@@ -24,5 +24,7 @@ Before coding a slice:
 4. Add tests and docs.
 5. Update `docs/DEFERRED.md` for discovered out-of-scope work.
 6. Leave main buildable and runnable.
+7. Land the slice as exactly one commit on main: never combine slices in a
+   commit, never leave a completed slice uncommitted.
 
 If architecture must change, create or supersede an ADR first.

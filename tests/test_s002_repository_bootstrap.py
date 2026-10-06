@@ -35,8 +35,12 @@ class TestGoBootstrap(unittest.TestCase):
     def test_placeholders_reference_version_package(self):
         for cmd in ("homestead-server", "homesteadctl"):
             with self.subTest(cmd=cmd):
-                content = read(f"cmd/{cmd}/main.go")
-                self.assertIn("homestead/internal/version", content)
+                sources = " ".join(
+                    p.read_text(encoding="utf-8")
+                    for p in (REPO / "cmd" / cmd).glob("*.go")
+                    if not p.name.endswith("_test.go")
+                )
+                self.assertIn("homestead/internal/version", sources)
 
     def test_version_package_has_test(self):
         self.assertTrue((REPO / "internal" / "version" / "version.go").is_file())

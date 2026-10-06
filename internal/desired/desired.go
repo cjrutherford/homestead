@@ -52,8 +52,8 @@ func DefaultPath() string {
 // the configuration schema (S015). Strict file parsing still applies to the
 // envelope; per-setting validation is the schema's job.
 type State struct {
-	Version  int            `yaml:"version"`
-	Settings map[string]any `yaml:"settings,omitempty"`
+	Version  int            `yaml:"version" json:"version"`
+	Settings map[string]any `yaml:"settings,omitempty" json:"settings"`
 }
 
 // New returns a current-version State.

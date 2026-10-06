@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -180,5 +181,31 @@ func TestFieldErrorMessage(t *testing.T) {
 	msg := FieldError{Field: "web_port", Value: 1, Reason: "want >= 2"}.Error()
 	if !strings.Contains(msg, "web_port") || !strings.Contains(msg, "want >= 2") {
 		t.Fatalf("FieldError message = %q", msg)
+	}
+}
+
+func TestIntegerAcceptsJSONNumbers(t *testing.T) {
+	// JSON decodes numbers as float64; integral ones are integers.
+	s := Schema{Fields: []Field{
+		{Name: "port", Type: TypeInteger, Description: "Port.", Min: Int(1), Max: Int(65535)},
+	}}
+	if errs := s.Validate(map[string]any{"port": float64(8080)}); len(errs) != 0 {
+		t.Fatalf("Validate float64(8080) = %v, want none", errs)
+	}
+	for _, bad := range []any{8080.5, "8080", true, nil} {
+		if errs := s.Validate(map[string]any{"port": bad}); len(errs) == 0 {
+			t.Fatalf("Validate(%v) accepted, want error", bad)
+		}
+	}
+}
+
+func TestIntegerRejectsOutOfRangeFloats(t *testing.T) {
+	s := Schema{Fields: []Field{
+		{Name: "n", Type: TypeInteger, Description: "N."},
+	}}
+	for _, bad := range []any{1e300, -1e300, math.Inf(1)} {
+		if errs := s.Validate(map[string]any{"n": bad}); len(errs) == 0 {
+			t.Fatalf("Validate(%v) accepted, want error", bad)
+		}
 	}
 }

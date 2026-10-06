@@ -72,9 +72,10 @@ func (s *Service) Apply(candidate map[string]any) (desired.State, []schema.Field
 	return state, nil, nil
 }
 
-// Plan is the result of validating a candidate configuration.
+// Plan is the result of validating a candidate configuration. JSON tags
+// serve CLI and dashboard output (ADR-004).
 type Plan struct {
-	Valid     bool
-	Effective map[string]any
-	Errors    []schema.FieldError
+	Valid     bool                `json:"valid"`
+	Effective map[string]any      `json:"effective,omitempty"`
+	Errors    []schema.FieldError `json:"errors,omitempty"`
 }

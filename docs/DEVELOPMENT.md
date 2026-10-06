@@ -15,7 +15,7 @@ S002 repository bootstrap. Toolchains and layout for local development.
 
 ```text
 cmd/homestead-server/   homestead-server binary (HTTP skeleton in S010; see ADR-001)
-cmd/homesteadctl/       homesteadctl binary (placeholder until S018; see ADR-004)
+cmd/homesteadctl/       CLI: status/version/config over the API (S018; ADR-004)
 internal/server/        daemon HTTP surface: health/version + graceful shutdown (S010)
 internal/layout/        authoritative filesystem layout + provisioner (S012)
 internal/store/         versioned SQLite operational state (S013; ADR-003)
@@ -129,6 +129,22 @@ context-propagated with a 10s default timeout (`WithTimeout`), swappable
 transport (`WithHTTPClient`, the future Unix-socket hook). Transport
 failures return `*StatusError`; validation outcomes stay data, mirroring
 `internal/config`.
+
+## homesteadctl (S018)
+
+```bash
+go run ./cmd/homesteadctl status                        # via local daemon
+HOMESTEAD_SERVER=http://127.0.0.1:8080 homesteadctl status
+homesteadctl --server http://host:8080 config get
+homesteadctl config plan -f settings.json               # dry-run, exit 1 if invalid
+homesteadctl config apply -f settings.yaml              # persist, exit 1 if invalid
+```
+
+- Exit codes: 0 success, 1 runtime/API/validation failure, 2 usage error.
+- `-f` takes JSON or YAML by extension (bare settings or `{"settings": …}`);
+  no `--set` flags — flat strings cannot carry typed values.
+- Everything goes through `internal/apiclient`; the CLI never reads state
+  files or the database. Claim (S019) and admin recovery (S021) extend it.
 
 ## Installing as a system service (S011)
 

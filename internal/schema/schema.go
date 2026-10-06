@@ -13,6 +13,7 @@ package schema
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strings"
@@ -210,6 +211,20 @@ func toInt(value any) (int, bool) {
 	case int:
 		return n, true
 	case int64:
+		if n > int64(math.MaxInt) || n < int64(math.MinInt) {
+			return 0, false
+		}
+		return int(n), true
+	case float64:
+		// JSON numbers decode as float64; integral ones are integers.
+		// math.MaxInt is not float64-representable, so >= excludes 2^63
+		// (not a valid int) while losing nothing representable.
+		if math.IsNaN(n) || math.IsInf(n, 0) || n != math.Trunc(n) {
+			return 0, false
+		}
+		if n >= float64(math.MaxInt) || n < float64(math.MinInt) {
+			return 0, false
+		}
 		return int(n), true
 	}
 	return 0, false
