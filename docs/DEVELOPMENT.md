@@ -218,7 +218,10 @@ vendor/device/driver) — all optional sources, silent when absent. Network
 (S042) adds interfaces with addresses/MTU/MAC/flags, the lowest-metric
 IPv4 default gateway and its interface (`/proc/net/route`), and resolvers
 (`/etc/resolv.conf`); missing routes stay silent, IPv6 gateways extend
-later. Mounted storage (S043) extends the same package.
+later. Mounted storage (S043) adds every mount from `/proc/self/mountinfo`
+with statfs usage, UUID/label identity from `/dev/disk`, stale mounts
+marked inaccessible rather than fatal, longest-prefix lookup — and never
+formats anything (ADR-013).
 
 ## Installing as a system service (S011)
 
