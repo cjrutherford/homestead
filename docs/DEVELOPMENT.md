@@ -260,6 +260,15 @@ unknown shapes become foreign removals) into create/add/remove/update
 changes with the rendered script attached for S054. Missing table means
 create-table, never an error. Lenient by design: hand edits surface for
 review instead of crashing.
+
+## Firewall atomic apply (S054)
+
+`ApplySet` validates, pre-checks (`nft --check`), commits one `nft -f`
+transaction (idempotent add-table, scoped flush, chain plus rules), then
+post-verifies the live table is in sync — distinct errors for each stage.
+Temp scripts are 0600 and removed. Observers see the old or new table,
+never a half-written one; only the homestead table is ever named.
+Lockout protection (S055) constrains what plans may contain.
 A skip-guarded `nft --check` golden test validates output where
 privilege allows (S229 bare metal).
 
