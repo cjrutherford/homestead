@@ -1,5 +1,6 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { SessionService } from './auth/session.service';
 
 /** Homestead dashboard shell: brand header, primary nav, routed content. */
 @Component({
@@ -8,4 +9,10 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
   styleUrl: './app.css',
   templateUrl: './app.html',
 })
-export class App {}
+export class App {
+  protected readonly sessions = inject(SessionService);
+
+  protected logout(): void {
+    this.sessions.logout().subscribe();
+  }
+}

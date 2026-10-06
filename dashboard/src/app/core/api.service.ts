@@ -1,5 +1,5 @@
 import { inject, Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 /** GET /healthz — always available, even UNCLAIMED. */
@@ -31,6 +31,12 @@ export interface AdminCreated {
   username: string;
 }
 
+/** POST /api/v1/sessions — minted session. */
+export interface LoginSession {
+  token: string;
+  expires_at: string;
+}
+
 /**
  * Typed access to the homestead-server API (S016/S019/S020).
  * Relative URLs: production serves the dashboard from the daemon (S031),
@@ -60,6 +66,19 @@ export class ApiService {
     return this.http.post<AdminCreated>('/api/v1/admins/setup', {
       username,
       password,
+    });
+  }
+
+  login(username: string, password: string): Observable<LoginSession> {
+    return this.http.post<LoginSession>('/api/v1/sessions', {
+      username,
+      password,
+    });
+  }
+
+  logout(token: string): Observable<void> {
+    return this.http.delete<void>('/api/v1/sessions', {
+      headers: new HttpHeaders({ Authorization: `Bearer ${token}` }),
     });
   }
 }

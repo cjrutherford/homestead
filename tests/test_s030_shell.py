@@ -84,16 +84,16 @@ class TestRunnerWired(unittest.TestCase):
 
 
 class TestLaterSlicesAbsent(unittest.TestCase):
-    def test_no_auth_config_pages(self):
-        """S033 authentication, S035 configuration own their pages (S032 landed claim)."""
+    def test_no_config_pages(self):
+        """S035 configuration owns its pages (S032/S033 landed claim/login)."""
         names = [p.name for p in APP.rglob("*")]
-        for banned in ("login", "setup", "config-page"):
+        for banned in ("setup", "config-page"):
             with self.subTest(banned=banned):
                 self.assertNotIn(banned, " ".join(names))
 
     def test_no_future_routes(self):
         src = read_dash("src/app/app.routes.ts")
-        for path in ("path: 'login'", "path: 'setup'", "path: 'config'"):
+        for path in ("path: 'setup'", "path: 'config'"):
             with self.subTest(path=path):
                 self.assertNotIn(path, src)
 

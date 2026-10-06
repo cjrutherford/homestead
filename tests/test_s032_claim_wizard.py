@@ -50,16 +50,5 @@ class TestWizard(unittest.TestCase):
         self.assertIn('routerLink="/claim"', html)
 
 
-class TestLaterSlicesAbsent(unittest.TestCase):
-    def test_no_login_or_session_ui(self):
-        """S033 owns authentication UI; no session handling here."""
-        names = [p.name for p in APP.rglob("*")]
-        for banned in ("login", "session"):
-            with self.subTest(banned=banned):
-                self.assertNotIn(banned, " ".join(names))
-        src = read_dash("src/app/core/api.service.ts")
-        self.assertNotIn("/api/v1/sessions", src)
-
-
 if __name__ == "__main__":
     unittest.main()

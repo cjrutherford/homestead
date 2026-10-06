@@ -265,9 +265,17 @@ no absolute URLs.
 `/claim`: token step (single-use console token, 401 invalid/expired, 409
 skips ahead) then first-administrator step (username, ≥12 password with
 confirmation, 409 lands on done). The wizard reads identity on init so
-already-claimed appliances start at the admin step. Login and session
-handling arrive with S033; a mistyped password is recoverable via
-`homesteadctl admin recover` (S021).
+already-claimed appliances start at the admin step.
+
+## Authentication UI (S033)
+
+`/login` plus `SessionService`: login stores token/username/expiry in
+`localStorage` (`homestead.session`, matching the 30-day server sessions);
+the shell nav shows the username with logout instead of the login link.
+Logout clears locally first and destroys server-side best-effort. Sessions
+are created here, not yet required anywhere — no route guards yet. A
+mistyped password remains recoverable via `homesteadctl admin recover`
+(S021).
 
 ## Embedded dashboard (S031)
 ```bash

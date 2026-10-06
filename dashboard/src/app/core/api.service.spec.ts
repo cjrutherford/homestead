@@ -74,4 +74,25 @@ describe('ApiService', () => {
     });
     req.flush({ id: 1, username: 'owner' });
   });
+
+  it('logs in for a session token', () => {
+    service.login('owner', 'long-enough-password').subscribe((session) => {
+      expect(session.token).toBe('session-token');
+    });
+    const req = http.expectOne('/api/v1/sessions');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      username: 'owner',
+      password: 'long-enough-password',
+    });
+    req.flush({ token: 'session-token', expires_at: '2026-01-01T00:00:00Z' });
+  });
+
+  it('logs out with the bearer token', () => {
+    service.logout('session-token').subscribe();
+    const req = http.expectOne('/api/v1/sessions');
+    expect(req.request.method).toBe('DELETE');
+    expect(req.request.headers.get('Authorization')).toBe('Bearer session-token');
+    req.flush(null);
+  });
 });

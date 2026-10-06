@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { routes } from './app.routes';
 import { Status } from './status/status';
+import { Claim } from './claim/claim';
+import { Login } from './login/login';
 import { NotFound } from './not-found/not-found';
 
 describe('routes', () => {
@@ -12,6 +14,16 @@ describe('routes', () => {
   it('serves the status page', () => {
     const status = routes.find((route) => route.path === 'status');
     expect(status?.component).toBe(Status);
+  });
+
+  it('serves the login page', () => {
+    const login = routes.find((route) => route.path === 'login');
+    expect(login?.component).toBe(Login);
+  });
+
+  it('serves the claim page', () => {
+    const claim = routes.find((route) => route.path === 'claim');
+    expect(claim?.component).toBe(Claim);
   });
 
   it('falls back to not-found last', () => {
