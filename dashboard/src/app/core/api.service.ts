@@ -36,6 +36,8 @@ export interface FirewallStatus {
   rule_count: number;
   daemon_port: number;
   local_subnets: string[];
+  mode: string;
+  external_managers: string[];
 }
 
 /** One reviewed firewall change. */

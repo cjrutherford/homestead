@@ -19,8 +19,8 @@ import (
 	"homestead/internal/config"
 	"homestead/internal/dashboard"
 	"homestead/internal/desired"
+	"homestead/internal/firewall"
 	"homestead/internal/layout"
-	"homestead/internal/schema"
 	"homestead/internal/server"
 	"homestead/internal/store"
 	"homestead/internal/version"
@@ -54,10 +54,11 @@ func run(listen, configPath, dataDir, socketPath string) error {
 	defer st.Close()
 	claimSvc := claim.New(st)
 	authSvc := auth.New(st, claimSvc)
-	// Empty schema: domain slices register their fields in later slices;
-	// until then the API serves state and rejects unknown settings (S016).
+	// Domain slices register their settings fields here; the config API,
+	// CLI, and dashboard render them from this one schema (S015/S016).
 	srv := server.New(listen)
-	srv.MountConfig(config.New(schema.Schema{}, configPath))
+	configSvc := config.New(firewall.Schema(), configPath)
+	srv.MountConfig(configSvc)
 	srv.MountClaim(claimSvc)
 	srv.MountAuth(authSvc)
 	srv.MountRecovery(authSvc)
@@ -66,7 +67,7 @@ func run(listen, configPath, dataDir, socketPath string) error {
 	if port, err := daemonPort(listen); err != nil {
 		return err
 	} else {
-		srv.MountFirewall(port)
+		srv.MountFirewall(port, configSvc)
 	}
 	if files, ok := dashboard.Embedded(); ok {
 		srv.MountDashboard(dashboard.New(files))

@@ -35,7 +35,12 @@ const rulesetFixture = `{"nftables": [
 
 func TestFullDetection(t *testing.T) {
 	stubCommands(t,
-		func(string) (string, error) { return "/usr/sbin/nft", nil },
+		func(name string) (string, error) {
+			if name == "ufw" || name == "firewall-cmd" {
+				return "", errors.New("not found")
+			}
+			return "/usr/sbin/" + name, nil
+		},
 		func(name string, args ...string) (string, error) {
 			switch name + " " + args[0] {
 			case "nft --version":
@@ -116,7 +121,53 @@ func TestLiveDetectionNeverFails(t *testing.T) {
 	if state.NFTAvailable && state.NFTVersion == "" && state.RulesetError == "" && !state.RulesetAccessible {
 		t.Logf("nft present but version unreadable: %+v", state)
 	}
-	t.Logf("nft=%v accessible=%v tables=%d iptables=%v(%s)",
+	t.Logf("nft=%v accessible=%v tables=%d iptables=%v(%s) external=%v",
 		state.NFTAvailable, state.RulesetAccessible, len(state.Tables),
-		state.IPTablesAvailable, state.IPTablesBackend)
+		state.IPTablesAvailable, state.IPTablesBackend, state.ExternalManagers)
+}
+
+func TestExternalManagers(t *testing.T) {
+	stubCommands(t,
+		func(name string) (string, error) {
+			return "/usr/sbin/" + name, nil
+		},
+		func(name string, args ...string) (string, error) {
+			switch name + " " + args[0] {
+			case "nft --version":
+				return "nftables v1.0.9\n", nil
+			case "ufw status":
+				return "Status: active\n", nil
+			case "firewall-cmd --state":
+				return "running\n", nil
+			}
+			return "", errors.New("not found")
+		},
+	)
+	state := Detect()
+	if len(state.ExternalManagers) != 2 {
+		t.Fatalf("managers = %v, want ufw+firewalld", state.ExternalManagers)
+	}
+}
+
+func TestInactiveManagersAbsent(t *testing.T) {
+	stubCommands(t,
+		func(name string) (string, error) {
+			return "/usr/sbin/" + name, nil
+		},
+		func(name string, args ...string) (string, error) {
+			switch name + " " + args[0] {
+			case "nft --version":
+				return "nftables v1.0.9\n", nil
+			case "ufw status":
+				return "Status: inactive\n", nil
+			case "firewall-cmd --state":
+				return "", errors.New("exit status 1: not running")
+			}
+			return "", errors.New("not found")
+		},
+	)
+	state := Detect()
+	if len(state.ExternalManagers) != 0 {
+		t.Fatalf("managers = %v, want none", state.ExternalManagers)
+	}
 }

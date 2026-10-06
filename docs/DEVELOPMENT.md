@@ -251,6 +251,8 @@ rather than opening the world). `Render` emits the isolated
 rules filter only what they match and compose with administrator policy;
 no default-drop exists by design. `ManagementBaseline` accepts the daemon
 port from LAN subnets then drops it from everywhere else (public denied).
+A skip-guarded `nft --check` golden test validates output where
+privilege allows (S229 bare metal).
 
 ## Firewall planner (S053)
 
@@ -271,7 +273,6 @@ never a half-written one; only the homestead table is ever named.
 Lockout protection (S055) constrains what plans may contain.
 
 ## Firewall wizard (S056)
-
 `/firewall`: LAN subnets from live discovery, recommended rules as the
 rendered script, review of the planned diff, then guarded apply with
 snapshot-backed rollback — all framed by the S036 shell with persisted
@@ -281,6 +282,16 @@ management baseline accepts loopback plus LAN and drops public; overlay
 accepts await overlay resolution (S110+), and external-firewall mode is
 S057. Unix-socket callers verify as loopback (same-machine by
 construction).
+
+## External firewall mode (S057)
+
+`firewall_mode` (`managed` default, `external` opt-out) is the first real
+domain setting: defined in `internal/firewall`, served through the
+existing config API, rendered by the config page, settable via CLI files.
+External mode never mutates — plan returns the rendered rules as
+instructions with an informational change, apply refuses 409, while
+status keeps diagnosing (including active ufw/firewalld managers).
+Homestead manages only its own table either way (ADR-008).
 
 ## Firewall lockout protection (S055)
 
@@ -292,8 +303,6 @@ nothing on guard failure. `TakeSnapshot`/`Restore` capture exact table
 text and roll back byte-equal on failed changes. Active reachability
 probing (dial-back) is out: atomic apply plus post-verify plus the guard
 is the mechanism; S126 does active probing for exposure.
-A skip-guarded `nft --check` golden test validates output where
-privilege allows (S229 bare metal).
 
 ## System doctor (S044)
 `internal/doctor` judges the facts: eight stable checks (distro gate,

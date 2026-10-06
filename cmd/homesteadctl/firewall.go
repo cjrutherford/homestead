@@ -38,6 +38,10 @@ func runFirewallStatus(ctx context.Context, client *apiclient.Client, stdout, st
 	}
 	fmt.Fprintf(stdout, "nftables: available=%v accessible=%v\n", status.NFTAvailable, status.RulesetAccessible)
 	fmt.Fprintf(stdout, "managed: %v (%d rules), daemon port %d\n", status.Managed, status.RuleCount, status.DaemonPort)
+	fmt.Fprintf(stdout, "mode: %s\n", status.Mode)
+	if len(status.ExternalManagers) > 0 {
+		fmt.Fprintf(stdout, "external managers: %s\n", strings.Join(status.ExternalManagers, ", "))
+	}
 	fmt.Fprintf(stdout, "local subnets: %s\n", strings.Join(status.LocalSubnets, ", "))
 	return exitOK
 }

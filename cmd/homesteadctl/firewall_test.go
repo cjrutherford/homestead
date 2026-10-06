@@ -13,7 +13,7 @@ func firewallStub(t *testing.T, applyStatus int) string {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path + " " + r.Method {
 		case "/api/v1/firewall/status GET":
-			_, _ = w.Write([]byte(`{"nft_available":true,"ruleset_accessible":false,"managed":false,"rule_count":0,"daemon_port":8080,"local_subnets":["192.168.1.0/24"]}`))
+			_, _ = w.Write([]byte(`{"nft_available":true,"ruleset_accessible":false,"managed":false,"rule_count":0,"daemon_port":8080,"local_subnets":["192.168.1.0/24"],"mode":"managed","external_managers":[]}`))
 		case "/api/v1/firewall/plan GET":
 			_, _ = w.Write([]byte(`{"in_sync":false,"changes":[{"action":"create-table","detail":"create"}],"script":"table"}`))
 		case "/api/v1/firewall/apply POST":
@@ -38,6 +38,9 @@ func TestFirewallStatus(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "192.168.1.0/24") || !strings.Contains(stdout, "daemon port 8080") {
 		t.Fatalf("stdout = %q", stdout)
+	}
+	if !strings.Contains(stdout, "mode: managed") {
+		t.Fatalf("stdout = %q, want mode", stdout)
 	}
 }
 

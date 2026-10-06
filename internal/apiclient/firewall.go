@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// FirewallStatus is the setup-state report (S056).
+// FirewallStatus is the setup-state report (S056, extended S057).
 type FirewallStatus struct {
 	NFTAvailable      bool     `json:"nft_available"`
 	RulesetAccessible bool     `json:"ruleset_accessible"`
@@ -13,6 +13,8 @@ type FirewallStatus struct {
 	RuleCount         int      `json:"rule_count"`
 	DaemonPort        int      `json:"daemon_port"`
 	LocalSubnets      []string `json:"local_subnets"`
+	Mode              string   `json:"mode"`
+	ExternalManagers  []string `json:"external_managers"`
 }
 
 // FirewallChange is one reviewed plan step.

@@ -5,19 +5,28 @@ import (
 	"net"
 	"net/http"
 
+	"homestead/internal/config"
 	"homestead/internal/discover"
 	"homestead/internal/firewall"
 )
 
 // MountFirewall registers firewall setup endpoints (S056) for the daemon
-// port: status (detection plus LAN identification), plan (reviewable
-// diff), and apply (guarded, snapshot-backed). The wizard and CLI drive
-// all three; nothing here enforces authentication yet, consistent with
-// the rest of the local API.
-func (s *Server) MountFirewall(daemonPort int) {
-	s.mux.HandleFunc("GET /api/v1/firewall/status", handleFirewallStatus(daemonPort))
-	s.mux.HandleFunc("GET /api/v1/firewall/plan", handleFirewallPlan(daemonPort))
-	s.mux.HandleFunc("POST /api/v1/firewall/apply", handleFirewallApply(daemonPort))
+// port, plus external-mode handling (S057): the mode comes from the same
+// config service as everything else, so CLI, dashboard, and file agree.
+func (s *Server) MountFirewall(daemonPort int, configSvc *config.Service) {
+	s.mux.HandleFunc("GET /api/v1/firewall/status", handleFirewallStatus(daemonPort, configSvc))
+	s.mux.HandleFunc("GET /api/v1/firewall/plan", handleFirewallPlan(daemonPort, configSvc))
+	s.mux.HandleFunc("POST /api/v1/firewall/apply", handleFirewallApply(daemonPort, configSvc))
+}
+
+// firewallMode reads the management mode, defaulting to managed. A
+// corrupt config file fails loudly instead of guessing.
+func firewallMode(configSvc *config.Service) (string, error) {
+	state, err := configSvc.Get()
+	if err != nil {
+		return "", err
+	}
+	return firewall.ModeOf(state.Settings), nil
 }
 
 type firewallStatus struct {
@@ -27,16 +36,25 @@ type firewallStatus struct {
 	RuleCount         int      `json:"rule_count"`
 	DaemonPort        int      `json:"daemon_port"`
 	LocalSubnets      []string `json:"local_subnets"`
+	Mode              string   `json:"mode"`
+	ExternalManagers  []string `json:"external_managers"`
 }
 
-func handleFirewallStatus(daemonPort int) http.HandlerFunc {
+func handleFirewallStatus(daemonPort int, configSvc *config.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
+		mode, err := firewallMode(configSvc)
+		if err != nil {
+			http.Error(w, "failed to read configuration", http.StatusInternalServerError)
+			return
+		}
 		detect := firewall.Detect()
 		status := firewallStatus{
 			NFTAvailable:      detect.NFTAvailable,
 			RulesetAccessible: detect.RulesetAccessible,
 			DaemonPort:        daemonPort,
 			LocalSubnets:      []string{},
+			Mode:              mode,
+			ExternalManagers:  nonNil(detect.ExternalManagers),
 		}
 		network, err := discover.DiscoverNetwork()
 		if err != nil {
@@ -57,6 +75,14 @@ func handleFirewallStatus(daemonPort int) http.HandlerFunc {
 	}
 }
 
+// nonNil keeps JSON arrays [] instead of null.
+func nonNil(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
+}
+
 func firewallDesired(daemonPort int) (firewall.RuleSet, discover.Network, error) {
 	network, err := discover.DiscoverNetwork()
 	if err != nil {
@@ -69,8 +95,13 @@ func firewallDesired(daemonPort int) (firewall.RuleSet, discover.Network, error)
 	return desired, network, nil
 }
 
-func handleFirewallPlan(daemonPort int) http.HandlerFunc {
+func handleFirewallPlan(daemonPort int, configSvc *config.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
+		mode, err := firewallMode(configSvc)
+		if err != nil {
+			http.Error(w, "failed to read configuration", http.StatusInternalServerError)
+			return
+		}
 		detect := firewall.Detect()
 		if !detect.NFTAvailable {
 			http.Error(w, "nftables unavailable on this host", http.StatusServiceUnavailable)
@@ -79,6 +110,23 @@ func handleFirewallPlan(daemonPort int) http.HandlerFunc {
 		desired, _, err := firewallDesired(daemonPort)
 		if err != nil {
 			http.Error(w, "failed to build desired rules", http.StatusInternalServerError)
+			return
+		}
+		if mode == firewall.ModeExternal {
+			script, err := firewall.Render(desired)
+			if err != nil {
+				http.Error(w, "failed to render rules", http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, firewall.Plan{
+				InSync: false,
+				Changes: []firewall.Change{{
+					Action: "external",
+					Detail: "managed firewall disabled (firewall_mode=external): " +
+						"implement the script below in your own firewall",
+				}},
+				Script: script,
+			})
 			return
 		}
 		live, err := firewall.LiveTable()
@@ -109,8 +157,17 @@ func requestConnection(r *http.Request, daemonPort int) firewall.Connection {
 	return firewall.Connection{SourceIP: host, Protocol: firewall.ProtocolTCP, Port: daemonPort}
 }
 
-func handleFirewallApply(daemonPort int) http.HandlerFunc {
+func handleFirewallApply(daemonPort int, configSvc *config.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		mode, err := firewallMode(configSvc)
+		if err != nil {
+			http.Error(w, "failed to read configuration", http.StatusInternalServerError)
+			return
+		}
+		if mode == firewall.ModeExternal {
+			http.Error(w, "managed firewall disabled (firewall_mode=external): implement the plan in your own firewall", http.StatusConflict)
+			return
+		}
 		detect := firewall.Detect()
 		if !detect.NFTAvailable {
 			http.Error(w, "nftables unavailable on this host", http.StatusServiceUnavailable)

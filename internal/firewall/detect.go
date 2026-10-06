@@ -35,6 +35,10 @@ type State struct {
 	HasHomesteadTable bool
 	IPTablesAvailable bool
 	IPTablesBackend   string
+	// ExternalManagers names active third-party firewall managers
+	// (ufw, firewalld), best-effort: unprivileged callers may not see
+	// them. S057 records; it never manages through them.
+	ExternalManagers []string
 }
 
 // runCmd and lookPath are vars so tests can stub process execution.
@@ -65,24 +69,24 @@ func Detect() State {
 		state.NFTVersion = parseNFTVersion(version)
 	}
 	ruleset, err := runCmd("nft", "--json", "list", "ruleset")
-	if err != nil {
-		if isPermissionError(err) {
-			return state
+	switch {
+	case err == nil:
+		tables, err := parseTables([]byte(ruleset))
+		if err != nil {
+			state.RulesetError = err.Error()
+			break
 		}
-		state.RulesetError = err.Error()
-		return state
-	}
-	tables, err := parseTables([]byte(ruleset))
-	if err != nil {
-		state.RulesetError = err.Error()
-		return state
-	}
-	state.RulesetAccessible = true
-	state.Tables = tables
-	for _, table := range tables {
-		if table.Name == HomesteadTable {
-			state.HasHomesteadTable = true
+		state.RulesetAccessible = true
+		state.Tables = tables
+		for _, table := range tables {
+			if table.Name == HomesteadTable {
+				state.HasHomesteadTable = true
+			}
 		}
+	case isPermissionError(err):
+		// Unprivileged: unlistable, not broken. Continue probing the rest.
+	default:
+		state.RulesetError = err.Error()
 	}
 	if _, err := lookPath("iptables"); err == nil {
 		state.IPTablesAvailable = true
@@ -90,7 +94,32 @@ func Detect() State {
 			state.IPTablesBackend = parseIPTablesBackend(version)
 		}
 	}
+	state.ExternalManagers = detectExternalManagers()
 	return state
+}
+
+// detectExternalManagers lists active third-party managers by asking each
+// for its own state. Failures mean "cannot tell", never an error: absence
+// of evidence is reported as absence.
+func detectExternalManagers() []string {
+	var managers []string
+	if _, err := lookPath("ufw"); err == nil {
+		if out, err := runCmd("ufw", "status"); err == nil {
+			for _, line := range strings.Split(out, "\n") {
+				if strings.HasPrefix(strings.TrimSpace(strings.ToLower(line)), "status: active") {
+					managers = append(managers, "ufw")
+					break
+				}
+			}
+		}
+	}
+	if _, err := lookPath("firewall-cmd"); err == nil {
+		if out, err := runCmd("firewall-cmd", "--state"); err == nil &&
+			strings.TrimSpace(strings.ToLower(out)) == "running" {
+			managers = append(managers, "firewalld")
+		}
+	}
+	return managers
 }
 
 // parseNFTVersion extracts "1.0.9" from "nftables v1.0.9 (Old Doc Yak #3)".

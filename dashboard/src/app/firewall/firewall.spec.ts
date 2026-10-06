@@ -145,12 +145,12 @@ describe('Firewall', () => {
     });
     fixture.detectChanges();
     fixture.componentInstance['confirm']();
-    http.expectOne('/api/v1/firewall/apply').flush('refused', {
+    http.expectOne('/api/v1/firewall/apply').flush('managed firewall disabled', {
       status: 409,
       statusText: 'Conflict',
     });
     fixture.detectChanges();
-    expect(text()).toContain('would cut the management path');
+    expect(text()).toContain('managed firewall disabled');
     expect(text()).toContain('Review changes');
   });
 

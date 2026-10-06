@@ -57,10 +57,10 @@ class TestApiRoutes(unittest.TestCase):
         self.assertIn("StatusBadRequest", src)
         self.assertIn("DisallowUnknownFields", src)
 
-    def test_production_wiring_is_schema_free(self):
-        """Domain slices register fields; S016 ships an empty schema."""
+    def test_production_wiring_registers_domain_schema(self):
+        """Domain slices register fields; S057 added the firewall section."""
         main = read("cmd/homestead-server/main.go")
-        self.assertIn("schema.Schema{}", main)
+        self.assertIn("firewall.Schema()", main)
         self.assertIn("MountConfig", main)
         self.assertIn("desired.DefaultPath()", main)
 

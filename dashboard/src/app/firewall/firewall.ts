@@ -89,10 +89,13 @@ export class Firewall implements OnInit {
       },
       error: (err: HttpErrorResponse) => {
         this.busy.set(false);
+        const serverMessage =
+          typeof err.error === 'string' && err.error ? err.error : null;
         this.error.set(
-          err.status === 409
-            ? 'Apply refused: the plan would cut the management path.'
-            : 'Apply failed. The previous rules were restored.',
+          serverMessage ??
+            (err.status === 409
+              ? 'Apply refused: the plan would cut the management path.'
+              : 'Apply failed. The previous rules were restored.'),
         );
       },
     });
