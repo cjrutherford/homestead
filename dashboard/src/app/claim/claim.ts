@@ -1,37 +1,72 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
+import { WizardService } from '../wizard/wizard.service';
+import { WizardShell } from '../wizard/wizard-shell';
 
 type WizardStep = 'token' | 'admin' | 'done';
 
+const WIZARD_ID = 'claim';
+
+const STEPS = ['Claim token', 'Administrator', 'Done'];
+
 /**
- * Appliance claim wizard (S032): redeem the console token, then create the
- * first administrator. Already-claimed appliances skip ahead; an existing
- * administrator lands on done. Login itself arrives with S033.
+ * Appliance claim wizard (S032), framed by the reusable shell and resumed
+ * through persisted progress (S036): redeem the console token, then create
+ * the first administrator. Step selection always follows the appliance
+ * state first — UNCLAIMED means the token step regardless of saved
+ * progress — so stale saves can never misdirect. Only step names persist;
+ * tokens and passwords never touch wizard state.
  */
 @Component({
-  imports: [RouterLink],
+  imports: [RouterLink, WizardShell],
   selector: 'app-claim',
   templateUrl: './claim.html',
 })
 export class Claim implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly wizards = inject(WizardService);
 
   protected readonly step = signal<WizardStep>('token');
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly alreadySetup = signal(false);
+  protected readonly steps = STEPS;
+  protected readonly stepIndex = computed(() =>
+    this.step() === 'token' ? 0 : this.step() === 'admin' ? 1 : 2,
+  );
 
   ngOnInit(): void {
     this.api.identity().subscribe({
       next: (identity) => {
-        if (identity.state === 'CLAIMED') {
-          this.step.set('admin');
+        if (identity.state !== 'CLAIMED') {
+          return;
         }
+        this.wizards.load(WIZARD_ID).subscribe({
+          next: (saved) => {
+            if (saved.step === 'done') {
+              this.alreadySetup.set(true);
+              this.step.set('done');
+            } else {
+              this.step.set('admin');
+            }
+          },
+          error: () => {
+            this.step.set('admin');
+          },
+        });
       },
       error: () => this.unreachable(),
     });
+  }
+
+  protected goBack(): void {
+    if (this.step() === 'admin') {
+      this.step.set('token');
+    } else if (this.step() === 'done') {
+      this.step.set('admin');
+    }
   }
 
   protected submitToken(rawToken: string): void {
@@ -45,12 +80,12 @@ export class Claim implements OnInit {
     this.api.claim(token).subscribe({
       next: () => {
         this.busy.set(false);
-        this.step.set('admin');
+        this.advanceTo('admin');
       },
       error: (err: HttpErrorResponse) => {
         this.busy.set(false);
         if (err.status === 409) {
-          this.step.set('admin');
+          this.advanceTo('admin');
           return;
         }
         this.error.set(
@@ -77,13 +112,13 @@ export class Claim implements OnInit {
     this.api.setupAdmin(name, password).subscribe({
       next: () => {
         this.busy.set(false);
-        this.step.set('done');
+        this.advanceTo('done');
       },
       error: (err: HttpErrorResponse) => {
         this.busy.set(false);
         if (err.status === 409) {
           this.alreadySetup.set(true);
-          this.step.set('done');
+          this.advanceTo('done');
           return;
         }
         this.error.set(
@@ -92,6 +127,19 @@ export class Claim implements OnInit {
             : 'Setup failed. Is the daemon reachable?',
         );
       },
+    });
+  }
+
+  private advanceTo(step: WizardStep): void {
+    this.persist(step, () => this.step.set(step));
+  }
+
+  private persist(step: WizardStep, done: () => void): void {
+    // Progress tracking is best-effort: the appliance state already drives
+    // resume, so a failed save never blocks onboarding.
+    this.wizards.save(WIZARD_ID, step).subscribe({
+      next: done,
+      error: done,
     });
   }
 

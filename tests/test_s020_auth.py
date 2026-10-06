@@ -65,8 +65,11 @@ class TestAuthService(unittest.TestCase):
 
 class TestAuthSurface(unittest.TestCase):
     def test_migration_v3(self):
+        import re
+
         src = read("internal/store/store.go")
-        self.assertIn("CurrentVersion = 3", src)
+        version = int(re.search(r"(?m)^const CurrentVersion = (\d+)$", src).group(1))
+        self.assertGreaterEqual(version, 3)
         self.assertIn("password_hash", src)
         self.assertIn("identities_username_unique", src)
         self.assertIn("ALTER TABLE sessions ADD COLUMN token_hash", src)

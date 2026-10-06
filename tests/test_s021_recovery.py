@@ -77,8 +77,11 @@ class TestRecoverFlow(unittest.TestCase):
         self.assertIn("UnixClient", code)
 
     def test_no_schema_change(self):
+        import re
+
         src = read("internal/store/store.go")
-        self.assertIn("CurrentVersion = 3", src)
+        version = int(re.search(r"(?m)^const CurrentVersion = (\d+)$", src).group(1))
+        self.assertGreaterEqual(version, 3)
 
 
 if __name__ == "__main__":

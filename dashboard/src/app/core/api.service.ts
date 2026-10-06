@@ -28,6 +28,14 @@ export interface PlanResult {
   errors?: FieldError[];
 }
 
+/** GET /api/v1/wizards/:id — saved wizard progress. */
+export interface WizardState {
+  wizard: string;
+  step: string;
+  payload: Record<string, unknown>;
+  updated_at: string;
+}
+
 /** GET /api/v1/config/schema — field metadata for the renderer. */
 export interface ConfigSchema {
   fields: ConfigField[];
@@ -81,6 +89,22 @@ export class ApiService {
 
   applyConfig(settings: Record<string, unknown>): Observable<ConfigState> {
     return this.http.put<ConfigState>('/api/v1/config', { settings });
+  }
+
+  wizardState(id: string): Observable<WizardState> {
+    return this.http.get<WizardState>(`/api/v1/wizards/${id}`);
+  }
+
+  saveWizardState(
+    id: string,
+    step: string,
+    payload: Record<string, unknown> = {},
+  ): Observable<WizardState> {
+    return this.http.put<WizardState>(`/api/v1/wizards/${id}`, { step, payload });
+  }
+
+  clearWizardState(id: string): Observable<void> {
+    return this.http.delete<void>(`/api/v1/wizards/${id}`);
   }
 
   claim(token: string): Observable<ClaimResult> {

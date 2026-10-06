@@ -22,6 +22,7 @@ import (
 	"homestead/internal/server"
 	"homestead/internal/store"
 	"homestead/internal/version"
+	"homestead/internal/wizard"
 )
 
 func main() {
@@ -58,6 +59,7 @@ func run(listen, configPath, dataDir, socketPath string) error {
 	srv.MountClaim(claimSvc)
 	srv.MountAuth(authSvc)
 	srv.MountRecovery(authSvc)
+	srv.MountWizards(wizard.New(st))
 	if files, ok := dashboard.Embedded(); ok {
 		srv.MountDashboard(dashboard.New(files))
 	} else {

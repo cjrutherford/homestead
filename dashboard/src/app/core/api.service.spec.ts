@@ -127,4 +127,30 @@ describe('ApiService', () => {
     expect(req.request.body).toEqual({ settings: { hostname: 'hs' } });
     req.flush({ version: 1, settings: { hostname: 'hs' } });
   });
+
+  it('loads wizard progress', () => {
+    service.wizardState('claim').subscribe((state) => {
+      expect(state.step).toBe('admin');
+    });
+    const req = http.expectOne('/api/v1/wizards/claim');
+    expect(req.request.method).toBe('GET');
+    req.flush({ wizard: 'claim', step: 'admin', payload: {}, updated_at: '' });
+  });
+
+  it('saves wizard progress', () => {
+    service.saveWizardState('claim', 'done', {}).subscribe((state) => {
+      expect(state.step).toBe('done');
+    });
+    const req = http.expectOne('/api/v1/wizards/claim');
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({ step: 'done', payload: {} });
+    req.flush({ wizard: 'claim', step: 'done', payload: {}, updated_at: '' });
+  });
+
+  it('clears wizard progress', () => {
+    service.clearWizardState('claim').subscribe();
+    const req = http.expectOne('/api/v1/wizards/claim');
+    expect(req.request.method).toBe('DELETE');
+    req.flush(null);
+  });
 });

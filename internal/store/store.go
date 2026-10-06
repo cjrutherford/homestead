@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 3
+const CurrentVersion = 4
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -102,6 +102,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS identities_username_unique
 ALTER TABLE sessions ADD COLUMN identity_id INTEGER REFERENCES identities(id);
 ALTER TABLE sessions ADD COLUMN token_hash BLOB;
 ALTER TABLE sessions ADD COLUMN expires_at TEXT NOT NULL DEFAULT '';`,
+	},
+	{
+		// S036 resumable wizards: per-wizard step plus opaque JSON payload.
+		// Payloads hold UI progress only — never secrets (claim tokens and
+		// passwords stay out; see S019/S020).
+		version: 4,
+		name:    "wizard state",
+		sql: `
+CREATE TABLE IF NOT EXISTS wizard_state (
+	wizard TEXT PRIMARY KEY,
+	step TEXT NOT NULL,
+	payload TEXT NOT NULL DEFAULT '{}',
+	updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);`,
 	},
 }
 

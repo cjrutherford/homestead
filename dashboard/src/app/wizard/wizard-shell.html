@@ -1,0 +1,15 @@
+<section aria-label="Wizard">
+  <ol class="wizard-steps">
+    @for (step of steps(); track step; let index = $index) {
+      <li [attr.aria-current]="index === current() ? 'step' : null">
+        Step {{ index + 1 }} of {{ steps().length }}: {{ step }}
+      </li>
+    }
+  </ol>
+
+  <ng-content />
+
+  @if (current() > 0) {
+    <button type="button" (click)="back.emit()">Back</button>
+  }
+</section>

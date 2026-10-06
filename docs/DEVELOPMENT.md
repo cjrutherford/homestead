@@ -287,7 +287,6 @@ server stays the validation source of truth. No config page yet — S035
 builds on the renderer.
 
 ## Configuration UX (S035)
-
 `/config`: loads schema plus current values, renders the S034 form,
 submits to plan first — valid candidates show an added/removed/changed
 diff for confirm, invalid ones surface per-field errors without leaving
@@ -295,13 +294,24 @@ the editor. Confirm PUTs and refreshes to the persisted state with a
 saved notice; revert reloads the saved state and resets the form;
 back abandons review keeping the draft.
 
+## Wizard framework (S036)
+
+`internal/wizard` persists per-wizard `{step, payload}` (`wizard_state`,
+migration v4) behind `GET/PUT/DELETE /api/v1/wizards/:id`; the dashboard
+`WizardService` plus `app-wizard-shell` (step indicator, projected content,
+Back) frame each flow. Steps and payloads are opaque to the server;
+payloads hold UI progress only — never tokens, passwords, or sessions.
+The claim wizard dogfoods it: step names persist, appliance state drives
+resume (UNCLAIMED always restarts at the token step), so stale saves can
+never misdirect.
+
 ## Embedded dashboard (S031)
 ```bash
 make dashboard-build dashboard-embed   # refresh internal/dashboard/dist/ (gitignored)
 go build -tags embeddash ./...         # appliance binary serving the UI at /
 ```
 
-- `internal/dashboard` serves files verbatim with SPA fallback to
+-    `internal/dashboard` serves files verbatim with SPA fallback to
   `index.html` (never cached; hashed assets carry their own identity) and
   rejects non-GET/HEAD. The catch-all never shadows `/api/*` — mux
   longest-match wins, locked by test.
