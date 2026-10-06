@@ -286,6 +286,15 @@ omitted so server defaults apply, 422 errors under their fields. The
 server stays the validation source of truth. No config page yet — S035
 builds on the renderer.
 
+## Configuration UX (S035)
+
+`/config`: loads schema plus current values, renders the S034 form,
+submits to plan first — valid candidates show an added/removed/changed
+diff for confirm, invalid ones surface per-field errors without leaving
+the editor. Confirm PUTs and refreshes to the persisted state with a
+saved notice; revert reloads the saved state and resets the form;
+back abandons review keeping the draft.
+
 ## Embedded dashboard (S031)
 ```bash
 make dashboard-build dashboard-embed   # refresh internal/dashboard/dist/ (gitignored)

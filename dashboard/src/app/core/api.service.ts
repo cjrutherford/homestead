@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { ConfigField } from '../schema/schema';
+import { ConfigField, FieldError } from '../schema/schema';
 
 /** GET /healthz — always available, even UNCLAIMED. */
 export interface Health {
@@ -19,6 +19,13 @@ export interface Identity {
 export interface ConfigState {
   version: number;
   settings: Record<string, unknown>;
+}
+
+/** POST /api/v1/config/plan and PUT /api/v1/config outcomes. */
+export interface PlanResult {
+  valid: boolean;
+  effective?: Record<string, unknown>;
+  errors?: FieldError[];
 }
 
 /** GET /api/v1/config/schema — field metadata for the renderer. */
@@ -66,6 +73,14 @@ export class ApiService {
 
   configSchema(): Observable<ConfigSchema> {
     return this.http.get<ConfigSchema>('/api/v1/config/schema');
+  }
+
+  planConfig(settings: Record<string, unknown>): Observable<PlanResult> {
+    return this.http.post<PlanResult>('/api/v1/config/plan', { settings });
+  }
+
+  applyConfig(settings: Record<string, unknown>): Observable<ConfigState> {
+    return this.http.put<ConfigState>('/api/v1/config', { settings });
   }
 
   claim(token: string): Observable<ClaimResult> {

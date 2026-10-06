@@ -107,4 +107,24 @@ describe('ApiService', () => {
     expect(req.request.headers.get('Authorization')).toBe('Bearer session-token');
     req.flush(null);
   });
+
+  it('plans configuration without persisting', () => {    service.planConfig({ hostname: 'hs' }).subscribe((plan) => {
+      expect(plan.valid).toBe(true);
+      expect(plan.effective).toEqual({ hostname: 'hs' });
+    });
+    const req = http.expectOne('/api/v1/config/plan');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ settings: { hostname: 'hs' } });
+    req.flush({ valid: true, effective: { hostname: 'hs' } });
+  });
+
+  it('applies configuration', () => {
+    service.applyConfig({ hostname: 'hs' }).subscribe((state) => {
+      expect(state.version).toBe(1);
+    });
+    const req = http.expectOne('/api/v1/config');
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({ settings: { hostname: 'hs' } });
+    req.flush({ version: 1, settings: { hostname: 'hs' } });
+  });
 });

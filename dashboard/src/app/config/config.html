@@ -1,0 +1,42 @@
+<section aria-label="Configuration">
+  <h2>Configuration</h2>
+
+  @if (loading()) {
+    <p>Loading…</p>
+  } @else if (loadError()) {
+    <p role="alert" class="error">{{ loadError() }}</p>
+  } @else if (reviewing()) {
+    <h3>Review changes</h3>
+    @if (changes().length === 0) {
+      <p>No changes.</p>
+    } @else {
+      <ul>
+        @for (change of changes(); track change.key) {
+          <li>
+            <code>{{ change.key }}</code>:
+            <span>{{ change.before === undefined ? '(unset)' : (change.before | json) }}</span>
+            →
+            <span>{{ change.after === undefined ? '(unset)' : (change.after | json) }}</span>
+          </li>
+        }
+      </ul>
+    }
+    <button type="button" (click)="confirm()" [disabled]="busy()">Confirm apply</button>
+    <button type="button" (click)="back()">Back to editing</button>
+  } @else {
+    @if (notice()) {
+      <p role="status">{{ notice() }}</p>
+    }
+    @for (revision of [revision()]; track revision) {
+      <app-schema-form
+        [fields]="fields()"
+        [values]="values()"
+        [errors]="errors()"
+        (submitted)="review($event)"
+      />
+    }
+    <button type="button" (click)="revert()" [disabled]="busy()">
+      Revert to saved
+    </button>
+  }
+</section>

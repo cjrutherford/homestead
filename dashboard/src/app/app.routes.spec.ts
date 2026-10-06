@@ -3,6 +3,7 @@ import { routes } from './app.routes';
 import { Status } from './status/status';
 import { Claim } from './claim/claim';
 import { Login } from './login/login';
+import { Config } from './config/config';
 import { NotFound } from './not-found/not-found';
 
 describe('routes', () => {
@@ -26,7 +27,10 @@ describe('routes', () => {
     expect(claim?.component).toBe(Claim);
   });
 
-  it('falls back to not-found last', () => {
+  it('serves the configuration page', () => {
+    const config = routes.find((route) => route.path === 'config');
+    expect(config?.component).toBe(Config);
+  });  it('falls back to not-found last', () => {
     const last = routes[routes.length - 1];
     expect(last.path).toBe('**');
     expect(last.component).toBe(NotFound);

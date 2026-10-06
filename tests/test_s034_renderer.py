@@ -65,12 +65,5 @@ class TestRenderer(unittest.TestCase):
         self.assertIn("'/api/v1/config/schema'", src)
 
 
-class TestNoConfigPage(unittest.TestCase):
-    def test_config_page_absent(self):
-        """S035 owns the configuration page; S034 ships the renderer only."""
-        src = read_dash("src/app/app.routes.ts")
-        self.assertNotIn("path: 'config'", src)
-
-
 if __name__ == "__main__":
     unittest.main()
