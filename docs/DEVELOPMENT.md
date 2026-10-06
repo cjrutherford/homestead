@@ -269,6 +269,17 @@ post-verifies the live table is in sync — distinct errors for each stage.
 Temp scripts are 0600 and removed. Observers see the old or new table,
 never a half-written one; only the homestead table is ever named.
 Lockout protection (S055) constrains what plans may contain.
+
+## Firewall lockout protection (S055)
+
+`Guard` proves the desired set keeps the administrator's connection
+usable before anything mutates: first match in priority order decides —
+an earlier drop fails naming the rule, an accept or total silence
+(accept-default chain) passes. `ApplyGuarded` guards then applies, changing
+nothing on guard failure. `TakeSnapshot`/`Restore` capture exact table
+text and roll back byte-equal on failed changes. Active reachability
+probing (dial-back) is out: atomic apply plus post-verify plus the guard
+is the mechanism; S126 does active probing for exposure.
 A skip-guarded `nft --check` golden test validates output where
 privilege allows (S229 bare metal).
 
