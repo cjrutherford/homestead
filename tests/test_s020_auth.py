@@ -59,7 +59,7 @@ class TestAuthService(unittest.TestCase):
         """S021 owns root-only recovery; no backdoors here."""
         import re
 
-        code = re.sub(r"(?m)//.*$", "", read("internal/auth/auth.go"))
+        code = re.sub(r"(?m)^\s*//.*$", "", read("internal/auth/auth.go"))
         self.assertNotIn("recover", code.lower())
 
 
@@ -86,14 +86,13 @@ class TestAuthSurface(unittest.TestCase):
         self.assertIn("func (c *Client) Login(", src)
         self.assertIn("func (c *Client) Logout(", src)
 
-    def test_cli_covers_auth_without_recover(self):
+    def test_cli_covers_auth(self):
         import re
 
-        code = re.sub(r"(?m)//.*$", "", ctl_sources())
+        code = re.sub(r"(?m)^\s*//.*$", "", ctl_sources())
         for cmd in ('"admin"', '"login"', '"logout"', "--password-file"):
             with self.subTest(cmd=cmd):
                 self.assertIn(cmd, code)
-        self.assertNotIn("recover", code)
 
     def test_daemon_mounts_auth(self):
         main = read("cmd/homestead-server/main.go")

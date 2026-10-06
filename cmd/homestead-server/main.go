@@ -27,19 +27,20 @@ func main() {
 	listen := flag.String("listen", server.DefaultAddr, "address to bind (loopback by default; see ADR-006)")
 	configPath := flag.String("config", desired.DefaultPath(), "desired-state file (S014)")
 	dataDir := flag.String("data-dir", layout.LibDir.Path, "operational state directory (S012)")
+	socketPath := flag.String("socket", server.DefaultSocketPath, "root-only recovery socket (S021)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version.Version)
 		return
 	}
-	if err := run(*listen, *configPath, *dataDir); err != nil {
+	if err := run(*listen, *configPath, *dataDir, *socketPath); err != nil {
 		fmt.Fprintln(os.Stderr, "homestead-server:", err)
 		os.Exit(1)
 	}
 }
 
-func run(listen, configPath, dataDir string) error {
+func run(listen, configPath, dataDir, socketPath string) error {
 	// The state directory is provisioned by S012 and never created here:
 	// a missing data dir fails loudly instead of scattering state.
 	st, err := store.Open(filepath.Join(dataDir, store.DBFileName))
@@ -48,18 +49,29 @@ func run(listen, configPath, dataDir string) error {
 	}
 	defer st.Close()
 	claimSvc := claim.New(st)
+	authSvc := auth.New(st, claimSvc)
 	// Empty schema: domain slices register their fields in later slices;
 	// until then the API serves state and rejects unknown settings (S016).
 	srv := server.New(listen)
 	srv.MountConfig(config.New(schema.Schema{}, configPath))
 	srv.MountClaim(claimSvc)
-	srv.MountAuth(auth.New(st, claimSvc))
+	srv.MountAuth(authSvc)
+	srv.MountRecovery(authSvc)
 	if err := ensureClaimToken(claimSvc); err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	return srv.Run(ctx)
+	// Both listeners share ctx and drain together. A socket failure is
+	// fatal: silent loss of the recovery channel is worse than no start.
+	unixErr := make(chan error, 1)
+	go func() {
+		unixErr <- srv.RunUnix(ctx, socketPath)
+	}()
+	if err := srv.Run(ctx); err != nil {
+		return err
+	}
+	return <-unixErr
 }
 
 // ensureClaimToken mints the console token for a fresh appliance that has

@@ -12,15 +12,18 @@ import (
 	"homestead/internal/apiclient"
 )
 
-// runAdmin dispatches the admin group. S020 owns setup; S021 adds recover.
+// runAdmin dispatches the admin group: setup (S020) and root-only local
+// recovery (S021).
 func runAdmin(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl admin <setup> [flags]")
+		fmt.Fprintln(stderr, "usage: homesteadctl admin <setup|recover> [flags]")
 		return exitUsage
 	}
 	switch args[0] {
 	case "setup":
 		return runAdminSetup(ctx, client, args[1:], stdout, stderr)
+	case "recover":
+		return runAdminRecover(ctx, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown admin subcommand %q\n", args[0])
 		return exitUsage

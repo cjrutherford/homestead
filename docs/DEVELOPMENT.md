@@ -140,13 +140,15 @@ HOMESTEAD_SERVER=http://127.0.0.1:8080 homesteadctl status
 homesteadctl --server http://host:8080 config get
 homesteadctl config plan -f settings.json               # dry-run, exit 1 if invalid
 homesteadctl config apply -f settings.yaml              # persist, exit 1 if invalid
+homesteadctl admin recover --username owner --password-file ./new.pass  # root-only socket (S021)
 ```
 
 - Exit codes: 0 success, 1 runtime/API/validation failure, 2 usage error.
 - `-f` takes JSON or YAML by extension (bare settings or `{"settings": …}`);
   no `--set` flags — flat strings cannot carry typed values.
 - Everything goes through `internal/apiclient`; the CLI never reads state
-  files or the database. Claim (S019) and admin recovery (S021) extend it.
+  files or the database. `claim` (S019), `admin setup` (S020), and
+  `admin recover` (S021) extend the S018 foundation.
 
 ## Secure claim (S019)
 
@@ -182,6 +184,23 @@ homesteadctl logout --token "$TOKEN"        # or HOMESTEAD_TOKEN env
   from wrong passwords. Password files should be 0600.
 - Sessions are created here, not yet required: other endpoints stay open
   until a later slice enforces authentication. Recovery is S021.
+
+## Local admin recovery (S021)
+
+```bash
+sudo homesteadctl admin recover --username owner --password-file ./new.pass
+```
+
+- The daemon also listens on `/run/homestead/homestead.sock` (`--socket`
+  overrides; dev: `--socket /tmp/hs.sock`). The socket file is 0600, so
+  only root can connect — that file mode, not self-attestation, makes the
+  recover endpoint root-only. It is mounted solely on the socket mux:
+  `/api/v1/admins/recover` 404s over TCP.
+- Recovery resets the password with no claim-state gate and no session:
+  break-glass by design. The administrator must exist (creation stays in
+  `admin setup`); the new password faces the same ≥12 policy.
+- A missing socket directory fails startup loudly; a stale socket file is
+  replaced at listen time.
 
 ## Installing as a system service (S011)
 

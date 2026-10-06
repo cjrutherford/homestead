@@ -42,7 +42,7 @@ class TestClaimService(unittest.TestCase):
         """S020 owns administrators and sessions; S021 owns recovery."""
         import re
 
-        code = re.sub(r"(?m)//.*$", "", read("internal/claim/claim.go"))
+        code = re.sub(r"(?m)^\s*//.*$", "", read("internal/claim/claim.go"))
         for banned in ("password", "session", "bcrypt", "recover"):
             with self.subTest(banned=banned):
                 self.assertNotIn(banned, code.lower())

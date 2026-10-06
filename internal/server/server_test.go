@@ -93,7 +93,7 @@ func TestGracefulShutdown(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.serve(ctx, ln) }()
+	go func() { done <- s.serve(ctx, ln, s.http, "test") }()
 
 	getHealth := func() error {
 		res, err := http.Get(baseURL + "/healthz")
