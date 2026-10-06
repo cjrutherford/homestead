@@ -27,6 +27,7 @@ internal/claim/         single-use claim tokens + UNCLAIMED→CLAIMED (S019; ADR
 internal/dashboard/     production UI serving + embed split (S031)
 internal/auth/          first administrator + session login/logout (S020)
 internal/discover/      read-only host facts: OS today, hardware/network/storage next (S040+)
+internal/firewall/      nftables detection: binary, version, tables, backend flavor (S050; ADR-008)
 internal/               shared Go packages (API client arrives in S017)
 dashboard/              Angular 22 dashboard app, pnpm-managed (real UI arrives in S030+)
 tests/                  Python conformance tests (S000 constitution, S001 ADR, S002 bootstrap)
@@ -222,8 +223,16 @@ UUID/label identity from `/dev/disk`, stale mounts marked inaccessible
 rather than fatal, longest-prefix lookup — and never formats anything
 (ADR-013).
 
-## System doctor (S044)
+## Firewall detection (S050)
 
+`internal/firewall` observes only (ADR-008): `nft` presence and version,
+`nft --json list ruleset` tables with the homestead-table flag,
+iptables backend flavor. Unprivileged unlistability reports
+`RulesetAccessible=false`, never an error; process execution is stubbed
+in tests and scoped to this package. Planning and mutation belong to
+later slices; ufw/firewalld service detection belongs to S057.
+
+## System doctor (S044)
 `internal/doctor` judges the facts: eight stable checks (distro gate,
 memory, CPU, gateway, resolvers, root disk, stale mounts, state dirs) with
 ok/warn/fail and remediation-minded detail, served at
