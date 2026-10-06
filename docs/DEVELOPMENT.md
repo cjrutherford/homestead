@@ -251,6 +251,15 @@ rather than opening the world). `Render` emits the isolated
 rules filter only what they match and compose with administrator policy;
 no default-drop exists by design. `ManagementBaseline` accepts the daemon
 port from LAN subnets then drops it from everywhere else (public denied).
+
+## Firewall planner (S053)
+
+`Build` diffs desired rules against canonical live rules parsed from
+`nft --json` (comment names, set/range/prefix rights, counters ignored,
+unknown shapes become foreign removals) into create/add/remove/update
+changes with the rendered script attached for S054. Missing table means
+create-table, never an error. Lenient by design: hand edits surface for
+review instead of crashing.
 A skip-guarded `nft --check` golden test validates output where
 privilege allows (S229 bare metal).
 

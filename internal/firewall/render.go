@@ -157,15 +157,18 @@ func Render(set RuleSet) (string, error) {
 	return out.String(), nil
 }
 
-// renderRule renders one rule verdict line.
+// renderRule renders one rule verdict line. Interfaces sort for canonical
+// stability with live parsing (S053 diffs rendered text).
 func renderRule(rule Rule) (string, error) {
 	parts := []string{}
 	if len(rule.Interfaces) > 0 {
-		if len(rule.Interfaces) == 1 {
-			parts = append(parts, fmt.Sprintf("iifname %q", rule.Interfaces[0]))
+		ifaces := append([]string(nil), rule.Interfaces...)
+		sort.Strings(ifaces)
+		if len(ifaces) == 1 {
+			parts = append(parts, fmt.Sprintf("iifname %q", ifaces[0]))
 		} else {
-			quoted := make([]string, 0, len(rule.Interfaces))
-			for _, iface := range rule.Interfaces {
+			quoted := make([]string, 0, len(ifaces))
+			for _, iface := range ifaces {
 				quoted = append(quoted, fmt.Sprintf("%q", iface))
 			}
 			parts = append(parts, fmt.Sprintf("iifname { %s }", strings.Join(quoted, ", ")))
