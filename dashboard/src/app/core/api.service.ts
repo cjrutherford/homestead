@@ -28,6 +28,37 @@ export interface DoctorReport {
   checks: DoctorCheck[];
 }
 
+/** One operation step (GET /api/v1/operations/:id). */
+export interface OperationStep {
+  id: number;
+  operation_id: number;
+  position: number;
+  name: string;
+  status: string;
+  started_at: string;
+  finished_at: string;
+  error: string;
+}
+
+/** One operation record. */
+export interface OperationState {
+  id: number;
+  type: string;
+  status: string;
+  payload: string;
+  result: string;
+  error: string;
+  created_at: string;
+  updated_at: string;
+  steps: OperationStep[];
+}
+
+/** Minimal EventSource surface (injectable for tests; jsdom lacks it). */
+export interface EventSourceLike {
+  addEventListener(type: string, listener: (event: { data: string }) => void): void;
+  close(): void;
+}
+
 /** GET /api/v1/firewall/status — setup state plus LAN identification. */
 export interface FirewallStatus {
   nft_available: boolean;
@@ -128,6 +159,23 @@ export class ApiService {
 
   firewallApply(): Observable<{ applied: boolean }> {
     return this.http.post<{ applied: boolean }>('/api/v1/firewall/apply', {});
+  }
+
+  operation(id: number): Observable<OperationState> {
+    return this.http.get<OperationState>(`/api/v1/operations/${id}`);
+  }
+
+  operationEvents(
+    id: number,
+    open: (url: string) => EventSourceLike = (url) => new EventSource(url),
+  ): Observable<OperationState> {
+    return new Observable((subscriber) => {
+      const source = open(`/api/v1/operations/${id}/events`);
+      source.addEventListener('state', (event) => {
+        subscriber.next(JSON.parse(event.data) as OperationState);
+      });
+      return () => source.close();
+    });
   }
 
   config(): Observable<ConfigState> {

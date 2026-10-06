@@ -70,6 +70,7 @@ func run(listen, configPath, dataDir, socketPath string) error {
 	srv.MountRecovery(authSvc)
 	srv.MountWizards(wizard.New(st))
 	srv.MountDoctor()
+	srv.MountOperations(operation.New(st))
 	if port, err := daemonPort(listen); err != nil {
 		return err
 	} else {

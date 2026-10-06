@@ -35,29 +35,30 @@ var (
 	ErrBadTransition = errors.New("illegal status transition")
 )
 
-// Operation is one unit of tracked work.
+// Operation is one unit of tracked work. JSON tags serve the S062 event
+// stream and fetch endpoints.
 type Operation struct {
-	ID        int64
-	Type      string
-	Status    string
-	Payload   string
-	Result    string
-	Error     string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Steps     []Step
+	ID        int64     `json:"id"`
+	Type      string    `json:"type"`
+	Status    string    `json:"status"`
+	Payload   string    `json:"payload"`
+	Result    string    `json:"result"`
+	Error     string    `json:"error"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Steps     []Step    `json:"steps"`
 }
 
 // Step is one ordered unit within an operation.
 type Step struct {
-	ID          int64
-	OperationID int64
-	Position    int
-	Name        string
-	Status      string
-	StartedAt   time.Time
-	FinishedAt  time.Time
-	Error       string
+	ID          int64     `json:"id"`
+	OperationID int64     `json:"operation_id"`
+	Position    int       `json:"position"`
+	Name        string    `json:"name"`
+	Status      string    `json:"status"`
+	StartedAt   time.Time `json:"started_at"`
+	FinishedAt  time.Time `json:"finished_at"`
+	Error       string    `json:"error"`
 }
 
 // Terminal reports succeeded, failed, or cancelled.

@@ -324,6 +324,18 @@ migration v5 (operation columns plus `operation_steps`). Execution belongs
 to the runner (S061); events (S062), audit (S063), and progress UI (S064)
 observe these records.
 
+## Operation events (S062)
+
+Poll-backed SSE, no broker: `GET /api/v1/operations/:id` fetches one
+record; `GET .../events` sends the current state immediately, a `state`
+event per 500ms-snapshot change, heartbeats every 30s, and closes after
+the terminal state (clients reconnect idempotently; no replay log).
+`homesteadctl operations get|follow` consumes it (follow exits 1 on
+failed/cancelled, 0 on SIGINT); the dashboard wraps `EventSource` in
+`ApiService.operationEvents` with an injectable factory (jsdom lacks
+it). Rich progress UI is S064; operation producers arrive with their
+own slices (nothing creates operations yet).
+
 ## Operation runner (S061)
 
 `Start` validates the definition, records operation plus steps, marks
@@ -333,6 +345,17 @@ dropping the HTTP connection never stops the work. Failures stop fast
 `Cancel` lands running work cancelled (idempotent), `Wait` polls to
 terminal, and `Recover` fails stale records at daemon startup (wired in
 `main`). Events (S062), audit (S063), and progress UI (S064) observe.
+
+## Operation events (S062)
+
+Poll-backed SSE, no broker: `GET /api/v1/operations/:id` fetches one
+record; `GET .../events` sends the current state immediately, a `state`
+event per change (500ms snapshots), heartbeats every 30s, and closes
+after the terminal state (clients reconnect idempotently). `homesteadctl
+operations get|follow` consumes it (follow exits 1 on failed/cancelled);
+the dashboard wraps `EventSource` in `ApiService.operationEvents` with an
+injectable factory (jsdom lacks it). Rich progress UI is S064; operation
+producers arrive with their own slices.
 
 ## Installing as a system service (S011)
 

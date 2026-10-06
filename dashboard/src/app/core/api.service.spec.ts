@@ -195,4 +195,32 @@ describe('ApiService', () => {
     expect(req.request.method).toBe('POST');
     req.flush({ applied: true });
   });
+
+  it('fetches one operation', () => {
+    service.operation(7).subscribe((op) => {
+      expect(op.type).toBe('test.op');
+      expect(op.steps).toEqual([]);
+    });
+    const req = http.expectOne('/api/v1/operations/7');
+    expect(req.request.method).toBe('GET');
+    req.flush({ id: 7, type: 'test.op', status: 'succeeded', steps: [] });
+  });
+
+  it('streams operation states', () => {
+    const received: string[] = [];
+    let listener!: (event: { data: string }) => void;
+    service
+      .operationEvents(7, () => ({
+        addEventListener: (_type: string, fn: (event: { data: string }) => void) => {
+          listener = fn;
+        },
+        close: () => undefined,
+      }))
+      .subscribe((op) => {
+        received.push(op.status);
+      });
+    listener({ data: '{"id":7,"status":"running","steps":[]}' });
+    listener({ data: '{"id":7,"status":"succeeded","steps":[]}' });
+    expect(received).toEqual(['running', 'succeeded']);
+  });
 });
