@@ -27,7 +27,7 @@ internal/claim/         single-use claim tokens + UNCLAIMED→CLAIMED (S019; ADR
 internal/dashboard/     production UI serving + embed split (S031)
 internal/auth/          first administrator + session login/logout (S020)
 internal/discover/      read-only host facts: OS today, hardware/network/storage next (S040+)
-internal/firewall/      nftables detection: binary, version, tables, backend flavor (S050; ADR-008)
+internal/firewall/      nftables detection plus domain model (S050/S051; ADR-008)
 internal/               shared Go packages (API client arrives in S017)
 dashboard/              Angular 22 dashboard app, pnpm-managed (real UI arrives in S030+)
 tests/                  Python conformance tests (S000 constitution, S001 ADR, S002 bootstrap)
@@ -231,6 +231,15 @@ iptables backend flavor. Unprivileged unlistability reports
 `RulesetAccessible=false`, never an error; process execution is stubbed
 in tests and scoped to this package. Planning and mutation belong to
 later slices; ufw/firewalld service detection belongs to S057.
+
+## Firewall domain model (S051)
+
+Zones (`local`/`overlay`/`public`, shared with exposure language),
+services (tcp/udp, port or range), sources (zone plus optional CIDR),
+rules (interfaces, source, service, accept/drop, priority), policies
+(service plus allowed sources; empty blocks), and ordered sets with
+uniqueness and canonical priority ordering. Pure data and validation —
+rendering is S053, apply is S054, and only accept/drop exist (no reject).
 
 ## System doctor (S044)
 `internal/doctor` judges the facts: eight stable checks (distro gate,
