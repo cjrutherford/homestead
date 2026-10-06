@@ -1,0 +1,30 @@
+# Configuration Parity Matrix (S037; ADR-004)
+
+Every daemon API route must be reachable from both `homesteadctl` and the
+dashboard, or carry an explicit `n/a` with a reason. `tests/test_s037_parity.py`
+parses the table below and fails the build on drift: a route without a row,
+a row without a route, or a claimed command/method that no longer exists.
+
+Cell syntax (machine-checked): comma-separated `` `tokens` `` naming the
+CLI subcommand (`"status"`) or dashboard symbol (`health`); exactly `n/a`
+for an intentional gap. The Notes column is free text.
+
+| Method | Path | CLI | Dashboard | Notes |
+|--------|------|-----|-----------|-------|
+| GET | /healthz | `"status"` | `health` |  |
+| GET | /version | `"version"` | n/a | Dashboard shows the version via health/identity without fetching it |
+| GET | /api/v1/config | `"get"` | `config` |  |
+| GET | /api/v1/config/schema | n/a | `configSchema` | CLI takes typed files; schema-driven UI is dashboard-only |
+| POST | /api/v1/config/plan | `"plan"` | `planConfig` |  |
+| PUT | /api/v1/config | `"apply"` | `applyConfig` |  |
+| GET | /api/v1/identity | n/a | `identity` | CLI status reports health only |
+| POST | /api/v1/claim | `"claim"` | `claim` |  |
+| POST | /api/v1/admins/setup | `"setup"` | `setupAdmin` |  |
+| POST | /api/v1/admins/recover | `"recover"` | n/a | Root-only Unix socket has no browser surface by design |
+| POST | /api/v1/sessions | `"login"` | `login` |  |
+| DELETE | /api/v1/sessions | `"logout"` | `logout` |  |
+| GET | /api/v1/wizards/{id} | n/a | `WizardService` | Resume machinery is dashboard-only |
+| PUT | /api/v1/wizards/{id} | n/a | `WizardService` | Resume machinery is dashboard-only |
+| DELETE | /api/v1/wizards/{id} | n/a | `WizardService` | Resume machinery is dashboard-only |
+| GET | / | n/a | `app-root` | The UI itself; the CLI is the other interface. Catch-all also answers HEAD; mux method patterns cannot express both without conflicting, so both rows stand for one Handle |
+| HEAD | / | n/a | `app-root` | Same catch-all as GET / |

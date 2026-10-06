@@ -287,12 +287,21 @@ server stays the validation source of truth. No config page yet — S035
 builds on the renderer.
 
 ## Configuration UX (S035)
+
 `/config`: loads schema plus current values, renders the S034 form,
 submits to plan first — valid candidates show an added/removed/changed
 diff for confirm, invalid ones surface per-field errors without leaving
 the editor. Confirm PUTs and refreshes to the persisted state with a
 saved notice; revert reloads the saved state and resets the form;
 back abandons review keeping the draft.
+
+## Parity enforcement (S037)
+
+`docs/PARITY.md` maps every daemon route to its CLI command and dashboard
+surface (or an explicit `n/a` with a reason); `tests/test_s037_parity.py`
+parses it and fails on drift in either direction. Adding an endpoint,
+command, or UI surface requires a matrix row — update the doc first,
+the test enforces the rest.
 
 ## Wizard framework (S036)
 

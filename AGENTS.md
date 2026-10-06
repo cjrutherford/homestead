@@ -26,5 +26,7 @@ Before coding a slice:
 6. Leave main buildable and runnable.
 7. Land the slice as exactly one commit on main: never combine slices in a
    commit, never leave a completed slice uncommitted.
+8. If the slice adds, removes, or renames API routes, CLI commands, or
+   dashboard surfaces, update `docs/PARITY.md` — the parity test enforces it.
 
 If architecture must change, create or supersede an ADR first.
