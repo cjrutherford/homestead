@@ -7,9 +7,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 
 	"homestead/internal/auth"
@@ -61,6 +63,11 @@ func run(listen, configPath, dataDir, socketPath string) error {
 	srv.MountRecovery(authSvc)
 	srv.MountWizards(wizard.New(st))
 	srv.MountDoctor()
+	if port, err := daemonPort(listen); err != nil {
+		return err
+	} else {
+		srv.MountFirewall(port)
+	}
 	if files, ok := dashboard.Embedded(); ok {
 		srv.MountDashboard(dashboard.New(files))
 	} else {
@@ -81,6 +88,21 @@ func run(listen, configPath, dataDir, socketPath string) error {
 		return err
 	}
 	return <-unixErr
+}
+
+// daemonPort extracts the serving port for firewall self-protection.
+// A malformed listen address fails loudly: protecting an unknown port
+// would be worse than refusing to start.
+func daemonPort(listen string) (int, error) {
+	_, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return 0, fmt.Errorf("homestead-server: bad listen address %q: %w", listen, err)
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return 0, fmt.Errorf("homestead-server: bad listen port %q", port)
+	}
+	return n, nil
 }
 
 // ensureClaimToken mints the console token for a fresh appliance that has

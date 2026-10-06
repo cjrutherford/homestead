@@ -28,6 +28,30 @@ export interface DoctorReport {
   checks: DoctorCheck[];
 }
 
+/** GET /api/v1/firewall/status — setup state plus LAN identification. */
+export interface FirewallStatus {
+  nft_available: boolean;
+  ruleset_accessible: boolean;
+  managed: boolean;
+  rule_count: number;
+  daemon_port: number;
+  local_subnets: string[];
+}
+
+/** One reviewed firewall change. */
+export interface FirewallChange {
+  action: string;
+  rule: string;
+  detail: string;
+}
+
+/** GET /api/v1/firewall/plan — reviewed diff with the script to apply. */
+export interface FirewallPlan {
+  in_sync: boolean;
+  changes: FirewallChange[];
+  script: string;
+}
+
 /** GET /api/v1/config — current desired state. */
 export interface ConfigState {
   version: number;
@@ -90,6 +114,18 @@ export class ApiService {
 
   doctor(): Observable<DoctorReport> {
     return this.http.get<DoctorReport>('/api/v1/doctor');
+  }
+
+  firewallStatus(): Observable<FirewallStatus> {
+    return this.http.get<FirewallStatus>('/api/v1/firewall/status');
+  }
+
+  firewallPlan(): Observable<FirewallPlan> {
+    return this.http.get<FirewallPlan>('/api/v1/firewall/plan');
+  }
+
+  firewallApply(): Observable<{ applied: boolean }> {
+    return this.http.post<{ applied: boolean }>('/api/v1/firewall/apply', {});
   }
 
   config(): Observable<ConfigState> {

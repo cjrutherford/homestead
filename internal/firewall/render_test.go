@@ -37,6 +37,14 @@ func TestLocalSubnets(t *testing.T) {
 			t.Fatalf("subnets = %q, want %q", got, want)
 		}
 	}
+	dupes := fixtureNetwork()
+	dupes.Interfaces = append(dupes.Interfaces, discover.Interface{
+		Name: "eth1", Index: 5, MTU: 1500, Up: true,
+		Addresses: []discover.Address{{IP: "192.168.1.6", Network: "192.168.1.0/24"}},
+	})
+	if got := LocalSubnets(dupes); len(got) != 2 {
+		t.Fatalf("subnets = %q, want duplicates merged", got)
+	}
 }
 
 func TestExpand(t *testing.T) {
@@ -92,8 +100,14 @@ func TestManagementBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("baseline: %v", err)
 	}
-	if len(set.Rules) != 3 {
-		t.Fatalf("rules = %+v, want 2 accepts + public drop", set.Rules)
+	if len(set.Rules) != 5 {
+		t.Fatalf("rules = %+v, want loopback pair + 2 accepts + public drop", set.Rules)
+	}
+	if set.Rules[0].Name != "management-loopback" || set.Rules[0].Priority != 50 {
+		t.Fatalf("first = %+v, want loopback at 50", set.Rules[0])
+	}
+	if set.Rules[1].Source.CIDR != "::1/128" {
+		t.Fatalf("second = %+v, want v6 loopback", set.Rules[1])
 	}
 	last := set.Rules[len(set.Rules)-1]
 	if last.Name != "management-public-drop" || last.Action != ActionDrop || last.Source.CIDR != "" {

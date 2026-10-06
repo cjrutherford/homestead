@@ -137,7 +137,6 @@ describe('ApiService', () => {
     expect(req.request.body).toEqual({ settings: { hostname: 'hs' } });
     req.flush({ version: 1, settings: { hostname: 'hs' } });
   });
-
   it('loads wizard progress', () => {
     service.wizardState('claim').subscribe((state) => {
       expect(state.step).toBe('admin');
@@ -146,7 +145,6 @@ describe('ApiService', () => {
     expect(req.request.method).toBe('GET');
     req.flush({ wizard: 'claim', step: 'admin', payload: {}, updated_at: '' });
   });
-
   it('saves wizard progress', () => {
     service.saveWizardState('claim', 'done', {}).subscribe((state) => {
       expect(state.step).toBe('done');
@@ -162,5 +160,39 @@ describe('ApiService', () => {
     const req = http.expectOne('/api/v1/wizards/claim');
     expect(req.request.method).toBe('DELETE');
     req.flush(null);
+  });
+
+  it('fetches firewall status', () => {
+    service.firewallStatus().subscribe((status) => {
+      expect(status.daemon_port).toBe(8080);
+      expect(status.local_subnets).toEqual(['192.168.1.0/24']);
+    });
+    const req = http.expectOne('/api/v1/firewall/status');
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      nft_available: true,
+      ruleset_accessible: true,
+      managed: false,
+      rule_count: 0,
+      daemon_port: 8080,
+      local_subnets: ['192.168.1.0/24'],
+    });
+  });
+
+  it('fetches the firewall plan and applies it', () => {
+    service.firewallPlan().subscribe((plan) => {
+      expect(plan.in_sync).toBe(false);
+    });
+    http.expectOne('/api/v1/firewall/plan').flush({
+      in_sync: false,
+      changes: [],
+      script: 'table',
+    });
+    service.firewallApply().subscribe((result) => {
+      expect(result.applied).toBe(true);
+    });
+    const req = http.expectOne('/api/v1/firewall/apply');
+    expect(req.request.method).toBe('POST');
+    req.flush({ applied: true });
   });
 });

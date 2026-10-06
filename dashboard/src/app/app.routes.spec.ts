@@ -4,6 +4,7 @@ import { Status } from './status/status';
 import { Claim } from './claim/claim';
 import { Login } from './login/login';
 import { Config } from './config/config';
+import { Firewall } from './firewall/firewall';
 import { NotFound } from './not-found/not-found';
 
 describe('routes', () => {
@@ -30,6 +31,11 @@ describe('routes', () => {
   it('serves the configuration page', () => {
     const config = routes.find((route) => route.path === 'config');
     expect(config?.component).toBe(Config);
+  });
+
+  it('serves the firewall page', () => {
+    const firewall = routes.find((route) => route.path === 'firewall');
+    expect(firewall?.component).toBe(Firewall);
   });  it('falls back to not-found last', () => {
     const last = routes[routes.length - 1];
     expect(last.path).toBe('**');

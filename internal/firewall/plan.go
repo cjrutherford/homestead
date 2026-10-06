@@ -25,17 +25,17 @@ const (
 
 // Change is one reviewed step of a plan.
 type Change struct {
-	Action string
-	Rule   string
-	Detail string
+	Action string `json:"action"`
+	Rule   string `json:"rule,omitempty"`
+	Detail string `json:"detail"`
 }
 
 // Plan is the reviewed diff between desired rules and the live table,
 // plus the rendered script S054 applies when not in sync.
 type Plan struct {
-	InSync  bool
-	Changes []Change
-	Script  string
+	InSync  bool     `json:"in_sync"`
+	Changes []Change `json:"changes"`
+	Script  string   `json:"script"`
 }
 
 // LiveRule is one live homestead-table rule in canonical form: the same

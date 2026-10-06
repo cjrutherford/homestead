@@ -68,10 +68,11 @@ func Expand(policies []ServicePolicy, network discover.Network) (RuleSet, error)
 	return set, nil
 }
 
-// LocalSubnets returns the IPv4 networks of up non-loopback interfaces,
-// sorted. S222 narrows LAN identification later; expansion uses all of
-// them so nothing routable is silently dropped.
+// LocalSubnets returns the deduplicated IPv4 networks of up non-loopback
+// interfaces, sorted. S222 narrows LAN identification later; expansion
+// uses all of them so nothing routable is silently dropped.
 func LocalSubnets(network discover.Network) []string {
+	seen := map[string]bool{}
 	var subnets []string
 	for _, iface := range network.Interfaces {
 		if !iface.Up || iface.Loopback {
@@ -82,24 +83,45 @@ func LocalSubnets(network discover.Network) []string {
 			if err != nil || !prefix.Addr().Is4() {
 				continue
 			}
-			subnets = append(subnets, prefix.String())
+			subnet := prefix.String()
+			if !seen[subnet] {
+				seen[subnet] = true
+				subnets = append(subnets, subnet)
+			}
 		}
 	}
 	sort.Strings(subnets)
 	return subnets
 }
 
-// ManagementBaseline protects the daemon port itself: accept from LAN
-// subnets, then drop from everywhere else (public denied, ADR-006).
-// Overlay acceptance needs overlay resolution (S110+) and arrives later;
-// until then remote administration rides explicit CIDRs via Expand.
+// ManagementBaseline protects the daemon port itself: loopback and LAN
+// accepts, then a match-all public drop (public denied, ADR-006).
+// Loopback has no interface restriction so local tools verify through the
+// guard with unknown ingress interfaces. Overlay acceptance needs overlay
+// resolution (S110+) and arrives later; until then remote administration
+// rides explicit CIDRs via Expand.
 func ManagementBaseline(daemonPort int, network discover.Network) (RuleSet, error) {
 	service := Service{Name: "management", Protocol: ProtocolTCP, Port: daemonPort}
 	if err := service.Validate(); err != nil {
 		return RuleSet{}, err
 	}
-	set := RuleSet{}
-	priority := 0
+	set := RuleSet{Rules: []Rule{
+		{
+			Name:     "management-loopback",
+			Source:   Source{Zone: ZoneLocal, CIDR: "127.0.0.0/8"},
+			Service:  service,
+			Action:   ActionAccept,
+			Priority: 50,
+		},
+		{
+			Name:     "management-loopback-v6",
+			Source:   Source{Zone: ZoneLocal, CIDR: "::1/128"},
+			Service:  service,
+			Action:   ActionAccept,
+			Priority: 60,
+		},
+	}}
+	priority := 100
 	subnets := LocalSubnets(network)
 	for i, cidr := range subnets {
 		priority += 100

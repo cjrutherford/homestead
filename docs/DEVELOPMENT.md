@@ -270,6 +270,18 @@ Temp scripts are 0600 and removed. Observers see the old or new table,
 never a half-written one; only the homestead table is ever named.
 Lockout protection (S055) constrains what plans may contain.
 
+## Firewall wizard (S056)
+
+`/firewall`: LAN subnets from live discovery, recommended rules as the
+rendered script, review of the planned diff, then guarded apply with
+snapshot-backed rollback — all framed by the S036 shell with persisted
+progress. The daemon also serves status/plan/apply for
+`homesteadctl firewall status|plan|apply` (same guarded path). The
+management baseline accepts loopback plus LAN and drops public; overlay
+accepts await overlay resolution (S110+), and external-firewall mode is
+S057. Unix-socket callers verify as loopback (same-machine by
+construction).
+
 ## Firewall lockout protection (S055)
 
 `Guard` proves the desired set keeps the administrator's connection

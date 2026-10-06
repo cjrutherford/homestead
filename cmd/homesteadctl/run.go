@@ -46,6 +46,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runStatus(ctx, client, stdout, stderr)
 	case "doctor":
 		return runDoctor(ctx, client, stdout, stderr)
+	case "firewall":
+		return runFirewall(ctx, client, rest[1:], stdout, stderr)
 	case "version":
 		return runVersion(ctx, client, stdout, stderr)
 	case "config":
@@ -71,6 +73,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "commands:")
 	fmt.Fprintln(w, "  status                 daemon health and version")
 	fmt.Fprintln(w, "  doctor                 system diagnostics (S044)")
+	fmt.Fprintln(w, "  firewall <status|plan|apply>  host firewall setup (S056)")
 	fmt.Fprintln(w, "  version                CLI and daemon versions")
 	fmt.Fprintln(w, "  config get             print current desired state")
 	fmt.Fprintln(w, "  config plan -f FILE    validate settings without persisting")

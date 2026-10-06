@@ -26,6 +26,9 @@ for an intentional gap. The Notes column is free text.
 | GET | /api/v1/wizards/{id} | n/a | `WizardService` | Resume machinery is dashboard-only |
 | PUT | /api/v1/wizards/{id} | n/a | `WizardService` | Resume machinery is dashboard-only |
 | DELETE | /api/v1/wizards/{id} | n/a | `WizardService` | Resume machinery is dashboard-only |
+| GET | /api/v1/firewall/status | `runFirewallStatus` | `firewallStatus` | Firewall setup state plus LAN identification |
+| GET | /api/v1/firewall/plan | `runFirewallPlan` | `firewallPlan` | Reviewed diff for the daemon port |
+| POST | /api/v1/firewall/apply | `runFirewallApply` | `firewallApply` | Guarded, snapshot-backed commit |
 | GET | /api/v1/doctor | `"doctor"` | `doctor` | Diagnostic report on all three surfaces |
 | GET | / | n/a | `app-root` | The UI itself; the CLI is the other interface. Catch-all also answers HEAD; mux method patterns cannot express both without conflicting, so both rows stand for one Handle |
 | HEAD | / | n/a | `app-root` | Same catch-all as GET / |

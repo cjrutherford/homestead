@@ -1,0 +1,42 @@
+<app-wizard-shell [steps]="steps" [current]="stepIndex()" (back)="back()">
+  <section aria-label="Host firewall setup">
+    <h2>Host firewall</h2>
+
+    @if (error()) {
+      <p role="alert" class="error">{{ error() }}</p>
+    }
+
+    @if (busy() && !status()) {
+      <p>Loading…</p>
+    } @else if (stepIndex() === 0) {
+      <p>Detected LAN subnets. Management stays reachable from these networks.</p>
+      <ul>
+        @for (subnet of status()?.local_subnets ?? []; track subnet) {
+          <li><code>{{ subnet }}</code></li>
+        }
+      </ul>
+      <button type="button" (click)="next()">Continue</button>
+    } @else if (stepIndex() === 1) {
+      <p>Recommended rules for the isolated homestead table:</p>
+      <pre>{{ plan()?.script }}</pre>
+      <button type="button" (click)="next()">Continue</button>
+    } @else if (stepIndex() === 2) {
+      <h3>Review changes</h3>
+      <ul>
+        @for (change of plan()?.changes ?? []; track change.rule + change.action) {
+          <li>{{ change.action }} {{ change.rule }}: {{ change.detail }}</li>
+        }
+      </ul>
+      <button type="button" (click)="confirm()" [disabled]="busy()">Confirm apply</button>
+    } @else {
+      <p>
+        @if (alreadyApplied()) {
+          The firewall already matches the recommended rules.
+        } @else {
+          Firewall applied and verified.
+        }
+        Continue on the <a routerLink="/status">status page</a>.
+      </p>
+    }
+  </section>
+</app-wizard-shell>
