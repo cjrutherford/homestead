@@ -26,6 +26,7 @@ internal/apiclient/     reusable Go API client for local consumers (S017; ADR-00
 internal/claim/         single-use claim tokens + UNCLAIMED→CLAIMED (S019; ADR-015)
 internal/dashboard/     production UI serving + embed split (S031)
 internal/auth/          first administrator + session login/logout (S020)
+internal/discover/      read-only host facts: OS today, hardware/network/storage next (S040+)
 internal/               shared Go packages (API client arrives in S017)
 dashboard/              Angular 22 dashboard app, pnpm-managed (real UI arrives in S030+)
 tests/                  Python conformance tests (S000 constitution, S001 ADR, S002 bootstrap)
@@ -202,6 +203,16 @@ sudo homesteadctl admin recover --username owner --password-file ./new.pass
   `admin setup`); the new password faces the same ≥12 policy.
 - A missing socket directory fails startup loudly; a stale socket file is
   replaced at listen time.
+
+## Host discovery (S040)
+
+`internal/discover` reports read-only host facts, Linux-only, failing
+loudly elsewhere: distro ID/name/version (`/etc/os-release`), kernel
+(`/proc/sys/kernel/osrelease`), arch (`GOARCH`), hostname, memory
+(`/proc/meminfo`), CPU count plus model (`/proc/cpuinfo`, ARM-aware).
+Nothing is served yet — S044 aggregates facts into the doctor, and later
+platform slices surface them. Hardware devices (S041), network (S042), and
+mounted storage (S043) extend the same package.
 
 ## Installing as a system service (S011)
 
