@@ -21,6 +21,7 @@ import (
 	"homestead/internal/desired"
 	"homestead/internal/firewall"
 	"homestead/internal/layout"
+	"homestead/internal/operation"
 	"homestead/internal/server"
 	"homestead/internal/store"
 	"homestead/internal/version"
@@ -52,6 +53,11 @@ func run(listen, configPath, dataDir, socketPath string) error {
 		return err
 	}
 	defer st.Close()
+	// No operation record may claim to run forever: fail anything a dead
+	// daemon left behind (S061).
+	if err := operation.NewRunner(st).Recover(); err != nil {
+		return err
+	}
 	claimSvc := claim.New(st)
 	authSvc := auth.New(st, claimSvc)
 	// Domain slices register their settings fields here; the config API,

@@ -324,6 +324,16 @@ migration v5 (operation columns plus `operation_steps`). Execution belongs
 to the runner (S061); events (S062), audit (S063), and progress UI (S064)
 observe these records.
 
+## Operation runner (S061)
+
+`Start` validates the definition, records operation plus steps, marks
+running, and returns while a goroutine executes on a detached context —
+dropping the HTTP connection never stops the work. Failures stop fast
+(unstarted steps stay pending), panics fail instead of stranding,
+`Cancel` lands running work cancelled (idempotent), `Wait` polls to
+terminal, and `Recover` fails stale records at daemon startup (wired in
+`main`). Events (S062), audit (S063), and progress UI (S064) observe.
+
 ## Installing as a system service (S011)
 
 ```bash
