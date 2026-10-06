@@ -50,6 +50,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runConfig(ctx, client, rest[1:], stdout, stderr)
 	case "claim":
 		return runClaim(ctx, client, rest[1:], stdout, stderr)
+	case "admin":
+		return runAdmin(ctx, client, rest[1:], stdout, stderr)
+	case "login":
+		return runLogin(ctx, client, rest[1:], stdout, stderr)
+	case "logout":
+		return runLogout(ctx, client, rest[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", rest[0])
 		usage(stderr)
@@ -67,6 +73,9 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  config plan -f FILE    validate settings without persisting")
 	fmt.Fprintln(w, "  config apply -f FILE   validate and persist settings")
 	fmt.Fprintln(w, "  claim TOKEN              redeem the console claim token (S019)")
+	fmt.Fprintln(w, "  admin setup              create the first administrator (once, S020)")
+	fmt.Fprintln(w, "  login                    mint a session token (S020)")
+	fmt.Fprintln(w, "  logout                   destroy a session token (S020)")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "FILE holds JSON or YAML (by extension) with settings,")
 	fmt.Fprintln(w, "either bare or under a \"settings\" key.")

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"homestead/internal/auth"
 	"homestead/internal/claim"
 	"homestead/internal/config"
 	"homestead/internal/desired"
@@ -52,6 +53,7 @@ func run(listen, configPath, dataDir string) error {
 	srv := server.New(listen)
 	srv.MountConfig(config.New(schema.Schema{}, configPath))
 	srv.MountClaim(claimSvc)
+	srv.MountAuth(auth.New(st, claimSvc))
 	if err := ensureClaimToken(claimSvc); err != nil {
 		return err
 	}

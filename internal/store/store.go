@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 2
+const CurrentVersion = 3
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -87,6 +87,21 @@ CREATE TABLE IF NOT EXISTS claim_tokens (
 	used_at TEXT,
 	created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );`,
+	},
+	{
+		// S020 administrator authentication: first-administrator
+		// credentials on identities plus durable session tokens.
+		// Enforcement on other endpoints arrives in later slices.
+		version: 3,
+		name:    "administrator auth",
+		sql: `
+ALTER TABLE identities ADD COLUMN username TEXT;
+ALTER TABLE identities ADD COLUMN password_hash BLOB;
+CREATE UNIQUE INDEX IF NOT EXISTS identities_username_unique
+	ON identities(username) WHERE username IS NOT NULL;
+ALTER TABLE sessions ADD COLUMN identity_id INTEGER REFERENCES identities(id);
+ALTER TABLE sessions ADD COLUMN token_hash BLOB;
+ALTER TABLE sessions ADD COLUMN expires_at TEXT NOT NULL DEFAULT '';`,
 	},
 }
 

@@ -47,16 +47,17 @@ class TestGoBootstrap(unittest.TestCase):
         self.assertTrue((REPO / "internal" / "version" / "version_test.go").is_file())
 
     def test_no_external_go_dependencies(self):
-        """Direct deps stay on the slice-approved allowlist (ADR-001).
+        """        Direct deps stay on the slice-approved allowlist (ADR-001).
 
         Indirect transitive deps are fine; each new direct dependency needs
-        its owning slice. Approved: S013 SQLite driver, S014 YAML.
+        its owning slice. Approved: S013 SQLite driver, S014 YAML, S020 bcrypt.
         """
         import re
 
         direct = re.findall(r"(?m)^\t(\S+) v\S+$", read("go.mod"))
         self.assertEqual(
-            sorted(direct), ["gopkg.in/yaml.v3", "modernc.org/sqlite"]
+            sorted(direct),
+            ["golang.org/x/crypto", "gopkg.in/yaml.v3", "modernc.org/sqlite"],
         )
 
 

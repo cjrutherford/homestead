@@ -24,6 +24,7 @@ internal/schema/        typed configuration metadata + validation (S015; ADR-004
 internal/config/        validated configuration service: get/plan/apply (S016)
 internal/apiclient/     reusable Go API client for local consumers (S017; ADR-004)
 internal/claim/         single-use claim tokens + UNCLAIMED→CLAIMED (S019; ADR-015)
+internal/auth/          first administrator + session login/logout (S020)
 internal/               shared Go packages (API client arrives in S017)
 dashboard/              Angular 22 dashboard app, pnpm-managed (real UI arrives in S030+)
 tests/                  Python conformance tests (S000 constitution, S001 ADR, S002 bootstrap)
@@ -164,6 +165,23 @@ curl localhost:8080/api/v1/identity              # {"state":"CLAIMED",...}
   `/var/lib/homestead` (or an existing `--data-dir`) it exits loudly.
 - Claim carries no credentials — the first administrator and sessions
   arrive with S020 on top of the CLAIMED state.
+
+## Administrator authentication (S020)
+
+```bash
+homesteadctl admin setup --username owner --password-file ./owner.pass
+homesteadctl login --username owner --password-file ./owner.pass   # prints session token
+homesteadctl logout --token "$TOKEN"        # or HOMESTEAD_TOKEN env
+```
+
+- Setup succeeds exactly once: CLAIMED state, no administrator yet (403
+  unclaimed, 409 exists, 422 weak input). Usernames match
+  `[a-z][a-z0-9_-]{0,63}`; passwords minimum 12 characters.
+- Passwords are bcrypt hashes; sessions are 30-day SHA-256-hashed tokens in
+  SQLite (`Authorization: Bearer`). Login never distinguishes unknown users
+  from wrong passwords. Password files should be 0600.
+- Sessions are created here, not yet required: other endpoints stay open
+  until a later slice enforces authentication. Recovery is S021.
 
 ## Installing as a system service (S011)
 
