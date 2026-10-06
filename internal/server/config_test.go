@@ -199,3 +199,40 @@ func TestConfigGetMethodNotAllowed(t *testing.T) {
 		t.Fatalf("DELETE status = %d, want 405", rec.Code)
 	}
 }
+
+func TestConfigSchema(t *testing.T) {
+	rec := doRequest(t, mountedServer(t), http.MethodGet, "/api/v1/config/schema", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Fields []struct {
+			Name        string   `json:"name"`
+			Type        string   `json:"type"`
+			Description string   `json:"description"`
+			Required    bool     `json:"required"`
+			Default     any      `json:"default"`
+			Choices     []string `json:"choices"`
+		} `json:"fields"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Fields) != 2 {
+		t.Fatalf("fields = %+v, want 2", body.Fields)
+	}
+	hostname := body.Fields[0]
+	if hostname.Name != "hostname" || hostname.Type != "string" || !hostname.Required {
+		t.Fatalf("hostname field = %+v", hostname)
+	}
+	if hostname.Description == "" {
+		t.Fatal("hostname field missing description")
+	}
+	webPort := body.Fields[1]
+	if webPort.Name != "web_port" || webPort.Type != "integer" {
+		t.Fatalf("web_port field = %+v", webPort)
+	}
+	if webPort.Default != float64(8080) {
+		t.Fatalf("web_port default = %v, want 8080", webPort.Default)
+	}
+}

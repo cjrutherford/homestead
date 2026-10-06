@@ -37,28 +37,29 @@ func Int(v int) *int {
 	return &v
 }
 
-// Field describes one configuration setting.
+// Field describes one configuration setting. JSON tags serve the S034
+// schema endpoint consumed by the dashboard renderer.
 type Field struct {
 	// Name is the settings-map key: lowercase letters, digits, underscores.
-	Name string
-	Type Type
+	Name string `json:"name"`
+	Type Type   `json:"type"`
 	// Description is the human-readable help shown in CLI and dashboard.
-	Description string
+	Description string `json:"description"`
 	// Group optionally groups fields for UI rendering; "" leaves ungrouped.
-	Group string
+	Group string `json:"group,omitempty"`
 	// Required fails validation when the setting is absent.
-	Required bool
+	Required bool `json:"required"`
 	// Default applies when the setting is absent; must itself validate.
-	Default any
+	Default any `json:"default,omitempty"`
 	// Choices lists allowed values; TypeChoice only, must be non-empty.
-	Choices []string
+	Choices []string `json:"choices,omitempty"`
 	// Min/Max bound TypeInteger values when non-nil.
-	Min *int
-	Max *int
+	Min *int `json:"min,omitempty"`
+	Max *int `json:"max,omitempty"`
 	// Sensitive marks secrets: UIs mask the value, logs redact it.
-	Sensitive bool
+	Sensitive bool `json:"sensitive,omitempty"`
 	// Advanced hides the field from simple views; wizards still offer it.
-	Advanced bool
+	Advanced bool `json:"advanced,omitempty"`
 }
 
 // FieldError describes one validation failure. JSON tags serve the S016 API.

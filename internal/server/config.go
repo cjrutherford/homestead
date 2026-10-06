@@ -19,6 +19,7 @@ import (
 // answer 400. Apply persists nothing when validation fails.
 func (s *Server) MountConfig(svc *config.Service) {
 	s.mux.HandleFunc("GET /api/v1/config", s.handleConfigGet(svc))
+	s.mux.HandleFunc("GET /api/v1/config/schema", s.handleConfigSchema(svc))
 	s.mux.HandleFunc("POST /api/v1/config/plan", s.handleConfigPlan(svc))
 	s.mux.HandleFunc("PUT /api/v1/config", s.handleConfigApply(svc))
 }
@@ -61,6 +62,17 @@ func (s *Server) handleConfigGet(svc *config.Service) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, stateResponse(state))
+	}
+}
+
+// handleConfigSchema serves field metadata for schema-driven UIs (S034).
+func (s *Server) handleConfigSchema(svc *config.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		fields := svc.Schema().Fields
+		if fields == nil {
+			fields = []schema.Field{}
+		}
+		writeJSON(w, map[string]any{"fields": fields})
 	}
 }
 

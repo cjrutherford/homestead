@@ -1,0 +1,81 @@
+<form
+  #form
+  (submit)="submit(form); $event.preventDefault()"
+  aria-label="Configuration"
+>
+  <label>
+    <input
+      type="checkbox"
+      [checked]="showAdvanced()"
+      (change)="showAdvanced.set($any($event.target).checked)"
+    />
+    Show advanced settings
+  </label>
+
+  @for (group of visibleGroups(); track group[0]) {
+    <fieldset>
+      @if (group[0]) {
+        <legend>{{ group[0] }}</legend>
+      }
+      @for (field of group[1]; track field.name) {
+        <div class="field">
+          @switch (field.type) {
+            @case ('boolean') {
+              <label>
+                <input
+                  type="checkbox"
+                  [name]="field.name"
+                  [checked]="$any(current(field))"
+                />
+                {{ field.name }}
+              </label>
+            }
+            @case ('choice') {
+              <label>
+                {{ field.name }}
+                <select [name]="field.name">
+                  @for (choice of field.choices ?? []; track choice) {
+                    <option [value]="choice" [selected]="choice === current(field)">
+                      {{ choice }}
+                    </option>
+                  }
+                </select>
+              </label>
+            }
+            @case ('integer') {
+              <label>
+                {{ field.name }}
+                <input
+                  type="number"
+                  [name]="field.name"
+                  [value]="$any(current(field))"
+                  [min]="field.min ?? ''"
+                  [max]="field.max ?? ''"
+                  [required]="!!field.required"
+                />
+              </label>
+            }
+            @default {
+              <label>
+                {{ field.name }}
+                <input
+                  [type]="field.sensitive ? 'password' : 'text'"
+                  [name]="field.name"
+                  [value]="$any(current(field))"
+                  [required]="!!field.required"
+                  [autocomplete]="field.sensitive ? 'new-password' : 'off'"
+                />
+              </label>
+            }
+          }
+          <p class="hint">{{ field.description }}</p>
+          @if (errorFor(field.name); as reason) {
+            <p role="alert" class="error">{{ reason }}</p>
+          }
+        </div>
+      }
+    </fieldset>
+  }
+
+  <button type="submit">Save</button>
+</form>

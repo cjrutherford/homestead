@@ -1,6 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { ConfigField } from '../schema/schema';
 
 /** GET /healthz — always available, even UNCLAIMED. */
 export interface Health {
@@ -18,6 +19,11 @@ export interface Identity {
 export interface ConfigState {
   version: number;
   settings: Record<string, unknown>;
+}
+
+/** GET /api/v1/config/schema — field metadata for the renderer. */
+export interface ConfigSchema {
+  fields: ConfigField[];
 }
 
 /** POST /api/v1/claim — token redemption result. */
@@ -56,6 +62,10 @@ export class ApiService {
 
   config(): Observable<ConfigState> {
     return this.http.get<ConfigState>('/api/v1/config');
+  }
+
+  configSchema(): Observable<ConfigSchema> {
+    return this.http.get<ConfigSchema>('/api/v1/config/schema');
   }
 
   claim(token: string): Observable<ClaimResult> {

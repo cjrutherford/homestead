@@ -268,7 +268,6 @@ confirmation, 409 lands on done). The wizard reads identity on init so
 already-claimed appliances start at the admin step.
 
 ## Authentication UI (S033)
-
 `/login` plus `SessionService`: login stores token/username/expiry in
 `localStorage` (`homestead.session`, matching the 30-day server sessions);
 the shell nav shows the username with logout instead of the login link.
@@ -276,6 +275,16 @@ Logout clears locally first and destroys server-side best-effort. Sessions
 are created here, not yet required anywhere — no route guards yet. A
 mistyped password remains recoverable via `homesteadctl admin recover`
 (S021).
+
+## Schema renderer (S034)
+
+`GET /api/v1/config/schema` serves S015 field metadata; `app/schema/`
+renders it: text (password-masked when sensitive), number with min/max,
+checkbox, select, grouped fieldsets, advanced fields behind a toggle
+(untouched advanced values are preserved on submit), empty optionals
+omitted so server defaults apply, 422 errors under their fields. The
+server stays the validation source of truth. No config page yet — S035
+builds on the renderer.
 
 ## Embedded dashboard (S031)
 ```bash
@@ -304,6 +313,6 @@ approval first: `pnpm approve-builds <pkg>...` records it in
 - **Lint baseline is `gofmt` + `go vet`.** Adopting `golangci-lint` (or another
   aggregator) belongs to a later slice; do not add ad-hoc linters per slice.
 - **Direct Go dependencies need an owning slice** (ADR-001): `modernc.org/sqlite`
-  (S013, pure Go — cgo drivers would break the static daemon) and
-  `gopkg.in/yaml.v3` (S014, pure Go). Further deps arrive only with the
-  slices that need them.
+  (S013, pure Go — cgo drivers would break the static daemon),
+  `gopkg.in/yaml.v3` (S014, pure Go), and `golang.org/x/crypto` (S020 bcrypt,
+  pure Go). Further deps arrive only with the slices that need them.

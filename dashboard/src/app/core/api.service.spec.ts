@@ -52,6 +52,18 @@ describe('ApiService', () => {
     req.flush({ version: 1, settings: {} });
   });
 
+  it('fetches field metadata for the renderer', () => {
+    service.configSchema().subscribe((schema) => {
+      expect(schema.fields.length).toBe(1);
+      expect(schema.fields[0].name).toBe('hostname');
+    });
+    const req = http.expectOne('/api/v1/config/schema');
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      fields: [{ name: 'hostname', type: 'string', description: 'Name.', required: true }],
+    });
+  });
+
   it('redeems a claim token', () => {
     service.claim('console-token').subscribe((result) => {
       expect(result.state).toBe('CLAIMED');

@@ -30,6 +30,12 @@ func New(s schema.Schema, path string) *Service {
 	return &Service{schema: s, path: path}
 }
 
+// Schema returns the field metadata this service validates against,
+// served to schema-driven UIs (S034).
+func (s *Service) Schema() schema.Schema {
+	return s.schema
+}
+
 // Get returns the stored state, or a current-version empty state when no
 // file exists yet (fresh appliance, S012 dirs provisioned but unconfigured).
 func (s *Service) Get() (desired.State, error) {
