@@ -147,3 +147,21 @@ func TestOpenMissingParentFailsLoudly(t *testing.T) {
 		t.Fatal("Open with missing parent dir succeeded, want error")
 	}
 }
+
+func TestMigrationV2SeedsUnclaimedAppliance(t *testing.T) {
+	s := openTestStore(t)
+	version, err := s.SchemaVersion()
+	if err != nil {
+		t.Fatalf("SchemaVersion: %v", err)
+	}
+	if version != CurrentVersion || CurrentVersion < 2 {
+		t.Fatalf("SchemaVersion = %d, want >= 2", version)
+	}
+	var state string
+	if err := s.DB().QueryRow(`SELECT state FROM appliance WHERE id = 1`).Scan(&state); err != nil {
+		t.Fatalf("appliance state: %v", err)
+	}
+	if state != "UNCLAIMED" {
+		t.Fatalf("state = %q, want UNCLAIMED", state)
+	}
+}

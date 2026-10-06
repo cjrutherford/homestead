@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 1
+const CurrentVersion = 2
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -65,6 +65,27 @@ CREATE TABLE IF NOT EXISTS onboarding (
 	id INTEGER PRIMARY KEY,
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S019 secure claim: appliance state singleton plus single-use
+		// tokens. Plaintext tokens never touch the database — only
+		// SHA-256 hashes. First-administrator records belong to S020.
+		version: 2,
+		name:    "appliance claim state",
+		sql: `
+CREATE TABLE IF NOT EXISTS appliance (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	state TEXT NOT NULL DEFAULT 'UNCLAIMED'
+);
+INSERT INTO appliance (id, state) SELECT 1, 'UNCLAIMED'
+	WHERE NOT EXISTS (SELECT 1 FROM appliance WHERE id = 1);
+CREATE TABLE IF NOT EXISTS claim_tokens (
+	id INTEGER PRIMARY KEY,
+	token_hash BLOB NOT NULL UNIQUE,
+	expires_at TEXT NOT NULL,
+	used_at TEXT,
+	created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );`,
 	},
 }

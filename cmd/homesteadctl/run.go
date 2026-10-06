@@ -48,6 +48,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runVersion(ctx, client, stdout, stderr)
 	case "config":
 		return runConfig(ctx, client, rest[1:], stdout, stderr)
+	case "claim":
+		return runClaim(ctx, client, rest[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", rest[0])
 		usage(stderr)
@@ -64,6 +66,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  config get             print current desired state")
 	fmt.Fprintln(w, "  config plan -f FILE    validate settings without persisting")
 	fmt.Fprintln(w, "  config apply -f FILE   validate and persist settings")
+	fmt.Fprintln(w, "  claim TOKEN              redeem the console claim token (S019)")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "FILE holds JSON or YAML (by extension) with settings,")
 	fmt.Fprintln(w, "either bare or under a \"settings\" key.")

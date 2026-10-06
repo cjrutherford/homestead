@@ -23,6 +23,7 @@ internal/desired/       versioned YAML desired-state storage (S014; ADR-003)
 internal/schema/        typed configuration metadata + validation (S015; ADR-004)
 internal/config/        validated configuration service: get/plan/apply (S016)
 internal/apiclient/     reusable Go API client for local consumers (S017; ADR-004)
+internal/claim/         single-use claim tokens + UNCLAIMED→CLAIMED (S019; ADR-015)
 internal/               shared Go packages (API client arrives in S017)
 dashboard/              Angular 22 dashboard app, pnpm-managed (real UI arrives in S030+)
 tests/                  Python conformance tests (S000 constitution, S001 ADR, S002 bootstrap)
@@ -145,6 +146,24 @@ homesteadctl config apply -f settings.yaml              # persist, exit 1 if inv
   no `--set` flags — flat strings cannot carry typed values.
 - Everything goes through `internal/apiclient`; the CLI never reads state
   files or the database. Claim (S019) and admin recovery (S021) extend it.
+
+## Secure claim (S019)
+
+```bash
+mkdir -p /tmp/hs-data   # dev only: production uses provisioned /var/lib/homestead
+go run ./cmd/homestead-server --data-dir /tmp/hs-data
+# ... logs the single-use console token (30min TTL) on fresh start
+curl localhost:8080/api/v1/identity              # {"state":"UNCLAIMED",...}
+go run ./cmd/homesteadctl --server http://127.0.0.1:8080 claim <TOKEN>
+curl localhost:8080/api/v1/identity              # {"state":"CLAIMED",...}
+```
+
+- Tokens are 24-byte crypto/rand, base64url on the console, SHA-256 hashes
+  in SQLite, constant-time compared, expired ones pruned on mint.
+- The daemon never creates the state directory: without provisioned
+  `/var/lib/homestead` (or an existing `--data-dir`) it exits loudly.
+- Claim carries no credentials — the first administrator and sessions
+  arrive with S020 on top of the CLAIMED state.
 
 ## Installing as a system service (S011)
 
