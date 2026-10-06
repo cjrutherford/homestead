@@ -254,13 +254,22 @@ pnpm exec ng test --watch=false  # Vitest unit tests (or make dashboard-test)
 Layout: `src/app/app.ts` shell (brand header, nav, outlet), `app.routes.ts`
 (status page, redirect, not-found; claim/auth/config routes arrive in
 S032/S033/S035), `core/api.service.ts` (typed HttpClient over relative
-URLs), `status/` daemon health + claim state, `not-found/` fallback.
+URLs), `status/` daemon health + claim state, `not-found/` fallback,
+`claim/` token-then-administrator onboarding wizard (S032).
 `proxy.conf.json` maps API paths to the local daemon for `pnpm start`;
 production serves same-origin from the daemon (S031), so the service uses
 no absolute URLs.
 
-## Embedded dashboard (S031)
+## Claim wizard (S032)
 
+`/claim`: token step (single-use console token, 401 invalid/expired, 409
+skips ahead) then first-administrator step (username, ≥12 password with
+confirmation, 409 lands on done). The wizard reads identity on init so
+already-claimed appliances start at the admin step. Login and session
+handling arrive with S033; a mistyped password is recoverable via
+`homesteadctl admin recover` (S021).
+
+## Embedded dashboard (S031)
 ```bash
 make dashboard-build dashboard-embed   # refresh internal/dashboard/dist/ (gitignored)
 go build -tags embeddash ./...         # appliance binary serving the UI at /

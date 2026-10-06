@@ -20,6 +20,17 @@ export interface ConfigState {
   settings: Record<string, unknown>;
 }
 
+/** POST /api/v1/claim — token redemption result. */
+export interface ClaimResult {
+  state: string;
+}
+
+/** POST /api/v1/admins/setup — created administrator. */
+export interface AdminCreated {
+  id: number;
+  username: string;
+}
+
 /**
  * Typed access to the homestead-server API (S016/S019/S020).
  * Relative URLs: production serves the dashboard from the daemon (S031),
@@ -39,5 +50,16 @@ export class ApiService {
 
   config(): Observable<ConfigState> {
     return this.http.get<ConfigState>('/api/v1/config');
+  }
+
+  claim(token: string): Observable<ClaimResult> {
+    return this.http.post<ClaimResult>('/api/v1/claim', { token });
+  }
+
+  setupAdmin(username: string, password: string): Observable<AdminCreated> {
+    return this.http.post<AdminCreated>('/api/v1/admins/setup', {
+      username,
+      password,
+    });
   }
 }

@@ -1,0 +1,66 @@
+<section aria-label="Claim appliance">
+  <h2>Claim this appliance</h2>
+
+  @if (error()) {
+    <p role="alert" class="error">{{ error() }}</p>
+  }
+
+  @if (step() === 'token') {
+    <p>Enter the single-use claim token shown on the appliance console.</p>
+    <form
+      (submit)="submitToken(tokenInput.value); $event.preventDefault()"
+      aria-label="Claim token"
+    >
+      <label>
+        Claim token
+        <input #tokenInput name="token" autocomplete="off" [disabled]="busy()" />
+      </label>
+      <button type="submit" [disabled]="busy()">Claim</button>
+    </form>
+  } @else if (step() === 'admin') {
+    <p>Create the first administrator. This can only be done once.</p>
+    <form
+      (submit)="
+        submitAdmin(nameInput.value, passwordInput.value, confirmInput.value);
+        $event.preventDefault()
+      "
+      aria-label="First administrator"
+    >
+      <label>
+        Username
+        <input #nameInput name="username" autocomplete="username" [disabled]="busy()" />
+      </label>
+      <label>
+        Password
+        <input
+          #passwordInput
+          name="password"
+          type="password"
+          minlength="12"
+          autocomplete="new-password"
+          [disabled]="busy()"
+        />
+      </label>
+      <label>
+        Confirm password
+        <input
+          #confirmInput
+          name="confirm"
+          type="password"
+          autocomplete="new-password"
+          [disabled]="busy()"
+        />
+      </label>
+      <button type="submit" [disabled]="busy()">Create administrator</button>
+    </form>
+  } @else {
+    <p>
+      @if (alreadySetup()) {
+        An administrator already exists.
+      } @else {
+        Appliance claimed and administrator created.
+      }
+      Continue on the <a routerLink="/status">status page</a>.
+    </p>
+  }
+</section>

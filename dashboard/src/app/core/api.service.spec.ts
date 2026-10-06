@@ -51,4 +51,27 @@ describe('ApiService', () => {
     expect(req.request.method).toBe('GET');
     req.flush({ version: 1, settings: {} });
   });
+
+  it('redeems a claim token', () => {
+    service.claim('console-token').subscribe((result) => {
+      expect(result.state).toBe('CLAIMED');
+    });
+    const req = http.expectOne('/api/v1/claim');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ token: 'console-token' });
+    req.flush({ state: 'CLAIMED' });
+  });
+
+  it('creates the first administrator', () => {
+    service.setupAdmin('owner', 'long-enough-password').subscribe((admin) => {
+      expect(admin.username).toBe('owner');
+    });
+    const req = http.expectOne('/api/v1/admins/setup');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      username: 'owner',
+      password: 'long-enough-password',
+    });
+    req.flush({ id: 1, username: 'owner' });
+  });
 });
