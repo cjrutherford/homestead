@@ -15,6 +15,7 @@ import (
 	"homestead/internal/auth"
 	"homestead/internal/claim"
 	"homestead/internal/config"
+	"homestead/internal/dashboard"
 	"homestead/internal/desired"
 	"homestead/internal/layout"
 	"homestead/internal/schema"
@@ -57,6 +58,11 @@ func run(listen, configPath, dataDir, socketPath string) error {
 	srv.MountClaim(claimSvc)
 	srv.MountAuth(authSvc)
 	srv.MountRecovery(authSvc)
+	if files, ok := dashboard.Embedded(); ok {
+		srv.MountDashboard(dashboard.New(files))
+	} else {
+		fmt.Fprintln(os.Stderr, "homestead-server: dashboard UI not embedded (make dashboard-embed, build with -tags embeddash)")
+	}
 	if err := ensureClaimToken(claimSvc); err != nil {
 		return err
 	}

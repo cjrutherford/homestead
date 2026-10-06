@@ -1,4 +1,4 @@
-.PHONY: test test-py test-go build lint lint-scripts dashboard-install dashboard-build dashboard-test install uninstall check
+.PHONY: test test-py test-go build lint lint-scripts dashboard-install dashboard-build dashboard-test dashboard-embed install uninstall check
 
 test: test-py test-go
 
@@ -34,5 +34,11 @@ dashboard-build:
 
 dashboard-test:
 	cd dashboard && pnpm exec ng test --watch=false
+
+dashboard-embed:
+	test -d dashboard/dist/homestead-dashboard/browser || (echo "run make dashboard-build first" >&2; exit 1)
+	rm -rf internal/dashboard/dist
+	mkdir -p internal/dashboard/dist
+	cp -r dashboard/dist/homestead-dashboard/browser/. internal/dashboard/dist/
 
 check: lint build test

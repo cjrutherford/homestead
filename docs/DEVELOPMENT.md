@@ -24,6 +24,7 @@ internal/schema/        typed configuration metadata + validation (S015; ADR-004
 internal/config/        validated configuration service: get/plan/apply (S016)
 internal/apiclient/     reusable Go API client for local consumers (S017; ADR-004)
 internal/claim/         single-use claim tokens + UNCLAIMED→CLAIMED (S019; ADR-015)
+internal/dashboard/     production UI serving + embed split (S031)
 internal/auth/          first administrator + session login/logout (S020)
 internal/               shared Go packages (API client arrives in S017)
 dashboard/              Angular 22 dashboard app, pnpm-managed (real UI arrives in S030+)
@@ -257,6 +258,21 @@ URLs), `status/` daemon health + claim state, `not-found/` fallback.
 `proxy.conf.json` maps API paths to the local daemon for `pnpm start`;
 production serves same-origin from the daemon (S031), so the service uses
 no absolute URLs.
+
+## Embedded dashboard (S031)
+
+```bash
+make dashboard-build dashboard-embed   # refresh internal/dashboard/dist/ (gitignored)
+go build -tags embeddash ./...         # appliance binary serving the UI at /
+```
+
+- `internal/dashboard` serves files verbatim with SPA fallback to
+  `index.html` (never cached; hashed assets carry their own identity) and
+  rejects non-GET/HEAD. The catch-all never shadows `/api/*` — mux
+  longest-match wins, locked by test.
+- Plain `go build`/`go test` stay hermetic and API-only (noembed stub with
+  a startup notice); only `-tags embeddash` carries the UI, so everyday Go
+  iteration never waits on pnpm. CI builds both.
 
 Adding a dashboard dependency that runs an install script requires explicit
 approval first: `pnpm approve-builds <pkg>...` records it in
