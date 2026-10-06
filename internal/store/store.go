@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 4
+const CurrentVersion = 5
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -116,6 +116,31 @@ CREATE TABLE IF NOT EXISTS wizard_state (
 	payload TEXT NOT NULL DEFAULT '{}',
 	updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );`,
+	},
+	{
+		// S060 operation domain: typed operations with status/result/error
+		// plus ordered steps. Execution (S061), events (S062), and audit
+		// (S063) build on these records.
+		version: 5,
+		name:    "operation records",
+		sql: `
+ALTER TABLE operations ADD COLUMN type TEXT NOT NULL DEFAULT '';
+ALTER TABLE operations ADD COLUMN status TEXT NOT NULL DEFAULT 'pending';
+ALTER TABLE operations ADD COLUMN payload TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE operations ADD COLUMN result TEXT NOT NULL DEFAULT '';
+ALTER TABLE operations ADD COLUMN error TEXT NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS operation_steps (
+	id INTEGER PRIMARY KEY,
+	operation_id INTEGER NOT NULL REFERENCES operations(id),
+	position INTEGER NOT NULL,
+	name TEXT NOT NULL,
+	status TEXT NOT NULL DEFAULT 'pending',
+	started_at TEXT NOT NULL DEFAULT '',
+	finished_at TEXT NOT NULL DEFAULT '',
+	error TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS operation_steps_operation
+	ON operation_steps(operation_id, position);`,
 	},
 }
 

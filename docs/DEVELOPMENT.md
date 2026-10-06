@@ -27,6 +27,7 @@ internal/claim/         single-use claim tokens + UNCLAIMED→CLAIMED (S019; ADR
 internal/dashboard/     production UI serving + embed split (S031)
 internal/auth/          first administrator + session login/logout (S020)
 internal/discover/      read-only host facts: OS today, hardware/network/storage next (S040+)
+internal/operation/     operation records: model, state machine, CRUD store (S060; runner is S061)
 internal/firewall/      nftables detection, domain model, table generation (S050-S052; ADR-008)
 internal/               shared Go packages (API client arrives in S017)
 dashboard/              Angular 22 dashboard app, pnpm-managed (real UI arrives in S030+)
@@ -305,6 +306,7 @@ probing (dial-back) is out: atomic apply plus post-verify plus the guard
 is the mechanism; S126 does active probing for exposure.
 
 ## System doctor (S044)
+
 `internal/doctor` judges the facts: eight stable checks (distro gate,
 memory, CPU, gateway, resolvers, root disk, stale mounts, state dirs) with
 ok/warn/fail and remediation-minded detail, served at
@@ -312,6 +314,15 @@ ok/warn/fail and remediation-minded detail, served at
 failure), and listed in the status page Diagnostics section. Thresholds
 (memory 1/2 GiB, root 5/10 GiB, 2 cores) are S044 baselines to tune with
 experience, never silently.
+
+## Operation domain (S060)
+
+`internal/operation`: typed operations (`dotted.names`) and ordered steps
+sharing one state machine (pending → running → succeeded/failed/cancelled;
+terminal states never move), JSON-validated payloads, and a CRUD store over
+migration v5 (operation columns plus `operation_steps`). Execution belongs
+to the runner (S061); events (S062), audit (S063), and progress UI (S064)
+observe these records.
 
 ## Installing as a system service (S011)
 

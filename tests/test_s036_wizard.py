@@ -31,9 +31,12 @@ class TestWizardStore(unittest.TestCase):
             with self.subTest(op=op):
                 self.assertIn(op, src)
 
-    def test_migration_v4(self):
+    def test_migration_version(self):
+        import re
+
         src = read("internal/store/store.go")
-        self.assertIn("CurrentVersion = 4", src)
+        version = int(re.search(r"(?m)^const CurrentVersion = (\d+)$", src).group(1))
+        self.assertGreaterEqual(version, 4)
         self.assertIn("CREATE TABLE IF NOT EXISTS wizard_state", src)
 
     def test_routes(self):
