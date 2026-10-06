@@ -1,0 +1,12 @@
+# Go build outputs
+/homestead-server
+/homesteadctl
+/bin/
+
+# Angular / Node
+node_modules/
+dashboard/dist/
+dashboard/.angular/
+
+# OS / editor
+.DS_Store

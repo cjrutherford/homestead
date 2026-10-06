@@ -1,0 +1,31 @@
+# homestead-server.service — Homestead control daemon (S011; see ADR-001).
+#
+# Installed to /etc/systemd/system/homestead-server.service by
+# scripts/install-systemd.sh (sudo make install). systemd owns process
+# supervision; the daemon drains gracefully on SIGTERM (see S010).
+#
+# Hardening is intentionally strict. ReadWritePaths grants exactly the state
+# directories the layout owns (S012); /opt/homestead/stacks follows when
+# stack lifecycle lands (S074+).
+
+[Unit]
+Description=Homestead control daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/homestead-server --listen 127.0.0.1:8080
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+RuntimeDirectory=homestead
+ReadWritePaths=/etc/homestead /var/lib/homestead /var/log/homestead
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

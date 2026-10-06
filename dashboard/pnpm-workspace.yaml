@@ -1,0 +1,8 @@
+allowBuilds:
+  '@parcel/watcher': true
+  esbuild: true
+  lmdb: true
+  msgpackr-extract: true
+# pnpm 12 blocks install scripts by default; approvals live here (the
+# package.json "pnpm" field is no longer honored). Managed via
+# `pnpm approve-builds <pkg>...` — do not hand-edit hashes, if any.
