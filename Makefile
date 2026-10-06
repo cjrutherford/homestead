@@ -1,4 +1,4 @@
-.PHONY: test test-py test-go build lint lint-scripts dashboard-install dashboard-build install uninstall check
+.PHONY: test test-py test-go build lint lint-scripts dashboard-install dashboard-build dashboard-test install uninstall check
 
 test: test-py test-go
 
@@ -31,5 +31,8 @@ dashboard-install:
 
 dashboard-build:
 	cd dashboard && pnpm build
+
+dashboard-test:
+	cd dashboard && pnpm exec ng test --watch=false
 
 check: lint build test

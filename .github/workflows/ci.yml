@@ -27,4 +27,4 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 12.9.1
-      - run: make dashboard-install dashboard-build
+      - run: make dashboard-install dashboard-test dashboard-build

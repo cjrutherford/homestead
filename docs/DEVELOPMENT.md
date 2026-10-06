@@ -245,13 +245,18 @@ Details:
 ```bash
 cd dashboard
 pnpm install            # first checkout (or make dashboard-install)
-pnpm start              # ng serve, local dev server
+pnpm start              # ng serve on :4200, proxying /healthz /version /api to :8080
 pnpm build              # production build into dashboard/dist/ (gitignored)
+pnpm exec ng test --watch=false  # Vitest unit tests (or make dashboard-test)
 ```
 
-Component unit tests (`ng test`) are intentionally not wired yet: the scaffold was
-generated with `--skip-tests` and no spec files exist. Karma/browser-based testing
-arrives with the first real UI slice (S030+), which will also decide the runner.
+Layout: `src/app/app.ts` shell (brand header, nav, outlet), `app.routes.ts`
+(status page, redirect, not-found; claim/auth/config routes arrive in
+S032/S033/S035), `core/api.service.ts` (typed HttpClient over relative
+URLs), `status/` daemon health + claim state, `not-found/` fallback.
+`proxy.conf.json` maps API paths to the local daemon for `pnpm start`;
+production serves same-origin from the daemon (S031), so the service uses
+no absolute URLs.
 
 Adding a dashboard dependency that runs an install script requires explicit
 approval first: `pnpm approve-builds <pkg>...` records it in

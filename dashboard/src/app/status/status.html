@@ -1,0 +1,22 @@
+<section aria-label="Appliance status">
+  <h2>Status</h2>
+
+  @if (error()) {
+    <p role="alert" class="error">{{ error() }}</p>
+  } @else {
+    <dl>
+      <div>
+        <dt>Daemon</dt>
+        <dd>{{ health()?.status ?? '…' }}</dd>
+      </div>
+      <div>
+        <dt>Appliance</dt>
+        <dd>{{ identity()?.state ?? '…' }}</dd>
+      </div>
+      <div>
+        <dt>Version</dt>
+        <dd>{{ health()?.version ?? identity()?.version ?? '…' }}</dd>
+      </div>
+    </dl>
+  }
+</section>
