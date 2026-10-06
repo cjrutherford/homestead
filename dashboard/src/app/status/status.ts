@@ -1,7 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
-import { ApiService, Health, Identity } from '../core/api.service';
+import { ApiService, DoctorReport, Health, Identity } from '../core/api.service';
 
-/** Appliance status page: daemon health plus claim state (S030). */
+/** Appliance status page: daemon health, claim state, diagnostics (S044). */
 @Component({
   selector: 'app-status',
   templateUrl: './status.html',
@@ -11,6 +11,7 @@ export class Status implements OnInit {
 
   protected readonly health = signal<Health | null>(null);
   protected readonly identity = signal<Identity | null>(null);
+  protected readonly report = signal<DoctorReport | null>(null);
   protected readonly error = signal<string | null>(null);
 
   ngOnInit(): void {
@@ -20,6 +21,10 @@ export class Status implements OnInit {
     });
     this.api.identity().subscribe({
       next: (identity) => this.identity.set(identity),
+      error: () => this.unreachable(),
+    });
+    this.api.doctor().subscribe({
+      next: (report) => this.report.set(report),
       error: () => this.unreachable(),
     });
   }

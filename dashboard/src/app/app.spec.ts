@@ -32,9 +32,13 @@ describe('App', () => {
     // The status page fires API calls on init; answer them.
     const http = TestBed.inject(HttpTestingController);
     for (const req of http.match(() => true)) {
-      req.flush(req.request.url === '/healthz'
-        ? { status: 'ok', version: 'test' }
-        : { state: 'UNCLAIMED', version: 'test' });
+      if (req.request.url === '/healthz') {
+        req.flush({ status: 'ok', version: 'test' });
+      } else if (req.request.url === '/api/v1/doctor') {
+        req.flush({ overall: 'ok', checks: [] });
+      } else {
+        req.flush({ state: 'UNCLAIMED', version: 'test' });
+      }
     }
     fixture.detectChanges();
     http.verify();

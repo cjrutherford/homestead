@@ -210,18 +210,27 @@ sudo homesteadctl admin recover --username owner --password-file ./new.pass
 loudly elsewhere: distro ID/name/version (`/etc/os-release`), kernel
 (`/proc/sys/kernel/osrelease`), arch (`GOARCH`), hostname, memory
 (`/proc/meminfo`), CPU count plus model (`/proc/cpuinfo`, ARM-aware).
-Nothing is served yet — S044 aggregates facts into the doctor, and later
-platform slices surface them. Hardware (S041) adds machine vendor/model
-(DMI), the sorted CPU flag union with HasFlag, and GPU devices (DRM
-render/card nodes, NVIDIA nodes, PCI VGA/3D controllers with
-vendor/device/driver) — all optional sources, silent when absent. Network
-(S042) adds interfaces with addresses/MTU/MAC/flags, the lowest-metric
-IPv4 default gateway and its interface (`/proc/net/route`), and resolvers
-(`/etc/resolv.conf`); missing routes stay silent, IPv6 gateways extend
-later. Mounted storage (S043) adds every mount from `/proc/self/mountinfo`
-with statfs usage, UUID/label identity from `/dev/disk`, stale mounts
-marked inaccessible rather than fatal, longest-prefix lookup — and never
-formats anything (ADR-013).
+Hardware (S041) adds machine vendor/model (DMI), the sorted CPU flag
+union with HasFlag, and GPU devices (DRM render/card nodes, NVIDIA nodes,
+PCI VGA/3D controllers with vendor/device/driver) — all optional sources,
+silent when absent. Network (S042) adds interfaces with
+addresses/MTU/MAC/flags, the lowest-metric IPv4 default gateway and its
+interface (`/proc/net/route`), and resolvers (`/etc/resolv.conf`);
+missing routes stay silent, IPv6 gateways extend later. Mounted storage
+(S043) adds every mount from `/proc/self/mountinfo` with statfs usage,
+UUID/label identity from `/dev/disk`, stale mounts marked inaccessible
+rather than fatal, longest-prefix lookup — and never formats anything
+(ADR-013).
+
+## System doctor (S044)
+
+`internal/doctor` judges the facts: eight stable checks (distro gate,
+memory, CPU, gateway, resolvers, root disk, stale mounts, state dirs) with
+ok/warn/fail and remediation-minded detail, served at
+`GET /api/v1/doctor`, printed by `homesteadctl doctor` (exit 1 on any
+failure), and listed in the status page Diagnostics section. Thresholds
+(memory 1/2 GiB, root 5/10 GiB, 2 cores) are S044 baselines to tune with
+experience, never silently.
 
 ## Installing as a system service (S011)
 

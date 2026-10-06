@@ -15,6 +15,19 @@ export interface Identity {
   version: string;
 }
 
+/** GET /api/v1/doctor — diagnostic report check entry. */
+export interface DoctorCheck {
+  name: string;
+  status: string;
+  detail: string;
+}
+
+/** GET /api/v1/doctor — diagnostic report. */
+export interface DoctorReport {
+  overall: string;
+  checks: DoctorCheck[];
+}
+
 /** GET /api/v1/config — current desired state. */
 export interface ConfigState {
   version: number;
@@ -73,6 +86,10 @@ export class ApiService {
 
   identity(): Observable<Identity> {
     return this.http.get<Identity>('/api/v1/identity');
+  }
+
+  doctor(): Observable<DoctorReport> {
+    return this.http.get<DoctorReport>('/api/v1/doctor');
   }
 
   config(): Observable<ConfigState> {

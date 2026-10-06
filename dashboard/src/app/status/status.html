@@ -18,5 +18,17 @@
         <dd>{{ health()?.version ?? identity()?.version ?? '…' }}</dd>
       </div>
     </dl>
+
+    @if (report(); as diagnostics) {
+      <h3>Diagnostics: {{ diagnostics.overall }}</h3>
+      <dl>
+        @for (check of diagnostics.checks; track check.name) {
+          <div>
+            <dt>{{ check.name }}: {{ check.status }}</dt>
+            <dd>{{ check.detail }}</dd>
+          </div>
+        }
+      </dl>
+    }
   }
 </section>

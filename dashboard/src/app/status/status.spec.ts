@@ -29,6 +29,11 @@ describe('Status', () => {
     for (const req of pending) {
       if (req.request.url === '/healthz') {
         req.flush({ status: 'ok', version: '0.0.0-s002' });
+      } else if (req.request.url === '/api/v1/doctor') {
+        req.flush({
+          overall: 'warn',
+          checks: [{ name: 'memory', status: 'warn', detail: 'low' }],
+        });
       } else {
         req.flush({ state: 'CLAIMED', version: '0.0.0-s002' });
       }
@@ -53,5 +58,14 @@ describe('Status', () => {
     fixture.detectChanges();
     const alert = fixture.nativeElement.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain('unreachable');
+  });
+
+  it('renders diagnostics from the doctor', () => {
+    fixture.detectChanges();
+    flushAll();
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Diagnostics: warn');
+    expect(text).toContain('memory: warn');
+    expect(text).toContain('low');
   });
 });

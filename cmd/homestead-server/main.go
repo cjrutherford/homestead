@@ -60,6 +60,7 @@ func run(listen, configPath, dataDir, socketPath string) error {
 	srv.MountAuth(authSvc)
 	srv.MountRecovery(authSvc)
 	srv.MountWizards(wizard.New(st))
+	srv.MountDoctor()
 	if files, ok := dashboard.Embedded(); ok {
 		srv.MountDashboard(dashboard.New(files))
 	} else {

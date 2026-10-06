@@ -42,6 +42,16 @@ describe('ApiService', () => {
     req.flush({ state: 'UNCLAIMED', version: '0.0.0-s002' });
   });
 
+  it('fetches the diagnostic report', () => {
+    service.doctor().subscribe((report) => {
+      expect(report.overall).toBe('ok');
+      expect(report.checks.length).toBe(1);
+    });
+    const req = http.expectOne('/api/v1/doctor');
+    expect(req.request.method).toBe('GET');
+    req.flush({ overall: 'ok', checks: [{ name: 'memory', status: 'ok', detail: 'x' }] });
+  });
+
   it('fetches desired configuration', () => {
     service.config().subscribe((config) => {
       expect(config.version).toBe(1);
