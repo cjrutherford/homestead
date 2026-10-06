@@ -204,15 +204,18 @@ sudo homesteadctl admin recover --username owner --password-file ./new.pass
 - A missing socket directory fails startup loudly; a stale socket file is
   replaced at listen time.
 
-## Host discovery (S040)
+## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing
 loudly elsewhere: distro ID/name/version (`/etc/os-release`), kernel
 (`/proc/sys/kernel/osrelease`), arch (`GOARCH`), hostname, memory
 (`/proc/meminfo`), CPU count plus model (`/proc/cpuinfo`, ARM-aware).
 Nothing is served yet — S044 aggregates facts into the doctor, and later
-platform slices surface them. Hardware devices (S041), network (S042), and
-mounted storage (S043) extend the same package.
+platform slices surface them. Hardware (S041) adds machine vendor/model
+(DMI), the sorted CPU flag union with HasFlag, and GPU devices (DRM
+render/card nodes, NVIDIA nodes, PCI VGA/3D controllers with
+vendor/device/driver) — all optional sources, silent when absent. Network
+(S042) and mounted storage (S043) extend the same package.
 
 ## Installing as a system service (S011)
 
