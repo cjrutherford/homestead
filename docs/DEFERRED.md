@@ -15,3 +15,5 @@
   needed before friendly names (S086) work end-to-end against a fresh
   instance; kept out of S085 as version-brittle and unverifiable without
   a live server.
+- Route 53 STS session-token flow: the S094 adapter takes static IAM keys
+  only; short-lived credentials need a refresh flow no slice owns yet.

@@ -590,7 +590,13 @@ paginated listing normalized to intent (FQDN to relative names,
 automatic TTL to default, foreign types and zones skipped), and ordered
 apply with creates posting and deletes resolving through a fresh
 listing to provider IDs (missing targets are errors, so retries
-converge).
+converge). The Route 53 provider (S094) signs the query API with SigV4
+from stdlib only (no SDK, IAM key pair, STS out of scope), prefers
+same-name public zones over private ones, expands multi-value sets to
+intent with TXT unquoted while non-simple and foreign sets stay
+unmanaged, and applies one transactional ChangeBatch where per-key
+final sets compute from fresh state (unchanged sets skip, emptied sets
+delete; TTL prefers created values, then actual, then explicit 300).
 
 ## Provisional decisions (revisit, do not work around silently)
 
