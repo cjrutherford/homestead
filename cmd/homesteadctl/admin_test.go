@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"homestead/internal/audit"
 	"homestead/internal/auth"
 	"homestead/internal/claim"
 	"homestead/internal/server"
@@ -24,7 +25,7 @@ func authDaemon(t *testing.T) string {
 	claimSvc := claim.New(st)
 	srv := server.New("127.0.0.1:0")
 	srv.MountClaim(claimSvc)
-	srv.MountAuth(auth.New(st, claimSvc))
+	srv.MountAuth(auth.New(st, claimSvc), audit.New(st))
 	token, err := claimSvc.MintToken(claim.TokenTTL)
 	if err != nil {
 		t.Fatalf("MintToken: %v", err)

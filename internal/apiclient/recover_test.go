@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"homestead/internal/audit"
 	"homestead/internal/auth"
 	"homestead/internal/claim"
 	"homestead/internal/server"
@@ -25,7 +26,7 @@ func unixRecoverClient(t *testing.T) (*Client, *Client) {
 	authSvc := auth.New(st, claimSvc)
 	tcpSrv := server.New("127.0.0.1:0")
 	tcpSrv.MountClaim(claimSvc)
-	tcpSrv.MountAuth(authSvc)
+	tcpSrv.MountAuth(authSvc, audit.New(st))
 	ts := httptest.NewServer(tcpSrv.Handler())
 	t.Cleanup(ts.Close)
 	unixSrv := server.New("127.0.0.1:0")

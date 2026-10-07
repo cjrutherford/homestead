@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"homestead/internal/audit"
 	"homestead/internal/auth"
 	"homestead/internal/claim"
 	"homestead/internal/config"
@@ -66,7 +67,8 @@ func run(listen, configPath, dataDir, socketPath string) error {
 	configSvc := config.New(firewall.Schema(), configPath)
 	srv.MountConfig(configSvc)
 	srv.MountClaim(claimSvc)
-	srv.MountAuth(authSvc)
+	srv.MountAuth(authSvc, audit.New(st))
+	srv.MountAudit(audit.New(st))
 	srv.MountRecovery(authSvc)
 	srv.MountWizards(wizard.New(st))
 	srv.MountDoctor()

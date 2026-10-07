@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"homestead/internal/audit"
 	"homestead/internal/auth"
 	"homestead/internal/claim"
 	"homestead/internal/server"
@@ -24,7 +25,7 @@ func recoverDaemon(t *testing.T) string {
 	authSvc := auth.New(st, claimSvc)
 	srv := server.New("127.0.0.1:0")
 	srv.MountClaim(claimSvc)
-	srv.MountAuth(authSvc)
+	srv.MountAuth(authSvc, audit.New(st))
 	srv.MountRecovery(authSvc)
 	token, err := claimSvc.MintToken(claim.TokenTTL)
 	if err != nil {

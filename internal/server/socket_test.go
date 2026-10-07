@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"homestead/internal/audit"
 	"homestead/internal/auth"
 	"homestead/internal/claim"
 	"homestead/internal/store"
@@ -28,7 +29,7 @@ func socketServer(t *testing.T) (*Server, *auth.Service, string) {
 	authSvc := auth.New(st, claimSvc)
 	srv := New("127.0.0.1:0")
 	srv.MountClaim(claimSvc)
-	srv.MountAuth(authSvc)
+	srv.MountAuth(authSvc, audit.New(st))
 	srv.MountRecovery(authSvc)
 	if _, err := authSvc.SetupAdmin("owner", "long-enough-password"); err == nil {
 		t.Fatal("setup succeeded unclaimed, want failure")

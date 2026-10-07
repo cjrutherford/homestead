@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 5
+const CurrentVersion = 6
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -141,6 +141,26 @@ CREATE TABLE IF NOT EXISTS operation_steps (
 );
 CREATE INDEX IF NOT EXISTS operation_steps_operation
 	ON operation_steps(operation_id, position);`,
+	},
+	{
+		// S063 audit trail: append-only actor/action/plan/outcome records
+		// including owner overrides. No update or delete path exists.
+		version: 6,
+		name:    "audit trail",
+		sql: `
+CREATE TABLE IF NOT EXISTS audit_entries (
+	id INTEGER PRIMARY KEY,
+	actor TEXT NOT NULL,
+	action TEXT NOT NULL,
+	plan TEXT NOT NULL DEFAULT '',
+	outcome TEXT NOT NULL,
+	detail TEXT NOT NULL DEFAULT '',
+	override INTEGER NOT NULL DEFAULT 0,
+	override_reason TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS audit_entries_actor
+	ON audit_entries(actor, id);`,
 	},
 }
 

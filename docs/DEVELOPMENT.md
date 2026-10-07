@@ -336,6 +336,16 @@ failed/cancelled, 0 on SIGINT); the dashboard wraps `EventSource` in
 it). Rich progress UI is S064; operation producers arrive with their
 own slices (nothing creates operations yet).
 
+## Audit trail (S063)
+
+`internal/audit` appends actor/action/plan/outcome records plus explicit
+owner overrides (migration v6, no update or delete path by design).
+Login attempts are recorded server-side with the attempted username —
+success and failure alike, never with secrets, and audit failures log
+instead of failing auth. Read newest-first via `GET /api/v1/audit`
+(`?limit`, clamped) or `homesteadctl audit list`; broader wiring follows
+the enforcement slices.
+
 ## Operation runner (S061)
 
 `Start` validates the definition, records operation plus steps, marks

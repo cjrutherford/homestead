@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"homestead/internal/audit"
 	"homestead/internal/auth"
 	"homestead/internal/claim"
 	"homestead/internal/store"
@@ -23,7 +24,7 @@ func authServer(t *testing.T) (*Server, *claim.Service) {
 	claimSvc := claim.New(st)
 	srv := New("127.0.0.1:0")
 	srv.MountClaim(claimSvc)
-	srv.MountAuth(auth.New(st, claimSvc))
+	srv.MountAuth(auth.New(st, claimSvc), audit.New(st))
 	return srv, claimSvc
 }
 

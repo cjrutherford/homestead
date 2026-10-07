@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"homestead/internal/audit"
 	"homestead/internal/auth"
 	"homestead/internal/claim"
 	"homestead/internal/server"
@@ -22,7 +23,7 @@ func authClient(t *testing.T) (*Client, *claim.Service) {
 	claimSvc := claim.New(st)
 	srv := server.New("127.0.0.1:0")
 	srv.MountClaim(claimSvc)
-	srv.MountAuth(auth.New(st, claimSvc))
+	srv.MountAuth(auth.New(st, claimSvc), audit.New(st))
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return New(ts.URL), claimSvc
