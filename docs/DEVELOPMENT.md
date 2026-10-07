@@ -637,7 +637,14 @@ https directory and known challenge with dns-01 bound to a provider,
 manual bare), lifecycle states with failure text only on failed, and
 renewal policies with manual auto-renew refused and window math for
 monitors. Tables keep unique names with single-owner DNS names plus
-lookup; issuance mechanics belong to later slices. Automatic HTTPS
+lookup; issuance mechanics belong to later slices. DNS-01
+infrastructure (S102), also in `internal/cert`, orchestrates
+challenges provider-neutrally: authorizations map to
+`_acme-challenge` TXT records (wildcards stripped to base, validated
+before any provider call), placement creates only so sibling TXT
+records survive, propagation awaits through the shared verifier with
+caller-owned polling and deadlines, and cleanup removes exactly
+placed values idempotently. Automatic HTTPS
 (S101) in `internal/docker` gates standard Caddy automation on direct
 challenge validity: private names (single-label, LAN/reserved
 suffixes, IP literals) never face public ACME, direct challenges count
