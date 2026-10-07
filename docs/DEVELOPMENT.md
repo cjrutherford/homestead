@@ -775,7 +775,12 @@ RFC 6887 version-2 MAP datagrams with nonces and defaulted
 lifetimes: deletions converge by zero lifetime, gateway port
 reassignments fail loudly for fixed-port serving, result codes
 diagnose, silence exhausts retries, and querying stays unsupported
-with disabled automation refusing before the network. Owner overrides (S125), also in `internal/exposure`,
+with disabled automation refusing before the network. UPnP mapping
+(S137), also in `internal/router`, automates AddPortMapping,
+DeletePortMapping, and single-entry query across both WAN services
+with explicit leases defaulting: conflicts fail loudly with codes,
+absent deletes converge with absent reads reporting, and review
+lives one layer up in the assisted flow. Owner overrides (S125), also in `internal/exposure`,
 record per-host exposure exceptions with required reasons, named
 actors, and management flags over schema v8: re-grants replacing
 with fresh audit, revocation converging, reads enforcing with the
