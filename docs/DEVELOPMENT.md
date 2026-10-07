@@ -697,7 +697,12 @@ config, data directory) running under vanilla Compose per the
 recovery rule. Server URLs must be https — LAN http enrols directly
 instead — and DNS stays at defaults for S115. Deploy plans
 ensure-network, write, up, and verify; user bootstrap converges on
-existing names. Automatic HTTPS
+existing names. Overlay DNS (S115) in `internal/docker` bridges
+split-DNS address records to control-plane extras with
+fully-qualified names, reconciles dns sections into deployed managed
+configurations preserving every other key, and plans write, restart,
+and verify idempotently; Tailscale-side DNS stays admin-console
+owned with no adapter pretending otherwise. Automatic HTTPS
 (S101) in `internal/docker` gates standard Caddy automation on direct
 challenge validity: private names (single-label, LAN/reserved
 suffixes, IP literals) never face public ACME, direct challenges count

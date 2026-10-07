@@ -38,3 +38,6 @@
 - Headscale relay exposure: the S114 profile publishes the control
   port only; embedded DERP/STUN ports for NAT-traversed relay stay
   undeployed until remote nodes need them.
+- Tailscale admin-side DNS: MagicDNS names, search, and nameservers for
+  Tailscale tailnets stay admin-console owned; no API-key flow manages
+  them from Homestead.
