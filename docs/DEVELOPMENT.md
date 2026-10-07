@@ -584,7 +584,13 @@ as exact master-file lines (`$ORIGIN` plus name/TTL/class/type/value,
 CNAME absolute, TXT quoted; LAN answers never leak and view-less zones
 fail), and `VerifyRecords` proves propagation through a public
 resolver with per-type normalization, aggregating gaps into one report
-while TTLs stay unobserved.
+while TTLs stay unobserved. The Cloudflare provider (S093) adapts the
+same contract to the v4 API with a token: exact-single zone resolution,
+paginated listing normalized to intent (FQDN to relative names,
+automatic TTL to default, foreign types and zones skipped), and ordered
+apply with creates posting and deletes resolving through a fresh
+listing to provider IDs (missing targets are errors, so retries
+converge).
 
 ## Provisional decisions (revisit, do not work around silently)
 
