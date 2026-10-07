@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"net/url"
 	"os/exec"
 	"sort"
 	"strings"
@@ -157,11 +158,13 @@ func singleHost(prefix netip.Prefix) (netip.Addr, bool) {
 }
 
 // UpOptions carries `tailscale up` intent: an empty auth key reapplies
-// settings on an existing login instead of authenticating. Only enabled
+// settings on an existing login instead of authenticating, and an
+// empty login server keeps the default control plane. Only enabled
 // routes advertise; DNS toggles provider DNS acceptance.
 type UpOptions struct {
 	AuthKey      string
 	Hostname     string
+	LoginServer  string
 	Routes       []SubnetRoute
 	AcceptRoutes bool
 	AcceptDNS    bool
@@ -173,6 +176,12 @@ type UpOptions struct {
 func (o UpOptions) Validate() error {
 	if err := validateHostname("overlay.hostname", o.Hostname); err != nil {
 		return err
+	}
+	if o.LoginServer != "" {
+		parsed, err := url.Parse(o.LoginServer)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return fmt.Errorf("overlay: login server must be an http or https URL")
+		}
 	}
 	for i := range o.Routes {
 		if err := o.Routes[i].Validate(); err != nil {
@@ -189,6 +198,9 @@ func upArgs(options UpOptions) []string {
 		args = append(args, "--authkey="+options.AuthKey)
 	}
 	args = append(args, "--hostname="+options.Hostname)
+	if options.LoginServer != "" {
+		args = append(args, "--login-server="+options.LoginServer)
+	}
 	var advertised []string
 	for _, route := range options.Routes {
 		if route.Enabled {
