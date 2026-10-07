@@ -770,7 +770,12 @@ claims stay out. The mapping contract (S134), also in
 remove, and read with disabled automation refusing consent-first,
 incapable, disabled, and absent kept distinct, bounded lifetimes
 refreshing instead of fossilizing, and a manual provider carrying no
-automation. Owner overrides (S125), also in `internal/exposure`,
+automation. PCP mapping (S135), also in `internal/router`, speaks
+RFC 6887 version-2 MAP datagrams with nonces and defaulted
+lifetimes: deletions converge by zero lifetime, gateway port
+reassignments fail loudly for fixed-port serving, result codes
+diagnose, silence exhausts retries, and querying stays unsupported
+with disabled automation refusing before the network. Owner overrides (S125), also in `internal/exposure`,
 record per-host exposure exceptions with required reasons, named
 actors, and management flags over schema v8: re-grants replacing
 with fresh audit, revocation converging, reads enforcing with the
