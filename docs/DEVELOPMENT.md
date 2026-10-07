@@ -625,7 +625,12 @@ gates destructive application (deletes hold unless explicitly allowed
 while creates proceed), previews effective tables with gated changes
 for owner review, and reconciles by listing, previewing, and applying
 the gated set. Address records bridge to local-DNS rewrites for shared
-friendly names.
+friendly names. DNS diagnostics (S099), also in `internal/dns`,
+explain resolution failures per record in the doctor vocabulary (ok
+serves the value, fail serves nothing or the wrong thing, warn marks
+timeouts and probe trouble), with details naming causes and TTLs kept
+out as unobservable. `VerifyView` diagnoses merged audience tables so
+owners see each view's intended state verified.
 
 ## Provisional decisions (revisit, do not work around silently)
 
