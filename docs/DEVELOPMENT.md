@@ -676,7 +676,13 @@ provider-neutral overlay intent per ADR-011 (none/headscale/tailscale,
 disabled meaning unconfigured): node hostnames, staged subnet routes
 refusing default and unroutable destinations, accept-routes posture,
 and overlay DNS intent, plus observed nodes and networks validated
-for shape. Adapters own all provider contact (S111+). Automatic HTTPS
+for shape. Adapters own all provider contact (S111+). The Tailscale
+adapter (S111) adopts existing access: absence is data, live tailnets
+map from status JSON (backend state driving presence, peers sorted,
+self-addresses excluded from offers), up converges login and settings
+in one runner-backed step advertising enabled routes only, logout is
+the off state, and a labeled demo profile previews the UX without
+enrollment. Automatic HTTPS
 (S101) in `internal/docker` gates standard Caddy automation on direct
 challenge validity: private names (single-label, LAN/reserved
 suffixes, IP literals) never face public ACME, direct challenges count
