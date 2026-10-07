@@ -1,0 +1,20 @@
+<section aria-label="Operations">
+  <h2>Operations</h2>
+
+  @if (error()) {
+    <p role="alert" class="error">{{ error() }}</p>
+  } @else if (operations() === null) {
+    <p>Loading…</p>
+  } @else if (operations()?.length === 0) {
+    <p>No operations yet.</p>
+  } @else {
+    <ul>
+      @for (op of operations() ?? []; track op.id) {
+        <li>
+          <a [routerLink]="['/operations', op.id]">{{ op.type }}</a>
+          — {{ op.status }}
+        </li>
+      }
+    </ul>
+  }
+</section>

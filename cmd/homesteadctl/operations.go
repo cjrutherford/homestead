@@ -17,12 +17,14 @@ import (
 // display belongs to the dashboard (S064); the CLI reports outcomes.
 func runOperations(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl operations <get|follow> ID")
+		fmt.Fprintln(stderr, "usage: homesteadctl operations <get|list|follow> [ID]")
 		return exitUsage
 	}
 	switch args[0] {
 	case "get":
 		return runOperationsGet(ctx, client, args[1:], stdout, stderr)
+	case "list":
+		return runOperationsList(ctx, client, args[1:], stdout, stderr)
 	case "follow":
 		return runOperationsFollow(ctx, client, args[1:], stdout, stderr)
 	default:
@@ -58,6 +60,26 @@ func runOperationsGet(ctx context.Context, client *apiclient.Client, args []stri
 		return fail(stderr, err)
 	}
 	writeJSON(stdout, op)
+	return exitOK
+}
+
+func runOperationsList(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	limit := 0
+	if len(args) > 0 {
+		parsed, err := strconv.Atoi(args[0])
+		if err != nil || parsed <= 0 {
+			fmt.Fprintln(stderr, "operations list takes an optional positive limit")
+			return exitUsage
+		}
+		limit = parsed
+	}
+	ops, err := client.ListOperations(ctx, limit)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	for _, op := range ops {
+		fmt.Fprintf(stdout, "%d %s %s\n", op.ID, op.Type, op.Status)
+	}
 	return exitOK
 }
 

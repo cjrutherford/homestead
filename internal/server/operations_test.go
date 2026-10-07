@@ -198,3 +198,33 @@ func TestOperationEventsStreamTransitions(t *testing.T) {
 		}
 	}
 }
+
+func TestOperationList(t *testing.T) {
+	srv, svc := operationServer(t)
+	for _, typ := range []string{"a.one", "b.two"} {
+		if _, err := svc.Create(typ, ""); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/operations?limit=1", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200", rec.Code)
+	}
+	var body []struct {
+		Type string `json:"type"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body) != 1 || body[0].Type != "b.two" {
+		t.Fatalf("body = %+v, want newest first", body)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/operations?limit=bogus", nil)
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("GET status = %d, want 400", rec.Code)
+	}
+}

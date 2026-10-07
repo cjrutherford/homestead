@@ -98,3 +98,30 @@ func TestOperationsFollowMissing(t *testing.T) {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
 }
+
+func TestOperationsListStubbed(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/operations" || r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"id":2,"type":"b.two","status":"running","steps":[]},{"id":1,"type":"a.one","status":"succeeded","steps":[]}]`))
+	}))
+	defer ts.Close()
+	code, stdout, _ := invoke(t, []string{"--server", ts.URL, "operations", "list"})
+	if code != exitOK {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(stdout, "b.two running") || !strings.Contains(stdout, "a.one succeeded") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	code, _, _ = invoke(t, []string{"--server", ts.URL, "operations", "list", "5"})
+	if code != exitOK {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	code, _, _ = invoke(t, []string{"--server", ts.URL, "operations", "list", "bogus"})
+	if code != exitUsage {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+}

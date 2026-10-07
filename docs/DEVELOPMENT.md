@@ -336,6 +336,15 @@ failed/cancelled, 0 on SIGINT); the dashboard wraps `EventSource` in
 it). Rich progress UI is S064; operation producers arrive with their
 own slices (nothing creates operations yet).
 
+## Operation progress UI (S064)
+
+`/operations` lists records newest-first linking to `/operations/:id`,
+which fetches once and follows the SSE stream until terminal (dying with
+the component via `takeUntilDestroyed`). `GET /api/v1/operations` (limit
+validated, clamped server-side), `homesteadctl operations list`, and
+`ApiService.operations` complete the read surface; no producers exist
+yet, so pages stay honest about empty states.
+
 ## Audit trail (S063)
 
 `internal/audit` appends actor/action/plan/outcome records plus explicit

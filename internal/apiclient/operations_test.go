@@ -91,3 +91,19 @@ func TestStreamMissing(t *testing.T) {
 		t.Fatalf("err = %v, want 404 StatusError", err)
 	}
 }
+
+func TestListOperations(t *testing.T) {
+	c, opStore := operationClient(t)
+	for _, typ := range []string{"a.one", "b.two"} {
+		if _, err := opStore.Create(typ, ""); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+	ops, err := c.ListOperations(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("ListOperations: %v", err)
+	}
+	if len(ops) != 2 || ops[0].Type != "b.two" {
+		t.Fatalf("ops = %+v, want newest first", ops)
+	}
+}

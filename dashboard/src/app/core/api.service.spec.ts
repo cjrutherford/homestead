@@ -206,6 +206,19 @@ describe('ApiService', () => {
     req.flush({ id: 7, type: 'test.op', status: 'succeeded', steps: [] });
   });
 
+  it('lists operations newest first', () => {
+    service.operations().subscribe((ops) => {
+      expect(ops.length).toBe(2);
+      expect(ops[0].type).toBe('b.two');
+    });
+    const req = http.expectOne('/api/v1/operations');
+    expect(req.request.method).toBe('GET');
+    req.flush([
+      { id: 2, type: 'b.two', status: 'running', steps: [] },
+      { id: 1, type: 'a.one', status: 'succeeded', steps: [] },
+    ]);
+  });
+
   it('streams operation states', () => {
     const received: string[] = [];
     let listener!: (event: { data: string }) => void;

@@ -165,6 +165,11 @@ export class ApiService {
     return this.http.get<OperationState>(`/api/v1/operations/${id}`);
   }
 
+  operations(limit = 0): Observable<OperationState[]> {
+    const params = limit > 0 ? `?limit=${limit}` : '';
+    return this.http.get<OperationState[]>(`/api/v1/operations${params}`);
+  }
+
   operationEvents(
     id: number,
     open: (url: string) => EventSourceLike = (url) => new EventSource(url),

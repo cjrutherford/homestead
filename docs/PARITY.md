@@ -30,6 +30,7 @@ for an intentional gap. The Notes column is free text.
 | GET | /api/v1/firewall/plan | `runFirewallPlan` | `firewallPlan` | Reviewed diff for the daemon port |
 | POST | /api/v1/firewall/apply | `runFirewallApply` | `firewallApply` | Guarded, snapshot-backed commit |
 | GET | /api/v1/operations/{id} | `runOperationsGet` | `operation` | Single operation record |
+| GET | /api/v1/operations | `runOperationsList` | `operations` | Newest-first records |
 | GET | /api/v1/operations/{id}/events | `runOperationsFollow` | `operationEvents` | Poll-backed SSE state stream |
 | GET | /api/v1/audit | `runAuditList` | n/a | Append-only trail; no dashboard viewer yet |
 | GET | /api/v1/doctor | `"doctor"` | `doctor` | Diagnostic report on all three surfaces |

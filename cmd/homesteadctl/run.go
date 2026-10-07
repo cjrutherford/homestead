@@ -78,7 +78,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  status                 daemon health and version")
 	fmt.Fprintln(w, "  doctor                 system diagnostics (S044)")
 	fmt.Fprintln(w, "  audit list             audit trail, newest first (S063)")
-	fmt.Fprintln(w, "  operations <get|follow> ID  inspect and follow operations (S062)")
+	fmt.Fprintln(w, "  operations <get|list|follow>  inspect and follow operations (S062/S064)")
 	fmt.Fprintln(w, "  firewall <status|plan|apply>  host firewall setup (S056)")
 	fmt.Fprintln(w, "  version                CLI and daemon versions")
 	fmt.Fprintln(w, "  config get             print current desired state")

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"homestead/internal/operation"
@@ -19,6 +20,34 @@ func (c *Client) GetOperation(ctx context.Context, id int64) (operation.Operatio
 		return operation.Operation{}, err
 	}
 	return op, nil
+}
+
+// ListOperations returns the newest operation records first (S064).
+func (c *Client) ListOperations(ctx context.Context, limit int) ([]operation.Operation, error) {
+	path := "/api/v1/operations"
+	if limit > 0 {
+		path += "?limit=" + strconv.Itoa(limit)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, c.statusError(req, res)
+	}
+	var ops []operation.Operation
+	if err := json.NewDecoder(res.Body).Decode(&ops); err != nil {
+		return nil, fmt.Errorf("api: decode response: %w", err)
+	}
+	if ops == nil {
+		ops = []operation.Operation{}
+	}
+	return ops, nil
 }
 
 // StreamOperation follows the SSE state stream, calling onState for every

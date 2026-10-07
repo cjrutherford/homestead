@@ -19,12 +19,44 @@ const EventPollInterval = 500 * time.Millisecond
 // proxies. Heartbeats are SSE comments, ignored by clients.
 const EventHeartbeatInterval = 30 * time.Second
 
-// MountOperations serves operation records (S062): fetch plus a
+// MountOperations serves operation records (S062): fetch, list, plus a
 // poll-backed SSE stream. The stream sends the current state immediately,
 // then a state event per change, closing after the terminal state.
 func (s *Server) MountOperations(svc *operation.Store) {
+	s.mux.HandleFunc("GET /api/v1/operations", handleOperationList(svc))
 	s.mux.HandleFunc("GET /api/v1/operations/{id}", handleOperationGet(svc))
 	s.mux.HandleFunc("GET /api/v1/operations/{id}/events", handleOperationEvents(svc))
+}
+
+func operationLimit(r *http.Request) (int, error) {
+	raw := r.URL.Query().Get("limit")
+	if raw == "" {
+		return 0, nil
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, err
+	}
+	return limit, nil
+}
+
+func handleOperationList(svc *operation.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		limit, err := operationLimit(r)
+		if err != nil {
+			http.Error(w, "invalid limit", http.StatusBadRequest)
+			return
+		}
+		ops, err := svc.List(limit)
+		if err != nil {
+			http.Error(w, "failed to list operations", http.StatusInternalServerError)
+			return
+		}
+		if ops == nil {
+			ops = []operation.Operation{}
+		}
+		writeJSON(w, ops)
+	}
 }
 
 func operationID(r *http.Request) (int64, error) {

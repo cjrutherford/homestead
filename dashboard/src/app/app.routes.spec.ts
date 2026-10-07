@@ -5,6 +5,8 @@ import { Claim } from './claim/claim';
 import { Login } from './login/login';
 import { Config } from './config/config';
 import { Firewall } from './firewall/firewall';
+import { Operations } from './operations/operations';
+import { OperationDetail } from './operations/operation-detail';
 import { NotFound } from './not-found/not-found';
 
 describe('routes', () => {
@@ -36,6 +38,11 @@ describe('routes', () => {
   it('serves the firewall page', () => {
     const firewall = routes.find((route) => route.path === 'firewall');
     expect(firewall?.component).toBe(Firewall);
+  });
+
+  it('serves operations list and detail pages', () => {
+    expect(routes.find((route) => route.path === 'operations')?.component).toBe(Operations);
+    expect(routes.find((route) => route.path === 'operations/:id')?.component).toBe(OperationDetail);
   });  it('falls back to not-found last', () => {
     const last = routes[routes.length - 1];
     expect(last.path).toBe('**');
