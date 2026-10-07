@@ -563,7 +563,14 @@ to a LAN answer: `WriteNameSnippet` renders the proxy snippet,
 `VerifyName` proves the route renders and the name resolves to the
 answer through local DNS (non-local exposures refused, so public names
 cannot arrive by accident). `EnsureNameDefinition` plans the four steps
-as an idempotent `names.ensure` operation.
+as an idempotent `names.ensure` operation. DNS intent (S090),
+also in `internal/dns` but provider-neutral, models zones with baseline
+records plus per-audience views (local/overlay/public per ADR-007, one
+view per audience), A/AAAA/CNAME/TXT records with per-type values and
+bounded TTLs, relative names with underscore labels for challenge
+names, CNAME exclusivity, and deterministic ordering. Providers (S091+)
+render from this shape; merging baseline with views belongs to
+split-DNS reconciliation (S098).
 
 ## Provisional decisions (revisit, do not work around silently)
 
