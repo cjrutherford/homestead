@@ -662,7 +662,16 @@ and health: chain inspection reporting names, windows, issuer, depth,
 and days remaining; live handshake capture with SNI that inspects
 without trusting; and per-certificate grades reusing each
 certificate's own renewal policy. It reports only — re-issuance
-scheduling lives above it. Automatic HTTPS
+scheduling lives above it. The TLS wizard (S106), also in
+`internal/cert`, guides strategy, prerequisites, and validation over
+the generic wizard store: strategies validate as coherent sets
+(private names to internal or manual issuance only), prerequisites
+prove readiness without fetching (dns-01 credentials plus reachable
+directory, configured authority, manual and direct challenges needing
+nothing checkable), plans pair strategy with readiness, and validation
+grades served material through monitoring. Issuance runs between
+prerequisites and validation at the caller's layer. It owns no HTTP
+surface. Automatic HTTPS
 (S101) in `internal/docker` gates standard Caddy automation on direct
 challenge validity: private names (single-label, LAN/reserved
 suffixes, IP literals) never face public ACME, direct challenges count
