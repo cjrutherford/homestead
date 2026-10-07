@@ -744,7 +744,12 @@ short-circuiting: DNS to the expected address, both edge ports over
 TCP, TLS verified against system roots with trust failures
 classified, and served responses meeting path/status/body contracts.
 Dial overrides serve split-horizon checks; plaintext stays confined
-to LAN and test use. Router integration (S130) in `internal/router`
+to LAN and test use. Storage classes (S140) in `internal/storage`
+define the five-way vocabulary with handling contracts: local-only
+databases, evictable caches, and backup defaults with bulk, targets,
+and caches out. Unknown classes fail; profiles never promise what
+discovery facts cannot match. Selection and provisioning belong to
+later slices. Router integration (S130) in `internal/router`
 generates exact NAT instructions: purposes mapping to port sets with
 unknown purposes failing, merged sets deduplicated and sorted,
 matched external/internal ports with validated appliance addresses,
