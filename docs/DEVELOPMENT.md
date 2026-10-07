@@ -733,7 +733,12 @@ reviewed public plans over the generic wizard store: cumulative
 validation with the planner proving reviewability before anything
 persists, already-placed and unplannable selections refused, and
 reviewed plans recomputed from saved inputs. It owns no HTTP
-surface. Exposure policies (S116)
+surface. Safety recommendations (S124), also in `internal/exposure`,
+merge engine, package, and certificate counsel with warns before
+information: ceiling breaches advise audited overrides instead of
+refusing, plaintext-public and unhealthy certificates warn, quiet
+postures confirm explicitly, and presentation layers quote rendered
+text verbatim. Exposure policies (S116)
 in `internal/docker` narrow routes beyond their origin zone over
 shared firewall sources: empty denies all, zone-wide-only stays
 firewall-governed, and listed networks enforce at the proxy through
