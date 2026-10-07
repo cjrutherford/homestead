@@ -749,7 +749,13 @@ generates exact NAT instructions: purposes mapping to port sets with
 unknown purposes failing, merged sets deduplicated and sorted,
 matched external/internal ports with validated appliance addresses,
 and instructions naming DHCP stability, verification, CGNAT limits,
-and management restraint. Owner overrides (S125), also in `internal/exposure`,
+and management restraint. Gateway discovery (S131), also in
+`internal/router`, identifies the likely NAT upstream from
+default-route facts with absent routes failing: UPnP by multicast
+with WAN connection control URLs, NAT-PMP/PCP distinguished by
+version on the shared port with external addresses disclosed, and
+unsupported protocols staying out without error while real
+handshakes wait for later slices. Owner overrides (S125), also in `internal/exposure`,
 record per-host exposure exceptions with required reasons, named
 actors, and management flags over schema v8: re-grants replacing
 with fresh audit, revocation converging, reads enforcing with the
