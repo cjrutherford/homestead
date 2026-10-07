@@ -702,7 +702,15 @@ split-DNS address records to control-plane extras with
 fully-qualified names, reconciles dns sections into deployed managed
 configurations preserving every other key, and plans write, restart,
 and verify idempotently; Tailscale-side DNS stays admin-console
-owned with no adapter pretending otherwise. Exposure policies (S116)
+owned with no adapter pretending otherwise. The remote access wizard
+(S117) in `internal/overlay` guides provider choice, overlay config,
+credentials, and connectivity over the generic wizard store:
+cumulative validation with Headscale server settings required,
+provider-exact credential storage (Tailscale adopting keyless,
+Headscale requiring pre-auth), prerequisites proving binary plus
+settings plus secrets, and connectivity verified as
+online-with-addresses. Enrolment runs between credentials and
+validation at the caller's layer. It owns no HTTP surface. Exposure policies (S116)
 in `internal/docker` narrow routes beyond their origin zone over
 shared firewall sources: empty denies all, zone-wide-only stays
 firewall-governed, and listed networks enforce at the proxy through
