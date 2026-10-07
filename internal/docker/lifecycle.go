@@ -2,7 +2,9 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"homestead/internal/operation"
 )
@@ -30,6 +32,34 @@ func composeArgs(stack Stack, action []string, services []string) []string {
 	}
 	args = append(args, action...)
 	return append(args, services...)
+}
+
+// verifyService proves one Compose service runs via compose ps. Deploy
+// and reconcile operations close with it: running is the automatable
+// proof, deeper serving checks belong to the owning feature slice.
+func verifyService(ctx context.Context, stack Stack, service string) error {
+	out, err := execRun(ctx, "docker",
+		"compose", "--project-directory", stack.Dir, "--project-name", stack.Name,
+		"ps", "--format", "json")
+	if err != nil {
+		return fmt.Errorf("verify %s: %w", service, err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		var observed struct {
+			Service string `json:"Service"`
+			State   string `json:"State"`
+		}
+		if err := json.Unmarshal([]byte(line), &observed); err != nil {
+			return fmt.Errorf("verify %s: %w", service, err)
+		}
+		if observed.Service == service && observed.State == "running" {
+			return nil
+		}
+	}
+	return fmt.Errorf("verify %s: not running", service)
 }
 
 // runCompose executes one compose invocation in the stack directory.

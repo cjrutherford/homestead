@@ -2,11 +2,9 @@ package docker
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"homestead/internal/operation"
 )
@@ -148,26 +146,5 @@ func DeployDefinition(stack Stack) (operation.Definition, error) {
 
 // verifyProxy proves the proxy container runs via compose ps.
 func verifyProxy(ctx context.Context, stack Stack) error {
-	out, err := execRun(ctx, "docker",
-		"compose", "--project-directory", stack.Dir, "--project-name", stack.Name,
-		"ps", "--format", "json")
-	if err != nil {
-		return fmt.Errorf("verify proxy: %w", err)
-	}
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if line == "" {
-			continue
-		}
-		var service struct {
-			Service string `json:"Service"`
-			State   string `json:"State"`
-		}
-		if err := json.Unmarshal([]byte(line), &service); err != nil {
-			return fmt.Errorf("verify proxy: %w", err)
-		}
-		if service.Service == CaddyService && service.State == "running" {
-			return nil
-		}
-	}
-	return fmt.Errorf("verify proxy: %s not running", CaddyService)
+	return verifyService(ctx, stack, CaddyService)
 }

@@ -540,7 +540,16 @@ renders each desired route to a `<host>.caddy` snippet in the stack
 `tls internal`, exposure rides as a comment for firewall planning),
 removes only stale managed snippets, reloads through the proxy
 container (Caddy validates before swapping), and closes with a serving
-verify — planned as an idempotent `caddy.reconcile` operation.
+verify — planned as an idempotent `caddy.reconcile` operation. AdGuard
+Home (S084) deploys initial local DNS as ordinary Compose artifacts
+under the adguard stack directory — `compose.yaml` (pinned
+`adguard/adguardhome:v0.107.79`, DNS on 53/tcp+udp, web/API on 3000,
+work/conf data volumes, attached to `homestead-platform`) — runnable
+with vanilla `docker compose` per the recovery rule. No configuration
+file is generated; defaults arise on first start and initial setup
+belongs to the provider adapter (S085). `AdguardDeployDefinition`
+plans ensure-platform-network, write-stack, up, and verify (container
+running; DNS-level proof belongs to the adapter).
 
 ## Provisional decisions (revisit, do not work around silently)
 
