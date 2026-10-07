@@ -702,7 +702,12 @@ split-DNS address records to control-plane extras with
 fully-qualified names, reconciles dns sections into deployed managed
 configurations preserving every other key, and plans write, restart,
 and verify idempotently; Tailscale-side DNS stays admin-console
-owned with no adapter pretending otherwise. Automatic HTTPS
+owned with no adapter pretending otherwise. Exposure policies (S116)
+in `internal/docker` narrow routes beyond their origin zone over
+shared firewall sources: empty denies all, zone-wide-only stays
+firewall-governed, and listed networks enforce at the proxy through
+allowlists with aborts elsewhere. Nil policies render byte-identical
+output; TLS stays site-level above enforcement. Automatic HTTPS
 (S101) in `internal/docker` gates standard Caddy automation on direct
 challenge validity: private names (single-label, LAN/reserved
 suffixes, IP literals) never face public ACME, direct challenges count

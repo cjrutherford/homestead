@@ -124,16 +124,19 @@ func (h HealthCheck) Validate() error {
 
 // Route is one desired edge-proxy entry: the hostname served, the
 // upstream answering, who may reach it, how TLS terminates, and how the
-// upstream is probed. The model validates shape and enum membership only;
-// cross-field policy (for example public exposure wanting TLS) belongs to
-// the plan/preview layers, where the owner can see and override
-// recommendations.
+// upstream is probed. An optional exposure policy (S116) narrows the
+// origin zone at the proxy; nil means zone-wide exposure governed by
+// the firewall alone. The model validates shape and enum membership
+// only; cross-field policy (for example public exposure wanting TLS)
+// belongs to the plan/preview layers, where the owner can see and
+// override recommendations.
 type Route struct {
 	Host     Hostname
 	Target   Target
 	Exposure Exposure
 	TLS      TLSMode
 	Health   HealthCheck
+	Policy   *Policy
 }
 
 // Validate checks a route end to end.
@@ -149,6 +152,11 @@ func (r Route) Validate() error {
 	}
 	if !r.TLS.Valid() {
 		return fmt.Errorf("route.tls: must be off, internal, or auto")
+	}
+	if r.Policy != nil {
+		if err := r.Policy.Validate(); err != nil {
+			return err
+		}
 	}
 	if err := r.Health.Validate(); err != nil {
 		return err
