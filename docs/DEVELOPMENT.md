@@ -597,6 +597,12 @@ intent with TXT unquoted while non-simple and foreign sets stay
 unmanaged, and applies one transactional ChangeBatch where per-key
 final sets compute from fresh state (unchanged sets skip, emptied sets
 delete; TTL prefers created values, then actual, then explicit 300).
+The DigitalOcean provider (S095) speaks the v2 JSON API with a bearer
+token: exact zone existence, paginated listing normalized to intent
+(relative names direct, CNAME targets trimmed, foreign types skipped),
+and ordered apply with creates posting (TTL-less records omit the
+field for the API default, CNAME absolute) and deletes resolving
+through a fresh listing to record IDs.
 
 ## Provisional decisions (revisit, do not work around silently)
 
