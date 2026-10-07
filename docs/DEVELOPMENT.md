@@ -608,7 +608,16 @@ keeps AES-GCM rows in the operational database (schema v7: name, nonce,
 ciphertext) with the key in a root-only file that is generated once,
 refused when group/other readable, and validated for length. Reads fail
 closed on missing names and wrong keys, deletes converge, and listing
-reports names and timestamps but never values.
+reports names and timestamps but never values. The domain wizard
+(S097) in `internal/domain` guides provider choice, zone naming,
+credential storage, access validation, and Homestead subdomain planning
+over the generic wizard store: six ordered steps with cumulative
+payload validation, credential values refused in wizard state and kept
+under `dns_<provider>_<field>` secrets with exact field sets,
+validation proving auth and zone access through the live provider
+(manual passing on syntax with propagation deferred to real records),
+and a plan emitting provider, zone, base, and FQDN without mutating
+provider state. It owns no HTTP surface; later slices drive it.
 
 ## Provisional decisions (revisit, do not work around silently)
 
