@@ -780,7 +780,13 @@ with disabled automation refusing before the network. UPnP mapping
 DeletePortMapping, and single-entry query across both WAN services
 with explicit leases defaulting: conflicts fail loudly with codes,
 absent deletes converge with absent reads reporting, and review
-lives one layer up in the assisted flow. Owner overrides (S125), also in `internal/exposure`,
+lives one layer up in the assisted flow. NAT-PMP mapping (S136),
+also in `internal/router`, speaks RFC 6886 version-0 family
+datagrams with defaulted lifetimes: deletions converge by zero
+lifetime, gateway port reassignments fail loudly for fixed-port
+serving, result codes diagnose, silence exhausts retries, and
+querying stays unsupported with disabled automation refusing before
+the network. Owner overrides (S125), also in `internal/exposure`,
 record per-host exposure exceptions with required reasons, named
 actors, and management flags over schema v8: re-grants replacing
 with fresh audit, revocation converging, reads enforcing with the
