@@ -749,7 +749,10 @@ define the five-way vocabulary with handling contracts: local-only
 databases, evictable caches, and backup defaults with bulk, targets,
 and caches out. Unknown classes fail; profiles never promise what
 discovery facts cannot match. Selection and provisioning belong to
-later slices. Router integration (S130) in `internal/router`
+later slices. Mount registration (S141), also in `internal/storage`,
+approves discovered mounts under unique owner labels over schema v9:
+registration validates mounted, serving, writable, and never
+pseudo-filesystems, re-registration renames, and removal converges. Router integration (S130) in `internal/router`
 generates exact NAT instructions: purposes mapping to port sets with
 unknown purposes failing, merged sets deduplicated and sorted,
 matched external/internal ports with validated appliance addresses,

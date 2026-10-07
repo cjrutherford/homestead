@@ -33,9 +33,11 @@ class TestOverrideContract(unittest.TestCase):
                 self.assertIn(symbol, src)
 
     def test_persisted_audited(self):
+        import re
         migration = read("internal/store/store.go")
         self.assertIn("exposure_overrides", migration)
-        self.assertIn("CurrentVersion = 8", migration)
+        version = int(re.search(r"(?m)^const CurrentVersion = (\d+)$", migration).group(1))
+        self.assertGreaterEqual(version, 8)
 
 
 if __name__ == "__main__":

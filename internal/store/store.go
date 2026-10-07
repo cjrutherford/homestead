@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 8
+const CurrentVersion = 9
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -192,6 +192,21 @@ CREATE TABLE IF NOT EXISTS exposure_overrides (
 	actor TEXT NOT NULL,
 	management INTEGER NOT NULL DEFAULT 0,
 	created_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S141 mount registry: owner-approved storage locations.
+		// Registration references discovered mounts by mountpoint; the
+		// table holds approval metadata only, never mount facts, so
+		// re-discovery never orphans validation logic.
+		version: 9,
+		name:    "storage registrations",
+		sql: `
+CREATE TABLE IF NOT EXISTS storage_registrations (
+	mountpoint TEXT PRIMARY KEY,
+	label TEXT NOT NULL,
+	actor TEXT NOT NULL,
+	added_at TEXT NOT NULL
 );`,
 	},
 }
