@@ -521,7 +521,15 @@ runner-backed operations. Platform networks (S080): `homestead-edge`
 for proxy-to-app traffic and `homestead-platform` for platform-service
 consumers, both bridged with egress, created idempotently with managed
 labels (driver mismatches refuse instead of touching), verified after
-ensure.
+ensure. Caddy (S081) deploys the edge proxy as ordinary Compose
+artifacts under the caddy stack directory — `compose.yaml` (pinned
+`caddy:2.11.7`, port 80/443, read-only Caddyfile/routes mounts, data
+and config volumes, attached to `homestead-edge`), a base `Caddyfile`
+with container-local admin plus a routes-snippet import, and
+`routes/`, `caddy-data/`, `caddy-config/` directories — runnable with
+vanilla `docker compose` per the recovery rule. `DeployDefinition`
+plans ensure-edge-network, write-stack, up, and verify (compose ps
+proving the proxy running), idempotent throughout.
 
 ## Provisional decisions (revisit, do not work around silently)
 
