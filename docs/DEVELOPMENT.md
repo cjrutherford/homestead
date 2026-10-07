@@ -671,7 +671,12 @@ directory, configured authority, manual and direct challenges needing
 nothing checkable), plans pair strategy with readiness, and validation
 grades served material through monitoring. Issuance runs between
 prerequisites and validation at the caller's layer. It owns no HTTP
-surface. Automatic HTTPS
+surface. Remote access (S110) in `internal/overlay` models
+provider-neutral overlay intent per ADR-011 (none/headscale/tailscale,
+disabled meaning unconfigured): node hostnames, staged subnet routes
+refusing default and unroutable destinations, accept-routes posture,
+and overlay DNS intent, plus observed nodes and networks validated
+for shape. Adapters own all provider contact (S111+). Automatic HTTPS
 (S101) in `internal/docker` gates standard Caddy automation on direct
 challenge validity: private names (single-label, LAN/reserved
 suffixes, IP literals) never face public ACME, direct challenges count

@@ -29,3 +29,6 @@
 - Renewal actuation loop: S105 reports renewal-due status, but no
   scheduled runner re-issues expiring certificates yet; the loop needs
   an owner-visible schedule before production certificates depend on it.
+- Exit-node operation: the S110 model refuses default-route
+  advertisement, so serving as an exit node needs its own slice with
+  explicit owner consent.
