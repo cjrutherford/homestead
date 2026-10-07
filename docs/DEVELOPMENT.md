@@ -760,7 +760,12 @@ handshakes wait for later slices. Assisted setup (S132), also in
 over the generic wizard store with owner confirmation recording only
 the owner sees their router UI, plans recomputed from saved inputs,
 and UPnP mappings queried read-only with 714 meaning absent while
-external proof waits for verification. Owner overrides (S125), also in `internal/exposure`,
+external proof waits for verification. Port verification (S133),
+also in `internal/router`, attributes ingress across service, host
+firewall, and router layers from kernel tables, LAN dials, and UPnP
+queries: ordered evidence names the first failure without blending
+faults, unaskable gateways report unknown, and hairpin-prone external
+claims stay out. Owner overrides (S125), also in `internal/exposure`,
 record per-host exposure exceptions with required reasons, named
 actors, and management flags over schema v8: re-grants replacing
 with fresh audit, revocation converging, reads enforcing with the
