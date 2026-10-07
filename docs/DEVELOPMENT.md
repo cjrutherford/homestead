@@ -630,7 +630,14 @@ explain resolution failures per record in the doctor vocabulary (ok
 serves the value, fail serves nothing or the wrong thing, warn marks
 timeouts and probe trouble), with details naming causes and TTLs kept
 out as unobservable. `VerifyView` diagnoses merged audience tables so
-owners see each view's intended state verified.
+owners see each view's intended state verified. Certificates (S100)
+in `internal/cert` model TLS identities: canonical DNS names with one
+wildcard label allowed, issuers per type (internal bare, ACME with
+https directory and known challenge with dns-01 bound to a provider,
+manual bare), lifecycle states with failure text only on failed, and
+renewal policies with manual auto-renew refused and window math for
+monitors. Tables keep unique names with single-owner DNS names plus
+lookup; issuance mechanics belong to later slices.
 
 ## Provisional decisions (revisit, do not work around silently)
 
