@@ -26,3 +26,6 @@
 - Internal CA distribution: the S104 authority mints and signs, but
   installing its certificate into OS/client trust stores (and rotation)
   belongs to the security baseline flow (S222).
+- Renewal actuation loop: S105 reports renewal-due status, but no
+  scheduled runner re-issues expiring certificates yet; the loop needs
+  an owner-visible schedule before production certificates depend on it.

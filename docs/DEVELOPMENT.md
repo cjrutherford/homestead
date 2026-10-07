@@ -656,7 +656,13 @@ authority (decade lifetime, no intermediates to track) with storage
 round-trips proving key-certificate match, and server issuance under
 fresh keys with handshake usage, server-auth EKU, and hours-to-years
 lifetimes. Distribution into trust stores is host mutation owned by
-the security baseline (S222), never the minting unit. Automatic HTTPS
+the security baseline (S222), never the minting unit. Certificate
+monitoring (S105), also in `internal/cert`, tracks expiry, renewal,
+and health: chain inspection reporting names, windows, issuer, depth,
+and days remaining; live handshake capture with SNI that inspects
+without trusting; and per-certificate grades reusing each
+certificate's own renewal policy. It reports only — re-issuance
+scheduling lives above it. Automatic HTTPS
 (S101) in `internal/docker` gates standard Caddy automation on direct
 challenge validity: private names (single-label, LAN/reserved
 suffixes, IP literals) never face public ACME, direct challenges count
