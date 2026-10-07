@@ -64,13 +64,14 @@ type scriptDNSProvider struct {
 	records []dns.Record
 	applied []dns.Change
 	listErr error
+	fields  []dns.CredentialField
 }
 
 func (s *scriptDNSProvider) Name() string { return "script" }
 func (s *scriptDNSProvider) Capabilities() []dns.Capability {
 	return []dns.Capability{dns.CapabilityDNS01}
 }
-func (s *scriptDNSProvider) RequiredCredentials() []dns.CredentialField { return nil }
+func (s *scriptDNSProvider) RequiredCredentials() []dns.CredentialField { return s.fields }
 func (s *scriptDNSProvider) ListRecords(_ context.Context, _ string, _ dns.Credentials) ([]dns.Record, error) {
 	if s.listErr != nil {
 		return nil, s.listErr
@@ -80,8 +81,17 @@ func (s *scriptDNSProvider) ListRecords(_ context.Context, _ string, _ dns.Crede
 func (s *scriptDNSProvider) ApplyChanges(_ context.Context, _ string, _ dns.Credentials, changes []dns.Change) error {
 	s.applied = append(s.applied, changes...)
 	for _, change := range changes {
-		if change.Action == dns.ChangeCreate {
+		switch change.Action {
+		case dns.ChangeCreate:
 			s.records = append(s.records, change.Record)
+		case dns.ChangeDelete:
+			kept := s.records[:0]
+			for _, r := range s.records {
+				if r != change.Record {
+					kept = append(kept, r)
+				}
+			}
+			s.records = kept
 		}
 	}
 	return nil

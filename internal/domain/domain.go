@@ -46,9 +46,9 @@ type Plan struct {
 	FQDN     string
 }
 
-// secretName maps a provider credential field to its secret-store name,
+// SecretName maps a provider credential field to its secret-store name,
 // shared with every reader so values meet calls without ever surfacing.
-func secretName(provider, field string) string {
+func SecretName(provider, field string) string {
 	return "dns_" + provider + "_" + field
 }
 
@@ -221,7 +221,7 @@ func (s *Service) StoreCredentials(provider string, values map[string]string) er
 		if !ok || value == "" {
 			return fmt.Errorf("domain: missing credential %q", field.Name)
 		}
-		if err := s.secrets.Set(secretName(provider, field.Name), value); err != nil {
+		if err := s.secrets.Set(SecretName(provider, field.Name), value); err != nil {
 			return err
 		}
 	}
@@ -237,7 +237,7 @@ func (s *Service) credentials(provider string) (dns.Credentials, error) {
 	}
 	creds := dns.Credentials{}
 	for _, field := range fields {
-		value, err := s.secrets.Get(secretName(provider, field.Name))
+		value, err := s.secrets.Get(SecretName(provider, field.Name))
 		if err != nil {
 			return nil, fmt.Errorf("domain: missing credential %q", field.Name)
 		}

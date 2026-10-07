@@ -644,7 +644,13 @@ challenges provider-neutrally: authorizations map to
 before any provider call), placement creates only so sibling TXT
 records survive, propagation awaits through the shared verifier with
 caller-owned polling and deadlines, and cleanup removes exactly
-placed values idempotently. Automatic HTTPS
+placed values idempotently. Provider-backed DNS-01 (S103) wires the
+three API providers (manual stays out: no API to place through) into
+issuance: issuers resolve to providers for dns-01 only, credentials
+assemble from secrets under conventional names, and a minimal RFC 8555
+client (dns-01 only, P-256 JWS, nonce discipline, terms requiring
+owner agreement) orders, places, awaits, triggers, finalizes with a
+fresh key, downloads the chain, and cleans up even on failure. Automatic HTTPS
 (S101) in `internal/docker` gates standard Caddy automation on direct
 challenge validity: private names (single-label, LAN/reserved
 suffixes, IP literals) never face public ACME, direct challenges count
