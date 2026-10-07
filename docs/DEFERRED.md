@@ -23,3 +23,6 @@
 - Overlay-view DNS application: S098 computes overlay effective tables,
   but no overlay DNS provider exists to receive them; overlay names are
   served through local DNS until a provider lands.
+- Internal CA distribution: the S104 authority mints and signs, but
+  installing its certificate into OS/client trust stores (and rotation)
+  belongs to the security baseline flow (S222).

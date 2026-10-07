@@ -650,7 +650,13 @@ issuance: issuers resolve to providers for dns-01 only, credentials
 assemble from secrets under conventional names, and a minimal RFC 8555
 client (dns-01 only, P-256 JWS, nonce discipline, terms requiring
 owner agreement) orders, places, awaits, triggers, finalizes with a
-fresh key, downloads the chain, and cleans up even on failure. Automatic HTTPS
+fresh key, downloads the chain, and cleans up even on failure. The internal CA (S104), also in
+`internal/cert`, mints locally trusted HTTPS: a single-tier P-256
+authority (decade lifetime, no intermediates to track) with storage
+round-trips proving key-certificate match, and server issuance under
+fresh keys with handshake usage, server-auth EKU, and hours-to-years
+lifetimes. Distribution into trust stores is host mutation owned by
+the security baseline (S222), never the minting unit. Automatic HTTPS
 (S101) in `internal/docker` gates standard Caddy automation on direct
 challenge validity: private names (single-label, LAN/reserved
 suffixes, IP literals) never face public ACME, direct challenges count
