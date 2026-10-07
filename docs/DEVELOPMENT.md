@@ -28,7 +28,7 @@ internal/dashboard/     production UI serving + embed split (S031)
 internal/auth/          first administrator + session login/logout (S020)
 internal/discover/      read-only host facts: OS today, hardware/network/storage next (S040+)
 internal/operation/     operation records: model, state machine, CRUD store (S060; runner is S061)
-internal/docker/        Engine plus Compose v2 versions via CLI (S070; ADR-005)
+internal/docker/        Engine plus Compose v2 versions via CLI (S070; ADR-005), Debian install operation (S071)
 internal/firewall/      nftables detection, domain model, table generation (S050-S052; ADR-008)
 internal/               shared Go packages (API client arrives in S017)
 dashboard/              Angular 22 dashboard app, pnpm-managed (real UI arrives in S030+)
@@ -501,8 +501,12 @@ approval first: `pnpm approve-builds <pkg>...` records it in
 `internal/docker` observes Engine plus API versions and the Compose v2
 plugin version through the CLI (`docker version --format json`,
 `docker compose version --format json`), flagging legacy `docker-compose`
-v1. Absence is data, never an error; runtime health arrives in S073 and
-installation in S071/S072.
+v1. Absence is data, never an error; runtime health arrives in S073.
+S071 adds the install operation: `InstallDefinition` plans prerequisites,
+the Docker apt repository (key fetched in-process, no curl/gnupg
+footprint), packages, and verify — each step short-circuits when
+satisfied, executed through the S061 runner, surfaced by the bootstrap
+(S220).
 
 ## Provisional decisions (revisit, do not work around silently)
 
