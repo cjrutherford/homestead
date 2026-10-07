@@ -507,7 +507,11 @@ the Docker apt repository (key fetched in-process, no curl/gnupg
 footprint), packages, and verify — each step short-circuits when
 satisfied, executed through the S061 runner, surfaced by the bootstrap
 (S220). Ubuntu (S072) reuses the shape with isolated identity and
-repository URLs; exactly one distro detector matches any host.
+repository URLs; exactly one distro detector matches any host. Health
+(S073) reads Engine versions plus image/container/network inventory over
+the Unix socket with stdlib HTTP (no SDK), served at
+`GET /api/v1/docker/health` and printed by `homesteadctl docker health`;
+unreachable daemons report data, not errors.
 
 ## Provisional decisions (revisit, do not work around silently)
 

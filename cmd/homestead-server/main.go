@@ -20,6 +20,7 @@ import (
 	"homestead/internal/config"
 	"homestead/internal/dashboard"
 	"homestead/internal/desired"
+	"homestead/internal/docker"
 	"homestead/internal/firewall"
 	"homestead/internal/layout"
 	"homestead/internal/operation"
@@ -73,6 +74,7 @@ func run(listen, configPath, dataDir, socketPath string) error {
 	srv.MountWizards(wizard.New(st))
 	srv.MountDoctor()
 	srv.MountOperations(operation.New(st))
+	srv.MountDocker(docker.NewClient(""))
 	if port, err := daemonPort(listen); err != nil {
 		return err
 	} else {

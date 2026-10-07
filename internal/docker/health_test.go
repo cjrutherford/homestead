@@ -1,0 +1,109 @@
+package docker
+
+import (
+	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"testing"
+)
+
+func stubEngine(t *testing.T) (string, *int) {
+	t.Helper()
+	calls := 0
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/_ping":
+			_, _ = w.Write([]byte("OK"))
+		case "/version":
+			_, _ = w.Write([]byte(`{"Version":"29.1.2","ApiVersion":"1.52"}`))
+		case "/info":
+			_, _ = w.Write([]byte(`{"Driver":"overlayfs"}`))
+		case "/containers/json":
+			_, _ = w.Write([]byte(`[{"Id":"abc123def456","Names":["/web"],"Image":"nginx:latest","State":"running","Status":"Up 2 hours"}]`))
+		case "/images/json":
+			_, _ = w.Write([]byte(`[{"Id":"sha256:111","RepoTags":["nginx:latest"],"Size":188000000,"Created":1700000000}]`))
+		case "/networks":
+			_, _ = w.Write([]byte(`[{"Id":"net1","Name":"bridge","Driver":"bridge","Scope":"local"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	socketPath := filepath.Join(t.TempDir(), "docker.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	server.Listener = listener
+	server.Start()
+	t.Cleanup(server.Close)
+	return socketPath, &calls
+}
+
+func TestHealthRoundTrip(t *testing.T) {
+	socketPath, _ := stubEngine(t)
+	health, err := NewClient(socketPath).Health(context.Background())
+	if err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+	if !health.Reachable || health.Version != "29.1.2" || health.APIVersion != "1.52" {
+		t.Fatalf("health = %+v", health)
+	}
+	if health.StorageDriver != "overlayfs" {
+		t.Fatalf("driver = %q", health.StorageDriver)
+	}
+	if len(health.Containers) != 1 || health.Containers[0].Names[0] != "web" {
+		t.Fatalf("containers = %+v", health.Containers)
+	}
+	if len(health.Images) != 1 || health.Images[0].RepoTags[0] != "nginx:latest" {
+		t.Fatalf("images = %+v", health.Images)
+	}
+	if len(health.Networks) != 1 || health.Networks[0].Name != "bridge" {
+		t.Fatalf("networks = %+v", health.Networks)
+	}
+}
+
+func TestUnreachableSocket(t *testing.T) {
+	health, err := NewClient(filepath.Join(t.TempDir(), "absent.sock")).Health(context.Background())
+	if err != nil {
+		t.Fatalf("unreachable = %v, want nil error", err)
+	}
+	if health.Reachable {
+		t.Fatal("reported reachable without socket")
+	}
+}
+
+func TestBrokenResponsesError(t *testing.T) {
+	// Ping succeeds but version is garbage: anomaly, not unreachability.
+	broken := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/_ping" {
+			_, _ = w.Write([]byte("OK"))
+			return
+		}
+		_, _ = w.Write([]byte("nope"))
+	}))
+	brokenPath := filepath.Join(t.TempDir(), "broken.sock")
+	brokenListener, err := net.Listen("unix", brokenPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	broken.Listener = brokenListener
+	broken.Start()
+	defer broken.Close()
+	if _, err := NewClient(brokenPath).Health(context.Background()); err == nil {
+		t.Fatal("garbage version accepted, want error")
+	}
+}
+
+func TestLiveHealth(t *testing.T) {
+	health, err := NewClient("").Health(context.Background())
+	if err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+	t.Logf("reachable=%v version=%q api=%q containers=%d images=%d networks=%d driver=%q",
+		health.Reachable, health.Version, health.APIVersion,
+		len(health.Containers), len(health.Images), len(health.Networks), health.StorageDriver)
+}
