@@ -529,7 +529,13 @@ with container-local admin plus a routes-snippet import, and
 `routes/`, `caddy-data/`, `caddy-config/` directories — runnable with
 vanilla `docker compose` per the recovery rule. `DeployDefinition`
 plans ensure-edge-network, write-stack, up, and verify (compose ps
-proving the proxy running), idempotent throughout.
+proving the proxy running), idempotent throughout. Routes (S082) model
+desired proxy entries — canonical lowercase hostname, upstream host
+plus port, exposure in the shared local/overlay/public vocabulary
+(ADR-006), provider-abstract TLS mode off/internal/auto (ADR-010), and
+optional active health probing — with shape-only validation; policy
+enforcement belongs to plan/preview layers. Generation from desired
+route state arrives in S083.
 
 ## Provisional decisions (revisit, do not work around silently)
 
