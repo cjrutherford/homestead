@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 7
+const CurrentVersion = 8
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -175,6 +175,23 @@ CREATE TABLE IF NOT EXISTS secrets (
 	nonce BLOB NOT NULL,
 	ciphertext BLOB NOT NULL,
 	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S125 owner overrides: current per-host exposure exceptions
+		// with reasons, actors, and management flags. The append-only
+		// audit trail (S063) records every grant and revocation; this
+		// table holds the live set readers enforce.
+		version: 8,
+		name:    "exposure overrides",
+		sql: `
+CREATE TABLE IF NOT EXISTS exposure_overrides (
+	host TEXT PRIMARY KEY,
+	to_exposure TEXT NOT NULL,
+	reason TEXT NOT NULL,
+	actor TEXT NOT NULL,
+	management INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL
 );`,
 	},
 }

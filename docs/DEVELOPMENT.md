@@ -738,7 +738,12 @@ merge engine, package, and certificate counsel with warns before
 information: ceiling breaches advise audited overrides instead of
 refusing, plaintext-public and unhealthy certificates warn, quiet
 postures confirm explicitly, and presentation layers quote rendered
-text verbatim. Exposure policies (S116)
+text verbatim. Owner overrides (S125), also in `internal/exposure`,
+record per-host exposure exceptions with required reasons, named
+actors, and management flags over schema v8: re-grants replacing
+with fresh audit, revocation converging, reads enforcing with the
+trail explaining. Unreachable targets and closed ceilings hold
+absolutely; everything else audits with override marking. Exposure policies (S116)
 in `internal/docker` narrow routes beyond their origin zone over
 shared firewall sources: empty denies all, zone-wide-only stays
 firewall-governed, and listed networks enforce at the proxy through
