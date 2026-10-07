@@ -618,6 +618,14 @@ validation proving auth and zone access through the live provider
 (manual passing on syntax with propagation deferred to real records),
 and a plan emitting provider, zone, base, and FQDN without mutating
 provider state. It owns no HTTP surface; later slices drive it.
+Split-DNS reconciliation (S098), also in `internal/dns`, merges zones
+per audience (baseline stands except where the audience's view covers
+the same name/type key; view-less audiences fall back to baseline),
+gates destructive application (deletes hold unless explicitly allowed
+while creates proceed), previews effective tables with gated changes
+for owner review, and reconciles by listing, previewing, and applying
+the gated set. Address records bridge to local-DNS rewrites for shared
+friendly names.
 
 ## Provisional decisions (revisit, do not work around silently)
 

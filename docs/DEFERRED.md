@@ -20,3 +20,6 @@
 - Secret re-key/rotation: the S096 key file has no rotation path; losing
   it strands ciphertext, so rotation needs a re-encrypt flow before the
   first long-lived production secret depends on it.
+- Overlay-view DNS application: S098 computes overlay effective tables,
+  but no overlay DNS provider exists to receive them; overlay names are
+  served through local DNS until a provider lands.
