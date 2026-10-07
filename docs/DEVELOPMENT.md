@@ -710,7 +710,13 @@ provider-exact credential storage (Tailscale adopting keyless,
 Headscale requiring pre-auth), prerequisites proving binary plus
 settings plus secrets, and connectivity verified as
 online-with-addresses. Enrolment runs between credentials and
-validation at the caller's layer. It owns no HTTP surface. Exposure policies (S116)
+validation at the caller's layer. It owns no HTTP surface. Public
+exposure (S120) in `internal/docker` evaluates recommended versus
+selected route exposure with no calls and no mutations: least
+privilege governs ties with private names always resolving local,
+warnings for unreachable-as-declared exposure, information for
+narrowed posture, invalid routes failing instead of grading, and
+enforcement left to planners. Exposure policies (S116)
 in `internal/docker` narrow routes beyond their origin zone over
 shared firewall sources: empty denies all, zone-wide-only stays
 firewall-governed, and listed networks enforce at the proxy through
