@@ -35,3 +35,6 @@
 - Headscale server-side issuance: S113 enrols with owner-pasted
   pre-auth keys; minting keys through the server API (no out-of-band
   CLI step) needs a Headscale API client slice.
+- Headscale relay exposure: the S114 profile publishes the control
+  port only; embedded DERP/STUN ports for NAT-traversed relay stay
+  undeployed until remote nodes need them.

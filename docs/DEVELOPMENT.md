@@ -689,7 +689,15 @@ API-key secret names for later slices. Existing Headscale setup
 (S113) enrols against an external server: validated setup (origin,
 user, hostname, routes) plus a per-call pre-auth key plans up with a
 verify proving online-with-addresses, offline results aborting; keys
-arrive from secrets, never stored state. Automatic HTTPS
+arrive from secrets, never stored state. The Headscale deployment
+profile (S114) in `internal/docker` manages the optional control
+plane as ordinary Compose artifacts (compose.yaml with 8080
+published, config directory with a minimal server-url/listen/SQLite
+config, data directory) running under vanilla Compose per the
+recovery rule. Server URLs must be https — LAN http enrols directly
+instead — and DNS stays at defaults for S115. Deploy plans
+ensure-network, write, up, and verify; user bootstrap converges on
+existing names. Automatic HTTPS
 (S101) in `internal/docker` gates standard Caddy automation on direct
 challenge validity: private names (single-label, LAN/reserved
 suffixes, IP literals) never face public ACME, direct challenges count

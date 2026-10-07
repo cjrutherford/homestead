@@ -15,6 +15,12 @@ import (
 // half-trusted handshake here.
 var validHeadscaleUser = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 
+// ValidHeadscaleUser reports a usable Headscale user name for enrolment
+// and user bootstrap alike, so both spellings stay one rule.
+func ValidHeadscaleUser(user string) bool {
+	return validHeadscaleUser.MatchString(user)
+}
+
 // ExistingSetup enrols the appliance against an already-running
 // Headscale server: origin, owning user, node hostname, routes, and
 // posture. The pre-auth key arrives per call from the secret store
