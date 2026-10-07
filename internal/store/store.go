@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 6
+const CurrentVersion = 7
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -161,6 +161,21 @@ CREATE TABLE IF NOT EXISTS audit_entries (
 );
 CREATE INDEX IF NOT EXISTS audit_entries_actor
 	ON audit_entries(actor, id);`,
+	},
+	{
+		// S096 secret store: DNS/API secret values live here encrypted
+		// (AES-GCM, key in a root-only file — see internal/secret), never
+		// in desired YAML, logs, or API responses. The table holds nonce
+		// plus ciphertext only; updates replace rows outright.
+		version: 7,
+		name:    "secret store",
+		sql: `
+CREATE TABLE IF NOT EXISTS secrets (
+	name TEXT PRIMARY KEY,
+	nonce BLOB NOT NULL,
+	ciphertext BLOB NOT NULL,
+	updated_at TEXT NOT NULL
+);`,
 	},
 }
 

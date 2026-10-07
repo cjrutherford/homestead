@@ -602,7 +602,13 @@ token: exact zone existence, paginated listing normalized to intent
 (relative names direct, CNAME targets trimmed, foreign types skipped),
 and ordered apply with creates posting (TTL-less records omit the
 field for the API default, CNAME absolute) and deletes resolving
-through a fresh listing to record IDs.
+through a fresh listing to record IDs. Secrets (S096) live outside
+ordinary YAML, logs, and API responses by construction: `internal/secret`
+keeps AES-GCM rows in the operational database (schema v7: name, nonce,
+ciphertext) with the key in a root-only file that is generated once,
+refused when group/other readable, and validated for length. Reads fail
+closed on missing names and wrong keys, deletes converge, and listing
+reports names and timestamps but never values.
 
 ## Provisional decisions (revisit, do not work around silently)
 

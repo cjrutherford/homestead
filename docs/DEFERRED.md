@@ -17,3 +17,6 @@
   a live server.
 - Route 53 STS session-token flow: the S094 adapter takes static IAM keys
   only; short-lived credentials need a refresh flow no slice owns yet.
+- Secret re-key/rotation: the S096 key file has no rotation path; losing
+  it strands ciphertext, so rotation needs a re-encrypt flow before the
+  first long-lived production secret depends on it.
