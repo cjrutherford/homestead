@@ -557,6 +557,13 @@ proves the service answers and reports whether DNS runs, and
 as validated rewrites (canonical lowercase domains matching the route
 model, IP answers). Decoding stays tolerant of API evolution; install
 wizard automation stays out until a slice needs end-to-end setup.
+Friendly names (S086) in `internal/docker` bind a local-exposure route
+to a LAN answer: `WriteNameSnippet` renders the proxy snippet,
+`AddRewrite` answers it in DNS, `ReloadProxy` adopts both, and
+`VerifyName` proves the route renders and the name resolves to the
+answer through local DNS (non-local exposures refused, so public names
+cannot arrive by accident). `EnsureNameDefinition` plans the four steps
+as an idempotent `names.ensure` operation.
 
 ## Provisional decisions (revisit, do not work around silently)
 
