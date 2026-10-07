@@ -577,7 +577,14 @@ live in the secret store, S096), a `Provider` surface of list plus
 ordered apply, pure `DiffRecords` set math with stable ordering, and a
 registry refusing duplicates. Diff surfaces deletes but never
 authorizes them — destructive application stays gated at the
-reconciliation layer (S098).
+reconciliation layer (S098). The manual provider (S092) is the
+human-operated implementation: no capabilities, no credentials, API
+methods returning `ErrNoAPI`. It publishes only the zone's public view
+as exact master-file lines (`$ORIGIN` plus name/TTL/class/type/value,
+CNAME absolute, TXT quoted; LAN answers never leak and view-less zones
+fail), and `VerifyRecords` proves propagation through a public
+resolver with per-type normalization, aggregating gaps into one report
+while TTLs stay unobserved.
 
 ## Provisional decisions (revisit, do not work around silently)
 
