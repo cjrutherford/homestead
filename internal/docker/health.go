@@ -21,11 +21,12 @@ const ClientTimeout = 15 * time.Second
 
 // Container is one container summary.
 type Container struct {
-	ID     string   `json:"id"`
-	Names  []string `json:"names"`
-	Image  string   `json:"image"`
-	State  string   `json:"state"`
-	Status string   `json:"status"`
+	ID     string            `json:"id"`
+	Names  []string          `json:"names"`
+	Image  string            `json:"image"`
+	State  string            `json:"state"`
+	Status string            `json:"status"`
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // Image is one image summary.
@@ -153,11 +154,12 @@ func (c *Client) Health(ctx context.Context) (Health, error) {
 	}
 	health.StorageDriver = info.Driver
 	var containers []struct {
-		ID     string   `json:"Id"`
-		Names  []string `json:"Names"`
-		Image  string   `json:"Image"`
-		State  string   `json:"State"`
-		Status string   `json:"Status"`
+		ID     string            `json:"Id"`
+		Names  []string          `json:"Names"`
+		Image  string            `json:"Image"`
+		State  string            `json:"State"`
+		Status string            `json:"Status"`
+		Labels map[string]string `json:"Labels"`
 	}
 	if err := c.get(ctx, "/containers/json?all=1", &containers); err != nil {
 		return Health{}, err
@@ -171,6 +173,7 @@ func (c *Client) Health(ctx context.Context) (Health, error) {
 		health.Containers = append(health.Containers, Container{
 			ID: container.ID, Names: names,
 			Image: container.Image, State: container.State, Status: container.Status,
+			Labels: container.Labels,
 		})
 	}
 	var images []struct {

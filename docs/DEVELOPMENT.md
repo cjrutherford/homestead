@@ -28,7 +28,7 @@ internal/dashboard/     production UI serving + embed split (S031)
 internal/auth/          first administrator + session login/logout (S020)
 internal/discover/      read-only host facts: OS today, hardware/network/storage next (S040+)
 internal/operation/     operation records: model, state machine, CRUD store (S060; runner is S061)
-internal/docker/        Engine plus Compose v2 versions via CLI (S070; ADR-005), Debian install operation (S071)
+internal/docker/        Engine plus Compose v2 versions via CLI (S070; ADR-005), Debian install operation (S071), stack model (S074)
 internal/firewall/      nftables detection, domain model, table generation (S050-S052; ADR-008)
 internal/               shared Go packages (API client arrives in S017)
 dashboard/              Angular 22 dashboard app, pnpm-managed (real UI arrives in S030+)
@@ -511,7 +511,12 @@ repository URLs; exactly one distro detector matches any host. Health
 (S073) reads Engine versions plus image/container/network inventory over
 the Unix socket with stdlib HTTP (no SDK), served at
 `GET /api/v1/docker/health` and printed by `homesteadctl docker health`;
-unreachable daemons report data, not errors.
+unreachable daemons report data, not errors. Stacks (S074) model
+definition (name, directory under `/opt/homestead/stacks`, desired
+services, enabled), validate names and placement, and group live
+containers into observed stacks by Compose labels — one-offs and
+unlabeled containers excluded, wanted flags from the desired set.
+Lifecycle decisions are S075.
 
 ## Provisional decisions (revisit, do not work around silently)
 
