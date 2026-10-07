@@ -685,7 +685,11 @@ the off state, and a labeled demo profile previews the UX without
 enrollment. The Headscale adapter (S112) pins the same client flow to
 a validated server origin for enrolment, reuses the identical status
 mapping with no second parser to drift, and declares the pre-auth and
-API-key secret names for later slices. Automatic HTTPS
+API-key secret names for later slices. Existing Headscale setup
+(S113) enrols against an external server: validated setup (origin,
+user, hostname, routes) plus a per-call pre-auth key plans up with a
+verify proving online-with-addresses, offline results aborting; keys
+arrive from secrets, never stored state. Automatic HTTPS
 (S101) in `internal/docker` gates standard Caddy automation on direct
 challenge validity: private names (single-label, LAN/reserved
 suffixes, IP literals) never face public ACME, direct challenges count

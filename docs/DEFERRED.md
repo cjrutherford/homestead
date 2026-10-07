@@ -32,3 +32,6 @@
 - Exit-node operation: the S110 model refuses default-route
   advertisement, so serving as an exit node needs its own slice with
   explicit owner consent.
+- Headscale server-side issuance: S113 enrols with owner-pasted
+  pre-auth keys; minting keys through the server API (no out-of-band
+  CLI step) needs a Headscale API client slice.
