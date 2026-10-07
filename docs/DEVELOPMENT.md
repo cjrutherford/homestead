@@ -716,7 +716,13 @@ selected route exposure with no calls and no mutations: least
 privilege governs ties with private names always resolving local,
 warnings for unreachable-as-declared exposure, information for
 narrowed posture, invalid routes failing instead of grading, and
-enforcement left to planners. Exposure policies (S116)
+enforcement left to planners. The exposure planner (S121) in
+`internal/exposure` produces offline change sets across DNS, TLS,
+firewall, and edge with an embedded engine assessment: private names
+refused public widening, public records under the zone origin with
+known addresses, TLS work from coverage plus monitoring, firewall
+desired as unexpanded policies for live expansion at apply, and edge
+carrying the target exposure. Exposure policies (S116)
 in `internal/docker` narrow routes beyond their origin zone over
 shared firewall sources: empty denies all, zone-wide-only stays
 firewall-governed, and listed networks enforce at the proxy through

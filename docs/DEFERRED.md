@@ -41,3 +41,7 @@
 - Tailscale admin-side DNS: MagicDNS names, search, and nameservers for
   Tailscale tailnets stay admin-console owned; no API-key flow manages
   them from Homestead.
+- Public accept-all firewall rules: the S053 expander errors on
+  zone-wide public/overlay accepts, so serving the public internet
+  needs an explicit accept-all shape before S227 applies planner
+  output.
