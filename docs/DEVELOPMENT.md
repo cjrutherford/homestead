@@ -727,7 +727,13 @@ carrying the target exposure. Application metadata (S122), also in
 posture ahead of phase 14: recommended origins with open or closed
 ceilings over a narrow-to-wide order, bounded package-authored
 warnings, and lookup by endpoint. Declarations only, never
-application; later slices refuse widening closed ceilings. Exposure policies (S116)
+application; later slices refuse widening closed ceilings. The exposure wizard
+(S123), also in `internal/exposure`, guides private routes to
+reviewed public plans over the generic wizard store: cumulative
+validation with the planner proving reviewability before anything
+persists, already-placed and unplannable selections refused, and
+reviewed plans recomputed from saved inputs. It owns no HTTP
+surface. Exposure policies (S116)
 in `internal/docker` narrow routes beyond their origin zone over
 shared firewall sources: empty denies all, zone-wide-only stays
 firewall-governed, and listed networks enforce at the proxy through
