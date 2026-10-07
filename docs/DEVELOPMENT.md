@@ -765,7 +765,12 @@ also in `internal/router`, attributes ingress across service, host
 firewall, and router layers from kernel tables, LAN dials, and UPnP
 queries: ordered evidence names the first failure without blending
 faults, unaskable gateways report unknown, and hairpin-prone external
-claims stay out. Owner overrides (S125), also in `internal/exposure`,
+claims stay out. The mapping contract (S134), also in
+`internal/router`, binds automation behind explicit opt-in: add,
+remove, and read with disabled automation refusing consent-first,
+incapable, disabled, and absent kept distinct, bounded lifetimes
+refreshing instead of fossilizing, and a manual provider carrying no
+automation. Owner overrides (S125), also in `internal/exposure`,
 record per-host exposure exceptions with required reasons, named
 actors, and management flags over schema v8: re-grants replacing
 with fresh audit, revocation converging, reads enforcing with the
