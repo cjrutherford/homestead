@@ -722,7 +722,12 @@ firewall, and edge with an embedded engine assessment: private names
 refused public widening, public records under the zone origin with
 known addresses, TLS work from coverage plus monitoring, firewall
 desired as unexpanded policies for live expansion at apply, and edge
-carrying the target exposure. Exposure policies (S116)
+carrying the target exposure. Application metadata (S122), also in
+`internal/exposure`, lets catalog packages declare per-endpoint
+posture ahead of phase 14: recommended origins with open or closed
+ceilings over a narrow-to-wide order, bounded package-authored
+warnings, and lookup by endpoint. Declarations only, never
+application; later slices refuse widening closed ceilings. Exposure policies (S116)
 in `internal/docker` narrow routes beyond their origin zone over
 shared firewall sources: empty denies all, zone-wide-only stays
 firewall-governed, and listed networks enforce at the proxy through
