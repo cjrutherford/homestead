@@ -11,3 +11,7 @@
 - Hosted HAI coordination/control service
 - Multi-appliance dashboard
 - Live storage migration between devices
+- AdGuard Home install-wizard automation (`POST /control/install/configure`):
+  needed before friendly names (S086) work end-to-end against a fresh
+  instance; kept out of S085 as version-brittle and unverifiable without
+  a live server.

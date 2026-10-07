@@ -549,7 +549,14 @@ with vanilla `docker compose` per the recovery rule. No configuration
 file is generated; defaults arise on first start and initial setup
 belongs to the provider adapter (S085). `AdguardDeployDefinition`
 plans ensure-platform-network, write-stack, up, and verify (container
-running; DNS-level proof belongs to the adapter).
+running; DNS-level proof belongs to the adapter). The local DNS
+provider adapter (S085) in `internal/dns` speaks the AdGuard control
+API over the published web origin with basic auth: `FetchStatus`
+proves the service answers and reports whether DNS runs, and
+`ListRewrites`/`AddRewrite`/`DeleteRewrite` manage custom DNS answers
+as validated rewrites (canonical lowercase domains matching the route
+model, IP answers). Decoding stays tolerant of API evolution; install
+wizard automation stays out until a slice needs end-to-end setup.
 
 ## Provisional decisions (revisit, do not work around silently)
 
