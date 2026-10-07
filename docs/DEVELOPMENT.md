@@ -28,6 +28,7 @@ internal/dashboard/     production UI serving + embed split (S031)
 internal/auth/          first administrator + session login/logout (S020)
 internal/discover/      read-only host facts: OS today, hardware/network/storage next (S040+)
 internal/operation/     operation records: model, state machine, CRUD store (S060; runner is S061)
+internal/docker/        Engine plus Compose v2 versions via CLI (S070; ADR-005)
 internal/firewall/      nftables detection, domain model, table generation (S050-S052; ADR-008)
 internal/               shared Go packages (API client arrives in S017)
 dashboard/              Angular 22 dashboard app, pnpm-managed (real UI arrives in S030+)
@@ -365,17 +366,6 @@ dropping the HTTP connection never stops the work. Failures stop fast
 terminal, and `Recover` fails stale records at daemon startup (wired in
 `main`). Events (S062), audit (S063), and progress UI (S064) observe.
 
-## Operation events (S062)
-
-Poll-backed SSE, no broker: `GET /api/v1/operations/:id` fetches one
-record; `GET .../events` sends the current state immediately, a `state`
-event per change (500ms snapshots), heartbeats every 30s, and closes
-after the terminal state (clients reconnect idempotently). `homesteadctl
-operations get|follow` consumes it (follow exits 1 on failed/cancelled);
-the dashboard wraps `EventSource` in `ApiService.operationEvents` with an
-injectable factory (jsdom lacks it). Rich progress UI is S064; operation
-producers arrive with their own slices.
-
 ## Installing as a system service (S011)
 
 ```bash
@@ -505,6 +495,14 @@ Adding a dashboard dependency that runs an install script requires explicit
 approval first: `pnpm approve-builds <pkg>...` records it in
 `dashboard/pnpm-workspace.yaml`. Unapproved scripts fail the install
 (`ERR_PNPM_IGNORED_BUILDS`), including `--frozen-lockfile` in CI.
+
+## Docker platform (S070)
+
+`internal/docker` observes Engine plus API versions and the Compose v2
+plugin version through the CLI (`docker version --format json`,
+`docker compose version --format json`), flagging legacy `docker-compose`
+v1. Absence is data, never an error; runtime health arrives in S073 and
+installation in S071/S072.
 
 ## Provisional decisions (revisit, do not work around silently)
 
