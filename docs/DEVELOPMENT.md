@@ -637,7 +637,14 @@ https directory and known challenge with dns-01 bound to a provider,
 manual bare), lifecycle states with failure text only on failed, and
 renewal policies with manual auto-renew refused and window math for
 monitors. Tables keep unique names with single-owner DNS names plus
-lookup; issuance mechanics belong to later slices.
+lookup; issuance mechanics belong to later slices. Automatic HTTPS
+(S101) in `internal/docker` gates standard Caddy automation on direct
+challenge validity: private names (single-label, LAN/reserved
+suffixes, IP literals) never face public ACME, direct challenges count
+only for public names on public exposure, recommendations automate
+there and go internal elsewhere, and rendering refuses automatic mode
+on private names instead of deploying routes Caddy could never bring
+up. DNS-01 (S102) and the internal CA (S104) cover the rest.
 
 ## Provisional decisions (revisit, do not work around silently)
 

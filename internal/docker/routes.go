@@ -23,13 +23,18 @@ func RouteFilename(host Hostname) string {
 
 // RenderRoute renders one desired route as a Caddyfile snippet. TLS off
 // pins an http:// site address (no auto-TLS); internal emits `tls
-// internal`; auto relies on Caddy defaults. Exposure rides as a comment:
-// the snippet serves every origin Caddy sees, and firewall planning
-// (later slices) reconciles who may actually reach it. Health probing is
-// emitted only when a path is set.
+// internal`; auto relies on Caddy defaults. Exposure rides as a
+// comment: the snippet serves every origin Caddy sees, and firewall
+// planning (later slices) reconciles who may actually reach it. Health
+// probing is emitted only when a path is set. Automatic mode on a
+// private name is refused: no public CA can issue for it, so rendering
+// would deploy a route Caddy can never bring up (S101) — use internal.
 func RenderRoute(r Route) (string, error) {
 	if err := r.Validate(); err != nil {
 		return "", err
+	}
+	if r.TLS == TLSAuto && IsPrivateName(r.Host) {
+		return "", fmt.Errorf("routes: automatic TLS needs a public name, %q is private", r.Host)
 	}
 	var site string
 	switch r.TLS {

@@ -74,7 +74,7 @@ func TestReconcileWritesAndCleans(t *testing.T) {
 	routesDir := filepath.Join(dir, "routes")
 	set := RouteSet{Routes: []Route{
 		routeFor("wiki.lan", TLSInternal, ExposureLocal),
-		routeFor("app.lan", TLSAuto, ExposureOverlay),
+		routeFor("app.lan", TLSInternal, ExposureOverlay),
 	}}
 	if err := ReconcileRoutes(dir, set); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -93,7 +93,7 @@ func TestReconcileWritesAndCleans(t *testing.T) {
 	if err := os.WriteFile(keep, []byte("owner"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	narrow := RouteSet{Routes: []Route{routeFor("app.lan", TLSAuto, ExposureOverlay)}}
+	narrow := RouteSet{Routes: []Route{routeFor("app.lan", TLSInternal, ExposureOverlay)}}
 	if err := ReconcileRoutes(dir, narrow); err != nil {
 		t.Fatalf("narrow: %v", err)
 	}
@@ -143,7 +143,7 @@ func routesStackIn(t *testing.T) Stack {
 }
 
 func routesSet() RouteSet {
-	return RouteSet{Routes: []Route{routeFor("app.lan", TLSAuto, ExposureLocal)}}
+	return RouteSet{Routes: []Route{routeFor("app.lan", TLSInternal, ExposureLocal)}}
 }
 
 func TestReconcileDefinitionFlow(t *testing.T) {
