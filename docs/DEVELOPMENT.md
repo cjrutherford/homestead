@@ -28,7 +28,7 @@ internal/dashboard/     production UI serving + embed split (S031)
 internal/auth/          first administrator + session login/logout (S020)
 internal/discover/      read-only host facts: OS today, hardware/network/storage next (S040+)
 internal/operation/     operation records: model, state machine, CRUD store (S060; runner is S061)
-internal/docker/        Engine plus Compose v2 versions via CLI (S070; ADR-005), Debian install operation (S071), stack model plus runner-backed lifecycle (S074/S075), stack model (S074)
+internal/docker/        Engine plus Compose v2 versions via CLI (S070; ADR-005), Debian install operation (S071), stack model plus runner-backed lifecycle (S074/S075), platform networks (S080), stack model (S074)
 internal/firewall/      nftables detection, domain model, table generation (S050-S052; ADR-008)
 internal/               shared Go packages (API client arrives in S017)
 dashboard/              Angular 22 dashboard app, pnpm-managed (real UI arrives in S030+)
@@ -516,7 +516,12 @@ definition (name, directory under `/opt/homestead/stacks`, desired
 services, enabled), validate names and placement, and group live
 containers into observed stacks by Compose labels — one-offs and
 unlabeled containers excluded, wanted flags from the desired set.
-Lifecycle decisions are S075.
+Lifecycle (S075) runs pull/up/stop/restart plus two-step redeploy as
+runner-backed operations. Platform networks (S080): `homestead-edge`
+for proxy-to-app traffic and `homestead-platform` for platform-service
+consumers, both bridged with egress, created idempotently with managed
+labels (driver mismatches refuse instead of touching), verified after
+ensure.
 
 ## Provisional decisions (revisit, do not work around silently)
 
