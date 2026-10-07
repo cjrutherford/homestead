@@ -570,7 +570,14 @@ view per audience), A/AAAA/CNAME/TXT records with per-type values and
 bounded TTLs, relative names with underscore labels for challenge
 names, CNAME exclusivity, and deterministic ordering. Providers (S091+)
 render from this shape; merging baseline with views belongs to
-split-DNS reconciliation (S098).
+split-DNS reconciliation (S098). The provider contract (S091), also in
+`internal/dns`, binds intent to implementations: capabilities
+(records, ACME DNS-01), credential requirements without values (values
+live in the secret store, S096), a `Provider` surface of list plus
+ordered apply, pure `DiffRecords` set math with stable ordering, and a
+registry refusing duplicates. Diff surfaces deletes but never
+authorizes them — destructive application stays gated at the
+reconciliation layer (S098).
 
 ## Provisional decisions (revisit, do not work around silently)
 
