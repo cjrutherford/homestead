@@ -744,7 +744,12 @@ short-circuiting: DNS to the expected address, both edge ports over
 TCP, TLS verified against system roots with trust failures
 classified, and served responses meeting path/status/body contracts.
 Dial overrides serve split-horizon checks; plaintext stays confined
-to LAN and test use. Owner overrides (S125), also in `internal/exposure`,
+to LAN and test use. Router integration (S130) in `internal/router`
+generates exact NAT instructions: purposes mapping to port sets with
+unknown purposes failing, merged sets deduplicated and sorted,
+matched external/internal ports with validated appliance addresses,
+and instructions naming DHCP stability, verification, CGNAT limits,
+and management restraint. Owner overrides (S125), also in `internal/exposure`,
 record per-host exposure exceptions with required reasons, named
 actors, and management flags over schema v8: re-grants replacing
 with fresh audit, revocation converging, reads enforcing with the
