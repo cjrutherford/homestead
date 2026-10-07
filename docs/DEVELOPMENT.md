@@ -534,8 +534,13 @@ desired proxy entries — canonical lowercase hostname, upstream host
 plus port, exposure in the shared local/overlay/public vocabulary
 (ADR-006), provider-abstract TLS mode off/internal/auto (ADR-010), and
 optional active health probing — with shape-only validation; policy
-enforcement belongs to plan/preview layers. Generation from desired
-route state arrives in S083.
+enforcement belongs to plan/preview layers. The generator (S083)
+renders each desired route to a `<host>.caddy` snippet in the stack
+`routes/` directory (TLS off pins `http://`, internal emits
+`tls internal`, exposure rides as a comment for firewall planning),
+removes only stale managed snippets, reloads through the proxy
+container (Caddy validates before swapping), and closes with a serving
+verify — planned as an idempotent `caddy.reconcile` operation.
 
 ## Provisional decisions (revisit, do not work around silently)
 

@@ -21,6 +21,8 @@ const (
 	CaddyStackName = "caddy"
 	// CaddyService is the proxy container (exec/reload target).
 	CaddyService = "caddy"
+	// CaddyContainerName is the proxy container name (exec target).
+	CaddyContainerName = "homestead-caddy"
 )
 
 // CaddyStack returns the edge-proxy stack value: fixed name, layout
@@ -67,7 +69,7 @@ func composeFile() string {
 services:
   caddy:
     image: ` + CaddyImage + `
-    container_name: homestead-caddy
+    container_name: ` + CaddyContainerName + `
     restart: unless-stopped
     ports:
       - "80:80"
@@ -96,16 +98,25 @@ import /etc/caddy/routes/*.caddy
 `
 }
 
+// checkCaddyStack rejects non-caddy stacks and empty dirs so deploy and
+// reconcile refuse misplacement instead of writing elsewhere.
+func checkCaddyStack(stack Stack) error {
+	if stack.Name != CaddyStackName {
+		return fmt.Errorf("caddy: stack must be %q", CaddyStackName)
+	}
+	if stack.Dir == "" {
+		return fmt.Errorf("caddy: stack dir must not be empty")
+	}
+	return nil
+}
+
 // DeployDefinition plans the edge proxy: platform edge network, stack
 // files, detached up, and a verify proving the proxy container runs.
 // Idempotent throughout: existing networks short-circuit, files rewrite
 // identically, up converges.
 func DeployDefinition(stack Stack) (operation.Definition, error) {
-	if stack.Name != CaddyStackName {
-		return operation.Definition{}, fmt.Errorf("caddy: stack must be %q", CaddyStackName)
-	}
-	if stack.Dir == "" {
-		return operation.Definition{}, fmt.Errorf("caddy: stack dir must not be empty")
+	if err := checkCaddyStack(stack); err != nil {
+		return operation.Definition{}, err
 	}
 	def := operation.Definition{Type: "caddy.deploy"}
 	def.Steps = append(def.Steps, operation.StepDef{
