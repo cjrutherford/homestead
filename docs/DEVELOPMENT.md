@@ -738,7 +738,13 @@ merge engine, package, and certificate counsel with warns before
 information: ceiling breaches advise audited overrides instead of
 refusing, plaintext-public and unhealthy certificates warn, quiet
 postures confirm explicitly, and presentation layers quote rendered
-text verbatim. Owner overrides (S125), also in `internal/exposure`,
+text verbatim. Connectivity validation (S126), also in
+`internal/exposure`, proves public serving across five layers with no
+short-circuiting: DNS to the expected address, both edge ports over
+TCP, TLS verified against system roots with trust failures
+classified, and served responses meeting path/status/body contracts.
+Dial overrides serve split-horizon checks; plaintext stays confined
+to LAN and test use. Owner overrides (S125), also in `internal/exposure`,
 record per-host exposure exceptions with required reasons, named
 actors, and management flags over schema v8: re-grants replacing
 with fresh audit, revocation converging, reads enforcing with the
