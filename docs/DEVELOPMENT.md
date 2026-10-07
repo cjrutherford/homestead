@@ -506,7 +506,8 @@ S071 adds the install operation: `InstallDefinition` plans prerequisites,
 the Docker apt repository (key fetched in-process, no curl/gnupg
 footprint), packages, and verify — each step short-circuits when
 satisfied, executed through the S061 runner, surfaced by the bootstrap
-(S220).
+(S220). Ubuntu (S072) reuses the shape with isolated identity and
+repository URLs; exactly one distro detector matches any host.
 
 ## Provisional decisions (revisit, do not work around silently)
 

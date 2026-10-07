@@ -53,7 +53,7 @@ func openRunner(t *testing.T) *operation.Runner {
 
 func testDistro(t *testing.T, gpgURL string) Distro {
 	t.Helper()
-	d, err := assembleDistro("debian", "bookworm", "amd64")
+	d, err := assembleDistro("debian", "bookworm", "amd64", "debian")
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -88,18 +88,28 @@ func TestReleaseIdentity(t *testing.T) {
 }
 
 func TestAssembleDistro(t *testing.T) {
-	if _, err := assembleDistro("ubuntu", "noble", "amd64"); err == nil {
+	if _, err := assembleDistro("ubuntu", "noble", "amd64", "debian"); err == nil {
 		t.Fatal("ubuntu accepted as Debian")
 	}
-	if _, err := assembleDistro("debian", "", "amd64"); err == nil {
+	if _, err := assembleDistro("debian", "", "amd64", "debian"); err == nil {
 		t.Fatal("empty codename accepted")
 	}
-	d, err := assembleDistro("debian", "bookworm", "amd64")
+	d, err := assembleDistro("debian", "bookworm", "amd64", "debian")
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
-	if !strings.Contains(d.GPGURL, "download.docker.com") {
+	if !strings.Contains(d.GPGURL, "download.docker.com/linux/debian") {
 		t.Fatalf("GPGURL = %q", d.GPGURL)
+	}
+	u, err := assembleDistro("ubuntu", "noble", "amd64", "ubuntu")
+	if err != nil {
+		t.Fatalf("ubuntu assemble: %v", err)
+	}
+	if !strings.Contains(u.GPGURL, "download.docker.com/linux/ubuntu") {
+		t.Fatalf("GPGURL = %q", u.GPGURL)
+	}
+	if _, err := assembleDistro("debian", "bookworm", "amd64", "ubuntu"); err == nil {
+		t.Fatal("debian accepted as Ubuntu")
 	}
 }
 
@@ -264,5 +274,51 @@ func TestFetchFile(t *testing.T) {
 	}
 	if err := fetchFile(context.Background(), missing.URL, path); err == nil {
 		t.Fatal("404 accepted, want error")
+	}
+}
+
+func TestDistroIsolation(t *testing.T) {
+	keyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("key"))
+	}))
+	defer keyServer.Close()
+	lines := map[string]string{}
+	for _, tc := range []struct {
+		id       string
+		codename string
+	}{
+		{"debian", "bookworm"},
+		{"ubuntu", "noble"},
+	} {
+		stubAptDirs(t)
+		d, err := assembleDistro(tc.id, tc.codename, "amd64", tc.id)
+		if err != nil {
+			t.Fatalf("assemble: %v", err)
+		}
+		d.GPGURL = keyServer.URL
+		if err := configureRepository(context.Background(), d); err != nil {
+			t.Fatalf("configure %s: %v", tc.id, err)
+		}
+		list, err := os.ReadFile(filepath.Join(aptListsDir, "docker.list"))
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		lines[tc.id] = string(list)
+	}
+	if lines["debian"] == lines["ubuntu"] {
+		t.Fatalf("identical repo lines: %q", lines["debian"])
+	}
+	for id, line := range lines {
+		if !strings.Contains(line, "download.docker.com/linux/"+id) {
+			t.Fatalf("%s line = %q", id, line)
+		}
+	}
+}
+
+func TestLiveDistroDetection(t *testing.T) {
+	_, debErr := DebianDistro()
+	_, ubuErr := UbuntuDistro()
+	if (debErr == nil) == (ubuErr == nil) {
+		t.Fatalf("debian=%v ubuntu=%v, want exactly one to match this host", debErr, ubuErr)
 	}
 }

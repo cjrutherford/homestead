@@ -61,10 +61,21 @@ func ReleaseIdentity(path string) (id, codename string, err error) {
 	return values["ID"], values["VERSION_CODENAME"], nil
 }
 
-// DebianDistro detects the local Debian release (S071). Ubuntu arrives in
-// S072 with the same InstallDefinition shape.
+// DebianDistro detects the local Debian release (S071).
 func DebianDistro() (Distro, error) {
-	id, codename, err := ReleaseIdentity("/etc/os-release")
+	return distroFromFile("/etc/os-release", "debian")
+}
+
+// UbuntuDistro detects the local Ubuntu release (S072), fully isolated
+// from the Debian path: separate ID check, codename, and repository URLs.
+func UbuntuDistro() (Distro, error) {
+	return distroFromFile("/etc/os-release", "ubuntu")
+}
+
+// distroFromFile builds a Distro for the wanted ID from an os-release
+// file plus dpkg architecture.
+func distroFromFile(path, wantID string) (Distro, error) {
+	id, codename, err := ReleaseIdentity(path)
 	if err != nil {
 		return Distro{}, err
 	}
@@ -72,14 +83,14 @@ func DebianDistro() (Distro, error) {
 	if err != nil {
 		return Distro{}, err
 	}
-	return assembleDistro(id, codename, strings.TrimSpace(arch))
+	return assembleDistro(id, codename, strings.TrimSpace(arch), wantID)
 }
 
 // assembleDistro validates release parts and fills the key URL. Pure for
-// tests; DebianDistro wires the live sources.
-func assembleDistro(id, codename, arch string) (Distro, error) {
-	if id != "debian" {
-		return Distro{}, fmt.Errorf("docker: not Debian (id=%q)", id)
+// tests; DebianDistro and UbuntuDistro wire the live sources.
+func assembleDistro(id, codename, arch, wantID string) (Distro, error) {
+	if id != wantID {
+		return Distro{}, fmt.Errorf("docker: not %s (id=%q)", wantID, id)
 	}
 	if codename == "" {
 		return Distro{}, fmt.Errorf("docker: empty codename")
@@ -91,7 +102,7 @@ func assembleDistro(id, codename, arch string) (Distro, error) {
 		ID:       id,
 		Codename: codename,
 		Arch:     arch,
-		GPGURL:   "https://download.docker.com/linux/debian/gpg",
+		GPGURL:   "https://download.docker.com/linux/" + id + "/gpg",
 	}, nil
 }
 
