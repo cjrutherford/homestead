@@ -804,7 +804,11 @@ exposure. Install execution (S156), also in `internal/catalog`,
 runs approved plans as one runner-backed operation — per-directory
 provisioning plus stack writing plus up — failing fast with
 offenders named, with production directories resolving from plans
-and isolated overrides for tests. Router integration (S130) in `internal/router`
+and isolated overrides for tests. Configure execution (S157), also
+in `internal/catalog`, modifies installed apps through layered
+override files with reviewed per-service set/unset plans: merges
+preserving foreign state, emptied files deleting, 0600 permissions,
+base files staying generated-only, and write plus up execution. Router integration (S130) in `internal/router`
 generates exact NAT instructions: purposes mapping to port sets with
 unknown purposes failing, merged sets deduplicated and sorted,
 matched external/internal ports with validated appliance addresses,

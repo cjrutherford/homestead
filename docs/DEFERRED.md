@@ -45,3 +45,6 @@
   zone-wide public/overlay accepts, so serving the public internet
   needs an explicit accept-all shape before S227 applies planner
   output.
+- Secret-backed container variables: S157 writes operational values
+  only; injecting secret-store values into container environments
+  needs its own slice before apps with API keys install cleanly.
