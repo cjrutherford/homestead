@@ -773,7 +773,11 @@ also in `internal/storage`, grades registered mounts with evidence
 for presence, writability, and space: degraded covering read-only,
 stale, and low-space mounts, missing shared deliberately between
 loss and never-existed, roll-ups mirroring the worst, and checks
-pure against facts. Router integration (S130) in `internal/router`
+pure against facts. Catalog manifests (S150) in `internal/catalog`
+define first-party applications: pinned non-latest images with
+services linked to declared endpoints, semantic versions, bounded UX
+copy, memory/storage/port requirements, exposure bound to the
+manifest name, and contained relative backup paths. Router integration (S130) in `internal/router`
 generates exact NAT instructions: purposes mapping to port sets with
 unknown purposes failing, merged sets deduplicated and sorted,
 matched external/internal ports with validated appliance addresses,
