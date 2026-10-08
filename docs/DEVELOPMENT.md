@@ -752,7 +752,12 @@ discovery facts cannot match. Selection and provisioning belong to
 later slices. Mount registration (S141), also in `internal/storage`,
 approves discovered mounts under unique owner labels over schema v9:
 registration validates mounted, serving, writable, and never
-pseudo-filesystems, re-registration renames, and removal converges. Router integration (S130) in `internal/router`
+pseudo-filesystems, re-registration renames, and removal converges.
+Storage assignment (S142), also in `internal/storage`, maps classes
+to registered mounts over schema v10: suitability ranked against
+live facts with databases kept off network filesystems, assignment
+requiring approval plus current suitability, shared mounts across
+classes, and re-assignment migrating without churn. Router integration (S130) in `internal/router`
 generates exact NAT instructions: purposes mapping to port sets with
 unknown purposes failing, merged sets deduplicated and sorted,
 matched external/internal ports with validated appliance addresses,

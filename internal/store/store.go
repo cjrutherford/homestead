@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 9
+const CurrentVersion = 10
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -207,6 +207,21 @@ CREATE TABLE IF NOT EXISTS storage_registrations (
 	label TEXT NOT NULL,
 	actor TEXT NOT NULL,
 	added_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S142 storage assignments: one mount per class. Classes share
+		// mounts (different subdirectories, provisioned in S143), but
+		// each class lives in exactly one place so data never scatters
+		// across mounts under one class name.
+		version: 10,
+		name:    "storage assignments",
+		sql: `
+CREATE TABLE IF NOT EXISTS storage_assignments (
+	class TEXT PRIMARY KEY,
+	mountpoint TEXT NOT NULL,
+	actor TEXT NOT NULL,
+	created_at TEXT NOT NULL
 );`,
 	},
 }
