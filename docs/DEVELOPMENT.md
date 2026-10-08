@@ -800,7 +800,11 @@ requirements, routes, compose, DNS, TLS, firewall, and directories
 with lifecycle verbs: unmet requirements and unknown inputs refuse
 before anything writes, public routes need zone and address, TLS
 strategies follow shared eligibility, and firewall scopes to widest
-exposure. Router integration (S130) in `internal/router`
+exposure. Install execution (S156), also in `internal/catalog`,
+runs approved plans as one runner-backed operation — per-directory
+provisioning plus stack writing plus up — failing fast with
+offenders named, with production directories resolving from plans
+and isolated overrides for tests. Router integration (S130) in `internal/router`
 generates exact NAT instructions: purposes mapping to port sets with
 unknown purposes failing, merged sets deduplicated and sorted,
 matched external/internal ports with validated appliance addresses,
