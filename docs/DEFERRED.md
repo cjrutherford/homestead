@@ -53,3 +53,6 @@
   GPUs through yet; planning the fragment belongs with generation.
 - ARM SoC transcoding: S162 covers Intel, AMD, and NVIDIA only;
   Rockchip and other SoC bindings need per-board validation.
+- Backup encryption at rest: S181 copies plaintext; encrypting backup
+  trees (age recipients, key custody, rotation) belongs with restore
+  once runbooks exist.

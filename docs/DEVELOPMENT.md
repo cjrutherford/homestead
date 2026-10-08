@@ -813,7 +813,11 @@ port collisions naming both owners. The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine
 fields refused, staged commands bounded and service-linked, and
-credentials kept out of declarations. Jellyfin storage (S161) in `internal/jellyfin`
+credentials kept out of declarations. Local backups (S181) in
+`internal/backup` resolve backup-class destinations with live
+re-checks, copy trees preserving modes with symlinks refused,
+manifest runs last with re-walked counts, and runner-backed
+execution fails fast. Jellyfin storage (S161) in `internal/jellyfin`
 maps configuration and media to assigned mounts: config provisioned
 under application, libraries referenced (never created) under bulk
 with existence validated, every required class assigned, and
