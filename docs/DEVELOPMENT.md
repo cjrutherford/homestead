@@ -763,7 +763,12 @@ application directories on registered mounts with approval
 re-checked at run time: relative contained paths with symlink
 escapes refused against live state, existing files never converted,
 modes within 0700-0775 without world-write, explicit ownership with
-untouched defaults, and per-directory runner steps. Router integration (S130) in `internal/router`
+untouched defaults, and per-directory runner steps. The storage wizard (S144), also in
+`internal/storage`, guides mount selection and class assignment over
+the generic wizard store: shape-checked mounts with validated class
+bindings, readiness previewed against live facts with reasons where
+not, and approvals plus bindings applied at the caller's layer with
+offenders named. It owns no HTTP surface. Router integration (S130) in `internal/router`
 generates exact NAT instructions: purposes mapping to port sets with
 unknown purposes failing, merged sets deduplicated and sorted,
 matched external/internal ports with validated appliance addresses,
