@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"homestead/internal/operation"
 	"homestead/internal/storage"
@@ -12,12 +13,24 @@ import (
 // composeUp runs detached up for a stack directory and project name,
 // stubbed in tests. The docker package owns Compose models; install
 // execution owns this seam so full install flows verify without a
-// daemon.
+// daemon. Removal shares it (remove.go) rather than growing a second.
 var composeUp = func(ctx context.Context, dir, project string) error {
-	cmd := exec.CommandContext(ctx, "docker", "compose",
-		"--project-directory", dir, "--project-name", project, "up", "-d")
+	return composeRun(ctx, dir, project, "up", "-d")
+}
+
+// composeDown stops and removes an installed stack's containers and
+// networks without touching volumes or binds: data always survives
+// down by construction.
+var composeDown = func(ctx context.Context, dir, project string) error {
+	return composeRun(ctx, dir, project, "down")
+}
+
+// composeRun shells one compose invocation, stubbed in tests.
+var composeRun = func(ctx context.Context, dir, project string, args ...string) error {
+	argv := append([]string{"compose", "--project-directory", dir, "--project-name", project}, args...)
+	cmd := exec.CommandContext(ctx, "docker", argv...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("catalog: compose up %s: %w: %s", project, err, string(out))
+		return fmt.Errorf("catalog: compose %s %s: %w: %s", strings.Join(args, " "), project, err, string(out))
 	}
 	return nil
 }

@@ -808,7 +808,12 @@ and isolated overrides for tests. Configure execution (S157), also
 in `internal/catalog`, modifies installed apps through layered
 override files with reviewed per-service set/unset plans: merges
 preserving foreign state, emptied files deleting, 0600 permissions,
-base files staying generated-only, and write plus up execution. Router integration (S130) in `internal/router`
+base files staying generated-only, and write plus up execution.
+Removal (S158), also in `internal/catalog`, uninstalls with data
+preserved by default: down plus generated-file removal, explicit
+data removal naming every root with escapes refused and missing
+roots failing loudly, ambiguous intents and never-installed apps
+refused, and a shared compose execution seam. Router integration (S130) in `internal/router`
 generates exact NAT instructions: purposes mapping to port sets with
 unknown purposes failing, merged sets deduplicated and sorted,
 matched external/internal ports with validated appliance addresses,
