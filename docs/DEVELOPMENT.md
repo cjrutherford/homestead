@@ -794,7 +794,13 @@ configuration left to later slices. Network recommendations
 (S154), also in `internal/catalog`, materialize per-endpoint route
 defaults from metadata with service linkage, exposure, and
 hostname-agnostic TLS hints; owner inputs concretize them into
-validated routes, and planners look up ceilings by service. Router integration (S130) in `internal/router`
+validated routes, and planners look up ceilings by service. The install planner (S155),
+also in `internal/catalog`, produces offline change sets across
+requirements, routes, compose, DNS, TLS, firewall, and directories
+with lifecycle verbs: unmet requirements and unknown inputs refuse
+before anything writes, public routes need zone and address, TLS
+strategies follow shared eligibility, and firewall scopes to widest
+exposure. Router integration (S130) in `internal/router`
 generates exact NAT instructions: purposes mapping to port sets with
 unknown purposes failing, merged sets deduplicated and sorted,
 matched external/internal ports with validated appliance addresses,
