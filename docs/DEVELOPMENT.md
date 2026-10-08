@@ -815,7 +815,11 @@ generator with widening left to ceremony. Jellyfin DNS (S164),
 also in `internal/jellyfin`, answers the media hostname locally
 through the provider adapter with resolution verified to the bound
 answer, while split-horizon public records plan validated but
-unapplied with application owned by exposure flows. The install planner (S155),
+unapplied with application owned by exposure flows. Jellyfin TLS (S165), also in
+`internal/jellyfin`, gates route strategies without fetching,
+mints internal serving certificates under fresh keys with pre-store
+verification, and proves material covering exact and single-label
+wildcard names inside validity windows. The install planner (S155),
 also in `internal/catalog`, produces offline change sets across
 requirements, routes, compose, DNS, TLS, firewall, and directories
 with lifecycle verbs: unmet requirements and unknown inputs refuse
