@@ -825,7 +825,11 @@ refuse loudly. Update planning (S191), also in `internal/update`,
 reviews registry maxima against manifest pins with current
 services planning empty, flags backups with database-first reasons,
 lists affected services, and warns major version jumps with
-versions attached. The backup wizard (S184), also in
+versions attached. Safe updates (S192), also in
+`internal/update`, run backup hooks plus pull, pin rewrite, up
+with running-state verification, and rollback on verify failure
+with both outcomes reported; undescribed plans refuse before
+anything runs. The backup wizard (S184), also in
 `internal/backup`, guides package plus cadence over the generic
 wizard store with plans previewing without writing and schedules
 persisting under acting owners. It owns no HTTP surface. Restore
