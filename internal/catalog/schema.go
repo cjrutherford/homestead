@@ -121,8 +121,9 @@ func (r Requirements) Validate() error {
 
 // Manifest is one first-party application (ADR-014): identity with a
 // pinned semver, UX copy, services, requirements, exposure
-// declaration, and backup paths. The exposure package name must equal
-// the manifest name — one package, one declaration, no drift — and
+// declaration, backup paths, and optional database export plus
+// consistency hooks (S180). The exposure package name must equal the
+// manifest name — one package, one declaration, no drift — and
 // backup paths stay relative so they resolve under assigned mounts.
 type Manifest struct {
 	Name         string
@@ -136,6 +137,8 @@ type Manifest struct {
 	Requirements Requirements
 	Exposure     exposure.PackageExposure
 	BackupPaths  []string
+	Database     *DatabaseBackup
+	Hooks        []BackupHook
 }
 
 // Validate checks the manifest end to end.
@@ -179,6 +182,10 @@ func (m Manifest) Validate() error {
 	for _, endpoint := range m.Exposure.Endpoints {
 		endpoints[endpoint.Endpoint] = true
 	}
+	services := map[string]bool{}
+	for _, service := range m.Services {
+		services[service.Name] = true
+	}
 	seenServices := map[string]bool{}
 	for i := range m.Services {
 		if err := m.Services[i].Validate(endpoints); err != nil {
@@ -195,6 +202,16 @@ func (m Manifest) Validate() error {
 	for i, path := range m.BackupPaths {
 		if path == "" || path[0] == '/' || path == "." || strings.HasPrefix(path, "../") || strings.Contains(path, "/../") {
 			return fmt.Errorf("catalog: backup path #%d must be relative and contained", i)
+		}
+	}
+	if m.Database != nil {
+		if err := m.Database.Validate(services); err != nil {
+			return err
+		}
+	}
+	for i := range m.Hooks {
+		if err := m.Hooks[i].Validate(services); err != nil {
+			return fmt.Errorf("catalog: hook #%d: %w", i, err)
 		}
 	}
 	return nil

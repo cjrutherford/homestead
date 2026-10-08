@@ -809,7 +809,11 @@ declared requirements, exposure, and backup paths. Services without
 endpoints serve nothing routable by construction. The base suite (S172), also in
 `internal/catalog`, resolves the curated bundle in install order with joint
 grading: per-package verdicts plus combined memory footprints and cross-member
-port collisions naming both owners. Jellyfin storage (S161) in `internal/jellyfin`
+port collisions naming both owners. The backup contract (S180),
+also in `internal/catalog`, lets entries declare database exports
+and consistency hooks: per-engine parameters with cross-engine
+fields refused, staged commands bounded and service-linked, and
+credentials kept out of declarations. Jellyfin storage (S161) in `internal/jellyfin`
 maps configuration and media to assigned mounts: config provisioned
 under application, libraries referenced (never created) under bulk
 with existence validated, every required class assigned, and
