@@ -803,7 +803,11 @@ install surfaces. Jellyfin storage (S161) in `internal/jellyfin`
 maps configuration and media to assigned mounts: config provisioned
 under application, libraries referenced (never created) under bulk
 with existence validated, every required class assigned, and
-installer volumes plus provision-only-config outputs. The install planner (S155),
+installer volumes plus provision-only-config outputs. Hardware
+acceleration (S162), also in `internal/jellyfin`, maps discovered
+GPUs to transcode paths: discrete NVIDIA, then Intel Quick Sync,
+then AMD VAAPI, with half stacks falling to software and group
+additions deliberately absent pending host video GIDs. The install planner (S155),
 also in `internal/catalog`, produces offline change sets across
 requirements, routes, compose, DNS, TLS, firewall, and directories
 with lifecycle verbs: unmet requirements and unknown inputs refuse

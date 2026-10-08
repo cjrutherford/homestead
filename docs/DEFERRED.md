@@ -48,3 +48,5 @@
 - Secret-backed container variables: S157 writes operational values
   only; injecting secret-store values into container environments
   needs its own slice before apps with API keys install cleanly.
+- ARM SoC transcoding: S162 covers Intel, AMD, and NVIDIA only;
+  Rockchip and other SoC bindings need per-board validation.
