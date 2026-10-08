@@ -17,9 +17,10 @@ var (
 
 // Service is one container an app runs: a compose-safe name, a pinned
 // image (tags required, latest refused — reproducible installs only),
-// and the exposure endpoint key it serves, linked into the package
-// exposure declaration so generation (S153) always knows the upstream
-// behind every name.
+// and the exposure endpoint key it serves. Internal services (database,
+// cache, workers) leave Exposes empty: no endpoint, no route, no
+// posture to declare. Generation (S153) and recommendations (S154)
+// skip them for serving while still rendering their containers.
 type Service struct {
 	Name    string
 	Image   string
@@ -35,7 +36,7 @@ func (s Service) Validate(endpoints map[string]bool) error {
 	if !found || image == "" || tag == "" || tag == "latest" {
 		return fmt.Errorf("catalog: image %q must pin a non-latest tag", s.Image)
 	}
-	if !endpoints[s.Exposes] {
+	if s.Exposes != "" && !endpoints[s.Exposes] {
 		return fmt.Errorf("catalog: service %q exposes unknown endpoint %q", s.Name, s.Exposes)
 	}
 	return nil

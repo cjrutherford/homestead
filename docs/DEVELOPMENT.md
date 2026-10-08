@@ -802,7 +802,11 @@ they were reviewed against; runtime path resolution lands with the
 install surfaces. The Nextcloud package (S170) in `catalog/` is
 the second curated application with pinned images, declared
 requirements, exposure, and backup paths, loading valid alongside
-the first with SQLite as the default database. Jellyfin storage (S161) in `internal/jellyfin`
+the first with SQLite as the default database. The Immich package (S171) in
+`catalog/` is the third curated application with official release
+pins across four services (internal ones carrying no endpoint),
+declared requirements, exposure, and backup paths. Services without
+endpoints serve nothing routable by construction. Jellyfin storage (S161) in `internal/jellyfin`
 maps configuration and media to assigned mounts: config provisioned
 under application, libraries referenced (never created) under bulk
 with existence validated, every required class assigned, and
