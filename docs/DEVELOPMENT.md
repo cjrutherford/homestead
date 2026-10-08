@@ -817,7 +817,11 @@ credentials kept out of declarations. Local backups (S181) in
 `internal/backup` resolve backup-class destinations with live
 re-checks, copy trees preserving modes with symlinks refused,
 manifest runs last with re-walked counts, and runner-backed
-execution fails fast. Jellyfin storage (S161) in `internal/jellyfin`
+execution fails fast. Database exports (S182), also in
+`internal/backup`, run application-aware: pre hooks, engine export,
+post hooks even on failure with both reported; SQLite snapshots
+online with busy absorption, Postgres dumps through container
+tooling with passwords confined to process environment. Jellyfin storage (S161) in `internal/jellyfin`
 maps configuration and media to assigned mounts: config provisioned
 under application, libraries referenced (never created) under bulk
 with existence validated, every required class assigned, and
