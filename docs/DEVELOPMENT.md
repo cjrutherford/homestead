@@ -757,7 +757,13 @@ Storage assignment (S142), also in `internal/storage`, maps classes
 to registered mounts over schema v10: suitability ranked against
 live facts with databases kept off network filesystems, assignment
 requiring approval plus current suitability, shared mounts across
-classes, and re-assignment migrating without churn. Router integration (S130) in `internal/router`
+classes, and re-assignment migrating without churn. Directory
+provisioning (S143), also in `internal/storage`, converges
+application directories on registered mounts with approval
+re-checked at run time: relative contained paths with symlink
+escapes refused against live state, existing files never converted,
+modes within 0700-0775 without world-write, explicit ownership with
+untouched defaults, and per-directory runner steps. Router integration (S130) in `internal/router`
 generates exact NAT instructions: purposes mapping to port sets with
 unknown purposes failing, merged sets deduplicated and sorted,
 matched external/internal ports with validated appliance addresses,
