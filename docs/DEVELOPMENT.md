@@ -821,7 +821,12 @@ execution fails fast. Database exports (S182), also in
 `internal/backup`, run application-aware: pre hooks, engine export,
 post hooks even on failure with both reported; SQLite snapshots
 online with busy absorption, Postgres dumps through container
-tooling with passwords confined to process environment. Jellyfin storage (S161) in `internal/jellyfin`
+tooling with passwords confined to process environment. Backup schedules
+(S183), also in `internal/backup`, persist hourly-floored intervals
+with retention counts per package over schema v11, and retained job
+definitions copy files, export databases, prune to newest, and close
+with manifests; results record through operations while wall-clock
+triggering belongs to timers. Jellyfin storage (S161) in `internal/jellyfin`
 maps configuration and media to assigned mounts: config provisioned
 under application, libraries referenced (never created) under bulk
 with existence validated, every required class assigned, and

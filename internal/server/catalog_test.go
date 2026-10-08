@@ -43,7 +43,7 @@ requirements:
   storage:
   - class: application
     minbytes: 1048576
-  ports: [8080]
+  ports: [18080]
 exposure:
   package: demo
   endpoints:
@@ -117,7 +117,7 @@ func TestCatalogListGet(t *testing.T) {
 func installTestBody() map[string]any {
 	return map[string]any{
 		"domain":          "lan",
-		"container_ports": map[string]int{"web": 8080},
+		"container_ports": map[string]int{"web": 18080},
 		"storage":         map[string]string{"application": "/tmp"},
 		"volumes": []map[string]any{
 			{"Service": "web", "Class": "application", "Subpath": "data", "Target": "/data"},
@@ -138,7 +138,7 @@ func TestCatalogParityAcceptance(t *testing.T) {
 			// CLI files may omit empties; both must plan identically.
 			"domain":          "lan",
 			"hostnames":       map[string]string{},
-			"container_ports": map[string]int{"web": 8080},
+			"container_ports": map[string]int{"web": 18080},
 			"storage":         map[string]string{"application": "/tmp"},
 			"volumes": []map[string]any{
 				{"Service": "web", "Class": "application", "Subpath": "data", "Target": "/data"},

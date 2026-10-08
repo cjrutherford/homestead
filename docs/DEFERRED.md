@@ -56,3 +56,6 @@
 - Backup encryption at rest: S181 copies plaintext; encrypting backup
   trees (age recipients, key custody, rotation) belongs with restore
   once runbooks exist.
+- Backup job triggering: S183 persists schedules and runs retained
+  jobs, but no wall-clock trigger (systemd timers or daemon ticker)
+  fires them yet.

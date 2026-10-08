@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 10
+const CurrentVersion = 11
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -222,6 +222,23 @@ CREATE TABLE IF NOT EXISTS storage_assignments (
 	mountpoint TEXT NOT NULL,
 	actor TEXT NOT NULL,
 	created_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S183 backup schedules: one interval per package with retention
+		// counts and enablement. Runs execute through the operation
+		// engine (results live there); wall-clock triggering belongs to
+		// timers, not this table.
+		version: 11,
+		name:    "backup schedules",
+		sql: `
+CREATE TABLE IF NOT EXISTS backup_schedules (
+	package TEXT PRIMARY KEY,
+	interval_seconds INTEGER NOT NULL,
+	retain INTEGER NOT NULL DEFAULT 0,
+	enabled INTEGER NOT NULL DEFAULT 1,
+	actor TEXT NOT NULL,
+	updated_at TEXT NOT NULL
 );`,
 	},
 }
