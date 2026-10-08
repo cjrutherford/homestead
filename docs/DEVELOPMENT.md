@@ -799,7 +799,11 @@ in `catalog/` is the first curated application: pinned images with
 declared requirements, exposure, and backup paths, loading valid in
 CI with versions surfacing verbatim. Packages ship with the code
 they were reviewed against; runtime path resolution lands with the
-install surfaces. The install planner (S155),
+install surfaces. Jellyfin storage (S161) in `internal/jellyfin`
+maps configuration and media to assigned mounts: config provisioned
+under application, libraries referenced (never created) under bulk
+with existence validated, every required class assigned, and
+installer volumes plus provision-only-config outputs. The install planner (S155),
 also in `internal/catalog`, produces offline change sets across
 requirements, routes, compose, DNS, TLS, firewall, and directories
 with lifecycle verbs: unmet requirements and unknown inputs refuse
