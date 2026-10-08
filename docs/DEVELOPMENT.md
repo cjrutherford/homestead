@@ -768,7 +768,12 @@ untouched defaults, and per-directory runner steps. The storage wizard (S144), a
 the generic wizard store: shape-checked mounts with validated class
 bindings, readiness previewed against live facts with reasons where
 not, and approvals plus bindings applied at the caller's layer with
-offenders named. It owns no HTTP surface. Router integration (S130) in `internal/router`
+offenders named. It owns no HTTP surface. Storage health (S145),
+also in `internal/storage`, grades registered mounts with evidence
+for presence, writability, and space: degraded covering read-only,
+stale, and low-space mounts, missing shared deliberately between
+loss and never-existed, roll-ups mirroring the worst, and checks
+pure against facts. Router integration (S130) in `internal/router`
 generates exact NAT instructions: purposes mapping to port sets with
 unknown purposes failing, merged sets deduplicated and sorted,
 matched external/internal ports with validated appliance addresses,
