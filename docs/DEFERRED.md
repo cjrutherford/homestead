@@ -48,5 +48,8 @@
 - Secret-backed container variables: S157 writes operational values
   only; injecting secret-store values into container environments
   needs its own slice before apps with API keys install cleanly.
+- Container device passthrough: S162 detects GPU stacks, but compose
+  generation has no devices/runtime fields, so installs cannot pass
+  GPUs through yet; planning the fragment belongs with generation.
 - ARM SoC transcoding: S162 covers Intel, AMD, and NVIDIA only;
   Rockchip and other SoC bindings need per-board validation.

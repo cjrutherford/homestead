@@ -50,6 +50,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runDocker(ctx, client, rest[1:], stdout, stderr)
 	case "audit":
 		return runAudit(ctx, client, rest[1:], stdout, stderr)
+	case "apps":
+		return runApps(ctx, client, rest[1:], stdout, stderr)
 	case "operations":
 		return runOperations(ctx, client, rest[1:], stdout, stderr)
 	case "firewall":
@@ -81,6 +83,10 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  doctor                 system diagnostics (S044)")
 	fmt.Fprintln(w, "  docker health          Docker engine and inventory, read-only (S073)")
 	fmt.Fprintln(w, "  audit list             audit trail, newest first (S063)")
+	fmt.Fprintln(w, "  apps list              curated packages (S167)")
+	fmt.Fprintln(w, "  apps plan <pkg> -f FILE  review install plan (S168)")
+	fmt.Fprintln(w, "  apps install <pkg> -f FILE [--follow]  install package (S168)")
+	fmt.Fprintln(w, "  apps configure <pkg> --service NAME [--set K=V] [--unset K]  configure service (S168)")
 	fmt.Fprintln(w, "  operations <get|list|follow>  inspect and follow operations (S062/S064)")
 	fmt.Fprintln(w, "  firewall <status|plan|apply>  host firewall setup (S056)")
 	fmt.Fprintln(w, "  version                CLI and daemon versions")

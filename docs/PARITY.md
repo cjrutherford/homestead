@@ -35,10 +35,10 @@ for an intentional gap. The Notes column is free text.
 | GET | /api/v1/audit | `runAuditList` | n/a | Append-only trail; no dashboard viewer yet |
 | GET | /api/v1/docker/health | `runDockerHealth` | n/a | Engine inventory; stack UI arrives later |
 | GET | /api/v1/doctor | `"doctor"` | `doctor` | Diagnostic report on all three surfaces |
-| GET | /api/v1/catalog | n/a | `catalogPackages` | Package summaries; CLI install arrives in S168 |
-| GET | /api/v1/catalog/{name} | n/a | `catalogPackage` | Manifest detail; CLI install arrives in S168 |
-| POST | /api/v1/catalog/{name}/plan | n/a | `planInstall` | Reviewed install plan; CLI install arrives in S168 |
-| POST | /api/v1/catalog/{name}/install | n/a | `installPackage` | Approved installation; CLI install arrives in S168 |
-| POST | /api/v1/catalog/{name}/configure | n/a | `configurePackage` | Configuration operation; CLI install arrives in S168 |
+| GET | /api/v1/catalog | `"apps"` | `catalogPackages` | Package summaries on both surfaces |
+| GET | /api/v1/catalog/{name} | `"apps"` | `catalogPackage` | Manifest detail on both surfaces |
+| POST | /api/v1/catalog/{name}/plan | `"apps"` | `planInstall` | Reviewed install plan on both surfaces |
+| POST | /api/v1/catalog/{name}/install | `"apps"` | `installPackage` | Approved installation on both surfaces |
+| POST | /api/v1/catalog/{name}/configure | `"apps"` | `configurePackage` | Configuration operation on both surfaces |
 | GET | / | n/a | `app-root` | The UI itself; the CLI is the other interface. Catch-all also answers HEAD; mux method patterns cannot express both without conflicting, so both rows stand for one Handle |
 | HEAD | / | n/a | `app-root` | Same catch-all as GET / |

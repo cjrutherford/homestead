@@ -823,7 +823,11 @@ wildcard names inside validity windows. Dashboard install (S167) serves catalog
 list, detail, plan, install, and configure routes with server-side
 host facts and operation IDs onto existing streams, plus a catalog
 page with review-then-install and configuration forms; CLI rows wait
-for S168. Jellyfin exposure (S166), also in
+for S168. CLI install (S168) completes the equivalent flow through
+`homesteadctl apps`: list, reviewed plan, approved install with
+optional follow, and service configuration by flags over shared API
+client methods, with file-driven bodies matching the dashboard
+shape. Jellyfin exposure (S166), also in
 `internal/jellyfin`, selects and enforces route posture with
 ceilings holding unless matching live overrides name the widening,
 private names never going public, and assessment plus

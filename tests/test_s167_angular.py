@@ -45,8 +45,7 @@ class TestAngularInstallContract(unittest.TestCase):
         parity = read("docs/PARITY.md")
         for symbol in ("/api/v1/catalog", "catalogPackages",
                        "catalogPackage", "planInstall",
-                       "installPackage", "configurePackage",
-                       "CLI install arrives in S168"):
+                       "installPackage", "configurePackage"):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, parity)
 
