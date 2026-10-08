@@ -91,7 +91,7 @@ func TestLoadRejects(t *testing.T) {
 		{"bad yaml", "bad.yaml", ":\tbad", "parse"},
 		{"unknown field", "jellyfin.yaml", loaderFixture + "typo: 1\n", "field typo"},
 		{"name drift", "other.yaml", loaderFixture, "names"},
-		{"invalid manifest", "jellyfin.yaml", "name: jellyfin\n", "semantic"},
+		{"invalid manifest", "jellyfin.yaml", "name: jellyfin\n", "numeric dotted"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

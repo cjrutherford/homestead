@@ -49,7 +49,7 @@ func TestManifestInvalid(t *testing.T) {
 		want   string
 	}{
 		{"bad name", func(m *Manifest) { m.Name = "Bad!" }, "package must match"},
-		{"bad version", func(m *Manifest) { m.Version = "10" }, "semantic"},
+		{"bad version", func(m *Manifest) { m.Version = "10" }, "numeric dotted"},
 		{"no title", func(m *Manifest) { m.Title = "" }, "title must be"},
 		{"long blurb", func(m *Manifest) { m.Blurb = strings.Repeat("x", 201) }, "blurb must be"},
 		{"no services", func(m *Manifest) { m.Services = nil }, "at least one service"},

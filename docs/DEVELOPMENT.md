@@ -794,7 +794,12 @@ configuration left to later slices. Network recommendations
 (S154), also in `internal/catalog`, materialize per-endpoint route
 defaults from metadata with service linkage, exposure, and
 hostname-agnostic TLS hints; owner inputs concretize them into
-validated routes, and planners look up ceilings by service. The install planner (S155),
+validated routes, and planners look up ceilings by service. The Jellyfin package (S160)
+in `catalog/` is the first curated application: pinned images with
+declared requirements, exposure, and backup paths, loading valid in
+CI with versions surfacing verbatim. Packages ship with the code
+they were reviewed against; runtime path resolution lands with the
+install surfaces. The install planner (S155),
 also in `internal/catalog`, produces offline change sets across
 requirements, routes, compose, DNS, TLS, firewall, and directories
 with lifecycle verbs: unmet requirements and unknown inputs refuse

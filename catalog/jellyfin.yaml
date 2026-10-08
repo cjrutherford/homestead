@@ -1,0 +1,35 @@
+# Jellyfin media server (S160): the first complete Homestead app package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+name: jellyfin
+version: 12.2
+title: Jellyfin
+blurb: Media server you control.
+description: Jellyfin streams your movies, shows, and music across the home
+  and beyond, with no accounts, no tracking, and no fees. Libraries live on
+  bulk storage; configuration stays small and backed up.
+category: media
+icon: mdi:plex
+services:
+- name: jellyfin
+  image: jellyfin/jellyfin:12.2
+  exposes: web
+requirements:
+  memorymb: 2048
+  cpucount: 2
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 1073741824
+  - class: bulk
+    minbytes: 21474836480
+  ports: [8096]
+exposure:
+  package: jellyfin
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Media libraries leave the LAN when widened; share deliberately.
+backuppaths:
+- config

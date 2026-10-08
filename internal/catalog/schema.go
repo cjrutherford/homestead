@@ -11,7 +11,7 @@ import (
 
 var (
 	validPackageName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-	validVersion     = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+	validVersion     = regexp.MustCompile(`^\d+\.\d+(\.\d+)?$`)
 	validServiceName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 )
 
@@ -143,7 +143,7 @@ func (m Manifest) Validate() error {
 		return fmt.Errorf("catalog: package must match [a-z][a-z0-9-]*")
 	}
 	if !validVersion.MatchString(m.Version) {
-		return fmt.Errorf("catalog: version must be semantic (x.y.z)")
+		return fmt.Errorf("catalog: version must be numeric dotted (x.y or x.y.z)")
 	}
 	if len(m.Title) == 0 || len(m.Title) > 64 {
 		return fmt.Errorf("catalog: title must be 1-64 characters")
