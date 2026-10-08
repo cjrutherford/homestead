@@ -790,7 +790,11 @@ older manifests valid while declared ones gate. Compose generation
 from manifests plus caller-positioned ports, volumes, and networks:
 deterministic services with provenance headers parsing back as
 Compose, invalid bindings refused before rendering, and
-configuration left to later slices. Router integration (S130) in `internal/router`
+configuration left to later slices. Network recommendations
+(S154), also in `internal/catalog`, materialize per-endpoint route
+defaults from metadata with service linkage, exposure, and
+hostname-agnostic TLS hints; owner inputs concretize them into
+validated routes, and planners look up ceilings by service. Router integration (S130) in `internal/router`
 generates exact NAT instructions: purposes mapping to port sets with
 unknown purposes failing, merged sets deduplicated and sorted,
 matched external/internal ports with validated appliance addresses,
