@@ -27,9 +27,16 @@ const (
 // a refused dial is firewall evidence, not service evidence.
 var procTCPPaths = []string{"/proc/net/tcp", "/proc/net/tcp6"}
 
-// listeningPorts reports locally bound LISTEN ports from the kernel
-// tables (hex state 0A). Unreadable tables fail closed to empty rather
-// than erroring: verification degrades to dial evidence, never stops.
+// ListeningPorts reports locally bound LISTEN ports from the kernel
+// tables, exported for install planning (S167): bound host ports
+// conflict with published app ports. Unreadable tables yield empty,
+// never errors.
+func ListeningPorts() map[uint16]bool {
+	return listeningPorts()
+}
+
+// listeningPorts reads the kernel tables; unreadable tables fail
+// closed to empty rather than erroring.
 func listeningPorts() map[uint16]bool {
 	listening := map[uint16]bool{}
 	for _, path := range procTCPPaths {

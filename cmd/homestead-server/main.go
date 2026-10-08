@@ -35,19 +35,20 @@ func main() {
 	configPath := flag.String("config", desired.DefaultPath(), "desired-state file (S014)")
 	dataDir := flag.String("data-dir", layout.LibDir.Path, "operational state directory (S012)")
 	socketPath := flag.String("socket", server.DefaultSocketPath, "root-only recovery socket (S021)")
+	catalogDir := flag.String("catalog-dir", "catalog", "curated package directory (S160; packaging installs it)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version.Version)
 		return
 	}
-	if err := run(*listen, *configPath, *dataDir, *socketPath); err != nil {
+	if err := run(*listen, *configPath, *dataDir, *socketPath, *catalogDir); err != nil {
 		fmt.Fprintln(os.Stderr, "homestead-server:", err)
 		os.Exit(1)
 	}
 }
 
-func run(listen, configPath, dataDir, socketPath string) error {
+func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	// The state directory is provisioned by S012 and never created here:
 	// a missing data dir fails loudly instead of scattering state.
 	st, err := store.Open(filepath.Join(dataDir, store.DBFileName))
@@ -74,6 +75,7 @@ func run(listen, configPath, dataDir, socketPath string) error {
 	srv.MountWizards(wizard.New(st))
 	srv.MountDoctor()
 	srv.MountOperations(operation.New(st))
+	srv.MountCatalog(st, catalogDir)
 	srv.MountDocker(docker.NewClient(""))
 	if port, err := daemonPort(listen); err != nil {
 		return err

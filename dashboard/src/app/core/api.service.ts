@@ -98,6 +98,65 @@ export interface PlanResult {
   errors?: FieldError[];
 }
 
+/** GET /api/v1/catalog — browsable package summaries. */
+export interface PackageSummary {
+  name: string;
+  version: string;
+  title: string;
+  blurb: string;
+  category: string;
+  icon: string;
+}
+
+/** GET /api/v1/catalog/:name — curated manifest detail. */
+export interface CatalogService {
+  name: string;
+  image: string;
+  exposes: string;
+}
+
+export interface CatalogManifest {
+  Name: string;
+  Version: string;
+  Title: string;
+  Blurb: string;
+  Description: string;
+  Category: string;
+  Services: CatalogService[];
+  Requirements: {
+    MemoryMB: number;
+    Storage: { Class: string; MinBytes: number }[];
+    Ports: number[];
+  };
+  Exposure: {
+    Package: string;
+    Endpoints: {
+      Endpoint: string;
+      Recommended: string;
+      AllowWider: boolean;
+      Warnings: string[];
+    }[];
+  };
+  BackupPaths: string[];
+}
+
+/** POST /api/v1/catalog/:name/plan — reviewed install change set. */
+export interface InstallPlan {
+  Package: string;
+  Requirements: { Passed: boolean };
+  Routes: { Host: string; Exposure: string }[];
+  Compose: { ComposeYAML: string };
+  DNS: { Name: string; Type: string; Value: string }[];
+  TLS: { Host: string; Issuer: string }[];
+  Firewall: { Service: { Name: string } }[];
+  Directories: { Mountpoint: string }[];
+  Actions: string[];
+}
+
+/** POST /api/v1/catalog/:name/install — started operation. */
+export interface OperationStarted {
+  id: number;
+}
 /** GET /api/v1/wizards/:id — saved wizard progress. */
 export interface WizardState {
   wizard: string;
@@ -159,6 +218,41 @@ export class ApiService {
 
   firewallApply(): Observable<{ applied: boolean }> {
     return this.http.post<{ applied: boolean }>('/api/v1/firewall/apply', {});
+  }
+
+  catalogPackages(): Observable<PackageSummary[]> {
+    return this.http.get<PackageSummary[]>('/api/v1/catalog');
+  }
+
+  catalogPackage(name: string): Observable<CatalogManifest> {
+    return this.http.get<CatalogManifest>(`/api/v1/catalog/${name}`);
+  }
+
+  planInstall(
+    name: string,
+    body: Record<string, unknown>,
+  ): Observable<InstallPlan> {
+    return this.http.post<InstallPlan>(`/api/v1/catalog/${name}/plan`, body);
+  }
+
+  installPackage(
+    name: string,
+    body: Record<string, unknown>,
+  ): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(
+      `/api/v1/catalog/${name}/install`,
+      body,
+    );
+  }
+
+  configurePackage(
+    name: string,
+    changes: Record<string, unknown>[],
+  ): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(
+      `/api/v1/catalog/${name}/configure`,
+      { changes },
+    );
   }
 
   operation(id: number): Observable<OperationState> {

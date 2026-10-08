@@ -819,7 +819,11 @@ unapplied with application owned by exposure flows. Jellyfin TLS (S165), also in
 `internal/jellyfin`, gates route strategies without fetching,
 mints internal serving certificates under fresh keys with pre-store
 verification, and proves material covering exact and single-label
-wildcard names inside validity windows. Jellyfin exposure (S166), also in
+wildcard names inside validity windows. Dashboard install (S167) serves catalog
+list, detail, plan, install, and configure routes with server-side
+host facts and operation IDs onto existing streams, plus a catalog
+page with review-then-install and configuration forms; CLI rows wait
+for S168. Jellyfin exposure (S166), also in
 `internal/jellyfin`, selects and enforces route posture with
 ceilings holding unless matching live overrides name the widening,
 private names never going public, and assessment plus
