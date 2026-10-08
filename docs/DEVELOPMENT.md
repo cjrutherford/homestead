@@ -827,7 +827,10 @@ for S168. CLI install (S168) completes the equivalent flow through
 `homesteadctl apps`: list, reviewed plan, approved install with
 optional follow, and service configuration by flags over shared API
 client methods, with file-driven bodies matching the dashboard
-shape. Jellyfin exposure (S166), also in
+shape. Parity acceptance (S169) proves CLI and dashboard converge:
+identical bodies plan byte-identical change sets at runtime, form
+keys match server keys exactly, and catalog parity rows carry both
+surfaces with no gaps. Jellyfin exposure (S166), also in
 `internal/jellyfin`, selects and enforces route posture with
 ceilings holding unless matching live overrides name the widening,
 private names never going public, and assessment plus

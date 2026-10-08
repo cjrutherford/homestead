@@ -126,6 +126,44 @@ func installTestBody() map[string]any {
 	}
 }
 
+func TestCatalogParityAcceptance(t *testing.T) {
+	srv, _ := catalogTestServer(t)
+	// Both surfaces post the same document shape: file-driven CLI
+	// bodies and dashboard form bodies share keys, so one acceptance
+	// body proves both paths.
+	bodies := []map[string]any{
+		installTestBody(),
+		{
+			// Dashboard-shaped: every key present, empties explicit.
+			// CLI files may omit empties; both must plan identically.
+			"domain":          "lan",
+			"hostnames":       map[string]string{},
+			"container_ports": map[string]int{"web": 8080},
+			"storage":         map[string]string{"application": "/tmp"},
+			"volumes": []map[string]any{
+				{"Service": "web", "Class": "application", "Subpath": "data", "Target": "/data"},
+			},
+			"networks":  []map[string]any{},
+			"zone":      "",
+			"public_ip": "",
+		},
+	}
+	var first []byte
+	for i, body := range bodies {
+		recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/demo/plan", body)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("body %d: code = %d (%s)", i, recorder.Code, recorder.Body.String())
+		}
+		if first == nil {
+			first = recorder.Body.Bytes()
+			continue
+		}
+		if recorder.Body.String() != string(first) {
+			t.Fatalf("plan %d differs:\n%s\n---\n%s", i, recorder.Body.String(), first)
+		}
+	}
+}
+
 func TestCatalogPlan(t *testing.T) {
 	srv, _ := catalogTestServer(t)
 	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/demo/plan", installTestBody())
