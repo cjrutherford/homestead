@@ -12,11 +12,11 @@ import (
 	"time"
 )
 
-// dockerHubAPI lists tags without authentication, which bounds this
+// DockerHubAPI lists tags without authentication, which bounds this
 // unit to Docker Hub images (jellyfin, nextcloud). ghcr images
 // (immich) need a token flow no slice owns yet — see DEFERRED — so
 // registry discovery skips them loudly rather than pretending.
-const dockerHubAPI = "https://hub.docker.com/v2/repositories"
+const DockerHubAPI = "https://hub.docker.com/v2/repositories"
 
 // httpTimeout bounds registry calls; discovery degrades to manifest
 // drift when registries sulk, never hangs operations on them.

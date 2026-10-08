@@ -186,6 +186,48 @@ export class Catalog implements OnInit {
     ]);
   }
 
+  // Template bindings cannot carry arrow functions, so row edits go
+  // through these patch methods with plain object literals.
+  setContainerPort(service: string, value: string): void {
+    this.containerPorts.update((ports) => ({ ...ports, [service]: value }));
+  }
+
+  setMountpoint(className: string, value: string): void {
+    this.mountpoints.update((mounts) => ({ ...mounts, [className]: value }));
+  }
+
+  patchVolume(index: number, patch: Partial<VolumeRow>): void {
+    this.volumes.update((rows) =>
+      rows.map((entry, position) =>
+        position === index ? { ...entry, ...patch } : entry,
+      ),
+    );
+  }
+
+  patchNetwork(index: number, patch: Partial<NetworkRow>): void {
+    this.networks.update((rows) =>
+      rows.map((entry, position) =>
+        position === index ? { ...entry, ...patch } : entry,
+      ),
+    );
+  }
+
+  patchConfigRow(index: number, patch: Partial<ConfigRow>): void {
+    this.configRows.update((rows) =>
+      rows.map((entry, position) =>
+        position === index ? { ...entry, ...patch } : entry,
+      ),
+    );
+  }
+
+  patchUnsetRow(index: number, patch: Partial<ConfigRow>): void {
+    this.unsetRows.update((rows) =>
+      rows.map((entry, position) =>
+        position === index ? { ...entry, ...patch } : entry,
+      ),
+    );
+  }
+
   addNetworkRow(): void {
     this.networks.update((rows) => [...rows, { name: '', external: false }]);
   }

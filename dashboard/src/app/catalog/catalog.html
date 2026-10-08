@@ -51,7 +51,7 @@
         <input
           [name]="'port-' + service.name"
           [value]="containerPorts()[service.name] ?? ''"
-          (input)="containerPorts.update((ports) => ({ ...ports, [service.name]: $any($event.target).value }))"
+          (input)="setContainerPort(service.name, $any($event.target).value)"
         />
       </label>
     }
@@ -61,7 +61,7 @@
         <input
           [name]="'mount-' + need.Class"
           [value]="mountpoints()[need.Class] ?? ''"
-          (input)="mountpoints.update((mounts) => ({ ...mounts, [need.Class]: $any($event.target).value }))"
+          (input)="setMountpoint(need.Class, $any($event.target).value)"
         />
       </label>
     }
@@ -72,22 +72,22 @@
           <input
             aria-label="Service"
             [value]="row.service"
-            (input)="volumes.update((rows) => rows.map((entry, position) => position === $index ? { ...entry, service: $any($event.target).value } : entry))"
+            (input)="patchVolume($index, { service: $any($event.target).value })"
           />
           <input
             aria-label="Class"
             [value]="row.class"
-            (input)="volumes.update((rows) => rows.map((entry, position) => position === $index ? { ...entry, class: $any($event.target).value } : entry))"
+            (input)="patchVolume($index, { class: $any($event.target).value })"
           />
           <input
             aria-label="Subpath"
             [value]="row.subpath"
-            (input)="volumes.update((rows) => rows.map((entry, position) => position === $index ? { ...entry, subpath: $any($event.target).value } : entry))"
+            (input)="patchVolume($index, { subpath: $any($event.target).value })"
           />
           <input
             aria-label="Target"
             [value]="row.target"
-            (input)="volumes.update((rows) => rows.map((entry, position) => position === $index ? { ...entry, target: $any($event.target).value } : entry))"
+            (input)="patchVolume($index, { target: $any($event.target).value })"
           />
         </li>
       }
@@ -100,14 +100,14 @@
           <input
             aria-label="Network"
             [value]="row.name"
-            (input)="networks.update((rows) => rows.map((entry, position) => position === $index ? { ...entry, name: $any($event.target).value } : entry))"
+            (input)="patchNetwork($index, { name: $any($event.target).value })"
           />
           <label>
             External
             <input
               type="checkbox"
               [checked]="row.external"
-              (change)="networks.update((rows) => rows.map((entry, position) => position === $index ? { ...entry, external: $any($event.target).checked } : entry))"
+              (change)="patchNetwork($index, { external: $any($event.target).checked })"
             />
           </label>
         </li>
@@ -163,17 +163,17 @@
           <input
             aria-label="Service"
             [value]="row.service"
-            (input)="configRows.update((rows) => rows.map((entry, position) => position === $index ? { ...entry, service: $any($event.target).value } : entry))"
+            (input)="patchConfigRow($index, { service: $any($event.target).value })"
           />
           <input
             aria-label="Key"
             [value]="row.key"
-            (input)="configRows.update((rows) => rows.map((entry, position) => position === $index ? { ...entry, key: $any($event.target).value } : entry))"
+            (input)="patchConfigRow($index, { key: $any($event.target).value })"
           />
           <input
             aria-label="Value"
             [value]="row.value"
-            (input)="configRows.update((rows) => rows.map((entry, position) => position === $index ? { ...entry, value: $any($event.target).value } : entry))"
+            (input)="patchConfigRow($index, { value: $any($event.target).value })"
           />
         </li>
       }
@@ -186,12 +186,12 @@
           <input
             aria-label="Service"
             [value]="row.service"
-            (input)="unsetRows.update((rows) => rows.map((entry, position) => position === $index ? { ...entry, service: $any($event.target).value } : entry))"
+            (input)="patchUnsetRow($index, { service: $any($event.target).value })"
           />
           <input
             aria-label="Key"
             [value]="row.key"
-            (input)="unsetRows.update((rows) => rows.map((entry, position) => position === $index ? { ...entry, key: $any($event.target).value } : entry))"
+            (input)="patchUnsetRow($index, { key: $any($event.target).value })"
           />
         </li>
       }

@@ -62,3 +62,7 @@
 - ghcr registry checks: S190 discovers Docker Hub tags only; ghcr
   listings need a token flow before Immich updates discover
   upstream.
+- CLI updates coverage: S193 serves review and apply on the API
+  and dashboard only; CLI list/plan/apply commands over
+  the same routes belong with a later updates CLI slice (mirrors
+  the S167/S168 catalog split).

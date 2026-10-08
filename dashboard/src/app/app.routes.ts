@@ -5,6 +5,7 @@ import { Login } from './login/login';
 import { Config } from './config/config';
 import { Firewall } from './firewall/firewall';
 import { Catalog } from './catalog/catalog';
+import { Updates } from './updates/updates';
 import { Operations } from './operations/operations';
 import { OperationDetail } from './operations/operation-detail';
 import { NotFound } from './not-found/not-found';
@@ -17,6 +18,7 @@ export const routes: Routes = [
   { path: 'config', component: Config },
   { path: 'firewall', component: Firewall },
   { path: 'catalog', component: Catalog },
+  { path: 'updates', component: Updates },
   { path: 'operations', component: Operations },
   { path: 'operations/:id', component: OperationDetail },
   // Later slices register their routes here, before the wildcard.

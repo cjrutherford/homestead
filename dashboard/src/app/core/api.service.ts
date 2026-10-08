@@ -156,6 +156,32 @@ export interface InstallPlan {
 /** POST /api/v1/catalog/:name/install — started operation. */
 export interface OperationStarted {
   id: number;
+  detail?: string;
+}
+
+/** GET /api/v1/updates — per-package review rows. */
+export interface ServiceUpdate {
+  Service: string;
+  Current: string;
+  Target: string;
+  Source: string;
+}
+
+/** GET /api/v1/updates — reviewable change set for one package. */
+export interface UpdatePlan {
+  Package: string;
+  Services: ServiceUpdate[];
+  Backup: boolean;
+  BackupWhy: string;
+  Affected: string[];
+  Warnings: string[];
+}
+
+/** GET /api/v1/updates — one row of the review list. */
+export interface PackageUpdate {
+  package: string;
+  installed: boolean;
+  plan: UpdatePlan;
 }
 /** GET /api/v1/wizards/:id — saved wizard progress. */
 export interface WizardState {
@@ -252,6 +278,20 @@ export class ApiService {
     return this.http.post<OperationStarted>(
       `/api/v1/catalog/${name}/configure`,
       { changes },
+    );
+  }
+
+  updates(): Observable<PackageUpdate[]> {
+    return this.http.get<PackageUpdate[]>('/api/v1/updates');
+  }
+
+  applyUpdate(
+    name: string,
+    body: Record<string, unknown>,
+  ): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(
+      `/api/v1/updates/${name}/apply`,
+      body,
     );
   }
 

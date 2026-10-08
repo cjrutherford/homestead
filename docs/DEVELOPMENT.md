@@ -829,7 +829,20 @@ versions attached. Safe updates (S192), also in
 `internal/update`, run backup hooks plus pull, pin rewrite, up
 with running-state verification, and rollback on verify failure
 with both outcomes reported; undescribed plans refuse before
-anything runs. The backup wizard (S184), also in
+anything runs. The update review API (S193), in
+`internal/server`, serves per-package drift plans with installed
+marking plus approved application: backup-gated plans refuse
+without backup requested, current packages report no-op instead of
+empty operations, and long executions return operation IDs onto
+existing streams with database passwords flowing through once and
+never stored. The updates dashboard page reviews moves, warnings,
+and backup reasons with opt-in backup plus one-shot database
+passwords, disables guarded apply until backup is opted in, and
+links started updates to operation detail; CLI rows wait for a
+later updates CLI slice. S193 also repaired catalog template
+bindings to parser-legal forms: Angular templates reject arrow
+functions and computed keys, so row edits go through component
+patch methods, which unblocked the whole dashboard suite. The backup wizard (S184), also in
 `internal/backup`, guides package plus cadence over the generic
 wizard store with plans previewing without writing and schedules
 persisting under acting owners. It owns no HTTP surface. Restore

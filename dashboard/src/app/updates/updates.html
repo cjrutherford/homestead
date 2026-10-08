@@ -1,0 +1,81 @@
+<section aria-label="Application updates">
+  <h2>Updates</h2>
+
+  @if (error()) {
+    <p role="alert" class="error">{{ error() }}</p>
+  }
+
+  @if (notice()) {
+    <p role="status">{{ notice() }}</p>
+  }
+
+  @if (operationId(); as id) {
+    <p>
+      Update started.
+      <a [routerLink]="['/operations', id]">Follow operation {{ id }}</a>
+    </p>
+  }
+
+  @if (busy() && rows().length === 0) {
+    <p>Loading…</p>
+  } @else {
+    <button type="button" (click)="refresh()" [disabled]="busy()">
+      Refresh plans
+    </button>
+    <ul>
+      @for (row of rows(); track row.package) {
+        <li>
+          <h3>{{ row.package }}</h3>
+          @if (!row.installed) {
+            <p>Not installed; nothing to update.</p>
+          } @else if ((row.plan.Services ?? []).length === 0) {
+            <p>Already current.</p>
+          } @else {
+            <ul>
+              @for (move of row.plan.Services; track move.Service) {
+                <li>
+                  {{ move.Service }}: {{ move.Current }} → {{ move.Target }}
+                  ({{ move.Source }})
+                </li>
+              }
+            </ul>
+            @for (warning of (row.plan.Warnings ?? []); track warning) {
+              <p class="warning">{{ warning }}</p>
+            }
+            @if (row.plan.Backup) {
+              <p>Backup required: {{ row.plan.BackupWhy }}</p>
+            }
+            <label>
+              <input
+                type="checkbox"
+                [name]="'backup-' + row.package"
+                [checked]="withBackup()[row.package] ?? false"
+                (change)="setBackup(row.package, $any($event.target).checked)"
+              />
+              Back up before updating
+            </label>
+            <label>
+              Database password (sent once, never stored)
+              <input
+                type="password"
+                autocomplete="off"
+                [name]="'db-password-' + row.package"
+                [value]="dbPasswords()[row.package] ?? ''"
+                (input)="setDbPassword(row.package, $any($event.target).value)"
+              />
+            </label>
+            <button
+              type="button"
+              (click)="apply(row.package)"
+              [disabled]="busy() || (row.plan.Backup && !(withBackup()[row.package] ?? false))"
+            >
+              Apply update
+            </button>
+          }
+        </li>
+      } @empty {
+        <li>No packages curated yet.</li>
+      }
+    </ul>
+  }
+</section>

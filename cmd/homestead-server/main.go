@@ -76,7 +76,9 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	srv.MountDoctor()
 	srv.MountOperations(operation.New(st))
 	srv.MountCatalog(st, catalogDir)
-	srv.MountDocker(docker.NewClient(""))
+	dockerClient := docker.NewClient("")
+	srv.MountDocker(dockerClient)
+	srv.MountUpdates(st, catalogDir, dockerClient)
 	if port, err := daemonPort(listen); err != nil {
 		return err
 	} else {
