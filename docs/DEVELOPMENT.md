@@ -817,7 +817,11 @@ credentials kept out of declarations. Local backups (S181) in
 `internal/backup` resolve backup-class destinations with live
 re-checks, copy trees preserving modes with symlinks refused,
 manifest runs last with re-walked counts, and runner-backed
-execution fails fast. The backup wizard (S184), also in
+execution fails fast. Image discovery (S190) in `internal/update`
+compares manifest pins against running images and filters Docker
+Hub listings to newer same-variant versions with numeric ordering;
+outages error instead of reading as current, and non-Hub images
+refuse loudly. The backup wizard (S184), also in
 `internal/backup`, guides package plus cadence over the generic
 wizard store with plans previewing without writing and schedules
 persisting under acting owners. It owns no HTTP surface. Restore

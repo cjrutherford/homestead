@@ -59,3 +59,6 @@
 - Backup job triggering: S183 persists schedules and runs retained
   jobs, but no wall-clock trigger (systemd timers or daemon ticker)
   fires them yet.
+- ghcr registry checks: S190 discovers Docker Hub tags only; ghcr
+  listings need a token flow before Immich updates discover
+  upstream.
