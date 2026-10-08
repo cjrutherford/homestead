@@ -61,12 +61,19 @@ func (n StorageNeed) Validate() error {
 }
 
 // Requirements is what an install needs from its host: memory in
-// megabytes, per-class storage floors, and host ports the app binds
-// (for conflict checks at plan time, never auto-opened).
+// megabytes, per-class storage floors, host ports the app binds (for
+// conflict checks at plan time, never auto-opened), and the optional
+// architecture, CPU, and GPU floors the requirements engine (S152)
+// evaluates. Optional floors stay zero-valued when undeclared —
+// existing manifests keep validating — with empty architectures
+// meaning any supported platform.
 type Requirements struct {
-	MemoryMB uint64
-	Storage  []StorageNeed
-	Ports    []int
+	MemoryMB      uint64
+	Storage       []StorageNeed
+	Ports         []int
+	Architectures []string
+	CPUCount      int
+	NeedsGPU      bool
 }
 
 // Validate checks requirements shape: nonzero memory, valid unique
@@ -94,6 +101,19 @@ func (r Requirements) Validate() error {
 			return fmt.Errorf("catalog: duplicate port %d", port)
 		}
 		seenPorts[port] = true
+	}
+	seenArch := map[string]bool{}
+	for _, arch := range r.Architectures {
+		if arch != "amd64" && arch != "arm64" {
+			return fmt.Errorf("catalog: architecture must be amd64 or arm64")
+		}
+		if seenArch[arch] {
+			return fmt.Errorf("catalog: duplicate architecture %q", arch)
+		}
+		seenArch[arch] = true
+	}
+	if r.CPUCount < 0 {
+		return fmt.Errorf("catalog: CPU count must not be negative")
 	}
 	return nil
 }

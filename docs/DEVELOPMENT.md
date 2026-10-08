@@ -781,7 +781,11 @@ manifest name, and contained relative backup paths. The catalog loader (S151),
 also in `internal/catalog`, reads local curated directories with
 one manifest per package file, filenames bound to manifest names,
 strict fields failing typos loudly, every entry validated, and
-local files only with versions surfacing verbatim. Router integration (S130) in `internal/router`
+local files only with versions surfacing verbatim. Requirements
+(S152), also in `internal/catalog`, evaluate CPU, RAM, arch, GPU,
+storage, and network prerequisites against explicit host facts with
+both sides compared and missing data failing: optional floors keep
+older manifests valid while declared ones gate. Router integration (S130) in `internal/router`
 generates exact NAT instructions: purposes mapping to port sets with
 unknown purposes failing, merged sets deduplicated and sorted,
 matched external/internal ports with validated appliance addresses,
