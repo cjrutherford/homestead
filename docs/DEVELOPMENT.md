@@ -820,7 +820,12 @@ manifest runs last with re-walked counts, and runner-backed
 execution fails fast. The backup wizard (S184), also in
 `internal/backup`, guides package plus cadence over the generic
 wizard store with plans previewing without writing and schedules
-persisting under acting owners. It owns no HTTP surface. Database exports (S182), also in
+persisting under acting owners. It owns no HTTP surface. Restore
+planning (S185), also in `internal/backup`, inventories runs
+newest-first with foreign and partial runs staying out, defaults
+entries to provenance mounts with missing provenance requiring
+explicit targets, and marks existing targets destructive with
+named warnings including quiescence for databases. Database exports (S182), also in
 `internal/backup`, run application-aware: pre hooks, engine export,
 post hooks even on failure with both reported; SQLite snapshots
 online with busy absorption, Postgres dumps through container

@@ -45,11 +45,14 @@ const timestampLayout = "20060102T150405Z"
 
 // Manifest records one backup run for restore planners (S185): what,
 // from where, and when. Written last, so its presence marks completion.
+// Sources maps each entry to its origin mountpoint, so restores can
+// default targets to original locations without guessing.
 type Manifest struct {
-	Package string   `json:"package"`
-	Created string   `json:"created_at"`
-	Entries []string `json:"entries"`
-	Files   int      `json:"files"`
+	Package string            `json:"package"`
+	Created string            `json:"created_at"`
+	Entries []string          `json:"entries"`
+	Files   int               `json:"files"`
+	Sources map[string]string `json:"sources"`
 }
 
 // ResolveDestination finds the backup root: the backup-class
@@ -237,9 +240,10 @@ func copySource(root string, source Source) error {
 // what was planned.
 func writeManifest(request Request, stamp string) error {
 	root := filepath.Join(request.Destination, request.Package, stamp)
-	manifest := Manifest{Package: request.Package, Created: stamp}
+	manifest := Manifest{Package: request.Package, Created: stamp, Sources: map[string]string{}}
 	for _, source := range request.Sources {
 		manifest.Entries = append(manifest.Entries, source.Path)
+		manifest.Sources[source.Path] = source.Mountpoint
 		count := 0
 		_ = filepath.WalkDir(filepath.Join(root, source.Path), func(path string, entry fs.DirEntry, err error) error {
 			if err == nil && !entry.IsDir() {

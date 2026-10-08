@@ -318,9 +318,10 @@ func prune(job Job, current string) error {
 // database export when present, with counts re-walked from disk.
 func writeJobManifest(job Job, stamp string) error {
 	root := filepath.Join(job.DestRoot, job.Package, stamp)
-	manifest := Manifest{Package: job.Package, Created: stamp}
+	manifest := Manifest{Package: job.Package, Created: stamp, Sources: map[string]string{}}
 	for _, source := range job.Sources {
 		manifest.Entries = append(manifest.Entries, source.Path)
+		manifest.Sources[source.Path] = source.Mountpoint
 	}
 	if job.Manifest.Database != nil {
 		name := job.Manifest.Database.Database + ".sql"
