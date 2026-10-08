@@ -811,7 +811,11 @@ additions deliberately absent pending host video GIDs. The Jellyfin
 route (S163), also in `internal/jellyfin`, builds the media route
 from catalog metadata with recommended exposure, internal TLS, and
 the public-info health probe, rendering through the shared
-generator with widening left to ceremony. The install planner (S155),
+generator with widening left to ceremony. Jellyfin DNS (S164),
+also in `internal/jellyfin`, answers the media hostname locally
+through the provider adapter with resolution verified to the bound
+answer, while split-horizon public records plan validated but
+unapplied with application owned by exposure flows. The install planner (S155),
 also in `internal/catalog`, produces offline change sets across
 requirements, routes, compose, DNS, TLS, firewall, and directories
 with lifecycle verbs: unmet requirements and unknown inputs refuse
