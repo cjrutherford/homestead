@@ -777,7 +777,11 @@ pure against facts. Catalog manifests (S150) in `internal/catalog`
 define first-party applications: pinned non-latest images with
 services linked to declared endpoints, semantic versions, bounded UX
 copy, memory/storage/port requirements, exposure bound to the
-manifest name, and contained relative backup paths. Router integration (S130) in `internal/router`
+manifest name, and contained relative backup paths. The catalog loader (S151),
+also in `internal/catalog`, reads local curated directories with
+one manifest per package file, filenames bound to manifest names,
+strict fields failing typos loudly, every entry validated, and
+local files only with versions surfacing verbatim. Router integration (S130) in `internal/router`
 generates exact NAT instructions: purposes mapping to port sets with
 unknown purposes failing, merged sets deduplicated and sorted,
 matched external/internal ports with validated appliance addresses,
