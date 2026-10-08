@@ -807,7 +807,11 @@ installer volumes plus provision-only-config outputs. Hardware
 acceleration (S162), also in `internal/jellyfin`, maps discovered
 GPUs to transcode paths: discrete NVIDIA, then Intel Quick Sync,
 then AMD VAAPI, with half stacks falling to software and group
-additions deliberately absent pending host video GIDs. The install planner (S155),
+additions deliberately absent pending host video GIDs. The Jellyfin
+route (S163), also in `internal/jellyfin`, builds the media route
+from catalog metadata with recommended exposure, internal TLS, and
+the public-info health probe, rendering through the shared
+generator with widening left to ceremony. The install planner (S155),
 also in `internal/catalog`, produces offline change sets across
 requirements, routes, compose, DNS, TLS, firewall, and directories
 with lifecycle verbs: unmet requirements and unknown inputs refuse
