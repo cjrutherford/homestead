@@ -825,7 +825,11 @@ planning (S185), also in `internal/backup`, inventories runs
 newest-first with foreign and partial runs staying out, defaults
 entries to provenance mounts with missing provenance requiring
 explicit targets, and marks existing targets destructive with
-named warnings including quiescence for databases. Database exports (S182), also in
+named warnings including
+quiescence for databases. Restore execution (S186), also in
+`internal/backup`, copies approved plans with mirror semantics
+plus closing verification comparing file sets and sizes, failing
+fast with offenders named. Database exports (S182), also in
 `internal/backup`, run application-aware: pre hooks, engine export,
 post hooks even on failure with both reported; SQLite snapshots
 online with busy absorption, Postgres dumps through container
