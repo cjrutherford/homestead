@@ -64,3 +64,30 @@ func TestCuratedJellyfin(t *testing.T) {
 		t.Fatalf("report = %+v", report)
 	}
 }
+
+func TestCuratedNextcloud(t *testing.T) {
+	catalog := repoCatalog(t)
+	manifest, err := catalog.Get("nextcloud")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if manifest.Version != "35.0.1" {
+		t.Fatalf("version = %q", manifest.Version)
+	}
+	if len(manifest.Services) != 1 || manifest.Services[0].Image != "nextcloud:35.0.1-apache" {
+		t.Fatalf("services = %+v", manifest.Services)
+	}
+	endpoint, ok := manifest.Exposure.Find("web")
+	if !ok {
+		t.Fatal("no web endpoint")
+	}
+	if string(endpoint.Recommended) != "local" || !endpoint.AllowWider {
+		t.Fatalf("endpoint = %+v", endpoint)
+	}
+	if names := catalog.Names(); len(names) != 2 || names[0] != "jellyfin" || names[1] != "nextcloud" {
+		t.Fatalf("names = %v", names)
+	}
+}

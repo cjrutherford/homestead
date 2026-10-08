@@ -1,0 +1,38 @@
+# Nextcloud files and collaboration (S170): the second curated app package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# SQLite carries the database by default (single-user scale); larger
+# deployments graduate to external databases in later slices.
+name: nextcloud
+version: 35.0.1
+title: Nextcloud
+blurb: Files, calendar, and contacts you host.
+description: Nextcloud keeps files in sync across devices with calendar
+  and contacts alongside, all on the home appliance. User files live on
+  bulk storage; configuration and the embedded database stay small and
+  backed up.
+category: files
+icon: mdi:cloud
+services:
+- name: nextcloud
+  image: nextcloud:35.0.1-apache
+  exposes: web
+requirements:
+  memorymb: 1024
+  cpucount: 2
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 2147483648
+  - class: bulk
+    minbytes: 53687091200
+  ports: [80]
+exposure:
+  package: nextcloud
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Files leave the LAN when widened; share deliberately.
+backuppaths:
+- config
