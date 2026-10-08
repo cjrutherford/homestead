@@ -817,7 +817,10 @@ credentials kept out of declarations. Local backups (S181) in
 `internal/backup` resolve backup-class destinations with live
 re-checks, copy trees preserving modes with symlinks refused,
 manifest runs last with re-walked counts, and runner-backed
-execution fails fast. Database exports (S182), also in
+execution fails fast. The backup wizard (S184), also in
+`internal/backup`, guides package plus cadence over the generic
+wizard store with plans previewing without writing and schedules
+persisting under acting owners. It owns no HTTP surface. Database exports (S182), also in
 `internal/backup`, run application-aware: pre hooks, engine export,
 post hooks even on failure with both reported; SQLite snapshots
 online with busy absorption, Postgres dumps through container

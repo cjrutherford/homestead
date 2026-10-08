@@ -37,8 +37,20 @@ type Schedule struct {
 	UpdatedAt       time.Time
 }
 
-// Validate checks schedule shape.
+// Validate checks schedule shape plus actor presence.
 func (s Schedule) Validate() error {
+	if err := s.validateShape(); err != nil {
+		return err
+	}
+	if s.Actor == "" {
+		return fmt.Errorf("backup: actor must not be empty")
+	}
+	return nil
+}
+
+// validateShape checks everything but the actor, for flows (wizard
+// review) where ownership attaches at apply time.
+func (s Schedule) validateShape() error {
 	if s.Package == "" {
 		return fmt.Errorf("backup: schedule package must not be empty")
 	}
@@ -47,9 +59,6 @@ func (s Schedule) Validate() error {
 	}
 	if s.Retain < 0 {
 		return fmt.Errorf("backup: retention must not be negative")
-	}
-	if s.Actor == "" {
-		return fmt.Errorf("backup: actor must not be empty")
 	}
 	return nil
 }
