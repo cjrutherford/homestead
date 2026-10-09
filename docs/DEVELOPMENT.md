@@ -299,6 +299,17 @@ avahi-browse -r _homestead._tcp   # or open http://homestead.local:8080
   persisted authority or served endpoint exists yet — the leg
   proves the mechanics, and provisioning belongs to later slices.
 
+## Domain onboarding (S223)
+
+- `internal/onboard` connects the wizard-selected customer domain:
+  the S222 baseline must hold (failing legs named), the provider
+  must list the zone (ownership proof; manual attests by
+  construction), and the validated plan records as the single
+  connected domain (schema v16 `domain_onboarding`) under the
+  acting owner. Re-runs re-validate and replace; gated attempts,
+  failed proofs, and actorless calls record nothing. No HTTP
+  surface: bootstrap slices drive it from here.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing

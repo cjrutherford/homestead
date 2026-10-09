@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 15
+const CurrentVersion = 16
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -295,6 +295,24 @@ CREATE TABLE IF NOT EXISTS generated_fingerprints (
 		version: 15,
 		name:    "fingerprint content",
 		sql:     `ALTER TABLE generated_fingerprints ADD COLUMN content TEXT NOT NULL DEFAULT '';`,
+	},
+	{
+		// S223 connected domain: the single onboarded customer
+		// domain per appliance (single row by construction).
+		// Bootstrap slices after onboarding read it; the wizard
+		// selection stays the input, this table the decision.
+		version: 16,
+		name:    "domain onboarding",
+		sql: `
+CREATE TABLE IF NOT EXISTS domain_onboarding (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	provider TEXT NOT NULL,
+	zone TEXT NOT NULL,
+	base TEXT NOT NULL,
+	fqdn TEXT NOT NULL,
+	actor TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`,
 	},
 }
 

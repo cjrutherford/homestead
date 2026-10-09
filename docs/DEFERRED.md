@@ -107,3 +107,6 @@
 - Management TLS provisioning: S222 proves issue-and-verify
   mechanics only; persisting the internal authority and serving
   management TLS from the daemon or proxy belong to later slices.
+- Domain onboarding surface: S223 gates, proves, and records in
+  code only; API, CLI, and dashboard affordances for connecting
+  a domain belong to later slices.
