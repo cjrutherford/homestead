@@ -93,3 +93,11 @@
   through the API and dashboard; CLI affordances, wall-clock
   scanning, and running-container-versus-file comparison belong
   to later slices.
+- Docker Engine bootstrap: S220 installs the Homestead kernel
+  only; engine installation on clean machines (S071 owns the
+  operation) has no bootstrap wiring yet.
+- CLI binary installation: bootstrap and install scripts place
+  the daemon only; the command binary has no install path yet.
+- Remote bootstrap source: no canonical repository URL exists,
+  so bootstrap runs from a checkout; curl-pipe installation
+  waits on distribution work.

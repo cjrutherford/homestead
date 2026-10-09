@@ -16,9 +16,13 @@ lint:
 	go vet ./...
 
 lint-scripts:
+	bash -n scripts/bootstrap.sh
 	bash -n scripts/install-systemd.sh
 	bash -n scripts/uninstall-systemd.sh
 	bash -n scripts/provision-layout.sh
+
+bootstrap:
+	sudo ./scripts/bootstrap.sh
 
 install:
 	sudo ./scripts/install-systemd.sh

@@ -254,6 +254,21 @@ protocols upstream supports, Authentik itself unsupported.
   carries the boundary in the record — Homestead administrator
   login and socket recovery stay local, only app logins change.
 
+## Bootstrap (S220)
+
+```bash
+sudo ./scripts/bootstrap.sh   # clean Debian/Ubuntu checkout: deps, toolchain, install
+```
+
+- Root-gated and idempotent: refuses non-Debian/Ubuntu
+  distributions instead of guessing, requires systemd and apt,
+  installs only ca-certificates and curl from the OS, then takes
+  the Go toolchain version from `go.mod` (overridable via
+  `HOMESTEAD_GO_VERSION`) — checksum-verified official binaries,
+  never distribution packages — and finishes through
+  `scripts/install-systemd.sh`, which converges layout, binary,
+  unit, and service.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing
