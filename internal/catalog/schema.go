@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"homestead/internal/exposure"
+	"homestead/internal/identity"
 	"homestead/internal/storage"
 )
 
@@ -119,9 +120,76 @@ func (r Requirements) Validate() error {
 	return nil
 }
 
+// SSOClass declares how a package relates to single sign-on (S203):
+// whether the app can delegate login to an external identity
+// provider, and how strongly Homestead should nudge toward it.
+type SSOClass string
+
+const (
+	// SSOUnsupported marks apps with no SSO path (including the
+	// identity provider itself, which is the login — not a login
+	// consumer).
+	SSOUnsupported SSOClass = "unsupported"
+	// SSOOptional marks apps that accept SSO alongside local logins.
+	SSOOptional SSOClass = "optional"
+	// SSORecommended marks apps Homestead nudges toward SSO.
+	SSORecommended SSOClass = "recommended"
+	// SSORequired marks apps that only serve SSO logins.
+	SSORequired SSOClass = "required"
+)
+
+// Valid reports a known class. Empty means unset, which reads as
+// unsupported so manifests without SSO posture stay valid.
+func (c SSOClass) Valid() bool {
+	return c == "" || c == SSOUnsupported || c == SSOOptional || c == SSORecommended || c == SSORequired
+}
+
+// Effective resolves the working class: unset reads as unsupported.
+func (c SSOClass) Effective() SSOClass {
+	if c == "" {
+		return SSOUnsupported
+	}
+	return c
+}
+
+// SSODeclaration is one package's SSO posture: the class plus the
+// protocols it speaks, drawn from the identity provider capabilities
+// (S202) so declarations only name protocols providers can serve.
+type SSODeclaration struct {
+	Class     SSOClass
+	Protocols []identity.Capability
+}
+
+// Validate checks the declaration: a known class, known unique
+// protocols, and protocols present exactly when the class exceeds
+// unsupported — support without a protocol is unactionable, and
+// protocols on an unsupported app contradict the class.
+func (d SSODeclaration) Validate() error {
+	if !d.Class.Valid() {
+		return fmt.Errorf("catalog: SSO class %q must be unsupported, optional, recommended, or required", d.Class)
+	}
+	seen := map[identity.Capability]bool{}
+	for _, protocol := range d.Protocols {
+		if !protocol.Valid() {
+			return fmt.Errorf("catalog: SSO protocol %q unknown", protocol)
+		}
+		if seen[protocol] {
+			return fmt.Errorf("catalog: duplicate SSO protocol %q", protocol)
+		}
+		seen[protocol] = true
+	}
+	if d.Class.Effective() == SSOUnsupported && len(d.Protocols) > 0 {
+		return fmt.Errorf("catalog: unsupported SSO takes no protocols")
+	}
+	if d.Class.Effective() != SSOUnsupported && len(d.Protocols) == 0 {
+		return fmt.Errorf("catalog: %s SSO must name at least one protocol", d.Class)
+	}
+	return nil
+}
+
 // Manifest is one first-party application (ADR-014): identity with a
 // pinned semver, UX copy, services, requirements, exposure
-// declaration, backup paths, and optional database export plus
+// declaration, backup paths, SSO posture, and optional database export plus
 // consistency hooks (S180). The exposure package name must equal the
 // manifest name — one package, one declaration, no drift — and
 // backup paths stay relative so they resolve under assigned mounts.
@@ -139,6 +207,7 @@ type Manifest struct {
 	BackupPaths  []string
 	Database     *DatabaseBackup
 	Hooks        []BackupHook
+	SSO          SSODeclaration
 }
 
 // Validate checks the manifest end to end.
@@ -208,6 +277,9 @@ func (m Manifest) Validate() error {
 		if err := m.Database.Validate(services); err != nil {
 			return err
 		}
+	}
+	if err := m.SSO.Validate(); err != nil {
+		return err
 	}
 	for i := range m.Hooks {
 		if err := m.Hooks[i].Validate(services); err != nil {

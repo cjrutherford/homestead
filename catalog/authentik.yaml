@@ -43,6 +43,8 @@ exposure:
     - Identity logins leave the LAN when widened; share deliberately.
 backuppaths:
 - config
+sso:
+  class: unsupported
 database:
   service: postgresql
   kind: postgres

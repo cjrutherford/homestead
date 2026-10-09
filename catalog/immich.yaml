@@ -47,3 +47,6 @@ exposure:
     - Photo libraries leave the LAN when widened; share deliberately.
 backuppaths:
 - config
+sso:
+  class: optional
+  protocols: [oidc]

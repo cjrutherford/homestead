@@ -230,9 +230,15 @@ sudo homesteadctl admin recover --username owner --password-file ./new.pass
   protocol capabilities (OIDC, SAML, LDAP), credential fields without
   values (secrets live in the store and arrive at call time), one live
   `CheckConnection` call proving the endpoint answers before setup
-  flows trust it, and a registry refusing duplicates and unknown
-  lookups. Local administrator identity stays in `internal/auth`;
-  this package never authenticates anyone itself.
+flows trust it, and a registry refusing duplicates and unknown
+lookups. Local administrator identity stays in `internal/auth`;
+this package never authenticates anyone itself. SSO posture (S203),
+also in `internal/catalog`, lets manifests declare unsupported,
+optional, recommended, or required with protocols drawn from the
+identity capabilities: support without a protocol and protocols on
+unsupported apps both refuse, unset reads as unsupported, and the
+curated packages pin honest postures — clients optional with the
+protocols upstream supports, Authentik itself unsupported.
 
 ## Host discovery (S040+)
 
