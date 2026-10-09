@@ -101,3 +101,6 @@
 - Remote bootstrap source: no canonical repository URL exists,
   so bootstrap runs from a checkout; curl-pipe installation
   waits on distribution work.
+- mDNS coexistence and probing: S221 answers while the port is
+  free and warns otherwise; sharing 5353 with Avahi, name-conflict
+  probing, and IPv6 advertisements belong to later slices.

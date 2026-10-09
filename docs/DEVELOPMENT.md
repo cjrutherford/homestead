@@ -269,6 +269,22 @@ sudo ./scripts/bootstrap.sh   # clean Debian/Ubuntu checkout: deps, toolchain, i
   `scripts/install-systemd.sh`, which converges layout, binary,
   unit, and service.
 
+## First-run local discovery (S221)
+
+```bash
+avahi-browse -r _homestead._tcp   # or open http://homestead.local:8080
+```
+
+- `internal/mdns` answers mDNS on every multicast-capable LAN
+  interface: `homestead.local` A records plus a `_homestead._tcp`
+  advertisement with SRV port and TXT claim state and version, so
+  owners find unclaimed boxes with no DNS server, directory, or
+  cloud. IPv4 only; no probing — single-appliance scope puts one
+  Homestead per LAN by design.
+- The daemon starts discovery in the background with live claim
+  state and addresses; a taken port or missing interfaces only
+  warn on stderr, never fail the boot.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing

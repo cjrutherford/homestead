@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -20,9 +21,11 @@ import (
 	"homestead/internal/config"
 	"homestead/internal/dashboard"
 	"homestead/internal/desired"
+	"homestead/internal/discover"
 	"homestead/internal/docker"
 	"homestead/internal/firewall"
 	"homestead/internal/layout"
+	"homestead/internal/mdns"
 	"homestead/internal/operation"
 	"homestead/internal/server"
 	"homestead/internal/store"
@@ -96,6 +99,11 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	// First-run local discovery (S221): answer homestead.local plus
+	// the service advertisement on the LAN, with live claim state so
+	// owners spot unclaimed boxes. Discovery is convenience, never
+	// boot-critical: failures only warn.
+	startLocalDiscovery(ctx, claimSvc, listen)
 	// Both listeners share ctx and drain together. A socket failure is
 	// fatal: silent loss of the recovery channel is worse than no start.
 	unixErr := make(chan error, 1)
@@ -106,6 +114,43 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 		return err
 	}
 	return <-unixErr
+}
+
+// startLocalDiscovery serves mDNS answers in the background:
+// homestead.local A records plus the service advertisement carrying
+// live claim state and LAN addresses. A bad listen address or a
+// taken mDNS port only warns on stderr — discovery must never fail
+// the boot it ornaments.
+func startLocalDiscovery(ctx context.Context, claimSvc *claim.Service, listen string) {
+	port, err := daemonPort(listen)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "homestead-server: local discovery off:", err)
+		return
+	}
+	cfg := mdns.Config{
+		Hostname: "homestead",
+		Port:     port,
+		Version:  version.Version,
+		State: func() string {
+			state, err := claimSvc.CurrentState()
+			if err != nil {
+				return "unknown"
+			}
+			return state.String()
+		},
+		Addresses: func() []netip.Addr {
+			network, err := discover.DiscoverNetwork()
+			if err != nil {
+				return nil
+			}
+			return mdns.LANIPv4(network)
+		},
+	}
+	go func() {
+		if err := mdns.ListenAndServe(ctx, cfg); err != nil {
+			fmt.Fprintln(os.Stderr, "homestead-server: local discovery off:", err)
+		}
+	}()
 }
 
 // daemonPort extracts the serving port for firewall self-protection.
