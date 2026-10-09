@@ -1064,7 +1064,16 @@ installs and configures re-baseline fingerprints on write, removals
 clear them, and `Detect` names modified and removed files with
 stable ordering while foreign files never report and unreadable
 files fail instead of guessing. Resolution belongs to S213;
-detection only names.
+detection only names. Drift resolution (S213), also in
+`internal/catalog` over schema v15, offers the three choices:
+records carry managed content so review pairs both sides without
+regeneration, accept adopts current files as managed, and restore
+rewrites recorded bytes with generated modes then converges
+through a `catalog.restore` operation. `GET` and `POST
+/api/v1/catalog/{name}/drift` serve review plus accept/restore
+with no-drift no-ops instead of empty operations, and a dashboard
+Drift page reviews both sides with accept and restore buttons
+linking started restores to operation detail.
 
 ## Provisional decisions (revisit, do not work around silently)
 

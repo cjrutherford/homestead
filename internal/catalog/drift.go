@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"homestead/internal/operation"
 	"homestead/internal/store"
 )
 
@@ -35,12 +37,12 @@ type Drift struct {
 	Kind string
 }
 
-// Fingerprints hashes the managed files present under dir: path to
-// hex SHA-256. Absent files are skipped, not failed — overrides only
+// readManaged returns the managed files present under dir: path to
+// content. Absent files are skipped, not failed — overrides only
 // exist after configuration, and recording happens right after
 // writes, so presence is the writer's business. Read failures fail
 // loudly instead of hashing partial bytes.
-func Fingerprints(dir string) (map[string]string, error) {
+func readManaged(dir string) (map[string]string, error) {
 	out := map[string]string{}
 	for _, name := range ManagedFiles() {
 		raw, err := os.ReadFile(filepath.Join(dir, name))
@@ -48,9 +50,23 @@ func Fingerprints(dir string) (map[string]string, error) {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return nil, fmt.Errorf("catalog: fingerprint %s: %w", name, err)
+			return nil, fmt.Errorf("catalog: read %s: %w", name, err)
 		}
-		sum := sha256.Sum256(raw)
+		out[name] = string(raw)
+	}
+	return out, nil
+}
+
+// Fingerprints hashes the managed files present under dir: path to
+// hex SHA-256.
+func Fingerprints(dir string) (map[string]string, error) {
+	contents, err := readManaged(dir)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for name, content := range contents {
+		sum := sha256.Sum256([]byte(content))
 		out[name] = hex.EncodeToString(sum[:])
 	}
 	return out, nil
@@ -60,8 +76,10 @@ func Fingerprints(dir string) (map[string]string, error) {
 // stack, replacing prior rows: writes re-baseline, so only edits
 // after the last Homestead write read as drift. Stacks with no
 // managed files present record nothing and clear stale rows.
+// Content records alongside hashes (S213) so viewing and restoring
+// never need regeneration inputs Homestead does not keep.
 func RecordFingerprints(st *store.Store, stack, dir string) error {
-	hashes, err := Fingerprints(dir)
+	contents, err := readManaged(dir)
 	if err != nil {
 		return err
 	}
@@ -71,13 +89,14 @@ func RecordFingerprints(st *store.Store, stack, dir string) error {
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	for _, name := range ManagedFiles() {
-		hash, ok := hashes[name]
+		content, ok := contents[name]
 		if !ok {
 			continue
 		}
+		sum := sha256.Sum256([]byte(content))
 		if _, err := db.Exec(
-			`INSERT INTO generated_fingerprints (stack, path, sha256, updated_at) VALUES (?, ?, ?, ?)`,
-			stack, name, hash, now,
+			`INSERT INTO generated_fingerprints (stack, path, sha256, content, updated_at) VALUES (?, ?, ?, ?, ?)`,
+			stack, name, hex.EncodeToString(sum[:]), content, now,
 		); err != nil {
 			return fmt.Errorf("catalog: record fingerprint: %w", err)
 		}
@@ -142,4 +161,167 @@ func Detect(dir string, recorded map[string]string) ([]Drift, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out, nil
+}
+
+// StoredContents returns the recorded file contents for stack: path
+// to managed bytes. Rows recorded before content tracking (schema
+// v14) read empty until the next Homestead write re-baselines them.
+func StoredContents(st *store.Store, stack string) (map[string]string, error) {
+	rows, err := st.DB().Query(`SELECT path, content FROM generated_fingerprints WHERE stack = ?`, stack)
+	if err != nil {
+		return nil, fmt.Errorf("catalog: read contents: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var path, content string
+		if err := rows.Scan(&path, &content); err != nil {
+			return nil, fmt.Errorf("catalog: scan content: %w", err)
+		}
+		out[path] = content
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("catalog: read contents: %w", err)
+	}
+	return out, nil
+}
+
+// FileReview is one drifted file with both sides attached: the
+// recorded managed bytes and the current disk bytes (empty when the
+// file was removed). Surfaces render the diff; this package only
+// pairs the sides.
+type FileReview struct {
+	Path     string
+	Kind     string
+	Recorded string
+	Current  string
+}
+
+// Review pairs detection with contents: every drifted file with its
+// recorded and current bytes, sorted by path. Clean stacks review
+// empty — nothing to choose. Unreadable files fail instead of
+// reviewing half a picture.
+func Review(st *store.Store, stack, dir string) ([]FileReview, error) {
+	recordedHashes, err := StoredFingerprints(st, stack)
+	if err != nil {
+		return nil, err
+	}
+	recordedContents, err := StoredContents(st, stack)
+	if err != nil {
+		return nil, err
+	}
+	drifts, err := Detect(dir, recordedHashes)
+	if err != nil {
+		return nil, err
+	}
+	current, err := readManaged(dir)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FileReview, 0, len(drifts))
+	for _, drift := range drifts {
+		out = append(out, FileReview{
+			Path:     drift.Path,
+			Kind:     drift.Kind,
+			Recorded: recordedContents[drift.Path],
+			Current:  current[drift.Path],
+		})
+	}
+	return out, nil
+}
+
+// Accept adopts the current files as managed: re-baselines records
+// to disk and returns the adopted paths sorted. Experts keep their
+// edits; Homestead stops calling them drift.
+func Accept(st *store.Store, stack, dir string) ([]string, error) {
+	if err := RecordFingerprints(st, stack, dir); err != nil {
+		return nil, err
+	}
+	stored, err := StoredFingerprints(st, stack)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, name := range ManagedFiles() {
+		if _, ok := stored[name]; ok {
+			out = append(out, name)
+		}
+	}
+	return out, nil
+}
+
+// restorePerms keeps managed files on their generated modes:
+// world-readable base documents, owner-only overrides (S157).
+func restorePerms(name string) os.FileMode {
+	if name == OverrideFileName {
+		return 0o600
+	}
+	return 0o644
+}
+
+// Restore rewrites drifted files from recorded bytes and returns the
+// restored paths sorted. Files nobody drifted stay untouched;
+// stacks with nothing recorded restore nothing. Containers keep
+// running the old bytes until something ups — pair with the restore
+// operation to converge.
+func Restore(st *store.Store, stack, dir string) ([]string, error) {
+	recordedHashes, err := StoredFingerprints(st, stack)
+	if err != nil {
+		return nil, err
+	}
+	recordedContents, err := StoredContents(st, stack)
+	if err != nil {
+		return nil, err
+	}
+	drifts, err := Detect(dir, recordedHashes)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, drift := range drifts {
+		content, ok := recordedContents[drift.Path]
+		if !ok {
+			return nil, fmt.Errorf("catalog: no recorded content for %s", drift.Path)
+		}
+		if err := os.WriteFile(filepath.Join(dir, drift.Path), []byte(content), restorePerms(drift.Path)); err != nil {
+			return nil, fmt.Errorf("catalog: restore %s: %w", drift.Path, err)
+		}
+		out = append(out, drift.Path)
+	}
+	return out, nil
+}
+
+// RestoreDefinition plans drift restoration: rewrite recorded files,
+// then bring the stack up so containers converge on managed state —
+// one restore plus up, failing fast with the offender named. Empty
+// stack, directory, or project refuse before anything runs; a stack
+// with no drift restores nothing and still converges.
+func RestoreDefinition(st *store.Store, stack, dir, project string) (operation.Definition, error) {
+	if st == nil {
+		return operation.Definition{}, fmt.Errorf("catalog: restore needs a store")
+	}
+	if stack == "" {
+		return operation.Definition{}, fmt.Errorf("catalog: restore needs a stack")
+	}
+	if dir == "" {
+		return operation.Definition{}, fmt.Errorf("catalog: restore needs a directory")
+	}
+	if project == "" {
+		return operation.Definition{}, fmt.Errorf("catalog: restore needs a project")
+	}
+	def := operation.Definition{Type: "catalog.restore"}
+	def.Steps = append(def.Steps, operation.StepDef{
+		Name: "restore-files",
+		Run: func(ctx context.Context) error {
+			_, err := Restore(st, stack, dir)
+			return err
+		},
+	})
+	def.Steps = append(def.Steps, operation.StepDef{
+		Name: "up",
+		Run: func(ctx context.Context) error {
+			return composeUp(ctx, dir, project)
+		},
+	})
+	return def, nil
 }

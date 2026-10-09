@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 14
+const CurrentVersion = 15
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -286,6 +286,15 @@ CREATE TABLE IF NOT EXISTS generated_fingerprints (
 	updated_at TEXT NOT NULL,
 	PRIMARY KEY (stack, path)
 );`,
+	},
+	{
+		// S213 recorded content: viewing and restoring drift needs
+		// the managed bytes, not just their hashes. Earlier rows
+		// carry empty content until the next Homestead write
+		// re-baselines them.
+		version: 15,
+		name:    "fingerprint content",
+		sql:     `ALTER TABLE generated_fingerprints ADD COLUMN content TEXT NOT NULL DEFAULT '';`,
 	},
 }
 

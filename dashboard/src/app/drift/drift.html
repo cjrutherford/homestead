@@ -1,0 +1,66 @@
+<section aria-label="Configuration drift">
+  <h2>Drift</h2>
+  <p>
+    Generated files changed outside Homestead. Review both sides,
+    then adopt current files or restore managed state.
+  </p>
+
+  @if (error()) {
+    <p role="alert" class="error">{{ error() }}</p>
+  }
+
+  @if (notice()) {
+    <p role="status">{{ notice() }}</p>
+  }
+
+  @if (operationId(); as id) {
+    <p>
+      Restore started.
+      <a [routerLink]="['/operations', id]">Follow operation {{ id }}</a>
+    </p>
+  }
+
+  @if (busy() && packages().length === 0) {
+    <p>Loading…</p>
+  } @else {
+    <ul>
+      @for (pkg of packages(); track pkg.name) {
+        <li>
+          <button type="button" (click)="select(pkg.name)">
+            {{ pkg.title }} ({{ pkg.version }})
+          </button>
+        </li>
+      } @empty {
+        <li>No packages curated yet.</li>
+      }
+    </ul>
+  }
+
+  @if (selected(); as name) {
+    <h3>{{ name }}</h3>
+    <button type="button" (click)="refresh()" [disabled]="busy()">
+      Refresh review
+    </button>
+    @if (review().length === 0) {
+      <p>No drift: generated files match managed state.</p>
+    } @else {
+      <ul>
+        @for (file of review(); track file.path) {
+          <li>
+            <h4>{{ file.path }} ({{ file.kind }})</h4>
+            <h5>Managed</h5>
+            <pre>{{ file.recorded }}</pre>
+            <h5>Current</h5>
+            <pre>{{ file.current }}</pre>
+          </li>
+        }
+      </ul>
+      <button type="button" (click)="accept()" [disabled]="busy()">
+        Accept current files
+      </button>
+      <button type="button" (click)="restore()" [disabled]="busy()">
+        Restore managed state
+      </button>
+    }
+  }
+</section>

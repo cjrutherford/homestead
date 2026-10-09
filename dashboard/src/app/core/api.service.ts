@@ -194,6 +194,21 @@ export interface DockgeLink {
   findings: string[];
   installed: boolean;
 }
+/** GET /api/v1/catalog/:name/drift — one viewed file with both sides. */
+export interface FileDrift {
+  path: string;
+  kind: string;
+  recorded: string;
+  current: string;
+}
+
+/** POST /api/v1/catalog/:name/drift — accept or restore outcome. */
+export interface DriftResolution {
+  id?: number;
+  accepted?: string[];
+  detail?: string;
+}
+
 /** GET /api/v1/wizards/:id — saved wizard progress. */
 export interface WizardState {
   wizard: string;
@@ -310,6 +325,16 @@ export class ApiService {
     return this.http.get<DockgeLink>(
       `/api/v1/dockge?domain=${encodeURIComponent(domain)}`,
     );
+  }
+
+  driftReview(name: string): Observable<FileDrift[]> {
+    return this.http.get<FileDrift[]>(`/api/v1/catalog/${name}/drift`);
+  }
+
+  driftResolve(name: string, action: string): Observable<DriftResolution> {
+    return this.http.post<DriftResolution>(`/api/v1/catalog/${name}/drift`, {
+      action,
+    });
   }
 
   operation(id: number): Observable<OperationState> {

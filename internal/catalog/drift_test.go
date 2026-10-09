@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"homestead/internal/operation"
+	"homestead/internal/store"
 )
 
 func writeDriftFile(t *testing.T, dir, name, body string) {
@@ -276,5 +277,170 @@ func TestDefinitionsNeedStore(t *testing.T) {
 	dir := removeStack(t)
 	if _, err := RemoveDefinition(Removal{Package: "jellyfin"}, dir, nil); err == nil {
 		t.Fatal("remove without store accepted")
+	}
+}
+
+// driftedStack records a two-file stack, then edits one file and
+// deletes the other: the standard diverged fixture.
+func driftedStack(t *testing.T, st *store.Store, dir string) {
+	t.Helper()
+	writeDriftFile(t, dir, "compose.yaml", "services: {managed: true}\n")
+	writeDriftFile(t, dir, OverrideFileName, "services: {managed: true}\n")
+	if err := RecordFingerprints(st, "jellyfin", dir); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	writeDriftFile(t, dir, "compose.yaml", "services: {expert: true}\n")
+	if err := os.Remove(filepath.Join(dir, OverrideFileName)); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+}
+
+func TestReviewPairsBothSides(t *testing.T) {
+	st := openDriftStore(t)
+	dir := t.TempDir()
+	driftedStack(t, st, dir)
+	review, err := Review(st, "jellyfin", dir)
+	if err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	if len(review) != 2 {
+		t.Fatalf("review = %+v", review)
+	}
+	byPath := map[string]FileReview{}
+	for _, file := range review {
+		byPath[file.Path] = file
+	}
+	modified := byPath["compose.yaml"]
+	if modified.Kind != DriftModified || modified.Recorded != "services: {managed: true}\n" ||
+		modified.Current != "services: {expert: true}\n" {
+		t.Fatalf("modified = %+v", modified)
+	}
+	removed := byPath[OverrideFileName]
+	if removed.Kind != DriftRemoved || removed.Recorded != "services: {managed: true}\n" || removed.Current != "" {
+		t.Fatalf("removed = %+v", removed)
+	}
+	// Clean stacks review empty.
+	clean := t.TempDir()
+	writeDriftFile(t, clean, "compose.yaml", "services: {}\n")
+	if err := RecordFingerprints(st, "clean", clean); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	review, err = Review(st, "clean", clean)
+	if err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	if len(review) != 0 {
+		t.Fatalf("review = %+v", review)
+	}
+}
+
+func TestAcceptAdoptsCurrent(t *testing.T) {
+	st := openDriftStore(t)
+	dir := t.TempDir()
+	driftedStack(t, st, dir)
+	adopted, err := Accept(st, "jellyfin", dir)
+	if err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	// Only present files adopt: the deleted override adopts as
+	// absent, ending its drift the same way.
+	if len(adopted) != 1 || adopted[0] != "compose.yaml" {
+		t.Fatalf("adopted = %v", adopted)
+	}
+	// Adoption ends the drift: expert content is managed now.
+	review, err := Review(st, "jellyfin", dir)
+	if err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	if len(review) != 0 {
+		t.Fatalf("review = %+v", review)
+	}
+}
+
+func TestRestoreRewritesRecorded(t *testing.T) {
+	st := openDriftStore(t)
+	dir := t.TempDir()
+	driftedStack(t, st, dir)
+	restored, err := Restore(st, "jellyfin", dir)
+	if err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if len(restored) != 2 || restored[0] != OverrideFileName || restored[1] != "compose.yaml" {
+		t.Fatalf("restored = %v", restored)
+	}
+	// Managed bytes are back with generated modes: base readable,
+	// overrides owner-only.
+	compose, err := os.ReadFile(filepath.Join(dir, "compose.yaml"))
+	if err != nil || string(compose) != "services: {managed: true}\n" {
+		t.Fatalf("compose = %q, err = %v", compose, err)
+	}
+	info, err := os.Stat(filepath.Join(dir, OverrideFileName))
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("override mode = %v, err = %v", info, err)
+	}
+	review, err := Review(st, "jellyfin", dir)
+	if err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	if len(review) != 0 {
+		t.Fatalf("review = %+v", review)
+	}
+	// Nothing recorded restores nothing.
+	restored, err = Restore(st, "ghost", t.TempDir())
+	if err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if len(restored) != 0 {
+		t.Fatalf("restored = %v", restored)
+	}
+}
+
+func TestRestoreDefinitionFlow(t *testing.T) {
+	st := openDriftStore(t)
+	dir := t.TempDir()
+	driftedStack(t, st, dir)
+	calls := stubComposeUp(t, false)
+	def, err := RestoreDefinition(st, "jellyfin", dir, "jellyfin")
+	if err != nil {
+		t.Fatalf("RestoreDefinition: %v", err)
+	}
+	if def.Type != "catalog.restore" || len(def.Steps) != 2 ||
+		def.Steps[0].Name != "restore-files" || def.Steps[1].Name != "up" {
+		t.Fatalf("def = %+v", def)
+	}
+	runner := openInstallRunner(t)
+	op, err := runner.Start(context.Background(), def, "")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	done, err := runner.Wait(context.Background(), op.ID)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if done.Status != operation.StatusSucceeded {
+		t.Fatalf("status = %q", done.Status)
+	}
+	// Files restored and the stack converged.
+	review, err := Review(st, "jellyfin", dir)
+	if err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	if len(review) != 0 {
+		t.Fatalf("review = %+v", review)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("calls = %v", *calls)
+	}
+	if _, err := RestoreDefinition(nil, "jellyfin", dir, "jellyfin"); err == nil {
+		t.Fatal("restore without store accepted")
+	}
+	if _, err := RestoreDefinition(st, "", dir, "jellyfin"); err == nil {
+		t.Fatal("restore without stack accepted")
+	}
+	if _, err := RestoreDefinition(st, "jellyfin", "", "jellyfin"); err == nil {
+		t.Fatal("restore without dir accepted")
+	}
+	if _, err := RestoreDefinition(st, "jellyfin", dir, ""); err == nil {
+		t.Fatal("restore without project accepted")
 	}
 }
