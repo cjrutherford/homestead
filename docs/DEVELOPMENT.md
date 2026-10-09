@@ -1050,7 +1050,15 @@ recovery rule. No credentials are generated; login arises on first
 start. `DockgeDeployDefinition` plans ensure-platform-network,
 write-stack, up, and verify (container running). The socket and
 stacks mounts grant full engine control by design; who may reach
-the interface belongs to the administration link (S211).
+the interface belongs to the administration link (S211). The link
+(S211), also in `internal/docker` with `GET /api/v1/dockge` and a
+dashboard Advanced page, exposes the interface under its assessed
+access policy: the route constructor hard-codes local exposure with
+internal TLS so engine control cannot describe anything wider, the
+engine assessment proves the posture aligned and finding-free, the
+API serves the link read-only with installed status from engine
+labels, and the page states the policy beside the link without
+changing anything.
 
 ## Provisional decisions (revisit, do not work around silently)
 

@@ -1,0 +1,45 @@
+<section aria-label="Advanced administration">
+  <h2>Advanced</h2>
+  <p>
+    Expert tools with full appliance control. Reach them only over the
+    local network; nothing here widens access by itself.
+  </p>
+
+  @if (error()) {
+    <p role="alert" class="error">{{ error() }}</p>
+  }
+
+  <label>
+    Domain
+    <input
+      name="domain"
+      [value]="domain()"
+      (input)="setDomain($any($event.target).value)"
+    />
+  </label>
+  <button type="button" (click)="load()" [disabled]="busy()">
+    Show link
+  </button>
+
+  @if (busy() && link() === null) {
+    <p>Loading…</p>
+  }
+
+  @if (link(); as entry) {
+    <h3>Dockge</h3>
+    <p>
+      <a [href]="entry.url">{{ entry.url }}</a>
+    </p>
+    <ul>
+      <li>Access: {{ entry.exposure }} only</li>
+      <li>Policy aligned: {{ entry.aligned ? 'yes' : 'no' }}</li>
+      <li>Status: {{ entry.installed ? 'running' : 'not running' }}</li>
+    </ul>
+    @for (finding of entry.findings; track finding) {
+      <p class="warning">{{ finding }}</p>
+    }
+    @if (!entry.installed) {
+      <p>Deploy the Dockge stack before opening the interface.</p>
+    }
+  }
+</section>

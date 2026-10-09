@@ -191,3 +191,65 @@ func TestDockgeDeployFailureAborts(t *testing.T) {
 		t.Fatalf("status = %q, want failed", done.Status)
 	}
 }
+
+func TestDockgeRouteLocalOnly(t *testing.T) {
+	host, err := DockgeDefaultHostname("lan")
+	if err != nil {
+		t.Fatalf("DefaultHostname: %v", err)
+	}
+	if host != "dockge.lan" {
+		t.Fatalf("host = %q", host)
+	}
+	route, err := DockgeRouteFor(host)
+	if err != nil {
+		t.Fatalf("DockgeRouteFor: %v", err)
+	}
+	if route.Exposure != ExposureLocal {
+		t.Fatalf("exposure = %q, want local", route.Exposure)
+	}
+	if route.TLS != TLSInternal {
+		t.Fatalf("tls = %q, want internal", route.TLS)
+	}
+	if route.Target.Host != DockgeContainerName || route.Target.Port != DockgeUIPort {
+		t.Fatalf("target = %+v", route.Target)
+	}
+	// The policy proves itself: local recommended, aligned, no
+	// findings — the constructor cannot describe anything wider.
+	assessment, err := Assess(route)
+	if err != nil {
+		t.Fatalf("Assess: %v", err)
+	}
+	if assessment.Recommended != ExposureLocal || !assessment.Aligned || len(assessment.Findings) != 0 {
+		t.Fatalf("assessment = %+v", assessment)
+	}
+	if _, err := DockgeDefaultHostname("Bad Domain!"); err == nil {
+		t.Fatal("invalid domain accepted")
+	}
+	if _, err := DockgeRouteFor("Bad Host!"); err == nil {
+		t.Fatal("invalid host accepted")
+	}
+}
+
+func TestDockgeInstalled(t *testing.T) {
+	running := Health{Reachable: true, Containers: []Container{
+		{Names: []string{"homestead-dockge"}, State: "running", Labels: map[string]string{LabelProject: "dockge"}},
+	}}
+	if !DockgeInstalled(running) {
+		t.Fatal("running stack reads absent")
+	}
+	stopped := Health{Reachable: true, Containers: []Container{
+		{Names: []string{"homestead-dockge"}, State: "exited", Labels: map[string]string{LabelProject: "dockge"}},
+	}}
+	if DockgeInstalled(stopped) {
+		t.Fatal("stopped stack reads installed")
+	}
+	foreign := Health{Reachable: true, Containers: []Container{
+		{Names: []string{"other"}, State: "running", Labels: map[string]string{LabelProject: "other"}},
+	}}
+	if DockgeInstalled(foreign) {
+		t.Fatal("foreign stack reads as dockge")
+	}
+	if DockgeInstalled(Health{}) {
+		t.Fatal("empty health reads installed")
+	}
+}

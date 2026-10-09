@@ -134,3 +134,55 @@ func DockgeDeployDefinition(stack Stack) (operation.Definition, error) {
 	})
 	return def, nil
 }
+
+// DockgeHealthPath probes the interface root: Dockge serves its login
+// page there on 200 while running.
+const DockgeHealthPath = "/"
+
+// DockgeHealthIntervalSeconds spaces active probes at the shared default.
+const DockgeHealthIntervalSeconds = 30
+
+// DockgeDefaultHostname names the expert route under a base domain:
+// dockge.<domain>. Owners override freely; defaults only start.
+func DockgeDefaultHostname(domain string) (Hostname, error) {
+	host := Hostname("dockge." + domain)
+	if err := host.Validate(); err != nil {
+		return "", fmt.Errorf("dockge: default hostname: %w", err)
+	}
+	return host, nil
+}
+
+// DockgeRouteFor builds the expert-interface proxy route (S211):
+// local-only exposure with internal TLS for LAN serving, upstreaming
+// to the Dockge container on the platform network. Exposure is not an
+// input — the interface grants full engine control, so the
+// constructor cannot describe anything wider; widening stays
+// impossible, not merely unreviewed. The engine assessment (S120)
+// proves the posture: local recommended, aligned, finding-free.
+func DockgeRouteFor(host Hostname) (Route, error) {
+	route := Route{
+		Host:     host,
+		Target:   Target{Host: DockgeContainerName, Port: DockgeUIPort},
+		Exposure: ExposureLocal,
+		TLS:      TLSInternal,
+		Health:   HealthCheck{Path: DockgeHealthPath, IntervalSeconds: DockgeHealthIntervalSeconds},
+	}
+	if err := route.Validate(); err != nil {
+		return Route{}, fmt.Errorf("dockge: route: %w", err)
+	}
+	return route, nil
+}
+
+// DockgeInstalled reports whether the engine runs the Dockge stack:
+// any running container carrying the dockge Compose project label.
+func DockgeInstalled(health Health) bool {
+	for _, container := range health.Containers {
+		if container.Labels[LabelProject] != DockgeStackName {
+			continue
+		}
+		if container.State == "running" {
+			return true
+		}
+	}
+	return false
+}

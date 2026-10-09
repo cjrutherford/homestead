@@ -183,6 +183,17 @@ export interface PackageUpdate {
   installed: boolean;
   plan: UpdatePlan;
 }
+
+/** GET /api/v1/dockge — expert-interface link with access policy. */
+export interface DockgeLink {
+  host: string;
+  url: string;
+  exposure: string;
+  tls: string;
+  aligned: boolean;
+  findings: string[];
+  installed: boolean;
+}
 /** GET /api/v1/wizards/:id — saved wizard progress. */
 export interface WizardState {
   wizard: string;
@@ -292,6 +303,12 @@ export class ApiService {
     return this.http.post<OperationStarted>(
       `/api/v1/updates/${name}/apply`,
       body,
+    );
+  }
+
+  dockge(domain: string): Observable<DockgeLink> {
+    return this.http.get<DockgeLink>(
+      `/api/v1/dockge?domain=${encodeURIComponent(domain)}`,
     );
   }
 

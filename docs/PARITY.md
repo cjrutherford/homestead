@@ -42,5 +42,6 @@ for an intentional gap. The Notes column is free text.
 | POST | /api/v1/catalog/{name}/configure | `"apps"` | `configurePackage` | Configuration operation on both surfaces |
 | GET | /api/v1/updates | n/a | `updates` | Per-package review rows on dashboard; CLI rows wait for a later updates CLI slice |
 | POST | /api/v1/updates/{name}/apply | n/a | `applyUpdate` | Approved update on dashboard; CLI rows wait for a later updates CLI slice |
+| GET | /api/v1/dockge | n/a | `dockge` | Expert-interface link with assessed policy on dashboard; no command surface yet |
 | GET | / | n/a | `app-root` | The UI itself; the CLI is the other interface. Catch-all also answers HEAD; mux method patterns cannot express both without conflicting, so both rows stand for one Handle |
 | HEAD | / | n/a | `app-root` | Same catch-all as GET / |

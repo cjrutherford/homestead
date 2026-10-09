@@ -85,3 +85,6 @@
 - SSO client actuation: S204 records reviewed integration intent,
   but writing provider credentials into application configuration
   has no owning slice yet.
+- Dockge route reconciliation: S211 models and links the local-only
+  route, but no flow writes it into the proxy yet; the direct UI
+  port serves until then.
