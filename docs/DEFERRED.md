@@ -82,3 +82,6 @@
 - Identity provider adapters: S202 defines the integration contract
   only; driving a provider's API (Authentik first, beyond the
   connection check) belongs to a later slice.
+- SSO client actuation: S204 records reviewed integration intent,
+  but writing provider credentials into application configuration
+  has no owning slice yet.

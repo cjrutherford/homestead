@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 12
+const CurrentVersion = 13
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -253,6 +253,22 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 	failures INTEGER NOT NULL DEFAULT 0,
 	first_failure_at TEXT NOT NULL DEFAULT '',
 	locked_until TEXT NOT NULL DEFAULT ''
+);`,
+	},
+	{
+		// S204 SSO integrations: one recorded intent per application
+		// with provider, protocol, and acting owner. Client
+		// configuration inside apps belongs to actuation; this table
+		// records what the wizard reviewed, replaceable per package.
+		version: 13,
+		name:    "sso integrations",
+		sql: `
+CREATE TABLE IF NOT EXISTS sso_integrations (
+	package TEXT PRIMARY KEY,
+	provider TEXT NOT NULL,
+	protocol TEXT NOT NULL,
+	actor TEXT NOT NULL,
+	updated_at TEXT NOT NULL
 );`,
 	},
 }

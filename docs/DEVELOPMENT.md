@@ -240,6 +240,20 @@ unsupported apps both refuse, unset reads as unsupported, and the
 curated packages pin honest postures — clients optional with the
 protocols upstream supports, Authentik itself unsupported.
 
+## SSO setup wizard (S204)
+
+- `internal/catalog` guides per-app SSO over the generic wizard
+  store, the catalog, and the identity registry: package, provider,
+  review, done. Unsupported apps, unregistered providers, and
+  protocols either side does not speak all refuse with the failing
+  side named; plans review without writing; apply records one
+  intent per application (schema v13 `sso_integrations`) under the
+  acting owner, replacing earlier pairings.
+- Recovery independence holds by construction: the wizard never
+  touches administrator identities or sessions, and every plan
+  carries the boundary in the record — Homestead administrator
+  login and socket recovery stay local, only app logins change.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing
