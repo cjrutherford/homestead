@@ -5,9 +5,9 @@
 // sessions. Passwords are bcrypt hashes — plaintext never persists.
 // Session tokens are SHA-256-hashed like claim tokens.
 //
-// Scope: setup, login, verify, logout. Requiring authentication on other
-// endpoints, password rotation, and lockout policy belong to later slices
-// (S200 hardens identity); recovery belongs to S021.
+// Scope: setup, login, verify, logout. S200 hardens identity with
+// password rotation, login lockout, and session revocation on
+// credential change and recovery; recovery belongs to S021.
 package auth
 
 import (
@@ -33,6 +33,16 @@ const SessionTTL = 30 * 24 * time.Hour
 // MinPasswordLength is the floor for administrator passwords.
 const MinPasswordLength = 12
 
+// Login lockout policy (S200): five failures inside ten minutes lock
+// the attempted username for fifteen. Attempts track by attempted
+// username before lookup, so unknown and known names behave
+// identically and lockout never becomes an account oracle.
+const (
+	MaxLoginFailures   = 5
+	LoginAttemptWindow = 10 * time.Minute
+	LoginLockout       = 15 * time.Minute
+)
+
 // tokenBytes is the entropy per session token.
 const tokenBytes = 32
 
@@ -51,6 +61,10 @@ var (
 	ErrBadUsername = errors.New("username must match [a-z][a-z0-9_-]{0,63}")
 	// ErrInvalidCredentials reports a failed login without saying why.
 	ErrInvalidCredentials = errors.New("invalid username or password")
+	// ErrAccountLocked reports a login during lockout. It answers for
+	// known and unknown usernames alike: lockout tracks attempted
+	// names, so the response never confirms an account exists.
+	ErrAccountLocked = errors.New("account temporarily locked after repeated failures")
 	// ErrInvalidSession reports an unknown or expired session token.
 	ErrInvalidSession = errors.New("invalid or expired session")
 )
@@ -142,19 +156,31 @@ func (s *Service) SetupAdmin(username, password string) (Admin, error) {
 }
 
 // Login verifies credentials and mints a session. Plaintext token is
-// returned once; only its hash is stored.
+// returned once; only its hash is stored. Failures feed lockout and
+// success clears it; locked usernames refuse before lookup so the
+// response stays uniform for known and unknown names.
 func (s *Service) Login(username, password string) (Session, error) {
+	locked, err := s.lockedOut(username)
+	if err != nil {
+		return Session{}, err
+	}
+	if locked {
+		return Session{}, ErrAccountLocked
+	}
 	var id int64
 	var hash []byte
-	err := s.db.QueryRow(`SELECT id, password_hash FROM identities WHERE username = ?`, username).Scan(&id, &hash)
+	err = s.db.QueryRow(`SELECT id, password_hash FROM identities WHERE username = ?`, username).Scan(&id, &hash)
 	if err == sql.ErrNoRows {
-		return Session{}, ErrInvalidCredentials
+		return Session{}, s.recordFailure(username)
 	}
 	if err != nil {
 		return Session{}, fmt.Errorf("auth: find admin: %w", err)
 	}
 	if err := bcrypt.CompareHashAndPassword(hash, []byte(password)); err != nil {
-		return Session{}, ErrInvalidCredentials
+		return Session{}, s.recordFailure(username)
+	}
+	if err := s.clearFailures(username); err != nil {
+		return Session{}, err
 	}
 	entropy := make([]byte, tokenBytes)
 	if _, err := rand.Read(entropy); err != nil {
@@ -171,6 +197,129 @@ func (s *Service) Login(username, password string) (Session, error) {
 		return Session{}, fmt.Errorf("auth: create session: %w", err)
 	}
 	return Session{Token: token, ExpiresAt: expires}, nil
+}
+
+// lockedOut reports whether username sits inside a lockout. Absent
+// rows and empty deadlines read as unlocked; corrupt deadlines fail
+// loudly instead of guessing open or shut.
+func (s *Service) lockedOut(username string) (bool, error) {
+	var lockedUntil string
+	err := s.db.QueryRow(`SELECT locked_until FROM login_attempts WHERE username = ?`, username).Scan(&lockedUntil)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("auth: read lockout: %w", err)
+	}
+	if lockedUntil == "" {
+		return false, nil
+	}
+	deadline, err := time.Parse(time.RFC3339Nano, lockedUntil)
+	if err != nil {
+		return false, fmt.Errorf("auth: parse lockout: %w", err)
+	}
+	return deadline.After(time.Now()), nil
+}
+
+// recordFailure counts a failed login inside a sliding window and
+// locks at the threshold. It answers invalid credentials until the
+// trip and locked once locked — identically for unknown usernames,
+// which track rows of their own so lockout never oracles accounts.
+func (s *Service) recordFailure(username string) error {
+	now := time.Now()
+	var failures int
+	var firstFailureAt string
+	err := s.db.QueryRow(`SELECT failures, first_failure_at FROM login_attempts WHERE username = ?`, username).Scan(&failures, &firstFailureAt)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("auth: read attempts: %w", err)
+	}
+	if err == sql.ErrNoRows || firstFailureAt == "" {
+		failures, firstFailureAt = 0, formatTime(now)
+	} else if start, parseErr := time.Parse(time.RFC3339Nano, firstFailureAt); parseErr != nil || now.Sub(start) > LoginAttemptWindow {
+		failures, firstFailureAt = 0, formatTime(now)
+	}
+	failures++
+	lockedUntil := ""
+	result := ErrInvalidCredentials
+	if failures >= MaxLoginFailures {
+		lockedUntil = formatTime(now.Add(LoginLockout))
+		result = ErrAccountLocked
+	}
+	if _, err := s.db.Exec(
+		`INSERT INTO login_attempts (username, failures, first_failure_at, locked_until) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(username) DO UPDATE SET failures = excluded.failures, first_failure_at = excluded.first_failure_at, locked_until = excluded.locked_until`,
+		username, failures, firstFailureAt, lockedUntil,
+	); err != nil {
+		return fmt.Errorf("auth: record attempt: %w", err)
+	}
+	return result
+}
+
+// clearFailures drops username's attempt row after a good login:
+// success forgives, so stale failures never pile into a lockout.
+func (s *Service) clearFailures(username string) error {
+	if _, err := s.db.Exec(`DELETE FROM login_attempts WHERE username = ?`, username); err != nil {
+		return fmt.Errorf("auth: clear attempts: %w", err)
+	}
+	return nil
+}
+
+// revokeSessions destroys every session for an identity. Credential
+// change and recovery call it so pre-change sessions — possibly held
+// by whoever forced the change — stop working at the boundary.
+func (s *Service) revokeSessions(identityID int64) error {
+	if _, err := s.db.Exec(`DELETE FROM sessions WHERE identity_id = ?`, identityID); err != nil {
+		return fmt.Errorf("auth: revoke sessions: %w", err)
+	}
+	return nil
+}
+
+// ChangePassword rotates username's password with the current
+// credential: wrong current answers invalid without saying more,
+// weak replacements refuse under the same policy as setup, and
+// success revokes every session so only fresh logins continue.
+// Guesses feed the same lockout as logins — rotation never bypasses
+// the throttle — and success forgives it.
+func (s *Service) ChangePassword(username, currentPassword, newPassword string) (Admin, error) {
+	locked, err := s.lockedOut(username)
+	if err != nil {
+		return Admin{}, err
+	}
+	if locked {
+		return Admin{}, ErrAccountLocked
+	}
+	var id int64
+	var hash []byte
+	err = s.db.QueryRow(`SELECT id, password_hash FROM identities WHERE username = ?`, username).Scan(&id, &hash)
+	if err == sql.ErrNoRows {
+		return Admin{}, s.recordFailure(username)
+	}
+	if err != nil {
+		return Admin{}, fmt.Errorf("auth: find admin: %w", err)
+	}
+	if err := bcrypt.CompareHashAndPassword(hash, []byte(currentPassword)); err != nil {
+		return Admin{}, s.recordFailure(username)
+	}
+	if len(newPassword) < MinPasswordLength {
+		return Admin{}, ErrWeakPassword
+	}
+	replacement, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return Admin{}, fmt.Errorf("auth: hash password: %w", err)
+	}
+	if _, err := s.db.Exec(
+		`UPDATE identities SET password_hash = ?, updated_at = ? WHERE id = ?`,
+		replacement, formatTime(time.Now()), id,
+	); err != nil {
+		return Admin{}, fmt.Errorf("auth: rotate password: %w", err)
+	}
+	if err := s.revokeSessions(id); err != nil {
+		return Admin{}, err
+	}
+	if err := s.clearFailures(username); err != nil {
+		return Admin{}, err
+	}
+	return Admin{ID: id, Username: username}, nil
 }
 
 // Verify proves a session token, rejecting unknown and expired sessions.

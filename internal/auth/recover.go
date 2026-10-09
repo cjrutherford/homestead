@@ -16,7 +16,9 @@ var ErrAdminNotFound = errors.New("administrator not found")
 // deliberately no claim-state gate and no session: possession of the
 // root-only local socket (S021) is the authorization. The administrator
 // must already exist — creation stays in SetupAdmin — and the new password
-// faces the same policy.
+// faces the same policy. Recovery is a boundary (S200): every session for
+// the identity dies with the reset, so credentials issued before recovery —
+// possibly in hostile hands — stop working the moment it completes.
 func (s *Service) Recover(username, password string) (Admin, error) {
 	if !validUsername.MatchString(username) {
 		return Admin{}, ErrBadUsername
@@ -41,6 +43,15 @@ func (s *Service) Recover(username, password string) (Admin, error) {
 		hash, formatTime(time.Now()), id,
 	); err != nil {
 		return Admin{}, fmt.Errorf("auth: reset password: %w", err)
+	}
+	if err := s.revokeSessions(id); err != nil {
+		return Admin{}, err
+	}
+	// Recovery resets the whole authentication state: lockout from
+	// guessing clears with the password, since socket possession
+	// already proved the owner.
+	if err := s.clearFailures(username); err != nil {
+		return Admin{}, err
 	}
 	return Admin{ID: id, Username: username}, nil
 }

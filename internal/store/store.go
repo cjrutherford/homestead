@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 11
+const CurrentVersion = 12
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -239,6 +239,20 @@ CREATE TABLE IF NOT EXISTS backup_schedules (
 	enabled INTEGER NOT NULL DEFAULT 1,
 	actor TEXT NOT NULL,
 	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S200 login attempts: per-username failure counts with window
+		// starts and lockout deadlines. Empty timestamps mean unset;
+		// successful logins delete the row outright.
+		version: 12,
+		name:    "login attempts",
+		sql: `
+CREATE TABLE IF NOT EXISTS login_attempts (
+	username TEXT PRIMARY KEY,
+	failures INTEGER NOT NULL DEFAULT 0,
+	first_failure_at TEXT NOT NULL DEFAULT '',
+	locked_until TEXT NOT NULL DEFAULT ''
 );`,
 	},
 }

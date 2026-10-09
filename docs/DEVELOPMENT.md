@@ -207,6 +207,23 @@ sudo homesteadctl admin recover --username owner --password-file ./new.pass
 - A missing socket directory fails startup loudly; a stale socket file is
   replaced at listen time.
 
+## Local identity hardening (S200)
+
+- Rotation proves the current credential: wrong current answers invalid
+  without saying more, weak replacements refuse under the setup policy,
+  and success revokes every session so only fresh logins continue.
+- Recovery is a boundary: the reset revokes all of the identity's
+  sessions and clears its lockout, since socket possession already
+  proved the owner — pre-recovery sessions stop working at completion.
+- Login lockout throttles guessing: five failures inside ten minutes
+  lock the attempted username for fifteen, tracked persistently
+  (schema v12 `login_attempts`) so restarts never forgive. Attempts
+  track before lookup, so unknown and known names behave identically
+  and lockout never confirms an account exists; success forgives.
+- Rotation guesses feed the same lockout; rotation success forgives it.
+- Rotation and lockout status have no API, CLI, or dashboard surface
+  yet — policy lives in `internal/auth` awaiting later slices.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing
