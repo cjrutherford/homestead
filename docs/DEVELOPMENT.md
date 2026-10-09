@@ -224,6 +224,16 @@ sudo homesteadctl admin recover --username owner --password-file ./new.pass
 - Rotation and lockout status have no API, CLI, or dashboard surface
   yet — policy lives in `internal/auth` awaiting later slices.
 
+## Identity provider interface (S202)
+
+- `internal/identity` holds the provider-neutral integration contract:
+  protocol capabilities (OIDC, SAML, LDAP), credential fields without
+  values (secrets live in the store and arrive at call time), one live
+  `CheckConnection` call proving the endpoint answers before setup
+  flows trust it, and a registry refusing duplicates and unknown
+  lookups. Local administrator identity stays in `internal/auth`;
+  this package never authenticates anyone itself.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing
