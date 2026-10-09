@@ -216,6 +216,14 @@ func handleUpdatesApply(st *store.Store, catalogDir string, client *docker.Clien
 	runner := operation.NewRunner(st)
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
+		// Platform components update separately (S194): the
+		// compose-based application applier cannot replace the
+		// daemon out from under itself, so platform names refuse
+		// here even if a catalog entry ever collides with them.
+		if update.IsPlatformComponent(name) {
+			http.Error(w, fmt.Sprintf("platform component %q updates separately from applications", name), http.StatusBadRequest)
+			return
+		}
 		manifest, plan, _, err := planPackage(catalogDir, client, r, name)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)

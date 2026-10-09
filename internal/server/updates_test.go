@@ -247,4 +247,17 @@ func TestUpdatesApply(t *testing.T) {
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("code = %d", recorder.Code)
 	}
+	// Platform components refuse on the application route: the
+	// daemon cannot be compose-upped out from under itself.
+	for _, name := range []string{"homestead-server", "homesteadctl"} {
+		recorder = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodPost, "/api/v1/updates/"+name+"/apply", strings.NewReader(`{}`))
+		srv.Handler().ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("%s code = %d", name, recorder.Code)
+		}
+		if !strings.Contains(recorder.Body.String(), "separately") {
+			t.Fatalf("%s body = %s", name, recorder.Body.String())
+		}
+	}
 }

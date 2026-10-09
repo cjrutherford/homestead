@@ -839,7 +839,18 @@ never stored. The updates dashboard page reviews moves, warnings,
 and backup reasons with opt-in backup plus one-shot database
 passwords, disables guarded apply until backup is opted in, and
 links started updates to operation detail; CLI rows wait for a
-later updates CLI slice. S193 also repaired catalog template
+later updates CLI slice. The platform update model (S194), in
+`internal/update`, names Homestead's own components apart from
+catalog applications: daemon and CLI with the dashboard riding
+daemon releases because its assets embed in the binary, so a
+dashboard-only update is indescribable. Desired versions arrive
+owner-declared with no hosted feed by customer-ownership rule;
+current components plan empty, rebuild suffixes move, downgrades,
+duplicates, strangers, and unparseable versions refuse, major
+jumps and daemon restarts warn, and moves always require backup
+first. The application apply route turns platform names away so
+compose flows never try to replace the daemon out from under
+itself. S193 also repaired catalog template
 bindings to parser-legal forms: Angular templates reject arrow
 functions and computed keys, so row edits go through component
 patch methods, which unblocked the whole dashboard suite. The backup wizard (S184), also in
