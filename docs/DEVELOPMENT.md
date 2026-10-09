@@ -1039,7 +1039,18 @@ suffixes, IP literals) never face public ACME, direct challenges count
 only for public names on public exposure, recommendations automate
 there and go internal elsewhere, and rendering refuses automatic mode
 on private names instead of deploying routes Caddy could never bring
-up. DNS-01 (S102) and the internal CA (S104) cover the rest.
+up. DNS-01 (S102) and the internal CA (S104) cover the rest. Dockge (S210)
+in `internal/docker` deploys the expert Compose interface as ordinary
+Compose artifacts under the dockge stack directory — `compose.yaml`
+(pinned `louislam/dockge:1.5.0`, UI on 5001, engine socket and data
+volumes, the stacks directory mounted at the same path inside and
+out so experts see Homestead-managed stacks beside their own, root
+file ownership) — runnable with vanilla `docker compose` per the
+recovery rule. No credentials are generated; login arises on first
+start. `DockgeDeployDefinition` plans ensure-platform-network,
+write-stack, up, and verify (container running). The socket and
+stacks mounts grant full engine control by design; who may reach
+the interface belongs to the administration link (S211).
 
 ## Provisional decisions (revisit, do not work around silently)
 
