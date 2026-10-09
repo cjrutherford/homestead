@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 13
+const CurrentVersion = 14
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -269,6 +269,22 @@ CREATE TABLE IF NOT EXISTS sso_integrations (
 	protocol TEXT NOT NULL,
 	actor TEXT NOT NULL,
 	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S212 generated fingerprints: recorded hashes of managed
+		// stack files per stack, re-baselined on every Homestead
+		// write so later edits read as drift. Resolution only reads
+		// this table; recording owns it.
+		version: 14,
+		name:    "generated fingerprints",
+		sql: `
+CREATE TABLE IF NOT EXISTS generated_fingerprints (
+	stack TEXT NOT NULL,
+	path TEXT NOT NULL,
+	sha256 TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	PRIMARY KEY (stack, path)
 );`,
 	},
 }

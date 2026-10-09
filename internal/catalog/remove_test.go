@@ -46,13 +46,13 @@ func TestRemovePreservesData(t *testing.T) {
 	}
 	t.Cleanup(func() { composeDown = old })
 	def, err := RemoveDefinition(Removal{Package: "jellyfin",
-		DataDirs: []DataDir{{Mountpoint: mount, Path: subpath}}}, dir)
+		DataDirs: []DataDir{{Mountpoint: mount, Path: subpath}}}, dir, openDriftStore(t))
 	if err != nil {
 		// Data roots without removal flag refuse: intent ambiguous.
 		if !strings.Contains(err.Error(), "explicit removal") {
 			t.Fatalf("err = %v", err)
 		}
-		def, err = RemoveDefinition(Removal{Package: "jellyfin"}, dir)
+		def, err = RemoveDefinition(Removal{Package: "jellyfin"}, dir, openDriftStore(t))
 		if err != nil {
 			t.Fatalf("RemoveDefinition: %v", err)
 		}
@@ -92,7 +92,7 @@ func TestRemoveDataExplicit(t *testing.T) {
 	composeDown = func(_ context.Context, _, _ string) error { return nil }
 	t.Cleanup(func() { composeDown = old })
 	def, err := RemoveDefinition(Removal{Package: "jellyfin", RemoveData: true,
-		DataDirs: []DataDir{{Mountpoint: mount, Path: subpath}}}, dir)
+		DataDirs: []DataDir{{Mountpoint: mount, Path: subpath}}}, dir, openDriftStore(t))
 	if err != nil {
 		t.Fatalf("RemoveDefinition: %v", err)
 	}
@@ -118,30 +118,30 @@ func TestRemoveDataExplicit(t *testing.T) {
 
 func TestRemoveValidation(t *testing.T) {
 	dir := removeStack(t)
-	if _, err := RemoveDefinition(Removal{}, dir); err == nil {
+	if _, err := RemoveDefinition(Removal{}, dir, openDriftStore(t)); err == nil {
 		t.Fatal("removed without package")
 	}
-	if _, err := RemoveDefinition(Removal{Package: "x"}, ""); err == nil {
+	if _, err := RemoveDefinition(Removal{Package: "x"}, "", openDriftStore(t)); err == nil {
 		t.Fatal("removed without dir")
 	}
-	if _, err := RemoveDefinition(Removal{Package: "x", RemoveData: true}, dir); err == nil {
+	if _, err := RemoveDefinition(Removal{Package: "x", RemoveData: true}, dir, openDriftStore(t)); err == nil {
 		t.Fatal("removed data without roots")
 	}
 	if _, err := RemoveDefinition(Removal{Package: "x",
-		DataDirs: []DataDir{{Mountpoint: "/m", Path: ".."}}}, dir); err == nil {
+		DataDirs: []DataDir{{Mountpoint: "/m", Path: ".."}}}, dir, openDriftStore(t)); err == nil {
 		t.Fatal("removed escaping path")
 	}
 	if _, err := RemoveDefinition(Removal{Package: "x",
-		DataDirs: []DataDir{{Mountpoint: "/m", Path: "."}}}, dir); err == nil {
+		DataDirs: []DataDir{{Mountpoint: "/m", Path: "."}}}, dir, openDriftStore(t)); err == nil {
 		t.Fatal("removed mount root")
 	}
-	if _, err := RemoveDefinition(Removal{Package: "ghost"}, t.TempDir()); err == nil {
+	if _, err := RemoveDefinition(Removal{Package: "ghost"}, t.TempDir(), openDriftStore(t)); err == nil {
 		t.Fatal("removed never-installed app")
 	}
 	// Missing data roots fail loudly instead of silently passing.
 	mount, _ := removeData(t)
 	def, err := RemoveDefinition(Removal{Package: "jellyfin", RemoveData: true,
-		DataDirs: []DataDir{{Mountpoint: mount, Path: "ghost"}}}, dir)
+		DataDirs: []DataDir{{Mountpoint: mount, Path: "ghost"}}}, dir, openDriftStore(t))
 	if err != nil {
 		t.Fatalf("RemoveDefinition: %v", err)
 	}

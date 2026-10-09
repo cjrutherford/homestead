@@ -8,6 +8,7 @@ import (
 
 	"homestead/internal/operation"
 	"homestead/internal/storage"
+	"homestead/internal/store"
 )
 
 // composeUp runs detached up for a stack directory and project name,
@@ -41,8 +42,9 @@ var composeRun = func(ctx context.Context, dir, project string, args ...string) 
 // dir overrides the stack directory (tests isolate here); empty means
 // the planned production directory. Only approved plans execute:
 // empty packages, missing routes, and unwritten compose refuse before
-// anything runs.
-func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string) (operation.Definition, error) {
+// anything runs. The write step re-baselines drift fingerprints, so
+// edits after install read as drift (S212).
+func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string, st *store.Store) (operation.Definition, error) {
 	if plan.Package == "" {
 		return operation.Definition{}, fmt.Errorf("catalog: install needs a package")
 	}
@@ -54,6 +56,9 @@ func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string)
 	}
 	if registry == nil {
 		return operation.Definition{}, fmt.Errorf("catalog: install needs a registry")
+	}
+	if st == nil {
+		return operation.Definition{}, fmt.Errorf("catalog: install needs a store")
 	}
 	if dir == "" {
 		dir = plan.Compose.Stack.Dir
@@ -72,7 +77,10 @@ func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string)
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "write-stack",
 		Run: func(ctx context.Context) error {
-			return WriteStack(dir, files)
+			if err := WriteStack(dir, files); err != nil {
+				return err
+			}
+			return RecordFingerprints(st, plan.Package, dir)
 		},
 	})
 	def.Steps = append(def.Steps, operation.StepDef{

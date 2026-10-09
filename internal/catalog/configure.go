@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 	"homestead/internal/operation"
+	"homestead/internal/store"
 )
 
 // OverrideFileName is the layered configuration document: base
@@ -173,18 +174,24 @@ func ApplyConfig(dir string, plan ConfigPlan) error {
 // the override file, then bring the stack up so containers adopt it.
 // Only reviewed plans execute: empty and invalid plans refuse before
 // anything writes.
-func ConfigureDefinition(plan ConfigPlan, dir, project string) (operation.Definition, error) {
+func ConfigureDefinition(plan ConfigPlan, dir, project string, st *store.Store) (operation.Definition, error) {
 	if err := plan.Validate(); err != nil {
 		return operation.Definition{}, err
 	}
 	if dir == "" || project == "" {
 		return operation.Definition{}, fmt.Errorf("catalog: configure needs directory and project")
 	}
+	if st == nil {
+		return operation.Definition{}, fmt.Errorf("catalog: configure needs a store")
+	}
 	def := operation.Definition{Type: "catalog.configure"}
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "write-config",
 		Run: func(ctx context.Context) error {
-			return ApplyConfig(dir, plan)
+			if err := ApplyConfig(dir, plan); err != nil {
+				return err
+			}
+			return RecordFingerprints(st, plan.Manifest.Name, dir)
 		},
 	})
 	def.Steps = append(def.Steps, operation.StepDef{

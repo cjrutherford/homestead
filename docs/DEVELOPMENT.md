@@ -1058,7 +1058,13 @@ internal TLS so engine control cannot describe anything wider, the
 engine assessment proves the posture aligned and finding-free, the
 API serves the link read-only with installed status from engine
 labels, and the page states the policy beside the link without
-changing anything.
+changing anything. Drift detection (S212), in `internal/catalog`
+over schema v14, watches generated files by recorded SHA-256:
+installs and configures re-baseline fingerprints on write, removals
+clear them, and `Detect` names modified and removed files with
+stable ordering while foreign files never report and unreadable
+files fail instead of guessing. Resolution belongs to S213;
+detection only names.
 
 ## Provisional decisions (revisit, do not work around silently)
 

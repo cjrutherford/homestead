@@ -27,7 +27,7 @@ func (s *Server) MountCatalog(st *store.Store, catalogDir string) {
 	s.mux.HandleFunc("GET /api/v1/catalog/{name}", handleCatalogGet(catalogDir))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/plan", handleCatalogPlan(st, catalogDir))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/install", handleCatalogInstall(st, catalogDir, runner))
-	s.mux.HandleFunc("POST /api/v1/catalog/{name}/configure", handleCatalogConfigure(catalogDir, runner))
+	s.mux.HandleFunc("POST /api/v1/catalog/{name}/configure", handleCatalogConfigure(st, catalogDir, runner))
 }
 
 // packageSummary is the list-view projection: enough to browse,
@@ -232,7 +232,7 @@ func handleCatalogInstall(st *store.Store, catalogDir string, runner *operation.
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
-		def, err := catalog.InstallDefinition(plan, storage.NewRegistry(st), "")
+		def, err := catalog.InstallDefinition(plan, storage.NewRegistry(st), "", st)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
@@ -246,7 +246,7 @@ func handleCatalogInstall(st *store.Store, catalogDir string, runner *operation.
 	}
 }
 
-func handleCatalogConfigure(catalogDir string, runner *operation.Runner) http.HandlerFunc {
+func handleCatalogConfigure(st *store.Store, catalogDir string, runner *operation.Runner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		manifest, ok := loadPackage(catalogDir, name, w)
@@ -265,7 +265,7 @@ func handleCatalogConfigure(catalogDir string, runner *operation.Runner) http.Ha
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
-		def, err := catalog.ConfigureDefinition(plan, docker.DirFor(name), name)
+		def, err := catalog.ConfigureDefinition(plan, docker.DirFor(name), name, st)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return

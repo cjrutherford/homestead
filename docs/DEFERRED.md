@@ -88,3 +88,7 @@
 - Dockge route reconciliation: S211 models and links the local-only
   route, but no flow writes it into the proxy yet; the direct UI
   port serves until then.
+- Drift surfacing and live-state comparison: S212 detects generated
+  file drift on demand in code only; scheduled scans, API/dashboard
+  exposure, and running-container-versus-file comparison belong
+  with resolution or later slices.

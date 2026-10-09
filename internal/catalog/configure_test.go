@@ -107,7 +107,7 @@ func TestApplyConfig(t *testing.T) {
 func TestConfigureDefinition(t *testing.T) {
 	dir := t.TempDir()
 	calls := stubComposeUp(t, false)
-	def, err := ConfigureDefinition(configPlan(), dir, "jellyfin")
+	def, err := ConfigureDefinition(configPlan(), dir, "jellyfin", openDriftStore(t))
 	if err != nil {
 		t.Fatalf("ConfigureDefinition: %v", err)
 	}
@@ -133,10 +133,10 @@ func TestConfigureDefinition(t *testing.T) {
 	if len(*calls) != 1 {
 		t.Fatalf("calls = %v", *calls)
 	}
-	if _, err := ConfigureDefinition(ConfigPlan{}, dir, "x"); err == nil {
+	if _, err := ConfigureDefinition(ConfigPlan{}, dir, "x", openDriftStore(t)); err == nil {
 		t.Fatal("planned empty")
 	}
-	if _, err := ConfigureDefinition(configPlan(), "", "x"); err == nil {
+	if _, err := ConfigureDefinition(configPlan(), "", "x", openDriftStore(t)); err == nil {
 		t.Fatal("planned without dir")
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"homestead/internal/operation"
+	"homestead/internal/store"
 )
 
 // DataDir names one persistent-data root for explicit removal: the
@@ -71,13 +72,17 @@ func (r Removal) Validate() error {
 // and networks, delete generated stack files, and — only when
 // explicitly asked with explicit roots — delete persistent data.
 // Missing compose files refuse before anything runs: removing what was
-// never installed is a typo, not a no-op.
-func RemoveDefinition(removal Removal, dir string) (operation.Definition, error) {
+// never installed is a typo, not a no-op. Fingerprint records clear
+// with the files so deleted stacks stop reporting (S212).
+func RemoveDefinition(removal Removal, dir string, st *store.Store) (operation.Definition, error) {
 	if err := removal.Validate(); err != nil {
 		return operation.Definition{}, err
 	}
 	if dir == "" {
 		return operation.Definition{}, fmt.Errorf("catalog: removal needs a directory")
+	}
+	if st == nil {
+		return operation.Definition{}, fmt.Errorf("catalog: removal needs a store")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "compose.yaml")); err != nil {
 		return operation.Definition{}, fmt.Errorf("catalog: %q is not installed: %w", removal.Package, err)
@@ -92,6 +97,12 @@ func RemoveDefinition(removal Removal, dir string) (operation.Definition, error)
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "remove-files",
 		Run: func(ctx context.Context) error {
+			// Records clear first: a failed clear leaves files (and
+			// their records) in place for retry, while files removed
+			// without clearing would report phantom drift.
+			if err := ClearFingerprints(st, removal.Package); err != nil {
+				return err
+			}
 			for _, name := range []string{"compose.yaml", OverrideFileName} {
 				path := filepath.Join(dir, name)
 				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
