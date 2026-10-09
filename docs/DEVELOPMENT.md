@@ -310,6 +310,18 @@ avahi-browse -r _homestead._tcp   # or open http://homestead.local:8080
   failed proofs, and actorless calls record nothing. No HTTP
   surface: bootstrap slices drive it from here.
 
+## Split-DNS bootstrap (S224)
+
+- `internal/dns` reaches `SPLIT_DNS_READY` without going public:
+  the zone intent carries a local view (FQDN to the appliance LAN
+  address, default interface preferred) with no public view, local
+  answers ensure in local DNS without deleting foreign rewrites,
+  and the public audience previews with changes held — applying
+  nothing, ever. API-less providers skip remote proof explicitly.
+  Re-runs converge; refusals record nothing. The stage records one
+  row (schema v17 `split_dns_state`) for later bootstrap slices;
+  the overlay view belongs to S225.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing

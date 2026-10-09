@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 16
+const CurrentVersion = 17
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -311,6 +311,21 @@ CREATE TABLE IF NOT EXISTS domain_onboarding (
 	base TEXT NOT NULL,
 	fqdn TEXT NOT NULL,
 	actor TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S224 split-DNS state: the established zone, FQDN, and LAN
+		// answer per appliance (single row by construction).
+		// Re-establishing replaces; later bootstrap slices read it.
+		version: 17,
+		name:    "split DNS state",
+		sql: `
+CREATE TABLE IF NOT EXISTS split_dns_state (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	zone TEXT NOT NULL,
+	fqdn TEXT NOT NULL,
+	lan TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );`,
 	},
