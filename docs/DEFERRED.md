@@ -110,6 +110,9 @@
 - Domain onboarding surface: S223 gates, proves, and records in
   code only; API, CLI, and dashboard affordances for connecting
   a domain belong to later slices.
-- Split-DNS surfaces and overlay view: S224 establishes and
-  records in code only; API, CLI, and dashboard affordances plus
-  the overlay audience view (S225) belong to later slices.
+- Split-DNS surfaces: S224 establishes and records in code
+  only; API, CLI, and dashboard affordances belong to later
+  slices.
+- Overlay view application: S225 reviews validated overlay
+  intent, but no overlay DNS provider exists to receive it;
+  applying overlay answers belongs to a later slice.

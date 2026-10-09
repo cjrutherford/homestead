@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 17
+const CurrentVersion = 18
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -326,6 +326,21 @@ CREATE TABLE IF NOT EXISTS split_dns_state (
 	zone TEXT NOT NULL,
 	fqdn TEXT NOT NULL,
 	lan TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S225 overlay state: the reached overlay stage per
+		// appliance (single row by construction) — provider plus
+		// node addresses as JSON, "none" when local-only skips the
+		// stage. Later bootstrap slices read it.
+		version: 18,
+		name:    "overlay state",
+		sql: `
+CREATE TABLE IF NOT EXISTS overlay_state (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	provider TEXT NOT NULL,
+	addresses TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );`,
 	},

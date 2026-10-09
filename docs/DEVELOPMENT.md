@@ -322,6 +322,19 @@ avahi-browse -r _homestead._tcp   # or open http://homestead.local:8080
   row (schema v17 `split_dns_state`) for later bootstrap slices;
   the overlay view belongs to S225.
 
+## Optional overlay bootstrap (S225)
+
+- `internal/overlay` reaches `OVERLAY_READY` before public
+  exposure: the remote-wizard selection names the provider, live
+  connectivity validates with node addresses resolving, and the
+  overlay view intent (FQDN to node addresses, A and AAAA)
+  validates against the zone without applying anywhere — no
+  overlay DNS provider exists to receive it yet. Local-only
+  selections skip with a recorded none. The stage records
+  provider plus addresses (schema v18 `overlay_state`); re-runs
+  converge, refusals record nothing. No HTTP surface: bootstrap
+  slices drive it from here.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing
