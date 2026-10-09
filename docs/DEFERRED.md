@@ -104,3 +104,6 @@
 - mDNS coexistence and probing: S221 answers while the port is
   free and warns otherwise; sharing 5353 with Avahi, name-conflict
   probing, and IPv6 advertisements belong to later slices.
+- Management TLS provisioning: S222 proves issue-and-verify
+  mechanics only; persisting the internal authority and serving
+  management TLS from the daemon or proxy belong to later slices.

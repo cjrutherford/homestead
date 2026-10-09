@@ -285,6 +285,20 @@ avahi-browse -r _homestead._tcp   # or open http://homestead.local:8080
   state and addresses; a taken port or missing interfaces only
   warn on stderr, never fail the boot.
 
+## Local security baseline (S222)
+
+- `internal/baseline` gates external exposure on one readiness
+  report: claim (appliance redeemed), admin (an administrator
+  exists, via `HasAdmin`), firewall (nftables present, ruleset
+  readable, Homestead table applied — unreadable rulesets fail as
+  unverifiable, not unapplied), and management TLS (a fresh
+  internal authority issues a serving certificate for
+  `homestead.local` verifying with margin, in pure crypto). Ready
+  only when every leg passes, each failure naming its remedy;
+  unwired dependencies read as incomplete, never ready. No
+  persisted authority or served endpoint exists yet — the leg
+  proves the mechanics, and provisioning belongs to later slices.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing

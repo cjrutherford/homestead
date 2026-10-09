@@ -104,6 +104,16 @@ func formatTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
+// HasAdmin reports whether any administrator identity exists: the
+// readiness signal for setup completion (S222) without exposing who.
+func (s *Service) HasAdmin() (bool, error) {
+	count, err := s.adminCount()
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // adminCount counts administrator identities.
 func (s *Service) adminCount() (int, error) {
 	var count int
