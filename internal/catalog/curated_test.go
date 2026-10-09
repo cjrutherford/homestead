@@ -87,7 +87,7 @@ func TestCuratedNextcloud(t *testing.T) {
 	if string(endpoint.Recommended) != "local" || !endpoint.AllowWider {
 		t.Fatalf("endpoint = %+v", endpoint)
 	}
-	if names := catalog.Names(); len(names) != 3 || names[0] != "immich" || names[1] != "jellyfin" || names[2] != "nextcloud" {
+	if names := catalog.Names(); len(names) != 4 || names[0] != "authentik" || names[1] != "immich" || names[2] != "jellyfin" || names[3] != "nextcloud" {
 		t.Fatalf("names = %v", names)
 	}
 }
@@ -136,7 +136,57 @@ func TestCuratedImmich(t *testing.T) {
 	if !report.Passed {
 		t.Fatalf("report = %+v", report)
 	}
-	if names := catalog.Names(); len(names) != 3 {
+	if names := catalog.Names(); len(names) != 4 || names[0] != "authentik" || names[1] != "immich" || names[2] != "jellyfin" || names[3] != "nextcloud" {
 		t.Fatalf("names = %v", names)
+	}
+}
+
+func TestCuratedAuthentik(t *testing.T) {
+	catalog := repoCatalog(t)
+	manifest, err := catalog.Get("authentik")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if manifest.Version != "2026.8.3" {
+		t.Fatalf("version = %q", manifest.Version)
+	}
+	if len(manifest.Services) != 3 {
+		t.Fatalf("services = %+v", manifest.Services)
+	}
+	internal := 0
+	for _, service := range manifest.Services {
+		if service.Exposes == "" {
+			internal++
+		}
+	}
+	if internal != 2 {
+		t.Fatalf("internal services = %d", internal)
+	}
+	if manifest.Database == nil || manifest.Database.Service != "postgresql" ||
+		manifest.Database.Kind != DatabasePostgres || manifest.Database.Database != "authentik" ||
+		manifest.Database.Username != "authentik" {
+		t.Fatalf("database = %+v", manifest.Database)
+	}
+	endpoint, ok := manifest.Exposure.Find("web")
+	if !ok {
+		t.Fatal("no web endpoint")
+	}
+	if string(endpoint.Recommended) != "local" || !endpoint.AllowWider {
+		t.Fatalf("endpoint = %+v", endpoint)
+	}
+	report, err := Evaluate(manifest, HostFacts{
+		Arch: "amd64", MemoryMB: 8192, CPUCount: 4,
+		FreeSpace: map[storage.Class]uint64{
+			storage.ClassApplication: 10 << 30,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !report.Passed {
+		t.Fatalf("report = %+v", report)
 	}
 }

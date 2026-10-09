@@ -826,7 +826,12 @@ declared requirements, exposure, and backup paths. Services without
 endpoints serve nothing routable by construction. The base suite (S172), also in
 `internal/catalog`, resolves the curated bundle in install order with joint
 grading: per-package verdicts plus combined memory footprints and cross-member
-port collisions naming both owners. The backup contract (S180),
+port collisions naming both owners. The Authentik package (S201) in
+`catalog/` is the fourth curated application following the official
+compose pins (server, worker, postgres) with internal services
+carrying no endpoint: the first manifest declaring a Postgres
+database export for backup, with credentials wiring post-install
+through configuration. The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine
 fields refused, staged commands bounded and service-linked, and

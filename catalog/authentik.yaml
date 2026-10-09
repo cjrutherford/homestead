@@ -1,0 +1,50 @@
+# Authentik identity provider (S201): the fourth curated app package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# Image tags follow the official 2026.8 compose (server, worker, postgres
+# 16); digests stay out because multi-arch digests differ per platform
+# while tags resolve correctly everywhere.
+# Database and secret credentials wire post-install through configuration
+# (S157); secret-backed variables arrive in their own slice.
+name: authentik
+version: 2026.8.3
+title: Authentik
+blurb: Single sign-on for your services.
+description: Authentik brings single sign-on and identity management to the
+  home appliance with OAuth2, OIDC, SAML, and LDAP providers — one login
+  for every service that supports it. Identity state lives in Postgres;
+  file state stays small and backed up.
+category: identity
+icon: mdi:key
+services:
+- name: server
+  image: ghcr.io/goauthentik/server:2026.8.3
+  exposes: web
+- name: worker
+  image: ghcr.io/goauthentik/server:2026.8.3
+  exposes: ""
+- name: postgresql
+  image: docker.io/library/postgres:16-alpine
+  exposes: ""
+requirements:
+  memorymb: 2048
+  cpucount: 2
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 2147483648
+  ports: [9000]
+exposure:
+  package: authentik
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Identity logins leave the LAN when widened; share deliberately.
+backuppaths:
+- config
+database:
+  service: postgresql
+  kind: postgres
+  database: authentik
+  username: authentik
