@@ -16,10 +16,14 @@ lint:
 	go vet ./...
 
 lint-scripts:
+	bash -n scripts/acceptance.sh
 	bash -n scripts/bootstrap.sh
 	bash -n scripts/install-systemd.sh
 	bash -n scripts/uninstall-systemd.sh
 	bash -n scripts/provision-layout.sh
+
+acceptance:
+	sudo ./scripts/acceptance.sh
 
 bootstrap:
 	sudo ./scripts/bootstrap.sh

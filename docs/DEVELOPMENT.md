@@ -365,7 +365,6 @@ avahi-browse -r _homestead._tcp   # or open http://homestead.local:8080
   later slices drive it from here.
 
 ## Public validation bootstrap (S228)
-
 - `internal/exposure` reaches `PUBLIC_VALIDATED` only after every
   check passes: the verdict gates on a public-target approval
   (unapproved, mismatched, and non-public hosts refuse), runs the
@@ -375,6 +374,26 @@ avahi-browse -r _homestead._tcp   # or open http://homestead.local:8080
   (schema v21 `public_validation`); status surfaces read the last
   word back, showing `PUBLIC / HEALTHY` only from passing
   records. No HTTP surface: later slices drive it from here.
+
+## Bare-metal acceptance (S229)
+
+```bash
+sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
+  HOMESTEAD_PASSWORD_FILE=/root/owner.pass \
+  HOMESTEAD_CLAIM_TOKEN=<console-token> ./scripts/acceptance.sh
+```
+
+- `scripts/acceptance.sh` walks a fresh supported OS to the base
+  suite with validated access through supported surfaces only:
+  preconditions (root, distro, tools, mounts), bootstrap,
+  claim, admin setup plus login, doctor, firewall apply, per-app
+  review-then-install with `--follow` (jellyfin, nextcloud,
+  immich on isolated networks), drift-clean proof per package
+  (no manual Compose editing, mechanically asserted), and
+  serving checks on published ports. Every phase asserts and
+  fails loudly; plan files generate from environment with sane
+  port defaults. Backup has no CLI/API surface yet, so the run
+  ends noting manual backup configuration before production use.
 
 ## Host discovery (S040+)
 

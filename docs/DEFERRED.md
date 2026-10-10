@@ -126,3 +126,6 @@
   the appliance with caller-named management hosts; scheduled
   re-validation, status surfaces, and best-vantage external
   probing belong to later slices.
+- Backup configuration surfaces: S229 acceptance stops at a
+  backup note because backup destinations and schedules have no
+  CLI/API surface; driving them belongs to later slices.
