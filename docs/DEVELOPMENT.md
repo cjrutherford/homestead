@@ -431,6 +431,32 @@ sudo ./scripts/recover-control-plane.sh
   leave no half-imported state, and re-runs converge with values
   decrypting under a fresh key — recovery, not copying.
 
+## Docker-only emergency recovery (S233)
+
+```bash
+cd /opt/homestead/stacks/jellyfin
+docker network create homestead-edge 2>/dev/null || true
+docker compose up -d
+docker compose ps
+```
+
+- Every curated stack runs under vanilla `docker compose` with
+  Homestead nowhere in the loop — proven per package by
+  `TestGeneratedStacksValidateWithCompose`, which renders each
+  manifest and passes it to the real `compose config` (plus an
+  override-merge case): no daemon, no store, no proprietary
+  extensions. If Homestead is unavailable: take the stack
+  directory, ensure the external `homestead-edge` network exists,
+  `up -d`, and confirm with `ps` plus the published ports
+  (`compose port` shows the owner-mapped host ports).
+- Data stays where the compose file binds it (assigned mounts —
+  do not move it); configured variables already ride in
+  `compose.override.yaml`, so nothing needs re-entering; `down`
+  never touches volumes or binds. Not covered here: TLS
+  termination and DNS (Caddy's job), dashboard and operations,
+  backups, and updates — recover the control plane (S230) or
+  rebuild from backups (S234) for the rest.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing
