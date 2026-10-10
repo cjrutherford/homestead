@@ -19,6 +19,7 @@ lint-scripts:
 	bash -n scripts/acceptance.sh
 	bash -n scripts/bootstrap.sh
 	bash -n scripts/install-systemd.sh
+	bash -n scripts/recover-control-plane.sh
 	bash -n scripts/uninstall-systemd.sh
 	bash -n scripts/provision-layout.sh
 
@@ -33,6 +34,9 @@ install:
 
 uninstall:
 	sudo ./scripts/uninstall-systemd.sh
+
+recover:
+	sudo ./scripts/recover-control-plane.sh
 
 dashboard-install:
 	cd dashboard && pnpm install --frozen-lockfile

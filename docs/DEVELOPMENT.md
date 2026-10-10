@@ -395,6 +395,22 @@ sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
   port defaults. Backup has no CLI/API surface yet, so the run
   ends noting manual backup configuration before production use.
 
+## Control-plane recovery (S230)
+
+```bash
+sudo ./scripts/recover-control-plane.sh
+```
+
+- Reinstalls the daemon without destroying workloads: stops the
+  service (containers keep running — the daemon never parents
+  them), snapshots the operational database aside, reinstalls
+  binary and unit through `install-systemd.sh`, waits on
+  `/healthz`, then diffs the running-container set — any
+  disappearance fails the run with the snapshot path attached. A
+  missing database refuses as disaster recovery (S234) instead of
+  booting amnesiac over live workloads. Every phase asserts;
+  safe to re-run.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing

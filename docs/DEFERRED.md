@@ -129,3 +129,6 @@
 - Backup configuration surfaces: S229 acceptance stops at a
   backup note because backup destinations and schedules have no
   CLI/API surface; driving them belongs to later slices.
+- Corrupt-database repair: S230 snapshots state and refuses a
+  missing database as disaster recovery; repairing corrupt
+  state belongs to the disaster-recovery flow (S234).
