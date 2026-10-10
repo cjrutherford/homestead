@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 18
+const CurrentVersion = 19
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -341,6 +341,23 @@ CREATE TABLE IF NOT EXISTS overlay_state (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
 	provider TEXT NOT NULL,
 	addresses TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S226 TLS readiness: the decided certificate strategy per
+		// appliance (single row by construction). Reaching readiness
+		// decides; issuance belongs to later slices.
+		version: 19,
+		name:    "TLS readiness",
+		sql: `
+CREATE TABLE IF NOT EXISTS tls_readiness (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	fqdn TEXT NOT NULL,
+	strategy TEXT NOT NULL,
+	challenge TEXT NOT NULL DEFAULT '',
+	dns_provider TEXT NOT NULL DEFAULT '',
+	needs_ingress INTEGER NOT NULL DEFAULT 0,
 	updated_at TEXT NOT NULL
 );`,
 	},

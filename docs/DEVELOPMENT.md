@@ -335,6 +335,20 @@ avahi-browse -r _homestead._tcp   # or open http://homestead.local:8080
   converge, refusals record nothing. No HTTP surface: bootstrap
   slices drive it from here.
 
+## TLS readiness bootstrap (S226)
+
+- `internal/cert` reaches `TLS_READY` without requiring public
+  app ingress: private names stay internal, public names prefer
+  DNS-01 where the provider speaks it (issuance before exposure,
+  no ingress evidence needed), then direct challenges on verified
+  ingress only — wildcards excluded, since only DNS-01 issues
+  them — and finally the manual owner path. Unknown providers
+  and malformed names refuse instead of defaulting somewhere
+  unsafe. The decided strategy records one row (schema v19
+  `tls_readiness`) for later issuance; fetching certificates
+  belongs to later slices. No HTTP surface: bootstrap slices
+  drive it from here.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing

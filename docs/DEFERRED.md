@@ -116,3 +116,6 @@
 - Overlay view application: S225 reviews validated overlay
   intent, but no overlay DNS provider exists to receive it;
   applying overlay answers belongs to a later slice.
+- Certificate issuance: S226 decides and records strategy only;
+  fetching certificates (ACME orders, DNS-01 TXT orchestration,
+  manual material intake) belongs to later slices.
