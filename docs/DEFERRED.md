@@ -122,3 +122,7 @@
 - Exposure apply surfaces: S227 approves and applies in code
   only; API, CLI, and dashboard affordances for reviewing and
   approving exposure belong to later slices.
+- Validation surfaces and external vantage: S228 validates from
+  the appliance with caller-named management hosts; scheduled
+  re-validation, status surfaces, and best-vantage external
+  probing belong to later slices.

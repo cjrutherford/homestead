@@ -364,6 +364,18 @@ avahi-browse -r _homestead._tcp   # or open http://homestead.local:8080
   Unapproved hosts refuse before anything runs. No HTTP surface:
   later slices drive it from here.
 
+## Public validation bootstrap (S228)
+
+- `internal/exposure` reaches `PUBLIC_VALIDATED` only after every
+  check passes: the verdict gates on a public-target approval
+  (unapproved, mismatched, and non-public hosts refuse), runs the
+  five DNS/port/TLS/response layers without short-circuiting, and
+  trips when caller-named management hosts resolve to the public
+  address. Every verdict records with failed checks named
+  (schema v21 `public_validation`); status surfaces read the last
+  word back, showing `PUBLIC / HEALTHY` only from passing
+  records. No HTTP surface: later slices drive it from here.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing

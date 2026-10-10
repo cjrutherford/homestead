@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 20
+const CurrentVersion = 21
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -374,6 +374,21 @@ CREATE TABLE IF NOT EXISTS exposure_approvals (
 	plan TEXT NOT NULL,
 	actor TEXT NOT NULL,
 	networks TEXT NOT NULL DEFAULT '[]',
+	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S228 public validation: the last verdict per route host
+		// (pass plus failed check names). The dashboard shows
+		// PUBLIC / HEALTHY only from a passing record; later runs
+		// replace.
+		version: 21,
+		name:    "public validation",
+		sql: `
+CREATE TABLE IF NOT EXISTS public_validation (
+	host TEXT PRIMARY KEY,
+	passed INTEGER NOT NULL DEFAULT 0,
+	failed TEXT NOT NULL DEFAULT '[]',
 	updated_at TEXT NOT NULL
 );`,
 	},
