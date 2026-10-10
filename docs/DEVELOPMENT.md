@@ -411,6 +411,16 @@ sudo ./scripts/recover-control-plane.sh
   booting amnesiac over live workloads. Every phase asserts;
   safe to re-run.
 
+## Configuration export (S231)
+
+- `internal/desired` bundles portable configuration: desired
+  state plus provenance (export and Homestead versions, store
+  schema, timestamp) and the secret-reference manifest — names
+  only, since only `List` is ever called and values are
+  structurally unreachable. Documents stay inspectable YAML at
+  0644 with strict parsing, version bounds, and atomic writes;
+  import builds on the same reader.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing
