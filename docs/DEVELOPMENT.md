@@ -349,6 +349,21 @@ avahi-browse -r _homestead._tcp   # or open http://homestead.local:8080
   belongs to later slices. No HTTP surface: bootstrap slices
   drive it from here.
 
+## Public exposure bootstrap (S227)
+
+- `internal/exposure` approves and applies route widening: approval
+  names the actor, re-validates the edge with a fresh aligned
+  assessment, and takes explicit CIDRs for zone-wide wide sources
+  (the planner never invents them); stale, misaligned, no-op, and
+  malformed-network approvals refuse. Approvals record per host
+  (schema v20 `exposure_approvals`) for the audit trail.
+  Application composes the management baseline with every
+  approval — approving never drops earlier routes — collapsing
+  exact duplicates and refusing same-named conflicts naming both
+  owners, then writes the edge snippet with a proxy reload.
+  Unapproved hosts refuse before anything runs. No HTTP surface:
+  later slices drive it from here.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing

@@ -119,3 +119,6 @@
 - Certificate issuance: S226 decides and records strategy only;
   fetching certificates (ACME orders, DNS-01 TXT orchestration,
   manual material intake) belongs to later slices.
+- Exposure apply surfaces: S227 approves and applies in code
+  only; API, CLI, and dashboard affordances for reviewing and
+  approving exposure belong to later slices.

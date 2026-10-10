@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 19
+const CurrentVersion = 20
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -358,6 +358,22 @@ CREATE TABLE IF NOT EXISTS tls_readiness (
 	challenge TEXT NOT NULL DEFAULT '',
 	dns_provider TEXT NOT NULL DEFAULT '',
 	needs_ingress INTEGER NOT NULL DEFAULT 0,
+	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S227 exposure approvals: the recorded ownership decision
+		// per route host (plan JSON plus actor). Firewall
+		// composition expands every approval, so approving never
+		// drops earlier routes.
+		version: 20,
+		name:    "exposure approvals",
+		sql: `
+CREATE TABLE IF NOT EXISTS exposure_approvals (
+	host TEXT PRIMARY KEY,
+	plan TEXT NOT NULL,
+	actor TEXT NOT NULL,
+	networks TEXT NOT NULL DEFAULT '[]',
 	updated_at TEXT NOT NULL
 );`,
 	},
