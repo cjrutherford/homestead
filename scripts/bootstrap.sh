@@ -63,15 +63,17 @@ else
 			exit 1
 			;;
 	esac
-	# Official binaries only (golang.org/dl): distribution Go packages
-	# lag the toolchain the module requires, and third-party builds
-	# have no place in the trust ladder.
+	# Official binaries only (dl.google.com, the go.dev download
+	# backend): distribution Go packages lag the toolchain the module
+	# requires, and third-party builds have no place in the trust
+	# ladder. The checksum endpoint serves the bare hash, hence the
+	# reformat before verifying.
 	tmp="$(mktemp -d)"
 	trap 'rm -rf "$tmp"' EXIT
 	tarball="go$WANT_GO.linux-$GOARCH.tar.gz"
-	curl -fsSL -o "$tmp/$tarball" "https://go.dev/dl/$tarball"
-	curl -fsSL -o "$tmp/$tarball.sha256" "https://go.dev/dl/$tarball.sha256"
-	(cd "$tmp" && sha256sum -c "$tarball.sha256")
+	curl -fsSL -o "$tmp/$tarball" "https://dl.google.com/go/$tarball"
+	curl -fsSL -o "$tmp/$tarball.sha256" "https://dl.google.com/go/$tarball.sha256"
+	(cd "$tmp" && echo "$(awk '{print $1}' "$tarball.sha256")  $tarball" | sha256sum -c -)
 	rm -rf /usr/local/go
 	tar -C /usr/local -xzf "$tmp/$tarball"
 	ln -sf /usr/local/go/bin/go /usr/local/bin/go

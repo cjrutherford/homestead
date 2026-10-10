@@ -53,7 +53,7 @@ class TestBootstrapScript(unittest.TestCase):
     def test_minimal_dependencies(self):
         content = read("scripts/bootstrap.sh")
         for symbol in ("command -v systemctl", "ca-certificates curl",
-                       "go.mod", "go.dev/dl", "sha256sum -c"):
+                       "go.mod", "dl.google.com/go", "sha256sum -c"):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, content)
 

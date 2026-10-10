@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -48,6 +49,11 @@ func TestFirewallStatusShape(t *testing.T) {
 }
 
 func TestFirewallExternalPlanIsInstructions(t *testing.T) {
+	// Needs the nftables client: foreign dev machines and
+	// PATH-limited shells lack it, and its absence skips.
+	if _, err := exec.LookPath("nft"); err != nil {
+		t.Skip("nft unavailable")
+	}
 	srv := externalServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/firewall/plan", nil)
 	rec := httptest.NewRecorder()
