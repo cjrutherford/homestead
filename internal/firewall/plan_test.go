@@ -206,3 +206,46 @@ func TestParseSetAndIPv6(t *testing.T) {
 		t.Fatalf("canonical = %q, want %q", rules[0].Canonical, want)
 	}
 }
+
+func TestRenderedRulesRoundTrip(t *testing.T) {
+	// Regression: rendered rules once carried no comment, so live
+	// parses marked every own rule foreign and verification never
+	// converged. Rendered output must name itself, and Build must
+	// find a comment-carrying live table in sync.
+	rule := Rule{
+		Name:       "mgmt-lan",
+		Interfaces: []string{"eth0"},
+		Source:     Source{Zone: ZoneLocal, CIDR: "192.168.1.0/24"},
+		Service:    Service{Name: "management", Protocol: ProtocolTCP, Port: 8080},
+		Action:     ActionAccept,
+		Priority:   100,
+	}
+	rendered, err := renderRule(rule)
+	if err != nil {
+		t.Fatalf("renderRule: %v", err)
+	}
+	if !strings.HasSuffix(rendered, `comment "mgmt-lan"`) {
+		t.Fatalf("rendered = %q, want name comment", rendered)
+	}
+	live, err := ParseLiveTable([]byte(`{"nftables": [
+	  {"rule": {"family": "inet", "table": "homestead", "chain": "input",
+	    "comment": "mgmt-lan",
+	    "expr": [
+	      {"match": {"op": "==", "left": {"meta": {"key": "iifname"}}, "right": "eth0"}},
+	      {"match": {"op": "==", "left": {"payload": {"protocol": "ip", "field": "saddr"}},
+	        "right": {"prefix": {"addr": "192.168.1.0", "len": 24}}}},
+	      {"match": {"op": "==", "left": {"payload": {"protocol": "tcp", "field": "dport"}}, "right": 8080}},
+	      {"accept": null}
+	    ]}}
+	]}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	plan, err := Build(RuleSet{Rules: []Rule{rule}}, live)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !plan.InSync {
+		t.Fatalf("changes = %+v, want in sync", plan.Changes)
+	}
+}

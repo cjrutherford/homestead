@@ -182,6 +182,20 @@ func Render(set RuleSet) (string, error) {
 // renderRule renders one rule verdict line. Interfaces sort for canonical
 // stability with live parsing (S053 diffs rendered text).
 func renderRule(rule Rule) (string, error) {
+	body, err := renderRuleBody(rule)
+	if err != nil {
+		return "", err
+	}
+	// The rule name rides as a comment: live rules report it back,
+	// which is how verification matches desired against live instead
+	// of proposing our own rules for removal as foreign. Names match
+	// [a-z][a-z0-9-]*, so quoting is safe. Comparison (Build) uses
+	// the body alone — comments name rules, they never match traffic.
+	return body + fmt.Sprintf(" comment %q", rule.Name), nil
+}
+
+// renderRuleBody renders the match grammar without the name comment.
+func renderRuleBody(rule Rule) (string, error) {
 	parts := []string{}
 	if len(rule.Interfaces) > 0 {
 		ifaces := append([]string(nil), rule.Interfaces...)

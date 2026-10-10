@@ -83,8 +83,8 @@ func TestBuildApplyScriptExact(t *testing.T) {
 	want := `add table inet homestead
 flush table inet homestead
 add chain inet homestead input { type filter hook input priority filter; policy accept; }
-add rule inet homestead input ip saddr 192.168.1.0/24 tcp dport 8080 accept
-add rule inet homestead input tcp dport 8080 drop
+add rule inet homestead input ip saddr 192.168.1.0/24 tcp dport 8080 accept comment "mgmt-lan"
+add rule inet homestead input tcp dport 8080 drop comment "mgmt-public-drop"
 `
 	if got != want {
 		t.Fatalf("script:\n%s\nwant:\n%s", got, want)

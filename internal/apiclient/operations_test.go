@@ -107,3 +107,24 @@ func TestListOperations(t *testing.T) {
 		t.Fatalf("ops = %+v, want newest first", ops)
 	}
 }
+
+func TestStreamIgnoresCallTimeout(t *testing.T) {
+	// Regression: streams once shared the 10s call timeout, killing
+	// --follow on any operation quieter than that (image pulls).
+	// A 50ms call timeout must not disturb a 300ms-quiet stream.
+	c, opStore := operationClient(t)
+	short := New(c.base, WithTimeout(50*time.Millisecond))
+	created, err := opStore.Create("test.op", "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		_ = opStore.Transition(created.ID, operation.StatusRunning, "", "")
+		time.Sleep(100 * time.Millisecond)
+		_ = opStore.Transition(created.ID, operation.StatusSucceeded, "", "")
+	}()
+	if err := short.StreamOperation(context.Background(), created.ID, func(operation.Operation) {}); err != nil {
+		t.Fatalf("StreamOperation: %v", err)
+	}
+}

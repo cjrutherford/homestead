@@ -41,6 +41,17 @@ class TestUnitFile(unittest.TestCase):
         )
         self.assertIn("--listen 127.0.0.1:", exec_start)
 
+    def test_exec_start_pins_packaged_catalog(self):
+        exec_start = load_unit()["Service"]["ExecStart"]
+        self.assertIn("--catalog-dir /usr/local/share/homestead/catalog", exec_start)
+
+    def test_writable_paths_cover_state_and_stacks(self):
+        paths = load_unit()["Service"]["ReadWritePaths"]
+        for want in ("/etc/homestead", "/var/lib/homestead",
+                     "/opt/homestead/stacks"):
+            with self.subTest(want=want):
+                self.assertIn(want, paths)
+
     def test_restart_policy(self):
         service = load_unit()["Service"]
         self.assertEqual(service["Restart"], "on-failure")
@@ -95,6 +106,12 @@ class TestInstallScripts(unittest.TestCase):
         for step in ("daemon-reload", "systemctl enable", "systemctl restart"):
             with self.subTest(step=step):
                 self.assertIn(step, content)
+
+    def test_install_places_packaged_catalog(self):
+        content = read("scripts/install-systemd.sh")
+        for symbol in ("catalog", "/usr/local/share/homestead/catalog"):
+            with self.subTest(symbol=symbol):
+                self.assertIn(symbol, content)
 
     def test_uninstall_disables_and_cleans_up(self):
         content = read("scripts/uninstall-systemd.sh")

@@ -389,11 +389,14 @@ sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
   claim, admin setup plus login, doctor, firewall apply, per-app
   review-then-install with `--follow` (jellyfin, nextcloud,
   immich on isolated networks), drift-clean proof per package
-  (no manual Compose editing, mechanically asserted), and
-  serving checks on published ports. Every phase asserts and
-  fails loudly; plan files generate from environment with sane
-  port defaults. Backup has no CLI/API surface yet, so the run
-  ends noting manual backup configuration before production use.
+  (no manual Compose editing, mechanically asserted), and access
+  validation one level down (generated stacks publish no host
+  ports by design — every service owns a container, secret-free
+  apps prove health, secret-gated ones report status). Every
+  phase asserts and fails loudly; plan files generate from
+  environment with sane port defaults. Backup has no CLI/API
+  surface yet, so the run ends noting manual backup
+  configuration before production use.
 
 ## Control-plane recovery (S230)
 

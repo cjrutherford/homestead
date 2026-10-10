@@ -154,11 +154,11 @@ table inet homestead {
     chain input {
         type filter hook input priority filter; policy accept;
         # mgmt-lan
-        iifname "eth0" ip saddr 192.168.1.0/24 tcp dport 8080 accept
+        iifname "eth0" ip saddr 192.168.1.0/24 tcp dport 8080 accept comment "mgmt-lan"
         # dns-lan
-        ip saddr 10.0.0.0/8 udp dport 53 accept
+        ip saddr 10.0.0.0/8 udp dport 53 accept comment "dns-lan"
         # mgmt-public-drop
-        tcp dport 8080 drop
+        tcp dport 8080 drop comment "mgmt-public-drop"
     }
 }
 `

@@ -32,6 +32,11 @@ const DefaultTimeout = 10 * time.Second
 type Client struct {
 	base string
 	http *http.Client
+	// stream serves event streams without a deadline: the server
+	// closes them at terminal states and the caller's context
+	// bounds them — a call timeout would kill long operations
+	// mid-follow instead.
+	stream *http.Client
 }
 
 // Option configures a Client.
@@ -54,8 +59,9 @@ func WithHTTPClient(h *http.Client) Option {
 // New returns a Client for baseURL (e.g. http://127.0.0.1:8080).
 func New(baseURL string, opts ...Option) *Client {
 	c := &Client{
-		base: strings.TrimRight(baseURL, "/"),
-		http: &http.Client{Timeout: DefaultTimeout},
+		base:   strings.TrimRight(baseURL, "/"),
+		http:   &http.Client{Timeout: DefaultTimeout},
+		stream: &http.Client{},
 	}
 	for _, opt := range opts {
 		opt(c)

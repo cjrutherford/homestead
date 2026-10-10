@@ -27,6 +27,8 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 : "${JELLYFIN_PORT:=8096}"
 : "${NEXTCLOUD_PORT:=8080}"
 : "${IMMICH_PORT:=2283}"
+# Plan files render in python subprocesses: inputs must export.
+export HOMESTEAD_DOMAIN HOMESTEAD_APP_MOUNT HOMESTEAD_BULK_MOUNT
 
 if [ "$(id -u)" -ne 0 ]; then
 	echo "error: run as root (e.g. sudo ./scripts/acceptance.sh)" >&2
@@ -129,16 +131,51 @@ for package in jellyfin nextcloud immich; do
 done
 
 phase "access"
-check_port() {
-	# $1 = package, $2 = host port: any sub-500 answer proves serving.
-	code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "http://127.0.0.1:$2/")" ||
-		fail access "$1 unreachable on port $2"
-	test "$code" -lt 500 || fail access "$1 answered HTTP $code on port $2"
-	echo "$1 serves HTTP $code"
+# Generated stacks publish no host ports by design (S153):
+# local-first serving goes through the proxy, never host ports.
+# Access validates one level down instead: every manifest service
+# owns a container, and images with health contracts prove serving.
+# Secret-gated apps (database passwords arrive with the secrets
+# slice) report status without failing: install convergence plus
+# presence is what this phase owns.
+: "${HOMESTEAD_HEALTHY_APPS:=jellyfin}"
+check_stack() {
+	# $1 = package, $2... = "service" entries
+	package="$1"
+	shift
+	json="$(docker compose --project-directory "/opt/homestead/stacks/$package" ps --format json)" ||
+		fail access "compose ps failed for $package"
+	python3 - "$package" "$HOMESTEAD_HEALTHY_APPS" "$json" "$@" <<'EOF' || fail access "$package presence/health unproven"
+import json, sys
+package, healthy_pkgs, raw, services = sys.argv[1], sys.argv[2].split(), sys.argv[3], sys.argv[4:]
+try:
+    containers = json.loads(raw or "[]")
+except json.JSONDecodeError:
+    # Newer Compose emits one object per line instead of an array.
+    try:
+        containers = [json.loads(line) for line in raw.splitlines() if line.strip()]
+    except json.JSONDecodeError as exc:
+        sys.exit(f"{package}: unparsable compose ps: {exc}")
+if isinstance(containers, dict):
+    containers = [containers]
+names = set()
+for container in containers:
+    name = container.get("Name", "")
+    names.add(name)
+    print(f"{package}: {name} {container.get('State','?')} {container.get('Health','')}".rstrip())
+missing = [s for s in services if f"{package}-{s}" not in names]
+if missing:
+    sys.exit(f"{package}: missing containers for services: {missing}")
+if package in healthy_pkgs:
+    bad = [c.get("Name", "") for c in containers
+           if not c.get("Health", "").startswith("healthy")]
+    if bad:
+        sys.exit(f"{package}: unhealthy: {bad}")
+EOF
 }
-check_port jellyfin "$JELLYFIN_PORT"
-check_port nextcloud "$NEXTCLOUD_PORT"
-check_port immich "$IMMICH_PORT"
+check_stack jellyfin jellyfin
+check_stack nextcloud nextcloud
+check_stack immich server machine-learning database cache
 
 echo "acceptance PASSED: base suite installed with validated access"
 echo "note: backups have no CLI/API surface yet; configure them before production use"

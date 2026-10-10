@@ -34,11 +34,13 @@ esac
 command -v systemctl >/dev/null || { echo "error: systemctl not found; systemd is required" >&2; exit 1; }
 command -v apt-get >/dev/null || { echo "error: apt-get not found" >&2; exit 1; }
 
-# Minimal OS packages: TLS roots for module downloads plus a fetcher
-# for the toolchain tarball. Everything else (build, service) comes
-# from Go and the install script — never a metapackage sprawl.
+# Minimal OS packages: TLS roots for module downloads, a fetcher for
+# the toolchain tarball, and nftables for the firewall the security
+# baseline requires (S222) — the package installs no rules by itself.
+# Everything else (build, service) comes from Go and the install
+# script — never a metapackage sprawl.
 apt-get update
-apt-get install -y --no-install-recommends ca-certificates curl
+apt-get install -y --no-install-recommends ca-certificates curl nftables
 
 # Required toolchain comes from go.mod, overridable for testing new
 # releases before the module moves: HOMESTEAD_GO_VERSION=1.26.0.

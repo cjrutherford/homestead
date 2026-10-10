@@ -132,3 +132,11 @@
 - Corrupt-database repair: S230 snapshots state and refuses a
   missing database as disaster recovery; repairing corrupt
   state belongs to the disaster-recovery flow (S234).
+- Storage setup surfaces: storage registration and assignment
+  plus the setup wizard apply paths have no API or CLI surface;
+  KVM acceptance proved installs block without assignments, so
+  owners cannot complete setup on a real machine yet.
+- Proxy serve surfaces: Caddy deployment and route
+  reconciliation have no API or CLI surface; KVM acceptance
+  proved installed apps stay unreachable until those land
+  (generated stacks publish no host ports by design).

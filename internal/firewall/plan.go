@@ -84,7 +84,7 @@ func Build(desired RuleSet, live []LiveRule) (Plan, error) {
 	}
 	want := map[string]string{}
 	for _, rule := range desired.Rules {
-		canonical, err := renderRule(rule)
+		canonical, err := renderRuleBody(rule)
 		if err != nil {
 			return Plan{}, err
 		}

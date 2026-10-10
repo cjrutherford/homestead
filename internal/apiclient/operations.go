@@ -61,7 +61,7 @@ func (c *Client) StreamOperation(ctx context.Context, id int64, onState func(ope
 		return fmt.Errorf("api: %w", err)
 	}
 	req.Header.Set("Accept", "text/event-stream")
-	res, err := c.http.Do(req)
+	res, err := c.stream.Do(req)
 	if err != nil {
 		return fmt.Errorf("api: %w", err)
 	}

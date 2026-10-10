@@ -5,8 +5,9 @@
 # supervision; the daemon drains gracefully on SIGTERM (see S010).
 #
 # Hardening is intentionally strict. ReadWritePaths grants exactly the state
-# directories the layout owns (S012); /opt/homestead/stacks follows when
-# stack lifecycle lands (S074+).
+# directories the layout owns (S012) plus the stacks directory installs
+# write (S156) and the packaged read-only catalog (S160, installed by
+# install-systemd.sh alongside the binary).
 
 [Unit]
 Description=Homestead control daemon
@@ -16,12 +17,12 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/bin/homestead-server --listen 127.0.0.1:8080
+ExecStart=/usr/local/bin/homestead-server --listen 127.0.0.1:8080 --catalog-dir /usr/local/share/homestead/catalog
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=10
 RuntimeDirectory=homestead
-ReadWritePaths=/etc/homestead /var/lib/homestead /var/log/homestead
+ReadWritePaths=/etc/homestead /var/lib/homestead /var/log/homestead /opt/homestead/stacks
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
