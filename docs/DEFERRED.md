@@ -132,5 +132,3 @@
 - Corrupt-database repair: S230 snapshots state and refuses a
   missing database as disaster recovery; repairing corrupt
   state belongs to the disaster-recovery flow (S234).
-- Secret value transfer: S231 exports names only by design;
-  re-entering values at import belongs to S232.

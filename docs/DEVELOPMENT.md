@@ -421,6 +421,16 @@ sudo ./scripts/recover-control-plane.sh
   0644 with strict parsing, version bounds, and atomic writes;
   import builds on the same reader.
 
+## Configuration import (S232)
+
+- `internal/desired` validates and imports exported documents:
+  version bounds plus store/desired schema compatibility refuse
+  newer documents, secret completeness proves before anything
+  writes (missing names listed, blanks counted missing, extras
+  refused), secrets set before the desired file lands so failures
+  leave no half-imported state, and re-runs converge with values
+  decrypting under a fresh key — recovery, not copying.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing
