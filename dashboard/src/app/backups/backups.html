@@ -1,0 +1,95 @@
+<section aria-label="Backups">
+  <h2>Backups</h2>
+  <p>
+    Backups land on the storage you assigned the backup class. These
+    controls configure destination and schedules; they do not run a
+    backup.
+  </p>
+
+  @if (error()) {
+    <app-state-message kind="error" [headline]="error()" />
+  }
+  @if (notice()) {
+    <app-state-message kind="status" [headline]="notice()" />
+  }
+
+  <h3>Destination</h3>
+  @if (destination(); as root) {
+    <p>Backup root: <code>{{ root }}</code></p>
+  } @else if (destinationError()) {
+    <app-state-message kind="error" [headline]="destinationError()" />
+  } @else {
+    <app-state-message kind="loading" headline="Resolving destination…" />
+  }
+
+  <h3>Schedules</h3>
+  <button type="button" (click)="refresh()" [disabled]="loading() || busy()">
+    Refresh
+  </button>
+  @if (loading() && schedules().length === 0) {
+    <app-state-message kind="loading" headline="Loading schedules…" />
+  } @else {
+    <ul>
+      @for (row of schedules(); track row.Package) {
+        <li>
+          <strong>{{ row.Package }}</strong>
+          every {{ row.IntervalSeconds / 3600 }}h, retain {{ row.Retain }},
+          {{ row.Enabled ? 'enabled' : 'disabled' }}, by {{ row.Actor }}
+          <button type="button" (click)="inspect(row.Package)">Inspect</button>
+          <button type="button" (click)="remove(row.Package)" [disabled]="busy()">
+            Remove
+          </button>
+        </li>
+      } @empty {
+        <li>
+          <app-state-message kind="empty" headline="No backup schedules yet." />
+        </li>
+      }
+    </ul>
+  }
+
+  @if (inspected(); as one) {
+    <h3>Schedule detail: {{ one.Package }}</h3>
+    <p>
+      Every {{ one.IntervalSeconds / 3600 }}h, retain {{ one.Retain }},
+      {{ one.Enabled ? 'enabled' : 'disabled' }}. Last changed by
+      {{ one.Actor }} at {{ one.UpdatedAt }}.
+    </p>
+  }
+
+  <h3>Save schedule</h3>
+  <form
+    (submit)="
+      save(
+        packageInput.value,
+        hoursInput.value,
+        retainInput.value,
+        enabledInput.checked,
+        actorInput.value
+      );
+      $event.preventDefault()
+    "
+  >
+    <label>
+      Package
+      <input #packageInput name="package" autocomplete="off" [disabled]="busy()" />
+    </label>
+    <label>
+      Interval (hours)
+      <input #hoursInput name="interval" inputmode="numeric" [disabled]="busy()" />
+    </label>
+    <label>
+      Retain (runs)
+      <input #retainInput name="retain" inputmode="numeric" value="7" [disabled]="busy()" />
+    </label>
+    <label>
+      <input #enabledInput type="checkbox" name="enabled" checked [disabled]="busy()" />
+      Enabled
+    </label>
+    <label>
+      Acting owner
+      <input #actorInput name="actor" autocomplete="off" [disabled]="busy()" />
+    </label>
+    <button type="submit" [disabled]="busy()">Save schedule</button>
+  </form>
+</section>

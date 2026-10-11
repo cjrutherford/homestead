@@ -70,11 +70,11 @@ unchanged.
 | GET | /api/v1/tunnel/status | `"tunnel"` | `tunnelStatus` | Discovery and health on CLI and dashboard |
 | POST | /api/v1/tunnel/setup | `"tunnel"` | `tunnelSetup` | Tunnel setup on CLI and dashboard |
 | DELETE | /api/v1/tunnel/tunnels/{id} | `"tunnel"` | `tunnelTeardown` | Tunnel teardown on CLI and dashboard |
-| GET | /api/v1/backups/destination | `"backup"` | n/a | Resolved backup root on CLI; dashboard surface belongs to later slices |
-| GET | /api/v1/backups/schedules | `"backup"` | n/a | Schedule records on CLI; dashboard surface belongs to later slices |
-| POST | /api/v1/backups/schedules | `"backup"` | n/a | Schedule save on CLI; dashboard surface belongs to later slices |
-| GET | /api/v1/backups/schedules/{package} | `"backup"` | n/a | Visible through schedules listing on CLI; dashboard surface belongs to later slices |
-| DELETE | /api/v1/backups/schedules/{package} | `"backup"` | n/a | Schedule removal on CLI; dashboard surface belongs to later slices |
+| GET | /api/v1/backups/destination | `"backup"` | `backupDestination` | Resolved backup root on CLI and dashboard |
+| GET | /api/v1/backups/schedules | `"backup"` | `backupSchedules` | Schedule records on CLI and dashboard |
+| POST | /api/v1/backups/schedules | `"backup"` | `backupScheduleSave` | Schedule save on CLI and dashboard |
+| GET | /api/v1/backups/schedules/{package} | `"backup"` | `backupScheduleGet` | Visible through schedules listing on CLI; per-package inspect on dashboard |
+| DELETE | /api/v1/backups/schedules/{package} | `"backup"` | `backupScheduleDelete` | Schedule removal on CLI and dashboard |
 | GET | /api/v1/updates | `"updates"` | `updates` | Review rows on both surfaces |
 | POST | /api/v1/updates/{name}/apply | `"updates"` | `applyUpdate` | Approved updates on both surfaces |
 | GET | /api/v1/dockge | n/a | `dockge` | Expert-interface link with assessed policy on dashboard; no command surface yet |

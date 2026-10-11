@@ -236,6 +236,16 @@ export interface ExposureApproval {
   actor: string;
 }
 
+/** GET /api/v1/backups/schedules — one persisted schedule record. */
+export interface BackupSchedule {
+  Package: string;
+  IntervalSeconds: number;
+  Retain: number;
+  Enabled: boolean;
+  Actor: string;
+  UpdatedAt: string;
+}
+
 /** GET /api/v1/tunnel/status — discovery, tunnels, and connector. */
 export interface TunnelStatus {
   preferred: string;
@@ -414,6 +424,36 @@ export class ApiService {
     return this.http.post<OperationStarted>('/api/v1/exposure/apply', {
       host,
     });
+  }
+
+  backupDestination(): Observable<{ destination: string }> {
+    return this.http.get<{ destination: string }>('/api/v1/backups/destination');
+  }
+
+  backupSchedules(): Observable<BackupSchedule[]> {
+    return this.http.get<BackupSchedule[]>('/api/v1/backups/schedules');
+  }
+
+  backupScheduleSave(body: {
+    package: string;
+    interval_seconds: number;
+    retain: number;
+    enabled: boolean;
+    actor: string;
+  }): Observable<BackupSchedule> {
+    return this.http.post<BackupSchedule>('/api/v1/backups/schedules', body);
+  }
+
+  backupScheduleGet(name: string): Observable<BackupSchedule> {
+    return this.http.get<BackupSchedule>(
+      `/api/v1/backups/schedules/${encodeURIComponent(name)}`,
+    );
+  }
+
+  backupScheduleDelete(name: string): Observable<void> {
+    return this.http.delete<void>(
+      `/api/v1/backups/schedules/${encodeURIComponent(name)}`,
+    );
   }
 
   tunnelStatus(): Observable<TunnelStatus> {
