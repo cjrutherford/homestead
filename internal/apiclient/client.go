@@ -37,6 +37,9 @@ type Client struct {
 	// bounds them — a call timeout would kill long operations
 	// mid-follow instead.
 	stream *http.Client
+	// token, when set, is sent as Authorization: Bearer on every call
+	// (ADR-020, S256).
+	token string
 }
 
 // Option configures a Client.
@@ -56,6 +59,45 @@ func WithHTTPClient(h *http.Client) Option {
 	}
 }
 
+// WithToken authenticates every request with Authorization: Bearer
+// <token>, the CLI's session transport (ADR-020). Requests that already
+// carry an Authorization header keep it.
+func WithToken(token string) Option {
+	return func(c *Client) {
+		c.token = token
+	}
+}
+
+// BaseURL returns the daemon base URL the client targets.
+func (c *Client) BaseURL() string { return c.base }
+
+// Token returns the bearer token the client sends, if any.
+func (c *Client) Token() string { return c.token }
+
+// bearerTransport adds the session bearer to outgoing requests.
+type bearerTransport struct {
+	base  http.RoundTripper
+	token string
+}
+
+func (t bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Header.Get("Authorization") == "" {
+		req = req.Clone(req.Context())
+		req.Header.Set("Authorization", "Bearer "+t.token)
+	}
+	return t.base.RoundTrip(req)
+}
+
+func withBearer(h *http.Client, token string) *http.Client {
+	clone := *h
+	base := clone.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	clone.Transport = bearerTransport{base: base, token: token}
+	return &clone
+}
+
 // New returns a Client for baseURL (e.g. http://127.0.0.1:8080).
 func New(baseURL string, opts ...Option) *Client {
 	c := &Client{
@@ -65,6 +107,10 @@ func New(baseURL string, opts ...Option) *Client {
 	}
 	for _, opt := range opts {
 		opt(c)
+	}
+	if c.token != "" {
+		c.http = withBearer(c.http, c.token)
+		c.stream = withBearer(c.stream, c.token)
 	}
 	return c
 }

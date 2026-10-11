@@ -37,8 +37,9 @@ class TestLoginExperience(unittest.TestCase):
     def test_api_session_methods(self):
         src = read_dash("src/app/core/api.service.ts")
         self.assertIn("'/api/v1/sessions'", src)
-        self.assertIn("Authorization", src)
-        self.assertIn("Bearer", src)
+        # S256: the browser uses the HttpOnly cookie, never a bearer header.
+        self.assertNotIn("Bearer", src)
+        self.assertIn("logout()", src)
 
     def test_login_route_and_nav(self):
         routes = read_dash("src/app/app.routes.ts")

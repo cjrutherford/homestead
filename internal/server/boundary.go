@@ -19,7 +19,7 @@ import (
 // A single middleware wraps the TCP mux and classifies every request
 // against routeClasses. In S255 it is REPORT-ONLY: requests it would
 // reject are logged and audited (aggregated) but always served. S256 adds
-// the cookie/CSRF transport; S257 flips enforcement.
+// the cookie/CSRF transport (recognised here); S257 flips enforcement.
 
 // RouteClass says what the boundary requires of a route.
 type RouteClass int
@@ -55,6 +55,8 @@ const (
 	reasonWizardClaimed  = "claim-window-closed"
 	reasonUnclassified   = "unclassified-route"
 	reasonClaimStateErr  = "claim-state-error"
+	reasonCSRFMissing    = "csrf-missing"
+	reasonCSRFMismatch   = "csrf-mismatch"
 )
 
 // auditActionWouldReject is the audit action of aggregated report-only
@@ -233,19 +235,39 @@ func (b *boundary) check(mux *recordingMux, r *http.Request) {
 		}
 		return
 	}
-	token, ok := bearerToken(r.Header.Get("Authorization"))
-	switch {
-	case !ok:
+	token, viaCookie, ok := sessionCredential(r)
+	if !ok {
 		if class == ClassClaimWindow {
 			b.report(pattern, reasonWizardClaimed)
 		} else {
 			b.report(pattern, reasonNoSession)
 		}
-	default:
-		if _, err := b.sessions.Verify(token); err != nil {
-			b.report(pattern, reasonInvalidSession)
+		return
+	}
+	session, err := b.sessions.Verify(token)
+	if err != nil {
+		b.report(pattern, reasonInvalidSession)
+		return
+	}
+	// Cookies are ambient, so a mutating cookie-authenticated request
+	// must echo the per-session CSRF token. Bearer requests are exempt.
+	if viaCookie && isMutating(r.Method) {
+		presented := r.Header.Get(CSRFHeader)
+		switch {
+		case presented == "":
+			b.report(pattern, reasonCSRFMissing)
+		case !session.CSRFMatches(presented):
+			b.report(pattern, reasonCSRFMismatch)
 		}
 	}
+}
+
+func isMutating(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	}
+	return false
 }
 
 // dashboardPattern is the method-less static dashboard catch-all.

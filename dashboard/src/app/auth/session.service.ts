@@ -2,8 +2,12 @@ import { computed, inject, Injectable, signal } from '@angular/core';
 import { catchError, map, Observable, of, tap } from 'rxjs';
 import { ApiService } from '../core/api.service';
 
+/**
+ * Display-only session hint. The credential is the HttpOnly cookie the
+ * browser holds; no token is ever readable by, or stored by, the
+ * dashboard (ADR-020, S256).
+ */
 export interface StoredSession {
-  token: string;
   username: string;
   expiresAt: string;
 }
@@ -12,9 +16,10 @@ export interface StoredSession {
 export const SESSION_STORAGE_KEY = 'homestead.session';
 
 /**
- * Client session state (S033): logged-in user plus token, persisted across
- * browser restarts to match the 30-day server sessions. Logout clears
- * locally first and destroys server-side best-effort.
+ * Client session state (S033, S256): the logged-in user, persisted across
+ * reloads as a hint; the server session lives in the cookie (12h idle, 7d
+ * absolute). Logout clears locally first and revokes server-side
+ * best-effort. A 401 from the API calls expire().
  */
 @Injectable({ providedIn: 'root' })
 export class SessionService {
@@ -22,7 +27,6 @@ export class SessionService {
 
   private readonly session = signal<StoredSession | null>(readStoredSession());
 
-  readonly token = computed(() => this.session()?.token ?? null);
   readonly username = computed(() => this.session()?.username ?? null);
   readonly isLoggedIn = computed(() => this.session() !== null);
 
@@ -30,7 +34,6 @@ export class SessionService {
     return this.api.login(username, password).pipe(
       tap((session) => {
         this.store({
-          token: session.token,
           username,
           expiresAt: session.expires_at,
         });
@@ -40,15 +43,20 @@ export class SessionService {
   }
 
   logout(): Observable<void> {
-    const token = this.token();
+    const wasLoggedIn = this.isLoggedIn();
     this.clear();
-    if (!token) {
+    if (!wasLoggedIn) {
       return of(undefined);
     }
-    return this.api.logout(token).pipe(
+    return this.api.logout().pipe(
       map(() => undefined),
       catchError(() => of(undefined)),
     );
+  }
+
+  /** Drops the local hint after the server said the session is gone. */
+  expire(): void {
+    this.clear();
   }
 
   private store(session: StoredSession): void {
@@ -77,12 +85,11 @@ function readStoredSession(): StoredSession | null {
       return null;
     }
     const parsed = JSON.parse(raw) as Partial<StoredSession>;
-    if (typeof parsed.token !== 'string' || !parsed.token) {
-      return null;
+    if (typeof parsed.username !== 'string' || !parsed.username) {
+      return null; // also drops pre-S256 entries that held a token
     }
     return {
-      token: parsed.token,
-      username: typeof parsed.username === 'string' ? parsed.username : '',
+      username: parsed.username,
       expiresAt: typeof parsed.expiresAt === 'string' ? parsed.expiresAt : '',
     };
   } catch {

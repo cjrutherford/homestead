@@ -165,3 +165,22 @@ func TestMigrationV2SeedsUnclaimedAppliance(t *testing.T) {
 		t.Fatalf("state = %q, want UNCLAIMED", state)
 	}
 }
+
+func TestSessionTransportMigration(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), DBFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, idx := range []string{"sessions_token_hash_unique", "sessions_identity"} {
+		var n int
+		if err := s.DB().QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?`, idx).Scan(&n); err != nil || n != 1 {
+			t.Fatalf("index %s missing (n=%d, err=%v)", idx, n, err)
+		}
+	}
+	for _, col := range []string{"csrf_hash", "last_used_at"} {
+		if _, err := s.DB().Exec(`SELECT ` + col + ` FROM sessions LIMIT 1`); err != nil {
+			t.Fatalf("sessions.%s missing: %v", col, err)
+		}
+	}
+}

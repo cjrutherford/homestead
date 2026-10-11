@@ -17,9 +17,17 @@ import (
 //	POST   /api/v1/sessions      log in, mint a session token
 //	DELETE /api/v1/sessions      log out (Authorization: Bearer <token>)
 //
+// Session transport (ADR-020, S256): login sets an HttpOnly,
+// SameSite=Strict cookie (Secure when the request arrived over TLS)
+// for the browser and returns the same token in the body as a bearer
+// for the CLI; both resolve to one session. A second, script-readable
+// CSRF cookie carries the per-session token the dashboard echoes in
+// X-CSRF-Token on cookie-authenticated mutations. Sessions live 12h
+// idle / 7d absolute and are revoked by logout and password change.
+//
 // Setup needs CLAIMED state with no administrator yet: 403 unclaimed,
 // 409 already set up, 422 weak credentials, 201 created. Login answers
-// 200 with the single-use token or 401 without saying why. Logout
+// 200 with the reusable token or 401 without saying why. Logout
 // answers 204 or 401. Requiring sessions on other endpoints belongs to
 // later slices.
 func (s *Server) MountAuth(svc *auth.Service, auditSvc *audit.Service) {
@@ -100,8 +108,10 @@ func (s *Server) handleLogin(svc *auth.Service, auditSvc *audit.Service) http.Ha
 		}); recordErr != nil {
 			s.log.Warn("audit record failed", "action", "admin.login", "error", recordErr)
 		}
+		setSessionCookies(w, r, session)
 		writeJSON(w, map[string]any{
 			"token":      session.Token,
+			"csrf_token": session.CSRFToken,
 			"expires_at": session.ExpiresAt.UTC().Format(time.RFC3339),
 		})
 	}
@@ -109,9 +119,9 @@ func (s *Server) handleLogin(svc *auth.Service, auditSvc *audit.Service) http.Ha
 
 func (s *Server) handleLogout(svc *auth.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token, ok := bearerToken(r.Header.Get("Authorization"))
+		token, _, ok := sessionCredential(r)
 		if !ok {
-			http.Error(w, "missing bearer session", http.StatusUnauthorized)
+			http.Error(w, "missing session", http.StatusUnauthorized)
 			return
 		}
 		if err := svc.Logout(token); err != nil {
@@ -122,8 +132,64 @@ func (s *Server) handleLogout(svc *auth.Service) http.HandlerFunc {
 			http.Error(w, "failed to log out", http.StatusInternalServerError)
 			return
 		}
+		clearSessionCookies(w, r)
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// Cookie names (ADR-020). The session cookie is HttpOnly; the CSRF
+// cookie is deliberately readable by the dashboard script.
+const (
+	SessionCookieName = "homestead_session"
+	CSRFCookieName    = "homestead_csrf"
+	// CSRFHeader carries the CSRF token on cookie-authenticated
+	// mutating requests.
+	CSRFHeader = "X-CSRF-Token"
+)
+
+// requestIsTLS reports whether the request reached us over TLS, directly
+// or via a TLS-terminating proxy (the tunnel) that says so. A spoofed
+// header can only make the cookie Secure, never weaker.
+func requestIsTLS(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+func setSessionCookies(w http.ResponseWriter, r *http.Request, session auth.Session) {
+	secure := requestIsTLS(r)
+	http.SetCookie(w, &http.Cookie{
+		Name: SessionCookieName, Value: session.Token, Path: "/",
+		Expires: session.ExpiresAt, HttpOnly: true, Secure: secure,
+		SameSite: http.SameSiteStrictMode,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name: CSRFCookieName, Value: session.CSRFToken, Path: "/",
+		Expires: session.ExpiresAt, HttpOnly: false, Secure: secure,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func clearSessionCookies(w http.ResponseWriter, r *http.Request) {
+	secure := requestIsTLS(r)
+	for _, name := range []string{SessionCookieName, CSRFCookieName} {
+		http.SetCookie(w, &http.Cookie{
+			Name: name, Value: "", Path: "/", MaxAge: -1, Expires: time.Unix(0, 0),
+			HttpOnly: name == SessionCookieName, Secure: secure,
+			SameSite: http.SameSiteStrictMode,
+		})
+	}
+}
+
+// sessionCredential extracts the session token from the Authorization
+// bearer header, else from the session cookie. viaCookie tells callers
+// whether the credential was ambient (browser) and so needs CSRF.
+func sessionCredential(r *http.Request) (token string, viaCookie, ok bool) {
+	if t, found := bearerToken(r.Header.Get("Authorization")); found {
+		return t, false, true
+	}
+	if c, err := r.Cookie(SessionCookieName); err == nil && c.Value != "" {
+		return c.Value, true, true
+	}
+	return "", false, false
 }
 
 func bearerToken(header string) (string, bool) {
@@ -136,9 +202,9 @@ func bearerToken(header string) (string, bool) {
 
 func (s *Server) handleChangePassword(svc *auth.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token, ok := bearerToken(r.Header.Get("Authorization"))
+		token, _, ok := sessionCredential(r)
 		if !ok {
-			http.Error(w, "missing bearer session", http.StatusUnauthorized)
+			http.Error(w, "missing session", http.StatusUnauthorized)
 			return
 		}
 		session, err := svc.Verify(token)
@@ -158,7 +224,7 @@ func (s *Server) handleChangePassword(svc *auth.Service) http.HandlerFunc {
 		}
 		// Self-service only: the session owner is the only identity
 		// a caller may rotate, so sessions never escalate.
-		admin, err := svc.ChangePassword(session.Username, body.CurrentPassword, body.NewPassword)
+		admin, err := svc.ChangePasswordKeepingSession(session.Username, body.CurrentPassword, body.NewPassword, token)
 		if err != nil {
 			switch {
 			case errors.Is(err, auth.ErrInvalidCredentials):
@@ -178,9 +244,9 @@ func (s *Server) handleChangePassword(svc *auth.Service) http.HandlerFunc {
 
 func (s *Server) handleLockoutStatus(svc *auth.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token, ok := bearerToken(r.Header.Get("Authorization"))
+		token, _, ok := sessionCredential(r)
 		if !ok {
-			http.Error(w, "missing bearer session", http.StatusUnauthorized)
+			http.Error(w, "missing session", http.StatusUnauthorized)
 			return
 		}
 		session, err := svc.Verify(token)

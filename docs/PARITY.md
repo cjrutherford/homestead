@@ -9,6 +9,14 @@ Cell syntax (machine-checked): comma-separated `` `tokens` `` naming the
 CLI subcommand (`"status"`) or dashboard symbol (`health`); exactly `n/a`
 for an intentional gap. The Notes column is free text.
 
+Session requirement (ADR-020, S256): the CLI sends `Authorization: Bearer`
+from the session `homesteadctl login` stores (`~/.config/homestead/session`),
+and the dashboard uses the HttpOnly session cookie plus `X-CSRF-Token` on
+mutating calls. Both resolve to one session store. Every route except the
+public allowlist and the claim-window wizard routes requires such a session
+once S257 enforces; until then the boundary only reports. S256 added or
+renamed no routes or commands, so the table below is unchanged.
+
 | Method | Path | CLI | Dashboard | Notes |
 |--------|------|-----|-----------|-------|
 | GET | /healthz | `"status"` | `health` |  |

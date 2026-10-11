@@ -47,7 +47,8 @@ describe('Login', () => {
     req.flush({ token: 'session-token', expires_at: '2026-01-01T00:00:00Z' });
     expect(navigate).toHaveBeenCalledWith('/status');
     fixture.detectChanges();
-    expect(localStorage.getItem(SESSION_STORAGE_KEY)).toContain('session-token');
+    expect(localStorage.getItem(SESSION_STORAGE_KEY)).not.toContain('session-token');
+    expect(localStorage.getItem(SESSION_STORAGE_KEY)).toContain('owner');
     expect(text()).toContain('Already logged in as');
   });
 

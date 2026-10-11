@@ -110,11 +110,11 @@ describe('ApiService', () => {
     req.flush({ token: 'session-token', expires_at: '2026-01-01T00:00:00Z' });
   });
 
-  it('logs out with the bearer token', () => {
-    service.logout('session-token').subscribe();
+  it('logs out with the session cookie, no bearer header', () => {
+    service.logout().subscribe();
     const req = http.expectOne('/api/v1/sessions');
     expect(req.request.method).toBe('DELETE');
-    expect(req.request.headers.get('Authorization')).toBe('Bearer session-token');
+    expect(req.request.headers.has('Authorization')).toBe(false);
     req.flush(null);
   });
 

@@ -166,6 +166,15 @@
   S256; enforcement, removal of the inline session checks, and the
   pre-claim 401/403 behaviour belong to S257. Per-actor attribution of
   would-be rejections (entries are always actor `anonymous`) and
-  `Verify` scanning every session row per request (needs an indexed
-  token lookup before enforcement puts it on every call) are discovered
-  and unscheduled.
+  `Verify` scanning every session row per request (fixed in S256 by an
+  indexed lookup) are discovered; attribution remains unscheduled.
+- Session transport follow-ups (S256): CSRF, cookie, and idle/absolute
+  rules are report-only until S257 enforces them. Not done: an `Origin` /
+  `Sec-Fetch-Site` check as a second CSRF layer; a "list / revoke my
+  sessions" surface (CLI and dashboard); a CLI `login --no-store` flag and
+  OS keyring storage for the CLI token; an admin-visible session expiry
+  warning in the dashboard; trusted-proxy configuration for
+  `X-Forwarded-Proto` (today any client may claim https, which only
+  hardens the cookie); and a `Secure`-cookie caveat for plain-HTTP LAN
+  access: browsers accept `Secure` cookies only over HTTPS or localhost,
+  so TLS-less LAN dashboards rely on the cookie being non-Secure there.

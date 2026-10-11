@@ -177,15 +177,15 @@ curl localhost:8080/api/v1/identity              # {"state":"CLAIMED",...}
 
 ```bash
 homesteadctl admin setup --username owner --password-file ./owner.pass
-homesteadctl login --username owner --password-file ./owner.pass   # prints session token
-homesteadctl logout --token "$TOKEN"        # or HOMESTEAD_TOKEN env
+homesteadctl login --username owner --password-file ./owner.pass   # prints + stores the session
+homesteadctl logout                          # revokes it and deletes the stored file
 ```
 
 - Setup succeeds exactly once: CLAIMED state, no administrator yet (403
   unclaimed, 409 exists, 422 weak input). Usernames match
   `[a-z][a-z0-9_-]{0,63}`; passwords minimum 12 characters.
-- Passwords are bcrypt hashes; sessions are 30-day SHA-256-hashed tokens in
-  SQLite (`Authorization: Bearer`). Login never distinguishes unknown users
+- Passwords are bcrypt hashes; sessions are SHA-256-hashed tokens in
+  SQLite (lifetime and transport: see "Session transport (S256)"). Login never distinguishes unknown users
   from wrong passwords. Password files should be 0600.
 - Sessions are created here, not yet required: other endpoints stay open
   until a later slice enforces authentication. Recovery is S021.
@@ -209,13 +209,50 @@ homesteadctl logout --token "$TOKEN"        # or HOMESTEAD_TOKEN env
   dashboard catch-all `/` is public only for GET/HEAD outside `/api/`;
   any other fallthrough (unregistered method, unknown API path) is
   classified as a session route. Tokens and cookies are
-  never recorded. Only bearer sessions are recognised until S256 adds
-  cookies, so the dashboard reports as `no-session` for now.
+  never recorded. Bearer and cookie sessions are both recognised (S256);
+  cookie mutations additionally report `csrf-missing` / `csrf-mismatch`.
 - Production routes are mounted by `server.MountApp`, shared by
   `cmd/homestead-server` and the classification test so wiring cannot
   drift. Add the pattern to `routeClasses`; `TestEveryRegisteredRouteIsClassified` enumerates the
   real registrations (58 today) and fails on any unclassified or stale
   entry. Review audit with `homesteadctl audit` before S257 enforces.
+
+## Session transport (S256)
+
+One session store (ADR-004), two transports (ADR-020):
+
+- `POST /api/v1/sessions` returns `{token, csrf_token, expires_at}` and
+  sets two cookies: `homestead_session` (the same token; `HttpOnly`,
+  `SameSite=Strict`, `Path=/`, `Secure` when the request arrived over TLS
+  or via a proxy sending `X-Forwarded-Proto: https`) and `homestead_csrf`
+  (the per-session CSRF token; same attributes but readable by script).
+  `EventSource` SSE works because same-origin requests carry the cookie.
+- CSRF is a double-submit scheme checked against the server-side hash: a
+  mutating (POST/PUT/PATCH/DELETE) request authenticated by cookie must
+  send the CSRF token in `X-CSRF-Token`; it is SHA-256-hashed and
+  constant-time compared with the session's stored hash. Bearer requests
+  are exempt (browsers never attach that header ambiently); bearer wins
+  when both are present. Report-only: the boundary records `csrf-missing`
+  / `csrf-mismatch` (never the values) and serves the request.
+- Lifetime: 12h idle (refreshed on use, written at most once a minute) and
+  7d absolute (`auth.IdleTTL`, `auth.AbsoluteTTL`); legacy 30-day rows are
+  capped at 7d. Expired rows are deleted when seen and swept at login.
+- Revocation: `DELETE /api/v1/sessions` (bearer or cookie) deletes the
+  session and clears both cookies; a password change revokes every other
+  session of the administrator and keeps the caller's; recovery (S021)
+  revokes all.
+- `Verify` is one indexed lookup (`sessions_token_hash_unique`, migration
+  23), not a scan, so S257 can run it on every request.
+- CLI: `homesteadctl login` writes `~/.config/homestead/session` (JSON
+  with server URL, token, expiry; file 0600, directory 0700) and every
+  command sends it as `Authorization: Bearer`. `HOMESTEAD_TOKEN` and
+  `--token` override it; a file for a different `--server`, an expired one,
+  or one with group/world permissions is ignored. `logout` revokes
+  server-side and deletes the file.
+- Dashboard: `SessionService` keeps only a display hint (username,
+  expiry) in `localStorage`; the credential is the HttpOnly cookie. An
+  interceptor adds `X-CSRF-Token` to mutating API calls and, on a 401
+  (other than a failed login), drops the hint and routes to `/login`.
 
 ## Local admin recovery (S021)
 
@@ -914,9 +951,9 @@ confirmation, 409 lands on done). The wizard reads identity on init so
 already-claimed appliances start at the admin step.
 
 ## Authentication UI (S033)
-`/login` plus `SessionService`: login stores token/username/expiry in
-`localStorage` (`homestead.session`, matching the 30-day server sessions);
-the shell nav shows the username with logout instead of the login link.
+`/login` plus `SessionService`: login stores only username/expiry as a
+display hint in `localStorage` (`homestead.session`); the credential is the
+HttpOnly session cookie (S256, "Session transport"); the shell nav shows the username with logout instead of the login link.
 Logout clears locally first and destroys server-side best-effort. Sessions
 are created here, not yet required anywhere — no route guards yet. A
 mistyped password remains recoverable via `homesteadctl admin recover`

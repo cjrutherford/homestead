@@ -16,9 +16,12 @@ type Admin struct {
 	Username string `json:"username"`
 }
 
-// LoginSession is a minted session: single-use token plus expiry.
+// LoginSession is a minted session: a bearer token reusable until it
+// expires (12h idle, 7d absolute) or is revoked by logout or password
+// change. CSRFToken only matters to browsers; the CLI ignores it.
 type LoginSession struct {
 	Token     string    `json:"token"`
+	CSRFToken string    `json:"csrf_token,omitempty"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 

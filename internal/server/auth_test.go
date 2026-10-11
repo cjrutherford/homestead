@@ -200,6 +200,7 @@ func TestChangePasswordFlow(t *testing.T) {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
 	token := loginToken(t, srv, "long-enough-password")
+	other := loginToken(t, srv, "long-enough-password")
 	// Wrong current answers invalid without saying more.
 	rec = doJSON(t, srv, http.MethodPost, "/api/v1/admins/password",
 		`{"current_password":"wrong-password-here","new_password":"replacement-password-long"}`, token)
@@ -217,16 +218,20 @@ func TestChangePasswordFlow(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d (%s), want 200", rec.Code, rec.Body.String())
 	}
-	// The old credential dies and the old session with it: rotation
-	// revokes everything issued before.
+	// The old credential dies and every OTHER session with it; the
+	// session that rotated the password survives (ADR-020).
 	rec = doJSON(t, srv, http.MethodPost, "/api/v1/sessions",
 		`{"username":"owner","password":"long-enough-password"}`, "")
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("old login status = %d, want 401", rec.Code)
 	}
-	rec = doJSON(t, srv, http.MethodDelete, "/api/v1/sessions", "", token)
+	rec = doJSON(t, srv, http.MethodDelete, "/api/v1/sessions", "", other)
 	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("old session status = %d, want 401", rec.Code)
+		t.Fatalf("other session status = %d, want 401 (revoked)", rec.Code)
+	}
+	rec = doJSON(t, srv, http.MethodGet, "/api/v1/admins/lockout", "", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("rotating session status = %d, want 200 (kept)", rec.Code)
 	}
 	fresh := loginToken(t, srv, "replacement-password-long")
 	rec = doJSON(t, srv, http.MethodGet, "/api/v1/admins/lockout", "", fresh)

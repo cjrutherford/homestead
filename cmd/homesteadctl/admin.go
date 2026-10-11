@@ -119,6 +119,11 @@ func runLogin(ctx context.Context, client *apiclient.Client, args []string, stdo
 		}
 		return fail(stderr, err)
 	}
+	// The CSRF token is a browser concern; the CLI neither prints nor keeps it.
+	session.CSRFToken = ""
+	if err := saveSession(storedSession{Server: client.BaseURL(), Token: session.Token, ExpiresAt: session.ExpiresAt}); err != nil {
+		fmt.Fprintln(stderr, "warning: session not stored:", err)
+	}
 	writeJSON(stdout, session)
 	return exitOK
 }
@@ -126,20 +131,31 @@ func runLogin(ctx context.Context, client *apiclient.Client, args []string, stdo
 func runLogout(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	set := flag.NewFlagSet("logout", flag.ContinueOnError)
 	set.SetOutput(stderr)
-	token := set.String("token", os.Getenv("HOMESTEAD_TOKEN"), "session token (or HOMESTEAD_TOKEN)")
+	token := sessionTokenFlag(set)
 	if err := set.Parse(args); err != nil {
 		return exitUsage
 	}
 	if *token == "" {
-		fmt.Fprintln(stderr, "logout requires --token or HOMESTEAD_TOKEN")
+		*token = client.Token() // stored session from `login`
+	}
+	if *token == "" {
+		fmt.Fprintln(stderr, "logout requires --token, HOMESTEAD_TOKEN, or a stored session (homesteadctl login)")
 		return exitUsage
 	}
-	if err := client.Logout(ctx, *token); err != nil {
-		var statusErr *apiclient.StatusError
-		if errors.As(err, &statusErr) && statusErr.Status == 401 {
-			fmt.Fprintln(stderr, "invalid or expired session")
-			return exitError
+	err := client.Logout(ctx, *token)
+	var statusErr *apiclient.StatusError
+	revoked := errors.As(err, &statusErr) && statusErr.Status == 401
+	if (err == nil || revoked) && loadSession(client.BaseURL()) == *token {
+		// The session is gone server-side either way; drop the local copy.
+		if delErr := deleteSession(); delErr != nil {
+			fmt.Fprintln(stderr, "warning: stored session not removed:", delErr)
 		}
+	}
+	if revoked {
+		fmt.Fprintln(stderr, "invalid or expired session")
+		return exitError
+	}
+	if err != nil {
 		return fail(stderr, err)
 	}
 	fmt.Fprintln(stdout, "logged out")
@@ -158,6 +174,9 @@ func runAdminPasswd(ctx context.Context, client *apiclient.Client, args []string
 	token := sessionTokenFlag(set)
 	if err := set.Parse(args); err != nil {
 		return exitUsage
+	}
+	if *token == "" {
+		*token = client.Token()
 	}
 	if *currentFile == "" || *newFile == "" || *token == "" {
 		fmt.Fprintln(stderr, "admin passwd requires --current-password-file, --new-password-file and --token (or HOMESTEAD_TOKEN)")
@@ -198,6 +217,9 @@ func runAdminLockout(ctx context.Context, client *apiclient.Client, args []strin
 	token := sessionTokenFlag(set)
 	if err := set.Parse(args); err != nil {
 		return exitUsage
+	}
+	if *token == "" {
+		*token = client.Token()
 	}
 	if *token == "" {
 		fmt.Fprintln(stderr, "admin lockout requires --token (or HOMESTEAD_TOKEN)")

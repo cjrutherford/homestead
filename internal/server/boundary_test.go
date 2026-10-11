@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/http"
@@ -114,7 +115,8 @@ type fakeSessions struct{ valid string }
 
 func (f fakeSessions) Verify(token string) (auth.VerifiedSession, error) {
 	if token == f.valid {
-		return auth.VerifiedSession{Username: "owner"}, nil
+		sum := sha256.Sum256([]byte("csrf-good"))
+		return auth.VerifiedSession{Username: "owner", CSRFHash: sum[:]}, nil
 	}
 	return auth.VerifiedSession{}, auth.ErrInvalidSession
 }
@@ -464,5 +466,70 @@ func TestRunWaitsForBoundaryFinalFlush(t *testing.T) {
 	}
 	if n := r.audit.count(); n != 1 {
 		t.Fatalf("entries when Run returned = %d, want 1 (final flush must finish before stores close)", n)
+	}
+}
+
+func (r *boundaryRig) doCookie(method, path, cookie, csrf, bearer string) int {
+	req := httptest.NewRequest(method, path, nil)
+	if cookie != "" {
+		req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: cookie})
+	}
+	if csrf != "" {
+		req.Header.Set(CSRFHeader, csrf)
+	}
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	rec := httptest.NewRecorder()
+	r.srv.Handler().ServeHTTP(rec, req)
+	return rec.Code
+}
+
+func TestBoundaryRecognizesCookieSessionsAndCSRF(t *testing.T) {
+	cases := []struct {
+		name                       string
+		method, cookie, csrf, bear string
+		want                       string // "" = nothing reported
+	}{
+		{"cookie GET needs no csrf", "GET", "good", "", "", ""},
+		{"cookie PUT with csrf", "PUT", "good", "csrf-good", "", ""},
+		{"cookie PUT missing csrf", "PUT", "good", "", "", "csrf-missing"},
+		{"cookie PUT wrong csrf", "PUT", "good", "csrf-bad", "", "csrf-mismatch"},
+		{"cookie PUT csrf equal to session token", "PUT", "good", "good", "", "csrf-mismatch"},
+		{"cookie invalid session", "PUT", "bad", "csrf-good", "", "invalid-session"},
+		{"bearer PUT exempt from csrf", "PUT", "", "", "good", ""},
+		{"bearer wins over cookie, exempt", "PUT", "good", "", "good", ""},
+		{"bad bearer is not rescued by good cookie", "PUT", "good", "csrf-good", "bad", "invalid-session"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t, claim.StateClaimed)
+			path := "/api/v1/config"
+			if tc.method == "GET" {
+				path = "/api/v1/config"
+				r.srv.mux.HandleFunc("GET /api/v1/config", func(http.ResponseWriter, *http.Request) {})
+			}
+			r.doCookie(tc.method, path, tc.cookie, tc.csrf, tc.bear)
+			got := r.reasons()
+			if tc.want == "" {
+				if len(got) != 0 {
+					t.Fatalf("unexpected report %v", got)
+				}
+				return
+			}
+			if len(got) != 1 || !strings.Contains(got[0], "("+tc.want+")") {
+				t.Fatalf("report = %v, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBoundaryNeverRecordsCSRFValues(t *testing.T) {
+	r := newRig(t, claim.StateClaimed)
+	r.doCookie(http.MethodPut, "/api/v1/config", "good", "csrf-wrong-secret", "")
+	for _, d := range r.reasons() {
+		if strings.Contains(d, "csrf-wrong-secret") || strings.Contains(d, "csrf-good") {
+			t.Fatalf("csrf value leaked into audit: %q", d)
+		}
 	}
 }

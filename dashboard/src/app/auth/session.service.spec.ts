@@ -27,7 +27,6 @@ describe('SessionService', () => {
 
   it('starts logged out with no stored session', () => {
     expect(service.isLoggedIn()).toBe(false);
-    expect(service.token()).toBeNull();
   });
 
   it('stores the session and persists it on login', () => {
@@ -42,14 +41,14 @@ describe('SessionService', () => {
     expect(service.isLoggedIn()).toBe(true);
     expect(service.username()).toBe('owner');
     const stored = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY) ?? '{}');
-    expect(stored.token).toBe('session-token');
+    expect(stored.token).toBeUndefined(); // credential is the HttpOnly cookie
     expect(stored.username).toBe('owner');
   });
 
   it('restores a stored session without logging in', () => {
     localStorage.setItem(
       SESSION_STORAGE_KEY,
-      JSON.stringify({ token: 'old-token', username: 'owner', expiresAt: '' }),
+      JSON.stringify({ username: 'owner', expiresAt: '' }),
     );
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -59,7 +58,18 @@ describe('SessionService', () => {
     const fresh = TestBed.inject(SessionService);
     expect(fresh.isLoggedIn()).toBe(true);
     expect(fresh.username()).toBe('owner');
-    expect(fresh.token()).toBe('old-token');
+  });
+
+  it('drops pre-S256 stored entries that held a token', () => {
+    localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({ token: 'legacy', expiresAt: '' }),
+    );
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    expect(TestBed.inject(SessionService).isLoggedIn()).toBe(false);
   });
 
   it('clears locally and destroys server-side on logout', () => {
@@ -72,7 +82,7 @@ describe('SessionService', () => {
     service.logout().subscribe();
     const req = http.expectOne('/api/v1/sessions');
     expect(req.request.method).toBe('DELETE');
-    expect(req.request.headers.get('Authorization')).toBe('Bearer session-token');
+    expect(req.request.headers.has('Authorization')).toBe(false);
     req.flush(null);
     expect(service.isLoggedIn()).toBe(false);
     expect(localStorage.getItem(SESSION_STORAGE_KEY)).toBeNull();

@@ -1,5 +1,5 @@
 import { inject, Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { ConfigField, FieldError } from '../schema/schema';
 
@@ -276,9 +276,14 @@ export interface AdminCreated {
   username: string;
 }
 
-/** POST /api/v1/sessions — minted session. */
+/**
+ * POST /api/v1/sessions — minted session. The browser authenticates with
+ * the HttpOnly session cookie the same response sets; `token` is the CLI
+ * bearer and is deliberately never kept by the dashboard (ADR-020).
+ */
 export interface LoginSession {
   token: string;
+  csrf_token?: string;
   expires_at: string;
 }
 
@@ -444,6 +449,8 @@ export class ApiService {
     open: (url: string) => EventSourceLike = (url) => new EventSource(url),
   ): Observable<OperationState> {
     return new Observable((subscriber) => {
+      // EventSource cannot set headers; same-origin it sends the
+      // HttpOnly session cookie by itself (ADR-020).
       const source = open(`/api/v1/operations/${id}/events`);
       source.addEventListener('state', (event) => {
         subscriber.next(JSON.parse(event.data) as OperationState);
@@ -502,9 +509,8 @@ export class ApiService {
     });
   }
 
-  logout(token: string): Observable<void> {
-    return this.http.delete<void>('/api/v1/sessions', {
-      headers: new HttpHeaders({ Authorization: `Bearer ${token}` }),
-    });
+  /** Revokes the cookie session (the cookie rides along same-origin). */
+  logout(): Observable<void> {
+    return this.http.delete<void>('/api/v1/sessions');
   }
 }

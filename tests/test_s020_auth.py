@@ -48,7 +48,8 @@ class TestAuthService(unittest.TestCase):
     def test_password_policy_and_session_ttl(self):
         src = read("internal/auth/auth.go")
         self.assertIn("MinPasswordLength", src)
-        self.assertIn("SessionTTL", src)
+        self.assertIn("IdleTTL", src)
+        self.assertIn("AbsoluteTTL", src)
 
     def test_setup_gated_on_claim(self):
         src = read("internal/auth/auth.go")

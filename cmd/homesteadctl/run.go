@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"homestead/internal/apiclient"
 )
@@ -40,7 +41,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		usage(stderr)
 		return exitUsage
 	}
-	client := apiclient.New(*server)
+	// Credentials: HOMESTEAD_TOKEN wins, else the session stored by
+	// `homesteadctl login` for this server (ADR-020).
+	token := os.Getenv("HOMESTEAD_TOKEN")
+	if token == "" {
+		token = loadSession(strings.TrimRight(*server, "/"))
+	}
+	client := apiclient.New(*server, apiclient.WithToken(token))
 	switch rest[0] {
 	case "status":
 		return runStatus(ctx, client, stdout, stderr)
@@ -118,8 +125,8 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  config apply -f FILE   validate and persist settings")
 	fmt.Fprintln(w, "  claim TOKEN              redeem the console claim token (S019)")
 	fmt.Fprintln(w, "  admin setup              create the first administrator (once, S020)")
-	fmt.Fprintln(w, "  login                    mint a session token (S020)")
-	fmt.Fprintln(w, "  logout                   destroy a session token (S020)")
+	fmt.Fprintln(w, "  login                    log in and store the session (S020, S256)")
+	fmt.Fprintln(w, "  logout                   revoke the session and delete the stored token (S020, S256)")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "FILE holds JSON or YAML (by extension) with settings,")
 	fmt.Fprintln(w, "either bare or under a \"settings\" key.")

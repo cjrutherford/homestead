@@ -27,8 +27,15 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// SessionTTL bounds a session's absolute lifetime.
-const SessionTTL = 30 * 24 * time.Hour
+// Session lifetime (ADR-020, S256): a session dies after IdleTTL without
+// use or AbsoluteTTL after login, whichever comes first.
+const (
+	IdleTTL     = 12 * time.Hour
+	AbsoluteTTL = 7 * 24 * time.Hour
+	// touchInterval throttles the idle-clock write so verification
+	// stays read-mostly.
+	touchInterval = time.Minute
+)
 
 // MinPasswordLength is the floor for administrator passwords.
 const MinPasswordLength = 12
@@ -75,10 +82,13 @@ type Admin struct {
 	Username string
 }
 
-// Session is an authenticated session: plaintext token plus expiry.
-// The token is shown once at login and hashed in storage.
+// Session is an authenticated session: plaintext token, per-session
+// CSRF token, and absolute expiry. Both tokens are shown once at login
+// and hashed in storage; the session is reusable until it expires or is
+// revoked.
 type Session struct {
 	Token     string
+	CSRFToken string
 	ExpiresAt time.Time
 }
 
@@ -86,18 +96,35 @@ type Session struct {
 type VerifiedSession struct {
 	IdentityID int64
 	Username   string
-	ExpiresAt  time.Time
+	// ExpiresAt is the absolute expiry; IdleExpiresAt is when the
+	// session dies if unused.
+	ExpiresAt     time.Time
+	IdleExpiresAt time.Time
+	// CSRFHash is the stored SHA-256 of the session's CSRF token.
+	CSRFHash []byte
+}
+
+// CSRFMatches reports, in constant time, whether presented is this
+// session's CSRF token. An empty token or a session without one never
+// matches.
+func (v VerifiedSession) CSRFMatches(presented string) bool {
+	if presented == "" || len(v.CSRFHash) == 0 {
+		return false
+	}
+	sum := sha256.Sum256([]byte(presented))
+	return subtle.ConstantTimeCompare(v.CSRFHash, sum[:]) == 1
 }
 
 // Service authenticates administrators over the operational store.
 type Service struct {
 	db    *sql.DB
 	claim *claim.Service
+	now   func() time.Time
 }
 
 // New returns a Service. Claim state gates first-admin setup.
 func New(s *store.Store, c *claim.Service) *Service {
-	return &Service{db: s.DB(), claim: c}
+	return &Service{db: s.DB(), claim: c, now: time.Now}
 }
 
 func formatTime(t time.Time) string {
@@ -192,21 +219,39 @@ func (s *Service) Login(username, password string) (Session, error) {
 	if err := s.clearFailures(username); err != nil {
 		return Session{}, err
 	}
-	entropy := make([]byte, tokenBytes)
-	if _, err := rand.Read(entropy); err != nil {
-		return Session{}, fmt.Errorf("auth: entropy: %w", err)
+	token, err := randomToken()
+	if err != nil {
+		return Session{}, err
 	}
-	token := base64.RawURLEncoding.EncodeToString(entropy)
+	csrf, err := randomToken()
+	if err != nil {
+		return Session{}, err
+	}
 	sum := sha256.Sum256([]byte(token))
-	expires := time.Now().Add(SessionTTL)
-	now := formatTime(time.Now())
+	csrfSum := sha256.Sum256([]byte(csrf))
+	now := s.now()
+	expires := now.Add(AbsoluteTTL)
+	stamp := formatTime(now)
+	// Expired rows are swept here, off the per-request path.
+	if _, err := s.db.Exec(`DELETE FROM sessions WHERE expires_at != '' AND expires_at <= ?`, stamp); err != nil {
+		return Session{}, fmt.Errorf("auth: sweep sessions: %w", err)
+	}
 	if _, err := s.db.Exec(
-		`INSERT INTO sessions (identity_id, token_hash, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		id, sum[:], formatTime(expires), now, now,
+		`INSERT INTO sessions (identity_id, token_hash, csrf_hash, expires_at, last_used_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, sum[:], csrfSum[:], formatTime(expires), stamp, stamp, stamp,
 	); err != nil {
 		return Session{}, fmt.Errorf("auth: create session: %w", err)
 	}
-	return Session{Token: token, ExpiresAt: expires}, nil
+	return Session{Token: token, CSRFToken: csrf, ExpiresAt: expires}, nil
+}
+
+func randomToken() (string, error) {
+	entropy := make([]byte, tokenBytes)
+	if _, err := rand.Read(entropy); err != nil {
+		return "", fmt.Errorf("auth: entropy: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(entropy), nil
 }
 
 // lockedOut reports whether username sits inside a lockout. Absent
@@ -284,6 +329,26 @@ func (s *Service) revokeSessions(identityID int64) error {
 	return nil
 }
 
+// revokeOtherSessions destroys every session for an identity except the
+// one identified by keepToken.
+func (s *Service) revokeOtherSessions(identityID int64, keepToken string) error {
+	keep := sha256.Sum256([]byte(keepToken))
+	if _, err := s.db.Exec(
+		`DELETE FROM sessions WHERE identity_id = ? AND (token_hash IS NULL OR token_hash != ?)`,
+		identityID, keep[:],
+	); err != nil {
+		return fmt.Errorf("auth: revoke sessions: %w", err)
+	}
+	return nil
+}
+
+// ChangePasswordKeepingSession is ChangePassword for a logged-in
+// caller: every other session of the administrator is revoked and the
+// caller's own (keepToken) survives.
+func (s *Service) ChangePasswordKeepingSession(username, currentPassword, newPassword, keepToken string) (Admin, error) {
+	return s.changePassword(username, currentPassword, newPassword, &keepToken)
+}
+
 // ChangePassword rotates username's password with the current
 // credential: wrong current answers invalid without saying more,
 // weak replacements refuse under the same policy as setup, and
@@ -291,6 +356,10 @@ func (s *Service) revokeSessions(identityID int64) error {
 // Guesses feed the same lockout as logins — rotation never bypasses
 // the throttle — and success forgives it.
 func (s *Service) ChangePassword(username, currentPassword, newPassword string) (Admin, error) {
+	return s.changePassword(username, currentPassword, newPassword, nil)
+}
+
+func (s *Service) changePassword(username, currentPassword, newPassword string, keepToken *string) (Admin, error) {
 	locked, err := s.lockedOut(username)
 	if err != nil {
 		return Admin{}, err
@@ -323,7 +392,12 @@ func (s *Service) ChangePassword(username, currentPassword, newPassword string) 
 	); err != nil {
 		return Admin{}, fmt.Errorf("auth: rotate password: %w", err)
 	}
-	if err := s.revokeSessions(id); err != nil {
+	if keepToken != nil {
+		err = s.revokeOtherSessions(id, *keepToken)
+	} else {
+		err = s.revokeSessions(id)
+	}
+	if err != nil {
 		return Admin{}, err
 	}
 	if err := s.clearFailures(username); err != nil {
@@ -340,49 +414,68 @@ func (s *Service) Locked(username string) (bool, error) {
 	return s.lockedOut(username)
 }
 
-// Verify proves a session token, rejecting unknown and expired sessions.
+// Verify proves a session token through the unique token-hash index
+// (one row, no scan). Unknown, revoked, idle-expired (IdleTTL) and
+// absolute-expired (AbsoluteTTL) sessions are refused; expired rows are
+// deleted. A successful check refreshes the idle clock, throttled to
+// once per touchInterval.
 func (s *Service) Verify(token string) (VerifiedSession, error) {
 	if token == "" {
 		return VerifiedSession{}, ErrInvalidSession
 	}
-	// Collect first (single-connection store): no cursor open across use.
-	type row struct {
-		identityID int64
-		username   string
-		hash       []byte
-		expiresAt  string
-	}
-	rows, err := s.db.Query(
-		`SELECT s.identity_id, i.username, s.token_hash, s.expires_at
-		 FROM sessions s JOIN identities i ON i.id = s.identity_id`,
-	)
-	if err != nil {
-		return VerifiedSession{}, fmt.Errorf("auth: list sessions: %w", err)
-	}
-	defer rows.Close()
 	sum := sha256.Sum256([]byte(token))
-	now := time.Now()
-	for rows.Next() {
-		var r row
-		if err := rows.Scan(&r.identityID, &r.username, &r.hash, &r.expiresAt); err != nil {
-			return VerifiedSession{}, fmt.Errorf("auth: scan session: %w", err)
-		}
-		if subtle.ConstantTimeCompare(r.hash, sum[:]) != 1 {
-			continue
-		}
-		expiry, err := time.Parse(time.RFC3339Nano, r.expiresAt)
-		if err != nil {
-			return VerifiedSession{}, fmt.Errorf("auth: parse expiry: %w", err)
-		}
-		if !expiry.After(now) {
-			return VerifiedSession{}, ErrInvalidSession
-		}
-		return VerifiedSession{IdentityID: r.identityID, Username: r.username, ExpiresAt: expiry}, nil
+	var (
+		id                             int64
+		v                              VerifiedSession
+		expiresAt, createdAt, lastUsed string
+	)
+	err := s.db.QueryRow(
+		`SELECT s.id, s.identity_id, i.username, s.expires_at, s.created_at, s.last_used_at, s.csrf_hash
+		 FROM sessions s JOIN identities i ON i.id = s.identity_id
+		 WHERE s.token_hash = ?`, sum[:],
+	).Scan(&id, &v.IdentityID, &v.Username, &expiresAt, &createdAt, &lastUsed, &v.CSRFHash)
+	if err == sql.ErrNoRows {
+		return VerifiedSession{}, ErrInvalidSession
 	}
-	if err := rows.Err(); err != nil {
-		return VerifiedSession{}, fmt.Errorf("auth: list sessions: %w", err)
+	if err != nil {
+		return VerifiedSession{}, fmt.Errorf("auth: find session: %w", err)
 	}
-	return VerifiedSession{}, ErrInvalidSession
+	expiry, err := time.Parse(time.RFC3339Nano, expiresAt)
+	if err != nil {
+		return VerifiedSession{}, fmt.Errorf("auth: parse expiry: %w", err)
+	}
+	created, err := time.Parse(time.RFC3339Nano, createdAt)
+	if err != nil {
+		return VerifiedSession{}, fmt.Errorf("auth: parse created: %w", err)
+	}
+	used := created
+	if lastUsed != "" {
+		if used, err = time.Parse(time.RFC3339Nano, lastUsed); err != nil {
+			return VerifiedSession{}, fmt.Errorf("auth: parse last use: %w", err)
+		}
+	}
+	// Legacy rows carry a 30-day expiry; the absolute cap applies to
+	// them too.
+	if capped := created.Add(AbsoluteTTL); capped.Before(expiry) {
+		expiry = capped
+	}
+	now := s.now()
+	idleExpiry := used.Add(IdleTTL)
+	if !expiry.After(now) || !idleExpiry.After(now) {
+		if _, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
+			return VerifiedSession{}, fmt.Errorf("auth: delete expired session: %w", err)
+		}
+		return VerifiedSession{}, ErrInvalidSession
+	}
+	if now.Sub(used) >= touchInterval {
+		if _, err := s.db.Exec(`UPDATE sessions SET last_used_at = ? WHERE id = ?`, formatTime(now), id); err != nil {
+			return VerifiedSession{}, fmt.Errorf("auth: refresh session: %w", err)
+		}
+		idleExpiry = now.Add(IdleTTL)
+	}
+	v.ExpiresAt = expiry
+	v.IdleExpiresAt = idleExpiry
+	return v, nil
 }
 
 // Logout destroys the session for token. Unknown tokens fail.
