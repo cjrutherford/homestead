@@ -127,6 +127,8 @@ type StatusError struct {
 	Path   string
 	Status int
 	Body   string
+	// Code is the daemon's stable X-Homestead-Error code, if any.
+	Code string
 }
 
 func (e *StatusError) Error() string {

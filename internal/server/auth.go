@@ -40,6 +40,13 @@ func (s *Server) MountAuth(svc *auth.Service, auditSvc *audit.Service) {
 	s.mux.HandleFunc("GET /api/v1/admins/lockout", s.handleLockoutStatus(svc))
 }
 
+// ErrorCodeHeader carries a stable machine-readable error code on
+// responses whose status alone is ambiguous.
+const (
+	ErrorCodeHeader                 = "X-Homestead-Error"
+	ErrorCodeInvalidCurrentPassword = "invalid-current-password"
+)
+
 func (s *Server) handleAdminSetup(svc *auth.Service, auditSvc *audit.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -256,6 +263,9 @@ func (s *Server) handleChangePassword(svc *auth.Service) http.HandlerFunc {
 		if err != nil {
 			switch {
 			case errors.Is(err, auth.ErrInvalidCredentials):
+				// The code tells this 401 (wrong current password) apart
+				// from the boundary's 401 (bad session).
+				w.Header().Set(ErrorCodeHeader, ErrorCodeInvalidCurrentPassword)
 				http.Error(w, "invalid username or password", http.StatusUnauthorized)
 			case errors.Is(err, auth.ErrWeakPassword):
 				http.Error(w, err.Error(), http.StatusUnprocessableEntity)

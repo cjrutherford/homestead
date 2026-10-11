@@ -1,8 +1,10 @@
 package auth
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"homestead/internal/claim"
@@ -65,6 +67,40 @@ func TestSetupExactlyOnce(t *testing.T) {
 	}
 	if _, err := svc.SetupAdmin("second", "another-long-password"); err != ErrAdminExists {
 		t.Fatalf("second SetupAdmin = %v, want ErrAdminExists", err)
+	}
+}
+
+func TestConcurrentSetupCreatesExactlyOneAdmin(t *testing.T) {
+	svc := claimedAuthService(t)
+	const n = 16
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			_, errs[i] = svc.SetupAdmin(fmt.Sprintf("owner%d", i), "long-enough-password")
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	won := 0
+	for _, err := range errs {
+		switch err {
+		case nil:
+			won++
+		case ErrAdminExists:
+		default:
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	if won != 1 {
+		t.Fatalf("%d setups succeeded, want exactly 1", won)
+	}
+	if count, err := svc.adminCount(); err != nil || count != 1 {
+		t.Fatalf("adminCount = %d, %v; want 1", count, err)
 	}
 }
 

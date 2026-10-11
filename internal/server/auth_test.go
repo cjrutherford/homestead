@@ -2,10 +2,12 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"homestead/internal/audit"
@@ -209,6 +211,9 @@ func TestChangePasswordFlow(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
+	if got := rec.Header().Get(ErrorCodeHeader); got != ErrorCodeInvalidCurrentPassword {
+		t.Fatalf("error code = %q, want %q", got, ErrorCodeInvalidCurrentPassword)
+	}
 	// Weak replacements refuse under the setup policy.
 	rec = doJSON(t, srv, http.MethodPost, "/api/v1/admins/password",
 		`{"current_password":"long-enough-password","new_password":"short"}`, token)
@@ -267,5 +272,45 @@ func TestLockoutStatusFlow(t *testing.T) {
 	rec = doJSON(t, srv, http.MethodGet, "/api/v1/admins/lockout", "", "bogus")
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+}
+
+func TestAdminSetupConcurrentExactlyOneWins(t *testing.T) {
+	srv := claimedAuthServer(t)
+	const n = 12
+	codes := make([]int, n)
+	bodies := make([]string, n)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			payload := fmt.Sprintf(`{"username":"owner%d","password":"long-enough-password"}`, i)
+			rec := doJSON(t, srv, http.MethodPost, "/api/v1/admins/setup", payload, "")
+			codes[i], bodies[i] = rec.Code, rec.Body.String()
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	created := 0
+	for i, c := range codes {
+		switch c {
+		case http.StatusCreated:
+			created++
+			if !strings.Contains(bodies[i], `"token"`) {
+				t.Fatalf("winner got no session: %s", bodies[i])
+			}
+		case http.StatusConflict:
+			if strings.Contains(bodies[i], "token") {
+				t.Fatalf("loser got a session: %s", bodies[i])
+			}
+		default:
+			t.Fatalf("status %d: %s", c, bodies[i])
+		}
+	}
+	if created != 1 {
+		t.Fatalf("%d setups returned 201, want exactly 1", created)
 	}
 }

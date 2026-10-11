@@ -71,5 +71,6 @@ func (c *Client) statusError(req *http.Request, res *http.Response) error {
 		Path:   req.URL.Path,
 		Status: res.StatusCode,
 		Body:   strings.TrimSpace(string(excerpt)),
+		Code:   res.Header.Get("X-Homestead-Error"),
 	}
 }

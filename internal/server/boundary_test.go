@@ -118,9 +118,21 @@ type fakeClaims struct {
 
 func (f *fakeClaims) CurrentState() (claim.State, error) { return f.state, f.err }
 
-type fakeSessions struct{ valid string }
+type fakeSessions struct {
+	valid string
+	err   error // non-invalid-session store failure
+	// expires, when set with now, makes the valid token die at that time.
+	expires time.Time
+	now     func() time.Time
+}
 
 func (f fakeSessions) Verify(token string) (auth.VerifiedSession, error) {
+	if f.err != nil {
+		return auth.VerifiedSession{}, f.err
+	}
+	if !f.expires.IsZero() && !f.now().Before(f.expires) {
+		return auth.VerifiedSession{}, auth.ErrInvalidSession
+	}
 	if token == f.valid {
 		sum := sha256.Sum256([]byte("csrf-good"))
 		return auth.VerifiedSession{Username: "owner", CSRFHash: sum[:]}, nil
@@ -234,7 +246,7 @@ func TestBoundaryEnforcesAndAudits(t *testing.T) {
 var reasonStatus = map[string]int{
 	reasonPreClaim: 403, reasonNoSession: 401, reasonInvalidSession: 401,
 	reasonWizardClaimed: 401, reasonUnclassified: 403, reasonClaimStateErr: 503,
-	reasonCSRFMissing: 403, reasonCSRFMismatch: 403,
+	reasonCSRFMissing: 403, reasonCSRFMismatch: 403, reasonVerifyError: 503,
 }
 
 var rejectionStatuses = map[int]bool{401: true, 403: true, 503: true}
@@ -566,5 +578,46 @@ func TestBoundaryNeverRecordsCSRFValues(t *testing.T) {
 		if strings.Contains(d, "csrf-wrong-secret") || strings.Contains(d, "csrf-good") {
 			t.Fatalf("csrf value leaked into audit: %q", d)
 		}
+	}
+}
+
+func TestBoundaryStoreErrorFailsClosedWith503(t *testing.T) {
+	r := newRig(t, claim.StateClaimed)
+	r.srv.mountBoundary(fakeSessions{valid: "good", err: errors.New("db down")}, r.claims, r.audit, func() time.Time { return r.now })
+	r.srv.boundary.log = r.log
+	status := r.do(http.MethodPut, "/api/v1/config", "good")
+	if status != reasonStatus[reasonVerifyError] {
+		t.Fatalf("status = %d, want %d", status, reasonStatus[reasonVerifyError])
+	}
+	got := r.reasons()
+	if len(got) != 1 || !strings.Contains(got[0], "("+reasonVerifyError+")") {
+		t.Fatalf("report = %v", got)
+	}
+}
+
+func TestBoundaryRejectsExpiredSession(t *testing.T) {
+	r := newRig(t, claim.StateClaimed)
+	clock := func() time.Time { return r.now }
+	r.srv.mountBoundary(fakeSessions{valid: "good", expires: r.now.Add(time.Hour), now: clock}, r.claims, r.audit, clock)
+	r.srv.boundary.log = r.log
+	if got := r.do(http.MethodPut, "/api/v1/config", "good"); got != http.StatusTeapot {
+		t.Fatalf("live session status = %d", got)
+	}
+	r.now = r.now.Add(2 * time.Hour)
+	if got := r.do(http.MethodPut, "/api/v1/config", "good"); got != http.StatusUnauthorized {
+		t.Fatalf("expired session status = %d, want 401", got)
+	}
+}
+
+func TestBoundaryInvalidBearerDoesNotFallBackToCookie(t *testing.T) {
+	r := newRig(t, claim.StateClaimed)
+	if got := r.doCookie(http.MethodGet, "/api/v1/operations", "good", "", "bad"); got != http.StatusUnauthorized {
+		t.Fatalf("invalid bearer + valid cookie = %d, want 401", got)
+	}
+}
+
+func TestSessionStillValidFailsClosedWithoutSession(t *testing.T) {
+	if sessionStillValid(httptest.NewRequest(http.MethodGet, "/", nil)) {
+		t.Fatal("no boundary session in context must not count as valid")
 	}
 }

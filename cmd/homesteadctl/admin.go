@@ -204,7 +204,7 @@ func runAdminPasswd(ctx context.Context, client *apiclient.Client, args []string
 			case 401:
 				// The boundary's 401 is about the session; the
 				// handler's is about the current password.
-				if strings.Contains(statusErr.Body, "password") {
+				if statusErr.Code == "invalid-current-password" {
 					fmt.Fprintln(stderr, "invalid username or password")
 					return exitError
 				}

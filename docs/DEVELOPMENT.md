@@ -219,7 +219,13 @@ homesteadctl logout                          # revokes it and deletes the stored
   `handleLockoutStatus` no longer check credentials themselves). Long-lived
   SSE streams call `sessionStillValid` on each heartbeat
   (`EventHeartbeatInterval`) and stop once the session is revoked or
-  expired.
+  expired. Revocation latency: a revoked session can keep an open
+  stream for up to one heartbeat (30s) before it is dropped (tracked in
+  `docs/DEFERRED.md`).
+- `POST /api/v1/admins/password` answers a wrong current password with
+  401 plus `X-Homestead-Error: invalid-current-password`; the boundary's
+  session 401 carries no code, so clients (`homesteadctl admin passwd`)
+  tell them apart by the header, not by body text.
 - First-admin setup (`POST /api/v1/admins/setup`) logs the owner in: the
   201 response sets the cookies and carries `token`, `csrf_token` and
   `expires_at` like login, so the claim wizard's later saves and the CLI's

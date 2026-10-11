@@ -219,11 +219,11 @@ func operatorFromContext(ctx context.Context) (operatorSession, bool) {
 	return op, ok
 }
 
-// sessionStillValid is true when the request carries no boundary
-// session (no middleware mounted) or the session still verifies.
+// sessionStillValid is true only when the request carries a boundary
+// session that still verifies; it fails closed without one.
 func sessionStillValid(r *http.Request) bool {
 	op, ok := operatorFromContext(r.Context())
-	return !ok || op.stillValid()
+	return ok && op.stillValid()
 }
 
 func (b *boundary) wrap(mux *recordingMux) http.Handler {

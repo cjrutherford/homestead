@@ -179,11 +179,19 @@ func (s *Service) SetupAdmin(username, password string) (Admin, error) {
 	}
 	now := formatTime(time.Now())
 	res, err := s.db.Exec(
-		`INSERT INTO identities (username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO identities (username, password_hash, created_at, updated_at)
+		 SELECT ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM identities WHERE username IS NOT NULL)`,
 		username, hash, now, now,
 	)
 	if err != nil {
 		return Admin{}, fmt.Errorf("auth: create admin: %w", err)
+	}
+	// The check and the insert are one statement, so concurrent setups
+	// cannot both win; a loser inserted nothing.
+	if n, err := res.RowsAffected(); err != nil {
+		return Admin{}, fmt.Errorf("auth: create admin: %w", err)
+	} else if n == 0 {
+		return Admin{}, ErrAdminExists
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
