@@ -412,9 +412,10 @@ sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
   imports configuration after admin and before the suite —
   disaster recovery through the same script. Every phase asserts
   and fails loudly; plan files generate from environment with
-  sane port defaults. Backup has no CLI/API
-  surface yet, so the run ends noting manual backup
-  configuration before production use.
+  sane port defaults. Backup configuration
+  has CLI/API surfaces since S238 (`homesteadctl backup`,
+  `/api/v1/backups/*`) but no dashboard surface yet, so the run
+  ends noting manual backup configuration before production use.
 
 ## Control-plane recovery (S230)
 
