@@ -86,6 +86,7 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	srv.MountOperations(operation.New(st))
 	srv.MountCatalog(st, catalogDir)
 	srv.MountStorage(st)
+	srv.MountBackups(st)
 	srv.MountDrift(st, catalogDir)
 	dockerClient := docker.NewClient("")
 	srv.MountDocker(dockerClient)

@@ -534,6 +534,23 @@ homesteadctl edge routes set -f routes.json --follow
   reconciled, serving proven over the proxy. Dashboard surfaces
   belong to later slices.
 
+## Backup configuration surfaces (S238)
+
+```bash
+homesteadctl backup destination
+homesteadctl backup schedule --package jellyfin --interval 24 --retain 7 --actor owner
+homesteadctl backup schedules
+homesteadctl backup unschedule --package jellyfin
+```
+
+- Destination resolution plus schedule records over the API and
+  CLI: unassigned destinations name their absence instead of
+  guessing paths, schedules persist with hourly floors and actor
+  presence, malformed bodies and short intervals refuse, deletes
+  converge idempotently, and lists read empty (never null).
+  Backup runs themselves still fire through later slices;
+  dashboard surfaces belong to later slices.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing

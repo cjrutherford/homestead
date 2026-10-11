@@ -56,6 +56,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runOperations(ctx, client, rest[1:], stdout, stderr)
 	case "firewall":
 		return runFirewall(ctx, client, rest[1:], stdout, stderr)
+	case "backup":
+		return runBackup(ctx, client, rest[1:], stdout, stderr)
 	case "edge":
 		return runEdge(ctx, client, rest[1:], stdout, stderr)
 	case "storage":
@@ -94,6 +96,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  apps uninstall <pkg> [--remove-data --data-dir M:P]... [--follow]  uninstall package (S236)")
 	fmt.Fprintln(w, "  operations <get|list|follow>  inspect and follow operations (S062/S064)")
 	fmt.Fprintln(w, "  firewall <status|plan|apply>  host firewall setup (S056)")
+	fmt.Fprintln(w, "  backup <destination|schedules|schedule|unschedule>  backup configuration (S238)")
 	fmt.Fprintln(w, "  edge deploy [--follow]  deploy the Caddy edge proxy (S237)")
 	fmt.Fprintln(w, "  edge routes set -f FILE [--follow]  reconcile the proxy route table (S237)")
 	fmt.Fprintln(w, "  storage <mounts|register|registrations|assign|assignments>  mounted storage setup (S235)")

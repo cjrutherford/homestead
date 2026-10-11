@@ -130,9 +130,10 @@
   the appliance with caller-named management hosts; scheduled
   re-validation, status surfaces, and best-vantage external
   probing belong to later slices.
-- Backup configuration surfaces: S229 acceptance stops at a
-  backup note because backup destinations and schedules have no
-  CLI/API surface; driving them belongs to later slices.
+- Backup dashboard surface and run firing: S238 covers
+  destination and schedule records over the API and CLI;
+  dashboard affordances plus scheduled run firing belong to
+  later slices.
 - Backup-run restoration: S234 rebuilds from export documents
   plus suite reinstalls; restoring application data from backup
   runs awaits the same backup surfaces.

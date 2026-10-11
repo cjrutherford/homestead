@@ -50,6 +50,11 @@ for an intentional gap. The Notes column is free text.
 | POST | /api/v1/catalog/{name}/uninstall | `"apps"` | n/a | Approved removal on CLI; dashboard surface belongs to later slices |
 | POST | /api/v1/edge/deploy | `"edge"` | n/a | Edge deployment on CLI; dashboard surface belongs to later slices |
 | POST | /api/v1/edge/routes | `"edge"` | n/a | Route reconciliation on CLI; dashboard surface belongs to later slices |
+| GET | /api/v1/backups/destination | `"backup"` | n/a | Resolved backup root on CLI; dashboard surface belongs to later slices |
+| GET | /api/v1/backups/schedules | `"backup"` | n/a | Schedule records on CLI; dashboard surface belongs to later slices |
+| POST | /api/v1/backups/schedules | `"backup"` | n/a | Schedule save on CLI; dashboard surface belongs to later slices |
+| GET | /api/v1/backups/schedules/{package} | `"backup"` | n/a | Visible through schedules listing on CLI; dashboard surface belongs to later slices |
+| DELETE | /api/v1/backups/schedules/{package} | `"backup"` | n/a | Schedule removal on CLI; dashboard surface belongs to later slices |
 | GET | /api/v1/updates | n/a | `updates` | Per-package review rows on dashboard; CLI rows wait for a later updates CLI slice |
 | POST | /api/v1/updates/{name}/apply | n/a | `applyUpdate` | Approved update on dashboard; CLI rows wait for a later updates CLI slice |
 | GET | /api/v1/dockge | n/a | `dockge` | Expert-interface link with assessed policy on dashboard; no command surface yet |
