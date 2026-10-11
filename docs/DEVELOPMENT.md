@@ -609,6 +609,22 @@ homesteadctl exposure apply app.example.com --follow
   firewall composition plus edge write through the operation
   engine. Dashboard surfaces belong to later slices.
 
+## Tunnel provider (S246)
+
+```bash
+homesteadctl tunnel status
+homesteadctl tunnel setup --name homestead --hostname app.example.com --service http://127.0.0.1:8080 --api-token TOKEN --account-id ID --follow
+homesteadctl tunnel teardown <tunnel-id> --account-id ID --follow
+```
+
+- Tunnel remote access over the API and CLI: discovery prefers
+  automated router protocols and falls through to the tunnel when
+  the router stays silent, setup seals the API token and runs
+  tunnel creation plus connector enablement through the operation
+  engine, teardown deletes the tunnel and forgets its routes, and
+  status never leaks credentials. Dashboard surfaces belong to
+  S247.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing

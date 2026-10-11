@@ -1,0 +1,26 @@
+# homestead-tunnel.service — Cloudflare Tunnel connector for Homestead (S246).
+#
+# Installed (not enabled) to /etc/systemd/system/homestead-tunnel.service by
+# scripts/install-systemd.sh alongside the daemon unit. Tunnel setup enables
+# and starts it once a tunnel exists; teardown disables it. The daemon never
+# writes this file — it only writes the config and token below, which stay
+# inside the daemon's own state directory by design.
+#
+# Config: /etc/homestead/tunnel/config.yml (written by tunnel setup)
+# Token:  /etc/homestead/tunnel/token.env, root-only (written by tunnel setup)
+
+[Unit]
+Description=Homestead tunnel connector
+After=network-online.target homestead-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/etc/homestead/tunnel/token.env
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --config /etc/homestead/tunnel/config.yml run --token ${TUNNEL_TOKEN}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

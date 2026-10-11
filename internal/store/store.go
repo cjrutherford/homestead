@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 21
+const CurrentVersion = 22
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -389,6 +389,22 @@ CREATE TABLE IF NOT EXISTS public_validation (
 	host TEXT PRIMARY KEY,
 	passed INTEGER NOT NULL DEFAULT 0,
 	failed TEXT NOT NULL DEFAULT '[]',
+	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S246 tunnel routes: one served hostname per row (tunnel
+		// plus local origin service). Re-setup replaces; teardown
+		// deletes. Secrets never land here — only the sealed
+		// store holds the API token.
+		version: 22,
+		name:    "tunnel routes",
+		sql: `
+CREATE TABLE IF NOT EXISTS tunnel_routes (
+	hostname TEXT PRIMARY KEY,
+	tunnel_id TEXT NOT NULL,
+	tunnel_name TEXT NOT NULL DEFAULT '',
+	service TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );`,
 	},

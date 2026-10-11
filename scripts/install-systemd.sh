@@ -28,6 +28,10 @@ rm -rf "$CATALOG_DST"
 mkdir -p "$(dirname "$CATALOG_DST")"
 cp -r "$CATALOG_SRC" "$CATALOG_DST"
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"
+# The tunnel connector unit ships disabled: tunnel setup enables it once
+# a tunnel exists (S246). Installing the file needs privilege; enabling
+# stays an explicit setup-time act, never a side effect of install.
+install -m 0644 "$REPO/systemd/homestead-tunnel.service" /etc/systemd/system/homestead-tunnel.service
 systemctl daemon-reload
 systemctl enable homestead-server.service
 systemctl restart homestead-server.service

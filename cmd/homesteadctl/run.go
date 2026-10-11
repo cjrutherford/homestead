@@ -58,6 +58,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runFirewall(ctx, client, rest[1:], stdout, stderr)
 	case "exposure":
 		return runExposure(ctx, client, rest[1:], stdout, stderr)
+	case "tunnel":
+		return runTunnel(ctx, client, rest[1:], stdout, stderr)
 	case "drift":
 		return runDrift(ctx, client, rest[1:], stdout, stderr)
 	case "updates":
@@ -103,6 +105,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  operations <get|list|follow>  inspect and follow operations (S062/S064)")
 	fmt.Fprintln(w, "  firewall <status|plan|apply>  host firewall setup (S056)")
 	fmt.Fprintln(w, "  exposure <review|approvals|approve|apply>  public exposure review and apply (S245)")
+	fmt.Fprintln(w, "  tunnel <status|setup|teardown>  tunnel remote access (S246)")
 	fmt.Fprintln(w, "  drift <review|accept|restore> <package> [--follow]  managed-state drift choices (S244)")
 	fmt.Fprintln(w, "  updates <list|apply>  application updates review and apply (S243)")
 	fmt.Fprintln(w, "  backup <destination|schedules|schedule|unschedule>  backup configuration (S238)")

@@ -98,6 +98,7 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	} else {
 		srv.MountFirewall(port, configSvc)
 		srv.MountExposure(st, port)
+		srv.MountTunnel(st, configSecrets)
 	}
 	if files, ok := dashboard.Embedded(); ok {
 		srv.MountDashboard(dashboard.New(files))

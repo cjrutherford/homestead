@@ -11,6 +11,16 @@
 - Hosted HAI coordination/control service
 - Multi-appliance dashboard
 - Live storage migration between devices
+- Tunnel DNS route actuation: S246 creates the tunnel and runs its
+  connector, but the public hostname's DNS record still routes
+  through the DNS reconcile path; proxied tunnel CNAME management
+  belongs to a later slice.
+- Connector binary installation: S246 setup refuses with
+  instructions when cloudflared is absent; packaging or supervising
+  the binary itself belongs to a later slice.
+- Pre-S246 tunnel adoption: tunnels created before the routes table
+  existed serve fine but read as unrecorded; adopting them into
+  management belongs to S247.
 - AdGuard Home install-wizard automation (`POST /control/install/configure`):
   needed before friendly names (S086) work end-to-end against a fresh
   instance; kept out of S085 as version-brittle and unverifiable without
