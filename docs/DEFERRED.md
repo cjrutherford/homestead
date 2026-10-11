@@ -93,6 +93,9 @@
   through the API and dashboard; CLI affordances, wall-clock
   scanning, and running-container-versus-file comparison belong
   to later slices.
+- Storage dashboard surface: S235 covers the API and CLI;
+  dashboard affordances for mounts, registrations, and
+  assignments belong to later slices.
 - Docker Engine bootstrap: S220 installs the Homestead kernel
   only; engine installation on clean machines (S071 owns the
   operation) has no bootstrap wiring yet.
@@ -136,11 +139,13 @@
 - Corrupt-database repair: S230 snapshots state and refuses a
   missing database as disaster recovery; repairing corrupt
   state belongs to the disaster-recovery flow (S234).
-- Storage setup surfaces: storage registration and assignment
-  plus the setup wizard apply paths have no API or CLI surface;
-  KVM acceptance proved installs block without assignments, so
-  owners cannot complete setup on a real machine yet.
+- Storage dashboard surface: S235 covers mount registration
+  and class assignment over the API and CLI; dashboard
+  affordances belong to later slices.
 - Proxy serve surfaces: Caddy deployment and route
   reconciliation have no API or CLI surface; KVM acceptance
   proved installed apps stay unreachable until those land
   (generated stacks publish no host ports by design).
+- Dashboard embed in install flow: serving the UI needs the
+  node toolchain plus a manual embed build (proven working in
+  KVM); prebuilt packaging belongs to distribution (S240).

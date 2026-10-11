@@ -6,8 +6,12 @@
 #
 # Hardening is intentionally strict. ReadWritePaths grants exactly the state
 # directories the layout owns (S012) plus the stacks directory installs
-# write (S156) and the packaged read-only catalog (S160, installed by
-# install-systemd.sh alongside the binary).
+# write (S156), the packaged read-only catalog (S160, installed by
+# install-systemd.sh alongside the binary), and the conventional mount
+# roots owner storage lives under: provisioning and backups write
+# assigned mounts by design, so /mnt and /media stay writable while
+# /etc//usr//boot stay read-only. Mounts outside both need a unit
+# drop-in extending ReadWritePaths plus a daemon reload.
 
 [Unit]
 Description=Homestead control daemon
@@ -22,7 +26,7 @@ Restart=on-failure
 RestartSec=5
 TimeoutStopSec=10
 RuntimeDirectory=homestead
-ReadWritePaths=/etc/homestead /var/lib/homestead /var/log/homestead /opt/homestead/stacks
+ReadWritePaths=/etc/homestead /var/lib/homestead /var/log/homestead /opt/homestead/stacks /mnt /media
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

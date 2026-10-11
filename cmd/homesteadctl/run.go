@@ -56,6 +56,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runOperations(ctx, client, rest[1:], stdout, stderr)
 	case "firewall":
 		return runFirewall(ctx, client, rest[1:], stdout, stderr)
+	case "storage":
+		return runStorage(ctx, client, rest[1:], stdout, stderr)
 	case "version":
 		return runVersion(ctx, client, stdout, stderr)
 	case "config":
@@ -89,6 +91,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  apps configure <pkg> --service NAME [--set K=V] [--unset K]  configure service (S168)")
 	fmt.Fprintln(w, "  operations <get|list|follow>  inspect and follow operations (S062/S064)")
 	fmt.Fprintln(w, "  firewall <status|plan|apply>  host firewall setup (S056)")
+	fmt.Fprintln(w, "  storage <mounts|register|registrations|assign|assignments>  mounted storage setup (S235)")
 	fmt.Fprintln(w, "  version                CLI and daemon versions")
 	fmt.Fprintln(w, "  config get             print current desired state")
 	fmt.Fprintln(w, "  config plan -f FILE    validate settings without persisting")

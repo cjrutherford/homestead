@@ -486,6 +486,24 @@ sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
   surfaces; dashboard import/export surfaces belong to later
   slices.
 
+## Storage setup surfaces (S235)
+
+```bash
+homesteadctl storage mounts
+homesteadctl storage register --mountpoint /mnt/app --label app --actor owner
+homesteadctl storage assign --class application --mountpoint /mnt/app --actor owner
+```
+
+- Mount registration and class assignment over the API and CLI:
+  discovered mounts list live candidates, phantom paths refuse
+  against live discovery, unknown classes refuse before touching
+  storage, and unregistered mounts refuse assignment. Installs
+  read assignments for space checks, so setup precedes planning.
+  Proven live in KVM against real bind mounts — including the
+  sandbox lesson that owner mounts need `ReadWritePaths`
+  coverage or the daemon sees them read-only. Dashboard surfaces
+  belong to later slices.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing
