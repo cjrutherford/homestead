@@ -190,6 +190,25 @@ homesteadctl logout --token "$TOKEN"        # or HOMESTEAD_TOKEN env
 - Sessions are created here, not yet required: other endpoints stay open
   until a later slice enforces authentication. Recovery is S021.
 
+## Operator session boundary, report-only (S255)
+
+- `internal/server/boundary.go` wraps the TCP mux (never the Unix socket)
+  in a deny-by-default classifier (ADR-020). `routeClasses` declares every
+  route as public (7: health, version, identity, claim, first-admin setup,
+  session create, dashboard `/`), claim-window (3 wizard routes, open only
+  until claim completes) or session (48, pending enforcement by S257).
+- Report-only: nothing is rejected. Requests that enforcement would
+  reject (reasons `pre-claim`, `no-session`, `invalid-session`,
+  `claim-window-closed`, `unclassified-route`) are counted per route and
+  reason and flushed as one `session.boundary.would_reject` audit entry
+  (plus a log line) per minute with the count; tokens and cookies are
+  never recorded. Only bearer sessions are recognised until S256 adds
+  cookies, so the dashboard reports as `no-session` for now.
+- Register TCP routes with `s.route`/`s.routeFunc` and add the pattern to
+  `routeClasses`; `TestEveryRegisteredRouteIsClassified` enumerates the
+  real registrations (58 today) and fails on any unclassified or stale
+  entry. Review audit with `homesteadctl audit` before S257 enforces.
+
 ## Local admin recovery (S021)
 
 ```bash

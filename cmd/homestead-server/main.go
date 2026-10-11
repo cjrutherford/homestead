@@ -105,6 +105,9 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	} else {
 		fmt.Fprintln(os.Stderr, "homestead-server: dashboard UI not embedded (make dashboard-embed, build with -tags embeddash)")
 	}
+	// Session boundary (ADR-020, S255): classifies every TCP request;
+	// report-only until S257 enforces. The Unix socket is not wrapped.
+	srv.MountSessionBoundary(authSvc, claimSvc, audit.New(st))
 	if err := ensureClaimToken(claimSvc); err != nil {
 		return err
 	}

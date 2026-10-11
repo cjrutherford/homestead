@@ -161,3 +161,11 @@
 - Dashboard embed in install flow: serving the UI needs the
   node toolchain plus a manual embed build (proven working in
   KVM); prebuilt packaging belongs to distribution (S240).
+- Session boundary follow-ups (S255): report-only mode recognises bearer
+  sessions only, so cookie sessions, CSRF, and SSE cookie auth belong to
+  S256; enforcement, removal of the inline session checks, and the
+  pre-claim 401/403 behaviour belong to S257. Per-actor attribution of
+  would-be rejections (entries are always actor `anonymous`) and
+  `Verify` scanning every session row per request (needs an indexed
+  token lookup before enforcement puts it on every call) are discovered
+  and unscheduled.

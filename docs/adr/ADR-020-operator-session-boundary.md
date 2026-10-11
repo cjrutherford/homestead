@@ -83,7 +83,10 @@ not subject to session checks; filesystem permissions are its boundary.
 There is no auth middleware today. `handleLogout`, `handleChangePassword`
 and `handleLockoutStatus` in `internal/server/auth.go` check a session
 inline; nothing else does. The TCP mux has 58 registrations (57
-`HandleFunc` plus the dashboard catch-all `Handle("/")`;
+`HandleFunc` plus the dashboard catch-all `Handle("/")`, verified by
+`TestEveryRegisteredRouteIsClassified`, which enumerates them from the
+registration helper; a raw grep over-counts to 65 because it includes
+socket, test, and comment matches;
 `recover.go:19` is socket-only), nearly all unauthenticated, including
 `PUT /api/v1/config` and `POST /api/v1/config/import`, which accepts secret
 values (`internal/server/configio.go`). Anyone who can reach the management

@@ -15,6 +15,10 @@
 ## Control boundary
 The browser never receives Docker socket access. The Go daemon owns host-level mutation.
 
+The TCP listener is wrapped by the operator session boundary (ADR-020):
+every route is classified public, claim-window, or session in code. It is
+report-only as of S255 and enforcing from S257; the Unix socket is exempt.
+
 ## Desired/generated/observed
 Homestead separates:
 - desired state: what the owner requested;

@@ -46,16 +46,17 @@ type versionResponse struct {
 type Server struct {
 	addr      string
 	http      *http.Server
-	mux       *http.ServeMux
+	mux       *recordingMux
 	unix      *http.Server
 	socketMux *http.ServeMux
 	log       *slog.Logger
+	boundary  *boundary
 }
 
 // New returns a Server serving addr. Pass DefaultAddr for local-only binding.
 func New(addr string) *Server {
 	s := &Server{addr: addr, log: slog.Default()}
-	s.mux = http.NewServeMux()
+	s.mux = newRecordingMux()
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("GET /version", s.handleVersion)
 	s.socketMux = http.NewServeMux()
@@ -95,6 +96,9 @@ func (s *Server) Run(ctx context.Context) error {
 	ln, err := net.Listen("tcp", s.addr)
 	if err != nil {
 		return err
+	}
+	if s.boundary != nil {
+		go s.boundary.run(ctx)
 	}
 	return s.serve(ctx, ln, s.http, "tcp")
 }
