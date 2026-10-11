@@ -57,8 +57,8 @@ for an intentional gap. The Notes column is free text.
 | POST | /api/v1/backups/schedules | `"backup"` | n/a | Schedule save on CLI; dashboard surface belongs to later slices |
 | GET | /api/v1/backups/schedules/{package} | `"backup"` | n/a | Visible through schedules listing on CLI; dashboard surface belongs to later slices |
 | DELETE | /api/v1/backups/schedules/{package} | `"backup"` | n/a | Schedule removal on CLI; dashboard surface belongs to later slices |
-| GET | /api/v1/updates | n/a | `updates` | Per-package review rows on dashboard; CLI rows wait for a later updates CLI slice |
-| POST | /api/v1/updates/{name}/apply | n/a | `applyUpdate` | Approved update on dashboard; CLI rows wait for a later updates CLI slice |
+| GET | /api/v1/updates | `"updates"` | `updates` | Review rows on both surfaces |
+| POST | /api/v1/updates/{name}/apply | `"updates"` | `applyUpdate` | Approved updates on both surfaces |
 | GET | /api/v1/dockge | n/a | `dockge` | Expert-interface link with assessed policy on dashboard; no command surface yet |
 | GET | /api/v1/catalog/{name}/drift | n/a | `driftReview` | Managed-state review on dashboard; no command surface yet |
 | POST | /api/v1/catalog/{name}/drift | n/a | `driftResolve` | Accept or restore choice on dashboard; no command surface yet |

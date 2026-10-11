@@ -566,6 +566,20 @@ homesteadctl backup unschedule --package jellyfin
   Backup runs themselves still fire through later slices;
   dashboard surfaces belong to later slices.
 
+## Updates CLI (S243)
+
+```bash
+homesteadctl updates list
+homesteadctl updates apply jellyfin --backup --follow
+```
+
+- Review and apply over the updates API: the review lists
+  installed, current, and backup-gated packages with moves,
+  warnings, and reasons; apply carries backup opt-in with a
+  database password file, reports no-ops without opening
+  operations, and streams with follow. Proven live in KVM
+  against real registry discovery.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing
