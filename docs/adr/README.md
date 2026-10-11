@@ -65,3 +65,6 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-014 | First-party Catalog | Accepted |
 | ADR-015 | Secure First Claim | Accepted |
 | ADR-016 | Bootstrap Trust Ladder | Accepted |
+| ADR-017 | Tunnel Remote Access | Accepted |
+| ADR-018 | Static Container Packages | Accepted |
+| ADR-019 | Clean-room UI Reuse | Accepted |
