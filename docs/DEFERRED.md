@@ -120,8 +120,8 @@
   fetching certificates (ACME orders, DNS-01 TXT orchestration,
   manual material intake) belongs to later slices.
 - Exposure apply surfaces: S227 approves and applies in code
-  only; API, CLI, and dashboard affordances for reviewing and
-  approving exposure belong to later slices.
+  only; S245 adds API and CLI review, approval, and apply,
+  leaving the dashboard affordance for a later slice.
 - Validation surfaces and external vantage: S228 validates from
   the appliance with caller-named management hosts; scheduled
   re-validation, status surfaces, and best-vantage external

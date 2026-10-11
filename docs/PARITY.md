@@ -52,6 +52,10 @@ for an intentional gap. The Notes column is free text.
 | POST | /api/v1/catalog/{name}/uninstall | `"apps"` | n/a | Approved removal on CLI; dashboard surface belongs to later slices |
 | POST | /api/v1/edge/deploy | `"edge"` | n/a | Edge deployment on CLI; dashboard surface belongs to later slices |
 | POST | /api/v1/edge/routes | `"edge"` | n/a | Route reconciliation on CLI; dashboard surface belongs to later slices |
+| GET | /api/v1/exposure/review | `"exposure"` | n/a | Reviewed plan on CLI; dashboard surface belongs to later slices |
+| GET | /api/v1/exposure/approvals | `"exposure"` | n/a | Approval records on CLI; dashboard surface belongs to later slices |
+| POST | /api/v1/exposure/approvals | `"exposure"` | n/a | Ownership approval on CLI; dashboard surface belongs to later slices |
+| POST | /api/v1/exposure/apply | `"exposure"` | n/a | Firewall and edge application on CLI; dashboard surface belongs to later slices |
 | GET | /api/v1/backups/destination | `"backup"` | n/a | Resolved backup root on CLI; dashboard surface belongs to later slices |
 | GET | /api/v1/backups/schedules | `"backup"` | n/a | Schedule records on CLI; dashboard surface belongs to later slices |
 | POST | /api/v1/backups/schedules | `"backup"` | n/a | Schedule save on CLI; dashboard surface belongs to later slices |

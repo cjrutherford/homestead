@@ -566,6 +566,20 @@ homesteadctl backup unschedule --package jellyfin
   Backup runs themselves still fire through later slices;
   dashboard surfaces belong to later slices.
 
+## Updates CLI (S243)
+
+```bash
+homesteadctl updates list
+homesteadctl updates apply jellyfin --backup --follow
+```
+
+- Review and apply over the updates API: the review lists
+  installed, current, and backup-gated packages with moves,
+  warnings, and reasons; apply carries backup opt-in with a
+  database password file, reports no-ops without opening
+  operations, and streams with follow. Proven live in KVM
+  against real registry discovery.
+
 ## Drift CLI (S244)
 
 ```bash
@@ -580,19 +594,20 @@ homesteadctl drift restore jellyfin --follow
   operations and streams with follow. Proven live in KVM
   against hand-edited compose files.
 
-## Updates CLI (S243)
+## Exposure surfaces (S245)
 
 ```bash
-homesteadctl updates list
-homesteadctl updates apply jellyfin --backup --follow
+homesteadctl exposure review
+homesteadctl exposure approve --actor owner --network 203.0.113.0/24
+homesteadctl exposure apply app.example.com --follow
 ```
 
-- Review and apply over the updates API: the review lists
-  installed, current, and backup-gated packages with moves,
-  warnings, and reasons; apply carries backup opt-in with a
-  database password file, reports no-ops without opening
-  operations, and streams with follow. Proven live in KVM
-  against real registry discovery.
+- Review, approval, and application over the API and CLI:
+  review recomputes from saved wizard inputs with missing
+  selections reading as absent, approvals name the actor with
+  explicit CIDRs and record per host, and application runs
+  firewall composition plus edge write through the operation
+  engine. Dashboard surfaces belong to later slices.
 
 ## Host discovery (S040+)
 
