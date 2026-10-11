@@ -518,6 +518,22 @@ homesteadctl apps uninstall immich --remove-data --data-dir /mnt/bulk:immich --f
   installs. Dashboard surfaces belong to later slices. Proven
   live in KVM: remove plus reinstall cycles with data preserved.
 
+## Proxy serve surfaces (S237)
+
+```bash
+homesteadctl edge deploy --follow
+homesteadctl edge routes set -f routes.json --follow
+```
+
+- Caddy deployment and route-table reconciliation over the API
+  and CLI, both through the operation engine: invalid tables
+  and malformed bodies refuse before running anything, route
+  files take capitalized keys matching the docker model, and
+  `--follow` streams progress. Proven live in KVM: edge
+  deployed, app reinstalled on the edge network, route
+  reconciled, serving proven over the proxy. Dashboard surfaces
+  belong to later slices.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing

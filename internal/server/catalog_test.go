@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -14,6 +15,15 @@ import (
 	"homestead/internal/storage"
 	"homestead/internal/store"
 )
+
+// freeBytesPattern matches live free-space quantities in plan output.
+var freeBytesPattern = regexp.MustCompile(`offers \d+ bytes`)
+
+// normalizePlan masks volatile live facts so equivalence assertions
+// compare decisions, not background disk activity.
+func normalizePlan(raw []byte) string {
+	return freeBytesPattern.ReplaceAllString(string(raw), "offers N bytes")
+}
 
 func catalogTestServer(t *testing.T) (*Server, string) {
 	t.Helper()
@@ -158,7 +168,10 @@ func TestCatalogParityAcceptance(t *testing.T) {
 			first = recorder.Body.Bytes()
 			continue
 		}
-		if recorder.Body.String() != string(first) {
+		// Free-space bytes are live facts: background disk activity
+		// between the two plans must not fail body equivalence.
+		// Normalize them away on both sides before comparing.
+		if normalizePlan(recorder.Body.Bytes()) != normalizePlan(first) {
 			t.Fatalf("plan %d differs:\n%s\n---\n%s", i, recorder.Body.String(), first)
 		}
 	}

@@ -155,3 +155,33 @@ func TestEnsureFailureAborts(t *testing.T) {
 		t.Fatalf("status = %q, want failed", done.Status)
 	}
 }
+
+func TestInspectMissingAcrossDaemonWordings(t *testing.T) {
+	// Regression: Docker 26 reports absent networks as "not found"
+	// instead of "No such network" — both must read as missing, or
+	// every deploy fails its ensure step on newer daemons.
+	for _, message := range []string{
+		"exit status 1: Error: No such network: homestead-edge",
+		"exit status 1: Error response from daemon: network homestead-edge not found",
+	} {
+		old := execRun
+		execRun = func(_ context.Context, name string, args ...string) (string, error) {
+			return "", errors.New(message)
+		}
+		_, exists, err := inspectNetwork(context.Background(), "homestead-edge")
+		execRun = old
+		if err != nil || exists {
+			t.Fatalf("message %q: exists = %v, err = %v", message, exists, err)
+		}
+	}
+	// Genuine failures still fail instead of creating blindly.
+	old := execRun
+	execRun = func(_ context.Context, name string, args ...string) (string, error) {
+		return "", errors.New("exit status 1: permission denied")
+	}
+	_, _, err := inspectNetwork(context.Background(), "homestead-edge")
+	execRun = old
+	if err == nil {
+		t.Fatal("permission error read as missing")
+	}
+}

@@ -48,6 +48,8 @@ for an intentional gap. The Notes column is free text.
 | POST | /api/v1/catalog/{name}/install | `"apps"` | `installPackage` | Approved installation on both surfaces |
 | POST | /api/v1/catalog/{name}/configure | `"apps"` | `configurePackage` | Configuration operation on both surfaces |
 | POST | /api/v1/catalog/{name}/uninstall | `"apps"` | n/a | Approved removal on CLI; dashboard surface belongs to later slices |
+| POST | /api/v1/edge/deploy | `"edge"` | n/a | Edge deployment on CLI; dashboard surface belongs to later slices |
+| POST | /api/v1/edge/routes | `"edge"` | n/a | Route reconciliation on CLI; dashboard surface belongs to later slices |
 | GET | /api/v1/updates | n/a | `updates` | Per-package review rows on dashboard; CLI rows wait for a later updates CLI slice |
 | POST | /api/v1/updates/{name}/apply | n/a | `applyUpdate` | Approved update on dashboard; CLI rows wait for a later updates CLI slice |
 | GET | /api/v1/dockge | n/a | `dockge` | Expert-interface link with assessed policy on dashboard; no command surface yet |

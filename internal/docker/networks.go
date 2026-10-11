@@ -64,10 +64,14 @@ func EnsureDefinition(networks []NetworkSpec) operation.Definition {
 }
 
 // inspectNetwork reads one network, reporting existence and driver.
+// Absence reads across daemon wordings ("No such network" on older
+// daemons, "not found" on newer ones — proven live on Docker 26);
+// anything else fails instead of creating over an unclear state.
 func inspectNetwork(ctx context.Context, name string) (driver string, exists bool, err error) {
 	out, err := execRun(ctx, "docker", "network", "inspect", name, "--format", "json")
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "no such network") {
+		lowered := strings.ToLower(err.Error())
+		if strings.Contains(lowered, "no such network") || strings.Contains(lowered, "not found") {
 			return "", false, nil
 		}
 		return "", false, fmt.Errorf("inspect network %s: %w", name, err)

@@ -142,10 +142,9 @@
 - Storage dashboard surface: S235 covers mount registration
   and class assignment over the API and CLI; dashboard
   affordances belong to later slices.
-- Proxy serve surfaces: Caddy deployment and route
-  reconciliation have no API or CLI surface; KVM acceptance
-  proved installed apps stay unreachable until those land
-  (generated stacks publish no host ports by design).
+- Proxy dashboard surface: S237 covers Caddy deployment and
+  route reconciliation over the API and CLI; dashboard
+  affordances belong to later slices.
 - Dashboard embed in install flow: serving the UI needs the
   node toolchain plus a manual embed build (proven working in
   KVM); prebuilt packaging belongs to distribution (S240).
