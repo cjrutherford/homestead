@@ -55,7 +55,7 @@ class TestFirewallApi(unittest.TestCase):
 
     def test_daemon_port_wired(self):
         main = read("cmd/homestead-server/main.go")
-        self.assertIn("MountFirewall", main)
+        self.assertIn("MountFirewall", read("internal/server/mount.go"))
         self.assertIn("daemonPort", main)
 
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -53,6 +54,7 @@ const (
 	reasonInvalidSession = "invalid-session"
 	reasonWizardClaimed  = "claim-window-closed"
 	reasonUnclassified   = "unclassified-route"
+	reasonClaimStateErr  = "claim-state-error"
 )
 
 // auditActionWouldReject is the audit action of aggregated report-only
@@ -170,9 +172,9 @@ type boundary struct {
 	}
 	now func() time.Time
 
-	mu          sync.Mutex
-	windowStart time.Time
-	pending     map[reportKey]*reportBucket
+	mu              sync.Mutex
+	lastStateErrLog time.Time
+	pending         map[reportKey]*reportBucket
 }
 
 // MountSessionBoundary wraps the TCP mux in the report-only session
@@ -209,14 +211,23 @@ func (b *boundary) check(mux *recordingMux, r *http.Request) {
 		b.report(pattern, reasonUnclassified)
 		return
 	}
+	if pattern == dashboardPattern && !isDashboardRequest(r) {
+		// The method-less catch-all also receives unregistered methods
+		// and unknown API paths. Only static dashboard reads are public;
+		// everything else needs a session like any other API route.
+		class = ClassSession
+	}
 	if class == ClassPublic {
 		return
 	}
-	claimed := true // fail closed: unknown state counts as claimed
-	if state, err := b.claims.CurrentState(); err == nil {
-		claimed = state == claim.StateClaimed
+	state, err := b.claims.CurrentState()
+	if err != nil {
+		// Fail closed, but say so: this is not a closed claim window.
+		b.logClaimStateError(err)
+		b.report(pattern, reasonClaimStateErr)
+		return
 	}
-	if !claimed {
+	if state != claim.StateClaimed {
 		if class != ClassClaimWindow {
 			b.report(pattern, reasonPreClaim)
 		}
@@ -237,18 +248,39 @@ func (b *boundary) check(mux *recordingMux, r *http.Request) {
 	}
 }
 
-// report counts a would-be rejection. Counts flush as one audit entry per
-// route and reason per window, so a polling dashboard cannot flood audit.
+// dashboardPattern is the method-less static dashboard catch-all.
+const dashboardPattern = "/"
+
+// isDashboardRequest reports whether r is a plain static dashboard read.
+func isDashboardRequest(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	return r.URL.Path != "/api" && !strings.HasPrefix(r.URL.Path, "/api/")
+}
+
+// logClaimStateError logs a claim-state read failure at most once per
+// reportWindow so a down database cannot flood the journal.
+func (b *boundary) logClaimStateError(err error) {
+	now := b.now()
+	b.mu.Lock()
+	due := b.lastStateErrLog.IsZero() || now.Sub(b.lastStateErrLog) >= reportWindow
+	if due {
+		b.lastStateErrLog = now
+	}
+	b.mu.Unlock()
+	if due {
+		b.log.Warn("session boundary: claim state unreadable; failing closed", "error", err)
+	}
+}
+
+// report counts a would-be rejection. It only touches memory: the
+// ticker in run flushes counts as one audit entry per route and reason
+// per window, so a polling dashboard cannot flood audit and requests
+// never write audit.
 func (b *boundary) report(pattern, reason string) {
 	now := b.now()
 	b.mu.Lock()
-	var due []flushItem
-	if b.windowStart.IsZero() {
-		b.windowStart = now
-	} else if now.Sub(b.windowStart) >= reportWindow {
-		due = b.drainLocked()
-		b.windowStart = now
-	}
 	key := reportKey{pattern, reason}
 	bucket := b.pending[key]
 	if bucket == nil {
@@ -257,7 +289,6 @@ func (b *boundary) report(pattern, reason string) {
 	}
 	bucket.count++
 	b.mu.Unlock()
-	b.emit(due)
 }
 
 type flushItem struct {
@@ -284,7 +315,6 @@ func (b *boundary) drainLocked() []flushItem {
 func (b *boundary) flush() {
 	b.mu.Lock()
 	due := b.drainLocked()
-	b.windowStart = time.Time{}
 	b.mu.Unlock()
 	b.emit(due)
 }
@@ -304,17 +334,15 @@ func (b *boundary) emit(items []flushItem) {
 	}
 }
 
-// run flushes each window so a quiet tail is not held back, and once more
-// on shutdown.
-func (b *boundary) run(ctx context.Context) {
-	t := time.NewTicker(reportWindow)
-	defer t.Stop()
+// run flushes on every tick so a quiet tail is not held back, and once
+// more on shutdown before returning (callers wait for it).
+func (b *boundary) run(ctx context.Context, tick <-chan time.Time) {
 	for {
 		select {
 		case <-ctx.Done():
 			b.flush()
 			return
-		case <-t.C:
+		case <-tick:
 			b.flush()
 		}
 	}

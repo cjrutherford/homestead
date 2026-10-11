@@ -50,7 +50,7 @@ class TestWiring(unittest.TestCase):
     def test_daemon_mounts_when_embedded(self):
         main = read("cmd/homestead-server/main.go")
         self.assertIn("dashboard.Embedded()", main)
-        self.assertIn("MountDashboard", main)
+        self.assertIn("MountDashboard", read("internal/server/mount.go"))
         self.assertIn("not embedded", main)
 
     def test_makefile_embed_target(self):

@@ -47,7 +47,7 @@ class TestWizardStore(unittest.TestCase):
                 self.assertIn(route, src)
 
     def test_daemon_mounts_wizards(self):
-        self.assertIn("MountWizards", read("cmd/homestead-server/main.go"))
+        self.assertIn("MountWizards", read("internal/server/mount.go"))
 
 
 class TestWizardFramework(unittest.TestCase):

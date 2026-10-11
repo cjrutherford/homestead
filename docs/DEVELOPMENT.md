@@ -200,12 +200,20 @@ homesteadctl logout --token "$TOKEN"        # or HOMESTEAD_TOKEN env
 - Report-only: nothing is rejected. Requests that enforcement would
   reject (reasons `pre-claim`, `no-session`, `invalid-session`,
   `claim-window-closed`, `unclassified-route`) are counted per route and
-  reason and flushed as one `session.boundary.would_reject` audit entry
-  (plus a log line) per minute with the count; tokens and cookies are
+  reason and flushed by a background ticker as one
+  `session.boundary.would_reject` audit entry (plus a log line) per
+  minute with the count; requests themselves never write audit, and the
+  ticker's final flush completes before `Run` returns (so before stores
+  close). An unreadable claim state fails closed with reason
+  `claim-state-error` (logged at most once a minute). The method-less
+  dashboard catch-all `/` is public only for GET/HEAD outside `/api/`;
+  any other fallthrough (unregistered method, unknown API path) is
+  classified as a session route. Tokens and cookies are
   never recorded. Only bearer sessions are recognised until S256 adds
   cookies, so the dashboard reports as `no-session` for now.
-- Register TCP routes with `s.route`/`s.routeFunc` and add the pattern to
-  `routeClasses`; `TestEveryRegisteredRouteIsClassified` enumerates the
+- Production routes are mounted by `server.MountApp`, shared by
+  `cmd/homestead-server` and the classification test so wiring cannot
+  drift. Add the pattern to `routeClasses`; `TestEveryRegisteredRouteIsClassified` enumerates the
   real registrations (58 today) and fails on any unclassified or stale
   entry. Review audit with `homesteadctl audit` before S257 enforces.
 

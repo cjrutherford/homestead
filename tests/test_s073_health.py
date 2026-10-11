@@ -44,7 +44,7 @@ class TestHealthContract(unittest.TestCase):
 
     def test_endpoint_and_client(self):
         self.assertIn("GET /api/v1/docker/health", read("internal/server/docker.go"))
-        self.assertIn("MountDocker", read("cmd/homestead-server/main.go"))
+        self.assertIn("MountDocker", read("internal/server/mount.go"))
         self.assertIn("func (c *Client) DockerHealth(", read("internal/apiclient/docker.go"))
 
     def test_cli_command(self):

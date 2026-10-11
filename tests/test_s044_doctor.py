@@ -46,7 +46,7 @@ class TestDoctorContract(unittest.TestCase):
 
     def test_endpoint_and_client(self):
         self.assertIn("GET /api/v1/doctor", read("internal/server/doctor.go"))
-        self.assertIn("MountDoctor", read("cmd/homestead-server/main.go"))
+        self.assertIn("MountDoctor", read("internal/server/mount.go"))
         self.assertIn("func (c *Client) Doctor(", read("internal/apiclient/doctor.go"))
 
     def test_cli_command(self):

@@ -60,8 +60,9 @@ class TestApiRoutes(unittest.TestCase):
     def test_production_wiring_registers_domain_schema(self):
         """Domain slices register fields; S057 added the firewall section."""
         main = read("cmd/homestead-server/main.go")
-        self.assertIn("firewall.Schema()", main)
-        self.assertIn("MountConfig", main)
+        mount = read("internal/server/mount.go")
+        self.assertIn("firewall.Schema()", mount)
+        self.assertIn("MountConfig", mount)
         self.assertIn("desired.DefaultPath()", main)
 
     def test_errors_serialize_lowercase(self):

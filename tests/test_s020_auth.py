@@ -99,7 +99,7 @@ class TestAuthSurface(unittest.TestCase):
 
     def test_daemon_mounts_auth(self):
         main = read("cmd/homestead-server/main.go")
-        self.assertIn("MountAuth", main)
+        self.assertIn("MountAuth", read("internal/server/mount.go"))
 
 
 if __name__ == "__main__":

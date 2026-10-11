@@ -1,29 +1,26 @@
 package server
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"homestead/internal/audit"
 	"homestead/internal/auth"
 	"homestead/internal/claim"
-	"homestead/internal/config"
-	"homestead/internal/docker"
-	"homestead/internal/firewall"
-	"homestead/internal/operation"
-	"homestead/internal/secret"
 	"homestead/internal/store"
-	"homestead/internal/wizard"
 )
 
-// fullServer mounts every production TCP route, mirroring
-// cmd/homestead-server, so the classification test sees the real set.
+// fullServer mounts every production TCP route through the same
+// MountApp cmd/homestead-server uses, so wiring drift cannot hide.
 func fullServer(t *testing.T) (*Server, *store.Store) {
 	t.Helper()
 	dir := t.TempDir()
@@ -32,37 +29,14 @@ func fullServer(t *testing.T) (*Server, *store.Store) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	claimSvc := claim.New(st)
-	authSvc := auth.New(st, claimSvc)
 	srv := New(DefaultAddr)
-	cfgPath := filepath.Join(dir, "desired.yaml")
-	cfg := config.New(firewall.Schema(), cfgPath)
-	srv.MountConfig(cfg)
-	secrets, err := secret.New(st, filepath.Join(dir, "key"))
-	if err != nil {
+	if _, err := MountApp(srv, AppConfig{
+		Store: st, ConfigPath: filepath.Join(dir, "desired.yaml"), CatalogDir: "catalog",
+		SecretKeyPath: filepath.Join(dir, "key"), Port: 8080,
+		Dashboard: http.NotFoundHandler(),
+	}); err != nil {
 		t.Fatal(err)
 	}
-	srv.MountConfigIO(cfgPath, secrets)
-	srv.MountClaim(claimSvc)
-	srv.MountAuth(authSvc, audit.New(st))
-	srv.MountAudit(audit.New(st))
-	srv.MountRecovery(authSvc)
-	srv.MountWizards(wizard.New(st))
-	srv.MountDoctor()
-	srv.MountOperations(operation.New(st))
-	srv.MountCatalog(st, "catalog")
-	srv.MountStorage(st)
-	srv.MountBackups(st)
-	srv.MountDrift(st, "catalog")
-	dc := docker.NewClient("")
-	srv.MountDocker(dc)
-	srv.MountDockge(dc)
-	srv.MountEdge(st)
-	srv.MountUpdates(st, "catalog", dc)
-	srv.MountFirewall(8080, cfg)
-	srv.MountExposure(st, 8080)
-	srv.MountTunnel(st, secrets)
-	srv.MountDashboard(http.NotFoundHandler())
 	return srv, st
 }
 
@@ -83,6 +57,9 @@ func TestEveryRegisteredRouteIsClassified(t *testing.T) {
 		if !registered[p] {
 			t.Errorf("routeClasses has stale entry %q (not registered)", p)
 		}
+	}
+	if len(routes) != 58 {
+		t.Errorf("TCP route count = %d, want 58 (update deliberately with routeClasses)", len(routes))
 	}
 	counts := map[RouteClass]int{}
 	for _, p := range routes {
@@ -142,15 +119,54 @@ func (f fakeSessions) Verify(token string) (auth.VerifiedSession, error) {
 	return auth.VerifiedSession{}, auth.ErrInvalidSession
 }
 
-type fakeAudit struct{ entries []audit.Entry }
+type fakeAudit struct {
+	mu      sync.Mutex
+	entries []audit.Entry
+	err     error
+}
 
 func (f *fakeAudit) Record(e audit.Entry) (audit.Entry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return audit.Entry{}, f.err
+	}
 	f.entries = append(f.entries, e)
 	return e, nil
 }
 
+func (f *fakeAudit) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.entries)
+}
+
+type fakeLog struct {
+	mu   sync.Mutex
+	msgs []string
+}
+
+func (l *fakeLog) Warn(msg string, _ ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.msgs = append(l.msgs, msg)
+}
+
+func (l *fakeLog) count(msg string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n := 0
+	for _, m := range l.msgs {
+		if m == msg {
+			n++
+		}
+	}
+	return n
+}
+
 type boundaryRig struct {
 	srv    *Server
+	log    *fakeLog
 	claims *fakeClaims
 	audit  *fakeAudit
 	now    time.Time
@@ -160,9 +176,12 @@ func newRig(t *testing.T, state claim.State) *boundaryRig {
 	t.Helper()
 	r := &boundaryRig{claims: &fakeClaims{state: state}, audit: &fakeAudit{}, now: time.Unix(1_700_000_000, 0)}
 	r.srv = New(DefaultAddr)
+	r.log = &fakeLog{}
 	r.srv.mux.HandleFunc("PUT /api/v1/config", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
 	r.srv.mux.HandleFunc("PUT /api/v1/wizards/{id}", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	r.srv.mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) })
 	r.srv.mountBoundary(fakeSessions{valid: "good"}, r.claims, r.audit, func() time.Time { return r.now })
+	r.srv.boundary.log = r.log
 	return r
 }
 
@@ -215,7 +234,13 @@ func TestBoundaryReasons(t *testing.T) {
 		{"wizard pre-claim", "PUT", "/api/v1/wizards/claim", "", claim.StateUnclaimed, ""},
 		{"wizard after claim, no session", "PUT", "/api/v1/wizards/claim", "", claim.StateClaimed, "claim-window-closed"},
 		{"wizard after claim, session", "PUT", "/api/v1/wizards/claim", "good", claim.StateClaimed, ""},
-		{"unrouted path", "GET", "/api/v1/nope", "", claim.StateClaimed, ""},
+		{"unrouted api path falls to catch-all", "GET", "/api/v1/nope", "", claim.StateClaimed, "no-session"},
+		{"unregistered method on api path", "DELETE", "/api/v1/config", "", claim.StateClaimed, "no-session"},
+		{"unregistered method, valid session", "DELETE", "/api/v1/config", "good", claim.StateClaimed, ""},
+		{"dashboard GET public", "GET", "/index.html", "", claim.StateClaimed, ""},
+		{"dashboard HEAD public", "HEAD", "/", "", claim.StateClaimed, ""},
+		{"dashboard POST not public", "POST", "/index.html", "", claim.StateClaimed, "no-session"},
+		{"api path pre-claim", "PUT", "/api/v1/other", "", claim.StateUnclaimed, "pre-claim"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -238,10 +263,35 @@ func TestBoundaryReasons(t *testing.T) {
 func TestBoundaryClaimStateErrorFailsClosed(t *testing.T) {
 	r := newRig(t, claim.StateUnclaimed)
 	r.claims.err = errors.New("db down")
-	r.do(http.MethodPut, "/api/v1/wizards/claim", "")
+	for i := 0; i < 5; i++ {
+		r.do(http.MethodPut, "/api/v1/wizards/claim", "")
+	}
 	got := r.reasons()
-	if len(got) != 1 || !strings.Contains(got[0], "claim-window-closed") {
+	if len(got) != 1 || !strings.Contains(got[0], "(claim-state-error)") || !strings.Contains(got[0], "x5") {
 		t.Fatalf("report = %v", got)
+	}
+	if n := r.log.count("session boundary: claim state unreadable; failing closed"); n != 1 {
+		t.Fatalf("state error logged %d times in one window, want 1 (rate limited)", n)
+	}
+	r.now = r.now.Add(reportWindow + time.Second)
+	r.do(http.MethodPut, "/api/v1/wizards/claim", "")
+	if n := r.log.count("session boundary: claim state unreadable; failing closed"); n != 2 {
+		t.Fatalf("state error logged %d times after window, want 2", n)
+	}
+}
+
+func TestBoundaryRequestsNeverWriteAudit(t *testing.T) {
+	r := newRig(t, claim.StateClaimed)
+	for i := 0; i < 20; i++ {
+		r.do(http.MethodPut, "/api/v1/config", "")
+		r.now = r.now.Add(reportWindow) // every request crosses a window
+	}
+	if n := r.audit.count(); n != 0 {
+		t.Fatalf("requests wrote %d audit entries; only the ticker/flush may", n)
+	}
+	r.srv.boundary.flush()
+	if n := r.audit.count(); n != 1 {
+		t.Fatalf("entries after flush = %d, want 1", n)
 	}
 }
 
@@ -251,13 +301,12 @@ func TestBoundaryAggregatesPerWindow(t *testing.T) {
 		r.do(http.MethodPut, "/api/v1/config", "")
 	}
 	r.do(http.MethodPut, "/api/v1/wizards/x", "")
-	if n := len(r.audit.entries); n != 0 {
+	if n := r.audit.count(); n != 0 {
 		t.Fatalf("entries inside window = %d, want 0 until flush", n)
 	}
-	r.now = r.now.Add(reportWindow + time.Second)
-	r.do(http.MethodPut, "/api/v1/config", "") // crosses the window
-	if n := len(r.audit.entries); n != 2 {
-		t.Fatalf("entries after window = %d, want 2 (one per route+reason)", n)
+	r.srv.boundary.flush()
+	if n := r.audit.count(); n != 2 {
+		t.Fatalf("entries after flush = %d, want 2 (one per route+reason)", n)
 	}
 	var cfg string
 	for _, e := range r.audit.entries {
@@ -267,6 +316,107 @@ func TestBoundaryAggregatesPerWindow(t *testing.T) {
 	}
 	if !strings.Contains(cfg, "x50") {
 		t.Fatalf("config entry %q lacks count x50", cfg)
+	}
+}
+
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not met in time")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestBoundaryRunFlushesOnTickAndShutdown(t *testing.T) {
+	r := newRig(t, claim.StateClaimed)
+	r.do(http.MethodPut, "/api/v1/config", "")
+	tick := make(chan time.Time)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); r.srv.boundary.run(ctx, tick) }()
+	tick <- time.Now()
+	waitFor(t, func() bool { return r.audit.count() == 1 })
+	r.do(http.MethodPut, "/api/v1/wizards/x", "")
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("run did not return after cancel")
+	}
+	if n := r.audit.count(); n != 2 {
+		t.Fatalf("entries after shutdown = %d, want 2 (final flush completed before run returned)", n)
+	}
+}
+
+func TestBoundaryConcurrentReportAndFlush(t *testing.T) {
+	r := newRig(t, claim.StateClaimed)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				r.do(http.MethodPut, "/api/v1/config", "")
+				if j%25 == 0 {
+					r.srv.boundary.flush()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	r.srv.boundary.flush()
+	total := 0
+	for _, e := range r.audit.entries {
+		var n int
+		idx := strings.Index(e.Detail, ") x")
+		if idx < 0 {
+			t.Fatalf("bad detail %q", e.Detail)
+		}
+		if _, err := fmt.Sscanf(e.Detail[idx+3:], "%d", &n); err != nil {
+			t.Fatal(err)
+		}
+		total += n
+	}
+	if total != 1600 {
+		t.Fatalf("counted %d reports, want 1600 (none lost or duplicated)", total)
+	}
+}
+
+func TestBoundaryAuditFailureIsLoggedNotFatal(t *testing.T) {
+	r := newRig(t, claim.StateClaimed)
+	r.audit.err = errors.New("disk full")
+	if got := r.do(http.MethodPut, "/api/v1/config", ""); got != http.StatusTeapot {
+		t.Fatalf("status %d", got)
+	}
+	r.srv.boundary.flush()
+	if n := r.log.count("audit record failed"); n != 1 {
+		t.Fatalf("audit failure logged %d times, want 1", n)
+	}
+	if n := r.audit.count(); n != 0 {
+		t.Fatalf("entries = %d", n)
+	}
+}
+
+func TestBoundaryDoesNotWrapUnixSocket(t *testing.T) {
+	srv, st := fullServer(t)
+	aud := &fakeAudit{}
+	cl := &fakeClaims{state: claim.StateClaimed}
+	srv.mountBoundary(fakeSessions{}, cl, aud, time.Now)
+	_ = st
+	r := &boundaryRig{srv: srv, audit: aud}
+	rec := httptest.NewRecorder()
+	r.srv.SocketHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/admins/recover", strings.NewReader("{}")))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("socket status = %d, want 400 (served without a session)", rec.Code)
+	}
+	if got := r.reasons(); len(got) != 0 {
+		t.Fatalf("socket request was classified by the boundary: %v", got)
+	}
+	if r.srv.unix.Handler != http.Handler(r.srv.socketMux) {
+		t.Fatal("unix server handler was replaced")
 	}
 }
 
@@ -292,5 +442,27 @@ func TestBoundaryUnclassifiedRouteIsReported(t *testing.T) {
 	got := r.reasons()
 	if len(got) != 1 || !strings.Contains(got[0], "unclassified-route") {
 		t.Fatalf("report = %v", got)
+	}
+}
+
+func TestRunWaitsForBoundaryFinalFlush(t *testing.T) {
+	r := newRig(t, claim.StateClaimed)
+	r.srv.addr = "127.0.0.1:0"
+	r.do(http.MethodPut, "/api/v1/config", "")
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- r.srv.Run(ctx) }()
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return")
+	}
+	if n := r.audit.count(); n != 1 {
+		t.Fatalf("entries when Run returned = %d, want 1 (final flush must finish before stores close)", n)
 	}
 }

@@ -16,14 +16,10 @@ import (
 	"syscall"
 
 	"homestead/internal/audit"
-	"homestead/internal/auth"
 	"homestead/internal/claim"
-	"homestead/internal/config"
 	"homestead/internal/dashboard"
 	"homestead/internal/desired"
 	"homestead/internal/discover"
-	"homestead/internal/docker"
-	"homestead/internal/firewall"
 	"homestead/internal/layout"
 	"homestead/internal/mdns"
 	"homestead/internal/operation"
@@ -31,7 +27,6 @@ import (
 	"homestead/internal/server"
 	"homestead/internal/store"
 	"homestead/internal/version"
-	"homestead/internal/wizard"
 )
 
 func main() {
@@ -65,49 +60,32 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	if err := operation.NewRunner(st).Recover(); err != nil {
 		return err
 	}
-	claimSvc := claim.New(st)
-	authSvc := auth.New(st, claimSvc)
-	// Domain slices register their settings fields here; the config API,
-	// CLI, and dashboard render them from this one schema (S015/S016).
-	srv := server.New(listen)
-	configSvc := config.New(firewall.Schema(), configPath)
-	srv.MountConfig(configSvc)
-	configSecrets, err := secret.New(st, secret.DefaultKeyPath())
+	// Domain slices register their routes in server.MountApp, shared with
+	// the route-classification test so wiring cannot drift (S255).
+	// Their settings fields feed one schema for the config API, CLI, and
+	// dashboard (S015/S016).
+	port, err := daemonPort(listen)
 	if err != nil {
 		return err
 	}
-	srv.MountConfigIO(configPath, configSecrets)
-	srv.MountClaim(claimSvc)
-	srv.MountAuth(authSvc, audit.New(st))
-	srv.MountAudit(audit.New(st))
-	srv.MountRecovery(authSvc)
-	srv.MountWizards(wizard.New(st))
-	srv.MountDoctor()
-	srv.MountOperations(operation.New(st))
-	srv.MountCatalog(st, catalogDir)
-	srv.MountStorage(st)
-	srv.MountBackups(st)
-	srv.MountDrift(st, catalogDir)
-	dockerClient := docker.NewClient("")
-	srv.MountDocker(dockerClient)
-	srv.MountDockge(dockerClient)
-	srv.MountEdge(st)
-	srv.MountUpdates(st, catalogDir, dockerClient)
-	if port, err := daemonPort(listen); err != nil {
-		return err
-	} else {
-		srv.MountFirewall(port, configSvc)
-		srv.MountExposure(st, port)
-		srv.MountTunnel(st, configSecrets)
+	srv := server.New(listen)
+	app := server.AppConfig{
+		Store: st, ConfigPath: configPath, CatalogDir: catalogDir,
+		SecretKeyPath: secret.DefaultKeyPath(), Port: port,
 	}
 	if files, ok := dashboard.Embedded(); ok {
-		srv.MountDashboard(dashboard.New(files))
+		app.Dashboard = dashboard.New(files)
 	} else {
 		fmt.Fprintln(os.Stderr, "homestead-server: dashboard UI not embedded (make dashboard-embed, build with -tags embeddash)")
 	}
+	svcs, err := server.MountApp(srv, app)
+	if err != nil {
+		return err
+	}
+	claimSvc := svcs.Claim
 	// Session boundary (ADR-020, S255): classifies every TCP request;
 	// report-only until S257 enforces. The Unix socket is not wrapped.
-	srv.MountSessionBoundary(authSvc, claimSvc, audit.New(st))
+	srv.MountSessionBoundary(svcs.Auth, claimSvc, audit.New(st))
 	if err := ensureClaimToken(claimSvc); err != nil {
 		return err
 	}

@@ -97,10 +97,24 @@ func (s *Server) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if s.boundary != nil {
-		go s.boundary.run(ctx)
+	if s.boundary == nil {
+		return s.serve(ctx, ln, s.http, "tcp")
 	}
-	return s.serve(ctx, ln, s.http, "tcp")
+	// The boundary's final flush writes audit, so Run must not return
+	// (and callers must not close stores) until it has finished. The
+	// child context also stops it if serving fails without ctx ending.
+	bctx, stop := context.WithCancel(ctx)
+	ticker := time.NewTicker(reportWindow)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.boundary.run(bctx, ticker.C)
+	}()
+	err = s.serve(ctx, ln, s.http, "tcp")
+	stop()
+	<-done
+	ticker.Stop()
+	return err
 }
 
 // RunUnix serves the socket mux on a root-only Unix socket (0600) until

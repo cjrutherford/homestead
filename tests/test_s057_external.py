@@ -40,8 +40,9 @@ class TestModeConfig(unittest.TestCase):
 
     def test_daemon_serves_domain_schema(self):
         main = read("cmd/homestead-server/main.go")
-        self.assertIn("firewall.Schema()", main)
-        self.assertNotIn("schema.Schema{}", main)
+        mount = read("internal/server/mount.go")
+        self.assertIn("firewall.Schema()", mount)
+        self.assertNotIn("schema.Schema{}", main + mount)
 
 
 class TestExternalDetection(unittest.TestCase):
