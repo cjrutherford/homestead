@@ -107,6 +107,12 @@ class TestInstallScripts(unittest.TestCase):
             with self.subTest(step=step):
                 self.assertIn(step, content)
 
+    def test_install_embeds_built_dashboard(self):
+        content = read("scripts/install-systemd.sh")
+        for symbol in ("internal/dashboard/dist/index.html", "-tags embeddash"):
+            with self.subTest(symbol=symbol):
+                self.assertIn(symbol, content)
+
     def test_install_places_packaged_catalog(self):
         content = read("scripts/install-systemd.sh")
         for symbol in ("catalog", "/usr/local/share/homestead/catalog"):

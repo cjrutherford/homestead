@@ -20,7 +20,13 @@ test -f "$UNIT_SRC" || { echo "error: unit file missing: $UNIT_SRC" >&2; exit 1;
 
 cd "$REPO"
 "$REPO/scripts/provision-layout.sh"
-go build -o "$BIN_DST" ./cmd/homestead-server
+# A built dashboard (make dashboard-build dashboard-embed) travels inside
+# the binary; without one the daemon stays API-only (S031).
+build_tags=()
+if [ -f "$REPO/internal/dashboard/dist/index.html" ]; then
+	build_tags=(-tags embeddash)
+fi
+go build "${build_tags[@]}" -o "$BIN_DST" ./cmd/homestead-server
 # The packaged catalog travels with the binary: curated manifests are
 # code, versioned and reviewed with it (S160). Replaced wholesale so
 # removed packages never linger beside new ones.
