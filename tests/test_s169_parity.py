@@ -40,9 +40,11 @@ class TestParityAcceptanceContract(unittest.TestCase):
     def test_matrix_complete(self):
         parity = read("docs/PARITY.md")
         # Install-flow rows carry both surfaces with no gaps; drift
-        # rows (S213) carry dashboard only, covered by S213 tests.
+        # (S213) and uninstall (S236) rows carry dashboard n/a,
+        # covered by their own slice tests.
         rows = [line for line in parity.splitlines()
-                if "/api/v1/catalog" in line and "/drift" not in line]
+                if "/api/v1/catalog" in line
+                and "/drift" not in line and "/uninstall" not in line]
         self.assertEqual(len(rows), 5)
         for row in rows:
             with self.subTest(row=row):

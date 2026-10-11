@@ -22,6 +22,8 @@ func appsStub(t *testing.T) string {
 			_, _ = w.Write([]byte(`{"id":7}`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/configure"):
 			_, _ = w.Write([]byte(`{"id":9}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/uninstall"):
+			_, _ = w.Write([]byte(`{"id":11}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -102,5 +104,24 @@ func TestAppsConfigure(t *testing.T) {
 	code, _, _ = invoke(t, []string{"--server", url, "apps", "bogus"})
 	if code != exitUsage {
 		t.Fatalf("exit = %d, want usage", code)
+	}
+}
+
+func TestAppsUninstall(t *testing.T) {
+	url := appsStub(t)
+	code, stdout, _ := invoke(t, []string{"--server", url, "apps", "uninstall", "jellyfin"})
+	if code != exitOK {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(stdout, "operation: 11") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	code, _, _ = invoke(t, []string{"--server", url, "apps", "uninstall"})
+	if code != exitUsage {
+		t.Fatalf("exit = %d, want usage", code)
+	}
+	code, _, stderr := invoke(t, []string{"--server", url, "apps", "uninstall", "jellyfin", "--data-dir", "nope"})
+	if code != exitUsage || !strings.Contains(stderr, "MOUNT:PATH") {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
 }

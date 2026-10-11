@@ -126,6 +126,17 @@ func (c *Client) InstallPackage(ctx context.Context, name string, body map[strin
 	return out.ID, nil
 }
 
+// UninstallPackage removes an installed package, returning the
+// operation id for progress streams. Data survives unless the body
+// asks for explicit roots.
+func (c *Client) UninstallPackage(ctx context.Context, name string, body map[string]any) (int64, error) {
+	var out OperationStarted
+	if err := c.postJSON(ctx, "/api/v1/catalog/"+name+"/uninstall", body, &out); err != nil {
+		return 0, err
+	}
+	return out.ID, nil
+}
+
 // ConfigurePackage applies service variable changes, returning the
 // operation id for progress streams.
 func (c *Client) ConfigurePackage(ctx context.Context, name string, changes []map[string]any) (int64, error) {

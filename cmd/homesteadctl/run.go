@@ -89,6 +89,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  apps plan <pkg> -f FILE  review install plan (S168)")
 	fmt.Fprintln(w, "  apps install <pkg> -f FILE [--follow]  install package (S168)")
 	fmt.Fprintln(w, "  apps configure <pkg> --service NAME [--set K=V] [--unset K]  configure service (S168)")
+	fmt.Fprintln(w, "  apps uninstall <pkg> [--remove-data --data-dir M:P]... [--follow]  uninstall package (S236)")
 	fmt.Fprintln(w, "  operations <get|list|follow>  inspect and follow operations (S062/S064)")
 	fmt.Fprintln(w, "  firewall <status|plan|apply>  host firewall setup (S056)")
 	fmt.Fprintln(w, "  storage <mounts|register|registrations|assign|assignments>  mounted storage setup (S235)")

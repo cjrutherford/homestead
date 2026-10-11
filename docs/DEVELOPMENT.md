@@ -504,6 +504,20 @@ homesteadctl storage assign --class application --mountpoint /mnt/app --actor ow
   coverage or the daemon sees them read-only. Dashboard surfaces
   belong to later slices.
 
+## App removal surfaces (S236)
+
+```bash
+homesteadctl apps uninstall nextcloud --follow
+homesteadctl apps uninstall immich --remove-data --data-dir /mnt/bulk:immich --follow
+```
+
+- Uninstall runs through the API and CLI over the S158 removal
+  operation: unknown packages 404, missing stacks refuse before
+  anything runs, data survives by default with explicit roots
+  required for removal, and `--follow` streams progress like
+  installs. Dashboard surfaces belong to later slices. Proven
+  live in KVM: remove plus reinstall cycles with data preserved.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing

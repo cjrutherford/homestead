@@ -236,3 +236,58 @@ func TestCatalogConfigure(t *testing.T) {
 		t.Fatalf("code = %d", recorder.Code)
 	}
 }
+
+func uninstallTestServer(t *testing.T, withStack bool) (*Server, string) {
+	t.Helper()
+	srv, _ := catalogTestServer(t)
+	stackDir := filepath.Join(t.TempDir(), "demo")
+	if withStack {
+		if err := os.MkdirAll(stackDir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(stackDir, "compose.yaml"), []byte("name: demo\n"), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	old := stackDirFor
+	stackDirFor = func(name string) string {
+		if name == "demo" {
+			return stackDir
+		}
+		return old(name)
+	}
+	t.Cleanup(func() { stackDirFor = old })
+	return srv, stackDir
+}
+
+func TestCatalogUninstall(t *testing.T) {
+	srv, _ := uninstallTestServer(t, true)
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/demo/uninstall", map[string]any{})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("code = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+	var started struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &started); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if started.ID == 0 {
+		t.Fatal("no operation id")
+	}
+	// Unknown packages 404; missing stacks refuse before running.
+	recorder = serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/ghost/uninstall", map[string]any{})
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("code = %d", recorder.Code)
+	}
+	bare, _ := uninstallTestServer(t, false)
+	recorder = serveRequest(t, bare, http.MethodPost, "/api/v1/catalog/demo/uninstall", map[string]any{})
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("code = %d", recorder.Code)
+	}
+	// Data removal without explicit roots refuses.
+	recorder = serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/demo/uninstall", map[string]any{"remove_data": true})
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("code = %d", recorder.Code)
+	}
+}

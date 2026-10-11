@@ -16,7 +16,7 @@ import (
 // endpoints.
 func runApps(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|plan|install|configure>")
+		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|plan|install|configure|uninstall>")
 		return exitUsage
 	}
 	switch args[0] {
@@ -28,6 +28,8 @@ func runApps(ctx context.Context, client *apiclient.Client, args []string, stdou
 		return runAppsInstall(ctx, client, args[1:], stdout, stderr)
 	case "configure":
 		return runAppsConfigure(ctx, client, args[1:], stdout, stderr)
+	case "uninstall":
+		return runAppsUninstall(ctx, client, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown apps subcommand %q\n", args[0])
 		return exitUsage
@@ -224,4 +226,68 @@ func runAppsConfigure(ctx context.Context, client *apiclient.Client, args []stri
 	}
 	fmt.Fprintf(stdout, "operation: %d\n", id)
 	return exitOK
+}
+
+func runAppsUninstall(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	var dataDirs []string
+	removeData := false
+	follow := false
+	var positional []string
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--remove-data":
+			removeData = true
+		case args[i] == "--data-dir" && i+1 < len(args):
+			dataDirs = append(dataDirs, args[i+1])
+			i++
+		case args[i] == "--follow":
+			follow = true
+		case strings.HasPrefix(args[i], "-"):
+			fmt.Fprintf(stderr, "unknown flag %q\n", args[i])
+			return exitUsage
+		default:
+			positional = append(positional, args[i])
+		}
+	}
+	if len(positional) != 1 {
+		fmt.Fprintln(stderr, "usage: homesteadctl apps uninstall <package> [--remove-data --data-dir MOUNT:PATH]... [--follow]")
+		return exitUsage
+	}
+	body := map[string]any{"remove_data": removeData}
+	var dirs []map[string]any
+	for _, dir := range dataDirs {
+		mountpoint, path, found := strings.Cut(dir, ":")
+		if !found || mountpoint == "" || path == "" {
+			fmt.Fprintln(stderr, "invalid --data-dir (want MOUNT:PATH)")
+			return exitUsage
+		}
+		dirs = append(dirs, map[string]any{"mountpoint": mountpoint, "path": path})
+	}
+	if dirs != nil {
+		body["data_dirs"] = dirs
+	}
+	id, err := client.UninstallPackage(ctx, positional[0], body)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "operation: %d\n", id)
+	if !follow {
+		return exitOK
+	}
+	var last operation.Operation
+	if err := client.StreamOperation(ctx, id, func(op operation.Operation) {
+		last = op
+		fmt.Fprintf(stdout, "%s: %s\n", op.Status, stepSummary(op))
+	}); err != nil {
+		if ctx.Err() != nil {
+			return exitOK
+		}
+		return fail(stderr, err)
+	}
+	switch last.Status {
+	case operation.StatusSucceeded:
+		return exitOK
+	default:
+		return exitError
+	}
 }

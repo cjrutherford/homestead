@@ -28,7 +28,14 @@ func (s *Server) MountCatalog(st *store.Store, catalogDir string) {
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/plan", handleCatalogPlan(st, catalogDir))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/install", handleCatalogInstall(st, catalogDir, runner))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/configure", handleCatalogConfigure(st, catalogDir, runner))
+	s.mux.HandleFunc("POST /api/v1/catalog/{name}/uninstall", handleCatalogUninstall(st, catalogDir, runner))
 }
+
+// stackDirFor resolves installed stack directories, stubbed in tests:
+// production uses docker.DirFor. Install and configure tolerate the
+// production path (their failures surface async); uninstall validates
+// synchronously, so it needs the seam.
+var stackDirFor = docker.DirFor
 
 // packageSummary is the list-view projection: enough to browse,
 // details behind the detail route.
@@ -266,6 +273,41 @@ func handleCatalogConfigure(st *store.Store, catalogDir string, runner *operatio
 			return
 		}
 		def, err := catalog.ConfigureDefinition(plan, docker.DirFor(name), name, st)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		op, err := runner.Start(r.Context(), def, "")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"id": op.ID})
+	}
+}
+
+func handleCatalogUninstall(st *store.Store, catalogDir string, runner *operation.Runner) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if _, ok := loadPackage(catalogDir, name, w); !ok {
+			return
+		}
+		var body struct {
+			RemoveData bool `json:"remove_data"`
+			DataDirs   []struct {
+				Mountpoint string `json:"mountpoint"`
+				Path       string `json:"path"`
+			} `json:"data_dirs"`
+		}
+		if err := decodeBody(r, &body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		removal := catalog.Removal{Package: name, RemoveData: body.RemoveData}
+		for _, dir := range body.DataDirs {
+			removal.DataDirs = append(removal.DataDirs, catalog.DataDir{Mountpoint: dir.Mountpoint, Path: dir.Path})
+		}
+		def, err := catalog.RemoveDefinition(removal, stackDirFor(name), st)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
