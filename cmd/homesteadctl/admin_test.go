@@ -133,3 +133,64 @@ func TestAdminSetupRequiresFlags(t *testing.T) {
 		t.Fatalf("exit = %d, want 2", code)
 	}
 }
+
+func TestAdminPasswd(t *testing.T) {
+	url := authDaemon(t)
+	serverArgs := []string{"--server", url}
+	current := passwordFile(t, "long-enough-password")
+	replacement := passwordFile(t, "replacement-password-long")
+	code, _, _ := invoke(t, append(serverArgs, "admin", "setup", "--username", "owner", "--password-file", current))
+	if code != exitOK {
+		t.Fatalf("setup exit = %d, want 0", code)
+	}
+	_, stdout, _ := invoke(t, append(serverArgs, "login", "--username", "owner", "--password-file", current))
+	var session struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &session); err != nil || session.Token == "" {
+		t.Fatalf("login stdout = %q", stdout)
+	}
+	os.Setenv("HOMESTEAD_TOKEN", session.Token)
+	defer os.Unsetenv("HOMESTEAD_TOKEN")
+	code, stdout, _ = invoke(t, append(serverArgs, "admin", "passwd",
+		"--current-password-file", current, "--new-password-file", replacement))
+	if code != exitOK {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(stdout, "password changed") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	// The old credential dies with the rotation.
+	code, _, stderr := invoke(t, append(serverArgs, "login", "--username", "owner", "--password-file", current))
+	if code != exitError || !strings.Contains(stderr, "invalid username or password") {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	// Missing flags refuse usage-first.
+	code, _, _ = invoke(t, append(serverArgs, "admin", "passwd", "--current-password-file", current))
+	if code != exitUsage {
+		t.Fatalf("exit = %d, want usage", code)
+	}
+}
+
+func TestAdminLockout(t *testing.T) {
+	url := authDaemon(t)
+	serverArgs := []string{"--server", url}
+	current := passwordFile(t, "long-enough-password")
+	code, _, _ := invoke(t, append(serverArgs, "admin", "setup", "--username", "owner", "--password-file", current))
+	if code != exitOK {
+		t.Fatalf("setup exit = %d, want 0", code)
+	}
+	_, stdout, _ := invoke(t, append(serverArgs, "login", "--username", "owner", "--password-file", current))
+	var session struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &session); err != nil {
+		t.Fatalf("login stdout = %q", stdout)
+	}
+	os.Setenv("HOMESTEAD_TOKEN", session.Token)
+	defer os.Unsetenv("HOMESTEAD_TOKEN")
+	code, stdout, _ = invoke(t, append(serverArgs, "admin", "lockout"))
+	if code != exitOK || !strings.Contains(stdout, "unlocked") {
+		t.Fatalf("exit = %d, stdout = %q", code, stdout)
+	}
+}

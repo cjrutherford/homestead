@@ -221,8 +221,23 @@ sudo homesteadctl admin recover --username owner --password-file ./new.pass
   track before lookup, so unknown and known names behave identically
   and lockout never confirms an account exists; success forgives.
 - Rotation guesses feed the same lockout; rotation success forgives it.
-- Rotation and lockout status have no API, CLI, or dashboard surface
-  yet — policy lives in `internal/auth` awaiting later slices.
+- Rotation and lockout status are served over the API and CLI
+  (S239); dashboard surfaces belong to later slices.
+
+## Account surfaces (S239)
+
+```bash
+export HOMESTEAD_TOKEN="$(homesteadctl login --username owner --password-file ./owner.pass | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
+homesteadctl admin lockout
+homesteadctl admin passwd --current-password-file ./owner.pass --new-password-file ./new.pass
+```
+
+- Self-service rotation and lockout status over the API and CLI:
+  rotation proves the current credential, refuses weak
+  replacements and throttled callers with their own statuses,
+  and revokes every earlier session; lockout status answers for
+  the session owner only, and unknown sessions never reach
+  either. Dashboard surfaces belong to later slices.
 
 ## Identity provider interface (S202)
 

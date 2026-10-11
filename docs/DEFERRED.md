@@ -76,9 +76,9 @@
 - Authenticated operator API: S200 hardens credentials and sessions,
   but most operator routes still answer without sessions; requiring
   sessions beyond login/logout belongs to a later slice.
-- Rotation and lockout surfaces: S200 policy lives in the auth
-  service only; change-password and lockout-status affordances on
-  the API, CLI, and dashboard belong to later slices.
+- Rotation and lockout dashboard surfaces: S239 serves
+  rotation and lockout status over the API and CLI; dashboard
+  affordances belong to later slices.
 - Identity provider adapters: S202 defines the integration contract
   only; driving a provider's API (Authentik first, beyond the
   connection check) belongs to a later slice.

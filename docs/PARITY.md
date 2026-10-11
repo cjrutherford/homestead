@@ -25,6 +25,8 @@ for an intentional gap. The Notes column is free text.
 | POST | /api/v1/admins/recover | `"recover"` | n/a | Root-only Unix socket has no browser surface by design |
 | POST | /api/v1/sessions | `"login"` | `login` |  |
 | DELETE | /api/v1/sessions | `"logout"` | `logout` |  |
+| POST | /api/v1/admins/password | `"passwd"` | n/a | Self-service rotation on CLI; dashboard surface belongs to later slices |
+| GET | /api/v1/admins/lockout | `"lockout"` | n/a | Own lockout status on CLI; dashboard surface belongs to later slices |
 | GET | /api/v1/wizards/{id} | n/a | `WizardService` | Resume machinery is dashboard-only |
 | PUT | /api/v1/wizards/{id} | n/a | `WizardService` | Resume machinery is dashboard-only |
 | DELETE | /api/v1/wizards/{id} | n/a | `WizardService` | Resume machinery is dashboard-only |

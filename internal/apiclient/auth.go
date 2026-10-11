@@ -1,9 +1,11 @@
 package apiclient
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -87,4 +89,50 @@ func (c *Client) Logout(ctx context.Context, token string) error {
 		return c.statusError(req, res)
 	}
 	return nil
+}
+
+// ChangePassword rotates the session owner's password (S239):
+// wrong current answers 401, weak replacements 422, throttled
+// callers 429. Sessions issued before rotation die with it.
+func (c *Client) ChangePassword(ctx context.Context, token, current, replacement string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/api/v1/admins/password", nil)
+	if err != nil {
+		return fmt.Errorf("api: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	var body bytes.Buffer
+	if err := json.NewEncoder(&body).Encode(map[string]any{
+		"current_password": current, "new_password": replacement,
+	}); err != nil {
+		return fmt.Errorf("api: encode: %w", err)
+	}
+	req.Body = io.NopCloser(&body)
+	req.ContentLength = int64(body.Len())
+	res, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("api: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return c.statusError(req, res)
+	}
+	return nil
+}
+
+// LockoutStatus reports whether the session owner's account sits
+// inside a login lockout (S239).
+func (c *Client) LockoutStatus(ctx context.Context, token string) (bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/v1/admins/lockout", nil)
+	if err != nil {
+		return false, fmt.Errorf("api: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	var out struct {
+		Locked bool `json:"locked"`
+	}
+	if err := c.roundTrip(req, http.StatusOK, &out); err != nil {
+		return false, err
+	}
+	return out.Locked, nil
 }

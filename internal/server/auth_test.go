@@ -170,3 +170,95 @@ func TestLogoutRequiresBearer(t *testing.T) {
 		t.Fatalf("logout status = %d, want 401", rec.Code)
 	}
 }
+
+func loginToken(t *testing.T, srv *Server, password string) string {
+	t.Helper()
+	rec := doJSON(t, srv, http.MethodPost, "/api/v1/sessions",
+		`{"username":"owner","password":"`+password+`"}`, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var session struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&session); err != nil || session.Token == "" {
+		t.Fatalf("login body = %q", rec.Body.String())
+	}
+	return session.Token
+}
+
+func TestChangePasswordFlow(t *testing.T) {
+	srv := claimedAuthServer(t)
+	rec := doJSON(t, srv, http.MethodPost, "/api/v1/admins/setup", `{"username":"owner","password":"long-enough-password"}`, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup status = %d, want 201", rec.Code)
+	}
+	// Missing sessions refuse before touching anything.
+	rec = doJSON(t, srv, http.MethodPost, "/api/v1/admins/password",
+		`{"current_password":"long-enough-password","new_password":"replacement-password-long"}`, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+	token := loginToken(t, srv, "long-enough-password")
+	// Wrong current answers invalid without saying more.
+	rec = doJSON(t, srv, http.MethodPost, "/api/v1/admins/password",
+		`{"current_password":"wrong-password-here","new_password":"replacement-password-long"}`, token)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+	// Weak replacements refuse under the setup policy.
+	rec = doJSON(t, srv, http.MethodPost, "/api/v1/admins/password",
+		`{"current_password":"long-enough-password","new_password":"short"}`, token)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422", rec.Code)
+	}
+	rec = doJSON(t, srv, http.MethodPost, "/api/v1/admins/password",
+		`{"current_password":"long-enough-password","new_password":"replacement-password-long"}`, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d (%s), want 200", rec.Code, rec.Body.String())
+	}
+	// The old credential dies and the old session with it: rotation
+	// revokes everything issued before.
+	rec = doJSON(t, srv, http.MethodPost, "/api/v1/sessions",
+		`{"username":"owner","password":"long-enough-password"}`, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("old login status = %d, want 401", rec.Code)
+	}
+	rec = doJSON(t, srv, http.MethodDelete, "/api/v1/sessions", "", token)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("old session status = %d, want 401", rec.Code)
+	}
+	fresh := loginToken(t, srv, "replacement-password-long")
+	rec = doJSON(t, srv, http.MethodGet, "/api/v1/admins/lockout", "", fresh)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"locked":false`) {
+		t.Fatalf("lockout = %d (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLockoutStatusFlow(t *testing.T) {
+	srv := claimedAuthServer(t)
+	rec := doJSON(t, srv, http.MethodPost, "/api/v1/admins/setup", `{"username":"owner","password":"long-enough-password"}`, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup status = %d, want 201", rec.Code)
+	}
+	token := loginToken(t, srv, "long-enough-password")
+	for range 5 {
+		doJSON(t, srv, http.MethodPost, "/api/v1/sessions",
+			`{"username":"owner","password":"wrong-password-here"}`, "")
+	}
+	rec = doJSON(t, srv, http.MethodGet, "/api/v1/admins/lockout", "", token)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"locked":true`) {
+		t.Fatalf("lockout = %d (%s)", rec.Code, rec.Body.String())
+	}
+	// Rotation while locked refuses with throttling, not credentials.
+	rec = doJSON(t, srv, http.MethodPost, "/api/v1/admins/password",
+		`{"current_password":"long-enough-password","new_password":"replacement-password-long"}`, token)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", rec.Code)
+	}
+	// Unknown sessions never reach status.
+	rec = doJSON(t, srv, http.MethodGet, "/api/v1/admins/lockout", "", "bogus")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+}

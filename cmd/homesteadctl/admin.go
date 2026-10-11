@@ -12,11 +12,11 @@ import (
 	"homestead/internal/apiclient"
 )
 
-// runAdmin dispatches the admin group: setup (S020) and root-only local
-// recovery (S021).
+// runAdmin dispatches the admin group: setup (S020), root-only local
+// recovery (S021), self-service rotation and lockout status (S239).
 func runAdmin(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl admin <setup|recover> [flags]")
+		fmt.Fprintln(stderr, "usage: homesteadctl admin <setup|recover|passwd|lockout> [flags]")
 		return exitUsage
 	}
 	switch args[0] {
@@ -24,6 +24,10 @@ func runAdmin(ctx context.Context, client *apiclient.Client, args []string, stdo
 		return runAdminSetup(ctx, client, args[1:], stdout, stderr)
 	case "recover":
 		return runAdminRecover(ctx, args[1:], stdout, stderr)
+	case "passwd":
+		return runAdminPasswd(ctx, client, args[1:], stdout, stderr)
+	case "lockout":
+		return runAdminLockout(ctx, client, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown admin subcommand %q\n", args[0])
 		return exitUsage
@@ -139,5 +143,74 @@ func runLogout(ctx context.Context, client *apiclient.Client, args []string, std
 		return fail(stderr, err)
 	}
 	fmt.Fprintln(stdout, "logged out")
+	return exitOK
+}
+
+func sessionTokenFlag(set *flag.FlagSet) *string {
+	return set.String("token", os.Getenv("HOMESTEAD_TOKEN"), "session token (or HOMESTEAD_TOKEN)")
+}
+
+func runAdminPasswd(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	set := flag.NewFlagSet("admin passwd", flag.ContinueOnError)
+	set.SetOutput(stderr)
+	currentFile := set.String("current-password-file", "", "file holding the current password")
+	newFile := set.String("new-password-file", "", "file holding the replacement password")
+	token := sessionTokenFlag(set)
+	if err := set.Parse(args); err != nil {
+		return exitUsage
+	}
+	if *currentFile == "" || *newFile == "" || *token == "" {
+		fmt.Fprintln(stderr, "admin passwd requires --current-password-file, --new-password-file and --token (or HOMESTEAD_TOKEN)")
+		return exitUsage
+	}
+	current, err := readSecretFile(*currentFile)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	replacement, err := readSecretFile(*newFile)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if err := client.ChangePassword(ctx, *token, current, replacement); err != nil {
+		var statusErr *apiclient.StatusError
+		if errors.As(err, &statusErr) {
+			switch statusErr.Status {
+			case 401:
+				fmt.Fprintln(stderr, "invalid username or password")
+				return exitError
+			case 422:
+				fmt.Fprintln(stderr, "replacement password too weak")
+				return exitError
+			case 429:
+				fmt.Fprintln(stderr, "account temporarily locked after repeated failures")
+				return exitError
+			}
+		}
+		return fail(stderr, err)
+	}
+	fmt.Fprintln(stdout, "password changed; other sessions revoked")
+	return exitOK
+}
+
+func runAdminLockout(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	set := flag.NewFlagSet("admin lockout", flag.ContinueOnError)
+	set.SetOutput(stderr)
+	token := sessionTokenFlag(set)
+	if err := set.Parse(args); err != nil {
+		return exitUsage
+	}
+	if *token == "" {
+		fmt.Fprintln(stderr, "admin lockout requires --token (or HOMESTEAD_TOKEN)")
+		return exitUsage
+	}
+	locked, err := client.LockoutStatus(ctx, *token)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if locked {
+		fmt.Fprintln(stdout, "locked")
+		return exitOK
+	}
+	fmt.Fprintln(stdout, "unlocked")
 	return exitOK
 }

@@ -332,6 +332,14 @@ func (s *Service) ChangePassword(username, currentPassword, newPassword string) 
 	return Admin{ID: id, Username: username}, nil
 }
 
+// Locked reports whether username currently sits inside a login
+// lockout: the read half of the S200 throttle for status surfaces.
+// Like the throttle itself it tracks attempted names, so the answer
+// never confirms an account exists.
+func (s *Service) Locked(username string) (bool, error) {
+	return s.lockedOut(username)
+}
+
 // Verify proves a session token, rejecting unknown and expired sessions.
 func (s *Service) Verify(token string) (VerifiedSession, error) {
 	if token == "" {

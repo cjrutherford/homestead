@@ -26,6 +26,8 @@ func (s *Server) MountAuth(svc *auth.Service, auditSvc *audit.Service) {
 	s.mux.HandleFunc("POST /api/v1/admins/setup", s.handleAdminSetup(svc))
 	s.mux.HandleFunc("POST /api/v1/sessions", s.handleLogin(svc, auditSvc))
 	s.mux.HandleFunc("DELETE /api/v1/sessions", s.handleLogout(svc))
+	s.mux.HandleFunc("POST /api/v1/admins/password", s.handleChangePassword(svc))
+	s.mux.HandleFunc("GET /api/v1/admins/lockout", s.handleLockoutStatus(svc))
 }
 
 func (s *Server) handleAdminSetup(svc *auth.Service) http.HandlerFunc {
@@ -130,4 +132,67 @@ func bearerToken(header string) (string, bool) {
 		return "", false
 	}
 	return token, true
+}
+
+func (s *Server) handleChangePassword(svc *auth.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, ok := bearerToken(r.Header.Get("Authorization"))
+		if !ok {
+			http.Error(w, "missing bearer session", http.StatusUnauthorized)
+			return
+		}
+		session, err := svc.Verify(token)
+		if err != nil {
+			http.Error(w, "invalid or expired session", http.StatusUnauthorized)
+			return
+		}
+		var body struct {
+			CurrentPassword string `json:"current_password"`
+			NewPassword     string `json:"new_password"`
+		}
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil || body.CurrentPassword == "" || body.NewPassword == "" {
+			http.Error(w, "invalid request body (want {\"current_password\", \"new_password\"})", http.StatusBadRequest)
+			return
+		}
+		// Self-service only: the session owner is the only identity
+		// a caller may rotate, so sessions never escalate.
+		admin, err := svc.ChangePassword(session.Username, body.CurrentPassword, body.NewPassword)
+		if err != nil {
+			switch {
+			case errors.Is(err, auth.ErrInvalidCredentials):
+				http.Error(w, "invalid username or password", http.StatusUnauthorized)
+			case errors.Is(err, auth.ErrWeakPassword):
+				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			case errors.Is(err, auth.ErrAccountLocked):
+				http.Error(w, "account temporarily locked after repeated failures", http.StatusTooManyRequests)
+			default:
+				http.Error(w, "failed to change password", http.StatusInternalServerError)
+			}
+			return
+		}
+		writeJSON(w, map[string]any{"id": admin.ID, "username": admin.Username})
+	}
+}
+
+func (s *Server) handleLockoutStatus(svc *auth.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, ok := bearerToken(r.Header.Get("Authorization"))
+		if !ok {
+			http.Error(w, "missing bearer session", http.StatusUnauthorized)
+			return
+		}
+		session, err := svc.Verify(token)
+		if err != nil {
+			http.Error(w, "invalid or expired session", http.StatusUnauthorized)
+			return
+		}
+		locked, err := svc.Locked(session.Username)
+		if err != nil {
+			http.Error(w, "failed to read lockout", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"username": session.Username, "locked": locked})
+	}
 }
