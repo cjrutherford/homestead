@@ -48,7 +48,8 @@ class TestAcceptanceScript(unittest.TestCase):
         content = read("scripts/acceptance.sh")
         for symbol in ("preconditions", "bootstrap", "claim", "admin",
                        "doctor", "firewall", "install_package",
-                       "drift", "check_stack", "acceptance PASSED"):
+                       "drift", "check_stack", "wait_healthy",
+                       "HOMESTEAD_HEALTHY_APPS", "acceptance PASSED"):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, content)
 

@@ -148,6 +148,56 @@ func (c *Client) GetConfig(ctx context.Context) (desired.State, error) {
 	return state, nil
 }
 
+// ImportSummary reports restored settings and secrets counts.
+type ImportSummary struct {
+	Settings int `json:"settings"`
+	Secrets  int `json:"secrets"`
+}
+
+// ExportConfig fetches the portable configuration document (S234):
+// desired state plus provenance and secret names, never values.
+func (c *Client) ExportConfig(ctx context.Context) (desired.Export, error) {
+	var export desired.Export
+	if err := c.get(ctx, "/api/v1/config/export", &export); err != nil {
+		return desired.Export{}, err
+	}
+	return export, nil
+}
+
+// ImportConfig validates and imports a portable document with secret
+// values (S234). Values travel per call; refusal details arrive as
+// errors naming the gap.
+func (c *Client) ImportConfig(ctx context.Context, document desired.Export, secrets map[string]string) (ImportSummary, error) {
+	var summary ImportSummary
+	data, err := json.Marshal(map[string]any{"document": document, "secrets": secrets})
+	if err != nil {
+		return ImportSummary{}, fmt.Errorf("api: encode request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/api/v1/config/import", bytes.NewReader(data))
+	if err != nil {
+		return ImportSummary{}, fmt.Errorf("api: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := c.http.Do(req)
+	if err != nil {
+		return ImportSummary{}, fmt.Errorf("api: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		excerpt, _ := io.ReadAll(io.LimitReader(res.Body, 512))
+		return ImportSummary{}, &StatusError{
+			Method: http.MethodPost,
+			Path:   "/api/v1/config/import",
+			Status: res.StatusCode,
+			Body:   strings.TrimSpace(string(excerpt)),
+		}
+	}
+	if err := json.NewDecoder(res.Body).Decode(&summary); err != nil {
+		return ImportSummary{}, fmt.Errorf("api: decode response: %w", err)
+	}
+	return summary, nil
+}
+
 type planEnvelope struct {
 	Valid     bool                `json:"valid"`
 	Effective map[string]any      `json:"effective"`

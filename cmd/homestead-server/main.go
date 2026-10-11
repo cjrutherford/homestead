@@ -27,6 +27,7 @@ import (
 	"homestead/internal/layout"
 	"homestead/internal/mdns"
 	"homestead/internal/operation"
+	"homestead/internal/secret"
 	"homestead/internal/server"
 	"homestead/internal/store"
 	"homestead/internal/version"
@@ -71,6 +72,11 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	srv := server.New(listen)
 	configSvc := config.New(firewall.Schema(), configPath)
 	srv.MountConfig(configSvc)
+	configSecrets, err := secret.New(st, secret.DefaultKeyPath())
+	if err != nil {
+		return err
+	}
+	srv.MountConfigIO(configPath, configSecrets)
 	srv.MountClaim(claimSvc)
 	srv.MountAuth(authSvc, audit.New(st))
 	srv.MountAudit(audit.New(st))

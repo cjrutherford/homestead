@@ -31,6 +31,18 @@ func ImportState(path string, desiredPath string, secrets *secret.Store, values 
 	if err != nil {
 		return ImportSummary{}, err
 	}
+	return ImportExport(export, desiredPath, secrets, values)
+}
+
+// ImportExport imports an already-read document: the API path for
+// inline documents, sharing every rule with ImportState.
+func ImportExport(export Export, desiredPath string, secrets *secret.Store, values map[string]string) (ImportSummary, error) {
+	if secrets == nil {
+		return ImportSummary{}, fmt.Errorf("desired: import needs a secret store")
+	}
+	if err := export.Validate(); err != nil {
+		return ImportSummary{}, err
+	}
 	if export.StoreSchema > store.CurrentVersion {
 		return ImportSummary{}, fmt.Errorf("desired: export needs store schema %d, this Homestead supports %d (upgrade homestead)", export.StoreSchema, store.CurrentVersion)
 	}

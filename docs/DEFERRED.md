@@ -129,6 +129,9 @@
 - Backup configuration surfaces: S229 acceptance stops at a
   backup note because backup destinations and schedules have no
   CLI/API surface; driving them belongs to later slices.
+- Backup-run restoration: S234 rebuilds from export documents
+  plus suite reinstalls; restoring application data from backup
+  runs awaits the same backup surfaces.
 - Corrupt-database repair: S230 snapshots state and refuses a
   missing database as disaster recovery; repairing corrupt
   state belongs to the disaster-recovery flow (S234).

@@ -17,6 +17,8 @@ for an intentional gap. The Notes column is free text.
 | GET | /api/v1/config/schema | n/a | `configSchema` | CLI takes typed files; schema-driven UI is dashboard-only |
 | POST | /api/v1/config/plan | `"plan"` | `planConfig` |  |
 | PUT | /api/v1/config | `"apply"` | `applyConfig` |  |
+| GET | /api/v1/config/export | `"export"` | n/a | Portable document for disaster recovery; dashboard surface belongs to later slices |
+| POST | /api/v1/config/import | `"import"` | n/a | Validated restore with per-call secrets; dashboard surface belongs to later slices |
 | GET | /api/v1/identity | n/a | `identity` | CLI status reports health only |
 | POST | /api/v1/claim | `"claim"` | `claim` |  |
 | POST | /api/v1/admins/setup | `"setup"` | `setupAdmin` |  |

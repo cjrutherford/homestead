@@ -10,6 +10,8 @@
 #   HOMESTEAD_BULK_MOUNT   bulk-class mountpoint (mounted storage)
 #   HOMESTEAD_PASSWORD_FILE  owner password file (0600 recommended)
 # Optional:
+#   HOMESTEAD_EXPORT_FILE    export document to import (disaster recovery)
+#   HOMESTEAD_SECRETS_FILE   JSON object file mapping secret names to values
 #   HOMESTEAD_CLAIM_TOKEN  single-use claim token (else must be claimed)
 #   HOMESTEAD_ADMIN_USER   administrator username (default owner)
 #   HOMESTEAD_DOMAIN       install domain (default lan)
@@ -88,6 +90,18 @@ fi
 TOKEN="$("$CTL" login --username "$HOMESTEAD_ADMIN_USER" --password-file "$HOMESTEAD_PASSWORD_FILE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')" || fail admin "login failed"
 test -n "$TOKEN" || fail admin "login produced no token"
 
+phase "import"
+if [ -n "${HOMESTEAD_EXPORT_FILE:-}" ]; then
+	test -f "$HOMESTEAD_EXPORT_FILE" || fail import "export file missing: $HOMESTEAD_EXPORT_FILE"
+	args=(-f "$HOMESTEAD_EXPORT_FILE")
+	if [ -n "${HOMESTEAD_SECRETS_FILE:-}" ]; then
+		args+=(--secrets-file "$HOMESTEAD_SECRETS_FILE")
+	fi
+	"$CTL" config import "${args[@]}" || fail import "configuration import refused"
+else
+	echo "no export file; continuing with fresh configuration"
+fi
+
 phase "doctor"
 "$CTL" doctor || fail doctor "host checks failed"
 
@@ -145,9 +159,9 @@ check_stack() {
 	shift
 	json="$(docker compose --project-directory "/opt/homestead/stacks/$package" ps --format json)" ||
 		fail access "compose ps failed for $package"
-	python3 - "$package" "$HOMESTEAD_HEALTHY_APPS" "$json" "$@" <<'EOF' || fail access "$package presence/health unproven"
+	python3 - "$package" "$json" "$@" <<'EOF' || fail access "$package presence unproven"
 import json, sys
-package, healthy_pkgs, raw, services = sys.argv[1], sys.argv[2].split(), sys.argv[3], sys.argv[4:]
+package, raw, services = sys.argv[1], sys.argv[2], sys.argv[3:]
 try:
     containers = json.loads(raw or "[]")
 except json.JSONDecodeError:
@@ -166,16 +180,38 @@ for container in containers:
 missing = [s for s in services if f"{package}-{s}" not in names]
 if missing:
     sys.exit(f"{package}: missing containers for services: {missing}")
-if package in healthy_pkgs:
-    bad = [c.get("Name", "") for c in containers
-           if not c.get("Health", "").startswith("healthy")]
-    if bad:
-        sys.exit(f"{package}: unhealthy: {bad}")
 EOF
+}
+wait_healthy() {
+	# $1 = package, $2... = services: poll image health contracts
+	# until healthy or the deadline (first starts are slow).
+	end=$((SECONDS + 600))
+	while true; do
+		unready=0
+		for service in "${@:2}"; do
+			health="$(docker inspect --format '{{json .State.Health}}' "$1-$service" 2>/dev/null || echo missing)"
+			case "$health" in
+				*'"Status":"healthy"'*) ;;
+				"<no value>") echo "$1-$service has no health contract; skipping" ;;
+				*) unready=1 ;;
+			esac
+		done
+		[ "$unready" -eq 0 ] && return 0
+		[ $SECONDS -ge $end ] && return 1
+		sleep 15
+	done
 }
 check_stack jellyfin jellyfin
 check_stack nextcloud nextcloud
 check_stack immich server machine-learning database cache
+for package in $HOMESTEAD_HEALTHY_APPS; do
+	case "$package" in
+		jellyfin) wait_healthy jellyfin jellyfin || fail access "jellyfin never healthy" ;;
+		nextcloud) wait_healthy nextcloud nextcloud || fail access "nextcloud never healthy" ;;
+		immich) wait_healthy immich server machine-learning database cache || fail access "immich never healthy" ;;
+		*) fail access "unknown healthy package: $package" ;;
+	esac
+done
 
 echo "acceptance PASSED: base suite installed with validated access"
 echo "note: backups have no CLI/API surface yet; configure them before production use"

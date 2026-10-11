@@ -392,9 +392,12 @@ sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
   (no manual Compose editing, mechanically asserted), and access
   validation one level down (generated stacks publish no host
   ports by design — every service owns a container, secret-free
-  apps prove health, secret-gated ones report status). Every
-  phase asserts and fails loudly; plan files generate from
-  environment with sane port defaults. Backup has no CLI/API
+  apps prove health, secret-gated ones report status). With
+  `HOMESTEAD_EXPORT_FILE` (plus secrets file) set, the run
+  imports configuration after admin and before the suite —
+  disaster recovery through the same script. Every phase asserts
+  and fails loudly; plan files generate from environment with
+  sane port defaults. Backup has no CLI/API
   surface yet, so the run ends noting manual backup
   configuration before production use.
 
@@ -459,6 +462,29 @@ docker compose ps
   termination and DNS (Caddy's job), dashboard and operations,
   backups, and updates — recover the control plane (S230) or
   rebuild from backups (S234) for the rest.
+
+## Disaster recovery acceptance (S234)
+
+```bash
+sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
+  HOMESTEAD_PASSWORD_FILE=/root/owner.pass \
+  HOMESTEAD_CLAIM_TOKEN=<console-token> \
+  HOMESTEAD_EXPORT_FILE=/root/homestead-export.yaml \
+  HOMESTEAD_SECRETS_FILE=/root/homestead-secrets.json \
+  ./scripts/acceptance.sh
+```
+
+- `GET /api/v1/config/export` serves the portable document and
+  `POST /api/v1/config/import` validates plus restores it with
+  per-call secret values (`homesteadctl config export/import`
+  carry both over files); the acceptance run imports when an
+  export file is given and continues fresh otherwise, so the
+  same script proves both fresh installs and rebuilds from
+  documented artifacts. Proven in KVM: export, total state loss,
+  re-run with export plus secrets, suite reinstalled with
+  validated access. Backup-run restoration still awaits backup
+  surfaces; dashboard import/export surfaces belong to later
+  slices.
 
 ## Host discovery (S040+)
 
