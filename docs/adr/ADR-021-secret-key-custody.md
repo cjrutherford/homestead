@@ -23,6 +23,8 @@ Re-key is an audited owner operation:
 3. Commit. Then re-read every row and decrypt-verify it with the new key.
 4. Only after commit and full verification, delete the old key file
    (and fsync the directory).
+5. On start, if every row is on the newest version and decrypts, delete
+   any older key files. This completes an interrupted step 4.
 
 Failure analysis: a crash or error before the commit leaves the database on
 the old version, with a stray new key file that the next start ignores and

@@ -4,7 +4,7 @@
 Scheduled certificate check, approved-issuance fingerprint, and renewal status reporting; no issuance, per ADR-024.
 
 ## Dependencies
-S260,S105,S226
+S260,S103,S105,S226
 
 ## Scope
 Implement only the functionality required for this slice. Preserve all accepted ADRs and customer-ownership guarantees. Do not pull deferred features into scope without an ADR and slice update.

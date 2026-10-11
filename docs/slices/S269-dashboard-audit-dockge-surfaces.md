@@ -4,7 +4,7 @@
 Dashboard surfaces for the audit log and the Dockge advanced-management link.
 
 ## Dependencies
-S239,S248
+S239,S248,S257
 
 ## Scope
 Implement only the functionality required for this slice. Preserve all accepted ADRs and customer-ownership guarantees. Do not pull deferred features into scope without an ADR and slice update.
@@ -14,7 +14,7 @@ Split: account surfaces (lockout status, password change) are S274.
 ## Acceptance Criteria
 - Dashboard Audit and Advanced Surfaces implemented and documented
 - Angular routes for the audit log (`GET /api/v1/audit`) with filtering and pagination as the API allows, and the Dockge advanced-management link (`GET /api/v1/dockge`, extending `dashboard/src/app/advanced`), using S248 tokens and `StateMessage`
-- `docs/PARITY.md` rows for the corresponding routes flip from `n/a`
+- `docs/PARITY.md` audit row flips from `n/a`; the `/api/v1/dockge` row already maps to `dockge` and stays as is
 - Audit view never renders tokens, cookies, or secret values; entries from ADR-020 aggregation show their counts
 - Component tests cover the primary flows
 - Automated tests cover primary behavior

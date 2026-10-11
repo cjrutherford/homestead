@@ -6,6 +6,8 @@ Cookie, CSRF, bearer, lifetime, revocation, CLI token storage, and dashboard log
 ## Dependencies
 S255
 
+Replaces the earlier "gate mutating routes" S256 draft; enforcement moved to S257.
+
 ## Scope
 Implement only the functionality required for this slice. Preserve all accepted ADRs and customer-ownership guarantees. Do not pull deferred features into scope without an ADR and slice update.
 Governed by ADR-020, Accepted 2026-10-11.

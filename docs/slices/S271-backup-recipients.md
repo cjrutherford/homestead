@@ -1,7 +1,7 @@
-# S271 — Backup Recipients and Restore Runbook
+# S271 — Backup Recipients
 
 ## Goal
-Owner-held age recipients, recovery identity export, doctor warning, and a runbook for restoring with the plain age CLI.
+Owner-held age recipients, recovery identity export, and the owner actions that clear the doctor warning.
 
 ## Dependencies
 S259
@@ -9,16 +9,14 @@ S259
 ## Scope
 Implement only the functionality required for this slice. Preserve all accepted ADRs and customer-ownership guarantees. Do not pull deferred features into scope without an ADR and slice update.
 Governed by ADR-022, Accepted 2026-10-11.
-Split from S259.
+Split from S259. The restore runbook and its literal `age` CLI test are S275.
 
 ## Acceptance Criteria
-- Backup Recipients and Restore Runbook implemented and documented
+- Backup Recipients implemented and documented
 - API and `homesteadctl` to list, add, and remove owner recipients and to export the recovery identity (export is explicit, audited, and shown once); backups are encrypted to every configured recipient; removing the last recipient is refused
 - Dashboard surface for recipient management and identity export using S248 tokens and `StateMessage` (extends the S267 backup surface)
-- Doctor warns while the only recipient is the appliance identity; the warning clears when an owner-added recipient exists or the owner records that the recovery identity was exported (ADR-022)
-- Runbook in `docs/` shows restoring with the plain `age` CLI and standard tools; an automated test follows the runbook commands literally using the `age` binary
+- The S259 doctor warning clears when an owner-added recipient exists or the owner records that the recovery identity was exported (ADR-022)
 - `docs/PARITY.md` updated for every added or changed route (`tests/test_s037_parity.py` stays green)
-- Remove the "Backup encryption at rest" entry from `docs/DEFERRED.md` when landed
 - Automated tests cover primary behavior
 - Main build remains green
 

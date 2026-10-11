@@ -16,6 +16,7 @@ Depends on S257 so the new re-key route is never exposed ungated.
 - Versioned key files `secret.key.v<N>` under `layout.LibDir`; `internal/secret/secret.go` records the key version per row and opens each row with its recorded key
 - Migration of the existing raw 32-byte key (written at `internal/secret/secret.go:86`) to version 1 per ADR-021: copied to `secret.key.v1`, unversioned rows stamped 1, legacy file left in place and ignored; tested from a pre-S258 fixture
 - Re-key order per ADR-021: write the new versioned key file (temp, fsync, rename, directory fsync) before the DB commit; re-encrypt all rows in one SQLite transaction; commit; decrypt-verify every row; only then delete the old key file
+- On start, older key files are deleted once every row is on the newest version and verifies (ADR-021 step 5)
 - Injected failure at each step (before key write, mid-transaction, after commit before verify, before old-key delete) leaves the store readable and rerunning re-key succeeds
 - Re-key exposed over the API and `homesteadctl`; the dashboard gets a confirmed re-key action with operation progress using S248 tokens and `StateMessage`
 - `docs/PARITY.md` updated for every added or changed route (`tests/test_s037_parity.py` stays green) with both CLI and dashboard cells filled

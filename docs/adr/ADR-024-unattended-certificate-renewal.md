@@ -32,6 +32,9 @@ issue.
 - Renewal window: begin attempting when the certificate has 30 days or
   fewer remaining. The check runs on the scheduler (ADR-023), at most
   daily.
+- Retry cadence is separate from check cadence: while a renewal is due
+  and the last attempt failed, the scheduler evaluates the renewal job
+  hourly and attempts only once the stored next-attempt time has passed.
 - Failures retry with exponential backoff starting at 1 hour, doubling each
   consecutive failure and capped at 24 hours, with the attempt counter
   stored in SQLite. A success resets it. CA rate-limit responses are

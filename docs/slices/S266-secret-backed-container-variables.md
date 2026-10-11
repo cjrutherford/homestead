@@ -4,7 +4,7 @@
 Deliver secret-store values to containers as 0600 files via Compose `secrets:`, per ADR-021.
 
 ## Dependencies
-S157,S258
+S157,S258,S231,S259
 
 ## Scope
 Implement only the functionality required for this slice. Preserve all accepted ADRs and customer-ownership guarantees. Do not pull deferred features into scope without an ADR and slice update.
