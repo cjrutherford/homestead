@@ -31,18 +31,36 @@ func sessionFilePath() (string, error) {
 	return filepath.Join(home, ".config", "homestead", "session"), nil
 }
 
-// saveSession writes the session atomically with restrictive modes.
+// errUnsafeSessionPath is returned when the session directory or file
+// is a symlink (or otherwise not what we created), so a token is never
+// written through a link planted by another party.
+var errUnsafeSessionPath = errors.New("refusing to use a symlinked or unsafe session path")
+
+// saveSession writes the session atomically with restrictive modes. It
+// never follows a symlinked directory or file. A directory that already
+// exists is left as the user made it (no chmod), but must not be
+// group/world writable; a new directory is created 0700.
 func saveSession(sess storedSession) error {
 	path, err := sessionFilePath()
 	if err != nil {
 		return err
 	}
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	info, err := os.Lstat(dir)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("session dir: %w", err)
+		}
+	case err != nil:
 		return fmt.Errorf("session dir: %w", err)
+	case info.Mode()&fs.ModeSymlink != 0 || !info.IsDir():
+		return fmt.Errorf("session dir %s: %w", dir, errUnsafeSessionPath)
+	case info.Mode().Perm()&0o022 != 0:
+		return fmt.Errorf("session dir %s is group/world writable: %w", dir, errUnsafeSessionPath)
 	}
-	if err := os.Chmod(dir, 0o700); err != nil {
-		return fmt.Errorf("session dir: %w", err)
+	if fi, err := os.Lstat(path); err == nil && !fi.Mode().IsRegular() {
+		return fmt.Errorf("session file %s: %w", path, errUnsafeSessionPath)
 	}
 	data, err := json.Marshal(sess)
 	if err != nil {
@@ -68,28 +86,38 @@ func saveSession(sess storedSession) error {
 
 // loadSession returns the stored token for server, or "" when there is
 // none, it belongs to another server, it has expired, or the file is
-// unreadable or group/world accessible.
+// unreadable, a symlink, or group/world accessible.
 func loadSession(server string) string {
+	token, _ := loadSessionHint(server)
+	return token
+}
+
+// loadSessionHint is loadSession plus, when a stored session exists but
+// belongs to a different server, a hint telling the user how to proceed.
+func loadSessionHint(server string) (token, hint string) {
 	path, err := sessionFilePath()
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm()&0o077 != 0 {
-		return ""
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+		return "", ""
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	var sess storedSession
 	if json.Unmarshal(data, &sess) != nil || sess.Token == "" {
-		return ""
+		return "", ""
 	}
-	if sess.Server != server || !sess.ExpiresAt.After(time.Now()) {
-		return ""
+	if !sess.ExpiresAt.After(time.Now()) {
+		return "", ""
 	}
-	return sess.Token
+	if sess.Server != server {
+		return "", fmt.Sprintf("stored session is for %s, not %s; run homesteadctl login", sess.Server, server)
+	}
+	return sess.Token, ""
 }
 
 // deleteSession removes the stored session file; absence is fine.

@@ -245,9 +245,14 @@ One session store (ADR-004), two transports (ADR-020):
   23), not a scan, so S257 can run it on every request.
 - CLI: `homesteadctl login` writes `~/.config/homestead/session` (JSON
   with server URL, token, expiry; file 0600, directory 0700) and every
-  command sends it as `Authorization: Bearer`. `HOMESTEAD_TOKEN` and
-  `--token` override it; a file for a different `--server`, an expired one,
-  or one with group/world permissions is ignored. `logout` revokes
+  command sends it as `Authorization: Bearer`. Precedence: `--token`
+  (where a command has it), then `HOMESTEAD_TOKEN`, then the stored
+  session. A file for a different `--server` is ignored with a hint
+  ("stored session is for X; run homesteadctl login"); an expired one or
+  one with group/world permissions or a symlink is ignored silently.
+  `login` refuses to write through a symlinked directory or file, creates
+  the directory 0700, and leaves a pre-existing directory's mode alone
+  (refusing only if it is group/world writable). `logout` revokes
   server-side and deletes the file.
 - Dashboard: `SessionService` keeps only a display hint (username,
   expiry) in `localStorage`; the credential is the HttpOnly cookie. An

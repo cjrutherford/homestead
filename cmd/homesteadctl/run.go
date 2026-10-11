@@ -45,7 +45,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	// `homesteadctl login` for this server (ADR-020).
 	token := os.Getenv("HOMESTEAD_TOKEN")
 	if token == "" {
-		token = loadSession(strings.TrimRight(*server, "/"))
+		var hint string
+		token, hint = loadSessionHint(strings.TrimRight(*server, "/"))
+		if hint != "" && needsSession(rest[0]) {
+			fmt.Fprintln(stderr, "hint:", hint)
+		}
 	}
 	client := apiclient.New(*server, apiclient.WithToken(token))
 	switch rest[0] {
@@ -94,6 +98,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		usage(stderr)
 		return exitUsage
 	}
+}
+
+// needsSession is false for commands that work without a session.
+func needsSession(command string) bool {
+	switch command {
+	case "status", "version", "claim", "login":
+		return false
+	}
+	return true
 }
 
 func usage(w io.Writer) {

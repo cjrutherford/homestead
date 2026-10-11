@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, Subscription } from 'rxjs';
 import { ConfigField, FieldError } from '../schema/schema';
 
 /** GET /healthz — always available, even UNCLAIMED. */
@@ -52,6 +52,8 @@ export interface OperationState {
   updated_at: string;
   steps: OperationStep[];
 }
+
+const TERMINAL_STATUSES = new Set(['succeeded', 'failed', 'cancelled']);
 
 /** Minimal EventSource surface (injectable for tests; jsdom lacks it). */
 export interface EventSourceLike {
@@ -452,10 +454,39 @@ export class ApiService {
       // EventSource cannot set headers; same-origin it sends the
       // HttpOnly session cookie by itself (ADR-020).
       const source = open(`/api/v1/operations/${id}/events`);
+      let finished = false;
+      let probe: Subscription | undefined;
       source.addEventListener('state', (event) => {
-        subscriber.next(JSON.parse(event.data) as OperationState);
+        const state = JSON.parse(event.data) as OperationState;
+        subscriber.next(state);
+        if (TERMINAL_STATUSES.has(state.status)) {
+          // The server closes the stream after a terminal state; do not
+          // let EventSource reconnect or report that close as a failure.
+          finished = true;
+          source.close();
+          subscriber.complete();
+        }
       });
-      return () => source.close();
+      // EventSource hides HTTP status codes, so a failed stream could be
+      // a revoked session or a network drop. Probe an authenticated
+      // route: a 401 goes through the auth interceptor (local session
+      // dropped, redirect to /login) and either way the failure is
+      // surfaced instead of leaving the stream silently dead.
+      source.addEventListener('error', () => {
+        if (finished) {
+          return;
+        }
+        finished = true;
+        source.close();
+        probe = this.http.get('/api/v1/admins/lockout').subscribe({
+          next: () => subscriber.error(new Error('operation event stream interrupted')),
+          error: (err: unknown) => subscriber.error(err),
+        });
+      });
+      return () => {
+        probe?.unsubscribe();
+        source.close();
+      };
     });
   }
 

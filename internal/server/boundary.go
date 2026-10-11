@@ -194,24 +194,51 @@ func (s *Server) mountBoundary(sessions sessionVerifier, claims claimReader, rec
 	s.http.Handler = b.wrap(s.mux)
 }
 
+// operatorSession is what the boundary proved about a request; handlers
+// read it from the request context instead of re-checking credentials.
+type operatorSession struct {
+	Token   string
+	Session auth.VerifiedSession
+	// stillValid re-verifies the session now; long-lived streams call
+	// it so a revoked or expired session stops being served.
+	stillValid func() bool
+}
+
+type operatorKey struct{}
+
+// operatorFromContext returns the session the boundary verified, if any.
+func operatorFromContext(ctx context.Context) (operatorSession, bool) {
+	op, ok := ctx.Value(operatorKey{}).(operatorSession)
+	return op, ok
+}
+
+// sessionStillValid is true when the request carries no boundary
+// session (no middleware mounted) or the session still verifies.
+func sessionStillValid(r *http.Request) bool {
+	op, ok := operatorFromContext(r.Context())
+	return !ok || op.stillValid()
+}
+
 func (b *boundary) wrap(mux *recordingMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b.check(mux, r)
+		if op, ok := b.check(mux, r); ok {
+			r = r.WithContext(context.WithValue(r.Context(), operatorKey{}, op))
+		}
 		mux.ServeHTTP(w, r) // report-only: always served (S257 enforces)
 	})
 }
 
 // check classifies r and reports what enforcement would have done. It
 // never reads credentials into logs or audit and never fails the request.
-func (b *boundary) check(mux *recordingMux, r *http.Request) {
+func (b *boundary) check(mux *recordingMux, r *http.Request) (operatorSession, bool) {
 	_, pattern := mux.Handler(r)
 	if pattern == "" {
-		return // no route: the mux answers 404/405 itself
+		return operatorSession{}, false // no route: the mux answers 404/405 itself
 	}
 	class, known := Classify(pattern)
 	if !known {
 		b.report(pattern, reasonUnclassified)
-		return
+		return operatorSession{}, false
 	}
 	if pattern == dashboardPattern && !isDashboardRequest(r) {
 		// The method-less catch-all also receives unregistered methods
@@ -220,20 +247,20 @@ func (b *boundary) check(mux *recordingMux, r *http.Request) {
 		class = ClassSession
 	}
 	if class == ClassPublic {
-		return
+		return operatorSession{}, false
 	}
 	state, err := b.claims.CurrentState()
 	if err != nil {
 		// Fail closed, but say so: this is not a closed claim window.
 		b.logClaimStateError(err)
 		b.report(pattern, reasonClaimStateErr)
-		return
+		return operatorSession{}, false
 	}
 	if state != claim.StateClaimed {
 		if class != ClassClaimWindow {
 			b.report(pattern, reasonPreClaim)
 		}
-		return
+		return operatorSession{}, false
 	}
 	token, viaCookie, ok := sessionCredential(r)
 	if !ok {
@@ -242,12 +269,12 @@ func (b *boundary) check(mux *recordingMux, r *http.Request) {
 		} else {
 			b.report(pattern, reasonNoSession)
 		}
-		return
+		return operatorSession{}, false
 	}
 	session, err := b.sessions.Verify(token)
 	if err != nil {
 		b.report(pattern, reasonInvalidSession)
-		return
+		return operatorSession{}, false
 	}
 	// Cookies are ambient, so a mutating cookie-authenticated request
 	// must echo the per-session CSRF token. Bearer requests are exempt.
@@ -260,6 +287,10 @@ func (b *boundary) check(mux *recordingMux, r *http.Request) {
 			b.report(pattern, reasonCSRFMismatch)
 		}
 	}
+	return operatorSession{
+		Token: token, Session: session,
+		stillValid: func() bool { _, err := b.sessions.Verify(token); return err == nil },
+	}, true
 }
 
 func isMutating(method string) bool {

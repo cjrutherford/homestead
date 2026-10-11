@@ -16,8 +16,9 @@ import (
 const EventPollInterval = 500 * time.Millisecond
 
 // EventHeartbeatInterval keeps idle streams alive through buffering
-// proxies. Heartbeats are SSE comments, ignored by clients.
-const EventHeartbeatInterval = 30 * time.Second
+// proxies and is when the stream re-verifies its session (ADR-020).
+// Heartbeats are SSE comments, ignored by clients.
+var EventHeartbeatInterval = 30 * time.Second
 
 // MountOperations serves operation records (S062): fetch, list, plus a
 // poll-backed SSE stream. The stream sends the current state immediately,
@@ -124,6 +125,11 @@ func handleOperationEvents(svc *operation.Store) http.HandlerFunc {
 			case <-r.Context().Done():
 				return
 			case <-heartbeat.C:
+				// A stream outlives the request that authenticated it:
+				// stop once the session is revoked or expired.
+				if !sessionStillValid(r) {
+					return
+				}
 				if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
 					return
 				}

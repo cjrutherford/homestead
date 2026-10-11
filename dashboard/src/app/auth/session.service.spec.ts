@@ -72,6 +72,22 @@ describe('SessionService', () => {
     expect(TestBed.inject(SessionService).isLoggedIn()).toBe(false);
   });
 
+  it('strips a legacy bearer token from a stored entry', () => {
+    localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({ username: 'owner', token: 'legacy-secret', expiresAt: 'x' }),
+    );
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    const fresh = TestBed.inject(SessionService);
+    expect(fresh.username()).toBe('owner');
+    const stored = localStorage.getItem(SESSION_STORAGE_KEY) ?? '';
+    expect(stored).not.toContain('legacy-secret');
+    expect(JSON.parse(stored)).toEqual({ username: 'owner', expiresAt: 'x' });
+  });
+
   it('clears locally and destroys server-side on logout', () => {
     service.login('owner', 'long-enough-password').subscribe();
     http.expectOne('/api/v1/sessions').flush({

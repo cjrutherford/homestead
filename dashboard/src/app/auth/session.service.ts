@@ -84,14 +84,21 @@ function readStoredSession(): StoredSession | null {
     if (!raw) {
       return null;
     }
-    const parsed = JSON.parse(raw) as Partial<StoredSession>;
+    const parsed = JSON.parse(raw) as Partial<StoredSession> & { token?: unknown };
     if (typeof parsed.username !== 'string' || !parsed.username) {
-      return null; // also drops pre-S256 entries that held a token
+      localStorage.removeItem(SESSION_STORAGE_KEY); // unusable, maybe pre-S256
+      return null;
     }
-    return {
+    const hint: StoredSession = {
       username: parsed.username,
       expiresAt: typeof parsed.expiresAt === 'string' ? parsed.expiresAt : '',
     };
+    if ('token' in parsed) {
+      // Pre-S256 entries kept the bearer token in localStorage. Rewrite
+      // the entry as a display hint so the credential does not linger.
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(hint));
+    }
+    return hint;
   } catch {
     return null;
   }

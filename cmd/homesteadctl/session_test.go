@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,3 +118,91 @@ func TestLoosePermissionsInvalidateStoredSession(t *testing.T) {
 }
 
 func farFuture() (t time.Time) { return time.Now().Add(24 * time.Hour) }
+
+func TestServerMismatchPrintsHint(t *testing.T) {
+	isolatedHome(t)
+	if err := saveSession(storedSession{Server: "http://other:1", Token: "t", ExpiresAt: farFuture()}); err != nil {
+		t.Fatal(err)
+	}
+	if tok, hint := loadSessionHint("http://here:2"); tok != "" || !strings.Contains(hint, "stored session is for http://other:1") || !strings.Contains(hint, "homesteadctl login") {
+		t.Fatalf("token %q hint %q", tok, hint)
+	}
+	ts := httptest.NewServer(http.NotFoundHandler())
+	defer ts.Close()
+	_, _, stderr := invoke(t, []string{"--server", ts.URL, "audit", "list"})
+	if !strings.Contains(stderr, "run homesteadctl login") {
+		t.Fatalf("stderr lacks hint: %q", stderr)
+	}
+}
+
+func TestSaveSessionRefusesSymlinks(t *testing.T) {
+	home := isolatedHome(t)
+	target := t.TempDir()
+	cfg := filepath.Join(home, ".config")
+	if err := os.MkdirAll(cfg, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(cfg, "homestead")); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveSession(storedSession{Server: "s", Token: "t", ExpiresAt: farFuture()}); err == nil {
+		t.Fatal("saveSession followed a symlinked directory")
+	}
+	if entries, _ := os.ReadDir(target); len(entries) != 0 {
+		t.Fatalf("token written through symlink: %v", entries)
+	}
+	os.Remove(filepath.Join(cfg, "homestead"))
+	dir := filepath.Join(cfg, "homestead")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(target, "x"), filepath.Join(dir, "session")); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveSession(storedSession{Server: "s", Token: "t", ExpiresAt: farFuture()}); err == nil {
+		t.Fatal("saveSession replaced a symlinked session file")
+	}
+}
+
+func TestSaveSessionKeepsExistingDirMode(t *testing.T) {
+	home := isolatedHome(t)
+	dir := filepath.Join(home, ".config", "homestead")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveSession(storedSession{Server: "s", Token: "t", ExpiresAt: farFuture()}); err != nil {
+		t.Fatal(err)
+	}
+	if info, _ := os.Stat(dir); info.Mode().Perm() != 0o750 {
+		t.Fatalf("pre-existing dir mode changed to %v", info.Mode().Perm())
+	}
+	if err := os.Chmod(dir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveSession(storedSession{Server: "s", Token: "t", ExpiresAt: farFuture()}); err == nil {
+		t.Fatal("saveSession accepted a world-writable directory")
+	}
+}
+
+func TestEnvTokenWinsOverStoredSession(t *testing.T) {
+	isolatedHome(t)
+	var got []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("[]"))
+	}))
+	defer ts.Close()
+	if err := saveSession(storedSession{Server: ts.URL, Token: "stored", ExpiresAt: farFuture()}); err != nil {
+		t.Fatal(err)
+	}
+	invoke(t, []string{"--server", ts.URL, "audit", "list"})
+	t.Setenv("HOMESTEAD_TOKEN", "from-env")
+	invoke(t, []string{"--server", ts.URL, "audit", "list"})
+	if len(got) != 2 || got[0] != "Bearer stored" || got[1] != "Bearer from-env" {
+		t.Fatalf("Authorization headers = %q, want stored then env", got)
+	}
+}

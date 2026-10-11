@@ -4,13 +4,17 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"homestead/internal/auth"
+	"homestead/internal/claim"
 	"homestead/internal/operation"
 	"homestead/internal/store"
 )
@@ -226,5 +230,54 @@ func TestOperationList(t *testing.T) {
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("GET status = %d, want 400", rec.Code)
+	}
+}
+
+type revocableSessions struct{ revoked atomic.Bool }
+
+func (r *revocableSessions) Verify(token string) (auth.VerifiedSession, error) {
+	if token != "tok" || r.revoked.Load() {
+		return auth.VerifiedSession{}, auth.ErrInvalidSession
+	}
+	return auth.VerifiedSession{Username: "owner"}, nil
+}
+
+func TestOperationEventsStopAfterSessionRevoked(t *testing.T) {
+	old := EventHeartbeatInterval
+	EventHeartbeatInterval = 20 * time.Millisecond
+	t.Cleanup(func() { EventHeartbeatInterval = old })
+	srv, svc := operationServer(t)
+	if _, err := svc.Create("test.op", ""); err != nil {
+		t.Fatal(err)
+	}
+	sessions := &revocableSessions{}
+	srv.mountBoundary(sessions, &fakeClaims{state: claim.StateClaimed}, &fakeAudit{}, time.Now)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/operations/1/events", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("connect = %d", resp.StatusCode)
+	}
+	reader := bufio.NewReader(resp.Body)
+	if line, _ := reader.ReadString('\n'); !strings.HasPrefix(line, "event: state") {
+		t.Fatalf("first line = %q", line)
+	}
+	sessions.revoked.Store(true)
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(io.Discard, reader) // returns when the server ends the stream
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("stream kept serving after the session was revoked")
 	}
 }

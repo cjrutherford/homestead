@@ -219,21 +219,56 @@ describe('ApiService', () => {
     ]);
   });
 
-  it('streams operation states', () => {
-    const received: string[] = [];
-    let listener!: (event: { data: string }) => void;
-    service
-      .operationEvents(7, () => ({
-        addEventListener: (_type: string, fn: (event: { data: string }) => void) => {
-          listener = fn;
+  function fakeSource() {
+    const listeners: Record<string, (event: { data: string }) => void> = {};
+    let closed = false;
+    return {
+      listeners,
+      isClosed: () => closed,
+      source: {
+        addEventListener: (type: string, fn: (event: { data: string }) => void) => {
+          listeners[type] = fn;
         },
-        close: () => undefined,
-      }))
-      .subscribe((op) => {
-        received.push(op.status);
-      });
-    listener({ data: '{"id":7,"status":"running","steps":[]}' });
-    listener({ data: '{"id":7,"status":"succeeded","steps":[]}' });
+        close: () => {
+          closed = true;
+        },
+      },
+    };
+  }
+
+  it('streams operation states and completes after a terminal state', () => {
+    const received: string[] = [];
+    let completed = false;
+    const fake = fakeSource();
+    service.operationEvents(7, () => fake.source).subscribe({
+      next: (op) => received.push(op.status),
+      complete: () => (completed = true),
+    });
+    fake.listeners['state']({ data: '{"id":7,"status":"running","steps":[]}' });
+    fake.listeners['state']({ data: '{"id":7,"status":"succeeded","steps":[]}' });
     expect(received).toEqual(['running', 'succeeded']);
+    expect(completed).toBe(true);
+    expect(fake.isClosed()).toBe(true);
+  });
+
+  it('surfaces a stream failure and probes the session', () => {
+    const fake = fakeSource();
+    let error: unknown;
+    service.operationEvents(7, () => fake.source).subscribe({ error: (e) => (error = e) });
+    fake.listeners['error']({ data: '' });
+    expect(fake.isClosed()).toBe(true);
+    const probe = http.expectOne('/api/v1/admins/lockout');
+    expect(probe.request.method).toBe('GET');
+    probe.flush('no', { status: 401, statusText: 'Unauthorized' });
+    expect((error as { status?: number }).status).toBe(401);
+  });
+
+  it('reports an interrupted stream when the session is still valid', () => {
+    const fake = fakeSource();
+    let error: unknown;
+    service.operationEvents(7, () => fake.source).subscribe({ error: (e) => (error = e) });
+    fake.listeners['error']({ data: '' });
+    http.expectOne('/api/v1/admins/lockout').flush({ username: 'owner', locked: false });
+    expect(String(error)).toContain('interrupted');
   });
 });
