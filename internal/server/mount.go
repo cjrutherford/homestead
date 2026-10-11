@@ -51,6 +51,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 		return nil, err
 	}
 	srv.MountConfigIO(c.ConfigPath, secrets)
+	srv.MountSecrets(st, secrets)
 	srv.MountClaim(claimSvc)
 	srv.MountAuth(authSvc, audit.New(st))
 	srv.MountAudit(audit.New(st))

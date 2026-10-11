@@ -7,9 +7,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"time"
 
 	"homestead/internal/layout"
@@ -19,13 +19,18 @@ import (
 // ErrNotFound reports reads of names holding no secret.
 var ErrNotFound = errors.New("secret: not found")
 
-// KeyFileName is the encryption-key file inside LibDir. The key never
-// leaves this root-only file; the database holds ciphertext alone.
+// KeyFileName is the legacy (pre-S258) key file inside LibDir. Since
+// S258 keys live in versioned files KeyFileName.v<N> beside it (ADR-021);
+// the legacy file is only read once, to migrate it to version 1, and is
+// left in place and ignored afterward so a binary rollback still works.
+// Key material never leaves these root-only files; the database holds
+// ciphertext alone.
 const KeyFileName = "secret.key"
 
-// DefaultKeyPath returns the production key path. The parent directory
-// is provisioned by S012; loading does not create parents, so a missing
-// LibDir fails loudly instead of scattering key material.
+// DefaultKeyPath returns the production legacy key path; versioned key
+// files are derived from it. The parent directory is provisioned by S012;
+// loading does not create parents, so a missing LibDir fails loudly
+// instead of scattering key material.
 func DefaultKeyPath() string {
 	return filepath.Join(layout.LibDir.Path, KeyFileName)
 }
@@ -37,67 +42,60 @@ var validName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 const maxValueBytes = 8192
 
 // Store keeps DNS/API secret values encrypted at rest: AES-GCM rows in
-// the operational database (migration v7), key in a root-only file.
-// Values enter through Set and leave only through Get for provider
-// calls — List reports names and timestamps, never values, and errors
-// never carry value material.
+// the operational database (migration v7), keys in root-only versioned
+// files. Each row records the key version that sealed it and is opened
+// with that key, so mixed-version states stay readable (ADR-021). Values
+// enter through Set and leave only through Get for provider calls — List
+// reports names and timestamps, never values, and errors never carry
+// value or key material.
 type Store struct {
-	db  *sql.DB
-	key [32]byte
+	db      *sql.DB
+	keyPath string
+
+	// mu guards keys/current and serializes row writes against the
+	// re-encrypt transaction.
+	mu      sync.RWMutex
+	keys    map[int][32]byte
+	current int
+	// rekeying is set while a re-key operation owns the store.
+	rekeying bool
+	// hook is a test seam: called at named re-key steps; an error aborts
+	// the step as if the process had failed there.
+	hook func(point string) error
 }
 
-// New opens a Store over an open store, loading the key file at keyPath
-// or generating it (0600) on first use. An existing key file readable
-// beyond its owner is refused: the daemon repairs permissions, never
-// operates exposed.
+// New opens a Store over an open store. keyPath is the legacy key path
+// (see KeyFileName); versioned keys are keyPath.v<N>. On first start
+// after S258 an existing legacy key becomes version 1 and unversioned rows
+// are stamped 1 without changing any ciphertext; a fresh install
+// generates version 1 directly. Any key file readable beyond its owner is
+// refused: the daemon repairs permissions, never operates exposed. When
+// every row is already on the newest key version and verifies, older key
+// files are removed (completing an interrupted re-key).
 func New(s *store.Store, keyPath string) (*Store, error) {
-	key, err := loadOrGenerateKey(keyPath)
-	if err != nil {
+	st := &Store{db: s.DB(), keyPath: keyPath}
+	if err := st.loadKeys(); err != nil {
 		return nil, err
 	}
-	return &Store{db: s.DB(), key: key}, nil
+	if _, err := st.db.Exec(`UPDATE secrets SET key_version = 1 WHERE key_version = 0`); err != nil {
+		return nil, fmt.Errorf("secret: stamp unversioned rows: %w", err)
+	}
+	if err := st.cleanupOlder(); err != nil {
+		return nil, err
+	}
+	return st, nil
 }
 
-// loadOrGenerateKey reads the 32-byte key file or creates it. Parent
-// directories are never created here.
-func loadOrGenerateKey(path string) ([32]byte, error) {
-	var key [32]byte
-	raw, err := os.ReadFile(path)
-	if err == nil {
-		if len(raw) != 32 {
-			return key, fmt.Errorf("secret: key file %q must hold 32 bytes", path)
-		}
-		info, err := os.Stat(path)
-		if err != nil {
-			return key, fmt.Errorf("secret: stat key: %w", err)
-		}
-		if info.Mode().Perm()&0077 != 0 {
-			return key, fmt.Errorf("secret: key file %q must not be group/other readable", path)
-		}
-		copy(key[:], raw)
-		return key, nil
+// seal encrypts one value under a fresh random nonce with the key of the
+// given version. Callers hold mu.
+func (s *Store) seal(version int, value string) (nonce, ciphertext []byte, err error) {
+	key, ok := s.keys[version]
+	if !ok {
+		return nil, nil, fmt.Errorf("secret: key version %d unavailable", version)
 	}
-	if !os.IsNotExist(err) {
-		return key, fmt.Errorf("secret: read key: %w", err)
-	}
-	if _, err := rand.Read(key[:]); err != nil {
-		return key, fmt.Errorf("secret: generate key: %w", err)
-	}
-	if err := os.WriteFile(path, key[:], 0o600); err != nil {
-		return key, fmt.Errorf("secret: write key: %w", err)
-	}
-	return key, nil
-}
-
-// seal encrypts one value under a fresh random nonce.
-func (s *Store) seal(value string) (nonce, ciphertext []byte, err error) {
-	block, err := aes.NewCipher(s.key[:])
+	gcm, err := newGCM(key)
 	if err != nil {
-		return nil, nil, fmt.Errorf("secret: cipher: %w", err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, nil, fmt.Errorf("secret: gcm: %w", err)
+		return nil, nil, err
 	}
 	nonce = make([]byte, gcm.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
@@ -106,15 +104,28 @@ func (s *Store) seal(value string) (nonce, ciphertext []byte, err error) {
 	return nonce, gcm.Seal(nil, nonce, []byte(value), nil), nil
 }
 
-// open decrypts one row, failing closed on tampering or key mismatch.
-func (s *Store) open(nonce, ciphertext []byte) (string, error) {
-	block, err := aes.NewCipher(s.key[:])
+func newGCM(key [32]byte) (cipher.AEAD, error) {
+	block, err := aes.NewCipher(key[:])
 	if err != nil {
-		return "", fmt.Errorf("secret: cipher: %w", err)
+		return nil, fmt.Errorf("secret: cipher: %w", err)
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", fmt.Errorf("secret: gcm: %w", err)
+		return nil, fmt.Errorf("secret: gcm: %w", err)
+	}
+	return gcm, nil
+}
+
+// open decrypts one row with the key version it records, failing closed
+// on tampering or key mismatch. Callers hold mu.
+func (s *Store) open(version int, nonce, ciphertext []byte) (string, error) {
+	key, ok := s.keys[version]
+	if !ok {
+		return "", fmt.Errorf("secret: key version %d unavailable", version)
+	}
+	gcm, err := newGCM(key)
+	if err != nil {
+		return "", err
 	}
 	plain, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
@@ -140,17 +151,21 @@ func (s *Store) Set(name, value string) error {
 	if len(value) == 0 || len(value) > maxValueBytes {
 		return fmt.Errorf("secret: value must be 1-%d bytes", maxValueBytes)
 	}
-	nonce, ciphertext, err := s.seal(value)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	version := s.current
+	nonce, ciphertext, err := s.seal(version, value)
 	if err != nil {
 		return err
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	if _, err := s.db.Exec(
-		`INSERT INTO secrets (name, nonce, ciphertext, updated_at)
-		 VALUES (?, ?, ?, ?)
+		`INSERT INTO secrets (name, nonce, ciphertext, updated_at, key_version)
+		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(name) DO UPDATE SET nonce = excluded.nonce,
-		 ciphertext = excluded.ciphertext, updated_at = excluded.updated_at`,
-		name, nonce, ciphertext, now,
+		 ciphertext = excluded.ciphertext, updated_at = excluded.updated_at,
+		 key_version = excluded.key_version`,
+		name, nonce, ciphertext, now, version,
 	); err != nil {
 		return fmt.Errorf("secret: set %q: %w", name, err)
 	}
@@ -162,17 +177,20 @@ func (s *Store) Get(name string) (string, error) {
 	if err := validateName(name); err != nil {
 		return "", err
 	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	var nonce, ciphertext []byte
+	var version int
 	err := s.db.QueryRow(
-		`SELECT nonce, ciphertext FROM secrets WHERE name = ?`, name,
-	).Scan(&nonce, &ciphertext)
+		`SELECT nonce, ciphertext, `+versionExpr+` FROM secrets WHERE name = ?`, name,
+	).Scan(&nonce, &ciphertext, &version)
 	if err == sql.ErrNoRows {
 		return "", ErrNotFound
 	}
 	if err != nil {
 		return "", fmt.Errorf("secret: get %q: %w", name, err)
 	}
-	return s.open(nonce, ciphertext)
+	return s.open(version, nonce, ciphertext)
 }
 
 // Delete removes one secret, idempotent: absent names converge to nil so

@@ -34,7 +34,8 @@ class TestSecretContract(unittest.TestCase):
         migration = read("internal/store/store.go")
         self.assertIn("secrets", migration)
         self.assertIn("ciphertext", migration)
-        src = read("internal/secret/secret.go")
+        # Key-file handling moved to keys.go in S258.
+        src = read("internal/secret/secret.go") + read("internal/secret/keys.go")
         for symbol in ("aes.NewCipher", "cipher.NewGCM", "0600",
                        "must not be group/other readable", "decrypt failed"):
             with self.subTest(symbol=symbol):

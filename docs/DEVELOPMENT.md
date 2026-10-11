@@ -1598,6 +1598,27 @@ with no-drift no-ops instead of empty operations, and a dashboard
 Drift page reviews both sides with accept and restore buttons
 linking started restores to operation detail.
 
+Secret re-key (S258, ADR-021) lives in `internal/secret`: keys are
+versioned files `secret.key.v<N>` (mode 0600) beside the legacy
+`secret.key`, and each `secrets` row records its key version (schema
+v24; 0 reads as version 1). First start after S258 copies the legacy
+key to `secret.key.v1` and stamps unversioned rows 1 without touching
+ciphertext; the legacy file stays, ignored. Re-key is the
+`secret.rekey` operation (steps `write-key`, `reencrypt`, `verify`,
+`retire-old`): the new key is durable (temp, fsync, rename, directory
+fsync) before the one re-encrypt transaction, rows are decrypt-verified
+after commit, and only then are older key files deleted; start also
+retires older keys once every row verifies on the newest version. A
+key file left by an interrupted run is reused by the next run.
+`GET /api/v1/secrets/key` and `POST /api/v1/secrets/rekey`
+(`{"confirm": true}` required) serve `homesteadctl secrets
+<status|rekey --confirm [--follow]>` and the dashboard Secrets page;
+audit records `secret.rekey.start` and `secret.rekey` with versions
+and operation ids only. **Runbook:** every retained key file
+(`secret.key.v*`, plus the legacy `secret.key` until the owner removes
+it) belongs in the owner's recovery material; losing the key file a
+row records strands that row. Re-key blocks secret reads briefly.
+
 ## Provisional decisions (revisit, do not work around silently)
 
 - **Go module path is `homestead`** (bare). No VCS remote exists in the planning

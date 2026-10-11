@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 24
+const CurrentVersion = 25
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -439,6 +439,14 @@ CREATE TABLE IF NOT EXISTS scheduler_jobs (
 	last_skip_due TEXT NOT NULL DEFAULT '',
 	last_skip_blocking INTEGER NOT NULL DEFAULT 0
 );`,
+	},
+	{
+		// S258 secret re-key (ADR-021): each row records the key version
+		// that sealed it. 0 means unversioned (pre-S258) and is always
+		// read as version 1; internal/secret stamps those rows at start.
+		version: 25,
+		name:    "secret key version",
+		sql:     `ALTER TABLE secrets ADD COLUMN key_version INTEGER NOT NULL DEFAULT 0;`,
 	},
 }
 

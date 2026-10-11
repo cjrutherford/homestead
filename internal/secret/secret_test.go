@@ -47,7 +47,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("Get = %q %v", got, err)
 	}
 	// Key file is root-only.
-	info, err := os.Stat(filepath.Join(dir, KeyFileName))
+	info, err := os.Stat(filepath.Join(dir, KeyFileName+".v1"))
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestWrongKeyFailsClosed(t *testing.T) {
 func TestExposedKeyRefused(t *testing.T) {
 	_, dir := openSecret(t)
 	keyPath := filepath.Join(dir, KeyFileName)
-	if err := os.Chmod(keyPath, 0o644); err != nil {
+	if err := os.Chmod(keyPath+".v1", 0o644); err != nil {
 		t.Fatalf("Chmod: %v", err)
 	}
 	if _, err := New(storeFor(t, dir), keyPath); err == nil ||

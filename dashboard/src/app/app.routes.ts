@@ -10,6 +10,7 @@ import { Advanced } from './advanced/advanced';
 import { Drift } from './drift/drift';
 import { Exposure } from './exposure/exposure';
 import { Tunnel } from './tunnel/tunnel';
+import { Secrets } from './secrets/secrets';
 import { Operations } from './operations/operations';
 import { OperationDetail } from './operations/operation-detail';
 import { ValidationBoard } from './validation/validation-board';
@@ -30,6 +31,7 @@ export const routes: Routes = [
   { path: 'exposure', component: Exposure },
   { path: 'tunnel', component: Tunnel },
   { path: 'backups', component: Backups },
+  { path: 'secrets', component: Secrets },
   { path: 'operations', component: Operations },
   { path: 'operations/:id', component: OperationDetail },
   { path: 'validation-board', component: ValidationBoard },

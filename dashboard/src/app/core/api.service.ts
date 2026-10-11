@@ -155,6 +155,12 @@ export interface InstallPlan {
   Actions: string[];
 }
 
+/** GET /api/v1/secrets/key — secret-store key custody status (S258). */
+export interface SecretKeyStatus {
+  version: number;
+  in_progress: boolean;
+}
+
 /** POST /api/v1/catalog/:name/install — started operation. */
 export interface OperationStarted {
   id: number;
@@ -384,6 +390,16 @@ export class ApiService {
       `/api/v1/updates/${name}/apply`,
       body,
     );
+  }
+
+  secretKeyStatus(): Observable<SecretKeyStatus> {
+    return this.http.get<SecretKeyStatus>('/api/v1/secrets/key');
+  }
+
+  secretRekey(): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>('/api/v1/secrets/rekey', {
+      confirm: true,
+    });
   }
 
   dockge(domain: string): Observable<DockgeLink> {

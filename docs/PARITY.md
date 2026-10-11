@@ -78,6 +78,8 @@ unchanged.
 | DELETE | /api/v1/backups/schedules/{package} | `"backup"` | `backupScheduleDelete` | Schedule removal on CLI and dashboard |
 | GET | /api/v1/updates | `"updates"` | `updates` | Review rows on both surfaces |
 | POST | /api/v1/updates/{name}/apply | `"updates"` | `applyUpdate` | Approved updates on both surfaces |
+| GET | /api/v1/secrets/key | `"secrets"` | `secretKeyStatus` | Key version on both surfaces (S258) |
+| POST | /api/v1/secrets/rekey | `"secrets"` | `secretRekey` | Confirmed re-key operation on both surfaces (S258) |
 | GET | /api/v1/dockge | n/a | `dockge` | Expert-interface link with assessed policy on dashboard; no command surface yet |
 | GET | /api/v1/catalog/{name}/drift | `"drift"` | `driftReview` | Managed-state review on both surfaces |
 | POST | /api/v1/catalog/{name}/drift | `"drift"` | `driftResolve` | Accept or restore choice on both surfaces |
