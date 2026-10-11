@@ -100,6 +100,14 @@ func TestLoginFailures(t *testing.T) {
 	if code != exitError || !strings.Contains(stderr, "invalid username or password") {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
+	// Repeated failures trip lockout with its own message, not a 500.
+	for range 4 {
+		invoke(t, append(serverArgs, "login", "--username", "owner", "--password-file", wrong))
+	}
+	code, _, stderr = invoke(t, append(serverArgs, "login", "--username", "owner", "--password-file", wrong))
+	if code != exitError || !strings.Contains(stderr, "temporarily locked") {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
 	weak := passwordFile(t, "short")
 	code, _, stderr = invoke(t, append(serverArgs, "admin", "setup", "--username", "weak", "--password-file", weak))
 	if code != exitError || !strings.Contains(stderr, "invalid administrator") {

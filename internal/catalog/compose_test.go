@@ -120,3 +120,31 @@ func TestGenerateValidation(t *testing.T) {
 		t.Fatal("generated duplicate host ports")
 	}
 }
+
+func TestGenerateCommand(t *testing.T) {
+	manifest := composeManifest()
+	manifest.Services[1].Command = []string{"worker", "--foreground"}
+	files, err := Generate(manifest, composeGeneration())
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if !strings.Contains(files.ComposeYAML, "command:\n") || !strings.Contains(files.ComposeYAML, "- worker") {
+		t.Fatalf("missing command:\n%s", files.ComposeYAML)
+	}
+	// Services without commands render none.
+	lines := strings.Split(files.ComposeYAML, "\n")
+	commands := 0
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "command:" {
+			commands++
+		}
+	}
+	if commands != 1 {
+		t.Fatalf("commands = %d, want 1", commands)
+	}
+	broken := manifest
+	broken.Services[1].Command = []string{""}
+	if _, err := Generate(broken, composeGeneration()); err == nil {
+		t.Fatal("empty command argument accepted")
+	}
+}

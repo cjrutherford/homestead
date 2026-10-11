@@ -86,6 +86,10 @@ func (s *Server) handleLogin(svc *auth.Service, auditSvc *audit.Service) http.Ha
 				http.Error(w, "invalid username or password", http.StatusUnauthorized)
 				return
 			}
+			if errors.Is(err, auth.ErrAccountLocked) {
+				http.Error(w, "account temporarily locked after repeated failures", http.StatusTooManyRequests)
+				return
+			}
 			http.Error(w, "failed to log in", http.StatusInternalServerError)
 			return
 		}

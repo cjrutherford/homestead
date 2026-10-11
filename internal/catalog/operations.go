@@ -5,17 +5,33 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"homestead/internal/operation"
 	"homestead/internal/storage"
 	"homestead/internal/store"
 )
 
+// composeMu serializes Compose invocations per project: concurrent
+// up/down on one stack race container naming (proven live when two
+// configures collided mid-recreate), so the seam holds one lock per
+// project. Different projects proceed in parallel.
+var composeMu sync.Map
+
+// lockProject holds the project lock, releasing on done.
+func lockProject(project string) func() {
+	mu, _ := composeMu.LoadOrStore(project, &sync.Mutex{})
+	m := mu.(*sync.Mutex)
+	m.Lock()
+	return m.Unlock
+}
+
 // composeUp runs detached up for a stack directory and project name,
 // stubbed in tests. The docker package owns Compose models; install
 // execution owns this seam so full install flows verify without a
 // daemon. Removal shares it (remove.go) rather than growing a second.
 var composeUp = func(ctx context.Context, dir, project string) error {
+	defer lockProject(project)()
 	return composeRun(ctx, dir, project, "up", "-d")
 }
 
@@ -23,6 +39,7 @@ var composeUp = func(ctx context.Context, dir, project string) error {
 // networks without touching volumes or binds: data always survives
 // down by construction.
 var composeDown = func(ctx context.Context, dir, project string) error {
+	defer lockProject(project)()
 	return composeRun(ctx, dir, project, "down")
 }
 

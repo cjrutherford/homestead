@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"homestead/internal/discover"
 	"homestead/internal/operation"
@@ -172,5 +174,46 @@ func TestInstallUpFailureAborts(t *testing.T) {
 	// Earlier steps still applied before the failed up.
 	if _, err := os.Stat(filepath.Join(base, "jellyfin", "config")); err != nil {
 		t.Fatalf("directory missing after abort: %v", err)
+	}
+}
+
+func TestComposeUpSerializesPerProject(t *testing.T) {
+	// Regression: two concurrent ups on one stack raced container
+	// naming live. The seam serializes per project while letting
+	// different projects proceed together.
+	var current, peak int
+	var mu sync.Mutex
+	old := composeRun
+	composeRun = func(ctx context.Context, dir, project string, args ...string) error {
+		mu.Lock()
+		current++
+		if current > peak {
+			peak = current
+		}
+		mu.Unlock()
+		time.Sleep(50 * time.Millisecond)
+		mu.Lock()
+		current--
+		mu.Unlock()
+		return nil
+	}
+	t.Cleanup(func() { composeRun = old })
+	ctx := context.Background()
+	done := make(chan error, 4)
+	go func() { done <- composeUp(ctx, t.TempDir(), "same") }()
+	go func() { done <- composeUp(ctx, t.TempDir(), "same") }()
+	go func() { done <- composeUp(ctx, t.TempDir(), "other") }()
+	go func() { done <- composeDown(ctx, t.TempDir(), "same") }()
+	for range 4 {
+		if err := <-done; err != nil {
+			t.Fatalf("compose: %v", err)
+		}
+	}
+	// Same-project calls never overlapped; "other" may have joined
+	// either, so peak 2 proves parallelism survived serialization.
+	mu.Lock()
+	defer mu.Unlock()
+	if peak != 2 {
+		t.Fatalf("peak concurrency = %d, want 2", peak)
 	}
 }

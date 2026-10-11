@@ -26,12 +26,21 @@ type Service struct {
 	Name    string
 	Image   string
 	Exposes string
+	// Command overrides the image entrypoint command (official
+	// images like Authentik require `server`/`worker` verbs):
+	// empty inherits the image default.
+	Command []string
 }
 
 // Validate checks service shape and endpoint linkage.
 func (s Service) Validate(endpoints map[string]bool) error {
 	if !validServiceName.MatchString(s.Name) {
 		return fmt.Errorf("catalog: invalid service name %q", s.Name)
+	}
+	for _, arg := range s.Command {
+		if arg == "" {
+			return fmt.Errorf("catalog: service %q has an empty command argument", s.Name)
+		}
 	}
 	image, tag, found := strings.Cut(s.Image, ":")
 	if !found || image == "" || tag == "" || tag == "latest" {

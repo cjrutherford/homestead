@@ -138,6 +138,27 @@ func TestLoginFailures(t *testing.T) {
 	}
 }
 
+// TestLoginLockoutStatus proves repeated failures trip 429 instead
+// of the 500 the unmapped sentinel once produced: throttling is a
+// client signal, never a server error.
+func TestLoginLockoutStatus(t *testing.T) {
+	srv := claimedAuthServer(t)
+	rec := doJSON(t, srv, http.MethodPost, "/api/v1/admins/setup", `{"username":"owner","password":"long-enough-password"}`, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup status = %d, want 201", rec.Code)
+	}
+	for range 4 {
+		rec = doJSON(t, srv, http.MethodPost, "/api/v1/sessions", `{"username":"owner","password":"wrong-password-here"}`, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("login status = %d, want 401", rec.Code)
+		}
+	}
+	rec = doJSON(t, srv, http.MethodPost, "/api/v1/sessions", `{"username":"owner","password":"wrong-password-here"}`, "")
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("login status = %d, want 429", rec.Code)
+	}
+}
+
 func TestLogoutRequiresBearer(t *testing.T) {
 	srv := claimedAuthServer(t)
 	rec := doJSON(t, srv, http.MethodDelete, "/api/v1/sessions", "", "")

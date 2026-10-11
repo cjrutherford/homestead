@@ -125,6 +125,7 @@ type composeService struct {
 	Image     string          `yaml:"image"`
 	Container string          `yaml:"container_name"`
 	Restart   string          `yaml:"restart"`
+	Command   []string        `yaml:"command,omitempty"`
 	Ports     []string        `yaml:"ports,omitempty"`
 	Volumes   []composeVolume `yaml:"volumes,omitempty"`
 	Networks  []string        `yaml:"networks,omitempty"`
@@ -171,8 +172,10 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 		byService[spec.Service] = spec
 	}
 	var names []string
+	commands := map[string][]string{}
 	for _, service := range manifest.Services {
 		names = append(names, service.Name)
+		commands[service.Name] = service.Command
 	}
 	sort.Strings(names)
 	document := composeFile{Name: manifest.Name, Services: map[string]composeService{}}
@@ -185,6 +188,7 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 			Image:     images[name],
 			Container: manifest.Name + "-" + name,
 			Restart:   "unless-stopped",
+			Command:   commands[name],
 		}
 		if spec, ok := byService[name]; ok {
 			for _, port := range spec.Ports {

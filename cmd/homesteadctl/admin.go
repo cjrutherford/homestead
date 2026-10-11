@@ -103,9 +103,15 @@ func runLogin(ctx context.Context, client *apiclient.Client, args []string, stdo
 	session, err := client.Login(ctx, *username, password)
 	if err != nil {
 		var statusErr *apiclient.StatusError
-		if errors.As(err, &statusErr) && statusErr.Status == 401 {
-			fmt.Fprintln(stderr, "invalid username or password")
-			return exitError
+		if errors.As(err, &statusErr) {
+			switch statusErr.Status {
+			case 401:
+				fmt.Fprintln(stderr, "invalid username or password")
+				return exitError
+			case 429:
+				fmt.Fprintln(stderr, "account temporarily locked after repeated failures")
+				return exitError
+			}
 		}
 		return fail(stderr, err)
 	}
