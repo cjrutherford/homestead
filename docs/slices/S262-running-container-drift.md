@@ -12,10 +12,11 @@ Implement only the functionality required for this slice. Preserve all accepted 
 ## Acceptance Criteria
 - Running Container Drift implemented and documented
 - `internal/catalog/drift.go` extended with a live comparison using `internal/docker` for image, ports, networks, and mounts
-- Findings reported through the existing drift API and `homesteadctl` drift commands with parity rows
+- Findings reported through the existing drift API and `homesteadctl` drift commands, and shown on the existing dashboard drift surface, with parity rows in `docs/PARITY.md`
 - Included in the S261 scheduled scan
 - Read-only: no automatic correction; resolution stays on the S213 flow
 - Tests use a fake Docker client
+- Remove the "Drift scheduled scans and live-state comparison" entry from `docs/DEFERRED.md` when landed
 - Automated tests cover primary behavior
 - Main build remains green
 

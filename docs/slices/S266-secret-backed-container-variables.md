@@ -1,22 +1,24 @@
 # S266 — Secret-backed Container Variables
 
 ## Goal
-Inject secret-store values into container environments at install and configure time.
+Deliver secret-store values to containers as 0600 files via Compose `secrets:`, per ADR-021.
 
 ## Dependencies
 S157,S258
 
 ## Scope
 Implement only the functionality required for this slice. Preserve all accepted ADRs and customer-ownership guarantees. Do not pull deferred features into scope without an ADR and slice update.
+Governed by ADR-021, Accepted 2026-10-11.
 
 ## Acceptance Criteria
 - Secret-backed Container Variables implemented and documented
-- `internal/catalog/compose.go` (near line 239) and `internal/catalog/configure.go` (near line 62) resolve secret references from the secret store
-- Generated Compose YAML references env-file or secret mounts with restrictive permissions rather than embedding values in inspectable YAML
-- Drift detection treats secret values as opaque
-- Docker Compose stays usable without Homestead (documented how values are supplied)
-- Tests assert no secret value appears in generated YAML, logs, or audit
-- Remove the secret-backed variables entry from `docs/DEFERRED.md`
+- `WriteStack` in `internal/catalog/compose.go` (near line 237) and the configure plan in `internal/catalog/configure.go` (near line 59) resolve secret references from the secret store
+- Resolved values are written as mode 0600 files under the application directory and referenced from the generated Compose YAML through the top-level `secrets:` mechanism with `file:` sources; values are never `environment:` entries
+- Drift detection treats secret files as opaque (presence and mode only)
+- Docker Compose stays usable without Homestead (documented how to supply the files by hand)
+- Tests assert no secret value appears in generated YAML, environment, logs, audit, or drift output, and that files are 0600
+- Secret files are excluded from configuration export and included in encrypted backups
+- Remove the secret-backed variables entry from `docs/DEFERRED.md` when landed
 - Automated tests cover primary behavior
 - Main build remains green
 

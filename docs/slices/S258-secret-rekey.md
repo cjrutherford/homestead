@@ -1,23 +1,27 @@
 # S258 — Secret Re-key
 
 ## Goal
-Key versioning and an audited, crash-safe re-key of the secret store, per ADR-021.
+Versioned secret keys and an audited, crash-safe re-key of the secret store, per ADR-021.
 
 ## Dependencies
-S096
+S096,S248,S257
 
 ## Scope
 Implement only the functionality required for this slice. Preserve all accepted ADRs and customer-ownership guarantees. Do not pull deferred features into scope without an ADR and slice update.
-ADR-021 is Proposed and must be Accepted before implementation begins.
+Governed by ADR-021, Accepted 2026-10-11.
+Depends on S257 so the new re-key route is never exposed ungated.
 
 ## Acceptance Criteria
 - Secret Re-key implemented and documented
-- `internal/secret/secret.go` records a key version per row and in the key file
-- Re-key generates a new key, re-encrypts all rows in one SQLite transaction, then writes the key file atomically (temp, fsync, rename, directory fsync)
-- Previous key retained until commit succeeds; injected failure at each step leaves the store readable with the old key
-- Re-key exposed over the API and `homesteadctl` with dashboard parity row in `docs/PARITY.md` (dashboard may be `n/a` with reason)
+- Versioned key files `secret.key.v<N>` under `layout.LibDir`; `internal/secret/secret.go` records the key version per row and opens each row with its recorded key
+- Migration of the existing raw 32-byte key (written at `internal/secret/secret.go:86`) to version 1 per ADR-021: copied to `secret.key.v1`, unversioned rows stamped 1, legacy file left in place and ignored; tested from a pre-S258 fixture
+- Re-key order per ADR-021: write the new versioned key file (temp, fsync, rename, directory fsync) before the DB commit; re-encrypt all rows in one SQLite transaction; commit; decrypt-verify every row; only then delete the old key file
+- Injected failure at each step (before key write, mid-transaction, after commit before verify, before old-key delete) leaves the store readable and rerunning re-key succeeds
+- Re-key exposed over the API and `homesteadctl`; the dashboard gets a confirmed re-key action with operation progress using S248 tokens and `StateMessage`
+- `docs/PARITY.md` updated for every added or changed route (`tests/test_s037_parity.py` stays green) with both CLI and dashboard cells filled
 - Operation is audited without key material in logs
-- Remove the secret re-key entry from `docs/DEFERRED.md`
+- Runbook states that every retained key file belongs in the owner's recovery material
+- Remove the secret re-key entry from `docs/DEFERRED.md` when landed
 - Automated tests cover primary behavior
 - Main build remains green
 

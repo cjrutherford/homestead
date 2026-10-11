@@ -36,6 +36,14 @@ Additional sections (e.g. `## Context`, `## Alternatives`) may be inserted betwe
 
 Transitions allowed: `Proposed` → `Accepted`, `Accepted` → `Superseded by ADR-<NNN>`. No other transitions. Accepted records are never edited in place for substance — a correction is a new superseding record. Typo fixes that do not change meaning are the only in-place edits permitted.
 
+## Amendments
+
+An accepted record may carry a short `## Amended by ADR-<NNN>` section,
+placed between `Decision` and `Consequences`, that only points to the
+accepted record that narrows or extends it. The note never changes the
+original `Decision` text or `Status`; the amending ADR holds the substance
+and must say it amends the earlier record.
+
 ## Rules
 
 1. Preserve all accepted ADRs and customer-ownership guarantees.
@@ -68,9 +76,9 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-017 | Tunnel Remote Access | Accepted |
 | ADR-018 | Static Container Packages | Accepted |
 | ADR-019 | Clean-room UI Reuse | Accepted |
-| ADR-020 | Operator Session Boundary | Proposed |
-| ADR-021 | Secret Key Custody and Re-key | Proposed |
-| ADR-022 | Backup Encryption Format | Proposed |
-| ADR-023 | Daemon Scheduler | Proposed |
-| ADR-024 | Unattended Certificate Renewal | Proposed |
-| ADR-025 | Release Artifact Trust Root | Proposed |
+| ADR-020 | Operator Session Boundary | Accepted |
+| ADR-021 | Secret Key Custody and Re-key | Accepted |
+| ADR-022 | Backup Encryption Format | Accepted |
+| ADR-023 | Daemon Scheduler | Accepted |
+| ADR-024 | Unattended Certificate Renewal | Accepted |
+| ADR-025 | Release Artifact Trust Root | Accepted |
