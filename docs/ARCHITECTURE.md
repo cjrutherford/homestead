@@ -5,6 +5,18 @@
 - `homesteadctl`: standalone Go CLI using the same API.
 - Angular dashboard: compiled static assets served by the daemon in production.
 - SQLite: operations, sessions, onboarding, audits, wizard state.
+- Scheduler (S260, ADR-023): one in-process scheduler in `homestead-server`
+  (`internal/scheduler`). It only enqueues due work through the operation
+  runner, so scheduled runs appear in operations and audit as actor
+  `scheduler`. Last-run state is in SQLite (`scheduler_jobs`). A window
+  missed while the daemon was down runs once at startup (no burst
+  catch-up); a job still queued or running is skipped and audited
+  (`scheduler.skip`: job, due time, blocking operation), never run
+  concurrently. Domains register a `scheduler.Source` (`Register`) whose
+  jobs are re-read each tick; backup schedules are the first source, and
+  drift scans and certificate checks register later. State is visible via
+  `GET /api/v1/scheduler/jobs` and `homesteadctl scheduler jobs`.
+  Schedules run only while the daemon runs; there are no systemd timers.
 - YAML: customer-readable desired configuration and generated artifacts.
 - Docker Engine + Compose v2: application runtime.
 - Caddy: application reverse proxy / HTTP edge.

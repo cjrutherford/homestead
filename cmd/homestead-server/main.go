@@ -98,6 +98,16 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	startLocalDiscovery(ctx, claimSvc, listen)
 	// Both listeners share ctx and drain together. A socket failure is
 	// fatal: silent loss of the recovery channel is worse than no start.
+	// Daemon scheduler (S260, ADR-023): enqueues due work through the
+	// operation runner and stops with the daemon. Its first pass is the
+	// missed-run check.
+	schedDone := make(chan struct{})
+	go func() {
+		defer close(schedDone)
+		svcs.Scheduler.Run(ctx, func(err error) {
+			fmt.Fprintln(os.Stderr, "homestead-server: scheduler:", err)
+		})
+	}()
 	unixErr := make(chan error, 1)
 	go func() {
 		unixErr <- srv.RunUnix(ctx, socketPath)
@@ -105,6 +115,7 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	if err := srv.Run(ctx); err != nil {
 		return err
 	}
+	<-schedDone
 	return <-unixErr
 }
 

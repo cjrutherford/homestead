@@ -10,6 +10,7 @@ import (
 	"homestead/internal/docker"
 	"homestead/internal/firewall"
 	"homestead/internal/operation"
+	"homestead/internal/scheduler"
 	"homestead/internal/secret"
 	"homestead/internal/store"
 	"homestead/internal/wizard"
@@ -34,6 +35,8 @@ type AppConfig struct {
 type AppServices struct {
 	Claim *claim.Service
 	Auth  *auth.Service
+	// Scheduler is built and mounted for status; the daemon runs it (S260).
+	Scheduler *scheduler.Scheduler
 }
 
 // MountApp registers every production TCP route on srv.
@@ -58,6 +61,8 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountCatalog(st, c.CatalogDir)
 	srv.MountStorage(st)
 	srv.MountBackups(st)
+	sched := NewScheduler(st, c.CatalogDir)
+	srv.MountScheduler(sched)
 	srv.MountDrift(st, c.CatalogDir)
 	dockerClient := docker.NewClient("")
 	srv.MountDocker(dockerClient)
@@ -70,5 +75,5 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	if c.Dashboard != nil {
 		srv.MountDashboard(c.Dashboard)
 	}
-	return &AppServices{Claim: claimSvc, Auth: authSvc}, nil
+	return &AppServices{Claim: claimSvc, Auth: authSvc, Scheduler: sched}, nil
 }

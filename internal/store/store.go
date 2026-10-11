@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 23
+const CurrentVersion = 24
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -423,6 +423,22 @@ UPDATE sessions SET last_used_at = created_at;
 CREATE UNIQUE INDEX IF NOT EXISTS sessions_token_hash_unique
 	ON sessions(token_hash) WHERE token_hash IS NOT NULL;
 CREATE INDEX IF NOT EXISTS sessions_identity ON sessions(identity_id);`,
+	},
+	{
+		// S260 daemon scheduler: last-run and last-skip state per job, so
+		// missed windows run once at startup and never burst (ADR-023).
+		version: 24,
+		name:    "scheduler state",
+		sql: `
+CREATE TABLE IF NOT EXISTS scheduler_jobs (
+	job_id TEXT PRIMARY KEY,
+	last_run_at TEXT NOT NULL DEFAULT '',
+	last_operation_id INTEGER NOT NULL DEFAULT 0,
+	last_error TEXT NOT NULL DEFAULT '',
+	last_skip_at TEXT NOT NULL DEFAULT '',
+	last_skip_due TEXT NOT NULL DEFAULT '',
+	last_skip_blocking INTEGER NOT NULL DEFAULT 0
+);`,
 	},
 }
 

@@ -94,6 +94,7 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/admins/password":               ClassSession,
 	"GET /api/v1/admins/lockout":                 ClassSession,
 	"GET /api/v1/audit":                          ClassSession,
+	"GET /api/v1/scheduler/jobs":                 ClassSession,
 	"GET /api/v1/backups/destination":            ClassSession,
 	"GET /api/v1/backups/schedules":              ClassSession,
 	"POST /api/v1/backups/schedules":             ClassSession,

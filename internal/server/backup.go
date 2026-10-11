@@ -12,8 +12,8 @@ import (
 // MountBackups serves backup configuration (S238): destination
 // resolution status plus schedule records. Destinations resolve
 // from the backup-class assignment (S235 surfaces own that half);
-// schedules persist here. Backup runs themselves fire through the
-// operation engine in later slices; these routes configure.
+// schedules persist here. The daemon scheduler fires them through the
+// operation engine (S260); these routes configure.
 func (s *Server) MountBackups(st *store.Store) {
 	s.mux.HandleFunc("GET /api/v1/backups/destination", handleBackupDestination(st))
 	s.mux.HandleFunc("GET /api/v1/backups/schedules", handleBackupSchedules(st))

@@ -66,9 +66,11 @@
 - Backup encryption at rest: S181 copies plaintext; encrypting backup
   trees (age recipients, key custody, rotation) belongs with restore
   once runbooks exist.
-- Backup job triggering: S183 persists schedules and runs retained
-  jobs, but no wall-clock trigger (systemd timers or daemon ticker)
-  fires them yet.
+- Scheduled database backups: S260 fires backup schedules, but
+  database passwords are never stored, so scheduled postgres backups
+  fail with a recorded error (file-only and sqlite packages run); needs
+  secret custody for unattended exports. Also a dashboard surface for
+  scheduler state (CLI/API only in S260).
 - ghcr registry checks: S190 discovers Docker Hub tags only; ghcr
   listings need a token flow before Immich updates discover
   upstream.

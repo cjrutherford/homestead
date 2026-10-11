@@ -78,6 +78,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runUpdates(ctx, client, rest[1:], stdout, stderr)
 	case "backup":
 		return runBackup(ctx, client, rest[1:], stdout, stderr)
+	case "scheduler":
+		return runScheduler(ctx, client, rest[1:], stdout, stderr)
 	case "edge":
 		return runEdge(ctx, client, rest[1:], stdout, stderr)
 	case "storage":
@@ -130,6 +132,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  drift <review|accept|restore> <package> [--follow]  managed-state drift choices (S244)")
 	fmt.Fprintln(w, "  updates <list|apply>  application updates review and apply (S243)")
 	fmt.Fprintln(w, "  backup <destination|schedules|schedule|unschedule>  backup configuration (S238)")
+	fmt.Fprintln(w, "  scheduler jobs  scheduled jobs, last run and next due (S260)")
 	fmt.Fprintln(w, "  edge deploy [--follow]  deploy the Caddy edge proxy (S237)")
 	fmt.Fprintln(w, "  edge routes set -f FILE [--follow]  reconcile the proxy route table (S237)")
 	fmt.Fprintln(w, "  storage <mounts|register|registrations|assign|assignments>  mounted storage setup (S235)")
