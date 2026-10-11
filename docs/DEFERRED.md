@@ -84,11 +84,11 @@
 - Dockge route reconciliation: S211 models and links the local-only
   route, but no flow writes it into the proxy yet; the direct UI
   port serves until then.
-- Drift command surface, scheduled scans, live-state comparison:
-  S212/S213 detect and resolve generated file drift on demand
-  through the API and dashboard; CLI affordances, wall-clock
-  scanning, and running-container-versus-file comparison belong
-  to later slices.
+- Drift scheduled scans and live-state comparison: S212/S213/S244
+  detect and resolve generated file drift on demand through the
+  API, dashboard, and CLI; wall-clock scanning and
+  running-container-versus-file comparison belong to later
+  slices.
 - Storage dashboard surface: S235 covers the API and CLI;
   dashboard affordances for mounts, registrations, and
   assignments belong to later slices.

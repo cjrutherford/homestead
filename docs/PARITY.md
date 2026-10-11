@@ -60,7 +60,7 @@ for an intentional gap. The Notes column is free text.
 | GET | /api/v1/updates | `"updates"` | `updates` | Review rows on both surfaces |
 | POST | /api/v1/updates/{name}/apply | `"updates"` | `applyUpdate` | Approved updates on both surfaces |
 | GET | /api/v1/dockge | n/a | `dockge` | Expert-interface link with assessed policy on dashboard; no command surface yet |
-| GET | /api/v1/catalog/{name}/drift | n/a | `driftReview` | Managed-state review on dashboard; no command surface yet |
-| POST | /api/v1/catalog/{name}/drift | n/a | `driftResolve` | Accept or restore choice on dashboard; no command surface yet |
+| GET | /api/v1/catalog/{name}/drift | `"drift"` | `driftReview` | Managed-state review on both surfaces |
+| POST | /api/v1/catalog/{name}/drift | `"drift"` | `driftResolve` | Accept or restore choice on both surfaces |
 | GET | / | n/a | `app-root` | The UI itself; the CLI is the other interface. Catch-all also answers HEAD; mux method patterns cannot express both without conflicting, so both rows stand for one Handle |
 | HEAD | / | n/a | `app-root` | Same catch-all as GET / |

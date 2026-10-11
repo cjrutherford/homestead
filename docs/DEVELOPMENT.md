@@ -566,6 +566,20 @@ homesteadctl backup unschedule --package jellyfin
   Backup runs themselves still fire through later slices;
   dashboard surfaces belong to later slices.
 
+## Drift CLI (S244)
+
+```bash
+homesteadctl drift review jellyfin
+homesteadctl drift accept jellyfin
+homesteadctl drift restore jellyfin --follow
+```
+
+- Review, accept, and restore over the drift API: review prints
+  both sides per drifted file, accept adopts with per-path
+  confirmation, restore reports no-ops without opening
+  operations and streams with follow. Proven live in KVM
+  against hand-edited compose files.
+
 ## Updates CLI (S243)
 
 ```bash
