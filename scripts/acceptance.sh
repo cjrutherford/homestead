@@ -111,6 +111,15 @@ else
 	echo "no export file; continuing with fresh configuration"
 fi
 
+phase "storage"
+# Catalog requirements read free space from assigned mounts: a fresh
+# appliance has none, so register and assign the mounted storage through
+# the supported surfaces (idempotent, so reruns and imports are fine).
+"$CTL" storage register --mountpoint "$HOMESTEAD_APP_MOUNT" --label app --actor "$HOMESTEAD_ADMIN_USER" || fail storage "registering application mount refused"
+"$CTL" storage register --mountpoint "$HOMESTEAD_BULK_MOUNT" --label bulk --actor "$HOMESTEAD_ADMIN_USER" || fail storage "registering bulk mount refused"
+"$CTL" storage assign --class application --mountpoint "$HOMESTEAD_APP_MOUNT" --actor "$HOMESTEAD_ADMIN_USER" || fail storage "assigning application class refused"
+"$CTL" storage assign --class bulk --mountpoint "$HOMESTEAD_BULK_MOUNT" --actor "$HOMESTEAD_ADMIN_USER" || fail storage "assigning bulk class refused"
+
 phase "doctor"
 "$CTL" doctor || fail doctor "host checks failed"
 

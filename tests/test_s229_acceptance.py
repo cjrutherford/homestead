@@ -47,6 +47,7 @@ class TestAcceptanceScript(unittest.TestCase):
     def test_phases_cover_chain(self):
         content = read("scripts/acceptance.sh")
         for symbol in ("preconditions", "bootstrap", "claim", "admin",
+                       "storage register", "storage assign",
                        "doctor", "firewall", "install_package",
                        "drift", "check_stack", "wait_healthy",
                        "HOMESTEAD_HEALTHY_APPS", "acceptance PASSED"):
