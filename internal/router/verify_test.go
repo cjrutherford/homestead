@@ -132,9 +132,16 @@ func TestVerifyAttribution(t *testing.T) {
 	t.Run("host firewall signature", func(t *testing.T) {
 		// Kernel claims a listener, dials still fail: the firewall
 		// signature, reproduced deterministically.
-		fixtureProc(t, listenFixture(18081))
+		// Bind and release an ephemeral port so the dial is refused.
+		refused, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("listen: %v", err)
+		}
+		closedPort := refused.Addr().(*net.TCPAddr).Port
+		_ = refused.Close()
+		fixtureProc(t, listenFixture(closedPort))
 		verdict, err := VerifyForward(ctx, ForwardCheck{
-			Forward: Forward{Name: "web-http", Protocol: ProtocolTCP, Port: 18081},
+			Forward: Forward{Name: "web-http", Protocol: ProtocolTCP, Port: closedPort},
 			LANAddr: lanIP,
 		})
 		if err != nil {
