@@ -2,6 +2,7 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { ApiService, PackageUpdate } from '../core/api.service';
+import { StateMessage } from '../state/state-message';
 
 /**
  * Update review page (S193): per-package drift plans against running
@@ -11,7 +12,7 @@ import { ApiService, PackageUpdate } from '../core/api.service';
  * out to operation detail for progress; this page never blocks.
  */
 @Component({
-  imports: [RouterLink],
+  imports: [StateMessage, RouterLink],
   selector: 'app-updates',
   templateUrl: './updates.html',
 })

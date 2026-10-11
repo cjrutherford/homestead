@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { WizardService } from '../wizard/wizard.service';
 import { WizardShell } from '../wizard/wizard-shell';
+import { StateMessage } from '../state/state-message';
 
 type WizardStep = 'token' | 'admin' | 'done';
 
@@ -20,7 +21,7 @@ const STEPS = ['Claim token', 'Administrator', 'Done'];
  * tokens and passwords never touch wizard state.
  */
 @Component({
-  imports: [RouterLink, WizardShell],
+  imports: [StateMessage, RouterLink, WizardShell],
   selector: 'app-claim',
   templateUrl: './claim.html',
 })

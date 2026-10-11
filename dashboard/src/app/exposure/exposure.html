@@ -7,11 +7,11 @@
   </p>
 
   @if (error()) {
-    <p role="alert" class="error">{{ error() }}</p>
+    <app-state-message kind="error" [headline]="error()" />
   }
 
   @if (notice()) {
-    <p role="status">{{ notice() }}</p>
+    <app-state-message kind="status" [headline]="notice()" />
   }
 
   @if (operationId(); as id) {
@@ -129,6 +129,6 @@
       }
     </ul>
   } @else {
-    <p>No reviewed selection yet: save a route and target above.</p>
+    <app-state-message kind="empty" headline="No reviewed selection yet: save a route and target above." />
   }
 </section>

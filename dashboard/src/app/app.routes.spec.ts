@@ -10,6 +10,7 @@ import { OperationDetail } from './operations/operation-detail';
 import { Updates } from './updates/updates';
 import { Advanced } from './advanced/advanced';
 import { Drift } from './drift/drift';
+import { ValidationBoard } from './validation/validation-board';
 import { NotFound } from './not-found/not-found';
 
 describe('routes', () => {
@@ -58,7 +59,13 @@ describe('routes', () => {
 
   it('serves the drift page', () => {
     expect(routes.find((route) => route.path === 'drift')?.component).toBe(Drift);
-  });  it('falls back to not-found last', () => {
+  });
+
+  it('serves the validation board', () => {
+    expect(routes.find((route) => route.path === 'validation-board')?.component).toBe(ValidationBoard);
+  });
+
+  it('falls back to not-found last', () => {
     const last = routes[routes.length - 1];
     expect(last.path).toBe('**');
     expect(last.component).toBe(NotFound);

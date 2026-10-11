@@ -2,7 +2,7 @@
   <h2>Status</h2>
 
   @if (error()) {
-    <p role="alert" class="error">{{ error() }}</p>
+    <app-state-message kind="error" [headline]="error()" />
   } @else {
     <dl>
       <div>

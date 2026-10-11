@@ -2,11 +2,11 @@
   <h2>Updates</h2>
 
   @if (error()) {
-    <p role="alert" class="error">{{ error() }}</p>
+    <app-state-message kind="error" [headline]="error()" />
   }
 
   @if (notice()) {
-    <p role="status">{{ notice() }}</p>
+    <app-state-message kind="status" [headline]="notice()" />
   }
 
   @if (operationId(); as id) {
@@ -17,7 +17,7 @@
   }
 
   @if (busy() && rows().length === 0) {
-    <p>Loading…</p>
+    <app-state-message kind="loading" headline="Loading…" />
   } @else {
     <button type="button" (click)="refresh()" [disabled]="busy()">
       Refresh plans
@@ -27,7 +27,7 @@
         <li>
           <h3>{{ row.package }}</h3>
           @if (!row.installed) {
-            <p>Not installed; nothing to update.</p>
+            <app-state-message kind="empty" headline="Not installed; nothing to update." />
           } @else if ((row.plan.Services ?? []).length === 0) {
             <p>Already current.</p>
           } @else {

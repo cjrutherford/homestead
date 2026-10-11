@@ -7,6 +7,7 @@ import {
   InstallPlan,
   PackageSummary,
 } from '../core/api.service';
+import { StateMessage } from '../state/state-message';
 
 interface VolumeRow {
   service: string;
@@ -34,7 +35,7 @@ interface ConfigRow {
  * link out to operation detail for progress; this page never blocks.
  */
 @Component({
-  imports: [RouterLink],
+  imports: [StateMessage, RouterLink],
   selector: 'app-catalog',
   templateUrl: './catalog.html',
 })

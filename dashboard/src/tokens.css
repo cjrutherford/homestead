@@ -1,0 +1,108 @@
+/*
+ * Homestead design tokens (S248). Clean-room scales inspired by the
+ * optimistic-tanuki contract — values reimplemented here, no vendored
+ * sources. Single custom-property contract every component consumes;
+ * pages never hardcode spacing, type, radius, shadow, or breakpoints.
+ */
+
+:root {
+  /* Spacing scale (4px base). */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  --spacing-xxl: 3rem;
+
+  /* Type scale. */
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-xxl: 1.5rem;
+  --font-body: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', Menlo, monospace;
+
+  /* Shape. */
+  --border-radius-sm: 0.125rem;
+  --border-radius-md: 0.25rem;
+  --border-radius-lg: 0.5rem;
+
+  /* Elevation. */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.08);
+  --shadow-md: 0 2px 8px rgb(0 0 0 / 0.12);
+  --shadow-lg: 0 8px 24px rgb(0 0 0 / 0.16);
+
+  /* Surface and text. */
+  --background: #ffffff;
+  --foreground: #1a1a1a;
+  --surface: #f6f6f4;
+  --border: #dddddd;
+  --primary: #1f4fa3;
+  --primary-foreground: #ffffff;
+  --muted: #444444;
+  --danger: #aa0000;
+  --success: #1b6e2f;
+
+  /* Layers. */
+  --z-index-dropdown: 1000;
+  --z-index-modal: 1050;
+
+  /* Touch and content. */
+  --touch-target: 2.75rem;
+  --content-width: 60rem;
+}
+
+/*
+ * Canonical breakpoints (min-width semantics, mobile first; max-width
+ * rules use the value minus 0.0625rem). Custom properties cannot be
+ * used inside media queries, so these literals are the contract and
+ * every @media rule in the dashboard must use one of them:
+ *
+ *   xs  30rem  (480px)   large phones
+ *   sm  40rem  (640px)   shell collapses below this: stacked header,
+ *                        wrapping nav, full-bleed content
+ *   md  48rem  (768px)   tablets
+ *   lg  64rem  (1024px)  desktop
+ *   xl  80rem  (1280px)  wide desktop
+ *
+ * Minimum supported viewport is 375px wide with no horizontal
+ * overflow; interactive controls are at least --touch-target (44px).
+ */
+
+/*
+ * Themes: selected with data-theme on any element (the validation
+ * board nests all of them). Light is the default on :root.
+ */
+[data-theme='dark'] {
+  --background: #14161a;
+  --foreground: #ececec;
+  --surface: #1e2127;
+  --border: #3a3f48;
+  --primary: #8ab4ff;
+  --primary-foreground: #101418;
+  --muted: #b4b9c2;
+  --danger: #ff8a80;
+  --success: #7ddc96;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 2px 8px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 8px 24px rgb(0 0 0 / 0.6);
+}
+
+[data-theme='high-contrast'] {
+  --background: #000000;
+  --foreground: #ffffff;
+  --surface: #000000;
+  --border: #ffffff;
+  --primary: #ffff00;
+  --primary-foreground: #000000;
+  --muted: #ffffff;
+  --danger: #ff6b6b;
+  --success: #66ff99;
+}
+
+[data-theme] {
+  color: var(--foreground);
+  background: var(--background);
+}

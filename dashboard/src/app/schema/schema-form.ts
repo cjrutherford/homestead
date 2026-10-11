@@ -1,3 +1,4 @@
+import { StateMessage } from '../state/state-message';
 import { Component, computed, input, output, signal } from '@angular/core';
 import { ConfigField, FieldError, FieldValues } from './schema';
 
@@ -9,6 +10,7 @@ import { ConfigField, FieldError, FieldValues } from './schema';
  * values on submit; the server remains the validation source of truth.
  */
 @Component({
+  imports: [StateMessage],
   selector: 'app-schema-form',
   templateUrl: './schema-form.html',
 })

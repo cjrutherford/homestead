@@ -6,11 +6,11 @@
   </p>
 
   @if (error()) {
-    <p role="alert" class="error">{{ error() }}</p>
+    <app-state-message kind="error" [headline]="error()" />
   }
 
   @if (notice()) {
-    <p role="status">{{ notice() }}</p>
+    <app-state-message kind="status" [headline]="notice()" />
   }
 
   @if (operationId(); as id) {
@@ -21,7 +21,7 @@
   }
 
   @if (busy() && packages().length === 0) {
-    <p>Loading…</p>
+    <app-state-message kind="loading" headline="Loading…" />
   } @else {
     <ul>
       @for (pkg of packages(); track pkg.name) {
@@ -42,7 +42,7 @@
       Refresh review
     </button>
     @if (review().length === 0) {
-      <p>No drift: generated files match managed state.</p>
+      <app-state-message kind="empty" headline="No drift: generated files match managed state." />
     } @else {
       <ul>
         @for (file of review(); track file.path) {

@@ -7,7 +7,7 @@
     <h2>Claim this appliance</h2>
 
     @if (error()) {
-      <p role="alert" class="error">{{ error() }}</p>
+      <app-state-message kind="error" [headline]="error()" />
     }
 
     @if (step() === 'token') {

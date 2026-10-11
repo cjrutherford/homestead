@@ -2,6 +2,7 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { ApiService, FileDrift, PackageSummary } from '../core/api.service';
+import { StateMessage } from '../state/state-message';
 
 /**
  * Drift review page (S213): per-package managed-state review with
@@ -11,7 +12,7 @@ import { ApiService, FileDrift, PackageSummary } from '../core/api.service';
  * progress. This page never changes anything by itself.
  */
 @Component({
-  imports: [RouterLink],
+  imports: [StateMessage, RouterLink],
   selector: 'app-drift',
   templateUrl: './drift.html',
 })

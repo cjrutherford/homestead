@@ -12,6 +12,7 @@ import { Exposure } from './exposure/exposure';
 import { Tunnel } from './tunnel/tunnel';
 import { Operations } from './operations/operations';
 import { OperationDetail } from './operations/operation-detail';
+import { ValidationBoard } from './validation/validation-board';
 import { NotFound } from './not-found/not-found';
 
 export const routes: Routes = [
@@ -29,6 +30,7 @@ export const routes: Routes = [
   { path: 'tunnel', component: Tunnel },
   { path: 'operations', component: Operations },
   { path: 'operations/:id', component: OperationDetail },
+  { path: 'validation-board', component: ValidationBoard },
   // Later slices register their routes here, before the wildcard.
   { path: '**', component: NotFound },
 ];

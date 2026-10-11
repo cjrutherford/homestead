@@ -2,10 +2,11 @@ import { Component, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { SessionService } from '../auth/session.service';
+import { StateMessage } from '../state/state-message';
 
 /** Login page (S033): username plus password, session on success. */
 @Component({
-  imports: [RouterLink],
+  imports: [StateMessage, RouterLink],
   selector: 'app-login',
   templateUrl: './login.html',
 })

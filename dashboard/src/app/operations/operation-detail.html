@@ -6,10 +6,10 @@
     <h2>{{ op.type }}</h2>
     <p>Status: {{ op.status }}</p>
     @if (op.error) {
-      <p role="alert" class="error">{{ op.error }}</p>
+      <app-state-message kind="error" [headline]="op.error" />
     }
     @if (op.steps.length === 0) {
-      <p>No steps recorded.</p>
+      <app-state-message kind="empty" headline="No steps recorded." />
     } @else {
       <ol>
         @for (step of op.steps; track step.id) {
@@ -21,6 +21,6 @@
       <a routerLink="/operations">Back to operations</a>
     </p>
   } @else {
-    <p>Loading…</p>
+    <app-state-message kind="loading" headline="Loading…" />
   }
 </section>

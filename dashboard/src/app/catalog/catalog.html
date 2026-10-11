@@ -2,11 +2,11 @@
   <h2>Catalog</h2>
 
   @if (error()) {
-    <p role="alert" class="error">{{ error() }}</p>
+    <app-state-message kind="error" [headline]="error()" />
   }
 
   @if (busy() && packages().length === 0) {
-    <p>Loading…</p>
+    <app-state-message kind="loading" headline="Loading…" />
   } @else {
     <ul>
       @for (pkg of packages(); track pkg.name) {

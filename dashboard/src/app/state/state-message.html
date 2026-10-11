@@ -1,0 +1,3 @@
+@if (headline(); as text) {
+  <p [attr.role]="role()" [class]="'state-message state-' + kind()">{{ text }}</p>
+}

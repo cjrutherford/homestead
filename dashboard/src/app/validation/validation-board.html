@@ -1,0 +1,59 @@
+<h1>Validation board</h1>
+<p>Every primitive under each theme. Resize to 375px to check overflow.</p>
+
+@for (theme of themes; track theme) {
+  <section class="card board-theme" [attr.data-theme]="theme" [attr.data-board]="theme">
+    <h2>{{ theme }}</h2>
+
+    <h3>Buttons</h3>
+    <p>
+      <button type="button">Default</button>
+      <button type="button" disabled>Disabled</button>
+    </p>
+
+    <h3>Inputs</h3>
+    <label>
+      Text
+      <input type="text" name="sample-text-{{ theme }}" value="Sample" />
+    </label>
+    <label>
+      Select
+      <select name="sample-select-{{ theme }}">
+        <option>One</option>
+        <option>Two</option>
+      </select>
+    </label>
+    <label>
+      <input type="checkbox" name="sample-check-{{ theme }}" checked />
+      Checkbox
+    </label>
+
+    <h3>State messages</h3>
+    @for (kind of kinds; track kind) {
+      <app-state-message [kind]="kind" [headline]="'Sample ' + kind + ' message.'" />
+    }
+
+    <h3>Table</h3>
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Value</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>alpha</td><td>1</td></tr>
+        <tr><td>beta</td><td>2</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Card</h3>
+    <div class="card">Nested card on a themed surface.</div>
+
+    <h3>Navigation</h3>
+    <nav aria-label="Sample {{ theme }}">
+      <a href="#sample">Sample link</a>
+      <a href="#other">Other link</a>
+    </nav>
+
+    <h3>Code</h3>
+    <pre>homesteadctl status</pre>
+  </section>
+}

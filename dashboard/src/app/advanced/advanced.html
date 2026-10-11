@@ -6,7 +6,7 @@
   </p>
 
   @if (error()) {
-    <p role="alert" class="error">{{ error() }}</p>
+    <app-state-message kind="error" [headline]="error()" />
   }
 
   <label>
@@ -22,7 +22,7 @@
   </button>
 
   @if (busy() && link() === null) {
-    <p>Loading…</p>
+    <app-state-message kind="loading" headline="Loading…" />
   }
 
   @if (link(); as entry) {

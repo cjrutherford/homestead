@@ -3,11 +3,11 @@
     <h2>Host firewall</h2>
 
     @if (error()) {
-      <p role="alert" class="error">{{ error() }}</p>
+      <app-state-message kind="error" [headline]="error()" />
     }
 
     @if (busy() && !status()) {
-      <p>Loading…</p>
+      <app-state-message kind="loading" headline="Loading…" />
     } @else if (stepIndex() === 0) {
       <p>Detected LAN subnets. Management stays reachable from these networks.</p>
       <ul>

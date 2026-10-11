@@ -637,6 +637,31 @@ homesteadctl tunnel teardown <tunnel-id> --account-id ID --follow
   and teardown names its account explicitly. Router mapping stays
   available where it works.
 
+## Dashboard design system (S248)
+
+Clean-room (ADR-019): scales are reimplemented, nothing is vendored
+from Tanuki or any UI kit.
+
+- Tokens live in `dashboard/src/tokens.css` (imported by
+  `styles.css`): spacing, type, radius, shadow, z-index, surface
+  colors, `--touch-target` (44px). Components consume custom
+  properties; pages never hardcode these values.
+- Themes: `light` (default on `:root`), `dark`, and `high-contrast`,
+  selected with a `data-theme` attribute on any element.
+- Canonical breakpoints (xs 30rem, sm 40rem, md 48rem, lg 64rem, xl
+  80rem) are documented in `tokens.css`; custom properties cannot be
+  used in media queries, so `@media` rules use those literals. The
+  shell collapses below sm; 375px must not overflow horizontally and
+  buttons, inputs, selects, and nav links keep the 44px minimum.
+- `app-state-message` (`app/state/`) is the one empty, loading,
+  error, and status component. Errors use `role="alert"`, statuses
+  `role="status"`, the rest no role; a null or empty headline
+  renders nothing so nullable signals bind directly. Do not add ad hoc
+  `<p class="error">` markup.
+- The validation board at `/validation-board` renders every
+  primitive under every theme. It is static and API-free, so it needs
+  no session and has no parity row (PARITY.md covers API routes).
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing

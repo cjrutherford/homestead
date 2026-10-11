@@ -70,7 +70,7 @@
           }
           <p class="hint">{{ field.description }}</p>
           @if (errorFor(field.name); as reason) {
-            <p role="alert" class="error">{{ reason }}</p>
+            <app-state-message kind="error" [headline]="reason" />
           }
         </div>
       }

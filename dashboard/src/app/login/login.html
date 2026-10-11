@@ -8,7 +8,7 @@
     </p>
   } @else {
     @if (error()) {
-      <p role="alert" class="error">{{ error() }}</p>
+      <app-state-message kind="error" [headline]="error()" />
     }
     <form
       (submit)="submit(nameInput.value, passwordInput.value); $event.preventDefault()"

@@ -1,4 +1,5 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
+import { StateMessage } from '../state/state-message';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import {
@@ -16,7 +17,7 @@ import {
  * changes anything except through approve and apply.
  */
 @Component({
-  imports: [RouterLink],
+  imports: [StateMessage, RouterLink],
   selector: 'app-exposure',
   templateUrl: './exposure.html',
 })

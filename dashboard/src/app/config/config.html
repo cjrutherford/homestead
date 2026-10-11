@@ -2,13 +2,13 @@
   <h2>Configuration</h2>
 
   @if (loading()) {
-    <p>Loading…</p>
+    <app-state-message kind="loading" headline="Loading…" />
   } @else if (loadError()) {
-    <p role="alert" class="error">{{ loadError() }}</p>
+    <app-state-message kind="error" [headline]="loadError()" />
   } @else if (reviewing()) {
     <h3>Review changes</h3>
     @if (changes().length === 0) {
-      <p>No changes.</p>
+      <app-state-message kind="empty" headline="No changes." />
     } @else {
       <ul>
         @for (change of changes(); track change.key) {
@@ -25,7 +25,7 @@
     <button type="button" (click)="back()">Back to editing</button>
   } @else {
     @if (notice()) {
-      <p role="status">{{ notice() }}</p>
+      <app-state-message kind="status" [headline]="notice()" />
     }
     @for (revision of [revision()]; track revision) {
       <app-schema-form

@@ -1,6 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService, DockgeLink } from '../core/api.service';
+import { StateMessage } from '../state/state-message';
 
 /**
  * Advanced administration page (S211): the expert Compose interface
@@ -11,6 +12,7 @@ import { ApiService, DockgeLink } from '../core/api.service';
  */
 @Component({
   selector: 'app-advanced',
+  imports: [StateMessage],
   templateUrl: './advanced.html',
 })
 export class Advanced implements OnInit {

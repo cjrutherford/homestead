@@ -1,10 +1,11 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ApiService, OperationState } from '../core/api.service';
+import { StateMessage } from '../state/state-message';
 
 /** Operations list page (S064): newest-first records linking to detail. */
 @Component({
-  imports: [RouterLink],
+  imports: [StateMessage, RouterLink],
   selector: 'app-operations',
   templateUrl: './operations.html',
 })

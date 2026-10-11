@@ -5,6 +5,7 @@ import { forkJoin } from 'rxjs';
 import { ApiService, FirewallPlan, FirewallStatus } from '../core/api.service';
 import { WizardService } from '../wizard/wizard.service';
 import { WizardShell } from '../wizard/wizard-shell';
+import { StateMessage } from '../state/state-message';
 
 const WIZARD_ID = 'firewall';
 
@@ -20,7 +21,7 @@ const STEP_IDS = ['subnets', 'rules', 'review', 'done'];
  * apply protect the management path.
  */
 @Component({
-  imports: [RouterLink, WizardShell],
+  imports: [StateMessage, RouterLink, WizardShell],
   selector: 'app-firewall',
   templateUrl: './firewall.html',
 })

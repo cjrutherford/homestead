@@ -102,6 +102,12 @@
 - Storage dashboard surface: S235 covers the API and CLI;
   dashboard affordances for mounts, registrations, and
   assignments belong to later slices.
+- Theme selection: S248 defines light, dark, and high-contrast
+  themes and previews them on the validation board; no user-facing
+  switcher or prefers-color-scheme wiring exists yet.
+- Visual regression automation: the validation board is checked
+  structurally in unit tests; screenshot comparison and an automated
+  375px overflow check need a browser harness.
 - Docker Engine bootstrap: S220 installs the Homestead kernel
   only; engine installation on clean machines (S071 owns the
   operation) has no bootstrap wiring yet.

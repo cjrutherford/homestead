@@ -2,11 +2,11 @@
   <h2>Operations</h2>
 
   @if (error()) {
-    <p role="alert" class="error">{{ error() }}</p>
+    <app-state-message kind="error" [headline]="error()" />
   } @else if (operations() === null) {
-    <p>Loading…</p>
+    <app-state-message kind="loading" headline="Loading…" />
   } @else if (operations()?.length === 0) {
-    <p>No operations yet.</p>
+    <app-state-message kind="empty" headline="No operations yet." />
   } @else {
     <ul>
       @for (op of operations() ?? []; track op.id) {

@@ -2,6 +2,7 @@ import { Component, DestroyRef, inject, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ApiService, OperationState } from '../core/api.service';
+import { StateMessage } from '../state/state-message';
 
 /**
  * Operation detail page (S064): initial fetch plus live state events
@@ -9,7 +10,7 @@ import { ApiService, OperationState } from '../core/api.service';
  * states stop the stream server-side.
  */
 @Component({
-  imports: [RouterLink],
+  imports: [StateMessage, RouterLink],
   selector: 'app-operation-detail',
   templateUrl: './operation-detail.html',
 })

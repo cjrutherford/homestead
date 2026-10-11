@@ -5,6 +5,7 @@ import { forkJoin } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { ConfigField, FieldError, FieldValues } from '../schema/schema';
 import { SchemaForm } from '../schema/schema-form';
+import { StateMessage } from '../state/state-message';
 
 export interface Change {
   key: string;
@@ -19,7 +20,7 @@ export interface Change {
  * saved state; apply persists and refreshes it.
  */
 @Component({
-  imports: [SchemaForm, JsonPipe],
+  imports: [StateMessage, SchemaForm, JsonPipe],
   selector: 'app-config',
   templateUrl: './config.html',
 })

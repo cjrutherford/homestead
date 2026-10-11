@@ -1,9 +1,11 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { ApiService, DoctorReport, Health, Identity } from '../core/api.service';
+import { StateMessage } from '../state/state-message';
 
 /** Appliance status page: daemon health, claim state, diagnostics (S044). */
 @Component({
   selector: 'app-status',
+  imports: [StateMessage],
   templateUrl: './status.html',
 })
 export class Status implements OnInit {
