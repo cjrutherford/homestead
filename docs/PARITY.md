@@ -52,13 +52,13 @@ for an intentional gap. The Notes column is free text.
 | POST | /api/v1/catalog/{name}/uninstall | `"apps"` | n/a | Approved removal on CLI; dashboard surface belongs to later slices |
 | POST | /api/v1/edge/deploy | `"edge"` | n/a | Edge deployment on CLI; dashboard surface belongs to later slices |
 | POST | /api/v1/edge/routes | `"edge"` | n/a | Route reconciliation on CLI; dashboard surface belongs to later slices |
-| GET | /api/v1/exposure/review | `"exposure"` | n/a | Reviewed plan on CLI; dashboard surface belongs to later slices |
-| GET | /api/v1/exposure/approvals | `"exposure"` | n/a | Approval records on CLI; dashboard surface belongs to later slices |
-| POST | /api/v1/exposure/approvals | `"exposure"` | n/a | Ownership approval on CLI; dashboard surface belongs to later slices |
-| POST | /api/v1/exposure/apply | `"exposure"` | n/a | Firewall and edge application on CLI; dashboard surface belongs to later slices |
-| GET | /api/v1/tunnel/status | `"tunnel"` | n/a | Discovery and health on CLI; dashboard surface belongs to S247 |
-| POST | /api/v1/tunnel/setup | `"tunnel"` | n/a | Tunnel setup on CLI; dashboard surface belongs to S247 |
-| DELETE | /api/v1/tunnel/tunnels/{id} | `"tunnel"` | n/a | Tunnel teardown on CLI; dashboard surface belongs to S247 |
+| GET | /api/v1/exposure/review | `"exposure"` | `exposureReview` | Reviewed plan on CLI and dashboard |
+| GET | /api/v1/exposure/approvals | `"exposure"` | `exposureApprovals` | Approval records on CLI and dashboard |
+| POST | /api/v1/exposure/approvals | `"exposure"` | `exposureApprove` | Ownership approval on CLI and dashboard |
+| POST | /api/v1/exposure/apply | `"exposure"` | `exposureApply` | Firewall and edge application on CLI and dashboard |
+| GET | /api/v1/tunnel/status | `"tunnel"` | `tunnelStatus` | Discovery and health on CLI and dashboard |
+| POST | /api/v1/tunnel/setup | `"tunnel"` | `tunnelSetup` | Tunnel setup on CLI and dashboard |
+| DELETE | /api/v1/tunnel/tunnels/{id} | `"tunnel"` | `tunnelTeardown` | Tunnel teardown on CLI and dashboard |
 | GET | /api/v1/backups/destination | `"backup"` | n/a | Resolved backup root on CLI; dashboard surface belongs to later slices |
 | GET | /api/v1/backups/schedules | `"backup"` | n/a | Schedule records on CLI; dashboard surface belongs to later slices |
 | POST | /api/v1/backups/schedules | `"backup"` | n/a | Schedule save on CLI; dashboard surface belongs to later slices |

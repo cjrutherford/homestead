@@ -1,0 +1,145 @@
+<section aria-label="Tunnel remote access">
+  <h2>Tunnel</h2>
+  <p>
+    When the router stays silent — carrier-grade NAT, no admin access,
+    no UPnP answers — a tunnel carries public traffic over an
+    outbound-only connection. Router mappings stay available where
+    they work; the tunnel is the path that needs no router at all.
+  </p>
+
+  @if (error()) {
+    <p role="alert" class="error">{{ error() }}</p>
+  }
+
+  @if (notice()) {
+    <p role="status">{{ notice() }}</p>
+  }
+
+  @if (operationId(); as id) {
+    <p>
+      Operation started.
+      <a [routerLink]="['/operations', id]">Follow operation {{ id }}</a>
+    </p>
+  }
+
+  @if (status(); as state) {
+    <h3>Discovery</h3>
+    <p>
+      Preferred path: <strong>{{ state.preferred }}</strong>
+      @if (state.gateway) {
+        (gateway {{ state.gateway }} on {{ state.interface }})
+      }
+    </p>
+    @if (state.preferred === 'tunnel') {
+      <p>
+        No router automation answered, so the tunnel leads. Nothing
+        on the router needs changing.
+      </p>
+    } @else if (state.preferred !== 'manual') {
+      <p>
+        The router answers {{ state.preferred }}; router mapping and
+        tunnel both work, and the tunnel still needs no router changes.
+      </p>
+    }
+    @if (state.discovery_error) {
+      <p>Discovery note: {{ state.discovery_error }}</p>
+    }
+    <p>
+      Connector: installed={{ state.connector.installed }}
+      active={{ state.connector.active }}
+    </p>
+
+    <h3>Recorded tunnels ({{ state.tunnels.length }})</h3>
+    <ul>
+      @for (tunnel of state.tunnels; track tunnel.id) {
+        <li>
+          <h4>{{ tunnel.name }}: {{ tunnel.status }}</h4>
+          <p>{{ tunnel.connections.length }} connection(s)</p>
+          <form
+            (submit)="
+              teardown(tunnel.id, accountInput.value);
+              $event.preventDefault()
+            "
+          >
+            <label>
+              Account ID
+              <input
+                #accountInput
+                name="account-id"
+                autocomplete="off"
+                [disabled]="busy()"
+              />
+            </label>
+            <button type="submit" [disabled]="busy()">Tear down</button>
+          </form>
+        </li>
+      } @empty {
+        <li>No tunnels recorded yet.</li>
+      }
+    </ul>
+
+    <h3>Routes ({{ state.routes.length }})</h3>
+    <ul>
+      @for (route of state.routes; track route.Hostname) {
+        <li>{{ route.Hostname }} → {{ route.Service }}</li>
+      } @empty {
+        <li>No served hostnames recorded yet.</li>
+      }
+    </ul>
+  } @else {
+    <p>Loading…</p>
+  }
+
+  <h3>Set up a tunnel</h3>
+  <form
+    (submit)="
+      setup(
+        nameInput.value,
+        hostInput.value,
+        serviceInput.value,
+        tokenInput.value,
+        accountSetupInput.value
+      );
+      $event.preventDefault()
+    "
+  >
+    <label>
+      Tunnel name
+      <input #nameInput name="name" autocomplete="off" [disabled]="busy()" />
+    </label>
+    <label>
+      Hostname
+      <input #hostInput name="hostname" autocomplete="off" [disabled]="busy()" />
+    </label>
+    <label>
+      Local service
+      <input
+        #serviceInput
+        name="service"
+        placeholder="http://127.0.0.1:8080"
+        autocomplete="off"
+        [disabled]="busy()"
+      />
+    </label>
+    <label>
+      API token (sealed server-side, never shown again)
+      <input
+        #tokenInput
+        name="api-token"
+        type="password"
+        autocomplete="off"
+        [disabled]="busy()"
+      />
+    </label>
+    <label>
+      Account ID
+      <input
+        #accountSetupInput
+        name="account-id"
+        autocomplete="off"
+        [disabled]="busy()"
+      />
+    </label>
+    <button type="submit" [disabled]="busy()">Set up tunnel</button>
+  </form>
+</section>

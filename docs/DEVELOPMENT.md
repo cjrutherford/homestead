@@ -625,6 +625,18 @@ homesteadctl tunnel teardown <tunnel-id> --account-id ID --follow
   status never leaks credentials. Dashboard surfaces belong to
   S247.
 
+## Dashboard exposure surfaces (S247)
+
+- Exposure review, approval, and apply from the dashboard with
+  CLI/API parity: the selection saves through the generic wizard
+  endpoint while review always recomputes, approvals name the actor
+  with explicit CIDRs, and apply links out to operation detail.
+- Tunnel remote access from the dashboard with CLI/API parity:
+  discovery leads with the tunnel when the router stays silent,
+  setup seals the token server-side without ever showing it again,
+  and teardown names its account explicitly. Router mapping stays
+  available where it works.
+
 ## Host discovery (S040+)
 
 `internal/discover` reports read-only host facts, Linux-only, failing

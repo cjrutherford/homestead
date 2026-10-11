@@ -209,6 +209,49 @@ export interface DriftResolution {
   detail?: string;
 }
 
+/** GET /api/v1/exposure/review — recomputed plan for the saved selection. */
+export interface ExposurePlan {
+  Host: string;
+  From: string;
+  To: string;
+  Assessment: {
+    Aligned: boolean;
+    Recommended: string;
+    Findings: { Severity: string; Message: string }[];
+  };
+  DNS: { Name: string; Type: string; Value: string }[];
+  TLS: { Action: string; Name: string; Detail: string };
+  Firewall: {
+    Service: { Name: string; Protocol: string; Port: number };
+    Sources: { Zone: string; CIDR: string }[];
+  }[];
+  Edge: { Host: string; Exposure: string };
+}
+
+/** Exposure approval record. */
+export interface ExposureApproval {
+  host: string;
+  actor: string;
+}
+
+/** GET /api/v1/tunnel/status — discovery, tunnels, and connector. */
+export interface TunnelStatus {
+  preferred: string;
+  gateway: string;
+  interface: string;
+  protocols: string[];
+  tunnels: {
+    id: string;
+    name: string;
+    status: string;
+    connections: { Colo: string; Opened: string }[];
+  }[];
+  routes: { Hostname: string; TunnelID: string; Service: string }[];
+  connector: { installed: boolean; active: boolean };
+  accounts: number;
+  discovery_error?: string;
+}
+
 /** GET /api/v1/wizards/:id — saved wizard progress. */
 export interface WizardState {
   wizard: string;
@@ -335,6 +378,56 @@ export class ApiService {
     return this.http.post<DriftResolution>(`/api/v1/catalog/${name}/drift`, {
       action,
     });
+  }
+
+  exposureReview(): Observable<ExposurePlan> {
+    return this.http.get<ExposurePlan>('/api/v1/exposure/review');
+  }
+
+  exposureApprovals(): Observable<ExposureApproval[]> {
+    return this.http.get<ExposureApproval[]>('/api/v1/exposure/approvals');
+  }
+
+  exposureApprove(
+    actor: string,
+    networks: string[],
+  ): Observable<ExposureApproval> {
+    return this.http.post<ExposureApproval>('/api/v1/exposure/approvals', {
+      actor,
+      networks,
+    });
+  }
+
+  exposureApply(host: string): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>('/api/v1/exposure/apply', {
+      host,
+    });
+  }
+
+  tunnelStatus(): Observable<TunnelStatus> {
+    return this.http.get<TunnelStatus>('/api/v1/tunnel/status');
+  }
+
+  tunnelSetup(
+    name: string,
+    hostname: string,
+    service: string,
+    apiToken: string,
+    accountId: string,
+  ): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>('/api/v1/tunnel/setup', {
+      name,
+      hostname,
+      service,
+      api_token: apiToken,
+      account_id: accountId,
+    });
+  }
+
+  tunnelTeardown(id: string, accountId: string): Observable<OperationStarted> {
+    return this.http.delete<OperationStarted>(
+      `/api/v1/tunnel/tunnels/${encodeURIComponent(id)}?account_id=${encodeURIComponent(accountId)}`,
+    );
   }
 
   operation(id: number): Observable<OperationState> {

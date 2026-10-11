@@ -1,0 +1,134 @@
+<section aria-label="Public exposure">
+  <h2>Exposure</h2>
+  <p>
+    Review the planned public change before approving it under your
+    name, then apply through firewall and edge. Nothing here runs
+    until you approve and apply.
+  </p>
+
+  @if (error()) {
+    <p role="alert" class="error">{{ error() }}</p>
+  }
+
+  @if (notice()) {
+    <p role="status">{{ notice() }}</p>
+  }
+
+  @if (operationId(); as id) {
+    <p>
+      Apply started.
+      <a [routerLink]="['/operations', id]">Follow operation {{ id }}</a>
+    </p>
+  }
+
+  <h3>Selection</h3>
+  <form
+    (submit)="
+      save(
+        hostInput.value,
+        targetInput.value,
+        portInput.value,
+        toInput.value,
+        zoneInput.value,
+        ipInput.value
+      );
+      $event.preventDefault()
+    "
+  >
+    <label>
+      Route host
+      <input #hostInput name="host" autocomplete="off" [disabled]="busy()" />
+    </label>
+    <label>
+      Target host
+      <input #targetInput name="target" autocomplete="off" [disabled]="busy()" />
+    </label>
+    <label>
+      Target port
+      <input #portInput name="port" inputmode="numeric" [disabled]="busy()" />
+    </label>
+    <label>
+      Target exposure
+      <select #toInput name="to" [disabled]="busy()">
+        <option value="overlay">overlay</option>
+        <option value="public">public</option>
+      </select>
+    </label>
+    <label>
+      Zone
+      <input #zoneInput name="zone" autocomplete="off" [disabled]="busy()" />
+    </label>
+    <label>
+      Public IP
+      <input #ipInput name="public-ip" autocomplete="off" [disabled]="busy()" />
+    </label>
+    <button type="submit" [disabled]="busy()">Save and review</button>
+  </form>
+
+  <h3>Reviewed plan</h3>
+  @if (plan(); as reviewed) {
+    <p>
+      {{ reviewed.Host }}: {{ reviewed.From }} → {{ reviewed.To }}
+      (aligned: {{ reviewed.Assessment.Aligned }},
+      recommended: {{ reviewed.Assessment.Recommended }})
+    </p>
+    @if (reviewed.Assessment.Findings.length > 0) {
+      <ul>
+        @for (finding of reviewed.Assessment.Findings; track finding.Message) {
+          <li>{{ finding.Severity }}: {{ finding.Message }}</li>
+        }
+      </ul>
+    }
+    <h4>DNS records ({{ reviewed.DNS.length }})</h4>
+    <ul>
+      @for (record of reviewed.DNS; track record.Name + record.Type) {
+        <li>{{ record.Type }} {{ record.Name }} → {{ record.Value }}</li>
+      }
+    </ul>
+    <h4>TLS: {{ reviewed.TLS.Action }} {{ reviewed.TLS.Name }}</h4>
+    <p>{{ reviewed.TLS.Detail }}</p>
+    <h4>Firewall policies ({{ reviewed.Firewall.length }})</h4>
+    <ul>
+      @for (policy of reviewed.Firewall; track policy.Service.Name) {
+        <li>
+          {{ policy.Service.Protocol }}/{{ policy.Service.Port }}
+          ({{ policy.Service.Name }})
+        </li>
+      }
+    </ul>
+
+    <h3>Approve</h3>
+    <form
+      (submit)="
+        approve(actorInput.value, networksInput.value);
+        $event.preventDefault()
+      "
+    >
+      <label>
+        Actor
+        <input #actorInput name="actor" autocomplete="off" [disabled]="busy()" />
+      </label>
+      <label>
+        Networks (comma CIDRs, for wide sources)
+        <input #networksInput name="networks" autocomplete="off" [disabled]="busy()" />
+      </label>
+      <button type="submit" [disabled]="busy()">Approve plan</button>
+    </form>
+
+    <h3>Approvals ({{ approvals().length }})</h3>
+    <ul>
+      @for (approval of approvals(); track approval.host) {
+        <li>
+          {{ approval.host }} by {{ approval.actor }}
+          <button type="button" (click)="apply(approval.host)" [disabled]="busy()">
+            Apply
+          </button>
+        </li>
+      } @empty {
+        <li>No approvals recorded yet.</li>
+      }
+    </ul>
+  } @else {
+    <p>No reviewed selection yet: save a route and target above.</p>
+  }
+</section>
