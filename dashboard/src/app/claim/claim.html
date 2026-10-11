@@ -65,7 +65,11 @@
         } @else {
           Appliance claimed and administrator created.
         }
-        Continue to <a routerLink="/login">log in</a>.
+        @if (sessions.isLoggedIn()) {
+          You are logged in. Continue to the <a routerLink="/status">dashboard</a>.
+        } @else {
+          Continue to <a routerLink="/login">log in</a>.
+        }
       </p>
     }
   </section>

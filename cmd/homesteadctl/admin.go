@@ -67,7 +67,7 @@ func runAdminSetup(ctx context.Context, client *apiclient.Client, args []string,
 	if err != nil {
 		return fail(stderr, err)
 	}
-	admin, err := client.SetupAdmin(ctx, *username, password)
+	admin, session, err := client.SetupAdminSession(ctx, *username, password)
 	if err != nil {
 		var statusErr *apiclient.StatusError
 		if errors.As(err, &statusErr) {
@@ -84,6 +84,13 @@ func runAdminSetup(ctx context.Context, client *apiclient.Client, args []string,
 			}
 		}
 		return fail(stderr, err)
+	}
+	// Setup logs the owner in: keep the session so the next command
+	// works without a separate login (the token is never printed here).
+	if session.Token != "" {
+		if err := saveSession(storedSession{Server: client.BaseURL(), Token: session.Token, ExpiresAt: session.ExpiresAt}); err != nil {
+			fmt.Fprintln(stderr, "warning: session not stored:", err)
+		}
 	}
 	writeJSON(stdout, admin)
 	return exitOK
@@ -195,8 +202,12 @@ func runAdminPasswd(ctx context.Context, client *apiclient.Client, args []string
 		if errors.As(err, &statusErr) {
 			switch statusErr.Status {
 			case 401:
-				fmt.Fprintln(stderr, "invalid username or password")
-				return exitError
+				// The boundary's 401 is about the session; the
+				// handler's is about the current password.
+				if strings.Contains(statusErr.Body, "password") {
+					fmt.Fprintln(stderr, "invalid username or password")
+					return exitError
+				}
 			case 422:
 				fmt.Fprintln(stderr, "replacement password too weak")
 				return exitError

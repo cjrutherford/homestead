@@ -13,7 +13,7 @@ import (
 	"homestead/internal/store"
 )
 
-func auditServer(t *testing.T) *Server {
+func auditServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -26,6 +26,7 @@ func auditServer(t *testing.T) *Server {
 	srv.MountClaim(claimSvc)
 	srv.MountAuth(authSvc, audit.New(st))
 	srv.MountAudit(audit.New(st))
+	srv.MountSessionBoundary(authSvc, claimSvc, audit.New(st))
 	token, err := claimSvc.MintToken(claim.TokenTTL)
 	if err != nil {
 		t.Fatalf("MintToken: %v", err)
@@ -36,20 +37,27 @@ func auditServer(t *testing.T) *Server {
 	if _, err := authSvc.SetupAdmin("owner", "long-enough-password"); err != nil {
 		t.Fatalf("SetupAdmin: %v", err)
 	}
-	return srv
+	// A service-level login: it mints a session without writing the
+	// audit entries these tests count.
+	session, err := authSvc.Login("owner", "long-enough-password")
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	return srv, session.Token
 }
 
-func doAudit(t *testing.T, srv *Server, method, target, payload string) *httptest.ResponseRecorder {
+func doAudit(t *testing.T, srv *Server, token, method, target, payload string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, target, strings.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	return rec
 }
 
 func TestAuditListEmpty(t *testing.T) {
-	srv := auditServer(t)
-	rec := doAudit(t, srv, http.MethodGet, "/api/v1/audit", "")
+	srv, tok := auditServer(t)
+	rec := doAudit(t, srv, tok, http.MethodGet, "/api/v1/audit", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET status = %d, want 200", rec.Code)
 	}
@@ -59,18 +67,18 @@ func TestAuditListEmpty(t *testing.T) {
 }
 
 func TestLoginAttemptsAudited(t *testing.T) {
-	srv := auditServer(t)
-	rec := doAudit(t, srv, http.MethodPost, "/api/v1/sessions",
+	srv, tok := auditServer(t)
+	rec := doAudit(t, srv, tok, http.MethodPost, "/api/v1/sessions",
 		`{"username":"owner","password":"long-enough-password"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("login status = %d, want 200", rec.Code)
 	}
-	rec = doAudit(t, srv, http.MethodPost, "/api/v1/sessions",
+	rec = doAudit(t, srv, tok, http.MethodPost, "/api/v1/sessions",
 		`{"username":"owner","password":"wrong-password-here"}`)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("login status = %d, want 401", rec.Code)
 	}
-	rec = doAudit(t, srv, http.MethodGet, "/api/v1/audit", "")
+	rec = doAudit(t, srv, tok, http.MethodGet, "/api/v1/audit", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("audit status = %d, want 200", rec.Code)
 	}
@@ -87,12 +95,12 @@ func TestLoginAttemptsAudited(t *testing.T) {
 }
 
 func TestAuditLimitValidation(t *testing.T) {
-	srv := auditServer(t)
-	rec := doAudit(t, srv, http.MethodGet, "/api/v1/audit?limit=bogus", "")
+	srv, tok := auditServer(t)
+	rec := doAudit(t, srv, tok, http.MethodGet, "/api/v1/audit?limit=bogus", "")
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("GET status = %d, want 400", rec.Code)
 	}
-	rec = doAudit(t, srv, http.MethodGet, "/api/v1/audit?limit=10", "")
+	rec = doAudit(t, srv, tok, http.MethodGet, "/api/v1/audit?limit=10", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET status = %d, want 200", rec.Code)
 	}

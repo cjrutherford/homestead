@@ -24,6 +24,12 @@ import (
 // MountApp cmd/homestead-server uses, so wiring drift cannot hide.
 func fullServer(t *testing.T) (*Server, *store.Store) {
 	t.Helper()
+	srv, st, _ := fullServerApp(t)
+	return srv, st
+}
+
+func fullServerApp(t *testing.T) (*Server, *store.Store, *AppServices) {
+	t.Helper()
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, store.DBFileName))
 	if err != nil {
@@ -31,14 +37,15 @@ func fullServer(t *testing.T) (*Server, *store.Store) {
 	}
 	t.Cleanup(func() { st.Close() })
 	srv := New(DefaultAddr)
-	if _, err := MountApp(srv, AppConfig{
+	svcs, err := MountApp(srv, AppConfig{
 		Store: st, ConfigPath: filepath.Join(dir, "desired.yaml"), CatalogDir: "catalog",
 		SecretKeyPath: filepath.Join(dir, "key"), Port: 8080,
 		Dashboard: http.NotFoundHandler(),
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	return srv, st
+	return srv, st, svcs
 }
 
 func TestEveryRegisteredRouteIsClassified(t *testing.T) {
@@ -206,25 +213,37 @@ func (r *boundaryRig) reasons() []string {
 	return out
 }
 
-func TestBoundaryReportOnlyNeverRejects(t *testing.T) {
+func TestBoundaryEnforcesAndAudits(t *testing.T) {
 	r := newRig(t, claim.StateClaimed)
-	if got := r.do(http.MethodPut, "/api/v1/config", ""); got != http.StatusTeapot {
-		t.Fatalf("report-only must serve: status %d", got)
+	if got := r.do(http.MethodPut, "/api/v1/config", ""); got != http.StatusUnauthorized {
+		t.Fatalf("enforcing: no session must be 401, got %d", got)
 	}
 	got := r.reasons()
 	if len(got) != 1 || !strings.Contains(got[0], "no-session") {
 		t.Fatalf("audit = %v, want one no-session entry", got)
 	}
-	if r.audit.entries[0].Action != auditActionWouldReject || r.audit.entries[0].Outcome != audit.OutcomeError {
+	if r.audit.entries[0].Action != auditActionRejected || r.audit.entries[0].Outcome != audit.OutcomeError {
 		t.Fatalf("bad entry %+v", r.audit.entries[0])
 	}
+	if got := r.do(http.MethodPut, "/api/v1/config", "good"); got != http.StatusTeapot {
+		t.Fatalf("valid session must reach the handler, got %d", got)
+	}
 }
+
+// reasonStatus is the documented status per rejection reason.
+var reasonStatus = map[string]int{
+	reasonPreClaim: 403, reasonNoSession: 401, reasonInvalidSession: 401,
+	reasonWizardClaimed: 401, reasonUnclassified: 403, reasonClaimStateErr: 503,
+	reasonCSRFMissing: 403, reasonCSRFMismatch: 403,
+}
+
+var rejectionStatuses = map[int]bool{401: true, 403: true, 503: true}
 
 func TestBoundaryReasons(t *testing.T) {
 	cases := []struct {
 		name, method, path, bearer string
 		state                      claim.State
-		want                       string // "" = nothing reported
+		want                       string // "" = nothing rejected
 	}{
 		{"public claimed", "GET", "/healthz", "", claim.StateClaimed, ""},
 		{"public unclaimed", "GET", "/healthz", "", claim.StateUnclaimed, ""},
@@ -247,16 +266,19 @@ func TestBoundaryReasons(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRig(t, tc.state)
-			r.do(tc.method, tc.path, tc.bearer)
+			status := r.do(tc.method, tc.path, tc.bearer)
 			got := r.reasons()
 			if tc.want == "" {
-				if len(got) != 0 {
-					t.Fatalf("unexpected report %v", got)
+				if len(got) != 0 || rejectionStatuses[status] {
+					t.Fatalf("unexpected rejection %v (status %d)", got, status)
 				}
 				return
 			}
 			if len(got) != 1 || !strings.Contains(got[0], "("+tc.want+")") {
 				t.Fatalf("report = %v, want reason %s", got, tc.want)
+			}
+			if status != reasonStatus[tc.want] {
+				t.Fatalf("status = %d, want %d", status, reasonStatus[tc.want])
 			}
 		})
 	}
@@ -266,7 +288,9 @@ func TestBoundaryClaimStateErrorFailsClosed(t *testing.T) {
 	r := newRig(t, claim.StateUnclaimed)
 	r.claims.err = errors.New("db down")
 	for i := 0; i < 5; i++ {
-		r.do(http.MethodPut, "/api/v1/wizards/claim", "")
+		if got := r.do(http.MethodPut, "/api/v1/wizards/claim", ""); got != http.StatusServiceUnavailable {
+			t.Fatalf("claim state unreadable must fail closed with 503, got %d", got)
+		}
 	}
 	got := r.reasons()
 	if len(got) != 1 || !strings.Contains(got[0], "(claim-state-error)") || !strings.Contains(got[0], "x5") {
@@ -390,7 +414,7 @@ func TestBoundaryConcurrentReportAndFlush(t *testing.T) {
 func TestBoundaryAuditFailureIsLoggedNotFatal(t *testing.T) {
 	r := newRig(t, claim.StateClaimed)
 	r.audit.err = errors.New("disk full")
-	if got := r.do(http.MethodPut, "/api/v1/config", ""); got != http.StatusTeapot {
+	if got := r.do(http.MethodPut, "/api/v1/config", ""); got != http.StatusUnauthorized {
 		t.Fatalf("status %d", got)
 	}
 	r.srv.boundary.flush()
@@ -435,11 +459,12 @@ func TestBoundaryNeverRecordsCredentials(t *testing.T) {
 	}
 }
 
-func TestBoundaryUnclassifiedRouteIsReported(t *testing.T) {
+func TestBoundaryUnclassifiedRouteIsRejected(t *testing.T) {
 	r := newRig(t, claim.StateClaimed)
 	r.srv.mux.HandleFunc("GET /api/v1/brand-new", func(http.ResponseWriter, *http.Request) {})
-	if got := r.do(http.MethodGet, "/api/v1/brand-new", "good"); got != http.StatusOK {
-		t.Fatalf("status %d", got)
+	// Even a valid session cannot reach a route nobody classified.
+	if got := r.do(http.MethodGet, "/api/v1/brand-new", "good"); got != http.StatusForbidden {
+		t.Fatalf("status %d, want 403", got)
 	}
 	got := r.reasons()
 	if len(got) != 1 || !strings.Contains(got[0], "unclassified-route") {
@@ -494,6 +519,13 @@ func TestBoundaryRecognizesCookieSessionsAndCSRF(t *testing.T) {
 		{"cookie GET needs no csrf", "GET", "good", "", "", ""},
 		{"cookie PUT with csrf", "PUT", "good", "csrf-good", "", ""},
 		{"cookie PUT missing csrf", "PUT", "good", "", "", "csrf-missing"},
+		{"cookie POST missing csrf", "POST", "good", "", "", "csrf-missing"},
+		{"cookie PATCH missing csrf", "PATCH", "good", "", "", "csrf-missing"},
+		{"cookie DELETE missing csrf", "DELETE", "good", "", "", "csrf-missing"},
+		{"cookie POST wrong csrf", "POST", "good", "csrf-bad", "", "csrf-mismatch"},
+		{"cookie DELETE with csrf", "DELETE", "good", "csrf-good", "", ""},
+		{"bearer POST exempt", "POST", "", "", "good", ""},
+		{"bearer DELETE exempt", "DELETE", "", "", "good", ""},
 		{"cookie PUT wrong csrf", "PUT", "good", "csrf-bad", "", "csrf-mismatch"},
 		{"cookie PUT csrf equal to session token", "PUT", "good", "good", "", "csrf-mismatch"},
 		{"cookie invalid session", "PUT", "bad", "csrf-good", "", "invalid-session"},
@@ -509,16 +541,19 @@ func TestBoundaryRecognizesCookieSessionsAndCSRF(t *testing.T) {
 				path = "/api/v1/config"
 				r.srv.mux.HandleFunc("GET /api/v1/config", func(http.ResponseWriter, *http.Request) {})
 			}
-			r.doCookie(tc.method, path, tc.cookie, tc.csrf, tc.bear)
+			status := r.doCookie(tc.method, path, tc.cookie, tc.csrf, tc.bear)
 			got := r.reasons()
 			if tc.want == "" {
-				if len(got) != 0 {
-					t.Fatalf("unexpected report %v", got)
+				if len(got) != 0 || rejectionStatuses[status] {
+					t.Fatalf("unexpected rejection %v (status %d)", got, status)
 				}
 				return
 			}
 			if len(got) != 1 || !strings.Contains(got[0], "("+tc.want+")") {
 				t.Fatalf("report = %v, want %s", got, tc.want)
+			}
+			if status != reasonStatus[tc.want] {
+				t.Fatalf("status = %d, want %d", status, reasonStatus[tc.want])
 			}
 		})
 	}

@@ -27,6 +27,7 @@ func unixRecoverClient(t *testing.T) (*Client, *Client) {
 	tcpSrv := server.New("127.0.0.1:0")
 	tcpSrv.MountClaim(claimSvc)
 	tcpSrv.MountAuth(authSvc, audit.New(st))
+	tcpSrv.MountSessionBoundary(authSvc, claimSvc, audit.New(st))
 	ts := httptest.NewServer(tcpSrv.Handler())
 	t.Cleanup(ts.Close)
 	unixSrv := server.New("127.0.0.1:0")

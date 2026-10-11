@@ -206,3 +206,38 @@ func TestEnvTokenWinsOverStoredSession(t *testing.T) {
 		t.Fatalf("Authorization headers = %q, want stored then env", got)
 	}
 }
+
+func TestAdminSetupLogsInAndStoresSession(t *testing.T) {
+	isolatedHome(t)
+	url := authDaemon(t)
+	serverArgs := []string{"--server", url}
+	pass := passwordFile(t, "long-enough-password")
+	code, stdout, _ := invoke(t, append(serverArgs, "admin", "setup", "--username", "owner", "--password-file", pass))
+	if code != exitOK {
+		t.Fatalf("setup exit = %d", code)
+	}
+	if strings.Contains(stdout, "token") {
+		t.Fatalf("setup output leaks the session token: %q", stdout)
+	}
+	if loadSession(url) == "" {
+		t.Fatal("setup did not store a session")
+	}
+	// The enforcing boundary accepts the stored session, no login needed.
+	if code, out, _ := invoke(t, append(serverArgs, "admin", "lockout")); code != exitOK || !strings.Contains(out, "unlocked") {
+		t.Fatalf("lockout after setup: %d %q", code, out)
+	}
+}
+
+func TestRejectedSessionSuggestsLogin(t *testing.T) {
+	isolatedHome(t)
+	url := authDaemon(t)
+	pass := passwordFile(t, "long-enough-password")
+	invoke(t, []string{"--server", url, "admin", "setup", "--username", "owner", "--password-file", pass})
+	if err := saveSession(storedSession{Server: url, Token: "revoked-or-bogus", ExpiresAt: farFuture()}); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := invoke(t, []string{"--server", url, "admin", "lockout"})
+	if code != exitError || !strings.Contains(stderr, "homesteadctl login") {
+		t.Fatalf("exit %d stderr %q, want a login hint", code, stderr)
+	}
+}

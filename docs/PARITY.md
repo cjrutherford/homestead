@@ -14,8 +14,11 @@ from the session `homesteadctl login` stores (`~/.config/homestead/session`),
 and the dashboard uses the HttpOnly session cookie plus `X-CSRF-Token` on
 mutating calls. Both resolve to one session store. Every route except the
 public allowlist and the claim-window wizard routes requires such a session
-once S257 enforces; until then the boundary only reports. S256 added or
-renamed no routes or commands, so the table below is unchanged.
+(S257 enforces this: 401 without a session, 403 before claim). First-admin
+setup (`POST /api/v1/admins/setup`) also logs the owner in, returning the
+session fields login returns and setting the cookies; the CLI stores that
+session. S257 added or renamed no routes or commands, so the table below is
+unchanged.
 
 | Method | Path | CLI | Dashboard | Notes |
 |--------|------|-----|-----------|-------|

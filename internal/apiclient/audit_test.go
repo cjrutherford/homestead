@@ -26,6 +26,7 @@ func auditClient(t *testing.T) *Client {
 	srv.MountClaim(claimSvc)
 	srv.MountAuth(authSvc, audit.New(st))
 	srv.MountAudit(audit.New(st))
+	srv.MountSessionBoundary(authSvc, claimSvc, audit.New(st))
 	token, err := claimSvc.MintToken(claim.TokenTTL)
 	if err != nil {
 		t.Fatalf("MintToken: %v", err)
@@ -36,9 +37,13 @@ func auditClient(t *testing.T) *Client {
 	if _, err := authSvc.SetupAdmin("owner", "long-enough-password"); err != nil {
 		t.Fatalf("SetupAdmin: %v", err)
 	}
+	session, err := authSvc.Login("owner", "long-enough-password") // service-level: no audit entry
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
-	return New(ts.URL)
+	return New(ts.URL, WithToken(session.Token))
 }
 
 func TestAuditListRoundTrip(t *testing.T) {

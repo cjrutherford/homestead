@@ -7,6 +7,7 @@ import {
   HttpTestingController,
 } from '@angular/common/http/testing';
 import { Claim } from './claim';
+import { SessionService } from '../auth/session.service';
 
 describe('Claim', () => {
   let fixture: ComponentFixture<Claim>;
@@ -94,7 +95,7 @@ describe('Claim', () => {
     expect(text()).toContain('already exists');
   });
 
-  it('advances to admin after a valid token and saves progress', () => {
+  it('advances to admin after a valid token without a wizard save (no session yet)', () => {
     fixture.detectChanges();
     answerIdentity('UNCLAIMED');
     submitToken('good-token');
@@ -102,7 +103,6 @@ describe('Claim', () => {
     expect(req.request.method).toBe('POST');
     req.flush({ state: 'CLAIMED' });
     fixture.detectChanges();
-    flushSave('admin');
     expect(text()).toContain('Create the first administrator');
     expect(text()).toContain('Step 2 of 3');
   });
@@ -123,15 +123,16 @@ describe('Claim', () => {
     submitToken('good-token');
     http.expectOne('/api/v1/claim').flush({ state: 'CLAIMED' });
     fixture.detectChanges();
-    flushSave('admin');
     submitAdmin('owner', 'long-enough-password', 'long-enough-password');
     const req = http.expectOne('/api/v1/admins/setup');
     expect(req.request.method).toBe('POST');
-    req.flush({ id: 1, username: 'owner' });
+    req.flush({ id: 1, username: 'owner', expires_at: '2030-01-01T00:00:00Z' });
     fixture.detectChanges();
     flushSave('done');
     expect(text()).toContain('administrator created');
     expect(text()).toContain('Step 3 of 3');
+    // The owner is logged in locally by setup.
+    expect(TestBed.inject(SessionService).username()).toBe('owner');
   });
 
   it('lands on done when the administrator exists', () => {
@@ -142,7 +143,6 @@ describe('Claim', () => {
     const req = http.expectOne('/api/v1/admins/setup');
     req.flush('exists', { status: 409, statusText: 'Conflict' });
     fixture.detectChanges();
-    flushSave('done');
     expect(text()).toContain('already exists');
   });
 

@@ -84,7 +84,7 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	}
 	claimSvc := svcs.Claim
 	// Session boundary (ADR-020, S255): classifies every TCP request;
-	// report-only until S257 enforces. The Unix socket is not wrapped.
+	// enforcing since S257. The Unix socket is not wrapped.
 	srv.MountSessionBoundary(svcs.Auth, claimSvc, audit.New(st))
 	if err := ensureClaimToken(claimSvc); err != nil {
 		return err

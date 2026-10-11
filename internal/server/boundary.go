@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -17,9 +18,15 @@ import (
 // Operator session boundary (ADR-020, S255).
 //
 // A single middleware wraps the TCP mux and classifies every request
-// against routeClasses. In S255 it is REPORT-ONLY: requests it would
-// reject are logged and audited (aggregated) but always served. S256 adds
-// the cookie/CSRF transport (recognised here); S257 flips enforcement.
+// against routeClasses. Since S257 it ENFORCES: a request that fails the
+// boundary is answered here and never reaches a handler. Rejections are
+// counted in memory and audited aggregated (one entry per route and
+// reason per window), never with credentials.
+//
+// Status codes: 401 session missing or invalid (also a wizard route once
+// claim has completed); 403 pre-claim access to a non-public route, an
+// unclassified route, or a CSRF failure; 503 claim state unreadable
+// (fail closed).
 
 // RouteClass says what the boundary requires of a route.
 type RouteClass int
@@ -31,7 +38,7 @@ const (
 	// completes (claim-wizard saves, ADR-020 amending ADR-015).
 	ClassClaimWindow
 	// ClassSession requires a valid operator session and a claimed
-	// appliance. Pending enforcement by S257.
+	// appliance.
 	ClassSession
 )
 
@@ -47,7 +54,7 @@ func (c RouteClass) String() string {
 	return "unclassified"
 }
 
-// Would-be-rejection reasons.
+// Rejection reasons (the audit/log vocabulary).
 const (
 	reasonPreClaim       = "pre-claim"
 	reasonNoSession      = "no-session"
@@ -57,16 +64,16 @@ const (
 	reasonClaimStateErr  = "claim-state-error"
 	reasonCSRFMissing    = "csrf-missing"
 	reasonCSRFMismatch   = "csrf-mismatch"
+	reasonVerifyError    = "session-verify-error"
 )
 
-// auditActionWouldReject is the audit action of aggregated report-only
-// entries.
-const auditActionWouldReject = "session.boundary.would_reject"
+// auditActionRejected is the audit action of aggregated rejection entries.
+const auditActionRejected = "session.boundary.rejected"
 
 // routeClasses is the code-declared classification of every TCP route.
 // Deny-by-default: a registered route missing here is treated as
-// ClassSession and reported as unclassified, and the classification test
-// fails. Session routes are pending enforcement by S257.
+// ClassSession, rejected as unclassified, and the classification test
+// fails.
 var routeClasses = map[string]RouteClass{
 	// Public allowlist (ADR-020).
 	"GET /healthz":              ClassPublic,
@@ -82,7 +89,7 @@ var routeClasses = map[string]RouteClass{
 	"PUT /api/v1/wizards/{id}":    ClassClaimWindow,
 	"DELETE /api/v1/wizards/{id}": ClassClaimWindow,
 
-	// Session required (pending enforcement: S257).
+	// Session required.
 	"DELETE /api/v1/sessions":                    ClassSession,
 	"POST /api/v1/admins/password":               ClassSession,
 	"GET /api/v1/admins/lockout":                 ClassSession,
@@ -164,7 +171,7 @@ type reportBucket struct {
 	first time.Time
 }
 
-// boundary is the report-only session middleware state.
+// boundary is the enforcing session middleware state.
 type boundary struct {
 	sessions sessionVerifier
 	claims   claimReader
@@ -179,8 +186,8 @@ type boundary struct {
 	pending         map[reportKey]*reportBucket
 }
 
-// MountSessionBoundary wraps the TCP mux in the report-only session
-// middleware (ADR-020 rollout step 1). The Unix-socket mux is untouched.
+// MountSessionBoundary wraps the TCP mux in the enforcing session
+// middleware (ADR-020). The Unix-socket mux is untouched.
 func (s *Server) MountSessionBoundary(sessions *auth.Service, claims *claim.Service, auditSvc *audit.Service) {
 	s.mountBoundary(sessions, claims, auditSvc, time.Now)
 }
@@ -221,24 +228,45 @@ func sessionStillValid(r *http.Request) bool {
 
 func (b *boundary) wrap(mux *recordingMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if op, ok := b.check(mux, r); ok {
-			r = r.WithContext(context.WithValue(r.Context(), operatorKey{}, op))
+		op, v := b.check(mux, r)
+		if v.status != 0 {
+			b.report(v.pattern, v.reason)
+			if v.status == http.StatusUnauthorized {
+				w.Header().Set("WWW-Authenticate", "Bearer")
+			}
+			http.Error(w, v.message, v.status)
+			return
 		}
-		mux.ServeHTTP(w, r) // report-only: always served (S257 enforces)
+		if op != nil {
+			r = r.WithContext(context.WithValue(r.Context(), operatorKey{}, *op))
+		}
+		mux.ServeHTTP(w, r)
 	})
 }
 
-// check classifies r and reports what enforcement would have done. It
-// never reads credentials into logs or audit and never fails the request.
-func (b *boundary) check(mux *recordingMux, r *http.Request) (operatorSession, bool) {
+// verdict is a rejection: HTTP status, client-facing message, and the
+// audit pattern and reason. The zero value means "serve".
+type verdict struct {
+	status          int
+	message         string
+	pattern, reason string
+}
+
+func reject(status int, message, pattern, reason string) verdict {
+	return verdict{status: status, message: message, pattern: pattern, reason: reason}
+}
+
+// check classifies r. It returns either a rejection or, for session
+// routes, the verified operator session. It never reads credentials into
+// logs or audit.
+func (b *boundary) check(mux *recordingMux, r *http.Request) (*operatorSession, verdict) {
 	_, pattern := mux.Handler(r)
 	if pattern == "" {
-		return operatorSession{}, false // no route: the mux answers 404/405 itself
+		return nil, verdict{} // no route: the mux answers 404/405 itself
 	}
 	class, known := Classify(pattern)
 	if !known {
-		b.report(pattern, reasonUnclassified)
-		return operatorSession{}, false
+		return nil, reject(http.StatusForbidden, "route not classified", pattern, reasonUnclassified)
 	}
 	if pattern == dashboardPattern && !isDashboardRequest(r) {
 		// The method-less catch-all also receives unregistered methods
@@ -247,34 +275,36 @@ func (b *boundary) check(mux *recordingMux, r *http.Request) (operatorSession, b
 		class = ClassSession
 	}
 	if class == ClassPublic {
-		return operatorSession{}, false
+		return nil, verdict{}
 	}
 	state, err := b.claims.CurrentState()
 	if err != nil {
 		// Fail closed, but say so: this is not a closed claim window.
 		b.logClaimStateError(err)
-		b.report(pattern, reasonClaimStateErr)
-		return operatorSession{}, false
+		return nil, reject(http.StatusServiceUnavailable, "claim state unavailable", pattern, reasonClaimStateErr)
 	}
 	if state != claim.StateClaimed {
-		if class != ClassClaimWindow {
-			b.report(pattern, reasonPreClaim)
+		if class == ClassClaimWindow {
+			return nil, verdict{}
 		}
-		return operatorSession{}, false
+		return nil, reject(http.StatusForbidden, "appliance is not claimed", pattern, reasonPreClaim)
 	}
 	token, viaCookie, ok := sessionCredential(r)
 	if !ok {
+		reason := reasonNoSession
 		if class == ClassClaimWindow {
-			b.report(pattern, reasonWizardClaimed)
-		} else {
-			b.report(pattern, reasonNoSession)
+			reason = reasonWizardClaimed
 		}
-		return operatorSession{}, false
+		return nil, reject(http.StatusUnauthorized, "session required", pattern, reason)
 	}
 	session, err := b.sessions.Verify(token)
 	if err != nil {
-		b.report(pattern, reasonInvalidSession)
-		return operatorSession{}, false
+		if !errors.Is(err, auth.ErrInvalidSession) {
+			// A store failure is not the caller's fault; still closed.
+			b.log.Warn("session boundary: session verification failed", "error", err)
+			return nil, reject(http.StatusServiceUnavailable, "session check unavailable", pattern, reasonVerifyError)
+		}
+		return nil, reject(http.StatusUnauthorized, "invalid or expired session", pattern, reasonInvalidSession)
 	}
 	// Cookies are ambient, so a mutating cookie-authenticated request
 	// must echo the per-session CSRF token. Bearer requests are exempt.
@@ -282,15 +312,15 @@ func (b *boundary) check(mux *recordingMux, r *http.Request) (operatorSession, b
 		presented := r.Header.Get(CSRFHeader)
 		switch {
 		case presented == "":
-			b.report(pattern, reasonCSRFMissing)
+			return nil, reject(http.StatusForbidden, "CSRF token required", pattern, reasonCSRFMissing)
 		case !session.CSRFMatches(presented):
-			b.report(pattern, reasonCSRFMismatch)
+			return nil, reject(http.StatusForbidden, "CSRF token mismatch", pattern, reasonCSRFMismatch)
 		}
 	}
-	return operatorSession{
+	return &operatorSession{
 		Token: token, Session: session,
 		stillValid: func() bool { _, err := b.sessions.Verify(token); return err == nil },
-	}, true
+	}, verdict{}
 }
 
 func isMutating(method string) bool {
@@ -327,7 +357,7 @@ func (b *boundary) logClaimStateError(err error) {
 	}
 }
 
-// report counts a would-be rejection. It only touches memory: the
+// report counts a rejection. It only touches memory: the
 // ticker in run flushes counts as one audit entry per route and reason
 // per window, so a polling dashboard cannot flood audit and requests
 // never write audit.
@@ -374,15 +404,15 @@ func (b *boundary) flush() {
 
 func (b *boundary) emit(items []flushItem) {
 	for _, it := range items {
-		detail := fmt.Sprintf("report-only: would reject %s (%s) x%d since %s",
+		detail := fmt.Sprintf("rejected %s (%s) x%d since %s",
 			it.key.pattern, it.key.reason, it.bucket.count, it.bucket.first.UTC().Format(time.RFC3339))
-		b.log.Warn("session boundary would reject", "route", it.key.pattern,
+		b.log.Warn("session boundary rejected", "route", it.key.pattern,
 			"reason", it.key.reason, "count", it.bucket.count)
 		if _, err := b.audit.Record(audit.Entry{
-			Actor: "anonymous", Action: auditActionWouldReject,
+			Actor: "anonymous", Action: auditActionRejected,
 			Outcome: audit.OutcomeError, Detail: detail,
 		}); err != nil {
-			b.log.Warn("audit record failed", "action", auditActionWouldReject, "error", err)
+			b.log.Warn("audit record failed", "action", auditActionRejected, "error", err)
 		}
 	}
 }

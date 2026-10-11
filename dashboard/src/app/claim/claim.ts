@@ -1,6 +1,7 @@
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
+import { SessionService } from '../auth/session.service';
 import { ApiService } from '../core/api.service';
 import { WizardService } from '../wizard/wizard.service';
 import { WizardShell } from '../wizard/wizard-shell';
@@ -28,6 +29,7 @@ const STEPS = ['Claim token', 'Administrator', 'Done'];
 export class Claim implements OnInit {
   private readonly api = inject(ApiService);
   private readonly wizards = inject(WizardService);
+  protected readonly sessions = inject(SessionService);
 
   protected readonly step = signal<WizardStep>('token');
   protected readonly busy = signal(false);
@@ -81,12 +83,14 @@ export class Claim implements OnInit {
     this.api.claim(token).subscribe({
       next: () => {
         this.busy.set(false);
-        this.advanceTo('admin');
+        // Claim completed and no session exists yet; wizard saves need
+        // one now. Resume derives from appliance state, so nothing is lost.
+        this.step.set('admin');
       },
       error: (err: HttpErrorResponse) => {
         this.busy.set(false);
         if (err.status === 409) {
-          this.advanceTo('admin');
+          this.step.set('admin');
           return;
         }
         this.error.set(
@@ -111,15 +115,18 @@ export class Claim implements OnInit {
     this.busy.set(true);
     this.error.set(null);
     this.api.setupAdmin(name, password).subscribe({
-      next: () => {
+      next: (created) => {
         this.busy.set(false);
-        this.advanceTo('done');
+        // Setup logs the owner in (the response set the session cookie),
+        // so the wizard save below carries a session (ADR-020, S257).
+        this.sessions.begin(created.username, created.expires_at ?? '');
+        this.persist('done', () => this.step.set('done'));
       },
       error: (err: HttpErrorResponse) => {
         this.busy.set(false);
         if (err.status === 409) {
           this.alreadySetup.set(true);
-          this.advanceTo('done');
+          this.step.set('done'); // no session here: nothing to save with
           return;
         }
         this.error.set(
@@ -129,10 +136,6 @@ export class Claim implements OnInit {
         );
       },
     });
-  }
-
-  private advanceTo(step: WizardStep): void {
-    this.persist(step, () => this.step.set(step));
   }
 
   private persist(step: WizardStep, done: () => void): void {

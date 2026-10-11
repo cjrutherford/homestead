@@ -16,8 +16,10 @@
 The browser never receives Docker socket access. The Go daemon owns host-level mutation.
 
 The TCP listener is wrapped by the operator session boundary (ADR-020):
-every route is classified public, claim-window, or session in code. It is
-report-only as of S255 and enforcing from S257; the Unix socket is exempt.
+every route is classified public, claim-window, or session in code and the
+middleware enforces it (since S257): unauthenticated requests to non-public
+routes get 401, pre-claim access gets 403, and an unclassified route is
+refused. The root-only Unix socket is exempt; its file mode is its boundary.
 Sessions share one store with two transports (S256): an HttpOnly,
 SameSite=Strict cookie plus `X-CSRF-Token` for the browser, and
 `Authorization: Bearer` for the CLI; 12h idle / 7d absolute lifetime.

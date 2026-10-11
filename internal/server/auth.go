@@ -26,19 +26,21 @@ import (
 // idle / 7d absolute and are revoked by logout and password change.
 //
 // Setup needs CLAIMED state with no administrator yet: 403 unclaimed,
-// 409 already set up, 422 weak credentials, 201 created. Login answers
-// 200 with the reusable token or 401 without saying why. Logout
-// answers 204 or 401. Requiring sessions on other endpoints belongs to
-// later slices.
+// 409 already set up, 422 weak credentials, 201 created and logged in
+// (same cookies and token as login). Login answers 200 with the
+// reusable token or 401 without saying why. Logout, password change and
+// lockout status are session routes: the boundary (ADR-020, S257)
+// rejects them without a valid session and hands the verified session to
+// the handler through the request context.
 func (s *Server) MountAuth(svc *auth.Service, auditSvc *audit.Service) {
-	s.mux.HandleFunc("POST /api/v1/admins/setup", s.handleAdminSetup(svc))
+	s.mux.HandleFunc("POST /api/v1/admins/setup", s.handleAdminSetup(svc, auditSvc))
 	s.mux.HandleFunc("POST /api/v1/sessions", s.handleLogin(svc, auditSvc))
 	s.mux.HandleFunc("DELETE /api/v1/sessions", s.handleLogout(svc))
 	s.mux.HandleFunc("POST /api/v1/admins/password", s.handleChangePassword(svc))
 	s.mux.HandleFunc("GET /api/v1/admins/lockout", s.handleLockoutStatus(svc))
 }
 
-func (s *Server) handleAdminSetup(svc *auth.Service) http.HandlerFunc {
+func (s *Server) handleAdminSetup(svc *auth.Service, auditSvc *audit.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Username string `json:"username"`
@@ -64,8 +66,29 @@ func (s *Server) handleAdminSetup(svc *auth.Service) http.HandlerFunc {
 			}
 			return
 		}
+		resp := map[string]any{"id": admin.ID, "username": admin.Username}
+		// The owner is logged in by setup (ADR-020, S257): the claim
+		// wizard keeps saving after the first administrator exists and
+		// every non-public route now needs a session. Same transport
+		// as login: cookies for the browser, token in the body for the
+		// CLI. A failure here leaves the account created; the owner
+		// can still log in.
+		if session, err := svc.Login(body.Username, body.Password); err != nil {
+			s.log.Warn("first-admin setup: automatic login failed", "error", err)
+		} else {
+			if _, recordErr := auditSvc.Record(audit.Entry{
+				Actor: body.Username, Action: "admin.login", Outcome: audit.OutcomeOK,
+				Detail: "first-admin setup",
+			}); recordErr != nil {
+				s.log.Warn("audit record failed", "action", "admin.login", "error", recordErr)
+			}
+			setSessionCookies(w, r, session)
+			resp["token"] = session.Token
+			resp["csrf_token"] = session.CSRFToken
+			resp["expires_at"] = session.ExpiresAt.UTC().Format(time.RFC3339)
+		}
 		w.WriteHeader(http.StatusCreated)
-		writeJSON(w, map[string]any{"id": admin.ID, "username": admin.Username})
+		writeJSON(w, resp)
 	}
 }
 
@@ -117,14 +140,25 @@ func (s *Server) handleLogin(svc *auth.Service, auditSvc *audit.Service) http.Ha
 	}
 }
 
+// requireOperator returns the session the boundary verified. The
+// middleware has already rejected unauthenticated requests; a missing
+// value means the handler is mounted without the boundary, which fails
+// closed.
+func requireOperator(w http.ResponseWriter, r *http.Request) (operatorSession, bool) {
+	op, ok := operatorFromContext(r.Context())
+	if !ok {
+		http.Error(w, "missing session", http.StatusUnauthorized)
+	}
+	return op, ok
+}
+
 func (s *Server) handleLogout(svc *auth.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token, _, ok := sessionCredential(r)
+		op, ok := requireOperator(w, r)
 		if !ok {
-			http.Error(w, "missing session", http.StatusUnauthorized)
 			return
 		}
-		if err := svc.Logout(token); err != nil {
+		if err := svc.Logout(op.Token); err != nil {
 			if errors.Is(err, auth.ErrInvalidSession) {
 				http.Error(w, "invalid or expired session", http.StatusUnauthorized)
 				return
@@ -202,14 +236,8 @@ func bearerToken(header string) (string, bool) {
 
 func (s *Server) handleChangePassword(svc *auth.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token, _, ok := sessionCredential(r)
+		op, ok := requireOperator(w, r)
 		if !ok {
-			http.Error(w, "missing session", http.StatusUnauthorized)
-			return
-		}
-		session, err := svc.Verify(token)
-		if err != nil {
-			http.Error(w, "invalid or expired session", http.StatusUnauthorized)
 			return
 		}
 		var body struct {
@@ -224,7 +252,7 @@ func (s *Server) handleChangePassword(svc *auth.Service) http.HandlerFunc {
 		}
 		// Self-service only: the session owner is the only identity
 		// a caller may rotate, so sessions never escalate.
-		admin, err := svc.ChangePasswordKeepingSession(session.Username, body.CurrentPassword, body.NewPassword, token)
+		admin, err := svc.ChangePasswordKeepingSession(op.Session.Username, body.CurrentPassword, body.NewPassword, op.Token)
 		if err != nil {
 			switch {
 			case errors.Is(err, auth.ErrInvalidCredentials):
@@ -244,21 +272,15 @@ func (s *Server) handleChangePassword(svc *auth.Service) http.HandlerFunc {
 
 func (s *Server) handleLockoutStatus(svc *auth.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token, _, ok := sessionCredential(r)
+		op, ok := requireOperator(w, r)
 		if !ok {
-			http.Error(w, "missing session", http.StatusUnauthorized)
 			return
 		}
-		session, err := svc.Verify(token)
-		if err != nil {
-			http.Error(w, "invalid or expired session", http.StatusUnauthorized)
-			return
-		}
-		locked, err := svc.Locked(session.Username)
+		locked, err := svc.Locked(op.Session.Username)
 		if err != nil {
 			http.Error(w, "failed to read lockout", http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"username": session.Username, "locked": locked})
+		writeJSON(w, map[string]any{"username": op.Session.Username, "locked": locked})
 	}
 }

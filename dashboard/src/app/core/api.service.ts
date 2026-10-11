@@ -276,6 +276,11 @@ export interface ClaimResult {
 export interface AdminCreated {
   id: number;
   username: string;
+  /**
+   * Setup also logs the owner in: the response sets the session cookie
+   * and carries the session fields login returns (ADR-020, S257).
+   */
+  expires_at?: string;
 }
 
 /**

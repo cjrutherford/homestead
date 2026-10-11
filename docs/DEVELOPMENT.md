@@ -187,35 +187,53 @@ homesteadctl logout                          # revokes it and deletes the stored
 - Passwords are bcrypt hashes; sessions are SHA-256-hashed tokens in
   SQLite (lifetime and transport: see "Session transport (S256)"). Login never distinguishes unknown users
   from wrong passwords. Password files should be 0600.
-- Sessions are created here, not yet required: other endpoints stay open
-  until a later slice enforces authentication. Recovery is S021.
+- Sessions are created here and required by the operator session boundary
+  (S257). Recovery is S021.
 
-## Operator session boundary, report-only (S255)
+## Operator session boundary (S255, enforcing since S257)
 
 - `internal/server/boundary.go` wraps the TCP mux (never the Unix socket)
   in a deny-by-default classifier (ADR-020). `routeClasses` declares every
   route as public (7: health, version, identity, claim, first-admin setup,
   session create, dashboard `/`), claim-window (3 wizard routes, open only
-  until claim completes) or session (48, pending enforcement by S257).
-- Report-only: nothing is rejected. Requests that enforcement would
-  reject (reasons `pre-claim`, `no-session`, `invalid-session`,
-  `claim-window-closed`, `unclassified-route`) are counted per route and
-  reason and flushed by a background ticker as one
-  `session.boundary.would_reject` audit entry (plus a log line) per
-  minute with the count; requests themselves never write audit, and the
-  ticker's final flush completes before `Run` returns (so before stores
-  close). An unreadable claim state fails closed with reason
-  `claim-state-error` (logged at most once a minute). The method-less
-  dashboard catch-all `/` is public only for GET/HEAD outside `/api/`;
-  any other fallthrough (unregistered method, unknown API path) is
-  classified as a session route. Tokens and cookies are
-  never recorded. Bearer and cookie sessions are both recognised (S256);
-  cookie mutations additionally report `csrf-missing` / `csrf-mismatch`.
+  until claim completes) or session (48).
+- Enforcing: a request that fails the boundary is answered by the
+  middleware and never reaches a handler. Status codes: `401` no, invalid,
+  expired or revoked session (also a wizard route after claim completes,
+  reasons `no-session`, `invalid-session`, `claim-window-closed`); `403`
+  before claim for anything but the public allowlist and wizard routes
+  (`pre-claim`), an unclassified route (`unclassified-route`), or a
+  cookie-authenticated POST/PUT/PATCH/DELETE with a missing or wrong
+  `X-CSRF-Token` (`csrf-missing`, `csrf-mismatch`; bearer is exempt);
+  `503` when claim state or the session store cannot be read (fail
+  closed). Rejections are counted per route and reason and flushed by a
+  background ticker as one `session.boundary.rejected` audit entry (plus a
+  log line) per minute with the count; requests themselves never write
+  audit, and the ticker's final flush completes before `Run` returns (so
+  before stores close). The method-less dashboard catch-all `/` is public
+  only for GET/HEAD outside `/api/`; any other fallthrough (unregistered
+  method, unknown API path) is classified as a session route. Tokens and
+  cookies are never recorded.
+- Handlers read the verified session from the request context
+  (`operatorFromContext`; `handleLogout`, `handleChangePassword` and
+  `handleLockoutStatus` no longer check credentials themselves). Long-lived
+  SSE streams call `sessionStillValid` on each heartbeat
+  (`EventHeartbeatInterval`) and stop once the session is revoked or
+  expired.
+- First-admin setup (`POST /api/v1/admins/setup`) logs the owner in: the
+  201 response sets the cookies and carries `token`, `csrf_token` and
+  `expires_at` like login, so the claim wizard's later saves and the CLI's
+  next command are authenticated. The Unix-socket recovery route stays
+  session-free.
+- Tests: handler tests that exercise a route in isolation mount the
+  handler without the boundary; anything about access control mounts the
+  real boundary (`MountSessionBoundary`) with real claim and auth services
+  and logs in (see `internal/server/enforcement_test.go`).
 - Production routes are mounted by `server.MountApp`, shared by
   `cmd/homestead-server` and the classification test so wiring cannot
   drift. Add the pattern to `routeClasses`; `TestEveryRegisteredRouteIsClassified` enumerates the
   real registrations (58 today) and fails on any unclassified or stale
-  entry. Review audit with `homesteadctl audit` before S257 enforces.
+  entry.
 
 ## Session transport (S256)
 
@@ -232,8 +250,8 @@ One session store (ADR-004), two transports (ADR-020):
   send the CSRF token in `X-CSRF-Token`; it is SHA-256-hashed and
   constant-time compared with the session's stored hash. Bearer requests
   are exempt (browsers never attach that header ambiently); bearer wins
-  when both are present. Report-only: the boundary records `csrf-missing`
-  / `csrf-mismatch` (never the values) and serves the request.
+  when both are present. The boundary rejects with 403 and records
+  `csrf-missing` / `csrf-mismatch` (never the values).
 - Lifetime: 12h idle (refreshed on use, written at most once a minute) and
   7d absolute (`auth.IdleTTL`, `auth.AbsoluteTTL`); legacy 30-day rows are
   capped at 7d. Expired rows are deleted when seen and swept at login.
@@ -242,7 +260,7 @@ One session store (ADR-004), two transports (ADR-020):
   session of the administrator and keeps the caller's; recovery (S021)
   revokes all.
 - `Verify` is one indexed lookup (`sessions_token_hash_unique`, migration
-  23), not a scan, so S257 can run it on every request.
+  23), not a scan, so the boundary can run it on every request.
 - CLI: `homesteadctl login` writes `~/.config/homestead/session` (JSON
   with server URL, token, expiry; file 0600, directory 0700) and every
   command sends it as `Authorization: Bearer`. Precedence: `--token`

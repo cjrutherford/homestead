@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -146,6 +147,17 @@ func usage(w io.Writer) {
 }
 
 func fail(stderr io.Writer, err error) int {
+	var statusErr *apiclient.StatusError
+	if errors.As(err, &statusErr) {
+		switch {
+		case statusErr.Status == 401:
+			fmt.Fprintln(stderr, "Error: not logged in, or the session expired or was revoked; run `homesteadctl login`")
+			return exitError
+		case statusErr.Status == 403 && strings.Contains(statusErr.Body, "not claimed"):
+			fmt.Fprintln(stderr, "Error: the appliance is not claimed yet; run `homesteadctl claim TOKEN` first")
+			return exitError
+		}
+	}
 	fmt.Fprintf(stderr, "Error: %v\n", err)
 	return exitError
 }

@@ -42,6 +42,14 @@ export class SessionService {
     );
   }
 
+  /**
+   * Records a session the server already issued (first-admin setup sets
+   * the cookie like login does), so the shell shows the owner as logged in.
+   */
+  begin(username: string, expiresAt: string): void {
+    this.store({ username, expiresAt });
+  }
+
   logout(): Observable<void> {
     const wasLoggedIn = this.isLoggedIn();
     this.clear();

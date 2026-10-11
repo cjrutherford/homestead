@@ -79,9 +79,6 @@
   backups-first, but no operation executes platform moves, rolls
   back failed replacements, or surfaces platform plans on the API,
   CLI, or dashboard yet.
-- Authenticated operator API: S200 hardens credentials and sessions,
-  but most operator routes still answer without sessions; requiring
-  sessions beyond login/logout belongs to a later slice.
 - Rotation and lockout dashboard surfaces: S239 serves
   rotation and lockout status over the API and CLI; dashboard
   affordances belong to later slices.
@@ -161,15 +158,13 @@
 - Dashboard embed in install flow: serving the UI needs the
   node toolchain plus a manual embed build (proven working in
   KVM); prebuilt packaging belongs to distribution (S240).
-- Session boundary follow-ups (S255): report-only mode recognises bearer
-  sessions only, so cookie sessions, CSRF, and SSE cookie auth belong to
-  S256; enforcement, removal of the inline session checks, and the
-  pre-claim 401/403 behaviour belong to S257. Per-actor attribution of
-  would-be rejections (entries are always actor `anonymous`) and
-  `Verify` scanning every session row per request (fixed in S256 by an
-  indexed lookup) are discovered; attribution remains unscheduled.
+- Session boundary follow-ups (S255, S257): rejection audit entries are
+  always actor `anonymous` (per-actor attribution of rejected requests
+  is unscheduled), and an open SSE stream re-verifies its session only on
+  each heartbeat (30s), so a revoked session can finish up to one
+  interval of streaming; a push-style revocation signal is unscheduled.
 - Session transport follow-ups (S256): CSRF, cookie, and idle/absolute
-  rules are report-only until S257 enforces them. Not done: an `Origin` /
+  rules are enforced since S257. Not done: an `Origin` /
   `Sec-Fetch-Site` check as a second CSRF layer; a "list / revoke my
   sessions" surface (CLI and dashboard); a CLI `login --no-store` flag and
   OS keyring storage for the CLI token; an admin-visible session expiry

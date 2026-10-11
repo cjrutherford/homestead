@@ -111,9 +111,11 @@ func TestCookieAndBearerResolveToOneSession(t *testing.T) {
 
 func TestCookieLogoutClearsCookies(t *testing.T) {
 	srv := setupOwner(t)
-	cookie := cookieByName(loginRec(t, srv, nil), SessionCookieName)
+	login := loginRec(t, srv, nil)
+	cookie := cookieByName(login, SessionCookieName)
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions", nil)
 	req.AddCookie(cookie)
+	req.Header.Set(CSRFHeader, cookieByName(login, CSRFCookieName).Value)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent {

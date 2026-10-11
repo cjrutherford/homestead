@@ -28,27 +28,38 @@ type LoginSession struct {
 // SetupAdmin creates the first administrator (S020). The appliance must be
 // CLAIMED with no administrator yet, else a *StatusError (403/409/422).
 func (c *Client) SetupAdmin(ctx context.Context, username, password string) (Admin, error) {
+	admin, _, err := c.SetupAdminSession(ctx, username, password)
+	return admin, err
+}
+
+// SetupAdminSession is SetupAdmin plus the session the daemon issues with
+// it: setup logs the owner in (ADR-020, S257), so the caller can continue
+// without a separate login. The session is zero if the daemon sent none.
+func (c *Client) SetupAdminSession(ctx context.Context, username, password string) (Admin, LoginSession, error) {
 	data, err := json.Marshal(map[string]any{"username": username, "password": password})
 	if err != nil {
-		return Admin{}, fmt.Errorf("api: encode request: %w", err)
+		return Admin{}, LoginSession{}, fmt.Errorf("api: encode request: %w", err)
 	}
 	req, err := c.post(ctx, "/api/v1/admins/setup", data)
 	if err != nil {
-		return Admin{}, err
+		return Admin{}, LoginSession{}, err
 	}
 	res, err := c.http.Do(req)
 	if err != nil {
-		return Admin{}, fmt.Errorf("api: %w", err)
+		return Admin{}, LoginSession{}, fmt.Errorf("api: %w", err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusCreated {
-		return Admin{}, c.statusError(req, res)
+		return Admin{}, LoginSession{}, c.statusError(req, res)
 	}
-	var admin Admin
-	if err := json.NewDecoder(res.Body).Decode(&admin); err != nil {
-		return Admin{}, fmt.Errorf("api: decode response: %w", err)
+	var created struct {
+		Admin
+		LoginSession
 	}
-	return admin, nil
+	if err := json.NewDecoder(res.Body).Decode(&created); err != nil {
+		return Admin{}, LoginSession{}, fmt.Errorf("api: decode response: %w", err)
+	}
+	return created.Admin, created.LoginSession, nil
 }
 
 // Login mints a session token (S020). Bad credentials answer 401.

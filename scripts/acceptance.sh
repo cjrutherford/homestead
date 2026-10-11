@@ -84,11 +84,20 @@ elif [ "$state" != "CLAIMED" ]; then
 fi
 
 phase "admin"
+# Setup logs the owner in (the CLI stores that session); the explicit
+# login below proves the credentials independently and yields the token.
 if ! "$CTL" admin setup --username "$HOMESTEAD_ADMIN_USER" --password-file "$HOMESTEAD_PASSWORD_FILE" 2>/dev/null; then
 	echo "admin exists (or setup refused); proving login instead"
 fi
 TOKEN="$("$CTL" login --username "$HOMESTEAD_ADMIN_USER" --password-file "$HOMESTEAD_PASSWORD_FILE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')" || fail admin "login failed"
 test -n "$TOKEN" || fail admin "login produced no token"
+# Every route except the public allowlist needs a session (ADR-020,
+# S257): prove the boundary is enforcing, then use the session
+# explicitly for every later call (HOMESTEAD_TOKEN wins over the stored
+# session, so the run does not depend on the invoking user's HOME).
+code="$(curl -sS -o /dev/null -w '%{http_code}' "$HOMESTEAD_SERVER/api/v1/config")" || fail admin "config endpoint unreachable"
+[ "$code" = "401" ] || fail admin "unauthenticated GET /api/v1/config returned $code, want 401 (boundary not enforcing)"
+export HOMESTEAD_TOKEN="$TOKEN"
 
 phase "import"
 if [ -n "${HOMESTEAD_EXPORT_FILE:-}" ]; then

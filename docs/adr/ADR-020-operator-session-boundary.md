@@ -71,6 +71,15 @@ Staged so that each slice leaves main runnable:
    the same commit that updates the dashboard, the CLI, and
    `scripts/acceptance.sh`, so main never has a half-gated API.
 
+### First-admin setup issues a session
+`POST /api/v1/admins/setup` stays on the public allowlist but, on success,
+also logs the new owner in (S257): the response sets the session cookies
+and returns the token fields `POST /api/v1/sessions` returns. This is a
+transport detail, not a widening of the allowlist: setup remains
+claim-gated and one-shot, and it is what lets the claim wizard (whose
+saves are claim-window routes that close when claim completes) and the
+CLI continue authenticated without a second login.
+
 ### Audit of rejected requests
 Once enforcing, rejected requests are audited without logging tokens or
 cookies, and are rate-limited and aggregated like the report-only entries.
@@ -105,8 +114,8 @@ once an administrator exists.
 
 ## Consequences
 - Rollout is staged (report-only, then transport, then atomic enforcement);
-  until S257 the classification test records every route as public,
-  session, or pending-enforcement.
+  the classification test records every route as public, claim-window, or
+  session (S257 removed the pending-enforcement state).
 - `apiclient` and the dashboard must send credentials and handle 401.
 - Unclaimed or admin-less appliances keep working through the allowlist
   and the claim-wizard exception only.

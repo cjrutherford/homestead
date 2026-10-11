@@ -410,8 +410,8 @@ CREATE TABLE IF NOT EXISTS tunnel_routes (
 	},
 	{
 		// S256 session transport: an indexed token-hash lookup replaces
-		// the per-request full-table scan in auth.Verify (S257 puts
-		// Verify on every request), plus the per-session CSRF hash and
+		// the per-request full-table scan in auth.Verify (the S257 boundary
+		// runs Verify on every request), plus the per-session CSRF hash and
 		// the idle-timeout clock. Legacy rows start their idle clock at
 		// creation.
 		version: 23,
