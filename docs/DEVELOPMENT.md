@@ -241,6 +241,22 @@ homesteadctl logout                          # revokes it and deletes the stored
   real registrations (58 today) and fails on any unclassified or stale
   entry.
 
+- Proven live in KVM (S255-S257, fb8e88b): in-place upgrade of a
+  running appliance and a fresh install of a second one. Unauthenticated
+  API 401 (403 pre-claim; wizard routes reachable only pre-claim),
+  cookie login with HttpOnly session cookie, CSRF 403 without or with a
+  wrong header and success with it, bearer exempt, CLI login (0600
+  session file) and logout revocation, SSE stream ending within one
+  heartbeat of logout, root-socket recovery without a session (revokes
+  old sessions), aggregated credential-free `session.boundary.rejected`
+  audit entries, installed apps undisturbed, two concurrent first-admin
+  setups with different usernames yielding exactly one 201 and one 409,
+  and `scripts/acceptance.sh` green on both. Found and fixed: the
+  installed binary lacked the embedded dashboard and acceptance never
+  registered storage on a fresh appliance. Note: Nextcloud requires host
+  port 80, so acceptance on an appliance whose edge proxy already holds
+  :80 refuses the plan until the edge is stopped.
+
 ## Session transport (S256)
 
 One session store (ADR-004), two transports (ADR-020):
@@ -494,7 +510,9 @@ sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
 - `scripts/acceptance.sh` walks a fresh supported OS to the base
   suite with validated access through supported surfaces only:
   preconditions (root, distro, tools, mounts), bootstrap,
-  claim, admin setup plus login, doctor, firewall apply, per-app
+  claim, admin setup plus login, storage register and assign (fresh
+  appliances have no assigned mounts, which catalog requirements read),
+  doctor, firewall apply, per-app
   review-then-install with `--follow` (jellyfin, nextcloud,
   immich on isolated networks), drift-clean proof per package
   (no manual Compose editing, mechanically asserted), and access
@@ -930,6 +948,9 @@ Details:
 - Binary lands at `/usr/local/bin/homestead-server`, unit at
   `/etc/systemd/system/homestead-server.service` (see `ARCHITECTURE.md` paths).
 - Install is idempotent: re-running picks up a rebuilt binary (`restart`).
+  When `internal/dashboard/dist/index.html` exists (after
+  `make dashboard-build dashboard-embed`) the binary is built with
+  `-tags embeddash`, so the installed daemon serves the dashboard.
 - Install provisions the filesystem layout first
   (`scripts/provision-layout.sh`, mirrors `internal/layout`):
 
