@@ -68,3 +68,9 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-017 | Tunnel Remote Access | Accepted |
 | ADR-018 | Static Container Packages | Accepted |
 | ADR-019 | Clean-room UI Reuse | Accepted |
+| ADR-020 | Operator Session Boundary | Proposed |
+| ADR-021 | Secret Key Custody and Re-key | Proposed |
+| ADR-022 | Backup Encryption Format | Proposed |
+| ADR-023 | Daemon Scheduler | Proposed |
+| ADR-024 | Unattended Certificate Renewal | Proposed |
+| ADR-025 | Release Artifact Trust Root | Proposed |
