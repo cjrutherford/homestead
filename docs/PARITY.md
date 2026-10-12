@@ -70,7 +70,7 @@ unchanged.
 | GET | /api/v1/tunnel/status | `"tunnel"` | `tunnelStatus` | Discovery and health on CLI and dashboard |
 | POST | /api/v1/tunnel/setup | `"tunnel"` | `tunnelSetup` | Tunnel setup on CLI and dashboard |
 | DELETE | /api/v1/tunnel/tunnels/{id} | `"tunnel"` | `tunnelTeardown` | Tunnel teardown on CLI and dashboard |
-| GET | /api/v1/scheduler/jobs | `"scheduler"` | n/a | Scheduled jobs with last run and next due on CLI (S260); dashboard surface belongs to later slices |
+| GET | /api/v1/scheduler/jobs | `"scheduler"` | `schedulerJobs` | Scheduled jobs with last run, next due, last error and skip on CLI and the read-only dashboard Backups panel |
 | GET | /api/v1/backups/destination | `"backup"` | `backupDestination` | Resolved backup root on CLI and dashboard |
 | GET | /api/v1/backups/schedules | `"backup"` | `backupSchedules` | Schedule records on CLI and dashboard |
 | POST | /api/v1/backups/schedules | `"backup"` | `backupScheduleSave` | Schedule save on CLI and dashboard |

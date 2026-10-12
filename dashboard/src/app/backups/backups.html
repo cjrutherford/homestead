@@ -15,7 +15,7 @@
 
   <h3>Destination</h3>
   @if (destination(); as root) {
-    <p>Backup root: <code>{{ root }}</code></p>
+    <p>Backup root: <code class="backup-root">{{ root }}</code></p>
   } @else if (destinationError()) {
     <app-state-message kind="error" [headline]="destinationError()" />
   } @else {
@@ -30,15 +30,27 @@
     <app-state-message kind="loading" headline="Loading schedules…" />
   } @else {
     <ul>
-      @for (row of schedules(); track row.Package) {
+      @for (row of schedules(); track row.package) {
         <li>
-          <strong>{{ row.Package }}</strong>
-          every {{ row.IntervalSeconds / 3600 }}h, retain {{ row.Retain }},
-          {{ row.Enabled ? 'enabled' : 'disabled' }}, by {{ row.Actor }}
-          <button type="button" (click)="inspect(row.Package)">Inspect</button>
-          <button type="button" (click)="remove(row.Package)" [disabled]="busy()">
-            Remove
-          </button>
+          <strong>{{ row.package }}</strong>
+          every {{ hours(row.interval_seconds) }}, retain {{ row.retain === 0 ? 'all runs' : row.retain }},
+          {{ row.enabled ? 'enabled' : 'disabled' }}, by {{ row.actor }}
+          <button type="button" (click)="inspect(row.package)">Inspect</button>
+          @if (confirmingRemove() === row.package) {
+            <span role="alertdialog" [attr.aria-label]="'Confirm removal of ' + row.package">
+              Remove the schedule for {{ row.package }}?
+              <button type="button" (click)="remove(row.package)" [disabled]="busy()">
+                Confirm remove
+              </button>
+              <button type="button" (click)="cancelRemove()" [disabled]="busy()">
+                Cancel
+              </button>
+            </span>
+          } @else {
+            <button type="button" (click)="askRemove(row.package)" [disabled]="busy()">
+              Remove
+            </button>
+          }
         </li>
       } @empty {
         <li>
@@ -49,12 +61,49 @@
   }
 
   @if (inspected(); as one) {
-    <h3>Schedule detail: {{ one.Package }}</h3>
+    <h3>Schedule detail: {{ one.package }}</h3>
     <p>
-      Every {{ one.IntervalSeconds / 3600 }}h, retain {{ one.Retain }},
-      {{ one.Enabled ? 'enabled' : 'disabled' }}. Last changed by
-      {{ one.Actor }} at {{ one.UpdatedAt }}.
+      Every {{ hours(one.interval_seconds) }}, retain
+      {{ one.retain === 0 ? 'all runs' : one.retain }},
+      {{ one.enabled ? 'enabled' : 'disabled' }}. Last changed by
+      {{ one.actor }}; cadence window anchored at {{ one.updated_at }}.
     </p>
+  }
+
+  <h3>Scheduled jobs</h3>
+  <p>
+    Read-only state of the daemon scheduler: when each job last ran, when
+    it is next due, and the last error or skipped run.
+  </p>
+  @if (jobsError()) {
+    <app-state-message kind="error" [headline]="jobsError()" />
+  } @else if (jobsLoading() && jobs().length === 0) {
+    <app-state-message kind="loading" headline="Loading scheduled jobs…" />
+  } @else {
+    <ul aria-label="Scheduled jobs">
+      @for (job of jobs(); track job.id) {
+        <li>
+          <strong>{{ job.id }}</strong>
+          every {{ hours(job.interval_seconds) }},
+          {{ job.enabled ? 'enabled' : 'disabled' }}{{ job.running ? ', running' : '' }};
+          last run {{ when(job.last_run_at) }};
+          next due {{ job.enabled ? when(job.next_due, 'unknown') : 'not scheduled' }}
+          @if (job.last_error) {
+            <app-state-message kind="error" [headline]="'Last error: ' + job.last_error" />
+          }
+          @if (job.last_skip_blocking) {
+            <app-state-message
+              kind="status"
+              [headline]="'Run skipped at ' + when(job.last_skip_at) + ': operation ' + job.last_skip_blocking + ' was still active.'"
+            />
+          }
+        </li>
+      } @empty {
+        <li>
+          <app-state-message kind="empty" headline="No scheduled jobs." />
+        </li>
+      }
+    </ul>
   }
 
   <h3>Save schedule</h3>
@@ -79,7 +128,7 @@
       <input #hoursInput name="interval" inputmode="numeric" [disabled]="busy()" />
     </label>
     <label>
-      Retain (runs)
+      Retain (runs to keep; 0 keeps every run)
       <input #retainInput name="retain" inputmode="numeric" value="7" [disabled]="busy()" />
     </label>
     <label>

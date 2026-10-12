@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"homestead/internal/backup"
 )
@@ -48,7 +49,7 @@ func (c *Client) BackupSchedule(ctx context.Context, schedule backup.Schedule) (
 
 // BackupUnschedule drops one package schedule, idempotent.
 func (c *Client) BackupUnschedule(ctx context.Context, packageName string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.base+"/api/v1/backups/schedules/"+packageName, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.base+"/api/v1/backups/schedules/"+url.PathEscape(packageName), nil)
 	if err != nil {
 		return fmt.Errorf("api: %w", err)
 	}

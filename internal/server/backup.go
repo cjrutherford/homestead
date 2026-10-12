@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 
 	"homestead/internal/backup"
@@ -70,7 +71,11 @@ func handleBackupScheduleSave(st *store.Store) http.HandlerFunc {
 			Retain: body.Retain, Enabled: body.Enabled, Actor: body.Actor,
 		})
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			status := http.StatusInternalServerError
+			if errors.Is(err, backup.ErrInvalidSchedule) {
+				status = http.StatusUnprocessableEntity
+			}
+			http.Error(w, err.Error(), status)
 			return
 		}
 		writeJSON(w, schedule)
@@ -81,7 +86,11 @@ func handleBackupScheduleGet(st *store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		schedule, err := backup.NewSchedules(st).Get(r.PathValue("package"))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			status := http.StatusInternalServerError
+			if errors.Is(err, backup.ErrScheduleNotFound) {
+				status = http.StatusNotFound
+			}
+			http.Error(w, err.Error(), status)
 			return
 		}
 		writeJSON(w, schedule)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -23,22 +24,31 @@ import (
 // asking faster want continuous replication, not scheduled copies.
 const minScheduleInterval = 3600
 
+var (
+	// ErrInvalidSchedule marks schedule validation failures (HTTP 422).
+	ErrInvalidSchedule = errors.New("backup: invalid schedule")
+	// ErrScheduleNotFound marks a package with no schedule (HTTP 404).
+	ErrScheduleNotFound = errors.New("backup: schedule not found")
+)
+
 // Schedule is one retained backup job: the package, cadence in
 // seconds, runs to keep (0 keeps everything), enablement, and who set
 // it. Wall-clock triggering belongs to timers; this table declares
 // intent, and job runs execute it through the operation engine where
 // results already record.
+//
+// The JSON form is snake_case, matching the save request body.
 type Schedule struct {
-	Package         string
-	IntervalSeconds int64
-	Retain          int
-	Enabled         bool
-	Actor           string
+	Package         string `json:"package"`
+	IntervalSeconds int64  `json:"interval_seconds"`
+	Retain          int    `json:"retain"`
+	Enabled         bool   `json:"enabled"`
+	Actor           string `json:"actor"`
 	// UpdatedAt anchors the cadence: it moves when the schedule is
 	// created, its interval changes, or it is re-enabled, and stays put
 	// on edits that keep the cadence (retention, actor), so those never
 	// delay the next run.
-	UpdatedAt time.Time
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Validate checks schedule shape plus actor presence.
@@ -46,8 +56,8 @@ func (s Schedule) Validate() error {
 	if err := s.validateShape(); err != nil {
 		return err
 	}
-	if s.Actor == "" {
-		return fmt.Errorf("backup: actor must not be empty")
+	if strings.TrimSpace(s.Actor) == "" {
+		return fmt.Errorf("%w: actor must not be empty", ErrInvalidSchedule)
 	}
 	return nil
 }
@@ -55,14 +65,14 @@ func (s Schedule) Validate() error {
 // validateShape checks everything but the actor, for flows (wizard
 // review) where ownership attaches at apply time.
 func (s Schedule) validateShape() error {
-	if s.Package == "" {
-		return fmt.Errorf("backup: schedule package must not be empty")
+	if strings.TrimSpace(s.Package) == "" {
+		return fmt.Errorf("%w: package must not be empty", ErrInvalidSchedule)
 	}
 	if s.IntervalSeconds < minScheduleInterval {
-		return fmt.Errorf("backup: interval must be at least one hour")
+		return fmt.Errorf("%w: interval must be at least one hour", ErrInvalidSchedule)
 	}
 	if s.Retain < 0 {
-		return fmt.Errorf("backup: retention must not be negative")
+		return fmt.Errorf("%w: retention must not be negative", ErrInvalidSchedule)
 	}
 	return nil
 }
@@ -80,6 +90,8 @@ func NewSchedules(s *store.Store) *Schedules {
 
 // Save creates or replaces a package schedule.
 func (s *Schedules) Save(schedule Schedule) (Schedule, error) {
+	schedule.Package = strings.TrimSpace(schedule.Package)
+	schedule.Actor = strings.TrimSpace(schedule.Actor)
 	if err := schedule.Validate(); err != nil {
 		return Schedule{}, err
 	}
@@ -110,7 +122,7 @@ func (s *Schedules) Get(packageName string) (Schedule, error) {
 		 FROM backup_schedules WHERE package = ?`, packageName,
 	).Scan(&schedule.Package, &schedule.IntervalSeconds, &schedule.Retain, &enabled, &schedule.Actor, &updated)
 	if err == sql.ErrNoRows {
-		return Schedule{}, fmt.Errorf("backup: no schedule for %q", packageName)
+		return Schedule{}, fmt.Errorf("%w: %q", ErrScheduleNotFound, packageName)
 	}
 	if err != nil {
 		return Schedule{}, fmt.Errorf("backup: get schedule %q: %w", packageName, err)

@@ -66,8 +66,7 @@
 - Scheduled database backups: S260 fires backup schedules, but
   database passwords are never stored, so scheduled postgres backups
   fail with a recorded error (file-only and sqlite packages run); needs
-  secret custody for unattended exports. Also a dashboard surface for
-  scheduler state (CLI/API only in S260).
+  secret custody for unattended exports.
 - ghcr registry checks: S190 discovers Docker Hub tags only; ghcr
   listings need a token flow before Immich updates discover
   upstream.
@@ -138,9 +137,14 @@
   the appliance with caller-named management hosts; scheduled
   re-validation, status surfaces, and best-vantage external
   probing belong to later slices.
-- Backup run firing: S238/S267 cover destination and schedule
-  records over the API, CLI, and dashboard; scheduled run firing
-  belongs to later slices.
+- Backup runs endpoint: scheduled runs fire (S260) and show as
+  operations, but there is no endpoint listing retained run
+  directories per package, so S267 shows destination, schedules, and
+  scheduler state only, not a runs list.
+- API casing consistency: backup schedules are snake_case JSON, but
+  other responses (for example ExposurePlan and UpdatePlan) still
+  serialize Go field names in PascalCase. Normalizing them needs a
+  coordinated API, CLI, and dashboard change.
 - Backup-run restoration: S234 rebuilds from export documents
   plus suite reinstalls; restoring application data from backup
   runs awaits the same backup surfaces.

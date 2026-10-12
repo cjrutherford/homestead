@@ -525,8 +525,9 @@ sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
   and fails loudly; plan files generate from environment with
   sane port defaults. Backup configuration
   has CLI/API surfaces since S238 (`homesteadctl backup`,
-  `/api/v1/backups/*`) but no dashboard surface yet, so the run
-  ends noting manual backup configuration before production use.
+  `/api/v1/backups/*`) and a dashboard Backups page since S267; the
+  run still ends noting manual backup configuration before
+  production use.
 
 ## Control-plane recovery (S230)
 
@@ -675,8 +676,20 @@ homesteadctl backup unschedule --package jellyfin
   guessing paths, schedules persist with hourly floors and actor
   presence, malformed bodies and short intervals refuse, deletes
   converge idempotently, and lists read empty (never null).
-  Backup runs themselves still fire through later slices;
-  dashboard surfaces belong to later slices.
+  Scheduled runs fire from the daemon scheduler (S260) and are
+  ordinary operations; there is no separate backup-runs endpoint.
+  The dashboard Backups page (S267) covers destination, schedules
+  (inspect, save, confirmed remove), and a read-only scheduled-jobs
+  panel.
+- Wire format: schedule records are snake_case JSON (`package`,
+  `interval_seconds`, `retain`, `enabled`, `actor`, `updated_at`),
+  matching the save request body. This changed from PascalCase keys
+  before any release; other responses (exposure and update plans)
+  still use PascalCase (docs/DEFERRED.md).
+- Status codes: reading an absent schedule is 404, validation
+  failures on save are 422, and store errors are 500. `retain` 0
+  keeps every run. Actor and package are trimmed; whitespace-only
+  values are refused.
 
 ## Daemon scheduler (S260)
 

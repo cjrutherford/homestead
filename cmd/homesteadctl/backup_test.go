@@ -15,9 +15,9 @@ func backupStub(t *testing.T) string {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/backups/destination":
 			_, _ = w.Write([]byte(`{"destination":"/mnt/backup"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/backups/schedules":
-			_, _ = w.Write([]byte(`[{"Package":"jellyfin","IntervalSeconds":86400,"Retain":7,"Enabled":true,"Actor":"owner"}]`))
+			_, _ = w.Write([]byte(`[{"package":"jellyfin","interval_seconds":86400,"retain":7,"enabled":true,"actor":"owner"}]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/backups/schedules":
-			_, _ = w.Write([]byte(`{"Package":"jellyfin","IntervalSeconds":86400,"Retain":7,"Enabled":true,"Actor":"owner"}`))
+			_, _ = w.Write([]byte(`{"package":"jellyfin","interval_seconds":86400,"retain":7,"enabled":true,"actor":"owner"}`))
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/backups/schedules/jellyfin":
 			w.WriteHeader(http.StatusNoContent)
 		default:

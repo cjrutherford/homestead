@@ -1,18 +1,25 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ApiService, BackupSchedule } from '../core/api.service';
+import {
+  ApiService,
+  BackupSchedule,
+  SchedulerJob,
+} from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 
 /**
  * Backup surfaces (S267): resolved destination plus schedule records,
  * with the same capabilities as `homesteadctl backup`. Intervals are
- * entered in hours (minimum 1) and sent as seconds. Run firing is
- * deferred; these controls configure only.
+ * entered in hours (minimum 1) and sent as seconds. The daemon
+ * scheduler fires schedules (S260); these controls configure, and the
+ * read-only scheduled-jobs panel shows its state. Retain 0 keeps every
+ * run (server semantics).
  */
 @Component({
   imports: [StateMessage],
   selector: 'app-backups',
   templateUrl: './backups.html',
+  styles: ['.backup-root { overflow-wrap: anywhere; }'],
 })
 export class Backups implements OnInit {
   private readonly api = inject(ApiService);
@@ -21,6 +28,10 @@ export class Backups implements OnInit {
   protected readonly destinationError = signal<string | null>(null);
   protected readonly schedules = signal<BackupSchedule[]>([]);
   protected readonly inspected = signal<BackupSchedule | null>(null);
+  protected readonly jobs = signal<SchedulerJob[]>([]);
+  protected readonly jobsLoading = signal(true);
+  protected readonly jobsError = signal<string | null>(null);
+  protected readonly confirmingRemove = signal<string | null>(null);
   protected readonly loading = signal(true);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -39,6 +50,18 @@ export class Backups implements OnInit {
       error: (failure: HttpErrorResponse) => {
         this.destination.set(null);
         this.destinationError.set(failure.error ?? failure.message);
+      },
+    });
+    this.jobsLoading.set(true);
+    this.jobsError.set(null);
+    this.api.schedulerJobs().subscribe({
+      next: (rows) => {
+        this.jobsLoading.set(false);
+        this.jobs.set(rows);
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.jobsLoading.set(false);
+        this.jobsError.set(failure.error ?? failure.message);
       },
     });
     this.api.backupSchedules().subscribe({
@@ -69,18 +92,22 @@ export class Backups implements OnInit {
     enabled: boolean,
     actor: string,
   ): void {
-    const interval = Number(hours);
-    const keep = Number(retain === '' ? '7' : retain);
+    name = name.trim();
+    actor = actor.trim();
+    hours = hours.trim();
+    retain = retain.trim();
     if (!name || !actor) {
       this.error.set('A schedule needs a package and a named actor.');
       return;
     }
-    if (!Number.isInteger(interval) || interval < 1) {
+    const interval = /^\d+$/.test(hours) ? Number(hours) : NaN;
+    if (!Number.isSafeInteger(interval) || interval < 1) {
       this.error.set('Interval must be a whole number of hours, at least 1.');
       return;
     }
-    if (!Number.isInteger(keep) || keep < 0) {
-      this.error.set('Retain must be a count of 0 or more.');
+    const keep = retain === '' ? 7 : /^\d+$/.test(retain) ? Number(retain) : NaN;
+    if (!Number.isSafeInteger(keep)) {
+      this.error.set('Retain must be a whole number of runs, 0 or more.');
       return;
     }
     this.busy.set(true);
@@ -97,7 +124,7 @@ export class Backups implements OnInit {
       .subscribe({
         next: (saved) => {
           this.busy.set(false);
-          this.notice.set(`Saved schedule for ${saved.Package}.`);
+          this.notice.set(`Saved schedule for ${saved.package}.`);
           this.refresh();
         },
         error: (failure: HttpErrorResponse) => {
@@ -107,14 +134,34 @@ export class Backups implements OnInit {
       });
   }
 
+  /** First step of removal: ask the owner to confirm. */
+  askRemove(name: string): void {
+    this.confirmingRemove.set(name);
+  }
+
+  cancelRemove(): void {
+    this.confirmingRemove.set(null);
+  }
+
+  /** Whole hours read plainly; other cadences show up to two decimals. */
+  hours(seconds: number): string {
+    return `${Number((seconds / 3600).toFixed(2))}h`;
+  }
+
+  /** Go's zero time means the event never happened. */
+  when(iso: string, empty = 'never'): string {
+    return !iso || iso.startsWith('0001-') ? empty : iso;
+  }
+
   remove(name: string): void {
+    this.confirmingRemove.set(null);
     this.busy.set(true);
     this.error.set(null);
     this.notice.set(null);
     this.api.backupScheduleDelete(name).subscribe({
       next: () => {
         this.busy.set(false);
-        if (this.inspected()?.Package === name) {
+        if (this.inspected()?.package === name) {
           this.inspected.set(null);
         }
         this.notice.set(`Removed schedule for ${name}.`);

@@ -244,12 +244,28 @@ export interface ExposureApproval {
 
 /** GET /api/v1/backups/schedules — one persisted schedule record. */
 export interface BackupSchedule {
-  Package: string;
-  IntervalSeconds: number;
-  Retain: number;
-  Enabled: boolean;
-  Actor: string;
-  UpdatedAt: string;
+  package: string;
+  interval_seconds: number;
+  /** Runs to keep; 0 keeps every run. */
+  retain: number;
+  enabled: boolean;
+  actor: string;
+  updated_at: string;
+}
+
+/** GET /api/v1/scheduler/jobs — one declared job with its run state. */
+export interface SchedulerJob {
+  id: string;
+  interval_seconds: number;
+  enabled: boolean;
+  last_run_at: string;
+  last_operation_id: number;
+  last_error: string;
+  last_skip_at: string;
+  last_skip_due: string;
+  last_skip_blocking: number;
+  next_due: string;
+  running: boolean;
 }
 
 /** GET /api/v1/tunnel/status — discovery, tunnels, and connector. */
@@ -470,6 +486,10 @@ export class ApiService {
     return this.http.delete<void>(
       `/api/v1/backups/schedules/${encodeURIComponent(name)}`,
     );
+  }
+
+  schedulerJobs(): Observable<SchedulerJob[]> {
+    return this.http.get<SchedulerJob[]>('/api/v1/scheduler/jobs');
   }
 
   tunnelStatus(): Observable<TunnelStatus> {
