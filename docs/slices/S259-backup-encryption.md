@@ -20,6 +20,7 @@ Split: this slice is the encrypting writer plus the matching restore decryption,
 - Existing backup API responses report `encrypted` and format version, shown by the S267 dashboard surface and `homesteadctl backup`; `docs/PARITY.md` updated for every added or changed route (`tests/test_s037_parity.py` stays green)
 - Update the "Backup encryption at rest" entry in `docs/DEFERRED.md` when landed: narrow it to recipient management and the runbook (S275 removes the entry)
 - Doctor warns while backups are encrypted only to the appliance identity (ADR-022); S271 adds the owner actions that clear it
+- Secret-backed container variable files (S266, under the stack directory) are included in encrypted backups and restored with mode 0600
 - Automated tests cover primary behavior
 - Main build remains green
 
