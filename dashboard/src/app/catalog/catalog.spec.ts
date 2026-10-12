@@ -45,6 +45,19 @@ const PLAN = {
   TLS: [],
   Firewall: [],
   Directories: [],
+  Mounts: [
+    {
+      Service: 'jellyfin',
+      Target: '/config',
+      Source: '/mnt/app/jellyfin/config',
+      Class: 'application',
+      Database: false,
+      Ephemeral: false,
+      ReadOnly: false,
+      Declared: true,
+    },
+  ],
+  Notes: [],
   Actions: ['provision', 'up'],
 };
 
@@ -93,10 +106,27 @@ describe('Catalog', () => {
     plan.flush(PLAN);
     fixture.detectChanges();
     expect(text()).toContain('provision, up');
+    expect(text()).toContain('/mnt/app/jellyfin/config');
     fixture.componentInstance['install']();
     http.expectOne('/api/v1/catalog/jellyfin/install').flush({ id: 7 });
     fixture.detectChanges();
     expect(text()).toContain('#7');
+  });
+
+  it('disables Install for installed packages', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush([{ ...PACKAGES[0], installed: true }]);
+    fixture.detectChanges();
+    fixture.componentInstance['select']('jellyfin');
+    http.expectOne('/api/v1/catalog/jellyfin').flush(MANIFEST);
+    fixture.componentInstance['reviewPlan']();
+    http.expectOne('/api/v1/catalog/jellyfin/plan').flush(PLAN);
+    fixture.detectChanges();
+    expect(text()).toContain('Already installed');
+    const button = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('button'),
+    ).find((b) => b.textContent?.trim() === 'Install') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
   });
 
   it('applies configuration variables', () => {

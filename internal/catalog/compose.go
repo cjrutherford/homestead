@@ -27,7 +27,16 @@ type VolumeMapping struct {
 	Source   string
 	Target   string
 	ReadOnly bool
+	// Tmpfs renders a memory-backed mount for an ephemeral path:
+	// no source, no persistence, and no anonymous Docker volume.
+	Tmpfs bool
+	// TmpfsBytes caps the tmpfs size (default defaultTmpfsBytes).
+	TmpfsBytes int64
 }
+
+// defaultTmpfsBytes bounds ephemeral mounts at 256 MiB so a runaway
+// writer cannot exhaust host memory.
+const defaultTmpfsBytes int64 = 256 << 20
 
 // NetworkAttachment joins one network: external Homestead networks
 // (edge, platform) attach by name, while an empty set leaves services
@@ -84,7 +93,7 @@ func (g Generation) validate(manifest Manifest) error {
 		}
 		seenTargets := map[string]bool{}
 		for _, volume := range spec.Volumes {
-			if volume.Source == "" || volume.Source[0] != '/' {
+			if !volume.Tmpfs && (volume.Source == "" || volume.Source[0] != '/') {
 				return fmt.Errorf("catalog: service %q volume source must be absolute", spec.Service)
 			}
 			if volume.Target == "" || volume.Target[0] != '/' {
@@ -112,10 +121,24 @@ func (g Generation) validate(manifest Manifest) error {
 // composeVolume renders one bind in long syntax: self-documenting for
 // owners reading generated files.
 type composeVolume struct {
-	Type     string `yaml:"type"`
-	Source   string `yaml:"source"`
-	Target   string `yaml:"target"`
-	ReadOnly bool   `yaml:"read_only,omitempty"`
+	Type     string        `yaml:"type"`
+	Source   string        `yaml:"source,omitempty"`
+	Target   string        `yaml:"target"`
+	ReadOnly bool          `yaml:"read_only,omitempty"`
+	Bind     *composeBind  `yaml:"bind,omitempty"`
+	Tmpfs    *composeTmpfs `yaml:"tmpfs,omitempty"`
+}
+
+// composeBind refuses implicit host directory creation: a missing
+// source (unmounted storage) must fail the start instead of silently
+// writing app data onto the root disk (ADR-013).
+type composeBind struct {
+	CreateHostPath bool `yaml:"create_host_path"`
+}
+
+// composeTmpfs sizes an ephemeral mount in bytes.
+type composeTmpfs struct {
+	Size int64 `yaml:"size"`
 }
 
 // composeService renders one service with Homestead conventions:
@@ -195,9 +218,18 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 				rendered.Ports = append(rendered.Ports, fmt.Sprintf("%d:%d", port.Host, port.Container))
 			}
 			for _, volume := range spec.Volumes {
-				rendered.Volumes = append(rendered.Volumes, composeVolume{
+				entry := composeVolume{
 					Type: "bind", Source: volume.Source, Target: volume.Target, ReadOnly: volume.ReadOnly,
-				})
+					Bind: &composeBind{CreateHostPath: false},
+				}
+				if volume.Tmpfs {
+					size := volume.TmpfsBytes
+					if size <= 0 {
+						size = defaultTmpfsBytes
+					}
+					entry = composeVolume{Type: "tmpfs", Target: volume.Target, Tmpfs: &composeTmpfs{Size: size}}
+				}
+				rendered.Volumes = append(rendered.Volumes, entry)
 			}
 		}
 		if len(serviceNetworks) > 0 {

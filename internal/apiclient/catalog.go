@@ -68,6 +68,17 @@ type InstallPlanReport struct {
 	Directories []struct {
 		Mountpoint string `json:"Mountpoint"`
 	} `json:"Directories"`
+	Mounts []struct {
+		Service   string `json:"Service"`
+		Target    string `json:"Target"`
+		Source    string `json:"Source"`
+		Class     string `json:"Class"`
+		Database  bool   `json:"Database"`
+		Ephemeral bool   `json:"Ephemeral"`
+		ReadOnly  bool   `json:"ReadOnly"`
+		Declared  bool   `json:"Declared"`
+	} `json:"Mounts"`
+	Notes   []string `json:"Notes"`
 	Actions []string `json:"Actions"`
 }
 

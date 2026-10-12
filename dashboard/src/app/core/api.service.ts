@@ -108,6 +108,8 @@ export interface PackageSummary {
   blurb: string;
   category: string;
   icon: string;
+  /** True when a stack already exists; Install is refused (S276). */
+  installed?: boolean;
 }
 
 /** GET /api/v1/catalog/:name — curated manifest detail. */
@@ -152,7 +154,21 @@ export interface InstallPlan {
   TLS: { Host: string; Issuer: string }[];
   Firewall: { Service: { Name: string } }[];
   Directories: { Mountpoint: string }[];
+  Mounts?: PlannedMount[] | null;
+  Notes?: string[] | null;
   Actions: string[];
+}
+
+/** One resolved container mount in an install plan (S276). */
+export interface PlannedMount {
+  Service: string;
+  Target: string;
+  Source: string;
+  Class: string;
+  Database: boolean;
+  Ephemeral: boolean;
+  ReadOnly: boolean;
+  Declared: boolean;
 }
 
 /** GET /api/v1/secrets/key — secret-store key custody status (S258). */

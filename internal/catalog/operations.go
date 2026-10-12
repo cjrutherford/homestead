@@ -80,6 +80,9 @@ func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string,
 	if dir == "" {
 		dir = plan.Compose.Stack.Dir
 	}
+	if err := RefuseInstalled(st, plan.Package, dir, nil); err != nil {
+		return operation.Definition{}, err
+	}
 	def := operation.Definition{Type: "catalog.install"}
 	for i := range plan.Directories {
 		provision := plan.Directories[i]

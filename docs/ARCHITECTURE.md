@@ -63,3 +63,11 @@ Homestead separates:
 - `/var/log/homestead/`
 - `/run/homestead/`
 - `/opt/homestead/stacks/`
+
+## Application data
+Catalog apps keep persistent data in bind mounts under assigned mounted
+storage: `<class mount>/<package>/<subpath>`, declared per service in
+`catalog/*.yaml` (S276). Generated Compose files are self-contained with
+absolute host paths, so the stack stays usable without Homestead.
+Backups scan `<mount>/<package>` per assigned mount. Existing installs
+that predate this layout are migrated by S277.

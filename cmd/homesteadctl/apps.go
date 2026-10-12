@@ -112,8 +112,34 @@ func runAppsPlan(ctx context.Context, client *apiclient.Client, args []string, s
 	for _, dir := range plan.Directories {
 		fmt.Fprintf(stdout, "directory: %s\n", dir.Mountpoint)
 	}
+	for _, mount := range plan.Mounts {
+		fmt.Fprintf(stdout, "mount: %s\n", formatMount(mount.Service, mount.Target, mount.Source,
+			mount.Class, mount.Database, mount.Ephemeral, mount.ReadOnly, mount.Declared))
+	}
+	for _, note := range plan.Notes {
+		fmt.Fprintf(stdout, "note: %s\n", note)
+	}
 	fmt.Fprintf(stdout, "actions: %s\n", strings.Join(plan.Actions, ", "))
 	return exitOK
+}
+
+// formatMount renders one planned mount: service target <- host path,
+// with class and flags, so owners review where data lands (S276).
+func formatMount(service, target, source, class string, database, ephemeral, readOnly, declared bool) string {
+	if ephemeral {
+		return fmt.Sprintf("%s %s <- tmpfs (ephemeral)", service, target)
+	}
+	flags := []string{class}
+	if database {
+		flags = append(flags, "database")
+	}
+	if readOnly {
+		flags = append(flags, "read-only")
+	}
+	if !declared {
+		flags = append(flags, "owner")
+	}
+	return fmt.Sprintf("%s %s <- %s (%s)", service, target, source, strings.Join(flags, ", "))
 }
 
 func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {

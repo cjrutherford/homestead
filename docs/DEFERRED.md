@@ -213,3 +213,19 @@
   `<package>` still yield the same step name and the same destination
   subpath, so a scheduled or pre-update backup of that package is refused
   with a duplicate step error. Needs per-mount destination subpaths.
+- Catalog data placement follow-ups (S276): every persistent image path
+  of the four first-party apps lives on mounted storage; none needed an
+  exception. Not done: Immich's Valkey `/data` and any similar queue
+  state is ephemeral (tmpfs) by decision, so a restart drops queued jobs;
+  `backuppaths` in manifests is still informational (backups copy the
+  whole `<mount>/<package>` tree, including Jellyfin's bulk `cache` and
+  Immich's `model-cache`, and file copies of live Postgres directories
+  are not crash-consistent, so only Authentik's declared export is
+  authoritative for its database; Immich declares no export yet);
+  Nextcloud's default SQLite database lives in `data/` on bulk beside
+  user files, so file-level backups of a live instance are not
+  crash-consistent and the manifest declares no database export for it;
+  image VOLUME table rows marked `Unverified` in
+  `internal/catalog/data_test.go` (everything except postgres:16-alpine)
+  come from upstream documentation or an adjacent local tag and must
+  be confirmed by inspecting the images in KVM (`docker inspect`).

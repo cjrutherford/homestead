@@ -13,6 +13,17 @@ services:
 - name: jellyfin
   image: jellyfin/jellyfin:12.2
   exposes: web
+  # Image VOLUMEs: /config, /cache. The image runs as root by default
+  # (no USER in the image config), so ownership stays untouched. Media
+  # libraries are owner mounts (referenced, never provisioned), not
+  # declarations.
+  data:
+  - target: /config
+    class: application
+    subpath: config
+  - target: /cache
+    class: bulk
+    subpath: cache
 requirements:
   memorymb: 2048
   cpucount: 2

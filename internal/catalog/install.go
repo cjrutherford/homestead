@@ -3,6 +3,8 @@ package catalog
 import (
 	"fmt"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"homestead/internal/cert"
@@ -16,11 +18,14 @@ import (
 // resolves the source root, subpath scopes the package directory, and
 // target names the container path. Sources compute as
 // <mount>/<package>/<subpath> — deterministic, inspectable, and
-// provisionable by construction.
+// provisionable by construction. HostPath instead references an
+// owner-chosen existing directory under the class mount (media
+// libraries): never provisioned, never created, and Subpath stays empty.
 type VolumeSpec struct {
 	Service  string
 	Class    storage.Class
 	Subpath  string
+	HostPath string
 	Target   string
 	ReadOnly bool
 }
@@ -72,7 +77,11 @@ type InstallPlan struct {
 	TLS          []TLSNeed
 	Firewall     []firewall.ServicePolicy
 	Directories  []ProvisionDir
-	Actions      []string
+	// Mounts lists every resolved container mount with its absolute
+	// host source, declared and owner-supplied alike (S276).
+	Mounts  []PlannedMount
+	Notes   []string
+	Actions []string
 }
 
 // PlanInstall produces the install change set, refusing unplannable
@@ -143,28 +152,88 @@ func planRoutes(plan *InstallPlan, req InstallRequest, recommendations []RouteRe
 	return nil
 }
 
-// planCompose renders the stack with caller-positioned volumes
-// (sources joined from class mounts), ports unpublished by default —
-// local-first serving goes through the proxy, never host ports — and
-// the requested networks. Volume services must exist in the manifest;
-// targets validate absolute at generation.
+// planCompose renders the stack with catalog-declared data placement
+// (S276) plus owner extras: every declared path resolves to
+// <class mount>/<package>/<subpath> from the storage assignments — a
+// missing assignment is a requirements failure, never a silent
+// default — and ephemeral paths render as tmpfs. Owner volumes may
+// add mounts but never replace a declaration: a colliding target is
+// ignored and noted in the plan. Ports stay unpublished by default —
+// local-first serving goes through the proxy, never host ports.
 func planCompose(plan *InstallPlan, req InstallRequest) error {
 	byService := map[string][]VolumeMapping{}
+	declared := map[string]bool{}
+	seenDirs := map[string]bool{}
+	addDir := func(mountpoint string, dir storage.Directory) {
+		key := mountpoint + "\x00" + dir.Path
+		if seenDirs[key] {
+			return
+		}
+		seenDirs[key] = true
+		plan.Directories = append(plan.Directories, ProvisionDir{Mountpoint: mountpoint, Directory: dir})
+	}
+	mounts, dirs, err := ResolveData(req.Manifest, req.Storage)
+	if err != nil {
+		return err
+	}
+	for _, mount := range mounts {
+		declared[mount.Service+"\x00"+mount.Target] = true
+		byService[mount.Service] = append(byService[mount.Service], VolumeMapping{
+			Source: mount.Source, Target: mount.Target, Tmpfs: mount.Ephemeral,
+			TmpfsBytes: int64(mount.TmpfsMB) << 20,
+		})
+	}
+	plan.Mounts = append(plan.Mounts, mounts...)
+	for _, dir := range dirs {
+		addDir(dir.Mountpoint, dir.Directory)
+	}
+	known := map[string]bool{}
+	for _, service := range req.Manifest.Services {
+		known[service.Name] = true
+	}
 	for _, volume := range req.Volumes {
+		if !known[volume.Service] {
+			return fmt.Errorf("catalog: volume names unknown service %q", volume.Service)
+		}
+		if declared[volume.Service+"\x00"+volume.Target] {
+			return fmt.Errorf("catalog: volume %s %s collides with a path the catalog declares; declarations cannot be overridden",
+				volume.Service, volume.Target)
+		}
 		mountpoint, ok := req.Storage[volume.Class]
 		if !ok {
 			return fmt.Errorf("catalog: class %s has no mountpoint", volume.Class)
 		}
-		if err := validateSubpath(volume.Subpath); err != nil {
-			return err
-		}
 		if volume.Target == "" || volume.Target[0] != '/' {
 			return fmt.Errorf("catalog: volume target %q must be absolute", volume.Target)
 		}
+		if volume.HostPath != "" {
+			source, err := validateHostPath(mountpoint, volume)
+			if err != nil {
+				return err
+			}
+			byService[volume.Service] = append(byService[volume.Service], VolumeMapping{
+				Source: source, Target: volume.Target, ReadOnly: volume.ReadOnly,
+			})
+			plan.Mounts = append(plan.Mounts, PlannedMount{
+				Service: volume.Service, Target: volume.Target, Source: source,
+				Class: volume.Class, ReadOnly: volume.ReadOnly,
+			})
+			continue
+		}
+		if err := validateSubpath(volume.Subpath); err != nil {
+			return err
+		}
+		source := mountpoint + "/" + req.Manifest.Name + "/" + volume.Subpath
 		byService[volume.Service] = append(byService[volume.Service], VolumeMapping{
-			Source:   mountpoint + "/" + req.Manifest.Name + "/" + volume.Subpath,
-			Target:   volume.Target,
-			ReadOnly: volume.ReadOnly,
+			Source: source, Target: volume.Target, ReadOnly: volume.ReadOnly,
+		})
+		plan.Mounts = append(plan.Mounts, PlannedMount{
+			Service: volume.Service, Target: volume.Target, Source: source,
+			Class: volume.Class, ReadOnly: volume.ReadOnly,
+		})
+		relative := req.Manifest.Name + "/" + volume.Subpath
+		addDir(mountpoint, storage.Directory{
+			Path: relative, Mode: 0o750, Uid: storage.UnsetID, Gid: storage.UnsetID,
 		})
 	}
 	var specs []ServiceGeneration
@@ -176,17 +245,34 @@ func planCompose(plan *InstallPlan, req InstallRequest) error {
 		return err
 	}
 	plan.Compose = files
-	for _, volume := range req.Volumes {
-		plan.Directories = append(plan.Directories, ProvisionDir{
-			Mountpoint: req.Storage[volume.Class],
-			Directory: storage.Directory{
-				Path: req.Manifest.Name + "/" + volume.Subpath,
-				Mode: 0o750, Uid: storage.UnsetID, Gid: storage.UnsetID,
-			},
-		})
-	}
 	plan.Actions = append(plan.Actions, "provision", "up")
 	return nil
+}
+
+// validateHostPath checks an owner-chosen library path: absolute,
+// inside the class mount, and an existing directory. Libraries predate
+// installs and outlive them, so planning never creates them — a typo
+// must fail instead of mounting an empty directory.
+func validateHostPath(mountpoint string, volume VolumeSpec) (string, error) {
+	if volume.Subpath != "" {
+		return "", fmt.Errorf("catalog: volume %s %s takes a host path or a subpath, not both", volume.Service, volume.Target)
+	}
+	if !filepath.IsAbs(volume.HostPath) {
+		return "", fmt.Errorf("catalog: host path %q must be absolute", volume.HostPath)
+	}
+	cleaned := filepath.Clean(volume.HostPath)
+	root := filepath.Clean(mountpoint)
+	if cleaned != root && !strings.HasPrefix(cleaned, root+string(os.PathSeparator)) {
+		return "", fmt.Errorf("catalog: host path %q lives outside the %s mount %q", volume.HostPath, volume.Class, mountpoint)
+	}
+	info, err := os.Stat(cleaned)
+	if err != nil {
+		return "", fmt.Errorf("catalog: host path %q: %w", volume.HostPath, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("catalog: host path %q is not a directory", volume.HostPath)
+	}
+	return cleaned, nil
 }
 
 // validateSubpath checks volume subpaths: relative and contained,

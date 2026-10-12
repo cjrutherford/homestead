@@ -16,6 +16,22 @@ services:
 - name: nextcloud
   image: nextcloud:35.0.1-apache
   exposes: web
+  # Image VOLUME: /var/www/html (code, config, apps). User files and
+  # the default SQLite database live in its data/ directory, mounted
+  # nested on bulk storage (not flagged `database`: it is mostly user
+  # files). The image runs as www-data (33); the nested mountpoint stub
+  # is provisioned with the same owner.
+  data:
+  - target: /var/www/html
+    class: application
+    subpath: html
+    uid: 33
+    gid: 33
+  - target: /var/www/html/data
+    class: bulk
+    subpath: data
+    uid: 33
+    gid: 33
 requirements:
   memorymb: 1024
   cpucount: 2

@@ -18,15 +18,44 @@ services:
 - name: server
   image: ghcr.io/immich-app/immich-server:v3.3.0
   exposes: web
+  # Image VOLUME: /data (uploads, thumbnails, encoded video). The
+  # official image runs as root (upstream compose sets no user), so
+  # ownership stays untouched.
+  data:
+  - target: /data
+    class: bulk
+    subpath: library
 - name: machine-learning
   image: ghcr.io/immich-app/immich-machine-learning:v3.3.0
   exposes: ""
+  # Downloaded models; persisted so restarts do not re-download. Runs
+  # as root like the server image.
+  data:
+  - target: /cache
+    class: bulk
+    subpath: model-cache
 - name: database
   image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
   exposes: ""
+  # Image VOLUME: /var/lib/postgresql/data (postgres uid 999, 0700).
+  data:
+  - target: /var/lib/postgresql/data
+    class: application
+    subpath: database
+    database: true
+    mode: "0700"
+    uid: 999
+    gid: 999
 - name: cache
   image: valkey/valkey:9
   exposes: ""
+  # Image VOLUME: /data. Job queue and cache only; Immich rebuilds
+  # both on start (the official compose persists nothing here).
+  data:
+  - target: /data
+    ephemeral: true
+    sizemb: 256
+    reason: Queue and cache state Immich rebuilds on start; nothing to back up.
 requirements:
   memorymb: 4096
   cpucount: 2

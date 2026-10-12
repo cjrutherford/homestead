@@ -61,6 +61,12 @@ export class Catalog implements OnInit {
   protected readonly configRows = signal<ConfigRow[]>([]);
   protected readonly unsetRows = signal<ConfigRow[]>([]);
 
+  /** Installed packages cannot be installed again (S276). */
+  protected isInstalled(): boolean {
+    const name = this.selected()?.Name;
+    return this.packages().some((pkg) => pkg.name === name && pkg.installed === true);
+  }
+
   ngOnInit(): void {
     this.busy.set(true);
     this.api.catalogPackages().subscribe({

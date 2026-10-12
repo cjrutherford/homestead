@@ -145,7 +145,32 @@
         <li>Directories: {{ reviewed.Directories.length }}</li>
         <li>Actions: {{ reviewed.Actions.join(', ') }}</li>
       </ul>
-      <button type="button" (click)="install()" [disabled]="busy()">Install</button>
+      @if (reviewed.Mounts?.length) {
+        <h4>Data placement</h4>
+        <ul class="plan-mounts">
+          @for (mount of reviewed.Mounts; track mount.Service + mount.Target) {
+            <li>
+              {{ mount.Service }} {{ mount.Target }} &larr;
+              @if (mount.Ephemeral) {
+                tmpfs (ephemeral)
+              } @else {
+                <code>{{ mount.Source }}</code> ({{ mount.Class }}{{ mount.Database ? ', database' : ''
+                }}{{ mount.ReadOnly ? ', read-only' : '' }}{{ mount.Declared ? '' : ', owner' }})
+              }
+            </li>
+          }
+        </ul>
+      }
+      @for (note of reviewed.Notes ?? []; track note) {
+        <p class="plan-note">{{ note }}</p>
+      }
+      @if (isInstalled()) {
+        <p class="plan-note">
+          Already installed. Use configure or update instead; installing again would replace its
+          data mounts.
+        </p>
+      }
+      <button type="button" (click)="install()" [disabled]="busy() || isInstalled()">Install</button>
     }
 
     @if (operationId() !== null) {

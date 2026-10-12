@@ -30,6 +30,10 @@ type Service struct {
 	// images like Authentik require `server`/`worker` verbs):
 	// empty inherits the image default.
 	Command []string
+	// Data declares every container path the image writes (S276):
+	// persistent paths placed on mounted storage, ephemeral ones
+	// explicitly marked.
+	Data []DataPath
 }
 
 // Validate checks service shape and endpoint linkage.
@@ -275,6 +279,9 @@ func (m Manifest) Validate() error {
 		seenServices[m.Services[i].Name] = true
 	}
 	if err := m.Requirements.Validate(); err != nil {
+		return err
+	}
+	if err := validateData(m.Services, m.Requirements); err != nil {
 		return err
 	}
 	for i, path := range m.BackupPaths {

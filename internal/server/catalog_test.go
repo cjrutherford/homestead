@@ -67,6 +67,20 @@ backuppaths: [data]
 	}
 	srv := New("127.0.0.1:0")
 	srv.MountCatalog(s, catalogDir)
+	// Planning verifies class mounts against live discovery; stub it
+	// so tests do not depend on the host mount table.
+	oldDiscover := discoverStorage
+	discoverStorage = func() (discover.Storage, error) {
+		return discover.Storage{Mounts: []discover.Mount{
+			{Mountpoint: "/", Accessible: true},
+			{Mountpoint: "/tmp", Accessible: true},
+			{Mountpoint: "/ro", Accessible: true, ReadOnly: true},
+		}}, nil
+	}
+	t.Cleanup(func() { discoverStorage = oldDiscover })
+	oldStack := stackDirFor
+	stackDirFor = func(name string) string { return filepath.Join(dir, "stacks", name) }
+	t.Cleanup(func() { stackDirFor = oldStack })
 	// The planner needs an assigned application mount with live space:
 	// approve / against fixture discovery (real discovery always
 	// carries / with usage), then bind the class.
@@ -302,5 +316,40 @@ func TestCatalogUninstall(t *testing.T) {
 	recorder = serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/demo/uninstall", map[string]any{"remove_data": true})
 	if recorder.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("code = %d", recorder.Code)
+	}
+}
+
+func TestCatalogInstallRefusesInstalled(t *testing.T) {
+	srv, _ := catalogTestServer(t)
+	stack := stackDirFor("demo")
+	if err := os.MkdirAll(stack, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Pre-S276 stack: no bind mounts for the declared paths.
+	if err := os.WriteFile(filepath.Join(stack, "compose.yaml"), []byte("name: demo\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	for _, route := range []string{"plan", "install"} {
+		recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/demo/"+route, installTestBody())
+		if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "already installed") {
+			t.Fatalf("%s: code = %d (%s)", route, recorder.Code, recorder.Body.String())
+		}
+	}
+	recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog", nil)
+	var list []packageSummary
+	if err := json.Unmarshal(recorder.Body.Bytes(), &list); err != nil || len(list) != 1 || !list[0].Installed {
+		t.Fatalf("list = %+v (%v)", list, err)
+	}
+}
+
+func TestCatalogPlanRefusesUnmountedStorage(t *testing.T) {
+	srv, _ := catalogTestServer(t)
+	for _, mount := range []string{"/not-mounted", "/ro"} {
+		body := installTestBody()
+		body["storage"] = map[string]string{"application": mount}
+		recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/demo/plan", body)
+		if recorder.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("%s: code = %d (%s)", mount, recorder.Code, recorder.Body.String())
+		}
 	}
 }

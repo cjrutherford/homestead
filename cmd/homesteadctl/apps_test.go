@@ -17,7 +17,7 @@ func appsStub(t *testing.T) string {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/catalog":
 			_, _ = w.Write([]byte(`[{"name":"jellyfin","version":"12.2","title":"Jellyfin","blurb":"Media.","category":"media","icon":"mdi:plex"}]`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/plan"):
-			_, _ = w.Write([]byte(`{"Package":"jellyfin","Requirements":{"Passed":true},"Routes":[{"Host":"jellyfin.lan","Exposure":"local"}],"DNS":[],"TLS":[],"Firewall":[],"Directories":[],"Actions":["provision","up"]}`))
+			_, _ = w.Write([]byte(`{"Package":"jellyfin","Requirements":{"Passed":true},"Routes":[{"Host":"jellyfin.lan","Exposure":"local"}],"DNS":[],"TLS":[],"Firewall":[],"Directories":[],"Mounts":[{"Service":"jellyfin","Target":"/config","Source":"/mnt/app/jellyfin/config","Class":"application","Declared":true},{"Service":"cache","Target":"/data","Ephemeral":true,"Declared":true}],"Notes":["owner volume ignored"],"Actions":["provision","up"]}`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/install"):
 			_, _ = w.Write([]byte(`{"id":7}`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/configure"):
@@ -59,7 +59,7 @@ func TestAppsPlan(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit = %d", code)
 	}
-	for _, want := range []string{"package: jellyfin", "route: jellyfin.lan (local)", "actions: provision, up"} {
+	for _, want := range []string{"package: jellyfin", "route: jellyfin.lan (local)", "actions: provision, up", "mount: jellyfin /config <- /mnt/app/jellyfin/config (application)", "mount: cache /data <- tmpfs (ephemeral)", "note: owner volume ignored"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout)
 		}
