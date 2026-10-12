@@ -225,7 +225,8 @@
   Nextcloud's default SQLite database lives in `data/` on bulk beside
   user files, so file-level backups of a live instance are not
   crash-consistent and the manifest declares no database export for it;
-  image VOLUME table rows marked `Unverified` in
-  `internal/catalog/data_test.go` (everything except postgres:16-alpine)
-  come from upstream documentation or an adjacent local tag and must
-  be confirmed by inspecting the images in KVM (`docker inspect`).
+  restore has no CLI/API surface yet (S276 KVM restored a run through
+  the `internal/backup` plan and definition directly); Immich has no
+  generated Redis or database environment, so owners must `apps configure`
+  `REDIS_HOSTNAME`, `DB_*`, and Postgres credentials before the server
+  starts.

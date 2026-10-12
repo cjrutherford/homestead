@@ -1577,6 +1577,35 @@ the run manifest keeps `sources` (entry to mountpoint) and a new `paths`
 map (entry to package-relative path) so restore returns each tree to its
 own mount. Older manifests (entry = path, no `paths`) restore unchanged,
 and sources sharing a destination are refused before copying.
+Backup copies recreate relative symlinks that stay inside the tree
+(Nextcloud's code tree has 121) as links, never following them, still
+refuse absolute or escaping links, and keep owner and group when the
+daemon runs as root so a restored Postgres or Nextcloud tree stays
+usable by its container.
+
+- Proven live in KVM (S276, 278332f plus the fixes after it, fresh VM 2
+  with `/mnt/app`, `/mnt/bulk`, `/mnt/backup` ext4 data disks in
+  fstab): `scripts/acceptance.sh` ran to completion; plans listed the
+  resolved host paths; Authentik joined by hand. `docker inspect` of
+  all nine containers showed only bind mounts under
+  `/mnt/app/<pkg>` or `/mnt/bulk/<pkg>` plus the capped valkey tmpfs,
+  and `docker volume ls` stayed empty. Provisioned ownership held
+  (authentik 1000, alpine postgres 70, immich postgres 999, nextcloud
+  33 including the nested `html/data` stub); Nextcloud installed with
+  `occ`, and a WebDAV upload landed in `/mnt/bulk/nextcloud/data`.
+  With `/mnt/bulk` unmounted a plan and install were refused (422) and
+  no directories appeared on the root disk; reinstalling an installed
+  app is 409. Scheduled backups for jellyfin, nextcloud, and immich
+  wrote distinct `<run>/<class>/<pkg>` trees with real data (Jellyfin
+  `jellyfin.db`, the Nextcloud test file and `owncloud.db`, Immich's
+  Postgres directory) and manifests with sources and paths; a Jellyfin
+  restore onto a stopped stack returned the deleted database and the
+  app came back healthy. Authentik's scheduled backup records the known
+  "postgres backup needs a database password" error (docs/DEFERRED.md).
+  Image inspection showed every `knownImageVolumes` row correct except
+  valkey, which declares no VOLUME (row fixed). Found and fixed:
+  Nextcloud backups failed on its in-tree symlinks, and backup copies
+  dropped file ownership.
 Local backups (S181) in
 `internal/backup` resolve backup-class destinations with live
 re-checks, copy trees preserving modes with symlinks refused,
