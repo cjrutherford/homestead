@@ -260,3 +260,38 @@ func TestJobValidation(t *testing.T) {
 		t.Fatal("missing prune step")
 	}
 }
+
+func TestScheduleEditKeepsCadenceAnchor(t *testing.T) {
+	schedules := openSchedules(t)
+	first, err := schedules.Save(Schedule{Package: "photos", IntervalSeconds: 86400, Retain: 7, Enabled: true, Actor: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	edited, err := schedules.Save(Schedule{Package: "photos", IntervalSeconds: 86400, Retain: 3, Enabled: true, Actor: "other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !edited.UpdatedAt.Equal(first.UpdatedAt) || edited.Retain != 3 || edited.Actor != "other" {
+		t.Fatalf("retention edit moved the window: %+v vs %+v", edited, first)
+	}
+	time.Sleep(2 * time.Millisecond)
+	changed, err := schedules.Save(Schedule{Package: "photos", IntervalSeconds: 7200, Retain: 3, Enabled: true, Actor: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed.UpdatedAt.After(first.UpdatedAt) {
+		t.Fatal("interval change must restart the window")
+	}
+	if _, err := schedules.Save(Schedule{Package: "photos", IntervalSeconds: 7200, Retain: 3, Enabled: false, Actor: "owner"}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	reenabled, err := schedules.Save(Schedule{Package: "photos", IntervalSeconds: 7200, Retain: 3, Enabled: true, Actor: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reenabled.UpdatedAt.After(changed.UpdatedAt) {
+		t.Fatal("re-enabling must restart the window")
+	}
+}

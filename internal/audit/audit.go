@@ -26,6 +26,9 @@ const (
 	OutcomeOK = "ok"
 	// OutcomeError records failure.
 	OutcomeError = "error"
+	// OutcomeSkipped records work deliberately not performed (for
+	// example a scheduled run skipped because the previous one is live).
+	OutcomeSkipped = "skipped"
 )
 
 // ErrNotFound reports unknown audit ids.
@@ -63,8 +66,8 @@ func (s *Service) Record(entry Entry) (Entry, error) {
 	if entry.Action == "" {
 		return Entry{}, fmt.Errorf("audit: action must not be empty")
 	}
-	if entry.Outcome != OutcomeOK && entry.Outcome != OutcomeError {
-		return Entry{}, fmt.Errorf("audit: outcome must be ok or error")
+	if entry.Outcome != OutcomeOK && entry.Outcome != OutcomeError && entry.Outcome != OutcomeSkipped {
+		return Entry{}, fmt.Errorf("audit: outcome must be ok, error, or skipped")
 	}
 	if entry.Plan != "" && !json.Valid([]byte(entry.Plan)) {
 		return Entry{}, fmt.Errorf("audit: plan must be empty or JSON")

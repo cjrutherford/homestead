@@ -171,3 +171,6 @@
   hardens the cookie); and a `Secure`-cookie caveat for plain-HTTP LAN
   access: browsers accept `Secure` cookies only over HTTPS or localhost,
   so TLS-less LAN dashboards rely on the cookie being non-Secure there.
+- Operation cancel route: `Runner.Cancel` exists but no API, CLI, or
+  dashboard surface calls it, so a hung operation that blocks a
+  scheduled job (ADR-023) can only be cleared by restarting the daemon.

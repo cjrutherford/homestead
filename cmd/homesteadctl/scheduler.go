@@ -28,6 +28,13 @@ func runScheduler(ctx context.Context, client *apiclient.Client, args []string, 
 		}
 		fmt.Fprintf(stdout, "%s every %ds enabled=%v last=%s next=%s op=%d running=%v\n",
 			job.ID, job.IntervalSeconds, job.Enabled, last, next, job.LastOperationID, job.Running)
+		if job.LastError != "" {
+			fmt.Fprintf(stdout, "  last_error=%s\n", job.LastError)
+		}
+		if !job.LastSkipAt.IsZero() {
+			fmt.Fprintf(stdout, "  last_skip=%s blocked_by_operation=%d\n",
+				job.LastSkipAt.UTC().Format(time.RFC3339), job.LastSkipBlocking)
+		}
 	}
 	return exitOK
 }

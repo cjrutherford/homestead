@@ -14,6 +14,8 @@ package scheduler
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -64,8 +66,12 @@ type Status struct {
 	LastOperationID int64     `json:"last_operation_id"`
 	LastError       string    `json:"last_error"`
 	LastSkipAt      time.Time `json:"last_skip_at"`
-	NextDue         time.Time `json:"next_due"`
-	Running         bool      `json:"running"`
+	// LastSkipDue is the window the last skip spent; LastSkipBlocking is
+	// the live operation that blocked it.
+	LastSkipDue      time.Time `json:"last_skip_due"`
+	LastSkipBlocking int64     `json:"last_skip_blocking"`
+	NextDue          time.Time `json:"next_due"`
+	Running          bool      `json:"running"`
 }
 
 // Scheduler evaluates registered sources and enqueues due jobs.
@@ -77,7 +83,8 @@ type Scheduler struct {
 	clock  func() time.Time
 	every  time.Duration
 
-	mu      sync.Mutex // serializes Tick and Status; guards sources
+	tickMu  sync.Mutex // serializes Tick; never held by Status
+	mu      sync.Mutex // guards sources only; never held across Build or enqueue
 	sources []namedSource
 }
 
@@ -118,11 +125,19 @@ func (s *Scheduler) Register(name string, src Source) {
 	s.sources = append(s.sources, namedSource{name, src})
 }
 
+// Now reports the scheduler's clock, so sources can stamp work with the
+// same injectable time the schedule is evaluated against.
+func (s *Scheduler) Now() time.Time { return s.clock() }
+
+// state is one scheduler_jobs row. Rows for jobs whose schedule was
+// deleted are orphaned and harmless: nothing reads a row unless a
+// declared job with that ID exists, and re-declaring the ID resumes it.
 type state struct {
 	lastRun      time.Time
 	lastOp       int64
 	lastErr      string
 	lastSkip     time.Time
+	skipDue      time.Time
 	skipBlocking int64
 }
 
@@ -140,24 +155,27 @@ func format(t time.Time) string {
 
 func (s *Scheduler) load(id string) (state, error) {
 	var st state
-	var run, skip string
+	var run, skip, skipDue string
 	err := s.db.QueryRow(
-		`SELECT last_run_at, last_operation_id, last_error, last_skip_at, last_skip_blocking
+		`SELECT last_run_at, last_operation_id, last_error, last_skip_at, last_skip_due, last_skip_blocking
 		 FROM scheduler_jobs WHERE job_id = ?`, id,
-	).Scan(&run, &st.lastOp, &st.lastErr, &skip, &st.skipBlocking)
+	).Scan(&run, &st.lastOp, &st.lastErr, &skip, &skipDue, &st.skipBlocking)
 	if err == sql.ErrNoRows {
 		return state{}, nil
 	}
 	if err != nil {
 		return state{}, fmt.Errorf("scheduler: load %q: %w", id, err)
 	}
-	st.lastRun, st.lastSkip = parse(run), parse(skip)
+	st.lastRun, st.lastSkip, st.skipDue = parse(run), parse(skip), parse(skipDue)
 	return st, nil
 }
 
 // nextDue is one interval after the latest of the anchor, the last run,
-// and the last skip: a skipped window is spent, not queued.
-func nextDue(job Job, st state) time.Time {
+// and the last skip: a skipped window is spent, not queued. Recorded
+// times in the future (the clock stepped backwards) count as now, so a
+// bad clock step cannot silence a job until the clock catches up.
+func nextDue(job Job, st state, now time.Time) time.Time {
+	st = clampState(st, now)
 	base := job.Since
 	if st.lastRun.After(base) {
 		base = st.lastRun
@@ -168,19 +186,34 @@ func nextDue(job Job, st state) time.Time {
 	return base.Add(job.Interval)
 }
 
-func (s *Scheduler) jobs() (map[string]Job, []string, error) {
-	out := map[string]Job{}
-	var ids []string
-	for _, ns := range s.sources {
+func clampState(st state, now time.Time) state {
+	if st.lastRun.After(now) {
+		st.lastRun = now
+	}
+	if st.lastSkip.After(now) {
+		st.lastSkip = now
+	}
+	return st
+}
+
+// jobs reads every source. The first job to claim an ID wins; later
+// duplicates are dropped and reported in dups (never silently).
+func (s *Scheduler) jobs() (out map[string]Job, ids []string, dups []error, err error) {
+	s.mu.Lock()
+	sources := append([]namedSource(nil), s.sources...)
+	s.mu.Unlock()
+	out = map[string]Job{}
+	for _, ns := range sources {
 		jobs, err := ns.src.ScheduledJobs()
 		if err != nil {
-			return nil, nil, fmt.Errorf("scheduler: source %q: %w", ns.name, err)
+			return nil, nil, nil, fmt.Errorf("scheduler: source %q: %w", ns.name, err)
 		}
 		for _, j := range jobs {
 			if j.ID == "" || j.Interval <= 0 {
 				continue
 			}
 			if _, dup := out[j.ID]; dup {
+				dups = append(dups, fmt.Errorf("scheduler: source %q: duplicate job id %q ignored", ns.name, j.ID))
 				continue
 			}
 			out[j.ID] = j
@@ -188,61 +221,130 @@ func (s *Scheduler) jobs() (map[string]Job, []string, error) {
 		}
 	}
 	sort.Strings(ids)
-	return out, ids, nil
+	return out, ids, dups, nil
 }
 
 // Tick evaluates every enabled job once at the injected clock's time.
 // The first Tick after a restart is the missed-run check: a job whose
 // window elapsed while the daemon was down is due and runs exactly once.
+// Ticks serialize with each other but not with Status: Build and enqueue
+// run without the status lock. ctx is honoured between jobs.
 func (s *Scheduler) Tick(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	jobs, ids, err := s.jobs()
+	s.tickMu.Lock()
+	defer s.tickMu.Unlock()
+	jobs, ids, dups, err := s.jobs()
 	if err != nil {
 		return err
 	}
 	now := s.clock()
-	var firstErr error
+	var errs []error
+	errs = append(errs, dups...)
 	for _, id := range ids {
+		if err := ctx.Err(); err != nil {
+			return errors.Join(append(errs, err)...)
+		}
 		job := jobs[id]
 		if !job.Enabled {
 			continue
 		}
 		st, err := s.load(id)
 		if err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
+			errs = append(errs, err)
 			continue
 		}
-		due := nextDue(job, st)
+		if clamped := clampState(st, now); clamped != st {
+			// Persist the clamp so the anchor is stable across ticks.
+			if err := s.save(id, "last_run_at = ?, last_skip_at = ?", format(clamped.lastRun), format(clamped.lastSkip)); err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			st = clamped
+		}
+		due := nextDue(job, st, now)
 		if now.Before(due) {
 			continue
 		}
-		if err := s.fire(ctx, job, st, due, now); err != nil && firstErr == nil {
-			firstErr = err
+		if err := s.fire(ctx, job, st, due, now); err != nil {
+			errs = append(errs, err)
 		}
 	}
-	return firstErr
+	return errors.Join(errs...)
+}
+
+// scanLimit bounds how many recent operations activeOp inspects when
+// looking for a live run the saved state does not know about.
+const scanLimit = 500
+
+// activeOp returns a non-terminal operation that blocks the job, or
+// ok=false when the job is provably idle. Any error means idle cannot
+// be proven. A definitively missing last-operation row counts as idle.
+// Beyond the recorded last operation it scans recent operations for a
+// live run whose payload names the job, which covers a run whose id was
+// never saved.
+func (s *Scheduler) activeOp(job Job, st state) (id int64, ok bool, err error) {
+	if st.lastOp != 0 {
+		op, err := s.ops.Get(st.lastOp)
+		switch {
+		case err == nil:
+			if !operation.Terminal(op.Status) {
+				return op.ID, true, nil
+			}
+		case errors.Is(err, operation.ErrNotFound):
+		default:
+			return st.lastOp, false, err
+		}
+	}
+	recent, err := s.ops.List(scanLimit)
+	if err != nil {
+		return 0, false, err
+	}
+	for _, op := range recent {
+		if operation.Terminal(op.Status) {
+			continue
+		}
+		var p struct {
+			Scheduled bool   `json:"scheduled"`
+			Job       string `json:"job"`
+		}
+		if json.Unmarshal([]byte(op.Payload), &p) == nil && p.Scheduled && p.Job == job.ID {
+			return op.ID, true, nil
+		}
+	}
+	return 0, false, nil
 }
 
 func (s *Scheduler) fire(ctx context.Context, job Job, st state, due, now time.Time) error {
-	if st.lastOp != 0 {
-		op, err := s.ops.Get(st.lastOp)
-		if err == nil && !operation.Terminal(op.Status) {
-			return s.skip(job, due, now, op.ID)
-		}
+	blocking, active, err := s.activeOp(job, st)
+	if err != nil {
+		return s.unverifiable(job, due, blocking, err)
+	}
+	if active {
+		return s.skip(job, due, now, blocking)
 	}
 	def, err := job.Build()
 	if err != nil {
 		return s.failed(job, now, fmt.Errorf("build: %w", err))
 	}
-	payload := fmt.Sprintf(`{"scheduled":true,"job":%q,"due":%q}`, job.ID, format(due))
-	op, err := s.runner.Start(ctx, def, payload)
+	raw, err := json.Marshal(struct {
+		Scheduled bool   `json:"scheduled"`
+		Job       string `json:"job"`
+		Due       string `json:"due"`
+	}{true, job.ID, format(due)})
+	if err != nil {
+		return s.failed(job, now, fmt.Errorf("payload: %w", err))
+	}
+	// Pending marker: spend the window before enqueueing. If anything
+	// after this point fails to persist, the job cannot fire again this
+	// window, and the payload scan in activeOp finds the live run next
+	// window. A failure here starts nothing.
+	if err := s.save(job.ID, "last_run_at = ?, last_operation_id = 0, last_error = ''", format(now)); err != nil {
+		return err
+	}
+	op, err := s.runner.Start(ctx, def, string(raw))
 	if err != nil {
 		return s.failed(job, now, fmt.Errorf("enqueue: %w", err))
 	}
-	if err := s.save(job.ID, "last_run_at = ?, last_operation_id = ?, last_error = ''", format(now), op.ID); err != nil {
+	if err := s.save(job.ID, "last_operation_id = ?", op.ID); err != nil {
 		return err
 	}
 	_, err = s.audit.Record(audit.Entry{
@@ -266,15 +368,34 @@ func (s *Scheduler) failed(job Job, now time.Time, cause error) error {
 	return err
 }
 
+// ClearHint tells the owner how to unblock a job held by a hung
+// operation. There is no cancel route yet (docs/DEFERRED.md); startup
+// recovery cancels every operation a dead daemon left live.
+const ClearHint = "cancel that operation to resume (no cancel route yet: restart homestead-server, whose startup recovery cancels live operations)"
+
 func (s *Scheduler) skip(job Job, due, now time.Time, blocking int64) error {
 	if err := s.save(job.ID, "last_skip_at = ?, last_skip_due = ?, last_skip_blocking = ?", format(now), format(due), blocking); err != nil {
 		return err
 	}
 	_, err := s.audit.Record(audit.Entry{
-		Actor: Actor, Action: "scheduler.skip", Outcome: audit.OutcomeError,
-		Detail: fmt.Sprintf("job %s due %s skipped: operation %d still active", job.ID, format(due), blocking),
+		Actor: Actor, Action: "scheduler.skip", Outcome: audit.OutcomeSkipped,
+		Detail: fmt.Sprintf("job %s due %s skipped: operation %d still active; %s", job.ID, format(due), blocking, ClearHint),
 	})
 	return err
+}
+
+// unverifiable skips fail-closed when the previous run's state cannot be
+// read: running a second copy is worse than waiting. The window is not
+// spent, so the next tick retries the check.
+func (s *Scheduler) unverifiable(job Job, due time.Time, blocking int64, cause error) error {
+	_, err := s.audit.Record(audit.Entry{
+		Actor: Actor, Action: "scheduler.skip", Outcome: audit.OutcomeError,
+		Detail: fmt.Sprintf("job %s due %s skipped: cannot verify operation %d is idle: %v", job.ID, format(due), blocking, cause),
+	})
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("scheduler: job %q: cannot verify idle: %w", job.ID, cause)
 }
 
 // save upserts the named columns. set is a trusted internal fragment.
@@ -290,12 +411,11 @@ func (s *Scheduler) save(id, set string, args ...any) error {
 
 // Status reports every declared job with persisted run state.
 func (s *Scheduler) Status() ([]Status, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	jobs, ids, err := s.jobs()
+	jobs, ids, _, err := s.jobs()
 	if err != nil {
 		return nil, err
 	}
+	now := s.clock()
 	out := []Status{}
 	for _, id := range ids {
 		job := jobs[id]
@@ -306,10 +426,10 @@ func (s *Scheduler) Status() ([]Status, error) {
 		status := Status{
 			ID: id, IntervalSeconds: int64(job.Interval / time.Second), Enabled: job.Enabled,
 			LastRunAt: st.lastRun, LastOperationID: st.lastOp, LastError: st.lastErr,
-			LastSkipAt: st.lastSkip,
+			LastSkipAt: st.lastSkip, LastSkipDue: st.skipDue, LastSkipBlocking: st.skipBlocking,
 		}
 		if job.Enabled {
-			status.NextDue = nextDue(job, st)
+			status.NextDue = nextDue(job, st, now)
 		}
 		if st.lastOp != 0 {
 			if op, err := s.ops.Get(st.lastOp); err == nil && !operation.Terminal(op.Status) {
@@ -326,7 +446,7 @@ func (s *Scheduler) Status() ([]Status, error) {
 // stops for a failed tick.
 func (s *Scheduler) Run(ctx context.Context, onErr func(error)) {
 	report := func(err error) {
-		if err != nil && onErr != nil {
+		if err != nil && ctx.Err() == nil && onErr != nil {
 			onErr(err)
 		}
 	}

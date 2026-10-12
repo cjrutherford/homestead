@@ -46,3 +46,12 @@ on-demand only.
   are audited too.
 - Implementation must preserve this boundary.
 - Changes require a superseding ADR.
+- Addendum (review of S260): skip-and-audit means a hung operation
+  blocks its job indefinitely. The skip audit entry and scheduler status
+  name the blocking operation, and cancelling it (until a cancel route
+  exists, restarting the daemon, whose startup recovery cancels live
+  operations) resumes the job at its next window. When the previous
+  run's state cannot be read, the scheduler fails closed and skips. Skips
+  audit with outcome `skipped`. The window is spent before enqueue, and
+  a live run whose id was never saved is found by its payload, so a
+  persistence fault cannot start a second concurrent run.

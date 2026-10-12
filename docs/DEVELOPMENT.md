@@ -678,6 +678,31 @@ homesteadctl backup unschedule --package jellyfin
   Backup runs themselves still fire through later slices;
   dashboard surfaces belong to later slices.
 
+## Daemon scheduler (S260)
+
+```bash
+homesteadctl scheduler jobs
+```
+
+- Backup schedules fire from the daemon: a due job enqueues an
+  operation through the runner (actor `scheduler`), so runs show in
+  operations and audit. A window missed while the daemon was down
+  runs once at startup; there is no burst catch-up.
+- A schedule's window starts at creation and restarts only when its
+  interval changes or it is re-enabled; retention or actor edits never
+  delay a run.
+- Overlap policy is skip and audit. A skipped run records a
+  `scheduler.skip` entry (outcome `skipped`) naming the job, the due
+  time, and the blocking operation id. If a hung operation keeps a job
+  skipped forever, the blocking id is in that entry and in
+  `scheduler jobs` (`last_skip_blocking`). There is no cancel route yet
+  (docs/DEFERRED.md); restarting `homestead-server` cancels every live
+  operation at startup and the next window runs normally.
+- If the scheduler cannot read the previous run's state it skips with an
+  error-outcome audit entry rather than risk a second concurrent run.
+- Orphaned `scheduler_jobs` rows for deleted schedules are harmless and
+  resume if the same job id is declared again.
+
 ## Updates CLI (S243)
 
 ```bash

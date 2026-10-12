@@ -184,3 +184,43 @@ func TestSessionTransportMigration(t *testing.T) {
 		}
 	}
 }
+
+func TestUpgradeFromV23PopulatedDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DBFileName)
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Rewind to a populated v23 database: schedules exist, the scheduler
+	// table and later columns do not.
+	for _, stmt := range []string{
+		`INSERT INTO backup_schedules (package, interval_seconds, retain, enabled, actor, updated_at)
+		 VALUES ('photos', 86400, 7, 1, 'owner', '2026-10-01T00:00:00Z')`,
+		`DROP TABLE scheduler_jobs`,
+		`ALTER TABLE secrets DROP COLUMN key_version`,
+		`DELETE FROM schema_migrations WHERE version >= 24`,
+	} {
+		if _, err := s.DB().Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	up, err := Open(path)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	defer up.Close()
+	version, err := up.SchemaVersion()
+	if err != nil || version != CurrentVersion {
+		t.Fatalf("version = %d, %v", version, err)
+	}
+	var interval int
+	if err := up.DB().QueryRow(`SELECT interval_seconds FROM backup_schedules WHERE package = 'photos'`).Scan(&interval); err != nil || interval != 86400 {
+		t.Fatalf("schedule lost: %d, %v", interval, err)
+	}
+	if _, err := up.DB().Exec(`INSERT INTO scheduler_jobs (job_id) VALUES ('backup:photos')`); err != nil {
+		t.Fatalf("scheduler_jobs: %v", err)
+	}
+}

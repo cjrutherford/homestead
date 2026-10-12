@@ -34,7 +34,11 @@ type Schedule struct {
 	Retain          int
 	Enabled         bool
 	Actor           string
-	UpdatedAt       time.Time
+	// UpdatedAt anchors the cadence: it moves when the schedule is
+	// created, its interval changes, or it is re-enabled, and stays put
+	// on edits that keep the cadence (retention, actor), so those never
+	// delay the next run.
+	UpdatedAt time.Time
 }
 
 // Validate checks schedule shape plus actor presence.
@@ -83,9 +87,12 @@ func (s *Schedules) Save(schedule Schedule) (Schedule, error) {
 	if _, err := s.db.Exec(
 		`INSERT INTO backup_schedules (package, interval_seconds, retain, enabled, actor, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(package) DO UPDATE SET interval_seconds = excluded.interval_seconds,
+		 ON CONFLICT(package) DO UPDATE SET
+		 updated_at = CASE WHEN interval_seconds != excluded.interval_seconds
+		   OR (enabled = 0 AND excluded.enabled = 1) THEN excluded.updated_at ELSE updated_at END,
+		 interval_seconds = excluded.interval_seconds,
 		 retain = excluded.retain, enabled = excluded.enabled,
-		 actor = excluded.actor, updated_at = excluded.updated_at`,
+		 actor = excluded.actor`,
 		schedule.Package, schedule.IntervalSeconds, schedule.Retain, schedule.Enabled, schedule.Actor, now,
 	); err != nil {
 		return Schedule{}, fmt.Errorf("backup: save schedule %q: %w", schedule.Package, err)

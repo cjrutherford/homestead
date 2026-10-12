@@ -18,7 +18,7 @@ import (
 // status route only reads it.
 func NewScheduler(st *store.Store, catalogDir string, opts ...scheduler.Option) *scheduler.Scheduler {
 	s := scheduler.New(st, opts...)
-	s.Register("backup", backupSource(st, catalogDir))
+	s.Register("backup", backupSource(st, catalogDir, s.Now))
 	return s
 }
 
@@ -27,7 +27,7 @@ func NewScheduler(st *store.Store, catalogDir string, opts ...scheduler.Option) 
 // the same backupJob assembly pre-update backups use. Database
 // passwords are never stored, so scheduled postgres backups fail with a
 // recorded error until credential custody lands (docs/DEFERRED.md).
-func backupSource(st *store.Store, catalogDir string) scheduler.Source {
+func backupSource(st *store.Store, catalogDir string, now func() time.Time) scheduler.Source {
 	return scheduler.SourceFunc(func() ([]scheduler.Job, error) {
 		schedules, err := backup.NewSchedules(st).List()
 		if err != nil {
@@ -53,7 +53,7 @@ func backupSource(st *store.Store, catalogDir string) scheduler.Source {
 					if err != nil {
 						return operation.Definition{}, err
 					}
-					return backup.JobDefinition(job, nil)
+					return backup.JobDefinition(job, now)
 				},
 			})
 		}

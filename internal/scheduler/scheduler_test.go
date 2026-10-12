@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strconv"
@@ -287,5 +288,267 @@ func TestRunStopsOnCancelAndFiresAtStartup(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not stop")
+	}
+}
+
+func recordedOp(t *testing.T, st *store.Store, status string) int64 {
+	t.Helper()
+	op, err := operation.New(st).Create("test.job", "{}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status != "" {
+		if err := operation.New(st).Transition(op.ID, status, "", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return op.ID
+}
+
+func TestGetErrorFailsClosedButMissingRowIsIdle(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0}
+	var runs atomic.Int32
+	s := newSched(st, clock, quickJob("a", true, &runs))
+	if err := s.save("a", "last_run_at = ?, last_operation_id = 999", format(t0)); err != nil {
+		t.Fatal(err)
+	}
+	// Definitively missing row: counts as idle, job runs.
+	clock.Advance(time.Hour)
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return runs.Load() == 1 })
+	waitFor(t, func() bool {
+		ops, _ := operation.New(st).List(0)
+		return len(ops) == 1 && operation.Terminal(ops[0].Status)
+	})
+
+	// Unreadable operation store: idle cannot be proven, so skip.
+	if _, err := st.DB().Exec(`ALTER TABLE operations RENAME TO operations_gone`); err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(time.Hour)
+	err := s.Tick(context.Background())
+	if _, rerr := st.DB().Exec(`ALTER TABLE operations_gone RENAME TO operations`); rerr != nil {
+		t.Fatal(rerr)
+	}
+	if err == nil || !strings.Contains(err.Error(), "cannot verify") {
+		t.Fatalf("Tick err = %v", err)
+	}
+	if runs.Load() != 1 {
+		t.Fatalf("runs = %d, must not run when idle is unproven", runs.Load())
+	}
+	skips := auditActions(t, st, "scheduler.skip")
+	if len(skips) != 1 || skips[0].Outcome != audit.OutcomeError || !strings.Contains(skips[0].Detail, "cannot verify") {
+		t.Fatalf("skips = %+v", skips)
+	}
+}
+
+func TestSaveFailureAfterStartCannotDuplicateRun(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0}
+	release := make(chan struct{})
+	var runs atomic.Int32
+	job := Job{ID: "slow", Interval: time.Hour, Enabled: true, Since: t0,
+		Build: func() (operation.Definition, error) {
+			return operation.Definition{Type: "test.slow", Steps: []operation.StepDef{{
+				Name: "block", Run: func(ctx context.Context) error { runs.Add(1); <-release; return nil },
+			}}}, nil
+		}}
+	s := newSched(st, clock, job)
+	if _, err := st.DB().Exec(`CREATE TRIGGER fail_opid BEFORE UPDATE ON scheduler_jobs
+		WHEN NEW.last_operation_id != 0 BEGIN SELECT RAISE(ABORT, 'injected'); END`); err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(time.Hour)
+	if err := s.Tick(context.Background()); err == nil {
+		t.Fatal("expected the injected save failure to surface")
+	}
+	waitFor(t, func() bool { return runs.Load() == 1 })
+	// Same window: spent by the pending marker, nothing re-enqueued.
+	for i := 0; i < 3; i++ {
+		_ = s.Tick(context.Background())
+	}
+	// Next window while the first run is live: reconcile finds it by payload.
+	clock.Advance(time.Hour)
+	_ = s.Tick(context.Background())
+	ops, _ := operation.New(st).List(0)
+	if len(ops) != 1 || runs.Load() != 1 {
+		t.Fatalf("duplicate run: ops=%d runs=%d", len(ops), runs.Load())
+	}
+	skips := auditActions(t, st, "scheduler.skip")
+	if len(skips) != 1 || skips[0].Outcome != audit.OutcomeSkipped ||
+		!strings.Contains(skips[0].Detail, "operation "+itoa(ops[0].ID)) || !strings.Contains(skips[0].Detail, "cancel") {
+		t.Fatalf("skips = %+v", skips)
+	}
+	close(release)
+}
+
+func TestStatusStaysResponsiveDuringBuild(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0.Add(2 * time.Hour)}
+	entered, release := make(chan struct{}), make(chan struct{})
+	job := Job{ID: "a", Interval: time.Hour, Enabled: true, Since: t0,
+		Build: func() (operation.Definition, error) {
+			close(entered)
+			<-release
+			return operation.Definition{}, errors.New("stop")
+		}}
+	s := newSched(st, clock, job)
+	done := make(chan error)
+	go func() { done <- s.Tick(context.Background()) }()
+	<-entered
+	statusDone := make(chan struct{})
+	go func() { _, _ = s.Status(); close(statusDone) }()
+	select {
+	case <-statusDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Status blocked behind Build")
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConcurrentTickStatusRun(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0}
+	var runs atomic.Int32
+	s := New(st, WithClock(clock.Now), WithTickEvery(time.Millisecond))
+	s.Register("test", SourceFunc(func() ([]Job, error) {
+		return []Job{quickJob("a", true, &runs), quickJob("b", true, &runs)}, nil
+	}))
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); s.Run(ctx, nil) }()
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 20; j++ {
+				clock.Advance(time.Hour)
+				_ = s.Tick(ctx)
+				_, _ = s.Status()
+			}
+		}()
+	}
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	wg.Wait()
+	waitFor(t, func() bool {
+		ops, _ := operation.New(st).List(0)
+		for _, op := range ops {
+			if !operation.Terminal(op.Status) {
+				return false
+			}
+		}
+		return true
+	})
+}
+
+func TestTickHonoursCancelBetweenJobs(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0.Add(2 * time.Hour)}
+	ctx, cancel := context.WithCancel(context.Background())
+	var builtB atomic.Bool
+	a := Job{ID: "a", Interval: time.Hour, Enabled: true, Since: t0,
+		Build: func() (operation.Definition, error) { cancel(); return operation.Definition{}, errors.New("x") }}
+	b := Job{ID: "b", Interval: time.Hour, Enabled: true, Since: t0,
+		Build: func() (operation.Definition, error) {
+			builtB.Store(true)
+			return operation.Definition{}, errors.New("x")
+		}}
+	s := newSched(st, clock, a, b)
+	err := s.Tick(ctx)
+	if !errors.Is(err, context.Canceled) || builtB.Load() {
+		t.Fatalf("err = %v, builtB = %v", err, builtB.Load())
+	}
+}
+
+func TestBackwardsClockClamped(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0}
+	var runs atomic.Int32
+	s := newSched(st, clock, quickJob("a", true, &runs))
+	future := t0.Add(24 * time.Hour)
+	if err := s.save("a", "last_run_at = ?, last_skip_at = ?", format(future), format(future)); err != nil {
+		t.Fatal(err)
+	}
+	status, _ := s.Status()
+	if !status[0].NextDue.Equal(t0.Add(time.Hour)) {
+		t.Fatalf("next due = %v", status[0].NextDue)
+	}
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	st1, _ := s.load("a")
+	if !st1.lastRun.Equal(t0) || !st1.lastSkip.Equal(t0) {
+		t.Fatalf("clamp not persisted: %+v", st1)
+	}
+	clock.Advance(time.Hour)
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return runs.Load() == 1 })
+}
+
+func TestDuplicateJobIDsReportedFirstWins(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0.Add(time.Hour)}
+	var runsA, runsB atomic.Int32
+	s := New(st, WithClock(clock.Now))
+	s.Register("one", SourceFunc(func() ([]Job, error) { return []Job{quickJob("dup", true, &runsA)}, nil }))
+	s.Register("two", SourceFunc(func() ([]Job, error) {
+		return []Job{quickJob("dup", true, &runsB), quickJob("x", true, &runsB)}, nil
+	}))
+	err := s.Tick(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `duplicate job id "dup"`) {
+		t.Fatalf("err = %v", err)
+	}
+	waitFor(t, func() bool { return runsA.Load() == 1 && runsB.Load() == 1 })
+	status, _ := s.Status()
+	if len(status) != 2 {
+		t.Fatalf("status = %+v", status)
+	}
+}
+
+func TestPayloadIsValidJSONForAwkwardIDs(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0.Add(time.Hour)}
+	var runs atomic.Int32
+	id := "we\"ird\n id"
+	s := newSched(st, clock, quickJob(id, true, &runs))
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ops, _ := operation.New(st).List(0)
+	var p struct{ Job string }
+	if len(ops) != 1 || json.Unmarshal([]byte(ops[0].Payload), &p) != nil || p.Job != id {
+		t.Fatalf("payload = %+v", ops)
+	}
+}
+
+func TestSkipStateReadBack(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0}
+	blocker := recordedOp(t, st, operation.StatusRunning)
+	var runs atomic.Int32
+	s := newSched(st, clock, quickJob("a", true, &runs))
+	if err := s.save("a", "last_run_at = ?, last_operation_id = ?", format(t0), blocker); err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(time.Hour)
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	status, _ := s.Status()
+	if status[0].LastSkipBlocking != blocker || !status[0].LastSkipDue.Equal(t0.Add(time.Hour)) || !status[0].Running {
+		t.Fatalf("status = %+v", status[0])
+	}
+	if got := auditActions(t, st, "scheduler.skip"); len(got) != 1 || got[0].Outcome != audit.OutcomeSkipped {
+		t.Fatalf("skip audit = %+v", got)
 	}
 }
