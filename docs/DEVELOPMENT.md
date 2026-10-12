@@ -1606,6 +1606,49 @@ usable by its container.
   valkey, which declares no VOLUME (row fixed). Found and fixed:
   Nextcloud backups failed on its in-tree symlinks, and backup copies
   dropped file ownership.
+
+- Proven live in KVM (S277, ffe6446 plus fa6075d and ce383d8, VM 1 with
+  four pre-S276 apps on anonymous volumes; disk image copied first):
+  schema 29; detection reported `needs-migration` for all four on VM 1
+  and `placed` for all on the fresh VM 2. Seeded data survived. Nextcloud
+  (installed with `occ` first, SQLite): a 3 MB WebDAV file kept its
+  sha256 (6158d5ba...) after migration, `html` landed on
+  `/mnt/app/nextcloud/html` and the nested `data/` on
+  `/mnt/bulk/nextcloud/data` (no double copy; `html/data` is only the
+  empty mount point), and the owner/mode listing of both trees matched
+  the old volume apart from the mount-point stub mode. Jellyfin: tree
+  listing (type, mode, owner) identical to the old volume, every config
+  XML, a sentinel file, and `jellyfin.db` kept their sha256. Authentik
+  (Postgres): tree identical, `verify-database` passed, `pg_isready`
+  answered, and a user and group created before the migration were still
+  queryable; its container-layer `/media`, `/templates`, `/certs` came
+  up as new empty binds as the plan said. Immich cannot start its
+  database on VM 1 (no password, empty volume), so its migration fails
+  at `verify-database` and rolls back: the app restarts on the original
+  volumes, `compose.yaml` pins them, the copied `library` tree (with a
+  seeded 0640 uid 1000 file) was moved to `library.rollback-<stamp>`
+  with ownership intact, nothing was deleted, and the retry planned
+  cleanly. A second approve during a Nextcloud migration answered 409
+  and uninstall during it 422. Pre-migration backups held the stopped
+  volumes (Nextcloud 28292 files). After migration the scheduled backups
+  of Nextcloud and Jellyfin captured real data from `/mnt/app` and
+  `/mnt/bulk`; Authentik passed the guard and then stopped at the known
+  password requirement. With Jellyfin's `/config` directory renamed the
+  guard failed the run naming the path (restored afterwards); on VM 2
+  every app's scheduled backup passed it. Old-volume removal: an
+  unrecorded volume was refused (409), a recorded one held by another
+  container was refused, then both Jellyfin volumes were removed and
+  audited (`app.data.old-volumes.remove`); Nextcloud's and Authentik's
+  old volumes remain `pending-removal`. Doctor shows `app-data:*`
+  checks, `/data` is served, and the data routes answered with cookie
+  plus CSRF (403 without the header, 401 unauthenticated). Found and
+  fixed: the Engine list endpoint leaves a volume mount's `Source` empty
+  for some volumes (plan failed measuring volume ""), and `verify-stopped`
+  could read a container as still running just after `compose stop`.
+  Not exercised: `scripts/acceptance.sh` (it installs apps and needs a
+  checkout, a free :80, and an unclaimed or known-password appliance), a
+  successful Immich migration (needs configured database credentials),
+  and a Postgres-app backup after migration (needs a database password).
 Local backups (S181) in
 `internal/backup` resolve backup-class destinations with live
 re-checks, copy trees preserving modes with symlinks refused,
