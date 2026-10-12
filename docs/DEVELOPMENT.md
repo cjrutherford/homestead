@@ -718,6 +718,26 @@ homesteadctl drift schedule --interval 6h --enabled true
 - `homesteadctl doctor` and the dashboard show a `drift-scan` check
   (warn on drift or unreadable, ok when clean or not yet run).
 - Migration v26 adds `drift_scan_schedule` and `drift_scan_latest`.
+- A clean scan still creates one operation and one audit row per
+  interval. That is deliberate (ADR-023: this is how scheduled runs
+  stay visible); "quiet" means the audit line is one terse sentence,
+  not that nothing is recorded. Lengthen the interval to record less.
+- Accepting or restoring a package drops it from the stored latest scan
+  (drift and unreadable entries), so the API and doctor never show
+  drift the owner already resolved; the scan time is unchanged and
+  doctor prints the scan age.
+- Scan, accept, and restore take the same per-project lock
+  (`composeMu` via `lockProject`, keyed by stack name, which equals the
+  Compose project name) around their file work, so a scan never reads
+  files mid-restore. A scan holds one package's lock at a time.
+- `POST /api/v1/drift/schedule` requires both `interval_seconds` and
+  `enabled` (400 otherwise) and audits the authenticated operator.
+- One failing scheduler source (for example an unreadable drift
+  schedule) is audited as `scheduler.source` at most hourly and skipped;
+  other sources, such as backups, still run that tick.
+- The dashboard edits the interval in whole minutes (minimum 5), the
+  exact unit of the API minimum, so any saved interval that is a whole
+  number of minutes round-trips unchanged.
 
 ## Certificate renewal check (S263)
 

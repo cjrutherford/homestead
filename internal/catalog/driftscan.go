@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"homestead/internal/store"
@@ -128,10 +129,15 @@ func Scan(st *store.Store, dirFor func(string) string, now time.Time) (ScanResul
 	}
 	result := ScanResult{ScannedAt: now.UTC(), Drifted: []StackDrift{}, Errors: []string{}}
 	for _, stack := range stacks {
+		// Hold the same per-project lock accept, restore, and compose
+		// use, so a scan never reads files mid-rewrite and reports
+		// drift that is not there.
+		unlock := lockProject(stack)
 		recorded, err := StoredFingerprints(st, stack)
 		if err == nil {
 			var drifts []Drift
 			if drifts, err = Detect(dirFor(stack), recorded); err == nil {
+				unlock()
 				result.Scanned++
 				if len(drifts) > 0 {
 					entry := StackDrift{Package: stack}
@@ -143,6 +149,7 @@ func Scan(st *store.Store, dirFor func(string) string, now time.Time) (ScanResul
 				continue
 			}
 		}
+		unlock()
 		result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", stack, err))
 	}
 	return result, nil
@@ -179,4 +186,32 @@ func LatestScan(st *store.Store) (ScanResult, bool, error) {
 		return ScanResult{}, false, fmt.Errorf("catalog: decode drift scan: %w", err)
 	}
 	return out, true, nil
+}
+
+// ResolveInScan drops a package from the stored latest scan after the
+// owner accepted or restored it, so the scan never reports drift that
+// was resolved after it ran. The scan time is kept: it stays the age of
+// the data for every other package. A missing scan is a no-op.
+func ResolveInScan(st *store.Store, stack string) error {
+	latest, ok, err := LatestScan(st)
+	if err != nil || !ok {
+		return err
+	}
+	kept := make([]StackDrift, 0, len(latest.Drifted))
+	for _, d := range latest.Drifted {
+		if d.Package != stack {
+			kept = append(kept, d)
+		}
+	}
+	errs := make([]string, 0, len(latest.Errors))
+	for _, e := range latest.Errors {
+		if !strings.HasPrefix(e, stack+": ") {
+			errs = append(errs, e)
+		}
+	}
+	if len(kept) == len(latest.Drifted) && len(errs) == len(latest.Errors) {
+		return nil
+	}
+	latest.Drifted, latest.Errors = kept, errs
+	return SaveScan(st, latest)
 }

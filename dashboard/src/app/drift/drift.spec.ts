@@ -123,7 +123,7 @@ describe('Drift', () => {
     expect(text()).toContain('Scans every 24 hour(s)');
     expect(text()).toContain('2026-10-11T12:00:00Z');
     expect(text()).toContain('compose.yaml (modified)');
-    fixture.componentInstance['saveSchedule']('6', false);
+    fixture.componentInstance['saveSchedule']('360', false);
     const save = http.expectOne('/api/v1/drift/schedule');
     expect(save.request.method).toBe('POST');
     expect(save.request.body).toEqual({ interval_seconds: 21600, enabled: false });
@@ -131,5 +131,29 @@ describe('Drift', () => {
     fixture.detectChanges();
     expect(text()).toContain('Scans every 6 hour(s)');
     expect(text()).toContain('off');
+  });
+
+  it('round-trips an unchanged interval exactly, including the 5 minute minimum', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/drift/schedule').flush(SCHEDULE);
+    for (const seconds of [300, 330, 420, 3600, 5400, 86400]) {
+      fixture.componentInstance['schedule'].set({ ...SCHEDULE, interval_seconds: seconds });
+      fixture.detectChanges();
+      const input = fixture.nativeElement.querySelector('input[type="number"]') as HTMLInputElement;
+      expect(input.min).toBe('5');
+      fixture.componentInstance['saveSchedule'](input.value, true);
+      const save = http.expectOne('/api/v1/drift/schedule');
+      expect(save.request.body).toEqual({ interval_seconds: seconds, enabled: true });
+      save.flush({ ...SCHEDULE, interval_seconds: seconds });
+    }
+  });
+
+  it('labels 300 seconds exactly', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/drift/schedule').flush({ ...SCHEDULE, interval_seconds: 300 });
+    fixture.detectChanges();
+    expect(text()).toContain('Scans every 5 minute(s)');
   });
 });

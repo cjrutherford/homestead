@@ -61,7 +61,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountRecovery(authSvc)
 	srv.MountWizards(wizard.New(st))
 	srv.MountDoctor(
-		func() []doctor.Check { return []doctor.Check{driftDoctorCheck(st)()} },
+		func() []doctor.Check { return []doctor.Check{driftDoctorCheck(st, time.Now)()} },
 		certDoctorChecks(st, time.Now),
 	)
 	srv.MountTLSRenewal(st, time.Now)

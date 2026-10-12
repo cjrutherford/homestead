@@ -138,15 +138,25 @@ func (s *Server) MountDriftScan(st *store.Store, now func() time.Time) {
 		view(w, schedule)
 	})
 	s.mux.HandleFunc("POST /api/v1/drift/schedule", func(w http.ResponseWriter, r *http.Request) {
+		op, ok := requireOperator(w, r)
+		if !ok {
+			return
+		}
+		// Both fields are required: a body that omits enabled must not
+		// silently switch scans off.
 		var body struct {
-			IntervalSeconds int64 `json:"interval_seconds"`
-			Enabled         bool  `json:"enabled"`
+			IntervalSeconds *int64 `json:"interval_seconds"`
+			Enabled         *bool  `json:"enabled"`
 		}
 		if err := decodeBody(r, &body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		schedule, err := catalog.SaveScanSchedule(st, body.IntervalSeconds, body.Enabled, "owner", now())
+		if body.IntervalSeconds == nil || body.Enabled == nil {
+			http.Error(w, "interval_seconds and enabled are both required", http.StatusBadRequest)
+			return
+		}
+		schedule, err := catalog.SaveScanSchedule(st, *body.IntervalSeconds, *body.Enabled, op.Session.Username, now())
 		if err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, catalog.ErrInvalidScanSchedule) {
@@ -156,7 +166,7 @@ func (s *Server) MountDriftScan(st *store.Store, now func() time.Time) {
 			return
 		}
 		if _, err := audit.New(st).Record(audit.Entry{
-			Actor: "owner", Action: "drift.schedule", Outcome: audit.OutcomeOK,
+			Actor: op.Session.Username, Action: "drift.schedule", Outcome: audit.OutcomeOK,
 			Detail: fmt.Sprintf("interval %ds enabled=%v", schedule.IntervalSeconds, schedule.Enabled),
 		}); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -168,7 +178,7 @@ func (s *Server) MountDriftScan(st *store.Store, now func() time.Time) {
 
 // driftDoctorCheck reports the latest scan time and drift state (S261).
 // Drift or unreadable packages warn; never scanned is informational.
-func driftDoctorCheck(st *store.Store) func() doctor.Check {
+func driftDoctorCheck(st *store.Store, now func() time.Time) func() doctor.Check {
 	return func() doctor.Check {
 		const name = "drift-scan"
 		schedule, err := catalog.GetScanSchedule(st)
@@ -186,11 +196,15 @@ func driftDoctorCheck(st *store.Store) func() doctor.Check {
 			return doctor.Check{Name: name, Status: doctor.StatusOK, Detail: "no scan has run yet"}
 		}
 		when := latest.ScannedAt.UTC().Format(time.RFC3339)
+		age := "age unknown"
+		if d := now().Sub(latest.ScannedAt); d >= 0 {
+			age = "age " + d.Round(time.Second).String()
+		}
 		if latest.Clean() {
 			return doctor.Check{Name: name, Status: doctor.StatusOK,
-				Detail: fmt.Sprintf("clean at %s (%d package(s))", when, latest.Scanned)}
+				Detail: fmt.Sprintf("clean at %s, %s (%d package(s); resolved packages are dropped until the next scan)", when, age, latest.Scanned)}
 		}
 		return doctor.Check{Name: name, Status: doctor.StatusWarn,
-			Detail: fmt.Sprintf("at %s: %s; review with homesteadctl drift review <package>", when, scanSummary(latest))}
+			Detail: fmt.Sprintf("at %s, %s: %s; review with homesteadctl drift review <package>", when, age, scanSummary(latest))}
 	}
 }

@@ -47,4 +47,13 @@ func TestDriftScheduleShowAndSave(t *testing.T) {
 	if code, _, _ := invoke(t, []string{"--server", ts.URL, "drift", "schedule", "--interval", "soon"}); code != exitUsage {
 		t.Fatalf("bad interval exit = %d", code)
 	}
+	// Below the 5m API minimum is a local usage error: nothing is saved.
+	saved = nil
+	code, _, stderr := invoke(t, []string{"--server", ts.URL, "drift", "schedule", "--interval", "299s"})
+	if code != exitUsage || saved != nil || !strings.Contains(stderr, "minimum is 5m0s") {
+		t.Fatalf("299s exit = %d saved = %v stderr = %q", code, saved, stderr)
+	}
+	if code, _, _ := invoke(t, []string{"--server", ts.URL, "drift", "schedule", "--interval", "5m"}); code != exitOK || saved["interval_seconds"] != float64(300) {
+		t.Fatalf("5m exit = %d saved = %v", code, saved)
+	}
 }

@@ -552,3 +552,41 @@ func TestSkipStateReadBack(t *testing.T) {
 		t.Fatalf("skip audit = %+v", got)
 	}
 }
+
+// A source that fails is reported (audited, rate-limited) and skipped;
+// other sources' jobs still run, and Status still lists them.
+func TestFailingSourceDoesNotStopOtherSources(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0}
+	var runs atomic.Int32
+	s := New(st, WithClock(clock.Now))
+	s.Register("drift", SourceFunc(func() ([]Job, error) { return nil, errors.New("schedule unreadable") }))
+	s.Register("backup", SourceFunc(func() ([]Job, error) { return []Job{quickJob("backup:x", true, &runs)}, nil }))
+
+	clock.Advance(time.Hour)
+	err := s.Tick(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `source "drift"`) {
+		t.Fatalf("tick err = %v, want drift source error", err)
+	}
+	waitFor(t, func() bool { return runs.Load() == 1 })
+	if got := auditActions(t, st, "scheduler.source"); len(got) != 1 || got[0].Outcome != audit.OutcomeError {
+		t.Fatalf("source audit = %+v", got)
+	}
+	if status, err := s.Status(); err != nil || len(status) != 1 || status[0].ID != "backup:x" {
+		t.Fatalf("status = %+v %v", status, err)
+	}
+
+	// Rate-limited: the next ticks within the hour neither audit nor
+	// return the error; after it, reported again.
+	clock.Advance(time.Minute)
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatalf("rate-limited tick err = %v", err)
+	}
+	clock.Advance(SourceErrorEvery)
+	if err := s.Tick(context.Background()); err == nil {
+		t.Fatal("source error not reported again after the rate limit")
+	}
+	if got := auditActions(t, st, "scheduler.source"); len(got) != 2 {
+		t.Fatalf("source audit = %d, want 2", len(got))
+	}
+}

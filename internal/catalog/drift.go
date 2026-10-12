@@ -234,7 +234,11 @@ func Review(st *store.Store, stack, dir string) ([]FileReview, error) {
 // to disk and returns the adopted paths sorted. Experts keep their
 // edits; Homestead stops calling them drift.
 func Accept(st *store.Store, stack, dir string) ([]string, error) {
+	defer lockProject(stack)()
 	if err := RecordFingerprints(st, stack, dir); err != nil {
+		return nil, err
+	}
+	if err := ResolveInScan(st, stack); err != nil {
 		return nil, err
 	}
 	stored, err := StoredFingerprints(st, stack)
@@ -265,6 +269,7 @@ func restorePerms(name string) os.FileMode {
 // running the old bytes until something ups — pair with the restore
 // operation to converge.
 func Restore(st *store.Store, stack, dir string) ([]string, error) {
+	defer lockProject(stack)()
 	recordedHashes, err := StoredFingerprints(st, stack)
 	if err != nil {
 		return nil, err
@@ -287,6 +292,9 @@ func Restore(st *store.Store, stack, dir string) ([]string, error) {
 			return nil, fmt.Errorf("catalog: restore %s: %w", drift.Path, err)
 		}
 		out = append(out, drift.Path)
+	}
+	if err := ResolveInScan(st, stack); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

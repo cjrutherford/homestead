@@ -9,7 +9,7 @@
     <section aria-label="Scheduled drift scan">
       <h3>Scheduled scan</h3>
       <p>
-        Scans every {{ hours(sched.interval_seconds) }} hour(s);
+        Scans every {{ every(sched.interval_seconds) }};
         {{ sched.enabled ? 'on' : 'off' }}. Scans only detect; nothing is
         changed until you accept or restore.
       </p>
@@ -42,13 +42,13 @@
       }
       <form (submit)="$event.preventDefault()">
         <label>
-          Interval (hours)
+          Interval (minutes, at least 5)
           <input
             #interval
             type="number"
-            min="0.1"
-            step="any"
-            [value]="hours(sched.interval_seconds)"
+            min="5"
+            step="1"
+            [value]="minutes(sched.interval_seconds)"
           />
         </label>
         <label>

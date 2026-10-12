@@ -49,8 +49,15 @@ export class Drift implements OnInit {
     });
   }
 
-  saveSchedule(hours: string, enabled: boolean): void {
-    const interval_seconds = Math.round(Number(hours) * 3600);
+  saveSchedule(minutes: string, enabled: boolean): void {
+    const wanted = Math.round(Number(minutes));
+    const current = this.schedule();
+    // An untouched field keeps the stored seconds exactly, even when the
+    // interval (set over the CLI) is not a whole number of minutes.
+    const interval_seconds =
+      current !== null && wanted === this.minutes(current.interval_seconds)
+        ? current.interval_seconds
+        : wanted * 60;
     this.error.set(null);
     this.api.driftScheduleSave({ interval_seconds, enabled }).subscribe({
       next: (schedule) => this.schedule.set(schedule),
@@ -59,8 +66,20 @@ export class Drift implements OnInit {
     });
   }
 
-  protected hours(seconds: number): number {
-    return Math.round((seconds / 3600) * 100) / 100;
+  /** Whole minutes shown in the form; seconds-exact when divisible by 60. */
+  protected minutes(seconds: number): number {
+    return Math.round(seconds / 60);
+  }
+
+  /** Human label that never rounds: exact minutes, with hours when whole. */
+  protected every(seconds: number): string {
+    if (seconds % 3600 === 0) {
+      return `${seconds / 3600} hour(s)`;
+    }
+    if (seconds % 60 === 0) {
+      return `${seconds / 60} minute(s)`;
+    }
+    return `${seconds} second(s)`;
   }
 
   select(name: string): void {

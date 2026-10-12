@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"homestead/internal/apiclient"
+	"homestead/internal/catalog"
 )
 
 // runDriftSchedule shows the periodic scan cadence and latest result
@@ -36,6 +37,10 @@ func runDriftSchedule(ctx context.Context, client *apiclient.Client, args []stri
 			d, perr := time.ParseDuration(*interval)
 			if perr != nil || d < time.Second {
 				fmt.Fprintln(stderr, "invalid --interval (want a duration such as 6h)")
+				return exitUsage
+			}
+			if d < time.Duration(catalog.MinScanInterval)*time.Second {
+				fmt.Fprintf(stderr, "invalid --interval: minimum is %s\n", time.Duration(catalog.MinScanInterval)*time.Second)
 				return exitUsage
 			}
 			seconds = int64(d / time.Second)

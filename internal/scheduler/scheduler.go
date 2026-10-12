@@ -83,9 +83,12 @@ type Scheduler struct {
 	clock  func() time.Time
 	every  time.Duration
 
-	tickMu  sync.Mutex // serializes Tick; never held by Status
-	mu      sync.Mutex // guards sources only; never held across Build or enqueue
-	sources []namedSource
+	tickMu sync.Mutex // serializes Tick; never held by Status
+	// srcReported is when each failing source was last reported; guarded
+	// by tickMu.
+	srcReported map[string]time.Time
+	mu          sync.Mutex // guards sources only; never held across Build or enqueue
+	sources     []namedSource
 }
 
 type namedSource struct {
@@ -198,15 +201,20 @@ func clampState(st state, now time.Time) state {
 
 // jobs reads every source. The first job to claim an ID wins; later
 // duplicates are dropped and reported in dups (never silently).
-func (s *Scheduler) jobs() (out map[string]Job, ids []string, dups []error, err error) {
+//
+// A source that errors is isolated: its jobs are skipped this tick, the
+// other sources still run, and the failure is returned in srcErrs.
+func (s *Scheduler) jobs() (out map[string]Job, ids []string, dups []error, srcErrs map[string]error) {
 	s.mu.Lock()
 	sources := append([]namedSource(nil), s.sources...)
 	s.mu.Unlock()
 	out = map[string]Job{}
+	srcErrs = map[string]error{}
 	for _, ns := range sources {
 		jobs, err := ns.src.ScheduledJobs()
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("scheduler: source %q: %w", ns.name, err)
+			srcErrs[ns.name] = fmt.Errorf("scheduler: source %q: %w", ns.name, err)
+			continue
 		}
 		for _, j := range jobs {
 			if j.ID == "" || j.Interval <= 0 {
@@ -221,7 +229,44 @@ func (s *Scheduler) jobs() (out map[string]Job, ids []string, dups []error, err 
 		}
 	}
 	sort.Strings(ids)
-	return out, ids, dups, nil
+	return out, ids, dups, srcErrs
+}
+
+// SourceErrorEvery rate-limits reporting of one failing source: it is
+// audited and returned from Tick at most this often, not every tick.
+const SourceErrorEvery = time.Hour
+
+// reportSources audits each failing source (rate-limited per source)
+// and returns the errors that were newly reported. Callers hold tickMu.
+func (s *Scheduler) reportSources(srcErrs map[string]error, now time.Time) []error {
+	names := make([]string, 0, len(srcErrs))
+	for name := range srcErrs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if s.srcReported == nil {
+		s.srcReported = map[string]time.Time{}
+	}
+	for name := range s.srcReported {
+		if _, failing := srcErrs[name]; !failing {
+			delete(s.srcReported, name) // recovered: report again if it fails anew
+		}
+	}
+	var out []error
+	for _, name := range names {
+		if last, ok := s.srcReported[name]; ok && now.Sub(last) < SourceErrorEvery && !now.Before(last) {
+			continue
+		}
+		s.srcReported[name] = now
+		out = append(out, srcErrs[name])
+		if _, err := s.audit.Record(audit.Entry{
+			Actor: Actor, Action: "scheduler.source", Outcome: audit.OutcomeError,
+			Detail: fmt.Sprintf("%v; its jobs are skipped, other sources still run", srcErrs[name]),
+		}); err != nil {
+			out = append(out, err)
+		}
+	}
+	return out
 }
 
 // Tick evaluates every enabled job once at the injected clock's time.
@@ -232,13 +277,11 @@ func (s *Scheduler) jobs() (out map[string]Job, ids []string, dups []error, err 
 func (s *Scheduler) Tick(ctx context.Context) error {
 	s.tickMu.Lock()
 	defer s.tickMu.Unlock()
-	jobs, ids, dups, err := s.jobs()
-	if err != nil {
-		return err
-	}
+	jobs, ids, dups, srcErrs := s.jobs()
 	now := s.clock()
 	var errs []error
 	errs = append(errs, dups...)
+	errs = append(errs, s.reportSources(srcErrs, now)...)
 	for _, id := range ids {
 		if err := ctx.Err(); err != nil {
 			return errors.Join(append(errs, err)...)
@@ -411,10 +454,7 @@ func (s *Scheduler) save(id, set string, args ...any) error {
 
 // Status reports every declared job with persisted run state.
 func (s *Scheduler) Status() ([]Status, error) {
-	jobs, ids, _, err := s.jobs()
-	if err != nil {
-		return nil, err
-	}
+	jobs, ids, _, _ := s.jobs()
 	now := s.clock()
 	out := []Status{}
 	for _, id := range ids {
