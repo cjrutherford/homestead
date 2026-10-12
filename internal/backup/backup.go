@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"homestead/internal/discover"
@@ -130,9 +131,11 @@ func ResolveDestination(assignments *storage.Assignments, discovered discover.St
 }
 
 // copyTree replicates src into dst preserving modes: directories
-// created, files copied, symlinks refused (they escape on restore,
-// and data trees should not contain them — owners investigate
-// instead). Missing sources fail loudly; typos must not read as
+// created, files copied, and symlinks recreated as links only when
+// they are relative and stay inside the tree (applications ship such
+// links in their code trees, e.g. Nextcloud's .license files); any
+// other symlink is refused because it escapes on restore. Links are
+// never followed. Missing sources fail loudly; typos must not read as
 // empty backups.
 func copyTree(src, dst string) (int, error) {
 	info, err := os.Stat(src)
@@ -152,26 +155,63 @@ func copyTree(src, dst string) (int, error) {
 			return err
 		}
 		target := filepath.Join(dst, relative)
-		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("backup: symlink at %q refused", path)
+		info, err := entry.Info()
+		if err != nil {
+			return err
 		}
-		if entry.IsDir() {
-			info, err := entry.Info()
-			if err != nil {
+		if entry.Type()&os.ModeSymlink != 0 {
+			if err := copySymlink(src, path, target); err != nil {
 				return err
 			}
-			return os.MkdirAll(target, info.Mode().Perm())
+			files++
+			return chownLike(target, info)
+		}
+		if entry.IsDir() {
+			if err := os.MkdirAll(target, info.Mode().Perm()); err != nil {
+				return err
+			}
+			return chownLike(target, info)
 		}
 		if err := copyFile(path, target, entry); err != nil {
 			return err
 		}
 		files++
-		return nil
+		return chownLike(target, info)
 	}
 	if err := filepath.WalkDir(src, walk); err != nil {
 		return 0, err
 	}
 	return files, nil
+}
+
+// chownLike gives dst the owner and group of the copied entry, so a
+// restored database directory keeps the uid its container needs
+// (postgres refuses a data directory owned by anyone else). Only root
+// can chown; other callers keep their own identity.
+func chownLike(dst string, info fs.FileInfo) error {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || os.Geteuid() != 0 {
+		return nil
+	}
+	if err := os.Lchown(dst, int(stat.Uid), int(stat.Gid)); err != nil {
+		return fmt.Errorf("backup: chown %q: %w", dst, err)
+	}
+	return nil
+}
+
+// copySymlink recreates a link that is relative and resolves inside
+// root, lexically, without following it.
+func copySymlink(root, path, dst string) error {
+	link, err := os.Readlink(path)
+	if err != nil {
+		return err
+	}
+	resolved := filepath.Join(filepath.Dir(path), link)
+	inside, err := filepath.Rel(root, resolved)
+	if filepath.IsAbs(link) || err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("backup: symlink at %q refused", path)
+	}
+	return os.Symlink(link, dst)
 }
 
 // copyFile replicates one regular file with its mode.

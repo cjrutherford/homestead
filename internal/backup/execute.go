@@ -71,9 +71,6 @@ func treeSignature(root string) (map[string]int64, error) {
 		if entry.IsDir() {
 			return nil
 		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("backup: symlink at %q", path)
-		}
 		relative, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
