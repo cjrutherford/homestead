@@ -691,6 +691,13 @@ homesteadctl backup unschedule --package jellyfin
   keeps every run. Actor and package are trimmed; whitespace-only
   values are refused.
 
+- Proven live in KVM (S267, ffa7f89): the installed daemon served
+  `/backups` and `/secrets`, and the page's API flows worked with cookie
+  plus CSRF on both appliances: destination, list, save (200), short
+  interval (422), get, absent get (404), the scheduler jobs panel feed,
+  and delete (204, repeated 204), with snake_case bodies; mutating calls
+  without the CSRF header were 403 and unauthenticated reads 401.
+
 ## Daemon scheduler (S260)
 
 ```bash
@@ -715,6 +722,23 @@ homesteadctl scheduler jobs
   error-outcome audit entry rather than risk a second concurrent run.
 - Orphaned `scheduler_jobs` rows for deleted schedules are harmless and
   resume if the same job id is declared again.
+
+- Proven live in KVM (S260, ffa7f89): with the daemon stopped, a
+  backup schedule's `updated_at` (and, for a second run, the job's
+  `last_run_at`) was moved two hours back to make a one-hour job due. On
+  start exactly one `backup.job` operation ran (actor `scheduler`),
+  completed, wrote the tree and `backup.json` under the backup root, and
+  recorded `scheduler.run`; an immediate restart ran nothing more.
+  Overlap, simulated by a running `operations` row naming the job with
+  the daemon up, recorded one `scheduler.skip` naming the operation id
+  (restart cancelled it). A job with no package directory under an
+  assigned mount records `build: no backup sources for "<pkg>"`, and a
+  Postgres app records `build: postgres backup needs a database
+  password`, both as `scheduler.run` error entries with no operation
+  (generated stacks do not bind data under assigned storage yet, so a
+  package directory must exist under a mount for a scheduled backup to
+  run). Discovery needs real mountpoints, so the VMs used bind mounts for
+  `/mnt/backup` and `/mnt/app`.
 
 ## Updates CLI (S243)
 
@@ -1661,6 +1685,22 @@ re-key (re-key retires `secret.key.v1`; the legacy file is not kept in
 sync). Start refuses, with a clear error, when the legacy key and
 `secret.key.v1` differ before any re-key, or when secrets exist and no
 key file does; it never mints a key over existing ciphertext.
+
+- Proven live in KVM (S258-S267, ffa7f89): on an upgraded appliance
+  holding pre-S258 secrets and a fresh install, start stamped rows v1
+  and wrote `secret.key.v1` byte-identical to the legacy key; the same
+  secrets decrypted unchanged afterwards. `secrets rekey --confirm
+  --follow` moved both to v2 and retired `secret.key.v1`, secrets still
+  decrypted after a daemon restart, and audit held only versions and
+  the operation id. `GET /api/v1/secrets/key` and the rekey route
+  answered with cookie plus CSRF (403 without the header, 400 without
+  `confirm`), and the Secrets and Backups dashboard routes were served by
+  the installed binary. Moving every key file away with secrets present
+  refused to start with the clear error and minted nothing; restoring
+  them started normally. Found and fixed: restoring only the legacy
+  `secret.key` after a re-key started the daemon (copying it forward as
+  v1) and stranded the v2 rows; start now refuses naming the missing
+  key files.
 
 ## Provisional decisions (revisit, do not work around silently)
 
