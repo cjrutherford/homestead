@@ -477,11 +477,14 @@ func Open(path string) (*Store, error) {
 }
 
 func (s *Store) applyPragmas() error {
+	// busy_timeout goes first: switching journal_mode needs a lock, and
+	// without a timeout a writer still finishing (a previous process or
+	// connection) fails the open with SQLITE_BUSY instead of waiting.
 	for _, pragma := range []string{
+		"PRAGMA busy_timeout = 5000",
 		"PRAGMA foreign_keys = ON",
 		"PRAGMA journal_mode = WAL",
 		"PRAGMA synchronous = NORMAL",
-		"PRAGMA busy_timeout = 5000",
 	} {
 		if _, err := s.db.Exec(pragma); err != nil {
 			return fmt.Errorf("store: pragma %q: %w", pragma, err)
