@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"path/filepath"
 	"strings"
 
 	"homestead/internal/audit"
+	"homestead/internal/doctor"
 	"homestead/internal/release"
 	"homestead/internal/store"
 	"homestead/internal/update"
@@ -60,14 +60,18 @@ func (h *platformHandlers) record(entry audit.Entry) {
 type releaseView struct {
 	release.Release
 	// PlanError explains why PlanPlatform refused this release (for
-	// example a downgrade); empty when it planned.
+	// example a downgrade) or why it was never offered to the planner
+	// (not verified); empty when it planned.
 	PlanError string `json:"plan_error"`
 }
 
 type platformPlanView struct {
-	Running   map[string]string            `json:"running"`
-	Plan      update.PlatformPlan          `json:"plan"`
-	Releases  []releaseView                `json:"releases"`
+	Running  map[string]string   `json:"running"`
+	Plan     update.PlatformPlan `json:"plan"`
+	Releases []releaseView       `json:"releases"`
+	// Refused lists releases that failed or are not verified. They never
+	// enter the plan: nothing unverified is plannable.
+	Refused   []releaseView                `json:"refused"`
 	Installed map[string]release.Installed `json:"installed"`
 }
 
@@ -89,10 +93,19 @@ func (h *platformHandlers) plan(w http.ResponseWriter, r *http.Request) {
 		installed[component] = in
 	}
 	views := make([]releaseView, 0, len(releases))
+	refused := []releaseView{}
 	var desired []update.PlatformRelease
 	for _, rel := range releases {
 		view := releaseView{Release: rel}
-		if rel.Version != "" {
+		if rel.State != release.StateVerified {
+			// Failed, rollback-refused, and unverified releases are shown,
+			// never planned.
+			view.PlanError = "refused: " + rel.State
+			if rel.Detail != "" {
+				view.PlanError += ": " + rel.Detail
+			}
+			refused = append(refused, view)
+		} else if rel.Version != "" {
 			candidate := update.PlatformRelease{Component: rel.Component, Version: rel.Version, Verification: rel.State}
 			if _, err := update.PlanPlatform(running, []update.PlatformRelease{candidate}); err != nil {
 				view.PlanError = err.Error()
@@ -113,7 +126,7 @@ func (h *platformHandlers) plan(w http.ResponseWriter, r *http.Request) {
 	if plan.Warnings == nil {
 		plan.Warnings = []string{}
 	}
-	writeJSON(w, platformPlanView{Running: running, Plan: plan, Releases: views, Installed: installed})
+	writeJSON(w, platformPlanView{Running: running, Plan: plan, Releases: views, Refused: refused, Installed: installed})
 }
 
 type verifyBody struct {
@@ -164,8 +177,11 @@ func (h *platformHandlers) verify(w http.ResponseWriter, r *http.Request) {
 			verr = fmt.Errorf("%w: %v", release.ErrBadChecksums, err)
 		}
 	}
-	if verr != nil && (errors.Is(verr, fs.ErrNotExist) || errors.Is(verr, fs.ErrPermission)) {
-		http.Error(w, verr.Error(), http.StatusBadRequest)
+	// Unreadable inputs are a bad request, not a verification verdict. The
+	// answer is generic on purpose: it names the field, never the path,
+	// and does not say whether the path exists.
+	if verr != nil && (errors.Is(verr, release.ErrNotRegularFile) || errors.Is(verr, release.ErrTooLarge)) {
+		http.Error(w, verifyFileError(verr, body), http.StatusBadRequest)
 		return
 	}
 	rec := release.Release{Component: body.Component, Actor: op.Session.Username}
@@ -178,6 +194,17 @@ func (h *platformHandlers) verify(w http.ResponseWriter, r *http.Request) {
 	case verr == nil:
 		rec.State, rec.Version, rec.Counter, rec.KeyID, rec.SHA256, rec.Override = release.StateVerified, res.Version, res.Counter, res.KeyID, res.SHA256, res.Override
 		rec.Detail = fmt.Sprintf("verified %s counter %d with key %s", res.Version, res.Counter, res.KeyID)
+		// Seed the rollback baseline: a verified release equal to the
+		// running version is what is installed. Never overwrites a
+		// record, and never seeds from an override (that is by
+		// definition older than a record that exists).
+		if installed.Counter == 0 && res.Version == version.Version {
+			if seeded, err := h.rel.SeedInstalled(body.Component, res.Version, res.Counter); err != nil {
+				h.s.log.Error("platform installed baseline seed failed", "component", body.Component, "error", err)
+			} else if seeded {
+				rec.Detail += "; recorded as the installed baseline"
+			}
+		}
 		entry.Outcome, entry.Detail = audit.OutcomeOK, rec.Detail
 		if res.Override {
 			entry.Override = true
@@ -213,6 +240,14 @@ func (h *platformHandlers) verify(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, rec)
+}
+
+// verifyFileError renders a file refusal without echoing paths.
+func verifyFileError(err error, body verifyBody) string {
+	if errors.Is(err, release.ErrTooLarge) {
+		return "a supplied file exceeds the size limit"
+	}
+	return "artifact, checksums, and signature must each be a readable regular file"
 }
 
 func (h *platformHandlers) listKeys(w http.ResponseWriter, r *http.Request) {
@@ -278,11 +313,13 @@ func (h *platformHandlers) saveKey(w http.ResponseWriter, r *http.Request, oldID
 	if oldID != "" {
 		detail = fmt.Sprintf("trusted key %s replaced by %s", oldID, key.KeyID)
 	}
-	h.record(audit.Entry{Actor: op.Session.Username, Action: action, Outcome: audit.OutcomeOK, Detail: detail})
 	if err := h.render(); err != nil {
+		h.record(audit.Entry{Actor: op.Session.Username, Action: action, Outcome: audit.OutcomeError,
+			Detail: detail + "; saved but YAML render failed: " + err.Error()})
 		http.Error(w, "key saved but YAML render failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	h.record(audit.Entry{Actor: op.Session.Username, Action: action, Outcome: audit.OutcomeOK, Detail: detail})
 	writeJSON(w, key)
 }
 
@@ -297,10 +334,40 @@ func (h *platformHandlers) removeKey(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), keyStatus(err))
 		return
 	}
-	h.record(audit.Entry{Actor: op.Session.Username, Action: "platform.trust.remove", Outcome: audit.OutcomeOK, Detail: "removed trusted key " + id})
 	if err := h.render(); err != nil {
+		h.record(audit.Entry{Actor: op.Session.Username, Action: "platform.trust.remove", Outcome: audit.OutcomeError,
+			Detail: "removed trusted key " + id + "; removed but YAML render failed: " + err.Error()})
 		http.Error(w, "key removed but YAML render failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	h.record(audit.Entry{Actor: op.Session.Username, Action: "platform.trust.remove", Outcome: audit.OutcomeOK, Detail: "removed trusted key " + id})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// platformDoctorCheck warns while no real release key is trusted: with
+// only the embedded placeholder (whose private half was discarded) or no
+// key at all, no platform release can verify.
+func platformDoctorCheck(st *store.Store) func() []doctor.Check {
+	return func() []doctor.Check {
+		const name = "release-trust"
+		keys, err := release.NewStore(st).Keys()
+		if err != nil {
+			return []doctor.Check{{Name: name, Status: doctor.StatusWarn, Detail: "cannot read trusted release keys: " + err.Error()}}
+		}
+		real := 0
+		for _, k := range keys {
+			if !k.Placeholder {
+				real++
+			}
+		}
+		switch {
+		case len(keys) == 0:
+			return []doctor.Check{{Name: name, Status: doctor.StatusWarn,
+				Detail: "no trusted release keys: platform releases cannot verify; add one with homesteadctl updates trust add"}}
+		case real == 0:
+			return []doctor.Check{{Name: name, Status: doctor.StatusWarn,
+				Detail: "the only trusted release key is the embedded placeholder (its private half was discarded): no release can verify until you add a real key with homesteadctl updates trust add"}}
+		}
+		return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: fmt.Sprintf("%d trusted release key(s), %d real", len(keys), real)}}
+	}
 }

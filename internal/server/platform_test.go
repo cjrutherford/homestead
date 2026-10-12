@@ -15,12 +15,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"homestead/internal/audit"
 	"homestead/internal/auth"
+	"homestead/internal/doctor"
 	"homestead/internal/release"
 	"homestead/internal/store"
+	"homestead/internal/version"
 )
 
 type platformEnv struct {
@@ -265,4 +268,162 @@ func TestPlatformTrustKeyRoutes(t *testing.T) {
 	if !strings.Contains(actions, "platform.trust.add") || !strings.Contains(actions, "platform.trust.remove") {
 		t.Fatalf("audit actions = %s", actions)
 	}
+}
+
+// The first successful verify of a release equal to the running version
+// seeds the installed baseline; a later older counter is then refused.
+func TestPlatformSeedsInstalledBaselineThenRefusesOlder(t *testing.T) {
+	e := newPlatformEnv(t)
+	e.trust()
+	old := version.Version
+	version.Version = "3.0.0"
+	t.Cleanup(func() { version.Version = old })
+
+	if in, _ := e.h.rel.Installed("homestead-server"); in.Counter != 0 {
+		t.Fatalf("installed before = %+v", in)
+	}
+	rec, _ := e.verify(e.release("3.0.0", 30))
+	if rec.State != release.StateVerified {
+		t.Fatalf("running-version verify: %+v", rec)
+	}
+	if in, _ := e.h.rel.Installed("homestead-server"); in.Version != "3.0.0" || in.Counter != 30 {
+		t.Fatalf("baseline not seeded: %+v", in)
+	}
+	rec, _ = e.verify(e.release("2.0.0", 20))
+	if rec.State != release.StateFailed || rec.Refusal != release.RefusalRollback {
+		t.Fatalf("older counter must be refused after seeding: %+v", rec)
+	}
+	// A release that is not the running version never seeds or moves it.
+	if err := e.h.rel.RecordInstalled("homestead-server", "3.0.0", 30); err != nil {
+		t.Fatal(err)
+	}
+	if rec, _ = e.verify(e.release("4.0.0", 40)); rec.State != release.StateVerified {
+		t.Fatalf("newer: %+v", rec)
+	}
+	if in, _ := e.h.rel.Installed("homestead-server"); in.Counter != 30 {
+		t.Fatalf("a non-running release changed the baseline: %+v", in)
+	}
+}
+
+// A verified release for another version does not seed the baseline.
+func TestPlatformNonRunningVersionDoesNotSeed(t *testing.T) {
+	e := newPlatformEnv(t)
+	e.trust()
+	if rec, _ := e.verify(e.release("9.9.9", 90)); rec.State != release.StateVerified {
+		t.Fatalf("%+v", rec)
+	}
+	if in, _ := e.h.rel.Installed("homestead-server"); in.Counter != 0 {
+		t.Fatalf("seeded from a non-running version: %+v", in)
+	}
+}
+
+// Failed and rollback-refused releases are listed as refused with a
+// reason and never reach the planner.
+func TestPlatformPlanExcludesUnverifiedReleases(t *testing.T) {
+	e := newPlatformEnv(t)
+	e.trust()
+	if err := e.h.rel.RecordInstalled("homestead-server", "5.0.0", 50); err != nil {
+		t.Fatal(err)
+	}
+	// Rollback-refused: signed, counter below installed, version newer
+	// than running so the planner would otherwise take it.
+	body := e.release("6.0.0", 10)
+	if rec, _ := e.verify(body); rec.Refusal != release.RefusalRollback {
+		t.Fatalf("setup: %+v", rec)
+	}
+	view := e.planView()
+	if len(view.Plan.Components) != 0 {
+		t.Fatalf("a refused release is plannable: %+v", view.Plan)
+	}
+	if len(view.Refused) != 1 || !strings.Contains(view.Refused[0].PlanError, "refused: failed") ||
+		!strings.Contains(view.Refused[0].PlanError, "older") {
+		t.Fatalf("refused = %+v", view.Refused)
+	}
+	// Tampered artifact (authenticity failure): also refused, no plan.
+	body = e.release("7.0.0", 70)
+	if err := os.WriteFile(body.Artifact, []byte("evil"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e.verify(body)
+	view = e.planView()
+	if len(view.Plan.Components) != 0 || len(view.Refused) != 1 {
+		t.Fatalf("view = %+v", view)
+	}
+}
+
+func TestPlatformVerifyRefusesSpecialFilesGenerically(t *testing.T) {
+	e := newPlatformEnv(t)
+	e.trust()
+	body := e.release("1.0.0", 1)
+	fifo := filepath.Join(e.dir, "fifo")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	link := filepath.Join(e.dir, "link")
+	if err := os.Symlink(body.Artifact, link); err != nil {
+		t.Fatal(err)
+	}
+	for name, path := range map[string]string{"fifo": fifo, "symlink": link, "missing": filepath.Join(e.dir, "secret-missing-name")} {
+		b := body
+		b.Signature = path
+		raw, _ := json.Marshal(b)
+		rec := opRequest(http.MethodPost, string(raw), e.h.verify, "")
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: code = %d", name, rec.Code)
+		}
+		if msg := rec.Body.String(); strings.Contains(msg, e.dir) || strings.Contains(msg, "no such file") || strings.Contains(msg, "permission") {
+			t.Errorf("%s: response leaks filesystem detail: %q", name, msg)
+		}
+	}
+	if releases, _ := e.h.rel.Releases(); len(releases) != 0 {
+		t.Fatalf("input refusals must not be recorded as verdicts: %+v", releases)
+	}
+}
+
+func TestPlatformPlaceholderKeyMarkedAndDoctorWarns(t *testing.T) {
+	e := newPlatformEnv(t)
+	rec := httptest.NewRecorder()
+	e.h.listKeys(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+	var keys []release.TrustKey
+	_ = json.Unmarshal(rec.Body.Bytes(), &keys)
+	if len(keys) != 1 || !keys[0].Placeholder {
+		t.Fatalf("keys = %+v", keys)
+	}
+	checks := platformDoctorCheck(e.st)()
+	if len(checks) != 1 || checks[0].Status != doctor.StatusWarn || !strings.Contains(checks[0].Detail, "placeholder") {
+		t.Fatalf("doctor with only placeholder = %+v", checks)
+	}
+	e.trust()
+	if checks := platformDoctorCheck(e.st)(); checks[0].Status != doctor.StatusOK {
+		t.Fatalf("doctor with owner key = %+v", checks)
+	}
+	// Removing every key warns again.
+	for _, k := range func() []release.TrustKey { ks, _ := e.h.rel.Keys(); return ks }() {
+		if err := e.h.rel.RemoveKey(k.KeyID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if checks := platformDoctorCheck(e.st)(); checks[0].Status != doctor.StatusWarn {
+		t.Fatalf("doctor with no keys = %+v", checks)
+	}
+}
+
+// A YAML render failure is audited as an error, not as ok.
+func TestPlatformKeyChangeRenderFailureAuditedAsError(t *testing.T) {
+	e := newPlatformEnv(t)
+	e.h.trustYAML = filepath.Join(e.dir, "missing-dir", "platform-trust.yaml")
+	raw, _ := json.Marshal(keyBody{PublicKey: e.pubText(), Label: "x"})
+	if rec := opRequest(http.MethodPost, string(raw), e.h.addKey, ""); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("code = %d", rec.Code)
+	}
+	entries, _ := e.h.audit.List(20)
+	for _, entry := range entries {
+		if entry.Action == "platform.trust.add" {
+			if entry.Outcome != audit.OutcomeError || !strings.Contains(entry.Detail, "render failed") {
+				t.Fatalf("audit = %+v", entry)
+			}
+			return
+		}
+	}
+	t.Fatal("no audit entry")
 }

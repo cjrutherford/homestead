@@ -22,11 +22,20 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
-// maxSmallFile bounds checksums and signature files: they are tiny, so
-// anything larger is refused before it is read into memory.
-const maxSmallFile = 1 << 20
+// Size limits for owner-supplied files. Checksums and signature files
+// are tiny, so anything larger is refused before it is read into
+// memory; artifacts are bounded so a hostile path cannot make the
+// daemon hash an unbounded stream.
+const (
+	// MaxSmallFileBytes bounds checksums and signature files (1 MiB).
+	MaxSmallFileBytes = 1 << 20
+	// MaxArtifactBytes bounds an artifact (2 GiB).
+	MaxArtifactBytes int64 = 2 << 30
+	maxSmallFile           = MaxSmallFileBytes
+)
 
 // Sentinel errors. Authenticity failures (everything but ErrRollback)
 // have no override by design (ADR-025).
@@ -39,6 +48,16 @@ var (
 	ErrBadChecksums   = errors.New("release: invalid checksums file")
 	ErrChecksumAbsent = errors.New("release: artifact not listed in checksums file")
 	ErrChecksum       = errors.New("release: artifact SHA-256 does not match checksums file")
+	// ErrNotRegularFile is the single answer for any path that is not a
+	// readable regular file (missing, unreadable, symlink, FIFO, device,
+	// directory). It deliberately does not say which, so the route cannot
+	// be used to probe the filesystem.
+	ErrNotRegularFile = errors.New("release: not a readable regular file")
+	// ErrTooLarge marks a file over its size limit.
+	ErrTooLarge = errors.New("release: file exceeds the size limit")
+	// ErrDigestChanged marks an artifact whose bytes no longer match the
+	// digest recorded at verification (see VerifyDigestUnchanged).
+	ErrDigestChanged = errors.New("release: artifact changed since verification")
 	// ErrRollback marks an artifact whose counter is below the installed
 	// one: the only refusal an explicit owner override can lift.
 	ErrRollback = errors.New("release: artifact is older than the installed release")
@@ -180,12 +199,18 @@ type Checksums struct {
 	Files   map[string]string
 }
 
+// maxChecksumLine bounds one checksums line; real lines are ~100 bytes.
+const maxChecksumLine = 16 << 10
+
 // ParseChecksums parses the checksums file; version and counter are
 // mandatory (ADR-025).
 func ParseChecksums(data []byte) (Checksums, error) {
 	c := Checksums{Files: map[string]string{}}
 	scanner := bufio.NewScanner(bytes.NewReader(data))
-	haveCounter := false
+	// A line longer than the buffer fails the scan (checked below) rather
+	// than being silently truncated.
+	scanner.Buffer(make([]byte, 0, 4096), maxChecksumLine)
+	haveCounter, haveVersion := false, false
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -193,9 +218,10 @@ func ParseChecksums(data []byte) (Checksums, error) {
 		}
 		switch {
 		case strings.HasPrefix(line, "version="):
-			if c.Version != "" {
+			if haveVersion {
 				return Checksums{}, fmt.Errorf("%w: duplicate version", ErrBadChecksums)
 			}
+			haveVersion = true
 			c.Version = strings.TrimSpace(strings.TrimPrefix(line, "version="))
 		case strings.HasPrefix(line, "counter="):
 			if haveCounter {
@@ -215,11 +241,17 @@ func ParseChecksums(data []byte) (Checksums, error) {
 				return Checksums{}, fmt.Errorf("%w: bad digest for %q", ErrBadChecksums, fields[1])
 			}
 			name := strings.TrimPrefix(fields[1], "*")
+			if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) || strings.ContainsRune(name, 0) {
+				return Checksums{}, fmt.Errorf("%w: file name %q must be a bare name, not a path", ErrBadChecksums, name)
+			}
 			if _, dup := c.Files[name]; dup {
 				return Checksums{}, fmt.Errorf("%w: duplicate entry %q", ErrBadChecksums, name)
 			}
 			c.Files[name] = strings.ToLower(fields[0])
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return Checksums{}, fmt.Errorf("%w: %v", ErrBadChecksums, err)
 	}
 	if c.Version == "" || !haveCounter {
 		return Checksums{}, fmt.Errorf("%w: version and counter are required", ErrBadChecksums)
@@ -254,18 +286,41 @@ type Inputs struct {
 	AllowOlder    bool
 }
 
-func readSmall(path string) ([]byte, error) {
-	f, err := os.Open(path)
+// openRegular opens path for reading only if it is a regular file no
+// larger than limit. The checks run on the open descriptor (no
+// check-then-open race): O_NOFOLLOW refuses a symlink final component,
+// O_NONBLOCK stops a FIFO from blocking the open, and fstat then refuses
+// anything that is not a regular file. Every failure to open or classify
+// is ErrNotRegularFile, so callers cannot learn what exists.
+func openRegular(path string, limit int64) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		return nil, fmt.Errorf("release: %w", err)
+		return nil, ErrNotRegularFile
+	}
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, ErrNotRegularFile
+	}
+	if info.Size() > limit {
+		_ = f.Close()
+		return nil, fmt.Errorf("%w (%d bytes, limit %d)", ErrTooLarge, info.Size(), limit)
+	}
+	return f, nil
+}
+
+func readSmall(path string) ([]byte, error) {
+	f, err := openRegular(path, maxSmallFile)
+	if err != nil {
+		return nil, err
 	}
 	defer f.Close()
 	data, err := io.ReadAll(io.LimitReader(f, maxSmallFile+1))
 	if err != nil {
-		return nil, fmt.Errorf("release: read %s: %w", filepath.Base(path), err)
+		return nil, ErrNotRegularFile
 	}
 	if len(data) > maxSmallFile {
-		return nil, fmt.Errorf("release: %s is too large", filepath.Base(path))
+		return nil, fmt.Errorf("%w (limit %d)", ErrTooLarge, maxSmallFile)
 	}
 	return data, nil
 }
@@ -335,14 +390,36 @@ func Verify(in Inputs) (Result, error) {
 }
 
 func fileSHA256(path string) (string, error) {
-	f, err := os.Open(path)
+	f, err := openRegular(path, MaxArtifactBytes)
 	if err != nil {
-		return "", fmt.Errorf("release: %w", err)
+		return "", err
 	}
 	defer f.Close()
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", fmt.Errorf("release: hash %s: %w", filepath.Base(path), err)
+	// Read one byte past the limit so a file that grew after fstat is
+	// still bounded.
+	n, err := io.Copy(h, io.LimitReader(f, MaxArtifactBytes+1))
+	if err != nil {
+		return "", ErrNotRegularFile
+	}
+	if n > MaxArtifactBytes {
+		return "", fmt.Errorf("%w (limit %d)", ErrTooLarge, MaxArtifactBytes)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// VerifyDigestUnchanged re-hashes the artifact at path and compares it
+// with digest, the SHA-256 Verify returned (stored in the release
+// record). Verification and use are separate moments: an owner-writable
+// artifact can be swapped in between. Update actuation (S265) must call
+// this immediately before replacing the binary, and refuse on any error.
+func VerifyDigestUnchanged(path, digest string) error {
+	got, err := fileSHA256(path)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(got, digest) || len(digest) != sha256.Size*2 {
+		return ErrDigestChanged
+	}
+	return nil
 }

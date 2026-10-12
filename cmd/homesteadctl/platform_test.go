@@ -16,7 +16,8 @@ func platformStub(t *testing.T, verifyState string) string {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/platform/updates":
 			_, _ = w.Write([]byte(`{"running":{},"plan":{"Components":[{"Component":"homestead-server","Current":"0.0.0","Target":"1.0.0","Verification":"verified"}],"Backup":true,"BackupWhy":"state","Warnings":[]},
-				"releases":[{"component":"homestead-server","version":"1.0.0","counter":4,"state":"verified"},{"component":"homesteadctl","version":"","counter":0,"state":"failed","detail":"signature key is not trusted"}],"installed":{}}`))
+				"releases":[{"component":"homestead-server","version":"1.0.0","counter":4,"state":"verified"},{"component":"homesteadctl","version":"","counter":0,"state":"failed","detail":"signature key is not trusted","plan_error":"refused: failed: signature key is not trusted"}],
+				"refused":[{"component":"homesteadctl","version":"","counter":0,"state":"failed","plan_error":"refused: failed: signature key is not trusted"}],"installed":{}}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/platform/updates/verify":
 			if verifyState == "failed" {
 				_, _ = w.Write([]byte(`{"component":"homestead-server","version":"0.1.0","counter":1,"state":"failed","refusal":"rollback","detail":"older"}`))
@@ -24,7 +25,7 @@ func platformStub(t *testing.T, verifyState string) string {
 			}
 			_, _ = w.Write([]byte(`{"component":"homestead-server","version":"1.0.0","counter":4,"state":"verified","key_id":"ABCD"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/platform/trust-keys":
-			_, _ = w.Write([]byte(`[{"key_id":"ABCD","source":"embedded","label":"HAI"}]`))
+			_, _ = w.Write([]byte(`[{"key_id":"ABCD","source":"embedded","label":"HAI","placeholder":true}]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/platform/trust-keys":
 			_, _ = w.Write([]byte(`{"key_id":"EEFF","source":"owner"}`))
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/platform/trust-keys/ABCD":
@@ -45,7 +46,7 @@ func TestUpdatesPlatformShowsVerification(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit = %d", code)
 	}
-	for _, want := range []string{"homestead-server 1.0.0 (counter 4): verified", "homesteadctl - (counter 0): failed", "not trusted", "[verified]"} {
+	for _, want := range []string{"homestead-server 1.0.0 (counter 4): verified", "homesteadctl - (counter 0): failed", "not trusted", "[verified]", "refused (never planned): homesteadctl -: refused: failed"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout)
 		}
@@ -75,7 +76,7 @@ func TestUpdatesTrust(t *testing.T) {
 	if err := os.WriteFile(keyFile, []byte("untrusted comment: x\nabc\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code, out, _ := invoke(t, []string{"--server", url, "updates", "trust", "list"}); code != exitOK || !strings.Contains(out, "ABCD  embedded") {
+	if code, out, _ := invoke(t, []string{"--server", url, "updates", "trust", "list"}); code != exitOK || !strings.Contains(out, "ABCD  embedded") || !strings.Contains(out, "PLACEHOLDER") {
 		t.Fatalf("list: %d %s", code, out)
 	}
 	if code, out, _ := invoke(t, []string{"--server", url, "updates", "trust", "add", "--key-file", keyFile}); code != exitOK || !strings.Contains(out, "EEFF") {

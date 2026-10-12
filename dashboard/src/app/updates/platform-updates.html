@@ -21,7 +21,7 @@
         @if (release.override) {
           <span> Older release allowed by owner override (audited).</span>
         }
-        @if (release.plan_error) {
+        @if (release.plan_error && release.state === 'verified') {
           <span> Not planned: {{ release.plan_error }}</span>
         }
       </li>
@@ -29,6 +29,14 @@
       <li>No platform releases verified yet.</li>
     }
   </ul>
+  @if ((view()?.refused ?? []).length > 0) {
+    <h3>Refused (never planned)</h3>
+    <ul>
+      @for (release of view()?.refused ?? []; track release.component) {
+        <li>{{ release.component }} {{ release.version || '-' }}: {{ release.plan_error }}</li>
+      }
+    </ul>
+  }
   @for (move of view()?.plan?.Components ?? []; track move.Component) {
     <p>
       Plan: {{ move.Component }} {{ move.Current }} → {{ move.Target }}
@@ -84,6 +92,9 @@
     @for (key of keys(); track key.key_id) {
       <li>
         {{ key.key_id }} ({{ key.source }}) {{ key.label }}
+        @if (key.placeholder) {
+          <strong> Placeholder: verifies no real release.</strong>
+        }
         <button type="button" (click)="replaceKey(key.key_id)" [disabled]="busy() || !newKey">
           Replace with new key
         </button>

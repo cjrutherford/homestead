@@ -54,6 +54,7 @@ type PlatformUpdates struct {
 	Running   map[string]string            `json:"running"`
 	Plan      PlatformPlan                 `json:"plan"`
 	Releases  []PlatformRelease            `json:"releases"`
+	Refused   []PlatformRelease            `json:"refused"`
 	Installed map[string]PlatformInstalled `json:"installed"`
 }
 
@@ -65,6 +66,8 @@ type TrustKey struct {
 	Source    string    `json:"source"`
 	Actor     string    `json:"actor"`
 	CreatedAt time.Time `json:"created_at"`
+	// Placeholder marks the embedded key whose private half was discarded.
+	Placeholder bool `json:"placeholder"`
 }
 
 // PlatformUpdates reads the platform plan with per-release

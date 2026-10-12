@@ -44,12 +44,22 @@ const VIEW = {
       key_id: '',
       sha256: '',
       override: false,
+      plan_error: 'refused: failed: release: signature key is not trusted',
+    },
+  ],
+  refused: [
+    {
+      component: 'homesteadctl',
+      version: '',
+      counter: 0,
+      state: 'failed',
+      plan_error: 'refused: failed: release: signature key is not trusted',
     },
   ],
 };
 
 const KEYS = [
-  { key_id: 'ABCD', public_key: 'x', label: 'HAI', source: 'embedded' },
+  { key_id: 'ABCD', public_key: 'x', label: 'HAI', source: 'embedded', placeholder: true },
 ];
 
 describe('PlatformUpdatesPanel', () => {
@@ -85,6 +95,12 @@ describe('PlatformUpdatesPanel', () => {
     expect(text()).toContain('failed');
     expect(text()).toContain('signature key is not trusted');
     expect(text()).toContain('ABCD (embedded)');
+  });
+
+  it('marks the placeholder key and lists refused releases separately', () => {
+    expect(text()).toContain('Placeholder: verifies no real release');
+    expect(text()).toContain('Refused (never planned)');
+    expect(text()).toContain('homesteadctl -: refused: failed');
   });
 
   it('offers rollback override only after a rollback refusal', () => {

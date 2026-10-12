@@ -60,6 +60,9 @@ type TrustKey struct {
 	Source    string    `json:"source"`
 	Actor     string    `json:"actor"`
 	CreatedAt time.Time `json:"created_at"`
+	// Placeholder marks the embedded key whose private half was discarded:
+	// nothing can be signed for it, so it verifies no real release.
+	Placeholder bool `json:"placeholder"`
 }
 
 // Release is the latest verification record for one component.
@@ -92,22 +95,31 @@ func embeddedKey() TrustKey {
 	if err != nil {
 		panic("release: embedded public key is invalid: " + err.Error())
 	}
-	return TrustKey{KeyID: k.KeyID, PublicKey: k.Encoded(), Label: EmbeddedKeyLabel, Source: SourceEmbedded, Actor: "system"}
+	return TrustKey{KeyID: k.KeyID, PublicKey: k.Encoded(), Label: EmbeddedKeyLabel, Source: SourceEmbedded, Actor: "system", Placeholder: true}
 }
 
 // Keys lists trusted keys: the embedded key unless the owner removed
 // it, plus owner keys, sorted by id.
-func (s *Store) Keys() ([]TrustKey, error) {
+func (s *Store) Keys() ([]TrustKey, error) { return keysIn(s.db) }
+
+// querier is what *sql.DB and *sql.Tx share, so key reads can run inside
+// a transaction.
+type querier interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+func keysIn(q querier) ([]TrustKey, error) {
 	var keys []TrustKey
 	emb := embeddedKey()
 	var removed int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM platform_trust_removed WHERE key_id = ?`, emb.KeyID).Scan(&removed); err != nil {
+	if err := q.QueryRow(`SELECT COUNT(*) FROM platform_trust_removed WHERE key_id = ?`, emb.KeyID).Scan(&removed); err != nil {
 		return nil, fmt.Errorf("release: keys: %w", err)
 	}
 	if removed == 0 {
 		keys = append(keys, emb)
 	}
-	rows, err := s.db.Query(`SELECT key_id, public_key, label, actor, created_at FROM platform_trust_keys`)
+	rows, err := q.Query(`SELECT key_id, public_key, label, actor, created_at FROM platform_trust_keys`)
 	if err != nil {
 		return nil, fmt.Errorf("release: keys: %w", err)
 	}
@@ -145,8 +157,10 @@ func (s *Store) PublicKeys() ([]PublicKey, error) {
 	return out, nil
 }
 
-func (s *Store) hasKey(id string) (bool, error) {
-	keys, err := s.Keys()
+func (s *Store) hasKey(id string) (bool, error) { return hasKeyIn(s.db, id) }
+
+func hasKeyIn(q querier, id string) (bool, error) {
+	keys, err := keysIn(q)
 	if err != nil {
 		return false, err
 	}
@@ -180,23 +194,26 @@ func (s *Store) change(oldID, text, label, actor string) (TrustKey, error) {
 	if strings.TrimSpace(actor) == "" {
 		return TrustKey{}, fmt.Errorf("release: actor must not be empty")
 	}
-	if oldID != "" {
-		if ok, err := s.hasKey(oldID); err != nil {
-			return TrustKey{}, err
-		} else if !ok {
-			return TrustKey{}, ErrKeyNotFound
-		}
-	}
-	if ok, err := s.hasKey(p.KeyID); err != nil {
-		return TrustKey{}, err
-	} else if ok && p.KeyID != oldID {
-		return TrustKey{}, ErrKeyExists
-	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return TrustKey{}, fmt.Errorf("release: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	// Existence checks run inside the transaction, so two concurrent
+	// changes cannot both pass them; a lost race on the primary key is
+	// reported as ErrKeyExists below.
+	if oldID != "" {
+		if ok, err := hasKeyIn(tx, oldID); err != nil {
+			return TrustKey{}, err
+		} else if !ok {
+			return TrustKey{}, ErrKeyNotFound
+		}
+	}
+	if ok, err := hasKeyIn(tx, p.KeyID); err != nil {
+		return TrustKey{}, err
+	} else if ok && p.KeyID != oldID {
+		return TrustKey{}, ErrKeyExists
+	}
 	if oldID != "" {
 		if err := removeIn(tx, oldID); err != nil {
 			return TrustKey{}, err
@@ -212,6 +229,9 @@ func (s *Store) change(oldID, text, label, actor string) (TrustKey, error) {
 	} else {
 		if _, err := tx.Exec(`INSERT INTO platform_trust_keys (key_id, public_key, label, actor, created_at) VALUES (?, ?, ?, ?, ?)`,
 			p.KeyID, p.Encoded(), strings.TrimSpace(label), actor, now.Format(time.RFC3339Nano)); err != nil {
+			if strings.Contains(err.Error(), "constraint") {
+				return TrustKey{}, ErrKeyExists
+			}
 			return TrustKey{}, fmt.Errorf("release: add key: %w", err)
 		}
 	}
@@ -244,16 +264,16 @@ func removeIn(tx *sql.Tx, id string) error {
 // RemoveKey stops trusting a key. The embedded key is removable; the
 // owner may re-add it later.
 func (s *Store) RemoveKey(id string) error {
-	if ok, err := s.hasKey(id); err != nil {
-		return err
-	} else if !ok {
-		return ErrKeyNotFound
-	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("release: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if ok, err := hasKeyIn(tx, id); err != nil {
+		return err
+	} else if !ok {
+		return ErrKeyNotFound
+	}
 	if err := removeIn(tx, id); err != nil {
 		return err
 	}
@@ -284,6 +304,21 @@ func (s *Store) RecordInstalled(component, version string, counter int64) error 
 		return fmt.Errorf("release: record installed: %w", err)
 	}
 	return nil
+}
+
+// SeedInstalled records the installed release only when none is recorded,
+// reporting whether it did. It never overwrites: S265's RecordInstalled
+// owns later changes. The daemon seeds the baseline when a release
+// matching the running version verifies, so rollback protection works
+// before S265 lands.
+func (s *Store) SeedInstalled(component, version string, counter int64) (bool, error) {
+	res, err := s.db.Exec(`INSERT OR IGNORE INTO platform_installed (component, version, counter, recorded_at) VALUES (?, ?, ?, ?)`,
+		component, version, counter, time.Now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return false, fmt.Errorf("release: seed installed: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // SaveRelease upserts the latest verification record for a component.
@@ -335,6 +370,9 @@ type trustKeyYAML struct {
 	PublicKey string `yaml:"public_key"`
 	Label     string `yaml:"label,omitempty"`
 	Source    string `yaml:"source"`
+	// Placeholder is true for the embedded key until the production
+	// signing key replaces it.
+	Placeholder bool `yaml:"placeholder,omitempty"`
 }
 
 // RenderYAML writes the inspectable trust configuration (ADR-003)
@@ -346,7 +384,7 @@ func (s *Store) RenderYAML(path string) error {
 	}
 	doc := trustYAML{Version: 1, Keys: []trustKeyYAML{}}
 	for _, k := range keys {
-		doc.Keys = append(doc.Keys, trustKeyYAML{KeyID: k.KeyID, PublicKey: k.PublicKey, Label: k.Label, Source: k.Source})
+		doc.Keys = append(doc.Keys, trustKeyYAML{KeyID: k.KeyID, PublicKey: k.PublicKey, Label: k.Label, Source: k.Source, Placeholder: k.Placeholder})
 	}
 	data, err := yaml.Marshal(doc)
 	if err != nil {

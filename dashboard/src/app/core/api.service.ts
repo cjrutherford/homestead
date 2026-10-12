@@ -221,6 +221,8 @@ export interface PlatformUpdates {
     Warnings: string[];
   };
   releases: PlatformRelease[];
+  /** Failed or unverified releases: shown, never planned. */
+  refused?: PlatformRelease[];
 }
 
 /** POST /api/v1/platform/updates/verify — owner-supplied local files. */
@@ -238,6 +240,8 @@ export interface TrustKey {
   public_key: string;
   label: string;
   source: 'embedded' | 'owner';
+  /** The embedded key's private half was discarded; it verifies nothing real. */
+  placeholder?: boolean;
 }
 
 /** GET /api/v1/dockge — expert-interface link with access policy. */

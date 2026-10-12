@@ -13,7 +13,7 @@ Split: this slice swaps and restarts; rollback is S273. A failed health check he
 
 ## Acceptance Criteria
 - Platform Update Apply implemented and documented
-- Apply runs as an operation: stage the artifact, re-verify it with S264 immediately before use, keep the previous binary, replace atomically, restart `homestead-server` via systemd
+- Apply runs as an operation: stage the artifact, re-verify it with S264 immediately before use (call `release.VerifyDigestUnchanged` with the digest recorded at verification, immediately before replacement, and refuse on mismatch; see docs/architecture/RELEASE_VERIFICATION.md), keep the previous binary, replace atomically, restart `homestead-server` via systemd
 - The restart ends the process running the operation, so the operation is finalized on next start from a persisted marker; tested with the fake harness
 - Post-restart health check; failure marks the operation failed and leaves the previous binary retained
 - Only artifacts verified by S264 are applied; an older-counter artifact applies only with the owner's explicit `--allow-older` override (ADR-025), which is audited with both versions and offered on the dashboard behind a confirmation

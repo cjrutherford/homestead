@@ -29,9 +29,12 @@ func runUpdatesPlatform(ctx context.Context, client *apiclient.Client, stdout, s
 		if rel.Override {
 			fmt.Fprintln(stdout, "  older release allowed by owner override (audited)")
 		}
-		if rel.PlanError != "" {
+		if rel.PlanError != "" && !strings.HasPrefix(rel.PlanError, "refused:") {
 			fmt.Fprintf(stdout, "  not planned: %s\n", rel.PlanError)
 		}
+	}
+	for _, rel := range view.Refused {
+		fmt.Fprintf(stdout, "refused (never planned): %s %s: %s\n", rel.Component, orDash(rel.Version), rel.PlanError)
 	}
 	for _, move := range view.Plan.Components {
 		fmt.Fprintf(stdout, "plan: %s %s -> %s [%s]\n", move.Component, move.Current, move.Target, move.Verification)
@@ -153,7 +156,11 @@ func runUpdatesTrust(ctx context.Context, client *apiclient.Client, args []strin
 			return fail(stderr, err)
 		}
 		for _, key := range keys {
-			fmt.Fprintf(stdout, "%s  %s  %s\n", key.KeyID, key.Source, key.Label)
+			mark := ""
+			if key.Placeholder {
+				mark = "  [PLACEHOLDER: verifies no real release]"
+			}
+			fmt.Fprintf(stdout, "%s  %s  %s%s\n", key.KeyID, key.Source, key.Label, mark)
 		}
 		return exitOK
 	case "add":
