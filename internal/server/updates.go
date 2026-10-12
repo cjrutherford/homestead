@@ -195,6 +195,18 @@ func backupJob(st *store.Store, manifest catalog.Manifest, password string) (bac
 	if len(sources) == 0 {
 		return backup.Job{}, fmt.Errorf("no backup sources for %q", manifest.Name)
 	}
+	assignments, err := storage.NewAssignments(st).List()
+	if err != nil {
+		return backup.Job{}, fmt.Errorf("assignments: %w", err)
+	}
+	containers, err := backupInspect(manifest.Name)
+	if err != nil {
+		return backup.Job{}, fmt.Errorf("backup source guard: cannot inspect running mounts: %w", err)
+	}
+	warnings, err := guardBackupSources(manifest, assignedMountpoints(assignments), sources, containers)
+	if err != nil {
+		return backup.Job{}, err
+	}
 	discovered, err := discover.DiscoverStorage()
 	if err != nil {
 		return backup.Job{}, err
@@ -210,7 +222,7 @@ func backupJob(st *store.Store, manifest catalog.Manifest, password string) (bac
 	}
 	job := backup.Job{
 		Manifest: manifest, Package: manifest.Name,
-		Sources: sources, DestRoot: dest, Retain: retain,
+		Sources: sources, DestRoot: dest, Retain: retain, Warnings: warnings,
 	}
 	if manifest.Database != nil {
 		job.Container = manifest.Name + "-" + manifest.Database.Service
@@ -236,6 +248,10 @@ func handleUpdatesApply(st *store.Store, catalogDir string, client *docker.Clien
 		// here even if a catalog entry ever collides with them.
 		if update.IsPlatformComponent(name) {
 			http.Error(w, fmt.Sprintf("platform component %q updates separately from applications", name), http.StatusBadRequest)
+			return
+		}
+		if err := catalog.RefuseDuringMigration(name); err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
 		manifest, plan, _, err := planPackage(catalogDir, client, r, name)

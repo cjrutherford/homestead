@@ -181,6 +181,9 @@ func ConfigureDefinition(plan ConfigPlan, dir, project string, st *store.Store) 
 	if dir == "" || project == "" {
 		return operation.Definition{}, fmt.Errorf("catalog: configure needs directory and project")
 	}
+	if err := RefuseDuringMigration(project); err != nil {
+		return operation.Definition{}, err
+	}
 	if st == nil {
 		return operation.Definition{}, fmt.Errorf("catalog: configure needs a store")
 	}

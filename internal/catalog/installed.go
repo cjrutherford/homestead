@@ -47,7 +47,7 @@ func RefuseInstalled(st *store.Store, name, dir string, manifest *Manifest) erro
 		return nil
 	}
 	if manifest != nil && !hasDeclaredBinds(dir, *manifest) {
-		return fmt.Errorf("catalog: %q is already installed with its data outside mounted storage (installed before S276); reinstalling would orphan that data — use the S277 data migration, then update", name)
+		return fmt.Errorf("catalog: %q is already installed with its data outside mounted storage (installed before S276); reinstalling would orphan that data — use the S277 data migration (`homesteadctl data plan %s`; docs/architecture/APP_DATA_MIGRATION.md), then update", name, name)
 	}
 	return fmt.Errorf("catalog: %q is already installed; use configure or update instead of installing again", name)
 }

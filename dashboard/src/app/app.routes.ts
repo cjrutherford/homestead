@@ -6,6 +6,7 @@ import { Config } from './config/config';
 import { Firewall } from './firewall/firewall';
 import { Catalog } from './catalog/catalog';
 import { Updates } from './updates/updates';
+import { DataMigration } from './data/data-migration';
 import { Advanced } from './advanced/advanced';
 import { Drift } from './drift/drift';
 import { Exposure } from './exposure/exposure';
@@ -26,6 +27,7 @@ export const routes: Routes = [
   { path: 'firewall', component: Firewall },
   { path: 'catalog', component: Catalog },
   { path: 'updates', component: Updates },
+  { path: 'data', component: DataMigration },
   { path: 'advanced', component: Advanced },
   { path: 'drift', component: Drift },
   { path: 'exposure', component: Exposure },

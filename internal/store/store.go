@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 28
+const CurrentVersion = 29
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -518,6 +518,25 @@ CREATE TABLE IF NOT EXISTS platform_releases (
 	override INTEGER NOT NULL DEFAULT 0,
 	actor TEXT NOT NULL DEFAULT '',
 	verified_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S277 app data migration: Docker volumes left behind after a
+		// migration onto S276 bind mounts. Removal is a separate owner
+		// action, so each volume is tracked until removed.
+		version: 29,
+		name:    "app data migration old volumes",
+		sql: `
+CREATE TABLE IF NOT EXISTS app_data_old_volumes (
+	volume TEXT PRIMARY KEY,
+	package TEXT NOT NULL,
+	service TEXT NOT NULL,
+	target TEXT NOT NULL,
+	size_bytes INTEGER NOT NULL DEFAULT 0,
+	state TEXT NOT NULL,
+	actor TEXT NOT NULL DEFAULT '',
+	migrated_at TEXT NOT NULL,
+	removed_at TEXT NOT NULL DEFAULT ''
 );`,
 	},
 }

@@ -311,6 +311,9 @@ func RestoreDefinition(st *store.Store, stack, dir, project string) (operation.D
 	if stack == "" {
 		return operation.Definition{}, fmt.Errorf("catalog: restore needs a stack")
 	}
+	if err := RefuseDuringMigration(stack); err != nil {
+		return operation.Definition{}, err
+	}
 	if dir == "" {
 		return operation.Definition{}, fmt.Errorf("catalog: restore needs a directory")
 	}

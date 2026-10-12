@@ -190,6 +190,8 @@ type Job struct {
 	SrcRoot   string
 	DestRoot  string
 	Retain    int
+	// Warnings are recorded in the run manifest.
+	Warnings []string
 }
 
 // Validate checks job shape: manifest, package, sources, destination,
@@ -335,7 +337,7 @@ func prune(job Job, current string) error {
 // database export when present, with counts re-walked from disk.
 func writeJobManifest(job Job, stamp string) error {
 	root := filepath.Join(job.DestRoot, job.Package, stamp)
-	manifest := Manifest{Package: job.Package, Created: stamp, Sources: map[string]string{}}
+	manifest := Manifest{Package: job.Package, Created: stamp, Sources: map[string]string{}, Warnings: job.Warnings}
 	for _, source := range job.Sources {
 		manifest.recordSource(source)
 	}

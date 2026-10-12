@@ -1,0 +1,112 @@
+<section aria-label="App data placement">
+  <h2>App data</h2>
+  <p>
+    Apps installed before data placement keep their data in Docker volumes,
+    outside mounted storage and outside backups. Migrating copies it onto
+    mounted storage while the app is stopped; old volumes are kept until you
+    remove them.
+  </p>
+
+  @if (error()) {
+    <app-state-message kind="error" [headline]="error()" />
+  }
+
+  @if (operationId(); as id) {
+    <p>
+      Started.
+      <a [routerLink]="['/operations', id]">Follow operation {{ id }}</a>
+    </p>
+  }
+
+  <button type="button" (click)="refresh()" [disabled]="busy()">Refresh</button>
+
+  @if (busy() && data().apps.length === 0) {
+    <app-state-message kind="loading" headline="Loading…" />
+  } @else {
+    <ul>
+      @for (app of data().apps; track app.package) {
+        <li>
+          <h3>{{ app.package }}: {{ app.state }}</h3>
+          @if (app.reason) {
+            <p>{{ app.reason }}</p>
+          }
+          <ul>
+            @for (finding of app.findings; track finding.service + finding.target) {
+              <li>
+                {{ finding.service }} {{ finding.target }}: {{ finding.state }}
+                ({{ finding.kind }}{{ finding.volume ? ' ' + finding.volume : '' }})
+              </li>
+            }
+          </ul>
+          @if (app.state === 'needs-migration') {
+            <button type="button" (click)="reviewPlan(app.package)" [disabled]="busy()">
+              Review migration plan
+            </button>
+          }
+          @if (pendingVolumes(app.package).length > 0) {
+            <h4>Old volumes pending removal</h4>
+            <ul>
+              @for (volume of pendingVolumes(app.package); track volume.volume) {
+                <li>{{ volume.volume }} ({{ volume.target }}, {{ volume.size_bytes }} bytes)</li>
+              }
+            </ul>
+            <button type="button" (click)="removeVolumes(app.package)" [disabled]="busy()">
+              Remove old volumes
+            </button>
+          }
+          @if (plan(); as p) {
+            @if (planFor() === app.package) {
+              <div aria-label="Migration plan">
+                <h4>Migration plan</h4>
+                <ul>
+                  @for (item of p.items; track item.dest) {
+                    <li>
+                      {{ item.service }} {{ item.target }}: {{ item.source }} →
+                      {{ item.dest }} ({{ item.size_bytes }} bytes)
+                    </li>
+                  }
+                </ul>
+                @for (space of p.space; track space.mountpoint) {
+                  <p>
+                    {{ space.mountpoint }}: needs {{ space.needed_bytes }} bytes,
+                    {{ space.free_bytes }} free
+                  </p>
+                }
+                <p>Expected downtime: about {{ p.estimated_downtime_seconds }} seconds.</p>
+                @for (note of p.notes; track note) {
+                  <p>{{ note }}</p>
+                }
+                @if (p.backup.possible) {
+                  <p>A pre-migration backup will run to {{ p.backup.destination }}.</p>
+                } @else {
+                  <p class="warning">
+                    A pre-migration backup is not possible: {{ p.backup.reason }}
+                  </p>
+                  <label>
+                    <input
+                      type="checkbox"
+                      name="acknowledge-no-backup"
+                      [checked]="acknowledged()"
+                      (change)="setAcknowledged($any($event.target).checked)"
+                    />
+                    I understand and want to migrate without a backup
+                  </label>
+                }
+                <button
+                  type="button"
+                  (click)="approve()"
+                  [disabled]="busy() || (!p.backup.possible && !acknowledged())"
+                >
+                  Approve migration
+                </button>
+                <button type="button" (click)="cancelPlan()">Cancel</button>
+              </div>
+            }
+          }
+        </li>
+      } @empty {
+        <li>No installed apps.</li>
+      }
+    </ul>
+  }
+</section>

@@ -230,3 +230,24 @@
   generated Redis or database environment, so owners must `apps configure`
   `REDIS_HOSTNAME`, `DB_*`, and Postgres credentials before the server
   starts.
+- App data migration follow-ups (S277): migration is per app and
+  host-side. Not done: data that sits in a container's writable layer
+  (a declared path with no mount at all, for example Authentik's
+  `/media`, `/templates`, `/certs` on a pre-S276 stack) is not carried
+  over, because no volume holds it; the plan says so and the new bind
+  starts empty (copying with `docker cp` is possible later); two services
+  that each hold their own volume for one shared declared path are
+  refused rather than merged; the pre-migration backup reuses the file
+  backup machinery (in-tree symlinks and ownership preserved since the
+  S276 KVM fixes, links escaping the tree still refused), and it is a
+  safety copy for the owner, not the rollback path (rollback uses the
+  untouched old volumes); the backup guard does not
+  judge read-only binds or owner-supplied extra read-write binds outside
+  the package directory; progress and downtime figures are estimates
+  from a fixed copy throughput; directories moved aside by a rollback
+  (`<target>.rollback-<stamp>`) are never cleaned up automatically; the
+  package claim that serialises migration against configure, remove,
+  drift restore, and update is checked when those operations are built,
+  not inside their steps, so an operation built just before the claim
+  could still interleave; old volumes the migration did not record
+  (for example volumes of apps removed earlier) are not managed here.

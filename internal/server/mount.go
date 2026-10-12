@@ -64,10 +64,12 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 		func() []doctor.Check { return []doctor.Check{driftDoctorCheck(st, time.Now)()} },
 		certDoctorChecks(st, time.Now),
 		platformDoctorCheck(st),
+		migrationDoctorChecks(st, c.CatalogDir),
 	)
 	srv.MountTLSRenewal(st, time.Now)
 	srv.MountOperations(operation.New(st))
 	srv.MountCatalog(st, c.CatalogDir)
+	srv.MountMigrations(st, c.CatalogDir)
 	srv.MountStorage(st)
 	srv.MountBackups(st)
 	sched := NewScheduler(st, c.CatalogDir)

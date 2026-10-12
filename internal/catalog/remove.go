@@ -81,6 +81,9 @@ func RemoveDefinition(removal Removal, dir string, st *store.Store) (operation.D
 	if dir == "" {
 		return operation.Definition{}, fmt.Errorf("catalog: removal needs a directory")
 	}
+	if err := RefuseDuringMigration(removal.Package); err != nil {
+		return operation.Definition{}, err
+	}
 	if st == nil {
 		return operation.Definition{}, fmt.Errorf("catalog: removal needs a store")
 	}

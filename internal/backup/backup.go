@@ -104,6 +104,10 @@ type Manifest struct {
 	// the origin mount (restore target = mountpoint + path). Absent
 	// for older runs, where the entry is the path itself.
 	Paths map[string]string `json:"paths,omitempty"`
+	// Warnings records conditions the source guard tolerated (empty
+	// declared paths, image volumes the catalog does not declare), so
+	// a restore planner or owner can see what the run did not cover.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // ResolveDestination finds the backup root: the backup-class

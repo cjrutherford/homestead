@@ -79,6 +79,10 @@ unchanged.
 | DELETE | /api/v1/backups/schedules/{package} | `"backup"` | `backupScheduleDelete` | Schedule removal on CLI and dashboard |
 | GET | /api/v1/updates | `"updates"` | `updates` | Review rows on both surfaces |
 | POST | /api/v1/updates/{name}/apply | `"updates"` | `applyUpdate` | Approved updates on both surfaces |
+| GET | /api/v1/data-migrations | `runDataStatus` | `dataMigrations` | App data placement (placed, needs-migration, unknown) plus old volumes pending removal (S277); also surfaced as doctor checks |
+| POST | /api/v1/data-migrations/{name}/plan | `runDataPlan` | `planDataMigration` | Reviewed migration plan with digest, targets, sizes, space, downtime, backup verdict (S277) |
+| POST | /api/v1/data-migrations/{name}/approve | `runDataApprove` | `approveDataMigration` | Approval of the quoted plan digest starts the migration operation; audited (S277) |
+| POST | /api/v1/data-migrations/{name}/remove-volumes | `runDataRemoveVolumes` | `removeOldVolumes` | Explicit, audited removal of old volumes, refused while referenced (S277) |
 | GET | /api/v1/platform/updates | `"platform"` | `platformUpdates` | Platform plan with per-release verification state on both surfaces (S264) |
 | POST | /api/v1/platform/updates/verify | `"verify"` | `platformVerify` | Local artifact verification, `--allow-older` or confirmed rollback override on both surfaces (S264) |
 | GET | /api/v1/platform/trust-keys | `"trust"` | `trustKeys` | Trusted release keys on both surfaces (S264) |

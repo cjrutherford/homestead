@@ -183,6 +183,63 @@ export interface OperationStarted {
   detail?: string;
 }
 
+/** GET /api/v1/data-migrations — one declared path's observed placement. */
+export interface DataFinding {
+  service: string;
+  target: string;
+  state: 'placed' | 'needs-migration' | 'unknown';
+  kind: string;
+  volume?: string;
+  reason?: string;
+}
+
+/** GET /api/v1/data-migrations — one installed app's placement verdict. */
+export interface AppDataStatus {
+  package: string;
+  state: 'placed' | 'needs-migration' | 'unknown';
+  reason?: string;
+  findings: DataFinding[];
+}
+
+/** GET /api/v1/data-migrations — a volume left behind by a migration. */
+export interface OldVolumeRecord {
+  volume: string;
+  package: string;
+  service: string;
+  target: string;
+  size_bytes: number;
+  state: 'pending-removal' | 'removed';
+}
+
+/** GET /api/v1/data-migrations — detection plus old volumes. */
+export interface DataMigrations {
+  apps: AppDataStatus[];
+  old_volumes: OldVolumeRecord[];
+}
+
+/** POST /api/v1/data-migrations/:name/plan — reviewable migration plan. */
+export interface DataMigrationPlan {
+  package: string;
+  digest: string;
+  items: {
+    service: string;
+    target: string;
+    source: string;
+    dest: string;
+    size_bytes: number;
+  }[];
+  old_volumes: { name: string; size_bytes: number }[];
+  space: {
+    mountpoint: string;
+    needed_bytes: number;
+    free_bytes: number;
+    ok: boolean;
+  }[];
+  estimated_downtime_seconds: number;
+  notes: string[];
+  backup: { possible: boolean; destination?: string; reason?: string };
+}
+
 /** GET /api/v1/updates — per-package review rows. */
 export interface ServiceUpdate {
   Service: string;
@@ -492,6 +549,37 @@ export class ApiService {
     return this.http.post<OperationStarted>(
       `/api/v1/catalog/${name}/configure`,
       { changes },
+    );
+  }
+
+  dataMigrations(): Observable<DataMigrations> {
+    return this.http.get<DataMigrations>('/api/v1/data-migrations');
+  }
+
+  planDataMigration(name: string): Observable<DataMigrationPlan> {
+    return this.http.post<DataMigrationPlan>(
+      `/api/v1/data-migrations/${name}/plan`,
+      {},
+    );
+  }
+
+  approveDataMigration(
+    name: string,
+    body: { digest: string; acknowledge_no_backup: boolean },
+  ): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(
+      `/api/v1/data-migrations/${name}/approve`,
+      body,
+    );
+  }
+
+  removeOldVolumes(
+    name: string,
+    volumes: string[],
+  ): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(
+      `/api/v1/data-migrations/${name}/remove-volumes`,
+      { volumes },
     );
   }
 

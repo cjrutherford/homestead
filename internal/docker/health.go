@@ -27,6 +27,18 @@ type Container struct {
 	State  string            `json:"state"`
 	Status string            `json:"status"`
 	Labels map[string]string `json:"labels,omitempty"`
+	Mounts []Mount           `json:"mounts,omitempty"`
+}
+
+// Mount is one container mount as the Engine reports it: type is
+// "bind", "volume", or "tmpfs"; Name is set for volumes; Source is the
+// host path (the volume's data directory for volumes).
+type Mount struct {
+	Type        string `json:"type"`
+	Name        string `json:"name,omitempty"`
+	Source      string `json:"source,omitempty"`
+	Destination string `json:"destination"`
+	RW          bool   `json:"rw"`
 }
 
 // Image is one image summary.
@@ -153,29 +165,11 @@ func (c *Client) Health(ctx context.Context) (Health, error) {
 		return Health{}, err
 	}
 	health.StorageDriver = info.Driver
-	var containers []struct {
-		ID     string            `json:"Id"`
-		Names  []string          `json:"Names"`
-		Image  string            `json:"Image"`
-		State  string            `json:"State"`
-		Status string            `json:"Status"`
-		Labels map[string]string `json:"Labels"`
-	}
-	if err := c.get(ctx, "/containers/json?all=1", &containers); err != nil {
+	containers, err := c.Containers(ctx)
+	if err != nil {
 		return Health{}, err
 	}
-	health.Containers = []Container{}
-	for _, container := range containers {
-		names := make([]string, 0, len(container.Names))
-		for _, name := range container.Names {
-			names = append(names, strings.TrimPrefix(name, "/"))
-		}
-		health.Containers = append(health.Containers, Container{
-			ID: container.ID, Names: names,
-			Image: container.Image, State: container.State, Status: container.Status,
-			Labels: container.Labels,
-		})
-	}
+	health.Containers = containers
 	var images []struct {
 		ID       string   `json:"Id"`
 		RepoTags []string `json:"RepoTags"`
@@ -211,4 +205,48 @@ func (c *Client) Health(ctx context.Context) (Health, error) {
 		})
 	}
 	return health, nil
+}
+
+// Containers lists every container (running or not) with its mounts.
+// Stopped containers keep their mounts, so data placement can be read
+// from a stack that is down.
+func (c *Client) Containers(ctx context.Context) ([]Container, error) {
+	var containers []struct {
+		ID     string            `json:"Id"`
+		Names  []string          `json:"Names"`
+		Image  string            `json:"Image"`
+		State  string            `json:"State"`
+		Status string            `json:"Status"`
+		Labels map[string]string `json:"Labels"`
+		Mounts []struct {
+			Type        string `json:"Type"`
+			Name        string `json:"Name"`
+			Source      string `json:"Source"`
+			Destination string `json:"Destination"`
+			RW          bool   `json:"RW"`
+		} `json:"Mounts"`
+	}
+	if err := c.get(ctx, "/containers/json?all=1", &containers); err != nil {
+		return nil, err
+	}
+	out := []Container{}
+	for _, container := range containers {
+		names := make([]string, 0, len(container.Names))
+		for _, name := range container.Names {
+			names = append(names, strings.TrimPrefix(name, "/"))
+		}
+		var mounts []Mount
+		for _, mount := range container.Mounts {
+			mounts = append(mounts, Mount{
+				Type: mount.Type, Name: mount.Name, Source: mount.Source,
+				Destination: mount.Destination, RW: mount.RW,
+			})
+		}
+		out = append(out, Container{
+			ID: container.ID, Names: names,
+			Image: container.Image, State: container.State, Status: container.Status,
+			Labels: container.Labels, Mounts: mounts,
+		})
+	}
+	return out, nil
 }
