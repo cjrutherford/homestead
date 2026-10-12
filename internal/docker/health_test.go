@@ -23,7 +23,9 @@ func stubEngine(t *testing.T) (string, *int) {
 		case "/info":
 			_, _ = w.Write([]byte(`{"Driver":"overlayfs"}`))
 		case "/containers/json":
-			_, _ = w.Write([]byte(`[{"Id":"abc123def456","Names":["/web"],"Image":"nginx:latest","State":"running","Status":"Up 2 hours"}]`))
+			_, _ = w.Write([]byte(`[{"Id":"abc123def456","Names":["/web"],"Image":"nginx:latest","State":"running","Status":"Up 2 hours","Mounts":[{"Type":"volume","Name":"vol1","Source":"","Destination":"/data","RW":true},{"Type":"volume","Name":"vol2","Source":"/var/lib/docker/volumes/vol2/_data","Destination":"/b","RW":true}]}]`))
+		case "/volumes/vol1":
+			_, _ = w.Write([]byte(`{"Name":"vol1","Mountpoint":"/var/lib/docker/volumes/vol1/_data"}`))
 		case "/images/json":
 			_, _ = w.Write([]byte(`[{"Id":"sha256:111","RepoTags":["nginx:latest"],"Size":188000000,"Created":1700000000}]`))
 		case "/networks":
@@ -106,4 +108,21 @@ func TestLiveHealth(t *testing.T) {
 	t.Logf("reachable=%v version=%q api=%q containers=%d images=%d networks=%d driver=%q",
 		health.Reachable, health.Version, health.APIVersion,
 		len(health.Containers), len(health.Images), len(health.Networks), health.StorageDriver)
+}
+
+func TestContainersResolveEmptyVolumeSource(t *testing.T) {
+	socketPath, _ := stubEngine(t)
+	containers, err := NewClient(socketPath).Containers(context.Background())
+	if err != nil {
+		t.Fatalf("Containers: %v", err)
+	}
+	if len(containers) != 1 || len(containers[0].Mounts) != 2 {
+		t.Fatalf("containers = %+v", containers)
+	}
+	if got := containers[0].Mounts[0].Source; got != "/var/lib/docker/volumes/vol1/_data" {
+		t.Fatalf("empty list Source not resolved from the volume record: %q", got)
+	}
+	if got := containers[0].Mounts[1].Source; got != "/var/lib/docker/volumes/vol2/_data" {
+		t.Fatalf("listed Source changed: %q", got)
+	}
 }

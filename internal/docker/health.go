@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -207,6 +208,18 @@ func (c *Client) Health(ctx context.Context) (Health, error) {
 	return health, nil
 }
 
+// volumeMountpoint reads a volume's host directory, or "" when the
+// engine cannot say.
+func (c *Client) volumeMountpoint(ctx context.Context, name string) string {
+	var volume struct {
+		Mountpoint string `json:"Mountpoint"`
+	}
+	if err := c.get(ctx, "/volumes/"+url.PathEscape(name), &volume); err != nil {
+		return ""
+	}
+	return volume.Mountpoint
+}
+
 // Containers lists every container (running or not) with its mounts.
 // Stopped containers keep their mounts, so data placement can be read
 // from a stack that is down.
@@ -237,6 +250,12 @@ func (c *Client) Containers(ctx context.Context) ([]Container, error) {
 		}
 		var mounts []Mount
 		for _, mount := range container.Mounts {
+			if mount.Type == "volume" && mount.Source == "" && mount.Name != "" {
+				// The list endpoint leaves Source empty for some
+				// volumes (seen live for Compose anonymous volumes);
+				// the volume record always carries the host directory.
+				mount.Source = c.volumeMountpoint(ctx, mount.Name)
+			}
 			mounts = append(mounts, Mount{
 				Type: mount.Type, Name: mount.Name, Source: mount.Source,
 				Destination: mount.Destination, RW: mount.RW,
