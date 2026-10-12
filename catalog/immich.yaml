@@ -49,7 +49,7 @@ services:
 - name: cache
   image: valkey/valkey:9
   exposes: ""
-  # Image VOLUME: /data. Job queue and cache only; Immich rebuilds
+  # No image VOLUME (verified by inspection); /data is the queue and cache dir. Immich rebuilds
   # both on start (the official compose persists nothing here).
   data:
   - target: /data

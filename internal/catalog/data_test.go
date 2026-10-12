@@ -14,34 +14,28 @@ import (
 	"homestead/internal/store"
 )
 
-// imageVolumes is one table row: the VOLUMEs an image declares and
-// whether they were confirmed by inspecting exactly that image.
+// imageVolumes is one table row: the VOLUMEs an image declares.
 type imageVolumes struct {
 	Volumes []string
-	// Unverified rows come from upstream Dockerfiles and compose files
-	// (or an adjacent tag inspected locally); the KVM run inspects
-	// these images on the VM and flips the flag.
-	Unverified bool
 }
 
 // knownImageVolumes records each curated image's VOLUMEs (S276).
 // Image inspection is unavailable at test time in general, so this
 // table is the source of truth the coverage test compares declarations
-// against. Verified rows were inspected locally for that exact tag
-// (postgres:16-alpine). Unverified rows: jellyfin 12.2 was checked via
-// the adjacent local jellyfin/jellyfin:12 and authentik 2026.8.3 via
-// local 2024.12.3 (neither has a VOLUME); the rest come from upstream
-// documentation. Bumping an image tag in catalog/*.yaml fails the
+// against. Every row was verified with `docker image inspect` of
+// exactly that tag on the KVM appliance (2026-10-12; valkey/valkey:9
+// declares no VOLUME despite upstream docs, the catalog still mounts a
+// tmpfs at /data). Bumping an image tag in catalog/*.yaml fails the
 // table-membership test until someone re-verifies the image's VOLUMEs
 // and updates the row - that is the point.
 var knownImageVolumes = map[string]imageVolumes{
-	"jellyfin/jellyfin:12.2":                                         {Volumes: []string{"/config", "/cache"}, Unverified: true},
-	"nextcloud:35.0.1-apache":                                        {Volumes: []string{"/var/www/html"}, Unverified: true},
-	"ghcr.io/immich-app/immich-server:v3.3.0":                        {Volumes: []string{"/data"}, Unverified: true},
-	"ghcr.io/immich-app/immich-machine-learning:v3.3.0":              {Unverified: true},
-	"ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0": {Volumes: []string{"/var/lib/postgresql/data"}, Unverified: true},
-	"valkey/valkey:9":                                                {Volumes: []string{"/data"}, Unverified: true},
-	"ghcr.io/goauthentik/server:2026.8.3":                            {Unverified: true},
+	"jellyfin/jellyfin:12.2":                                         {Volumes: []string{"/config", "/cache"}},
+	"nextcloud:35.0.1-apache":                                        {Volumes: []string{"/var/www/html"}},
+	"ghcr.io/immich-app/immich-server:v3.3.0":                        {Volumes: []string{"/data"}},
+	"ghcr.io/immich-app/immich-machine-learning:v3.3.0":              {},
+	"ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0": {Volumes: []string{"/var/lib/postgresql/data"}},
+	"valkey/valkey:9":                                                {},
+	"ghcr.io/goauthentik/server:2026.8.3":                            {},
 	"docker.io/library/postgres:16-alpine":                           {Volumes: []string{"/var/lib/postgresql/data"}},
 }
 
