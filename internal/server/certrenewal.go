@@ -25,21 +25,25 @@ const (
 )
 
 // renewalStatuses grades every certificate with a stored approved
-// issuance against the saved TLS strategy at now (S263). No saved
-// strategy, or no issuances, is an empty result: nothing to renew.
-func renewalStatuses(st *store.Store, now time.Time) ([]cert.RenewalStatus, error) {
+// issuance against the saved TLS strategy at now (S263). No recorded
+// issuance is an explicit state in the report, not an empty list.
+func renewalStatuses(st *store.Store, now time.Time) (cert.RenewalReport, error) {
+	issuances, err := cert.NewIssuances(st).List()
+	if err != nil {
+		return cert.RenewalReport{}, err
+	}
 	set, err := cert.LoadStrategy(wizard.New(st))
 	if err != nil {
 		if errors.Is(err, wizard.ErrNotFound) {
-			return []cert.RenewalStatus{}, nil
+			return cert.NewRenewalReport(nil, len(issuances)), nil
 		}
-		return nil, err
+		return cert.RenewalReport{}, err
 	}
-	issuances, err := cert.NewIssuances(st).List()
+	statuses, err := cert.CheckRenewals(set, issuances, now)
 	if err != nil {
-		return nil, err
+		return cert.RenewalReport{}, err
 	}
-	return cert.CheckRenewals(set, issuances, now)
+	return cert.NewRenewalReport(statuses, len(issuances)), nil
 }
 
 // certRenewalSource declares the daily renewal check as a scheduler job
@@ -69,18 +73,18 @@ func certRenewalSource(st *store.Store, now func() time.Time) scheduler.Source {
 }
 
 func runRenewalCheck(st *store.Store, now time.Time) error {
-	statuses, err := renewalStatuses(st, now)
+	report, err := renewalStatuses(st, now)
 	if err != nil {
 		return err
 	}
 	var notable []string
 	expired := false
-	for _, status := range statuses {
-		if status.Status == cert.RenewalOK {
+	for _, status := range report.Certificates {
+		if status.Status == cert.RenewalOK || status.Status == cert.RenewalNoIssuance {
 			continue
 		}
 		notable = append(notable, status.Certificate+": "+status.Status+" - "+status.Detail)
-		if status.Status == cert.RenewalExpired {
+		if status.Status == cert.RenewalExpired || status.Status == cert.RenewalError {
 			expired = true
 		}
 	}
@@ -98,7 +102,7 @@ func runRenewalCheck(st *store.Store, now time.Time) error {
 		return err
 	}
 	if expired {
-		return fmt.Errorf("certificate expired: %s", strings.Join(notable, "; "))
+		return fmt.Errorf("certificate expired or unreadable: %s", strings.Join(notable, "; "))
 	}
 	return nil
 }
@@ -106,31 +110,36 @@ func runRenewalCheck(st *store.Store, now time.Time) error {
 // MountTLSRenewal serves renewal status (S263): GET /api/v1/tls/renewal.
 func (s *Server) MountTLSRenewal(st *store.Store, now func() time.Time) {
 	s.mux.HandleFunc("GET /api/v1/tls/renewal", func(w http.ResponseWriter, r *http.Request) {
-		statuses, err := renewalStatuses(st, now())
+		report, err := renewalStatuses(st, now())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
-		writeJSON(w, statuses)
+		writeJSON(w, report)
 	})
 }
 
-// certDoctorChecks adds one doctor check per tracked certificate:
-// renewal-due and plan-required warn, expired fails, ok passes.
+// certDoctorChecks adds one doctor check per desired certificate:
+// renewal-due and plan-required warn, expired and error (corrupt stored
+// chain) fail, ok and no-recorded-issuance pass. With nothing recorded
+// at all, one explicit tls-renewal check says so.
 func certDoctorChecks(st *store.Store, now func() time.Time) func() []doctor.Check {
 	return func() []doctor.Check {
-		statuses, err := renewalStatuses(st, now())
+		report, err := renewalStatuses(st, now())
 		if err != nil {
 			return []doctor.Check{{Name: "tls-renewal", Status: doctor.StatusWarn,
 				Detail: "renewal status unavailable: " + err.Error()}}
 		}
-		checks := make([]doctor.Check, 0, len(statuses))
-		for _, status := range statuses {
+		if report.Recorded == 0 {
+			return []doctor.Check{{Name: "tls-renewal", Status: doctor.StatusOK, Detail: report.Summary}}
+		}
+		checks := make([]doctor.Check, 0, len(report.Certificates))
+		for _, status := range report.Certificates {
 			level := doctor.StatusOK
 			switch status.Status {
 			case cert.RenewalDue, cert.RenewalPlanRequired:
 				level = doctor.StatusWarn
-			case cert.RenewalExpired:
+			case cert.RenewalExpired, cert.RenewalError:
 				level = doctor.StatusFail
 			}
 			checks = append(checks, doctor.Check{Name: "tls-renewal:" + status.Certificate,

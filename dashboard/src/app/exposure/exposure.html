@@ -27,17 +27,22 @@
     issues. A plan-required status means the desired names, DNS
     provider, or challenge changed since the approved issuance.
   </p>
-  <ul>
-    @for (renewal of renewals(); track renewal.certificate) {
-      <li>
-        {{ renewal.certificate }}: {{ renewal.status }}
-        ({{ renewal.days_remaining }} days remaining) —
-        {{ renewal.detail }}
-      </li>
-    } @empty {
-      <li>No issued certificates are tracked yet.</li>
+  @if (renewals(); as report) {
+    @if (report.recorded_issuances === 0) {
+      <p>{{ report.summary }}</p>
     }
-  </ul>
+    <ul>
+      @for (renewal of report.certificates; track renewal.certificate) {
+        <li>
+          {{ renewal.certificate }}: {{ renewal.status }}
+          @if (renewal.status !== 'no-recorded-issuance') {
+            ({{ renewal.days_remaining }} days remaining)
+          }
+          — {{ renewal.detail }}
+        </li>
+      }
+    </ul>
+  }
 
   <h3>Selection</h3>
   <form

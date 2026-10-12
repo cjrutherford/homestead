@@ -2,6 +2,7 @@ package cert
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -110,9 +111,26 @@ func TestCheckRenewals(t *testing.T) {
 		t.Fatalf("90-day threshold must cap at 30 days, got %q", got[0].Status)
 	}
 
-	// Certificates without a recorded issuance are omitted.
-	if got, _ := CheckRenewals(set, nil, issuedAt); len(got) != 0 {
+	// Certificates without a recorded issuance say so explicitly.
+	if got, _ := CheckRenewals(set, nil, issuedAt); len(got) != 1 || got[0].Status != RenewalNoIssuance {
 		t.Fatalf("untracked = %+v", got)
+	}
+
+	// An unparseable stored chain is its own error state, never
+	// plan-required.
+	corrupt := []Issuance{{Certificate: "www", Fingerprint: approved, ChainPEM: []byte("garbage")}}
+	if got, _ := CheckRenewals(set, corrupt, issuedAt); len(got) != 1 || got[0].Status != RenewalError ||
+		!strings.Contains(got[0].Detail, "corrupt") {
+		t.Fatalf("corrupt = %+v", got)
+	}
+
+	// Manual (no auto-renew) never reports renewal-due, even inside the
+	// window; the detail says renewal is manual.
+	manual := renewalSet("www.example.com")
+	manual.Certificates[0].Renewal.Auto = false
+	got, err = CheckRenewals(manual, issuance, issuedAt.Add(45*24*time.Hour))
+	if err != nil || got[0].Status != RenewalOK || !strings.Contains(got[0].Detail, "manually") {
+		t.Fatalf("manual = %+v, %v", got, err)
 	}
 }
 
@@ -141,5 +159,82 @@ func TestIssueForRecordsFingerprint(t *testing.T) {
 	if stored[0].Certificate != "www" || !stored[0].Fingerprint.Equal(want) ||
 		!issued.Fingerprint.Equal(want) || len(stored[0].ChainPEM) == 0 {
 		t.Fatalf("stored = %+v", stored[0])
+	}
+}
+
+func TestNormalizeNameIDNA(t *testing.T) {
+	composed := "m\u00fcnchen.example"
+	decomposed := "mu\u0308nchen.example"
+	for in, want := range map[string]string{
+		composed:                "xn--mnchen-3ya.example",
+		decomposed:              "xn--mnchen-3ya.example",
+		"b\u00fccher.example.":  "xn--bcher-kva.example",
+		"WWW.Example.COM":       "www.example.com",
+		"xn--mnchen-3ya.de":     "xn--mnchen-3ya.de",
+		"M\u00dcNCHEN.de":       "xn--mnchen-3ya.de",
+		"*.B\u00fccher.example": "*.xn--bcher-kva.example",
+		"*.example.com":         "*.example.com",
+	} {
+		got, err := NormalizeName(in)
+		if err != nil || got != want {
+			t.Errorf("NormalizeName(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	for _, bad := range []string{"", ".", "a..example.com", "example.com..", "..example.com", "-bad.example.com", "a b.example.com"} {
+		if got, err := NormalizeName(bad); err == nil {
+			t.Errorf("NormalizeName(%q) = %q, want error", bad, got)
+		}
+	}
+	if !NewFingerprint([]string{composed}, "p", "dns-01").Equal(NewFingerprint([]string{decomposed}, "p", "dns-01")) {
+		t.Fatal("composed and decomposed forms must be one name")
+	}
+	// A malformed name never equals a valid one and is reported.
+	bad := NewFingerprint([]string{"a..example.com"}, "p", "dns-01")
+	if bad.Equal(NewFingerprint([]string{"a.example.com"}, "p", "dns-01")) || len(bad.InvalidNames()) != 1 {
+		t.Fatalf("invalid name handling: %+v", bad)
+	}
+}
+
+// IssueFor stamps the record with the injected clock, and a recording
+// failure is joined with, not hidden by, an issue-side failure.
+func TestIssueForClockAndJoinedRecordFailure(t *testing.T) {
+	double := &acmeDouble{}
+	client, _ := serveACME(t, double)
+	provider := &scriptDNSProvider{deleteErr: errors.New("provider delete refused")}
+	dns01, _ := openDNS01(t, client, provider)
+	st, err := store.Open(filepath.Join(t.TempDir(), "iss.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dns01.Issuances = NewIssuances(st)
+	stamp := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	dns01.Now = func() time.Time { return stamp }
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Cleanup fails after a good issuance: material returned, error
+	// reported, and the record is stamped by the injected clock.
+	issued, err := dns01.IssueFor(ctx, "www", testAccount(t), scriptIssuer(), "example.com", []string{"www.example.com"}, true)
+	if err == nil || len(issued.ChainPEM) == 0 {
+		t.Fatalf("want cleanup error with material, got %v", err)
+	}
+	stored, _ := dns01.Issuances.List()
+	if len(stored) != 1 || !stored[0].IssuedAt.Equal(stamp) {
+		t.Fatalf("stored = %+v", stored)
+	}
+
+	// Now the store is gone too (fresh CA double; the first one is spent):
+	// both failures surface.
+	client2, _ := serveACME(t, &acmeDouble{})
+	dns02, _ := openDNS01(t, client2, &scriptDNSProvider{deleteErr: errors.New("provider delete refused")})
+	st2, err := store.Open(filepath.Join(t.TempDir(), "iss2.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dns02.Issuances = NewIssuances(st2)
+	st2.Close()
+	_, err = dns02.IssueFor(ctx, "www", testAccount(t), scriptIssuer(), "example.com", []string{"www.example.com"}, true)
+	if err == nil || !strings.Contains(err.Error(), "cleanup failed") || !strings.Contains(err.Error(), "recording failed") {
+		t.Fatalf("err = %v, want both cleanup and recording failures", err)
 	}
 }

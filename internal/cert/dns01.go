@@ -2,6 +2,7 @@ package cert
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -50,6 +51,15 @@ type DNS01 struct {
 	// Issuances, when set, records the approved-issuance fingerprint and
 	// chain of every certificate issued through IssueFor (S263).
 	Issuances *Issuances
+	// Now stamps recorded issuances; nil means time.Now (tests inject).
+	Now func() time.Time
+}
+
+func (d *DNS01) now() time.Time {
+	if d.Now != nil {
+		return d.Now()
+	}
+	return time.Now()
 }
 
 // placerFor resolves the issuer to a provider plus assembled credentials.
@@ -110,14 +120,18 @@ func (d *DNS01) Issue(ctx context.Context, acct *Account, issuer Issuer, zone st
 // the desired issuance is still the approved one. A recording failure
 // returns the issued material with the error, like a cleanup failure.
 func (d *DNS01) IssueFor(ctx context.Context, certName string, acct *Account, issuer Issuer, zone string, names []string, agreeTerms bool) (Issued, error) {
+	if bad := NewFingerprint(names, issuer.DNSProvider, string(issuer.Challenge)).InvalidNames(); len(bad) > 0 {
+		return Issued{}, fmt.Errorf("cert: invalid names %v", bad)
+	}
 	issued, err := d.issue(ctx, acct, issuer, zone, names, agreeTerms)
 	if len(issued.ChainPEM) == 0 {
 		return issued, err
 	}
 	issued.Fingerprint = NewFingerprint(names, issuer.DNSProvider, string(issuer.Challenge))
 	if certName != "" && d.Issuances != nil {
-		if recErr := d.Issuances.Record(certName, issued.Fingerprint, issued.ChainPEM, time.Now()); recErr != nil && err == nil {
-			err = fmt.Errorf("cert: issued but recording failed: %w", recErr)
+		if recErr := d.Issuances.Record(certName, issued.Fingerprint, issued.ChainPEM, d.now()); recErr != nil {
+			// Never drop either failure: join with any issue/cleanup error.
+			err = errors.Join(err, fmt.Errorf("cert: issued but recording failed: %w", recErr))
 		}
 	}
 	return issued, err

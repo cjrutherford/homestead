@@ -6,14 +6,15 @@ import (
 	"homestead/internal/cert"
 )
 
-// TLSRenewal lists certificate renewal statuses (S263).
-func (c *Client) TLSRenewal(ctx context.Context) ([]cert.RenewalStatus, error) {
-	var out []cert.RenewalStatus
+// TLSRenewal returns the certificate renewal report (S263): per-
+// certificate statuses plus the explicit recorded-issuance count.
+func (c *Client) TLSRenewal(ctx context.Context) (cert.RenewalReport, error) {
+	var out cert.RenewalReport
 	if err := c.get(ctx, "/api/v1/tls/renewal", &out); err != nil {
-		return nil, err
+		return cert.RenewalReport{}, err
 	}
-	if out == nil {
-		out = []cert.RenewalStatus{}
+	if out.Certificates == nil {
+		out.Certificates = []cert.RenewalStatus{}
 	}
 	return out, nil
 }

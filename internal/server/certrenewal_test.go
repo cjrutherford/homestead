@@ -114,10 +114,10 @@ func TestRenewalCheckSchedulesQuietlyAndReports(t *testing.T) {
 	if entries := certAuditEntries(t, st); len(entries) != 0 {
 		t.Fatalf("clean check was noisy: %+v", entries)
 	}
-	var statuses []cert.RenewalStatus
+	var renewal cert.RenewalReport
 	recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/tls/renewal", nil)
-	if err := json.Unmarshal(recorder.Body.Bytes(), &statuses); err != nil || len(statuses) != 1 ||
-		statuses[0].Status != cert.RenewalOK {
+	if err := json.Unmarshal(recorder.Body.Bytes(), &renewal); err != nil || len(renewal.Certificates) != 1 ||
+		renewal.Recorded != 1 || renewal.Certificates[0].Status != cert.RenewalOK {
 		t.Fatalf("statuses = %s (%v)", recorder.Body.String(), err)
 	}
 
@@ -186,10 +186,40 @@ func TestRenewalStatusEmptyWithoutStrategy(t *testing.T) {
 	srv := New("127.0.0.1:0")
 	srv.MountTLSRenewal(st, time.Now)
 	recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/tls/renewal", nil)
-	if recorder.Code != http.StatusOK || strings.TrimSpace(recorder.Body.String()) != "[]" {
+	var report cert.RenewalReport
+	if err := json.Unmarshal(recorder.Body.Bytes(), &report); err != nil || recorder.Code != http.StatusOK ||
+		report.Recorded != 0 || !strings.Contains(report.Summary, "no recorded issuances") || report.Certificates == nil {
 		t.Fatalf("response = %d %q", recorder.Code, recorder.Body.String())
+	}
+	checks := certDoctorChecks(st, time.Now)()
+	if len(checks) != 1 || checks[0].Name != "tls-renewal" || checks[0].Status != doctor.StatusOK ||
+		!strings.Contains(checks[0].Detail, "no recorded issuances") {
+		t.Fatalf("doctor = %+v", checks)
 	}
 	if err := runRenewalCheck(st, time.Now()); err != nil {
 		t.Fatalf("no strategy must be quiet: %v", err)
+	}
+}
+
+// A stored chain that does not parse is a distinct error state, not
+// plan-required: the doctor fails and the scheduled check fails.
+func TestRenewalCorruptChainIsErrorAndDoctorFails(t *testing.T) {
+	issuedAt := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	st := renewalFixture(t, issuedAt)
+	fp := cert.NewFingerprint([]string{"www.example.com"}, "cloudflare", "dns-01")
+	if err := cert.NewIssuances(st).Record("www", fp, []byte("not a pem chain"), issuedAt); err != nil {
+		t.Fatal(err)
+	}
+	now := issuedAt.Add(time.Hour)
+	report, err := renewalStatuses(st, now)
+	if err != nil || len(report.Certificates) != 1 || report.Certificates[0].Status != cert.RenewalError ||
+		!strings.Contains(report.Certificates[0].Detail, "corrupt") {
+		t.Fatalf("report = %+v, %v", report, err)
+	}
+	if got := certDoctorChecks(st, func() time.Time { return now })(); len(got) != 1 || got[0].Status != doctor.StatusFail {
+		t.Fatalf("doctor = %+v", got)
+	}
+	if err := runRenewalCheck(st, now); err == nil {
+		t.Fatal("corrupt chain must fail the scheduled check")
 	}
 }

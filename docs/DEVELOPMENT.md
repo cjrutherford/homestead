@@ -751,9 +751,22 @@ homesteadctl tls renewal
   challenge differ from the approved issuance; wildcards compare
   literally), `expired`. Expired fails the operation and exits 1 in the
   CLI; due and plan-required warn in doctor. Nothing re-issues (S272).
-- Only certificates issued through `DNS01.IssueFor` are tracked; others
-  are omitted. Clean checks leave no audit entry; any non-ok status
-  records `cert.renewal.check` under actor `scheduler`.
+- `GET /api/v1/tls/renewal` returns `{recorded_issuances, summary,
+  certificates}`. A desired certificate with no recorded issuance reports
+  `no-recorded-issuance`; with none recorded at all, `summary` states
+  "no recorded issuances" (also an ok `tls-renewal` doctor check, the CLI
+  first line, and the dashboard). Today no daemon path issues
+  certificates, so this is the normal state (docs/DEFERRED.md).
+- Statuses also include `error`: the stored chain does not parse
+  (corrupt). It fails doctor, the scheduled check, and exits 1 in the CLI.
+  A certificate with `auto` renewal off never reports `renewal-due`; the
+  detail says to renew manually.
+- Names normalize through the IDNA Lookup profile (UTS #46 mapping with
+  NFC, non-transitional, strict DNS rules) from `golang.org/x/net/idna`;
+  empty labels and double trailing dots are invalid and never match a
+  valid name. Clean checks leave no audit entry; any status other than
+  ok or no-recorded-issuance records `cert.renewal.check` under actor
+  `scheduler`.
 
 ## Daemon scheduler (S260)
 

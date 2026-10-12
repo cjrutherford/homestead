@@ -50,14 +50,20 @@ class TestGoBootstrap(unittest.TestCase):
         """        Direct deps stay on the slice-approved allowlist (ADR-001).
 
         Indirect transitive deps are fine; each new direct dependency needs
-        its owning slice. Approved: S013 SQLite driver, S014 YAML, S020 bcrypt.
+        its owning slice. Approved: S013 SQLite driver, S014 YAML, S020 bcrypt,
+        S263 review x/net/idna (IDNA name normalization for ADR-024).
         """
         import re
 
         direct = re.findall(r"(?m)^\t(\S+) v\S+$", read("go.mod"))
         self.assertEqual(
             sorted(direct),
-            ["golang.org/x/crypto", "gopkg.in/yaml.v3", "modernc.org/sqlite"],
+            [
+                "golang.org/x/crypto",
+                "golang.org/x/net",
+                "gopkg.in/yaml.v3",
+                "modernc.org/sqlite",
+            ],
         )
 
 

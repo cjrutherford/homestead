@@ -26,8 +26,9 @@
   `cert.renewal-check` operation: it grades stored issuances (fingerprint
   of normalized names, DNS provider id, challenge method, recorded in
   `cert_issuances` by `DNS01.IssueFor`) as ok / renewal-due /
-  plan-required / expired. It reports only; clean checks write no audit
-  entry. Status: `GET /api/v1/tls/renewal`, `homesteadctl tls renewal`,
+  plan-required / expired / error (corrupt chain), or no-recorded-issuance
+  (no daemon path issues certificates yet; docs/DEFERRED.md). It reports
+  only; clean checks write no audit entry. Status: `GET /api/v1/tls/renewal`, `homesteadctl tls renewal`,
   doctor checks `tls-renewal:<name>`, and the dashboard Exposure page.
 - YAML: customer-readable desired configuration and generated artifacts.
 - Docker Engine + Compose v2: application runtime.

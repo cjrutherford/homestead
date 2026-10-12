@@ -6,7 +6,7 @@ import {
   ApiService,
   ExposureApproval,
   ExposurePlan,
-  TlsRenewalStatus,
+  TlsRenewalReport,
 } from '../core/api.service';
 
 /**
@@ -27,7 +27,7 @@ export class Exposure implements OnInit {
 
   protected readonly plan = signal<ExposurePlan | null>(null);
   protected readonly approvals = signal<ExposureApproval[]>([]);
-  protected readonly renewals = signal<TlsRenewalStatus[]>([]);
+  protected readonly renewals = signal<TlsRenewalReport | null>(null);
   protected readonly operationId = signal<number | null>(null);
   protected readonly notice = signal<string | null>(null);
   protected readonly busy = signal(false);
@@ -36,7 +36,7 @@ export class Exposure implements OnInit {
   ngOnInit(): void {
     this.refresh();
     this.api.tlsRenewal().subscribe({
-      next: (renewals) => this.renewals.set(renewals ?? []),
+      next: (report) => this.renewals.set(report),
       error: (failure: HttpErrorResponse) =>
         this.error.set(failure.error ?? failure.message),
     });

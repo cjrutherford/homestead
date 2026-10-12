@@ -36,11 +36,20 @@
 - Renewal re-issue (S272, ADR-024): S263 schedules the daily renewal
   check and reports ok / renewal-due / plan-required / expired, but
   nothing re-issues expiring certificates yet.
-- Certificate issuance recording: S263 stores the approved-issuance
-  fingerprint through `DNS01.IssueFor`; no daemon route calls it yet, so
-  `cert_issuances` fills only when the issuance flow is wired (renewal
-  status is empty until then). http-01/tls-alpn-01 issuance is not
-  fingerprinted.
+- Certificate issuance path (found in the S263 review): no daemon,
+  API, CLI, or dashboard path issues certificates. `DNS01.Issue` and
+  `IssueFor` (internal/cert/dns01.go) are called only from tests; the
+  TLS wizard (S106/S226, `internal/cert/wizard.go`) saves strategy and
+  proves readiness only, the baseline (S222) mints an internal CA
+  without recording it, and nothing consumes the ACME account key or
+  writes issued chains for Caddy. `IssueFor` records the ADR-024
+  fingerprint and chain (migration 27) and is tested, but until an
+  owner-approved issuance flow (plan, preview, approve, ACME account
+  custody, chain and key placement) calls it, `cert_issuances` stays
+  empty. The renewal status therefore reports an explicit "no recorded
+  issuances" state in the API (`recorded_issuances`, `summary`), CLI,
+  dashboard, and doctor instead of an empty list. S272 depends on this
+  flow. http-01/tls-alpn-01 issuance is not fingerprinted.
 - Exit-node operation: the S110 model refuses default-route
   advertisement, so serving as an exit node needs its own slice with
   explicit owner consent.

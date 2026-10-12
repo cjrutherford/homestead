@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/idna"
+
 	"homestead/internal/store"
 )
 
@@ -22,6 +24,12 @@ const (
 	RenewalPlanRequired = "plan-required"
 	// RenewalExpired no longer validates; surfaced as an error.
 	RenewalExpired = "expired"
+	// RenewalError means the stored chain cannot be read (corrupt);
+	// renewal cannot be judged and the record needs owner attention.
+	RenewalError = "error"
+	// RenewalNoIssuance means a desired certificate has no recorded
+	// approved issuance: nothing to renew yet, stated explicitly.
+	RenewalNoIssuance = "no-recorded-issuance"
 )
 
 // MaxRenewalWindowDays caps the renewal window (ADR-024: 30 days or fewer).
@@ -77,106 +85,69 @@ func (f Fingerprint) String() string {
 		strings.Join(f.Names, " "), f.ProviderID, f.Challenge)
 }
 
-// normalizeName lowercases, strips one trailing dot, and converts each
-// non-ASCII label to its xn-- form. A wildcard label passes through.
+// lookupProfile is the IDNA Lookup profile (UTS #46 mapping incl. NFC,
+// non-transitional, STD3 and hyphen/joiner/bidi checks) plus strict DNS
+// length rules so empty labels and over-long labels are errors.
+var lookupProfile = idna.New(
+	idna.MapForLookup(),
+	idna.BidiRule(),
+	idna.StrictDomainName(true),
+	idna.CheckHyphens(true),
+	idna.CheckJoiners(true),
+	idna.VerifyDNSLength(true),
+)
+
+// invalidPrefix marks a name that failed IDNA validation. It can never
+// equal a valid ASCII host name ("!" is not a DNS character), so a
+// malformed name makes fingerprints differ instead of silently matching.
+const invalidPrefix = "!invalid:"
+
+// NormalizeName returns the ADR-024 comparison form of one name:
+// UTS #46 mapping with NFC and lowercasing, ASCII (xn--) labels, one
+// trailing dot stripped. A leading wildcard label stays literal. It is
+// the IDNA Lookup profile (golang.org/x/net/idna) with strict DNS
+// length and label rules, so empty labels, double trailing dots, and
+// invalid labels are errors.
+func NormalizeName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	name = strings.TrimSuffix(name, ".")
+	if strings.HasSuffix(name, ".") {
+		return "", fmt.Errorf("cert: invalid name %q: empty label", name)
+	}
+	wildcard := strings.HasPrefix(name, "*.")
+	if wildcard {
+		name = strings.TrimPrefix(name, "*.")
+	}
+	ascii, err := lookupProfile.ToASCII(name)
+	if err != nil {
+		return "", fmt.Errorf("cert: invalid name %q: %w", name, err)
+	}
+	if ascii == "" {
+		return "", fmt.Errorf("cert: invalid name %q: empty", name)
+	}
+	if wildcard {
+		ascii = "*." + ascii
+	}
+	return ascii, nil
+}
+
 func normalizeName(name string) string {
-	name = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ".")
-	labels := strings.Split(name, ".")
-	for i, label := range labels {
-		if label == "*" {
-			continue
-		}
-		labels[i] = toASCIILabel(label)
+	n, err := NormalizeName(name)
+	if err != nil {
+		return invalidPrefix + strings.ToLower(strings.TrimSpace(name))
 	}
-	return strings.Join(labels, ".")
+	return n
 }
 
-func toASCIILabel(label string) string {
-	for _, r := range label {
-		if r > 127 {
-			return "xn--" + punycode(label)
+// InvalidNames lists names in the fingerprint that failed normalization.
+func (f Fingerprint) InvalidNames() []string {
+	var out []string
+	for _, n := range f.Names {
+		if strings.HasPrefix(n, invalidPrefix) {
+			out = append(out, strings.TrimPrefix(n, invalidPrefix))
 		}
 	}
-	return label
-}
-
-// punycode is the RFC 3492 encoder (bootstring, base 36).
-func punycode(input string) string {
-	const (
-		base, tmin, tmax, skew, damp = 36, 1, 26, 38, 700
-		initialBias, initialN        = 72, 128
-	)
-	runes := []rune(input)
-	var out []byte
-	for _, r := range runes {
-		if r < 128 {
-			out = append(out, byte(r))
-		}
-	}
-	basic := len(out)
-	handled := basic
-	if basic > 0 {
-		out = append(out, '-')
-	}
-	digit := func(d int) byte {
-		if d < 26 {
-			return byte('a' + d)
-		}
-		return byte('0' + d - 26)
-	}
-	adapt := func(delta, points int, first bool) int {
-		if first {
-			delta /= damp
-		} else {
-			delta /= 2
-		}
-		delta += delta / points
-		k := 0
-		for delta > ((base-tmin)*tmax)/2 {
-			delta /= base - tmin
-			k += base
-		}
-		return k + (base-tmin+1)*delta/(delta+skew)
-	}
-	n, delta, bias := initialN, 0, initialBias
-	for handled < len(runes) {
-		m := int(^uint(0) >> 1)
-		for _, r := range runes {
-			if int(r) >= n && int(r) < m {
-				m = int(r)
-			}
-		}
-		delta += (m - n) * (handled + 1)
-		n = m
-		for _, r := range runes {
-			if int(r) < n {
-				delta++
-			}
-			if int(r) == n {
-				q := delta
-				for k := base; ; k += base {
-					t := k - bias
-					if t < tmin {
-						t = tmin
-					} else if t > tmax {
-						t = tmax
-					}
-					if q < t {
-						break
-					}
-					out = append(out, digit(t+(q-t)%(base-t)))
-					q = (q - t) / (base - t)
-				}
-				out = append(out, digit(q))
-				bias = adapt(delta, handled+1, handled == basic)
-				delta = 0
-				handled++
-			}
-		}
-		delta++
-		n++
-	}
-	return string(out)
+	return out
 }
 
 // Issuance is one stored approved issuance: the fingerprint and the
@@ -188,7 +159,7 @@ type Issuance struct {
 	IssuedAt    time.Time
 }
 
-// Issuances persists approved issuances in SQLite (migration 26).
+// Issuances persists approved issuances in SQLite (migration 27).
 type Issuances struct {
 	db *sql.DB
 }
@@ -239,6 +210,31 @@ func (i *Issuances) List() ([]Issuance, error) {
 	return out, rows.Err()
 }
 
+// RenewalReport is the renewal status response: the per-certificate
+// rows plus an explicit statement of how many issuances are recorded, so
+// "nothing recorded" is never an unexplained empty list.
+type RenewalReport struct {
+	Recorded     int             `json:"recorded_issuances"`
+	Summary      string          `json:"summary"`
+	Certificates []RenewalStatus `json:"certificates"`
+}
+
+// NoIssuancesSummary is the explicit state when no issuance is recorded.
+// The daemon does not itself issue certificates yet (docs/DEFERRED.md).
+const NoIssuancesSummary = "no recorded issuances: no certificate has been issued and recorded through Homestead, so there is nothing to renew (the daemon has no issuance path yet; see docs/DEFERRED.md)"
+
+// NewRenewalReport wraps statuses with the recorded-issuance count.
+func NewRenewalReport(statuses []RenewalStatus, recorded int) RenewalReport {
+	if statuses == nil {
+		statuses = []RenewalStatus{}
+	}
+	summary := fmt.Sprintf("%d recorded issuance(s)", recorded)
+	if recorded == 0 {
+		summary = NoIssuancesSummary
+	}
+	return RenewalReport{Recorded: recorded, Summary: summary, Certificates: statuses}
+}
+
 // RenewalStatus is the owner-visible renewal state of one certificate.
 type RenewalStatus struct {
 	Certificate   string    `json:"certificate"`
@@ -258,9 +254,8 @@ func RenewalWindowDays(r Renewal) int {
 }
 
 // CheckRenewals reports renewal status at now for each desired
-// certificate that has a stored approved issuance (certificates never
-// issued through the owner-approved flow have nothing to renew and are
-// omitted). It grades the stored chain through Check, then applies the
+// certificate. One with no stored approved issuance reports
+// no-recorded-issuance (nothing to renew). It grades the stored chain through Check, then applies the
 // ADR-024 rules: expired first, then plan-required when the desired
 // issuance differs from the approved fingerprint (or the chain no longer
 // serves the desired names), then renewal-due inside the window, else ok.
@@ -281,6 +276,8 @@ func CheckRenewals(set Set, issuances []Issuance, now time.Time) ([]RenewalStatu
 		certificate := set.Certificates[i]
 		issuance, ok := byName[certificate.Name]
 		if !ok {
+			out = append(out, RenewalStatus{Certificate: certificate.Name, Status: RenewalNoIssuance,
+				Detail: certificate.Name + " has no recorded approved issuance; nothing to renew"})
 			continue
 		}
 		status := RenewalStatus{Certificate: certificate.Name, DaysRemaining: health.DaysRemaining, NotAfter: health.NotAfter}
@@ -291,8 +288,12 @@ func CheckRenewals(set Set, issuances []Issuance, now time.Time) ([]RenewalStatu
 			status.Status = RenewalExpired
 			status.Detail = health.Detail
 		case health.Health == HealthInvalid:
+			status.Status = RenewalError
+			status.Detail = certificate.Name + " stored issuance is corrupt and cannot be read; re-issue through the plan, preview, and approve flow (" + health.Detail + ")"
+		case len(desired.InvalidNames()) > 0:
 			status.Status = RenewalPlanRequired
-			status.Detail = health.Detail
+			status.Detail = fmt.Sprintf("%s has invalid desired names %v; fix the strategy and re-plan",
+				certificate.Name, desired.InvalidNames())
 		case !desired.Equal(issuance.Fingerprint):
 			status.Status = RenewalPlanRequired
 			status.Detail = fmt.Sprintf("%s desired issuance differs from the approved one (approved %s; desired %s); re-plan and approve",
@@ -300,6 +301,12 @@ func CheckRenewals(set Set, issuances []Issuance, now time.Time) ([]RenewalStatu
 		case health.Health == HealthMismatch:
 			status.Status = RenewalPlanRequired
 			status.Detail = health.Detail
+		case !now.AddDate(0, 0, window).Before(health.NotAfter) && !certificate.Renewal.Auto:
+			// Manual semantics (S100): without auto-renew, renewal never
+			// comes due on its own; the owner is told, not nagged.
+			status.Status = RenewalOK
+			status.Detail = fmt.Sprintf("%s expires %s, inside the %d-day window, but auto-renew is off: renew it manually",
+				certificate.Name, health.NotAfter.Format(time.DateOnly), window)
 		case !now.AddDate(0, 0, window).Before(health.NotAfter):
 			status.Status = RenewalDue
 			status.Detail = fmt.Sprintf("%s expires %s, inside the %d-day renewal window",

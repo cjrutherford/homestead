@@ -65,6 +65,8 @@ type scriptDNSProvider struct {
 	applied []dns.Change
 	listErr error
 	fields  []dns.CredentialField
+	// deleteErr fails every delete change (cleanup), when set.
+	deleteErr error
 }
 
 func (s *scriptDNSProvider) Name() string { return "script" }
@@ -79,6 +81,11 @@ func (s *scriptDNSProvider) ListRecords(_ context.Context, _ string, _ dns.Crede
 	return s.records, nil
 }
 func (s *scriptDNSProvider) ApplyChanges(_ context.Context, _ string, _ dns.Credentials, changes []dns.Change) error {
+	for _, change := range changes {
+		if change.Action == dns.ChangeDelete && s.deleteErr != nil {
+			return s.deleteErr
+		}
+	}
 	s.applied = append(s.applied, changes...)
 	for _, change := range changes {
 		switch change.Action {

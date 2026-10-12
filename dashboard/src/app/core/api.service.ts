@@ -334,11 +334,19 @@ export interface SchedulerJob {
 /** GET /api/v1/tls/renewal — one certificate's renewal status (S263). */
 export interface TlsRenewalStatus {
   certificate: string;
-  /** ok | renewal-due | plan-required | expired */
+  /** ok | renewal-due | plan-required | expired | error | no-recorded-issuance */
   status: string;
   days_remaining: number;
   not_after: string;
   detail: string;
+}
+
+/** GET /api/v1/tls/renewal — statuses plus the explicit recorded count. */
+export interface TlsRenewalReport {
+  recorded_issuances: number;
+  /** Says "no recorded issuances ..." explicitly when none are recorded. */
+  summary: string;
+  certificates: TlsRenewalStatus[];
 }
 
 /** GET /api/v1/tunnel/status — discovery, tunnels, and connector. */
@@ -615,8 +623,8 @@ export class ApiService {
     return this.http.get<SchedulerJob[]>('/api/v1/scheduler/jobs');
   }
 
-  tlsRenewal(): Observable<TlsRenewalStatus[]> {
-    return this.http.get<TlsRenewalStatus[]>('/api/v1/tls/renewal');
+  tlsRenewal(): Observable<TlsRenewalReport> {
+    return this.http.get<TlsRenewalReport>('/api/v1/tls/renewal');
   }
 
   tunnelStatus(): Observable<TunnelStatus> {
