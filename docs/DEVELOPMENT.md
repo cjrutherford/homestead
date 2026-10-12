@@ -739,6 +739,22 @@ homesteadctl drift schedule --interval 6h --enabled true
   exact unit of the API minimum, so any saved interval that is a whole
   number of minutes round-trips unchanged.
 
+- Proven live in KVM (S261, da3362f): on both appliances the default was
+  24h enabled; `--interval` below 5m was a CLI usage error (exit 2) and
+  the API answered 422 for a short interval and 400 for a missing
+  `enabled`. At a 5m interval the first scan ran within seconds of its
+  due time as a `drift.scan` audit entry (actor `scheduler`) plus a
+  `scheduler.run` entry, and a clean result was one terse line. Editing a
+  generated `compose.yaml` comment was found by the next scan (audit and
+  doctor named the package, file, and scan age) and nothing resolved it
+  automatically; `drift restore` (one appliance) and `drift accept` (the
+  other) removed it from the latest scan and doctor, and the following
+  scan was clean. The drift routes answered with cookie plus CSRF (403
+  without the header). Found and fixed: scheduled and pre-update backups
+  treated the backup-class mount as a source and counted a mount once per
+  class, so a scheduled backup failed with a duplicate step name; the
+  scheduled run then completed and wrote its manifest.
+
 ## Certificate renewal check (S263)
 
 ```bash
@@ -767,6 +783,14 @@ homesteadctl tls renewal
   valid name. Clean checks leave no audit entry; any status other than
   ok or no-recorded-issuance records `cert.renewal.check` under actor
   `scheduler`.
+
+- Proven live in KVM (S263, da3362f): `homesteadctl tls renewal` and
+  `GET /api/v1/tls/renewal` reported the no-recorded-issuances state on
+  both appliances (nothing there issues certificates; the edge proxy's
+  own local CA certificates are not Homestead issuances), doctor showed
+  the matching ok `tls-renewal` check, and `scheduler jobs` listed
+  `cert:renewal-check` having run as an operation. No ACME issuance was
+  attempted.
 
 ## Daemon scheduler (S260)
 

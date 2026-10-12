@@ -26,6 +26,11 @@ the appliance.
 
 ## Rules
 
+- The daemon reads the files, and its unit sets `ProtectHome=true` and
+  `PrivateTmp=true`: files under `/home`, `/tmp`, or `/var/tmp` look
+  unreadable to it and give the generic "readable regular file" 400. Place
+  them elsewhere, for example `/srv` or `/opt`.
+
 - Authenticity failures (unknown key, bad signature, checksum mismatch,
   malformed file) block the release with no override.
 - A counter below the installed one is refused unless the owner
@@ -74,3 +79,19 @@ rotate or after a leaked HAI key:
 `GET|POST /api/v1/platform/trust-keys`,
 `PUT|DELETE /api/v1/platform/trust-keys/{id}`; `homesteadctl updates
 platform|verify|trust`; the dashboard Updates page. See docs/PARITY.md.
+
+## Proven live in KVM (S264, da3362f)
+
+On both appliances, with a throwaway Ed25519 minisign-format key:
+without the key, verification failed as untrusted and doctor warned
+(`release-trust`); after `trust add` the doctor check was ok and the
+release verified (the matching running version recorded the installed
+baseline). A tampered artifact, a tampered checksums file, and a
+signature from an unknown key each failed; counter 5 after installed 10
+was refused with the rollback hint and verified with `--allow-older`
+(audited with both versions and counters); FIFO, symlink, directory, and
+missing artifact paths were refused as 400 inputs, and the API required
+CSRF. `platform-trust.yaml` listed the key and dropped it on removal;
+the placeholder embedded key stayed flagged. The test key was removed
+afterwards. As documented, a later verify of an older counter does not
+move the baseline (S265 owns that).
