@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -77,9 +78,11 @@ var (
 	recordOldVolumes = RecordOldVolumes
 	// recordRetryDelay spaces bookkeeping retries.
 	recordRetryDelay = 2 * time.Second
-	healthTimeout    = 3 * time.Minute
-	healthStable     = 10 * time.Second
-	healthPoll       = 2 * time.Second
+	// stopSettle bounds waiting for stopped containers to read as stopped.
+	stopSettle    = 20 * time.Second
+	healthTimeout = 3 * time.Minute
+	healthStable  = 10 * time.Second
+	healthPoll    = 2 * time.Second
 )
 
 // tarCopy is the production migrateCopy.
@@ -325,13 +328,41 @@ func (r *migrationRun) stop(ctx context.Context) error {
 // verifyStopped refuses to copy while any container still runs:
 // database files and live writers cannot be copied consistently.
 func (r *migrationRun) verifyStopped(ctx context.Context) error {
+	deadline := time.Now().Add(stopSettle)
+	for {
+		err := r.runningContainer(ctx)
+		if err == nil {
+			return nil
+		}
+		// The engine reports a container's final state a moment after
+		// compose stop returns (seen live on a crash-looping stack), so
+		// a still-running container is re-read for a short, bounded
+		// time; one that keeps running fails the step.
+		var running errStillRunning
+		if !errors.As(err, &running) || time.Now().After(deadline) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(healthPoll):
+		}
+	}
+}
+
+// errStillRunning marks a container that is running or restarting.
+type errStillRunning struct{ message string }
+
+func (e errStillRunning) Error() string { return e.message }
+
+func (r *migrationRun) runningContainer(ctx context.Context) error {
 	containers, err := projectContainers(ctx, r.projectName)
 	if err != nil {
 		return err
 	}
 	for _, container := range containers {
 		if container.State == "running" || container.State == "restarting" {
-			return fmt.Errorf("container %s is still %s; data is not copied while it runs", strings.Join(container.Names, ","), container.State)
+			return errStillRunning{fmt.Sprintf("container %s is still %s; data is not copied while it runs", strings.Join(container.Names, ","), container.State)}
 		}
 	}
 	return nil

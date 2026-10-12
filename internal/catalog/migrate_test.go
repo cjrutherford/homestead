@@ -255,11 +255,11 @@ func (f *fakeEngine) call(name string) error {
 func (f *fakeEngine) install(t *testing.T) {
 	t.Helper()
 	oldStop, oldStart, oldUp, oldUpServices, oldProject, oldExec, oldCopy := composeStop, composeStart, composeUp, composeUpServices, projectContainers, execIn, migrateCopy
-	oldTimeout, oldStable, oldPoll := healthTimeout, healthStable, healthPoll
-	healthTimeout, healthStable, healthPoll = 80*time.Millisecond, 0, time.Millisecond
+	oldTimeout, oldStable, oldPoll, oldSettle := healthTimeout, healthStable, healthPoll, stopSettle
+	healthTimeout, healthStable, healthPoll, stopSettle = 80*time.Millisecond, 0, time.Millisecond, 80*time.Millisecond
 	t.Cleanup(func() {
 		composeStop, composeStart, composeUp, composeUpServices, projectContainers, execIn, migrateCopy = oldStop, oldStart, oldUp, oldUpServices, oldProject, oldExec, oldCopy
-		healthTimeout, healthStable, healthPoll = oldTimeout, oldStable, oldPoll
+		healthTimeout, healthStable, healthPoll, stopSettle = oldTimeout, oldStable, oldPoll, oldSettle
 	})
 	composeStop = func(context.Context, string, string) error {
 		if err := f.call("stop"); err != nil {

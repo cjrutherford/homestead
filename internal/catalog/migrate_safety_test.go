@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"homestead/internal/docker"
 	"homestead/internal/operation"
 	"homestead/internal/store"
 )
@@ -379,4 +380,35 @@ func TestTarCopyExcludesAreAnchoredAndLiteral(t *testing.T) {
 			t.Fatalf("%s present = %v, want %v", name, err == nil, want)
 		}
 	}
+}
+
+// The engine can report a container as running for a moment after
+// compose stop returns; verify-stopped re-reads for a bounded time, but
+// a container that keeps running still fails the step.
+func TestVerifyStoppedWaitsForStateToSettle(t *testing.T) {
+	f := newNextcloudFixture(t)
+	reads := 0
+	projectContainers = func(context.Context, string) ([]docker.Container, error) {
+		reads++
+		state := "exited"
+		if reads < 3 {
+			state = "running"
+		}
+		return []docker.Container{{Names: []string{"nextcloud-nextcloud"}, State: state}}, nil
+	}
+	run := &migrationRun{projectName: "nextcloud"}
+	if err := run.verifyStopped(context.Background()); err != nil {
+		t.Fatalf("settled container refused: %v", err)
+	}
+	if reads != 3 {
+		t.Fatalf("reads = %d, want 3", reads)
+	}
+	projectContainers = func(context.Context, string) ([]docker.Container, error) {
+		return []docker.Container{{Names: []string{"nextcloud-nextcloud"}, State: "restarting"}}, nil
+	}
+	err := run.verifyStopped(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "still restarting") {
+		t.Fatalf("a container that keeps running passed: %v", err)
+	}
+	_ = f
 }
