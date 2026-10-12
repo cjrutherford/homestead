@@ -57,11 +57,30 @@ describe('Exposure', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/exposure/review').flush(PLAN);
     http.expectOne('/api/v1/exposure/approvals').flush([]);
+    http.expectOne('/api/v1/tls/renewal').flush([]);
     fixture.detectChanges();
     expect(text()).toContain('app.example.com: local → public');
     expect(text()).toContain('Wide source needs CIDRs.');
     expect(text()).toContain('A app → 203.0.113.7');
     expect(text()).toContain('tcp/443');
+  });
+
+  it('shows certificate renewal status', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/exposure/review').flush(PLAN);
+    http.expectOne('/api/v1/exposure/approvals').flush([]);
+    http.expectOne('/api/v1/tls/renewal').flush([
+      {
+        certificate: 'www',
+        status: 'plan-required',
+        days_remaining: 12,
+        not_after: '2026-10-23T00:00:00Z',
+        detail: 'www desired issuance differs from the approved one',
+      },
+    ]);
+    fixture.detectChanges();
+    expect(text()).toContain('www: plan-required');
+    expect(text()).toContain('12 days remaining');
   });
 
   it('asks for a selection when nothing is saved', () => {
@@ -70,6 +89,7 @@ describe('Exposure', () => {
       .expectOne('/api/v1/exposure/review')
       .flush('no saved selection', { status: 404, statusText: 'Not Found' });
     http.expectOne('/api/v1/exposure/approvals').flush([]);
+    http.expectOne('/api/v1/tls/renewal').flush([]);
     fixture.detectChanges();
     expect(text()).toContain('No reviewed selection yet');
   });
@@ -78,6 +98,7 @@ describe('Exposure', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/exposure/review').flush(PLAN);
     http.expectOne('/api/v1/exposure/approvals').flush([]);
+    http.expectOne('/api/v1/tls/renewal').flush([]);
     fixture.detectChanges();
     fixture.componentInstance['approve']('owner', '203.0.113.0/24');
     const approve = http.expectOne('/api/v1/exposure/approvals');

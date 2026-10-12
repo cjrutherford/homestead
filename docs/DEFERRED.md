@@ -33,9 +33,14 @@
 - Internal CA distribution: the S104 authority mints and signs, but
   installing its certificate into OS/client trust stores (and rotation)
   belongs to the security baseline flow (S222).
-- Renewal actuation loop: S105 reports renewal-due status, but no
-  scheduled runner re-issues expiring certificates yet; the loop needs
-  an owner-visible schedule before production certificates depend on it.
+- Renewal re-issue (S272, ADR-024): S263 schedules the daily renewal
+  check and reports ok / renewal-due / plan-required / expired, but
+  nothing re-issues expiring certificates yet.
+- Certificate issuance recording: S263 stores the approved-issuance
+  fingerprint through `DNS01.IssueFor`; no daemon route calls it yet, so
+  `cert_issuances` fills only when the issuance flow is wired (renewal
+  status is empty until then). http-01/tls-alpn-01 issuance is not
+  fingerprinted.
 - Exit-node operation: the S110 model refuses default-route
   advertisement, so serving as an exit node needs its own slice with
   explicit owner consent.

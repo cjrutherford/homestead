@@ -2,12 +2,14 @@ package server
 
 import (
 	"net/http"
+	"time"
 
 	"homestead/internal/audit"
 	"homestead/internal/auth"
 	"homestead/internal/claim"
 	"homestead/internal/config"
 	"homestead/internal/docker"
+	"homestead/internal/doctor"
 	"homestead/internal/firewall"
 	"homestead/internal/operation"
 	"homestead/internal/scheduler"
@@ -57,7 +59,11 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountAudit(audit.New(st))
 	srv.MountRecovery(authSvc)
 	srv.MountWizards(wizard.New(st))
-	srv.MountDoctor(driftDoctorCheck(st))
+	srv.MountDoctor(
+		func() []doctor.Check { return []doctor.Check{driftDoctorCheck(st)()} },
+		certDoctorChecks(st, time.Now),
+	)
+	srv.MountTLSRenewal(st, time.Now)
 	srv.MountOperations(operation.New(st))
 	srv.MountCatalog(st, c.CatalogDir)
 	srv.MountStorage(st)

@@ -47,6 +47,9 @@ type DNS01 struct {
 	Client    *Client
 	Probe     dns.ProbeFunc
 	Interval  time.Duration
+	// Issuances, when set, records the approved-issuance fingerprint and
+	// chain of every certificate issued through IssueFor (S263).
+	Issuances *Issuances
 }
 
 // placerFor resolves the issuer to a provider plus assembled credentials.
@@ -84,6 +87,9 @@ func (d *DNS01) placerFor(issuer Issuer, zone string) (Placer, error) {
 type Issued struct {
 	ChainPEM []byte
 	KeyPEM   []byte
+	// Fingerprint is the approved-issuance fingerprint of this issuance
+	// (ADR-024): normalized names, DNS provider id, challenge method.
+	Fingerprint Fingerprint
 }
 
 // Issue runs one dns-01 issuance: compute authorizations through the
@@ -95,6 +101,29 @@ type Issued struct {
 // terms (S106 obtains it); without agreement and published terms,
 // issuance refuses.
 func (d *DNS01) Issue(ctx context.Context, acct *Account, issuer Issuer, zone string, names []string, agreeTerms bool) (Issued, error) {
+	return d.IssueFor(ctx, "", acct, issuer, zone, names, agreeTerms)
+}
+
+// IssueFor is Issue for a named certificate: on success the approved
+// issuance fingerprint and public chain are stored under certName (when
+// Issuances is set), so the renewal check (S263) can tell later whether
+// the desired issuance is still the approved one. A recording failure
+// returns the issued material with the error, like a cleanup failure.
+func (d *DNS01) IssueFor(ctx context.Context, certName string, acct *Account, issuer Issuer, zone string, names []string, agreeTerms bool) (Issued, error) {
+	issued, err := d.issue(ctx, acct, issuer, zone, names, agreeTerms)
+	if len(issued.ChainPEM) == 0 {
+		return issued, err
+	}
+	issued.Fingerprint = NewFingerprint(names, issuer.DNSProvider, string(issuer.Challenge))
+	if certName != "" && d.Issuances != nil {
+		if recErr := d.Issuances.Record(certName, issued.Fingerprint, issued.ChainPEM, time.Now()); recErr != nil && err == nil {
+			err = fmt.Errorf("cert: issued but recording failed: %w", recErr)
+		}
+	}
+	return issued, err
+}
+
+func (d *DNS01) issue(ctx context.Context, acct *Account, issuer Issuer, zone string, names []string, agreeTerms bool) (Issued, error) {
 	if d.Client == nil {
 		return Issued{}, fmt.Errorf("cert: ACME client must not be nil")
 	}

@@ -22,6 +22,13 @@
   `drift_scan_schedule`, latest result in `drift_scan_latest`) as a
   `catalog.drift-scan` operation plus a `drift.scan` audit entry. It only
   detects, never accepts or restores. API: `GET|POST /api/v1/drift/schedule`.
+  The `cert` source (S263, ADR-024) runs `cert:renewal-check` daily as a
+  `cert.renewal-check` operation: it grades stored issuances (fingerprint
+  of normalized names, DNS provider id, challenge method, recorded in
+  `cert_issuances` by `DNS01.IssueFor`) as ok / renewal-due /
+  plan-required / expired. It reports only; clean checks write no audit
+  entry. Status: `GET /api/v1/tls/renewal`, `homesteadctl tls renewal`,
+  doctor checks `tls-renewal:<name>`, and the dashboard Exposure page.
 - YAML: customer-readable desired configuration and generated artifacts.
 - Docker Engine + Compose v2: application runtime.
 - Caddy: application reverse proxy / HTTP edge.

@@ -80,6 +80,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runSecrets(ctx, client, rest[1:], stdout, stderr)
 	case "backup":
 		return runBackup(ctx, client, rest[1:], stdout, stderr)
+	case "tls":
+		return runTLS(ctx, client, rest[1:], stdout, stderr)
 	case "scheduler":
 		return runScheduler(ctx, client, rest[1:], stdout, stderr)
 	case "edge":
@@ -136,7 +138,8 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  updates <list|apply>  application updates review and apply (S243)")
 	fmt.Fprintln(w, "  secrets <status|rekey>  secret-store key version and confirmed re-key (S258)")
 	fmt.Fprintln(w, "  backup <destination|schedules|schedule|unschedule>  backup configuration (S238)")
-	fmt.Fprintln(w, "  scheduler jobs  scheduled jobs, last run and next due (S260)")
+	fmt.Fprintln(w, "  tls renewal  certificate renewal status, reporting only (S263)")
+	fmt.Fprintln(w, "  scheduler jobs scheduled jobs, last run and next due (S260)")
 	fmt.Fprintln(w, "  edge deploy [--follow]  deploy the Caddy edge proxy (S237)")
 	fmt.Fprintln(w, "  edge routes set -f FILE [--follow]  reconcile the proxy route table (S237)")
 	fmt.Fprintln(w, "  storage <mounts|register|registrations|assign|assignments>  mounted storage setup (S235)")

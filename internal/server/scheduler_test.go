@@ -44,7 +44,7 @@ func TestSchedulerFiresBackupSchedulesAndServesStatus(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &jobs); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(jobs) != 2 || jobs[1].ID != "drift:scan" || jobs[0].ID != "backup:ghost" || !jobs[0].NextDue.Equal(saved.UpdatedAt.Add(time.Hour)) {
+	if len(jobs) != 3 || jobs[1].ID != "cert:renewal-check" || jobs[2].ID != "drift:scan" || jobs[0].ID != "backup:ghost" || !jobs[0].NextDue.Equal(saved.UpdatedAt.Add(time.Hour)) {
 		t.Fatalf("jobs = %+v", jobs)
 	}
 
@@ -147,7 +147,7 @@ func TestBackupSourceAnchorSurvivesRetentionEdit(t *testing.T) {
 	}
 	sched := NewScheduler(st, t.TempDir(), scheduler.WithClock(func() time.Time { return first.UpdatedAt }))
 	jobs, err := sched.Status()
-	if err != nil || len(jobs) != 2 || !jobs[0].NextDue.Equal(first.UpdatedAt.Add(time.Hour)) {
+	if err != nil || len(jobs) != 3 || !jobs[0].NextDue.Equal(first.UpdatedAt.Add(time.Hour)) {
 		t.Fatalf("jobs = %+v, %v", jobs, err)
 	}
 }

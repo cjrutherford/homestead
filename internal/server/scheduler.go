@@ -20,6 +20,7 @@ func NewScheduler(st *store.Store, catalogDir string, opts ...scheduler.Option) 
 	s := scheduler.New(st, opts...)
 	s.Register("backup", backupSource(st, catalogDir, s.Now))
 	s.Register("drift", driftSource(st, s.Now))
+	s.Register("cert", certRenewalSource(st, s.Now))
 	return s
 }
 

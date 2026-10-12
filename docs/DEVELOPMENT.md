@@ -719,6 +719,22 @@ homesteadctl drift schedule --interval 6h --enabled true
   (warn on drift or unreadable, ok when clean or not yet run).
 - Migration v26 adds `drift_scan_schedule` and `drift_scan_latest`.
 
+## Certificate renewal check (S263)
+
+```bash
+homesteadctl tls renewal
+```
+
+- The daemon checks daily (job `cert:renewal-check`, an operation). Window:
+  the certificate's renewal days, capped at 30. Statuses: `ok`,
+  `renewal-due`, `plan-required` (desired names, provider id, or
+  challenge differ from the approved issuance; wildcards compare
+  literally), `expired`. Expired fails the operation and exits 1 in the
+  CLI; due and plan-required warn in doctor. Nothing re-issues (S272).
+- Only certificates issued through `DNS01.IssueFor` are tracked; others
+  are omitted. Clean checks leave no audit entry; any non-ok status
+  records `cert.renewal.check` under actor `scheduler`.
+
 ## Daemon scheduler (S260)
 
 ```bash

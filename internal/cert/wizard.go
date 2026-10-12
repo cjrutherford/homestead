@@ -141,8 +141,12 @@ func (w *Wizard) Save(step string, payload map[string]any) error {
 }
 
 // strategy loads the saved strategy set.
-func (w *Wizard) strategy() (Set, error) {
-	state, err := w.wizards.Get(TLSWizardID)
+func (w *Wizard) strategy() (Set, error) { return LoadStrategy(w.wizards) }
+
+// LoadStrategy reads the saved TLS strategy set from the wizard store.
+// The renewal check (S263) reads it without a full Wizard.
+func LoadStrategy(wizards *wizard.Service) (Set, error) {
+	state, err := wizards.Get(TLSWizardID)
 	if err != nil {
 		return Set{}, err
 	}

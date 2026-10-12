@@ -71,6 +71,7 @@ unchanged.
 | POST | /api/v1/tunnel/setup | `"tunnel"` | `tunnelSetup` | Tunnel setup on CLI and dashboard |
 | DELETE | /api/v1/tunnel/tunnels/{id} | `"tunnel"` | `tunnelTeardown` | Tunnel teardown on CLI and dashboard |
 | GET | /api/v1/scheduler/jobs | `"scheduler"` | `schedulerJobs` | Scheduled jobs with last run, next due, last error and skip on CLI and the read-only dashboard Backups panel |
+| GET | /api/v1/tls/renewal | `"tls"` | `tlsRenewal` | Certificate renewal status (S263, reporting only) on CLI (`tls renewal`) and the dashboard Exposure page; also surfaced as doctor checks |
 | GET | /api/v1/backups/destination | `"backup"` | `backupDestination` | Resolved backup root on CLI and dashboard |
 | GET | /api/v1/backups/schedules | `"backup"` | `backupSchedules` | Schedule records on CLI and dashboard |
 | POST | /api/v1/backups/schedules | `"backup"` | `backupScheduleSave` | Schedule save on CLI and dashboard |

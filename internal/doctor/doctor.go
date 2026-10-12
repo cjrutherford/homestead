@@ -86,9 +86,9 @@ func Run() Report {
 	return Report{Overall: overall(checks), Checks: checks}
 }
 
-// Add appends a check and recomputes the overall verdict.
-func (r *Report) Add(check Check) {
-	r.Checks = append(r.Checks, check)
+// Add appends checks and recomputes the overall verdict.
+func (r *Report) Add(checks ...Check) {
+	r.Checks = append(r.Checks, checks...)
 	r.Overall = overall(r.Checks)
 }
 

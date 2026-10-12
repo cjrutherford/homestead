@@ -21,6 +21,24 @@
     </p>
   }
 
+  <h3>Certificate renewal</h3>
+  <p>
+    Daily check of issued certificates; it reports only and never
+    issues. A plan-required status means the desired names, DNS
+    provider, or challenge changed since the approved issuance.
+  </p>
+  <ul>
+    @for (renewal of renewals(); track renewal.certificate) {
+      <li>
+        {{ renewal.certificate }}: {{ renewal.status }}
+        ({{ renewal.days_remaining }} days remaining) —
+        {{ renewal.detail }}
+      </li>
+    } @empty {
+      <li>No issued certificates are tracked yet.</li>
+    }
+  </ul>
+
   <h3>Selection</h3>
   <form
     (submit)="

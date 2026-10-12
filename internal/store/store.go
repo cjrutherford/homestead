@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 26
+const CurrentVersion = 27
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -466,6 +466,20 @@ CREATE TABLE IF NOT EXISTS drift_scan_latest (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
 	scanned_at TEXT NOT NULL,
 	result TEXT NOT NULL
+);`,
+	},
+	{
+		// S263 certificate renewal check (ADR-024): the approved-issuance
+		// fingerprint and public chain recorded with each certificate
+		// issued through DNS01.Issue. Keys never land here.
+		version: 27,
+		name:    "certificate issuances",
+		sql: `
+CREATE TABLE IF NOT EXISTS cert_issuances (
+	name TEXT PRIMARY KEY,
+	fingerprint TEXT NOT NULL,
+	chain_pem TEXT NOT NULL,
+	issued_at TEXT NOT NULL
 );`,
 	},
 }
