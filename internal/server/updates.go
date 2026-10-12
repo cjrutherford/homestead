@@ -178,7 +178,7 @@ func selectBackupSources(assignments []storage.Assignment, byPoint map[string]di
 			continue
 		}
 		seen[assignment.Mountpoint] = true
-		sources = append(sources, backup.Source{Mountpoint: assignment.Mountpoint, Path: packageName})
+		sources = append(sources, backup.Source{Mountpoint: assignment.Mountpoint, Path: packageName, Class: assignment.Class})
 	}
 	return sources
 }

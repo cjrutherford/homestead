@@ -110,7 +110,13 @@ func PlanRestore(run Run, overrides map[string]string) (RestorePlan, error) {
 			if !ok || mountpoint == "" {
 				return RestorePlan{}, fmt.Errorf("backup: entry %q needs an explicit target", entry)
 			}
-			target = filepath.Join(mountpoint, entry)
+			// Classed entries (<class>/<path>) restore to the recorded
+			// relative path; older runs stored the path as the entry.
+			relative := entry
+			if recorded, ok := run.Manifest.Paths[entry]; ok {
+				relative = recorded
+			}
+			target = filepath.Join(mountpoint, relative)
 		}
 		if target == "" || target[0] != '/' {
 			return RestorePlan{}, fmt.Errorf("backup: target for %q must be absolute", entry)

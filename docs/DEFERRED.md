@@ -207,12 +207,12 @@
 - Operation cancel route: `Runner.Cancel` exists but no API, CLI, or
   dashboard surface calls it, so a hung operation that blocks a
   scheduled job (ADR-023) can only be cleared by restarting the daemon.
-- Same package directory under several assigned application-side mounts
-  (S260 found in KVM): backup sources now skip the backup-class mount and
-  count each mount once, but two non-backup mounts that both hold
-  `<package>` still yield the same step name and the same destination
-  subpath, so a scheduled or pre-update backup of that package is refused
-  with a duplicate step error. Needs per-mount destination subpaths.
+- Package backups spanning mounts (S276): runs are now laid out per
+  storage class, but one mount assigned several classes is still copied
+  once under its first class, and two assigned mounts of the same class
+  holding `<package>` would still share a destination and be refused
+  with a clear error (the assignment model allows one mount per class,
+  so this only arises from hand-built sources).
 - Catalog data placement follow-ups (S276): every persistent image path
   of the four first-party apps lives on mounted storage; none needed an
   exception. Not done: Immich's Valkey `/data` and any similar queue

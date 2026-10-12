@@ -205,10 +205,8 @@ func (j Job) Validate() error {
 	if len(j.Sources) == 0 && j.Manifest.Database == nil {
 		return fmt.Errorf("backup: job captures nothing")
 	}
-	for i := range j.Sources {
-		if err := j.Sources[i].Validate(); err != nil {
-			return fmt.Errorf("backup: source #%d: %w", i, err)
-		}
+	if err := validateSources(j.Sources); err != nil {
+		return err
 	}
 	if j.DestRoot == "" || j.DestDirAbsent() {
 		return fmt.Errorf("backup: destination root must be absolute")
@@ -260,7 +258,7 @@ func JobDefinition(job Job, now func() time.Time) (operation.Definition, error) 
 	for i := range job.Sources {
 		source := job.Sources[i]
 		def.Steps = append(def.Steps, operation.StepDef{
-			Name: "backup:" + source.Path,
+			Name: source.StepName(),
 			Run: func(ctx context.Context) error {
 				return copySource(rootFor(), source)
 			},
@@ -339,8 +337,7 @@ func writeJobManifest(job Job, stamp string) error {
 	root := filepath.Join(job.DestRoot, job.Package, stamp)
 	manifest := Manifest{Package: job.Package, Created: stamp, Sources: map[string]string{}}
 	for _, source := range job.Sources {
-		manifest.Entries = append(manifest.Entries, source.Path)
-		manifest.Sources[source.Path] = source.Mountpoint
+		manifest.recordSource(source)
 	}
 	if job.Manifest.Database != nil {
 		name := job.Manifest.Database.Database + ".sql"

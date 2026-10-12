@@ -19,9 +19,52 @@ import (
 // Source is one data tree to capture: a registered mount plus the
 // package-relative path beneath it, mirroring provisioning so backup
 // and provision always name the same roots.
+//
+// Class optionally names the storage class of the mount. A package can
+// hold data on several mounts (S276: application and bulk), and every
+// mount's tree shares the package-relative Path, so classed sources
+// land at <run>/<class>/<path> and run as step "backup:<class>:<path>".
+// Unclassed sources keep the original single-source layout
+// (<run>/<path>), which restore still reads from older runs.
 type Source struct {
 	Mountpoint string
 	Path       string
+	Class      storage.Class
+}
+
+// Entry names the source inside a run: the manifest entry key and the
+// run-relative destination.
+func (s Source) Entry() string {
+	if s.Class == "" {
+		return s.Path
+	}
+	return string(s.Class) + "/" + s.Path
+}
+
+// StepName names the copy step, unique per entry.
+func (s Source) StepName() string {
+	if s.Class == "" {
+		return "backup:" + s.Path
+	}
+	return "backup:" + string(s.Class) + ":" + s.Path
+}
+
+// validateSources checks every source and refuses entries that would
+// share a destination: two trees written to one subpath would merge
+// silently, so the run fails before copying anything.
+func validateSources(sources []Source) error {
+	seen := map[string]bool{}
+	for i := range sources {
+		if err := sources[i].Validate(); err != nil {
+			return fmt.Errorf("backup: source #%d: %w", i, err)
+		}
+		entry := sources[i].Entry()
+		if seen[entry] {
+			return fmt.Errorf("backup: sources share the destination %q; give each mount a distinct class", entry)
+		}
+		seen[entry] = true
+	}
+	return nil
 }
 
 // Validate checks source shape: absolute mounts, relative contained
@@ -29,6 +72,9 @@ type Source struct {
 func (s Source) Validate() error {
 	if s.Mountpoint == "" || s.Mountpoint[0] != '/' {
 		return fmt.Errorf("backup: source mountpoint must be absolute")
+	}
+	if s.Class != "" && (strings.Contains(string(s.Class), "/") || s.Class == "." || s.Class == "..") {
+		return fmt.Errorf("backup: source class %q must be a plain name", s.Class)
 	}
 	if s.Path == "" || s.Path[0] == '/' || s.Path == "." {
 		return fmt.Errorf("backup: source path must be a relative subdirectory")
@@ -53,6 +99,10 @@ type Manifest struct {
 	Entries []string          `json:"entries"`
 	Files   int               `json:"files"`
 	Sources map[string]string `json:"sources"`
+	// Paths maps each classed entry to its package-relative path on
+	// the origin mount (restore target = mountpoint + path). Absent
+	// for older runs, where the entry is the path itself.
+	Paths map[string]string `json:"paths,omitempty"`
 }
 
 // ResolveDestination finds the backup root: the backup-class
@@ -169,12 +219,7 @@ func (r Request) Validate() error {
 	if len(r.Sources) == 0 {
 		return fmt.Errorf("backup: at least one source is required")
 	}
-	for i := range r.Sources {
-		if err := r.Sources[i].Validate(); err != nil {
-			return fmt.Errorf("backup: source #%d: %w", i, err)
-		}
-	}
-	return nil
+	return validateSources(r.Sources)
 }
 
 // Definition plans a backup run: one copy step per source plus a
@@ -199,7 +244,7 @@ func Definition(request Request, now func() time.Time) (operation.Definition, er
 	for i := range request.Sources {
 		source := request.Sources[i]
 		def.Steps = append(def.Steps, operation.StepDef{
-			Name: "backup:" + source.Path,
+			Name: source.StepName(),
 			Run: func(ctx context.Context) error {
 				root := filepath.Join(request.Destination, request.Package, stampFor())
 				return copySource(root, source)
@@ -225,7 +270,7 @@ func copySource(root string, source Source) error {
 	} else if info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("backup: source %q is a symlink: refused", source.Path)
 	}
-	dst := filepath.Join(root, source.Path)
+	dst := filepath.Join(root, source.Entry())
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return fmt.Errorf("backup: %w", err)
 	}
@@ -242,10 +287,9 @@ func writeManifest(request Request, stamp string) error {
 	root := filepath.Join(request.Destination, request.Package, stamp)
 	manifest := Manifest{Package: request.Package, Created: stamp, Sources: map[string]string{}}
 	for _, source := range request.Sources {
-		manifest.Entries = append(manifest.Entries, source.Path)
-		manifest.Sources[source.Path] = source.Mountpoint
+		manifest.recordSource(source)
 		count := 0
-		_ = filepath.WalkDir(filepath.Join(root, source.Path), func(path string, entry fs.DirEntry, err error) error {
+		_ = filepath.WalkDir(filepath.Join(root, source.Entry()), func(path string, entry fs.DirEntry, err error) error {
 			if err == nil && !entry.IsDir() {
 				count++
 			}
@@ -261,4 +305,18 @@ func writeManifest(request Request, stamp string) error {
 		return fmt.Errorf("backup: manifest: %w", err)
 	}
 	return nil
+}
+
+// recordSource adds one file source to the manifest: entry, origin
+// mount, and (for classed entries) the original relative path.
+func (m *Manifest) recordSource(source Source) {
+	entry := source.Entry()
+	m.Entries = append(m.Entries, entry)
+	m.Sources[entry] = source.Mountpoint
+	if source.Class != "" {
+		if m.Paths == nil {
+			m.Paths = map[string]string{}
+		}
+		m.Paths[entry] = source.Path
+	}
 }

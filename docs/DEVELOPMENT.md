@@ -1571,6 +1571,12 @@ drift restore rewrites exactly what install recorded.
 image's VOLUMEs (cross-checked against locally present images when the
 container CLI can inspect them) and fails when an image VOLUME has no
 declaration or ephemeral marker, or when a tag bump has no table row.
+Backup runs for packages on several mounts (S276 follow-up) place
+each source at `<run>/<class>/<path>` with step `backup:<class>:<path>`;
+the run manifest keeps `sources` (entry to mountpoint) and a new `paths`
+map (entry to package-relative path) so restore returns each tree to its
+own mount. Older manifests (entry = path, no `paths`) restore unchanged,
+and sources sharing a destination are refused before copying.
 Local backups (S181) in
 `internal/backup` resolve backup-class destinations with live
 re-checks, copy trees preserving modes with symlinks refused,
