@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 27
+const CurrentVersion = 28
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -480,6 +480,44 @@ CREATE TABLE IF NOT EXISTS cert_issuances (
 	fingerprint TEXT NOT NULL,
 	chain_pem TEXT NOT NULL,
 	issued_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S264 release artifact verification (ADR-025): owner-managed
+		// trusted keys (the embedded HAI key is tombstoned when removed),
+		// installed counters for rollback protection, and the latest
+		// verification record per platform component.
+		version: 28,
+		name:    "platform release verification",
+		sql: `
+CREATE TABLE IF NOT EXISTS platform_trust_keys (
+	key_id TEXT PRIMARY KEY,
+	public_key TEXT NOT NULL,
+	label TEXT NOT NULL DEFAULT '',
+	actor TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS platform_trust_removed (
+	key_id TEXT PRIMARY KEY
+);
+CREATE TABLE IF NOT EXISTS platform_installed (
+	component TEXT PRIMARY KEY,
+	version TEXT NOT NULL,
+	counter INTEGER NOT NULL,
+	recorded_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS platform_releases (
+	component TEXT PRIMARY KEY,
+	version TEXT NOT NULL DEFAULT '',
+	counter INTEGER NOT NULL DEFAULT 0,
+	state TEXT NOT NULL,
+	refusal TEXT NOT NULL DEFAULT '',
+	detail TEXT NOT NULL DEFAULT '',
+	key_id TEXT NOT NULL DEFAULT '',
+	sha256 TEXT NOT NULL DEFAULT '',
+	override INTEGER NOT NULL DEFAULT 0,
+	actor TEXT NOT NULL DEFAULT '',
+	verified_at TEXT NOT NULL
 );`,
 	},
 }

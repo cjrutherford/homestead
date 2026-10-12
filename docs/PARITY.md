@@ -79,6 +79,12 @@ unchanged.
 | DELETE | /api/v1/backups/schedules/{package} | `"backup"` | `backupScheduleDelete` | Schedule removal on CLI and dashboard |
 | GET | /api/v1/updates | `"updates"` | `updates` | Review rows on both surfaces |
 | POST | /api/v1/updates/{name}/apply | `"updates"` | `applyUpdate` | Approved updates on both surfaces |
+| GET | /api/v1/platform/updates | `"platform"` | `platformUpdates` | Platform plan with per-release verification state on both surfaces (S264) |
+| POST | /api/v1/platform/updates/verify | `"verify"` | `platformVerify` | Local artifact verification, `--allow-older` or confirmed rollback override on both surfaces (S264) |
+| GET | /api/v1/platform/trust-keys | `"trust"` | `trustKeys` | Trusted release keys on both surfaces (S264) |
+| POST | /api/v1/platform/trust-keys | `"trust"` | `trustKeyAdd` | Add a trusted key on both surfaces (S264) |
+| PUT | /api/v1/platform/trust-keys/{id} | `"trust"` | `trustKeyReplace` | Replace a trusted key on both surfaces (S264) |
+| DELETE | /api/v1/platform/trust-keys/{id} | `"trust"` | `trustKeyRemove` | Remove a trusted key on both surfaces (S264) |
 | GET | /api/v1/secrets/key | `"secrets"` | `secretKeyStatus` | Key version on both surfaces (S258) |
 | POST | /api/v1/secrets/rekey | `"secrets"` | `secretRekey` | Confirmed re-key operation on both surfaces (S258) |
 | GET | /api/v1/dockge | n/a | `dockge` | Expert-interface link with assessed policy on dashboard; no command surface yet |

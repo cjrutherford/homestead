@@ -39,12 +39,14 @@ class TestPlatformModel(unittest.TestCase):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, src)
 
-    def test_no_platform_route_leak(self):
+    def test_platform_routes_arrive_with_s264(self):
         matrix = read("docs/PARITY.md")
         for symbol in ("| /api/v1/updates |", "| /api/v1/updates/{name}/apply |"):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, matrix)
-        self.assertNotIn("/api/v1/platform", matrix)
+        # S264 deliberately surfaces the platform plan (ADR-025); the
+        # application apply route still refuses platform names above.
+        self.assertIn("/api/v1/platform/updates", matrix)
 
 
 if __name__ == "__main__":

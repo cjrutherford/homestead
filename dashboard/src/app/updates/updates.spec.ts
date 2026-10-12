@@ -60,6 +60,13 @@ describe('Updates', () => {
   });
 
   afterEach(() => {
+    // The embedded platform panel (S264) loads its own data; its
+    // behavior is covered in platform-updates.spec.ts.
+    for (const request of http.match((r) =>
+      r.url.startsWith('/api/v1/platform/'),
+    )) {
+      request.flush([]);
+    }
     http.verify();
   });
 

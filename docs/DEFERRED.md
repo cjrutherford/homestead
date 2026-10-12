@@ -82,12 +82,23 @@
   listings need a token flow before Immich updates discover
   upstream.
 - Platform release acquisition: S194 models desired versions only;
-  fetching releases, verifying artifacts, replacing binaries, and
-  restarting the daemon belong with distribution work.
+  fetching releases, replacing binaries, and restarting the daemon
+  belong with distribution work (S264 verifies owner-supplied local
+  files but fetches nothing).
 - Platform update actuation: S194 refuses downgrades and plans
-  backups-first, but no operation executes platform moves, rolls
-  back failed replacements, or surfaces platform plans on the API,
-  CLI, or dashboard yet.
+  backups-first, and S264 surfaces the plan with verification state
+  on the API, CLI, and dashboard, but no operation executes platform
+  moves or rolls back failed replacements yet (S265). S265 must
+  refuse unverified or failed releases and call
+  `release.Store.RecordInstalled` after a successful replacement; no
+  installed counter is recorded before then, so rollback protection
+  only engages once one exists.
+- Production release signing key: the HAI public key embedded by S264
+  (`internal/release.EmbeddedPublicKey`) is a labelled placeholder
+  whose private half was discarded. The real key, signing ceremony,
+  and release tooling that publishes `version=`/`counter=` checksums
+  and `.minisig` files are pending; owners may import a key by
+  configuration meanwhile.
 - Rotation and lockout dashboard surfaces: S239 serves
   rotation and lockout status over the API and CLI; dashboard
   affordances belong to later slices.

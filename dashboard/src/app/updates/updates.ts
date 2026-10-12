@@ -3,6 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { ApiService, PackageUpdate } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { PlatformUpdatesPanel } from './platform-updates';
 
 /**
  * Update review page (S193): per-package drift plans against running
@@ -12,7 +13,7 @@ import { StateMessage } from '../state/state-message';
  * out to operation detail for progress; this page never blocks.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [StateMessage, RouterLink, PlatformUpdatesPanel],
   selector: 'app-updates',
   templateUrl: './updates.html',
 })

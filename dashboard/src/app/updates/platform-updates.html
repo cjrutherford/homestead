@@ -1,0 +1,107 @@
+<section aria-label="Platform release verification">
+  <h2>Platform releases</h2>
+
+  @if (error()) {
+    <app-state-message kind="error" [headline]="error()" />
+  }
+  @if (notice()) {
+    <app-state-message kind="status" [headline]="notice()" />
+  }
+
+  <h3>Verification state</h3>
+  <ul>
+    @for (release of view()?.releases ?? []; track release.component) {
+      <li>
+        {{ release.component }} {{ release.version || '-' }}
+        (counter {{ release.counter }}):
+        <strong>{{ release.state }}</strong>
+        @if (release.state !== 'verified' && release.detail) {
+          <span> {{ release.detail }}</span>
+        }
+        @if (release.override) {
+          <span> Older release allowed by owner override (audited).</span>
+        }
+        @if (release.plan_error) {
+          <span> Not planned: {{ release.plan_error }}</span>
+        }
+      </li>
+    } @empty {
+      <li>No platform releases verified yet.</li>
+    }
+  </ul>
+  @for (move of view()?.plan?.Components ?? []; track move.Component) {
+    <p>
+      Plan: {{ move.Component }} {{ move.Current }} → {{ move.Target }}
+      ({{ move.Verification }})
+    </p>
+  }
+  @for (warning of view()?.plan?.Warnings ?? []; track warning) {
+    <p class="warning">{{ warning }}</p>
+  }
+
+  <h3>Verify local release files</h3>
+  <p>Absolute paths to files already on the appliance; nothing is downloaded.</p>
+  <label>
+    Component
+    <select name="component" (change)="component = $any($event.target).value">
+      <option value="homestead-server">homestead-server</option>
+      <option value="homesteadctl">homesteadctl</option>
+    </select>
+  </label>
+  <label>
+    Artifact
+    <input name="artifact" (input)="artifact = $any($event.target).value" />
+  </label>
+  <label>
+    Checksums file
+    <input name="checksums" (input)="checksums = $any($event.target).value" />
+  </label>
+  <label>
+    Signature file (.minisig)
+    <input name="signature" (input)="signature = $any($event.target).value" />
+  </label>
+  @if (last(); as result) {
+    @if (result.state === 'verified') {
+      <p>Verified {{ result.version }} (counter {{ result.counter }}).</p>
+    } @else {
+      <app-state-message kind="error" [headline]="'Verification failed: ' + result.detail" />
+      @if (result.refusal === 'rollback') {
+        <label>
+          <input
+            type="checkbox"
+            name="allow-older"
+            (change)="allowOlder = $any($event.target).checked"
+          />
+          I confirm installing an older release (recorded in the audit trail)
+        </label>
+      }
+    }
+  }
+  <button type="button" (click)="verify()" [disabled]="busy()">Verify</button>
+
+  <h3>Trusted keys</h3>
+  <ul>
+    @for (key of keys(); track key.key_id) {
+      <li>
+        {{ key.key_id }} ({{ key.source }}) {{ key.label }}
+        <button type="button" (click)="replaceKey(key.key_id)" [disabled]="busy() || !newKey">
+          Replace with new key
+        </button>
+        <button type="button" (click)="removeKey(key.key_id)" [disabled]="busy()">
+          Remove
+        </button>
+      </li>
+    } @empty {
+      <li>No trusted keys; every release will fail verification.</li>
+    }
+  </ul>
+  <label>
+    Minisign public key
+    <textarea name="new-key" rows="3" (input)="newKey = $any($event.target).value"></textarea>
+  </label>
+  <label>
+    Label
+    <input name="new-label" (input)="newLabel = $any($event.target).value" />
+  </label>
+  <button type="button" (click)="addKey()" [disabled]="busy() || !newKey">Add trusted key</button>
+</section>

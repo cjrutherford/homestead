@@ -39,9 +39,33 @@ func IsPlatformComponent(name string) bool {
 // customer-ownership rule, so targets arrive explicitly with the
 // release the owner obtained; a later distribution slice owns
 // acquisition, and this model only compares.
+//
+// Verification (S264, ADR-025) carries the artifact verification state
+// the owner's local files reached: "verified", "unverified" (the zero
+// value, no verification attempted) or "failed". It is reported, never
+// used to change planning: the planner stays pure, and blocking
+// unverified or failed moves belongs to update actuation (S265).
 type PlatformRelease struct {
-	Component string
-	Version   string
+	Component    string
+	Version      string
+	Verification string
+}
+
+// Verification states a PlatformRelease may carry.
+const (
+	VerificationVerified   = "verified"
+	VerificationUnverified = "unverified"
+	VerificationFailed     = "failed"
+)
+
+func normalizeVerification(state string) (string, error) {
+	switch state {
+	case "":
+		return VerificationUnverified, nil
+	case VerificationVerified, VerificationUnverified, VerificationFailed:
+		return state, nil
+	}
+	return "", fmt.Errorf("update: unknown verification state %q", state)
 }
 
 // Validate checks release shape: a known component and a parseable
@@ -63,6 +87,8 @@ type ComponentUpdate struct {
 	Component string
 	Current   string
 	Target    string
+	// Verification is the release's artifact verification state.
+	Verification string
 }
 
 // PlatformPlan is the reviewable change set for the platform,
@@ -135,6 +161,10 @@ func PlanPlatform(running map[string]string, desired []PlatformRelease) (Platfor
 		if err := release.Validate(); err != nil {
 			return PlatformPlan{}, err
 		}
+		verification, err := normalizeVerification(release.Verification)
+		if err != nil {
+			return PlatformPlan{}, err
+		}
 		if seen[release.Component] {
 			return PlatformPlan{}, fmt.Errorf("update: duplicate platform component %q", release.Component)
 		}
@@ -154,7 +184,13 @@ func PlanPlatform(running map[string]string, desired []PlatformRelease) (Platfor
 		}
 		plan.Components = append(plan.Components, ComponentUpdate{
 			Component: release.Component, Current: current, Target: release.Version,
+			Verification: verification,
 		})
+		if verification != VerificationVerified {
+			plan.Warnings = append(plan.Warnings,
+				fmt.Sprintf("%s %s is %s; it cannot be applied until artifact verification succeeds",
+					release.Component, release.Version, verification))
+		}
 		if platformMajorBump(current, release.Version) {
 			plan.Warnings = append(plan.Warnings,
 				fmt.Sprintf("%s jumps major versions (%s -> %s); expect migrations",

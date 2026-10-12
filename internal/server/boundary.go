@@ -143,6 +143,12 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/tunnel/setup":                  ClassSession,
 	"DELETE /api/v1/tunnel/tunnels/{id}":         ClassSession,
 	"GET /api/v1/updates":                        ClassSession,
+	"GET /api/v1/platform/updates":               ClassSession,
+	"POST /api/v1/platform/updates/verify":       ClassSession,
+	"GET /api/v1/platform/trust-keys":            ClassSession,
+	"POST /api/v1/platform/trust-keys":           ClassSession,
+	"PUT /api/v1/platform/trust-keys/{id}":       ClassSession,
+	"DELETE /api/v1/platform/trust-keys/{id}":    ClassSession,
 	"POST /api/v1/updates/{name}/apply":          ClassSession,
 }
 

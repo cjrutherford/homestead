@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"homestead/internal/audit"
@@ -77,6 +78,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountDockge(dockerClient)
 	srv.MountEdge(st)
 	srv.MountUpdates(st, c.CatalogDir, dockerClient)
+	srv.MountPlatform(st, filepath.Join(filepath.Dir(c.ConfigPath), "platform-trust.yaml"))
 	srv.MountFirewall(c.Port, configSvc)
 	srv.MountExposure(st, c.Port)
 	srv.MountTunnel(st, secrets)

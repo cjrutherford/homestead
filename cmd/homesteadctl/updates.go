@@ -12,7 +12,7 @@ import (
 
 func runUpdates(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl updates <list|apply> [flags]")
+		fmt.Fprintln(stderr, "usage: homesteadctl updates <list|apply|platform|verify|trust> [flags]")
 		return exitUsage
 	}
 	switch args[0] {
@@ -20,6 +20,12 @@ func runUpdates(ctx context.Context, client *apiclient.Client, args []string, st
 		return runUpdatesList(ctx, client, stdout, stderr)
 	case "apply":
 		return runUpdatesApply(ctx, client, args[1:], stdout, stderr)
+	case "platform":
+		return runUpdatesPlatform(ctx, client, stdout, stderr)
+	case "verify":
+		return runUpdatesVerify(ctx, client, args[1:], stdout, stderr)
+	case "trust":
+		return runUpdatesTrust(ctx, client, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown updates subcommand %q\n", args[0])
 		return exitUsage

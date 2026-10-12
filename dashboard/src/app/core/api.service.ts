@@ -192,6 +192,54 @@ export interface PackageUpdate {
   plan: UpdatePlan;
 }
 
+/** GET /api/v1/platform/updates — latest verification record per component. */
+export interface PlatformRelease {
+  component: string;
+  version: string;
+  counter: number;
+  state: 'verified' | 'unverified' | 'failed';
+  refusal: string;
+  detail: string;
+  key_id: string;
+  sha256: string;
+  override: boolean;
+  plan_error?: string;
+}
+
+/** GET /api/v1/platform/updates — platform plan with verification state. */
+export interface PlatformUpdates {
+  running: Record<string, string>;
+  plan: {
+    Components: {
+      Component: string;
+      Current: string;
+      Target: string;
+      Verification: string;
+    }[];
+    Backup: boolean;
+    BackupWhy: string;
+    Warnings: string[];
+  };
+  releases: PlatformRelease[];
+}
+
+/** POST /api/v1/platform/updates/verify — owner-supplied local files. */
+export interface PlatformVerifyBody {
+  component: string;
+  artifact: string;
+  checksums: string;
+  signature: string;
+  allow_older: boolean;
+}
+
+/** GET /api/v1/platform/trust-keys — one trusted release-signing key. */
+export interface TrustKey {
+  key_id: string;
+  public_key: string;
+  label: string;
+  source: 'embedded' | 'owner';
+}
+
 /** GET /api/v1/dockge — expert-interface link with access policy. */
 export interface DockgeLink {
   host: string;
@@ -430,6 +478,45 @@ export class ApiService {
     return this.http.post<OperationStarted>(
       `/api/v1/updates/${name}/apply`,
       body,
+    );
+  }
+
+  platformUpdates(): Observable<PlatformUpdates> {
+    return this.http.get<PlatformUpdates>('/api/v1/platform/updates');
+  }
+
+  platformVerify(body: PlatformVerifyBody): Observable<PlatformRelease> {
+    return this.http.post<PlatformRelease>(
+      '/api/v1/platform/updates/verify',
+      body,
+    );
+  }
+
+  trustKeys(): Observable<TrustKey[]> {
+    return this.http.get<TrustKey[]>('/api/v1/platform/trust-keys');
+  }
+
+  trustKeyAdd(publicKey: string, label: string): Observable<TrustKey> {
+    return this.http.post<TrustKey>('/api/v1/platform/trust-keys', {
+      public_key: publicKey,
+      label,
+    });
+  }
+
+  trustKeyReplace(
+    keyId: string,
+    publicKey: string,
+    label: string,
+  ): Observable<TrustKey> {
+    return this.http.put<TrustKey>(
+      `/api/v1/platform/trust-keys/${encodeURIComponent(keyId)}`,
+      { public_key: publicKey, label },
+    );
+  }
+
+  trustKeyRemove(keyId: string): Observable<void> {
+    return this.http.delete<void>(
+      `/api/v1/platform/trust-keys/${encodeURIComponent(keyId)}`,
     );
   }
 
