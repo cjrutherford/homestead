@@ -140,6 +140,12 @@ func (s *Store) loadKeys() error {
 		switch {
 		case err == nil:
 			// Migrate: the legacy file becomes version 1, byte for byte.
+			// The legacy file only ever holds version 1; rows on a newer
+			// version mean the re-key's key files are missing, and copying
+			// the legacy key forward would hide that.
+			if err := s.requireRowKeys(func(v int) bool { return v == 1 }); err != nil {
+				return err
+			}
 		case os.IsNotExist(err):
 			// Never mint a key over existing ciphertext: a fresh key
 			// would silently strand every stored secret.
@@ -179,6 +185,13 @@ func (s *Store) loadKeys() error {
 			return fmt.Errorf("secret: read legacy key: %w", err)
 		}
 	}
+	have := map[int]bool{}
+	for _, v := range versions {
+		have[v] = true
+	}
+	if err := s.requireRowKeys(func(v int) bool { return have[v] }); err != nil {
+		return err
+	}
 	s.keys = map[int][32]byte{}
 	for _, v := range versions {
 		key, err := readKeyFile(s.keyFile(v))
@@ -188,6 +201,35 @@ func (s *Store) loadKeys() error {
 		s.keys[v] = key
 	}
 	s.current = versions[len(versions)-1]
+	return nil
+}
+
+// requireRowKeys refuses to start when a stored secret records a key
+// version whose file is absent: that row could never be read, and
+// starting anyway would hide it until the first provider call fails.
+func (s *Store) requireRowKeys(have func(int) bool) error {
+	rows, err := s.db.Query(`SELECT DISTINCT ` + versionExpr + ` FROM secrets`)
+	if err != nil {
+		return fmt.Errorf("secret: read key versions: %w", err)
+	}
+	defer rows.Close()
+	var missing []string
+	for rows.Next() {
+		var v int
+		if err := rows.Scan(&v); err != nil {
+			return fmt.Errorf("secret: read key versions: %w", err)
+		}
+		if !have(v) {
+			missing = append(missing, fmt.Sprintf("%q", s.keyFile(v)))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("secret: stored secrets are encrypted under key file(s) %s which are missing; restore them from the owner's recovery material instead of starting without them",
+			strings.Join(missing, ", "))
+	}
 	return nil
 }
 

@@ -561,3 +561,26 @@ func TestConcurrentSetGetDuringRekey(t *testing.T) {
 	}
 	readable(t, st, "alpha", "beta")
 }
+
+// A re-keyed store whose newer key files are lost must refuse to start,
+// even when the surviving legacy key would otherwise migrate to v1.
+func TestRefusesStartWhenRowKeyVersionMissing(t *testing.T) {
+	st, dir := openSecret(t)
+	keyPath := filepath.Join(dir, KeyFileName)
+	seed(t, st, "alpha")
+	if _, err := st.Rekey(); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate the owner restoring only the pre-re-key legacy key.
+	os.Remove(keyPath + ".v2")
+	if err := os.WriteFile(keyPath, make([]byte, 32), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := New(storeFor(t, dir), keyPath)
+	if err == nil || !strings.Contains(err.Error(), keyPath+".v2") {
+		t.Fatalf("err = %v", err)
+	}
+	if hasFile(t, keyPath+".v1") {
+		t.Fatal("legacy key copied forward over rows on a newer version")
+	}
+}
