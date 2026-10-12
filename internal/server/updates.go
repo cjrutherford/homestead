@@ -153,8 +153,21 @@ func backupSources(st *store.Store, packageName string) ([]backup.Source, error)
 	for _, mount := range discovered.Mounts {
 		byPoint[mount.Mountpoint] = mount
 	}
+	return selectBackupSources(assignments, byPoint, packageName), nil
+}
+
+// selectBackupSources picks writable assigned mounts holding the
+// package directory. The backup class is the destination, never a
+// source (its package directory holds earlier runs, so copying it
+// would back the destination up into itself), and a mount assigned
+// several classes counts once, so step names stay unique.
+func selectBackupSources(assignments []storage.Assignment, byPoint map[string]discover.Mount, packageName string) []backup.Source {
 	var sources []backup.Source
+	seen := map[string]bool{}
 	for _, assignment := range assignments {
+		if assignment.Class == storage.ClassBackup || seen[assignment.Mountpoint] {
+			continue
+		}
 		mount, ok := byPoint[assignment.Mountpoint]
 		if !ok || !mount.Accessible || mount.ReadOnly {
 			continue
@@ -164,9 +177,10 @@ func backupSources(st *store.Store, packageName string) ([]backup.Source, error)
 		if err != nil || !info.IsDir() {
 			continue
 		}
+		seen[assignment.Mountpoint] = true
 		sources = append(sources, backup.Source{Mountpoint: assignment.Mountpoint, Path: packageName})
 	}
-	return sources, nil
+	return sources
 }
 
 // backupJob assembles the pre-update backup: file sources plus the

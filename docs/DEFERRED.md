@@ -207,3 +207,9 @@
 - Operation cancel route: `Runner.Cancel` exists but no API, CLI, or
   dashboard surface calls it, so a hung operation that blocks a
   scheduled job (ADR-023) can only be cleared by restarting the daemon.
+- Same package directory under several assigned application-side mounts
+  (S260 found in KVM): backup sources now skip the backup-class mount and
+  count each mount once, but two non-backup mounts that both hold
+  `<package>` still yield the same step name and the same destination
+  subpath, so a scheduled or pre-update backup of that package is refused
+  with a duplicate step error. Needs per-mount destination subpaths.

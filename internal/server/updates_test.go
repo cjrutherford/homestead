@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"homestead/internal/discover"
 	"homestead/internal/docker"
+	"homestead/internal/storage"
 	"homestead/internal/store"
 )
 
@@ -259,5 +261,29 @@ func TestUpdatesApply(t *testing.T) {
 		if !strings.Contains(recorder.Body.String(), "separately") {
 			t.Fatalf("%s body = %s", name, recorder.Body.String())
 		}
+	}
+}
+
+func TestSelectBackupSourcesSkipsBackupClassAndDuplicates(t *testing.T) {
+	app, bulk, dest, empty := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+	for _, root := range []string{app, bulk, dest} {
+		if err := os.MkdirAll(filepath.Join(root, "jellyfin"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mounts := map[string]discover.Mount{}
+	for _, root := range []string{app, bulk, dest, empty} {
+		mounts[root] = discover.Mount{Mountpoint: root, Accessible: true}
+	}
+	assignments := []storage.Assignment{
+		{Class: storage.ClassApplication, Mountpoint: app},
+		{Class: storage.ClassDatabase, Mountpoint: app},
+		{Class: storage.ClassBulk, Mountpoint: bulk},
+		{Class: storage.ClassBackup, Mountpoint: dest},
+		{Class: storage.ClassCache, Mountpoint: empty},
+	}
+	got := selectBackupSources(assignments, mounts, "jellyfin")
+	if len(got) != 2 || got[0].Mountpoint != app || got[1].Mountpoint != bulk {
+		t.Fatalf("sources = %+v, want app and bulk once each", got)
 	}
 }
