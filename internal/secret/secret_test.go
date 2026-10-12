@@ -159,7 +159,17 @@ func TestWrongKeyFailsClosed(t *testing.T) {
 	if err := st.Set("api_token", "secret-value"); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	other, err := New(storeFor(t, dir), filepath.Join(t.TempDir(), KeyFileName))
+	// A different key directory holds no key: New must refuse rather than
+	// mint a key that would strand the stored ciphertext.
+	if _, err := New(storeFor(t, dir), filepath.Join(t.TempDir(), KeyFileName)); err == nil {
+		t.Fatal("started with no key over existing secrets")
+	}
+	// A different key file over the same rows fails closed on read.
+	wrong := filepath.Join(t.TempDir(), KeyFileName)
+	if err := os.WriteFile(wrong, make([]byte, 32), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	other, err := New(storeFor(t, dir), wrong)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

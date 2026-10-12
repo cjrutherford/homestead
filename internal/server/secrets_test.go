@@ -44,7 +44,7 @@ func TestSecretRekeyRoute(t *testing.T) {
 	if err := secrets.Set("api_token", "super-secret-value"); err != nil {
 		t.Fatal(err)
 	}
-	rekey := handleSecretRekey(st, secrets)
+	rekey := handleSecretRekey(New("127.0.0.1:0"), st, secrets)
 
 	// Unconfirmed requests are refused and change nothing.
 	for _, body := range []string{``, `{}`, `{"confirm":false}`} {

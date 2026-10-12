@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 
@@ -16,7 +15,7 @@ import (
 // and audit entries carry versions and operation ids, never key material.
 func (s *Server) MountSecrets(st *store.Store, secrets *secret.Store) {
 	s.mux.HandleFunc("GET /api/v1/secrets/key", handleSecretKeyStatus(secrets))
-	s.mux.HandleFunc("POST /api/v1/secrets/rekey", handleSecretRekey(st, secrets))
+	s.mux.HandleFunc("POST /api/v1/secrets/rekey", handleSecretRekey(s, st, secrets))
 }
 
 func handleSecretKeyStatus(secrets *secret.Store) http.HandlerFunc {
@@ -34,7 +33,7 @@ type rekeyBody struct {
 	Confirm bool `json:"confirm"`
 }
 
-func handleSecretRekey(st *store.Store, secrets *secret.Store) http.HandlerFunc {
+func handleSecretRekey(s *Server, st *store.Store, secrets *secret.Store) http.HandlerFunc {
 	runner := operation.NewRunner(st)
 	auditSvc := audit.New(st)
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -58,12 +57,23 @@ func handleSecretRekey(st *store.Store, secrets *secret.Store) http.HandlerFunc 
 			return
 		}
 		actor := op.Session.Username
-		_, _ = auditSvc.Record(audit.Entry{
+		record := func(entry audit.Entry) {
+			if _, err := auditSvc.Record(entry); err != nil {
+				s.log.Error("secret re-key audit record failed", "action", entry.Action, "operation", started.ID, "error", err)
+			}
+		}
+		record(audit.Entry{
 			Actor: actor, Action: "secret.rekey.start", Outcome: audit.OutcomeOK,
 			Detail: fmt.Sprintf("operation %d from key version %d", started.ID, from),
 		})
 		go func() {
-			done, err := runner.Wait(context.Background(), started.ID)
+			done, err := runner.Wait(s.bg, started.ID)
+			if err != nil && s.bg.Err() != nil {
+				// Daemon shutdown: the operation is failed by Recover at
+				// next start; there is no outcome to audit yet.
+				s.log.Warn("secret re-key audit skipped at shutdown", "operation", started.ID)
+				return
+			}
 			entry := audit.Entry{
 				Actor: actor, Action: "secret.rekey", Outcome: audit.OutcomeOK,
 				Detail: fmt.Sprintf("operation %d: key version %d -> %d", started.ID, from, secrets.KeyVersion()),
@@ -72,7 +82,7 @@ func handleSecretRekey(st *store.Store, secrets *secret.Store) http.HandlerFunc 
 				entry.Outcome = audit.OutcomeError
 				entry.Detail = fmt.Sprintf("operation %d did not complete (key version %d)", started.ID, secrets.KeyVersion())
 			}
-			_, _ = auditSvc.Record(entry)
+			record(entry)
 		}()
 		writeJSON(w, map[string]any{"id": started.ID})
 	}

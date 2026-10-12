@@ -51,11 +51,16 @@ type Server struct {
 	socketMux *http.ServeMux
 	log       *slog.Logger
 	boundary  *boundary
+	// bg bounds background work started by handlers (such as audit
+	// waiters); serve cancels it when the daemon shuts down.
+	bg       context.Context
+	bgCancel context.CancelFunc
 }
 
 // New returns a Server serving addr. Pass DefaultAddr for local-only binding.
 func New(addr string) *Server {
 	s := &Server{addr: addr, log: slog.Default()}
+	s.bg, s.bgCancel = context.WithCancel(context.Background())
 	s.mux = newRecordingMux()
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("GET /version", s.handleVersion)
@@ -147,6 +152,7 @@ func (s *Server) serve(ctx context.Context, ln net.Listener, hs *http.Server, na
 	}()
 	select {
 	case <-ctx.Done():
+		s.bgCancel()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), ShutdownTimeout)
 		defer cancel()
 		s.log.Info("homestead-server shutting down", "listener", name)

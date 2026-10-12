@@ -22,7 +22,7 @@ var ErrNotFound = errors.New("secret: not found")
 // KeyFileName is the legacy (pre-S258) key file inside LibDir. Since
 // S258 keys live in versioned files KeyFileName.v<N> beside it (ADR-021);
 // the legacy file is only read once, to migrate it to version 1, and is
-// left in place and ignored afterward so a binary rollback still works.
+// left in place and ignored afterward (binary rollback works only before the first re-key; ADR-021).
 // Key material never leaves these root-only files; the database holds
 // ciphertext alone.
 const KeyFileName = "secret.key"

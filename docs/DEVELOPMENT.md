@@ -1618,6 +1618,11 @@ and operation ids only. **Runbook:** every retained key file
 (`secret.key.v*`, plus the legacy `secret.key` until the owner removes
 it) belongs in the owner's recovery material; losing the key file a
 row records strands that row. Re-key blocks secret reads briefly.
+Downgrading to a pre-S258 binary is only possible before the first
+re-key (re-key retires `secret.key.v1`; the legacy file is not kept in
+sync). Start refuses, with a clear error, when the legacy key and
+`secret.key.v1` differ before any re-key, or when secrets exist and no
+key file does; it never mints a key over existing ciphertext.
 
 ## Provisional decisions (revisit, do not work around silently)
 

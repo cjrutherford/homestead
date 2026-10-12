@@ -24,6 +24,10 @@ type StepDef struct {
 type Definition struct {
 	Type  string
 	Steps []StepDef
+	// Cleanup, when set, runs once when execution ends on any path:
+	// success, step failure, cancellation, a lost state transition, or a
+	// panic. It must be idempotent and must not assume a step ran.
+	Cleanup func()
 }
 
 // Runner executes definitions in the background, independently of the
@@ -96,6 +100,9 @@ func (r *Runner) execute(ctx context.Context, id int64, def Definition) {
 		delete(r.live, id)
 		r.mu.Unlock()
 	}()
+	if def.Cleanup != nil {
+		defer def.Cleanup()
+	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			_ = r.store.Transition(id, StatusFailed, "", fmt.Sprintf("step panicked: %v", recovered))

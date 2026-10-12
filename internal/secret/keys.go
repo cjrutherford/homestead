@@ -1,6 +1,7 @@
 package secret
 
 import (
+	"bytes"
 	"crypto/rand"
 	"fmt"
 	"os"
@@ -65,6 +66,12 @@ func readKeyFile(path string) ([32]byte, error) {
 	return key, nil
 }
 
+// Test seams for failure injection in writeKeyFile.
+var (
+	syncFile   = func(f *os.File) error { return f.Sync() }
+	renameFile = os.Rename
+)
+
 // writeKeyFile makes a key durable (mode 0600): temp file, fsync, rename, directory
 // fsync. A crash leaves either no file or a complete one.
 func writeKeyFile(path string, key [32]byte) error {
@@ -85,14 +92,14 @@ func writeKeyFile(path string, key [32]byte) error {
 	if _, err := tmp.Write(key[:]); err != nil {
 		return fail("write key", err)
 	}
-	if err := tmp.Sync(); err != nil {
+	if err := syncFile(tmp); err != nil {
 		return fail("sync key", err)
 	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("secret: write key: %w", err)
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := renameFile(tmpName, path); err != nil {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("secret: install key: %w", err)
 	}
@@ -134,6 +141,16 @@ func (s *Store) loadKeys() error {
 		case err == nil:
 			// Migrate: the legacy file becomes version 1, byte for byte.
 		case os.IsNotExist(err):
+			// Never mint a key over existing ciphertext: a fresh key
+			// would silently strand every stored secret.
+			var rows int
+			if err := s.db.QueryRow(`SELECT COUNT(*) FROM secrets`).Scan(&rows); err != nil {
+				return fmt.Errorf("secret: count rows: %w", err)
+			}
+			if rows > 0 {
+				return fmt.Errorf("secret: %d stored secrets exist but no key file was found (expected %q or %q); restore the key files from the owner's recovery material instead of starting with a new key",
+					rows, s.keyPath, s.keyFile(1))
+			}
 			if _, err := rand.Read(key[:]); err != nil {
 				return fmt.Errorf("secret: generate key: %w", err)
 			}
@@ -144,6 +161,23 @@ func (s *Store) loadKeys() error {
 			return err
 		}
 		versions = []int{1}
+	}
+	if len(versions) == 1 && versions[0] == 1 {
+		// No re-key has happened, so a surviving legacy file must still
+		// be the same key; disagreement means one was swapped or restored
+		// wrongly, and silently picking either could strand data.
+		legacy, err := os.ReadFile(s.keyPath)
+		if err == nil {
+			v1, err := os.ReadFile(s.keyFile(1))
+			if err != nil {
+				return fmt.Errorf("secret: read key: %w", err)
+			}
+			if !bytes.Equal(legacy, v1) {
+				return fmt.Errorf("secret: legacy key %q and %q differ before any re-key; refusing to start: restore the correct key or remove the wrong file", s.keyPath, s.keyFile(1))
+			}
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("secret: read legacy key: %w", err)
+		}
 	}
 	s.keys = map[int][32]byte{}
 	for _, v := range versions {

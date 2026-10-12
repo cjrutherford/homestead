@@ -54,6 +54,9 @@ type rekeyRun struct {
 	s      *Store
 	from   int
 	target int
+	// claimed is true while this run owns the store's re-key lock, so a
+	// release can never drop another run's claim.
+	claimed bool
 }
 
 // Rekey runs the whole re-key synchronously (ADR-021): used by tests and
@@ -73,11 +76,12 @@ func (s *Store) Rekey() (int, error) {
 // rerunnable. Errors and step names never carry key material.
 func (s *Store) RekeyDefinition() operation.Definition {
 	run := &rekeyRun{s: s}
-	return operation.Definition{Type: OperationType, Steps: run.steps()}
+	return operation.Definition{Type: OperationType, Steps: run.steps(), Cleanup: run.release}
 }
 
-// steps wires the four steps; the first claims the store and any failure
-// or the last step releases it.
+// steps wires the four steps; the first claims the store. A failure or
+// the last step releases it, and the runner's Cleanup hook releases it on
+// every other exit (cancellation, lost transitions, panics).
 func (r *rekeyRun) steps() []operation.StepDef {
 	defs := []struct {
 		name string
@@ -117,12 +121,18 @@ func (r *rekeyRun) claim() error {
 		return ErrRekeyInProgress
 	}
 	r.s.rekeying = true
+	r.claimed = true
 	return nil
 }
 
+// release drops this run's claim; idempotent and a no-op for a run that
+// never claimed.
 func (r *rekeyRun) release() {
 	r.s.mu.Lock()
-	r.s.rekeying = false
+	if r.claimed {
+		r.claimed = false
+		r.s.rekeying = false
+	}
 	r.s.mu.Unlock()
 }
 
@@ -141,7 +151,21 @@ func (r *rekeyRun) writeKey() error {
 		return fmt.Errorf("secret: re-key: %w", err)
 	}
 	r.from = s.current
-	if oldest != 0 && oldest < s.current {
+	// A key from an interrupted run: still in memory (rows not yet on it)
+	// or on disk after a restart (current is the newest file and rows lag).
+	newest := 0
+	for v := range s.keys {
+		if v > newest {
+			newest = v
+		}
+	}
+	if newest > s.current || (oldest != 0 && oldest < s.current) {
+		r.target = newest
+		return nil
+	}
+	// Current is already newest and every row verifies on it (a run that
+	// failed retiring old keys): just retire, never mint another key.
+	if len(s.keys) > 1 && s.verifyAllLocked(s.current) == nil {
 		r.target = s.current
 		return nil
 	}
@@ -153,8 +177,9 @@ func (r *rekeyRun) writeKey() error {
 	if err := writeKeyFile(s.keyFile(target), key); err != nil {
 		return err
 	}
+	// current advances only after the re-encrypt commit, so KeyVersion
+	// reports the version rows are actually on after a failed run.
 	s.keys[target] = key
-	s.current = target
 	r.target = target
 	return nil
 }
@@ -228,6 +253,7 @@ func (r *rekeyRun) reencrypt() error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("secret: re-key commit: %w", err)
 	}
+	s.current = r.target
 	return s.fire(pointAfterTx)
 }
 

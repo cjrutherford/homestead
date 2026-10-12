@@ -45,7 +45,7 @@ start after S258 the store treats that file as key version 1: it copies
 the file to `secret.key.v1` (temp, fsync, rename, directory fsync), stamps
 all unversioned rows as version 1 in one transaction, and leaves the legacy
 `secret.key` in place, unmodified and ignored afterward, so that rolling the
-daemon binary back still works. Rows without a version are always read as
+daemon binary back works until the first re-key (see Consequences). Rows without a version are always read as
 version 1. The migration never changes ciphertext; the legacy file may be
 removed by the owner once satisfied, and re-key never touches it.
 
@@ -92,5 +92,13 @@ container variables build on this store.
 - Operation appears in the audit log without logging key material.
 - Materialized secret files are plaintext on disk and must stay 0600
   under the application directory.
+- Downgrade to a pre-S258 binary is only possible before the first
+  re-key. The legacy `secret.key` is never kept in sync: the first
+  re-key retires `secret.key.v1`, after which an older binary reading
+  the legacy file cannot open version 2 rows. Rollback after a re-key
+  means restoring the database and key files from backup.
+- The daemon refuses to start, rather than guess, when `secret.key` and
+  `secret.key.v1` differ before any re-key, or when stored secrets exist
+  but no usable key file does; it never mints a key over ciphertext.
 - Implementation must preserve this boundary.
 - Changes require a superseding ADR.
