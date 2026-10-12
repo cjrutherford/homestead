@@ -63,6 +63,12 @@
 - Backup encryption at rest: S181 copies plaintext; encrypting backup
   trees (age recipients, key custody, rotation) belongs with restore
   once runbooks exist.
+- App data on anonymous volumes: KVM validation (2026-10-12) found
+  generated catalog stacks render no `volumes:`, so app data lives in
+  anonymous Docker volumes rather than mounted storage, and scheduled
+  backups find no sources. Planned as S276 (declared placement for new
+  installs) and S277 (migration of existing installs plus a backup
+  source guard).
 - Scheduled database backups: S260 fires backup schedules, but
   database passwords are never stored, so scheduled postgres backups
   fail with a recorded error (file-only and sqlite packages run); needs
