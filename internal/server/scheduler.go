@@ -19,6 +19,7 @@ import (
 func NewScheduler(st *store.Store, catalogDir string, opts ...scheduler.Option) *scheduler.Scheduler {
 	s := scheduler.New(st, opts...)
 	s.Register("backup", backupSource(st, catalogDir, s.Now))
+	s.Register("drift", driftSource(st, s.Now))
 	return s
 }
 

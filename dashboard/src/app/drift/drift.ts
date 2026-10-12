@@ -1,7 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
-import { ApiService, FileDrift, PackageSummary } from '../core/api.service';
+import { ApiService, DriftSchedule, FileDrift, PackageSummary } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 
 /**
@@ -9,7 +9,9 @@ import { StateMessage } from '../state/state-message';
  * accept and restore choices. Accept adopts current files as
  * managed; restore rewrites recorded files and converges the stack
  * through the operation engine, linking out to operation detail for
- * progress. This page never changes anything by itself.
+ * progress. This page never changes anything by itself. The scan
+ * panel (S261) shows the last scheduled scan and edits its cadence;
+ * scheduled scans only detect, never resolve.
  */
 @Component({
   imports: [StateMessage, RouterLink],
@@ -26,8 +28,14 @@ export class Drift implements OnInit {
   protected readonly notice = signal<string | null>(null);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
+  protected readonly schedule = signal<DriftSchedule | null>(null);
 
   ngOnInit(): void {
+    this.api.driftSchedule().subscribe({
+      next: (schedule) => this.schedule.set(schedule),
+      error: (failure: HttpErrorResponse) =>
+        this.error.set(failure.error ?? failure.message),
+    });
     this.busy.set(true);
     this.api.catalogPackages().subscribe({
       next: (packages) => {
@@ -39,6 +47,20 @@ export class Drift implements OnInit {
         this.error.set(failure.message);
       },
     });
+  }
+
+  saveSchedule(hours: string, enabled: boolean): void {
+    const interval_seconds = Math.round(Number(hours) * 3600);
+    this.error.set(null);
+    this.api.driftScheduleSave({ interval_seconds, enabled }).subscribe({
+      next: (schedule) => this.schedule.set(schedule),
+      error: (failure: HttpErrorResponse) =>
+        this.error.set(failure.error ?? failure.message),
+    });
+  }
+
+  protected hours(seconds: number): number {
+    return Math.round((seconds / 3600) * 100) / 100;
   }
 
   select(name: string): void {

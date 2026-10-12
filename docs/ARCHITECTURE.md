@@ -17,6 +17,11 @@
   drift scans and certificate checks register later. State is visible via
   `GET /api/v1/scheduler/jobs` and `homesteadctl scheduler jobs`.
   Schedules run only while the daemon runs; there are no systemd timers.
+  Drift scan (S261): job `drift:scan` runs the file-drift scan over
+  installed packages on an owner-set interval (default daily, min 5m;
+  `drift_scan_schedule`, latest result in `drift_scan_latest`) as a
+  `catalog.drift-scan` operation plus a `drift.scan` audit entry. It only
+  detects, never accepts or restores. API: `GET|POST /api/v1/drift/schedule`.
 - YAML: customer-readable desired configuration and generated artifacts.
 - Docker Engine + Compose v2: application runtime.
 - Caddy: application reverse proxy / HTTP edge.

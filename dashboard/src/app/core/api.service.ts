@@ -217,6 +217,21 @@ export interface DriftResolution {
   detail?: string;
 }
 
+/** GET/POST /api/v1/drift/schedule — periodic scan cadence and latest scan (S261). */
+export interface DriftScanResult {
+  scanned_at: string;
+  scanned: number;
+  drifted: { package: string; files: { path: string; kind: string }[] }[];
+  errors: string[];
+}
+
+export interface DriftSchedule {
+  interval_seconds: number;
+  enabled: boolean;
+  updated_at: string;
+  last_scan: DriftScanResult | null;
+}
+
 /** GET /api/v1/exposure/review — recomputed plan for the saved selection. */
 export interface ExposurePlan {
   Host: string;
@@ -432,6 +447,17 @@ export class ApiService {
     return this.http.post<DriftResolution>(`/api/v1/catalog/${name}/drift`, {
       action,
     });
+  }
+
+  driftSchedule(): Observable<DriftSchedule> {
+    return this.http.get<DriftSchedule>('/api/v1/drift/schedule');
+  }
+
+  driftScheduleSave(body: {
+    interval_seconds: number;
+    enabled: boolean;
+  }): Observable<DriftSchedule> {
+    return this.http.post<DriftSchedule>('/api/v1/drift/schedule', body);
   }
 
   exposureReview(): Observable<ExposurePlan> {

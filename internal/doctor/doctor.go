@@ -86,6 +86,12 @@ func Run() Report {
 	return Report{Overall: overall(checks), Checks: checks}
 }
 
+// Add appends a check and recomputes the overall verdict.
+func (r *Report) Add(check Check) {
+	r.Checks = append(r.Checks, check)
+	r.Overall = overall(r.Checks)
+}
+
 func overall(checks []Check) string {
 	result := StatusOK
 	for _, check := range checks {

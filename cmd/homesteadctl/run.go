@@ -132,6 +132,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  exposure <review|approvals|approve|apply>  public exposure review and apply (S245)")
 	fmt.Fprintln(w, "  tunnel <status|setup|teardown>  tunnel remote access (S246)")
 	fmt.Fprintln(w, "  drift <review|accept|restore> <package> [--follow]  managed-state drift choices (S244)")
+	fmt.Fprintln(w, "  drift schedule [--interval 6h] [--enabled true|false]  periodic scan cadence and last result (S261)")
 	fmt.Fprintln(w, "  updates <list|apply>  application updates review and apply (S243)")
 	fmt.Fprintln(w, "  secrets <status|rekey>  secret-store key version and confirmed re-key (S258)")
 	fmt.Fprintln(w, "  backup <destination|schedules|schedule|unschedule>  backup configuration (S238)")

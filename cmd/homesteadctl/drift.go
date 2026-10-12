@@ -21,6 +21,8 @@ func runDrift(ctx context.Context, client *apiclient.Client, args []string, stdo
 		return runDriftAccept(ctx, client, args[1:], stdout, stderr)
 	case "restore":
 		return runDriftRestore(ctx, client, args[1:], stdout, stderr)
+	case "schedule":
+		return runDriftSchedule(ctx, client, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown drift subcommand %q\n", args[0])
 		return exitUsage

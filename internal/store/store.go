@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 25
+const CurrentVersion = 26
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -447,6 +447,26 @@ CREATE TABLE IF NOT EXISTS scheduler_jobs (
 		version: 25,
 		name:    "secret key version",
 		sql:     `ALTER TABLE secrets ADD COLUMN key_version INTEGER NOT NULL DEFAULT 0;`,
+	},
+	{
+		// S261 periodic drift scan: the single owner-set cadence row and
+		// the latest scan result (both singletons, id = 1). Scan history
+		// lives in operations and audit; these hold only current state.
+		version: 26,
+		name:    "drift scan",
+		sql: `
+CREATE TABLE IF NOT EXISTS drift_scan_schedule (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	interval_seconds INTEGER NOT NULL,
+	enabled INTEGER NOT NULL,
+	actor TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS drift_scan_latest (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	scanned_at TEXT NOT NULL,
+	result TEXT NOT NULL
+);`,
 	},
 }
 

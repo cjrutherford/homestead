@@ -83,5 +83,7 @@ unchanged.
 | GET | /api/v1/dockge | n/a | `dockge` | Expert-interface link with assessed policy on dashboard; no command surface yet |
 | GET | /api/v1/catalog/{name}/drift | `"drift"` | `driftReview` | Managed-state review on both surfaces |
 | POST | /api/v1/catalog/{name}/drift | `"drift"` | `driftResolve` | Accept or restore choice on both surfaces |
+| GET | /api/v1/drift/schedule | `"drift"` | `driftSchedule` | Scan cadence and last scheduled scan on CLI (`drift schedule`) and the dashboard drift page |
+| POST | /api/v1/drift/schedule | `"drift"` | `driftScheduleSave` | Scan interval and enable on CLI (`drift schedule --every/--off`) and the dashboard drift page |
 | GET | / | n/a | `app-root` | The UI itself; the CLI is the other interface. Catch-all also answers HEAD; mux method patterns cannot express both without conflicting, so both rows stand for one Handle |
 | HEAD | / | n/a | `app-root` | Same catch-all as GET / |

@@ -698,6 +698,27 @@ homesteadctl backup unschedule --package jellyfin
   and delete (204, repeated 204), with snake_case bodies; mutating calls
   without the CSRF header were 403 and unauthenticated reads 401.
 
+## Periodic drift scan (S261)
+
+```bash
+homesteadctl drift schedule                       # cadence + last scan
+homesteadctl drift schedule --interval 6h --enabled true
+```
+
+- The scheduler job `drift:scan` scans every installed package's
+  managed files (S212) on the owner interval: default 24h, minimum 5m,
+  anchored when saved (the unsaved default anchors at first daemon
+  tick, so a fresh install does not scan immediately).
+- Each run is a `catalog.drift-scan` operation and one `drift.scan`
+  audit entry (actor `scheduler`). A clean scan audits a single
+  `clean: N package(s) scanned` line; drift names packages and files;
+  unreadable packages make the audit outcome and operation error.
+- Scans never accept or restore: resolution stays with
+  `drift review|accept|restore` and the dashboard drift page.
+- `homesteadctl doctor` and the dashboard show a `drift-scan` check
+  (warn on drift or unreadable, ok when clean or not yet run).
+- Migration v26 adds `drift_scan_schedule` and `drift_scan_latest`.
+
 ## Daemon scheduler (S260)
 
 ```bash

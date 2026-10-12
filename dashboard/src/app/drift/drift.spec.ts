@@ -28,6 +28,20 @@ const REVIEW = [
   },
 ];
 
+const SCHEDULE = {
+  interval_seconds: 86400,
+  enabled: true,
+  updated_at: '2026-10-10T12:00:00Z',
+  last_scan: {
+    scanned_at: '2026-10-11T12:00:00Z',
+    scanned: 2,
+    drifted: [
+      { package: 'jellyfin', files: [{ path: 'compose.yaml', kind: 'modified' }] },
+    ],
+    errors: [],
+  },
+};
+
 describe('Drift', () => {
   let fixture: ComponentFixture<Drift>;
   let http: HttpTestingController;
@@ -56,6 +70,7 @@ describe('Drift', () => {
   it('reviews both sides of drifted files', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/drift/schedule').flush(SCHEDULE);
     fixture.detectChanges();
     fixture.componentInstance['select']('jellyfin');
     http.expectOne('/api/v1/catalog/jellyfin/drift').flush(REVIEW);
@@ -68,6 +83,7 @@ describe('Drift', () => {
   it('accepts current files and refreshes', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/drift/schedule').flush(SCHEDULE);
     fixture.detectChanges();
     fixture.componentInstance['select']('jellyfin');
     http.expectOne('/api/v1/catalog/jellyfin/drift').flush(REVIEW);
@@ -86,6 +102,7 @@ describe('Drift', () => {
   it('restores through operations', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/drift/schedule').flush(SCHEDULE);
     fixture.detectChanges();
     fixture.componentInstance['select']('jellyfin');
     http.expectOne('/api/v1/catalog/jellyfin/drift').flush(REVIEW);
@@ -96,5 +113,23 @@ describe('Drift', () => {
     restore.flush({ id: 11 });
     fixture.detectChanges();
     expect(text()).toContain('Follow operation 11');
+  });
+
+  it('shows the last scheduled scan and saves the cadence', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/drift/schedule').flush(SCHEDULE);
+    fixture.detectChanges();
+    expect(text()).toContain('Scans every 24 hour(s)');
+    expect(text()).toContain('2026-10-11T12:00:00Z');
+    expect(text()).toContain('compose.yaml (modified)');
+    fixture.componentInstance['saveSchedule']('6', false);
+    const save = http.expectOne('/api/v1/drift/schedule');
+    expect(save.request.method).toBe('POST');
+    expect(save.request.body).toEqual({ interval_seconds: 21600, enabled: false });
+    save.flush({ ...SCHEDULE, interval_seconds: 21600, enabled: false });
+    fixture.detectChanges();
+    expect(text()).toContain('Scans every 6 hour(s)');
+    expect(text()).toContain('off');
   });
 });
