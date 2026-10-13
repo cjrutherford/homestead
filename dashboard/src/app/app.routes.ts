@@ -19,6 +19,7 @@ import { Backups } from './backups/backups';
 import { StorageSetup } from './storage/storage';
 import { Edge } from './edge/edge';
 import { AuditLog } from './audit/audit';
+import { Account } from './account/account';
 import { NotFound } from './not-found/not-found';
 
 export const routes: Routes = [
@@ -43,6 +44,7 @@ export const routes: Routes = [
   { path: 'operations', component: Operations },
   { path: 'operations/:id', component: OperationDetail },
   { path: 'validation-board', component: ValidationBoard },
+  { path: 'account', component: Account },
   // Later slices register their routes here, before the wildcard.
   { path: '**', component: NotFound },
 ];

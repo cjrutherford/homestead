@@ -11,6 +11,7 @@ import { Updates } from './updates/updates';
 import { Advanced } from './advanced/advanced';
 import { Drift } from './drift/drift';
 import { ValidationBoard } from './validation/validation-board';
+import { Account } from './account/account';
 import { Edge } from './edge/edge';
 import { AuditLog } from './audit/audit';
 import { NotFound } from './not-found/not-found';
@@ -80,5 +81,9 @@ describe('routes', () => {
   it('serves the edge page', () => {
     const edge = routes.find((route) => route.path === 'edge');
     expect(edge?.component).toBe(Edge);
+  });
+
+  it('serves the account page', () => {
+    expect(routes.find((route) => route.path === 'account')?.component).toBe(Account);
   });
 });

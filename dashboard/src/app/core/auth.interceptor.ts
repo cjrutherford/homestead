@@ -8,6 +8,10 @@ import { SessionService } from '../auth/session.service';
 export const CSRF_COOKIE = 'homestead_csrf';
 export const CSRF_HEADER = 'X-CSRF-Token';
 
+/** Marks a 401 that is a wrong current password, not a dead session (S274). */
+export const ERROR_CODE_HEADER = 'X-Homestead-Error';
+export const WRONG_CURRENT_PASSWORD = 'invalid-current-password';
+
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 export function readCookie(name: string, source: string = document.cookie): string | null {
@@ -24,7 +28,7 @@ export function readCookie(name: string, source: string = document.cookie): stri
  * Session transport for the dashboard (ADR-020, S256): same-origin requests
  * carry the HttpOnly session cookie by themselves; every mutating API call
  * also echoes the CSRF cookie in X-CSRF-Token. A 401 from the API (other
- * than a failed login) means the session ended, so the local hint is
+ * than a failed login or a wrong current password on password change) means the session ended, so the local hint is
  * dropped and the user is sent to the login page.
  */
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
@@ -44,7 +48,8 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         isApi &&
         !isLogin &&
         err instanceof HttpErrorResponse &&
-        err.status === 401
+        err.status === 401 &&
+        err.headers?.get(ERROR_CODE_HEADER) !== WRONG_CURRENT_PASSWORD
       ) {
         sessions.expire();
         const path = router.url.split('?')[0];

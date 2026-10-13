@@ -102,9 +102,9 @@
   and release tooling that publishes `version=`/`counter=` checksums
   and `.minisig` files are pending; owners may import a key by
   configuration meanwhile.
-- Rotation and lockout dashboard surfaces: S239 serves
-  rotation and lockout status over the API and CLI; dashboard
-  affordances belong to later slices.
+- Lockout detail: `GET /api/v1/admins/lockout` returns only
+  `{username, locked}`; failed-attempt counts and the unlock time need
+  an API addition before the Account page (S274) can show them.
 - Identity provider adapters: S202 defines the integration contract
   only; driving a provider's API (Authentik first, beyond the
   connection check) belongs to a later slice.

@@ -2255,3 +2255,15 @@ per-service `environment:` map; a variable may not be both.
   (S013, pure Go — cgo drivers would break the static daemon),
   `gopkg.in/yaml.v3` (S014, pure Go), and `golang.org/x/crypto` (S020 bcrypt,
   pure Go). Further deps arrive only with the slices that need them.
+
+## Dashboard account surfaces (S274)
+
+The Account page (`/account`) shows own lockout status
+(`GET /api/v1/admins/lockout`, which reports only `locked`) and changes the
+password (`POST /api/v1/admins/password`). Client rules mirror
+`auth.MinPasswordLength` (12). The inputs are uncontrolled and recreated
+empty after every submit, so passwords never sit in component state. A
+successful change keeps the caller's session and signs out the others
+(ADR-020). The auth interceptor treats a 401 carrying
+`X-Homestead-Error: invalid-current-password` as a form error, not a dead
+session; any other 401 expires the session and redirects to login.

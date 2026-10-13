@@ -74,6 +74,19 @@ describe('authInterceptor', () => {
     expect(nav).not.toHaveBeenCalled();
   });
 
+  it('keeps the session on a wrong-current-password 401', () => {
+    const nav = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+    const expire = vi.spyOn(TestBed.inject(SessionService), 'expire');
+    http.post('/api/v1/admins/password', {}).subscribe({ error: () => undefined });
+    ctrl.expectOne('/api/v1/admins/password').flush('no', {
+      status: 401,
+      statusText: 'Unauthorized',
+      headers: { 'X-Homestead-Error': 'invalid-current-password' },
+    });
+    expect(expire).not.toHaveBeenCalled();
+    expect(nav).not.toHaveBeenCalled();
+  });
+
   it('parses cookies', () => {
     expect(readCookie('b', 'a=1; b=two%20words; c=3')).toBe('two words');
     expect(readCookie('x', 'a=1')).toBeNull();

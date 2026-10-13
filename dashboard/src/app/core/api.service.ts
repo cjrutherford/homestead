@@ -1057,6 +1057,23 @@ export class ApiService {
     });
   }
 
+  /** Own lockout status (S274). */
+  lockoutStatus(): Observable<LockoutStatus> {
+    return this.http.get<LockoutStatus>('/api/v1/admins/lockout');
+  }
+
+  /**
+   * Self-service password change (S274). A wrong current password answers
+   * 401 with `X-Homestead-Error: invalid-current-password`; the auth
+   * interceptor leaves that one alone so the session survives.
+   */
+  changePassword(currentPassword: string, newPassword: string): Observable<AdminCreated> {
+    return this.http.post<AdminCreated>('/api/v1/admins/password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+  }
+
   /** Revokes the cookie session (the cookie rides along same-origin). */
   logout(): Observable<void> {
     return this.http.delete<void>('/api/v1/sessions');
@@ -1111,4 +1128,10 @@ export class ApiService {
   edgeReconcile(routes: EdgeRoute[]): Observable<OperationStarted> {
     return this.http.post<OperationStarted>('/api/v1/edge/routes', { routes });
   }
+}
+
+/** Own lockout status from GET /api/v1/admins/lockout. */
+export interface LockoutStatus {
+  username: string;
+  locked: boolean;
 }
