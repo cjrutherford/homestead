@@ -136,7 +136,7 @@ func TestJobFlow(t *testing.T) {
 	mount := t.TempDir()
 	dest := t.TempDir()
 	job := scheduleJob(t, mount, dest)
-	stubExec(t, func(_ string, _ []string, _ []string) (string, error) {
+	stubExec(t, func(_ string, _ string, _ []string) (string, error) {
 		return "ok", nil
 	})
 	def, err := JobDefinition(job, fixedJobTime)

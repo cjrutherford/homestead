@@ -161,3 +161,24 @@ readiness check added to `databaseReady` before its entry can rely on
 
 Schema version 29 adds `app_data_old_volumes` (volume, package, service,
 target, size, state `pending-removal` or `removed`, actor, timestamps).
+
+## Order for apps that predate both S266 and S276
+Apps installed before secret-backed variables (S266) and before declared
+data placement (S276) need three steps, in this order:
+
+1. **Register** the existing database password
+   (`homesteadctl apps secrets register <pkg> db_password --value-file -`).
+   The migration's pre-copy backup exports the database and needs it, and
+   registration only verifies, never changes, the password.
+2. **Adopt** the secret wiring (`homesteadctl apps configure <pkg>
+   --adopt-secrets`). It restarts the containers with new compose wiring;
+   Compose keeps anonymous volumes across that recreate, so data stays.
+3. **Migrate** the data (`homesteadctl data plan <pkg>`, then approve).
+   The migration rewrites only the `volumes:` of the compose file, so the
+   adopted secret wiring survives it.
+
+The other order (migrate, register, adopt) also works, but the
+migration backup then runs without a stored password and Postgres file
+copies are not crash-consistent; register first. Never uninstall and
+reinstall such an app to "fix" credentials: the uninstall is refused while
+data still lives in Docker volumes.

@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"os"
 	"testing"
 
 	"homestead/internal/secret"
@@ -16,7 +17,7 @@ type memSecrets struct {
 func newMemSecrets(t *testing.T) *memSecrets {
 	t.Helper()
 	old := chownSecret
-	chownSecret = func(string, int, int) error { return nil }
+	chownSecret = func(*os.File, int, int) error { return nil }
 	t.Cleanup(func() { chownSecret = old })
 	return &memSecrets{values: map[string]string{}}
 }
@@ -29,8 +30,13 @@ func (m *memSecrets) Get(name string) (string, error) {
 	return v, nil
 }
 
-func (m *memSecrets) Set(name, value string) error {
+func (m *memSecrets) SetApp(name, value string) error {
 	m.values[name] = value
 	m.sets++
+	return nil
+}
+
+func (m *memSecrets) Delete(name string) error {
+	delete(m.values, name)
 	return nil
 }

@@ -3,7 +3,9 @@ package catalog
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -88,6 +90,17 @@ func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string,
 		return operation.Definition{}, err
 	}
 	def := operation.Definition{Type: "catalog.install"}
+	if len(plan.Compose.SecretFiles) > 0 {
+		// A new database password over an initialised cluster would be
+		// rejected: Postgres applies POSTGRES_PASSWORD_FILE only at
+		// initdb. Refuse before anything is generated or provisioned.
+		def.Steps = append(def.Steps, operation.StepDef{
+			Name: "check-existing-database",
+			Run: func(ctx context.Context) error {
+				return refuseExistingCluster(plan, secrets)
+			},
+		})
+	}
 	for i := range plan.Directories {
 		provision := plan.Directories[i]
 		def.Steps = append(def.Steps, operation.StepDef{
@@ -119,4 +132,28 @@ func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string,
 		},
 	})
 	return def, nil
+}
+
+// refuseExistingCluster fails when a database password would be newly
+// generated while a database data directory already holds an
+// initialised cluster (PG_VERSION present).
+func refuseExistingCluster(plan InstallPlan, secrets SecretStore) error {
+	for _, f := range plan.Compose.SecretFiles {
+		if !f.DatabasePassword {
+			continue
+		}
+		if v, err := secrets.Get(f.StoreName); err == nil && v != "" {
+			continue
+		}
+		for _, mount := range plan.Mounts {
+			if !mount.Database || mount.Ephemeral {
+				continue
+			}
+			if _, err := os.Stat(filepath.Join(mount.Source, "PG_VERSION")); err == nil {
+				return fmt.Errorf("catalog: %s already holds an initialised database and %q has no stored password; a new password would be rejected. Register the existing password first (homesteadctl apps secrets register %s %s --value-file -)",
+					mount.Source, f.StoreName, plan.Package, f.Name)
+			}
+		}
+	}
+	return nil
 }

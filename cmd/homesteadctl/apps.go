@@ -205,8 +205,11 @@ func runAppsConfigure(ctx context.Context, client *apiclient.Client, args []stri
 	var service string
 	var sets, unsets, rotates []string
 	var positional []string
+	adopt := false
 	for i := 0; i < len(args); i++ {
 		switch {
+		case args[i] == "--adopt-secrets":
+			adopt = true
 		case args[i] == "--rotate-secret" && i+1 < len(args):
 			rotates = append(rotates, args[i+1])
 			i++
@@ -226,8 +229,16 @@ func runAppsConfigure(ctx context.Context, client *apiclient.Client, args []stri
 			positional = append(positional, args[i])
 		}
 	}
-	if len(positional) != 1 || (service == "" && len(rotates) == 0) {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps configure <package> --service NAME [--set KEY=VALUE] [--unset KEY] [--rotate-secret NAME]")
+	if len(positional) == 1 && adopt && service == "" && len(rotates) == 0 && len(sets) == 0 && len(unsets) == 0 {
+		id, err := client.AdoptPackageSecrets(ctx, positional[0])
+		if err != nil {
+			return fail(stderr, err)
+		}
+		fmt.Fprintf(stdout, "operation: %d\n", id)
+		return exitOK
+	}
+	if adopt || len(positional) != 1 || (service == "" && len(rotates) == 0) {
+		fmt.Fprintln(stderr, "usage: homesteadctl apps configure <package> --service NAME [--set KEY=VALUE] [--unset KEY] | --rotate-secret NAME (one) | --adopt-secrets")
 		return exitUsage
 	}
 	if service == "" && (len(sets) > 0 || len(unsets) > 0) {
@@ -282,7 +293,7 @@ func runAppsConfigure(ctx context.Context, client *apiclient.Client, args []stri
 // an existing value (S266):
 //
 //	apps secrets <pkg>
-//	apps secrets register <pkg> <secret> --value-file PATH|- [--skip-verify]
+//	apps secrets register <pkg> <secret> --value-file PATH|- [--skip-verify] [--force]
 //
 // The value comes from a file or stdin, never argv, so it stays out of
 // shell history and process listings.
@@ -291,7 +302,7 @@ func runAppsSecrets(ctx context.Context, client *apiclient.Client, args []string
 		return runAppsSecretRegister(ctx, client, args[1:], stdout, stderr)
 	}
 	if len(args) != 1 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps secrets <package> | register <package> <secret> --value-file PATH|- [--skip-verify]")
+		fmt.Fprintln(stderr, "usage: homesteadctl apps secrets <package> | register <package> <secret> --value-file PATH|- [--skip-verify] [--force]")
 		return exitUsage
 	}
 	secrets, err := client.AppSecrets(ctx, args[0])
@@ -314,17 +325,36 @@ func runAppsSecrets(ctx context.Context, client *apiclient.Client, args []string
 		if s.Immutable {
 			flags += " not-rotatable"
 		}
+		if s.Installed && !s.Wired {
+			flags += " not-wired (pre-S266: register, then apps configure --adopt-secrets)"
+		}
 		fmt.Fprintf(stdout, "%s: %s (%s; services: %s)%s\n", s.Name, state, s.StoreName, strings.Join(s.Services, ", "), flags)
 	}
 	return exitOK
 }
 
+// maxSecretValueBytes bounds a registered value read from disk or stdin.
+const maxSecretValueBytes = 64 << 10
+
+// readBounded reads at most limit+1 bytes of a file so oversized input
+// is detected without slurping it.
+func readBounded(path string, limit int) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(io.LimitReader(f, int64(limit)+1))
+}
+
 func runAppsSecretRegister(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	var valueFile string
-	skip := false
+	skip, force := false, false
 	var positional []string
 	for i := 0; i < len(args); i++ {
 		switch {
+		case args[i] == "--force":
+			force = true
 		case args[i] == "--value-file" && i+1 < len(args):
 			valueFile = args[i+1]
 			i++
@@ -338,25 +368,29 @@ func runAppsSecretRegister(ctx context.Context, client *apiclient.Client, args [
 		}
 	}
 	if valueFile == "" || len(positional) != 2 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps secrets register <package> <secret> --value-file PATH|- [--skip-verify]")
+		fmt.Fprintln(stderr, "usage: homesteadctl apps secrets register <package> <secret> --value-file PATH|- [--skip-verify] [--force]")
 		return exitUsage
 	}
 	var raw []byte
 	var err error
 	if valueFile == "-" {
-		raw, err = io.ReadAll(io.LimitReader(os.Stdin, 8192))
+		raw, err = io.ReadAll(io.LimitReader(os.Stdin, maxSecretValueBytes+1))
 	} else {
-		raw, err = os.ReadFile(valueFile)
+		raw, err = readBounded(valueFile, maxSecretValueBytes)
 	}
 	if err != nil {
 		return fail(stderr, err)
+	}
+	if len(raw) > maxSecretValueBytes {
+		fmt.Fprintln(stderr, "secret value exceeds 64 KiB")
+		return exitUsage
 	}
 	value := strings.TrimRight(string(raw), "\r\n")
 	if value == "" {
 		fmt.Fprintln(stderr, "secret value is empty")
 		return exitUsage
 	}
-	store, err := client.RegisterAppSecret(ctx, positional[0], positional[1], value, skip)
+	store, err := client.RegisterAppSecret(ctx, positional[0], positional[1], value, skip, force)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -368,9 +402,12 @@ func runAppsUninstall(ctx context.Context, client *apiclient.Client, args []stri
 	var dataDirs []string
 	removeData := false
 	follow := false
+	abandon := false
 	var positional []string
 	for i := 0; i < len(args); i++ {
 		switch {
+		case args[i] == "--abandon-volumes":
+			abandon = true
 		case args[i] == "--remove-data":
 			removeData = true
 		case args[i] == "--data-dir" && i+1 < len(args):
@@ -386,10 +423,13 @@ func runAppsUninstall(ctx context.Context, client *apiclient.Client, args []stri
 		}
 	}
 	if len(positional) != 1 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps uninstall <package> [--remove-data --data-dir MOUNT:PATH]... [--follow]")
+		fmt.Fprintln(stderr, "usage: homesteadctl apps uninstall <package> [--remove-data --data-dir MOUNT:PATH]... [--abandon-volumes] [--follow]")
 		return exitUsage
 	}
 	body := map[string]any{"remove_data": removeData}
+	if abandon {
+		body["abandon_volumes"] = true
+	}
 	var dirs []map[string]any
 	for _, dir := range dataDirs {
 		mountpoint, path, found := strings.Cut(dir, ":")

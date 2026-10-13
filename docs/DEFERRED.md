@@ -242,13 +242,13 @@
   not inside their steps, so an operation built just before the claim
   could still interleave; old volumes the migration did not record
   (for example volumes of apps removed earlier) are not managed here.
-- Secret-backed variables follow-ups (S266): stacks installed before S266
-  have no `secrets:` wiring in their recorded `compose.yaml`, and
-  Homestead never regenerates a recorded stack, so those installs can
-  register their database password (backups work) but cannot rotate or
-  receive secret files until uninstalled (data kept) and reinstalled; a
-  wiring upgrade for existing stacks is not built. Pg verification of a
-  registered password needs the database container running. Rotating a
-  non-database secret only rewrites files and restarts consumers. Drift
-  restore cannot recreate a missing secret file (configure does). Nextcloud
-  and Jellyfin declare no secrets.
+- Secret-backed variables follow-ups (S266): adoption needs the stack's
+  compose services to use mapping-form `environment:` (generated stacks
+  do; hand-edited list form is refused with a pointer). Non-database
+  secrets are only captured from a running container's environment or
+  registered. Drift restore still cannot recreate a missing secret file
+  (it now reports it; configure re-materializes). The startup
+  reconciliation retries for about four minutes, then leaves the pending
+  row for the next daemon start. Authentik `file://` and Immich
+  `DB_PASSWORD_FILE` delivery await KVM confirmation. Nextcloud and
+  Jellyfin declare no secrets.

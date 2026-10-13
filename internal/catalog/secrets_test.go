@@ -205,71 +205,6 @@ func stubCompose(t *testing.T) *[][]string {
 	return &calls
 }
 
-func TestRotateDatabasePassword(t *testing.T) {
-	m := authentikManifest(t)
-	sec := newMemSecrets(t)
-	dir, _ := writeSecretStack(t, m, sec)
-	name := SecretStoreName("authentik", "db_password")
-	old := sec.values[name]
-	db := stubDB(t, nil)
-	cmp := stubCompose(t)
-
-	def, err := ConfigureDefinition(ConfigPlan{Manifest: m, Rotate: []string{"db_password"}}, dir, "authentik", openDriftStore(t), sec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, step := range def.Steps {
-		if step.Name == "up" {
-			continue
-		}
-		if err := step.Run(context.Background()); err != nil {
-			t.Fatalf("%s: %v", step.Name, err)
-		}
-	}
-	fresh := sec.values[name]
-	if fresh == old || len(fresh) != 64 {
-		t.Fatal("secret was not rotated")
-	}
-	if len(*db) != 1 || !strings.Contains((*db)[0].stdin, "ALTER ROLE \"authentik\"") || !strings.Contains((*db)[0].stdin, fresh) {
-		t.Fatalf("db calls = %+v", *db)
-	}
-	for _, a := range (*db)[0].args {
-		if strings.Contains(a, fresh) {
-			t.Fatal("password on the command line")
-		}
-	}
-	for _, f := range SecretFilesFor(m) {
-		if f.Name != "db_password" {
-			continue
-		}
-		raw, _ := os.ReadFile(filepath.Join(dir, SecretsDirName, f.Key))
-		if string(raw) != fresh {
-			t.Fatalf("%s not refreshed", f.Key)
-		}
-	}
-	if len(*cmp) != 1 || (*cmp)[0][0] != "restart" {
-		t.Fatalf("compose calls = %v", *cmp)
-	}
-}
-
-func TestRotateRestoresRoleWhenStoreWriteFails(t *testing.T) {
-	m := authentikManifest(t)
-	sec := newMemSecrets(t)
-	dir, _ := writeSecretStack(t, m, sec)
-	old := sec.values[SecretStoreName("authentik", "db_password")]
-	db := stubDB(t, nil)
-	stubCompose(t)
-	failing := &failSet{memSecrets: sec}
-	err := rotateSecrets(context.Background(), m, dir, "authentik", []string{"db_password"}, failing)
-	if err == nil || len(*db) != 2 || !strings.Contains((*db)[1].stdin, old) {
-		t.Fatalf("err=%v calls=%d: want ALTER then revert to the old password", err, len(*db))
-	}
-}
-
-type failSet struct{ *memSecrets }
-
-func (f *failSet) Set(string, string) error { return os.ErrPermission }
-
 func TestRotateRefusedForUnwiredStack(t *testing.T) {
 	m := authentikManifest(t)
 	dir := t.TempDir()
@@ -359,35 +294,6 @@ func TestDriftTreatsSecretFilesAsOpaque(t *testing.T) {
 	drifts, _ = Detect(dir, recorded)
 	if len(drifts) != 1 || drifts[0].Kind != DriftRemoved {
 		t.Fatalf("removed drifts = %v", drifts)
-	}
-}
-
-func TestRegisterSecretVerifiesDatabasePassword(t *testing.T) {
-	m := authentikManifest(t)
-	sec := newMemSecrets(t)
-	rejected := stubDB(t, func(execCall) error { return os.ErrPermission })
-	_, err := RegisterSecret(context.Background(), m, "db_password", "hunter2-existing", sec, false)
-	if err == nil || len(sec.values) != 0 {
-		t.Fatalf("rejected password stored: err=%v", err)
-	}
-	if strings.Contains(err.Error(), "hunter2-existing") {
-		t.Fatal("error leaks the password")
-	}
-	if len(*rejected) != 1 || (*rejected)[0].stdin != "hunter2-existing\n" {
-		t.Fatalf("verify must pass the password on stdin: %+v", *rejected)
-	}
-	for _, a := range (*rejected)[0].args {
-		if strings.Contains(a, "hunter2") {
-			t.Fatal("password in argv")
-		}
-	}
-	stubDB(t, nil)
-	store, err := RegisterSecret(context.Background(), m, "db_password", "hunter2-existing", sec, false)
-	if err != nil || store != "app_authentik_db_password" || sec.values[store] != "hunter2-existing" {
-		t.Fatalf("store=%q err=%v", store, err)
-	}
-	if _, err := RegisterSecret(context.Background(), m, "ghost", "x", sec, true); err == nil {
-		t.Fatal("unknown secret registered")
 	}
 }
 

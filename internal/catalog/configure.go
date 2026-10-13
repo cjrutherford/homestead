@@ -67,6 +67,9 @@ type ConfigPlan struct {
 	// Rotate names declared secrets (SecretDecl.Name) to replace with
 	// fresh generated values (S266). Values never appear in plans.
 	Rotate []string
+	// Adopt regenerates only the secret wiring of a stack installed
+	// before S266 (see adopt.go); it takes no other change.
+	Adopt bool
 }
 
 // Validate checks the plan: manifest shape, known unique services,
@@ -75,7 +78,13 @@ func (p ConfigPlan) Validate() error {
 	if err := p.Manifest.Validate(); err != nil {
 		return err
 	}
-	if len(p.Changes) == 0 && len(p.Rotate) == 0 {
+	if p.Adopt && (len(p.Changes) > 0 || len(p.Rotate) > 0) {
+		return fmt.Errorf("catalog: adopting secrets takes no other changes")
+	}
+	if len(p.Rotate) > 1 {
+		return fmt.Errorf("catalog: rotate one secret per operation")
+	}
+	if len(p.Changes) == 0 && len(p.Rotate) == 0 && !p.Adopt {
 		return fmt.Errorf("catalog: configuration needs at least one change")
 	}
 	declared := map[string]SecretDecl{}
@@ -243,6 +252,13 @@ func ConfigureDefinition(plan ConfigPlan, dir, project string, st *store.Store, 
 			return operation.Definition{}, fmt.Errorf("catalog: configure of %q needs a secret store", plan.Manifest.Name)
 		}
 	}
+	if plan.Adopt {
+		if err := AdoptPreflight(plan.Manifest, dir, secrets); err != nil {
+			return operation.Definition{}, err
+		}
+		def.Steps = append(def.Steps, adoptSteps(plan.Manifest, dir, project, st, secrets)...)
+		return def, nil
+	}
 	wired := composeSecretsWired(dir, plan.Manifest)
 	if len(plan.Rotate) > 0 && !wired {
 		return operation.Definition{}, fmt.Errorf("catalog: %q has no secret wiring (installed before S266); register its existing secrets or reinstall before rotating", plan.Manifest.Name)
@@ -265,7 +281,7 @@ func ConfigureDefinition(plan ConfigPlan, dir, project string, st *store.Store, 
 			Name: "rotate-secrets",
 			Run: func(ctx context.Context) error {
 				defer lockProject(project)()
-				return rotateSecrets(ctx, plan.Manifest, dir, project, plan.Rotate, secrets)
+				return rotateSecret(ctx, plan.Manifest, dir, project, plan.Rotate[0], secrets)
 			},
 		})
 	}

@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 
 	"gopkg.in/yaml.v3"
 	"homestead/internal/secret"
@@ -86,8 +87,11 @@ func validateSecrets(m Manifest, services map[string]bool) error {
 		if !validSecretName.MatchString(decl.Name) {
 			return fmt.Errorf("catalog: secret name %q must match [a-z][a-z0-9_]*", decl.Name)
 		}
-		if len(SecretStoreName(m.Name, decl.Name)) > 64 {
-			return fmt.Errorf("catalog: secret %q store name exceeds 64 characters", decl.Name)
+		if len(SecretStoreName(m.Name, decl.Name))+len(pendingSuffix) > 64 {
+			return fmt.Errorf("catalog: secret %q store name exceeds 56 characters", decl.Name)
+		}
+		if strings.HasSuffix(decl.Name, pendingSuffix) {
+			return fmt.Errorf("catalog: secret name %q must not end in %s (reserved for rotation)", decl.Name, pendingSuffix)
 		}
 		if seen[decl.Name] {
 			return fmt.Errorf("catalog: duplicate secret %q", decl.Name)
@@ -131,6 +135,8 @@ type SecretFile struct {
 	Name      string // logical secret name
 	StoreName string
 	UID, GID  *int
+	// DatabasePassword marks the manifest's database password file.
+	DatabasePassword bool
 }
 
 // SecretFilesFor lists the files a manifest needs, sorted by key, with
@@ -156,7 +162,8 @@ func SecretFilesFor(m Manifest) []SecretFile {
 			seen[key] = true
 			o := owners[c.Service]
 			out = append(out, SecretFile{Key: key, Service: c.Service, Name: decl.Name,
-				StoreName: SecretStoreName(m.Name, decl.Name), UID: o[0], GID: o[1]})
+				StoreName: SecretStoreName(m.Name, decl.Name), UID: o[0], GID: o[1],
+				DatabasePassword: m.Database != nil && m.Database.PasswordSecret == decl.Name})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
@@ -166,7 +173,31 @@ func SecretFilesFor(m Manifest) []SecretFile {
 // SecretStore is the slice of the secret store this package needs.
 type SecretStore interface {
 	Get(name string) (string, error)
-	Set(name, value string) error
+	// SetApp writes a catalog-managed (app_) secret; the owner-facing
+	// Set refuses that prefix.
+	SetApp(name, value string) error
+	Delete(name string) error
+}
+
+// pendingSuffix names the journal row holding a rotation's intended new
+// value until the rotation settles (S266 review): written before the
+// database changes, promoted or dropped afterwards, reconciled at start.
+const pendingSuffix = "_pending"
+
+func pendingName(store string) string { return store + pendingSuffix }
+
+// overrideSource serves chosen store values (a not-yet-promoted
+// rotation) ahead of the real store when writing files.
+type overrideSource struct {
+	SecretStore
+	values map[string]string
+}
+
+func (o overrideSource) Get(name string) (string, error) {
+	if v, ok := o.values[name]; ok {
+		return v, nil
+	}
+	return o.SecretStore.Get(name)
 }
 
 // generateSecretValue makes a strong value: 32 random bytes as hex
@@ -206,7 +237,7 @@ func ensureNames(src SecretStore, names []string) error {
 		if err != nil {
 			return err
 		}
-		if err := src.Set(name, value); err != nil {
+		if err := src.SetApp(name, value); err != nil {
 			return fmt.Errorf("catalog: store secret %q: %w", name, err)
 		}
 	}
@@ -225,15 +256,106 @@ func storeNames(files []SecretFile) []string {
 	return out
 }
 
-// chownSecret hands a secret file to its consuming user, stubbed in
-// tests (the daemon runs as root; tests do not).
-var chownSecret = func(path string, uid, gid int) error { return os.Chown(path, uid, gid) }
+// chownSecret hands an open secret file to its consuming user, stubbed
+// in tests (the daemon runs as root; tests do not). It works on the open
+// descriptor, so a swapped path cannot redirect it.
+var chownSecret = func(f *os.File, uid, gid int) error { return f.Chown(uid, gid) }
+
+// prepareSecretsDir creates dir/secrets 0700 and refuses a symlink or
+// non-directory in its place; the mode is set on the open descriptor,
+// never following a link.
+func prepareSecretsDir(dir string) (string, error) {
+	secDir := filepath.Join(dir, SecretsDirName)
+	info, err := os.Lstat(secDir)
+	switch {
+	case os.IsNotExist(err):
+		if err := os.Mkdir(secDir, 0o700); err != nil {
+			return "", fmt.Errorf("catalog: secrets dir: %w", err)
+		}
+	case err != nil:
+		return "", fmt.Errorf("catalog: secrets dir: %w", err)
+	case !info.IsDir():
+		return "", fmt.Errorf("catalog: %s is not a directory (symlinks are refused)", secDir)
+	}
+	d, err := os.OpenFile(secDir, os.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return "", fmt.Errorf("catalog: open secrets dir: %w", err)
+	}
+	defer d.Close()
+	if err := d.Chmod(0o700); err != nil {
+		return "", fmt.Errorf("catalog: secrets dir mode: %w", err)
+	}
+	return secDir, nil
+}
+
+// writeSecretFile writes one value atomically: a 0600 temp file created
+// exclusively beside the target, owner and mode fixed on the descriptor
+// before any content lands, fsynced, then renamed over the target (which
+// must not be a symlink), and the directory fsynced. Containers pick up
+// the new inode when they next start.
+func writeSecretFile(secDir, key, value string, uid, gid *int) error {
+	path := filepath.Join(secDir, key)
+	if info, err := os.Lstat(path); err == nil {
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("catalog: secret file %s is not a regular file (symlinks are refused)", key)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("catalog: secret file %s: %w", key, err)
+	}
+	suffix := make([]byte, 6)
+	if _, err := rand.Read(suffix); err != nil {
+		return fmt.Errorf("catalog: secret file %s: %w", key, err)
+	}
+	tmp := filepath.Join(secDir, "."+key+".tmp-"+hex.EncodeToString(suffix))
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, SecretFileMode)
+	if err != nil {
+		return fmt.Errorf("catalog: secret file %s: %w", key, err)
+	}
+	cleanup := func() { _ = f.Close(); _ = os.Remove(tmp) }
+	if err := f.Chmod(SecretFileMode); err != nil {
+		cleanup()
+		return fmt.Errorf("catalog: secret file mode %s: %w", key, err)
+	}
+	if uid != nil || gid != nil {
+		u, g := -1, -1
+		if uid != nil {
+			u = *uid
+		}
+		if gid != nil {
+			g = *gid
+		}
+		if err := chownSecret(f, u, g); err != nil {
+			cleanup()
+			return fmt.Errorf("catalog: secret file owner %s: %w", key, err)
+		}
+	}
+	if _, err := f.WriteString(value); err != nil {
+		cleanup()
+		return fmt.Errorf("catalog: write secret file %s", key)
+	}
+	if err := f.Sync(); err != nil {
+		cleanup()
+		return fmt.Errorf("catalog: sync secret file %s: %w", key, err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("catalog: close secret file %s: %w", key, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("catalog: place secret file %s: %w", key, err)
+	}
+	if d, err := os.Open(secDir); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+	return nil
+}
 
 // WriteSecretFiles resolves each file's value from the store and writes
 // it mode 0600 under dir/secrets (directory 0700), owned by the
-// consuming service's user. Existing files are rewritten in place so a
-// running container's bind mount keeps seeing the file. A missing
-// secret fails naming the store entry, never writing an empty file.
+// consuming service's user, through writeSecretFile. A missing secret
+// fails naming the store entry, never writing an empty file.
 func WriteSecretFiles(dir string, files []SecretFile, src SecretStore) error {
 	if len(files) == 0 {
 		return nil
@@ -241,12 +363,9 @@ func WriteSecretFiles(dir string, files []SecretFile, src SecretStore) error {
 	if src == nil {
 		return fmt.Errorf("catalog: secret files need a secret store")
 	}
-	secDir := filepath.Join(dir, SecretsDirName)
-	if err := os.MkdirAll(secDir, 0o700); err != nil {
-		return fmt.Errorf("catalog: secrets dir: %w", err)
-	}
-	if err := os.Chmod(secDir, 0o700); err != nil {
-		return fmt.Errorf("catalog: secrets dir mode: %w", err)
+	secDir, err := prepareSecretsDir(dir)
+	if err != nil {
+		return err
 	}
 	for _, f := range files {
 		value, err := src.Get(f.StoreName)
@@ -256,30 +375,8 @@ func WriteSecretFiles(dir string, files []SecretFile, src SecretStore) error {
 			}
 			return fmt.Errorf("catalog: read secret %q: %w", f.StoreName, err)
 		}
-		path := filepath.Join(secDir, f.Key)
-		out, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, SecretFileMode)
-		if err != nil {
-			return fmt.Errorf("catalog: write secret file %s: %w", f.Key, err)
-		}
-		_, werr := out.WriteString(value)
-		cerr := out.Close()
-		if werr != nil || cerr != nil {
-			return fmt.Errorf("catalog: write secret file %s", f.Key)
-		}
-		if err := os.Chmod(path, SecretFileMode); err != nil {
-			return fmt.Errorf("catalog: secret file mode %s: %w", f.Key, err)
-		}
-		if f.UID != nil || f.GID != nil {
-			uid, gid := -1, -1
-			if f.UID != nil {
-				uid = *f.UID
-			}
-			if f.GID != nil {
-				gid = *f.GID
-			}
-			if err := chownSecret(path, uid, gid); err != nil {
-				return fmt.Errorf("catalog: secret file owner %s: %w", f.Key, err)
-			}
+		if err := writeSecretFile(secDir, f.Key, value, f.UID, f.GID); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -353,3 +450,19 @@ func WriteSecretFilesIfWired(dir string, m Manifest, src SecretStore) error {
 	}
 	return WriteSecretFiles(dir, SecretFilesFor(m), src)
 }
+
+// MissingSecretFiles lists secret files the compose file references that
+// are absent (drift cannot recreate them; configure does).
+func MissingSecretFiles(dir string) []string {
+	var out []string
+	for _, d := range detectSecretFiles(dir) {
+		if d.Kind == DriftRemoved {
+			out = append(out, d.Path)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// SecretsWired reports whether an installed stack carries secret wiring.
+func SecretsWired(dir string, m Manifest) bool { return composeSecretsWired(dir, m) }

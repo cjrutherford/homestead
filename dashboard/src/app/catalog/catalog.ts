@@ -64,6 +64,7 @@ export class Catalog implements OnInit {
   protected readonly appSecrets = signal<AppSecret[]>([]);
   protected readonly secretValues = signal<Record<string, string>>({});
   protected readonly skipVerify = signal(false);
+  protected readonly force = signal(false);
   protected readonly secretNotice = signal<string | null>(null);
 
   /** Installed packages cannot be installed again (S276). */
@@ -320,7 +321,7 @@ export class Catalog implements OnInit {
     }
     this.busy.set(true);
     this.error.set(null);
-    this.api.registerAppSecret(manifest.Name, secret, value, this.skipVerify()).subscribe({
+    this.api.registerAppSecret(manifest.Name, secret, value, this.skipVerify(), this.force()).subscribe({
       next: () => {
         this.busy.set(false);
         this.secretValues.update((values) => ({ ...values, [secret]: '' }));
@@ -343,6 +344,32 @@ export class Catalog implements OnInit {
     this.busy.set(true);
     this.error.set(null);
     this.api.configurePackage(manifest.Name, [], [secret]).subscribe({
+      next: ({ id }) => {
+        this.busy.set(false);
+        this.operationId.set(id);
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.busy.set(false);
+        this.error.set(failure.error ?? failure.message);
+      },
+    });
+  }
+
+  /** True when an installed stack predates S266 and has no secret wiring. */
+  protected canAdopt(): boolean {
+    const secrets = this.appSecrets();
+    return secrets.length > 0 && secrets[0].installed && !secrets[0].wired;
+  }
+
+  /** Regenerates only the secret wiring; every secret must be registered first. */
+  adoptSecrets(): void {
+    const manifest = this.selected();
+    if (manifest === null) {
+      return;
+    }
+    this.busy.set(true);
+    this.error.set(null);
+    this.api.adoptSecrets(manifest.Name).subscribe({
       next: ({ id }) => {
         this.busy.set(false);
         this.operationId.set(id);

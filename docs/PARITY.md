@@ -59,10 +59,10 @@ unchanged.
 | GET | /api/v1/catalog/{name} | `"apps"` | `catalogPackage` | Manifest detail on both surfaces |
 | POST | /api/v1/catalog/{name}/plan | `"apps"` | `planInstall` | Reviewed install plan on both surfaces |
 | POST | /api/v1/catalog/{name}/install | `"apps"` | `installPackage` | Approved installation on both surfaces |
-| POST | /api/v1/catalog/{name}/configure | `"apps"` | `configurePackage` | Configuration operation on both surfaces |
+| POST | /api/v1/catalog/{name}/configure | `"apps"` | `configurePackage` | Configuration operation on both surfaces; also secret rotation (one per operation) and adoption of pre-S266 secret wiring (S266) |
 | GET | /api/v1/catalog/{name}/secrets | `"apps"` | `appSecrets` | Declared secret-backed variables, presence only (S266) |
 | POST | /api/v1/catalog/{name}/secrets/{secret} | `"apps"` | `registerAppSecret` | Register an existing secret for pre-S266 installs; rotation rides configure (S266) |
-| POST | /api/v1/catalog/{name}/uninstall | `"apps"` | n/a | Approved removal on CLI; dashboard surface belongs to later slices |
+| POST | /api/v1/catalog/{name}/uninstall | `"apps"` | n/a | Approved removal on CLI (refuses volume-held data unless `--abandon-volumes`); dashboard surface belongs to later slices |
 | POST | /api/v1/edge/deploy | `"edge"` | n/a | Edge deployment on CLI; dashboard surface belongs to later slices |
 | POST | /api/v1/edge/routes | `"edge"` | n/a | Route reconciliation on CLI; dashboard surface belongs to later slices |
 | GET | /api/v1/exposure/review | `"exposure"` | `exposureReview` | Reviewed plan on CLI and dashboard |

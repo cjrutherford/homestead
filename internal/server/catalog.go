@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -29,8 +30,8 @@ func (s *Server) MountCatalog(st *store.Store, catalogDir string, secrets catalo
 	s.mux.HandleFunc("GET /api/v1/catalog/{name}", handleCatalogGet(catalogDir))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/plan", handleCatalogPlan(st, catalogDir))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/install", handleCatalogInstall(st, catalogDir, runner, secrets))
-	s.mux.HandleFunc("POST /api/v1/catalog/{name}/configure", handleCatalogConfigure(st, catalogDir, runner, secrets))
-	s.mux.HandleFunc("POST /api/v1/catalog/{name}/uninstall", handleCatalogUninstall(st, catalogDir, runner))
+	s.mux.HandleFunc("POST /api/v1/catalog/{name}/configure", handleCatalogConfigure(s, st, catalogDir, runner, secrets))
+	s.mux.HandleFunc("POST /api/v1/catalog/{name}/uninstall", handleCatalogUninstall(s, st, catalogDir, runner))
 }
 
 // stackDirFor resolves installed stack directories, stubbed in tests:
@@ -328,7 +329,7 @@ func handleCatalogInstall(st *store.Store, catalogDir string, runner *operation.
 	}
 }
 
-func handleCatalogConfigure(st *store.Store, catalogDir string, runner *operation.Runner, secrets catalog.SecretStore) http.HandlerFunc {
+func handleCatalogConfigure(s *Server, st *store.Store, catalogDir string, runner *operation.Runner, secrets catalog.SecretStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		manifest, ok := loadPackage(catalogDir, name, w)
@@ -340,12 +341,15 @@ func handleCatalogConfigure(st *store.Store, catalogDir string, runner *operatio
 			// RotateSecrets names declared secrets to replace with
 			// fresh values (S266); responses never carry values.
 			RotateSecrets []string `json:"rotate_secrets"`
+			// AdoptSecrets regenerates only the secret wiring of a
+			// stack installed before S266 (never data or passwords).
+			AdoptSecrets bool `json:"adopt_secrets"`
 		}
 		if err := decodeBody(r, &body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		plan := catalog.ConfigPlan{Manifest: manifest, Changes: body.Changes, Rotate: body.RotateSecrets}
+		plan := catalog.ConfigPlan{Manifest: manifest, Changes: body.Changes, Rotate: body.RotateSecrets, Adopt: body.AdoptSecrets}
 		if err := plan.Validate(); err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
@@ -360,22 +364,19 @@ func handleCatalogConfigure(st *store.Store, catalogDir string, runner *operatio
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if len(plan.Rotate) > 0 {
-			actor := "local"
-			if operator, ok := operatorFromContext(r.Context()); ok {
-				actor = operator.Session.Username
+		if len(plan.Rotate) > 0 || plan.Adopt {
+			action, detail := "app.secret.rotate", fmt.Sprintf("operation %d: %s rotating %v", op.ID, name, plan.Rotate)
+			if plan.Adopt {
+				action, detail = "app.secret.adopt", fmt.Sprintf("operation %d: %s adopting secret wiring", op.ID, name)
 			}
-			// Names only; rotated values are never logged or audited.
-			_, _ = audit.New(st).Record(audit.Entry{
-				Actor: actor, Action: "app.secret.rotate", Outcome: audit.OutcomeOK,
-				Detail: fmt.Sprintf("operation %d: %s rotating %v", op.ID, name, plan.Rotate),
-			})
+			// Names only; secret values are never logged or audited.
+			s.auditOperation(st, runner, op.ID, operatorActor(r), action, detail)
 		}
 		writeJSON(w, map[string]any{"id": op.ID})
 	}
 }
 
-func handleCatalogUninstall(st *store.Store, catalogDir string, runner *operation.Runner) http.HandlerFunc {
+func handleCatalogUninstall(s *Server, st *store.Store, catalogDir string, runner *operation.Runner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		if _, ok := loadPackage(catalogDir, name, w); !ok {
@@ -383,7 +384,10 @@ func handleCatalogUninstall(st *store.Store, catalogDir string, runner *operatio
 		}
 		var body struct {
 			RemoveData bool `json:"remove_data"`
-			DataDirs   []struct {
+			// AbandonVolumes acknowledges uninstalling an app whose
+			// data still lives in Docker volumes (audited).
+			AbandonVolumes bool `json:"abandon_volumes"`
+			DataDirs       []struct {
 				Mountpoint string `json:"mountpoint"`
 				Path       string `json:"path"`
 			} `json:"data_dirs"`
@@ -391,6 +395,19 @@ func handleCatalogUninstall(st *store.Store, catalogDir string, runner *operatio
 		if err := decodeBody(r, &body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		if status, err := uninstallDataStatus(r.Context(), st, catalogDir, name); err != nil && !body.AbandonVolumes {
+			http.Error(w, "cannot confirm where this app's data lives: "+err.Error()+"; pass abandon_volumes to proceed anyway", http.StatusBadGateway)
+			return
+		} else if err == nil && status == catalog.DataNeedsMigration {
+			if !body.AbandonVolumes {
+				http.Error(w, fmt.Sprintf("%q keeps data in Docker volumes outside mounted storage; uninstalling would orphan it. Run `homesteadctl data plan %s` and migrate first, or pass abandon_volumes to acknowledge leaving the data behind", name, name), http.StatusConflict)
+				return
+			}
+			_, _ = audit.New(st).Record(audit.Entry{
+				Actor: operatorActor(r), Action: "app.uninstall.abandon-volumes", Outcome: audit.OutcomeOK,
+				Detail: fmt.Sprintf("%s uninstalled with data left in Docker volumes (acknowledged)", name),
+			})
 		}
 		removal := catalog.Removal{Package: name, RemoveData: body.RemoveData}
 		for _, dir := range body.DataDirs {
@@ -408,4 +425,57 @@ func handleCatalogUninstall(st *store.Store, catalogDir string, runner *operatio
 		}
 		writeJSON(w, map[string]any{"id": op.ID})
 	}
+}
+
+// operatorActor names the audit actor: the session user, or "local" on
+// the root-only socket.
+func operatorActor(r *http.Request) string {
+	if op, ok := operatorFromContext(r.Context()); ok {
+		return op.Session.Username
+	}
+	return "local"
+}
+
+// auditOperation records the start of a secret operation and, once it
+// finishes, its outcome (a failed rotation or adoption is an audit
+// error). Entries carry names and operation ids, never values.
+func (s *Server) auditOperation(st *store.Store, runner *operation.Runner, id int64, actor, action, detail string) {
+	svc := audit.New(st)
+	_, _ = svc.Record(audit.Entry{Actor: actor, Action: action + ".start", Outcome: audit.OutcomeOK, Detail: detail})
+	go func() {
+		done, err := runner.Wait(s.bg, id)
+		if err != nil {
+			return
+		}
+		entry := audit.Entry{Actor: actor, Action: action, Outcome: audit.OutcomeOK, Detail: fmt.Sprintf("operation %d succeeded", id)}
+		if done.Status != operation.StatusSucceeded {
+			entry.Outcome = audit.OutcomeError
+			entry.Detail = fmt.Sprintf("operation %d %s: %s", id, done.Status, done.Error)
+		}
+		if _, err := svc.Record(entry); err != nil {
+			s.log.Error("secret operation audit failed", "action", action, "error", err)
+		}
+	}()
+}
+
+// uninstallDataStatus reports the S277 placement verdict for one
+// package, so uninstall can refuse to orphan volume-held data.
+func uninstallDataStatus(ctx context.Context, st *store.Store, catalogDir, name string) (string, error) {
+	entries, err := catalog.Load(catalogDir)
+	if err != nil {
+		return "", err
+	}
+	manifest, err := entries.Get(name)
+	if err != nil {
+		return "", err
+	}
+	assignments, err := storage.NewAssignments(st).List()
+	if err != nil {
+		return "", fmt.Errorf("assignments: %w", err)
+	}
+	containers, err := migrationContainers(ctx)
+	if err != nil {
+		return "", fmt.Errorf("engine unavailable: %w", err)
+	}
+	return catalog.DetectData(manifest, catalog.ProjectContainers(containers, name), assignedMountpoints(assignments)).State, nil
 }

@@ -154,6 +154,8 @@ export interface AppSecret {
   immutable: boolean;
   services: string[];
   database_password: boolean;
+  wired: boolean;
+  installed: boolean;
 }
 
 /** POST /api/v1/catalog/:name/plan — reviewed install change set. */
@@ -567,6 +569,14 @@ export class ApiService {
     );
   }
 
+  /** Regenerates only the secret wiring of a pre-S266 stack (S266). */
+  adoptSecrets(name: string): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(
+      `/api/v1/catalog/${name}/configure`,
+      { changes: [], adopt_secrets: true },
+    );
+  }
+
   appSecrets(name: string): Observable<AppSecret[]> {
     return this.http.get<AppSecret[]>(`/api/v1/catalog/${name}/secrets`);
   }
@@ -577,10 +587,11 @@ export class ApiService {
     secret: string,
     value: string,
     skipVerify: boolean,
+    force = false,
   ): Observable<{ store_name: string }> {
     return this.http.post<{ store_name: string }>(
       `/api/v1/catalog/${name}/secrets/${secret}`,
-      { value, skip_verify: skipVerify },
+      { value, skip_verify: skipVerify, force },
     );
   }
 

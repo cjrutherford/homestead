@@ -45,7 +45,7 @@ func TestJobBacksUpPackageAcrossMounts(t *testing.T) {
 		{Mountpoint: app, Path: "photos", Class: storage.ClassApplication},
 		{Mountpoint: bulk, Path: "photos", Class: storage.ClassBulk},
 	}
-	stubExec(t, func(_ string, _ []string, _ []string) (string, error) { return "ok", nil })
+	stubExec(t, func(_ string, _ string, _ []string) (string, error) { return "ok", nil })
 	def, err := JobDefinition(job, fixedJobTime)
 	if err != nil {
 		t.Fatalf("JobDefinition: %v", err)

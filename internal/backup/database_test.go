@@ -45,13 +45,13 @@ func sqliteManifest() catalog.Manifest {
 	}
 }
 
-func stubExec(t *testing.T, handler func(container string, env, args []string) (string, error)) *[]string {
+func stubExec(t *testing.T, handler func(container, stdin string, args []string) (string, error)) *[]string {
 	t.Helper()
 	var calls []string
 	old := execContainer
-	execContainer = func(_ context.Context, container string, env []string, args ...string) (string, error) {
+	execContainer = func(_ context.Context, container, stdin string, args ...string) (string, error) {
 		calls = append(calls, container+" "+strings.Join(args, " "))
-		return handler(container, env, args)
+		return handler(container, stdin, args)
 	}
 	t.Cleanup(func() { execContainer = old })
 	return &calls
@@ -72,7 +72,7 @@ func TestExportSQLite(t *testing.T) {
 			{Stage: catalog.HookPost, Service: "db", Command: []string{"post-hook"}},
 		},
 	}
-	calls := stubExec(t, func(_ string, _ []string, _ []string) (string, error) {
+	calls := stubExec(t, func(_ string, _ string, _ []string) (string, error) {
 		return "ok", nil
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -101,7 +101,7 @@ func TestExportSQLite(t *testing.T) {
 		t.Fatalf("integrity = %q %v", integrity, err)
 	}
 	// Export failure still runs post hooks, reporting both.
-	stubExec(t, func(_ string, _ []string, _ []string) (string, error) {
+	stubExec(t, func(_ string, _ string, _ []string) (string, error) {
 		return "", errors.New("hook down")
 	})
 	if _, err := ExportDatabase(ctx, req); err == nil ||
@@ -112,10 +112,10 @@ func TestExportSQLite(t *testing.T) {
 
 func TestExportPostgres(t *testing.T) {
 	manifest := sqliteManifest()
-	var seenEnv []string
+	var seenStdin string
 	var seenArgs []string
-	stubExec(t, func(_ string, env []string, args []string) (string, error) {
-		seenEnv = env
+	stubExec(t, func(_ string, stdin string, args []string) (string, error) {
+		seenStdin = stdin
 		seenArgs = args
 		return "-- postgres dump\nSELECT 1;\n", nil
 	})
@@ -144,13 +144,16 @@ func TestExportPostgres(t *testing.T) {
 		t.Fatalf("dump = %q", content)
 	}
 	joined := strings.Join(seenArgs, " ")
-	for _, want := range []string{"pg_dump", "--username=photos", "--dbname=photos"} {
+	for _, want := range []string{"pg_dump", "--username=\"$1\"", "--dbname=\"$2\"", "PGPASSWORD", "photos"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("args = %v", seenArgs)
 		}
 	}
-	if len(seenEnv) != 1 || seenEnv[0] != "PGPASSWORD=secret" {
-		t.Fatalf("env = %v", seenEnv)
+	if seenStdin != "secret\n" {
+		t.Fatalf("stdin = %q, want the password", seenStdin)
+	}
+	if strings.Contains(joined, "secret") {
+		t.Fatal("password in argv")
 	}
 	info, err := os.Stat(out)
 	if err != nil {
@@ -196,5 +199,37 @@ func TestExportValidation(t *testing.T) {
 	}
 	if _, err := ExportDatabase(context.Background(), ExportRequest{}); err == nil {
 		t.Fatal("exported empty request")
+	}
+}
+
+// TestExecContainerDeliversPasswordOnStdinOnly drives the real
+// execContainer with a fake `docker` on PATH that records its argv,
+// environment, and stdin: the password must arrive on stdin and nowhere
+// else the host can see.
+func TestExecContainerDeliversPasswordOnStdinOnly(t *testing.T) {
+	bin := t.TempDir()
+	out := t.TempDir()
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + out + "/argv\nenv > " + out + "/env\ncat > " + out + "/stdin\necho dump-body\n"
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	dst := filepath.Join(t.TempDir(), "photos.sql")
+	if err := exportPostgres(context.Background(), "photos-db", "photos", "photos", "hunter2-secret", dst); err != nil {
+		t.Fatal(err)
+	}
+	stdin, _ := os.ReadFile(filepath.Join(out, "stdin"))
+	if string(stdin) != "hunter2-secret\n" {
+		t.Fatalf("stdin = %q", stdin)
+	}
+	for _, name := range []string{"argv", "env"} {
+		raw, _ := os.ReadFile(filepath.Join(out, name))
+		if strings.Contains(string(raw), "hunter2-secret") {
+			t.Fatalf("password visible in host %s", name)
+		}
+	}
+	dump, _ := os.ReadFile(dst)
+	if strings.TrimSpace(string(dump)) != "dump-body" {
+		t.Fatalf("dump = %q", dump)
 	}
 }

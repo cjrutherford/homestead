@@ -245,7 +245,7 @@
             <button type="button" (click)="registerSecret(secret.name)" [disabled]="busy()">
               Register existing value
             </button>
-            @if (!secret.immutable && secret.present) {
+            @if (!secret.immutable && secret.present && secret.wired) {
               <button type="button" (click)="rotateSecret(secret.name)" [disabled]="busy()">
                 Rotate
               </button>
@@ -261,6 +261,22 @@
         />
         Skip verification against the running database
       </label>
+      <label>
+        <input
+          type="checkbox"
+          [checked]="force()"
+          (change)="force.set($any($event.target).checked)"
+        />
+        Overwrite an existing value without verification
+      </label>
+      @if (canAdopt()) {
+        <p class="plan-note">
+          This stack was installed before secret-backed variables. Register each secret's existing
+          value first, then adopt: only the secret wiring is regenerated, never your data or
+          passwords.
+        </p>
+        <button type="button" (click)="adoptSecrets()" [disabled]="busy()">Adopt secrets</button>
+      }
       @if (secretNotice() !== null) {
         <p>{{ secretNotice() }}</p>
       }

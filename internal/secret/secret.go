@@ -153,8 +153,29 @@ func validateName(name string) error {
 	return nil
 }
 
-// Set stores (or replaces) one secret value.
+// ErrReservedName reports owner-facing writes to the app-owned prefix.
+var ErrReservedName = errors.New("secret: the app_ prefix is reserved for catalog-managed secrets")
+
+// Set stores (or replaces) one owner-supplied secret value. The app_
+// prefix is reserved: owner routes (credentials, tunnel tokens, config
+// import) cannot overwrite catalog-managed secrets (S266); the catalog
+// uses SetApp.
 func (s *Store) Set(name, value string) error {
+	if IsAppSecret(name) {
+		return ErrReservedName
+	}
+	return s.set(name, value)
+}
+
+// SetApp stores a catalog-managed secret; only app_ names are accepted.
+func (s *Store) SetApp(name, value string) error {
+	if !IsAppSecret(name) {
+		return fmt.Errorf("secret: app secrets must start with %s", AppSecretPrefix)
+	}
+	return s.set(name, value)
+}
+
+func (s *Store) set(name, value string) error {
 	if err := validateName(name); err != nil {
 		return err
 	}

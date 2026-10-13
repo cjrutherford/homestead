@@ -158,6 +158,8 @@ describe('Catalog', () => {
       immutable: false,
       services: ['db'],
       database_password: true,
+      wired: false,
+      installed: true,
     };
     http.expectOne('/api/v1/catalog/jellyfin/secrets').flush([listed]);
     fixture.detectChanges();
@@ -167,7 +169,7 @@ describe('Catalog', () => {
     fixture.componentInstance['patchSecretValue']('db_password', 'old-pass');
     fixture.componentInstance['registerSecret']('db_password');
     const register = http.expectOne('/api/v1/catalog/jellyfin/secrets/db_password');
-    expect(register.request.body).toEqual({ value: 'old-pass', skip_verify: false });
+    expect(register.request.body).toEqual({ value: 'old-pass', skip_verify: false, force: false });
     register.flush({ store_name: 'app_jellyfin_db_password' });
     http
       .expectOne('/api/v1/catalog/jellyfin/secrets')
@@ -175,6 +177,13 @@ describe('Catalog', () => {
     fixture.detectChanges();
     expect(text()).toContain('present');
     expect(text()).not.toContain('old-pass');
+
+    // Not wired: adoption is offered and rotation is not.
+    expect(text()).toContain('Adopt secrets');
+    fixture.componentInstance['adoptSecrets']();
+    const adopt = http.expectOne('/api/v1/catalog/jellyfin/configure');
+    expect(adopt.request.body).toEqual({ changes: [], adopt_secrets: true });
+    adopt.flush({ id: 13 });
 
     fixture.componentInstance['rotateSecret']('db_password');
     const rotate = http.expectOne('/api/v1/catalog/jellyfin/configure');

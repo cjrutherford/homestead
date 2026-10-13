@@ -1947,13 +1947,52 @@ per-service `environment:` map; a variable may not be both.
 - Backups resolve the Postgres password from the store through
   `database.passwordsecret` for scheduled and pre-update runs; a missing
   secret fails naming it (for example `app_authentik_db_password`).
-- Existing installs that predate S266: `homesteadctl apps secrets
-  register <pkg> db_password --value-file PATH|-` (or the dashboard)
-  stores the current password without touching the stack. It is verified
-  by authenticating to the running database over its network address
-  (the loopback and socket paths trust every caller) unless
-  `--skip-verify`. Such stacks have no secret wiring in `compose.yaml`,
-  so rotation is refused with that explanation.
+- Existing installs that predate S266 (adopt, never reinstall).
+  Postgres applies `POSTGRES_PASSWORD_FILE` only at initdb, so a newly
+  generated password over an existing data directory is rejected, and
+  uninstall plus reinstall of a pre-S276 (anonymous-volume) stack orphans
+  its data. The supported path is: (1) `homesteadctl apps secrets
+  register <pkg> db_password --value-file PATH|-` (dashboard: Register
+  existing value) stores the current password; it is verified by
+  authenticating to the running database over its network address, after
+  first confirming the server rejects a random wrong password over that
+  same path (a trust-auth server cannot verify anything and is refused
+  unless `--skip-verify`). (2) `homesteadctl apps configure <pkg>
+  --adopt-secrets` (dashboard: Adopt secrets) runs the configure
+  operation that regenerates ONLY the wiring: secret files, compose
+  `secrets:` and the `*_FILE` variables, with the plaintext credential
+  variables scrubbed from the override file and fingerprints re-recorded;
+  the stack restarts and the database password is health-checked, and a
+  failed check restores the previous compose and override bytes. Secrets
+  other than the database password (Authentik `secret_key`) are read from
+  the running container's current environment, else must be registered.
+  Data and passwords are never re-initialised.
+- Registering is guarded: a value that differs from an existing one needs
+  a verified database password or an explicit `--force` (audited);
+  immutable secrets with a value refuse; a changed value on a wired stack
+  rewrites the files and restarts the consumers.
+- Rotation is one secret per operation and journaled: the new value is
+  written as `app_<pkg>_<name>_pending` before `ALTER ROLE`, then files,
+  promotion, consumer restart and a health check; any failure after the
+  role may have changed reverts the role to the old value. A failed
+  revert is an operation error naming the manual recovery (the pending
+  row keeps the value the role holds). At daemon start a pending row is
+  reconciled: the database is asked which password it accepts and store
+  and files follow it (retrying while the database starts). An unknown
+  current value refuses rotation up front.
+- Secret files are written atomically (0600 temp file created exclusively
+  in `secrets/`, mode and owner set on the descriptor, fsynced, renamed);
+  symlinked files or directories are refused. The `app_` prefix is
+  reserved: owner routes (`Store.Set`, config import) refuse it and only
+  the catalog writes it (`Store.SetApp`).
+- Install refuses to generate a database password when the database data
+  directory already holds an initialised cluster (`PG_VERSION`); register
+  the existing password first. Uninstall removes `secrets/` (the store
+  keeps the values) and refuses a stack whose S277 detection is
+  needs-migration unless `abandon_volumes` / `--abandon-volumes` is given
+  (audited); run `homesteadctl data plan <pkg>` first. Delivery of
+  Authentik's `file://` URIs and Immich's `DB_PASSWORD_FILE` is covered by
+  unit tests only; mark them verified once KVM confirms.
 - Running Compose by hand without Homestead: the YAML is valid on its
   own. Create `./secrets/<key>` files next to `compose.yaml` containing
   the value (`umask 077`; chown to the consuming service's uid, for

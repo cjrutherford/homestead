@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -168,5 +169,51 @@ func TestAppsConfigureRotateSecret(t *testing.T) {
 	}
 	if code, _, _ := invoke(t, []string{"--server", url, "apps", "configure", "authentik", "--set", "A=b"}); code != exitUsage {
 		t.Fatalf("set without service exit = %d", code)
+	}
+}
+
+func TestAppsAdoptAndUninstallFlags(t *testing.T) {
+	var configureBody, uninstallBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/configure"):
+			configureBody = string(raw)
+		case strings.HasSuffix(r.URL.Path, "/uninstall"):
+			uninstallBody = string(raw)
+		}
+		_, _ = w.Write([]byte(`{"id":5}`))
+	}))
+	t.Cleanup(ts.Close)
+	code, stdout, _ := invoke(t, []string{"--server", ts.URL, "apps", "configure", "authentik", "--adopt-secrets"})
+	if code != exitOK || !strings.Contains(stdout, "operation: 5") || !strings.Contains(configureBody, `"adopt_secrets":true`) {
+		t.Fatalf("exit=%d out=%q body=%q", code, stdout, configureBody)
+	}
+	if code, _, _ := invoke(t, []string{"--server", ts.URL, "apps", "configure", "authentik", "--adopt-secrets", "--rotate-secret", "x"}); code != exitUsage {
+		t.Fatalf("adopt plus rotate exit = %d", code)
+	}
+	code, _, _ = invoke(t, []string{"--server", ts.URL, "apps", "uninstall", "authentik", "--abandon-volumes"})
+	if code != exitOK || !strings.Contains(uninstallBody, `"abandon_volumes":true`) {
+		t.Fatalf("exit=%d body=%q", code, uninstallBody)
+	}
+}
+
+func TestAppsSecretRegisterBoundsAndForce(t *testing.T) {
+	var body string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+		_, _ = w.Write([]byte(`{"store_name":"app_authentik_db_password"}`))
+	}))
+	t.Cleanup(ts.Close)
+	big := writeInput(t, strings.Repeat("x", 70<<10))
+	code, _, stderr := invoke(t, []string{"--server", ts.URL, "apps", "secrets", "register", "authentik", "db_password", "--value-file", big})
+	if code != exitUsage || !strings.Contains(stderr, "64 KiB") || body != "" {
+		t.Fatalf("oversize exit=%d stderr=%q sent=%q", code, stderr, body)
+	}
+	ok := writeInput(t, "pw\n")
+	code, _, _ = invoke(t, []string{"--server", ts.URL, "apps", "secrets", "register", "authentik", "db_password", "--value-file", ok, "--force", "--skip-verify"})
+	if code != exitOK || !strings.Contains(body, `"force":true`) {
+		t.Fatalf("exit=%d body=%q", code, body)
 	}
 }

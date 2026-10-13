@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"homestead/internal/operation"
@@ -288,7 +289,7 @@ func Restore(st *store.Store, stack, dir string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out []string
+	var out, missing []string
 	for _, drift := range drifts {
 		if isSecretPath(drift.Path) {
 			// Opaque secret files: restore can fix the mode but never
@@ -298,6 +299,8 @@ func Restore(st *store.Store, stack, dir string) ([]string, error) {
 					return nil, fmt.Errorf("catalog: restore %s mode: %w", drift.Path, err)
 				}
 				out = append(out, drift.Path)
+			} else if drift.Kind == DriftRemoved {
+				missing = append(missing, drift.Path)
 			}
 			continue
 		}
@@ -309,6 +312,11 @@ func Restore(st *store.Store, stack, dir string) ([]string, error) {
 			return nil, fmt.Errorf("catalog: restore %s: %w", drift.Path, err)
 		}
 		out = append(out, drift.Path)
+	}
+	if len(missing) > 0 {
+		// Restore holds no secret contents: report loudly instead of
+		// resolving drift that still exists.
+		return out, fmt.Errorf("catalog: secret files missing and not restorable from drift records (%s); run configure to re-materialize them from the secret store", strings.Join(missing, ", "))
 	}
 	if err := ResolveInScan(st, stack); err != nil {
 		return nil, err

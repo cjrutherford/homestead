@@ -112,6 +112,13 @@ func RemoveDefinition(removal Removal, dir string, st *store.Store) (operation.D
 					return fmt.Errorf("catalog: remove %s: %w", name, err)
 				}
 			}
+			// Materialized secret files are plaintext: they go with the
+			// stack, data kept or not. The values stay in the secret
+			// store, so a reinstall re-materializes them. RemoveAll on a
+			// symlinked secrets directory removes the link, not its target.
+			if err := os.RemoveAll(filepath.Join(dir, SecretsDirName)); err != nil {
+				return fmt.Errorf("catalog: remove secret files: %w", err)
+			}
 			return nil
 		},
 	})

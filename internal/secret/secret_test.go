@@ -201,3 +201,25 @@ func TestShortKeyRefused(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestAppPrefixIsReservedForCatalogSecrets(t *testing.T) {
+	st, _ := openSecret(t)
+	if err := st.Set("app_authentik_db_password", "x"); !errors.Is(err, ErrReservedName) {
+		t.Fatalf("owner Set err = %v, want ErrReservedName", err)
+	}
+	if err := st.SetApp("dns_token", "x"); err == nil {
+		t.Fatal("SetApp accepted a non-app name")
+	}
+	if err := st.SetApp("app_authentik_db_password", "value"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Get("app_authentik_db_password"); err != nil || got != "value" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if err := st.Delete("app_authentik_db_password"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Set("dns_token", "ok"); err != nil {
+		t.Fatalf("ordinary names must still work: %v", err)
+	}
+}

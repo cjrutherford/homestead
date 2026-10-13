@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -16,17 +17,25 @@ import (
 )
 
 // execContainer runs a command in a service container, returning
-// stdout. Environment carries secrets (never logged, never stored);
-// stubbed in tests. The container images carry their own tooling —
+// stdout only (stderr joins the error, never the output, so tool
+// warnings cannot corrupt a dump). Secrets travel on stdin and are
+// exported inside the container by the command itself: never argv, never
+// the host process environment (`docker exec` forwards neither safely).
+// Stubbed in tests. The container images carry their own tooling —
 // pg_dump ships in postgres-family images — so no host footprint.
-var execContainer = func(ctx context.Context, container string, env []string, args ...string) (string, error) {
+var execContainer = func(ctx context.Context, container, stdin string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "docker", append([]string{"exec", "-i", container}, args...)...)
-	cmd.Env = append(os.Environ(), env...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("backup: exec %s: %w", container, err)
+	cmd.Stdin = strings.NewReader(stdin)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if stdin != "" {
+			detail = strings.ReplaceAll(detail, strings.TrimSpace(stdin), "[redacted]")
+		}
+		return "", fmt.Errorf("backup: exec %s: %w: %s", container, err, detail)
 	}
-	return string(out), nil
+	return stdout.String(), nil
 }
 
 // containerName resolves the S153 naming convention shared by
@@ -102,7 +111,7 @@ func runHooks(ctx context.Context, packageName string, hooks []catalog.BackupHoo
 			wait = time.Duration(hook.Timeout) * time.Second
 		}
 		call, cancel := context.WithTimeout(ctx, wait)
-		_, err := execContainer(call, containerName(packageName, hook.Service), nil, hook.Command...)
+		_, err := execContainer(call, containerName(packageName, hook.Service), "", hook.Command...)
 		cancel()
 		if err != nil {
 			return fmt.Errorf("backup: %s hook %q: %w", stage, strings.Join(hook.Command, " "), err)
@@ -130,12 +139,15 @@ func exportSQLite(srcPath, dstPath string) error {
 
 // exportPostgres dumps through the database container's own pg_dump
 // as plain SQL: inspectable, restorable with psql, no custom-format
-// tooling to match later. The password travels process environment
-// for the single invocation and never touches disk or errors.
+// tooling to match later. The password goes to the container on stdin
+// and is exported inside `sh` for the single pg_dump invocation; it never
+// touches argv, the host environment, disk, or errors. pg_dump connects
+// over the container's own network address so the password is actually
+// checked (loopback and the socket trust every caller): a stale stored
+// password fails the backup instead of passing unnoticed.
 func exportPostgres(ctx context.Context, container, user, database, password, dstPath string) error {
-	dump, err := execContainer(ctx, container,
-		[]string{"PGPASSWORD=" + password},
-		"pg_dump", "--username="+user, "--dbname="+database, "--no-password")
+	const script = `IFS= read -r PGPASSWORD; export PGPASSWORD; exec pg_dump -h "$(hostname)" --username="$1" --dbname="$2" --no-password`
+	dump, err := execContainer(ctx, container, password+"\n", "sh", "-c", script, "sh", user, database)
 	if err != nil {
 		return fmt.Errorf("backup: pg_dump: %w", err)
 	}

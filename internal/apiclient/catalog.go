@@ -178,6 +178,8 @@ type AppSecret struct {
 	Immutable bool     `json:"immutable"`
 	Services  []string `json:"services"`
 	Database  bool     `json:"database_password"`
+	Wired     bool     `json:"wired"`
+	Installed bool     `json:"installed"`
 }
 
 // AppSecrets lists a package's declared secret-backed variables.
@@ -192,11 +194,11 @@ func (c *Client) AppSecrets(ctx context.Context, name string) ([]AppSecret, erro
 // RegisterAppSecret registers an existing value for a declared secret
 // (installs that predate S266). The value travels in the request body
 // once; the database password is verified unless skipVerify is set.
-func (c *Client) RegisterAppSecret(ctx context.Context, name, secret, value string, skipVerify bool) (string, error) {
+func (c *Client) RegisterAppSecret(ctx context.Context, name, secret, value string, skipVerify, force bool) (string, error) {
 	var out struct {
 		StoreName string `json:"store_name"`
 	}
-	body := map[string]any{"value": value, "skip_verify": skipVerify}
+	body := map[string]any{"value": value, "skip_verify": skipVerify, "force": force}
 	if err := c.postJSON(ctx, "/api/v1/catalog/"+name+"/secrets/"+secret, body, &out); err != nil {
 		return "", err
 	}
@@ -208,6 +210,18 @@ func (c *Client) RegisterAppSecret(ctx context.Context, name, secret, value stri
 func (c *Client) RotatePackageSecrets(ctx context.Context, name string, secrets []string) (int64, error) {
 	var out OperationStarted
 	body := map[string]any{"changes": []map[string]any{}, "rotate_secrets": secrets}
+	if err := c.postJSON(ctx, "/api/v1/catalog/"+name+"/configure", body, &out); err != nil {
+		return 0, err
+	}
+	return out.ID, nil
+}
+
+// AdoptPackageSecrets regenerates only the secret wiring of a stack
+// installed before S266 (never data or passwords), returning the
+// configure operation id.
+func (c *Client) AdoptPackageSecrets(ctx context.Context, name string) (int64, error) {
+	var out OperationStarted
+	body := map[string]any{"changes": []map[string]any{}, "adopt_secrets": true}
 	if err := c.postJSON(ctx, "/api/v1/catalog/"+name+"/configure", body, &out); err != nil {
 		return 0, err
 	}
