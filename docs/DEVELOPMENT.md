@@ -753,6 +753,13 @@ homesteadctl backup unschedule --package jellyfin
   VM 2 Authentik run failed on `lstat .../postgres/base/1/pg_internal.init`
   (live PostgreSQL files vanishing mid-copy), unrelated to S271.
 
+- S275 backup restore runbook: `docs/architecture/BACKUP_RESTORE_RUNBOOK.md`
+  restores encrypted (format 2) and plaintext (format 1) runs with plain
+  `age`, `tar`, `cp`, and `docker`. Its `sh runbook <name>` blocks are
+  executed literally by `internal/backup/runbook_test.go` (real `age` and
+  `tar`, fake `docker`); the test skips without `age` and fails with
+  `HOMESTEAD_REQUIRE_AGE=1`, which `scripts/acceptance.sh` sets.
+
 - Wire format: schedule records are snake_case JSON (`package`,
   `interval_seconds`, `retain`, `enabled`, `actor`, `updated_at`),
   matching the save request body. This changed from PascalCase keys
