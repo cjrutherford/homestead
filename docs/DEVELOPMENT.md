@@ -920,6 +920,27 @@ homesteadctl drift schedule --interval 6h --enabled true
   exact unit of the API minimum, so any saved interval that is a whole
   number of minutes round-trips unchanged.
 
+- Proven live in KVM (S274, 1ed4876 + 621c3a7, deployed with
+  `scripts/install-systemd.sh` after `make dashboard-build dashboard-embed`;
+  identical binary on both appliances): the served bundle held
+  `/api/v1/admins/lockout` and `/account` answered 200. Lockout status read
+  `failures: 0, locked: false` fresh, counted 1-4 failed logins unlocked, and
+  the 5th answered 429 with `locked: true` and `locked_until` 15 minutes
+  ahead; `homesteadctl admin lockout` printed the same, an existing session
+  kept working, and a correct login stayed 429 until root-socket recovery
+  (which clears the lockout) restored the original password. Password change:
+  a wrong current password answered 401 with
+  `X-Homestead-Error: invalid-current-password` and the session stayed valid;
+  73-byte (ASCII and multi-byte) new passwords answered 422 "at most 72
+  bytes" without raising `failures`; a 72-byte non-ASCII password succeeded,
+  the caller's session survived, a second session answered 401, the new
+  password logged in and the old one did not. Recovery with a 73-byte
+  password was refused ("password must be at most 72 bytes") and left the
+  password unchanged. A bogus cookie on a GET answered 401. Not exercised
+  live: first-admin setup max length (both appliances are claimed; covered by
+  tests), and the dashboard pages in a browser. VM 1's administrator is
+  `owner`, not `alice`; a login for an unknown name is throttled identically.
+
 - Proven live in KVM (S261, da3362f): on both appliances the default was
   24h enabled; `--interval` below 5m was a CLI usage error (exit 2) and
   the API answered 422 for a short interval and 400 for a missing
