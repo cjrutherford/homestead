@@ -142,3 +142,15 @@ func TestUnregister(t *testing.T) {
 		t.Fatalf("listed = %+v", listed)
 	}
 }
+
+func TestRegistrableRefusesKernelInterfaceFilesystems(t *testing.T) {
+	for _, fs := range []string{"hugetlbfs", "mqueue", "bpf", "tracefs", "debugfs", "configfs", "securityfs", "pstore", "fusectl", "binfmt_misc", "autofs", "nsfs", "ramfs"} {
+		err := Registrable(discover.Mount{Mountpoint: "/x", FSType: fs, Accessible: true})
+		if err == nil || !strings.Contains(err.Error(), "pseudo-filesystem") {
+			t.Errorf("%s: err %v, want pseudo-filesystem refusal", fs, err)
+		}
+	}
+	if err := Registrable(discover.Mount{Mountpoint: "/mnt/a", FSType: "ext4", Accessible: true}); err != nil {
+		t.Errorf("ext4 refused: %v", err)
+	}
+}

@@ -27,6 +27,11 @@ var pseudoFilesystems = map[string]bool{
 	"proc": true, "sysfs": true, "cgroup": true, "cgroup2": true,
 	"devpts": true, "devtmpfs": true, "tmpfs": true, "overlay": true,
 	"squashfs": true, "iso9660": true,
+	// Kernel interface filesystems report zero capacity yet are rw.
+	"hugetlbfs": true, "mqueue": true, "bpf": true, "tracefs": true,
+	"debugfs": true, "configfs": true, "securityfs": true, "pstore": true,
+	"fusectl": true, "binfmt_misc": true, "autofs": true, "nsfs": true,
+	"ramfs": true, "rpc_pipefs": true, "efivarfs": true, "selinuxfs": true,
 }
 
 // Registrable reports why a discovered mount can never be registered
