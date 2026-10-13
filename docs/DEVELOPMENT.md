@@ -852,6 +852,33 @@ homesteadctl backup unschedule --package jellyfin
   from the existing `release-trust` warning. Not proven live: the Angular
   pages in a browser, and the Dockge-installed rendering with findings.
 
+- Proven live in KVM (S270, 894701a + f22fa34, deployed with
+  `scripts/install-systemd.sh` after `make dashboard-build dashboard-embed`;
+  identical binary on both appliances, schema 32): the served bundle held
+  `/api/v1/edge/deploy` and `/api/v1/edge/routes`, with `/edge` answering 200.
+  `GET /api/v1/edge/routes` and `homesteadctl edge routes get` read
+  `{"routes": []}` before any reconcile. On VM 1 (Caddy edge, a pre-existing
+  `jellyfin.lan` snippet) a private route set reconciled and Caddy served it
+  (302 from Jellyfin once it was attached to `homestead-edge`); GET returned
+  exactly what was sent; hand-placed and exposure-style snippets kept their
+  sha256. A public route with no approval and one differing from the recorded
+  approval (port changed) answered 422 with nothing written; the exact approved
+  route (`app.example.com`, from the earlier S245 test approval) was accepted,
+  written and later removed by a reconcile that left the other snippets alone.
+  `tls: auto` on `jellyfin.lan` answered 422 up front with files unchanged. A
+  hand-placed invalid snippet made the reload fail on both an add and a
+  removal: the operation failed at `reload`, files and the recorded table
+  rolled back, and Caddy kept serving the prior routes. `POST
+  /api/v1/edge/deploy` and `homesteadctl edge deploy --follow` streamed to
+  completion with the stack files and routes unchanged. On VM 2 (no edge) deploy
+  created the stack from scratch and the reconcile, 422 and rollback checks
+  repeated; VM 2 has no exposure approval, so the matching-public case is
+  proven on VM 1 and by unit tests. Doctor was unchanged apart from the
+  existing `release-trust` warning. Test scaffolding was removed afterwards
+  (VM 1 route files and approvals identical to the pre-test state; VM 2 edge
+  stack and network removed). Not proven live: the Angular Edge page in a
+  browser.
+
 ## Periodic drift scan (S261)
 
 ```bash
