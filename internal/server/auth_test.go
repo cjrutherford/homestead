@@ -262,6 +262,9 @@ func TestLockoutStatusFlow(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"locked":true`) {
 		t.Fatalf("lockout = %d (%s)", rec.Code, rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), `"locked_until":"`) || !strings.Contains(rec.Body.String(), `"failures":5`) {
+		t.Fatalf("lockout detail missing: %s", rec.Body.String())
+	}
 	// Rotation while locked refuses with throttling, not credentials.
 	rec = doJSON(t, srv, http.MethodPost, "/api/v1/admins/password",
 		`{"current_password":"long-enough-password","new_password":"replacement-password-long"}`, token)
@@ -312,5 +315,24 @@ func TestAdminSetupConcurrentExactlyOneWins(t *testing.T) {
 	}
 	if created != 1 {
 		t.Fatalf("%d setups returned 201, want exactly 1", created)
+	}
+}
+
+func TestPasswordTooLongIs422(t *testing.T) {
+	srv := claimedAuthServer(t)
+	long := strings.Repeat("a", 73)
+	rec := doJSON(t, srv, http.MethodPost, "/api/v1/admins/setup", `{"username":"owner","password":"`+long+`"}`, "")
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "72 bytes") {
+		t.Fatalf("setup = %d (%s)", rec.Code, rec.Body.String())
+	}
+	rec = doJSON(t, srv, http.MethodPost, "/api/v1/admins/setup", `{"username":"owner","password":"long-enough-password"}`, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup = %d", rec.Code)
+	}
+	token := loginToken(t, srv, "long-enough-password")
+	rec = doJSON(t, srv, http.MethodPost, "/api/v1/admins/password",
+		`{"current_password":"wrong-password-here","new_password":"`+long+`"}`, token)
+	if rec.Code != http.StatusUnprocessableEntity || rec.Header().Get(ErrorCodeHeader) != "" {
+		t.Fatalf("password = %d (%s)", rec.Code, rec.Body.String())
 	}
 }

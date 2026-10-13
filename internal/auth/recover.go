@@ -23,6 +23,9 @@ func (s *Service) Recover(username, password string) (Admin, error) {
 	if !validUsername.MatchString(username) {
 		return Admin{}, ErrBadUsername
 	}
+	if len(password) > MaxPasswordLength {
+		return Admin{}, ErrPasswordTooLong
+	}
 	if len(password) < MinPasswordLength {
 		return Admin{}, ErrWeakPassword
 	}

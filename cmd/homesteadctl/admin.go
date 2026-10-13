@@ -236,14 +236,14 @@ func runAdminLockout(ctx context.Context, client *apiclient.Client, args []strin
 		fmt.Fprintln(stderr, "admin lockout requires --token (or HOMESTEAD_TOKEN)")
 		return exitUsage
 	}
-	locked, err := client.LockoutStatus(ctx, *token)
+	status, err := client.LockoutStatus(ctx, *token)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	if locked {
-		fmt.Fprintln(stdout, "locked")
+	if status.Locked {
+		fmt.Fprintf(stdout, "locked until %s (failures: %d)\n", status.LockedUntil, status.Failures)
 		return exitOK
 	}
-	fmt.Fprintln(stdout, "unlocked")
+	fmt.Fprintf(stdout, "unlocked (failures: %d)\n", status.Failures)
 	return exitOK
 }

@@ -14,9 +14,16 @@
       Signed in as <strong>{{ l.username }}</strong>.
       @if (l.locked) {
         This account is temporarily locked after repeated failed sign-ins.
-        Lockouts clear on their own after a short wait.
+        @if (l.locked_until) {
+          It unlocks {{ relativeUntil(l.locked_until) }}.
+        } @else {
+          Lockouts clear on their own after a short wait.
+        }
       } @else {
         This account is not locked.
+      }
+      @if (l.failures) {
+        Recent failed attempts: {{ l.failures }}.
       }
     </p>
   } @else if (!loading() && !loadError()) {
@@ -41,14 +48,23 @@
       }
     </ul>
   }
-  @for (key of [formKey()]; track key) {
-    <form (submit)="$event.preventDefault(); submit(cur.value, nw.value, cf.value)">
+    <form #f (submit)="$event.preventDefault(); submit(cur.value, nw.value, cf.value); f.reset()">
+      <input
+        class="visually-hidden"
+        type="text"
+        name="username"
+        autocomplete="username"
+        readonly
+        tabindex="-1"
+        aria-hidden="true"
+        [value]="sessions.username() ?? ''"
+      />
       <p>
         <label for="account-current">Current password</label><br />
         <input id="account-current" #cur type="password" autocomplete="current-password" [disabled]="busy()" />
       </p>
       <p>
-        <label for="account-new">New password (at least {{ minLength }} characters)</label><br />
+        <label for="account-new">New password ({{ minLength }} to {{ maxLength }} bytes)</label><br />
         <input id="account-new" #nw type="password" autocomplete="new-password" [disabled]="busy()" />
       </p>
       <p>
@@ -57,7 +73,6 @@
       </p>
       <button type="submit" [disabled]="busy()">Change password</button>
     </form>
-  }
   @if (busy()) {
     <app-state-message kind="loading" headline="Changing password…" />
   }

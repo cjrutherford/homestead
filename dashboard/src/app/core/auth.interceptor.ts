@@ -42,14 +42,21 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     }
   }
   const isLogin = req.method === 'POST' && req.url === '/api/v1/sessions';
+  // Only the password-change route's coded 401 is a form error; the
+  // same header anywhere else must not keep a dead session alive.
+  const isPasswordChange = req.method === 'POST' && req.url === '/api/v1/admins/password';
   return next(req).pipe(
     catchError((err: unknown) => {
+      const isWrongCurrentPassword =
+        isPasswordChange &&
+        err instanceof HttpErrorResponse &&
+        err.headers?.get(ERROR_CODE_HEADER) === WRONG_CURRENT_PASSWORD;
       if (
         isApi &&
         !isLogin &&
         err instanceof HttpErrorResponse &&
         err.status === 401 &&
-        err.headers?.get(ERROR_CODE_HEADER) !== WRONG_CURRENT_PASSWORD
+        !isWrongCurrentPassword
       ) {
         sessions.expire();
         const path = router.url.split('?')[0];

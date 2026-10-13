@@ -2259,11 +2259,17 @@ per-service `environment:` map; a variable may not be both.
 ## Dashboard account surfaces (S274)
 
 The Account page (`/account`) shows own lockout status
-(`GET /api/v1/admins/lockout`, which reports only `locked`) and changes the
-password (`POST /api/v1/admins/password`). Client rules mirror
-`auth.MinPasswordLength` (12). The inputs are uncontrolled and recreated
-empty after every submit, so passwords never sit in component state. A
-successful change keeps the caller's session and signs out the others
-(ADR-020). The auth interceptor treats a 401 carrying
-`X-Homestead-Error: invalid-current-password` as a form error, not a dead
-session; any other 401 expires the session and redirects to login.
+(`GET /api/v1/admins/lockout`: `locked`, `failures`, and `locked_until`
+while locked) and changes the password (`POST /api/v1/admins/password`).
+Password policy is 12 to 72 UTF-8 bytes (`auth.MinPasswordLength`,
+`MaxPasswordLength`; bcrypt cannot hash more than 72). The daemon refuses
+an over-long password with 422 before checking the current password, in
+setup, recovery and change alike; the client counts bytes with
+`TextEncoder` and mirrors both bounds. The inputs are uncontrolled and
+reset by the form after every submit attempt, including validation failure,
+so passwords never sit in component state; a readonly username field lets
+password managers pair the credential. A successful change keeps the
+caller's session and signs out the others (ADR-020). The auth interceptor
+treats a 401 carrying `X-Homestead-Error: invalid-current-password` on
+`POST /api/v1/admins/password` only as a form error; any other 401
+expires the session and redirects to login.

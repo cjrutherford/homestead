@@ -134,19 +134,25 @@ func (c *Client) ChangePassword(ctx context.Context, token, current, replacement
 	return nil
 }
 
-// LockoutStatus reports whether the session owner's account sits
-// inside a login lockout (S239).
-func (c *Client) LockoutStatus(ctx context.Context, token string) (bool, error) {
+// Lockout is the session owner's login-throttle state.
+type Lockout struct {
+	Username    string `json:"username"`
+	Locked      bool   `json:"locked"`
+	Failures    int    `json:"failures"`
+	LockedUntil string `json:"locked_until,omitempty"`
+}
+
+// LockoutStatus reports the session owner's login lockout (S239; S274
+// adds the failure count and unlock time).
+func (c *Client) LockoutStatus(ctx context.Context, token string) (Lockout, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/v1/admins/lockout", nil)
 	if err != nil {
-		return false, fmt.Errorf("api: %w", err)
+		return Lockout{}, fmt.Errorf("api: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	var out struct {
-		Locked bool `json:"locked"`
-	}
+	var out Lockout
 	if err := c.roundTrip(req, http.StatusOK, &out); err != nil {
-		return false, err
+		return Lockout{}, err
 	}
-	return out.Locked, nil
+	return out, nil
 }

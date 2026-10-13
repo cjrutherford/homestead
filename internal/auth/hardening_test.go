@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -178,5 +179,53 @@ func TestRecoverClearsLockout(t *testing.T) {
 	}
 	if _, err := svc.Login("owner", hardeningReplacement); err != nil {
 		t.Fatalf("Login after recovery: %v", err)
+	}
+}
+
+func TestPasswordMaxBytes(t *testing.T) {
+	svc := claimedAuthService(t)
+	tooLong := strings.Repeat("a", MaxPasswordLength+1)
+	atLimit := strings.Repeat("a", MaxPasswordLength)
+	// Multibyte: 37 two-byte runes is 74 bytes though only 37 characters.
+	multibyte := strings.Repeat("é", 37)
+	for _, pw := range []string{tooLong, multibyte} {
+		if _, err := svc.SetupAdmin("owner", pw); err != ErrPasswordTooLong {
+			t.Fatalf("SetupAdmin(%d bytes) = %v, want ErrPasswordTooLong", len(pw), err)
+		}
+	}
+	setupOwner(t, svc)
+	// Refused before the current password is checked and without a failure.
+	if _, err := svc.ChangePassword("owner", "wrong-current-password", tooLong); err != ErrPasswordTooLong {
+		t.Fatalf("ChangePassword too long = %v", err)
+	}
+	if info, _ := svc.LockoutDetail("owner"); info.Failures != 0 {
+		t.Fatalf("too-long password counted as failure: %+v", info)
+	}
+	if _, err := svc.ChangePassword("owner", hardeningPassword, atLimit); err != nil {
+		t.Fatalf("72-byte password: %v", err)
+	}
+	if _, err := svc.Recover("owner", tooLong); err != ErrPasswordTooLong {
+		t.Fatalf("Recover too long = %v", err)
+	}
+}
+
+func TestLockoutDetail(t *testing.T) {
+	svc := claimedAuthService(t)
+	setupOwner(t, svc)
+	if info, err := svc.LockoutDetail("owner"); err != nil || info.Locked || info.Failures != 0 {
+		t.Fatalf("fresh = %+v, %v", info, err)
+	}
+	for range 2 {
+		_, _ = svc.Login("owner", "wrong-password-here")
+	}
+	if info, _ := svc.LockoutDetail("owner"); info.Locked || info.Failures != 2 {
+		t.Fatalf("after 2 failures = %+v", info)
+	}
+	for range MaxLoginFailures {
+		_, _ = svc.Login("owner", "wrong-password-here")
+	}
+	info, _ := svc.LockoutDetail("owner")
+	if !info.Locked || !info.LockedUntil.After(time.Now()) || info.Failures == 0 {
+		t.Fatalf("locked = %+v", info)
 	}
 }

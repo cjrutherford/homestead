@@ -66,7 +66,7 @@ func (s *Server) handleAdminSetup(svc *auth.Service, auditSvc *audit.Service) ht
 				http.Error(w, "appliance must be claimed first", http.StatusForbidden)
 			case errors.Is(err, auth.ErrAdminExists):
 				http.Error(w, "administrator already exists", http.StatusConflict)
-			case errors.Is(err, auth.ErrBadUsername), errors.Is(err, auth.ErrWeakPassword):
+			case errors.Is(err, auth.ErrBadUsername), errors.Is(err, auth.ErrWeakPassword), errors.Is(err, auth.ErrPasswordTooLong):
 				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			default:
 				http.Error(w, "failed to create administrator", http.StatusInternalServerError)
@@ -267,7 +267,7 @@ func (s *Server) handleChangePassword(svc *auth.Service) http.HandlerFunc {
 				// from the boundary's 401 (bad session).
 				w.Header().Set(ErrorCodeHeader, ErrorCodeInvalidCurrentPassword)
 				http.Error(w, "invalid username or password", http.StatusUnauthorized)
-			case errors.Is(err, auth.ErrWeakPassword):
+			case errors.Is(err, auth.ErrWeakPassword), errors.Is(err, auth.ErrPasswordTooLong):
 				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			case errors.Is(err, auth.ErrAccountLocked):
 				http.Error(w, "account temporarily locked after repeated failures", http.StatusTooManyRequests)
@@ -286,11 +286,15 @@ func (s *Server) handleLockoutStatus(svc *auth.Service) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		locked, err := svc.Locked(op.Session.Username)
+		info, err := svc.LockoutDetail(op.Session.Username)
 		if err != nil {
 			http.Error(w, "failed to read lockout", http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"username": op.Session.Username, "locked": locked})
+		out := map[string]any{"username": op.Session.Username, "locked": info.Locked, "failures": info.Failures}
+		if info.Locked {
+			out["locked_until"] = info.LockedUntil.UTC().Format(time.RFC3339)
+		}
+		writeJSON(w, out)
 	}
 }

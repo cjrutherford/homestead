@@ -1,11 +1,36 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
+import { SessionService } from '../auth/session.service';
 import { ApiService, LockoutStatus } from '../core/api.service';
 import { ERROR_CODE_HEADER, WRONG_CURRENT_PASSWORD } from '../core/auth.interceptor';
 import { StateMessage } from '../state/state-message';
 
-/** Mirrors auth.MinPasswordLength in the daemon. */
+/** Mirrors auth.MinPasswordLength and MaxPasswordLength (both in bytes). */
 export const MIN_PASSWORD_LENGTH = 12;
+export const MAX_PASSWORD_LENGTH = 72;
+
+const utf8 = new TextEncoder();
+/** The daemon counts UTF-8 bytes, not characters. */
+export function byteLength(value: string): number {
+  return utf8.encode(value).length;
+}
+
+/** "in 4 minutes" style wording for a future instant. */
+export function relativeUntil(iso: string, now: Date = new Date()): string {
+  const ms = Date.parse(iso) - now.getTime();
+  if (Number.isNaN(ms)) {
+    return 'at an unknown time';
+  }
+  if (ms <= 0) {
+    return 'any moment now';
+  }
+  const minutes = Math.ceil(ms / 60000);
+  if (minutes < 60) {
+    return `in ${minutes} minute${minutes === 1 ? '' : 's'}`;
+  }
+  const hours = Math.ceil(minutes / 60);
+  return `in ${hours} hour${hours === 1 ? '' : 's'}`;
+}
 
 /**
  * Account surfaces (S274): own lockout status and password change,
@@ -22,12 +47,16 @@ export const MIN_PASSWORD_LENGTH = 12;
     'button, input { min-height: 44px; }',
     'input { max-width: 100%; box-sizing: border-box; }',
     'section { overflow-wrap: anywhere; }',
+    '.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }',
   ],
 })
 export class Account implements OnInit {
   private readonly api = inject(ApiService);
+  protected readonly sessions = inject(SessionService);
 
   protected readonly minLength = MIN_PASSWORD_LENGTH;
+  protected readonly maxLength = MAX_PASSWORD_LENGTH;
+  protected readonly relativeUntil = relativeUntil;
   protected readonly lockout = signal<LockoutStatus | null>(null);
   protected readonly loading = signal(true);
   protected readonly loadError = signal<string | null>(null);
@@ -35,8 +64,6 @@ export class Account implements OnInit {
   protected readonly problems = signal<string[]>([]);
   protected readonly error = signal<string | null>(null);
   protected readonly notice = signal<string | null>(null);
-  /** Bumped after each submit so the form inputs are recreated empty. */
-  protected readonly formKey = signal(0);
 
   ngOnInit(): void {
     this.loadLockout();
@@ -63,8 +90,12 @@ export class Account implements OnInit {
     if (!current) {
       out.push('Enter your current password.');
     }
-    if (next.length < MIN_PASSWORD_LENGTH) {
-      out.push(`The new password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    const bytes = byteLength(next);
+    if (bytes < MIN_PASSWORD_LENGTH) {
+      out.push(`The new password must be at least ${MIN_PASSWORD_LENGTH} bytes (letters, digits and symbols are one byte each).`);
+    }
+    if (bytes > MAX_PASSWORD_LENGTH) {
+      out.push(`The new password must be at most ${MAX_PASSWORD_LENGTH} bytes (accented and non-Latin characters use two or more bytes each).`);
     }
     if (next !== confirm) {
       out.push('The new password and its confirmation do not match.');
@@ -84,7 +115,6 @@ export class Account implements OnInit {
     this.api.changePassword(current, next).subscribe({
       next: () => {
         this.busy.set(false);
-        this.formKey.update((n) => n + 1);
         this.notice.set(
           'Password changed. Your other sessions were signed out; this one stays signed in.',
         );
@@ -92,7 +122,6 @@ export class Account implements OnInit {
       },
       error: (failure: HttpErrorResponse) => {
         this.busy.set(false);
-        this.formKey.update((n) => n + 1);
         this.error.set(this.describe(failure));
         this.loadLockout();
       },
@@ -105,6 +134,10 @@ export class Account implements OnInit {
     }
     if (failure.status === 401 && failure.headers?.get(ERROR_CODE_HEADER) === WRONG_CURRENT_PASSWORD) {
       return 'The current password is incorrect. Repeated failures lock the account temporarily.';
+    }
+    if (failure.status === 422) {
+      const body = failure.error;
+      return typeof body === 'string' && body.trim() ? body.trim() : 'The new password was refused.';
     }
     if (failure.status === 429) {
       return 'The account is temporarily locked after repeated failures. Try again later.';

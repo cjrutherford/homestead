@@ -37,7 +37,7 @@ unchanged.
 | POST | /api/v1/sessions | `"login"` | `login` |  |
 | DELETE | /api/v1/sessions | `"logout"` | `logout` |  |
 | POST | /api/v1/admins/password | `"passwd"` | `changePassword` | Account page (`/account`); S274. Same 12-character rule as the daemon; a wrong current password is a 401 with `X-Homestead-Error: invalid-current-password`, which the interceptor does not treat as a dead session; other sessions are signed out, the caller's stays |
-| GET | /api/v1/admins/lockout | `"lockout"` | `lockoutStatus` | Account page (`/account`); S274. The daemon reports only `locked`, so no attempt count or unlock time is shown |
+| GET | /api/v1/admins/lockout | `"lockout"` | `lockoutStatus` | Account page (`/account`); S274. Reports `locked`, `failures` (current window) and `locked_until` (only while locked); CLI `admin lockout` prints both; Account page shows a relative unlock time |
 | GET | /api/v1/wizards/{id} | n/a | `WizardService` | Resume machinery is dashboard-only |
 | PUT | /api/v1/wizards/{id} | n/a | `WizardService` | Resume machinery is dashboard-only |
 | DELETE | /api/v1/wizards/{id} | n/a | `WizardService` | Resume machinery is dashboard-only |

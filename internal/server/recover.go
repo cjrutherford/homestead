@@ -36,7 +36,7 @@ func (s *Server) handleRecover(svc *auth.Service) http.HandlerFunc {
 			switch {
 			case errors.Is(err, auth.ErrAdminNotFound):
 				http.Error(w, "administrator not found", http.StatusNotFound)
-			case errors.Is(err, auth.ErrBadUsername), errors.Is(err, auth.ErrWeakPassword):
+			case errors.Is(err, auth.ErrBadUsername), errors.Is(err, auth.ErrWeakPassword), errors.Is(err, auth.ErrPasswordTooLong):
 				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			default:
 				http.Error(w, "failed to recover administrator", http.StatusInternalServerError)

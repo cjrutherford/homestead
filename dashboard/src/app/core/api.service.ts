@@ -1134,4 +1134,8 @@ export class ApiService {
 export interface LockoutStatus {
   username: string;
   locked: boolean;
+  /** Failed attempts inside the current window. */
+  failures?: number;
+  /** RFC 3339 unlock time; present only while locked. */
+  locked_until?: string;
 }

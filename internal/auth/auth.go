@@ -40,6 +40,10 @@ const (
 // MinPasswordLength is the floor for administrator passwords.
 const MinPasswordLength = 12
 
+// MaxPasswordLength is the ceiling in bytes: bcrypt rejects longer
+// inputs, so policy refuses them up front with a clear error.
+const MaxPasswordLength = 72
+
 // Login lockout policy (S200): five failures inside ten minutes lock
 // the attempted username for fifteen. Attempts track by attempted
 // username before lookup, so unknown and known names behave
@@ -64,6 +68,8 @@ var (
 	ErrAdminExists = errors.New("administrator already exists")
 	// ErrWeakPassword reports a short password.
 	ErrWeakPassword = errors.New("password must be at least 12 characters")
+	// ErrPasswordTooLong reports a password bcrypt cannot hash.
+	ErrPasswordTooLong = errors.New("password must be at most 72 bytes")
 	// ErrBadUsername reports a malformed username.
 	ErrBadUsername = errors.New("username must match [a-z][a-z0-9_-]{0,63}")
 	// ErrInvalidCredentials reports a failed login without saying why.
@@ -162,6 +168,9 @@ func (s *Service) SetupAdmin(username, password string) (Admin, error) {
 	}
 	if !validUsername.MatchString(username) {
 		return Admin{}, ErrBadUsername
+	}
+	if len(password) > MaxPasswordLength {
+		return Admin{}, ErrPasswordTooLong
 	}
 	if len(password) < MinPasswordLength {
 		return Admin{}, ErrWeakPassword
@@ -368,6 +377,11 @@ func (s *Service) ChangePassword(username, currentPassword, newPassword string) 
 }
 
 func (s *Service) changePassword(username, currentPassword, newPassword string, keepToken *string) (Admin, error) {
+	// Refused before any credential check so an unhashable password
+	// never reaches bcrypt (which would surface as a 500).
+	if len(newPassword) > MaxPasswordLength {
+		return Admin{}, ErrPasswordTooLong
+	}
 	locked, err := s.lockedOut(username)
 	if err != nil {
 		return Admin{}, err
@@ -420,6 +434,47 @@ func (s *Service) changePassword(username, currentPassword, newPassword string, 
 // never confirms an account exists.
 func (s *Service) Locked(username string) (bool, error) {
 	return s.lockedOut(username)
+}
+
+// LockoutInfo is the readable state of a username's login throttle.
+type LockoutInfo struct {
+	Locked bool
+	// LockedUntil is set only while Locked.
+	LockedUntil time.Time
+	// Failures counts failed attempts inside the current window.
+	Failures int
+}
+
+// LockoutDetail reads the throttle row: whether the name is locked, until
+// when, and how many failures the current window holds.
+func (s *Service) LockoutDetail(username string) (LockoutInfo, error) {
+	var failures int
+	var firstFailureAt, lockedUntil string
+	err := s.db.QueryRow(`SELECT failures, first_failure_at, locked_until FROM login_attempts WHERE username = ?`, username).Scan(&failures, &firstFailureAt, &lockedUntil)
+	if err == sql.ErrNoRows {
+		return LockoutInfo{}, nil
+	}
+	if err != nil {
+		return LockoutInfo{}, fmt.Errorf("auth: read lockout: %w", err)
+	}
+	info := LockoutInfo{}
+	now := time.Now()
+	if lockedUntil != "" {
+		deadline, err := time.Parse(time.RFC3339Nano, lockedUntil)
+		if err != nil {
+			return LockoutInfo{}, fmt.Errorf("auth: parse lockout: %w", err)
+		}
+		if deadline.After(now) {
+			info.Locked, info.LockedUntil = true, deadline
+		}
+	}
+	if start, err := time.Parse(time.RFC3339Nano, firstFailureAt); err == nil && now.Sub(start) <= LoginAttemptWindow {
+		info.Failures = failures
+	}
+	if info.Locked && info.Failures == 0 {
+		info.Failures = failures
+	}
+	return info, nil
 }
 
 // Verify proves a session token through the unique token-hash index
