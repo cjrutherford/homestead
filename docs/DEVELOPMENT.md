@@ -723,6 +723,36 @@ homesteadctl backup unschedule --package jellyfin
   `scripts/acceptance.sh` stops at preconditions when `age` is absent;
   the full script cannot rerun on appliances that already hold the apps.
 
+- Proven live in KVM (S271, 0169914 + 53e7484, deployed with
+  `scripts/install-systemd.sh`; both appliances at schema 31): the doctor
+  `backup-encryption` warning was present first; `backup recipients add`
+  listed the owner key and wrote only the public key to
+  `/etc/homestead/backup-recipients.yaml`, and the warning cleared. A
+  scheduled Authentik run after the add decrypted (`.tar.age`, `.sql.age`,
+  `secrets.tar.age`) with `age -d -i` and the owner identity alone; an
+  earlier run did not. After removal the warning returned, a new run
+  refused the owner key and the earlier post-add run still opened;
+  removing the appliance identity answered 409. `backup identity export
+  --out` wrote a 0600 file, a second export to the same path refused
+  (`file exists`), doctor said "exported but not acknowledged", `ack`
+  cleared it, and the exported identity decrypted every run including
+  those from before any recipient existed (file shredded afterwards). With
+  the cookie, export, ack and add without CSRF (or a wrong token) were 403;
+  with it, the sixth export in an hour was 429 and audited. The
+  `AGE-SECRET-KEY` prefix and the key body appeared nowhere in the journal,
+  any table other than `secrets`, `/etc/homestead`, the backup tree, or the
+  recipients, identity, operations, audit, doctor, destination and
+  schedules responses. `/backups` was served and the API flows worked with
+  cookie plus CSRF. The CLI export refuses an unwritable path before it
+  calls the daemon (no export is recorded). Not run live: a fresh state
+  GET (both appliances already held an identity; the handlers only read
+  and the unit test asserts nothing is created). Environment notes: after
+  a VM reboot the scheduler's first tick can run before the bind mounts
+  exist and spends the window (`no backup sources`); resetting
+  `scheduler_jobs.last_run_at` and restarting the daemon triggers runs. A
+  VM 2 Authentik run failed on `lstat .../postgres/base/1/pg_internal.init`
+  (live PostgreSQL files vanishing mid-copy), unrelated to S271.
+
 - Wire format: schedule records are snake_case JSON (`package`,
   `interval_seconds`, `retain`, `enabled`, `actor`, `updated_at`),
   matching the save request body. This changed from PascalCase keys
