@@ -3,8 +3,11 @@
 # Image tags follow the official v3.3.0 compose (server, learning,
 # valkey, vector postgres); digests stay out because multi-arch digests
 # differ per platform while tags resolve correctly everywhere.
-# Database credentials wire post-install through configuration (S157);
-# secret-backed variables arrive in their own slice.
+# Secrets (S266): the database password is generated into the secret
+# store at install and delivered as a 0600 file through Compose secrets
+# (ADR-021). Immich reads DB_PASSWORD_FILE and postgres POSTGRES_PASSWORD_FILE;
+# hostnames and names are plain environment, so a fresh install starts
+# without manual configuration.
 name: immich
 version: 3.3.0
 title: Immich
@@ -18,6 +21,11 @@ services:
 - name: server
   image: ghcr.io/immich-app/immich-server:v3.3.0
   exposes: web
+  environment:
+    DB_HOSTNAME: database
+    DB_USERNAME: immich
+    DB_DATABASE_NAME: immich
+    REDIS_HOSTNAME: cache
   # Image VOLUME: /data (uploads, thumbnails, encoded video). The
   # official image runs as root (upstream compose sets no user), so
   # ownership stays untouched.
@@ -37,6 +45,10 @@ services:
 - name: database
   image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
   exposes: ""
+  environment:
+    POSTGRES_USER: immich
+    POSTGRES_DB: immich
+    POSTGRES_INITDB_ARGS: --data-checksums
   # Image VOLUME: /var/lib/postgresql/data (postgres uid 999, 0700).
   data:
   - target: /var/lib/postgresql/data
@@ -79,3 +91,16 @@ backuppaths:
 sso:
   class: optional
   protocols: [oidc]
+database:
+  service: database
+  kind: postgres
+  database: immich
+  username: immich
+  passwordsecret: db_password
+secrets:
+- name: db_password
+  consumers:
+  - service: database
+    env: POSTGRES_PASSWORD_FILE
+  - service: server
+    env: DB_PASSWORD_FILE

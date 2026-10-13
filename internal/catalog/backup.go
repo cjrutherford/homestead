@@ -8,7 +8,7 @@ import (
 
 // DatabaseKind selects the export mechanics: file copies for
 // embedded SQLite, dumps for server databases. Credentials ride
-// secret-backed variables at export time (see DEFERRED) — declarations
+// secret-backed variables at export time (S266: PasswordSecret) — declarations
 // name what to export and as whom, never passwords.
 type DatabaseKind string
 
@@ -37,6 +37,10 @@ type DatabaseBackup struct {
 	Path     string
 	Database string
 	Username string
+	// PasswordSecret names the manifest secret (SecretDecl.Name)
+	// holding the Postgres password; backups resolve it from the
+	// secret store (S266). Empty means the caller supplies one.
+	PasswordSecret string
 }
 
 // Validate checks the declaration against known services.

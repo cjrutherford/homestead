@@ -148,11 +148,67 @@ func (c *Client) UninstallPackage(ctx context.Context, name string, body map[str
 	return out.ID, nil
 }
 
+// ConfigurePackageRotating applies variable changes and rotates the
+// named secrets in one configure operation.
+func (c *Client) ConfigurePackageRotating(ctx context.Context, name string, changes []map[string]any, rotate []string) (int64, error) {
+	var out OperationStarted
+	body := map[string]any{"changes": changes, "rotate_secrets": rotate}
+	if err := c.postJSON(ctx, "/api/v1/catalog/"+name+"/configure", body, &out); err != nil {
+		return 0, err
+	}
+	return out.ID, nil
+}
+
 // ConfigurePackage applies service variable changes, returning the
 // operation id for progress streams.
 func (c *Client) ConfigurePackage(ctx context.Context, name string, changes []map[string]any) (int64, error) {
 	var out OperationStarted
 	if err := c.postJSON(ctx, "/api/v1/catalog/"+name+"/configure", map[string]any{"changes": changes}, &out); err != nil {
+		return 0, err
+	}
+	return out.ID, nil
+}
+
+// AppSecret is one declared package secret as served (S266): names and
+// presence only, never a value.
+type AppSecret struct {
+	Name      string   `json:"name"`
+	StoreName string   `json:"store_name"`
+	Present   bool     `json:"present"`
+	Immutable bool     `json:"immutable"`
+	Services  []string `json:"services"`
+	Database  bool     `json:"database_password"`
+}
+
+// AppSecrets lists a package's declared secret-backed variables.
+func (c *Client) AppSecrets(ctx context.Context, name string) ([]AppSecret, error) {
+	var out []AppSecret
+	if err := c.get(ctx, "/api/v1/catalog/"+name+"/secrets", &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// RegisterAppSecret registers an existing value for a declared secret
+// (installs that predate S266). The value travels in the request body
+// once; the database password is verified unless skipVerify is set.
+func (c *Client) RegisterAppSecret(ctx context.Context, name, secret, value string, skipVerify bool) (string, error) {
+	var out struct {
+		StoreName string `json:"store_name"`
+	}
+	body := map[string]any{"value": value, "skip_verify": skipVerify}
+	if err := c.postJSON(ctx, "/api/v1/catalog/"+name+"/secrets/"+secret, body, &out); err != nil {
+		return "", err
+	}
+	return out.StoreName, nil
+}
+
+// RotatePackageSecrets rotates declared secrets through the configure
+// operation, returning its operation id.
+func (c *Client) RotatePackageSecrets(ctx context.Context, name string, secrets []string) (int64, error) {
+	var out OperationStarted
+	body := map[string]any{"changes": []map[string]any{}, "rotate_secrets": secrets}
+	if err := c.postJSON(ctx, "/api/v1/catalog/"+name+"/configure", body, &out); err != nil {
 		return 0, err
 	}
 	return out.ID, nil

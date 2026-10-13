@@ -360,7 +360,7 @@ func TestRefuseInstalled(t *testing.T) {
 	}
 	// InstallDefinition refuses too, so no caller can bypass the check.
 	plan := InstallPlan{Package: "jellyfin", Routes: []docker.Route{{}}, Compose: StackFiles{ComposeYAML: "x"}}
-	if _, err := InstallDefinition(plan, storage.NewRegistry(st), dir, st); err == nil ||
+	if _, err := InstallDefinition(plan, storage.NewRegistry(st), dir, st, nil); err == nil ||
 		!strings.Contains(err.Error(), "already installed") {
 		t.Fatalf("definition err = %v", err)
 	}

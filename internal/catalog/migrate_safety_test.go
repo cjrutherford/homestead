@@ -242,7 +242,7 @@ func TestConcurrentMigrationRefused(t *testing.T) {
 	if _, err := MigrateDefinition(opts); !errors.Is(err, ErrMigrationActive) {
 		t.Fatalf("second approval err = %v", err)
 	}
-	if _, err := ConfigureDefinition(ConfigPlan{Manifest: f.manifest}, f.dir, "nextcloud", f.st); err == nil {
+	if _, err := ConfigureDefinition(ConfigPlan{Manifest: f.manifest}, f.dir, "nextcloud", f.st, nil); err == nil {
 		t.Fatal("configure ran during a migration")
 	}
 	first.Cleanup()

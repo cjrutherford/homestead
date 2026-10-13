@@ -98,7 +98,7 @@ func TestRenewalCheckSchedulesQuietlyAndReports(t *testing.T) {
 	issuedAt := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	st := renewalFixture(t, issuedAt)
 	now := issuedAt.Add(time.Hour)
-	sched := NewScheduler(st, t.TempDir(), scheduler.WithClock(func() time.Time { return now }))
+	sched := NewScheduler(st, t.TempDir(), nil, scheduler.WithClock(func() time.Time { return now }))
 	srv := New("127.0.0.1:0")
 	srv.MountTLSRenewal(st, sched.Now)
 	srv.MountDoctor(certDoctorChecks(st, sched.Now))

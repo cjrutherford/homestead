@@ -24,6 +24,7 @@ func TestGeneratedStacksValidateWithCompose(t *testing.T) {
 		t.Skip("docker compose unavailable")
 	}
 	catalog := repoCatalog(t)
+	secrets := newMemSecrets(t)
 	for _, name := range catalog.Names() {
 		manifest, err := catalog.Get(name)
 		if err != nil {
@@ -39,7 +40,10 @@ func TestGeneratedStacksValidateWithCompose(t *testing.T) {
 			t.Fatalf("%s compose carries proprietary extensions", name)
 		}
 		dir := t.TempDir()
-		if err := WriteStack(dir, files); err != nil {
+		if err := ensureNames(secrets, storeNames(files.SecretFiles)); err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteStack(dir, files, secrets); err != nil {
 			t.Fatalf("WriteStack(%s): %v", name, err)
 		}
 		//nolint:gosec // test-only compose invocation on generated files.
@@ -76,7 +80,7 @@ func TestOverrideMergesWithCompose(t *testing.T) {
 		t.Fatalf("Generate: %v", err)
 	}
 	dir := t.TempDir()
-	if err := WriteStack(dir, files); err != nil {
+	if err := WriteStack(dir, files, nil); err != nil {
 		t.Fatalf("WriteStack: %v", err)
 	}
 	plan := ConfigPlan{

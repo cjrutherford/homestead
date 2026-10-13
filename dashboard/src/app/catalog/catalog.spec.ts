@@ -142,4 +142,43 @@ describe('Catalog', () => {
     fixture.detectChanges();
     expect(text()).toContain('#8');
   });
+
+  it('registers and rotates secret-backed variables without showing values', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    fixture.detectChanges();
+    fixture.componentInstance['select']('jellyfin');
+    http
+      .expectOne('/api/v1/catalog/jellyfin')
+      .flush({ ...MANIFEST, Secrets: [{ Name: 'db_password', Immutable: false }] });
+    const listed = {
+      name: 'db_password',
+      store_name: 'app_jellyfin_db_password',
+      present: false,
+      immutable: false,
+      services: ['db'],
+      database_password: true,
+    };
+    http.expectOne('/api/v1/catalog/jellyfin/secrets').flush([listed]);
+    fixture.detectChanges();
+    expect(text()).toContain('db_password');
+    expect(text()).toContain('missing');
+
+    fixture.componentInstance['patchSecretValue']('db_password', 'old-pass');
+    fixture.componentInstance['registerSecret']('db_password');
+    const register = http.expectOne('/api/v1/catalog/jellyfin/secrets/db_password');
+    expect(register.request.body).toEqual({ value: 'old-pass', skip_verify: false });
+    register.flush({ store_name: 'app_jellyfin_db_password' });
+    http
+      .expectOne('/api/v1/catalog/jellyfin/secrets')
+      .flush([{ ...listed, present: true }]);
+    fixture.detectChanges();
+    expect(text()).toContain('present');
+    expect(text()).not.toContain('old-pass');
+
+    fixture.componentInstance['rotateSecret']('db_password');
+    const rotate = http.expectOne('/api/v1/catalog/jellyfin/configure');
+    expect(rotate.request.body).toEqual({ changes: [], rotate_secrets: ['db_password'] });
+    rotate.flush({ id: 12 });
+  });
 });

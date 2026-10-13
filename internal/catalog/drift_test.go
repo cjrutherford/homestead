@@ -164,7 +164,7 @@ func TestInstallRecordsFingerprints(t *testing.T) {
 	stackDir := t.TempDir()
 	st := openDriftStore(t)
 	stubComposeUp(t, false)
-	def, err := InstallDefinition(plan, registry, stackDir, st)
+	def, err := InstallDefinition(plan, registry, stackDir, st, nil)
 	if err != nil {
 		t.Fatalf("InstallDefinition: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestConfigureRecordsFingerprints(t *testing.T) {
 	dir := t.TempDir()
 	st := openDriftStore(t)
 	stubComposeUp(t, false)
-	def, err := ConfigureDefinition(configPlan(), dir, "jellyfin", st)
+	def, err := ConfigureDefinition(configPlan(), dir, "jellyfin", st, nil)
 	if err != nil {
 		t.Fatalf("ConfigureDefinition: %v", err)
 	}
@@ -268,10 +268,10 @@ func TestDefinitionsNeedStore(t *testing.T) {
 	base := t.TempDir()
 	registry := installRegistry(t, base)
 	plan := installPlan(t, base)
-	if _, err := InstallDefinition(plan, registry, t.TempDir(), nil); err == nil {
+	if _, err := InstallDefinition(plan, registry, t.TempDir(), nil, nil); err == nil {
 		t.Fatal("install without store accepted")
 	}
-	if _, err := ConfigureDefinition(configPlan(), t.TempDir(), "jellyfin", nil); err == nil {
+	if _, err := ConfigureDefinition(configPlan(), t.TempDir(), "jellyfin", nil, nil); err == nil {
 		t.Fatal("configure without store accepted")
 	}
 	dir := removeStack(t)

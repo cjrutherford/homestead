@@ -3,8 +3,10 @@
 # Image tags follow the official 2026.8 compose (server, worker, postgres
 # 16); digests stay out because multi-arch digests differ per platform
 # while tags resolve correctly everywhere.
-# Database and secret credentials wire post-install through configuration
-# (S157); secret-backed variables arrive in their own slice.
+# Secrets (S266): the Postgres password and Authentik secret key are
+# generated into the secret store at install and delivered to containers
+# as 0600 files through Compose secrets (ADR-021), never environment values.
+# Authentik reads file:// URIs for its settings; postgres reads *_FILE.
 name: authentik
 version: 2026.8.3
 title: Authentik
@@ -20,6 +22,10 @@ services:
   image: ghcr.io/goauthentik/server:2026.8.3
   exposes: web
   command: [server]
+  environment:
+    AUTHENTIK_POSTGRESQL__HOST: postgresql
+    AUTHENTIK_POSTGRESQL__USER: authentik
+    AUTHENTIK_POSTGRESQL__NAME: authentik
   # No image VOLUME; the official compose binds media and templates.
   # Authentik runs as uid 1000.
   data:
@@ -37,6 +43,10 @@ services:
   image: ghcr.io/goauthentik/server:2026.8.3
   exposes: ""
   command: [worker]
+  environment:
+    AUTHENTIK_POSTGRESQL__HOST: postgresql
+    AUTHENTIK_POSTGRESQL__USER: authentik
+    AUTHENTIK_POSTGRESQL__NAME: authentik
   data:
   - target: /media
     class: application
@@ -56,6 +66,9 @@ services:
 - name: postgresql
   image: docker.io/library/postgres:16-alpine
   exposes: ""
+  environment:
+    POSTGRES_USER: authentik
+    POSTGRES_DB: authentik
   # Image VOLUME: /var/lib/postgresql/data (alpine postgres uid 70, 0700).
   data:
   - target: /var/lib/postgresql/data
@@ -90,3 +103,25 @@ database:
   kind: postgres
   database: authentik
   username: authentik
+  passwordsecret: db_password
+secrets:
+- name: db_password
+  consumers:
+  - service: postgresql
+    env: POSTGRES_PASSWORD_FILE
+  - service: server
+    env: AUTHENTIK_POSTGRESQL__PASSWORD
+    uri: true
+  - service: worker
+    env: AUTHENTIK_POSTGRESQL__PASSWORD
+    uri: true
+- name: secret_key
+  # Rotating the key would invalidate sessions and encrypted fields.
+  immutable: true
+  consumers:
+  - service: server
+    env: AUTHENTIK_SECRET_KEY
+    uri: true
+  - service: worker
+    env: AUTHENTIK_SECRET_KEY
+    uri: true

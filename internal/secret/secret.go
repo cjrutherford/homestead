@@ -35,6 +35,16 @@ func DefaultKeyPath() string {
 	return filepath.Join(layout.LibDir.Path, KeyFileName)
 }
 
+// AppSecretPrefix marks app-owned secrets (S266): container variables
+// the catalog generates. Configuration export leaves them out; they are
+// recovered from encrypted backups (S259), not from the export document.
+const AppSecretPrefix = "app_"
+
+// IsAppSecret reports whether name is an app-owned secret.
+func IsAppSecret(name string) bool {
+	return len(name) > len(AppSecretPrefix) && name[:len(AppSecretPrefix)] == AppSecretPrefix
+}
+
 var validName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 // maxValueBytes caps stored values: tokens are short, and a bound keeps

@@ -3,6 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import {
   ApiService,
+  AppSecret,
   CatalogManifest,
   InstallPlan,
   PackageSummary,
@@ -60,6 +61,10 @@ export class Catalog implements OnInit {
   protected readonly publicIp = signal('');
   protected readonly configRows = signal<ConfigRow[]>([]);
   protected readonly unsetRows = signal<ConfigRow[]>([]);
+  protected readonly appSecrets = signal<AppSecret[]>([]);
+  protected readonly secretValues = signal<Record<string, string>>({});
+  protected readonly skipVerify = signal(false);
+  protected readonly secretNotice = signal<string | null>(null);
 
   /** Installed packages cannot be installed again (S276). */
   protected isInstalled(): boolean {
@@ -106,6 +111,15 @@ export class Catalog implements OnInit {
         this.volumes.set([]);
         this.configRows.set([{ service: manifest.Services[0]?.name ?? '', key: '', value: '' }]);
         this.unsetRows.set([]);
+        this.appSecrets.set([]);
+        this.secretValues.set({});
+        this.secretNotice.set(null);
+        if ((manifest.Secrets ?? []).length > 0) {
+          this.api.appSecrets(manifest.Name).subscribe({
+            next: (secrets) => this.appSecrets.set(secrets),
+            error: (failure: HttpErrorResponse) => this.error.set(failure.message),
+          });
+        }
       },
       error: (failure: HttpErrorResponse) => {
         this.busy.set(false);
@@ -282,6 +296,53 @@ export class Catalog implements OnInit {
     this.busy.set(true);
     this.error.set(null);
     this.api.configurePackage(manifest.Name, changes).subscribe({
+      next: ({ id }) => {
+        this.busy.set(false);
+        this.operationId.set(id);
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.busy.set(false);
+        this.error.set(failure.error ?? failure.message);
+      },
+    });
+  }
+
+  patchSecretValue(name: string, value: string): void {
+    this.secretValues.update((values) => ({ ...values, [name]: value }));
+  }
+
+  /** Registers the owner-supplied existing value (installs that predate S266). */
+  registerSecret(secret: string): void {
+    const manifest = this.selected();
+    const value = this.secretValues()[secret] ?? '';
+    if (manifest === null || value === '') {
+      return;
+    }
+    this.busy.set(true);
+    this.error.set(null);
+    this.api.registerAppSecret(manifest.Name, secret, value, this.skipVerify()).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.secretValues.update((values) => ({ ...values, [secret]: '' }));
+        this.secretNotice.set(`Registered ${secret}.`);
+        this.api.appSecrets(manifest.Name).subscribe((secrets) => this.appSecrets.set(secrets));
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.busy.set(false);
+        this.error.set(failure.error ?? failure.message);
+      },
+    });
+  }
+
+  /** Rotates a generated secret through the configure operation. */
+  rotateSecret(secret: string): void {
+    const manifest = this.selected();
+    if (manifest === null) {
+      return;
+    }
+    this.busy.set(true);
+    this.error.set(null);
+    this.api.configurePackage(manifest.Name, [], [secret]).subscribe({
       next: ({ id }) => {
         this.busy.set(false);
         this.operationId.set(id);

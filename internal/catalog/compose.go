@@ -145,13 +145,17 @@ type composeTmpfs struct {
 // deterministic container names, restart unless stopped, and only the
 // sections generation was told about.
 type composeService struct {
-	Image     string          `yaml:"image"`
-	Container string          `yaml:"container_name"`
-	Restart   string          `yaml:"restart"`
-	Command   []string        `yaml:"command,omitempty"`
-	Ports     []string        `yaml:"ports,omitempty"`
-	Volumes   []composeVolume `yaml:"volumes,omitempty"`
-	Networks  []string        `yaml:"networks,omitempty"`
+	Image     string   `yaml:"image"`
+	Container string   `yaml:"container_name"`
+	Restart   string   `yaml:"restart"`
+	Command   []string `yaml:"command,omitempty"`
+	// Environment carries plain manifest variables and the in-container
+	// PATHS of secret files; never a secret value (ADR-021).
+	Environment map[string]string `yaml:"environment,omitempty"`
+	Secrets     []string          `yaml:"secrets,omitempty"`
+	Ports       []string          `yaml:"ports,omitempty"`
+	Volumes     []composeVolume   `yaml:"volumes,omitempty"`
+	Networks    []string          `yaml:"networks,omitempty"`
 }
 
 // composeNetwork renders one top-level network: external Homestead
@@ -161,11 +165,18 @@ type composeNetwork struct {
 	External bool `yaml:"external,omitempty"`
 }
 
+// composeSecret is one top-level secret: a relative file source, so the
+// stack directory stays relocatable and valid without Homestead.
+type composeSecret struct {
+	File string `yaml:"file"`
+}
+
 // composeFile is the rendered document root.
 type composeFile struct {
 	Name     string                    `yaml:"name"`
 	Services map[string]composeService `yaml:"services"`
 	Networks map[string]composeNetwork `yaml:"networks,omitempty"`
+	Secrets  map[string]composeSecret  `yaml:"secrets,omitempty"`
 }
 
 // StackFiles is the generation outcome: the Compose document plus the
@@ -173,6 +184,9 @@ type composeFile struct {
 type StackFiles struct {
 	ComposeYAML string
 	Stack       docker.Stack
+	// SecretFiles names the secret files the document references
+	// (metadata only); WriteStack materializes them from the store.
+	SecretFiles []SecretFile
 }
 
 // Generate renders inspectable Compose artifacts from a manifest plus
@@ -232,6 +246,7 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 				rendered.Volumes = append(rendered.Volumes, entry)
 			}
 		}
+		rendered.Environment, rendered.Secrets = serviceSecretWiring(manifest, name)
 		if len(serviceNetworks) > 0 {
 			rendered.Networks = append([]string(nil), serviceNetworks...)
 		}
@@ -245,6 +260,13 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 				entry.External = true
 			}
 			document.Networks[network.Name] = entry
+		}
+	}
+	secretFiles := SecretFilesFor(manifest)
+	if len(secretFiles) > 0 {
+		document.Secrets = map[string]composeSecret{}
+		for _, f := range secretFiles {
+			document.Secrets[f.Key] = composeSecret{File: "./" + SecretsDirName + "/" + f.Key}
 		}
 	}
 	var body strings.Builder
@@ -263,18 +285,57 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 			Name: manifest.Name, Dir: docker.DirFor(manifest.Name),
 			Services: names, Enabled: true,
 		},
+		SecretFiles: secretFiles,
 	}, nil
 }
 
-// WriteStack writes generated artifacts under dir: compose.yaml only,
-// since application stacks own no other files at generation time.
-// Configuration and secrets arrive in S157 without touching this file.
-func WriteStack(dir string, files StackFiles) error {
+// serviceSecretWiring renders one service's environment (plain manifest
+// variables plus secret file paths) and its secret references.
+func serviceSecretWiring(manifest Manifest, service string) (map[string]string, []string) {
+	env := map[string]string{}
+	for _, svc := range manifest.Services {
+		if svc.Name == service {
+			for k, v := range svc.Environment {
+				env[k] = v
+			}
+		}
+	}
+	var secrets []string
+	seen := map[string]bool{}
+	for _, decl := range manifest.Secrets {
+		for _, c := range decl.Consumers {
+			if c.Service != service {
+				continue
+			}
+			key := secretKey(service, decl.Name)
+			env[c.Env] = c.value(key)
+			if !seen[key] {
+				seen[key] = true
+				secrets = append(secrets, key)
+			}
+		}
+	}
+	sort.Strings(secrets)
+	if len(env) == 0 {
+		env = nil
+	}
+	return env, secrets
+}
+
+// WriteStack writes generated artifacts under dir: compose.yaml, plus
+// the 0600 secret files the document references, resolved from the
+// secret store (S266, ADR-021). A nil source is only valid for stacks
+// without secrets. Secret files land before compose.yaml, so a missing
+// secret fails before any reference to it exists.
+func WriteStack(dir string, files StackFiles, secrets SecretStore) error {
 	if err := files.Stack.Validate(); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("catalog: stack dir: %w", err)
+	}
+	if err := WriteSecretFiles(dir, files.SecretFiles, secrets); err != nil {
+		return err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(files.ComposeYAML), 0o644); err != nil {
 		return fmt.Errorf("catalog: write compose.yaml: %w", err)

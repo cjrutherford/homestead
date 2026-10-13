@@ -1,0 +1,355 @@
+package catalog
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+	"homestead/internal/secret"
+)
+
+// Secret-backed container variables (S266, ADR-021). The secret store
+// stays the encrypted source of truth; each value reaches a container as
+// a mode 0600 file under the stack directory, referenced from the base
+// Compose document through top-level `secrets:` with `file:` sources.
+// The files live in the stack directory, never under
+// <mount>/<package>, so plaintext backups cannot include them. No value
+// appears in YAML, `environment:`, logs, audit, drift, or export.
+
+// SecretsDirName is the stack-relative directory holding materialized
+// secret files.
+const SecretsDirName = "secrets"
+
+// SecretFileMode is the only mode a secret file may carry.
+const SecretFileMode os.FileMode = 0o600
+
+var validSecretName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// SecretConsumer wires one secret into one service: Env is the
+// environment variable that receives the in-container PATH of the file
+// (the images' own `*_FILE` convention), or, with URI set, a
+// `file://` URI of it (Authentik's convention). Never the value.
+type SecretConsumer struct {
+	Service string
+	Env     string
+	URI     bool
+}
+
+// SecretDecl declares one secret-backed variable. Name is the logical
+// name (also how configure addresses it); the store name derives from
+// package and name (SecretStoreName). Immutable secrets are generated
+// once and refuse rotation (rotating them would break existing data).
+type SecretDecl struct {
+	Name      string
+	Consumers []SecretConsumer
+	Immutable bool
+}
+
+// SecretStoreName is the secret-store row holding a package secret.
+// The `app_` prefix marks app-owned secrets, which configuration export
+// leaves out (they are covered by encrypted backups, S259).
+func SecretStoreName(pkg, name string) string {
+	return secret.AppSecretPrefix + strings.ReplaceAll(pkg, "-", "_") + "_" + name
+}
+
+// secretKey is the Compose secret name and file name for one
+// (service, secret) pair: one file per consuming service, because each
+// file must be owned by that service's user to stay readable at 0600.
+func secretKey(service, name string) string {
+	return strings.NewReplacer("-", "_", ".", "_").Replace(service) + "_" + name
+}
+
+func secretContainerPath(key string) string { return "/run/secrets/" + key }
+
+func (c SecretConsumer) value(key string) string {
+	if c.URI {
+		return "file://" + secretContainerPath(key)
+	}
+	return secretContainerPath(key)
+}
+
+func validateSecrets(m Manifest, services map[string]bool) error {
+	seen := map[string]bool{}
+	envs := map[string]bool{}
+	envSvc := map[string]map[string]string{}
+	for _, svc := range m.Services {
+		envSvc[svc.Name] = svc.Environment
+	}
+	for _, decl := range m.Secrets {
+		if !validSecretName.MatchString(decl.Name) {
+			return fmt.Errorf("catalog: secret name %q must match [a-z][a-z0-9_]*", decl.Name)
+		}
+		if len(SecretStoreName(m.Name, decl.Name)) > 64 {
+			return fmt.Errorf("catalog: secret %q store name exceeds 64 characters", decl.Name)
+		}
+		if seen[decl.Name] {
+			return fmt.Errorf("catalog: duplicate secret %q", decl.Name)
+		}
+		seen[decl.Name] = true
+		if len(decl.Consumers) == 0 {
+			return fmt.Errorf("catalog: secret %q needs at least one consumer", decl.Name)
+		}
+		for _, c := range decl.Consumers {
+			if !services[c.Service] {
+				return fmt.Errorf("catalog: secret %q consumer service %q unknown", decl.Name, c.Service)
+			}
+			if !validEnvKey.MatchString(c.Env) {
+				return fmt.Errorf("catalog: secret %q consumer variable %q invalid", decl.Name, c.Env)
+			}
+			id := c.Service + "\x00" + c.Env
+			if envs[id] {
+				return fmt.Errorf("catalog: service %q variable %q wired twice", c.Service, c.Env)
+			}
+			envs[id] = true
+			if _, plain := envSvc[c.Service][c.Env]; plain {
+				return fmt.Errorf("catalog: service %q variable %q is both plain and secret-backed", c.Service, c.Env)
+			}
+		}
+	}
+	if m.Database != nil && m.Database.PasswordSecret != "" {
+		if !seen[m.Database.PasswordSecret] {
+			return fmt.Errorf("catalog: database password secret %q is not declared", m.Database.PasswordSecret)
+		}
+		if m.Database.Kind != DatabasePostgres {
+			return fmt.Errorf("catalog: only postgres takes a password secret")
+		}
+	}
+	return nil
+}
+
+// SecretFile is one materialized file: metadata only, never a value.
+type SecretFile struct {
+	Key       string
+	Service   string
+	Name      string // logical secret name
+	StoreName string
+	UID, GID  *int
+}
+
+// SecretFilesFor lists the files a manifest needs, sorted by key, with
+// the owner each needs (the consuming service's declared data owner).
+func SecretFilesFor(m Manifest) []SecretFile {
+	owners := map[string][2]*int{}
+	for _, svc := range m.Services {
+		for _, d := range svc.Data {
+			if d.UID != nil || d.GID != nil {
+				owners[svc.Name] = [2]*int{d.UID, d.GID}
+				break
+			}
+		}
+	}
+	seen := map[string]bool{}
+	var out []SecretFile
+	for _, decl := range m.Secrets {
+		for _, c := range decl.Consumers {
+			key := secretKey(c.Service, decl.Name)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			o := owners[c.Service]
+			out = append(out, SecretFile{Key: key, Service: c.Service, Name: decl.Name,
+				StoreName: SecretStoreName(m.Name, decl.Name), UID: o[0], GID: o[1]})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out
+}
+
+// SecretStore is the slice of the secret store this package needs.
+type SecretStore interface {
+	Get(name string) (string, error)
+	Set(name, value string) error
+}
+
+// generateSecretValue makes a strong value: 32 random bytes as hex
+// (safe in URIs, SQL literals, and shell-free contexts).
+func generateSecretValue() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("catalog: generate secret: %w", err)
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+// EnsureSecrets generates a strong value into the store for every
+// declared secret that has none. Existing values are never touched.
+func EnsureSecrets(src SecretStore, m Manifest) error {
+	var names []string
+	for _, decl := range m.Secrets {
+		names = append(names, SecretStoreName(m.Name, decl.Name))
+	}
+	return ensureNames(src, names)
+}
+
+func ensureNames(src SecretStore, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	if src == nil {
+		return fmt.Errorf("catalog: secrets need a secret store")
+	}
+	for _, name := range names {
+		if _, err := src.Get(name); err == nil {
+			continue
+		} else if !errors.Is(err, secret.ErrNotFound) {
+			return fmt.Errorf("catalog: read secret %q: %w", name, err)
+		}
+		value, err := generateSecretValue()
+		if err != nil {
+			return err
+		}
+		if err := src.Set(name, value); err != nil {
+			return fmt.Errorf("catalog: store secret %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func storeNames(files []SecretFile) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, f := range files {
+		if !seen[f.StoreName] {
+			seen[f.StoreName] = true
+			out = append(out, f.StoreName)
+		}
+	}
+	return out
+}
+
+// chownSecret hands a secret file to its consuming user, stubbed in
+// tests (the daemon runs as root; tests do not).
+var chownSecret = func(path string, uid, gid int) error { return os.Chown(path, uid, gid) }
+
+// WriteSecretFiles resolves each file's value from the store and writes
+// it mode 0600 under dir/secrets (directory 0700), owned by the
+// consuming service's user. Existing files are rewritten in place so a
+// running container's bind mount keeps seeing the file. A missing
+// secret fails naming the store entry, never writing an empty file.
+func WriteSecretFiles(dir string, files []SecretFile, src SecretStore) error {
+	if len(files) == 0 {
+		return nil
+	}
+	if src == nil {
+		return fmt.Errorf("catalog: secret files need a secret store")
+	}
+	secDir := filepath.Join(dir, SecretsDirName)
+	if err := os.MkdirAll(secDir, 0o700); err != nil {
+		return fmt.Errorf("catalog: secrets dir: %w", err)
+	}
+	if err := os.Chmod(secDir, 0o700); err != nil {
+		return fmt.Errorf("catalog: secrets dir mode: %w", err)
+	}
+	for _, f := range files {
+		value, err := src.Get(f.StoreName)
+		if err != nil {
+			if errors.Is(err, secret.ErrNotFound) {
+				return fmt.Errorf("catalog: secret %q is not in the secret store", f.StoreName)
+			}
+			return fmt.Errorf("catalog: read secret %q: %w", f.StoreName, err)
+		}
+		path := filepath.Join(secDir, f.Key)
+		out, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, SecretFileMode)
+		if err != nil {
+			return fmt.Errorf("catalog: write secret file %s: %w", f.Key, err)
+		}
+		_, werr := out.WriteString(value)
+		cerr := out.Close()
+		if werr != nil || cerr != nil {
+			return fmt.Errorf("catalog: write secret file %s", f.Key)
+		}
+		if err := os.Chmod(path, SecretFileMode); err != nil {
+			return fmt.Errorf("catalog: secret file mode %s: %w", f.Key, err)
+		}
+		if f.UID != nil || f.GID != nil {
+			uid, gid := -1, -1
+			if f.UID != nil {
+				uid = *f.UID
+			}
+			if f.GID != nil {
+				gid = *f.GID
+			}
+			if err := chownSecret(path, uid, gid); err != nil {
+				return fmt.Errorf("catalog: secret file owner %s: %w", f.Key, err)
+			}
+		}
+	}
+	return nil
+}
+
+// composeSecretsWired reports whether the stack's compose file carries
+// secret wiring: false for stacks installed before S266.
+func composeSecretsWired(dir string, m Manifest) bool {
+	if len(m.Secrets) == 0 {
+		return false
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "compose.yaml"))
+	if err != nil {
+		return false
+	}
+	var doc struct {
+		Secrets map[string]any `yaml:"secrets"`
+	}
+	if yaml.Unmarshal(raw, &doc) != nil {
+		return false
+	}
+	for _, f := range SecretFilesFor(m) {
+		if _, ok := doc.Secrets[f.Key]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// detectSecretFiles reports secret files drift treats opaquely:
+// presence and mode only, never content. Paths come from the stack's
+// own compose `secrets:` file sources.
+func detectSecretFiles(dir string) []Drift {
+	raw, err := os.ReadFile(filepath.Join(dir, "compose.yaml"))
+	if err != nil {
+		return nil
+	}
+	var doc struct {
+		Secrets map[string]struct {
+			File string `yaml:"file"`
+		} `yaml:"secrets"`
+	}
+	if yaml.Unmarshal(raw, &doc) != nil {
+		return nil
+	}
+	var out []Drift
+	for _, entry := range doc.Secrets {
+		if entry.File == "" || !strings.HasPrefix(entry.File, "./"+SecretsDirName+"/") {
+			continue
+		}
+		rel := strings.TrimPrefix(entry.File, "./")
+		info, err := os.Stat(filepath.Join(dir, rel))
+		switch {
+		case err != nil:
+			out = append(out, Drift{Path: rel, Kind: DriftRemoved})
+		case info.Mode().Perm() != SecretFileMode:
+			out = append(out, Drift{Path: rel, Kind: DriftMode})
+		}
+	}
+	return out
+}
+
+func isSecretPath(path string) bool { return strings.HasPrefix(path, SecretsDirName+"/") }
+
+// WriteSecretFilesIfWired refreshes secret files for stacks whose
+// compose file carries the wiring; stacks that predate S266 are left
+// untouched (their stack is never regenerated here).
+func WriteSecretFilesIfWired(dir string, m Manifest, src SecretStore) error {
+	if !composeSecretsWired(dir, m) {
+		return nil
+	}
+	return WriteSecretFiles(dir, SecretFilesFor(m), src)
+}

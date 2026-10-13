@@ -16,9 +16,9 @@ import (
 // backup schedules registered. Later periodic jobs (drift, certificates)
 // register more sources on the returned value. The daemon runs it; the
 // status route only reads it.
-func NewScheduler(st *store.Store, catalogDir string, opts ...scheduler.Option) *scheduler.Scheduler {
+func NewScheduler(st *store.Store, catalogDir string, secrets catalog.SecretStore, opts ...scheduler.Option) *scheduler.Scheduler {
 	s := scheduler.New(st, opts...)
-	s.Register("backup", backupSource(st, catalogDir, s.Now))
+	s.Register("backup", backupSource(st, catalogDir, secrets, s.Now))
 	s.Register("drift", driftSource(st, s.Now))
 	s.Register("cert", certRenewalSource(st, s.Now))
 	return s
@@ -27,9 +27,9 @@ func NewScheduler(st *store.Store, catalogDir string, opts ...scheduler.Option) 
 // backupSource turns persisted backup schedules into scheduler jobs.
 // Jobs assemble at fire time from live storage and catalog facts, via
 // the same backupJob assembly pre-update backups use. Database
-// passwords are never stored, so scheduled postgres backups fail with a
-// recorded error until credential custody lands (docs/DEFERRED.md).
-func backupSource(st *store.Store, catalogDir string, now func() time.Time) scheduler.Source {
+// passwords resolve from the secret store (S266); a missing secret
+// fails the run with an error naming it.
+func backupSource(st *store.Store, catalogDir string, secrets catalog.SecretStore, now func() time.Time) scheduler.Source {
 	return scheduler.SourceFunc(func() ([]scheduler.Job, error) {
 		schedules, err := backup.NewSchedules(st).List()
 		if err != nil {
@@ -51,7 +51,7 @@ func backupSource(st *store.Store, catalogDir string, now func() time.Time) sche
 					if err != nil {
 						return operation.Definition{}, fmt.Errorf("unknown package %q", schedule.Package)
 					}
-					job, err := backupJob(st, manifest, "")
+					job, err := backupJob(st, manifest, secrets, "")
 					if err != nil {
 						return operation.Definition{}, err
 					}

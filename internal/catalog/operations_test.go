@@ -95,7 +95,7 @@ func TestInstallFlow(t *testing.T) {
 	plan := installPlan(t, base)
 	stackDir := t.TempDir()
 	calls := stubComposeUp(t, false)
-	def, err := InstallDefinition(plan, registry, stackDir, openDriftStore(t))
+	def, err := InstallDefinition(plan, registry, stackDir, openDriftStore(t), nil)
 	if err != nil {
 		t.Fatalf("InstallDefinition: %v", err)
 	}
@@ -133,19 +133,19 @@ func TestInstallValidates(t *testing.T) {
 	registry := installRegistry(t, base)
 	plan := installPlan(t, base)
 	empty := InstallPlan{}
-	if _, err := InstallDefinition(empty, registry, "", openDriftStore(t)); err == nil {
+	if _, err := InstallDefinition(empty, registry, "", openDriftStore(t), nil); err == nil {
 		t.Fatal("installed empty plan")
 	}
 	// Production directory resolves from the plan when unset.
 	stubComposeUp(t, false)
-	def, err := InstallDefinition(plan, registry, "", openDriftStore(t))
+	def, err := InstallDefinition(plan, registry, "", openDriftStore(t), nil)
 	if err != nil {
 		t.Fatalf("InstallDefinition: %v", err)
 	}
 	if len(def.Steps) != 4 {
 		t.Fatalf("def = %+v", def)
 	}
-	if _, err := InstallDefinition(plan, nil, "", openDriftStore(t)); err == nil {
+	if _, err := InstallDefinition(plan, nil, "", openDriftStore(t), nil); err == nil {
 		t.Fatal("installed without registry")
 	}
 }
@@ -155,7 +155,7 @@ func TestInstallUpFailureAborts(t *testing.T) {
 	registry := installRegistry(t, base)
 	plan := installPlan(t, base)
 	stubComposeUp(t, true)
-	def, err := InstallDefinition(plan, registry, t.TempDir(), openDriftStore(t))
+	def, err := InstallDefinition(plan, registry, t.TempDir(), openDriftStore(t), nil)
 	if err != nil {
 		t.Fatalf("InstallDefinition: %v", err)
 	}

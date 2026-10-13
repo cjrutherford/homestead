@@ -64,6 +64,9 @@ func (c ConfigChange) Validate(known map[string]bool) error {
 type ConfigPlan struct {
 	Manifest Manifest
 	Changes  []ConfigChange
+	// Rotate names declared secrets (SecretDecl.Name) to replace with
+	// fresh generated values (S266). Values never appear in plans.
+	Rotate []string
 }
 
 // Validate checks the plan: manifest shape, known unique services,
@@ -72,8 +75,30 @@ func (p ConfigPlan) Validate() error {
 	if err := p.Manifest.Validate(); err != nil {
 		return err
 	}
-	if len(p.Changes) == 0 {
+	if len(p.Changes) == 0 && len(p.Rotate) == 0 {
 		return fmt.Errorf("catalog: configuration needs at least one change")
+	}
+	declared := map[string]SecretDecl{}
+	for _, d := range p.Manifest.Secrets {
+		declared[d.Name] = d
+	}
+	seenRotate := map[string]bool{}
+	for _, name := range p.Rotate {
+		d, ok := declared[name]
+		switch {
+		case !ok:
+			return fmt.Errorf("catalog: %q declares no secret %q", p.Manifest.Name, name)
+		case d.Immutable:
+			return fmt.Errorf("catalog: secret %q cannot be rotated: replacing it would break existing data", name)
+		case seenRotate[name]:
+			return fmt.Errorf("catalog: secret %q rotated twice", name)
+		}
+		seenRotate[name] = true
+	}
+	for _, change := range p.Changes {
+		if err := refuseSecretKeys(p.Manifest, change); err != nil {
+			return err
+		}
 	}
 	known := map[string]bool{}
 	for _, service := range p.Manifest.Services {
@@ -88,6 +113,31 @@ func (p ConfigPlan) Validate() error {
 			return fmt.Errorf("catalog: duplicate changes for service %q", p.Changes[i].Service)
 		}
 		seen[p.Changes[i].Service] = true
+	}
+	return nil
+}
+
+// refuseSecretKeys keeps secret-backed variables (and the plain
+// variables their `*_FILE` forms replace) out of the plaintext override:
+// they change only through rotation or registration.
+func refuseSecretKeys(m Manifest, change ConfigChange) error {
+	for _, decl := range m.Secrets {
+		for _, c := range decl.Consumers {
+			if c.Service != change.Service {
+				continue
+			}
+			plain := strings.TrimSuffix(c.Env, "_FILE")
+			keys := make([]string, 0, len(change.Set)+len(change.Unset))
+			for k := range change.Set {
+				keys = append(keys, k)
+			}
+			keys = append(keys, change.Unset...)
+			for _, k := range keys {
+				if k == c.Env || k == plain {
+					return fmt.Errorf("catalog: variable %q on %q is secret-backed; rotate secret %q instead of setting it", k, change.Service, decl.Name)
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -174,7 +224,7 @@ func ApplyConfig(dir string, plan ConfigPlan) error {
 // the override file, then bring the stack up so containers adopt it.
 // Only reviewed plans execute: empty and invalid plans refuse before
 // anything writes.
-func ConfigureDefinition(plan ConfigPlan, dir, project string, st *store.Store) (operation.Definition, error) {
+func ConfigureDefinition(plan ConfigPlan, dir, project string, st *store.Store, secrets SecretStore) (operation.Definition, error) {
 	if err := plan.Validate(); err != nil {
 		return operation.Definition{}, err
 	}
@@ -188,15 +238,48 @@ func ConfigureDefinition(plan ConfigPlan, dir, project string, st *store.Store) 
 		return operation.Definition{}, fmt.Errorf("catalog: configure needs a store")
 	}
 	def := operation.Definition{Type: "catalog.configure"}
-	def.Steps = append(def.Steps, operation.StepDef{
-		Name: "write-config",
-		Run: func(ctx context.Context) error {
-			if err := ApplyConfig(dir, plan); err != nil {
-				return err
-			}
-			return RecordFingerprints(st, plan.Manifest.Name, dir)
-		},
-	})
+	if len(plan.Rotate) > 0 || len(plan.Manifest.Secrets) > 0 {
+		if secrets == nil {
+			return operation.Definition{}, fmt.Errorf("catalog: configure of %q needs a secret store", plan.Manifest.Name)
+		}
+	}
+	wired := composeSecretsWired(dir, plan.Manifest)
+	if len(plan.Rotate) > 0 && !wired {
+		return operation.Definition{}, fmt.Errorf("catalog: %q has no secret wiring (installed before S266); register its existing secrets or reinstall before rotating", plan.Manifest.Name)
+	}
+	if wired {
+		// Repair path: regenerate missing store values and missing or
+		// mis-moded files on every configure, never overwriting values.
+		def.Steps = append(def.Steps, operation.StepDef{
+			Name: "ensure-secrets",
+			Run: func(ctx context.Context) error {
+				if err := EnsureSecrets(secrets, plan.Manifest); err != nil {
+					return err
+				}
+				return WriteSecretFiles(dir, SecretFilesFor(plan.Manifest), secrets)
+			},
+		})
+	}
+	if len(plan.Rotate) > 0 {
+		def.Steps = append(def.Steps, operation.StepDef{
+			Name: "rotate-secrets",
+			Run: func(ctx context.Context) error {
+				defer lockProject(project)()
+				return rotateSecrets(ctx, plan.Manifest, dir, project, plan.Rotate, secrets)
+			},
+		})
+	}
+	if len(plan.Changes) > 0 {
+		def.Steps = append(def.Steps, operation.StepDef{
+			Name: "write-config",
+			Run: func(ctx context.Context) error {
+				if err := ApplyConfig(dir, plan); err != nil {
+					return err
+				}
+				return RecordFingerprints(st, plan.Manifest.Name, dir)
+			},
+		})
+	}
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "up",
 		Run: func(ctx context.Context) error {

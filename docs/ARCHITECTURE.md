@@ -71,3 +71,14 @@ storage: `<class mount>/<package>/<subpath>`, declared per service in
 absolute host paths, so the stack stays usable without Homestead.
 Backups scan `<mount>/<package>` per assigned mount. Existing installs
 that predate this layout are migrated by S277.
+
+## Secret-backed container variables
+Values the secret store holds that containers need (database passwords,
+the Authentik secret key) are delivered as mode 0600 files under the
+stack directory and referenced from the generated Compose through
+top-level `secrets:` with `file:` sources (S266, ADR-021). They are never
+`environment:` entries and never enter YAML, drift output, logs, audit,
+operation payloads, configuration export, or plaintext backups.
+Manifests declare them (`secrets:`); install generates missing values;
+configure rotates them; backups read the database password from the
+store. See `docs/DEVELOPMENT.md`.

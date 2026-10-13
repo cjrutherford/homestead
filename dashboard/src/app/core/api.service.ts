@@ -142,6 +142,18 @@ export interface CatalogManifest {
     }[];
   };
   BackupPaths: string[];
+  /** Secret-backed container variables the package declares (S266). */
+  Secrets?: { Name: string; Immutable: boolean }[];
+}
+
+/** GET /api/v1/catalog/:name/secrets — presence only, never values (S266). */
+export interface AppSecret {
+  name: string;
+  store_name: string;
+  present: boolean;
+  immutable: boolean;
+  services: string[];
+  database_password: boolean;
 }
 
 /** POST /api/v1/catalog/:name/plan — reviewed install change set. */
@@ -545,10 +557,30 @@ export class ApiService {
   configurePackage(
     name: string,
     changes: Record<string, unknown>[],
+    rotateSecrets: string[] = [],
   ): Observable<OperationStarted> {
     return this.http.post<OperationStarted>(
       `/api/v1/catalog/${name}/configure`,
-      { changes },
+      rotateSecrets.length > 0
+        ? { changes, rotate_secrets: rotateSecrets }
+        : { changes },
+    );
+  }
+
+  appSecrets(name: string): Observable<AppSecret[]> {
+    return this.http.get<AppSecret[]>(`/api/v1/catalog/${name}/secrets`);
+  }
+
+  /** Registers an existing value for installs that predate S266. */
+  registerAppSecret(
+    name: string,
+    secret: string,
+    value: string,
+    skipVerify: boolean,
+  ): Observable<{ store_name: string }> {
+    return this.http.post<{ store_name: string }>(
+      `/api/v1/catalog/${name}/secrets/${secret}`,
+      { value, skip_verify: skipVerify },
     );
   }
 

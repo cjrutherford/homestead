@@ -341,7 +341,11 @@ func newMigrationFixture(t *testing.T, name string) *migrationFixture {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	if err := WriteStack(dir, files); err != nil {
+	secrets := newMemSecrets(t)
+	if err := ensureNames(secrets, storeNames(files.SecretFiles)); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteStack(dir, files, secrets); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordFingerprints(st, name, dir); err != nil {

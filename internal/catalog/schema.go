@@ -34,6 +34,11 @@ type Service struct {
 	// persistent paths placed on mounted storage, ephemeral ones
 	// explicitly marked.
 	Data []DataPath
+	// Environment is plain, non-secret container environment the
+	// package needs to start (hostnames, usernames, database names).
+	// Secret values never belong here (ADR-021): declare them in the
+	// manifest's Secrets list instead.
+	Environment map[string]string
 }
 
 // Validate checks service shape and endpoint linkage.
@@ -49,6 +54,14 @@ func (s Service) Validate(endpoints map[string]bool) error {
 	image, tag, found := strings.Cut(s.Image, ":")
 	if !found || image == "" || tag == "" || tag == "latest" {
 		return fmt.Errorf("catalog: image %q must pin a non-latest tag", s.Image)
+	}
+	for key, value := range s.Environment {
+		if !validEnvKey.MatchString(key) {
+			return fmt.Errorf("catalog: service %q has invalid environment variable %q", s.Name, key)
+		}
+		if len(value) > 4096 {
+			return fmt.Errorf("catalog: service %q variable %q exceeds 4096 characters", s.Name, key)
+		}
 	}
 	if s.Exposes != "" && !endpoints[s.Exposes] {
 		return fmt.Errorf("catalog: service %q exposes unknown endpoint %q", s.Name, s.Exposes)
@@ -221,6 +234,9 @@ type Manifest struct {
 	Database     *DatabaseBackup
 	Hooks        []BackupHook
 	SSO          SSODeclaration
+	// Secrets declares secret-backed container variables (S266,
+	// ADR-021): delivered as 0600 files via Compose `secrets:`.
+	Secrets []SecretDecl
 }
 
 // Validate checks the manifest end to end.
@@ -295,6 +311,9 @@ func (m Manifest) Validate() error {
 		}
 	}
 	if err := m.SSO.Validate(); err != nil {
+		return err
+	}
+	if err := validateSecrets(m, services); err != nil {
 		return err
 	}
 	for i := range m.Hooks {

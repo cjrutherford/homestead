@@ -60,8 +60,9 @@ var composeRun = func(ctx context.Context, dir, project string, args ...string) 
 // the planned production directory. Only approved plans execute:
 // empty packages, missing routes, and unwritten compose refuse before
 // anything runs. The write step re-baselines drift fingerprints, so
-// edits after install read as drift (S212).
-func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string, st *store.Store) (operation.Definition, error) {
+// edits after install read as drift (S212). Declared secrets generate
+// into the secret store when absent (S266).
+func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string, st *store.Store, secrets SecretStore) (operation.Definition, error) {
 	if plan.Package == "" {
 		return operation.Definition{}, fmt.Errorf("catalog: install needs a package")
 	}
@@ -76,6 +77,9 @@ func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string,
 	}
 	if st == nil {
 		return operation.Definition{}, fmt.Errorf("catalog: install needs a store")
+	}
+	if len(plan.Compose.SecretFiles) > 0 && secrets == nil {
+		return operation.Definition{}, fmt.Errorf("catalog: install of %q needs a secret store", plan.Package)
 	}
 	if dir == "" {
 		dir = plan.Compose.Stack.Dir
@@ -97,7 +101,12 @@ func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string,
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "write-stack",
 		Run: func(ctx context.Context) error {
-			if err := WriteStack(dir, files); err != nil {
+			// Generate any secret the store lacks (never overwriting),
+			// then materialize the 0600 files beside compose.yaml.
+			if err := ensureNames(secrets, storeNames(files.SecretFiles)); err != nil {
+				return err
+			}
+			if err := WriteStack(dir, files, secrets); err != nil {
 				return err
 			}
 			return RecordFingerprints(st, plan.Package, dir)

@@ -66,7 +66,7 @@ backuppaths: [data]
 		t.Fatalf("write: %v", err)
 	}
 	srv := New("127.0.0.1:0")
-	srv.MountCatalog(s, catalogDir)
+	srv.MountCatalog(s, catalogDir, nil)
 	// Planning verifies class mounts against live discovery; stub it
 	// so tests do not depend on the host mount table.
 	oldDiscover := discoverStorage

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"homestead/internal/discover"
 	"homestead/internal/docker"
 	"homestead/internal/operation"
+	"homestead/internal/secret"
 	"homestead/internal/storage"
 	"homestead/internal/store"
 	"homestead/internal/update"
@@ -27,9 +29,9 @@ const defaultBackupRetain = 7
 // drift plans against running containers with best-effort registry
 // maxima, and approved application through the safe-update operation.
 // Long executions return operation IDs onto existing streams.
-func (s *Server) MountUpdates(st *store.Store, catalogDir string, client *docker.Client) {
+func (s *Server) MountUpdates(st *store.Store, catalogDir string, client *docker.Client, secrets catalog.SecretStore) {
 	s.mux.HandleFunc("GET /api/v1/updates", handleUpdatesList(st, catalogDir, client))
-	s.mux.HandleFunc("POST /api/v1/updates/{name}/apply", handleUpdatesApply(st, catalogDir, client))
+	s.mux.HandleFunc("POST /api/v1/updates/{name}/apply", handleUpdatesApply(st, catalogDir, client, secrets))
 }
 
 // packageUpdate is the review row: the plan plus whether anything
@@ -183,11 +185,13 @@ func selectBackupSources(assignments []storage.Assignment, byPoint map[string]di
 	return sources
 }
 
-// backupJob assembles the pre-update backup: file sources plus the
-// declared database export against its conventional container, with
-// secrets arriving per call. Retention follows the package schedule,
+// backupJob assembles the backup (scheduled and pre-update): file
+// sources plus the declared database export against its conventional
+// container. The Postgres password resolves from the secret store
+// (S266) through the manifest's PasswordSecret; an explicit password
+// argument overrides it. A missing secret fails naming it. Retention follows the package schedule,
 // defaulting to a week unscheduled.
-func backupJob(st *store.Store, manifest catalog.Manifest, password string) (backup.Job, error) {
+func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.SecretStore, password string) (backup.Job, error) {
 	sources, err := backupSources(st, manifest.Name)
 	if err != nil {
 		return backup.Job{}, err
@@ -226,6 +230,13 @@ func backupJob(st *store.Store, manifest catalog.Manifest, password string) (bac
 	}
 	if manifest.Database != nil {
 		job.Container = manifest.Name + "-" + manifest.Database.Service
+		if password == "" && manifest.Database.PasswordSecret != "" {
+			resolved, err := databasePassword(secrets, manifest)
+			if err != nil {
+				return backup.Job{}, err
+			}
+			password = resolved
+		}
 		job.Password = password
 		for _, source := range sources {
 			job.SrcRoot = filepath.Join(source.Mountpoint, source.Path)
@@ -238,7 +249,25 @@ func backupJob(st *store.Store, manifest catalog.Manifest, password string) (bac
 	return job, nil
 }
 
-func handleUpdatesApply(st *store.Store, catalogDir string, client *docker.Client) http.HandlerFunc {
+// databasePassword reads the declared database password secret. A
+// missing secret names the store entry and the remedy; an empty value is
+// never returned.
+func databasePassword(secrets catalog.SecretStore, manifest catalog.Manifest) (string, error) {
+	name := catalog.SecretStoreName(manifest.Name, manifest.Database.PasswordSecret)
+	if secrets == nil {
+		return "", fmt.Errorf("postgres backup needs secret %q but no secret store is available", name)
+	}
+	value, err := secrets.Get(name)
+	if errors.Is(err, secret.ErrNotFound) || (err == nil && value == "") {
+		return "", fmt.Errorf("postgres backup needs secret %q, which is not in the secret store: register the existing database password (homesteadctl apps secrets register %s %s) or reinstall", name, manifest.Name, manifest.Database.PasswordSecret)
+	}
+	if err != nil {
+		return "", fmt.Errorf("postgres backup cannot read secret %q: %w", name, err)
+	}
+	return value, nil
+}
+
+func handleUpdatesApply(st *store.Store, catalogDir string, client *docker.Client, secrets catalog.SecretStore) http.HandlerFunc {
 	runner := operation.NewRunner(st)
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
@@ -275,7 +304,7 @@ func handleUpdatesApply(st *store.Store, catalogDir string, client *docker.Clien
 			req.Moves = append(req.Moves, move)
 		}
 		if body.Backup {
-			job, err := backupJob(st, manifest, body.DBPassword)
+			job, err := backupJob(st, manifest, secrets, body.DBPassword)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 				return

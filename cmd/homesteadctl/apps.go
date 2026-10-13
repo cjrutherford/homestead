@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"homestead/internal/apiclient"
@@ -16,7 +17,7 @@ import (
 // endpoints.
 func runApps(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|plan|install|configure|uninstall>")
+		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|plan|install|configure|secrets|uninstall>")
 		return exitUsage
 	}
 	switch args[0] {
@@ -28,6 +29,8 @@ func runApps(ctx context.Context, client *apiclient.Client, args []string, stdou
 		return runAppsInstall(ctx, client, args[1:], stdout, stderr)
 	case "configure":
 		return runAppsConfigure(ctx, client, args[1:], stdout, stderr)
+	case "secrets":
+		return runAppsSecrets(ctx, client, args[1:], stdout, stderr)
 	case "uninstall":
 		return runAppsUninstall(ctx, client, args[1:], stdout, stderr)
 	default:
@@ -200,10 +203,13 @@ func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string
 
 func runAppsConfigure(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	var service string
-	var sets, unsets []string
+	var sets, unsets, rotates []string
 	var positional []string
 	for i := 0; i < len(args); i++ {
 		switch {
+		case args[i] == "--rotate-secret" && i+1 < len(args):
+			rotates = append(rotates, args[i+1])
+			i++
 		case args[i] == "--service" && i+1 < len(args):
 			service = args[i+1]
 			i++
@@ -220,9 +226,21 @@ func runAppsConfigure(ctx context.Context, client *apiclient.Client, args []stri
 			positional = append(positional, args[i])
 		}
 	}
-	if service == "" || len(positional) != 1 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps configure <package> --service NAME [--set KEY=VALUE] [--unset KEY]")
+	if len(positional) != 1 || (service == "" && len(rotates) == 0) {
+		fmt.Fprintln(stderr, "usage: homesteadctl apps configure <package> --service NAME [--set KEY=VALUE] [--unset KEY] [--rotate-secret NAME]")
 		return exitUsage
+	}
+	if service == "" && (len(sets) > 0 || len(unsets) > 0) {
+		fmt.Fprintln(stderr, "--set and --unset need --service")
+		return exitUsage
+	}
+	if service == "" {
+		id, err := client.RotatePackageSecrets(ctx, positional[0], rotates)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		fmt.Fprintf(stdout, "operation: %d\n", id)
+		return exitOK
 	}
 	entry := map[string]any{"Service": service}
 	setMap := map[string]any{}
@@ -246,11 +264,103 @@ func runAppsConfigure(ctx context.Context, client *apiclient.Client, args []stri
 	if len(unsetList) > 0 {
 		entry["Unset"] = unsetList
 	}
-	id, err := client.ConfigurePackage(ctx, positional[0], []map[string]any{entry})
+	var id int64
+	var err error
+	if len(rotates) > 0 {
+		id, err = client.ConfigurePackageRotating(ctx, positional[0], []map[string]any{entry}, rotates)
+	} else {
+		id, err = client.ConfigurePackage(ctx, positional[0], []map[string]any{entry})
+	}
 	if err != nil {
 		return fail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "operation: %d\n", id)
+	return exitOK
+}
+
+// runAppsSecrets lists a package's secret-backed variables, or registers
+// an existing value (S266):
+//
+//	apps secrets <pkg>
+//	apps secrets register <pkg> <secret> --value-file PATH|- [--skip-verify]
+//
+// The value comes from a file or stdin, never argv, so it stays out of
+// shell history and process listings.
+func runAppsSecrets(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	if len(args) >= 1 && args[0] == "register" {
+		return runAppsSecretRegister(ctx, client, args[1:], stdout, stderr)
+	}
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "usage: homesteadctl apps secrets <package> | register <package> <secret> --value-file PATH|- [--skip-verify]")
+		return exitUsage
+	}
+	secrets, err := client.AppSecrets(ctx, args[0])
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if len(secrets) == 0 {
+		fmt.Fprintln(stdout, "no secret-backed variables")
+		return exitOK
+	}
+	for _, s := range secrets {
+		state := "missing"
+		if s.Present {
+			state = "present"
+		}
+		flags := ""
+		if s.Database {
+			flags += " database-password"
+		}
+		if s.Immutable {
+			flags += " not-rotatable"
+		}
+		fmt.Fprintf(stdout, "%s: %s (%s; services: %s)%s\n", s.Name, state, s.StoreName, strings.Join(s.Services, ", "), flags)
+	}
+	return exitOK
+}
+
+func runAppsSecretRegister(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	var valueFile string
+	skip := false
+	var positional []string
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--value-file" && i+1 < len(args):
+			valueFile = args[i+1]
+			i++
+		case args[i] == "--skip-verify":
+			skip = true
+		case strings.HasPrefix(args[i], "-") && args[i] != "-":
+			fmt.Fprintf(stderr, "unknown flag %q\n", args[i])
+			return exitUsage
+		default:
+			positional = append(positional, args[i])
+		}
+	}
+	if valueFile == "" || len(positional) != 2 {
+		fmt.Fprintln(stderr, "usage: homesteadctl apps secrets register <package> <secret> --value-file PATH|- [--skip-verify]")
+		return exitUsage
+	}
+	var raw []byte
+	var err error
+	if valueFile == "-" {
+		raw, err = io.ReadAll(io.LimitReader(os.Stdin, 8192))
+	} else {
+		raw, err = os.ReadFile(valueFile)
+	}
+	if err != nil {
+		return fail(stderr, err)
+	}
+	value := strings.TrimRight(string(raw), "\r\n")
+	if value == "" {
+		fmt.Fprintln(stderr, "secret value is empty")
+		return exitUsage
+	}
+	store, err := client.RegisterAppSecret(ctx, positional[0], positional[1], value, skip)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "registered: %s\n", store)
 	return exitOK
 }
 

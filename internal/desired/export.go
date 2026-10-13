@@ -61,6 +61,9 @@ func ExportState(desiredPath string, secrets *secret.Store) (Export, error) {
 	}
 	names := make([]string, 0, len(infos))
 	for _, info := range infos {
+		if secret.IsAppSecret(info.Name) {
+			continue
+		}
 		names = append(names, info.Name)
 	}
 	return Export{

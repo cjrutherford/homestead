@@ -28,6 +28,9 @@ const (
 	DriftModified = "modified"
 	// DriftRemoved marks a recorded file that no longer exists.
 	DriftRemoved = "removed"
+	// DriftMode marks a secret file whose mode is not 0600 (S266).
+	// Secret files are opaque to drift: presence and mode only.
+	DriftMode = "mode"
 )
 
 // Drift is one diverged generated file: its stack-relative path and
@@ -159,6 +162,9 @@ func Detect(dir string, recorded map[string]string) ([]Drift, error) {
 			out = append(out, Drift{Path: name, Kind: DriftModified})
 		}
 	}
+	if _, watched := recorded["compose.yaml"]; watched {
+		out = append(out, detectSecretFiles(dir)...)
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out, nil
 }
@@ -284,6 +290,17 @@ func Restore(st *store.Store, stack, dir string) ([]string, error) {
 	}
 	var out []string
 	for _, drift := range drifts {
+		if isSecretPath(drift.Path) {
+			// Opaque secret files: restore can fix the mode but never
+			// holds their contents (configure re-materializes them).
+			if drift.Kind == DriftMode {
+				if err := os.Chmod(filepath.Join(dir, drift.Path), SecretFileMode); err != nil {
+					return nil, fmt.Errorf("catalog: restore %s mode: %w", drift.Path, err)
+				}
+				out = append(out, drift.Path)
+			}
+			continue
+		}
 		content, ok := recordedContents[drift.Path]
 		if !ok {
 			return nil, fmt.Errorf("catalog: no recorded content for %s", drift.Path)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,6 +19,19 @@ func appsStub(t *testing.T) string {
 			_, _ = w.Write([]byte(`[{"name":"jellyfin","version":"12.2","title":"Jellyfin","blurb":"Media.","category":"media","icon":"mdi:plex"}]`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/plan"):
 			_, _ = w.Write([]byte(`{"Package":"jellyfin","Requirements":{"Passed":true},"Routes":[{"Host":"jellyfin.lan","Exposure":"local"}],"DNS":[],"TLS":[],"Firewall":[],"Directories":[],"Mounts":[{"Service":"jellyfin","Target":"/config","Source":"/mnt/app/jellyfin/config","Class":"application","Declared":true},{"Service":"cache","Target":"/data","Ephemeral":true,"Declared":true}],"Notes":["owner volume ignored"],"Actions":["provision","up"]}`))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/secrets"):
+			_, _ = w.Write([]byte(`[{"name":"db_password","store_name":"app_authentik_db_password","present":false,"immutable":false,"services":["postgresql","server"],"database_password":true}]`))
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/secrets/"):
+			var body struct {
+				Value      string `json:"value"`
+				SkipVerify bool   `json:"skip_verify"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body.Value != "s3cret-value" || !body.SkipVerify {
+				http.Error(w, "bad body", http.StatusBadRequest)
+				return
+			}
+			_, _ = w.Write([]byte(`{"store_name":"app_authentik_db_password"}`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/install"):
 			_, _ = w.Write([]byte(`{"id":7}`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/configure"):
@@ -123,5 +137,36 @@ func TestAppsUninstall(t *testing.T) {
 	code, _, stderr := invoke(t, []string{"--server", url, "apps", "uninstall", "jellyfin", "--data-dir", "nope"})
 	if code != exitUsage || !strings.Contains(stderr, "MOUNT:PATH") {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+}
+
+func TestAppsSecrets(t *testing.T) {
+	url := appsStub(t)
+	code, stdout, _ := invoke(t, []string{"--server", url, "apps", "secrets", "authentik"})
+	if code != exitOK || !strings.Contains(stdout, "db_password: missing (app_authentik_db_password") ||
+		!strings.Contains(stdout, "database-password") {
+		t.Fatalf("exit=%d stdout=%q", code, stdout)
+	}
+	file := writeInput(t, "s3cret-value\n")
+	code, stdout, stderr := invoke(t, []string{"--server", url, "apps", "secrets", "register", "authentik", "db_password", "--value-file", file, "--skip-verify"})
+	if code != exitOK || !strings.Contains(stdout, "registered: app_authentik_db_password") {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if strings.Contains(stdout+stderr, "s3cret-value") {
+		t.Fatal("value echoed")
+	}
+	if code, _, _ := invoke(t, []string{"--server", url, "apps", "secrets", "register", "authentik", "db_password"}); code != exitUsage {
+		t.Fatalf("missing value file exit = %d", code)
+	}
+}
+
+func TestAppsConfigureRotateSecret(t *testing.T) {
+	url := appsStub(t)
+	code, stdout, _ := invoke(t, []string{"--server", url, "apps", "configure", "authentik", "--rotate-secret", "db_password"})
+	if code != exitOK || !strings.Contains(stdout, "operation: 9") {
+		t.Fatalf("exit=%d stdout=%q", code, stdout)
+	}
+	if code, _, _ := invoke(t, []string{"--server", url, "apps", "configure", "authentik", "--set", "A=b"}); code != exitUsage {
+		t.Fatalf("set without service exit = %d", code)
 	}
 }

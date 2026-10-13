@@ -1901,6 +1901,66 @@ key file does; it never mints a key over existing ciphertext.
   v1) and stranded the v2 rows; start now refuses naming the missing
   key files.
 
+## Secret-backed container variables (S266, ADR-021)
+
+Catalog manifests declare secret-backed variables under `secrets:` (a
+logical `name`, the `consumers` that receive it as service plus
+environment variable, and `immutable` for values that must never rotate)
+and name the database password with `database.passwordsecret`. Plain
+non-secret environment (hostnames, usernames, database names) is the
+per-service `environment:` map; a variable may not be both.
+
+- Secret-store name: `app_<package>_<name>` (dashes become underscores).
+  The `app_` prefix marks app-owned secrets; configuration export lists
+  only non-app secrets, because app secrets are recovered from encrypted
+  backups (S259), not the export document.
+- Install generates 32 random bytes (64 hex characters) per declared
+  secret that the store lacks, never overwriting an existing value, then
+  writes one file per consuming service: `<stack dir>/secrets/<service>_<name>`,
+  mode 0600 in a 0700 directory, owned by the uid/gid that service's
+  declared data paths use (so a non-root container user can read it).
+  Files live under the stack directory (`/opt/homestead/stacks/<package>/`),
+  never under `<mount>/<package>`, so plaintext backups do not copy them.
+- The generated `compose.yaml` carries a top-level `secrets:` map with
+  `file: ./secrets/<key>` sources and a per-service `secrets:` list. The
+  environment variable receives only the in-container path
+  (`/run/secrets/<key>`), or a `file://` URI for Authentik. No value
+  appears in `environment:`, the override file, drift, logs, audit,
+  operation payloads, or config export.
+- Delivery mechanism per image: Postgres (`postgres:16-alpine`,
+  `immich-app/postgres`): `POSTGRES_PASSWORD_FILE`; Immich server:
+  `DB_PASSWORD_FILE` (documented `_FILE` support); Authentik server and
+  worker: `AUTHENTIK_POSTGRESQL__PASSWORD` and `AUTHENTIK_SECRET_KEY` as
+  `file:///run/secrets/<key>` URIs (Authentik's `file://` syntax).
+- Configure: `apps configure <pkg> --rotate-secret NAME` (or the
+  dashboard Rotate button) runs through the normal configure operation:
+  a database password is changed in the running database with
+  `ALTER ROLE` (SQL on stdin, never argv), then stored, then files are
+  rewritten in place and consuming services restart. Immutable secrets
+  (Authentik `secret_key`) refuse rotation. Setting a secret-backed
+  variable (or its plain form such as `POSTGRES_PASSWORD`) through
+  `--set` is refused. Every configure also repairs missing or mis-moded
+  secret files.
+- Drift treats secret files as opaque: presence and mode (0600) only,
+  never content; restore fixes a wrong mode but cannot recreate a missing
+  file (run configure).
+- Backups resolve the Postgres password from the store through
+  `database.passwordsecret` for scheduled and pre-update runs; a missing
+  secret fails naming it (for example `app_authentik_db_password`).
+- Existing installs that predate S266: `homesteadctl apps secrets
+  register <pkg> db_password --value-file PATH|-` (or the dashboard)
+  stores the current password without touching the stack. It is verified
+  by authenticating to the running database over its network address
+  (the loopback and socket paths trust every caller) unless
+  `--skip-verify`. Such stacks have no secret wiring in `compose.yaml`,
+  so rotation is refused with that explanation.
+- Running Compose by hand without Homestead: the YAML is valid on its
+  own. Create `./secrets/<key>` files next to `compose.yaml` containing
+  the value (`umask 077`; chown to the consuming service's uid, for
+  example `chown 70 secrets/postgresql_db_password`, because the file
+  is bind-mounted with its host owner and mode 0600), keep one value
+  across the services that share a secret, then `docker compose up -d`.
+
 ## Provisional decisions (revisit, do not work around silently)
 
 - **Go module path is `homestead`** (bare). No VCS remote exists in the planning

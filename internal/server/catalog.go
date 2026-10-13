@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"path/filepath"
 
+	"homestead/internal/audit"
 	"homestead/internal/catalog"
 	"homestead/internal/discover"
 	"homestead/internal/docker"
@@ -22,13 +23,13 @@ import (
 // Long executions run through the operation engine; progress streams
 // on the existing operation endpoints, so these routes return
 // operation IDs instead of blocking.
-func (s *Server) MountCatalog(st *store.Store, catalogDir string) {
+func (s *Server) MountCatalog(st *store.Store, catalogDir string, secrets catalog.SecretStore) {
 	runner := operation.NewRunner(st)
 	s.mux.HandleFunc("GET /api/v1/catalog", handleCatalogList(st, catalogDir))
 	s.mux.HandleFunc("GET /api/v1/catalog/{name}", handleCatalogGet(catalogDir))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/plan", handleCatalogPlan(st, catalogDir))
-	s.mux.HandleFunc("POST /api/v1/catalog/{name}/install", handleCatalogInstall(st, catalogDir, runner))
-	s.mux.HandleFunc("POST /api/v1/catalog/{name}/configure", handleCatalogConfigure(st, catalogDir, runner))
+	s.mux.HandleFunc("POST /api/v1/catalog/{name}/install", handleCatalogInstall(st, catalogDir, runner, secrets))
+	s.mux.HandleFunc("POST /api/v1/catalog/{name}/configure", handleCatalogConfigure(st, catalogDir, runner, secrets))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/uninstall", handleCatalogUninstall(st, catalogDir, runner))
 }
 
@@ -296,7 +297,7 @@ func handleCatalogPlan(st *store.Store, catalogDir string) http.HandlerFunc {
 	}
 }
 
-func handleCatalogInstall(st *store.Store, catalogDir string, runner *operation.Runner) http.HandlerFunc {
+func handleCatalogInstall(st *store.Store, catalogDir string, runner *operation.Runner, secrets catalog.SecretStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body installBody
 		if err := decodeBody(r, &body); err != nil {
@@ -313,7 +314,7 @@ func handleCatalogInstall(st *store.Store, catalogDir string, runner *operation.
 			http.Error(w, err.Error(), status)
 			return
 		}
-		def, err := catalog.InstallDefinition(plan, storage.NewRegistry(st), "", st)
+		def, err := catalog.InstallDefinition(plan, storage.NewRegistry(st), "", st, secrets)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
@@ -327,7 +328,7 @@ func handleCatalogInstall(st *store.Store, catalogDir string, runner *operation.
 	}
 }
 
-func handleCatalogConfigure(st *store.Store, catalogDir string, runner *operation.Runner) http.HandlerFunc {
+func handleCatalogConfigure(st *store.Store, catalogDir string, runner *operation.Runner, secrets catalog.SecretStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		manifest, ok := loadPackage(catalogDir, name, w)
@@ -336,17 +337,20 @@ func handleCatalogConfigure(st *store.Store, catalogDir string, runner *operatio
 		}
 		var body struct {
 			Changes []catalog.ConfigChange `json:"changes"`
+			// RotateSecrets names declared secrets to replace with
+			// fresh values (S266); responses never carry values.
+			RotateSecrets []string `json:"rotate_secrets"`
 		}
 		if err := decodeBody(r, &body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		plan := catalog.ConfigPlan{Manifest: manifest, Changes: body.Changes}
+		plan := catalog.ConfigPlan{Manifest: manifest, Changes: body.Changes, Rotate: body.RotateSecrets}
 		if err := plan.Validate(); err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
-		def, err := catalog.ConfigureDefinition(plan, docker.DirFor(name), name, st)
+		def, err := catalog.ConfigureDefinition(plan, docker.DirFor(name), name, st, secrets)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
@@ -355,6 +359,17 @@ func handleCatalogConfigure(st *store.Store, catalogDir string, runner *operatio
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		if len(plan.Rotate) > 0 {
+			actor := "local"
+			if operator, ok := operatorFromContext(r.Context()); ok {
+				actor = operator.Session.Username
+			}
+			// Names only; rotated values are never logged or audited.
+			_, _ = audit.New(st).Record(audit.Entry{
+				Actor: actor, Action: "app.secret.rotate", Outcome: audit.OutcomeOK,
+				Detail: fmt.Sprintf("operation %d: %s rotating %v", op.ID, name, plan.Rotate),
+			})
 		}
 		writeJSON(w, map[string]any{"id": op.ID})
 	}

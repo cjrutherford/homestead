@@ -77,7 +77,7 @@ func scanAudit(t *testing.T, st *store.Store) []audit.Entry {
 func TestDriftScanSchedulerRecordsWithoutResolving(t *testing.T) {
 	srv, st, stackDir := driftTestServer(t)
 	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
-	sched := NewScheduler(st, t.TempDir(), scheduler.WithClock(func() time.Time { return now }))
+	sched := NewScheduler(st, t.TempDir(), nil, scheduler.WithClock(func() time.Time { return now }))
 	srv.MountDriftScan(st, sched.Now)
 
 	// Owner sets a 1h cadence at now; nothing is due before it elapses.
@@ -154,7 +154,7 @@ func TestDriftScanCleanStaysQuiet(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
-	sched := NewScheduler(st, t.TempDir(), scheduler.WithClock(func() time.Time { return now }))
+	sched := NewScheduler(st, t.TempDir(), nil, scheduler.WithClock(func() time.Time { return now }))
 	// Default schedule is enabled and daily, anchored at first read: not
 	// due on a fresh install, due one day later.
 	if err := sched.Tick(context.Background()); err != nil {
@@ -181,7 +181,7 @@ func TestDriftScanDisabledAndValidation(t *testing.T) {
 	srv, st, _ := driftTestServer(t)
 	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
 	clock := func() time.Time { return now }
-	sched := NewScheduler(st, t.TempDir(), scheduler.WithClock(clock))
+	sched := NewScheduler(st, t.TempDir(), nil, scheduler.WithClock(clock))
 	srv.MountDriftScan(st, clock)
 
 	if rec := scheduleAs(t, srv, "owner",
@@ -210,7 +210,7 @@ func TestDriftScanDisabledAndValidation(t *testing.T) {
 func TestDriftScanBoundaryAnchorAndReanchor(t *testing.T) {
 	srv, st, _ := driftTestServer(t)
 	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
-	sched := NewScheduler(st, t.TempDir(), scheduler.WithClock(func() time.Time { return now }))
+	sched := NewScheduler(st, t.TempDir(), nil, scheduler.WithClock(func() time.Time { return now }))
 	srv.MountDriftScan(st, sched.Now)
 	tick := func() {
 		t.Helper()

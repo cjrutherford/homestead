@@ -77,7 +77,7 @@ func TestGenerate(t *testing.T) {
 	}
 	dir := t.TempDir()
 	stackDir := filepath.Join(dir, "jellyfin")
-	if err := WriteStack(stackDir, files); err != nil {
+	if err := WriteStack(stackDir, files, nil); err != nil {
 		t.Fatalf("WriteStack: %v", err)
 	}
 	written, err := os.ReadFile(filepath.Join(stackDir, "compose.yaml"))

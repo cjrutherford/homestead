@@ -136,7 +136,7 @@ exposure:
 		t.Fatalf("write: %v", err)
 	}
 	srv := New("127.0.0.1:0")
-	srv.MountUpdates(s, catalogDir, dockerFake(t, image))
+	srv.MountUpdates(s, catalogDir, dockerFake(t, image), nil)
 	return srv
 }
 

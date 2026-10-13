@@ -32,7 +32,7 @@ func TestSchedulerFiresBackupSchedulesAndServesStatus(t *testing.T) {
 	}
 	now := saved.UpdatedAt
 	clock := func() time.Time { return now }
-	sched := NewScheduler(st, filepath.Join(t.TempDir(), "no-catalog"), scheduler.WithClock(clock))
+	sched := NewScheduler(st, filepath.Join(t.TempDir(), "no-catalog"), nil, scheduler.WithClock(clock))
 	srv := New("127.0.0.1:0")
 	srv.MountScheduler(sched)
 
@@ -145,7 +145,7 @@ func TestBackupSourceAnchorSurvivesRetentionEdit(t *testing.T) {
 	if _, err := schedules.Save(backup.Schedule{Package: "ghost", IntervalSeconds: 3600, Retain: 5, Enabled: true, Actor: "owner"}); err != nil {
 		t.Fatal(err)
 	}
-	sched := NewScheduler(st, t.TempDir(), scheduler.WithClock(func() time.Time { return first.UpdatedAt }))
+	sched := NewScheduler(st, t.TempDir(), nil, scheduler.WithClock(func() time.Time { return first.UpdatedAt }))
 	jobs, err := sched.Status()
 	if err != nil || len(jobs) != 3 || !jobs[0].NextDue.Equal(first.UpdatedAt.Add(time.Hour)) {
 		t.Fatalf("jobs = %+v, %v", jobs, err)

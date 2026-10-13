@@ -223,5 +223,47 @@
     </ul>
     <button type="button" (click)="addConfigRow(true)">Add unset</button>
     <button type="button" (click)="applyConfig()" [disabled]="busy()">Apply configuration</button>
+
+    @if (appSecrets().length > 0) {
+      <h4>Secrets</h4>
+      <p class="plan-note">
+        Secret-backed variables reach containers as owner-only files, never environment values.
+        Registering an existing password adopts it without regenerating the stack.
+      </p>
+      <ul>
+        @for (secret of appSecrets(); track secret.name) {
+          <li>
+            <strong>{{ secret.name }}</strong>
+            — {{ secret.present ? 'present' : 'missing' }} ({{ secret.services.join(', ') }})
+            <input
+              type="password"
+              autocomplete="off"
+              [attr.aria-label]="'Existing value for ' + secret.name"
+              [value]="secretValues()[secret.name] ?? ''"
+              (input)="patchSecretValue(secret.name, $any($event.target).value)"
+            />
+            <button type="button" (click)="registerSecret(secret.name)" [disabled]="busy()">
+              Register existing value
+            </button>
+            @if (!secret.immutable && secret.present) {
+              <button type="button" (click)="rotateSecret(secret.name)" [disabled]="busy()">
+                Rotate
+              </button>
+            }
+          </li>
+        }
+      </ul>
+      <label>
+        <input
+          type="checkbox"
+          [checked]="skipVerify()"
+          (change)="skipVerify.set($any($event.target).checked)"
+        />
+        Skip verification against the running database
+      </label>
+      @if (secretNotice() !== null) {
+        <p>{{ secretNotice() }}</p>
+      }
+    }
   }
 </section>

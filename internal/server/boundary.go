@@ -108,6 +108,8 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/catalog/{name}/plan":                   ClassSession,
 	"POST /api/v1/catalog/{name}/install":                ClassSession,
 	"POST /api/v1/catalog/{name}/configure":              ClassSession,
+	"GET /api/v1/catalog/{name}/secrets":                 ClassSession,
+	"POST /api/v1/catalog/{name}/secrets/{secret}":       ClassSession,
 	"POST /api/v1/catalog/{name}/uninstall":              ClassSession,
 	"GET /api/v1/catalog/{name}/drift":                   ClassSession,
 	"POST /api/v1/catalog/{name}/drift":                  ClassSession,

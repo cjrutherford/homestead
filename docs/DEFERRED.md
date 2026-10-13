@@ -66,9 +66,6 @@
   zone-wide public/overlay accepts, so serving the public internet
   needs an explicit accept-all shape before S227 applies planner
   output.
-- Secret-backed container variables: S157 writes operational values
-  only; injecting secret-store values into container environments
-  needs its own slice before apps with API keys install cleanly.
 - Container device passthrough: S162 detects GPU stacks, but compose
   generation has no devices/runtime fields, so installs cannot pass
   GPUs through yet; planning the fragment belongs with generation.
@@ -83,10 +80,6 @@
   backups find no sources. Planned as S276 (declared placement for new
   installs) and S277 (migration of existing installs plus a backup
   source guard).
-- Scheduled database backups: S260 fires backup schedules, but
-  database passwords are never stored, so scheduled postgres backups
-  fail with a recorded error (file-only and sqlite packages run); needs
-  secret custody for unattended exports.
 - ghcr registry checks: S190 discovers Docker Hub tags only; ghcr
   listings need a token flow before Immich updates discover
   upstream.
@@ -226,10 +219,8 @@
   user files, so file-level backups of a live instance are not
   crash-consistent and the manifest declares no database export for it;
   restore has no CLI/API surface yet (S276 KVM restored a run through
-  the `internal/backup` plan and definition directly); Immich has no
-  generated Redis or database environment, so owners must `apps configure`
-  `REDIS_HOSTNAME`, `DB_*`, and Postgres credentials before the server
-  starts.
+  the `internal/backup` plan and definition directly). (S266 resolved
+  the Immich database environment and credentials.)
 - App data migration follow-ups (S277): migration is per app and
   host-side. Not done: data that sits in a container's writable layer
   (a declared path with no mount at all, for example Authentik's
@@ -251,3 +242,13 @@
   not inside their steps, so an operation built just before the claim
   could still interleave; old volumes the migration did not record
   (for example volumes of apps removed earlier) are not managed here.
+- Secret-backed variables follow-ups (S266): stacks installed before S266
+  have no `secrets:` wiring in their recorded `compose.yaml`, and
+  Homestead never regenerates a recorded stack, so those installs can
+  register their database password (backups work) but cannot rotate or
+  receive secret files until uninstalled (data kept) and reinstalled; a
+  wiring upgrade for existing stacks is not built. Pg verification of a
+  registered password needs the database container running. Rotating a
+  non-database secret only rewrites files and restarts consumers. Drift
+  restore cannot recreate a missing secret file (configure does). Nextcloud
+  and Jellyfin declare no secrets.
