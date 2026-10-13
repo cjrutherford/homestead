@@ -15,6 +15,7 @@ import (
 	"homestead/internal/discover"
 	"homestead/internal/docker"
 	"homestead/internal/operation"
+	"homestead/internal/scheduler"
 	"homestead/internal/secret"
 	"homestead/internal/storage"
 	"homestead/internal/store"
@@ -197,7 +198,7 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 		return backup.Job{}, err
 	}
 	if len(sources) == 0 {
-		return backup.Job{}, fmt.Errorf("no backup sources for %q", manifest.Name)
+		return backup.Job{}, fmt.Errorf("%w: no backup sources for %q", scheduler.ErrUnavailable, manifest.Name)
 	}
 	assignments, err := storage.NewAssignments(st).List()
 	if err != nil {
@@ -211,13 +212,17 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 	if err != nil {
 		return backup.Job{}, err
 	}
+	sources, dbNotes := applyDatabaseHandling(manifest, assignedMountpoints(assignments), sources)
+	warnings = append(warnings, dbNotes...)
 	discovered, err := discover.DiscoverStorage()
 	if err != nil {
 		return backup.Job{}, err
 	}
 	dest, err := backup.ResolveDestination(storage.NewAssignments(st), discovered)
 	if err != nil {
-		return backup.Job{}, err
+		// A destination that is not mounted right now may be back by the
+		// next tick; the scheduler retries instead of spending the window.
+		return backup.Job{}, fmt.Errorf("%w: %v", scheduler.ErrUnavailable, err)
 	}
 	retain := defaultBackupRetain
 	schedules := backup.NewSchedules(st)

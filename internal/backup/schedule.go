@@ -267,7 +267,7 @@ func JobDefinition(job Job, now func() time.Time) (operation.Definition, error) 
 		def.Steps = append(def.Steps, operation.StepDef{
 			Name: source.StepName(),
 			Run: func(ctx context.Context) error {
-				n, err := copySource(rootFor(), source, job.Recipients)
+				n, err := copySource(rootFor(), source, job.Recipients, state)
 				state.record(source.Entry(), n)
 				return err
 			},
@@ -370,7 +370,7 @@ func prune(job Job, current string) error {
 // database export when present, with counts re-walked from disk.
 func writeJobManifest(job Job, stamp string, state *runState) error {
 	root := filepath.Join(job.DestRoot, job.Package, stamp)
-	manifest := Manifest{Package: job.Package, Created: stamp, Sources: map[string]string{}, Warnings: job.Warnings}
+	manifest := Manifest{Package: job.Package, Created: stamp, Sources: map[string]string{}, Warnings: append(append([]string(nil), job.Warnings...), state.warned()...)}
 	for _, source := range job.Sources {
 		manifest.recordSource(source)
 	}

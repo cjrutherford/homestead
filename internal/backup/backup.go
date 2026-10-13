@@ -3,6 +3,7 @@ package backup
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -38,6 +39,11 @@ type Source struct {
 	// files): it is only ever backed up encrypted, and restore forces
 	// its files to 0600.
 	Sensitive bool
+	// Exclude lists subdirectories (relative to the source tree) whose
+	// contents are left out of the copy: the directory itself is kept
+	// so modes and owners survive, but its files are not read. Used for
+	// live database directories a database export already covers.
+	Exclude []string
 }
 
 // Entry names the source inside a run: the manifest entry key and the
@@ -94,6 +100,12 @@ func (s Source) Validate() error {
 	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, "/../") {
 		return fmt.Errorf("backup: source path %q must stay inside its mount", s.Path)
 	}
+	for _, exclude := range s.Exclude {
+		c := filepath.Clean(exclude)
+		if exclude == "" || filepath.IsAbs(exclude) || c == "." || c == ".." || strings.HasPrefix(c, "../") {
+			return fmt.Errorf("backup: source exclude %q must be a subdirectory inside the tree", exclude)
+		}
+	}
 	return nil
 }
 
@@ -142,8 +154,22 @@ func (m Manifest) Format() int {
 // runState carries per-run facts between steps: file counts recorded
 // while archiving, because encrypted trees cannot be re-walked.
 type runState struct {
-	mu    sync.Mutex
-	files map[string]int
+	mu       sync.Mutex
+	files    map[string]int
+	warnings []string
+}
+
+// warn records a condition the run tolerated; it lands in the manifest.
+func (r *runState) warn(format string, args ...any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.warnings = append(r.warnings, fmt.Sprintf(format, args...))
+}
+
+func (r *runState) warned() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.warnings...)
 }
 
 func (r *runState) record(entry string, n int) {
@@ -209,16 +235,51 @@ func ResolveDestination(assignments *storage.Assignments, discovered discover.St
 // never followed. Missing sources fail loudly; typos must not read as
 // empty backups.
 func copyTree(src, dst string) (int, error) {
+	files, _, err := copyTreeOpts(src, dst, nil)
+	return files, err
+}
+
+// walkHook runs at the start of every walk callback; tests use it to
+// delete files after the directory was listed, as a live database does.
+var walkHook func(path string)
+
+// treeStats counts what a tree walk tolerated.
+type treeStats struct {
+	// Vanished is how many files disappeared between listing and
+	// reading (live databases drop temp files constantly) and were
+	// skipped instead of failing the run.
+	Vanished int
+}
+
+// excludeSet normalizes exclusion paths for lookup by slash-relative name.
+func excludeSet(exclude []string) map[string]bool {
+	set := map[string]bool{}
+	for _, e := range exclude {
+		set[filepath.ToSlash(filepath.Clean(e))] = true
+	}
+	return set
+}
+
+func copyTreeOpts(src, dst string, exclude []string) (int, treeStats, error) {
+	var stats treeStats
+	skip := excludeSet(exclude)
 	info, err := os.Stat(src)
 	if err != nil {
-		return 0, fmt.Errorf("backup: source %q: %w", src, err)
+		return 0, stats, fmt.Errorf("backup: source %q: %w", src, err)
 	}
 	if !info.IsDir() {
-		return 0, fmt.Errorf("backup: source %q is not a directory", src)
+		return 0, stats, fmt.Errorf("backup: source %q is not a directory", src)
 	}
 	files := 0
 	walk := func(path string, entry fs.DirEntry, err error) error {
+		if walkHook != nil {
+			walkHook(path)
+		}
 		if err != nil {
+			if path != src && errors.Is(err, fs.ErrNotExist) {
+				stats.Vanished++
+				return nil
+			}
 			return err
 		}
 		relative, err := filepath.Rel(src, path)
@@ -227,11 +288,19 @@ func copyTree(src, dst string) (int, error) {
 		}
 		target := filepath.Join(dst, relative)
 		info, err := entry.Info()
+		if errors.Is(err, fs.ErrNotExist) {
+			stats.Vanished++
+			return nil
+		}
 		if err != nil {
 			return err
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
 			if err := copySymlink(src, path, target); err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					stats.Vanished++
+					return nil
+				}
 				return err
 			}
 			files++
@@ -241,18 +310,28 @@ func copyTree(src, dst string) (int, error) {
 			if err := os.MkdirAll(target, info.Mode().Perm()); err != nil {
 				return err
 			}
-			return chownLike(target, info)
+			if err := chownLike(target, info); err != nil {
+				return err
+			}
+			if skip[filepath.ToSlash(relative)] {
+				return fs.SkipDir
+			}
+			return nil
 		}
 		if err := copyFile(path, target, entry); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				stats.Vanished++
+				return nil
+			}
 			return err
 		}
 		files++
 		return chownLike(target, info)
 	}
 	if err := filepath.WalkDir(src, walk); err != nil {
-		return 0, err
+		return 0, stats, err
 	}
-	return files, nil
+	return files, stats, nil
 }
 
 // chownLike gives dst the owner and group of the copied entry, so a
@@ -362,7 +441,7 @@ func Definition(request Request, now func() time.Time) (operation.Definition, er
 			Name: source.StepName(),
 			Run: func(ctx context.Context) error {
 				root := filepath.Join(request.Destination, request.Package, stampFor())
-				n, err := copySource(root, source, request.Recipients)
+				n, err := copySource(root, source, request.Recipients, state)
 				state.record(source.Entry(), n)
 				return err
 			},
@@ -386,8 +465,9 @@ func Definition(request Request, now func() time.Time) (operation.Definition, er
 // symlinked roots before walking: a linked root would back up the
 // target tree under a false name. With recipients the tree becomes one
 // encrypted tar stream (<entry>.tar.age) and nothing is written in
-// plaintext; it returns the file count.
-func copySource(root string, source Source, recipients []age.Recipient) (int, error) {
+// plaintext; it returns the file count and notes files that vanished
+// mid-copy in state (nil is allowed).
+func copySource(root string, source Source, recipients []age.Recipient, state *runState) (int, error) {
 	full := filepath.Join(source.Mountpoint, source.Path)
 	if info, err := os.Lstat(full); err != nil {
 		return 0, fmt.Errorf("backup: source %q: %w", source.Path, err)
@@ -401,10 +481,18 @@ func copySource(root string, source Source, recipients []age.Recipient) (int, er
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return 0, fmt.Errorf("backup: %w", err)
 	}
+	var n int
+	var stats treeStats
+	var err error
 	if len(recipients) > 0 {
-		return archiveTree(full, dst+ArchiveSuffix, recipients)
+		n, stats, err = archiveTreeOpts(full, dst+ArchiveSuffix, recipients, source.Exclude)
+	} else {
+		n, stats, err = copyTreeOpts(full, dst, source.Exclude)
 	}
-	return copyTree(full, dst)
+	if err == nil && stats.Vanished > 0 && state != nil {
+		state.warn("%d file(s) vanished while copying %s and were skipped (live files changing during the copy)", stats.Vanished, source.Entry())
+	}
+	return n, err
 }
 
 // writeManifest records the completed run: entries plus file counts
@@ -412,7 +500,7 @@ func copySource(root string, source Source, recipients []age.Recipient) (int, er
 // what was planned.
 func writeManifest(request Request, stamp string, state *runState) error {
 	root := filepath.Join(request.Destination, request.Package, stamp)
-	manifest := Manifest{Package: request.Package, Created: stamp, Sources: map[string]string{}}
+	manifest := Manifest{Package: request.Package, Created: stamp, Sources: map[string]string{}, Warnings: state.warned()}
 	for _, source := range request.Sources {
 		manifest.recordSource(source)
 		manifest.Files += countEntry(root, source.Entry(), len(request.Recipients) > 0, state)

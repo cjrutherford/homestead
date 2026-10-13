@@ -590,3 +590,104 @@ func TestFailingSourceDoesNotStopOtherSources(t *testing.T) {
 		t.Fatalf("source audit = %d, want 2", len(got))
 	}
 }
+
+func TestUnavailableBuildKeepsWindowAndBacksOff(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0}
+	var runs, builds atomic.Int32
+	ready := false
+	job := Job{ID: "late", Interval: time.Hour, Enabled: true, Since: t0,
+		Build: func() (operation.Definition, error) {
+			builds.Add(1)
+			if !ready {
+				return operation.Definition{}, errors.Join(ErrUnavailable, errors.New("mount missing"))
+			}
+			return quickJob("late", true, &runs).Build()
+		}}
+	s := newSched(st, clock, job)
+	tick := func() {
+		t.Helper()
+		if err := s.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clock.Advance(time.Hour)
+	tick()
+	if builds.Load() != 1 {
+		t.Fatalf("builds = %d", builds.Load())
+	}
+	clock.Advance(RetryBase - time.Second)
+	tick()
+	if builds.Load() != 1 {
+		t.Fatalf("retried inside backoff: %d", builds.Load())
+	}
+	clock.Advance(2 * time.Second)
+	tick()
+	if builds.Load() != 2 {
+		t.Fatalf("no retry after backoff: %d", builds.Load())
+	}
+	// The second delay doubles.
+	clock.Advance(RetryBase + time.Second)
+	tick()
+	if builds.Load() != 2 {
+		t.Fatalf("backoff did not grow: %d", builds.Load())
+	}
+	if n := len(auditActions(t, st, "scheduler.run")); n != 1 {
+		t.Fatalf("audits = %d, want one per window", n)
+	}
+	status, _ := s.Status()
+	if !strings.Contains(status[0].LastError, "mount missing") || !status[0].LastRunAt.IsZero() {
+		t.Fatalf("window spent or error missing: %+v", status[0])
+	}
+	// The mount appears: the same window runs, long before the next interval.
+	ready = true
+	clock.Advance(10 * time.Minute)
+	tick()
+	waitFor(t, func() bool { return runs.Load() == 1 })
+	clock.Advance(time.Minute)
+	tick()
+	if runs.Load() != 1 {
+		t.Fatalf("runs = %d", runs.Load())
+	}
+}
+
+func TestUnavailableBackoffCappedAtInterval(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0}
+	var builds atomic.Int32
+	job := Job{ID: "capped", Interval: 6 * time.Minute, Enabled: true, Since: t0,
+		Build: func() (operation.Definition, error) {
+			builds.Add(1)
+			return operation.Definition{}, errors.Join(ErrUnavailable, errors.New("gone"))
+		}}
+	s := newSched(st, clock, job)
+	clock.Advance(6 * time.Minute)
+	for i := 0; i < 5; i++ {
+		if err := s.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		clock.Advance(6 * time.Minute)
+	}
+	// Uncapped, the delays 5, 10, 20 minutes would allow only 3 attempts.
+	if builds.Load() != 5 {
+		t.Fatalf("builds = %d, want a retry every capped interval", builds.Load())
+	}
+}
+
+func TestUnavailableAuditsEachWindowOnce(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0}
+	job := Job{ID: "w", Interval: time.Hour, Enabled: true, Since: t0,
+		Build: func() (operation.Definition, error) {
+			return operation.Definition{}, errors.Join(ErrUnavailable, errors.New("gone"))
+		}}
+	s := newSched(st, clock, job)
+	clock.Advance(time.Hour)
+	for i := 0; i < 5; i++ {
+		_ = s.Tick(context.Background())
+		clock.Advance(RetryBase * 2)
+	}
+	if n := len(auditActions(t, st, "scheduler.run")); n != 1 {
+		t.Fatalf("audits = %d, want 1", n)
+	}
+}

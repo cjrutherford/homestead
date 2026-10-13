@@ -213,12 +213,14 @@
   state is ephemeral (tmpfs) by decision, so a restart drops queued jobs;
   `backuppaths` in manifests is still informational (backups copy the
   whole `<mount>/<package>` tree, including Jellyfin's bulk `cache` and
-  Immich's `model-cache`, and file copies of live Postgres directories
-  are not crash-consistent, so only Authentik's declared export is
-  authoritative for its database; Immich declares no export yet);
-  Nextcloud's default SQLite database lives in `data/` on bulk beside
-  user files, so file-level backups of a live instance are not
-  crash-consistent and the manifest declares no database export for it;
+  Immich's `model-cache`). Database directories (`database: true`) of a
+  package with a declared export (Authentik) are now excluded from the
+  file copy, which keeps only the empty directory, and the run records
+  that; where no export is declared (Immich, Nextcloud's SQLite in
+  `data/` beside user files) they are still copied, files that vanish
+  mid-copy are skipped and counted in the run warnings, and the run says
+  the copy is not crash-consistent. A consistent Immich Postgres and
+  Nextcloud SQLite export is still undeclared;
   restore has no CLI/API surface yet (S276 KVM restored a run through
   the `internal/backup` plan and definition directly). (S266 resolved
   the Immich database environment and credentials.)

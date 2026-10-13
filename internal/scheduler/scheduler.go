@@ -45,6 +45,25 @@ type Job struct {
 	Build func() (operation.Definition, error)
 }
 
+// ErrUnavailable marks a Build failure caused by something not there
+// right now (a source or mount that has not appeared), as opposed to a
+// fault in the job itself. The window is not spent: the job retries with
+// backoff (RetryBase doubling, capped at its interval) and the failure
+// is audited once per window, so a late-mounting disk still gets its
+// scheduled backup instead of waiting a whole interval.
+var ErrUnavailable = errors.New("scheduler: job inputs unavailable")
+
+// RetryBase is the first retry delay after an unavailable build.
+const RetryBase = 5 * time.Minute
+
+// retryState is the in-memory backoff for one job. A restart retries
+// immediately, which is the safe direction.
+type retryState struct {
+	attempts int
+	next     time.Time
+	audited  time.Time // the window (due) already audited
+}
+
 // Source lists the jobs currently declared by one domain. It is read on
 // every tick, so edits to declared schedules take effect without restart.
 type Source interface {
@@ -87,8 +106,11 @@ type Scheduler struct {
 	// srcReported is when each failing source was last reported; guarded
 	// by tickMu.
 	srcReported map[string]time.Time
-	mu          sync.Mutex // guards sources only; never held across Build or enqueue
-	sources     []namedSource
+	// retries holds backoff for jobs whose last build was unavailable;
+	// guarded by tickMu.
+	retries map[string]*retryState
+	mu      sync.Mutex // guards sources only; never held across Build or enqueue
+	sources []namedSource
 }
 
 type namedSource struct {
@@ -307,6 +329,9 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 		if now.Before(due) {
 			continue
 		}
+		if r, ok := s.retries[id]; ok && now.Before(r.next) && r.next.Sub(now) <= job.Interval {
+			continue
+		}
 		if err := s.fire(ctx, job, st, due, now); err != nil {
 			errs = append(errs, err)
 		}
@@ -365,9 +390,14 @@ func (s *Scheduler) fire(ctx context.Context, job Job, st state, due, now time.T
 		return s.skip(job, due, now, blocking)
 	}
 	def, err := job.Build()
+	if errors.Is(err, ErrUnavailable) {
+		return s.unavailable(job, due, now, err)
+	}
 	if err != nil {
+		delete(s.retries, job.ID)
 		return s.failed(job, now, fmt.Errorf("build: %w", err))
 	}
+	delete(s.retries, job.ID)
 	raw, err := json.Marshal(struct {
 		Scheduled bool   `json:"scheduled"`
 		Job       string `json:"job"`
@@ -407,6 +437,42 @@ func (s *Scheduler) failed(job Job, now time.Time, cause error) error {
 	_, err := s.audit.Record(audit.Entry{
 		Actor: Actor, Action: "scheduler.run", Outcome: audit.OutcomeError,
 		Detail: fmt.Sprintf("job %s could not start: %v", job.ID, cause),
+	})
+	return err
+}
+
+// unavailable records a build that found its inputs missing without
+// spending the window: last_run_at stays put so the job remains due, the
+// error is visible in status, and the next attempt waits out a capped
+// exponential backoff. The audit entry is written once per window.
+func (s *Scheduler) unavailable(job Job, due, now time.Time, cause error) error {
+	if s.retries == nil {
+		s.retries = map[string]*retryState{}
+	}
+	r := s.retries[job.ID]
+	if r == nil {
+		r = &retryState{}
+		s.retries[job.ID] = r
+	}
+	r.attempts++
+	delay := RetryBase
+	for i := 1; i < r.attempts && delay < job.Interval; i++ {
+		delay *= 2
+	}
+	if delay > job.Interval {
+		delay = job.Interval
+	}
+	r.next = now.Add(delay)
+	if err := s.save(job.ID, "last_error = ?", "build: "+cause.Error()); err != nil {
+		return err
+	}
+	if r.audited.Equal(due) {
+		return nil
+	}
+	r.audited = due
+	_, err := s.audit.Record(audit.Entry{
+		Actor: Actor, Action: "scheduler.run", Outcome: audit.OutcomeError,
+		Detail: fmt.Sprintf("job %s due %s waiting: %v; retrying with backoff (first retry in %s), window not spent", job.ID, format(due), cause, RetryBase),
 	})
 	return err
 }

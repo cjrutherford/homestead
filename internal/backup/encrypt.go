@@ -206,35 +206,50 @@ func encryptFile(src, dst string, recipients []age.Recipient) error {
 // the same rules as copyTree: modes, ownership, in-tree relative
 // symlinks only (never followed), nothing but dirs, files, and links.
 func archiveTree(src, dst string, recipients []age.Recipient) (int, error) {
+	files, _, err := archiveTreeOpts(src, dst, recipients, nil)
+	return files, err
+}
+
+func archiveTreeOpts(src, dst string, recipients []age.Recipient, exclude []string) (int, treeStats, error) {
+	var stats treeStats
 	info, err := os.Stat(src)
 	if err != nil {
-		return 0, fmt.Errorf("backup: source %q: %w", src, err)
+		return 0, stats, fmt.Errorf("backup: source %q: %w", src, err)
 	}
 	if !info.IsDir() {
-		return 0, fmt.Errorf("backup: source %q is not a directory", src)
+		return 0, stats, fmt.Errorf("backup: source %q is not a directory", src)
 	}
 	w, finish, err := createEncrypted(dst, recipients)
 	if err != nil {
-		return 0, fmt.Errorf("backup: archive: %w", err)
+		return 0, stats, fmt.Errorf("backup: archive: %w", err)
 	}
-	files, err := writeTar(w, src)
+	files, stats, err := writeTar(w, src, exclude)
 	if err != nil {
 		_ = finish()
 		_ = os.Remove(dst)
-		return 0, err
+		return 0, stats, err
 	}
 	if err := finish(); err != nil {
 		_ = os.Remove(dst)
-		return 0, fmt.Errorf("backup: archive: %w", err)
+		return 0, stats, fmt.Errorf("backup: archive: %w", err)
 	}
-	return files, nil
+	return files, stats, nil
 }
 
-func writeTar(w io.Writer, src string) (int, error) {
+func writeTar(w io.Writer, src string, exclude []string) (int, treeStats, error) {
 	tw := tar.NewWriter(w)
 	files := 0
+	var stats treeStats
+	skip := excludeSet(exclude)
+	vanished := func() error { stats.Vanished++; return nil }
 	walk := func(path string, entry fs.DirEntry, err error) error {
+		if walkHook != nil {
+			walkHook(path)
+		}
 		if err != nil {
+			if path != src && errors.Is(err, fs.ErrNotExist) {
+				return vanished()
+			}
 			return err
 		}
 		relative, err := filepath.Rel(src, path)
@@ -242,6 +257,9 @@ func writeTar(w io.Writer, src string) (int, error) {
 			return err
 		}
 		info, err := entry.Info()
+		if errors.Is(err, fs.ErrNotExist) {
+			return vanished()
+		}
 		if err != nil {
 			return err
 		}
@@ -259,6 +277,9 @@ func writeTar(w io.Writer, src string) (int, error) {
 		switch {
 		case entry.Type()&os.ModeSymlink != 0:
 			link, err := symlinkTarget(src, path)
+			if errors.Is(err, fs.ErrNotExist) {
+				return vanished()
+			}
 			if err != nil {
 				return err
 			}
@@ -273,29 +294,41 @@ func writeTar(w io.Writer, src string) (int, error) {
 		default:
 			return fmt.Errorf("backup: %q is not a regular file", path)
 		}
+		var in *os.File
+		if header.Typeflag == tar.TypeReg {
+			// Open before the header is written: a file that vanished
+			// after listing must leave no half entry in the stream.
+			in, err = os.Open(path)
+			if errors.Is(err, fs.ErrNotExist) {
+				files--
+				return vanished()
+			}
+			if err != nil {
+				return err
+			}
+			defer in.Close()
+		}
 		if err := tw.WriteHeader(header); err != nil {
 			return err
 		}
 		if header.Typeflag != tar.TypeReg {
+			if header.Typeflag == tar.TypeDir && skip[filepath.ToSlash(relative)] {
+				return fs.SkipDir
+			}
 			return nil
 		}
-		in, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer in.Close()
 		if n, err := io.CopyN(tw, in, header.Size); err != nil {
 			return fmt.Errorf("backup: %q changed while copying (%d of %d bytes): %w", path, n, header.Size, err)
 		}
 		return nil
 	}
 	if err := filepath.WalkDir(src, walk); err != nil {
-		return 0, err
+		return 0, stats, err
 	}
 	if err := tw.Close(); err != nil {
-		return 0, err
+		return 0, stats, err
 	}
-	return files, nil
+	return files, stats, nil
 }
 
 // symlinkTarget validates a link like copySymlink and returns it.
