@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -237,11 +238,25 @@ func Review(st *store.Store, stack, dir string) ([]FileReview, error) {
 	return out, nil
 }
 
+// ErrSecretDrift marks an accept refused because a secret file has the
+// wrong mode or is missing.
+var ErrSecretDrift = errors.New("catalog: secret file drift cannot be accepted")
+
 // Accept adopts the current files as managed: re-baselines records
 // to disk and returns the adopted paths sorted. Experts keep their
 // edits; Homestead stops calling them drift.
 func Accept(st *store.Store, stack, dir string) ([]string, error) {
 	defer lockProject(stack)()
+	// Secret files must stay 0600 and present; accepting would only
+	// hide the finding (found in KVM validation), so refuse.
+	if bad := detectSecretFiles(dir); len(bad) > 0 {
+		paths := make([]string, 0, len(bad))
+		for _, d := range bad {
+			paths = append(paths, d.Path)
+		}
+		sort.Strings(paths)
+		return nil, fmt.Errorf("%w: %s (restore fixes a wrong mode; configure re-creates a missing file)", ErrSecretDrift, strings.Join(paths, ", "))
+	}
 	if err := RecordFingerprints(st, stack, dir); err != nil {
 		return nil, err
 	}

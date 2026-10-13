@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 
 	"homestead/internal/catalog"
@@ -76,6 +77,10 @@ func handleDriftResolve(st *store.Store, catalogDir string, runner *operation.Ru
 		switch body.Action {
 		case "accept":
 			adopted, err := catalog.Accept(st, manifest.Name, dir)
+			if errors.Is(err, catalog.ErrSecretDrift) {
+				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+				return
+			}
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

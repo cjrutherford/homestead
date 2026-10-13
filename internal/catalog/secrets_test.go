@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"homestead/internal/operation"
 	"os"
@@ -281,6 +282,13 @@ func TestDriftTreatsSecretFilesAsOpaque(t *testing.T) {
 	review, err := Review(st, "authentik", dir)
 	if err != nil || len(review) != 1 || review[0].Current != "" || review[0].Recorded != "" {
 		t.Fatalf("review exposes content: %+v %v", review, err)
+	}
+	// Accept must not hide a wrong secret mode (found in KVM validation).
+	if _, err := Accept(st, "authentik", dir); !errors.Is(err, ErrSecretDrift) {
+		t.Fatalf("accept over secret drift = %v, want ErrSecretDrift", err)
+	}
+	if drifts, _ := Detect(dir, recorded); len(drifts) != 1 {
+		t.Fatalf("drift vanished after refused accept: %v", drifts)
 	}
 	if restored, err := Restore(st, "authentik", dir); err != nil || len(restored) != 1 {
 		t.Fatalf("restore = %v, %v", restored, err)
