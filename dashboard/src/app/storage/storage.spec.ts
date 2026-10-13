@@ -21,8 +21,30 @@ const MOUNT = {
   FreeBytes: 1024 ** 4,
   AvailBytes: 1024 ** 4,
 };
-const RO = { ...MOUNT, ID: 2, Mountpoint: '/mnt/ro', ReadOnly: true };
-const DEAD = { ...MOUNT, ID: 3, Mountpoint: '/mnt/dead', Accessible: false };
+const RO = {
+  ...MOUNT,
+  ID: 2,
+  Mountpoint: '/mnt/ro',
+  ReadOnly: true,
+  registrable: false,
+  registrable_reason: 'storage: "/mnt/ro" is read-only',
+};
+const DEAD = {
+  ...MOUNT,
+  ID: 3,
+  Mountpoint: '/mnt/dead',
+  Accessible: false,
+  registrable: false,
+  registrable_reason: 'storage: "/mnt/dead" serves no usage data',
+};
+const TMP = {
+  ...MOUNT,
+  ID: 4,
+  Mountpoint: '/run/tmp',
+  FSType: 'tmpfs',
+  registrable: false,
+  registrable_reason: 'storage: "/run/tmp" is a tmpfs pseudo-filesystem',
+};
 const REG = {
   Mountpoint: '/mnt/data',
   Label: 'main',
@@ -84,13 +106,14 @@ describe('StorageSetup', () => {
   });
 
   it('lists mounts with capacity, access, read-only and registration', () => {
-    load([MOUNT, RO, DEAD], [REG], [ASSIGN]);
+    load([MOUNT, RO, DEAD, TMP], [REG], [ASSIGN]);
     expect(text()).toContain('/mnt/data');
     expect(text()).toContain('1.0 TiB free of 2.0 TiB');
     expect(text()).toContain('registered as main');
     expect(text()).toContain('holds bulk');
-    expect(text()).toContain('Cannot be registered: read-only');
-    expect(text()).toContain('Cannot be registered: serves no usage data');
+    expect(text()).toContain('Cannot be registered: "/mnt/ro" is read-only');
+    expect(text()).toContain('tmpfs pseudo-filesystem');
+    expect(text()).toContain('serves no usage data');
     expect(text()).toContain('capacity unavailable');
   });
 
@@ -193,14 +216,43 @@ describe('StorageSetup', () => {
     expect(text()).toContain('Assigned bulk to /mnt/data.');
   });
 
-  it('confirms re-assignment with an impact message', () => {
-    const other = { ...REG, Mountpoint: '/mnt/other', Label: 'other' };
-    load([MOUNT], [REG, other], [ASSIGN]);
+  const OTHER = { ...REG, Mountpoint: '/mnt/other', Label: 'other' };
+  const IMPACT = {
+    error: 'moving bulk affects installed packages',
+    class: 'bulk',
+    from: '/mnt/data',
+    to: '/mnt/other',
+    affected_packages: ['jellyfin', 'immich'],
+  };
+
+  function reassignToImpact() {
+    load([MOUNT], [REG, OTHER], [ASSIGN]);
     fixture.componentInstance.assign('bulk', '/mnt/other', 'chris');
+    const first = http.expectOne('/api/v1/storage/assignments');
+    expect(first.request.body.acknowledge_impact).toBeUndefined();
+    first.flush(IMPACT, { status: 409, statusText: 'Conflict' });
     fixture.detectChanges();
+  }
+
+  it('lists affected packages on a 409 and acknowledges only after confirm', () => {
+    reassignToImpact();
+    expect(text()).toContain('jellyfin, immich');
+    expect(text()).toContain('from /mnt/data to /mnt/other');
     http.expectNone('/api/v1/storage/assignments');
-    expect(text()).toContain('bulk is currently on /mnt/data');
-    expect(text()).toContain('installed apps keep using it');
+    click('Confirm re-assign');
+    const second = http.expectOne('/api/v1/storage/assignments');
+    expect(second.request.body).toEqual({
+      class: 'bulk',
+      mountpoint: '/mnt/other',
+      actor: 'chris',
+      acknowledge_impact: true,
+    });
+    second.flush({ ...ASSIGN, Mountpoint: '/mnt/other' });
+    http.match(() => true).forEach((r) => r.flush([]));
+  });
+
+  it('shows the daemon refusal after an acknowledged re-assign fails', () => {
+    reassignToImpact();
     click('Confirm re-assign');
     http
       .expectOne('/api/v1/storage/assignments')
@@ -209,12 +261,67 @@ describe('StorageSetup', () => {
     expect(text()).toContain('is not suitable for bulk');
   });
 
-  it('cancels a re-assignment', () => {
-    const other = { ...REG, Mountpoint: '/mnt/other', Label: 'other' };
-    load([MOUNT], [REG, other], [ASSIGN]);
-    fixture.componentInstance.assign('bulk', '/mnt/other', 'chris');
-    fixture.detectChanges();
+  it('cancels a re-assignment without acknowledging', () => {
+    reassignToImpact();
     click('Cancel');
-    expect(text()).not.toContain('currently on');
+    expect(text()).not.toContain('affects these installed packages');
+    http.expectNone('/api/v1/storage/assignments');
+  });
+
+  it('disables the forms while a confirmation is pending', () => {
+    reassignToImpact();
+    const q = (sel: string) => fixture.nativeElement.querySelector(sel);
+    expect(q('select[name=class]').disabled).toBe(true);
+    expect(q('input[name=assign-actor]').disabled).toBe(true);
+    expect(q('select[name=assign-mountpoint]').disabled).toBe(true);
+  });
+
+  it('re-prompts rather than posting when rename values change', () => {
+    load([MOUNT], [REG], []);
+    const c = fixture.componentInstance;
+    c.register('/mnt/data', 'primary', 'chris');
+    c.register('/mnt/data', 'other-name', 'chris');
+    fixture.detectChanges();
+    http.expectNone('/api/v1/storage/registrations');
+    expect(text()).toContain('label to other-name');
+    click('Confirm rename');
+    const req = http.expectOne('/api/v1/storage/registrations');
+    expect(req.request.body.label).toBe('other-name');
+    req.flush({ ...REG, Label: 'other-name' });
+    http.match(() => true).forEach((r) => r.flush([]));
+  });
+
+  it('says the daemon is unreachable instead of [object ProgressEvent]', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/storage/mounts').error(new ProgressEvent('error'));
+    http.expectOne('/api/v1/storage/registrations').flush([]);
+    http.expectOne('/api/v1/storage/assignments').flush([]);
+    fixture.detectChanges();
+    expect(text()).toContain('Cannot reach the Homestead daemon');
+    expect(text()).not.toContain('ProgressEvent');
+  });
+
+  it('moves focus into the dialog, closes on Escape, and returns focus', async () => {
+    document.body.appendChild(fixture.nativeElement);
+    load([MOUNT], [REG], []);
+    const submit = fixture.nativeElement.querySelector(
+      'form button[type=submit]',
+    ) as HTMLButtonElement;
+    const opener = Array.from(
+      fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>,
+    ).find((b) => b.textContent?.trim() === 'Register mount')!;
+    expect(submit).toBeTruthy();
+    opener.focus();
+    fixture.componentInstance.register('/mnt/data', 'primary', 'chris');
+    fixture.detectChanges();
+    await Promise.resolve();
+    const dialog = fixture.nativeElement.querySelector('[role=alertdialog]') as HTMLElement;
+    expect(document.activeElement).toBe(dialog);
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[role=alertdialog]')).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(document.activeElement).toBe(opener);
+    fixture.nativeElement.remove();
   });
 });

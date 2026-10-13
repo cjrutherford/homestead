@@ -249,5 +249,6 @@
 - Storage unregister and unassign: the daemon has no route for either
   (the registry and assignments stores can drop rows, but nothing
   exposes it), so the S268 Storage page and the storage CLI
-  offer neither. Re-assigning a class is confirmed with an impact
-  message; the page cannot yet list which installed apps use a class.
+  offer neither. Re-assigning a class is refused with a 409 package list
+  until acknowledged; impact is judged by `<old mount>/<package>`
+  directories of installed stacks, and S276 declarations are not consulted.

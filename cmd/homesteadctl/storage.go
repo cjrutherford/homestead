@@ -84,6 +84,7 @@ func runStorageAssign(ctx context.Context, client *apiclient.Client, args []stri
 	class := set.String("class", "", "storage class (application, bulk, backup, ...)")
 	mountpoint := set.String("mountpoint", "", "registered mount path")
 	actor := storageActorFlags(set)
+	acknowledge := set.Bool("acknowledge-impact", false, "proceed even if installed packages still keep data on the mount this class leaves (audited)")
 	if err := set.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -91,7 +92,7 @@ func runStorageAssign(ctx context.Context, client *apiclient.Client, args []stri
 		fmt.Fprintln(stderr, "storage assign requires --class, --mountpoint and --actor")
 		return exitUsage
 	}
-	assignment, err := client.StorageAssign(ctx, *class, *mountpoint, *actor)
+	assignment, err := client.StorageAssign(ctx, *class, *mountpoint, *actor, *acknowledge)
 	if err != nil {
 		return fail(stderr, err)
 	}

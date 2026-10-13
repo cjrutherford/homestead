@@ -449,6 +449,9 @@ export interface StorageMount {
   TotalBytes: number;
   FreeBytes: number;
   AvailBytes: number;
+  /** Added by S268; absent from older daemons. */
+  registrable?: boolean;
+  registrable_reason?: string;
 }
 
 /** GET/POST /api/v1/storage/registrations (PascalCase). */
@@ -1058,6 +1061,7 @@ export class ApiService {
     class: string;
     mountpoint: string;
     actor: string;
+    acknowledge_impact?: boolean;
   }): Observable<StorageAssignment> {
     return this.http.post<StorageAssignment>(
       '/api/v1/storage/assignments',

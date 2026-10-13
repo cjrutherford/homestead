@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -101,5 +102,107 @@ func TestStorageRefusals(t *testing.T) {
 	recorder = serveRequest(t, srv, http.MethodPost, "/api/v1/storage/registrations", nil)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("code = %d", recorder.Code)
+	}
+}
+
+// impactFixture binds "application" to a temp directory (standing in
+// for an old mount) holding an installed package's data, with "/"
+// registered as the move target.
+func impactFixture(t *testing.T, withData bool) (*Server, *store.Store, string) {
+	t.Helper()
+	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	srv := New("127.0.0.1:0")
+	srv.MountStorage(s)
+	old := t.TempDir()
+	if withData {
+		if err := os.MkdirAll(filepath.Join(old, "jellyfin"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, q := range []string{
+		`INSERT INTO generated_fingerprints (stack, path, sha256, updated_at) VALUES ('jellyfin', 'compose.yaml', 'x', 'now')`,
+		`INSERT INTO storage_assignments (class, mountpoint, actor, created_at) VALUES ('application', '` + old + `', 'owner', '2026-01-01T00:00:00Z')`,
+	} {
+		if _, err := s.DB().Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/storage/registrations",
+		map[string]any{"mountpoint": "/", "label": "root", "actor": "owner"})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("register: %d %s", recorder.Code, recorder.Body.String())
+	}
+	return srv, s, old
+}
+
+func TestStorageReassignRefusesWithoutAcknowledgement(t *testing.T) {
+	srv, s, old := impactFixture(t, true)
+	body := map[string]any{"class": "application", "mountpoint": "/", "actor": "owner"}
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/storage/assignments", body)
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("code = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+	var impact struct {
+		From     string   `json:"from"`
+		Packages []string `json:"affected_packages"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &impact); err != nil {
+		t.Fatal(err)
+	}
+	if impact.From != old || len(impact.Packages) != 1 || impact.Packages[0] != "jellyfin" {
+		t.Fatalf("impact = %+v", impact)
+	}
+	var mount string
+	_ = s.DB().QueryRow(`SELECT mountpoint FROM storage_assignments WHERE class='application'`).Scan(&mount)
+	if mount != old {
+		t.Fatalf("assignment changed to %q despite refusal", mount)
+	}
+
+	body["acknowledge_impact"] = true
+	recorder = serveRequest(t, srv, http.MethodPost, "/api/v1/storage/assignments", body)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("acknowledged code = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+	var action, detail string
+	if err := s.DB().QueryRow(`SELECT action, detail FROM audit_entries WHERE action='storage.assign.impact_acknowledged'`).Scan(&action, &detail); err != nil {
+		t.Fatalf("audit entry missing: %v", err)
+	}
+	if !strings.Contains(detail, "jellyfin") {
+		t.Fatalf("detail = %q", detail)
+	}
+}
+
+func TestStorageReassignWithoutInstalledDataNeedsNoAcknowledgement(t *testing.T) {
+	srv, _, _ := impactFixture(t, false)
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/storage/assignments",
+		map[string]any{"class": "application", "mountpoint": "/", "actor": "owner"})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("code = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestStorageMountsReportRegistrability(t *testing.T) {
+	srv := storageTestServer(t)
+	recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/storage/mounts", nil)
+	var mounts []struct {
+		Mountpoint        string `json:"Mountpoint"`
+		FSType            string `json:"FSType"`
+		Registrable       bool   `json:"registrable"`
+		RegistrableReason string `json:"registrable_reason"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &mounts); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range mounts {
+		if m.FSType == "tmpfs" && (m.Registrable || m.RegistrableReason == "") {
+			t.Fatalf("tmpfs mount %+v should be unregistrable with a reason", m)
+		}
+		if !m.Registrable && m.RegistrableReason == "" {
+			t.Fatalf("mount %+v missing reason", m)
+		}
 	}
 }

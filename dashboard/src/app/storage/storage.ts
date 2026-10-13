@@ -7,6 +7,7 @@ import {
   StorageRegistration,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { DialogFocus } from './dialog-focus';
 
 /** The five class names the daemon accepts (internal/storage/classes.go). */
 export const STORAGE_CLASSES = [
@@ -25,7 +26,7 @@ export const STORAGE_CLASSES = [
  * PascalCase because the Go structs carry no json tags.
  */
 @Component({
-  imports: [StateMessage],
+  imports: [StateMessage, DialogFocus],
   selector: 'app-storage',
   templateUrl: './storage.html',
   styles: [
@@ -60,6 +61,8 @@ export class StorageSetup implements OnInit {
     class: string;
     mountpoint: string;
     actor: string;
+    from: string;
+    packages: string[];
   } | null>(null);
 
   ngOnInit(): void {
@@ -76,7 +79,7 @@ export class StorageSetup implements OnInit {
       },
       error: (failure: HttpErrorResponse) => {
         this.mountsLoading.set(false);
-        this.mountsError.set(failure.error ?? failure.message);
+        this.mountsError.set(this.describe(failure));
       },
     });
     this.registrationsLoading.set(true);
@@ -88,7 +91,7 @@ export class StorageSetup implements OnInit {
       },
       error: (failure: HttpErrorResponse) => {
         this.registrationsLoading.set(false);
-        this.registrationsError.set(failure.error ?? failure.message);
+        this.registrationsError.set(this.describe(failure));
       },
     });
     this.assignmentsLoading.set(true);
@@ -100,9 +103,27 @@ export class StorageSetup implements OnInit {
       },
       error: (failure: HttpErrorResponse) => {
         this.assignmentsLoading.set(false);
-        this.assignmentsError.set(failure.error ?? failure.message);
+        this.assignmentsError.set(this.describe(failure));
       },
     });
+  }
+
+  /**
+   * Readable text for a failed call: status 0 is a network failure (the
+   * browser hands back a ProgressEvent), and JSON bodies carry `error`.
+   */
+  protected describe(failure: HttpErrorResponse): string {
+    if (failure.status === 0) {
+      return 'Cannot reach the Homestead daemon. Check that it is running and try again.';
+    }
+    const body = failure.error;
+    if (typeof body === 'string' && body.trim()) {
+      return body;
+    }
+    if (body && typeof body.error === 'string') {
+      return body.error;
+    }
+    return failure.message;
   }
 
   /** Bytes in binary units, one decimal. */
@@ -117,12 +138,15 @@ export class StorageSetup implements OnInit {
     return `${unit === 0 ? value : value.toFixed(1)} ${units[unit]}`;
   }
 
-  /** Why registration would be refused, mirroring the server checks. */
+  /** Why registration would be refused: the daemon's `registrable` verdict, with a fallback for older daemons. */
   unfit(mount: StorageMount): string | null {
-    if (!mount.Accessible) {
+    if (mount.registrable === false) {
+      return (mount.registrable_reason || 'not registrable').replace(/^storage: /, '');
+    }
+    if (mount.registrable === undefined && !mount.Accessible) {
       return 'serves no usage data';
     }
-    if (mount.ReadOnly) {
+    if (mount.registrable === undefined && mount.ReadOnly) {
       return 'read-only';
     }
     return null;
@@ -165,7 +189,12 @@ export class StorageSetup implements OnInit {
       return;
     }
     const existing = this.registrationFor(mountpoint);
-    if (existing && !this.confirmingRegister()) {
+    const pending = this.confirmingRegister();
+    const confirmed =
+      pending?.mountpoint === mountpoint &&
+      pending.label === label &&
+      pending.actor === actor;
+    if (existing && !confirmed) {
       // Re-registering relabels an approved mount: confirm first.
       this.confirmingRegister.set({ mountpoint, label, actor });
       this.error.set(null);
@@ -184,7 +213,7 @@ export class StorageSetup implements OnInit {
       },
       error: (failure: HttpErrorResponse) => {
         this.busy.set(false);
-        this.error.set(failure.error ?? failure.message);
+        this.error.set(this.describe(failure));
       },
     });
   }
@@ -200,7 +229,7 @@ export class StorageSetup implements OnInit {
     this.confirmingRegister.set(null);
   }
 
-  assign(cls: string, mountpoint: string, actor: string): void {
+  assign(cls: string, mountpoint: string, actor: string, acknowledge = false): void {
     mountpoint = mountpoint.trim();
     actor = actor.trim();
     if (!(STORAGE_CLASSES as readonly string[]).includes(cls)) {
@@ -211,17 +240,17 @@ export class StorageSetup implements OnInit {
       this.error.set('Assignment needs a registered mount and a named actor.');
       return;
     }
-    const current = this.assignmentFor(cls);
-    if (current && current.Mountpoint !== mountpoint && !this.confirmingAssign()) {
-      this.confirmingAssign.set({ class: cls, mountpoint, actor });
-      this.error.set(null);
-      return;
-    }
     this.confirmingAssign.set(null);
     this.busy.set(true);
     this.error.set(null);
     this.notice.set(null);
-    this.api.storageAssign({ class: cls, mountpoint, actor }).subscribe({
+    const body = {
+      class: cls,
+      mountpoint,
+      actor,
+      ...(acknowledge ? { acknowledge_impact: true } : {}),
+    };
+    this.api.storageAssign(body).subscribe({
       next: (saved) => {
         this.busy.set(false);
         this.notice.set(`Assigned ${saved.Class} to ${saved.Mountpoint}.`);
@@ -229,7 +258,20 @@ export class StorageSetup implements OnInit {
       },
       error: (failure: HttpErrorResponse) => {
         this.busy.set(false);
-        this.error.set(failure.error ?? failure.message);
+        const impact = failure.status === 409 ? failure.error : null;
+        if (impact && Array.isArray(impact.affected_packages)) {
+          // The daemon refuses until the owner acknowledges: ask, and
+          // send the acknowledgement only after they confirm.
+          this.confirmingAssign.set({
+            class: cls,
+            mountpoint,
+            actor,
+            from: impact.from ?? '',
+            packages: impact.affected_packages,
+          });
+          return;
+        }
+        this.error.set(this.describe(failure));
       },
     });
   }
@@ -237,7 +279,7 @@ export class StorageSetup implements OnInit {
   confirmAssign(): void {
     const pending = this.confirmingAssign();
     if (pending) {
-      this.assign(pending.class, pending.mountpoint, pending.actor);
+      this.assign(pending.class, pending.mountpoint, pending.actor, true);
     }
   }
 

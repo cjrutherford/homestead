@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -74,5 +75,42 @@ func TestStorageRegisterAssign(t *testing.T) {
 	}
 	if code, _, _ := invoke(t, append(serverArgs, "storage", "bogus")); code != exitUsage {
 		t.Fatalf("exit = %d, want usage", code)
+	}
+}
+
+func TestStorageAssignImpactFlag(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	srv := server.New("127.0.0.1:0")
+	srv.MountStorage(s)
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	old := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(old, "jellyfin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO generated_fingerprints (stack, path, sha256, updated_at) VALUES ('jellyfin', 'compose.yaml', 'x', 'now')`,
+		`INSERT INTO storage_assignments (class, mountpoint, actor, created_at) VALUES ('application', '` + old + `', 'owner', '2026-01-01T00:00:00Z')`,
+	} {
+		if _, err := s.DB().Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	serverArgs := []string{"--server", ts.URL}
+	if code, _, stderr := invoke(t, append(serverArgs, "storage", "register", "--mountpoint", "/", "--label", "root", "--actor", "owner")); code != exitOK {
+		t.Fatalf("register: %d %s", code, stderr)
+	}
+	assign := append(serverArgs, "storage", "assign", "--class", "application", "--mountpoint", "/", "--actor", "owner")
+	code, _, stderr := invoke(t, assign)
+	if code == exitOK || !strings.Contains(stderr, "jellyfin") || !strings.Contains(stderr, "--acknowledge-impact") {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	code, stdout, stderr := invoke(t, append(assign, "--acknowledge-impact"))
+	if code != exitOK || !strings.Contains(stdout, "application /") {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", code, stdout, stderr)
 	}
 }

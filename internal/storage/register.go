@@ -29,6 +29,22 @@ var pseudoFilesystems = map[string]bool{
 	"squashfs": true, "iso9660": true,
 }
 
+// Registrable reports why a discovered mount can never be registered
+// (no usage data, read-only, pseudo filesystem), or nil. Discovery
+// responses and Register share it so clients never duplicate the rules.
+func Registrable(m discover.Mount) error {
+	if !m.Accessible {
+		return fmt.Errorf("storage: %q serves no usage data", m.Mountpoint)
+	}
+	if m.ReadOnly {
+		return fmt.Errorf("storage: %q is read-only", m.Mountpoint)
+	}
+	if pseudoFilesystems[m.FSType] {
+		return fmt.Errorf("storage: %q is a %s pseudo-filesystem", m.Mountpoint, m.FSType)
+	}
+	return nil
+}
+
 // Registration is one owner-approved storage location: the mountpoint
 // approved, the owner's label for it, who approved, and when. Labels
 // stay unique so UIs and assignments name locations unambiguously.
@@ -76,14 +92,8 @@ func (r *Registry) Register(mountpoint, label, actor string, discovered discover
 	if found == nil {
 		return Registration{}, fmt.Errorf("storage: %q is not a discovered mount", mountpoint)
 	}
-	if !found.Accessible {
-		return Registration{}, fmt.Errorf("storage: %q serves no usage data", mountpoint)
-	}
-	if found.ReadOnly {
-		return Registration{}, fmt.Errorf("storage: %q is read-only", mountpoint)
-	}
-	if pseudoFilesystems[found.FSType] {
-		return Registration{}, fmt.Errorf("storage: %q is a %s pseudo-filesystem", mountpoint, found.FSType)
+	if err := Registrable(*found); err != nil {
+		return Registration{}, err
 	}
 	var clash string
 	err := r.db.QueryRow(`SELECT mountpoint FROM storage_registrations WHERE label = ? AND mountpoint != ?`,

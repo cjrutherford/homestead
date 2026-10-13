@@ -84,20 +84,20 @@
   >
     <label>
       Mountpoint
-      <input #regMount name="mountpoint" autocomplete="off" [value]="picked()" [disabled]="busy()" />
+      <input #regMount name="mountpoint" autocomplete="off" [value]="picked()" [disabled]="busy() || !!confirmingRegister()" />
     </label>
     <label>
       Label
-      <input #regLabel name="label" autocomplete="off" [disabled]="busy()" />
+      <input #regLabel name="label" autocomplete="off" [disabled]="busy() || !!confirmingRegister()" />
     </label>
     <label>
       Acting owner
-      <input #regActor name="actor" autocomplete="off" [disabled]="busy()" />
+      <input #regActor name="actor" autocomplete="off" [disabled]="busy() || !!confirmingRegister()" />
     </label>
-    <button type="submit" [disabled]="busy()">Register mount</button>
+    <button type="submit" [disabled]="busy() || !!confirmingRegister()">Register mount</button>
   </form>
   @if (confirmingRegister(); as pending) {
-    <span role="alertdialog" aria-label="Confirm re-registration">
+    <span role="alertdialog" aria-label="Confirm re-registration" appDialogFocus (dismiss)="cancelRegister()">
       {{ pending.mountpoint }} is already registered. This changes its label
       to {{ pending.label }}; classes assigned to it stay in place.
       <button type="button" (click)="confirmRegister()" [disabled]="busy()">Confirm rename</button>
@@ -134,7 +134,7 @@
   >
     <label>
       Class
-      <select #asClass name="class" [disabled]="busy()">
+      <select #asClass name="class" [disabled]="busy() || !!confirmingAssign()">
         @for (cls of classes; track cls) {
           <option [value]="cls">{{ cls }}</option>
         }
@@ -142,7 +142,7 @@
     </label>
     <label>
       Registered mount
-      <select #asMount name="assign-mountpoint" [disabled]="busy() || registrations().length === 0">
+      <select #asMount name="assign-mountpoint" [disabled]="busy() || !!confirmingAssign() || registrations().length === 0">
         @for (reg of registrations(); track reg.Mountpoint) {
           <option [value]="reg.Mountpoint">{{ reg.Label }} ({{ reg.Mountpoint }})</option>
         }
@@ -150,16 +150,17 @@
     </label>
     <label>
       Acting owner
-      <input #asActor name="assign-actor" autocomplete="off" [disabled]="busy()" />
+      <input #asActor name="assign-actor" autocomplete="off" [disabled]="busy() || !!confirmingAssign()" />
     </label>
-    <button type="submit" [disabled]="busy()">Assign class</button>
+    <button type="submit" [disabled]="busy() || !!confirmingAssign()">Assign class</button>
   </form>
   @if (confirmingAssign(); as pending) {
-    <span role="alertdialog" aria-label="Confirm re-assignment">
-      {{ pending.class }} is currently on {{ assignmentFor(pending.class)?.Mountpoint }}.
-      Moving it to {{ pending.mountpoint }} changes where new installs,
-      volumes and backups look. Data already on the old mount is not moved
-      and installed apps keep using it until they are migrated.
+    <span role="alertdialog" aria-label="Confirm re-assignment" appDialogFocus (dismiss)="cancelAssign()">
+      Moving {{ pending.class }} from {{ pending.from }} to {{ pending.mountpoint }}
+      affects these installed packages: {{ pending.packages.join(', ') }}.
+      Their data stays on {{ pending.from }}, but backups follow the new
+      assignment and will stop finding it, and nothing is moved for you.
+      The acknowledgement is audited.
       <button type="button" (click)="confirmAssign()" [disabled]="busy()">Confirm re-assign</button>
       <button type="button" (click)="cancelAssign()" [disabled]="busy()">Cancel</button>
     </span>

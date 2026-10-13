@@ -2,6 +2,11 @@ package apiclient
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"strings"
 
 	"homestead/internal/discover"
 	"homestead/internal/storage"
@@ -54,11 +59,44 @@ func (c *Client) StorageAssignments(ctx context.Context) ([]storage.Assignment, 
 	return out, nil
 }
 
-// StorageAssign binds a class to a registered mount.
-func (c *Client) StorageAssign(ctx context.Context, class, mountpoint, actor string) (storage.Assignment, error) {
+// StorageImpactError is the daemon's 409 refusal: moving a class off a
+// mount that installed packages still use. Re-send with the
+// acknowledgement to proceed.
+type StorageImpactError struct {
+	Class    string
+	From     string
+	To       string
+	Packages []string
+}
+
+func (e *StorageImpactError) Error() string {
+	return fmt.Sprintf("moving %s from %s to %s affects installed packages (%s): their backups stop finding data on %s; re-run with --acknowledge-impact to proceed",
+		e.Class, e.From, e.To, strings.Join(e.Packages, ", "), e.From)
+}
+
+// StorageAssign binds a class to a registered mount. acknowledgeImpact
+// is the owner's explicit consent to move a class off a mount that
+// installed packages use; without it the daemon answers 409 and this
+// returns a *StorageImpactError.
+func (c *Client) StorageAssign(ctx context.Context, class, mountpoint, actor string, acknowledgeImpact bool) (storage.Assignment, error) {
 	var out storage.Assignment
 	body := map[string]any{"class": class, "mountpoint": mountpoint, "actor": actor}
+	if acknowledgeImpact {
+		body["acknowledge_impact"] = true
+	}
 	if err := c.postJSON(ctx, "/api/v1/storage/assignments", body, &out); err != nil {
+		var status *StatusError
+		if errors.As(err, &status) && status.Status == http.StatusConflict {
+			var impact struct {
+				Class    string   `json:"class"`
+				From     string   `json:"from"`
+				To       string   `json:"to"`
+				Packages []string `json:"affected_packages"`
+			}
+			if json.Unmarshal([]byte(status.Body), &impact) == nil && len(impact.Packages) > 0 {
+				return storage.Assignment{}, &StorageImpactError{Class: impact.Class, From: impact.From, To: impact.To, Packages: impact.Packages}
+			}
+		}
 		return storage.Assignment{}, err
 	}
 	return out, nil

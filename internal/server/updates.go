@@ -208,7 +208,7 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 		return backup.Job{}, err
 	}
 	if len(sources) == 0 {
-		return backup.Job{}, fmt.Errorf("%w: no backup sources for %q", scheduler.ErrUnavailable, manifest.Name)
+		return backup.Job{}, fmt.Errorf("%w: no backup sources for %q%s", scheduler.ErrUnavailable, manifest.Name, orphanedDataHint(st, manifest.Name))
 	}
 	assignments, err := storage.NewAssignments(st).List()
 	if err != nil {
@@ -418,4 +418,35 @@ func backupKeyStore(secrets catalog.SecretStore) (backup.KeyStore, error) {
 		return nil, errors.New("backup encryption needs a secret store that holds system secrets")
 	}
 	return keys, nil
+}
+
+// orphanedDataHint diagnoses a package with no backup sources: data on a
+// registered mount that no class is bound to any more usually means a
+// storage class was re-assigned. Empty when nothing matches.
+func orphanedDataHint(st *store.Store, packageName string) string {
+	registrations, err := storage.NewRegistry(st).List()
+	if err != nil {
+		return ""
+	}
+	assignments, err := storage.NewAssignments(st).List()
+	if err != nil {
+		return ""
+	}
+	assigned := map[string]bool{}
+	for _, assignment := range assignments {
+		assigned[assignment.Mountpoint] = true
+	}
+	var orphaned []string
+	for _, reg := range registrations {
+		if assigned[reg.Mountpoint] {
+			continue
+		}
+		if info, err := os.Stat(filepath.Join(reg.Mountpoint, packageName)); err == nil && info.IsDir() {
+			orphaned = append(orphaned, reg.Mountpoint)
+		}
+	}
+	if len(orphaned) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(": its data exists on %s, which no storage class is assigned to any more (was a class re-assigned?); assign a class back to that mount or migrate the data", strings.Join(orphaned, ", "))
 }
