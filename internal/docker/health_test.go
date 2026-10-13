@@ -130,8 +130,12 @@ func TestContainersResolveEmptyVolumeSource(t *testing.T) {
 func TestInventoryReadsPortsNetworksAndDigests(t *testing.T) {
 	socketPath, _ := stubEngine(t)
 	inv, err := NewClient(socketPath).Inventory(context.Background())
-	if err != nil || !inv.Reachable || len(inv.Containers) != 1 || len(inv.Images) != 1 {
+	if err != nil || !inv.Reachable || len(inv.Containers) != 1 || inv.Images != nil || inv.LoadImages == nil || !inv.Local {
 		t.Fatalf("inventory = %+v err = %v", inv, err)
+	}
+	images, err := inv.LoadImages()
+	if err != nil || len(images) != 1 {
+		t.Fatalf("images = %+v err = %v", images, err)
 	}
 	c := inv.Containers[0]
 	if c.ImageID != "sha256:111" || len(c.Ports) != 2 || c.Ports[0].Public != 8080 || c.Ports[1].Public != 0 {
@@ -140,7 +144,7 @@ func TestInventoryReadsPortsNetworksAndDigests(t *testing.T) {
 	if len(c.Networks) != 2 || c.Networks[0] != "edge" || c.Networks[1] != "web_default" {
 		t.Fatalf("networks = %v", c.Networks)
 	}
-	if got := inv.Images[0].RepoDigests; len(got) != 1 || got[0] != "nginx@sha256:abc" {
+	if got := images[0].RepoDigests; len(got) != 1 || got[0] != "nginx@sha256:abc" {
 		t.Fatalf("digests = %v", got)
 	}
 	// Unreachable daemons are data, not errors.

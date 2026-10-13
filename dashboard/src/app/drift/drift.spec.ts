@@ -65,6 +65,13 @@ describe('Drift', () => {
     http.verify();
   });
 
+  function restoreButtons(): number {
+    const buttons = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('button'),
+    );
+    return buttons.filter((b) => b.textContent?.includes('Restore managed state')).length;
+  }
+
   function text(): string {
     return fixture.nativeElement.textContent as string;
   }
@@ -189,15 +196,55 @@ describe('Drift', () => {
     http.expectOne('/api/v1/catalog/jellyfin/drift/live').flush({
       checked: true,
       findings: [
-        { service: 'web', container: 'jellyfin-web', kind: 'port', detail: 'host port 8096 -> 8096/tcp is not published', resolution: 'recreate' },
-        { service: 'web', kind: 'extra', detail: 'stray container', resolution: 'manual' },
+        { service: 'web', container: 'jellyfin-web', kind: 'port', detail: 'host port 8096 -> 8096/tcp is not published', resolution: 'recreate', hint: 'docker compose -p jellyfin rm -sf web, then Restore managed state' },
+        { service: 'web', kind: 'extra', detail: 'stray container', resolution: 'manual', hint: 'if unwanted: docker rm -f stray' },
       ],
     });
     http.expectOne('/api/v1/catalog/jellyfin/drift').flush([]);
     fixture.detectChanges();
     expect(text()).toContain('jellyfin-web: host port 8096 -> 8096/tcp is not published');
     expect(text()).toContain('resolve manually');
-    expect(text()).toContain('Restore managed state');
+    expect(text()).toContain('docker compose -p jellyfin rm -sf web');
+    expect(text()).toContain('docker rm -f stray');
+    // Recreate and manual findings cannot be fixed by Restore alone.
+    expect(restoreButtons()).toBe(0);
+  });
+
+  it('offers Restore only when a finding restore can fix exists', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/drift/schedule').flush(SCHEDULE);
+    fixture.componentInstance['select']('jellyfin');
+    http.expectOne('/api/v1/catalog/jellyfin/drift/live').flush({
+      checked: true,
+      findings: [
+        { service: 'web', kind: 'missing', detail: 'no container exists for this service', resolution: 'restore' },
+      ],
+    });
+    http.expectOne('/api/v1/catalog/jellyfin/drift').flush([]);
+    fixture.detectChanges();
+    expect(restoreButtons()).toBe(1);
+  });
+
+  it('shows an owner-stopped app as a state, with no Restore', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/drift/schedule').flush({
+      ...SCHEDULE,
+      last_scan: { ...SCHEDULE.last_scan, drifted: [], stopped: ['jellyfin'], live_notes: ['jellyfin: service web image uses interpolation; image comparison skipped'] },
+    });
+    fixture.detectChanges();
+    expect(text()).toContain('jellyfin is stopped (a run state, not drift)');
+    expect(text()).toContain('Live comparison limit: jellyfin: service web image');
+    fixture.componentInstance['select']('jellyfin');
+    http.expectOne('/api/v1/catalog/jellyfin/drift/live').flush({
+      checked: true, findings: [], stack_state: 'stopped', unsupported: ['service web image uses interpolation'],
+    });
+    http.expectOne('/api/v1/catalog/jellyfin/drift').flush([]);
+    fixture.detectChanges();
+    expect(text()).toContain('no service in this app is running');
+    expect(text()).toContain('Not compared: service web image uses interpolation');
+    expect(restoreButtons()).toBe(0);
   });
 
   it('says so when Docker was unreachable', () => {

@@ -113,9 +113,11 @@
   port serves until then.
 - Live drift refinements: S262 compares images, published ports,
   networks, and mounts; it does not compare environment, command,
-  healthchecks, resource limits, tmpfs sizes, or compose `build:`
-  services, and an owner-stopped stack reports stopped/missing since
-  Homestead tracks no per-stack desired run state.
+  healthchecks, resource limits, tmpfs sizes, compose `build:`
+  services, interpolated values, `extends:`, or `include:`. A fully
+  stopped stack reads as a state, not drift, because Homestead persists
+  no per-stack desired run state; an accidentally stopped stack is
+  indistinguishable until that state exists.
 - Theme selection: S248 defines light, dark, and high-contrast
   themes and previews them on the validation board; no user-facing
   switcher or prefers-color-scheme wiring exists yet.

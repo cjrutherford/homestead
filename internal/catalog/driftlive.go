@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -90,6 +91,9 @@ type LiveFinding struct {
 	Kind       string `json:"kind"`
 	Detail     string `json:"detail"`
 	Resolution string `json:"resolution"`
+	// Hint is the exact next step for findings Homestead cannot fix
+	// alone (recreate and manual).
+	Hint string `json:"hint,omitempty"`
 }
 
 // LiveSource supplies the Engine inventory; the Docker client satisfies
@@ -104,29 +108,58 @@ type LiveSource interface {
 type LiveReview struct {
 	Checked  bool          `json:"checked"`
 	Findings []LiveFinding `json:"findings"`
+	// StackState is "stopped" when no expected service has a running
+	// container: a run state the owner may have chosen (ADR-005), shown
+	// as information and never as drift. Empty otherwise.
+	StackState string `json:"stack_state,omitempty"`
+	// Unsupported lists compose features the comparison cannot judge
+	// (interpolation, extends, include, unparseable ports). Those fields
+	// are skipped, never reported as drift.
+	Unsupported []string `json:"unsupported,omitempty"`
 }
+
+// ErrLiveCompose marks compose files the live comparison cannot parse.
+var ErrLiveCompose = errors.New("catalog: compose not readable for live comparison")
 
 // LiveDrift reads the stack's compose files and compares them with the
 // Engine inventory from src. Unreachable engines report Checked false.
+// The compose read holds the per-project lock, so it never sees a file
+// mid-restore.
 func LiveDrift(ctx context.Context, src LiveSource, stack, dir string) (LiveReview, error) {
+	unlock := lockProject(stack)
+	desired, err := loadDesired(stack, dir)
+	unlock()
+	if err != nil {
+		return LiveReview{}, err
+	}
 	inv, err := src.Inventory(ctx)
 	if err != nil {
 		return LiveReview{}, fmt.Errorf("catalog: read live state: %w", err)
 	}
-	return LiveDriftInventory(stack, dir, inv)
+	return reviewLive(desired, inv), nil
 }
 
 // LiveDriftInventory compares one stack with an inventory already read,
-// so scans query the Engine once for every package.
+// so scans query the Engine once for every package. Callers hold the
+// project lock (scans do).
 func LiveDriftInventory(stack, dir string, inv docker.Inventory) (LiveReview, error) {
 	desired, err := loadDesired(stack, dir)
 	if err != nil {
 		return LiveReview{}, err
 	}
+	return reviewLive(desired, inv), nil
+}
+
+func reviewLive(desired desiredStack, inv docker.Inventory) LiveReview {
 	if !inv.Reachable {
-		return LiveReview{Findings: []LiveFinding{}}, nil
+		return LiveReview{Findings: []LiveFinding{}}
 	}
-	return LiveReview{Checked: true, Findings: compareLive(desired, inv)}, nil
+	review := LiveReview{Checked: true, Findings: []LiveFinding{}, Unsupported: desired.Notes}
+	if desired.Unsupported {
+		return review
+	}
+	review.Findings, review.StackState = compareLive(desired, inv)
+	return review
 }
 
 // ---- desired state ----
@@ -156,11 +189,17 @@ type desiredService struct {
 	Ports       []desiredPort
 	Mounts      []desiredMount
 	Networks    []string // resolved network names
+	// Unsupported flags skip one comparison for this service because
+	// compose uses interpolation or syntax the comparison cannot judge.
+	PortsUnsupported, MountsUnsupported, NetworksUnsupported bool
 }
 
 type desiredStack struct {
 	Project  string
 	Services map[string]*desiredService
+	// Unsupported marks the whole package (extends, include).
+	Unsupported bool
+	Notes       []string
 }
 
 type rawService struct {
@@ -177,6 +216,7 @@ type rawService struct {
 	Tmpfs    any   `yaml:"tmpfs"`
 	Secrets  []any `yaml:"secrets"`
 	Networks any   `yaml:"networks"`
+	Extends  any   `yaml:"extends"`
 }
 
 type rawResource struct {
@@ -189,6 +229,7 @@ type rawCompose struct {
 	Services map[string]rawService  `yaml:"services"`
 	Networks map[string]rawResource `yaml:"networks"`
 	Volumes  map[string]rawResource `yaml:"volumes"`
+	Include  any                    `yaml:"include"`
 }
 
 func readCompose(file string, required bool) (rawCompose, bool, error) {
@@ -201,7 +242,7 @@ func readCompose(file string, required bool) (rawCompose, bool, error) {
 		return doc, false, fmt.Errorf("catalog: read %s: %w", filepath.Base(file), err)
 	}
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return doc, false, fmt.Errorf("catalog: parse %s: %w", filepath.Base(file), err)
+		return doc, false, fmt.Errorf("%w: parse %s: %v", ErrLiveCompose, filepath.Base(file), err)
 	}
 	return doc, true, nil
 }
@@ -232,7 +273,24 @@ func loadDesired(stack, dir string) (desiredStack, error) {
 		project = stack
 	}
 	out := desiredStack{Project: project, Services: map[string]*desiredService{}}
+	note := func(format string, args ...any) { out.Notes = append(out.Notes, fmt.Sprintf(format, args...)) }
+	if base.Include != nil || over.Include != nil {
+		note("compose include: is not supported; live comparison skipped for this package")
+		out.Unsupported = true
+	}
 	for name, svc := range base.Services {
+		if svc.Extends != nil {
+			note("service %s uses extends:; live comparison skipped for this package", name)
+			out.Unsupported = true
+		}
+	}
+	names := make([]string, 0, len(base.Services))
+	for name := range base.Services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		svc := base.Services[name]
 		d := &desiredService{
 			Name: name, Image: svc.Image, Restart: svc.Restart,
 			NetworkMode: svc.NetworkMode, Profiled: len(svc.Profiles) > 0, Expected: 1,
@@ -243,13 +301,37 @@ func loadDesired(stack, dir string) (desiredStack, error) {
 		case svc.Deploy.Replicas != nil:
 			d.Expected = *svc.Deploy.Replicas
 		}
+		if containsInterp(svc.Image) {
+			d.Image = ""
+			note("service %s image uses interpolation; image comparison skipped", name)
+		}
 		for _, p := range svc.Ports {
-			d.Ports = append(d.Ports, parsePort(p)...)
+			parsed := parsePort(p)
+			if containsInterp(p) || len(parsed) == 0 {
+				d.PortsUnsupported = true
+				continue
+			}
+			d.Ports = append(d.Ports, parsed...)
+		}
+		if d.PortsUnsupported {
+			d.Ports = nil
+			note("service %s has ports the comparison cannot evaluate (interpolation or unsupported syntax); port comparison skipped", name)
 		}
 		for _, v := range svc.Volumes {
-			if m, ok := parseMount(v, dir, project, base.Volumes); ok {
-				d.Mounts = append(d.Mounts, m)
+			m, ok := parseMount(v, dir, project, base.Volumes)
+			if containsInterp(v) || !ok {
+				d.MountsUnsupported = true
+				continue
 			}
+			d.Mounts = append(d.Mounts, m)
+		}
+		if d.MountsUnsupported {
+			d.Mounts = nil
+			note("service %s has volumes the comparison cannot evaluate (interpolation or unsupported syntax); mount comparison skipped", name)
+		}
+		if containsInterp(svc.Networks) {
+			d.NetworksUnsupported = true
+			note("service %s networks use interpolation; network comparison skipped", name)
 		}
 		for _, t := range tmpfsTargets(svc.Tmpfs) {
 			d.Mounts = append(d.Mounts, desiredMount{Type: "tmpfs", Target: t})
@@ -263,6 +345,31 @@ func loadDesired(stack, dir string) (desiredStack, error) {
 		out.Services[name] = d
 	}
 	return out, nil
+}
+
+var interpPattern = regexp.MustCompile(`\$(\{|[A-Za-z_])`)
+
+// containsInterp reports compose variable interpolation anywhere in a
+// decoded value: its resolved value depends on an environment the
+// comparison does not reproduce. "$$" is a literal dollar.
+func containsInterp(v any) bool {
+	switch t := v.(type) {
+	case string:
+		return interpPattern.MatchString(strings.ReplaceAll(t, "$$", ""))
+	case []any:
+		for _, e := range t {
+			if containsInterp(e) {
+				return true
+			}
+		}
+	case map[string]any:
+		for k, e := range t {
+			if containsInterp(k) || containsInterp(e) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func mergeTmpfs(a, b any) any {
@@ -598,12 +705,12 @@ func findImage(images []docker.Image, id string) (docker.Image, bool) {
 
 // imageDrift returns a detail when the running image differs from the
 // desired reference, or "" when it matches or cannot be judged.
-func imageDrift(desired string, c docker.Container, images []docker.Image) string {
+func imageDrift(desired string, c docker.Container, images func() []docker.Image) string {
 	if desired == "" {
 		return ""
 	}
 	want := normalizeImage(desired)
-	byID := func(id string) (docker.Image, bool) { return findImage(images, id) }
+	byID := func(id string) (docker.Image, bool) { return findImage(images(), id) }
 	matchesImage := func(img docker.Image) bool {
 		if want.digest != "" {
 			for _, d := range img.RepoDigests {
@@ -758,9 +865,14 @@ func networkDrift(want []string, c docker.Container) []string {
 
 var engineManagedMounts = map[string]bool{"/etc/hosts": true, "/etc/hostname": true, "/etc/resolv.conf": true}
 
-func samePath(a, b string) bool {
+// samePath compares lexically; symlinks resolve only for a local
+// Engine, since a remote host's paths mean nothing on this filesystem.
+func samePath(a, b string, local bool) bool {
 	if filepath.Clean(a) == filepath.Clean(b) {
 		return true
+	}
+	if !local {
+		return false
 	}
 	ra, errA := filepath.EvalSymlinks(a)
 	rb, errB := filepath.EvalSymlinks(b)
@@ -779,7 +891,7 @@ func describeMount(m docker.Mount) string {
 	return "a " + m.Type + " mount"
 }
 
-func mountDrift(want []desiredMount, c docker.Container) []string {
+func mountDrift(want []desiredMount, c docker.Container, local bool) []string {
 	actual := map[string]docker.Mount{}
 	for _, m := range c.Mounts {
 		actual[path.Clean(m.Destination)] = m
@@ -805,7 +917,7 @@ func mountDrift(want []desiredMount, c docker.Container) []string {
 		}
 		switch w.Type {
 		case "bind":
-			if !samePath(got.Source, w.Source) {
+			if !samePath(got.Source, w.Source, local) {
 				out = append(out, fmt.Sprintf("mount %s binds %s, compose declares %s", w.Target, got.Source, w.Source))
 			}
 		case "volume":
@@ -835,10 +947,36 @@ func mountDrift(want []desiredMount, c docker.Container) []string {
 	return append(out, extra...)
 }
 
-func compareLive(desired desiredStack, inv docker.Inventory) []LiveFinding {
+func compareLive(desired desiredStack, inv docker.Inventory) ([]LiveFinding, string) {
 	findings := []LiveFinding{}
 	add := func(service, container, kind, detail, resolution string) {
-		findings = append(findings, LiveFinding{Service: service, Container: container, Kind: kind, Detail: detail, Resolution: resolution})
+		f := LiveFinding{Service: service, Container: container, Kind: kind, Detail: detail, Resolution: resolution}
+		switch {
+		case resolution == ResolveRecreate:
+			f.Hint = fmt.Sprintf("docker compose -p %s rm -sf %s, then Restore managed state", desired.Project, service)
+		case kind == LiveRestarting:
+			f.Hint = fmt.Sprintf("docker compose -p %s logs %s", desired.Project, service)
+		case kind == LiveExtra && container != "":
+			f.Hint = fmt.Sprintf("if unwanted: docker rm -f %s", container)
+		case kind == LiveExtra:
+			f.Hint = fmt.Sprintf("docker ps -a --filter label=%s=%s --filter label=%s=%s", docker.LabelProject, desired.Project, docker.LabelService, service)
+		}
+		findings = append(findings, f)
+	}
+	// Images list lazily: only ID resolution and digest checks need it.
+	var images []docker.Image
+	resolved := false
+	imageList := func() []docker.Image {
+		if !resolved {
+			resolved = true
+			images = inv.Images
+			if images == nil && inv.LoadImages != nil {
+				if list, err := inv.LoadImages(); err == nil {
+					images = list
+				}
+			}
+		}
+		return images
 	}
 	byService := map[string][]docker.Container{}
 	for _, c := range inv.Containers {
@@ -851,8 +989,24 @@ func compareLive(desired desiredStack, inv docker.Inventory) []LiveFinding {
 		}
 		byService[service] = append(byService[service], c)
 	}
-	for name, d := range desired.Services {
+	expectedServices, activeServices := 0, 0
+	names := make([]string, 0, len(desired.Services))
+	for name := range desired.Services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		d := desired.Services[name]
 		running := byService[name]
+		if !d.Profiled && d.Expected > 0 {
+			expectedServices++
+			for _, c := range running {
+				if c.State == "running" || c.State == "restarting" {
+					activeServices++
+					break
+				}
+			}
+		}
 		if d.Profiled && len(running) == 0 {
 			continue
 		}
@@ -877,31 +1031,52 @@ func compareLive(desired desiredStack, inv docker.Inventory) []LiveFinding {
 				}
 				add(name, cname, LiveStopped, fmt.Sprintf("container is %s: %s", c.State, c.Status), ResolveRestore)
 			}
-			if detail := imageDrift(d.Image, c, inv.Images); detail != "" {
+			if detail := imageDrift(d.Image, c, imageList); detail != "" {
 				add(name, cname, LiveImage, detail, ResolveRestore)
 			}
-			if c.State == "running" && d.NetworkMode == "" {
+			if c.State == "running" && d.NetworkMode == "" && !d.PortsUnsupported {
 				for _, detail := range portDrift(d.Ports, c) {
 					add(name, cname, LivePort, detail, ResolveRecreate)
 				}
 			}
-			if d.NetworkMode == "" {
+			if d.NetworkMode == "" && !d.NetworksUnsupported {
 				for _, detail := range networkDrift(d.Networks, c) {
 					add(name, cname, LiveNetwork, detail, ResolveRecreate)
 				}
 			}
-			for _, detail := range mountDrift(d.Mounts, c) {
-				add(name, cname, LiveMount, detail, ResolveRecreate)
+			if !d.MountsUnsupported {
+				for _, detail := range mountDrift(d.Mounts, c, inv.Local) {
+					add(name, cname, LiveMount, detail, ResolveRecreate)
+				}
 			}
 		}
 	}
-	for service, cs := range byService {
-		if _, ok := desired.Services[service]; ok {
-			continue
+	extraServices := make([]string, 0)
+	for service := range byService {
+		if _, ok := desired.Services[service]; !ok {
+			extraServices = append(extraServices, service)
 		}
-		for _, c := range cs {
+	}
+	sort.Strings(extraServices)
+	for _, service := range extraServices {
+		for _, c := range byService[service] {
 			add(service, containerName(c), LiveExtra, "container belongs to the compose project but no compose service declares it", ResolveManual)
 		}
+	}
+	state := ""
+	if expectedServices > 0 && activeServices == 0 {
+		// Nothing runs: a stopped stack is a run state (ADR-005), not
+		// drift. Homestead persists no desired run state, so a stack
+		// stopped by accident reads the same; only partial stacks are
+		// drift. Other findings (image, mounts) still stand.
+		state = "stopped"
+		kept := findings[:0]
+		for _, f := range findings {
+			if f.Kind != LiveMissing && f.Kind != LiveStopped {
+				kept = append(kept, f)
+			}
+		}
+		findings = kept
 	}
 	sort.Slice(findings, func(i, j int) bool {
 		a, b := findings[i], findings[j]
@@ -913,7 +1088,7 @@ func compareLive(desired desiredStack, inv docker.Inventory) []LiveFinding {
 		}
 		return a.Detail < b.Detail
 	})
-	return findings
+	return findings, state
 }
 
 func containerName(c docker.Container) string {

@@ -390,9 +390,12 @@ export interface DriftScanResult {
     package: string;
     files: { path: string; kind: string }[];
     live?: LiveFinding[];
+    live_error?: string;
   }[];
   errors: string[];
   live_skipped?: string;
+  stopped?: string[];
+  live_notes?: string[];
 }
 
 /** GET /api/v1/catalog/:name/drift/live — running-container finding (S262). */
@@ -402,11 +405,14 @@ export interface LiveFinding {
   kind: string;
   detail: string;
   resolution: 'restore' | 'recreate' | 'manual';
+  hint?: string;
 }
 
 export interface LiveDrift {
   checked: boolean;
   findings: LiveFinding[];
+  stack_state?: string;
+  unsupported?: string[];
 }
 
 export interface DriftSchedule {

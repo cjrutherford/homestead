@@ -16,6 +16,8 @@ type DriftScanStack struct {
 	Package string          `json:"package"`
 	Files   []DriftScanFile `json:"files"`
 	Live    []LiveFinding   `json:"live,omitempty"`
+	// LiveError says the compose files were unreadable for live comparison.
+	LiveError string `json:"live_error,omitempty"`
 }
 
 // DriftScanResult is the latest scheduled scan (S261).
@@ -25,7 +27,9 @@ type DriftScanResult struct {
 	Drifted   []DriftScanStack `json:"drifted"`
 	Errors    []string         `json:"errors"`
 	// LiveSkipped says why the running-container comparison did not run.
-	LiveSkipped string `json:"live_skipped,omitempty"`
+	LiveSkipped string   `json:"live_skipped,omitempty"`
+	Stopped     []string `json:"stopped,omitempty"`
+	LiveNotes   []string `json:"live_notes,omitempty"`
 }
 
 // DriftSchedule is the scan cadence plus the latest scan; LastScan is

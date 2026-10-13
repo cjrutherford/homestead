@@ -21,6 +21,12 @@
         @if (scan.drifted.length === 0 && scan.errors.length === 0) {
           <p>Clean: generated files match managed state.</p>
         }
+        @for (name of scan.stopped ?? []; track name) {
+          <p>{{ name }} is stopped (a run state, not drift).</p>
+        }
+        @for (note of scan.live_notes ?? []; track note) {
+          <p>Live comparison limit: {{ note }}</p>
+        }
         @if (scan.live_skipped) {
           <p>Live comparison skipped: {{ scan.live_skipped }}</p>
         }
@@ -36,6 +42,9 @@
               }
               @for (finding of stack.live ?? []; track $index) {
                 live {{ finding.kind }} {{ finding.service }}
+              }
+              @if (stack.live_error) {
+                live comparison unreadable: {{ stack.live_error }}
               }
             </li>
           }
@@ -112,31 +121,42 @@
         <h4>Running containers</h4>
         @if (!liveState.checked) {
           <app-state-message kind="empty" headline="Docker engine unreachable: running containers were not compared." />
-        } @else if (liveState.findings.length === 0) {
-          <app-state-message kind="empty" headline="Running containers match the generated compose files." />
         } @else {
-          <p>
-            Read-only comparison; nothing is changed automatically.
-            Restore starts missing or stopped containers and recreates ones
-            whose configuration changed. Accepting files does not change
-            containers.
-          </p>
-          <ul>
-            @for (finding of liveState.findings; track $index) {
-              <li>
-                <strong>{{ finding.kind }}</strong>
-                {{ finding.container || finding.service }}: {{ finding.detail }}
-                @switch (finding.resolution) {
-                  @case ('restore') { (resolve with Restore managed state) }
-                  @case ('recreate') {
-                    (Restore managed state, after removing the container if
-                    compose.yaml already matches)
-                  }
-                  @default { (resolve manually) }
-                }
-              </li>
+          @if (liveState.stack_state === 'stopped') {
+            <p>
+              Stopped: no service in this app is running. That is a run
+              state, not drift; start it from the app page when you want
+              it up.
+            </p>
+          }
+          @for (note of liveState.unsupported ?? []; track note) {
+            <p>Not compared: {{ note }}</p>
+          }
+          @if (liveState.findings.length === 0) {
+            @if (liveState.stack_state !== 'stopped' && (liveState.unsupported ?? []).length === 0) {
+              <app-state-message kind="empty" headline="Running containers match the generated compose files." />
             }
-          </ul>
+          } @else {
+            <p>
+              Read-only comparison; nothing is changed automatically.
+              Restore starts missing or stopped containers and recreates
+              ones whose image changed. Accepting files does not change
+              containers.
+            </p>
+            <ul>
+              @for (finding of liveState.findings; track $index) {
+                <li>
+                  <strong>{{ finding.kind }}</strong>
+                  {{ finding.container || finding.service }}: {{ finding.detail }}
+                  @switch (finding.resolution) {
+                    @case ('restore') { (resolve with Restore managed state) }
+                    @case ('recreate') { (remove the container, then Restore: <code>{{ finding.hint }}</code>) }
+                    @default { (resolve manually: <code>{{ finding.hint }}</code>) }
+                  }
+                </li>
+              }
+            </ul>
+          }
         }
       </section>
     }

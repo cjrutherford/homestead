@@ -85,13 +85,26 @@ func driftScanDefinition(st *store.Store, now func() time.Time) operation.Defini
 	}
 }
 
+// scanNotes renders informational scan state: stopped stacks and
+// skipped live comparisons. Neither is drift.
+func scanNotes(r catalog.ScanResult) string {
+	out := ""
+	if len(r.Stopped) > 0 {
+		out += "; stopped (not drift): " + strings.Join(r.Stopped, ", ")
+	}
+	if len(r.LiveNotes) > 0 {
+		out += "; live comparison limits: " + strings.Join(r.LiveNotes, "; ")
+	}
+	return out
+}
+
 func scanSummary(r catalog.ScanResult) string {
 	if r.Clean() {
 		out := fmt.Sprintf("clean: %d package(s) scanned", r.Scanned)
 		if r.LiveSkipped != "" {
 			out += "; live comparison skipped: " + r.LiveSkipped
 		}
-		return out
+		return out + scanNotes(r)
 	}
 	var parts []string
 	for _, d := range r.Drifted {
@@ -101,6 +114,9 @@ func scanSummary(r catalog.ScanResult) string {
 		}
 		for _, f := range d.Live {
 			files = append(files, "live "+f.Kind+" "+f.Service)
+		}
+		if d.LiveError != "" {
+			files = append(files, "live comparison unreadable: "+d.LiveError)
 		}
 		parts = append(parts, fmt.Sprintf("%s (%s)", d.Package, strings.Join(files, ", ")))
 	}
@@ -114,7 +130,7 @@ func scanSummary(r catalog.ScanResult) string {
 	if r.LiveSkipped != "" {
 		out += "; live comparison skipped: " + r.LiveSkipped
 	}
-	return out
+	return out + scanNotes(r)
 }
 
 // driftScanView is the schedule plus the latest scan, so surfaces show
@@ -215,6 +231,7 @@ func driftDoctorCheck(st *store.Store, now func() time.Time) func() doctor.Check
 			if latest.LiveSkipped != "" {
 				note = "; live comparison skipped: " + latest.LiveSkipped
 			}
+			note += scanNotes(latest)
 			return doctor.Check{Name: name, Status: doctor.StatusOK,
 				Detail: fmt.Sprintf("clean at %s, %s (%d package(s); resolved packages are dropped until the next scan)%s", when, age, latest.Scanned, note)}
 		}

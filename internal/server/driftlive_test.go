@@ -29,6 +29,15 @@ func init() {
 	driftLiveSource = func() catalog.LiveSource { return fakeLive{} }
 }
 
+func healthy(service, image string, ports ...docker.Port) docker.Container {
+	return docker.Container{
+		ID: service, Names: []string{"demo-" + service}, Image: image, State: "running",
+		Labels:   map[string]string{docker.LabelProject: "demo", docker.LabelService: service},
+		Ports:    ports,
+		Networks: []string{"demo_default"},
+	}
+}
+
 func useLive(t *testing.T, inv docker.Inventory, err error) {
 	t.Helper()
 	old := driftLiveSource
@@ -36,7 +45,7 @@ func useLive(t *testing.T, inv docker.Inventory, err error) {
 	t.Cleanup(func() { driftLiveSource = old })
 }
 
-const liveCompose = "name: demo\nservices:\n  web:\n    image: nginx:1.27\n    ports: ['8080:80']\n"
+const liveCompose = "name: demo\nservices:\n  web:\n    image: nginx:1.27\n    ports: ['8080:80']\n  db:\n    image: postgres:16\n"
 
 func liveStack(t *testing.T) (string, *store.Store) {
 	t.Helper()
@@ -61,7 +70,9 @@ func liveStack(t *testing.T) (string, *store.Store) {
 func TestScanRecordsLiveFindingsAndSkips(t *testing.T) {
 	_, st := liveStack(t)
 	now := time.Now()
-	useLive(t, docker.Inventory{Reachable: true}, nil)
+	web := healthy("web", "nginx:1.27", docker.Port{IP: "0.0.0.0", Private: 80, Public: 8080, Type: "tcp"})
+	// web runs, db is missing: a partial stack is drift.
+	useLive(t, docker.Inventory{Reachable: true, Containers: []docker.Container{web}}, nil)
 	res, err := catalog.ScanWithLive(context.Background(), st, driftDirFor, now, driftLiveSource())
 	if err != nil {
 		t.Fatal(err)
@@ -69,8 +80,21 @@ func TestScanRecordsLiveFindingsAndSkips(t *testing.T) {
 	if len(res.Drifted) != 1 || len(res.Drifted[0].Live) != 1 || res.Drifted[0].Live[0].Kind != catalog.LiveMissing {
 		t.Fatalf("scan = %+v", res)
 	}
-	if !strings.Contains(scanSummary(res), "live missing web") {
+	if !strings.Contains(scanSummary(res), "live missing db") {
 		t.Fatalf("summary = %q", scanSummary(res))
+	}
+	// Nothing running at all is a run state, reported but not drift.
+	useLive(t, docker.Inventory{Reachable: true}, nil)
+	res, _ = catalog.ScanWithLive(context.Background(), st, driftDirFor, now, driftLiveSource())
+	if !res.Clean() || len(res.Stopped) != 1 || !strings.Contains(scanSummary(res), "stopped (not drift): demo") {
+		t.Fatalf("stopped scan = %+v", res)
+	}
+	check := driftDoctorCheck(st, func() time.Time { return now })
+	if err := catalog.SaveScan(st, res); err != nil {
+		t.Fatal(err)
+	}
+	if c := check(); c.Status != "ok" || !strings.Contains(c.Detail, "stopped (not drift)") {
+		t.Fatalf("doctor = %+v", c)
 	}
 	// Unreachable engine: files still scan, comparison is skipped, not drift.
 	useLive(t, docker.Inventory{}, nil)
@@ -85,12 +109,10 @@ func TestLiveRouteReportsFindings(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(stackDir, "compose.yaml"), []byte(liveCompose), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	labels := map[string]string{docker.LabelProject: "demo", docker.LabelService: "web"}
-	useLive(t, docker.Inventory{Reachable: true, Containers: []docker.Container{{
-		ID: "c1", Names: []string{"demo-web"}, Image: "nginx:1.26", State: "running", Labels: labels,
-		Ports:    []docker.Port{{IP: "0.0.0.0", Private: 80, Public: 8080, Type: "tcp"}},
-		Networks: []string{"demo_default"},
-	}}}, nil)
+	useLive(t, docker.Inventory{Reachable: true, Containers: []docker.Container{
+		healthy("web", "nginx:1.26", docker.Port{IP: "0.0.0.0", Private: 80, Public: 8080, Type: "tcp"}),
+		healthy("db", "postgres:16"),
+	}}, nil)
 	recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/demo/drift/live", nil)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("code = %d (%s)", recorder.Code, recorder.Body.String())
@@ -110,25 +132,34 @@ func TestLiveRouteReportsFindings(t *testing.T) {
 	}
 }
 
-func TestRestoreRunsOnlyForConvergableLiveDrift(t *testing.T) {
+func TestRestoreRunsOnlyForRestoreFindings(t *testing.T) {
 	_, _, stackDir := driftTestServer(t)
 	if err := os.WriteFile(filepath.Join(stackDir, "compose.yaml"), []byte(liveCompose), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	labels := map[string]string{docker.LabelProject: "demo", docker.LabelService: "ghost"}
-	// Only an extra container: manual resolution, restore has nothing to do.
-	web := map[string]string{docker.LabelProject: "demo", docker.LabelService: "web"}
+	port := docker.Port{IP: "0.0.0.0", Private: 80, Public: 8080, Type: "tcp"}
+	ghost := healthy("ghost", "alpine")
+	// Only an extra container: manual resolution.
 	useLive(t, docker.Inventory{Reachable: true, Containers: []docker.Container{
-		{ID: "x", Names: []string{"ghost"}, Image: "alpine", State: "running", Labels: labels},
-		{ID: "w", Names: []string{"demo-web"}, Image: "nginx:1.27", State: "running", Labels: web,
-			Ports:    []docker.Port{{IP: "0.0.0.0", Private: 80, Public: 8080, Type: "tcp"}},
-			Networks: []string{"demo_default"}},
+		healthy("web", "nginx:1.27", port), healthy("db", "postgres:16"), ghost,
 	}}, nil)
 	if liveConverges(context.Background(), "demo") {
 		t.Fatal("manual-only drift must not trigger restore")
 	}
-	// web missing as well: up converges it.
+	// Recreate-only (port missing): restore alone would be a no-op.
+	useLive(t, docker.Inventory{Reachable: true, Containers: []docker.Container{
+		healthy("web", "nginx:1.27"), healthy("db", "postgres:16"),
+	}}, nil)
+	if liveConverges(context.Background(), "demo") {
+		t.Fatal("recreate-only drift must not offer restore")
+	}
+	// Owner-stopped stack: nothing to restore.
 	useLive(t, docker.Inventory{Reachable: true}, nil)
+	if liveConverges(context.Background(), "demo") {
+		t.Fatal("a stopped stack is not drift")
+	}
+	// Partial stack: db missing, web up: restore converges it.
+	useLive(t, docker.Inventory{Reachable: true, Containers: []docker.Container{healthy("web", "nginx:1.27", port)}}, nil)
 	if !liveConverges(context.Background(), "demo") {
 		t.Fatal("missing container should be convergable")
 	}

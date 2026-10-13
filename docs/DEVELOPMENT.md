@@ -2351,8 +2351,40 @@ remove the container (`docker compose rm -sf <service>`) and restore.
 `manual` (restarting, extra): no Homestead flow converges them.
 Accepting files never changes containers, and keeps the package's live
 findings in the stored scan. Restore, which previously answered "no
-drift" when files were clean, now runs when live findings it can
-converge exist. Desired state is the on-disk compose files, so a
-hand-edited `compose.yaml` is compared as edited (file drift reports
-the edit separately). An owner-stopped stack reports stopped or missing
-(Homestead tracks no per-stack run state).
+drift" when files were clean, now also runs when at least one finding has
+resolution `restore` (or file drift exists); recreate-only and manual-only
+findings do not offer it, because `up` would change nothing. Each such
+finding carries a `hint` with the exact command, for example
+`docker compose -p <project> rm -sf <service>` then Restore (recreate),
+`docker compose -p <project> logs <service>` (restarting), or
+`docker rm -f <container>` (extra). Desired state is the on-disk compose
+files, so a hand-edited `compose.yaml` is compared as edited (file drift
+reports the edit separately).
+
+Stopped stacks (ADR-005): when no expected service has a running or
+restarting container (for example `docker compose stop` or `down` by
+hand), the package reports `stack_state: "stopped"` (API, `drift live`,
+dashboard, and `stopped` in the scan). It is information, not drift: it
+is excluded from `Drifted`, `Clean()`, and the doctor warning, and no
+Restore is offered; missing and stopped findings are suppressed (other
+findings such as a wrong image still stand). Only a partial stack (some
+services up, others missing or stopped) reports missing and stopped
+findings with restore. Limitation: Homestead persists no desired run
+state, so a stack stopped by accident reads the same as one stopped on
+purpose.
+
+Unsupported compose features are skipped, never reported as drift, and
+listed as `unsupported` (API and CLI) and `live_notes` (scan): a value
+with `${...}` or `$VAR` interpolation skips that field (image, a
+service's ports, volumes, or networks); ports or volumes the comparison
+cannot parse skip that service's comparison; `extends:` or `include:`
+skips the whole package. An unparseable compose file keeps the package's
+file drift and records `live_error` beside it (the single-package route
+answers 422).
+
+Implementation notes: the live compose read holds the per-project lock
+(`lockProject`), as scans, accept, and restore do; the Engine is read once
+per request or scan, volume mountpoints are looked up once per volume, and
+the host image list is read only when an image ID or digest must be
+resolved; symlinks in bind sources resolve only for a local unix-socket
+Engine (a remote `DOCKER_HOST` compares paths lexically).

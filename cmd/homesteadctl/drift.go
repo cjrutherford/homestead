@@ -149,8 +149,16 @@ func runDriftLive(ctx context.Context, client *apiclient.Client, args []string, 
 		fmt.Fprintf(stdout, "%s: Docker engine unreachable; running containers not compared\n", name)
 		return exitOK
 	}
+	if live.StackState == "stopped" {
+		fmt.Fprintf(stdout, "%s: stopped (no service is running; a run state, not drift)\n", name)
+	}
+	for _, note := range live.Unsupported {
+		fmt.Fprintf(stdout, "unsupported: %s\n", note)
+	}
 	if len(live.Findings) == 0 {
-		fmt.Fprintf(stdout, "%s: running containers match generated compose\n", name)
+		if live.StackState == "" && len(live.Unsupported) == 0 {
+			fmt.Fprintf(stdout, "%s: running containers match generated compose\n", name)
+		}
 		return exitOK
 	}
 	for _, f := range live.Findings {
@@ -159,6 +167,9 @@ func runDriftLive(ctx context.Context, client *apiclient.Client, args []string, 
 			target = f.Container
 		}
 		fmt.Fprintf(stdout, "%s %s: %s [%s]\n", f.Kind, target, f.Detail, f.Resolution)
+		if f.Hint != "" {
+			fmt.Fprintf(stdout, "  next: %s\n", f.Hint)
+		}
 	}
 	return exitOK
 }

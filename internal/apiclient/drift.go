@@ -51,6 +51,7 @@ type LiveFinding struct {
 	Kind       string `json:"kind"`
 	Detail     string `json:"detail"`
 	Resolution string `json:"resolution"`
+	Hint       string `json:"hint,omitempty"`
 }
 
 // LiveDrift is the live comparison for one package; Checked is false
@@ -58,6 +59,9 @@ type LiveFinding struct {
 type LiveDrift struct {
 	Checked  bool          `json:"checked"`
 	Findings []LiveFinding `json:"findings"`
+	// StackState is "stopped" when no service runs (informational).
+	StackState  string   `json:"stack_state,omitempty"`
+	Unsupported []string `json:"unsupported,omitempty"`
 }
 
 // DriftLive returns the read-only running-container comparison.

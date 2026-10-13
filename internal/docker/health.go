@@ -123,6 +123,12 @@ func NewClient(socketPath string) *Client {
 	}
 }
 
+// local reports a unix socket on this host: DOCKER_HOST values with
+// another scheme are remote engines whose paths are not ours.
+func (c *Client) local() bool {
+	return strings.HasPrefix(c.socketPath, "/")
+}
+
 // ping proves the socket answers; any failure means unreachable.
 func (c *Client) ping(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost/_ping", nil)
@@ -273,6 +279,7 @@ func (c *Client) Containers(ctx context.Context) ([]Container, error) {
 		return nil, err
 	}
 	out := []Container{}
+	mountpoints := map[string]string{}
 	for _, container := range containers {
 		names := make([]string, 0, len(container.Names))
 		for _, name := range container.Names {
@@ -284,7 +291,13 @@ func (c *Client) Containers(ctx context.Context) ([]Container, error) {
 				// The list endpoint leaves Source empty for some
 				// volumes (seen live for Compose anonymous volumes);
 				// the volume record always carries the host directory.
-				mount.Source = c.volumeMountpoint(ctx, mount.Name)
+				// One lookup per volume per pass.
+				point, seen := mountpoints[mount.Name]
+				if !seen {
+					point = c.volumeMountpoint(ctx, mount.Name)
+					mountpoints[mount.Name] = point
+				}
+				mount.Source = point
 			}
 			mounts = append(mounts, Mount{
 				Type: mount.Type, Name: mount.Name, Source: mount.Source,
@@ -316,7 +329,14 @@ func (c *Client) Containers(ctx context.Context) ([]Container, error) {
 type Inventory struct {
 	Reachable  bool
 	Containers []Container
+	// Images is the host image list. Client.Inventory leaves it nil and
+	// sets LoadImages instead, so the list is read only when a
+	// comparison must resolve an image ID or digest.
 	Images     []Image
+	LoadImages func() ([]Image, error)
+	// Local means the Engine socket is on this host, so host paths in
+	// mounts are comparable with this filesystem (symlinks resolve).
+	Local bool
 }
 
 // Inventory reads containers and images read-only. An unreachable
@@ -329,17 +349,21 @@ func (c *Client) Inventory(ctx context.Context) (Inventory, error) {
 	if err != nil {
 		return Inventory{}, err
 	}
-	var images []struct {
-		ID          string   `json:"Id"`
-		RepoTags    []string `json:"RepoTags"`
-		RepoDigests []string `json:"RepoDigests"`
-	}
-	if err := c.get(ctx, "/images/json", &images); err != nil {
-		return Inventory{}, err
-	}
-	out := Inventory{Reachable: true, Containers: containers}
-	for _, image := range images {
-		out.Images = append(out.Images, Image{ID: image.ID, RepoTags: image.RepoTags, RepoDigests: image.RepoDigests})
+	out := Inventory{Reachable: true, Containers: containers, Local: c.local()}
+	out.LoadImages = func() ([]Image, error) {
+		var images []struct {
+			ID          string   `json:"Id"`
+			RepoTags    []string `json:"RepoTags"`
+			RepoDigests []string `json:"RepoDigests"`
+		}
+		if err := c.get(ctx, "/images/json", &images); err != nil {
+			return nil, err
+		}
+		list := []Image{}
+		for _, image := range images {
+			list = append(list, Image{ID: image.ID, RepoTags: image.RepoTags, RepoDigests: image.RepoDigests})
+		}
+		return list, nil
 	}
 	return out, nil
 }

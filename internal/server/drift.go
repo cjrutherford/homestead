@@ -74,8 +74,11 @@ func handleDriftLive(st *store.Store, catalogDir string) http.HandlerFunc {
 		review, err := catalog.LiveDrift(r.Context(), driftLiveSource(), manifest.Name, driftDirFor(manifest.Name))
 		if err != nil {
 			status := http.StatusInternalServerError
-			if errors.Is(err, os.ErrNotExist) {
+			switch {
+			case errors.Is(err, os.ErrNotExist):
 				status = http.StatusNotFound
+			case errors.Is(err, catalog.ErrLiveCompose):
+				status = http.StatusUnprocessableEntity
 			}
 			http.Error(w, err.Error(), status)
 			return
@@ -84,16 +87,17 @@ func handleDriftLive(st *store.Store, catalogDir string) http.HandlerFunc {
 	}
 }
 
-// liveConverges reports whether running containers diverge in a way
-// restore (compose up) can act on. Live-only drift still lets restore
-// run: file drift is absent, but up starts and recreates containers.
+// liveConverges reports whether restore (compose up) can act on a live
+// finding: only `restore` findings qualify. Recreate findings need the
+// container removed first, so restore alone would be a no-op, and an
+// owner-stopped stack reports no findings at all.
 func liveConverges(ctx context.Context, name string) bool {
 	review, err := catalog.LiveDrift(ctx, driftLiveSource(), name, driftDirFor(name))
 	if err != nil {
 		return false
 	}
 	for _, f := range review.Findings {
-		if f.Resolution != catalog.ResolveManual {
+		if f.Resolution == catalog.ResolveRestore {
 			return true
 		}
 	}

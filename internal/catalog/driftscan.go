@@ -90,6 +90,9 @@ type StackDrift struct {
 	Files   []ScanFile `json:"files"`
 	// Live lists running-container findings (S262).
 	Live []LiveFinding `json:"live,omitempty"`
+	// LiveError says the compose files could not be read for live
+	// comparison; file drift above still stands.
+	LiveError string `json:"live_error,omitempty"`
 }
 
 // ScanResult is one completed scan across installed packages. Errors
@@ -104,6 +107,12 @@ type ScanResult struct {
 	// (Engine unreachable or unreadable); empty when it ran. A skipped
 	// comparison is neither clean nor drifted (S262).
 	LiveSkipped string `json:"live_skipped,omitempty"`
+	// Stopped names packages with no running service: an informational
+	// run state (ADR-005), never drift.
+	Stopped []string `json:"stopped,omitempty"`
+	// LiveNotes lists compose features live comparison skipped
+	// (interpolation, extends, include); informational.
+	LiveNotes []string `json:"live_notes,omitempty"`
 }
 
 // Clean reports a scan with nothing drifted and nothing unreadable.
@@ -163,27 +172,34 @@ func ScanWithLive(ctx context.Context, st *store.Store, dirFor func(string) stri
 			var drifts []Drift
 			if drifts, err = Detect(dirFor(stack), recorded); err == nil {
 				var findings []LiveFinding
+				liveErr := ""
 				if compareLiveState {
-					var review LiveReview
-					review, err = LiveDriftInventory(stack, dirFor(stack), inv)
-					// A missing compose.yaml is already file drift.
-					if errors.Is(err, os.ErrNotExist) {
-						err = nil
-					}
-					findings = review.Findings
-				}
-				if err == nil {
-					unlock()
-					result.Scanned++
-					if len(drifts) > 0 || len(findings) > 0 {
-						entry := StackDrift{Package: stack, Files: []ScanFile{}, Live: findings}
-						for _, d := range drifts {
-							entry.Files = append(entry.Files, ScanFile{Path: d.Path, Kind: d.Kind})
+					review, lerr := LiveDriftInventory(stack, dirFor(stack), inv)
+					switch {
+					case lerr == nil:
+						findings = review.Findings
+						if review.StackState == "stopped" {
+							result.Stopped = append(result.Stopped, stack)
 						}
-						result.Drifted = append(result.Drifted, entry)
+						for _, n := range review.Unsupported {
+							result.LiveNotes = append(result.LiveNotes, stack+": "+n)
+						}
+					case errors.Is(lerr, os.ErrNotExist):
+						// A missing compose.yaml is already file drift.
+					default:
+						liveErr = lerr.Error()
 					}
-					continue
 				}
+				unlock()
+				result.Scanned++
+				if len(drifts) > 0 || len(findings) > 0 || liveErr != "" {
+					entry := StackDrift{Package: stack, Files: []ScanFile{}, Live: findings, LiveError: liveErr}
+					for _, d := range drifts {
+						entry.Files = append(entry.Files, ScanFile{Path: d.Path, Kind: d.Kind})
+					}
+					result.Drifted = append(result.Drifted, entry)
+				}
+				continue
 			}
 		}
 		unlock()
@@ -251,7 +267,7 @@ func resolveInScan(st *store.Store, stack string, keepLive bool) error {
 		switch {
 		case d.Package != stack:
 			kept = append(kept, d)
-		case keepLive && len(d.Live) > 0:
+		case keepLive && (len(d.Live) > 0 || d.LiveError != ""):
 			if len(d.Files) > 0 {
 				changed = true
 			}

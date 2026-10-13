@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -278,9 +279,11 @@ func TestLiveSymlinkedBindSourceIsNotDrift(t *testing.T) {
 	dir := liveDir(t, strings.Replace(liveCompose, "/mnt/data/demo/web", link, 1))
 	web := goodWeb(dir)
 	web.Mounts[0].Source = real
-	if r := runLive(t, dir, docker.Inventory{Containers: []docker.Container{web, goodDB()}}); len(r.Findings) != 0 {
+	if r := runLive(t, dir, docker.Inventory{Local: true, Containers: []docker.Container{web, goodDB()}}); len(r.Findings) != 0 {
 		t.Fatalf("findings = %+v", r.Findings)
 	}
+	// A remote Engine's paths mean nothing here: lexical comparison only.
+	expectOne(t, runLive(t, dir, docker.Inventory{Containers: []docker.Container{web, goodDB()}}), LiveMount, "binds", ResolveRecreate)
 }
 
 func TestLiveNamedVolumeResolvesProjectScope(t *testing.T) {
@@ -324,13 +327,14 @@ func TestLiveContainerStates(t *testing.T) {
 }
 
 func TestLiveRunOnceAndProfiles(t *testing.T) {
-	dir := liveDir(t, "name: demo\nservices:\n  job:\n    image: alpine\n    restart: 'no'\n  dev:\n    image: alpine\n    profiles: [debug]\n")
+	dir := liveDir(t, "name: demo\nservices:\n  job:\n    image: alpine\n    restart: 'no'\n  dev:\n    image: alpine\n    profiles: [debug]\n  app:\n    image: nginx:1.27\n")
+	app := docker.Container{ID: "a", Names: []string{"demo-app"}, Image: "nginx:1.27", State: "running", Labels: lbl("app"), Networks: []string{"demo_default"}}
 	job := docker.Container{ID: "j", Names: []string{"demo-job"}, Image: "alpine", State: "exited", Status: "Exited (0) 5 minutes ago", Labels: lbl("job"), Networks: []string{"demo_default"}}
-	if r := runLive(t, dir, docker.Inventory{Containers: []docker.Container{job}}); len(r.Findings) != 0 {
+	if r := runLive(t, dir, docker.Inventory{Containers: []docker.Container{job, app}}); len(r.Findings) != 0 {
 		t.Fatalf("findings = %+v", r.Findings)
 	}
 	job.Status = "Exited (2) 5 minutes ago"
-	expectOne(t, runLive(t, dir, docker.Inventory{Containers: []docker.Container{job}}), LiveStopped, "exited", ResolveRestore)
+	expectOne(t, runLive(t, dir, docker.Inventory{Containers: []docker.Container{job, app}}), LiveStopped, "exited", ResolveRestore)
 }
 
 func TestLiveOverrideAppliesImage(t *testing.T) {
@@ -421,5 +425,174 @@ func TestScanWithLiveAndAcceptKeepsLiveFindings(t *testing.T) {
 	failed, err := ScanWithLive(context.Background(), st, dirFor, now, fakeLive{err: errors.New("boom")})
 	if err != nil || !failed.Clean() || !strings.Contains(failed.LiveSkipped, "boom") {
 		t.Fatalf("failed = %+v err = %v", failed, err)
+	}
+}
+
+func TestLiveOwnerStoppedStackIsStateNotDrift(t *testing.T) {
+	dir := liveDir(t, liveCompose)
+	web, db := goodWeb(dir), goodDB()
+	web.State, web.Status, web.Ports = "exited", "Exited (0) 1 minute ago", nil
+	db.State, db.Status = "exited", "Exited (0) 1 minute ago"
+	r := runLive(t, dir, docker.Inventory{Containers: []docker.Container{web, db}})
+	if r.StackState != "stopped" || len(r.Findings) != 0 {
+		t.Fatalf("stopped = %+v", r)
+	}
+	// Fully down (containers removed) is the same state.
+	r = runLive(t, dir, docker.Inventory{Containers: []docker.Container{}})
+	if r.StackState != "stopped" || len(r.Findings) != 0 {
+		t.Fatalf("down = %+v", r)
+	}
+	// Other findings on a stopped stack still stand (wrong image).
+	web.Image = "nginx:1.20"
+	r = runLive(t, dir, docker.Inventory{Containers: []docker.Container{web, db}})
+	if r.StackState != "stopped" || len(r.Findings) != 1 || r.Findings[0].Kind != LiveImage {
+		t.Fatalf("stopped with image drift = %+v", r)
+	}
+	// Partial stack: web runs, db stopped -> drift with restore.
+	r = runLive(t, dir, docker.Inventory{Containers: []docker.Container{goodWeb(dir), db}})
+	expectOne(t, r, LiveStopped, "exited", ResolveRestore)
+	if r.StackState != "" {
+		t.Fatalf("partial state = %q", r.StackState)
+	}
+}
+
+func TestScanStoppedStackStaysClean(t *testing.T) {
+	st := liveStore(t)
+	dir := liveDir(t, liveCompose)
+	if err := os.MkdirAll(filepath.Join(dir, "secrets"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "secrets", "web_key"), []byte("k"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordFingerprints(st, "demo", dir); err != nil {
+		t.Fatal(err)
+	}
+	res, err := ScanWithLive(context.Background(), st, func(string) string { return dir }, time.Now(), fakeLive{inv: docker.Inventory{Reachable: true}})
+	if err != nil || !res.Clean() || len(res.Stopped) != 1 || res.Stopped[0] != "demo" {
+		t.Fatalf("scan = %+v err = %v", res, err)
+	}
+}
+
+func TestLiveHintsAreActionable(t *testing.T) {
+	dir := liveDir(t, liveCompose)
+	web := goodWeb(dir)
+	web.Ports = web.Ports[2:]
+	db := goodDB()
+	db.State, db.Status = "restarting", "Restarting (1) 1s ago"
+	ghost := docker.Container{ID: "g", Names: []string{"demo-ghost"}, Image: "alpine", State: "running", Labels: lbl("ghost")}
+	r := runLive(t, dir, docker.Inventory{Containers: []docker.Container{web, db, ghost}})
+	hints := map[string]string{}
+	for _, f := range r.Findings {
+		hints[f.Kind] = f.Hint
+	}
+	if hints[LivePort] != "docker compose -p demo rm -sf web, then Restore managed state" ||
+		hints[LiveRestarting] != "docker compose -p demo logs db" ||
+		hints[LiveExtra] != "if unwanted: docker rm -f demo-ghost" {
+		t.Fatalf("hints = %v", hints)
+	}
+}
+
+func TestLiveInterpolationAndUnsupportedAreNotDrift(t *testing.T) {
+	compose := `name: demo
+services:
+  web:
+    image: nginx:${TAG}
+    ports: ["${PORT}:80", "oops"]
+    volumes: ["${DATA}:/data"]
+    networks: ["${NET}"]
+`
+	dir := liveDir(t, compose)
+	web := docker.Container{ID: "w", Names: []string{"w"}, Image: "nginx:9", State: "running", Labels: lbl("web"),
+		Ports:  []docker.Port{{IP: "0.0.0.0", Private: 1, Public: 1, Type: "tcp"}},
+		Mounts: []docker.Mount{{Type: "bind", Source: "/x", Destination: "/y", RW: true}}, Networks: []string{"anything"}}
+	r := runLive(t, dir, docker.Inventory{Containers: []docker.Container{web}})
+	if len(r.Findings) != 0 || len(r.Unsupported) != 4 {
+		t.Fatalf("review = %+v", r)
+	}
+	// Unparseable ports are reported unsupported, not silently dropped.
+	dir = liveDir(t, "name: demo\nservices:\n  web:\n    image: nginx\n    ports: ['abc:def']\n")
+	r = runLive(t, dir, docker.Inventory{Containers: []docker.Container{{ID: "w", Image: "nginx", State: "running", Labels: lbl("web"), Networks: []string{"demo_default"}}}})
+	if len(r.Findings) != 0 || len(r.Unsupported) != 1 || !strings.Contains(r.Unsupported[0], "port comparison skipped") {
+		t.Fatalf("bad port = %+v", r)
+	}
+	// "$$" is an escaped literal, so it is not interpolation.
+	if containsInterp("pa$$word") || !containsInterp("${X}") || !containsInterp("$X") {
+		t.Fatal("containsInterp misclassified")
+	}
+	for _, doc := range []string{
+		"name: demo\ninclude:\n  - other.yaml\nservices:\n  web: {image: nginx}\n",
+		"name: demo\nservices:\n  web:\n    extends: {file: base.yaml, service: web}\n",
+	} {
+		r = runLive(t, liveDir(t, doc), docker.Inventory{Containers: []docker.Container{{ID: "z", Image: "x", State: "running", Labels: lbl("zzz")}}})
+		if len(r.Findings) != 0 || len(r.Unsupported) == 0 || !r.Checked {
+			t.Fatalf("unsupported package = %+v", r)
+		}
+	}
+}
+
+func TestLiveParseErrorKeepsFileDrift(t *testing.T) {
+	st := liveStore(t)
+	dir := liveDir(t, liveCompose)
+	if err := os.MkdirAll(filepath.Join(dir, "secrets"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "secrets", "web_key"), []byte("k"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordFingerprints(st, "demo", dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("services: {web: true}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := ScanWithLive(context.Background(), st, func(string) string { return dir }, time.Now(), fakeLive{inv: docker.Inventory{Reachable: true}})
+	if err != nil || len(res.Errors) != 0 || len(res.Drifted) != 1 {
+		t.Fatalf("scan = %+v err = %v", res, err)
+	}
+	d := res.Drifted[0]
+	if len(d.Files) != 1 || d.Files[0].Kind != DriftModified || d.LiveError == "" || !strings.Contains(d.LiveError, "parse compose.yaml") {
+		t.Fatalf("drifted = %+v", d)
+	}
+	if _, err := LiveDrift(context.Background(), fakeLive{}, "demo", dir); !errors.Is(err, ErrLiveCompose) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestLiveDriftTakesProjectLock(t *testing.T) {
+	dir := liveDir(t, liveCompose)
+	unlock := lockProject("demo")
+	var done atomic.Bool
+	finished := make(chan struct{})
+	go func() {
+		_, _ = LiveDrift(context.Background(), fakeLive{}, "demo", dir)
+		done.Store(true)
+		close(finished)
+	}()
+	time.Sleep(100 * time.Millisecond)
+	if done.Load() {
+		t.Fatal("LiveDrift read compose while the project lock was held")
+	}
+	unlock()
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("LiveDrift never finished after unlock")
+	}
+}
+
+func TestLiveImagesLoadLazily(t *testing.T) {
+	dir := liveDir(t, liveCompose)
+	var calls int
+	load := func() ([]docker.Image, error) { calls++; return []docker.Image{}, nil }
+	inv := docker.Inventory{Reachable: true, LoadImages: load, Containers: []docker.Container{goodWeb(dir), goodDB()}}
+	if r, err := LiveDriftInventory("demo", dir, inv); err != nil || len(r.Findings) != 0 || calls != 0 {
+		t.Fatalf("tag references loaded images: calls = %d (%+v, %v)", calls, r, err)
+	}
+	web := goodWeb(dir)
+	web.Image = "sha256:" + strings.Repeat("9", 64)
+	inv.Containers = []docker.Container{web, goodDB()}
+	if _, err := LiveDriftInventory("demo", dir, inv); err != nil || calls != 1 {
+		t.Fatalf("ID reference loads once: calls = %d err = %v", calls, err)
 	}
 }

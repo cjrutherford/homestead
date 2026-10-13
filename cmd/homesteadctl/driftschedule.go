@@ -75,6 +75,17 @@ func runDriftSchedule(ctx context.Context, client *apiclient.Client, args []stri
 			fmt.Fprintf(stdout, "live drift: %s %s %s: %s [%s]\n", stack.Package, f.Service, f.Kind, f.Detail, f.Resolution)
 		}
 	}
+	for _, stack := range scan.Drifted {
+		if stack.LiveError != "" {
+			fmt.Fprintf(stdout, "live comparison unreadable: %s: %s\n", stack.Package, stack.LiveError)
+		}
+	}
+	for _, name := range scan.Stopped {
+		fmt.Fprintf(stdout, "stopped (not drift): %s\n", name)
+	}
+	for _, note := range scan.LiveNotes {
+		fmt.Fprintf(stdout, "live comparison limit: %s\n", note)
+	}
 	if scan.LiveSkipped != "" {
 		fmt.Fprintf(stdout, "live comparison skipped: %s\n", scan.LiveSkipped)
 	}

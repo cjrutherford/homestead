@@ -85,9 +85,9 @@ export class Drift implements OnInit {
     return `${seconds} second(s)`;
   }
 
-  /** True when a live finding can converge through restore (compose up). */
+  /** True when restore (compose up) can fix a live finding by itself. */
   protected convergable(): boolean {
-    return (this.live()?.findings ?? []).some((f) => f.resolution !== 'manual');
+    return (this.live()?.findings ?? []).some((f) => f.resolution === 'restore');
   }
 
   select(name: string): void {
