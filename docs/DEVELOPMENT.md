@@ -694,6 +694,36 @@ homesteadctl backup unschedule --package jellyfin
   scratch (`/dev/shm`, swept at daemon start); tmpfs pages can be
   swapped on hosts with swap, so disable swap or encrypt it if that
   matters.
+- Proven live in KVM (S259, 72ae5c1, deployed with
+  `scripts/install-systemd.sh`; VM 1 four apps on binds with a disk image
+  copied first, VM 2 ext4 data disks): `sys_backup_identity` appeared in
+  the secret store at the first backup and its key never appeared in the
+  journal, audit entries, any API response, the CLI, manifests, or the
+  backup tree. `GET /api/v1/backups/destination` answered
+  `encrypted: true, format_version: 2` (the installed `homesteadctl`
+  must be rebuilt to show it; `install-systemd.sh` installs only the
+  daemon). Scheduled runs of all four apps wrote only `<entry>.tar.age`,
+  `<name>.age` and a plaintext `backup.json` (format 2, `archives` map,
+  no secret names or values), mode 0600 files; Authentik and Immich held
+  `*.sql.age` (230 and 72 tables) and `stack-secrets/<pkg>/secrets.tar.age`.
+  No catalog app uses the SQLite export, so `/dev/shm` stayed empty
+  while sampled every 100 ms (the SQLite path is covered by tests only).
+  The `age` CLI with the identity (exported with a throwaway helper,
+  shredded afterwards) listed and decrypted every artifact, and a
+  different key was refused. Restore onto a stopped Jellyfin brought back
+  a deleted `jellyfin.db` and the app turned healthy; the secrets entry
+  came back as a 0700 directory with 0600 files owned by 70/1000 after a
+  deliberate chmod/chown; a format 1 plaintext run still restored
+  identically; truncated, tail-cut, and bit-flipped archives were refused
+  with the target tree unchanged. With retain 2, repeated runs left the 2
+  newest, and a stale directory without a manifest was removed. A daemon
+  SIGKILL during a Nextcloud backup left an encrypted partial that never
+  counted as a run, the last good run survived, and the next run removed
+  it. Doctor showed the `backup-encryption` warning and the dashboard
+  routes answered with cookie plus CSRF (403 without the header).
+  `scripts/acceptance.sh` stops at preconditions when `age` is absent;
+  the full script cannot rerun on appliances that already hold the apps.
+
 - Wire format: schedule records are snake_case JSON (`package`,
   `interval_seconds`, `retain`, `enabled`, `actor`, `updated_at`),
   matching the save request body. This changed from PascalCase keys
