@@ -11,6 +11,7 @@ import { Updates } from './updates/updates';
 import { Advanced } from './advanced/advanced';
 import { Drift } from './drift/drift';
 import { ValidationBoard } from './validation/validation-board';
+import { AuditLog } from './audit/audit';
 import { NotFound } from './not-found/not-found';
 
 describe('routes', () => {
@@ -63,6 +64,10 @@ describe('routes', () => {
 
   it('serves the validation board', () => {
     expect(routes.find((route) => route.path === 'validation-board')?.component).toBe(ValidationBoard);
+  });
+
+  it('serves the audit log', () => {
+    expect(routes.find((route) => route.path === 'audit')?.component).toBe(AuditLog);
   });
 
   it('falls back to not-found last', () => {

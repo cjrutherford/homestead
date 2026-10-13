@@ -1,0 +1,100 @@
+<section aria-label="Audit log">
+  <h2>Audit log</h2>
+  <p>
+    Append-only record of security-relevant actions. Entries cannot be
+    changed or deleted. The daemon returns the newest entries up to the
+    limit you choose; the filters below narrow that loaded set.
+  </p>
+
+  <label>
+    Load newest
+    <select name="limit" (change)="setLimit($any($event.target).value)">
+      @for (n of limits; track n) {
+        <option [value]="n" [selected]="n === limit()">{{ n }} entries</option>
+      }
+    </select>
+  </label>
+  <button type="button" (click)="load()" [disabled]="loading()">Refresh</button>
+
+  <fieldset>
+    <legend>Filter loaded entries</legend>
+    <label>
+      Actor
+      <input name="actor" [value]="actor()"
+        (input)="setFilter('actor', $any($event.target).value)" />
+    </label>
+    <label>
+      Action
+      <input name="action" [value]="action()"
+        (input)="setFilter('action', $any($event.target).value)" />
+    </label>
+    <label>
+      Outcome
+      <select name="outcome" (change)="setFilter('outcome', $any($event.target).value)">
+        <option value="" [selected]="outcome() === ''">Any</option>
+        @for (o of outcomes; track o) {
+          <option [value]="o" [selected]="outcome() === o">{{ o }}</option>
+        }
+      </select>
+    </label>
+    <label>
+      From
+      <input type="date" name="since" [value]="since()"
+        (input)="setFilter('since', $any($event.target).value)" />
+    </label>
+    <label>
+      Until
+      <input type="date" name="until" [value]="until()"
+        (input)="setFilter('until', $any($event.target).value)" />
+    </label>
+    <button type="button" (click)="clearFilters()">Clear filters</button>
+  </fieldset>
+
+  @if (error()) {
+    <app-state-message kind="error" [headline]="error()" />
+  } @else if (loading() && rows().length === 0) {
+    <app-state-message kind="loading" headline="Loading audit log…" />
+  } @else if (rows().length === 0) {
+    <app-state-message kind="empty" headline="No audit entries yet." />
+  } @else if (filtered().length === 0) {
+    <app-state-message kind="empty" headline="No entries match these filters." />
+  } @else {
+    <p>
+      Showing {{ visible().length }} of {{ filtered().length }} matching
+      ({{ rows().length }} loaded).
+    </p>
+    <ul aria-label="Audit entries">
+      @for (row of visible(); track row.entry.id) {
+        @let entry = row.entry;
+        <li class="audit-entry">
+          <span class="outcome" [class]="outcomeClass(entry.outcome)">{{ entry.outcome }}</span>
+          <strong class="audit-text">{{ entry.action }}</strong>
+          by <span class="audit-text">{{ entry.actor }}</span>
+          at <time [attr.datetime]="entry.created_at">{{ entry.created_at }}</time>
+          @if (row.rejection; as r) {
+            <p class="audit-text">
+              Rejected {{ r.count }} request{{ r.count === 1 ? '' : 's' }} to
+              {{ r.route }} ({{ r.reason }}) since {{ r.since }}
+            </p>
+          } @else if (entry.detail) {
+            <p class="audit-text">{{ entry.detail }}</p>
+          }
+          @if (entry.override) {
+            <p class="audit-text">Owner override: {{ entry.override_reason }}</p>
+          }
+          @if (entry.plan) {
+            <details>
+              <summary>Reviewed plan</summary>
+              <pre class="audit-text">{{ row.plan }}</pre>
+            </details>
+          }
+        </li>
+      }
+    </ul>
+    <nav aria-label="Audit pages">
+      <button type="button" (click)="go(-1)" [disabled]="page() === 0">Newer</button>
+      <span>Page {{ page() + 1 }} of {{ pageCount() }}</span>
+      <button type="button" (click)="go(1)" [disabled]="page() >= pageCount() - 1">Older</button>
+    </nav>
+  }
+</section>

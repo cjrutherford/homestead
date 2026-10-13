@@ -79,4 +79,48 @@ describe('Advanced', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('a')).toBeNull();
   });
+
+  it('shows loading before the link arrives', () => {
+    fixture.detectChanges();
+    expect(text()).toContain('Loading');
+    http.expectOne('/api/v1/dockge?domain=lan').flush(LINK);
+  });
+
+  it('maps a network failure to readable text', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/dockge?domain=lan').error(new ProgressEvent('error'));
+    fixture.detectChanges();
+    expect(text()).toContain('Cannot reach the Homestead daemon');
+    expect(fixture.nativeElement.querySelector('a')).toBeNull();
+  });
+
+  it('warns when the assessed exposure is not local-only', () => {
+    fixture.detectChanges();
+    http
+      .expectOne('/api/v1/dockge?domain=lan')
+      .flush({ ...LINK, exposure: 'public', aligned: false, findings: ['public route found'] });
+    fixture.detectChanges();
+    expect(text()).toContain('not local-only');
+    expect(text()).toContain('Policy aligned: no');
+    expect(text()).toContain('public route found');
+    expect(text()).toContain('TLS: internal');
+  });
+
+  it('does not warn for a local-only link and shows the not-running state', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/dockge?domain=lan').flush({ ...LINK, installed: false });
+    fixture.detectChanges();
+    expect(text()).not.toContain('not local-only');
+    expect(text()).toContain('Dockge is not running');
+  });
+
+  it('offers only http(s) URLs as links', () => {
+    fixture.detectChanges();
+    http
+      .expectOne('/api/v1/dockge?domain=lan')
+      .flush({ ...LINK, url: 'javascript:alert(1)' });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('a')).toBeNull();
+    expect(text()).toContain('javascript:alert(1)');
+  });
 });

@@ -331,6 +331,19 @@ export interface TrustKey {
   placeholder?: boolean;
 }
 
+/** GET /api/v1/audit — one immutable audit entry (snake_case JSON). */
+export interface AuditEntry {
+  id: number;
+  actor: string;
+  action: string;
+  plan: string;
+  outcome: string;
+  detail: string;
+  override: boolean;
+  override_reason: string;
+  created_at: string;
+}
+
 /** GET /api/v1/dockge — expert-interface link with access policy. */
 export interface DockgeLink {
   host: string;
@@ -764,6 +777,10 @@ export class ApiService {
     return this.http.post<OperationStarted>('/api/v1/secrets/rekey', {
       confirm: true,
     });
+  }
+
+  auditList(limit: number): Observable<AuditEntry[]> {
+    return this.http.get<AuditEntry[]>(`/api/v1/audit?limit=${limit}`);
   }
 
   dockge(domain: string): Observable<DockgeLink> {

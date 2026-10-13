@@ -123,6 +123,20 @@ Recipients live in SQLite (`backup_recipients`, migration 30) and render to
 `backup-recipients.yaml` beside `desired.yaml` (public keys only, ADR-003).
 Audit entries carry fingerprints and public keys only.
 
+Audit trail safety (S269): callers record names and ids, never values.
+As a best-effort net, `audit.Service.Record` also redacts known credential
+shapes (`key=value` pairs for password/secret/token/api-key/private-key/
+credential/authorization/cookie names, Bearer/Basic values, `AGE-SECRET-KEY-`
+identities, JWT-like tunnel tokens) from Detail and OverrideReason, and
+sensitive-named keys in Plan JSON (`internal/audit/redact.go`). It does not
+catch arbitrary secrets, so the dashboard Audit page (`/audit`) renders
+every field as plain text. `GET /api/v1/audit` takes only `limit`; the page
+filters and pages client-side over the loaded window. Aggregated
+`session.boundary.rejected` entries (ADR-020) show their request counts.
+The Advanced page (`/advanced`) shows the Dockge link with its assessed
+policy (exposure, TLS, alignment, findings) and warns when it is not
+local-only.
+
 The recovery identity export (`POST /api/v1/backups/identity/export`,
 body `{"confirm": true}`) is explicit, audited, and rate limited (5 per
 hour, 429 beyond). It fails closed: the export is recorded and audited

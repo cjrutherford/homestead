@@ -47,7 +47,7 @@ unchanged.
 | GET | /api/v1/operations/{id} | `runOperationsGet` | `operation` | Single operation record |
 | GET | /api/v1/operations | `runOperationsList` | `operations` | Newest-first records |
 | GET | /api/v1/operations/{id}/events | `runOperationsFollow` | `operationEvents` | Poll-backed SSE state stream |
-| GET | /api/v1/audit | `runAuditList` | n/a | Append-only trail; no dashboard viewer yet |
+| GET | /api/v1/audit | `runAuditList` | `auditList` | Audit page (`/audit`); S269. API supports only `limit`; actor/action/outcome/time filters and paging are client-side over the loaded window |
 | GET | /api/v1/docker/health | `runDockerHealth` | n/a | Engine inventory; stack UI arrives later |
 | GET | /api/v1/storage/mounts | `runStorageMounts` | `storageMounts` | Storage page (`/storage`); S268. Entries add `registrable` and `registrable_reason` |
 | GET | /api/v1/storage/registrations | `runStorageRegistrations` | `storageRegistrations` | Storage page (`/storage`); S268 |

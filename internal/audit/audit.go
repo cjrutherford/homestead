@@ -75,6 +75,10 @@ func (s *Service) Record(entry Entry) (Entry, error) {
 	if entry.Override && entry.OverrideReason == "" {
 		return Entry{}, fmt.Errorf("audit: override requires a reason")
 	}
+	// Safety net (redact.go): callers record names, never values.
+	entry.Detail = RedactText(entry.Detail)
+	entry.OverrideReason = RedactText(entry.OverrideReason)
+	entry.Plan = RedactPlan(entry.Plan)
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	res, err := s.db.Exec(
 		`INSERT INTO audit_entries (actor, action, plan, outcome, detail, override, override_reason, created_at)

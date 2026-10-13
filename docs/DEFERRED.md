@@ -252,3 +252,9 @@
   offer neither. Re-assigning a class is refused with a 409 package list
   until acknowledged; impact is judged by `<old mount>/<package>`
   directories of installed stacks, and S276 declarations are not consulted.
+- Audit server-side query (S269): `GET /api/v1/audit` accepts only
+  `limit` (max 1000), so the dashboard Audit page filters (actor, action,
+  outcome, time range) and pages client-side over the loaded window, and
+  entries older than that window are unreachable from the dashboard and
+  CLI. Server-side filters, a cursor, and audit-list CLI
+  filter flags belong to one coordinated API, CLI, and dashboard change.

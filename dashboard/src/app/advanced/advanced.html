@@ -27,19 +27,34 @@
 
   @if (link(); as entry) {
     <h3>Dockge</h3>
-    <p>
-      <a [href]="entry.url">{{ entry.url }}</a>
+    <p class="advanced-text">
+      @if (safeUrl(entry.url)) {
+        <a [href]="entry.url" rel="noopener noreferrer">{{ entry.url }}</a>
+      } @else {
+        {{ entry.url }}
+      }
     </p>
     <ul>
+      <li class="advanced-text">Host: {{ entry.host }}</li>
       <li>Access: {{ entry.exposure }} only</li>
+      <li>TLS: {{ entry.tls }}</li>
       <li>Policy aligned: {{ entry.aligned ? 'yes' : 'no' }}</li>
       <li>Status: {{ entry.installed ? 'running' : 'not running' }}</li>
     </ul>
+    @if (exposed(entry)) {
+      <app-state-message
+        kind="error"
+        headline="This interface is not local-only. It grants full engine control; restrict it to the local network."
+      />
+    }
     @for (finding of entry.findings; track finding) {
-      <p class="warning">{{ finding }}</p>
+      <p class="warning advanced-text">{{ finding }}</p>
     }
     @if (!entry.installed) {
-      <p>Deploy the Dockge stack before opening the interface.</p>
+      <app-state-message
+        kind="empty"
+        headline="Dockge is not running. Deploy the Dockge stack before opening the interface."
+      />
     }
   }
 </section>
