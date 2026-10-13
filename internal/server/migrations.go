@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"filippo.io/age"
+
 	"homestead/internal/audit"
 	"homestead/internal/backup"
 	"homestead/internal/catalog"
@@ -217,7 +219,11 @@ func (h *migrationHandlers) preMigrationBackup(manifest catalog.Manifest, plan c
 	manifest.Database = nil
 	manifest.Hooks = nil
 	// The volume copy is encrypted like every backup (S259).
-	recipients, err := backup.Recipients(h.secrets)
+	keys, err := backupKeyStore(h.secrets)
+	var recipients []age.Recipient
+	if err == nil {
+		recipients, err = backup.Recipients(keys)
+	}
 	if err != nil {
 		return backup.Job{}, backupAvailability{Destination: dest,
 			Reason: "backup encryption unavailable: " + err.Error()}

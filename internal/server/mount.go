@@ -7,6 +7,7 @@ import (
 
 	"homestead/internal/audit"
 	"homestead/internal/auth"
+	"homestead/internal/backup"
 	"homestead/internal/claim"
 	"homestead/internal/config"
 	"homestead/internal/docker"
@@ -45,6 +46,7 @@ type AppServices struct {
 // MountApp registers every production TCP route on srv.
 func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	st := c.Store
+	backup.SweepScratch()
 	claimSvc := claim.New(st)
 	authSvc := auth.New(st, claimSvc)
 	configSvc := config.New(firewall.Schema(), c.ConfigPath)

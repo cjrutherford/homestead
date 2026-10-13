@@ -40,7 +40,7 @@ command -v apt-get >/dev/null || { echo "error: apt-get not found" >&2; exit 1; 
 # Everything else (build, service) comes from Go and the install
 # script — never a metapackage sprawl.
 apt-get update
-apt-get install -y --no-install-recommends ca-certificates curl nftables
+apt-get install -y --no-install-recommends ca-certificates curl nftables age
 
 # Required toolchain comes from go.mod, overridable for testing new
 # releases before the module moves: HOMESTEAD_GO_VERSION=1.26.0.

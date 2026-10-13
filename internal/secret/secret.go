@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,6 +45,28 @@ const AppSecretPrefix = "app_"
 func IsAppSecret(name string) bool {
 	return len(name) > len(AppSecretPrefix) && name[:len(AppSecretPrefix)] == AppSecretPrefix
 }
+
+// SystemSecretPrefix marks appliance-held system secrets (S259): the
+// backup identity. Neither the owner routes (Set) nor the catalog
+// (SetApp, app_ only) can write these names, so no package or owner
+// secret can collide with or overwrite them. Configuration export
+// leaves them out.
+const SystemSecretPrefix = "sys_"
+
+// BackupIdentityName holds the appliance backup identity (ADR-022).
+const BackupIdentityName = SystemSecretPrefix + "backup_identity"
+
+// legacyBackupIdentityName is where the first S259 build stored the
+// identity, inside the catalog's namespace; it migrates on startup.
+const legacyBackupIdentityName = AppSecretPrefix + "backup_identity"
+
+// IsSystemSecret reports whether name is a system secret.
+func IsSystemSecret(name string) bool {
+	return len(name) > len(SystemSecretPrefix) && name[:len(SystemSecretPrefix)] == SystemSecretPrefix
+}
+
+// IsReserved reports names configuration export and import never carry.
+func IsReserved(name string) bool { return IsAppSecret(name) || IsSystemSecret(name) }
 
 var validName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
@@ -92,6 +115,9 @@ func New(s *store.Store, keyPath string) (*Store, error) {
 	}
 	if err := st.cleanupOlder(); err != nil {
 		return nil, err
+	}
+	if err := st.migrateLegacyBackupIdentity(); err != nil {
+		return nil, fmt.Errorf("secret: migrate backup identity: %w", err)
 	}
 	return st, nil
 }
@@ -161,10 +187,51 @@ var ErrReservedName = errors.New("secret: the app_ prefix is reserved for catalo
 // import) cannot overwrite catalog-managed secrets (S266); the catalog
 // uses SetApp.
 func (s *Store) Set(name, value string) error {
-	if IsAppSecret(name) {
+	if IsReserved(name) {
 		return ErrReservedName
 	}
 	return s.set(name, value)
+}
+
+// SetSystem stores an appliance-held system secret; only sys_ names.
+func (s *Store) SetSystem(name, value string) error {
+	if !IsSystemSecret(name) {
+		return fmt.Errorf("secret: system secrets must start with %s", SystemSecretPrefix)
+	}
+	return s.set(name, value)
+}
+
+// migrateLegacyBackupIdentity moves an identity stored by the first S259
+// build under app_backup_identity to sys_backup_identity: copy first,
+// delete only after the copy reads back identical, idempotent. Only a
+// value shaped like an age identity moves, so a catalog secret that
+// legitimately has this name is left alone.
+func (s *Store) migrateLegacyBackupIdentity() error {
+	legacy, err := s.Get(legacyBackupIdentityName)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(legacy, "AGE-SECRET-KEY-") {
+		return nil
+	}
+	current, err := s.Get(BackupIdentityName)
+	if errors.Is(err, ErrNotFound) {
+		if err := s.set(BackupIdentityName, legacy); err != nil {
+			return err
+		}
+		current = legacy
+	} else if err != nil {
+		return err
+	}
+	if current != legacy {
+		// A newer identity already exists; never delete the old one: it
+		// may be the only key to backups written before this migration.
+		return nil
+	}
+	return s.Delete(legacyBackupIdentityName)
 }
 
 // SetApp stores a catalog-managed secret; only app_ names are accepted.

@@ -145,7 +145,7 @@ func TestJobFlow(t *testing.T) {
 	}
 	if def.Type != "backup.job" || len(def.Steps) != 4 ||
 		def.Steps[0].Name != "backup:photos/config" || def.Steps[1].Name != "export:db" ||
-		def.Steps[2].Name != "prune" || def.Steps[3].Name != "write-manifest" {
+		def.Steps[2].Name != "write-manifest" || def.Steps[3].Name != "prune" {
 		t.Fatalf("def = %+v", def)
 	}
 	runner := openJobRunner(t)

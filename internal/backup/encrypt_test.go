@@ -32,7 +32,7 @@ func (m *memKeys) Get(name string) (string, error) {
 	return v, nil
 }
 
-func (m *memKeys) SetApp(name, value string) error { m.values[name] = value; return nil }
+func (m *memKeys) SetSystem(name, value string) error { m.values[name] = value; return nil }
 
 func runDef(t *testing.T, def operation.Definition) {
 	t.Helper()
@@ -57,8 +57,8 @@ func TestIdentityGeneratedOnceAndStable(t *testing.T) {
 	if err != nil || a.String() != b.String() {
 		t.Fatalf("identity changed: %v", err)
 	}
-	if !strings.HasPrefix(IdentitySecret, secret.AppSecretPrefix) {
-		t.Fatal("identity secret must use the reserved app_ prefix")
+	if !strings.HasPrefix(IdentitySecret, secret.SystemSecretPrefix) {
+		t.Fatal("identity secret must use the reserved sys_ prefix")
 	}
 	keys.values[IdentitySecret] = "AGE-SECRET-KEY-garbage"
 	if _, err := ApplianceIdentity(keys); err == nil || strings.Contains(err.Error(), "garbage") {

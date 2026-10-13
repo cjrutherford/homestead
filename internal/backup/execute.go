@@ -54,22 +54,16 @@ func RestoreDefinition(plan RestorePlan, identities ...age.Identity) (operation.
 // source stays intact, so a failed copy retries from safety rather
 // than from loss.
 func restoreEntry(entry PlannedEntry, identities []age.Identity) error {
-	encrypted := entry.Encrypted || isEncryptedFile(entry.BackupPath)
-	if encrypted {
-		// Decrypt-check before clearing: a missing or wrong identity must
-		// fail while the live target is still intact.
-		if err := checkDecryptable(entry.BackupPath, identities); err != nil {
-			return err
-		}
-	}
-	if err := os.RemoveAll(entry.Target); err != nil {
-		return fmt.Errorf("backup: clear %q: %w", entry.Target, err)
-	}
-	if encrypted {
+	if entry.Encrypted || isEncryptedFile(entry.BackupPath) {
+		// Staged and swapped: a missing identity, wrong key, or damaged
+		// stream fails with the live target untouched.
 		if err := restoreEncrypted(entry.BackupPath, entry.Target, identities, entry.Sensitive); err != nil {
 			return fmt.Errorf("backup: restore %q: %w", entry.BackupPath, err)
 		}
 		return nil
+	}
+	if err := os.RemoveAll(entry.Target); err != nil {
+		return fmt.Errorf("backup: clear %q: %w", entry.Target, err)
 	}
 	if _, err := copyTree(entry.BackupPath, entry.Target); err != nil {
 		return fmt.Errorf("backup: restore %q: %w", entry.BackupPath, err)

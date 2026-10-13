@@ -374,6 +374,11 @@ func Definition(request Request, now func() time.Time) (operation.Definition, er
 			return writeManifest(request, stampFor(), state)
 		},
 	})
+	def.Cleanup = func() {
+		if stamp != "" {
+			cleanupPartial(filepath.Join(request.Destination, request.Package, stamp))
+		}
+	}
 	return def, nil
 }
 
@@ -417,7 +422,7 @@ func writeManifest(request Request, stamp string, state *runState) error {
 	if err != nil {
 		return fmt.Errorf("backup: manifest: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "backup.json"), raw, 0o644); err != nil {
+	if err := writeFileAtomic(filepath.Join(root, "backup.json"), raw, 0o644); err != nil {
 		return fmt.Errorf("backup: manifest: %w", err)
 	}
 	return nil
@@ -451,4 +456,62 @@ func countEntry(root, entry string, encrypted bool, state *runState) int {
 		return nil
 	})
 	return count
+}
+
+// writeFileAtomic writes data via temp file, fsync, and rename, then
+// syncs the directory: a manifest either exists complete or not at all,
+// which is what marks a run restorable.
+func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".backup-manifest-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	fail := func(err error) error {
+		_ = tmp.Close()
+		_ = os.Remove(name)
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(name)
+		return err
+	}
+	if err := os.Rename(name, path); err != nil {
+		_ = os.Remove(name)
+		return err
+	}
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+	return nil
+}
+
+// runComplete reports whether a run directory holds a readable manifest:
+// the only evidence a run finished.
+func runComplete(dir string) bool {
+	raw, err := os.ReadFile(filepath.Join(dir, "backup.json"))
+	if err != nil {
+		return false
+	}
+	var manifest Manifest
+	return json.Unmarshal(raw, &manifest) == nil && manifest.Package != ""
+}
+
+// cleanupPartial removes a run directory that never got its manifest, so
+// an interrupted backup leaves nothing that could count as a run.
+func cleanupPartial(root string) {
+	if root != "" && !runComplete(root) {
+		_ = os.RemoveAll(root)
+	}
 }

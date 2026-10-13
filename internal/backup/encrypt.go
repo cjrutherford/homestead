@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,10 +44,11 @@ const (
 	ArchiveSuffix = ".tar.age"
 	FileSuffix    = ".age"
 
-	// IdentitySecret is the app_-reserved secret holding the appliance
-	// backup identity (ADR-021/022). It is generated on first use and is
+	// IdentitySecret is the sys_-reserved secret holding the appliance
+	// backup identity (ADR-021/022). Neither owner routes nor the catalog
+	// can write that namespace. It is generated on first use and is
 	// never logged, listed with its value, or returned by any route.
-	IdentitySecret = secret.AppSecretPrefix + "backup_identity"
+	IdentitySecret = secret.BackupIdentityName
 
 	// SecretsClass names the sensitive source class carrying a stack's
 	// materialized secret files (S266); such sources only run encrypted.
@@ -56,7 +58,7 @@ const (
 // KeyStore is the slice of the secret store the backup identity needs.
 type KeyStore interface {
 	Get(name string) (string, error)
-	SetApp(name, value string) error
+	SetSystem(name, value string) error
 }
 
 var identityMu sync.Mutex
@@ -83,7 +85,7 @@ func ApplianceIdentity(store KeyStore) (*age.X25519Identity, error) {
 		if gerr != nil {
 			return nil, fmt.Errorf("backup: generate identity: %w", gerr)
 		}
-		if serr := store.SetApp(IdentitySecret, identity.String()); serr != nil {
+		if serr := store.SetSystem(IdentitySecret, identity.String()); serr != nil {
 			return nil, fmt.Errorf("backup: store identity: %w", serr)
 		}
 		return identity, nil
@@ -314,26 +316,60 @@ func openDecrypted(path string, identities []age.Identity) (io.Reader, func() er
 	return r, file.Close, nil
 }
 
-// restoreEncrypted extracts one encrypted artifact onto target: tar
-// streams become trees, anything else a single 0600 file. Mirrors
-// restoreEntry's contract; sensitive entries get files forced to 0600.
+// restoreEncrypted replaces target with one encrypted artifact, safely:
+// the stream is extracted into a hidden sibling staging directory on the
+// same filesystem and drained to EOF (so truncation or corruption
+// anywhere in the stream fails here), and only then is the live target
+// renamed aside, the staged payload renamed into place, and the old tree
+// removed. Any failure restores the original and leaves the target
+// untouched. Tar streams become trees, anything else a single 0600 file;
+// sensitive entries get files forced to 0600 and must keep recorded
+// ownership.
 func restoreEncrypted(archive, target string, identities []age.Identity, sensitive bool) error {
 	r, closeFn, err := openDecrypted(archive, identities)
 	if err != nil {
 		return err
 	}
 	defer closeFn()
-	if !strings.HasSuffix(archive, ArchiveSuffix) {
-		return extractFile(r, target)
-	}
-	return extractTar(r, target, sensitive)
-}
-
-func extractFile(r io.Reader, target string) error {
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+	parent := filepath.Dir(target)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return err
 	}
-	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	staging, err := os.MkdirTemp(parent, "."+filepath.Base(target)+".restore-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(staging)
+	payload := filepath.Join(staging, "payload")
+	if strings.HasSuffix(archive, ArchiveSuffix) {
+		err = extractTar(r, payload, sensitive)
+	} else {
+		err = extractFile(r, payload)
+	}
+	if err != nil {
+		return err
+	}
+	aside := filepath.Join(staging, "previous")
+	moved := false
+	if _, err := os.Lstat(target); err == nil {
+		if err := os.Rename(target, aside); err != nil {
+			return fmt.Errorf("backup: move aside %q: %w", target, err)
+		}
+		moved = true
+	}
+	if err := os.Rename(payload, target); err != nil {
+		if moved {
+			_ = os.Rename(aside, target)
+		}
+		return fmt.Errorf("backup: install %q: %w", target, err)
+	}
+	return nil
+}
+
+// extractFile writes the whole decrypted stream to dst (0600), draining
+// to EOF so a truncated final chunk is an error.
+func extractFile(r io.Reader, dst string) error {
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
@@ -345,17 +381,29 @@ func extractFile(r io.Reader, target string) error {
 }
 
 type dirMeta struct {
-	path     string
+	name     string
 	mode     os.FileMode
 	uid, gid int
 }
 
+// warnf reports restore conditions that do not fail the run; the daemon
+// log is the record. Replaced in tests.
+var warnf = log.Printf
+
+// extractTar unpacks into a new tree at target through an os.Root, so no
+// in-tree symlink can redirect a create, chmod, or chown outside it.
 func extractTar(r io.Reader, target string, sensitive bool) error {
-	if err := os.MkdirAll(target, 0o700); err != nil {
+	if err := os.Mkdir(target, 0o700); err != nil {
 		return err
 	}
+	root, err := os.OpenRoot(target)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	tr := tar.NewReader(r)
 	var dirs []dirMeta
+	chowner := &ownerSetter{root: root, sensitive: sensitive, target: target}
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
@@ -368,37 +416,35 @@ func extractTar(r io.Reader, target string, sensitive bool) error {
 		if filepath.IsAbs(name) || name == ".." || strings.HasPrefix(name, ".."+string(filepath.Separator)) {
 			return fmt.Errorf("backup: archive entry %q escapes the tree", header.Name)
 		}
-		dst := filepath.Join(target, name)
 		if name == "." && header.Typeflag != tar.TypeDir {
 			return fmt.Errorf("backup: archive root entry must be a directory")
 		}
-		if err := refuseLinkedParents(target, dst); err != nil {
+		if err := refuseLinkedParents(root, name); err != nil {
 			return err
 		}
 		mode := os.FileMode(header.Mode).Perm()
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(dst, 0o700); err != nil {
+			if err := root.MkdirAll(name, 0o700); err != nil {
 				return err
 			}
-			dirs = append(dirs, dirMeta{dst, mode, header.Uid, header.Gid})
+			dirs = append(dirs, dirMeta{name, mode, header.Uid, header.Gid})
 		case tar.TypeSymlink:
-			resolved := filepath.Join(filepath.Dir(dst), header.Linkname)
-			inside, err := filepath.Rel(target, resolved)
-			if filepath.IsAbs(header.Linkname) || err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
+			resolved := filepath.Join(filepath.Dir(name), header.Linkname)
+			if filepath.IsAbs(header.Linkname) || resolved == ".." || strings.HasPrefix(resolved, ".."+string(filepath.Separator)) {
 				return fmt.Errorf("backup: archive symlink %q refused", header.Name)
 			}
-			if err := os.Symlink(header.Linkname, dst); err != nil {
+			if err := root.Symlink(header.Linkname, name); err != nil {
 				return err
 			}
-			if err := chownIDs(dst, header.Uid, header.Gid); err != nil {
+			if err := chowner.set(name, header.Uid, header.Gid, true); err != nil {
 				return err
 			}
 		case tar.TypeReg:
 			if sensitive {
 				mode &= 0o600
 			}
-			out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+			out, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 			if err != nil {
 				return err
 			}
@@ -409,64 +455,82 @@ func extractTar(r io.Reader, target string, sensitive bool) error {
 			if err := out.Close(); err != nil {
 				return err
 			}
-			if err := os.Chmod(dst, mode); err != nil {
+			if err := root.Chmod(name, mode); err != nil {
 				return err
 			}
-			if err := chownIDs(dst, header.Uid, header.Gid); err != nil {
+			if err := chowner.set(name, header.Uid, header.Gid, false); err != nil {
 				return err
 			}
 		default:
 			return fmt.Errorf("backup: archive entry %q has unsupported type", header.Name)
 		}
 	}
+	// Tar stops at its end marker; drain the age stream so truncation or
+	// tampering in the final chunk is detected before anything installs.
+	if _, err := io.Copy(io.Discard, r); err != nil {
+		return fmt.Errorf("backup: read archive: %w", err)
+	}
 	// Directory modes and owners apply last, deepest first, so a
 	// read-only directory never blocks its own contents.
 	for i := len(dirs) - 1; i >= 0; i-- {
 		d := dirs[i]
-		if err := os.Chmod(d.path, d.mode); err != nil {
+		if err := root.Chmod(d.name, d.mode); err != nil {
 			return err
 		}
-		if err := chownIDs(d.path, d.uid, d.gid); err != nil {
+		if err := chowner.set(d.name, d.uid, d.gid, false); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// refuseLinkedParents rejects extraction through a symlinked ancestor:
-// every parent between the tree root and dst must be a real directory.
-func refuseLinkedParents(root, dst string) error {
-	if dst == root {
+// refuseLinkedParents rejects entries whose parent path passes through a
+// symlink or non-directory (belt and braces beside os.Root).
+func refuseLinkedParents(root *os.Root, name string) error {
+	parent := filepath.Dir(name)
+	if parent == "." {
 		return nil
 	}
-	parent := filepath.Dir(dst)
-	relative, err := filepath.Rel(root, parent)
-	if err != nil {
-		return err
-	}
-	if relative == "." {
-		return nil
-	}
-	current := root
-	for _, part := range strings.Split(relative, string(filepath.Separator)) {
+	current := ""
+	for _, part := range strings.Split(parent, string(filepath.Separator)) {
 		current = filepath.Join(current, part)
-		info, err := os.Lstat(current)
+		info, err := root.Lstat(current)
 		if err != nil {
 			return err
 		}
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			return fmt.Errorf("backup: archive entry %q passes through a link", dst)
+			return fmt.Errorf("backup: archive entry %q passes through a link", name)
 		}
 	}
 	return nil
 }
 
-func chownIDs(path string, uid, gid int) error {
-	if os.Geteuid() != 0 {
+// ownerSetter applies recorded ownership. Only root can chown: for
+// sensitive entries a mismatch is an error (secret files must keep the
+// owner their container needs), otherwise one warning per restore.
+type ownerSetter struct {
+	root      *os.Root
+	sensitive bool
+	target    string
+	warned    bool
+}
+
+func (o *ownerSetter) set(name string, uid, gid int, _ bool) error {
+	if os.Geteuid() == 0 {
+		if err := o.root.Lchown(name, uid, gid); err != nil {
+			return fmt.Errorf("backup: chown %q: %w", name, err)
+		}
 		return nil
 	}
-	if err := os.Lchown(path, uid, gid); err != nil {
-		return fmt.Errorf("backup: chown %q: %w", path, err)
+	if uid == os.Getuid() && gid == os.Getgid() {
+		return nil
+	}
+	if o.sensitive {
+		return fmt.Errorf("backup: restoring %q keeps recorded ownership %d:%d, which needs root", o.target, uid, gid)
+	}
+	if !o.warned {
+		o.warned = true
+		warnf("backup: restore of %s did not apply recorded ownership (not running as root)", o.target)
 	}
 	return nil
 }
@@ -491,6 +555,9 @@ func archiveSignature(archive string, identities []age.Identity) (map[string]int
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
+			if _, err := io.Copy(io.Discard, r); err != nil {
+				return nil, err
+			}
 			return signature, nil
 		}
 		if err != nil {
@@ -505,14 +572,4 @@ func archiveSignature(archive string, identities []age.Identity) (map[string]int
 			signature[name] = header.Size
 		}
 	}
-}
-
-// checkDecryptable reads an artifact's age header with the identities,
-// proving they can open it before anything live is replaced.
-func checkDecryptable(archive string, identities []age.Identity) error {
-	_, closeFn, err := openDecrypted(archive, identities)
-	if err != nil {
-		return err
-	}
-	return closeFn()
 }

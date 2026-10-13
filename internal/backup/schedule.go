@@ -288,6 +288,14 @@ func JobDefinition(job Job, now func() time.Time) (operation.Definition, error) 
 			},
 		})
 	}
+	def.Steps = append(def.Steps, operation.StepDef{
+		Name: "write-manifest",
+		Run: func(ctx context.Context) error {
+			return writeJobManifest(job, stampFor(), state)
+		},
+	})
+	// Prune only after the new run is complete: retention must never
+	// delete the last good run for one that did not finish.
 	if job.Retain > 0 {
 		def.Steps = append(def.Steps, operation.StepDef{
 			Name: "prune",
@@ -296,18 +304,20 @@ func JobDefinition(job Job, now func() time.Time) (operation.Definition, error) 
 			},
 		})
 	}
-	def.Steps = append(def.Steps, operation.StepDef{
-		Name: "write-manifest",
-		Run: func(ctx context.Context) error {
-			return writeJobManifest(job, stampFor(), state)
-		},
-	})
+	def.Cleanup = func() {
+		if stamp != "" {
+			cleanupPartial(rootFor())
+		}
+	}
 	return def, nil
 }
 
-// prune drops timestamped runs beyond retention, newest kept: only
-// runner-named directories ever match, so stray files and foreign
-// directories survive pruning unconditionally.
+// prune applies retention to complete runs only: runs with a readable
+// manifest, newest kept, the current run always kept. Runner-named
+// directories without a manifest are garbage from interrupted runs; they
+// never count toward retention and are removed once an older-than-newest
+// complete run exists (an unfinished newer run might still be writing).
+// Stray files and foreign directories survive unconditionally.
 func prune(job Job, current string) error {
 	base := filepath.Join(job.DestRoot, job.Package)
 	entries, err := os.ReadDir(base)
@@ -317,25 +327,40 @@ func prune(job Job, current string) error {
 		}
 		return fmt.Errorf("backup: list runs: %w", err)
 	}
-	var runs []string
+	var good, partial []string
 	for _, entry := range entries {
-		if entry.IsDir() && runName.MatchString(entry.Name()) {
-			runs = append(runs, entry.Name())
+		if !entry.IsDir() || !runName.MatchString(entry.Name()) {
+			continue
+		}
+		if runComplete(filepath.Join(base, entry.Name())) {
+			good = append(good, entry.Name())
+		} else {
+			partial = append(partial, entry.Name())
 		}
 	}
-	sort.Sort(sort.Reverse(sort.StringSlice(runs)))
+	sort.Sort(sort.Reverse(sort.StringSlice(good)))
 	keep := map[string]bool{current: true}
-	for i, run := range runs {
+	for i, run := range good {
 		if i < job.Retain {
 			keep[run] = true
 		}
 	}
-	for _, run := range runs {
+	for _, run := range good {
 		if keep[run] {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(base, run)); err != nil {
 			return fmt.Errorf("backup: prune %q: %w", run, err)
+		}
+	}
+	if len(good) == 0 {
+		return nil
+	}
+	for _, run := range partial {
+		if run < good[0] && run != current {
+			if err := os.RemoveAll(filepath.Join(base, run)); err != nil {
+				return fmt.Errorf("backup: prune partial %q: %w", run, err)
+			}
 		}
 	}
 	return nil
@@ -370,7 +395,7 @@ func writeJobManifest(job Job, stamp string, state *runState) error {
 	if err != nil {
 		return fmt.Errorf("backup: manifest: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "backup.json"), raw, 0o644); err != nil {
+	if err := writeFileAtomic(filepath.Join(root, "backup.json"), raw, 0o644); err != nil {
 		return fmt.Errorf("backup: manifest: %w", err)
 	}
 	return nil

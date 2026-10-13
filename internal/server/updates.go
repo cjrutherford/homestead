@@ -224,7 +224,11 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 	if schedule, err := schedules.Get(manifest.Name); err == nil {
 		retain = schedule.Retain
 	}
-	recipients, err := backup.Recipients(secrets)
+	keys, err := backupKeyStore(secrets)
+	if err != nil {
+		return backup.Job{}, err
+	}
+	recipients, err := backup.Recipients(keys)
 	if err != nil {
 		return backup.Job{}, err
 	}
@@ -370,4 +374,14 @@ func handleUpdatesApply(st *store.Store, catalogDir string, client *docker.Clien
 		}
 		writeJSON(w, map[string]any{"id": op.ID})
 	}
+}
+
+// backupKeyStore narrows the secret store to what the backup identity
+// needs; stores that cannot hold system secrets refuse encryption.
+func backupKeyStore(secrets catalog.SecretStore) (backup.KeyStore, error) {
+	keys, ok := secrets.(backup.KeyStore)
+	if !ok || secrets == nil {
+		return nil, errors.New("backup encryption needs a secret store that holds system secrets")
+	}
+	return keys, nil
 }

@@ -46,9 +46,13 @@ case "${ID:-} ${ID_LIKE:-}" in
 	*debian* | *ubuntu*) ;;
 	*) fail preconditions "unsupported distribution '${ID:-unknown}'" ;;
 esac
-for tool in systemctl docker curl python3 go; do
+for tool in systemctl docker curl python3 go age tar; do
 	command -v "$tool" >/dev/null || fail preconditions "missing tool: $tool (run scripts/bootstrap.sh first)"
 done
+# Backup encryption (ADR-022) is verified with the real age CLI; absence
+# fails here instead of skipping the independent-decryptor test.
+(cd "$REPO" && HOMESTEAD_REQUIRE_AGE=1 go test ./internal/backup -run TestRealAgeCLIDecryptsArchive -count=1) \
+	|| fail preconditions "age CLI decryptor check failed (install age: scripts/bootstrap.sh)"
 test -f "$HOMESTEAD_PASSWORD_FILE" || fail preconditions "password file missing: $HOMESTEAD_PASSWORD_FILE"
 if [ "$(stat -c %a "$HOMESTEAD_PASSWORD_FILE")" != "600" ]; then
 	echo "warning: password file is not 0600" >&2

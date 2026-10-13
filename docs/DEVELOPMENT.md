@@ -688,7 +688,12 @@ homesteadctl backup unschedule --package jellyfin
   (database files: `age -d -i identity.txt X.sql.age > X.sql`). Tests:
   `go test ./internal/backup` runs a real `age` CLI check when `age` is
   on PATH; set `HOMESTEAD_REQUIRE_AGE=1` to fail instead of skip when it
-  is missing (acceptance does).
+  is missing. `scripts/acceptance.sh` (`make acceptance`) requires `age`
+  (installed by `scripts/bootstrap.sh`) and runs that test with the
+  variable set, so acceptance fails closed. SQLite exports use tmpfs
+  scratch (`/dev/shm`, swept at daemon start); tmpfs pages can be
+  swapped on hosts with swap, so disable swap or encrypt it if that
+  matters.
 - Wire format: schedule records are snake_case JSON (`package`,
   `interval_seconds`, `retain`, `enabled`, `actor`, `updated_at`),
   matching the save request body. This changed from PascalCase keys

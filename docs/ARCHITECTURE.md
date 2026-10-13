@@ -96,12 +96,17 @@ scratch). `backup.json` stays readable plaintext with non-secret
 metadata: package, timestamp, entry names, counts, `format_version`,
 `encrypted`, and the entry-to-archive map. Runs without those fields are
 format 1 (plaintext) and restore unchanged. The appliance identity is
-generated on first use and held in the secret store as `app_backup_identity`
-(reserved `app_` prefix: absent from configuration export, never logged or
-returned). Stack secret files (S266) join each run as a sensitive source
+generated on first use and held in the secret store as `sys_backup_identity`
+(reserved `sys_` namespace: neither owner routes nor the catalog can write
+it, absent from configuration export, never logged or returned; an identity
+stored by the first build under `app_backup_identity` migrates on startup). Stack secret files (S266) join each run as a sensitive source
 (`stack-secrets/<pkg>/secrets`) and restore 0600 with recorded ownership.
-Restore decrypts with the appliance identity (`backup.Identities`) and
-fails before touching live data if it cannot. Pre-update, scheduled, and
+Restore decrypts with the appliance identity (`backup.Identities`) into a
+hidden sibling staging directory, drains the stream to EOF, then swaps it
+in by rename (old tree kept aside until the swap succeeds), so a wrong key
+or damaged stream leaves live data untouched. Runs are complete only with a
+manifest (written atomically); interrupted runs are cleaned up, and
+retention prunes after the manifest and counts complete runs only. Pre-update, scheduled, and
 pre-migration backups all encrypt. Owner recipients, identity export, and
 the plain-`age` runbook are S271/S275; until then doctor warns
 (`backup-encryption`). `filippo.io/age` is BSD-3-Clause (plus

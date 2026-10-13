@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"homestead/internal/operation"
+	"homestead/internal/secret"
 	"os"
 	"path/filepath"
 	"strings"
@@ -366,6 +367,20 @@ func TestInstallGeneratesSecretsAndLeaksNone(t *testing.T) {
 		}
 		if info, err := os.Stat(filepath.Join(stackDir, SecretsDirName)); err != nil || info.Mode().Perm() != 0o700 {
 			t.Fatalf("secrets dir: %v", err)
+		}
+	}
+}
+
+// Catalog-generated store names always live under app_, so they can never
+// reach the sys_ namespace holding the backup identity, whatever the
+// package or secret is called.
+func TestSecretStoreNamesNeverEnterSystemNamespace(t *testing.T) {
+	for _, pkg := range []string{"backup", "sys", "sys-backup", "a"} {
+		for _, name := range []string{"identity", "backup_identity", "x"} {
+			got := SecretStoreName(pkg, name)
+			if !secret.IsAppSecret(got) || secret.IsSystemSecret(got) {
+				t.Fatalf("SecretStoreName(%q,%q) = %q", pkg, name, got)
+			}
 		}
 	}
 }

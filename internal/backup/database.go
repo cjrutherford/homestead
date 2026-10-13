@@ -134,11 +134,28 @@ func exportSQLite(srcPath, dstPath string) error {
 	return exportSQLiteTo(srcPath, dstPath, nil)
 }
 
+// scratchBase is the RAM-backed scratch root and scratchPrefix names
+// the per-export directories inside it. tmpfs pages can be swapped to
+// disk on hosts with swap, so the scratch holds a snapshot only for the
+// seconds an export takes and is swept at daemon start.
+var scratchBase = "/dev/shm"
+
+const scratchPrefix = "homestead-backup-"
+
+// SweepScratch removes scratch directories a crashed export left behind.
+// Called once at daemon start, before any backup can run.
+func SweepScratch() {
+	matches, _ := filepath.Glob(filepath.Join(scratchBase, scratchPrefix+"*"))
+	for _, m := range matches {
+		_ = os.RemoveAll(m)
+	}
+}
+
 // sqliteScratchDir picks RAM-backed scratch space for the one place
 // SQLite needs a file (VACUUM INTO): encrypted exports must never put
 // plaintext on a disk, so it refuses to fall back to ordinary storage.
 func sqliteScratchDir() (string, error) {
-	const shm = "/dev/shm"
+	shm := scratchBase
 	var fsStat syscall.Statfs_t
 	if err := syscall.Statfs(shm, &fsStat); err != nil || fsStat.Type != 0x01021994 { // TMPFS_MAGIC
 		return "", fmt.Errorf("backup: encrypted sqlite export needs tmpfs scratch space at %s", shm)
@@ -157,7 +174,7 @@ func exportSQLiteTo(srcPath, dstPath string, recipients []age.Recipient) error {
 	if err != nil {
 		return err
 	}
-	scratch, err := os.MkdirTemp(base, "homestead-backup-")
+	scratch, err := os.MkdirTemp(base, scratchPrefix)
 	if err != nil {
 		return fmt.Errorf("backup: scratch: %w", err)
 	}

@@ -106,6 +106,10 @@ func PlanRestore(run Run, overrides map[string]string) (RestorePlan, error) {
 	if len(run.Manifest.Entries) == 0 {
 		return RestorePlan{}, fmt.Errorf("backup: run %q captures nothing", run.Stamp)
 	}
+	if run.Manifest.Format() > CurrentFormat {
+		return RestorePlan{}, fmt.Errorf("backup: run %q uses format %d, newer than this version understands (%d): upgrade Homestead or decrypt it with age directly",
+			run.Stamp, run.Manifest.Format(), CurrentFormat)
+	}
 	plan := RestorePlan{Package: run.Package, Stamp: run.Stamp}
 	for _, entry := range run.Manifest.Entries {
 		target, ok := overrides[entry]
