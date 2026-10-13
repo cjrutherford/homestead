@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"homestead/internal/catalog"
 )
 
 // Run is one restorable backup: its package, timestamp, directory,
@@ -71,6 +73,10 @@ type PlannedEntry struct {
 	// Sensitive additionally forces restored files to 0600.
 	Encrypted bool
 	Sensitive bool
+	// Preserve names top-level children of the target that restore must
+	// neither remove nor replace: a stack's secrets/ belongs to its own
+	// entry, so a run without that entry must not delete live secrets.
+	Preserve []string
 }
 
 // RestorePlan previews one run's restoration: per-entry targets with
@@ -130,6 +136,9 @@ func PlanRestore(run Run, overrides map[string]string) (RestorePlan, error) {
 			return RestorePlan{}, fmt.Errorf("backup: target for %q must be absolute", entry)
 		}
 		planned := PlannedEntry{BackupPath: filepath.Join(run.Dir, entry), Target: target}
+		if strings.HasPrefix(entry, StackClass+"/") {
+			planned.Preserve = []string{catalog.SecretsDirName}
+		}
 		if archive, ok := run.Manifest.Archives[entry]; ok && run.Manifest.Encrypted {
 			if archive == "" || filepath.IsAbs(archive) || strings.Contains(archive, "..") {
 				return RestorePlan{}, fmt.Errorf("backup: entry %q names an invalid archive", entry)

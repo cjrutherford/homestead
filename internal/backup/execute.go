@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"filippo.io/age"
 
@@ -57,12 +59,12 @@ func restoreEntry(entry PlannedEntry, identities []age.Identity) error {
 	if entry.Encrypted || isEncryptedFile(entry.BackupPath) {
 		// Staged and swapped: a missing identity, wrong key, or damaged
 		// stream fails with the live target untouched.
-		if err := restoreEncrypted(entry.BackupPath, entry.Target, identities, entry.Sensitive); err != nil {
+		if err := restoreEncrypted(entry.BackupPath, entry.Target, identities, entry.Sensitive, entry.Preserve...); err != nil {
 			return fmt.Errorf("backup: restore %q: %w", entry.BackupPath, err)
 		}
 		return nil
 	}
-	if err := os.RemoveAll(entry.Target); err != nil {
+	if err := clearTarget(entry.Target, entry.Preserve); err != nil {
 		return fmt.Errorf("backup: clear %q: %w", entry.Target, err)
 	}
 	if _, err := copyTree(entry.BackupPath, entry.Target); err != nil {
@@ -71,19 +73,49 @@ func restoreEntry(entry PlannedEntry, identities []age.Identity) error {
 	return nil
 }
 
+// clearTarget empties target except the preserved top-level children;
+// without any it removes the target itself.
+func clearTarget(target string, preserve []string) error {
+	if len(preserve) == 0 {
+		return os.RemoveAll(target)
+	}
+	children, err := os.ReadDir(target)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, child := range children {
+		if slices.Contains(preserve, child.Name()) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(target, child.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // treeSignature maps relative file paths to sizes for comparison.
-func treeSignature(root string) (map[string]int64, error) {
+func treeSignature(root string, skip ...string) (map[string]int64, error) {
 	signature := map[string]int64{}
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() {
-			return nil
-		}
 		relative, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
+		}
+		if slices.Contains(skip, strings.SplitN(filepath.ToSlash(relative), "/", 2)[0]) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() {
+			return nil
 		}
 		info, err := entry.Info()
 		if err != nil {
@@ -115,7 +147,7 @@ func verifyRestore(plan RestorePlan, identities []age.Identity) error {
 		if err != nil {
 			return fmt.Errorf("backup: verify %q: %w", entry.BackupPath, err)
 		}
-		got, err := treeSignature(entry.Target)
+		got, err := treeSignature(entry.Target, entry.Preserve...)
 		if err != nil {
 			return fmt.Errorf("backup: verify %q: %w", entry.Target, err)
 		}

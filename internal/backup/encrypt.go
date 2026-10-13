@@ -384,7 +384,7 @@ func openDecrypted(path string, identities []age.Identity) (io.Reader, func() er
 // untouched. Tar streams become trees, anything else a single 0600 file;
 // sensitive entries get files forced to 0600 and must keep recorded
 // ownership.
-func restoreEncrypted(archive, target string, identities []age.Identity, sensitive bool) error {
+func restoreEncrypted(archive, target string, identities []age.Identity, sensitive bool, preserve ...string) error {
 	r, closeFn, err := openDecrypted(archive, identities)
 	if err != nil {
 		return err
@@ -421,6 +421,26 @@ func restoreEncrypted(archive, target string, identities []age.Identity, sensiti
 			_ = os.Rename(aside, target)
 		}
 		return fmt.Errorf("backup: install %q: %w", target, err)
+	}
+	// Preserved children carry over from the replaced tree; the archive's
+	// own copy of one (should it exist) never overrides the live one.
+	if moved {
+		for _, name := range preserve {
+			from := filepath.Join(aside, name)
+			if _, err := os.Lstat(from); err != nil {
+				continue
+			}
+			to := filepath.Join(target, name)
+			if err := os.RemoveAll(to); err != nil {
+				return fmt.Errorf("backup: preserve %q: %w", name, err)
+			}
+			if err := os.Rename(from, to); err != nil {
+				// Put everything back: the live tree is the safe state.
+				_ = os.RemoveAll(target)
+				_ = os.Rename(aside, target)
+				return fmt.Errorf("backup: preserve %q: %w", name, err)
+			}
+		}
 	}
 	return nil
 }
