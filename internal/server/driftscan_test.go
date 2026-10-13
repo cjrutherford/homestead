@@ -169,7 +169,7 @@ func TestDriftScanCleanStaysQuiet(t *testing.T) {
 	}
 	waitOps(t, st, 1)
 	entries := scanAudit(t, st)
-	if len(entries) != 1 || entries[0].Detail != "clean: 1 package(s) scanned" || entries[0].Outcome != audit.OutcomeOK {
+	if len(entries) != 1 || !strings.HasPrefix(entries[0].Detail, "clean: 1 package(s) scanned") || entries[0].Outcome != audit.OutcomeOK {
 		t.Fatalf("audit = %+v", entries)
 	}
 	if check := driftDoctorCheck(st, func() time.Time { return now })(); check.Status != doctor.StatusOK || !strings.Contains(check.Detail, "clean at") {

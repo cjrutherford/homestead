@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -29,6 +30,21 @@ type Container struct {
 	Status string            `json:"status"`
 	Labels map[string]string `json:"labels,omitempty"`
 	Mounts []Mount           `json:"mounts,omitempty"`
+	// ImageID is the image the container runs (S262): the Image
+	// reference can read as this ID once its tag moved.
+	ImageID string `json:"image_id,omitempty"`
+	// Ports lists the published and exposed ports the Engine reports.
+	Ports []Port `json:"ports,omitempty"`
+	// Networks names the networks the container is attached to, sorted.
+	Networks []string `json:"networks,omitempty"`
+}
+
+// Port is one Engine port entry: Public is 0 for exposed-only ports.
+type Port struct {
+	IP      string `json:"ip,omitempty"`
+	Private int    `json:"private"`
+	Public  int    `json:"public,omitempty"`
+	Type    string `json:"type"`
 }
 
 // Mount is one container mount as the Engine reports it: type is
@@ -46,8 +62,10 @@ type Mount struct {
 type Image struct {
 	ID       string   `json:"id"`
 	RepoTags []string `json:"repo_tags"`
-	Size     int64    `json:"size"`
-	Created  int64    `json:"created"`
+	// RepoDigests lists name@sha256 references (S262 digest matching).
+	RepoDigests []string `json:"repo_digests,omitempty"`
+	Size        int64    `json:"size"`
+	Created     int64    `json:"created"`
 }
 
 // Network is one network summary.
@@ -172,10 +190,11 @@ func (c *Client) Health(ctx context.Context) (Health, error) {
 	}
 	health.Containers = containers
 	var images []struct {
-		ID       string   `json:"Id"`
-		RepoTags []string `json:"RepoTags"`
-		Size     int64    `json:"Size"`
-		Created  int64    `json:"Created"`
+		ID          string   `json:"Id"`
+		RepoTags    []string `json:"RepoTags"`
+		RepoDigests []string `json:"RepoDigests"`
+		Size        int64    `json:"Size"`
+		Created     int64    `json:"Created"`
 	}
 	if err := c.get(ctx, "/images/json", &images); err != nil {
 		return Health{}, err
@@ -187,7 +206,8 @@ func (c *Client) Health(ctx context.Context) (Health, error) {
 			tags = []string{}
 		}
 		health.Images = append(health.Images, Image{
-			ID: image.ID, RepoTags: tags, Size: image.Size, Created: image.Created,
+			ID: image.ID, RepoTags: tags, RepoDigests: image.RepoDigests,
+			Size: image.Size, Created: image.Created,
 		})
 	}
 	var networks []struct {
@@ -225,12 +245,22 @@ func (c *Client) volumeMountpoint(ctx context.Context, name string) string {
 // from a stack that is down.
 func (c *Client) Containers(ctx context.Context) ([]Container, error) {
 	var containers []struct {
-		ID     string            `json:"Id"`
-		Names  []string          `json:"Names"`
-		Image  string            `json:"Image"`
-		State  string            `json:"State"`
-		Status string            `json:"Status"`
-		Labels map[string]string `json:"Labels"`
+		ID      string            `json:"Id"`
+		Names   []string          `json:"Names"`
+		Image   string            `json:"Image"`
+		State   string            `json:"State"`
+		Status  string            `json:"Status"`
+		Labels  map[string]string `json:"Labels"`
+		ImageID string            `json:"ImageID"`
+		Ports   []struct {
+			IP          string `json:"IP"`
+			PrivatePort int    `json:"PrivatePort"`
+			PublicPort  int    `json:"PublicPort"`
+			Type        string `json:"Type"`
+		} `json:"Ports"`
+		NetworkSettings struct {
+			Networks map[string]json.RawMessage `json:"Networks"`
+		} `json:"NetworkSettings"`
 		Mounts []struct {
 			Type        string `json:"Type"`
 			Name        string `json:"Name"`
@@ -261,11 +291,55 @@ func (c *Client) Containers(ctx context.Context) ([]Container, error) {
 				Destination: mount.Destination, RW: mount.RW,
 			})
 		}
+		var ports []Port
+		for _, port := range container.Ports {
+			ports = append(ports, Port{IP: port.IP, Private: port.PrivatePort, Public: port.PublicPort, Type: port.Type})
+		}
+		var networks []string
+		for name := range container.NetworkSettings.Networks {
+			networks = append(networks, name)
+		}
+		sort.Strings(networks)
 		out = append(out, Container{
+			ImageID: container.ImageID, Ports: ports, Networks: networks,
 			ID: container.ID, Names: names,
 			Image: container.Image, State: container.State, Status: container.Status,
 			Labels: container.Labels, Mounts: mounts,
 		})
+	}
+	return out, nil
+}
+
+// Inventory is the live container and image state a drift comparison
+// reads (S262). Reachable false means the daemon did not answer:
+// absence is data, not an error.
+type Inventory struct {
+	Reachable  bool
+	Containers []Container
+	Images     []Image
+}
+
+// Inventory reads containers and images read-only. An unreachable
+// daemon reports Reachable false and no error.
+func (c *Client) Inventory(ctx context.Context) (Inventory, error) {
+	if err := c.ping(ctx); err != nil {
+		return Inventory{}, nil
+	}
+	containers, err := c.Containers(ctx)
+	if err != nil {
+		return Inventory{}, err
+	}
+	var images []struct {
+		ID          string   `json:"Id"`
+		RepoTags    []string `json:"RepoTags"`
+		RepoDigests []string `json:"RepoDigests"`
+	}
+	if err := c.get(ctx, "/images/json", &images); err != nil {
+		return Inventory{}, err
+	}
+	out := Inventory{Reachable: true, Containers: containers}
+	for _, image := range images {
+		out.Images = append(out.Images, Image{ID: image.ID, RepoTags: image.RepoTags, RepoDigests: image.RepoDigests})
 	}
 	return out, nil
 }

@@ -260,7 +260,7 @@ func Accept(st *store.Store, stack, dir string) ([]string, error) {
 	if err := RecordFingerprints(st, stack, dir); err != nil {
 		return nil, err
 	}
-	if err := ResolveInScan(st, stack); err != nil {
+	if err := ResolveFilesInScan(st, stack); err != nil {
 		return nil, err
 	}
 	stored, err := StoredFingerprints(st, stack)

@@ -15,6 +15,7 @@ type DriftScanFile struct {
 type DriftScanStack struct {
 	Package string          `json:"package"`
 	Files   []DriftScanFile `json:"files"`
+	Live    []LiveFinding   `json:"live,omitempty"`
 }
 
 // DriftScanResult is the latest scheduled scan (S261).
@@ -23,6 +24,8 @@ type DriftScanResult struct {
 	Scanned   int              `json:"scanned"`
 	Drifted   []DriftScanStack `json:"drifted"`
 	Errors    []string         `json:"errors"`
+	// LiveSkipped says why the running-container comparison did not run.
+	LiveSkipped string `json:"live_skipped,omitempty"`
 }
 
 // DriftSchedule is the scan cadence plus the latest scan; LastScan is

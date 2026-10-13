@@ -36,7 +36,7 @@ class TestDriftCLI(unittest.TestCase):
     def test_parity_rows(self):
         matrix = read("docs/PARITY.md")
         rows = [line for line in matrix.splitlines() if "/catalog/{name}/drift" in line]
-        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(rows), 3)  # review, live (S262), resolve
         for row in rows:
             with self.subTest(row=row):
                 cells = [cell.strip() for cell in row.strip("|").split("|")]

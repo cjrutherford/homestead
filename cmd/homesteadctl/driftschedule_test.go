@@ -57,3 +57,45 @@ func TestDriftScheduleShowAndSave(t *testing.T) {
 		t.Fatalf("5m exit = %d saved = %v", code, saved)
 	}
 }
+
+func TestDriftLive(t *testing.T) {
+	body := `{"checked":true,"findings":[{"service":"web","container":"demo-web","kind":"image","detail":"running nginx:1.26, compose declares nginx:1.27","resolution":"restore"}]}`
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/v1/catalog/demo/drift/live" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(ts.Close)
+	code, stdout, _ := invoke(t, []string{"--server", ts.URL, "drift", "live", "demo"})
+	if code != exitOK || !strings.Contains(stdout, "image demo-web: running nginx:1.26, compose declares nginx:1.27 [restore]") {
+		t.Fatalf("exit = %d stdout = %s", code, stdout)
+	}
+	body = `{"checked":true,"findings":[]}`
+	if _, stdout, _ = invoke(t, []string{"--server", ts.URL, "drift", "live", "demo"}); !strings.Contains(stdout, "match generated compose") {
+		t.Fatalf("clean stdout = %s", stdout)
+	}
+	body = `{"checked":false,"findings":[]}`
+	if _, stdout, _ = invoke(t, []string{"--server", ts.URL, "drift", "live", "demo"}); !strings.Contains(stdout, "unreachable") {
+		t.Fatalf("unreachable stdout = %s", stdout)
+	}
+	if code, _, _ := invoke(t, []string{"--server", ts.URL, "drift", "live"}); code != exitUsage {
+		t.Fatalf("usage exit = %d", code)
+	}
+}
+
+func TestDriftScheduleShowsLiveFindings(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"interval_seconds":86400,"enabled":true,"last_scan":{"scanned_at":"2026-10-11T13:00:00Z","scanned":1,"drifted":[{"package":"demo","files":[],"live":[{"service":"db","kind":"missing","detail":"no container exists for this service","resolution":"restore"}]}],"errors":[],"live_skipped":"Docker engine unreachable"}}`))
+	}))
+	t.Cleanup(ts.Close)
+	_, stdout, _ := invoke(t, []string{"--server", ts.URL, "drift", "schedule"})
+	for _, want := range []string{"live drift: demo db missing: no container exists for this service [restore]", "live comparison skipped: Docker engine unreachable"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+}

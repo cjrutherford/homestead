@@ -28,6 +28,8 @@ const REVIEW = [
   },
 ];
 
+const LIVE_CLEAN = { checked: true, findings: [] };
+
 const SCHEDULE = {
   interval_seconds: 86400,
   enabled: true,
@@ -73,6 +75,7 @@ describe('Drift', () => {
     http.expectOne('/api/v1/drift/schedule').flush(SCHEDULE);
     fixture.detectChanges();
     fixture.componentInstance['select']('jellyfin');
+    http.expectOne('/api/v1/catalog/jellyfin/drift/live').flush(LIVE_CLEAN);
     http.expectOne('/api/v1/catalog/jellyfin/drift').flush(REVIEW);
     fixture.detectChanges();
     expect(text()).toContain('services: {managed: true}');
@@ -86,12 +89,14 @@ describe('Drift', () => {
     http.expectOne('/api/v1/drift/schedule').flush(SCHEDULE);
     fixture.detectChanges();
     fixture.componentInstance['select']('jellyfin');
+    http.expectOne('/api/v1/catalog/jellyfin/drift/live').flush(LIVE_CLEAN);
     http.expectOne('/api/v1/catalog/jellyfin/drift').flush(REVIEW);
     fixture.detectChanges();
     fixture.componentInstance['accept']();
     const accept = http.expectOne('/api/v1/catalog/jellyfin/drift');
     expect(accept.request.body).toMatchObject({ action: 'accept' });
     accept.flush({ accepted: ['compose.yaml'] });
+    http.expectOne('/api/v1/catalog/jellyfin/drift/live').flush(LIVE_CLEAN);
     const refresh = http.expectOne('/api/v1/catalog/jellyfin/drift');
     refresh.flush([]);
     fixture.detectChanges();
@@ -105,6 +110,7 @@ describe('Drift', () => {
     http.expectOne('/api/v1/drift/schedule').flush(SCHEDULE);
     fixture.detectChanges();
     fixture.componentInstance['select']('jellyfin');
+    http.expectOne('/api/v1/catalog/jellyfin/drift/live').flush(LIVE_CLEAN);
     http.expectOne('/api/v1/catalog/jellyfin/drift').flush(REVIEW);
     fixture.detectChanges();
     fixture.componentInstance['restore']();
@@ -155,5 +161,54 @@ describe('Drift', () => {
     http.expectOne('/api/v1/drift/schedule').flush({ ...SCHEDULE, interval_seconds: 300 });
     fixture.detectChanges();
     expect(text()).toContain('Scans every 5 minute(s)');
+  });
+
+  it('shows running-container findings with their resolution path', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/drift/schedule').flush({
+      ...SCHEDULE,
+      last_scan: {
+        ...SCHEDULE.last_scan,
+        drifted: [
+          {
+            package: 'jellyfin',
+            files: [],
+            live: [
+              { service: 'web', kind: 'missing', detail: 'no container exists for this service', resolution: 'restore' },
+            ],
+          },
+        ],
+        live_skipped: 'Docker engine unreachable',
+      },
+    });
+    fixture.detectChanges();
+    expect(text()).toContain('live missing web');
+    expect(text()).toContain('Live comparison skipped: Docker engine unreachable');
+    fixture.componentInstance['select']('jellyfin');
+    http.expectOne('/api/v1/catalog/jellyfin/drift/live').flush({
+      checked: true,
+      findings: [
+        { service: 'web', container: 'jellyfin-web', kind: 'port', detail: 'host port 8096 -> 8096/tcp is not published', resolution: 'recreate' },
+        { service: 'web', kind: 'extra', detail: 'stray container', resolution: 'manual' },
+      ],
+    });
+    http.expectOne('/api/v1/catalog/jellyfin/drift').flush([]);
+    fixture.detectChanges();
+    expect(text()).toContain('jellyfin-web: host port 8096 -> 8096/tcp is not published');
+    expect(text()).toContain('resolve manually');
+    expect(text()).toContain('Restore managed state');
+  });
+
+  it('says so when Docker was unreachable', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/drift/schedule').flush(SCHEDULE);
+    fixture.componentInstance['select']('jellyfin');
+    http.expectOne('/api/v1/catalog/jellyfin/drift/live').flush({ checked: false, findings: [] });
+    http.expectOne('/api/v1/catalog/jellyfin/drift').flush([]);
+    fixture.detectChanges();
+    expect(text()).toContain('Docker engine unreachable');
+    expect(text()).not.toContain('Restore managed state');
   });
 });

@@ -386,8 +386,27 @@ export interface DriftResolution {
 export interface DriftScanResult {
   scanned_at: string;
   scanned: number;
-  drifted: { package: string; files: { path: string; kind: string }[] }[];
+  drifted: {
+    package: string;
+    files: { path: string; kind: string }[];
+    live?: LiveFinding[];
+  }[];
   errors: string[];
+  live_skipped?: string;
+}
+
+/** GET /api/v1/catalog/:name/drift/live — running-container finding (S262). */
+export interface LiveFinding {
+  service: string;
+  container?: string;
+  kind: string;
+  detail: string;
+  resolution: 'restore' | 'recreate' | 'manual';
+}
+
+export interface LiveDrift {
+  checked: boolean;
+  findings: LiveFinding[];
 }
 
 export interface DriftSchedule {
@@ -810,6 +829,10 @@ export class ApiService {
     return this.http.post<DriftResolution>(`/api/v1/catalog/${name}/drift`, {
       action,
     });
+  }
+
+  driftLive(name: string): Observable<LiveDrift> {
+    return this.http.get<LiveDrift>(`/api/v1/catalog/${name}/drift/live`);
   }
 
   driftSchedule(): Observable<DriftSchedule> {

@@ -58,7 +58,7 @@ func driftScanDefinition(st *store.Store, now func() time.Time) operation.Defini
 		Steps: []operation.StepDef{{
 			Name: "scan",
 			Run: func(ctx context.Context) error {
-				result, err := catalog.Scan(st, driftDirFor, now())
+				result, err := catalog.ScanWithLive(ctx, st, driftDirFor, now(), driftLiveSource())
 				if err != nil {
 					return err
 				}
@@ -87,13 +87,20 @@ func driftScanDefinition(st *store.Store, now func() time.Time) operation.Defini
 
 func scanSummary(r catalog.ScanResult) string {
 	if r.Clean() {
-		return fmt.Sprintf("clean: %d package(s) scanned", r.Scanned)
+		out := fmt.Sprintf("clean: %d package(s) scanned", r.Scanned)
+		if r.LiveSkipped != "" {
+			out += "; live comparison skipped: " + r.LiveSkipped
+		}
+		return out
 	}
 	var parts []string
 	for _, d := range r.Drifted {
 		files := make([]string, 0, len(d.Files))
 		for _, f := range d.Files {
 			files = append(files, f.Path+" "+f.Kind)
+		}
+		for _, f := range d.Live {
+			files = append(files, "live "+f.Kind+" "+f.Service)
 		}
 		parts = append(parts, fmt.Sprintf("%s (%s)", d.Package, strings.Join(files, ", ")))
 	}
@@ -103,6 +110,9 @@ func scanSummary(r catalog.ScanResult) string {
 	}
 	if len(r.Errors) > 0 {
 		out += "; unreadable: " + strings.Join(r.Errors, "; ")
+	}
+	if r.LiveSkipped != "" {
+		out += "; live comparison skipped: " + r.LiveSkipped
 	}
 	return out
 }
@@ -201,8 +211,12 @@ func driftDoctorCheck(st *store.Store, now func() time.Time) func() doctor.Check
 			age = "age " + d.Round(time.Second).String()
 		}
 		if latest.Clean() {
+			note := ""
+			if latest.LiveSkipped != "" {
+				note = "; live comparison skipped: " + latest.LiveSkipped
+			}
 			return doctor.Check{Name: name, Status: doctor.StatusOK,
-				Detail: fmt.Sprintf("clean at %s, %s (%d package(s); resolved packages are dropped until the next scan)", when, age, latest.Scanned)}
+				Detail: fmt.Sprintf("clean at %s, %s (%d package(s); resolved packages are dropped until the next scan)%s", when, age, latest.Scanned, note)}
 		}
 		return doctor.Check{Name: name, Status: doctor.StatusWarn,
 			Detail: fmt.Sprintf("at %s, %s: %s; review with homesteadctl drift review <package>", when, age, scanSummary(latest))}

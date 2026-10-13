@@ -21,6 +21,9 @@
         @if (scan.drifted.length === 0 && scan.errors.length === 0) {
           <p>Clean: generated files match managed state.</p>
         }
+        @if (scan.live_skipped) {
+          <p>Live comparison skipped: {{ scan.live_skipped }}</p>
+        }
         <ul>
           @for (stack of scan.drifted; track stack.package) {
             <li>
@@ -30,6 +33,9 @@
               drifted:
               @for (file of stack.files; track file.path) {
                 {{ file.path }} ({{ file.kind }})
+              }
+              @for (finding of stack.live ?? []; track $index) {
+                live {{ finding.kind }} {{ finding.service }}
               }
             </li>
           }
@@ -101,8 +107,46 @@
     <button type="button" (click)="refresh()" [disabled]="busy()">
       Refresh review
     </button>
+    @if (live(); as liveState) {
+      <section aria-label="Running containers">
+        <h4>Running containers</h4>
+        @if (!liveState.checked) {
+          <app-state-message kind="empty" headline="Docker engine unreachable: running containers were not compared." />
+        } @else if (liveState.findings.length === 0) {
+          <app-state-message kind="empty" headline="Running containers match the generated compose files." />
+        } @else {
+          <p>
+            Read-only comparison; nothing is changed automatically.
+            Restore starts missing or stopped containers and recreates ones
+            whose configuration changed. Accepting files does not change
+            containers.
+          </p>
+          <ul>
+            @for (finding of liveState.findings; track $index) {
+              <li>
+                <strong>{{ finding.kind }}</strong>
+                {{ finding.container || finding.service }}: {{ finding.detail }}
+                @switch (finding.resolution) {
+                  @case ('restore') { (resolve with Restore managed state) }
+                  @case ('recreate') {
+                    (Restore managed state, after removing the container if
+                    compose.yaml already matches)
+                  }
+                  @default { (resolve manually) }
+                }
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
     @if (review().length === 0) {
       <app-state-message kind="empty" headline="No drift: generated files match managed state." />
+      @if (convergable()) {
+        <button type="button" (click)="restore()" [disabled]="busy()">
+          Restore managed state
+        </button>
+      }
     } @else {
       <ul>
         @for (file of review(); track file.path) {

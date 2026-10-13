@@ -111,9 +111,11 @@
 - Dockge route reconciliation: S211 models and links the local-only
   route, but no flow writes it into the proxy yet; the direct UI
   port serves until then.
-- Drift live-state comparison: S261 schedules file-drift scans, but
-  comparing running containers against generated files belongs to a
-  later slice (S262).
+- Live drift refinements: S262 compares images, published ports,
+  networks, and mounts; it does not compare environment, command,
+  healthchecks, resource limits, tmpfs sizes, or compose `build:`
+  services, and an owner-stopped stack reports stopped/missing since
+  Homestead tracks no per-stack desired run state.
 - Theme selection: S248 defines light, dark, and high-contrast
   themes and previews them on the validation board; no user-facing
   switcher or prefers-color-scheme wiring exists yet.

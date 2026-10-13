@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"os"
 
 	"homestead/internal/catalog"
 	"homestead/internal/docker"
@@ -14,6 +16,10 @@ import (
 // composeUp seam pattern. Production uses docker.DirFor.
 var driftDirFor = docker.DirFor
 
+// driftLiveSource supplies the Engine inventory for running-container
+// comparison (S262), stubbed in tests with a fake Docker client.
+var driftLiveSource = func() catalog.LiveSource { return docker.NewClient("") }
+
 // MountDrift serves drift review and resolution (S213): per-package
 // managed-state review plus accept and restore choices. Review and
 // accept answer inline; restore runs through the operation engine
@@ -22,6 +28,7 @@ var driftDirFor = docker.DirFor
 func (s *Server) MountDrift(st *store.Store, catalogDir string) {
 	runner := operation.NewRunner(st)
 	s.mux.HandleFunc("GET /api/v1/catalog/{name}/drift", handleDriftReview(st, catalogDir))
+	s.mux.HandleFunc("GET /api/v1/catalog/{name}/drift/live", handleDriftLive(st, catalogDir))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/drift", handleDriftResolve(st, catalogDir, runner))
 }
 
@@ -54,6 +61,43 @@ func handleDriftReview(st *store.Store, catalogDir string) http.HandlerFunc {
 		}
 		writeJSON(w, out)
 	}
+}
+
+// handleDriftLive serves the read-only running-container comparison
+// (S262). An unreachable Engine answers checked=false, not an error.
+func handleDriftLive(st *store.Store, catalogDir string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		manifest, ok := loadPackage(catalogDir, r.PathValue("name"), w)
+		if !ok {
+			return
+		}
+		review, err := catalog.LiveDrift(r.Context(), driftLiveSource(), manifest.Name, driftDirFor(manifest.Name))
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, os.ErrNotExist) {
+				status = http.StatusNotFound
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+		writeJSON(w, review)
+	}
+}
+
+// liveConverges reports whether running containers diverge in a way
+// restore (compose up) can act on. Live-only drift still lets restore
+// run: file drift is absent, but up starts and recreates containers.
+func liveConverges(ctx context.Context, name string) bool {
+	review, err := catalog.LiveDrift(ctx, driftLiveSource(), name, driftDirFor(name))
+	if err != nil {
+		return false
+	}
+	for _, f := range review.Findings {
+		if f.Resolution != catalog.ResolveManual {
+			return true
+		}
+	}
+	return false
 }
 
 // driftAction carries the owner's choice: adopt current files, or
@@ -92,7 +136,7 @@ func handleDriftResolve(st *store.Store, catalogDir string, runner *operation.Ru
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			if len(review) == 0 {
+			if len(review) == 0 && !liveConverges(r.Context(), manifest.Name) {
 				writeJSON(w, map[string]any{"id": 0, "detail": "no drift"})
 				return
 			}

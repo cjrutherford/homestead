@@ -43,3 +43,31 @@ func (c *Client) DriftResolve(ctx context.Context, name, action string) (DriftRe
 	}
 	return out, nil
 }
+
+// LiveFinding is one running-container divergence (S262).
+type LiveFinding struct {
+	Service    string `json:"service"`
+	Container  string `json:"container"`
+	Kind       string `json:"kind"`
+	Detail     string `json:"detail"`
+	Resolution string `json:"resolution"`
+}
+
+// LiveDrift is the live comparison for one package; Checked is false
+// when the Docker engine was unreachable.
+type LiveDrift struct {
+	Checked  bool          `json:"checked"`
+	Findings []LiveFinding `json:"findings"`
+}
+
+// DriftLive returns the read-only running-container comparison.
+func (c *Client) DriftLive(ctx context.Context, name string) (LiveDrift, error) {
+	var out LiveDrift
+	if err := c.get(ctx, "/api/v1/catalog/"+name+"/drift/live", &out); err != nil {
+		return LiveDrift{}, err
+	}
+	if out.Findings == nil {
+		out.Findings = []LiveFinding{}
+	}
+	return out, nil
+}

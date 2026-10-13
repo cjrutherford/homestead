@@ -23,11 +23,11 @@ func stubEngine(t *testing.T) (string, *int) {
 		case "/info":
 			_, _ = w.Write([]byte(`{"Driver":"overlayfs"}`))
 		case "/containers/json":
-			_, _ = w.Write([]byte(`[{"Id":"abc123def456","Names":["/web"],"Image":"nginx:latest","State":"running","Status":"Up 2 hours","Mounts":[{"Type":"volume","Name":"vol1","Source":"","Destination":"/data","RW":true},{"Type":"volume","Name":"vol2","Source":"/var/lib/docker/volumes/vol2/_data","Destination":"/b","RW":true}]}]`))
+			_, _ = w.Write([]byte(`[{"Id":"abc123def456","Names":["/web"],"Image":"nginx:latest","State":"running","Status":"Up 2 hours","ImageID":"sha256:111","Ports":[{"IP":"0.0.0.0","PrivatePort":80,"PublicPort":8080,"Type":"tcp"},{"PrivatePort":443,"Type":"tcp"}],"NetworkSettings":{"Networks":{"web_default":{},"edge":{}}},"Mounts":[{"Type":"volume","Name":"vol1","Source":"","Destination":"/data","RW":true},{"Type":"volume","Name":"vol2","Source":"/var/lib/docker/volumes/vol2/_data","Destination":"/b","RW":true}]}]`))
 		case "/volumes/vol1":
 			_, _ = w.Write([]byte(`{"Name":"vol1","Mountpoint":"/var/lib/docker/volumes/vol1/_data"}`))
 		case "/images/json":
-			_, _ = w.Write([]byte(`[{"Id":"sha256:111","RepoTags":["nginx:latest"],"Size":188000000,"Created":1700000000}]`))
+			_, _ = w.Write([]byte(`[{"Id":"sha256:111","RepoTags":["nginx:latest"],"RepoDigests":["nginx@sha256:abc"],"Size":188000000,"Created":1700000000}]`))
 		case "/networks":
 			_, _ = w.Write([]byte(`[{"Id":"net1","Name":"bridge","Driver":"bridge","Scope":"local"}]`))
 		default:
@@ -124,5 +124,28 @@ func TestContainersResolveEmptyVolumeSource(t *testing.T) {
 	}
 	if got := containers[0].Mounts[1].Source; got != "/var/lib/docker/volumes/vol2/_data" {
 		t.Fatalf("listed Source changed: %q", got)
+	}
+}
+
+func TestInventoryReadsPortsNetworksAndDigests(t *testing.T) {
+	socketPath, _ := stubEngine(t)
+	inv, err := NewClient(socketPath).Inventory(context.Background())
+	if err != nil || !inv.Reachable || len(inv.Containers) != 1 || len(inv.Images) != 1 {
+		t.Fatalf("inventory = %+v err = %v", inv, err)
+	}
+	c := inv.Containers[0]
+	if c.ImageID != "sha256:111" || len(c.Ports) != 2 || c.Ports[0].Public != 8080 || c.Ports[1].Public != 0 {
+		t.Fatalf("container = %+v", c)
+	}
+	if len(c.Networks) != 2 || c.Networks[0] != "edge" || c.Networks[1] != "web_default" {
+		t.Fatalf("networks = %v", c.Networks)
+	}
+	if got := inv.Images[0].RepoDigests; len(got) != 1 || got[0] != "nginx@sha256:abc" {
+		t.Fatalf("digests = %v", got)
+	}
+	// Unreachable daemons are data, not errors.
+	gone, err := NewClient(filepath.Join(t.TempDir(), "none.sock")).Inventory(context.Background())
+	if err != nil || gone.Reachable {
+		t.Fatalf("unreachable = %+v err = %v", gone, err)
 	}
 }

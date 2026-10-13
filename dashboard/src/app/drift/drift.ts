@@ -1,7 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
-import { ApiService, DriftSchedule, FileDrift, PackageSummary } from '../core/api.service';
+import { ApiService, DriftSchedule, FileDrift, LiveDrift, PackageSummary } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 
 /**
@@ -11,7 +11,9 @@ import { StateMessage } from '../state/state-message';
  * through the operation engine, linking out to operation detail for
  * progress. This page never changes anything by itself. The scan
  * panel (S261) shows the last scheduled scan and edits its cadence;
- * scheduled scans only detect, never resolve.
+ * scheduled scans only detect, never resolve. Running containers
+ * (S262) are compared read-only with the generated compose files; each
+ * live finding names the flow that converges it.
  */
 @Component({
   imports: [StateMessage, RouterLink],
@@ -28,6 +30,7 @@ export class Drift implements OnInit {
   protected readonly notice = signal<string | null>(null);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
+  protected readonly live = signal<LiveDrift | null>(null);
   protected readonly schedule = signal<DriftSchedule | null>(null);
 
   ngOnInit(): void {
@@ -82,8 +85,14 @@ export class Drift implements OnInit {
     return `${seconds} second(s)`;
   }
 
+  /** True when a live finding can converge through restore (compose up). */
+  protected convergable(): boolean {
+    return (this.live()?.findings ?? []).some((f) => f.resolution !== 'manual');
+  }
+
   select(name: string): void {
     this.selected.set(name);
+    this.live.set(null);
     this.operationId.set(null);
     this.notice.set(null);
     this.refresh();
@@ -96,6 +105,13 @@ export class Drift implements OnInit {
     }
     this.busy.set(true);
     this.error.set(null);
+    this.api.driftLive(name).subscribe({
+      next: (live) => this.live.set(live),
+      error: (failure: HttpErrorResponse) => {
+        this.live.set(null);
+        this.error.set(failure.error ?? failure.message);
+      },
+    });
     this.api.driftReview(name).subscribe({
       next: (review) => {
         this.busy.set(false);

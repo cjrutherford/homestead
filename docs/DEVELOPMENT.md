@@ -2294,3 +2294,65 @@ caller's session and signs out the others (ADR-020). The auth interceptor
 treats a 401 carrying `X-Homestead-Error: invalid-current-password` on
 `POST /api/v1/admins/password` only as a form error; any other 401
 expires the session and redirects to login.
+
+## Running container drift (S262)
+
+```bash
+homesteadctl drift live <package>     # read-only live comparison
+```
+
+`GET /api/v1/catalog/{name}/drift/live` returns `{checked, findings[]}`;
+`checked=false` means the Docker engine was unreachable (not clean). The
+same findings ride in the S261 scheduled scan (`drifted[].live`, plus
+`live_skipped` when Docker could not be read, which never fails the scan
+or its operation) and the `drift-scan` doctor check. The comparison only
+reads: it parses the on-disk `compose.yaml` plus `compose.override.yaml`
+and compares each service's containers (matched by Compose project and
+service labels) with the Engine inventory.
+
+Findings: `image`, `port`, `network`, `mount` (wrong type, anonymous or
+named volume where a bind is declared, wrong source, wrong read-only
+flag, missing, unexpected), `missing`, `stopped`, `restarting`, `extra`
+(unknown project container or too many containers for a service).
+
+Normalizations, each avoiding a false positive:
+- Images: `docker.io/` and `library/` prefixes drop, no tag means
+  `:latest`; an image the Engine reports by ID (its tag moved) resolves
+  through the image list (unresolvable IDs are not drift); digest pins
+  compare by digest, using `RepoDigests` when the container shows a tag;
+  `build:` services skip the image check.
+- Ports: tcp default; `0.0.0.0`, `::`, and empty host IPs are one
+  wildcard and the Engine's v4/v6 duplicates collapse; host IP compared
+  only when compose names one (a loopback bind served on all interfaces
+  is a finding); container-only mappings just need the port published;
+  exposed-only ports ignored; ports compared for running containers only
+  (stopped containers list none); `network_mode` services skip ports and
+  networks.
+- Networks: no `networks:` means `<project>_default`; keys resolve to
+  `<project>_<key>` unless external or `name:`d.
+- Mounts: relative bind sources resolve against the stack directory;
+  symlinked paths compare by real path; secrets are read-only file
+  mounts at `/run/secrets` with host source ignored; anonymous volumes
+  at undeclared destinations are image `VOLUME`s and ignored; Engine-
+  managed `/etc/hosts`, `/etc/hostname`, `/etc/resolv.conf` ignored;
+  tmpfs size is not compared.
+- Containers: `profiles` services are not expected; `scale` and
+  `deploy.replicas` set the expected count; a `restart: no` service that
+  exited 0 is finished; `compose run` one-offs are ignored.
+- Override: image replaces; ports, volumes, tmpfs, secrets append;
+  networks union; environment is irrelevant.
+
+Resolution stays on the S213 flow; nothing is corrected automatically.
+Each finding names its path. `restore` (missing, stopped, image):
+S213 restore runs `compose up -d`, which starts and recreates those
+containers. `recreate` (port, network, mount): `up` recreates only when
+compose configuration changed, so if `compose.yaml` already matches,
+remove the container (`docker compose rm -sf <service>`) and restore.
+`manual` (restarting, extra): no Homestead flow converges them.
+Accepting files never changes containers, and keeps the package's live
+findings in the stored scan. Restore, which previously answered "no
+drift" when files were clean, now runs when live findings it can
+converge exist. Desired state is the on-disk compose files, so a
+hand-edited `compose.yaml` is compared as edited (file drift reports
+the edit separately). An owner-stopped stack reports stopped or missing
+(Homestead tracks no per-stack run state).

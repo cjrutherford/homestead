@@ -21,7 +21,8 @@
   installed packages on an owner-set interval (default daily, min 5m;
   `drift_scan_schedule`, latest result in `drift_scan_latest`) as a
   `catalog.drift-scan` operation plus a `drift.scan` audit entry. It only
-  detects, never accepts or restores. API: `GET|POST /api/v1/drift/schedule`.
+  detects, never accepts or restores; it also compares running containers (S262,
+  `docs/DEVELOPMENT.md`). API: `GET|POST /api/v1/drift/schedule`, `GET /api/v1/catalog/{name}/drift/live`.
   The `cert` source (S263, ADR-024) runs `cert:renewal-check` daily as a
   `cert.renewal-check` operation: it grades stored issuances (fingerprint
   of normalized names, DNS provider id, challenge method, recorded in

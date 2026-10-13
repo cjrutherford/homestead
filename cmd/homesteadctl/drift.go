@@ -11,12 +11,14 @@ import (
 
 func runDrift(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl drift <review|accept|restore> <package> [--follow]")
+		fmt.Fprintln(stderr, "usage: homesteadctl drift <review|live|accept|restore|schedule> <package> [--follow]")
 		return exitUsage
 	}
 	switch args[0] {
 	case "review":
 		return runDriftReview(ctx, client, args[1:], stdout, stderr)
+	case "live":
+		return runDriftLive(ctx, client, args[1:], stdout, stderr)
 	case "accept":
 		return runDriftAccept(ctx, client, args[1:], stdout, stderr)
 	case "restore":
@@ -128,4 +130,35 @@ func runDriftRestore(ctx context.Context, client *apiclient.Client, args []strin
 	default:
 		return exitError
 	}
+}
+
+// runDriftLive prints the read-only running-container comparison
+// (S262). Nothing is corrected: each finding names the flow that
+// converges it (restore, recreate, or manual).
+func runDriftLive(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	name, _, code := driftPackage(args, stderr)
+	if code != exitOK {
+		fmt.Fprintln(stderr, "usage: homesteadctl drift live <package>")
+		return code
+	}
+	live, err := client.DriftLive(ctx, name)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if !live.Checked {
+		fmt.Fprintf(stdout, "%s: Docker engine unreachable; running containers not compared\n", name)
+		return exitOK
+	}
+	if len(live.Findings) == 0 {
+		fmt.Fprintf(stdout, "%s: running containers match generated compose\n", name)
+		return exitOK
+	}
+	for _, f := range live.Findings {
+		target := f.Service
+		if f.Container != "" {
+			target = f.Container
+		}
+		fmt.Fprintf(stdout, "%s %s: %s [%s]\n", f.Kind, target, f.Detail, f.Resolution)
+	}
+	return exitOK
 }

@@ -70,6 +70,14 @@ func runDriftSchedule(ctx context.Context, client *apiclient.Client, args []stri
 			fmt.Fprintf(stdout, "drift: %s %s (%s)\n", stack.Package, file.Path, file.Kind)
 		}
 	}
+	for _, stack := range scan.Drifted {
+		for _, f := range stack.Live {
+			fmt.Fprintf(stdout, "live drift: %s %s %s: %s [%s]\n", stack.Package, f.Service, f.Kind, f.Detail, f.Resolution)
+		}
+	}
+	if scan.LiveSkipped != "" {
+		fmt.Fprintf(stdout, "live comparison skipped: %s\n", scan.LiveSkipped)
+	}
 	for _, msg := range scan.Errors {
 		fmt.Fprintf(stdout, "unreadable: %s\n", msg)
 	}
