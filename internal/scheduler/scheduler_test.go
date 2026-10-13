@@ -674,7 +674,7 @@ func TestUnavailableBackoffCappedAtInterval(t *testing.T) {
 	}
 }
 
-func TestUnavailableAuditsEachWindowOnce(t *testing.T) {
+func TestUnavailableAuditsFirstThenPeriodically(t *testing.T) {
 	st := openStore(t)
 	clock := &fakeClock{now: t0}
 	job := Job{ID: "w", Interval: time.Hour, Enabled: true, Since: t0,
@@ -683,11 +683,63 @@ func TestUnavailableAuditsEachWindowOnce(t *testing.T) {
 		}}
 	s := newSched(st, clock, job)
 	clock.Advance(time.Hour)
-	for i := 0; i < 5; i++ {
+	// Attempts 1..9 inside the first day audit once.
+	for i := 0; i < 9; i++ {
 		_ = s.Tick(context.Background())
-		clock.Advance(RetryBase * 2)
+		clock.Advance(time.Hour)
 	}
 	if n := len(auditActions(t, st, "scheduler.run")); n != 1 {
-		t.Fatalf("audits = %d, want 1", n)
+		t.Fatalf("audits = %d, want 1 before the Nth attempt", n)
+	}
+	// Attempt 10 re-audits by count.
+	_ = s.Tick(context.Background())
+	if n := len(auditActions(t, st, "scheduler.run")); n != 2 {
+		t.Fatalf("audits = %d, want re-audit at attempt %d", n, ReauditAttempts)
+	}
+	status, _ := s.Status()
+	if status[0].UnavailableAttempts != 10 || status[0].UnavailableSince.IsZero() {
+		t.Fatalf("status = %+v", status[0])
+	}
+}
+
+func TestUnavailableReauditsDaily(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0}
+	job := Job{ID: "d", Interval: 48 * time.Hour, Enabled: true, Since: t0,
+		Build: func() (operation.Definition, error) {
+			return operation.Definition{}, errors.Join(ErrUnavailable, errors.New("gone"))
+		}}
+	s := newSched(st, clock, job)
+	clock.Advance(48 * time.Hour)
+	_ = s.Tick(context.Background())
+	clock.Advance(25 * time.Hour)
+	_ = s.Tick(context.Background())
+	if n := len(auditActions(t, st, "scheduler.run")); n != 2 {
+		t.Fatalf("audits = %d, want a daily re-audit", n)
+	}
+}
+
+func TestUnavailableClearsOnSuccess(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0}
+	var runs atomic.Int32
+	ready := false
+	job := Job{ID: "c", Interval: time.Hour, Enabled: true, Since: t0,
+		Build: func() (operation.Definition, error) {
+			if !ready {
+				return operation.Definition{}, errors.Join(ErrUnavailable, errors.New("gone"))
+			}
+			return quickJob("c", true, &runs).Build()
+		}}
+	s := newSched(st, clock, job)
+	clock.Advance(time.Hour)
+	_ = s.Tick(context.Background())
+	ready = true
+	clock.Advance(RetryBase + time.Second)
+	_ = s.Tick(context.Background())
+	waitFor(t, func() bool { return runs.Load() == 1 })
+	status, _ := s.Status()
+	if status[0].UnavailableAttempts != 0 || !status[0].UnavailableSince.IsZero() {
+		t.Fatalf("status = %+v", status[0])
 	}
 }

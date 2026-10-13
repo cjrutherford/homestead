@@ -203,6 +203,11 @@ func (m *Manifest) markFormat(recipients []age.Recipient, dbEntry string) {
 	}
 }
 
+// ErrDestinationUnavailable marks a destination fault that may clear by
+// itself (mount not accessible, read-only, or absent from discovery), as
+// opposed to a configuration fault such as no backup class assignment.
+var ErrDestinationUnavailable = errors.New("backup: destination unavailable")
+
 // ResolveDestination finds the backup root: the backup-class
 // assignment's mountpoint, re-checked against live facts (present,
 // serving usage, writable) because assignments age and mounts
@@ -217,14 +222,14 @@ func ResolveDestination(assignments *storage.Assignments, discovered discover.St
 			continue
 		}
 		if !mount.Accessible {
-			return "", fmt.Errorf("backup: destination %q serves no usage data", mount.Mountpoint)
+			return "", fmt.Errorf("%w: backup: destination %q serves no usage data", ErrDestinationUnavailable, mount.Mountpoint)
 		}
 		if mount.ReadOnly {
-			return "", fmt.Errorf("backup: destination %q is read-only", mount.Mountpoint)
+			return "", fmt.Errorf("%w: backup: destination %q is read-only", ErrDestinationUnavailable, mount.Mountpoint)
 		}
 		return mount.Mountpoint, nil
 	}
-	return "", fmt.Errorf("backup: destination %q absent from discovery", assignment.Mountpoint)
+	return "", fmt.Errorf("%w: backup: destination %q absent from discovery", ErrDestinationUnavailable, assignment.Mountpoint)
 }
 
 // copyTree replicates src into dst preserving modes: directories
@@ -297,7 +302,7 @@ func copyTreeOpts(src, dst string, exclude []string) (int, treeStats, error) {
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
 			if err := copySymlink(src, path, target); err != nil {
-				if errors.Is(err, fs.ErrNotExist) {
+				if sourceVanished(err) {
 					stats.Vanished++
 					return nil
 				}
@@ -319,7 +324,7 @@ func copyTreeOpts(src, dst string, exclude []string) (int, treeStats, error) {
 			return nil
 		}
 		if err := copyFile(path, target, entry); err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
+			if sourceVanished(err) {
 				stats.Vanished++
 				return nil
 			}
@@ -349,12 +354,29 @@ func chownLike(dst string, info fs.FileInfo) error {
 	return nil
 }
 
+// sourceError tags a failure that happened on the source side of a copy.
+// Only those may be tolerated as vanished files: a missing destination
+// directory is a real failure, not a live file disappearing.
+type sourceError struct{ err error }
+
+func (e sourceError) Error() string { return e.err.Error() }
+func (e sourceError) Unwrap() error { return e.err }
+
+func sourceSide(err error) error { return sourceError{err} }
+
+// sourceVanished reports a source-side open, stat or readlink that
+// found the file gone.
+func sourceVanished(err error) bool {
+	var se sourceError
+	return errors.As(err, &se) && errors.Is(err, fs.ErrNotExist)
+}
+
 // copySymlink recreates a link that is relative and resolves inside
 // root, lexically, without following it.
 func copySymlink(root, path, dst string) error {
 	link, err := os.Readlink(path)
 	if err != nil {
-		return err
+		return sourceSide(err)
 	}
 	resolved := filepath.Join(filepath.Dir(path), link)
 	inside, err := filepath.Rel(root, resolved)
@@ -368,14 +390,14 @@ func copySymlink(root, path, dst string) error {
 func copyFile(src, dst string, entry fs.DirEntry) error {
 	info, err := entry.Info()
 	if err != nil {
-		return err
+		return sourceSide(err)
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("backup: %q is not a regular file", src)
 	}
 	in, err := os.Open(src)
 	if err != nil {
-		return err
+		return sourceSide(err)
 	}
 	defer in.Close()
 	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())

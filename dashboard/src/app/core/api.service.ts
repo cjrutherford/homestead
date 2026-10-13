@@ -456,6 +456,9 @@ export interface SchedulerJob {
   last_skip_blocking: number;
   next_due: string;
   running: boolean;
+  /** Ongoing outage: builds unavailable, window not spent (ADR-026). */
+  unavailable_attempts?: number;
+  unavailable_since?: string;
 }
 
 /** GET /api/v1/tls/renewal — one certificate's renewal status (S263). */

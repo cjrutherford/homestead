@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"path"
+	"strings"
 
 	"homestead/internal/backup"
 	"homestead/internal/catalog"
@@ -14,7 +15,7 @@ import (
 // cannot be copied consistently while the database runs (Postgres drops
 // and rewrites files such as pg_internal.init mid-copy).
 //
-// With a declared export the export is authoritative: those directories
+// With a declared export the export is authoritative for the directories it covers: those directories
 // are excluded from the file copy (the directory itself is kept so its
 // mode and owner survive) and the run records that. Without one the
 // directories are still copied, vanished files are tolerated, and the
@@ -44,7 +45,7 @@ func applyDatabaseHandling(manifest catalog.Manifest, mountpoints map[storage.Cl
 			if index < 0 {
 				continue
 			}
-			if manifest.Database != nil {
+			if exportCovers(manifest, service.Name, sub) {
 				out[index].Exclude = append(append([]string(nil), out[index].Exclude...), sub)
 				notes = append(notes, fmt.Sprintf("database directory %s (%s) is not copied as files: the %s export is authoritative", sub, data.Target, manifest.Database.Kind))
 				continue
@@ -53,4 +54,21 @@ func applyDatabaseHandling(manifest catalog.Manifest, mountpoints map[storage.Cl
 		}
 	}
 	return out, notes
+}
+
+// exportCovers reports whether the declared export is the authoritative
+// copy of one database directory: it must dump the same service, and for
+// SQLite the exported file must live inside that directory. A package
+// with several databases and one export therefore keeps copying the
+// others (with the not-crash-consistent warning).
+func exportCovers(manifest catalog.Manifest, service, sub string) bool {
+	export := manifest.Database
+	if export == nil || export.Service != service {
+		return false
+	}
+	if export.Kind != catalog.DatabaseSQLite {
+		return true
+	}
+	file := path.Clean(export.Path)
+	return file == sub || strings.HasPrefix(file, sub+"/")
 }

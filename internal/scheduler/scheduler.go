@@ -48,8 +48,9 @@ type Job struct {
 // ErrUnavailable marks a Build failure caused by something not there
 // right now (a source or mount that has not appeared), as opposed to a
 // fault in the job itself. The window is not spent: the job retries with
-// backoff (RetryBase doubling, capped at its interval) and the failure
-// is audited once per window, so a late-mounting disk still gets its
+// backoff (RetryBase doubling, capped at its interval) and the outage
+// is audited on its first attempt, then at least daily and every
+// ReauditAttempts attempts (ADR-026), so a late-mounting disk still gets its
 // scheduled backup instead of waiting a whole interval.
 var ErrUnavailable = errors.New("scheduler: job inputs unavailable")
 
@@ -61,8 +62,17 @@ const RetryBase = 5 * time.Minute
 type retryState struct {
 	attempts int
 	next     time.Time
-	audited  time.Time // the window (due) already audited
+	since    time.Time // first unavailable attempt of this outage
+	audited  time.Time // last time the outage was audited
 }
+
+// ReauditEvery and ReauditAttempts bound how long an ongoing outage can
+// go unaudited: a repeat audit entry is written at least daily and at
+// every ReauditAttempts-th attempt (ADR-023 amendment, ADR-026).
+const (
+	ReauditEvery    = 24 * time.Hour
+	ReauditAttempts = 10
+)
 
 // Source lists the jobs currently declared by one domain. It is read on
 // every tick, so edits to declared schedules take effect without restart.
@@ -91,6 +101,11 @@ type Status struct {
 	LastSkipBlocking int64     `json:"last_skip_blocking"`
 	NextDue          time.Time `json:"next_due"`
 	Running          bool      `json:"running"`
+	// UnavailableAttempts and UnavailableSince describe an ongoing
+	// outage (builds failing with ErrUnavailable, window not spent);
+	// zero when the job is not waiting. In-memory, reset on restart.
+	UnavailableAttempts int       `json:"unavailable_attempts"`
+	UnavailableSince    time.Time `json:"unavailable_since"`
 }
 
 // Scheduler evaluates registered sources and enqueues due jobs.
@@ -109,6 +124,7 @@ type Scheduler struct {
 	// retries holds backoff for jobs whose last build was unavailable;
 	// guarded by tickMu.
 	retries map[string]*retryState
+	retryMu sync.Mutex // guards retries and its states; leaf lock
 	mu      sync.Mutex // guards sources only; never held across Build or enqueue
 	sources []namedSource
 }
@@ -329,7 +345,7 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 		if now.Before(due) {
 			continue
 		}
-		if r, ok := s.retries[id]; ok && now.Before(r.next) && r.next.Sub(now) <= job.Interval {
+		if s.backingOff(id, job, now) {
 			continue
 		}
 		if err := s.fire(ctx, job, st, due, now); err != nil {
@@ -394,10 +410,10 @@ func (s *Scheduler) fire(ctx context.Context, job Job, st state, due, now time.T
 		return s.unavailable(job, due, now, err)
 	}
 	if err != nil {
-		delete(s.retries, job.ID)
+		s.clearRetry(job.ID)
 		return s.failed(job, now, fmt.Errorf("build: %w", err))
 	}
-	delete(s.retries, job.ID)
+	s.clearRetry(job.ID)
 	raw, err := json.Marshal(struct {
 		Scheduled bool   `json:"scheduled"`
 		Job       string `json:"job"`
@@ -446,12 +462,13 @@ func (s *Scheduler) failed(job Job, now time.Time, cause error) error {
 // error is visible in status, and the next attempt waits out a capped
 // exponential backoff. The audit entry is written once per window.
 func (s *Scheduler) unavailable(job Job, due, now time.Time, cause error) error {
+	s.retryMu.Lock()
 	if s.retries == nil {
 		s.retries = map[string]*retryState{}
 	}
 	r := s.retries[job.ID]
 	if r == nil {
-		r = &retryState{}
+		r = &retryState{since: now}
 		s.retries[job.ID] = r
 	}
 	r.attempts++
@@ -463,18 +480,37 @@ func (s *Scheduler) unavailable(job Job, due, now time.Time, cause error) error 
 		delay = job.Interval
 	}
 	r.next = now.Add(delay)
+	attempts, since := r.attempts, r.since
+	doAudit := r.audited.IsZero() || now.Sub(r.audited) >= ReauditEvery || attempts%ReauditAttempts == 0
+	if doAudit {
+		r.audited = now
+	}
+	s.retryMu.Unlock()
 	if err := s.save(job.ID, "last_error = ?", "build: "+cause.Error()); err != nil {
 		return err
 	}
-	if r.audited.Equal(due) {
+	if !doAudit {
 		return nil
 	}
-	r.audited = due
 	_, err := s.audit.Record(audit.Entry{
 		Actor: Actor, Action: "scheduler.run", Outcome: audit.OutcomeError,
-		Detail: fmt.Sprintf("job %s due %s waiting: %v; retrying with backoff (first retry in %s), window not spent", job.ID, format(due), cause, RetryBase),
+		Detail: fmt.Sprintf("job %s due %s waiting: %v; attempt %d since %s; retrying with backoff (next retry in %s), window not spent", job.ID, format(due), cause, attempts, format(since), delay),
 	})
 	return err
+}
+
+// backingOff reports whether an unavailable job is still inside its delay.
+func (s *Scheduler) backingOff(id string, job Job, now time.Time) bool {
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	r, ok := s.retries[id]
+	return ok && now.Before(r.next) && r.next.Sub(now) <= job.Interval
+}
+
+func (s *Scheduler) clearRetry(id string) {
+	s.retryMu.Lock()
+	delete(s.retries, id)
+	s.retryMu.Unlock()
 }
 
 // ClearHint tells the owner how to unblock a job held by a hung
@@ -537,6 +573,11 @@ func (s *Scheduler) Status() ([]Status, error) {
 		if job.Enabled {
 			status.NextDue = nextDue(job, st, now)
 		}
+		s.retryMu.Lock()
+		if r, ok := s.retries[id]; ok {
+			status.UnavailableAttempts, status.UnavailableSince = r.attempts, r.since
+		}
+		s.retryMu.Unlock()
 		if st.lastOp != 0 {
 			if op, err := s.ops.Get(st.lastOp); err == nil && !operation.Terminal(op.Status) {
 				status.Running = true

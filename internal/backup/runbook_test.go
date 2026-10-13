@@ -25,7 +25,11 @@ import (
 
 const runbookPath = "../../docs/architecture/BACKUP_RESTORE_RUNBOOK.md"
 
-var runbookBlock = regexp.MustCompile("(?ms)^```sh runbook ([a-z0-9-]+)\n(.*?)^```$")
+var (
+	runbookBlock = regexp.MustCompile("(?ms)^```sh runbook ([a-z0-9-]+)\n(.*?)^```$")
+	// shellFence matches any fence that opens a shell block, named or not.
+	shellFence = regexp.MustCompile("(?m)^```(?:sh|bash|shell|console|zsh)\\b.*$")
+)
 
 func runbookBlocks(t *testing.T) map[string]string {
 	t.Helper()
@@ -34,7 +38,11 @@ func runbookBlocks(t *testing.T) map[string]string {
 		t.Fatalf("runbook missing: %v", err)
 	}
 	blocks := map[string]string{}
-	for _, m := range runbookBlock.FindAllStringSubmatch(string(raw), -1) {
+	named := runbookBlock.FindAllStringSubmatch(string(raw), -1)
+	if fences := shellFence.FindAllString(string(raw), -1); len(fences) != len(named) {
+		t.Fatalf("the runbook has %d shell fences but %d are named `sh runbook <name>`: every shell block must be named so it is tested (%q)", len(fences), len(named), fences)
+	}
+	for _, m := range named {
 		if _, dup := blocks[m[1]]; dup {
 			t.Fatalf("runbook block %q appears twice", m[1])
 		}
@@ -53,10 +61,20 @@ func requireTool(t *testing.T, name string) {
 	}
 }
 
-// runbookShell runs one documented block under sh -eu with the given
-// variables. docker is a shell function recording what the block pipes
-// into it, because the test has no database container.
-func runbookShell(t *testing.T, blocks map[string]string, used map[string]bool, name string, env map[string]string) {
+// dockerShim stands in for the docker binary, which the test cannot
+// run: it appends its arguments to $DOCKER_ARGS (one line per call),
+// saves what an `exec -i` call reads to $DOCKER_STDIN, and exits with
+// $DOCKER_STATUS (default 0), so a block that ignores docker's failure
+// is caught.
+const dockerShim = "docker() {\n" +
+	"\tprintf '%s\\n' \"$*\" >> \"$DOCKER_ARGS\" || return 1\n" +
+	"\tcase \"$1\" in exec) cat > \"$DOCKER_STDIN\" || return 1 ;; esac\n" +
+	"\treturn \"${DOCKER_STATUS:-0}\"\n" +
+	"}\n"
+
+// runbookCmd prepares one documented block under sh -eu with the given
+// variables.
+func runbookCmd(t *testing.T, blocks map[string]string, used map[string]bool, name string, env map[string]string) *exec.Cmd {
 	t.Helper()
 	body, ok := blocks[name]
 	if !ok {
@@ -65,17 +83,41 @@ func runbookShell(t *testing.T, blocks map[string]string, used map[string]bool, 
 	used[name] = true
 	// A restrictive umask, as root shells often have: modes must come
 	// from the archive, not from the shell.
-	script := "set -eu\numask 077\n" +
-		"docker() { printf '%s\\n' \"$*\" > \"$DOCKER_ARGS\"; cat > \"$DOCKER_STDIN\"; }\n" +
-		body
-	cmd := exec.Command("sh", "-c", script)
+	cmd := exec.Command("sh", "-c", "set -eu\numask 077\n"+dockerShim+body)
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("runbook block %q failed: %v\n%s\nscript:\n%s", name, err, out, body)
+	return cmd
+}
+
+func runbookShell(t *testing.T, blocks map[string]string, used map[string]bool, name string, env map[string]string) {
+	t.Helper()
+	if out, err := runbookCmd(t, blocks, used, name, env).CombinedOutput(); err != nil {
+		t.Fatalf("runbook block %q failed: %v\n%s\nscript:\n%s", name, err, out, blocks[name])
 	}
+}
+
+// runbookFails requires a block to exit non-zero.
+func runbookFails(t *testing.T, blocks map[string]string, used map[string]bool, name string, env map[string]string) {
+	t.Helper()
+	if out, err := runbookCmd(t, blocks, used, name, env).CombinedOutput(); err == nil {
+		t.Fatalf("runbook block %q succeeded but must fail: %s", name, out)
+	}
+}
+
+// truncated copies a file without its last bytes.
+func truncated(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), filepath.Base(path))
+	if err := os.WriteFile(out, raw[:len(raw)-24], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 // treeEntry is what restore must reproduce for one path.
@@ -197,7 +239,10 @@ func TestRunbookRestoresEncryptedRunWithRealAgeAndTar(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	secrets := filepath.Join(stacks, "photos", "secrets")
+	stack := filepath.Join(stacks, "photos")
+	writeFile(t, filepath.Join(stack, "compose.yaml"), "services:\n  db:\n    image: postgres\n")
+	writeFile(t, filepath.Join(stack, "compose.override.yaml"), "services:\n  db:\n    restart: always\n")
+	secrets := filepath.Join(stack, "secrets")
 	writeFile(t, filepath.Join(secrets, "db_password"), "s3cret-value-9912")
 	if err := os.Chmod(filepath.Join(secrets, "db_password"), 0o600); err != nil {
 		t.Fatal(err)
@@ -233,6 +278,7 @@ func TestRunbookRestoresEncryptedRunWithRealAgeAndTar(t *testing.T) {
 		DestRoot: dest, Retain: 2, Recipients: recipients,
 		Sources: []Source{
 			{Mountpoint: mount, Path: "photos", Class: "application", Exclude: []string{"postgres"}},
+			{Mountpoint: stacks, Path: "photos", Class: StackClass, Exclude: []string{"secrets"}},
 			{Mountpoint: stacks, Path: "photos/secrets", Class: SecretsClass, Sensitive: true},
 		},
 	}
@@ -254,7 +300,23 @@ func TestRunbookRestoresEncryptedRunWithRealAgeAndTar(t *testing.T) {
 
 	restoreRoot := filepath.Join(work, "restored")
 	dockerArgs, dockerStdin := filepath.Join(work, "docker.args"), filepath.Join(work, "docker.stdin")
-	base := map[string]string{"RUN": run, "IDENTITY": identity, "DOCKER_ARGS": dockerArgs, "DOCKER_STDIN": dockerStdin}
+	// Block temp directories land under work, so a failed block leaves
+	// nothing behind in the host's /tmp.
+	tmpdir := filepath.Join(work, "tmp")
+	if err := os.Mkdir(tmpdir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// The restore target is the manifest's source mount plus path,
+	// re-rooted under restoreRoot so the test never touches the host.
+	targetOf := func(entry string) string {
+		return filepath.Join(restoreRoot, m.Sources[entry], m.Paths[entry])
+	}
+	stackTarget := targetOf(StackClass + "/photos")
+	base := map[string]string{
+		"RUN": run, "IDENTITY": identity, "DOCKER_ARGS": dockerArgs, "DOCKER_STDIN": dockerStdin,
+		"TMPDIR": tmpdir, "PACKAGE": "photos", "STACK": stackTarget, "DBSERVICE": "db",
+		"DBCONTAINER": "photos-db", "DBUSER": "photos", "DBNAME": "photos",
+	}
 	with := func(extra map[string]string) map[string]string {
 		out := map[string]string{}
 		for k, v := range base {
@@ -265,70 +327,103 @@ func TestRunbookRestoresEncryptedRunWithRealAgeAndTar(t *testing.T) {
 		}
 		return out
 	}
-	// The restore target is the manifest's source mount plus path,
-	// re-rooted under restoreRoot so the test never touches the host.
-	targetOf := func(entry string) string {
-		return filepath.Join(restoreRoot, m.Sources[entry], m.Paths[entry])
-	}
-
-	type tree struct {
-		entry, src string
-		skip       []string
-	}
-	trees := []tree{
-		{"application/photos", app, []string{"postgres"}},
-		{SecretsClass + "/photos/secrets", secrets, nil},
-	}
-	for _, tr := range trees {
-		archive, ok := m.Archives[tr.entry]
+	dockerLog := func() string { return readFile(t, dockerArgs) }
+	archiveOf := func(entry string) string {
+		archive, ok := m.Archives[entry]
 		if !ok {
-			t.Fatalf("manifest has no archive for %q: %+v", tr.entry, m.Archives)
+			t.Fatalf("manifest has no archive for %q: %+v", entry, m.Archives)
 		}
-		env := with(map[string]string{"ARCHIVE": filepath.Join(run, archive), "TARGET": targetOf(tr.entry)})
-		runbookShell(t, blocks, used, "list-archive", env)
-		// A stale live tree exists: the runbook moves it aside first.
-		writeFile(t, filepath.Join(targetOf(tr.entry), "stale.txt"), "old live data")
-		runbookShell(t, blocks, used, "move-aside", env)
-		if readFile(t, filepath.Join(targetOf(tr.entry)+".before-restore", "stale.txt")) != "old live data" {
-			t.Fatalf("%s: stale tree not moved aside", tr.entry)
+		return filepath.Join(run, archive)
+	}
+	leftovers := func(label string) {
+		t.Helper()
+		if entries, _ := os.ReadDir(tmpdir); len(entries) != 0 {
+			t.Fatalf("%s left temporary plaintext behind: %v", label, entries)
 		}
-		runbookShell(t, blocks, used, "extract-tree", env)
-		if tr.entry == SecretsClass+"/photos/secrets" {
-			runbookShell(t, blocks, used, "secrets-modes", env)
-		}
-		want := snapshotTree(t, tr.src)
-		if len(tr.skip) > 0 {
-			// The database directory is kept but its files are not copied.
-			want = snapshotTree(t, tr.src, tr.skip...)
-			for name := range want {
-				if strings.HasPrefix(name, "postgres"+string(filepath.Separator)) {
-					delete(want, name)
-				}
-			}
-		}
-		compareTrees(t, tr.entry, want, snapshotTree(t, targetOf(tr.entry)))
 	}
 
-	// Secret files restore 0600 under a 0700 directory.
-	info, err := os.Stat(filepath.Join(targetOf(SecretsClass+"/photos/secrets"), "db_password"))
-	if err != nil || info.Mode().Perm() != 0o600 {
+	runbookShell(t, blocks, used, "read-manifest", with(nil))
+	runbookShell(t, blocks, used, "stop-stack", with(nil))
+	if got := dockerLog(); !strings.Contains(got, "compose --project-directory "+stackTarget+" --project-name photos stop") {
+		t.Fatalf("stop-stack ran %q", got)
+	}
+
+	// The application data tree: list, move aside, extract.
+	appEntry := "application/photos"
+	appEnv := with(map[string]string{"ARCHIVE": archiveOf(appEntry), "TARGET": targetOf(appEntry)})
+	runbookShell(t, blocks, used, "list-archive", appEnv)
+	writeFile(t, filepath.Join(targetOf(appEntry), "stale.txt"), "old live data")
+	runbookShell(t, blocks, used, "move-aside", appEnv)
+	if readFile(t, filepath.Join(targetOf(appEntry)+".before-restore", "stale.txt")) != "old live data" {
+		t.Fatalf("%s: stale tree not moved aside", appEntry)
+	}
+	runbookShell(t, blocks, used, "extract-tree", appEnv)
+	// The database directory is kept but its files are not copied.
+	want := snapshotTree(t, app, "postgres")
+	for name := range want {
+		if strings.HasPrefix(name, "postgres"+string(filepath.Separator)) {
+			delete(want, name)
+		}
+	}
+	compareTrees(t, appEntry, want, snapshotTree(t, targetOf(appEntry)))
+	leftovers("extract-tree")
+
+	// The stack definition, then its secrets into the directory the
+	// stack restore left. A stale live stack is moved aside first.
+	stackEnv := with(map[string]string{"TARGET": stackTarget, "STACK_ARCHIVE": archiveOf(StackClass + "/photos")})
+	writeFile(t, filepath.Join(stackTarget, "stale.yaml"), "old stack")
+	runbookShell(t, blocks, used, "move-aside", stackEnv)
+	runbookShell(t, blocks, used, "restore-stack", stackEnv)
+	if readFile(t, filepath.Join(stackTarget, "compose.yaml")) != readFile(t, filepath.Join(stack, "compose.yaml")) ||
+		readFile(t, filepath.Join(stackTarget, "compose.override.yaml")) != readFile(t, filepath.Join(stack, "compose.override.yaml")) {
+		t.Fatal("stack definition differs after restore")
+	}
+	if entries, err := os.ReadDir(filepath.Join(stackTarget, "secrets")); err != nil || len(entries) != 0 {
+		t.Fatalf("the stack entry must carry an empty secrets directory: %v %v", entries, err)
+	}
+	secretsEntry := SecretsClass + "/photos/secrets"
+	if targetOf(secretsEntry) != filepath.Join(stackTarget, "secrets") {
+		t.Fatalf("secrets target %q is not under the stack", targetOf(secretsEntry))
+	}
+	secretsEnv := with(map[string]string{"ARCHIVE": archiveOf(secretsEntry), "TARGET": targetOf(secretsEntry)})
+	runbookShell(t, blocks, used, "extract-tree", secretsEnv)
+	runbookShell(t, blocks, used, "secrets-modes", secretsEnv)
+	compareTrees(t, "stack", snapshotTree(t, stack), snapshotTree(t, stackTarget))
+	if info, err := os.Stat(filepath.Join(targetOf(secretsEntry), "db_password")); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("secret file = %v %v", info, err)
 	}
-
-	// Postgres: the documented pipeline decrypts the dump into psql.
-	artifact, ok := m.Archives["photos.sql"]
-	if !ok {
-		t.Fatalf("manifest has no dump archive: %+v", m.Archives)
+	// The stack archive never carries secret values.
+	ids, _ := Identities(keys)
+	sig, err := archiveSignature(archiveOf(StackClass+"/photos"), ids)
+	if err != nil {
+		t.Fatal(err)
 	}
-	runbookShell(t, blocks, used, "postgres-restore", with(map[string]string{
-		"ARTIFACT": filepath.Join(run, artifact), "DBCONTAINER": "photos-db", "DBUSER": "photos", "DBNAME": "photos",
-	}))
+	for name := range sig {
+		if strings.Contains(name, "db_password") {
+			t.Fatalf("stack archive carries %q", name)
+		}
+	}
+	leftovers("restore-stack")
+
+	// Postgres: start only the database, recreate the database, load
+	// the decrypted dump.
+	runbookShell(t, blocks, used, "postgres-up", with(nil))
+	if got := dockerLog(); !strings.Contains(got, "project-name photos up -d db") {
+		t.Fatalf("postgres-up ran %q", got)
+	}
+	runbookShell(t, blocks, used, "postgres-recreate", with(nil))
+	if got := dockerLog(); !strings.Contains(got, `exec -i photos-db psql -U photos -d postgres -v ON_ERROR_STOP=1 -c DROP DATABASE "photos" -c CREATE DATABASE "photos" OWNER "photos"`) {
+		t.Fatalf("postgres-recreate ran %q", got)
+	}
+	artifact := archiveOf("photos.sql")
+	runbookShell(t, blocks, used, "postgres-restore", with(map[string]string{"ARTIFACT": artifact}))
 	if got := readFile(t, dockerStdin); got != dump {
 		t.Fatalf("psql received %q, want the decrypted dump", got)
 	}
-	if got := strings.TrimSpace(readFile(t, dockerArgs)); !strings.Contains(got, "exec -i photos-db psql -U photos -d photos") {
+	if got := dockerLog(); !strings.Contains(got, "exec -i photos-db psql -U photos -d photos") {
 		t.Fatalf("docker args = %q", got)
 	}
+	leftovers("postgres-restore")
 
 	// SQLite: an export is one encrypted file named <file>.age.
 	sqliteBytes := "SQLite format 3\x00 pretend database"
@@ -345,16 +440,50 @@ func TestRunbookRestoresEncryptedRunWithRealAgeAndTar(t *testing.T) {
 		t.Fatalf("sqlite mode = %v", info.Mode().Perm())
 	}
 
+	// Bring the stack back by hand.
+	runbookShell(t, blocks, used, "start-stack", with(nil))
+	runbookShell(t, blocks, used, "stack-status", with(nil))
+	if got := dockerLog(); !strings.Contains(got, "project-name photos up -d\n") || !strings.HasSuffix(got, "project-name photos ps\n") {
+		t.Fatalf("docker log = %q", got)
+	}
+
+	// docker's failure status propagates out of every block that runs it.
+	failing := with(map[string]string{"DOCKER_STATUS": "3", "ARTIFACT": artifact})
+	for _, name := range []string{"stop-stack", "postgres-up", "postgres-recreate", "postgres-restore", "start-stack", "stack-status"} {
+		runbookFails(t, blocks, used, name, failing)
+	}
+
+	// A truncated archive fails the tar, postgres and sqlite blocks,
+	// before anything is extracted or loaded.
+	bad := truncated(t, archiveOf(appEntry))
+	badTarget := filepath.Join(restoreRoot, "truncated-tree")
+	runbookFails(t, blocks, used, "extract-tree", with(map[string]string{"ARCHIVE": bad, "TARGET": badTarget}))
+	if _, err := os.Stat(badTarget); err == nil {
+		t.Fatal("a truncated archive created or extracted into the target")
+	}
+	runbookFails(t, blocks, used, "list-archive", with(map[string]string{"ARCHIVE": bad}))
+	badStack := filepath.Join(restoreRoot, "truncated-stack")
+	runbookFails(t, blocks, used, "restore-stack", with(map[string]string{"STACK_ARCHIVE": truncated(t, archiveOf(StackClass+"/photos")), "STACK": badStack}))
+	if _, err := os.Stat(badStack); err == nil {
+		t.Fatal("a truncated stack archive was extracted")
+	}
+	before := dockerLog()
+	runbookFails(t, blocks, used, "postgres-restore", with(map[string]string{"ARTIFACT": truncated(t, artifact)}))
+	if dockerLog() != before {
+		t.Fatalf("psql was started for a truncated dump: %q", dockerLog())
+	}
+	badDB := filepath.Join(restoreRoot, "truncated.db")
+	runbookFails(t, blocks, used, "sqlite-restore", with(map[string]string{"ARTIFACT": truncated(t, sqliteArtifact), "DBFILE": badDB}))
+	if _, err := os.Stat(badDB); err == nil {
+		t.Fatal("a truncated sqlite export produced a database file")
+	}
+
 	// The wrong key is refused by the documented step, before any
 	// live data is touched.
 	other, _ := age.GenerateX25519Identity()
 	wrong := filepath.Join(work, "wrong.txt")
 	_ = os.WriteFile(wrong, []byte(other.String()+"\n"), 0o600)
-	cmd := exec.Command("sh", "-c", "set -eu\n"+blocks["list-archive"])
-	cmd.Env = append(os.Environ(), "IDENTITY="+wrong, "ARCHIVE="+filepath.Join(run, m.Archives["application/photos"]))
-	if out, err := cmd.CombinedOutput(); err == nil {
-		t.Fatalf("a wrong identity listed the archive: %s", out)
-	}
+	runbookFails(t, blocks, used, "list-archive", with(map[string]string{"IDENTITY": wrong, "ARCHIVE": archiveOf(appEntry)}))
 
 	assertAllRunbookBlocksUsed(t, blocks, used, "plaintext-tree")
 }

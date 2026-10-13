@@ -53,6 +53,11 @@ const (
 	// SecretsClass names the sensitive source class carrying a stack's
 	// materialized secret files (S266); such sources only run encrypted.
 	SecretsClass = "stack-secrets"
+
+	// StackClass names the source class carrying a stack's definition
+	// (compose.yaml and its override, without secrets/), so a rebuilt
+	// machine can bring the stack back from the run alone.
+	StackClass = "stack"
 )
 
 // KeyStore is the slice of the secret store the backup identity needs.

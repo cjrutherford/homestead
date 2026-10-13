@@ -195,6 +195,12 @@
           @if (job.last_error) {
             <app-state-message kind="error" [headline]="'Last error: ' + job.last_error" />
           }
+          @if (job.unavailable_attempts) {
+            <app-state-message
+              kind="status"
+              [headline]="'Waiting for inputs since ' + when(job.unavailable_since ?? '', 'unknown') + ' (attempt ' + job.unavailable_attempts + '); retrying with backoff.'"
+            />
+          }
           @if (job.last_skip_blocking) {
             <app-state-message
               kind="status"

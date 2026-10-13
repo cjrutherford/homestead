@@ -74,9 +74,10 @@
 - Backup restore follow-ups (S275): the runbook
   (`docs/architecture/BACKUP_RESTORE_RUNBOOK.md`) restores with plain
   `age`; restore execution is still package-level only (no API route),
-  runs do not contain the stack's `compose.yaml` (it is regenerable by
-  Homestead or copied from `/opt/homestead/stacks`), and SSH-key
-  recipients are not accepted (ADR-022 names X25519 only).
+  SSH-key recipients are not accepted (ADR-022 names X25519 only), and
+  package-level restore of the `stack` entry replaces the whole stack
+  directory, so it must run before the secrets entry (manifest order
+  does) and a run without secrets leaves the live ones deleted.
 - App data on anonymous volumes: KVM validation (2026-10-12) found
   generated catalog stacks render no `volumes:`, so app data lives in
   anonymous Docker volumes rather than mounted storage, and scheduled

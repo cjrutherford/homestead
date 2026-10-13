@@ -31,6 +31,10 @@ func runScheduler(ctx context.Context, client *apiclient.Client, args []string, 
 		if job.LastError != "" {
 			fmt.Fprintf(stdout, "  last_error=%s\n", job.LastError)
 		}
+		if job.UnavailableAttempts > 0 {
+			fmt.Fprintf(stdout, "  unavailable_attempts=%d unavailable_since=%s\n",
+				job.UnavailableAttempts, job.UnavailableSince.UTC().Format(time.RFC3339))
+		}
 		if !job.LastSkipAt.IsZero() {
 			fmt.Fprintf(stdout, "  last_skip=%s blocked_by_operation=%d\n",
 				job.LastSkipAt.UTC().Format(time.RFC3339), job.LastSkipBlocking)

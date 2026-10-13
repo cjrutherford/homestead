@@ -22,6 +22,10 @@ is recorded (job id, due time, id of the operation that blocked it). A
 skipped run is not queued for later; the next due window is evaluated
 normally.
 
+## Amended by ADR-026
+Unavailable job inputs retry with backoff without spending the window, and
+the outage is audited periodically.
+
 ## Context
 No scheduler exists. The only periodic mechanisms are the operation runner
 wait loop (`internal/operation/runner.go:171`), SSE polling and heartbeats

@@ -152,3 +152,23 @@ func TestJobManifestRecordsVanishedWarning(t *testing.T) {
 		t.Fatalf("manifest lacks vanished warning:\n%s", raw)
 	}
 }
+
+func TestDestinationRemovedMidCopyFailsRun(t *testing.T) {
+	src := vanishFixture(t)
+	dst := filepath.Join(t.TempDir(), "out")
+	done := false
+	walkHook = func(path string) {
+		if path == filepath.Join(src, "b-vanishes") && !done {
+			done = true
+			_ = os.RemoveAll(dst)
+		}
+	}
+	t.Cleanup(func() { walkHook = nil })
+	_, stats, err := copyTreeOpts(src, dst, nil)
+	if err == nil {
+		t.Fatalf("copy succeeded with the destination removed (vanished=%d)", stats.Vanished)
+	}
+	if stats.Vanished != 0 {
+		t.Fatalf("destination loss counted as vanished: %d", stats.Vanished)
+	}
+}

@@ -100,3 +100,30 @@ func TestPreMigrationBackupIsEncrypted(t *testing.T) {
 		}
 	}
 }
+
+func TestStackDefinitionSourceExcludesSecrets(t *testing.T) {
+	root := t.TempDir()
+	old := stackDirFor
+	stackDirFor = func(name string) string { return filepath.Join(root, name) }
+	t.Cleanup(func() { stackDirFor = old })
+	if _, ok := stackDefinitionSource("demo"); ok {
+		t.Fatal("source reported without a compose.yaml")
+	}
+	if err := os.MkdirAll(filepath.Join(root, "demo", catalog.SecretsDirName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "demo", "compose.yaml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	source, ok := stackDefinitionSource("demo")
+	if !ok || source.Sensitive || source.Class != backup.StackClass || source.Mountpoint != root ||
+		source.Path != "demo" || len(source.Exclude) != 1 || source.Exclude[0] != catalog.SecretsDirName {
+		t.Fatalf("source = %+v ok=%v", source, ok)
+	}
+	if source.Entry() != "stack/demo" {
+		t.Fatalf("entry = %q", source.Entry())
+	}
+	if err := source.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}

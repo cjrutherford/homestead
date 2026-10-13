@@ -186,6 +186,16 @@ func selectBackupSources(assignments []storage.Assignment, byPoint map[string]di
 	return sources
 }
 
+// classifyDestinationError marks only destination faults that can clear
+// by themselves as retryable; configuration faults (no backup class
+// assignment) fail the run and spend the window.
+func classifyDestinationError(err error) error {
+	if errors.Is(err, backup.ErrDestinationUnavailable) {
+		return fmt.Errorf("%w: %v", scheduler.ErrUnavailable, err)
+	}
+	return err
+}
+
 // backupJob assembles the backup (scheduled and pre-update): file
 // sources plus the declared database export against its conventional
 // container. The Postgres password resolves from the secret store
@@ -222,7 +232,7 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 	if err != nil {
 		// A destination that is not mounted right now may be back by the
 		// next tick; the scheduler retries instead of spending the window.
-		return backup.Job{}, fmt.Errorf("%w: %v", scheduler.ErrUnavailable, err)
+		return backup.Job{}, classifyDestinationError(err)
 	}
 	retain := defaultBackupRetain
 	schedules := backup.NewSchedules(st)
@@ -263,10 +273,29 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 	// S266 secret files live in the stack directory, outside the data
 	// mounts. They join the run as a sensitive source: archived only
 	// encrypted, restored 0600 with their recorded ownership.
+	// The stack definition joins first: restoring it replaces the stack
+	// directory, so the secrets entry must follow it, never precede it.
+	if source, ok := stackDefinitionSource(manifest.Name); ok {
+		job.Sources = append(job.Sources, source)
+	}
 	if source, ok := stackSecretsSource(manifest.Name); ok {
 		job.Sources = append(job.Sources, source)
 	}
 	return job, nil
+}
+
+// stackDefinitionSource returns the source for a stack's compose.yaml
+// and override files: the stack directory minus secrets/ (its own
+// sensitive entry), when the directory holds a compose.yaml.
+func stackDefinitionSource(packageName string) (backup.Source, bool) {
+	dir := stackDirFor(packageName)
+	if info, err := os.Stat(filepath.Join(dir, "compose.yaml")); err != nil || !info.Mode().IsRegular() {
+		return backup.Source{}, false
+	}
+	return backup.Source{
+		Mountpoint: filepath.Dir(dir), Path: packageName,
+		Class: backup.StackClass, Exclude: []string{catalog.SecretsDirName},
+	}, true
 }
 
 // stackSecretsSource returns the sensitive source for a stack's

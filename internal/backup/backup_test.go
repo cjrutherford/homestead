@@ -3,6 +3,7 @@ package backup
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -215,5 +216,37 @@ func TestBackupRefusals(t *testing.T) {
 				t.Fatal("symlink tree backed up")
 			}
 		})
+	}
+}
+
+func TestResolveDestinationClassifiesUnavailability(t *testing.T) {
+	_, dest, discovered := backupFixtures(t)
+	assignments, _ := backupRegistry(t, dest, discovered)
+	for name, mutate := range map[string]func(*discover.Mount){
+		"inaccessible": func(m *discover.Mount) { m.Accessible = false },
+		"read-only":    func(m *discover.Mount) { m.ReadOnly = true },
+	} {
+		mutated := discover.Storage{}
+		for _, m := range discovered.Mounts {
+			if m.Mountpoint == dest {
+				mutate(&m)
+			}
+			mutated.Mounts = append(mutated.Mounts, m)
+		}
+		if _, err := ResolveDestination(assignments, mutated); !errors.Is(err, ErrDestinationUnavailable) {
+			t.Fatalf("%s: err = %v, want unavailable", name, err)
+		}
+	}
+	if _, err := ResolveDestination(assignments, discover.Storage{}); !errors.Is(err, ErrDestinationUnavailable) {
+		t.Fatalf("absent: err = %v, want unavailable", err)
+	}
+	s, err := store.Open(filepath.Join(t.TempDir(), "empty.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	_, err = ResolveDestination(storage.NewAssignments(s), discovered)
+	if err == nil || errors.Is(err, ErrDestinationUnavailable) {
+		t.Fatalf("no class assignment must be a config fault, got %v", err)
 	}
 }
