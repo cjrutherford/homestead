@@ -198,6 +198,7 @@ func TestUpgradeFromV23PopulatedDatabase(t *testing.T) {
 		 VALUES ('photos', 86400, 7, 1, 'owner', '2026-10-01T00:00:00Z')`,
 		`DROP TABLE scheduler_jobs`,
 		`ALTER TABLE secrets DROP COLUMN key_version`,
+		`ALTER TABLE backup_identity_exports DROP COLUMN acknowledged_at`,
 		`DELETE FROM schema_migrations WHERE version >= 24`,
 	} {
 		if _, err := s.DB().Exec(stmt); err != nil {
@@ -222,5 +223,43 @@ func TestUpgradeFromV23PopulatedDatabase(t *testing.T) {
 	}
 	if _, err := up.DB().Exec(`INSERT INTO scheduler_jobs (job_id) VALUES ('backup:photos')`); err != nil {
 		t.Fatalf("scheduler_jobs: %v", err)
+	}
+}
+
+func TestUpgradeFromV30KeepsPopulatedBackupRecipients(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DBFileName)
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		`INSERT INTO backup_recipients (fingerprint, public_key, label, actor, created_at) VALUES ('fp', 'age1x', 'laptop', 'owner', '2026-10-01T00:00:00Z')`,
+		`DROP TABLE backup_identity_exports`,
+		`CREATE TABLE backup_identity_exports (id INTEGER PRIMARY KEY AUTOINCREMENT, fingerprint TEXT NOT NULL, actor TEXT NOT NULL, exported_at TEXT NOT NULL)`,
+		`INSERT INTO backup_identity_exports (fingerprint, actor, exported_at) VALUES ('fp', 'owner', '2026-10-01T00:00:00Z')`,
+		`DELETE FROM schema_migrations WHERE version >= 31`,
+	} {
+		if _, err := s.DB().Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	up, err := Open(path)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	defer up.Close()
+	if version, err := up.SchemaVersion(); err != nil || version != CurrentVersion {
+		t.Fatalf("version = %d, %v", version, err)
+	}
+	var label, ack string
+	if err := up.DB().QueryRow(`SELECT label FROM backup_recipients WHERE fingerprint = 'fp'`).Scan(&label); err != nil || label != "laptop" {
+		t.Fatalf("recipient lost: %q %v", label, err)
+	}
+	// A pre-upgrade export stays unacknowledged: the owner never confirmed it.
+	if err := up.DB().QueryRow(`SELECT acknowledged_at FROM backup_identity_exports WHERE fingerprint = 'fp'`).Scan(&ack); err != nil || ack != "" {
+		t.Fatalf("export ack = %q, %v", ack, err)
 	}
 }

@@ -304,9 +304,37 @@ export class Backups implements OnInit {
     URL.revokeObjectURL(url);
   }
 
-  /** Dropping the signal is the only copy the page holds. */
+  /**
+   * Dropping the signal is the only copy the page holds; the key is
+   * never written to storage. Dismissing without acknowledging leaves
+   * the doctor warning in place.
+   */
   dismissExport(): void {
     this.exported.set(null);
     this.notice.set(null);
+  }
+
+  /** The owner confirms the key is stored offline; then it is dropped. */
+  acknowledgeExport(): void {
+    this.busy.set(true);
+    this.error.set(null);
+    this.api.backupIdentityAck().subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.exported.set(null);
+        this.notice.set('Recorded: the recovery identity is stored offline.');
+        this.refresh();
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.busy.set(false);
+        this.error.set(failure.error ?? failure.message);
+      },
+    });
+  }
+
+  /** Exported earlier but never confirmed stored. */
+  pendingAck(): boolean {
+    const status = this.identity();
+    return !!status && status.exported && !status.acknowledged;
   }
 }

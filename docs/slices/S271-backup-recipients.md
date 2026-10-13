@@ -13,9 +13,9 @@ Split from S259. The restore runbook and its literal `age` CLI test are S275.
 
 ## Acceptance Criteria
 - Backup Recipients implemented and documented
-- API and `homesteadctl` to list, add, and remove owner recipients and to export the recovery identity (export is explicit, audited, and shown once); backups are encrypted to every configured recipient; removing the last recipient is refused
+- API and `homesteadctl` to list, add, and remove owner recipients and to export the recovery identity (export is explicit, audited, and shown once); backups are encrypted to every configured recipient; the appliance identity always remains a recipient and its removal is refused, while removing the last owner recipient is allowed (the doctor warning returns); export is rate limited, fails closed if its audit write fails, and is followed by a separate owner acknowledgement that the key is stored offline
 - Dashboard surface for recipient management and identity export using S248 tokens and `StateMessage` (extends the S267 backup surface)
-- The S259 doctor warning clears when an owner-added recipient exists or the owner records that the recovery identity was exported (ADR-022)
+- The S259 doctor warning clears when an owner-added recipient exists or the owner acknowledges having stored an exported recovery identity offline (ADR-022); an export alone does not clear it
 - `docs/PARITY.md` updated for every added or changed route (`tests/test_s037_parity.py` stays green)
 - Automated tests cover primary behavior
 - Main build remains green

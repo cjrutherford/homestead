@@ -124,14 +124,30 @@ Recipients live in SQLite (`backup_recipients`, migration 30) and render to
 Audit entries carry fingerprints and public keys only.
 
 The recovery identity export (`POST /api/v1/backups/identity/export`,
-body `{"confirm": true}`) is explicit and audited. The response carries the
-secret key once with `Cache-Control: no-store`; the daemon stores only
-fingerprint, actor, and time (`backup_identity_exports`), never the value,
-and never logs it. The CLI needs `--out FILE` (new 0600 file, never
-overwrites) or `--stdout`; the dashboard asks for confirmation, then shows
-the key with copy and download until dismissed. Exports may be repeated,
-each audited. Doctor `backup-encryption` warns until an owner recipient
-exists or an export was recorded, and warns again if the last owner
-recipient is removed with no export on record. `filippo.io/age` is BSD-3-Clause (plus
+body `{"confirm": true}`) is explicit, audited, and rate limited (5 per
+hour, 429 beyond). It fails closed: the export is recorded and audited
+before the key is returned, and if either write fails the key is
+withheld (500). The response carries the secret key with
+`Cache-Control: no-store`; the daemon stores only fingerprint, actor, and
+times (`backup_identity_exports`, migration 31 adds `acknowledged_at`),
+never the value, and never logs it. The CLI needs `--out FILE` (new 0600
+file, O_EXCL so existing files and symlinks are refused, fsync'd) or
+`--stdout`; the dashboard asks for confirmation, then shows the key with
+copy and download until acknowledged or dismissed (held only in component
+state, never in storage). An export alone does not prove the owner holds
+the key: the owner then acknowledges storing it offline
+(`POST /api/v1/backups/identity/ack`, `homesteadctl backup identity ack`
+or `export --ack`, the dashboard button). Doctor `backup-encryption`
+warns until an owner recipient exists or an export was acknowledged, warns
+again if the last owner recipient is removed with no acknowledged export,
+and reports an unreadable export record as its own warning. Read routes
+never create the appliance identity (`appliance_created`/`created` report
+false until the first backup or export). Removing the last owner
+recipient is allowed; removing the appliance identity is refused (409).
+Add and remove run in one transaction, so the 16-recipient cap holds under
+concurrency and a double removal returns 404. A recipient/YAML render
+failure after a committed change is audited as its own
+`backup.recipient.render` error entry, not as a failure of the action.
+All JSON request bodies decoded through `decodeBody` are capped at 128 KiB. `filippo.io/age` is BSD-3-Clause (plus
 `filippo.io/hpke`, BSD-3-Clause), licenses recorded in
 `docs/THIRD_PARTY.md`.

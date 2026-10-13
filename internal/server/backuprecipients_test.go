@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -48,6 +49,9 @@ func TestBackupRecipientRoutes(t *testing.T) {
 	e := newRecipientEnv(t)
 	owner, _ := age.GenerateX25519Identity()
 	pub := owner.Recipient().String()
+	if _, err := backup.ApplianceIdentity(e.keys); err != nil {
+		t.Fatal(err)
+	}
 
 	rec := opRequest(http.MethodPost, `{"public_key":"bogus"}`, e.h.add, "")
 	if rec.Code != http.StatusUnprocessableEntity {
@@ -122,12 +126,21 @@ func TestIdentityExportIsConfirmedAuditedAndClearsDoctor(t *testing.T) {
 	if out.Identity != stored || !strings.HasPrefix(out.Identity, "AGE-SECRET-KEY-") || out.Actor != "owner" {
 		t.Fatalf("export = %+v", out)
 	}
+	if c := check(); c[0].Status != doctor.StatusWarn || !strings.Contains(c[0].Detail, "not acknowledged") {
+		t.Fatalf("export alone = %+v", c)
+	}
+	if rec := opRequest(http.MethodPost, ``, e.h.acknowledge, ""); rec.Code != http.StatusOK {
+		t.Fatalf("ack = %d %s", rec.Code, rec.Body)
+	}
 	if c := check(); c[0].Status != doctor.StatusOK {
-		t.Fatalf("after export = %+v", c)
+		t.Fatalf("after ack = %+v", c)
+	}
+	if rec := opRequest(http.MethodPost, ``, e.h.acknowledge, ""); rec.Code != http.StatusConflict {
+		t.Fatalf("second ack = %d", rec.Code)
 	}
 	// Status route reports the export without the key.
 	rec = opRequest(http.MethodGet, "", e.h.identityStatus, "")
-	if strings.Contains(rec.Body.String(), "AGE-SECRET-KEY") || !strings.Contains(rec.Body.String(), `"exported":true`) {
+	if strings.Contains(rec.Body.String(), "AGE-SECRET-KEY") || !strings.Contains(rec.Body.String(), `"acknowledged":true`) {
 		t.Fatalf("status = %s", rec.Body)
 	}
 	entries, _ := audit.New(e.st).List(100)
@@ -185,4 +198,142 @@ func opRequestPath(method, body string, handler http.HandlerFunc, key, value str
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 	return rec
+}
+
+type failingAudit struct{}
+
+func (failingAudit) Record(audit.Entry) (audit.Entry, error) {
+	return audit.Entry{}, errors.New("audit store down")
+}
+
+func TestExportFailsClosedWhenAuditFails(t *testing.T) {
+	e := newRecipientEnv(t)
+	e.h.audit = failingAudit{}
+	rec := opRequest(http.MethodPost, `{"confirm":true}`, e.h.export, "")
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("export with failing audit = %d", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "AGE-SECRET-KEY") {
+		t.Fatal("key returned although the audit write failed")
+	}
+}
+
+func TestReadRoutesDoNotCreateTheApplianceIdentity(t *testing.T) {
+	e := newRecipientEnv(t)
+	rec := opRequest(http.MethodGet, "", e.h.list, "")
+	var view recipientList
+	_ = json.Unmarshal(rec.Body.Bytes(), &view)
+	if view.ApplianceCreated || len(view.Recipients) != 0 {
+		t.Fatalf("view = %+v", view)
+	}
+	rec = opRequest(http.MethodGet, "", e.h.identityStatus, "")
+	if !strings.Contains(rec.Body.String(), `"created":false`) {
+		t.Fatalf("status = %s", rec.Body)
+	}
+	opRequest(http.MethodPost, `{"public_key":"bogus"}`, e.h.add, "")
+	removeRequest(e, "nope")
+	if _, err := e.keys.Get(backup.IdentitySecret); err == nil {
+		t.Fatal("a read or refused write created the appliance identity")
+	}
+	if rec := opRequest(http.MethodPost, `{"confirm":true}`, e.h.export, ""); rec.Code != http.StatusOK {
+		t.Fatalf("export = %d", rec.Code)
+	}
+	if _, err := e.keys.Get(backup.IdentitySecret); err != nil {
+		t.Fatal("export did not create the identity")
+	}
+}
+
+func TestExportIsRateLimitedAndAudited(t *testing.T) {
+	e := newRecipientEnv(t)
+	for i := 0; i < backup.MaxExportsPerHour; i++ {
+		if rec := opRequest(http.MethodPost, `{"confirm":true}`, e.h.export, ""); rec.Code != http.StatusOK {
+			t.Fatalf("export %d = %d", i, rec.Code)
+		}
+	}
+	rec := opRequest(http.MethodPost, `{"confirm":true}`, e.h.export, "")
+	if rec.Code != http.StatusTooManyRequests || strings.Contains(rec.Body.String(), "AGE-SECRET-KEY") {
+		t.Fatalf("over limit = %d %s", rec.Code, rec.Body)
+	}
+	entries, _ := audit.New(e.st).List(100)
+	refused := false
+	for _, en := range entries {
+		refused = refused || (en.Action == "backup.identity.export" && en.Outcome == audit.OutcomeError)
+	}
+	if !refused {
+		t.Fatal("refusal not audited")
+	}
+}
+
+func TestRemovingLastOwnerRecipientIsAllowed(t *testing.T) {
+	e := newRecipientEnv(t)
+	owner, _ := age.GenerateX25519Identity()
+	opRequest(http.MethodPost, `{"public_key":"`+owner.Recipient().String()+`"}`, e.h.add, "")
+	if rec := removeRequest(e, backup.Fingerprint(owner.Recipient().String())); rec.Code != http.StatusOK {
+		t.Fatalf("remove last owner recipient = %d", rec.Code)
+	}
+}
+
+func TestRenderFailureAfterCommitIsAuditedSeparately(t *testing.T) {
+	e := newRecipientEnv(t)
+	e.h.yaml = filepath.Join(t.TempDir(), "missing-dir", "x.yaml")
+	owner, _ := age.GenerateX25519Identity()
+	rec := opRequest(http.MethodPost, `{"public_key":"`+owner.Recipient().String()+`"}`, e.h.add, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add = %d %s", rec.Code, rec.Body)
+	}
+	entries, _ := audit.New(e.st).List(100)
+	var addOK, renderErr bool
+	for _, en := range entries {
+		addOK = addOK || (en.Action == "backup.recipient.add" && en.Outcome == audit.OutcomeOK)
+		renderErr = renderErr || (en.Action == "backup.recipient.render" && en.Outcome == audit.OutcomeError)
+	}
+	if !addOK || !renderErr {
+		t.Fatalf("addOK=%v renderErr=%v", addOK, renderErr)
+	}
+}
+
+func TestDoctorReportsUnreadableExportRecord(t *testing.T) {
+	e := newRecipientEnv(t)
+	if _, err := e.st.DB().Exec(`DROP TABLE backup_identity_exports`); err != nil {
+		t.Fatal(err)
+	}
+	c := backupEncryptionDoctorCheck(e.st)()
+	if c[0].Status != doctor.StatusWarn || !strings.Contains(c[0].Detail, "cannot read the recovery identity export record") {
+		t.Fatalf("check = %+v", c)
+	}
+}
+
+func TestDecodeBodyIsBounded(t *testing.T) {
+	big := `{"public_key":"` + strings.Repeat("a", maxJSONBody+10) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(big))
+	var body struct {
+		PublicKey string `json:"public_key"`
+	}
+	if err := decodeBody(req, &body); err == nil {
+		t.Fatal("oversized body decoded")
+	}
+	small := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"public_key":"x"}`))
+	if err := decodeBody(small, &body); err != nil || body.PublicKey != "x" {
+		t.Fatalf("small body: %v", err)
+	}
+}
+
+func TestExportAndAckRejectCookieWithoutCSRF(t *testing.T) {
+	a := newEnforcedApp(t)
+	rec := a.setup(t)
+	cookie := cookieByName(rec, SessionCookieName)
+	csrf := jsonField(t, rec, "csrf_token")
+	for _, path := range []string{"/api/v1/backups/identity/export", "/api/v1/backups/identity/ack"} {
+		got := a.do(http.MethodPost, path, `{"confirm":true}`, func(r *http.Request) { r.AddCookie(cookie) }).Code
+		if got != http.StatusForbidden {
+			t.Errorf("%s without CSRF = %d, want 403", path, got)
+		}
+	}
+	code := a.do(http.MethodPost, "/api/v1/backups/identity/export", `{"confirm":true}`, func(r *http.Request) {
+		r.AddCookie(cookie)
+		r.Header.Set(CSRFHeader, csrf)
+	}).Code
+	if code == http.StatusForbidden || code == http.StatusUnauthorized {
+		t.Errorf("export with CSRF rejected = %d", code)
+	}
 }

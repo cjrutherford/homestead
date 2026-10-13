@@ -40,7 +40,15 @@ var (
 	// ErrApplianceRecipient marks an attempt to remove the appliance
 	// identity, which always remains a recipient (409).
 	ErrApplianceRecipient = errors.New("backup: the appliance identity is always a recipient and cannot be removed")
+	// ErrExportRateLimited marks too many recovery exports in an hour (429).
+	ErrExportRateLimited = errors.New("backup: too many recovery identity exports this hour; try again later")
+	// ErrNothingToAcknowledge marks an acknowledgement with no pending
+	// export (409).
+	ErrNothingToAcknowledge = errors.New("backup: no unacknowledged recovery identity export")
 )
+
+// MaxExportsPerHour bounds recovery identity exports.
+const MaxExportsPerHour = 5
 
 // Recipient is one configured owner recipient. Public data only.
 type Recipient struct {
@@ -52,13 +60,20 @@ type Recipient struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-// IdentityExport records that the recovery identity was exported. It
-// carries no key material.
+// IdentityExport records that the recovery identity was exported and,
+// separately, that the owner confirmed storing it offline. It carries no
+// key material. Only an acknowledged export satisfies the doctor check:
+// an export alone does not prove the owner holds the key.
 type IdentityExport struct {
-	Fingerprint string    `json:"fingerprint"`
-	Actor       string    `json:"actor"`
-	ExportedAt  time.Time `json:"exported_at"`
+	ID             int64     `json:"-"`
+	Fingerprint    string    `json:"fingerprint"`
+	Actor          string    `json:"actor"`
+	ExportedAt     time.Time `json:"exported_at"`
+	AcknowledgedAt time.Time `json:"acknowledged_at"`
 }
+
+// Acknowledged reports whether the owner confirmed storing the key.
+func (e IdentityExport) Acknowledged() bool { return !e.AcknowledgedAt.IsZero() }
 
 // Fingerprint names a recipient by the SHA-256 of its public key string
 // (first 16 bytes, hex). It is not secret.
@@ -131,20 +146,30 @@ func (s *RecipientStore) Add(publicKey, label, actor, appliance string) (Recipie
 	if key == appliance {
 		return Recipient{}, fmt.Errorf("%w: that is the appliance identity's own recipient; add a key you hold elsewhere", ErrInvalidRecipient)
 	}
-	existing, err := s.Owner()
+	rec := Recipient{Fingerprint: Fingerprint(key), PublicKey: key, Label: label, Kind: "owner", Actor: actor, CreatedAt: s.now().UTC()}
+	// Count and insert share one transaction so concurrent adds cannot
+	// jointly exceed the cap.
+	tx, err := s.db.Begin()
 	if err != nil {
-		return Recipient{}, err
+		return Recipient{}, fmt.Errorf("backup: add recipient: %w", err)
 	}
-	if len(existing) >= MaxOwnerRecipients {
+	defer tx.Rollback()
+	var count int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM backup_recipients`).Scan(&count); err != nil {
+		return Recipient{}, fmt.Errorf("backup: add recipient: %w", err)
+	}
+	if count >= MaxOwnerRecipients {
 		return Recipient{}, fmt.Errorf("%w: at most %d owner recipients", ErrInvalidRecipient, MaxOwnerRecipients)
 	}
-	rec := Recipient{Fingerprint: Fingerprint(key), PublicKey: key, Label: label, Kind: "owner", Actor: actor, CreatedAt: s.now().UTC()}
-	_, err = s.db.Exec(`INSERT INTO backup_recipients (fingerprint, public_key, label, actor, created_at) VALUES (?, ?, ?, ?, ?)`,
+	_, err = tx.Exec(`INSERT INTO backup_recipients (fingerprint, public_key, label, actor, created_at) VALUES (?, ?, ?, ?, ?)`,
 		rec.Fingerprint, rec.PublicKey, rec.Label, rec.Actor, rec.CreatedAt.Format(time.RFC3339Nano))
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return Recipient{}, ErrRecipientExists
 		}
+		return Recipient{}, fmt.Errorf("backup: add recipient: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
 		return Recipient{}, fmt.Errorf("backup: add recipient: %w", err)
 	}
 	return rec, nil
@@ -158,38 +183,83 @@ func (s *RecipientStore) Remove(fingerprint, appliance string) (Recipient, error
 	if appliance != "" && fingerprint == Fingerprint(appliance) {
 		return Recipient{}, ErrApplianceRecipient
 	}
-	owners, err := s.Owner()
+	tx, err := s.db.Begin()
 	if err != nil {
-		return Recipient{}, err
+		return Recipient{}, fmt.Errorf("backup: remove recipient: %w", err)
 	}
-	for _, r := range owners {
-		if r.Fingerprint == fingerprint {
-			if _, err := s.db.Exec(`DELETE FROM backup_recipients WHERE fingerprint = ?`, fingerprint); err != nil {
-				return Recipient{}, fmt.Errorf("backup: remove recipient: %w", err)
-			}
-			return r, nil
-		}
+	defer tx.Rollback()
+	var r Recipient
+	var created string
+	err = tx.QueryRow(`SELECT fingerprint, public_key, label, actor, created_at FROM backup_recipients WHERE fingerprint = ?`, fingerprint).
+		Scan(&r.Fingerprint, &r.PublicKey, &r.Label, &r.Actor, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Recipient{}, ErrRecipientNotFound
 	}
-	return Recipient{}, ErrRecipientNotFound
+	if err != nil {
+		return Recipient{}, fmt.Errorf("backup: remove recipient: %w", err)
+	}
+	r.Kind = "owner"
+	r.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+	res, err := tx.Exec(`DELETE FROM backup_recipients WHERE fingerprint = ?`, fingerprint)
+	if err != nil {
+		return Recipient{}, fmt.Errorf("backup: remove recipient: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return Recipient{}, ErrRecipientNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return Recipient{}, fmt.Errorf("backup: remove recipient: %w", err)
+	}
+	return r, nil
 }
 
-// RecordExport notes that the recovery identity was exported. Only the
-// recipient fingerprint, actor, and time are kept.
+// RecordExport notes that the recovery identity was exported, refusing
+// more than MaxExportsPerHour. Only the recipient fingerprint, actor, and
+// time are kept. Call it before the key is returned.
 func (s *RecipientStore) RecordExport(fingerprint, actor string) (IdentityExport, error) {
 	at := s.now().UTC()
-	if _, err := s.db.Exec(`INSERT INTO backup_identity_exports (fingerprint, actor, exported_at) VALUES (?, ?, ?)`,
-		fingerprint, actor, at.Format(time.RFC3339Nano)); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
 		return IdentityExport{}, fmt.Errorf("backup: record export: %w", err)
 	}
-	return IdentityExport{Fingerprint: fingerprint, Actor: actor, ExportedAt: at}, nil
+	defer tx.Rollback()
+	rows, err := tx.Query(`SELECT exported_at FROM backup_identity_exports ORDER BY id DESC LIMIT ?`, MaxExportsPerHour)
+	if err != nil {
+		return IdentityExport{}, fmt.Errorf("backup: record export: %w", err)
+	}
+	recent := 0
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			rows.Close()
+			return IdentityExport{}, err
+		}
+		if t, perr := time.Parse(time.RFC3339Nano, raw); perr == nil && at.Sub(t) < time.Hour {
+			recent++
+		}
+	}
+	rows.Close()
+	if recent >= MaxExportsPerHour {
+		return IdentityExport{}, ErrExportRateLimited
+	}
+	res, err := tx.Exec(`INSERT INTO backup_identity_exports (fingerprint, actor, exported_at) VALUES (?, ?, ?)`,
+		fingerprint, actor, at.Format(time.RFC3339Nano))
+	if err != nil {
+		return IdentityExport{}, fmt.Errorf("backup: record export: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return IdentityExport{}, fmt.Errorf("backup: record export: %w", err)
+	}
+	id, _ := res.LastInsertId()
+	return IdentityExport{ID: id, Fingerprint: fingerprint, Actor: actor, ExportedAt: at}, nil
 }
 
-// LastExport returns the latest export record, if any.
-func (s *RecipientStore) LastExport() (IdentityExport, bool, error) {
+const exportColumns = `SELECT id, fingerprint, actor, exported_at, acknowledged_at FROM backup_identity_exports`
+
+func scanExport(row *sql.Row) (IdentityExport, bool, error) {
 	var e IdentityExport
-	var at string
-	err := s.db.QueryRow(`SELECT fingerprint, actor, exported_at FROM backup_identity_exports ORDER BY id DESC LIMIT 1`).
-		Scan(&e.Fingerprint, &e.Actor, &at)
+	var at, ack string
+	err := row.Scan(&e.ID, &e.Fingerprint, &e.Actor, &at, &ack)
 	if errors.Is(err, sql.ErrNoRows) {
 		return IdentityExport{}, false, nil
 	}
@@ -197,11 +267,48 @@ func (s *RecipientStore) LastExport() (IdentityExport, bool, error) {
 		return IdentityExport{}, false, fmt.Errorf("backup: read export: %w", err)
 	}
 	e.ExportedAt, _ = time.Parse(time.RFC3339Nano, at)
+	if ack != "" {
+		e.AcknowledgedAt, _ = time.Parse(time.RFC3339Nano, ack)
+	}
 	return e, true, nil
 }
 
+// LastExport returns the latest export record, if any.
+func (s *RecipientStore) LastExport() (IdentityExport, bool, error) {
+	return scanExport(s.db.QueryRow(exportColumns + ` ORDER BY id DESC LIMIT 1`))
+}
+
+// LastAcknowledged returns the latest export the owner acknowledged.
+func (s *RecipientStore) LastAcknowledged() (IdentityExport, bool, error) {
+	return scanExport(s.db.QueryRow(exportColumns + ` WHERE acknowledged_at != '' ORDER BY id DESC LIMIT 1`))
+}
+
+// Acknowledge records that the owner stored the most recent export
+// offline. It refuses when there is no export or it is already
+// acknowledged.
+func (s *RecipientStore) Acknowledge() (IdentityExport, error) {
+	e, ok, err := s.LastExport()
+	if err != nil {
+		return IdentityExport{}, err
+	}
+	if !ok || e.Acknowledged() {
+		return IdentityExport{}, ErrNothingToAcknowledge
+	}
+	at := s.now().UTC()
+	res, err := s.db.Exec(`UPDATE backup_identity_exports SET acknowledged_at = ? WHERE id = ? AND acknowledged_at = ''`,
+		at.Format(time.RFC3339Nano), e.ID)
+	if err != nil {
+		return IdentityExport{}, fmt.Errorf("backup: acknowledge export: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return IdentityExport{}, ErrNothingToAcknowledge
+	}
+	e.AcknowledgedAt = at
+	return e, nil
+}
+
 // OwnerProtected reports whether the doctor owner-recipient check is
-// satisfied: an owner recipient exists or an export was recorded.
+// satisfied: an owner recipient exists or an export was acknowledged.
 func (s *RecipientStore) OwnerProtected() (bool, error) {
 	owners, err := s.Owner()
 	if err != nil {
@@ -210,8 +317,8 @@ func (s *RecipientStore) OwnerProtected() (bool, error) {
 	if len(owners) > 0 {
 		return true, nil
 	}
-	_, exported, err := s.LastExport()
-	return exported, err
+	_, acked, err := s.LastAcknowledged()
+	return acked, err
 }
 
 type recipientsYAML struct {
@@ -228,8 +335,9 @@ type recipientYAML struct {
 }
 
 type exportYAML struct {
-	Actor      string `yaml:"actor"`
-	ExportedAt string `yaml:"exported_at"`
+	Actor          string `yaml:"actor"`
+	ExportedAt     string `yaml:"exported_at"`
+	AcknowledgedAt string `yaml:"acknowledged_at,omitempty"`
 }
 
 // RenderYAML writes the inspectable recipient configuration (ADR-003)
@@ -248,6 +356,9 @@ func (s *RecipientStore) RenderYAML(path string) error {
 		return err
 	} else if ok {
 		doc.Export = &exportYAML{Actor: e.Actor, ExportedAt: e.ExportedAt.Format(time.RFC3339)}
+		if e.Acknowledged() {
+			doc.Export.AcknowledgedAt = e.AcknowledgedAt.Format(time.RFC3339)
+		}
 	}
 	data, err := yaml.Marshal(doc)
 	if err != nil {

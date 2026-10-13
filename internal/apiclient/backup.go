@@ -92,7 +92,9 @@ type BackupRecipient struct {
 type BackupRecipients struct {
 	Recipients []BackupRecipient `json:"recipients"`
 	OwnerHeld  bool              `json:"owner_held"`
-	Note       string            `json:"note"`
+	// ApplianceCreated is false until the first backup or export.
+	ApplianceCreated bool   `json:"appliance_created"`
+	Note             string `json:"note"`
 }
 
 // BackupRecipients lists the appliance and owner recipients.
@@ -122,11 +124,22 @@ func (c *Client) BackupRecipientRemove(ctx context.Context, fingerprint string) 
 
 // BackupIdentityStatus is GET /api/v1/backups/identity.
 type BackupIdentityStatus struct {
-	Recipient   string `json:"recipient"`
-	Fingerprint string `json:"fingerprint"`
-	Exported    bool   `json:"exported"`
-	ExportedAt  string `json:"exported_at"`
-	ExportedBy  string `json:"exported_by"`
+	Created        bool   `json:"created"`
+	Recipient      string `json:"recipient"`
+	Fingerprint    string `json:"fingerprint"`
+	Exported       bool   `json:"exported"`
+	ExportedAt     string `json:"exported_at"`
+	ExportedBy     string `json:"exported_by"`
+	Acknowledged   bool   `json:"acknowledged"`
+	AcknowledgedAt string `json:"acknowledged_at"`
+}
+
+// BackupIdentityAck confirms the exported recovery identity is stored
+// offline; only this clears the doctor warning.
+func (c *Client) BackupIdentityAck(ctx context.Context) (BackupIdentityStatus, error) {
+	var out BackupIdentityStatus
+	err := c.postJSON(ctx, "/api/v1/backups/identity/ack", map[string]any{}, &out)
+	return out, err
 }
 
 // BackupIdentity reports the appliance recipient and export record.

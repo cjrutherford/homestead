@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 30
+const CurrentVersion = 31
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -560,6 +560,15 @@ CREATE TABLE IF NOT EXISTS backup_identity_exports (
 	actor TEXT NOT NULL,
 	exported_at TEXT NOT NULL
 );`,
+	},
+	{
+		// S271 review: an export alone does not prove the owner holds the
+		// key. The owner acknowledges storing it offline; only that
+		// clears the doctor warning. Exports recorded before this
+		// migration stay unacknowledged.
+		version: 31,
+		name:    "backup identity export acknowledgement",
+		sql:     `ALTER TABLE backup_identity_exports ADD COLUMN acknowledged_at TEXT NOT NULL DEFAULT '';`,
 	},
 }
 

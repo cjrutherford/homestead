@@ -94,6 +94,27 @@ func ApplianceIdentity(store KeyStore) (*age.X25519Identity, error) {
 	}
 }
 
+// PeekApplianceIdentity reads the appliance identity without creating
+// it: read-only routes must not generate key material as a side effect.
+func PeekApplianceIdentity(store KeyStore) (*age.X25519Identity, bool, error) {
+	if store == nil {
+		return nil, false, errors.New("backup: encryption needs the secret store")
+	}
+	value, err := store.Get(IdentitySecret)
+	switch {
+	case err == nil:
+		identity, perr := age.ParseX25519Identity(strings.TrimSpace(value))
+		if perr != nil {
+			return nil, false, errors.New("backup: stored backup identity is unreadable")
+		}
+		return identity, true, nil
+	case errors.Is(err, secret.ErrNotFound):
+		return nil, false, nil
+	default:
+		return nil, false, fmt.Errorf("backup: read identity: %w", err)
+	}
+}
+
 // Recipients returns the recipients new backups encrypt to: the
 // appliance identity only; RecipientsWithOwner (S271) appends owners.
 func Recipients(store KeyStore) ([]age.Recipient, error) {

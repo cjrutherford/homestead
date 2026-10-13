@@ -83,9 +83,17 @@
 
   <h4>Recovery identity</h4>
   @if (identity(); as status) {
+    @if (!status.created) {
+      <p>The appliance identity is created by the first backup or by the first export.</p>
+    }
     <p>
       @if (status.exported) {
         Exported by {{ status.exported_by }} at {{ status.exported_at }}.
+        @if (status.acknowledged) {
+          Confirmed stored offline at {{ status.acknowledged_at }}.
+        } @else {
+          Not yet confirmed stored offline: the warning stays until you export again and confirm.
+        }
       } @else {
         Never exported.
       }
@@ -100,7 +108,10 @@
       <pre class="backup-root">{{ result.identity }}</pre>
       <button type="button" (click)="copyExport()">Copy</button>
       <button type="button" (click)="downloadExport()">Download</button>
-      <button type="button" (click)="dismissExport()">I stored it, dismiss</button>
+      <button type="button" (click)="acknowledgeExport()" [disabled]="busy()">
+        I have stored this key offline
+      </button>
+      <button type="button" (click)="dismissExport()">Dismiss without confirming</button>
     </div>
   } @else if (confirmingExport()) {
     <span role="alertdialog" aria-label="Confirm identity export">

@@ -29,19 +29,38 @@ func (s *Server) MountBackupRecipients(st *store.Store, secrets catalog.SecretSt
 	s.mux.HandleFunc("DELETE /api/v1/backups/recipients/{fingerprint}", h.remove)
 	s.mux.HandleFunc("GET /api/v1/backups/identity", h.identityStatus)
 	s.mux.HandleFunc("POST /api/v1/backups/identity/export", h.export)
+	s.mux.HandleFunc("POST /api/v1/backups/identity/ack", h.acknowledge)
 }
 
 type recipientHandlers struct {
 	s       *Server
 	rec     *backup.RecipientStore
-	audit   *audit.Service
+	audit   auditRecorder
 	secrets catalog.SecretStore
 	yaml    string
 }
 
+// record audits best-effort for routes that are already committed; the
+// key-revealing export uses audited() instead and fails closed.
 func (h *recipientHandlers) record(entry audit.Entry) {
-	if _, err := h.audit.Record(entry); err != nil {
+	if err := h.audited(entry); err != nil {
 		h.s.log.Error("backup recipient audit record failed", "action", entry.Action, "error", err)
+	}
+}
+
+func (h *recipientHandlers) audited(entry audit.Entry) error {
+	_, err := h.audit.Record(entry)
+	return err
+}
+
+// renderAfterCommit renders the YAML for a change already committed to
+// SQLite. A failure is logged and audited as its own entry so the
+// action itself is not misreported; the next mount re-renders.
+func (h *recipientHandlers) renderAfterCommit(actor, action string) {
+	if err := h.render(); err != nil {
+		h.s.log.Warn("backup recipients yaml render failed", "action", action, "error", err)
+		h.record(audit.Entry{Actor: actor, Action: "backup.recipient.render", Outcome: audit.OutcomeError,
+			Detail: "after " + action + ": YAML render failed: " + err.Error()})
 	}
 }
 
@@ -52,13 +71,16 @@ func (h *recipientHandlers) render() error {
 	return h.rec.RenderYAML(h.yaml)
 }
 
+// appliance returns the appliance recipient without creating the
+// identity: "" means it does not exist yet (first backup or an explicit
+// export creates it).
 func (h *recipientHandlers) appliance() (string, error) {
 	keys, err := backupKeyStore(h.secrets)
 	if err != nil {
 		return "", err
 	}
-	id, err := backup.ApplianceIdentity(keys)
-	if err != nil {
+	id, ok, err := backup.PeekApplianceIdentity(keys)
+	if err != nil || !ok {
 		return "", err
 	}
 	return id.Recipient().String(), nil
@@ -67,9 +89,12 @@ func (h *recipientHandlers) appliance() (string, error) {
 type recipientList struct {
 	Recipients []backup.Recipient `json:"recipients"`
 	// OwnerHeld reports whether the doctor owner-recipient check is
-	// satisfied (an owner recipient exists or an export was recorded).
-	OwnerHeld bool   `json:"owner_held"`
-	Note      string `json:"note"`
+	// satisfied (an owner recipient exists or an export was acknowledged).
+	OwnerHeld bool `json:"owner_held"`
+	// ApplianceCreated is false until the first backup or export creates
+	// the appliance identity; listing never creates it.
+	ApplianceCreated bool   `json:"appliance_created"`
+	Note             string `json:"note"`
 }
 
 func (h *recipientHandlers) view() (recipientList, error) {
@@ -85,9 +110,12 @@ func (h *recipientHandlers) view() (recipientList, error) {
 	if err != nil {
 		return recipientList{}, err
 	}
-	all := append([]backup.Recipient{{Fingerprint: backup.Fingerprint(appliance), PublicKey: appliance,
-		Label: "appliance identity", Kind: "appliance", Actor: "system"}}, owners...)
-	return recipientList{Recipients: all, OwnerHeld: held,
+	all := owners
+	if appliance != "" {
+		all = append([]backup.Recipient{{Fingerprint: backup.Fingerprint(appliance), PublicKey: appliance,
+			Label: "appliance identity", Kind: "appliance", Actor: "system"}}, owners...)
+	}
+	return recipientList{Recipients: all, OwnerHeld: held, ApplianceCreated: appliance != "",
 		Note: "New backup runs encrypt to every recipient listed. Existing runs are not re-encrypted."}, nil
 }
 
@@ -162,39 +190,51 @@ func (h *recipientHandlers) remove(w http.ResponseWriter, r *http.Request) {
 	h.finish(w, actor, "backup.recipient.remove", detail, rec)
 }
 
-// finish renders the YAML, audits, and answers with the recipient.
+// finish audits the committed change, renders the YAML, and answers.
 func (h *recipientHandlers) finish(w http.ResponseWriter, actor, action, detail string, rec backup.Recipient) {
-	if err := h.render(); err != nil {
-		h.record(audit.Entry{Actor: actor, Action: action, Outcome: audit.OutcomeError, Detail: detail + "; saved but YAML render failed: " + err.Error()})
-		http.Error(w, "saved but YAML render failed: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
 	h.record(audit.Entry{Actor: actor, Action: action, Outcome: audit.OutcomeOK, Detail: detail})
+	h.renderAfterCommit(actor, action)
 	writeJSON(w, rec)
 }
 
 type identityStatus struct {
-	Recipient   string `json:"recipient"`
-	Fingerprint string `json:"fingerprint"`
-	Exported    bool   `json:"exported"`
-	ExportedAt  string `json:"exported_at,omitempty"`
-	ExportedBy  string `json:"exported_by,omitempty"`
+	Created        bool   `json:"created"`
+	Recipient      string `json:"recipient,omitempty"`
+	Fingerprint    string `json:"fingerprint,omitempty"`
+	Exported       bool   `json:"exported"`
+	ExportedAt     string `json:"exported_at,omitempty"`
+	ExportedBy     string `json:"exported_by,omitempty"`
+	Acknowledged   bool   `json:"acknowledged"`
+	AcknowledgedAt string `json:"acknowledged_at,omitempty"`
 }
 
-func (h *recipientHandlers) identityStatus(w http.ResponseWriter, r *http.Request) {
+func (h *recipientHandlers) statusView() (identityStatus, error) {
 	appliance, err := h.appliance()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return identityStatus{}, err
 	}
-	out := identityStatus{Recipient: appliance, Fingerprint: backup.Fingerprint(appliance)}
+	out := identityStatus{Created: appliance != ""}
+	if appliance != "" {
+		out.Recipient, out.Fingerprint = appliance, backup.Fingerprint(appliance)
+	}
 	e, ok, err := h.rec.LastExport()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return identityStatus{}, err
 	}
 	if ok {
 		out.Exported, out.ExportedAt, out.ExportedBy = true, e.ExportedAt.Format(time.RFC3339), e.Actor
+		if e.Acknowledged() {
+			out.Acknowledged, out.AcknowledgedAt = true, e.AcknowledgedAt.Format(time.RFC3339)
+		}
+	}
+	return out, nil
+}
+
+func (h *recipientHandlers) identityStatus(w http.ResponseWriter, r *http.Request) {
+	out, err := h.statusView()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	writeJSON(w, out)
 }
@@ -208,11 +248,13 @@ type exportResult struct {
 	Actor       string `json:"actor"`
 }
 
-// export returns the appliance recovery identity once per explicit,
-// confirmed request. The export is recorded (time, actor, fingerprint)
-// and audited before the value leaves; the value itself is never
-// stored by the daemon beyond the secret store, never logged, never
-// cached.
+// export returns the appliance recovery identity on an explicit,
+// confirmed request. It fails closed: the export is recorded and the
+// audit entry written before the key is returned, and if either fails
+// the key is withheld. Exports are rate limited. The value is never
+// stored beyond the secret store, never logged, never cached. The
+// export alone does not clear the doctor warning; the owner must
+// acknowledge it (acknowledge).
 func (h *recipientHandlers) export(w http.ResponseWriter, r *http.Request) {
 	op, ok := requireOperator(w, r)
 	if !ok {
@@ -243,16 +285,51 @@ func (h *recipientHandlers) export(w http.ResponseWriter, r *http.Request) {
 	fp := backup.Fingerprint(id.Recipient().String())
 	e, err := h.rec.RecordExport(fp, actor)
 	if err != nil {
-		h.record(audit.Entry{Actor: actor, Action: "backup.identity.export", Outcome: audit.OutcomeError, Detail: "export not recorded; identity withheld"})
+		h.record(audit.Entry{Actor: actor, Action: "backup.identity.export", Outcome: audit.OutcomeError, Detail: "refused: " + err.Error()})
+		if errors.Is(err, backup.ErrExportRateLimited) {
+			http.Error(w, err.Error(), http.StatusTooManyRequests)
+			return
+		}
 		http.Error(w, "export could not be recorded; identity withheld", http.StatusInternalServerError)
 		return
 	}
 	detail := fmt.Sprintf("recovery identity for recipient %s (%s) exported", fp, id.Recipient().String())
-	if err := h.render(); err != nil {
-		detail += "; YAML render failed: " + err.Error()
+	if err := h.audited(audit.Entry{Actor: actor, Action: "backup.identity.export", Outcome: audit.OutcomeOK, Detail: detail}); err != nil {
+		h.s.log.Error("backup identity export audit failed; identity withheld", "error", err)
+		http.Error(w, "export could not be audited; identity withheld", http.StatusInternalServerError)
+		return
 	}
-	h.record(audit.Entry{Actor: actor, Action: "backup.identity.export", Outcome: audit.OutcomeOK, Detail: detail})
+	h.renderAfterCommit(actor, "backup.identity.export")
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, exportResult{Identity: id.String(), Recipient: id.Recipient().String(),
 		Fingerprint: fp, ExportedAt: e.ExportedAt.Format(time.RFC3339), Actor: actor})
+}
+
+// acknowledge records that the owner stored the exported key offline.
+// This, not the export itself, clears the doctor warning.
+func (h *recipientHandlers) acknowledge(w http.ResponseWriter, r *http.Request) {
+	op, ok := requireOperator(w, r)
+	if !ok {
+		return
+	}
+	actor := op.Session.Username
+	e, err := h.rec.Acknowledge()
+	if err != nil {
+		h.record(audit.Entry{Actor: actor, Action: "backup.identity.ack", Outcome: audit.OutcomeError, Detail: err.Error()})
+		status := http.StatusInternalServerError
+		if errors.Is(err, backup.ErrNothingToAcknowledge) {
+			status = http.StatusConflict
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	h.record(audit.Entry{Actor: actor, Action: "backup.identity.ack", Outcome: audit.OutcomeOK,
+		Detail: fmt.Sprintf("owner confirmed the recovery identity for recipient %s is stored offline", e.Fingerprint)})
+	h.renderAfterCommit(actor, "backup.identity.ack")
+	out, err := h.statusView()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, out)
 }

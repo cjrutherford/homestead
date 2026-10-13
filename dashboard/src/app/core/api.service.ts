@@ -408,15 +408,19 @@ export interface BackupRecipient {
 export interface BackupRecipients {
   recipients: BackupRecipient[];
   owner_held: boolean;
+  appliance_created: boolean;
   note: string;
 }
 
 export interface BackupIdentityStatus {
-  recipient: string;
-  fingerprint: string;
+  created: boolean;
+  recipient?: string;
+  fingerprint?: string;
   exported: boolean;
   exported_at?: string;
   exported_by?: string;
+  acknowledged: boolean;
+  acknowledged_at?: string;
 }
 
 /** POST /api/v1/backups/identity/export: the only response with the key. */
@@ -835,6 +839,13 @@ export class ApiService {
     return this.http.post<BackupIdentityExport>(
       '/api/v1/backups/identity/export',
       { confirm: true },
+    );
+  }
+
+  backupIdentityAck(): Observable<BackupIdentityStatus> {
+    return this.http.post<BackupIdentityStatus>(
+      '/api/v1/backups/identity/ack',
+      {},
     );
   }
 

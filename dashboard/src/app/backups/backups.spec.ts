@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import {
@@ -27,9 +27,16 @@ const RECIPIENTS = {
     },
   ],
   owner_held: false,
+  appliance_created: true,
   note: 'New runs only.',
 };
-const IDENTITY = { recipient: 'age1appliance', fingerprint: 'aa11', exported: false };
+const IDENTITY = {
+  created: true,
+  recipient: 'age1appliance',
+  fingerprint: 'aa11',
+  exported: false,
+  acknowledged: false,
+};
 
 const JOB = {
   id: 'backup:jellyfin',
@@ -335,5 +342,50 @@ describe('Backups', () => {
     fixture.componentInstance.dismissExport();
     fixture.detectChanges();
     expect(text()).not.toContain('AGE-SECRET-KEY-TEST');
+  });
+
+  it('keeps the exported key out of storage and drops it on ack or dismiss', () => {
+    load([]);
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    fixture.componentInstance.confirmExport();
+    http.expectOne('/api/v1/backups/identity/export').flush({
+      identity: 'AGE-SECRET-KEY-TEST',
+      recipient: 'age1appliance',
+      fingerprint: 'aa11',
+      exported_at: 'now',
+      actor: 'chris',
+    });
+    for (const [url, body] of [
+      ['/api/v1/backups/destination', { destination: '/b' }],
+      ['/api/v1/scheduler/jobs', []],
+      ['/api/v1/backups/recipients', RECIPIENTS],
+      ['/api/v1/backups/identity', { ...IDENTITY, exported: true }],
+      ['/api/v1/backups/schedules', []],
+    ] as const) {
+      http.expectOne(url).flush(body);
+    }
+    fixture.detectChanges();
+    expect(text()).toContain('AGE-SECRET-KEY-TEST');
+    fixture.componentInstance.acknowledgeExport();
+    const ack = http.expectOne('/api/v1/backups/identity/ack');
+    expect(ack.request.method).toBe('POST');
+    ack.flush({ ...IDENTITY, exported: true, acknowledged: true });
+    for (const [url, body] of [
+      ['/api/v1/backups/destination', { destination: '/b' }],
+      ['/api/v1/scheduler/jobs', []],
+      ['/api/v1/backups/recipients', RECIPIENTS],
+      ['/api/v1/backups/identity', { ...IDENTITY, exported: true, acknowledged: true }],
+      ['/api/v1/backups/schedules', []],
+    ] as const) {
+      http.expectOne(url).flush(body);
+    }
+    fixture.detectChanges();
+    expect(text()).not.toContain('AGE-SECRET-KEY-TEST');
+    expect(
+      (fixture.componentInstance as unknown as { exported(): unknown }).exported(),
+    ).toBeNull();
+    expect(setItem).not.toHaveBeenCalled();
+    expect(JSON.stringify({ ...localStorage })).not.toContain('AGE-SECRET-KEY');
+    setItem.mockRestore();
   });
 });

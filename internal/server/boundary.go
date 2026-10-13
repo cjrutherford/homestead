@@ -108,6 +108,7 @@ var routeClasses = map[string]RouteClass{
 	"DELETE /api/v1/backups/recipients/{fingerprint}":    ClassSession,
 	"GET /api/v1/backups/identity":                       ClassSession,
 	"POST /api/v1/backups/identity/export":               ClassSession,
+	"POST /api/v1/backups/identity/ack":                  ClassSession,
 	"GET /api/v1/catalog":                                ClassSession,
 	"GET /api/v1/catalog/{name}":                         ClassSession,
 	"POST /api/v1/catalog/{name}/plan":                   ClassSession,

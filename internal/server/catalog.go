@@ -267,9 +267,12 @@ func hostFacts(st *store.Store) (catalog.HostFacts, error) {
 	return facts, nil
 }
 
+// maxJSONBody bounds every JSON request decoded through decodeBody.
+const maxJSONBody = 128 << 10
+
 func decodeBody(r *http.Request, body any) error {
 	defer r.Body.Close()
-	decoder := json.NewDecoder(r.Body)
+	decoder := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxJSONBody))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(body); err != nil {
 		return fmt.Errorf("invalid request: %w", err)

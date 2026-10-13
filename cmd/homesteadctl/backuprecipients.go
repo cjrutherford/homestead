@@ -70,7 +70,7 @@ func runBackupRecipients(ctx context.Context, client *apiclient.Client, args []s
 	}
 }
 
-const identityUsage = "usage: homesteadctl backup identity <status|export (--out FILE | --stdout)>"
+const identityUsage = "usage: homesteadctl backup identity <status|ack|export (--out FILE | --stdout) [--ack]>"
 
 // runBackupIdentity reports or exports the recovery identity. Export
 // never prints unless --stdout is given; --out writes a new 0600 file
@@ -84,6 +84,7 @@ func runBackupIdentity(ctx context.Context, client *apiclient.Client, args []str
 	set.SetOutput(stderr)
 	out := set.String("out", "", "write the identity to a new 0600 file")
 	toStdout := set.Bool("stdout", false, "print the identity to standard output")
+	ack := set.Bool("ack", false, "after a successful export, confirm the key is stored offline")
 	if err := set.Parse(args[1:]); err != nil {
 		return exitUsage
 	}
@@ -93,12 +94,27 @@ func runBackupIdentity(ctx context.Context, client *apiclient.Client, args []str
 		if err != nil {
 			return fail(stderr, err)
 		}
-		fmt.Fprintf(stdout, "appliance recipient: %s (%s)\n", st.Recipient, st.Fingerprint)
+		if st.Created {
+			fmt.Fprintf(stdout, "appliance recipient: %s (%s)\n", st.Recipient, st.Fingerprint)
+		} else {
+			fmt.Fprintln(stdout, "appliance identity not created yet (the first backup or an export creates it)")
+		}
 		if st.Exported {
 			fmt.Fprintf(stdout, "recovery identity exported by %s at %s\n", st.ExportedBy, st.ExportedAt)
+			if st.Acknowledged {
+				fmt.Fprintf(stdout, "stored offline: acknowledged at %s\n", st.AcknowledgedAt)
+			} else {
+				fmt.Fprintln(stdout, "not acknowledged as stored offline; run `homesteadctl backup identity ack`")
+			}
 		} else {
 			fmt.Fprintln(stdout, "recovery identity never exported")
 		}
+		return exitOK
+	case "ack":
+		if _, err := client.BackupIdentityAck(ctx); err != nil {
+			return fail(stderr, err)
+		}
+		fmt.Fprintln(stdout, "recorded: the recovery identity is stored offline")
 		return exitOK
 	case "export":
 		if (*out == "") == !*toStdout {
@@ -124,6 +140,10 @@ func runBackupIdentity(ctx context.Context, client *apiclient.Client, args []str
 		}
 		if file != nil {
 			_, werr := fmt.Fprintln(file, res.Identity)
+			if werr == nil {
+				// Durable on disk before the owner is told it is safe.
+				werr = file.Sync()
+			}
 			if cerr := file.Close(); werr == nil {
 				werr = cerr
 			}
@@ -134,6 +154,14 @@ func runBackupIdentity(ctx context.Context, client *apiclient.Client, args []str
 		} else {
 			fmt.Fprintln(stdout, res.Identity)
 			fmt.Fprintln(stderr, "recovery identity printed above; store it offline, off this appliance. This export is audited.")
+		}
+		if *ack {
+			if _, err := client.BackupIdentityAck(ctx); err != nil {
+				return fail(stderr, err)
+			}
+			fmt.Fprintln(stdout, "recorded: the recovery identity is stored offline")
+		} else {
+			fmt.Fprintln(stderr, "the doctor warning stays until you confirm storage: run `homesteadctl backup identity ack`")
 		}
 		return exitOK
 	default:

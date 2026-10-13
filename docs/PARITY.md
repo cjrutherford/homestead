@@ -83,7 +83,8 @@ unchanged.
 | POST | /api/v1/backups/recipients | `"backup"` | `backupRecipientAdd` | Add an owner X25519 recipient on CLI and dashboard; applies to new runs only (S271) |
 | DELETE | /api/v1/backups/recipients/{fingerprint} | `"backup"` | `backupRecipientRemove` | Remove an owner recipient on CLI and dashboard; the appliance identity is refused (S271) |
 | GET | /api/v1/backups/identity | `"backup"` | `backupIdentity` | Appliance recipient and export record, never the key, on CLI (`backup identity status`) and dashboard (S271) |
-| POST | /api/v1/backups/identity/export | `"backup"` | `backupIdentityExport` | Explicit, audited recovery identity export, shown once: CLI `--out FILE` (0600) or `--stdout`; dashboard confirmation then copy/download (S271) |
+| POST | /api/v1/backups/identity/export | `"backup"` | `backupIdentityExport` | Explicit, audited, rate-limited recovery identity export, shown once: CLI `--out FILE` (0600, fsync'd) or `--stdout`; dashboard confirmation then copy/download (S271) |
+| POST | /api/v1/backups/identity/ack | `"backup"` | `backupIdentityAck` | Owner confirms the exported key is stored offline (clears the doctor warning) on CLI (`backup identity ack`, or `export --ack`) and dashboard (S271) |
 | GET | /api/v1/updates | `"updates"` | `updates` | Review rows on both surfaces |
 | POST | /api/v1/updates/{name}/apply | `"updates"` | `applyUpdate` | Approved updates on both surfaces |
 | GET | /api/v1/data-migrations | `runDataStatus` | `dataMigrations` | App data placement (placed, needs-migration, unknown) plus old volumes pending removal (S277); also surfaced as doctor checks |

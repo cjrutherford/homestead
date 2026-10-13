@@ -25,6 +25,9 @@ func recipientStub(t *testing.T, exports *int) string {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/backups/identity/export":
 			*exports++
 			_, _ = w.Write([]byte(`{"identity":"AGE-SECRET-KEY-TEST","recipient":"age1app","fingerprint":"aa"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/backups/identity/ack":
+			*exports += 100
+			_, _ = w.Write([]byte(`{"created":true,"exported":true,"acknowledged":true}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -82,5 +85,51 @@ func TestBackupIdentityExportRequiresExplicitDestination(t *testing.T) {
 	}
 	if code, out, _ = invoke(t, []string{"--server", url, "backup", "identity", "status"}); code != exitOK || !strings.Contains(out, "never exported") {
 		t.Fatalf("status %d %q", code, out)
+	}
+}
+
+func TestBackupIdentityAckFlows(t *testing.T) {
+	n := 0
+	url := recipientStub(t, &n)
+	if code, _, _ := invoke(t, []string{"--server", url, "backup", "identity", "ack"}); code != exitOK || n != 100 {
+		t.Fatalf("ack code=%d n=%d", code, n)
+	}
+	n = 0
+	file := filepath.Join(t.TempDir(), "id.txt")
+	code, out, stderr := invoke(t, []string{"--server", url, "backup", "identity", "export", "--out", file})
+	if code != exitOK || n != 1 || !strings.Contains(stderr, "identity ack") || strings.Contains(out, "recorded:") {
+		t.Fatalf("export without --ack: code=%d n=%d out=%q err=%q", code, n, out, stderr)
+	}
+	n = 0
+	file = filepath.Join(t.TempDir(), "id2.txt")
+	if code, out, _ = invoke(t, []string{"--server", url, "backup", "identity", "export", "--out", file, "--ack"}); code != exitOK || n != 101 || !strings.Contains(out, "recorded:") {
+		t.Fatalf("export --ack: code=%d n=%d out=%q", code, n, out)
+	}
+}
+
+func TestBackupIdentityExportRefusesSymlinkTarget(t *testing.T) {
+	n := 0
+	url := recipientStub(t, &n)
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "victim")
+	if err := os.WriteFile(victim, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(victim, link); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, _ := invoke(t, []string{"--server", url, "backup", "identity", "export", "--out", link}); code == exitOK || n != 0 {
+		t.Fatalf("symlink target accepted: code=%d exports=%d", code, n)
+	}
+	if raw, _ := os.ReadFile(victim); string(raw) != "keep" {
+		t.Fatalf("victim overwritten: %q", raw)
+	}
+	dangling := filepath.Join(dir, "dangling")
+	if err := os.Symlink(filepath.Join(dir, "nowhere"), dangling); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, _ := invoke(t, []string{"--server", url, "backup", "identity", "export", "--out", dangling}); code == exitOK || n != 0 {
+		t.Fatalf("dangling symlink accepted: code=%d", code)
 	}
 }

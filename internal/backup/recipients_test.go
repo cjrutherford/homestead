@@ -6,7 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"filippo.io/age"
 
@@ -80,20 +83,109 @@ func TestRecipientStoreAddRemoveAndRefusals(t *testing.T) {
 	}
 }
 
-func TestOwnerProtectedByRecipientOrExport(t *testing.T) {
+func TestOwnerProtectedByRecipientOrAcknowledgedExport(t *testing.T) {
 	s := openRecipients(t)
 	if held, _ := s.OwnerProtected(); held {
 		t.Fatal("protected with nothing configured")
 	}
+	if _, err := s.Acknowledge(); err != ErrNothingToAcknowledge {
+		t.Fatalf("ack with no export = %v", err)
+	}
 	if _, err := s.RecordExport("abc", "chris"); err != nil {
 		t.Fatal(err)
 	}
-	if held, _ := s.OwnerProtected(); !held {
-		t.Fatal("export did not count")
+	if held, _ := s.OwnerProtected(); held {
+		t.Fatal("an unacknowledged export counted")
 	}
-	e, ok, _ := s.LastExport()
-	if !ok || e.Actor != "chris" || e.Fingerprint != "abc" {
-		t.Fatalf("export = %+v", e)
+	e, err := s.Acknowledge()
+	if err != nil || !e.Acknowledged() {
+		t.Fatalf("ack = %+v %v", e, err)
+	}
+	if _, err := s.Acknowledge(); err != ErrNothingToAcknowledge {
+		t.Fatalf("second ack = %v", err)
+	}
+	if held, _ := s.OwnerProtected(); !held {
+		t.Fatal("acknowledged export did not count")
+	}
+	last, ok, _ := s.LastExport()
+	if !ok || last.Actor != "chris" || last.Fingerprint != "abc" || !last.Acknowledged() {
+		t.Fatalf("export = %+v", last)
+	}
+}
+
+func TestExportRateLimit(t *testing.T) {
+	s := openRecipients(t)
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return now }
+	for i := 0; i < MaxExportsPerHour; i++ {
+		if _, err := s.RecordExport("fp", "chris"); err != nil {
+			t.Fatalf("export %d: %v", i, err)
+		}
+	}
+	if _, err := s.RecordExport("fp", "chris"); err != ErrExportRateLimited {
+		t.Fatalf("over limit = %v", err)
+	}
+	now = now.Add(61 * time.Minute)
+	if _, err := s.RecordExport("fp", "chris"); err != nil {
+		t.Fatalf("after the window: %v", err)
+	}
+}
+
+func TestPeekDoesNotCreateIdentity(t *testing.T) {
+	keys := newKeys()
+	if _, ok, err := PeekApplianceIdentity(keys); ok || err != nil {
+		t.Fatalf("peek = %v %v", ok, err)
+	}
+	if len(keys.values) != 0 {
+		t.Fatal("peek stored an identity")
+	}
+	if _, err := ApplianceIdentity(keys); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := PeekApplianceIdentity(keys); !ok {
+		t.Fatal("peek missed an existing identity")
+	}
+}
+
+// The cap is enforced under concurrent adds, and a recipient removed
+// concurrently is deleted exactly once.
+func TestRecipientCapAndRemoveUnderConcurrency(t *testing.T) {
+	s := openRecipients(t)
+	var wg sync.WaitGroup
+	var added atomic.Int64
+	for i := 0; i < MaxOwnerRecipients+8; i++ {
+		id, _ := age.GenerateX25519Identity()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := s.Add(id.Recipient().String(), "", "chris", ""); err == nil {
+				added.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	owners, _ := s.Owner()
+	if added.Load() != MaxOwnerRecipients || len(owners) != MaxOwnerRecipients {
+		t.Fatalf("added %d, stored %d, cap %d", added.Load(), len(owners), MaxOwnerRecipients)
+	}
+	var removed, missing atomic.Int64
+	target := owners[0].Fingerprint
+	for i := 0; i < 6; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := s.Remove(target, "")
+			switch err {
+			case nil:
+				removed.Add(1)
+			case ErrRecipientNotFound:
+				missing.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if removed.Load() != 1 || missing.Load() != 5 {
+		t.Fatalf("removed %d, not found %d", removed.Load(), missing.Load())
 	}
 }
 
@@ -182,12 +274,15 @@ func TestRenderRecipientsYAMLHasPublicKeysOnly(t *testing.T) {
 	if _, err := s.RecordExport("abc", "chris"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.Acknowledge(); err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(t.TempDir(), "backup-recipients.yaml")
 	if err := s.RenderYAML(path); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(path)
-	if !bytes.Contains(raw, []byte(owner.Recipient().String())) || !bytes.Contains(raw, []byte("identity_export")) {
+	if !bytes.Contains(raw, []byte(owner.Recipient().String())) || !bytes.Contains(raw, []byte("acknowledged_at")) {
 		t.Fatalf("yaml = %s", raw)
 	}
 	if bytes.Contains(raw, []byte("AGE-SECRET-KEY")) || bytes.Contains(raw, []byte(appliance.String())) {
