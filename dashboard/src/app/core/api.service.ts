@@ -191,6 +191,19 @@ export interface SecretKeyStatus {
   in_progress: boolean;
 }
 
+/**
+ * One desired edge route (S270), PascalCase as the Go docker.Route has
+ * no json tags. `Policy` is passed through untouched when present.
+ */
+export interface EdgeRoute {
+  Host: string;
+  Target: { Host: string; Port: number };
+  Exposure: 'local' | 'overlay' | 'public';
+  TLS: 'off' | 'internal' | 'auto';
+  Health: { Path: string; IntervalSeconds: number };
+  Policy?: unknown;
+}
+
 /** POST /api/v1/catalog/:name/install — started operation. */
 export interface OperationStarted {
   id: number;
@@ -1084,5 +1097,13 @@ export class ApiService {
       '/api/v1/storage/assignments',
       body,
     );
+  }
+
+  edgeDeploy(): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>('/api/v1/edge/deploy', {});
+  }
+
+  edgeReconcile(routes: EdgeRoute[]): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>('/api/v1/edge/routes', { routes });
   }
 }

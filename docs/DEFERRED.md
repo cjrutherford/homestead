@@ -169,9 +169,12 @@
 - Corrupt-database repair: S230 snapshots state and refuses a
   missing database as disaster recovery; repairing corrupt
   state belongs to the disaster-recovery flow (S234).
-- Proxy dashboard surface: S237 covers Caddy deployment and
-  route reconciliation over the API and CLI; dashboard
-  affordances belong to later slices.
+- Edge route-table read-back: S270 gives the dashboard deploy and
+  reconcile only, matching the CLI. The daemon has no
+  `GET /api/v1/edge/*` route, so neither surface can show the live
+  route table or Caddy runtime status, and the editor starts empty
+  (a reconcile replaces the whole table). A read route would be a
+  coordinated API, CLI and dashboard change.
 - Dashboard embed in install flow: serving the UI needs the
   node toolchain plus a manual embed build (proven working in
   KVM); prebuilt packaging belongs to distribution (S240).

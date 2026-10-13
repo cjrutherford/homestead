@@ -63,8 +63,8 @@ unchanged.
 | GET | /api/v1/catalog/{name}/secrets | `"apps"` | `appSecrets` | Declared secret-backed variables, presence only (S266) |
 | POST | /api/v1/catalog/{name}/secrets/{secret} | `"apps"` | `registerAppSecret` | Register an existing secret for pre-S266 installs; rotation rides configure (S266) |
 | POST | /api/v1/catalog/{name}/uninstall | `"apps"` | n/a | Approved removal on CLI (refuses volume-held data unless `--abandon-volumes`); dashboard surface belongs to later slices |
-| POST | /api/v1/edge/deploy | `"edge"` | n/a | Edge deployment on CLI; dashboard surface belongs to later slices |
-| POST | /api/v1/edge/routes | `"edge"` | n/a | Route reconciliation on CLI; dashboard surface belongs to later slices |
+| POST | /api/v1/edge/deploy | `"edge"` | `edgeDeploy` | Edge page (`/edge`); S270. Confirmed deploy with live operation progress; CLI `edge deploy [--follow]` |
+| POST | /api/v1/edge/routes | `"edge"` | `edgeReconcile` | Edge page (`/edge`); S270. Confirmed full-table replace with the same validation and route-document shape as CLI `edge routes set -f`; public routes warn and point to Exposure |
 | GET | /api/v1/exposure/review | `"exposure"` | `exposureReview` | Reviewed plan on CLI and dashboard |
 | GET | /api/v1/exposure/approvals | `"exposure"` | `exposureApprovals` | Approval records on CLI and dashboard |
 | POST | /api/v1/exposure/approvals | `"exposure"` | `exposureApprove` | Ownership approval on CLI and dashboard |

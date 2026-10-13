@@ -17,6 +17,7 @@ import { OperationDetail } from './operations/operation-detail';
 import { ValidationBoard } from './validation/validation-board';
 import { Backups } from './backups/backups';
 import { StorageSetup } from './storage/storage';
+import { Edge } from './edge/edge';
 import { AuditLog } from './audit/audit';
 import { NotFound } from './not-found/not-found';
 
@@ -36,6 +37,7 @@ export const routes: Routes = [
   { path: 'tunnel', component: Tunnel },
   { path: 'backups', component: Backups },
   { path: 'storage', component: StorageSetup },
+  { path: 'edge', component: Edge },
   { path: 'audit', component: AuditLog },
   { path: 'secrets', component: Secrets },
   { path: 'operations', component: Operations },
