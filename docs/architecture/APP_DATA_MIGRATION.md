@@ -182,3 +182,8 @@ migration backup then runs without a stored password and Postgres file
 copies are not crash-consistent; register first. Never uninstall and
 reinstall such an app to "fix" credentials: the uninstall is refused while
 data still lives in Docker volumes.
+
+An app whose database was never initialised (for example a pre-S266
+Immich crash-looping for lack of a password, with an empty volume) cannot
+be verified at register time: register a newly generated password with
+`--skip-verify`, then adopt (Postgres runs initdb with it), then migrate.

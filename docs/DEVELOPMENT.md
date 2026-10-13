@@ -1991,14 +1991,77 @@ per-service `environment:` map; a variable may not be both.
   keeps the values) and refuses a stack whose S277 detection is
   needs-migration unless `abandon_volumes` / `--abandon-volumes` is given
   (audited); run `homesteadctl data plan <pkg>` first. Delivery of
-  Authentik's `file://` URIs and Immich's `DB_PASSWORD_FILE` is covered by
-  unit tests only; mark them verified once KVM confirms.
+  Authentik's `file://` URIs and Immich's `DB_PASSWORD_FILE` is proven
+  live (see the KVM note below).
+- Apps whose database was never initialised (a crash-looping pre-S266
+  Immich with an empty data directory): there is no running database to
+  verify against, so register a new password with `--skip-verify`
+  (allowed only while no value is stored), then adopt; Postgres runs
+  initdb with it on the restart, and adopt waits for the database to
+  accept connections before verifying. Never use this on a database that
+  already holds data.
+- `drift accept` refuses (422) while a secret file has the wrong mode or
+  is missing, naming the files; accepting would only hide the finding.
+  Use `drift restore` (mode) or configure (missing file).
 - Running Compose by hand without Homestead: the YAML is valid on its
   own. Create `./secrets/<key>` files next to `compose.yaml` containing
   the value (`umask 077`; chown to the consuming service's uid, for
   example `chown 70 secrets/postgresql_db_password`, because the file
   is bind-mounted with its host owner and mode 0600), keep one value
   across the services that share a secret, then `docker compose up -d`.
+
+- Proven live in KVM (S266, 8e9b66d plus ede12ba, 5682948, f5395cc; VM 2
+  fresh S276 install, VM 1 pre-S266 apps with a disk image copied
+  first; the catalog directory under `/usr/local/share/homestead/catalog`
+  must be redeployed with the binary or the daemon keeps the old
+  manifests and reports no secrets). With initialised Postgres data
+  present, install of Authentik and Immich was refused naming the secret
+  and the register command; after moving the old data directories aside
+  it installed. `secrets/` was 0700 and files 0600 owned by 70/1000/999
+  (Immich server's file is root, its container user); compose carried
+  top-level `secrets:` with `file:` sources and `docker inspect` showed
+  only `POSTGRES_PASSWORD_FILE`, `DB_PASSWORD_FILE` and
+  `file:///run/secrets/...` values; no secret value appeared in
+  compose, journal, audit, container logs, inspect, or `ps`.
+  Authentik's `file://` URI syntax works for both the password and the
+  secret key: server and worker authenticated, applied migrations, and
+  answered 200 on `/-/health/live/` and `ak healthcheck`. Immich's
+  `DB_PASSWORD_FILE` works: migrations ran and the API answered
+  `pong`; the role rejects a wrong password over TCP and accepts the
+  file value. Scheduled backups of both included a real `pg_dump` file
+  (Authentik 230 tables, Immich 72) with mode 0600 and no secret files in
+  the tree; `ps` sampling every 50 ms during the runs showed the password
+  never in argv (only `read -r PGPASSWORD` from stdin). Rotation of the
+  Authentik and Immich passwords changed the role (old rejected, new
+  accepted), rewrote all files, restarted the consumers healthy, and a
+  later backup worked; `secret_key` rotation and `--set POSTGRES_PASSWORD`
+  were refused (422). A daemon SIGKILL during rotation, timed at the end
+  of the `ALTER ROLE` exec (once with the file already rewritten, once
+  before it), left a `_pending` row and, after systemd restarted the
+  daemon, reconciliation recorded `app.secret.reconcile` ("database
+  accepts the new password; settled to it"), files and store agreed and
+  Authentik was healthy. A secret file chmod 0644 showed as mode drift
+  without any content; restore fixed it, and accept was found to report
+  success while hiding it (fixed: 5682948). On VM 1 Immich (empty,
+  crash-looping database): a verified register is impossible with the
+  database down, so a generated password was registered with
+  `--skip-verify` and adopted; adopt found a bug (verification ran while
+  initdb listened only on its socket and rolled back; fixed: f5395cc),
+  after which Postgres initialised with the password, the server started
+  healthy, an admin user was created, and the S277 migration moved the
+  database and library to binds with the user, seeded files and
+  checksums intact and a real database export in the next backup.
+  Uninstall of the needs-migration Immich was refused (409) without
+  `--abandon-volumes`. VM 1 Authentik (migrated, pre-S266): registering a
+  wrong password was rejected, the right one accepted, adopt left it
+  healthy with the `secret_key` captured from the container
+  (user data intact) and its backup now holds a real export. Owner import
+  of an `app_` secret is refused (422); export lists only `dr_probe`.
+  The Secrets API answered with cookie plus CSRF (403 without the header).
+  Found in the environment, not the slice: VM 1's default QEMU CPU lacks
+  x86-64-v2, so Immich machine learning crash-looped and failed the
+  migration health check (rolled back cleanly); VM 1 now boots with
+  `-cpu host`.
 
 ## Provisional decisions (revisit, do not work around silently)
 
