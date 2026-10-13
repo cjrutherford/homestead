@@ -828,6 +828,30 @@ homesteadctl backup unschedule --package jellyfin
   there is no unregister route, so the scratch registration was removed with
   SQL.
 
+- Proven live in KVM (S269, c4dd6de + efd4118, deployed with
+  `scripts/install-systemd.sh` after `make dashboard-build dashboard-embed`;
+  identical binaries on both appliances): the served bundle held
+  `/api/v1/audit`, `/api/v1/dockge` and the `audit` and `advanced` routes,
+  with `/audit` and `/advanced` answering 200. `GET /api/v1/audit` with limit
+  100 and 1000 returned `ok` and `error` entries (no `skipped` or `warning`
+  in the live data) and aggregated `session.boundary.rejected` entries
+  (no-session, invalid-session, csrf-missing) after the 1-minute flush; every
+  detail matched the dashboard's `rejected ROUTE (REASON) xN since TS` parser.
+  Canary secrets sent through a failing secret register (wrong database
+  password), tunnel setup, a recipient add with an AGE secret key, and
+  bearer/cookie rejections never reached the table or the API. Found and
+  fixed: a failed login stores the attempted username as the actor, and the
+  actor was not redacted, so `password=...` or `Bearer ...` typed into the
+  username field persisted; it is now redacted at write time. Entries
+  written before the fix are untouched (redaction is write-time only), and
+  the only such entries were the validation canaries. A bare password typed
+  alone as the username is not a recognisable shape and is still recorded.
+  `/api/v1/dockge` answered `installed: false` with host, exposure, TLS,
+  alignment and empty findings on both appliances (the Advanced empty
+  state); Dockge itself is not installed there. Doctor was unchanged apart
+  from the existing `release-trust` warning. Not proven live: the Angular
+  pages in a browser, and the Dockge-installed rendering with findings.
+
 ## Periodic drift scan (S261)
 
 ```bash
