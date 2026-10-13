@@ -297,7 +297,7 @@ func adoptSteps(m Manifest, dir, project string, st *store.Store, src SecretStor
 			}
 			pw, err := src.Get(SecretStoreName(m.Name, m.Database.PasswordSecret))
 			if err == nil {
-				err = VerifyDatabasePassword(ctx, m, pw)
+				err = waitVerifyDatabasePassword(ctx, m, pw)
 			}
 			if err != nil {
 				restore(ctx)

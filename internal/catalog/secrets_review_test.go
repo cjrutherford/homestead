@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"homestead/internal/operation"
 )
@@ -730,5 +731,42 @@ func TestRestoreReportsMissingSecretFiles(t *testing.T) {
 	}
 	if got := MissingSecretFiles(dir); len(got) != 1 {
 		t.Fatalf("missing = %v", got)
+	}
+}
+
+// A first start runs initdb with only a socket listener, so TCP
+// refuses connections for a while; adopt waits instead of rolling back
+// (found in KVM validation on an uninitialised Immich database).
+func TestAdoptWaitsForDatabaseStillStarting(t *testing.T) {
+	m, dir, _ := preS266Stack(t)
+	sec := newMemSecrets(t)
+	st := openDriftStore(t)
+	_ = RecordFingerprints(st, "authentik", dir)
+	stubComposeUp(t, false)
+	sec.values[SecretStoreName("authentik", "db_password")] = "fresh-pass"
+	db := &fakeDB{password: "fresh-pass", env: map[string]string{"AUTHENTIK_SECRET_KEY": "legacy-key"}}
+	db.install(t)
+	inner := dbExec
+	refused := 3
+	dbExec = func(ctx context.Context, container, stdin string, args ...string) (string, error) {
+		if args[0] == "sh" && refused > 0 {
+			refused--
+			return "", errors.New("psql: error: connection to server failed: Connection refused")
+		}
+		return inner(ctx, container, stdin, args...)
+	}
+	oldPoll := healthPoll
+	healthPoll = time.Millisecond
+	t.Cleanup(func() { healthPoll = oldPoll })
+
+	def, err := ConfigureDefinition(ConfigPlan{Manifest: m, Adopt: true}, dir, "authentik", st, sec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runSteps(t, def); err != nil {
+		t.Fatalf("adopt did not wait for the database: %v", err)
+	}
+	if refused != 0 {
+		t.Fatalf("refusals left = %d", refused)
 	}
 }

@@ -98,6 +98,28 @@ func VerifyDatabasePassword(ctx context.Context, m Manifest, password string) er
 	return nil
 }
 
+// waitVerifyDatabasePassword verifies like VerifyDatabasePassword but
+// waits for a database that is still coming up (a first start runs
+// initdb with only a socket listener, so TCP refuses connections for a
+// while). A definite answer ends the wait: the password was rejected,
+// or the server cannot verify anything. Found in KVM validation.
+func waitVerifyDatabasePassword(ctx context.Context, m Manifest, password string) error {
+	deadline := time.Now().Add(healthTimeout)
+	for {
+		err := VerifyDatabasePassword(ctx, m, password)
+		if err == nil || errors.Is(err, ErrCannotVerify) ||
+			strings.Contains(err.Error(), "password authentication failed") ||
+			time.Now().After(deadline) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(healthPoll):
+		}
+	}
+}
+
 // RegisterOptions tunes RegisterSecret.
 type RegisterOptions struct {
 	// SkipVerify skips database verification; allowed only when no value
