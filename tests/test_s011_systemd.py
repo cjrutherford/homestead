@@ -119,6 +119,13 @@ class TestInstallScripts(unittest.TestCase):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, content)
 
+    def test_install_places_cli(self):
+        content = read("scripts/install-systemd.sh")
+        for symbol in ("./cmd/homesteadctl", "/usr/local/bin/homesteadctl"):
+            with self.subTest(symbol=symbol):
+                self.assertIn(symbol, content)
+        self.assertIn("/usr/local/bin/homesteadctl", read("scripts/uninstall-systemd.sh"))
+
     def test_uninstall_disables_and_cleans_up(self):
         content = read("scripts/uninstall-systemd.sh")
         self.assertIn("disable --now", content)

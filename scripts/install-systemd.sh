@@ -6,6 +6,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_SRC="$REPO/systemd/homestead-server.service"
 BIN_DST="/usr/local/bin/homestead-server"
+CTL_DST="/usr/local/bin/homesteadctl"
 UNIT_DST="/etc/systemd/system/homestead-server.service"
 CATALOG_SRC="$REPO/catalog"
 CATALOG_DST="/usr/local/share/homestead/catalog"
@@ -27,6 +28,9 @@ if [ -f "$REPO/internal/dashboard/dist/index.html" ]; then
 	build_tags=(-tags embeddash)
 fi
 go build "${build_tags[@]}" -o "$BIN_DST" ./cmd/homestead-server
+# The CLI shares the daemon's API version, so it is rebuilt with it:
+# a stale homesteadctl beside a new daemon misreads changed responses.
+go build -o "$CTL_DST" ./cmd/homesteadctl
 # The packaged catalog travels with the binary: curated manifests are
 # code, versioned and reviewed with it (S160). Replaced wholesale so
 # removed packages never linger beside new ones.

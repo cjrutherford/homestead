@@ -130,8 +130,6 @@
 - Docker Engine bootstrap: S220 installs the Homestead kernel
   only; engine installation on clean machines (S071 owns the
   operation) has no bootstrap wiring yet.
-- CLI binary installation: bootstrap and install scripts place
-  the daemon only; the command binary has no install path yet.
 - Remote bootstrap source: no canonical repository URL exists,
   so bootstrap runs from a checkout; curl-pipe installation
   waits on distribution work.
@@ -251,6 +249,5 @@
   registered. Drift restore still cannot recreate a missing secret file
   (it now reports it; configure re-materializes). The startup
   reconciliation retries for about four minutes, then leaves the pending
-  row for the next daemon start. Authentik `file://` and Immich
-  `DB_PASSWORD_FILE` delivery await KVM confirmation. Nextcloud and
+  row for the next daemon start. Nextcloud and
   Jellyfin declare no secrets.

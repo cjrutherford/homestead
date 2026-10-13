@@ -3,6 +3,7 @@
 set -euo pipefail
 
 BIN_DST="/usr/local/bin/homestead-server"
+CTL_DST="/usr/local/bin/homesteadctl"
 UNIT_DST="/etc/systemd/system/homestead-server.service"
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -15,5 +16,5 @@ if command -v systemctl >/dev/null; then
 	rm -f "$UNIT_DST"
 	systemctl daemon-reload
 fi
-rm -f "$BIN_DST"
+rm -f "$BIN_DST" "$CTL_DST"
 echo "homestead-server uninstalled"

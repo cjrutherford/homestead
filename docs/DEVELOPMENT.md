@@ -700,9 +700,8 @@ homesteadctl backup unschedule --package jellyfin
   the secret store at the first backup and its key never appeared in the
   journal, audit entries, any API response, the CLI, manifests, or the
   backup tree. `GET /api/v1/backups/destination` answered
-  `encrypted: true, format_version: 2` (the installed `homesteadctl`
-  must be rebuilt to show it; `install-systemd.sh` installs only the
-  daemon). Scheduled runs of all four apps wrote only `<entry>.tar.age`,
+  `encrypted: true, format_version: 2` (`install-systemd.sh` installed only the daemon at the time; it now
+  builds and installs the CLI too). Scheduled runs of all four apps wrote only `<entry>.tar.age`,
   `<name>.age` and a plaintext `backup.json` (format 2, `archives` map,
   no secret names or values), mode 0600 files; Authentik and Immich held
   `*.sql.age` (230 and 72 tables) and `stack-secrets/<pkg>/secrets.tar.age`.
