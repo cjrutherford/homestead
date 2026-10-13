@@ -25,6 +25,7 @@ export class Backups implements OnInit {
   private readonly api = inject(ApiService);
 
   protected readonly destination = signal<string | null>(null);
+  protected readonly encryption = signal<string | null>(null);
   protected readonly destinationError = signal<string | null>(null);
   protected readonly schedules = signal<BackupSchedule[]>([]);
   protected readonly inspected = signal<BackupSchedule | null>(null);
@@ -46,7 +47,12 @@ export class Backups implements OnInit {
     this.error.set(null);
     this.destinationError.set(null);
     this.api.backupDestination().subscribe({
-      next: ({ destination }) => this.destination.set(destination),
+      next: ({ destination, encrypted, format_version }) => {
+        this.destination.set(destination);
+        this.encryption.set(
+          encrypted ? `age, format ${format_version ?? 2}` : 'not encrypted',
+        );
+      },
       error: (failure: HttpErrorResponse) => {
         this.destination.set(null);
         this.destinationError.set(failure.error ?? failure.message);

@@ -119,7 +119,7 @@ func newMigrationEnv(t *testing.T) *migrationEnv {
 		t.Fatal(err)
 	}
 	env.srv = New("127.0.0.1:0")
-	env.srv.MountMigrations(st, catalogDir)
+	env.srv.MountMigrations(st, catalogDir, nil)
 	return env
 }
 

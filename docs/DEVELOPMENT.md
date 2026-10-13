@@ -681,6 +681,14 @@ homesteadctl backup unschedule --package jellyfin
   The dashboard Backups page (S267) covers destination, schedules
   (inspect, save, confirmed remove), and a read-only scheduled-jobs
   panel.
+- Encryption (S259): `GET /api/v1/backups/destination` also reports
+  `encrypted` and `format_version` (shown by `homesteadctl backup
+  destination` and the dashboard Backups page). Decrypt any artifact
+  without Homestead: `age -d -i identity.txt X.tar.age | tar -x`
+  (database files: `age -d -i identity.txt X.sql.age > X.sql`). Tests:
+  `go test ./internal/backup` runs a real `age` CLI check when `age` is
+  on PATH; set `HOMESTEAD_REQUIRE_AGE=1` to fail instead of skip when it
+  is missing (acceptance does).
 - Wire format: schedule records are snake_case JSON (`package`,
   `interval_seconds`, `retain`, `enabled`, `actor`, `updated_at`),
   matching the save request body. This changed from PascalCase keys

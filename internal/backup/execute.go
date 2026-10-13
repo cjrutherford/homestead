@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"filippo.io/age"
+
 	"homestead/internal/operation"
 )
 
@@ -17,7 +19,7 @@ import (
 // same refusal of surprises — so restore and verify can never
 // disagree about what a tree holds. Plans preview in S185; this unit
 // executes them, failing fast with offenders named.
-func RestoreDefinition(plan RestorePlan) (operation.Definition, error) {
+func RestoreDefinition(plan RestorePlan, identities ...age.Identity) (operation.Definition, error) {
 	if len(plan.Entries) == 0 {
 		return operation.Definition{}, fmt.Errorf("backup: restore plan captures nothing")
 	}
@@ -32,14 +34,14 @@ func RestoreDefinition(plan RestorePlan) (operation.Definition, error) {
 		def.Steps = append(def.Steps, operation.StepDef{
 			Name: "restore:" + entry.BackupPath,
 			Run: func(ctx context.Context) error {
-				return restoreEntry(entry)
+				return restoreEntry(entry, identities)
 			},
 		})
 	}
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "verify",
 		Run: func(ctx context.Context) error {
-			return verifyRestore(plan)
+			return verifyRestore(plan, identities)
 		},
 	})
 	return def, nil
@@ -51,9 +53,23 @@ func RestoreDefinition(plan RestorePlan) (operation.Definition, error) {
 // the approved plan — targets reviewed in S185 — and the backup
 // source stays intact, so a failed copy retries from safety rather
 // than from loss.
-func restoreEntry(entry PlannedEntry) error {
+func restoreEntry(entry PlannedEntry, identities []age.Identity) error {
+	encrypted := entry.Encrypted || isEncryptedFile(entry.BackupPath)
+	if encrypted {
+		// Decrypt-check before clearing: a missing or wrong identity must
+		// fail while the live target is still intact.
+		if err := checkDecryptable(entry.BackupPath, identities); err != nil {
+			return err
+		}
+	}
 	if err := os.RemoveAll(entry.Target); err != nil {
 		return fmt.Errorf("backup: clear %q: %w", entry.Target, err)
+	}
+	if encrypted {
+		if err := restoreEncrypted(entry.BackupPath, entry.Target, identities, entry.Sensitive); err != nil {
+			return fmt.Errorf("backup: restore %q: %w", entry.BackupPath, err)
+		}
+		return nil
 	}
 	if _, err := copyTree(entry.BackupPath, entry.Target); err != nil {
 		return fmt.Errorf("backup: restore %q: %w", entry.BackupPath, err)
@@ -93,9 +109,15 @@ func treeSignature(root string) (map[string]int64, error) {
 // extras either way. Content hashing would prove more and cost
 // proportionally; sizes catch truncation and mixups, which is what
 // restores actually get wrong.
-func verifyRestore(plan RestorePlan) error {
+func verifyRestore(plan RestorePlan, identities []age.Identity) error {
 	for _, entry := range plan.Entries {
-		want, err := treeSignature(entry.BackupPath)
+		var want map[string]int64
+		var err error
+		if entry.Encrypted || isEncryptedFile(entry.BackupPath) {
+			want, err = archiveSignature(entry.BackupPath, identities)
+		} else {
+			want, err = treeSignature(entry.BackupPath)
+		}
 		if err != nil {
 			return fmt.Errorf("backup: verify %q: %w", entry.BackupPath, err)
 		}

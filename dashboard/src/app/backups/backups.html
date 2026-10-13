@@ -16,6 +16,9 @@
   <h3>Destination</h3>
   @if (destination(); as root) {
     <p>Backup root: <code class="backup-root">{{ root }}</code></p>
+    @if (encryption(); as scheme) {
+      <p>Encryption: <span class="backup-encryption">{{ scheme }}</span></p>
+    }
   } @else if (destinationError()) {
     <app-state-message kind="error" [headline]="destinationError()" />
   } @else {

@@ -35,7 +35,12 @@ func handleBackupDestination(st *store.Store) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
-		writeJSON(w, map[string]any{"destination": destination})
+		// Backups are always age-encrypted (S259, ADR-022); the format
+		// version tells readers which layout new runs use.
+		writeJSON(w, map[string]any{
+			"destination": destination, "encrypted": true,
+			"format_version": backup.CurrentFormat,
+		})
 	}
 }
 

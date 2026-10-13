@@ -22,6 +22,21 @@ func (c *Client) BackupDestination(ctx context.Context) (string, error) {
 	return out.Destination, nil
 }
 
+// BackupDestinationInfo is the destination plus the encryption facts
+// of runs written there (S259).
+type BackupDestinationInfo struct {
+	Destination   string `json:"destination"`
+	Encrypted     bool   `json:"encrypted"`
+	FormatVersion int    `json:"format_version"`
+}
+
+// BackupDestinationInfo resolves the backup root with encryption facts.
+func (c *Client) BackupDestinationInfo(ctx context.Context) (BackupDestinationInfo, error) {
+	var out BackupDestinationInfo
+	err := c.get(ctx, "/api/v1/backups/destination", &out)
+	return out, err
+}
+
 // BackupSchedules lists persisted schedules ordered by package.
 func (c *Client) BackupSchedules(ctx context.Context) ([]backup.Schedule, error) {
 	var out []backup.Schedule

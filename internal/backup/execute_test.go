@@ -123,13 +123,13 @@ func TestRestoreValidation(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	mismatch := RestorePlan{Entries: []PlannedEntry{{BackupPath: want, Target: have}}}
-	if err := verifyRestore(mismatch); err == nil ||
+	if err := verifyRestore(mismatch, nil); err == nil ||
 		!strings.Contains(err.Error(), "differs") {
 		t.Fatalf("err = %v", err)
 	}
 	if err := verifyRestore(RestorePlan{Entries: []PlannedEntry{
 		{BackupPath: want, Target: filepath.Join(t.TempDir(), "ghost")},
-	}}); err == nil {
+	}}, nil); err == nil {
 		t.Fatal("verified missing target")
 	}
 }

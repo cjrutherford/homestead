@@ -740,8 +740,16 @@ export class ApiService {
     });
   }
 
-  backupDestination(): Observable<{ destination: string }> {
-    return this.http.get<{ destination: string }>('/api/v1/backups/destination');
+  backupDestination(): Observable<{
+    destination: string;
+    encrypted?: boolean;
+    format_version?: number;
+  }> {
+    return this.http.get<{
+      destination: string;
+      encrypted?: boolean;
+      format_version?: number;
+    }>('/api/v1/backups/destination');
   }
 
   backupSchedules(): Observable<BackupSchedule[]> {

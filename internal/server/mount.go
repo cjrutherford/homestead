@@ -65,12 +65,13 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 		certDoctorChecks(st, time.Now),
 		platformDoctorCheck(st),
 		migrationDoctorChecks(st, c.CatalogDir),
+		backupEncryptionDoctorCheck,
 	)
 	srv.MountTLSRenewal(st, time.Now)
 	srv.MountOperations(operation.New(st))
 	srv.MountCatalog(st, c.CatalogDir, secrets)
 	srv.MountAppSecrets(st, c.CatalogDir, secrets)
-	srv.MountMigrations(st, c.CatalogDir)
+	srv.MountMigrations(st, c.CatalogDir, secrets)
 	srv.MountStorage(st)
 	srv.MountBackups(st)
 	sched := NewScheduler(st, c.CatalogDir, secrets)

@@ -224,9 +224,14 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 	if schedule, err := schedules.Get(manifest.Name); err == nil {
 		retain = schedule.Retain
 	}
+	recipients, err := backup.Recipients(secrets)
+	if err != nil {
+		return backup.Job{}, err
+	}
 	job := backup.Job{
 		Manifest: manifest, Package: manifest.Name,
 		Sources: sources, DestRoot: dest, Retain: retain, Warnings: warnings,
+		Recipients: recipients,
 	}
 	if manifest.Database != nil {
 		job.Container = manifest.Name + "-" + manifest.Database.Service
@@ -246,7 +251,28 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 			return backup.Job{}, fmt.Errorf("postgres backup needs a database password")
 		}
 	}
+	// S266 secret files live in the stack directory, outside the data
+	// mounts. They join the run as a sensitive source: archived only
+	// encrypted, restored 0600 with their recorded ownership.
+	if source, ok := stackSecretsSource(manifest.Name); ok {
+		job.Sources = append(job.Sources, source)
+	}
 	return job, nil
+}
+
+// stackSecretsSource returns the sensitive source for a stack's
+// materialized secret files when the directory exists.
+func stackSecretsSource(packageName string) (backup.Source, bool) {
+	dir := filepath.Join(stackDirFor(packageName), catalog.SecretsDirName)
+	info, err := os.Lstat(dir)
+	if err != nil || !info.IsDir() {
+		return backup.Source{}, false
+	}
+	return backup.Source{
+		Mountpoint: filepath.Dir(stackDirFor(packageName)),
+		Path:       packageName + "/" + catalog.SecretsDirName,
+		Class:      backup.SecretsClass, Sensitive: true,
+	}, true
 }
 
 // databasePassword reads the declared database password secret. A

@@ -78,7 +78,32 @@ the Authentik secret key) are delivered as mode 0600 files under the
 stack directory and referenced from the generated Compose through
 top-level `secrets:` with `file:` sources (S266, ADR-021). They are never
 `environment:` entries and never enter YAML, drift output, logs, audit,
-operation payloads, configuration export, or plaintext backups.
+operation payloads, configuration export, or plaintext backups: the
+stack `secrets/` directory is a sensitive backup source that only runs
+encrypted (S259).
 Manifests declare them (`secrets:`); install generates missing values;
 configure rotates them; backups read the database password from the
 store. See `docs/DEVELOPMENT.md`.
+
+## Backup encryption (S259, ADR-022)
+Every backup run is age-encrypted (`filippo.io/age`, X25519). Format 2:
+each source tree is one streamed `tar | age` file, `<run>/<entry>.tar.age`
+(directories, modes, ownership, in-tree relative symlinks, per
+S276/870ce9b semantics), and each database export is one encrypted file
+`<run>/<name>.age`; no plaintext of the data is written to disk (the SQLite
+snapshot, which SQLite requires as a file, lives briefly in private tmpfs
+scratch). `backup.json` stays readable plaintext with non-secret
+metadata: package, timestamp, entry names, counts, `format_version`,
+`encrypted`, and the entry-to-archive map. Runs without those fields are
+format 1 (plaintext) and restore unchanged. The appliance identity is
+generated on first use and held in the secret store as `app_backup_identity`
+(reserved `app_` prefix: absent from configuration export, never logged or
+returned). Stack secret files (S266) join each run as a sensitive source
+(`stack-secrets/<pkg>/secrets`) and restore 0600 with recorded ownership.
+Restore decrypts with the appliance identity (`backup.Identities`) and
+fails before touching live data if it cannot. Pre-update, scheduled, and
+pre-migration backups all encrypt. Owner recipients, identity export, and
+the plain-`age` runbook are S271/S275; until then doctor warns
+(`backup-encryption`). `filippo.io/age` is BSD-3-Clause (plus
+`filippo.io/hpke`, BSD-3-Clause), licenses recorded in
+`docs/THIRD_PARTY.md`.

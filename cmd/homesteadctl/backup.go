@@ -32,11 +32,16 @@ func runBackup(ctx context.Context, client *apiclient.Client, args []string, std
 }
 
 func runBackupDestination(ctx context.Context, client *apiclient.Client, stdout, stderr io.Writer) int {
-	destination, err := client.BackupDestination(ctx)
+	info, err := client.BackupDestinationInfo(ctx)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	fmt.Fprintln(stdout, destination)
+	fmt.Fprintln(stdout, info.Destination)
+	if info.Encrypted {
+		fmt.Fprintf(stdout, "encrypted: yes (age, format %d)\n", info.FormatVersion)
+	} else {
+		fmt.Fprintln(stdout, "encrypted: no")
+	}
 	return exitOK
 }
 

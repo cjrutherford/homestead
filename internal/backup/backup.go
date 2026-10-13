@@ -9,8 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+
+	"filippo.io/age"
 
 	"homestead/internal/discover"
 	"homestead/internal/operation"
@@ -31,6 +34,10 @@ type Source struct {
 	Mountpoint string
 	Path       string
 	Class      storage.Class
+	// Sensitive marks a tree holding secret material (S266 secret
+	// files): it is only ever backed up encrypted, and restore forces
+	// its files to 0600.
+	Sensitive bool
 }
 
 // Entry names the source inside a run: the manifest entry key and the
@@ -53,11 +60,14 @@ func (s Source) StepName() string {
 // validateSources checks every source and refuses entries that would
 // share a destination: two trees written to one subpath would merge
 // silently, so the run fails before copying anything.
-func validateSources(sources []Source) error {
+func validateSources(sources []Source, encrypted bool) error {
 	seen := map[string]bool{}
 	for i := range sources {
 		if err := sources[i].Validate(); err != nil {
 			return fmt.Errorf("backup: source #%d: %w", i, err)
+		}
+		if sources[i].Sensitive && !encrypted {
+			return fmt.Errorf("backup: source %q holds secrets and is only backed up encrypted", sources[i].Entry())
 		}
 		entry := sources[i].Entry()
 		if seen[entry] {
@@ -108,6 +118,63 @@ type Manifest struct {
 	// declared paths, image volumes the catalog does not declare), so
 	// a restore planner or owner can see what the run did not cover.
 	Warnings []string `json:"warnings,omitempty"`
+	// FormatVersion is 2 for encrypted runs (S259, ADR-022); absent in
+	// runs from earlier versions, which are plaintext (format 1). The
+	// manifest itself stays readable plaintext in every format and
+	// carries non-secret metadata only.
+	FormatVersion int `json:"format_version,omitempty"`
+	// Encrypted reports whether the run's data is age-encrypted.
+	Encrypted bool `json:"encrypted"`
+	// Archives maps each entry to its encrypted artifact, relative to
+	// the run directory. Absent for plaintext runs.
+	Archives map[string]string `json:"archives,omitempty"`
+}
+
+// Format returns the run's format version, defaulting old manifests to
+// plaintext.
+func (m Manifest) Format() int {
+	if m.FormatVersion == 0 {
+		return FormatPlaintext
+	}
+	return m.FormatVersion
+}
+
+// runState carries per-run facts between steps: file counts recorded
+// while archiving, because encrypted trees cannot be re-walked.
+type runState struct {
+	mu    sync.Mutex
+	files map[string]int
+}
+
+func (r *runState) record(entry string, n int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.files == nil {
+		r.files = map[string]int{}
+	}
+	r.files[entry] = n
+}
+
+func (r *runState) count(entry string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.files[entry]
+}
+
+// stamp the manifest's format fields for a run.
+func (m *Manifest) markFormat(recipients []age.Recipient, dbEntry string) {
+	if len(recipients) == 0 {
+		m.FormatVersion = FormatPlaintext
+		return
+	}
+	m.FormatVersion, m.Encrypted = CurrentFormat, true
+	m.Archives = map[string]string{}
+	for _, entry := range m.Entries {
+		m.Archives[entry] = entry + ArchiveSuffix
+		if entry == dbEntry {
+			m.Archives[entry] = entry + FileSuffix
+		}
+	}
 }
 
 // ResolveDestination finds the backup root: the backup-class
@@ -250,6 +317,9 @@ type Request struct {
 	Package     string
 	Sources     []Source
 	Destination string
+	// Recipients encrypt the run (age). Empty writes the legacy
+	// plaintext layout, which sensitive sources refuse.
+	Recipients []age.Recipient
 }
 
 // Validate checks the request shape.
@@ -263,7 +333,7 @@ func (r Request) Validate() error {
 	if len(r.Sources) == 0 {
 		return fmt.Errorf("backup: at least one source is required")
 	}
-	return validateSources(r.Sources)
+	return validateSources(r.Sources, len(r.Recipients) > 0)
 }
 
 // Definition plans a backup run: one copy step per source plus a
@@ -278,6 +348,7 @@ func Definition(request Request, now func() time.Time) (operation.Definition, er
 		now = time.Now
 	}
 	def := operation.Definition{Type: "backup.run"}
+	state := &runState{}
 	var stamp string
 	stampFor := func() string {
 		if stamp == "" {
@@ -291,14 +362,16 @@ func Definition(request Request, now func() time.Time) (operation.Definition, er
 			Name: source.StepName(),
 			Run: func(ctx context.Context) error {
 				root := filepath.Join(request.Destination, request.Package, stampFor())
-				return copySource(root, source)
+				n, err := copySource(root, source, request.Recipients)
+				state.record(source.Entry(), n)
+				return err
 			},
 		})
 	}
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "write-manifest",
 		Run: func(ctx context.Context) error {
-			return writeManifest(request, stampFor())
+			return writeManifest(request, stampFor(), state)
 		},
 	})
 	return def, nil
@@ -306,41 +379,40 @@ func Definition(request Request, now func() time.Time) (operation.Definition, er
 
 // copySource replicates one source tree into its run root, refusing
 // symlinked roots before walking: a linked root would back up the
-// target tree under a false name.
-func copySource(root string, source Source) error {
+// target tree under a false name. With recipients the tree becomes one
+// encrypted tar stream (<entry>.tar.age) and nothing is written in
+// plaintext; it returns the file count.
+func copySource(root string, source Source, recipients []age.Recipient) (int, error) {
 	full := filepath.Join(source.Mountpoint, source.Path)
 	if info, err := os.Lstat(full); err != nil {
-		return fmt.Errorf("backup: source %q: %w", source.Path, err)
+		return 0, fmt.Errorf("backup: source %q: %w", source.Path, err)
 	} else if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("backup: source %q is a symlink: refused", source.Path)
+		return 0, fmt.Errorf("backup: source %q is a symlink: refused", source.Path)
+	}
+	if source.Sensitive && len(recipients) == 0 {
+		return 0, fmt.Errorf("backup: source %q holds secrets and is only backed up encrypted", source.Entry())
 	}
 	dst := filepath.Join(root, source.Entry())
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return fmt.Errorf("backup: %w", err)
+		return 0, fmt.Errorf("backup: %w", err)
 	}
-	if _, err := copyTree(full, dst); err != nil {
-		return err
+	if len(recipients) > 0 {
+		return archiveTree(full, dst+ArchiveSuffix, recipients)
 	}
-	return nil
+	return copyTree(full, dst)
 }
 
 // writeManifest records the completed run: entries plus file counts
 // re-walked from disk, so the manifest describes what landed, not
 // what was planned.
-func writeManifest(request Request, stamp string) error {
+func writeManifest(request Request, stamp string, state *runState) error {
 	root := filepath.Join(request.Destination, request.Package, stamp)
 	manifest := Manifest{Package: request.Package, Created: stamp, Sources: map[string]string{}}
 	for _, source := range request.Sources {
 		manifest.recordSource(source)
-		count := 0
-		_ = filepath.WalkDir(filepath.Join(root, source.Entry()), func(path string, entry fs.DirEntry, err error) error {
-			if err == nil && !entry.IsDir() {
-				count++
-			}
-			return nil
-		})
-		manifest.Files += count
+		manifest.Files += countEntry(root, source.Entry(), len(request.Recipients) > 0, state)
 	}
+	manifest.markFormat(request.Recipients, "")
 	raw, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return fmt.Errorf("backup: manifest: %w", err)
@@ -363,4 +435,20 @@ func (m *Manifest) recordSource(source Source) {
 		}
 		m.Paths[entry] = source.Path
 	}
+}
+
+// countEntry counts an entry's files: recorded while archiving for
+// encrypted runs, re-walked from disk for plaintext ones.
+func countEntry(root, entry string, encrypted bool, state *runState) int {
+	if encrypted {
+		return state.count(entry)
+	}
+	count := 0
+	_ = filepath.WalkDir(filepath.Join(root, entry), func(path string, dirEntry fs.DirEntry, err error) error {
+		if err == nil && !dirEntry.IsDir() {
+			count++
+		}
+		return nil
+	})
+	return count
 }

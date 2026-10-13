@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
+
+	"filippo.io/age"
 
 	"homestead/internal/catalog"
 	"homestead/internal/operation"
@@ -192,6 +193,9 @@ type Job struct {
 	Retain    int
 	// Warnings are recorded in the run manifest.
 	Warnings []string
+	// Recipients encrypt the run (S259). Empty writes the legacy
+	// plaintext layout, which sensitive sources refuse.
+	Recipients []age.Recipient
 }
 
 // Validate checks job shape: manifest, package, sources, destination,
@@ -207,7 +211,7 @@ func (j Job) Validate() error {
 	if len(j.Sources) == 0 && j.Manifest.Database == nil {
 		return fmt.Errorf("backup: job captures nothing")
 	}
-	if err := validateSources(j.Sources); err != nil {
+	if err := validateSources(j.Sources, len(j.Recipients) > 0); err != nil {
 		return err
 	}
 	if j.DestRoot == "" || j.DestDirAbsent() {
@@ -247,6 +251,7 @@ func JobDefinition(job Job, now func() time.Time) (operation.Definition, error) 
 		now = time.Now
 	}
 	def := operation.Definition{Type: "backup.job"}
+	state := &runState{}
 	var stamp string
 	stampFor := func() string {
 		if stamp == "" {
@@ -262,7 +267,9 @@ func JobDefinition(job Job, now func() time.Time) (operation.Definition, error) 
 		def.Steps = append(def.Steps, operation.StepDef{
 			Name: source.StepName(),
 			Run: func(ctx context.Context) error {
-				return copySource(rootFor(), source)
+				n, err := copySource(rootFor(), source, job.Recipients)
+				state.record(source.Entry(), n)
+				return err
 			},
 		})
 	}
@@ -275,6 +282,7 @@ func JobDefinition(job Job, now func() time.Time) (operation.Definition, error) 
 					Database: *job.Manifest.Database, SrcRoot: job.SrcRoot,
 					DestDir: rootFor(), Container: job.Container,
 					Password: job.Password, Hooks: job.Manifest.Hooks,
+					Recipients: job.Recipients,
 				})
 				return err
 			},
@@ -291,7 +299,7 @@ func JobDefinition(job Job, now func() time.Time) (operation.Definition, error) 
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "write-manifest",
 		Run: func(ctx context.Context) error {
-			return writeJobManifest(job, stampFor())
+			return writeJobManifest(job, stampFor(), state)
 		},
 	})
 	return def, nil
@@ -335,29 +343,29 @@ func prune(job Job, current string) error {
 
 // writeJobManifest records the retained run: file sources plus the
 // database export when present, with counts re-walked from disk.
-func writeJobManifest(job Job, stamp string) error {
+func writeJobManifest(job Job, stamp string, state *runState) error {
 	root := filepath.Join(job.DestRoot, job.Package, stamp)
 	manifest := Manifest{Package: job.Package, Created: stamp, Sources: map[string]string{}, Warnings: job.Warnings}
 	for _, source := range job.Sources {
 		manifest.recordSource(source)
 	}
+	dbEntry := ""
 	if job.Manifest.Database != nil {
 		name := job.Manifest.Database.Database + ".sql"
 		if job.Manifest.Database.Kind == catalog.DatabaseSQLite {
 			name = baseName(job.Manifest.Database.Path)
 		}
 		manifest.Entries = append(manifest.Entries, name)
+		dbEntry = name
 	}
 	for _, entry := range manifest.Entries {
-		count := 0
-		_ = filepath.WalkDir(filepath.Join(root, entry), func(path string, dirEntry fs.DirEntry, err error) error {
-			if err == nil && !dirEntry.IsDir() {
-				count++
-			}
-			return nil
-		})
-		manifest.Files += count
+		if len(job.Recipients) > 0 && entry == dbEntry {
+			manifest.Files++
+			continue
+		}
+		manifest.Files += countEntry(root, entry, len(job.Recipients) > 0, state)
 	}
+	manifest.markFormat(job.Recipients, dbEntry)
 	raw, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return fmt.Errorf("backup: manifest: %w", err)

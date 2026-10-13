@@ -37,8 +37,8 @@ const (
 // MountMigrations serves S277 app data migration: placement detection
 // per installed app, the migration plan, approval (an operation), and
 // the separate explicit removal of old volumes.
-func (s *Server) MountMigrations(st *store.Store, catalogDir string) {
-	h := &migrationHandlers{s: s, st: st, catalogDir: catalogDir, audit: audit.New(st), runner: operation.NewRunner(st)}
+func (s *Server) MountMigrations(st *store.Store, catalogDir string, secrets catalog.SecretStore) {
+	h := &migrationHandlers{s: s, st: st, secrets: secrets, catalogDir: catalogDir, audit: audit.New(st), runner: operation.NewRunner(st)}
 	s.mux.HandleFunc("GET /api/v1/data-migrations", h.list)
 	s.mux.HandleFunc("POST /api/v1/data-migrations/{name}/plan", h.plan)
 	s.mux.HandleFunc("POST /api/v1/data-migrations/{name}/approve", h.approve)
@@ -48,6 +48,7 @@ func (s *Server) MountMigrations(st *store.Store, catalogDir string) {
 type migrationHandlers struct {
 	s          *Server
 	st         *store.Store
+	secrets    catalog.SecretStore
 	catalogDir string
 	audit      *audit.Service
 	runner     *operation.Runner
@@ -215,7 +216,13 @@ func (h *migrationHandlers) preMigrationBackup(manifest catalog.Manifest, plan c
 	// needed.
 	manifest.Database = nil
 	manifest.Hooks = nil
-	return backup.Job{Manifest: manifest, Package: manifest.Name, Sources: sources, DestRoot: dest},
+	// The volume copy is encrypted like every backup (S259).
+	recipients, err := backup.Recipients(h.secrets)
+	if err != nil {
+		return backup.Job{}, backupAvailability{Destination: dest,
+			Reason: "backup encryption unavailable: " + err.Error()}
+	}
+	return backup.Job{Manifest: manifest, Package: manifest.Name, Sources: sources, DestRoot: dest, Recipients: recipients},
 		backupAvailability{Possible: true, Destination: dest}
 }
 

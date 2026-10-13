@@ -71,9 +71,11 @@
   GPUs through yet; planning the fragment belongs with generation.
 - ARM SoC transcoding: S162 covers Intel, AMD, and NVIDIA only;
   Rockchip and other SoC bindings need per-board validation.
-- Backup encryption at rest: S181 copies plaintext; encrypting backup
-  trees (age recipients, key custody, rotation) belongs with restore
-  once runbooks exist.
+- Backup encryption recipients and runbook: S259 encrypts every run to
+  the appliance identity; owner-added recipients, recovery-identity
+  export, and the plain-`age` restore runbook land in S271 and S275
+  (S275 removes this entry). Restore execution is still package-level
+  only (no API route), as before.
 - App data on anonymous volumes: KVM validation (2026-10-12) found
   generated catalog stacks render no `volumes:`, so app data lives in
   anonymous Docker volumes rather than mounted storage, and scheduled

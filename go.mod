@@ -3,6 +3,7 @@ module homestead
 go 1.26.0
 
 require (
+	filippo.io/age v1.3.2
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.58.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -10,6 +11,7 @@ require (
 )
 
 require (
+	filippo.io/hpke v0.4.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect

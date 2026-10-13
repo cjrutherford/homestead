@@ -15,7 +15,7 @@ func TestJobManifestRecordsWarnings(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dest, "photos", "20261008T120000Z"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeJobManifest(job, "20261008T120000Z"); err != nil {
+	if err := writeJobManifest(job, "20261008T120000Z", &runState{}); err != nil {
 		t.Fatalf("writeJobManifest: %v", err)
 	}
 	raw, err := os.ReadFile(filepath.Join(dest, "photos", "20261008T120000Z", "backup.json"))

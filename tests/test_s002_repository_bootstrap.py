@@ -51,7 +51,8 @@ class TestGoBootstrap(unittest.TestCase):
 
         Indirect transitive deps are fine; each new direct dependency needs
         its owning slice. Approved: S013 SQLite driver, S014 YAML, S020 bcrypt,
-        S263 review x/net/idna (IDNA name normalization for ADR-024).
+        S263 review x/net/idna (IDNA name normalization for ADR-024),
+        S259 filippo.io/age (backup encryption, ADR-022).
         """
         import re
 
@@ -59,6 +60,7 @@ class TestGoBootstrap(unittest.TestCase):
         self.assertEqual(
             sorted(direct),
             [
+                "filippo.io/age",
                 "golang.org/x/crypto",
                 "golang.org/x/net",
                 "gopkg.in/yaml.v3",

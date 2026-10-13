@@ -67,6 +67,10 @@ type PlannedEntry struct {
 	BackupPath string
 	Target     string
 	Exists     bool
+	// Encrypted marks an age artifact (BackupPath names the .age file);
+	// Sensitive additionally forces restored files to 0600.
+	Encrypted bool
+	Sensitive bool
 }
 
 // RestorePlan previews one run's restoration: per-entry targets with
@@ -122,6 +126,14 @@ func PlanRestore(run Run, overrides map[string]string) (RestorePlan, error) {
 			return RestorePlan{}, fmt.Errorf("backup: target for %q must be absolute", entry)
 		}
 		planned := PlannedEntry{BackupPath: filepath.Join(run.Dir, entry), Target: target}
+		if archive, ok := run.Manifest.Archives[entry]; ok && run.Manifest.Encrypted {
+			if archive == "" || filepath.IsAbs(archive) || strings.Contains(archive, "..") {
+				return RestorePlan{}, fmt.Errorf("backup: entry %q names an invalid archive", entry)
+			}
+			planned.BackupPath = filepath.Join(run.Dir, archive)
+			planned.Encrypted = true
+			planned.Sensitive = strings.HasPrefix(entry, SecretsClass+"/")
+		}
 		if _, err := os.Stat(target); err == nil {
 			planned.Exists = true
 			plan.Destructive = true

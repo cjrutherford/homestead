@@ -53,7 +53,9 @@ describe('Backups', () => {
     jobs: unknown[] = [],
   ) {
     fixture.detectChanges();
-    http.expectOne('/api/v1/backups/destination').flush({ destination });
+    http
+      .expectOne('/api/v1/backups/destination')
+      .flush({ destination, encrypted: true, format_version: 2 });
     http.expectOne('/api/v1/scheduler/jobs').flush(jobs);
     http.expectOne('/api/v1/backups/schedules').flush(schedules);
     fixture.detectChanges();
@@ -79,6 +81,7 @@ describe('Backups', () => {
   it('shows destination and schedules', () => {
     load([SCHEDULE]);
     expect(text()).toContain('/mnt/backup');
+    expect(text()).toContain('Encryption: age, format 2');
     expect(text()).toContain('jellyfin');
     expect(text()).toContain('every 24h');
     expect(fixture.nativeElement.querySelector('code.backup-root')).toBeTruthy();

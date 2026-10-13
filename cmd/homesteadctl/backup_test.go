@@ -13,7 +13,7 @@ func backupStub(t *testing.T) string {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/backups/destination":
-			_, _ = w.Write([]byte(`{"destination":"/mnt/backup"}`))
+			_, _ = w.Write([]byte(`{"destination":"/mnt/backup","encrypted":true,"format_version":2}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/backups/schedules":
 			_, _ = w.Write([]byte(`[{"package":"jellyfin","interval_seconds":86400,"retain":7,"enabled":true,"actor":"owner"}]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/backups/schedules":
@@ -34,7 +34,7 @@ func TestBackupDestination(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	if !strings.Contains(stdout, "/mnt/backup") {
+	if !strings.Contains(stdout, "/mnt/backup") || !strings.Contains(stdout, "encrypted: yes (age, format 2)") {
 		t.Fatalf("stdout = %q", stdout)
 	}
 }
