@@ -127,7 +127,7 @@ Audit trail safety (S269): callers record names and ids, never values.
 As a best-effort net, `audit.Service.Record` also redacts known credential
 shapes (`key=value` pairs for password/secret/token/api-key/private-key/
 credential/authorization/cookie names, Bearer/Basic values, `AGE-SECRET-KEY-`
-identities, JWT-like tunnel tokens) from Detail and OverrideReason, and
+identities, JWT-like tunnel tokens) from Actor (the attempted username of a failed login), Detail, and OverrideReason, and
 sensitive-named keys in Plan JSON (`internal/audit/redact.go`). It does not
 catch arbitrary secrets, so the dashboard Audit page (`/audit`) renders
 every field as plain text. `GET /api/v1/audit` takes only `limit`; the page

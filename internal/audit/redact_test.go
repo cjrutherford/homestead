@@ -56,3 +56,24 @@ func TestRecordRedactsBeforePersisting(t *testing.T) {
 		t.Fatalf("persisted secret: %+v", got)
 	}
 }
+
+func TestRecordRedactsActor(t *testing.T) {
+	svc := openAuditStore(t)
+	for _, actor := range []string{"password=hunter2", "Bearer abcdefghijklmnop12345"} {
+		e, err := svc.Record(Entry{Actor: actor, Action: "admin.login", Outcome: OutcomeError})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := svc.Get(e.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(got.Actor, "hunter2") || strings.Contains(got.Actor, "abcdefghijklmnop") {
+			t.Fatalf("persisted secret in actor: %+v", got)
+		}
+	}
+	e, err := svc.Record(Entry{Actor: "alice", Action: "x", Outcome: OutcomeOK})
+	if err != nil || e.Actor != "alice" {
+		t.Fatalf("plain actor changed: %+v %v", e, err)
+	}
+}

@@ -76,6 +76,9 @@ func (s *Service) Record(entry Entry) (Entry, error) {
 		return Entry{}, fmt.Errorf("audit: override requires a reason")
 	}
 	// Safety net (redact.go): callers record names, never values.
+	// The actor of a failed login is the attempted username, which a
+	// mistyped form can fill with a password or token.
+	entry.Actor = RedactText(entry.Actor)
 	entry.Detail = RedactText(entry.Detail)
 	entry.OverrideReason = RedactText(entry.OverrideReason)
 	entry.Plan = RedactPlan(entry.Plan)
