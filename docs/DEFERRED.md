@@ -117,9 +117,6 @@
 - Drift live-state comparison: S261 schedules file-drift scans, but
   comparing running containers against generated files belongs to a
   later slice (S262).
-- Storage dashboard surface: S235 covers the API and CLI;
-  dashboard affordances for mounts, registrations, and
-  assignments belong to later slices.
 - Theme selection: S248 defines light, dark, and high-contrast
   themes and previews them on the validation board; no user-facing
   switcher or prefers-color-scheme wiring exists yet.
@@ -172,9 +169,6 @@
 - Corrupt-database repair: S230 snapshots state and refuses a
   missing database as disaster recovery; repairing corrupt
   state belongs to the disaster-recovery flow (S234).
-- Storage dashboard surface: S235 covers mount registration
-  and class assignment over the API and CLI; dashboard
-  affordances belong to later slices.
 - Proxy dashboard surface: S237 covers Caddy deployment and
   route reconciliation over the API and CLI; dashboard
   affordances belong to later slices.
@@ -252,3 +246,8 @@
   reconciliation retries for about four minutes, then leaves the pending
   row for the next daemon start. Nextcloud and
   Jellyfin declare no secrets.
+- Storage unregister and unassign: the daemon has no route for either
+  (the registry and assignments stores can drop rows, but nothing
+  exposes it), so the S268 Storage page and the storage CLI
+  offer neither. Re-assigning a class is confirmed with an impact
+  message; the page cannot yet list which installed apps use a class.

@@ -49,11 +49,11 @@ unchanged.
 | GET | /api/v1/operations/{id}/events | `runOperationsFollow` | `operationEvents` | Poll-backed SSE state stream |
 | GET | /api/v1/audit | `runAuditList` | n/a | Append-only trail; no dashboard viewer yet |
 | GET | /api/v1/docker/health | `runDockerHealth` | n/a | Engine inventory; stack UI arrives later |
-| GET | /api/v1/storage/mounts | `runStorageMounts` | n/a | Discovered mounts for registration; dashboard surface belongs to later slices |
-| GET | /api/v1/storage/registrations | `runStorageRegistrations` | n/a | Registered mounts; dashboard surface belongs to later slices |
-| POST | /api/v1/storage/registrations | `runStorageRegister` | n/a | Mount approval; dashboard surface belongs to later slices |
-| GET | /api/v1/storage/assignments | `runStorageAssignments` | n/a | Class bindings; dashboard surface belongs to later slices |
-| POST | /api/v1/storage/assignments | `runStorageAssign` | n/a | Class binding; dashboard surface belongs to later slices |
+| GET | /api/v1/storage/mounts | `runStorageMounts` | `storageMounts` | Storage page (`/storage`); S268 |
+| GET | /api/v1/storage/registrations | `runStorageRegistrations` | `storageRegistrations` | Storage page (`/storage`); S268 |
+| POST | /api/v1/storage/registrations | `runStorageRegister` | `storageRegister` | Storage page (`/storage`); S268 |
+| GET | /api/v1/storage/assignments | `runStorageAssignments` | `storageAssignments` | Storage page (`/storage`); S268 |
+| POST | /api/v1/storage/assignments | `runStorageAssign` | `storageAssign` | Storage page (`/storage`); S268 |
 | GET | /api/v1/doctor | `"doctor"` | `doctor` | Diagnostic report on all three surfaces |
 | GET | /api/v1/catalog | `"apps"` | `catalogPackages` | Package summaries on both surfaces |
 | GET | /api/v1/catalog/{name} | `"apps"` | `catalogPackage` | Manifest detail on both surfaces |

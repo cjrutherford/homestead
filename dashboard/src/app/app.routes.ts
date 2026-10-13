@@ -16,6 +16,7 @@ import { Operations } from './operations/operations';
 import { OperationDetail } from './operations/operation-detail';
 import { ValidationBoard } from './validation/validation-board';
 import { Backups } from './backups/backups';
+import { StorageSetup } from './storage/storage';
 import { NotFound } from './not-found/not-found';
 
 export const routes: Routes = [
@@ -33,6 +34,7 @@ export const routes: Routes = [
   { path: 'exposure', component: Exposure },
   { path: 'tunnel', component: Tunnel },
   { path: 'backups', component: Backups },
+  { path: 'storage', component: StorageSetup },
   { path: 'secrets', component: Secrets },
   { path: 'operations', component: Operations },
   { path: 'operations/:id', component: OperationDetail },

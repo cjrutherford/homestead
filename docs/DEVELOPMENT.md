@@ -525,7 +525,7 @@ sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
   and fails loudly; plan files generate from environment with
   sane port defaults. Backup configuration
   has CLI/API surfaces since S238 (`homesteadctl backup`,
-  `/api/v1/backups/*`) and a dashboard Backups page since S267; the
+  `/api/v1/backups/*`) and a dashboard Backups page since S267 (storage setup has a dashboard Storage page since S268); the
   run still ends noting manual backup configuration before
   production use.
 

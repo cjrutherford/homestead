@@ -432,6 +432,41 @@ export interface BackupIdentityExport {
   actor: string;
 }
 
+/**
+ * GET /api/v1/storage/mounts — the Go structs carry no json tags, so
+ * fields arrive PascalCase.
+ */
+export interface StorageMount {
+  ID: number;
+  Device: string;
+  Mountpoint: string;
+  FSType: string;
+  Options: string[] | null;
+  ReadOnly: boolean;
+  UUID: string;
+  Label: string;
+  Accessible: boolean;
+  TotalBytes: number;
+  FreeBytes: number;
+  AvailBytes: number;
+}
+
+/** GET/POST /api/v1/storage/registrations (PascalCase). */
+export interface StorageRegistration {
+  Mountpoint: string;
+  Label: string;
+  Actor: string;
+  AddedAt: string;
+}
+
+/** GET/POST /api/v1/storage/assignments (PascalCase). */
+export interface StorageAssignment {
+  Class: string;
+  Mountpoint: string;
+  Actor: string;
+  CreatedAt: string;
+}
+
 /** GET /api/v1/backups/schedules — one persisted schedule record. */
 export interface BackupSchedule {
   package: string;
@@ -992,5 +1027,41 @@ export class ApiService {
   /** Revokes the cookie session (the cookie rides along same-origin). */
   logout(): Observable<void> {
     return this.http.delete<void>('/api/v1/sessions');
+  }
+
+  storageMounts(): Observable<StorageMount[]> {
+    return this.http.get<StorageMount[]>('/api/v1/storage/mounts');
+  }
+
+  storageRegistrations(): Observable<StorageRegistration[]> {
+    return this.http.get<StorageRegistration[]>(
+      '/api/v1/storage/registrations',
+    );
+  }
+
+  storageRegister(body: {
+    mountpoint: string;
+    label: string;
+    actor: string;
+  }): Observable<StorageRegistration> {
+    return this.http.post<StorageRegistration>(
+      '/api/v1/storage/registrations',
+      body,
+    );
+  }
+
+  storageAssignments(): Observable<StorageAssignment[]> {
+    return this.http.get<StorageAssignment[]>('/api/v1/storage/assignments');
+  }
+
+  storageAssign(body: {
+    class: string;
+    mountpoint: string;
+    actor: string;
+  }): Observable<StorageAssignment> {
+    return this.http.post<StorageAssignment>(
+      '/api/v1/storage/assignments',
+      body,
+    );
   }
 }

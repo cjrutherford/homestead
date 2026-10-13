@@ -1,0 +1,167 @@
+<section aria-label="Storage">
+  <h2>Storage</h2>
+  <p>
+    Homestead uses storage that is already mounted. It never formats or
+    partitions a disk. Register a mount you approve, then assign it a class
+    so installs and backups know where to put data.
+  </p>
+
+  @if (error()) {
+    <app-state-message kind="error" [headline]="error()" />
+  }
+  @if (notice()) {
+    <app-state-message kind="status" [headline]="notice()" />
+  }
+
+  <h3>Discovered mounts</h3>
+  <button type="button" (click)="refresh()" [disabled]="busy()">Refresh</button>
+  @if (mountsError()) {
+    <app-state-message kind="error" [headline]="mountsError()" />
+  } @else if (mountsLoading() && mounts().length === 0) {
+    <app-state-message kind="loading" headline="Discovering mounts…" />
+  } @else {
+    <ul aria-label="Discovered mounts">
+      @for (mount of mounts(); track mount.Mountpoint) {
+        <li>
+          <strong class="storage-path">{{ mount.Mountpoint }}</strong>
+          <span class="storage-path">({{ mount.Device }}, {{ mount.FSType }})</span>
+          @if (mount.Label) { label {{ mount.Label }}, }
+          @if (mount.Accessible) {
+            {{ size(mount.FreeBytes) }} free of {{ size(mount.TotalBytes) }},
+          } @else {
+            capacity unavailable,
+          }
+          {{ mount.ReadOnly ? 'read-only' : 'writable' }},
+          {{ mount.Accessible ? 'accessible' : 'not accessible' }}
+          @if (registrationFor(mount.Mountpoint); as reg) {
+            , registered as {{ reg.Label }}
+            @if (classesOn(mount.Mountpoint).length) {
+              , holds {{ classesOn(mount.Mountpoint).join(', ') }}
+            }
+          }
+          @if (unfit(mount); as why) {
+            <em> Cannot be registered: {{ why }}.</em>
+          } @else {
+            <button type="button" (click)="pick(mount.Mountpoint)" [disabled]="busy()"
+              [attr.aria-label]="'Use ' + mount.Mountpoint + ' for registration'">
+              Use for registration
+            </button>
+          }
+        </li>
+      } @empty {
+        <li><app-state-message kind="empty" headline="No mounts discovered." /></li>
+      }
+    </ul>
+  }
+
+  <h3>Registered mounts</h3>
+  @if (registrationsError()) {
+    <app-state-message kind="error" [headline]="registrationsError()" />
+  } @else if (registrationsLoading() && registrations().length === 0) {
+    <app-state-message kind="loading" headline="Loading registrations…" />
+  } @else {
+    <ul aria-label="Registered mounts">
+      @for (reg of registrations(); track reg.Mountpoint) {
+        <li>
+          <strong>{{ reg.Label }}</strong>
+          <span class="storage-path">{{ reg.Mountpoint }}</span>,
+          approved by {{ reg.Actor }} at {{ reg.AddedAt }}
+        </li>
+      } @empty {
+        <li><app-state-message kind="empty" headline="No mounts registered yet." /></li>
+      }
+    </ul>
+  }
+
+  <h4>Register a mount</h4>
+  <p>
+    The mount must be currently discovered, accessible and writable. Labels
+    are lowercase letters, digits and hyphens. Registering an already
+    registered mount renames it.
+  </p>
+  <form
+    (submit)="register(regMount.value, regLabel.value, regActor.value); $event.preventDefault()"
+  >
+    <label>
+      Mountpoint
+      <input #regMount name="mountpoint" autocomplete="off" [value]="picked()" [disabled]="busy()" />
+    </label>
+    <label>
+      Label
+      <input #regLabel name="label" autocomplete="off" [disabled]="busy()" />
+    </label>
+    <label>
+      Acting owner
+      <input #regActor name="actor" autocomplete="off" [disabled]="busy()" />
+    </label>
+    <button type="submit" [disabled]="busy()">Register mount</button>
+  </form>
+  @if (confirmingRegister(); as pending) {
+    <span role="alertdialog" aria-label="Confirm re-registration">
+      {{ pending.mountpoint }} is already registered. This changes its label
+      to {{ pending.label }}; classes assigned to it stay in place.
+      <button type="button" (click)="confirmRegister()" [disabled]="busy()">Confirm rename</button>
+      <button type="button" (click)="cancelRegister()" [disabled]="busy()">Cancel</button>
+    </span>
+  }
+
+  <h3>Class assignments</h3>
+  @if (assignmentsError()) {
+    <app-state-message kind="error" [headline]="assignmentsError()" />
+  } @else if (assignmentsLoading() && assignments().length === 0) {
+    <app-state-message kind="loading" headline="Loading assignments…" />
+  } @else {
+    <ul aria-label="Class assignments">
+      @for (item of assignments(); track item.Class) {
+        <li>
+          <strong>{{ item.Class }}</strong> on
+          <span class="storage-path">{{ item.Mountpoint }}</span>,
+          set by {{ item.Actor }} at {{ item.CreatedAt }}
+        </li>
+      } @empty {
+        <li><app-state-message kind="empty" headline="No classes assigned yet." /></li>
+      }
+    </ul>
+  }
+
+  <h4>Assign a class</h4>
+  <p>
+    Database storage needs a local mount. The daemon refuses mounts that are
+    unsuitable for the class and explains why.
+  </p>
+  <form
+    (submit)="assign(asClass.value, asMount.value, asActor.value); $event.preventDefault()"
+  >
+    <label>
+      Class
+      <select #asClass name="class" [disabled]="busy()">
+        @for (cls of classes; track cls) {
+          <option [value]="cls">{{ cls }}</option>
+        }
+      </select>
+    </label>
+    <label>
+      Registered mount
+      <select #asMount name="assign-mountpoint" [disabled]="busy() || registrations().length === 0">
+        @for (reg of registrations(); track reg.Mountpoint) {
+          <option [value]="reg.Mountpoint">{{ reg.Label }} ({{ reg.Mountpoint }})</option>
+        }
+      </select>
+    </label>
+    <label>
+      Acting owner
+      <input #asActor name="assign-actor" autocomplete="off" [disabled]="busy()" />
+    </label>
+    <button type="submit" [disabled]="busy()">Assign class</button>
+  </form>
+  @if (confirmingAssign(); as pending) {
+    <span role="alertdialog" aria-label="Confirm re-assignment">
+      {{ pending.class }} is currently on {{ assignmentFor(pending.class)?.Mountpoint }}.
+      Moving it to {{ pending.mountpoint }} changes where new installs,
+      volumes and backups look. Data already on the old mount is not moved
+      and installed apps keep using it until they are migrated.
+      <button type="button" (click)="confirmAssign()" [disabled]="busy()">Confirm re-assign</button>
+      <button type="button" (click)="cancelAssign()" [disabled]="busy()">Cancel</button>
+    </span>
+  }
+</section>
