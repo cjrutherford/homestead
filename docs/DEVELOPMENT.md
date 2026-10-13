@@ -803,6 +803,31 @@ homesteadctl backup unschedule --package jellyfin
   and delete (204, repeated 204), with snake_case bodies; mutating calls
   without the CSRF header were 403 and unauthenticated reads 401.
 
+- Proven live in KVM (S268, dccdbad + c7db40c, deployed with
+  `scripts/install-systemd.sh`, identical binaries on both appliances): the
+  installed daemon served `/storage` (200) and the embedded bundle held the
+  storage endpoints plus `acknowledge_impact` and `affected_packages`. The
+  mounts feed showed real capacity, accessible and read-only for ext4 data
+  disks (VM 2) and bind mounts (VM 1); tmpfs, overlay, proc, read-only and
+  devtmpfs mounts answered `registrable: false` with a reason and register
+  returned 422. Found and fixed: kernel interface filesystems (hugetlbfs,
+  mqueue, bpf, tracefs, debugfs, ...) were registrable; they now refuse.
+  A bind-mounted `/mnt/scratch` registered, renamed (re-POST), refused a
+  duplicate label (422) and a missing CSRF header (403). Moving
+  `application` off `/mnt/app` on VM 2 answered 409 listing authentik,
+  immich, jellyfin and nextcloud, and the CLI said the same with no change;
+  a `backup` move (exempt) and its restore went through without 409. On VM 1
+  `--acknowledge-impact` moved `application` to `/mnt/bulk`, wrote
+  `storage.assign.impact_acknowledged`, scheduled backups then failed naming
+  `/mnt/app` (Authentik: "no storage class is assigned to any more") or the
+  source guard's declared-versus-bound path, and after moving the class back
+  all four backups succeeded; VM 2 backups also succeeded after its checks.
+  With the daemon stopped, the API call failed at the transport (curl exit
+  56, status 0). Doctor was unchanged apart from the existing
+  `release-trust` warning. Not proven live: the Angular page in a browser;
+  there is no unregister route, so the scratch registration was removed with
+  SQL.
+
 ## Periodic drift scan (S261)
 
 ```bash
