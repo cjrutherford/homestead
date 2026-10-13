@@ -753,6 +753,32 @@ homesteadctl backup unschedule --package jellyfin
   VM 2 Authentik run failed on `lstat .../postgres/base/1/pg_internal.init`
   (live PostgreSQL files vanishing mid-copy), unrelated to S271.
 
+- Proven live in KVM (f06e3d0, 15b7078, 1a23576, 3920948; deployed with
+  `scripts/install-systemd.sh` on both appliances, identical binaries):
+  five forced scheduler cycles per appliance (20 backup operations each)
+  all succeeded, including Authentik on VM 2, which previously failed on
+  vanished `pg_internal.init`. Authentik and Immich runs excluded their
+  Postgres data directory and warned that the export is authoritative,
+  with `.sql.age` present; Jellyfin and Nextcloud had no warnings. Each
+  run held `stack/<pkg>.tar.age` with `compose.yaml` and an empty
+  `secrets/` directory and no secret files. Unavailable retry on VM 1:
+  with `/mnt/backup` unmounted and the jobs due, status showed
+  `unavailable_attempts` and `unavailable_since`, `last_run_at` stayed,
+  one audit row per job was written, the 5-minute retry made attempt 2
+  without another audit, and after remounting the next retry ran all four
+  jobs and cleared the status. A missing backup class assignment on VM 2
+  failed the jobs and spent the window (audited error entries); the
+  assignment was re-inserted unchanged. Runbook without Homestead on VM 2
+  (daemon stopped): Jellyfin was restored by the doc's blocks, extracted
+  verbatim, and its `jellyfin.db` sha256 matched; Authentik restored its
+  data tree, stack, secrets, and Postgres dump, then came up healthy with
+  a marker table and `akadmin` present. After restarting the daemon a
+  drift scan was clean, doctor was unchanged, and backups ran. The
+  recovery identity was exported, acknowledged and shredded. The stack
+  restore fix (3920948) is unit-tested; live restore used the runbook path.
+  Notes: the stack archive carries an empty `secrets/` directory entry;
+  the retry state is memory-only so a daemon restart retries at once.
+
 - S275 backup restore runbook: `docs/architecture/BACKUP_RESTORE_RUNBOOK.md`
   restores encrypted (format 2) and plaintext (format 1) runs with plain
   `age`, `tar`, `cp`, and `docker`. Its `sh runbook <name>` blocks are
