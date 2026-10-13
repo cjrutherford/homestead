@@ -38,7 +38,15 @@ describe('Edge', () => {
     fixture = TestBed.createComponent(Edge);
     http = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
+    http.expectOne('/api/v1/edge/routes').flush({ routes: [] });
+    fixture.detectChanges();
   });
+
+  /** Terminal operations re-read the recorded table. */
+  const settleReload = (routes: unknown[] = []) => {
+    http.expectOne('/api/v1/edge/routes').flush({ routes });
+    fixture.detectChanges();
+  };
   afterEach(() => http.verify());
 
   const c = () => fixture.componentInstance as any;
@@ -80,7 +88,7 @@ describe('Edge', () => {
     fixture.detectChanges();
     expect(text()).toContain('pull: done');
     events.next(state('succeeded', ['pull', 'up']));
-    fixture.detectChanges();
+    settleReload();
     expect(text()).toContain('Operation succeeded.');
     expect(text()).not.toContain('Working');
   });
@@ -96,7 +104,7 @@ describe('Edge', () => {
     click('Confirm deploy');
     http.expectOne('/api/v1/edge/deploy').flush({ id: 7 });
     events.next(state('failed'));
-    fixture.detectChanges();
+    settleReload();
     expect(text()).toContain('caddy exploded');
   });
 
@@ -166,7 +174,7 @@ describe('Edge', () => {
 
   it('warns about public routes and about emptying the table', () => {
     click('Reconcile routes');
-    expect(text()).toContain('empties the route table');
+    expect(text()).toContain('empties the table');
     click('Cancel');
     click('Add route');
     c().setField(0, 'host', 'pub.example.com');
@@ -204,5 +212,105 @@ describe('Edge', () => {
     fixture.detectChanges();
     click('Remove route');
     expect(text()).toContain('No routes in the table');
+  });
+
+  it('shows the recorded table on open and keeps policy', () => {
+    const again = TestBed.createComponent(Edge);
+    again.detectChanges();
+    http.expectOne('/api/v1/edge/routes').flush({ routes: JSON.parse(DOC).routes });
+    again.detectChanges();
+    const input = again.nativeElement.querySelector('input[name=host-0]') as HTMLInputElement;
+    expect(input.value).toBe('app.lan');
+    expect(again.nativeElement.textContent).toContain('exposure policy');
+  });
+
+  it('disables reconcile until the table loads and shows a load failure', () => {
+    const again = TestBed.createComponent(Edge);
+    again.detectChanges();
+    const reconcile = () =>
+      (Array.from(again.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
+        .find((b) => b.textContent?.trim() === 'Reconcile routes'))!;
+    expect(again.nativeElement.textContent).toContain('Loading the route table');
+    expect(reconcile().disabled).toBe(true);
+    http.expectOne('/api/v1/edge/routes').flush('boom', { status: 500, statusText: 'x' });
+    again.detectChanges();
+    expect(again.nativeElement.textContent).toContain('Could not load the route table: boom');
+    expect(reconcile().disabled).toBe(true);
+    // Retry succeeds.
+    (Array.from(again.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
+      .find((b) => b.textContent?.trim() === 'Retry loading routes'))!.click();
+    http.expectOne('/api/v1/edge/routes').flush({ routes: [] });
+    again.detectChanges();
+    expect(reconcile().disabled).toBe(false);
+  });
+
+  it('mirrors the private-name automatic TLS refusal', () => {
+    click('Add route');
+    c().setField(0, 'host', 'app.lan');
+    c().setField(0, 'targetHost', 'app');
+    c().setField(0, 'port', '80');
+    c().setField(0, 'tls', 'auto');
+    fixture.detectChanges();
+    click('Reconcile routes');
+    expect(text()).toContain('automatic TLS needs a public name');
+    c().setField(0, 'host', 'wiki.test');
+    fixture.detectChanges();
+    click('Reconcile routes');
+    expect(text()).toContain('automatic TLS needs a public name');
+    c().setField(0, 'host', 'wiki.mydomain.org');
+    fixture.detectChanges();
+    click('Reconcile routes');
+    expect(text()).not.toContain('automatic TLS needs a public name');
+  });
+
+  it('locks the form while an operation runs and unsubscribes the previous stream', () => {
+    click('Deploy Caddy');
+    click('Confirm deploy');
+    http.expectOne('/api/v1/edge/deploy').flush({ id: 7 });
+    events.next(state('running'));
+    fixture.detectChanges();
+    const buttons = Array.from(
+      fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>,
+    );
+    expect(buttons.find((b) => b.textContent?.trim() === 'Deploy Caddy')!.disabled).toBe(true);
+    expect(buttons.find((b) => b.textContent?.trim() === 'Reconcile routes')!.disabled).toBe(true);
+    expect(events.observed).toBe(true);
+    // A new operation replaces the stream rather than stacking one.
+    const second = new Subject<OperationState>();
+    (TestBed.inject(ApiService).operationEvents as any).mockReturnValue(second);
+    events.next(state('succeeded'));
+    settleReload();
+    click('Deploy Caddy');
+    click('Confirm deploy');
+    http.expectOne('/api/v1/edge/deploy').flush({ id: 8 });
+    expect(events.observed).toBe(false);
+    expect(second.observed).toBe(true);
+  });
+
+  it('reports each duplicate host once', () => {
+    for (let i = 0; i < 3; i++) {
+      click('Add route');
+      c().setField(i, 'host', 'dup.lan');
+      c().setField(i, 'targetHost', 'a');
+      c().setField(i, 'port', '80');
+    }
+    fixture.detectChanges();
+    click('Reconcile routes');
+    expect((text().match(/dup\.lan appears more than once/g) ?? []).length).toBe(1);
+  });
+
+  it('caps the pasted document size and validates item schema', () => {
+    c().importJson('{"routes":[],"pad":"' + 'x'.repeat(256 * 1024) + '"}');
+    fixture.detectChanges();
+    expect(text()).toContain('larger than 256 KiB');
+    c().importJson('{"routes":[42]}');
+    fixture.detectChanges();
+    expect(text()).toContain('Route 1 must be an object');
+    c().importJson('{"routes":[{"Host":"a.lan","Target":{"Host":"a","Port":"80"},"Exposure":"local","TLS":"off"}]}');
+    fixture.detectChanges();
+    expect(text()).toContain('Target needs a string Host and a numeric Port');
+    c().importJson('{"routes":[{"Host":"a.lan","Target":{"Host":"a","Port":80},"Exposure":"world","TLS":"off"}]}');
+    fixture.detectChanges();
+    expect(text()).toContain('Exposure must be local, overlay or public');
   });
 });

@@ -14,6 +14,8 @@ func edgeStub(t *testing.T) string {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/edge/deploy":
 			_, _ = w.Write([]byte(`{"id":21}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/edge/routes":
+			_, _ = w.Write([]byte(`{"routes":[{"Host":"app.lan","Target":{"Host":"app","Port":8080},"Exposure":"local","TLS":"internal","Health":{"Path":"","IntervalSeconds":0},"Policy":null}]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/edge/routes":
 			_, _ = w.Write([]byte(`{"id":22}`))
 		default:
@@ -56,5 +58,13 @@ func TestEdgeRoutesSet(t *testing.T) {
 	code, _, _ = invoke(t, []string{"--server", url, "edge", "routes", "set", "-f", bad})
 	if code != exitError {
 		t.Fatalf("exit = %d, want error", code)
+	}
+}
+
+func TestEdgeRoutesGet(t *testing.T) {
+	url := edgeStub(t)
+	code, stdout, _ := invoke(t, []string{"--server", url, "edge", "routes", "get"})
+	if code != exitOK || !strings.Contains(stdout, `"Host": "app.lan"`) {
+		t.Fatalf("exit = %d, stdout = %q", code, stdout)
 	}
 }

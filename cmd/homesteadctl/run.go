@@ -146,7 +146,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  tls renewal  certificate renewal status, reporting only (S263)")
 	fmt.Fprintln(w, "  scheduler jobs scheduled jobs, last run and next due (S260)")
 	fmt.Fprintln(w, "  edge deploy [--follow]  deploy the Caddy edge proxy (S237)")
-	fmt.Fprintln(w, "  edge routes set -f FILE [--follow]  reconcile the proxy route table (S237)")
+	fmt.Fprintln(w, "  edge routes <get | set -f FILE [--follow]>  read or reconcile the proxy route table (S237, S270)")
 	fmt.Fprintln(w, "  storage <mounts|register|registrations|assign|assignments>  mounted storage setup (S235)")
 	fmt.Fprintln(w, "  version                CLI and daemon versions")
 	fmt.Fprintln(w, "  config get             print current desired state")

@@ -525,7 +525,7 @@ sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
   and fails loudly; plan files generate from environment with
   sane port defaults. Backup configuration
   has CLI/API surfaces since S238 (`homesteadctl backup`,
-  `/api/v1/backups/*`) and a dashboard Backups page since S267 (storage setup has a dashboard Storage page since S268; edge deploy and route reconcile have a dashboard Edge page since S270, which streams operation progress and cannot read the live table back); the
+  `/api/v1/backups/*`) and a dashboard Backups page since S267 (storage setup has a dashboard Storage page since S268; edge deploy and route reconcile have a dashboard Edge page since S270, which streams operation progress and loads the recorded table; the reconciler owns only the hosts it last wrote, never removes exposure-owned or hand-placed snippets, refuses public routes without a matching exposure approval, and rolls files back if the proxy refuses the reload); the
   run still ends noting manual backup configuration before
   production use.
 

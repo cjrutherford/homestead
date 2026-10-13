@@ -24,6 +24,7 @@ class TestEdgeSurfaces(unittest.TestCase):
         src = read("internal/server/edge.go")
         for symbol in ("POST /api/v1/edge/deploy",
                        "POST /api/v1/edge/routes",
+                       "GET /api/v1/edge/routes",
                        "func (s *Server) MountEdge(",
                        "DeployDefinition(", "ReconcileDefinition("):
             with self.subTest(symbol=symbol):

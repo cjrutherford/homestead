@@ -1,6 +1,6 @@
-import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Subscription } from 'rxjs';
 import { RouterLink } from '@angular/router';
 import {
   ApiService,
@@ -27,6 +27,24 @@ interface Draft {
 }
 
 const HOST_LABEL = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+/** Cap on pasted route documents. */
+export const MAX_DOCUMENT_BYTES = 256 * 1024;
+const MAX_ROUTES = 1000;
+const PRIVATE_SUFFIXES = [
+  'lan', 'local', 'localhost', 'internal', 'home.arpa', 'test', 'example', 'invalid',
+];
+
+/** Mirrors docker.IsPrivateName: names public ACME can never issue for. */
+export function isPrivateName(host: string): boolean {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':')) {
+    return true;
+  }
+  if (!host.includes('.')) {
+    return true;
+  }
+  return PRIVATE_SUFFIXES.some((s) => host === s || host.endsWith('.' + s));
+}
+
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
 
 /**
@@ -49,14 +67,17 @@ const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
     '.edge-route { overflow-wrap: anywhere; }',
   ],
 })
-export class Edge {
+export class Edge implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
-  private readonly destroyRef = inject(DestroyRef);
+  private stream: Subscription | null = null;
 
   protected readonly exposures = EDGE_EXPOSURES;
   protected readonly tlsModes = EDGE_TLS;
   protected readonly drafts = signal<Draft[]>([]);
   protected readonly busy = signal(false);
+  protected readonly loading = signal(true);
+  protected readonly loaded = signal(false);
+  protected readonly loadError = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly notice = signal<string | null>(null);
   protected readonly confirming = signal<'deploy' | 'routes' | null>(null);
@@ -69,6 +90,50 @@ export class Edge {
   protected readonly problems = signal<string[]>([]);
   /** Prepared table awaiting confirmation (exactly what will be sent). */
   private pending: EdgeRoute[] = [];
+
+  /** Controls lock while a call or an operation is in flight. */
+  protected readonly locked = computed(() => this.busy() || this.running());
+
+  ngOnInit(): void {
+    this.loadRoutes();
+  }
+
+  ngOnDestroy(): void {
+    this.stream?.unsubscribe();
+  }
+
+  /** Loads the recorded table; reconcile stays disabled until it arrives. */
+  loadRoutes(): void {
+    this.loading.set(true);
+    this.loadError.set(null);
+    this.api.edgeRoutes().subscribe({
+      next: ({ routes }) => {
+        this.loading.set(false);
+        this.loaded.set(true);
+        this.drafts.set((routes ?? []).map((r) => this.toDraft(r)));
+        this.problems.set([]);
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.loading.set(false);
+        this.loadError.set(
+          `Could not load the route table: ${this.describe(failure)} Reconciling stays disabled so a partial table is never submitted.`,
+        );
+      },
+    });
+  }
+
+  private toDraft(r: EdgeRoute): Draft {
+    return {
+      host: r.Host ?? '',
+      targetHost: r.Target?.Host ?? '',
+      port: String(r.Target?.Port ?? ''),
+      exposure: r.Exposure ?? 'local',
+      tls: r.TLS ?? 'internal',
+      healthPath: r.Health?.Path ?? '',
+      interval: String(r.Health?.IntervalSeconds ?? 0),
+      policy: r.Policy ?? undefined,
+    };
+  }
 
   protected describe(failure: HttpErrorResponse): string {
     if (failure.status === 0) {
@@ -114,30 +179,64 @@ export class Edge {
   importJson(text: string): void {
     this.error.set(null);
     this.notice.set(null);
-    let doc: { routes?: EdgeRoute[] };
+    if (new Blob([text]).size > MAX_DOCUMENT_BYTES) {
+      this.error.set('That document is larger than 256 KiB.');
+      return;
+    }
+    let doc: { routes?: unknown };
     try {
       doc = JSON.parse(text);
     } catch {
       this.error.set('That is not valid JSON.');
       return;
     }
-    if (!doc || !Array.isArray(doc.routes)) {
+    if (!doc || typeof doc !== 'object' || !Array.isArray(doc.routes)) {
       this.error.set('The document needs a "routes" list.');
       return;
     }
-    this.drafts.set(
-      doc.routes.map((r) => ({
-        host: r?.Host ?? '',
-        targetHost: r?.Target?.Host ?? '',
-        port: String(r?.Target?.Port ?? ''),
-        exposure: r?.Exposure ?? 'local',
-        tls: r?.TLS ?? 'internal',
-        healthPath: r?.Health?.Path ?? '',
-        interval: String(r?.Health?.IntervalSeconds ?? 0),
-        policy: r?.Policy ?? undefined,
-      })),
-    );
+    if (doc.routes.length > MAX_ROUTES) {
+      this.error.set(`The document has more than ${MAX_ROUTES} routes.`);
+      return;
+    }
+    const bad = doc.routes
+      .map((r, i) => this.schemaProblem(r, i))
+      .find((message) => message !== null);
+    if (bad) {
+      this.error.set(bad);
+      return;
+    }
+    this.drafts.set((doc.routes as EdgeRoute[]).map((r) => this.toDraft(r)));
     this.notice.set(`Loaded ${doc.routes.length} route(s). Review them, then reconcile.`);
+  }
+
+  /** Shape check for one imported item; value rules run at submit. */
+  private schemaProblem(r: unknown, i: number): string | null {
+    const who = `Route ${i + 1}`;
+    const o = r as Record<string, any> | null;
+    if (!o || typeof o !== 'object' || Array.isArray(o)) {
+      return `${who} must be an object.`;
+    }
+    if (typeof o['Host'] !== 'string') {
+      return `${who}: Host must be a string.`;
+    }
+    const t = o['Target'];
+    if (!t || typeof t !== 'object' || typeof t.Host !== 'string' || typeof t.Port !== 'number') {
+      return `${who}: Target needs a string Host and a numeric Port.`;
+    }
+    if (!(EDGE_EXPOSURES as readonly string[]).includes(o['Exposure'])) {
+      return `${who}: Exposure must be local, overlay or public.`;
+    }
+    if (!(EDGE_TLS as readonly string[]).includes(o['TLS'])) {
+      return `${who}: TLS must be off, internal or auto.`;
+    }
+    const h = o['Health'];
+    if (h !== undefined && h !== null) {
+      if (typeof h !== 'object' || (h.Path !== undefined && typeof h.Path !== 'string') ||
+          (h.IntervalSeconds !== undefined && typeof h.IntervalSeconds !== 'number')) {
+        return `${who}: Health needs a string Path and a numeric IntervalSeconds.`;
+      }
+    }
+    return null;
   }
 
   /** Mirrors the daemon's route validation so mistakes show before a call. */
@@ -170,6 +269,11 @@ export class Edge {
     const interval = Number(row.interval === '' ? 0 : row.interval);
     if (!Number.isInteger(interval) || (interval !== 0 && (interval < 5 || interval > 300))) {
       errors.push(`${who}: health interval must be 0 or 5-300 seconds.`);
+    }
+    if (!errors.length && row.tls === 'auto' && isPrivateName(host)) {
+      errors.push(
+        `${who}: automatic TLS needs a public name, ${host} is private; use internal.`,
+      );
     }
     if (errors.length) {
       return { errors };
@@ -214,11 +318,9 @@ export class Edge {
       }
     });
     const hosts = routes.map((r) => r.Host);
-    hosts.forEach((h, i) => {
-      if (hosts.indexOf(h) !== i) {
-        errors.push(`Host ${h} appears more than once.`);
-      }
-    });
+    for (const h of new Set(hosts.filter((x, i) => hosts.indexOf(x) !== i))) {
+      errors.push(`Host ${h} appears more than once.`);
+    }
     this.problems.set(errors);
     if (errors.length) {
       return;
@@ -263,17 +365,21 @@ export class Edge {
   }
 
   private follow(id: number): void {
+    this.stream?.unsubscribe();
     this.operationId.set(id);
-    this.api
-      .operationEvents(id)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (state) => this.operation.set(state),
-        error: () =>
-          this.streamError.set(
-            'Lost the live progress stream. Open the operation to see its state.',
-          ),
-      });
+    this.stream = this.api.operationEvents(id).subscribe({
+      next: (state) => {
+        this.operation.set(state);
+        if (TERMINAL.has(state.status)) {
+          // The table on record changed (or rolled back): show it.
+          this.loadRoutes();
+        }
+      },
+      error: () =>
+        this.streamError.set(
+          'Lost the live progress stream. Open the operation to see its state.',
+        ),
+    });
   }
 
   protected running(): boolean {

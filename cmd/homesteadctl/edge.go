@@ -78,6 +78,18 @@ func runEdgeDeploy(ctx context.Context, client *apiclient.Client, args []string,
 }
 
 func runEdgeRoutes(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 1 && args[0] == "get" {
+		routes, err := client.EdgeRoutes(ctx)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(map[string]any{"routes": routes}); err != nil {
+			return fail(stderr, err)
+		}
+		return exitOK
+	}
 	var file string
 	follow := false
 	var positional []string
@@ -94,12 +106,12 @@ func runEdgeRoutes(ctx context.Context, client *apiclient.Client, args []string,
 			fmt.Fprintf(stderr, "unknown flag %q\n", args[i])
 			return exitUsage
 		default:
-			fmt.Fprintln(stderr, "usage: homesteadctl edge routes set -f FILE [--follow]")
+			fmt.Fprintln(stderr, "usage: homesteadctl edge routes <get | set -f FILE [--follow]>")
 			return exitUsage
 		}
 	}
 	if len(positional) != 1 || file == "" {
-		fmt.Fprintln(stderr, "usage: homesteadctl edge routes set -f FILE [--follow]")
+		fmt.Fprintln(stderr, "usage: homesteadctl edge routes <get | set -f FILE [--follow]>")
 		return exitUsage
 	}
 	routes, err := loadRoutesFile(file)

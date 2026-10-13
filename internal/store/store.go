@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 31
+const CurrentVersion = 32
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -569,6 +569,19 @@ CREATE TABLE IF NOT EXISTS backup_identity_exports (
 		version: 31,
 		name:    "backup identity export acknowledgement",
 		sql:     `ALTER TABLE backup_identity_exports ADD COLUMN acknowledged_at TEXT NOT NULL DEFAULT '';`,
+	},
+	{
+		// S270 review: the edge reconciler records the table it last
+		// wrote (one row). It owns exactly those hosts: only they are
+		// removed as stale, and the dashboard and CLI read it back.
+		version: 32,
+		name:    "edge reconcile route table",
+		sql: `
+CREATE TABLE IF NOT EXISTS edge_routes (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	routes TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`,
 	},
 }
 

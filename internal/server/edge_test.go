@@ -4,12 +4,20 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"homestead/internal/docker"
+	"homestead/internal/exposure"
 	"homestead/internal/store"
 )
 
 func edgeTestServer(t *testing.T) *Server {
+	srv, _ := edgeTestRig(t)
+	return srv
+}
+
+func edgeTestRig(t *testing.T) (*Server, *store.Store) {
 	t.Helper()
 	dir := t.TempDir()
 	s, err := store.Open(filepath.Join(dir, "test.db"))
@@ -19,7 +27,7 @@ func edgeTestServer(t *testing.T) *Server {
 	t.Cleanup(func() { s.Close() })
 	srv := New("127.0.0.1:0")
 	srv.MountEdge(s)
-	return srv
+	return srv, s
 }
 
 func TestEdgeDeploy(t *testing.T) {
@@ -68,5 +76,67 @@ func TestEdgeRoutes(t *testing.T) {
 	recorder = serveRequest(t, srv, http.MethodPost, "/api/v1/edge/routes", nil)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("code = %d", recorder.Code)
+	}
+}
+
+func publicRoute() docker.Route {
+	return docker.Route{
+		Host:     "wiki.example.com",
+		Target:   docker.Target{Host: "wiki", Port: 80},
+		Exposure: docker.ExposurePublic,
+		TLS:      docker.TLSAuto,
+	}
+}
+
+func routeBody(r docker.Route) map[string]any {
+	return map[string]any{"routes": []any{r}}
+}
+
+func TestEdgeRoutesPublicNeedsApproval(t *testing.T) {
+	srv, st := edgeTestRig(t)
+	route := publicRoute()
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/edge/routes", routeBody(route))
+	if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), "exposure approval") {
+		t.Fatalf("unapproved public: %d %s", recorder.Code, recorder.Body.String())
+	}
+	plan := exposure.Plan{Host: route.Host, From: docker.ExposureLocal, To: docker.ExposurePublic, Edge: route}
+	if err := exposure.RecordApproval(st, exposure.Approval{Host: route.Host, Plan: plan, Actor: "owner"}); err != nil {
+		t.Fatal(err)
+	}
+	recorder = serveRequest(t, srv, http.MethodPost, "/api/v1/edge/routes", routeBody(route))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("approved public: %d %s", recorder.Code, recorder.Body.String())
+	}
+	// A route that differs from the approved plan is refused.
+	changed := route
+	changed.Target.Port = 8080
+	recorder = serveRequest(t, srv, http.MethodPost, "/api/v1/edge/routes", routeBody(changed))
+	if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), "differs from its approved plan") {
+		t.Fatalf("changed public: %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestEdgeRoutesRefusesPrivateAutoUpFront(t *testing.T) {
+	srv := edgeTestServer(t)
+	route := docker.Route{Host: "app.lan", Target: docker.Target{Host: "app", Port: 80}, Exposure: docker.ExposureLocal, TLS: docker.TLSAuto}
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/edge/routes", routeBody(route))
+	if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), "automatic TLS") {
+		t.Fatalf("private auto: %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestEdgeRoutesGetReadsRecordedTable(t *testing.T) {
+	srv, st := edgeTestRig(t)
+	recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/edge/routes", nil)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"routes":[]`) {
+		t.Fatalf("empty: %d %s", recorder.Code, recorder.Body.String())
+	}
+	route := docker.Route{Host: "app.lan", Target: docker.Target{Host: "app", Port: 80}, Exposure: docker.ExposureLocal, TLS: docker.TLSInternal}
+	if err := saveEdgeRoutes(st, docker.RouteSet{Routes: []docker.Route{route}}); err != nil {
+		t.Fatal(err)
+	}
+	recorder = serveRequest(t, srv, http.MethodGet, "/api/v1/edge/routes", nil)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"Host":"app.lan"`) {
+		t.Fatalf("recorded: %d %s", recorder.Code, recorder.Body.String())
 	}
 }

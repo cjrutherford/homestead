@@ -1103,6 +1103,11 @@ export class ApiService {
     return this.http.post<OperationStarted>('/api/v1/edge/deploy', {});
   }
 
+  /** The table the reconciler last wrote (not routes placed by exposure). */
+  edgeRoutes(): Observable<{ routes: EdgeRoute[] }> {
+    return this.http.get<{ routes: EdgeRoute[] }>('/api/v1/edge/routes');
+  }
+
   edgeReconcile(routes: EdgeRoute[]): Observable<OperationStarted> {
     return this.http.post<OperationStarted>('/api/v1/edge/routes', { routes });
   }

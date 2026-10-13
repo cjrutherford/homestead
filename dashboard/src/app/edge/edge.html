@@ -54,59 +54,67 @@
     engine. The daemon does not report live proxy status; the progress of
     the operation is the status.
   </p>
-  <button type="button" (click)="askDeploy()" [disabled]="busy() || !!confirming()">
+  <button type="button" (click)="askDeploy()" [disabled]="locked() || !!confirming()">
     Deploy Caddy
   </button>
   @if (confirming() === 'deploy') {
     <span role="alertdialog" aria-label="Confirm Caddy deployment" appDialogFocus (dismiss)="cancel()">
       This deploys the Caddy proxy stack and restarts the proxy if it
       changed, which briefly interrupts every route it serves.
-      <button type="button" (click)="confirm()" [disabled]="busy()">Confirm deploy</button>
-      <button type="button" (click)="cancel()" [disabled]="busy()">Cancel</button>
+      <button type="button" (click)="confirm()" [disabled]="locked()">Confirm deploy</button>
+      <button type="button" (click)="cancel()" [disabled]="locked()">Cancel</button>
     </span>
   }
 
   <h3>Route table</h3>
   <p>
-    Reconciling replaces the whole table: the routes below become the only
-    routes served, and any route not listed is removed. The daemon cannot
-    read the live table back, so include every route you want kept, or
-    load a route document like the one <code>homesteadctl edge routes set</code>
-    takes.
+    This is the table the reconciler last wrote. Reconciling replaces it:
+    the routes below become the reconciler's routes, and any it wrote
+    earlier but you removed here are removed. Routes placed by the
+    Exposure flow, or by hand, are not part of this table and are never
+    removed. You can also load a route document like the one
+    <code>homesteadctl edge routes set</code> takes.
   </p>
+  @if (loading()) {
+    <app-state-message kind="loading" headline="Loading the route table…" />
+  }
+  @if (loadError()) {
+    <app-state-message kind="error" [headline]="loadError()" />
+    <button type="button" (click)="loadRoutes()">Retry loading routes</button>
+  }
 
   <label>
     Route document (JSON with a "routes" list)
-    <textarea #doc rows="4" name="route-document" aria-label="Route document" [disabled]="busy()"></textarea>
+    <textarea #doc rows="4" name="route-document" aria-label="Route document" [disabled]="locked()"></textarea>
   </label>
-  <button type="button" (click)="importJson(doc.value)" [disabled]="busy() || !!confirming()">
+  <button type="button" (click)="importJson(doc.value)" [disabled]="locked() || !!confirming()">
     Load document
   </button>
 
-  @if (drafts().length === 0) {
-    <app-state-message kind="empty" headline="No routes in the table. Reconciling now removes every route." />
+  @if (loaded() && drafts().length === 0) {
+    <app-state-message kind="empty" headline="No routes in the table. Reconciling now removes every route the reconciler wrote." />
   }
   <ul aria-label="Routes">
     @for (row of drafts(); track $index; let i = $index) {
       <li class="edge-route">
         <label>
           Host
-          <input name="host-{{ i }}" autocomplete="off" [value]="row.host" [disabled]="busy()"
+          <input name="host-{{ i }}" autocomplete="off" [value]="row.host" [disabled]="locked()"
             (input)="setField(i, 'host', $any($event.target).value)" />
         </label>
         <label>
           Target host
-          <input name="target-{{ i }}" autocomplete="off" [value]="row.targetHost" [disabled]="busy()"
+          <input name="target-{{ i }}" autocomplete="off" [value]="row.targetHost" [disabled]="locked()"
             (input)="setField(i, 'targetHost', $any($event.target).value)" />
         </label>
         <label>
           Port
-          <input name="port-{{ i }}" inputmode="numeric" autocomplete="off" [value]="row.port" [disabled]="busy()"
+          <input name="port-{{ i }}" inputmode="numeric" autocomplete="off" [value]="row.port" [disabled]="locked()"
             (input)="setField(i, 'port', $any($event.target).value)" />
         </label>
         <label>
           Exposure
-          <select name="exposure-{{ i }}" [disabled]="busy()"
+          <select name="exposure-{{ i }}" [disabled]="locked()"
             (change)="setField(i, 'exposure', $any($event.target).value)">
             @for (option of exposures; track option) {
               <option [value]="option" [selected]="row.exposure === option">{{ option }}</option>
@@ -115,7 +123,7 @@
         </label>
         <label>
           TLS
-          <select name="tls-{{ i }}" [disabled]="busy()"
+          <select name="tls-{{ i }}" [disabled]="locked()"
             (change)="setField(i, 'tls', $any($event.target).value)">
             @for (option of tlsModes; track option) {
               <option [value]="option" [selected]="row.tls === option">{{ option }}</option>
@@ -124,18 +132,18 @@
         </label>
         <label>
           Health path
-          <input name="health-{{ i }}" autocomplete="off" [value]="row.healthPath" [disabled]="busy()"
+          <input name="health-{{ i }}" autocomplete="off" [value]="row.healthPath" [disabled]="locked()"
             (input)="setField(i, 'healthPath', $any($event.target).value)" />
         </label>
         <label>
           Health interval (seconds, 0 for default)
-          <input name="interval-{{ i }}" inputmode="numeric" autocomplete="off" [value]="row.interval" [disabled]="busy()"
+          <input name="interval-{{ i }}" inputmode="numeric" autocomplete="off" [value]="row.interval" [disabled]="locked()"
             (input)="setField(i, 'interval', $any($event.target).value)" />
         </label>
         @if (row.policy !== undefined) {
           <em>Keeps its exposure policy from the loaded document.</em>
         }
-        <button type="button" (click)="removeRoute(i)" [disabled]="busy() || !!confirming()"
+        <button type="button" (click)="removeRoute(i)" [disabled]="locked() || !!confirming()"
           [attr.aria-label]="'Remove route ' + (i + 1)">
           Remove route
         </button>
@@ -143,8 +151,8 @@
     }
   </ul>
 
-  <button type="button" (click)="addRoute()" [disabled]="busy() || !!confirming()">Add route</button>
-  <button type="button" (click)="askRoutes()" [disabled]="busy() || !!confirming()">
+  <button type="button" (click)="addRoute()" [disabled]="locked() || !!confirming()">Add route</button>
+  <button type="button" (click)="askRoutes()" [disabled]="locked() || !loaded() || !!confirming()">
     Reconcile routes
   </button>
 
@@ -159,18 +167,18 @@
   @if (confirming() === 'routes') {
     <span role="alertdialog" aria-label="Confirm route reconciliation" appDialogFocus (dismiss)="cancel()">
       @if (pendingCount() === 0) {
-        This empties the route table: every route the proxy serves is removed.
+        This empties the table: every route the reconciler wrote is removed.
       } @else {
         This replaces the route table with these {{ pendingCount() }} route(s)
-        and removes any other route. The proxy reloads.
+        and removes the reconciler's other routes. The proxy reloads.
       }
       @if (publicHosts().length) {
         {{ publicHosts().join(', ') }} will be reachable from the public
         internet without the plan, preview and approval on the Exposure
         page. Prefer that workflow for public hosts.
       }
-      <button type="button" (click)="confirm()" [disabled]="busy()">Confirm reconcile</button>
-      <button type="button" (click)="cancel()" [disabled]="busy()">Cancel</button>
+      <button type="button" (click)="confirm()" [disabled]="locked()">Confirm reconcile</button>
+      <button type="button" (click)="cancel()" [disabled]="locked()">Cancel</button>
     </span>
   }
 </section>

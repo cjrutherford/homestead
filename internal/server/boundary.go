@@ -129,6 +129,7 @@ var routeClasses = map[string]RouteClass{
 	"GET /api/v1/dockge":                                 ClassSession,
 	"GET /api/v1/doctor":                                 ClassSession,
 	"POST /api/v1/edge/deploy":                           ClassSession,
+	"GET /api/v1/edge/routes":                            ClassSession,
 	"POST /api/v1/edge/routes":                           ClassSession,
 	"GET /api/v1/exposure/review":                        ClassSession,
 	"GET /api/v1/exposure/approvals":                     ClassSession,

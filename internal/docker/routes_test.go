@@ -76,7 +76,7 @@ func TestReconcileWritesAndCleans(t *testing.T) {
 		routeFor("wiki.lan", TLSInternal, ExposureLocal),
 		routeFor("app.lan", TLSInternal, ExposureOverlay),
 	}}
-	if err := ReconcileRoutes(dir, set); err != nil {
+	if _, err := ReconcileRoutes(dir, set, RouteSet{}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 	for _, name := range []string{"app.lan.caddy", "wiki.lan.caddy"} {
@@ -94,7 +94,7 @@ func TestReconcileWritesAndCleans(t *testing.T) {
 		t.Fatal(err)
 	}
 	narrow := RouteSet{Routes: []Route{routeFor("app.lan", TLSInternal, ExposureOverlay)}}
-	if err := ReconcileRoutes(dir, narrow); err != nil {
+	if _, err := ReconcileRoutes(dir, narrow, set); err != nil {
 		t.Fatalf("narrow: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(routesDir, "wiki.lan.caddy")); !os.IsNotExist(err) {
@@ -108,7 +108,7 @@ func TestReconcileWritesAndCleans(t *testing.T) {
 	}
 	// Invalid desired state refuses before touching disk.
 	bad := RouteSet{Routes: []Route{routeFor("App.lan", TLSAuto, ExposureLocal)}}
-	if err := ReconcileRoutes(dir, bad); err == nil {
+	if _, err := ReconcileRoutes(dir, bad, narrow); err == nil {
 		t.Fatal("reconciled invalid set")
 	}
 }
@@ -150,7 +150,7 @@ func TestReconcileDefinitionFlow(t *testing.T) {
 	calls := stubRoutes(t, false)
 	runner := openCaddyRunner(t)
 	stack := routesStackIn(t)
-	def, err := ReconcileDefinition(stack, routesSet())
+	def, err := ReconcileDefinition(stack, routesSet(), RouteState{})
 	if err != nil {
 		t.Fatalf("ReconcileDefinition: %v", err)
 	}
@@ -186,11 +186,11 @@ func TestReconcileDefinitionFlow(t *testing.T) {
 func TestReconcileDefinitionValidates(t *testing.T) {
 	stack := routesStackIn(t)
 	bad := Stack{Name: "other", Dir: stack.Dir, Enabled: true}
-	if _, err := ReconcileDefinition(bad, routesSet()); err == nil {
+	if _, err := ReconcileDefinition(bad, routesSet(), RouteState{}); err == nil {
 		t.Fatal("non-caddy stack accepted")
 	}
 	invalid := RouteSet{Routes: []Route{routeFor("App.lan", TLSAuto, ExposureLocal)}}
-	if _, err := ReconcileDefinition(stack, invalid); err == nil {
+	if _, err := ReconcileDefinition(stack, invalid, RouteState{}); err == nil {
 		t.Fatal("invalid set accepted")
 	}
 }
@@ -199,7 +199,7 @@ func TestReconcileReloadFailureAborts(t *testing.T) {
 	stubRoutes(t, true)
 	runner := openCaddyRunner(t)
 	stack := routesStackIn(t)
-	def, err := ReconcileDefinition(stack, routesSet())
+	def, err := ReconcileDefinition(stack, routesSet(), RouteState{})
 	if err != nil {
 		t.Fatalf("ReconcileDefinition: %v", err)
 	}
@@ -214,8 +214,96 @@ func TestReconcileReloadFailureAborts(t *testing.T) {
 	if done.Status != operation.StatusFailed {
 		t.Fatalf("status = %q, want failed", done.Status)
 	}
-	// Files still reconciled before the failed reload.
-	if _, err := os.Stat(filepath.Join(stack.Dir, "routes", "app.lan.caddy")); err != nil {
-		t.Fatalf("snippet missing after abort: %v", err)
+	// The refused reload rolled the files back: disk matches the
+	// running config.
+	if _, err := os.Stat(filepath.Join(stack.Dir, "routes", "app.lan.caddy")); !os.IsNotExist(err) {
+		t.Fatalf("snippet survived refused reload: %v", err)
+	}
+}
+
+func TestReconcileOnlyRemovesOwnedAndRollsBackOnReloadFailure(t *testing.T) {
+	stubRoutes(t, true)
+	runner := openCaddyRunner(t)
+	stack := routesStackIn(t)
+	routesDir := filepath.Join(stack.Dir, "routes")
+	exposure := filepath.Join(routesDir, "pub.example.com.caddy")
+	owned := filepath.Join(routesDir, "old.lan.caddy")
+	if err := os.WriteFile(exposure, []byte("exposure-owned"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(owned, []byte("previous"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prior := RouteSet{Routes: []Route{routeFor("old.lan", TLSInternal, ExposureLocal)}}
+	saved := prior
+	state := RouteState{
+		Load: func() (RouteSet, error) { return saved, nil },
+		Save: func(s RouteSet) error { saved = s; return nil },
+	}
+	def, err := ReconcileDefinition(stack, routesSet(), state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err := runner.Start(context.Background(), def, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done, err := runner.Wait(context.Background(), op.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.Status != operation.StatusFailed {
+		t.Fatalf("status = %q", done.Status)
+	}
+	if b, err := os.ReadFile(owned); err != nil || string(b) != "previous" {
+		t.Fatalf("stale file not restored: %q %v", b, err)
+	}
+	if _, err := os.Stat(exposure); err != nil {
+		t.Fatalf("exposure-owned file touched: %v", err)
+	}
+	if len(saved.Routes) != 1 || saved.Routes[0].Host != "old.lan" {
+		t.Fatalf("record not restored: %+v", saved)
+	}
+}
+
+func TestReconcileSuccessKeepsExposureOwned(t *testing.T) {
+	stubRoutes(t, false)
+	runner := openCaddyRunner(t)
+	stack := routesStackIn(t)
+	routesDir := filepath.Join(stack.Dir, "routes")
+	exposure := filepath.Join(routesDir, "pub.example.com.caddy")
+	owned := filepath.Join(routesDir, "old.lan.caddy")
+	for _, p := range []string{exposure, owned} {
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saved := RouteSet{Routes: []Route{routeFor("old.lan", TLSInternal, ExposureLocal)}}
+	state := RouteState{
+		Load: func() (RouteSet, error) { return saved, nil },
+		Save: func(s RouteSet) error { saved = s; return nil },
+	}
+	def, _ := ReconcileDefinition(stack, routesSet(), state)
+	op, _ := runner.Start(context.Background(), def, "")
+	done, _ := runner.Wait(context.Background(), op.ID)
+	if done.Status != operation.StatusSucceeded {
+		t.Fatalf("status = %q", done.Status)
+	}
+	if _, err := os.Stat(exposure); err != nil {
+		t.Fatalf("exposure-owned snippet removed: %v", err)
+	}
+	if _, err := os.Stat(owned); !os.IsNotExist(err) {
+		t.Fatal("owned stale snippet survived")
+	}
+	if len(saved.Routes) != 1 || saved.Routes[0].Host != "app.lan" {
+		t.Fatalf("record = %+v", saved)
+	}
+}
+
+func TestReconcileRefusesPrivateAutoUpFront(t *testing.T) {
+	stack := routesStackIn(t)
+	set := RouteSet{Routes: []Route{routeFor("app.lan", TLSAuto, ExposureLocal)}}
+	if _, err := ReconcileDefinition(stack, set, RouteState{}); err == nil {
+		t.Fatal("private auto accepted")
 	}
 }

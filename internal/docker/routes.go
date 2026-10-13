@@ -66,47 +66,122 @@ func RenderRoute(r Route) (string, error) {
 `, r.Exposure, upstream, site, serving), nil
 }
 
-// ReconcileRoutes writes the desired route table into the stack routes
-// directory and removes snippet files for hosts no longer desired. Writes
-// are identical rewrites (idempotent); only *-managed suffix files are
-// ever removed. It does not reload: callers chain ReloadProxy or run the
-// ReconcileDefinition operation.
-func ReconcileRoutes(dir string, set RouteSet) error {
+// ValidateRenderable checks a desired table end to end, including that
+// every route renders (for example automatic TLS on a private name is
+// refused), so callers can refuse before any file is written.
+func ValidateRenderable(set RouteSet) error {
 	if err := set.Validate(); err != nil {
 		return err
 	}
+	for _, r := range set.Routes {
+		if _, err := RenderRoute(r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RouteState is where the reconciler's ownership lives. Load returns the
+// table the previous reconcile wrote and Save records the new one; a nil
+// field means no ownership record, so nothing is ever removed as stale.
+type RouteState struct {
+	Load func() (RouteSet, error)
+	Save func(RouteSet) error
+}
+
+// ReconcileRoutes writes the desired route table into the stack routes
+// directory. The reconciler owns exactly the hosts in prior (the table
+// its previous run wrote): only those snippets are removed when no
+// longer desired. Snippets it never wrote, such as those the exposure
+// flow places or hand-placed files, are never removed. The returned
+// undo restores every touched file, so a failed reload leaves disk
+// matching the running config. It does not reload.
+func ReconcileRoutes(dir string, set, prior RouteSet) (undo func() error, err error) {
+	if err := ValidateRenderable(set); err != nil {
+		return nil, err
+	}
 	routesDir := filepath.Join(dir, "routes")
 	if err := os.MkdirAll(routesDir, 0o755); err != nil {
-		return fmt.Errorf("routes: dir: %w", err)
+		return nil, fmt.Errorf("routes: dir: %w", err)
+	}
+	type saved struct {
+		path    string
+		content []byte
+		existed bool
+	}
+	var log []saved
+	remember := func(path string) error {
+		for _, entry := range log {
+			if entry.path == path {
+				return nil
+			}
+		}
+		content, err := os.ReadFile(path)
+		switch {
+		case err == nil:
+			log = append(log, saved{path, content, true})
+		case os.IsNotExist(err):
+			log = append(log, saved{path: path})
+		default:
+			return fmt.Errorf("routes: read %s: %w", path, err)
+		}
+		return nil
+	}
+	undo = func() error {
+		var first error
+		for i := len(log) - 1; i >= 0; i-- {
+			entry := log[i]
+			var err error
+			if entry.existed {
+				err = os.WriteFile(entry.path, entry.content, 0o644)
+			} else if rmErr := os.Remove(entry.path); rmErr != nil && !os.IsNotExist(rmErr) {
+				err = rmErr
+			}
+			if err != nil && first == nil {
+				first = fmt.Errorf("routes: rollback %s: %w", entry.path, err)
+			}
+		}
+		return first
+	}
+	fail := func(cause error) (func() error, error) {
+		if rbErr := undo(); rbErr != nil {
+			cause = fmt.Errorf("%w (rollback also failed: %v)", cause, rbErr)
+		}
+		return nil, cause
 	}
 	wanted := map[string]bool{}
 	for _, r := range set.Sorted() {
 		content, err := RenderRoute(r)
 		if err != nil {
-			return err
+			return fail(err)
 		}
 		name := RouteFilename(r.Host)
 		wanted[name] = true
-		if err := os.WriteFile(filepath.Join(routesDir, name), []byte(content), 0o644); err != nil {
-			return fmt.Errorf("routes: write %s: %w", name, err)
+		path := filepath.Join(routesDir, name)
+		if err := remember(path); err != nil {
+			return fail(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			return fail(fmt.Errorf("routes: write %s: %w", name, err))
 		}
 	}
-	entries, err := os.ReadDir(routesDir)
-	if err != nil {
-		return fmt.Errorf("routes: list: %w", err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), RouteSnippetExt) {
+	for _, r := range prior.Routes {
+		name := RouteFilename(r.Host)
+		if wanted[name] {
 			continue
 		}
-		if wanted[entry.Name()] {
+		path := filepath.Join(routesDir, name)
+		if info, statErr := os.Stat(path); statErr == nil && info.IsDir() {
 			continue
 		}
-		if err := os.Remove(filepath.Join(routesDir, entry.Name())); err != nil {
-			return fmt.Errorf("routes: remove stale %s: %w", entry.Name(), err)
+		if err := remember(path); err != nil {
+			return fail(err)
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fail(fmt.Errorf("routes: remove stale %s: %w", name, err))
 		}
 	}
-	return nil
+	return undo, nil
 }
 
 // ReloadProxy asks the running proxy to adopt the reconciled snippets.
@@ -123,28 +198,66 @@ func ReloadProxy(ctx context.Context) error {
 	return nil
 }
 
-// ReconcileDefinition plans route adoption: write the desired table,
-// reload the proxy, and verify the proxy still runs. Idempotent
-// throughout: files rewrite identically, stale snippets drop, reload
-// converges, verify proves serving.
-func ReconcileDefinition(stack Stack, set RouteSet) (operation.Definition, error) {
+// ReconcileDefinition plans route adoption: write the desired table
+// (recording it in state), reload the proxy, and verify the proxy still
+// runs. Files and the recorded table roll back if the reload is
+// refused, so disk and record keep matching the running config. Only
+// hosts the previous reconcile wrote are ever removed.
+func ReconcileDefinition(stack Stack, set RouteSet, state RouteState) (operation.Definition, error) {
 	if err := checkCaddyStack(stack); err != nil {
 		return operation.Definition{}, err
 	}
-	if err := set.Validate(); err != nil {
+	if err := ValidateRenderable(set); err != nil {
 		return operation.Definition{}, err
 	}
+	var undo func() error
+	var prior RouteSet
 	def := operation.Definition{Type: "caddy.reconcile"}
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "write-routes",
 		Run: func(ctx context.Context) error {
-			return ReconcileRoutes(stack.Dir, set)
+			prior = RouteSet{}
+			if state.Load != nil {
+				loaded, err := state.Load()
+				if err != nil {
+					return err
+				}
+				prior = loaded
+			}
+			u, err := ReconcileRoutes(stack.Dir, set, prior)
+			if err != nil {
+				return err
+			}
+			undo = u
+			if state.Save != nil {
+				if err := state.Save(set); err != nil {
+					if rbErr := undo(); rbErr != nil {
+						return fmt.Errorf("%w (rollback also failed: %v)", err, rbErr)
+					}
+					return err
+				}
+			}
+			return nil
 		},
 	})
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "reload",
 		Run: func(ctx context.Context) error {
-			return ReloadProxy(ctx)
+			err := ReloadProxy(ctx)
+			if err == nil {
+				return nil
+			}
+			if undo != nil {
+				if rbErr := undo(); rbErr != nil {
+					err = fmt.Errorf("%w (rollback also failed: %v)", err, rbErr)
+				}
+			}
+			if state.Save != nil {
+				if saveErr := state.Save(prior); saveErr != nil {
+					err = fmt.Errorf("%w (restoring route record failed: %v)", err, saveErr)
+				}
+			}
+			return err
 		},
 	})
 	def.Steps = append(def.Steps, operation.StepDef{
