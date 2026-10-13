@@ -107,8 +107,31 @@ in by rename (old tree kept aside until the swap succeeds), so a wrong key
 or damaged stream leaves live data untouched. Runs are complete only with a
 manifest (written atomically); interrupted runs are cleaned up, and
 retention prunes after the manifest and counts complete runs only. Pre-update, scheduled, and
-pre-migration backups all encrypt. Owner recipients, identity export, and
-the plain-`age` runbook are S271/S275; until then doctor warns
-(`backup-encryption`). `filippo.io/age` is BSD-3-Clause (plus
+pre-migration backups all encrypt. The plain-`age` restore runbook is S275.
+
+### Owner recipients and recovery export (S271)
+Owners add native age X25519 public keys (`age1...`; SSH and plugin
+recipients are refused) with `homesteadctl backup recipients
+list|add|remove`, the Backups dashboard page, or `/api/v1/backups/recipients`.
+Every new run encrypts to the appliance identity plus all owner recipients
+(`backup.RecipientsWithOwner`; pre-update, scheduled, and pre-migration
+runs alike). Existing runs are never re-encrypted: a recipient added later
+cannot read older runs, and a removed recipient keeps the runs written
+while it was configured. The appliance identity always remains a recipient
+and its removal is refused (409), so a run never has zero recipients.
+Recipients live in SQLite (`backup_recipients`, migration 30) and render to
+`backup-recipients.yaml` beside `desired.yaml` (public keys only, ADR-003).
+Audit entries carry fingerprints and public keys only.
+
+The recovery identity export (`POST /api/v1/backups/identity/export`,
+body `{"confirm": true}`) is explicit and audited. The response carries the
+secret key once with `Cache-Control: no-store`; the daemon stores only
+fingerprint, actor, and time (`backup_identity_exports`), never the value,
+and never logs it. The CLI needs `--out FILE` (new 0600 file, never
+overwrites) or `--stdout`; the dashboard asks for confirmation, then shows
+the key with copy and download until dismissed. Exports may be repeated,
+each audited. Doctor `backup-encryption` warns until an owner recipient
+exists or an export was recorded, and warns again if the last owner
+recipient is removed with no export on record. `filippo.io/age` is BSD-3-Clause (plus
 `filippo.io/hpke`, BSD-3-Clause), licenses recorded in
 `docs/THIRD_PARTY.md`.

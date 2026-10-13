@@ -79,6 +79,11 @@ unchanged.
 | POST | /api/v1/backups/schedules | `"backup"` | `backupScheduleSave` | Schedule save on CLI and dashboard |
 | GET | /api/v1/backups/schedules/{package} | `"backup"` | `backupScheduleGet` | Visible through schedules listing on CLI; per-package inspect on dashboard |
 | DELETE | /api/v1/backups/schedules/{package} | `"backup"` | `backupScheduleDelete` | Schedule removal on CLI and dashboard |
+| GET | /api/v1/backups/recipients | `"backup"` | `backupRecipients` | Appliance and owner age recipients (public keys only) on CLI (`backup recipients list`) and the dashboard Backups page (S271) |
+| POST | /api/v1/backups/recipients | `"backup"` | `backupRecipientAdd` | Add an owner X25519 recipient on CLI and dashboard; applies to new runs only (S271) |
+| DELETE | /api/v1/backups/recipients/{fingerprint} | `"backup"` | `backupRecipientRemove` | Remove an owner recipient on CLI and dashboard; the appliance identity is refused (S271) |
+| GET | /api/v1/backups/identity | `"backup"` | `backupIdentity` | Appliance recipient and export record, never the key, on CLI (`backup identity status`) and dashboard (S271) |
+| POST | /api/v1/backups/identity/export | `"backup"` | `backupIdentityExport` | Explicit, audited recovery identity export, shown once: CLI `--out FILE` (0600) or `--stdout`; dashboard confirmation then copy/download (S271) |
 | GET | /api/v1/updates | `"updates"` | `updates` | Review rows on both surfaces |
 | POST | /api/v1/updates/{name}/apply | `"updates"` | `applyUpdate` | Approved updates on both surfaces |
 | GET | /api/v1/data-migrations | `runDataStatus` | `dataMigrations` | App data placement (placed, needs-migration, unknown) plus old volumes pending removal (S277); also surfaced as doctor checks |

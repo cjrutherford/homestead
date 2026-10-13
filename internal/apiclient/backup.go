@@ -78,3 +78,76 @@ func (c *Client) BackupUnschedule(ctx context.Context, packageName string) error
 	}
 	return nil
 }
+
+// BackupRecipient is one backup recipient (public data only; S271).
+type BackupRecipient struct {
+	Fingerprint string `json:"fingerprint"`
+	PublicKey   string `json:"public_key"`
+	Label       string `json:"label"`
+	Kind        string `json:"kind"`
+	Actor       string `json:"actor"`
+}
+
+// BackupRecipients is GET /api/v1/backups/recipients.
+type BackupRecipients struct {
+	Recipients []BackupRecipient `json:"recipients"`
+	OwnerHeld  bool              `json:"owner_held"`
+	Note       string            `json:"note"`
+}
+
+// BackupRecipients lists the appliance and owner recipients.
+func (c *Client) BackupRecipients(ctx context.Context) (BackupRecipients, error) {
+	var out BackupRecipients
+	err := c.get(ctx, "/api/v1/backups/recipients", &out)
+	return out, err
+}
+
+// BackupRecipientAdd adds one owner age recipient.
+func (c *Client) BackupRecipientAdd(ctx context.Context, publicKey, label string) (BackupRecipient, error) {
+	var out BackupRecipient
+	err := c.postJSON(ctx, "/api/v1/backups/recipients", map[string]string{"public_key": publicKey, "label": label}, &out)
+	return out, err
+}
+
+// BackupRecipientRemove removes one owner recipient by fingerprint.
+func (c *Client) BackupRecipientRemove(ctx context.Context, fingerprint string) (BackupRecipient, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.base+"/api/v1/backups/recipients/"+url.PathEscape(fingerprint), nil)
+	if err != nil {
+		return BackupRecipient{}, fmt.Errorf("api: %w", err)
+	}
+	var out BackupRecipient
+	err = c.roundTrip(req, http.StatusOK, &out)
+	return out, err
+}
+
+// BackupIdentityStatus is GET /api/v1/backups/identity.
+type BackupIdentityStatus struct {
+	Recipient   string `json:"recipient"`
+	Fingerprint string `json:"fingerprint"`
+	Exported    bool   `json:"exported"`
+	ExportedAt  string `json:"exported_at"`
+	ExportedBy  string `json:"exported_by"`
+}
+
+// BackupIdentity reports the appliance recipient and export record.
+func (c *Client) BackupIdentity(ctx context.Context) (BackupIdentityStatus, error) {
+	var out BackupIdentityStatus
+	err := c.get(ctx, "/api/v1/backups/identity", &out)
+	return out, err
+}
+
+// BackupIdentityExport is the one response carrying the secret key.
+type BackupIdentityExport struct {
+	Identity    string `json:"identity"`
+	Recipient   string `json:"recipient"`
+	Fingerprint string `json:"fingerprint"`
+	ExportedAt  string `json:"exported_at"`
+	Actor       string `json:"actor"`
+}
+
+// BackupIdentityExport exports the recovery identity (audited, explicit).
+func (c *Client) BackupIdentityExport(ctx context.Context) (BackupIdentityExport, error) {
+	var out BackupIdentityExport
+	err := c.postJSON(ctx, "/api/v1/backups/identity/export", map[string]bool{"confirm": true}, &out)
+	return out, err
+}

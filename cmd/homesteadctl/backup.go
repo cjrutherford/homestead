@@ -13,7 +13,7 @@ import (
 
 func runBackup(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl backup <destination|schedules|schedule|unschedule> [flags]")
+		fmt.Fprintln(stderr, "usage: homesteadctl backup <destination|schedules|schedule|unschedule|recipients|identity> [flags]")
 		return exitUsage
 	}
 	switch args[0] {
@@ -25,6 +25,10 @@ func runBackup(ctx context.Context, client *apiclient.Client, args []string, std
 		return runBackupSchedule(ctx, client, args[1:], stdout, stderr)
 	case "unschedule":
 		return runBackupUnschedule(ctx, client, args[1:], stdout, stderr)
+	case "recipients":
+		return runBackupRecipients(ctx, client, args[1:], stdout, stderr)
+	case "identity":
+		return runBackupIdentity(ctx, client, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown backup subcommand %q\n", args[0])
 		return exitUsage

@@ -25,6 +25,96 @@
     <app-state-message kind="loading" headline="Resolving destination…" />
   }
 
+  <h3>Recipients and recovery</h3>
+  <p>
+    Every new backup run is encrypted to the appliance identity and to each
+    owner recipient below. Existing runs are not re-encrypted. The appliance
+    identity lives only on this appliance, so add a recipient whose private
+    key you hold, or export the recovery identity and store it offline.
+  </p>
+  @if (recipientsError()) {
+    <app-state-message kind="error" [headline]="recipientsError()" />
+  } @else if (recipients(); as view) {
+    @if (!view.owner_held) {
+      <app-state-message
+        kind="status"
+        headline="No owner-held recipient and no recorded export: if this appliance is lost, backups cannot be read."
+      />
+    }
+    <ul aria-label="Backup recipients">
+      @for (row of view.recipients; track row.fingerprint) {
+        <li>
+          <strong>{{ row.kind === 'appliance' ? 'Appliance identity' : (row.label || 'Owner recipient') }}</strong>
+          <code>{{ row.public_key }}</code> ({{ row.fingerprint }})
+          @if (row.kind === 'owner') {
+            @if (confirmingRecipient() === row.fingerprint) {
+              <span role="alertdialog" [attr.aria-label]="'Confirm removal of recipient ' + row.fingerprint">
+                Remove this recipient? Later runs will not be readable by it.
+                <button type="button" (click)="removeRecipient(row.fingerprint)" [disabled]="busy()">
+                  Confirm remove recipient
+                </button>
+                <button type="button" (click)="cancelRemoveRecipient()" [disabled]="busy()">Cancel</button>
+              </span>
+            } @else {
+              <button type="button" (click)="askRemoveRecipient(row.fingerprint)" [disabled]="busy()">
+                Remove recipient
+              </button>
+            }
+          }
+        </li>
+      }
+    </ul>
+  } @else {
+    <app-state-message kind="loading" headline="Loading recipients…" />
+  }
+  <form
+    (submit)="addRecipient(recipientKey.value, recipientLabel.value); $event.preventDefault()"
+  >
+    <label>
+      Recipient public key (age1…)
+      <input #recipientKey name="recipient-key" autocomplete="off" [disabled]="busy()" />
+    </label>
+    <label>
+      Label
+      <input #recipientLabel name="recipient-label" autocomplete="off" [disabled]="busy()" />
+    </label>
+    <button type="submit" [disabled]="busy()">Add recipient</button>
+  </form>
+
+  <h4>Recovery identity</h4>
+  @if (identity(); as status) {
+    <p>
+      @if (status.exported) {
+        Exported by {{ status.exported_by }} at {{ status.exported_at }}.
+      } @else {
+        Never exported.
+      }
+    </p>
+  }
+  @if (exported(); as result) {
+    <div role="alert" aria-label="Exported recovery identity">
+      <app-state-message
+        kind="status"
+        headline="Store this offline, off this appliance. It is shown once and cannot be shown again here."
+      />
+      <pre class="backup-root">{{ result.identity }}</pre>
+      <button type="button" (click)="copyExport()">Copy</button>
+      <button type="button" (click)="downloadExport()">Download</button>
+      <button type="button" (click)="dismissExport()">I stored it, dismiss</button>
+    </div>
+  } @else if (confirmingExport()) {
+    <span role="alertdialog" aria-label="Confirm identity export">
+      This reveals the key that decrypts every backup, and the export is
+      audited. Continue?
+      <button type="button" (click)="confirmExport()" [disabled]="busy()">Confirm export</button>
+      <button type="button" (click)="cancelExport()" [disabled]="busy()">Cancel</button>
+    </span>
+  } @else {
+    <button type="button" (click)="askExport()" [disabled]="busy()">
+      Export recovery identity
+    </button>
+  }
+
   <h3>Schedules</h3>
   <button type="button" (click)="refresh()" [disabled]="loading() || busy()">
     Refresh

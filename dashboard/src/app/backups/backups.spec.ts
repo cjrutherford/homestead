@@ -16,6 +16,21 @@ const SCHEDULE = {
   updated_at: '2026-01-01T00:00:00Z',
 };
 
+const RECIPIENTS = {
+  recipients: [
+    {
+      fingerprint: 'aa11',
+      public_key: 'age1appliance',
+      label: 'appliance identity',
+      kind: 'appliance',
+      actor: 'system',
+    },
+  ],
+  owner_held: false,
+  note: 'New runs only.',
+};
+const IDENTITY = { recipient: 'age1appliance', fingerprint: 'aa11', exported: false };
+
 const JOB = {
   id: 'backup:jellyfin',
   interval_seconds: 86400,
@@ -57,6 +72,8 @@ describe('Backups', () => {
       .expectOne('/api/v1/backups/destination')
       .flush({ destination, encrypted: true, format_version: 2 });
     http.expectOne('/api/v1/scheduler/jobs').flush(jobs);
+    http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
+    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush(schedules);
     fixture.detectChanges();
   }
@@ -64,6 +81,8 @@ describe('Backups', () => {
   function reload(schedules: unknown[], jobs: unknown[] = []) {
     http.expectOne('/api/v1/backups/destination').flush({ destination: '/b' });
     http.expectOne('/api/v1/scheduler/jobs').flush(jobs);
+    http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
+    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush(schedules);
     fixture.detectChanges();
   }
@@ -99,6 +118,8 @@ describe('Backups', () => {
       .expectOne('/api/v1/backups/destination')
       .flush('no backup storage assigned', { status: 422, statusText: 'x' });
     http.expectOne('/api/v1/scheduler/jobs').flush([]);
+    http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
+    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush([]);
     fixture.detectChanges();
     expect(text()).toContain('No backup schedules yet');
@@ -243,6 +264,8 @@ describe('Backups', () => {
     fixture.componentInstance.refresh();
     http.expectOne('/api/v1/backups/destination').flush({ destination: '/b' });
     http.expectOne('/api/v1/scheduler/jobs').flush([]);
+    http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
+    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush([]);
     fixture.detectChanges();
     expect(text()).toContain('No scheduled jobs.');
@@ -252,8 +275,65 @@ describe('Backups', () => {
     http
       .expectOne('/api/v1/scheduler/jobs')
       .flush('scheduler down', { status: 500, statusText: 'x' });
+    http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
+    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush([]);
     fixture.detectChanges();
     expect(text()).toContain('scheduler down');
+  });
+
+  it('warns while only the appliance recipient exists', () => {
+    load([]);
+    expect(text()).toContain('cannot be read');
+    expect(text()).toContain('Appliance identity');
+    expect(text()).toContain('age1appliance');
+  });
+
+  it('adds a recipient and rejects a malformed key locally', () => {
+    load([]);
+    fixture.componentInstance.addRecipient('ssh-ed25519 AAAA', '');
+    fixture.detectChanges();
+    expect(text()).toContain('starting with age1');
+    fixture.componentInstance.addRecipient(' age1abc ', ' laptop ');
+    const req = http.expectOne('/api/v1/backups/recipients');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ public_key: 'age1abc', label: 'laptop' });
+    req.flush({ fingerprint: 'bb22', public_key: 'age1abc', kind: 'owner' });
+    http.expectOne('/api/v1/backups/destination').flush({ destination: '/b' });
+    http.expectOne('/api/v1/scheduler/jobs').flush([]);
+    http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
+    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
+    http.expectOne('/api/v1/backups/schedules').flush([]);
+    fixture.detectChanges();
+    expect(text()).toContain('not re-encrypted');
+  });
+
+  it('exports the identity only after confirmation and shows it once', () => {
+    load([]);
+    fixture.componentInstance.askExport();
+    fixture.detectChanges();
+    expect(text()).toContain('audited');
+    http.expectNone('/api/v1/backups/identity/export');
+    fixture.componentInstance.confirmExport();
+    const req = http.expectOne('/api/v1/backups/identity/export');
+    expect(req.request.body).toEqual({ confirm: true });
+    req.flush({
+      identity: 'AGE-SECRET-KEY-TEST',
+      recipient: 'age1appliance',
+      fingerprint: 'aa11',
+      exported_at: 'now',
+      actor: 'chris',
+    });
+    http.expectOne('/api/v1/backups/destination').flush({ destination: '/b' });
+    http.expectOne('/api/v1/scheduler/jobs').flush([]);
+    http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
+    http.expectOne('/api/v1/backups/identity').flush({ ...IDENTITY, exported: true });
+    http.expectOne('/api/v1/backups/schedules').flush([]);
+    fixture.detectChanges();
+    expect(text()).toContain('AGE-SECRET-KEY-TEST');
+    expect(text()).toContain('Store this offline');
+    fixture.componentInstance.dismissExport();
+    fixture.detectChanges();
+    expect(text()).not.toContain('AGE-SECRET-KEY-TEST');
   });
 });

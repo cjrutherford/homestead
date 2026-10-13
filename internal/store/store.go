@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 29
+const CurrentVersion = 30
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -537,6 +537,28 @@ CREATE TABLE IF NOT EXISTS app_data_old_volumes (
 	actor TEXT NOT NULL DEFAULT '',
 	migrated_at TEXT NOT NULL,
 	removed_at TEXT NOT NULL DEFAULT ''
+);`,
+	},
+	{
+		// S271 backup recipients (ADR-022): owner-held age public keys
+		// that every backup also encrypts to, and a record that the
+		// recovery identity was exported (timestamp and actor only; the
+		// exported value is never stored here).
+		version: 30,
+		name:    "backup recipients",
+		sql: `
+CREATE TABLE IF NOT EXISTS backup_recipients (
+	fingerprint TEXT PRIMARY KEY,
+	public_key TEXT NOT NULL UNIQUE,
+	label TEXT NOT NULL DEFAULT '',
+	actor TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS backup_identity_exports (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	fingerprint TEXT NOT NULL,
+	actor TEXT NOT NULL,
+	exported_at TEXT NOT NULL
 );`,
 	},
 }

@@ -228,7 +228,7 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 	if err != nil {
 		return backup.Job{}, err
 	}
-	recipients, err := backup.Recipients(keys)
+	recipients, err := backup.RecipientsWithOwner(keys, backup.NewRecipientStore(st))
 	if err != nil {
 		return backup.Job{}, err
 	}

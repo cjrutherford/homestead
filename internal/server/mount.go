@@ -67,7 +67,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 		certDoctorChecks(st, time.Now),
 		platformDoctorCheck(st),
 		migrationDoctorChecks(st, c.CatalogDir),
-		backupEncryptionDoctorCheck,
+		backupEncryptionDoctorCheck(st),
 	)
 	srv.MountTLSRenewal(st, time.Now)
 	srv.MountOperations(operation.New(st))
@@ -76,6 +76,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountMigrations(st, c.CatalogDir, secrets)
 	srv.MountStorage(st)
 	srv.MountBackups(st)
+	srv.MountBackupRecipients(st, secrets, filepath.Join(filepath.Dir(c.ConfigPath), "backup-recipients.yaml"))
 	sched := NewScheduler(st, c.CatalogDir, secrets)
 	srv.MountScheduler(sched)
 	srv.MountDriftScan(st, sched.Now)

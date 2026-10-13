@@ -222,7 +222,7 @@ func (h *migrationHandlers) preMigrationBackup(manifest catalog.Manifest, plan c
 	keys, err := backupKeyStore(h.secrets)
 	var recipients []age.Recipient
 	if err == nil {
-		recipients, err = backup.Recipients(keys)
+		recipients, err = backup.RecipientsWithOwner(keys, backup.NewRecipientStore(h.st))
 	}
 	if err != nil {
 		return backup.Job{}, backupAvailability{Destination: dest,

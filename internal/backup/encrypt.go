@@ -95,7 +95,7 @@ func ApplianceIdentity(store KeyStore) (*age.X25519Identity, error) {
 }
 
 // Recipients returns the recipients new backups encrypt to: the
-// appliance identity's. S271 appends owner-added recipients here.
+// appliance identity only; RecipientsWithOwner (S271) appends owners.
 func Recipients(store KeyStore) ([]age.Recipient, error) {
 	identity, err := ApplianceIdentity(store)
 	if err != nil {

@@ -396,6 +396,38 @@ export interface ExposureApproval {
   actor: string;
 }
 
+/** GET /api/v1/backups/recipients (S271): public data only. */
+export interface BackupRecipient {
+  fingerprint: string;
+  public_key: string;
+  label: string;
+  kind: 'appliance' | 'owner';
+  actor: string;
+}
+
+export interface BackupRecipients {
+  recipients: BackupRecipient[];
+  owner_held: boolean;
+  note: string;
+}
+
+export interface BackupIdentityStatus {
+  recipient: string;
+  fingerprint: string;
+  exported: boolean;
+  exported_at?: string;
+  exported_by?: string;
+}
+
+/** POST /api/v1/backups/identity/export: the only response with the key. */
+export interface BackupIdentityExport {
+  identity: string;
+  recipient: string;
+  fingerprint: string;
+  exported_at: string;
+  actor: string;
+}
+
 /** GET /api/v1/backups/schedules — one persisted schedule record. */
 export interface BackupSchedule {
   package: string;
@@ -775,6 +807,34 @@ export class ApiService {
   backupScheduleDelete(name: string): Observable<void> {
     return this.http.delete<void>(
       `/api/v1/backups/schedules/${encodeURIComponent(name)}`,
+    );
+  }
+
+  backupRecipients(): Observable<BackupRecipients> {
+    return this.http.get<BackupRecipients>('/api/v1/backups/recipients');
+  }
+
+  backupRecipientAdd(body: {
+    public_key: string;
+    label: string;
+  }): Observable<BackupRecipient> {
+    return this.http.post<BackupRecipient>('/api/v1/backups/recipients', body);
+  }
+
+  backupRecipientRemove(fingerprint: string): Observable<BackupRecipient> {
+    return this.http.delete<BackupRecipient>(
+      `/api/v1/backups/recipients/${encodeURIComponent(fingerprint)}`,
+    );
+  }
+
+  backupIdentity(): Observable<BackupIdentityStatus> {
+    return this.http.get<BackupIdentityStatus>('/api/v1/backups/identity');
+  }
+
+  backupIdentityExport(): Observable<BackupIdentityExport> {
+    return this.http.post<BackupIdentityExport>(
+      '/api/v1/backups/identity/export',
+      { confirm: true },
     );
   }
 

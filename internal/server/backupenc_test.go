@@ -16,14 +16,15 @@ import (
 )
 
 func TestBackupEncryptionDoctorWarnsWhileOnlyApplianceRecipient(t *testing.T) {
+	env := newRecipientEnv(t)
 	srv := New("127.0.0.1:0")
-	srv.MountDoctor(backupEncryptionDoctorCheck)
+	srv.MountDoctor(backupEncryptionDoctorCheck(env.st))
 	rec := serveRequest(t, srv, http.MethodGet, "/api/v1/doctor", nil)
 	body := rec.Body.String()
 	if !strings.Contains(body, `"backup-encryption"`) || !strings.Contains(body, "appliance identity") {
 		t.Fatalf("doctor body = %s", body)
 	}
-	checks := backupEncryptionDoctorCheck()
+	checks := backupEncryptionDoctorCheck(env.st)()
 	if len(checks) != 1 || checks[0].Status != doctor.StatusWarn {
 		t.Fatalf("checks = %+v", checks)
 	}
