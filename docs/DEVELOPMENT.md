@@ -2462,3 +2462,55 @@ Engine (a remote `DOCKER_HOST` compares paths lexically).
   between the rename and the health check; a daemon killed mid-apply.
   The plan view still reports the daemon's version as the CLI's running
   version.
+
+## Platform update rollback (S273, ADR-027)
+
+- Proven live in KVM (S273, f4f63d8 plus 96593b7, deployed with
+  `scripts/install-systemd.sh`; both appliances; throwaway Ed25519
+  minisig-format key, test releases built with `-ldflags` versions under
+  `/srv/releases`):
+  - Automatic rollback. A build whose embedded version differs from its
+    checksums failed the health probe, and a build that exits at start
+    (daemon not running, past the systemd start limit) failed the health
+    check; both ended `failed (rolled back)` inside the apply unit: the
+    installed file and `/proc` daemon matched the previous release's
+    digest, the daemon was healthy on it, the audit trail named both
+    versions, the installed baseline was unchanged, the marker was clear,
+    and `homestead-server.rolledback-<stamp>` held the bad build (correct
+    digest, 0755). Only the last two copies were kept. Doctor reported
+    `platform-apply` failed until the next successful platform operation.
+  - Manual rollback. After a good apply, `rollback-platform --follow`
+    without `--allow-older` was refused (422, the CLI printed the
+    override hint, the API carried `X-Homestead-Error:
+    older-release-needs-override`); with it the daemon rolled back, the
+    baseline moved to the previous release, and the override was audited
+    with both versions; `--follow` survived the restart. A rollback to
+    the same version as the running binary answered 409. With the
+    previous record's counter cleared in SQLite (throwaway edit), and
+    for a first CLI apply whose previous was the unrecorded original, the
+    rollback was refused even with `--allow-older`.
+  - Failure paths. A corrupted `.previous` was refused up front by the
+    daemon (no operation, nothing changed). With the apply unit delayed
+    by a drop-in and `.previous` corrupted inside the window, the unit
+    ended `rollback failed` ("the installed binary was not changed"),
+    and doctor failed. With `.previous` corrupted while a bad apply's
+    health check was running, the automatic rollback failed with the
+    "daemon is still on the failed binary" message and the manual
+    recovery command; following it (cp, mv, reset-failed, restart) from
+    the kept binary restored the daemon.
+  - The CLI component rolled back without a daemon restart (same
+    daemon main PID) after a CLI apply.
+  - Both appliances were restored to the main baseline, the installed
+    records reset (VM 1 back to its counter 10), the test key removed,
+    releases and rollback copies deleted; doctor showed only the
+    release-trust warning and the apps were running.
+- Found and fixed in KVM: two applies back to back (a follower starting
+  the next apply when it saw the previous one end) failed with "staged
+  copy size mismatch" because the apply unit cleaned the staging
+  directory after finalizing and the daemon side's end-of-operation
+  cleanup ran late over the new apply's staging (96593b7). Twelve
+  alternating CLI applies passed afterwards on both appliances.
+- Not exercised: a rollback restart that itself fails in systemd (only
+  an unrestorable `.previous`; the restart-failure path is covered by the
+  fake-systemd tests); the dashboard rollback action; power loss during
+  a rollback; the free-space skip of the rolled-back copy.
