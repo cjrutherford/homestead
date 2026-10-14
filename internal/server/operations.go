@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -26,7 +27,7 @@ var EventHeartbeatInterval = 30 * time.Second
 func (s *Server) MountOperations(svc *operation.Store) {
 	s.mux.HandleFunc("GET /api/v1/operations", handleOperationList(svc))
 	s.mux.HandleFunc("GET /api/v1/operations/{id}", handleOperationGet(svc))
-	s.mux.HandleFunc("GET /api/v1/operations/{id}/events", handleOperationEvents(svc))
+	s.mux.HandleFunc("GET /api/v1/operations/{id}/events", handleOperationEvents(svc, s.bg))
 }
 
 func operationLimit(r *http.Request) (int, error) {
@@ -84,7 +85,11 @@ func handleOperationGet(svc *operation.Store) http.HandlerFunc {
 	}
 }
 
-func handleOperationEvents(svc *operation.Store) http.HandlerFunc {
+// shutdown ends open streams when the daemon begins to stop: an idle SSE
+// connection otherwise holds the graceful drain until its timeout, and the
+// daemon then exits with an error (found in KVM during a platform apply
+// restart with `--follow` attached).
+func handleOperationEvents(svc *operation.Store, shutdown context.Context) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := operationID(r)
 		if err != nil {
@@ -123,6 +128,8 @@ func handleOperationEvents(svc *operation.Store) http.HandlerFunc {
 		for {
 			select {
 			case <-r.Context().Done():
+				return
+			case <-shutdown.Done():
 				return
 			case <-heartbeat.C:
 				// A stream outlives the request that authenticated it:

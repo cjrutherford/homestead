@@ -164,6 +164,38 @@ func TestOperationEventsTerminalCloses(t *testing.T) {
 	}
 }
 
+// A stream on a running operation ends when the daemon shuts down, so it
+// cannot hold the graceful drain open.
+func TestOperationEventsEndOnShutdown(t *testing.T) {
+	srv, svc := operationServer(t)
+	created, err := svc.Create("test.op", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Transition(created.ID, operation.StatusRunning, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		resp, err := http.Get(ts.URL + "/api/v1/operations/1/events")
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body)
+	}()
+	time.Sleep(300 * time.Millisecond)
+	srv.bgCancel()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the event stream outlived the daemon shutdown")
+	}
+}
+
 func TestOperationEventsStreamTransitions(t *testing.T) {
 	srv, svc := operationServer(t)
 	created, err := svc.Create("test.op", "")
