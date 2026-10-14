@@ -62,6 +62,9 @@ verification would be a supply-chain hole.
 - Hard-coded key with no owner override: violates customer ownership.
 - Prehashed minisign: needed only for large files; adds BLAKE2b.
 
+## Amended by ADR-027
+Platform binary replacement happens in a separate privileged apply unit, not in the daemon; see ADR-027.
+
 ## Consequences
 - Key rotation for HAI is an owner key import (or a binary release).
 - Release process must publish checksums with version and counter, and
