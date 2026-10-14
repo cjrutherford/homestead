@@ -195,13 +195,25 @@ func (r *Runner) Wait(ctx context.Context, id int64) (Operation, error) {
 
 // Recover fails every non-terminal operation left by a dead daemon, so
 // no record claims to run forever. Call once at startup.
-func (r *Runner) Recover() error {
+func (r *Runner) Recover() error { return r.RecoverExcept() }
+
+// RecoverExcept is Recover minus the operations in keep. An operation
+// that deliberately ends its own process (a platform update restarts
+// the daemon, S265) leaves a persisted marker and is finalized by the
+// next start from that marker, so it must not be failed as interrupted
+// first. The caller names only ids a finalizer will drive to a terminal
+// state; anything else stays Recover's to fail.
+func (r *Runner) RecoverExcept(keep ...int64) error {
+	skip := map[int64]bool{}
+	for _, id := range keep {
+		skip[id] = true
+	}
 	ops, err := r.store.List(0)
 	if err != nil {
 		return err
 	}
 	for _, op := range ops {
-		if Terminal(op.Status) {
+		if Terminal(op.Status) || skip[op.ID] {
 			continue
 		}
 		if err := r.store.Transition(op.ID, StatusCancelled, "", "interrupted by restart"); err != nil {

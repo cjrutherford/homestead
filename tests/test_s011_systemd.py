@@ -48,7 +48,8 @@ class TestUnitFile(unittest.TestCase):
     def test_writable_paths_cover_state_and_stacks(self):
         paths = load_unit()["Service"]["ReadWritePaths"]
         for want in ("/etc/homestead", "/var/lib/homestead",
-                     "/opt/homestead/stacks", "/mnt", "/media"):
+                     "/opt/homestead/stacks", "/mnt", "/media",
+                     "/usr/local/bin"):
             with self.subTest(want=want):
                 self.assertIn(want, paths)
 

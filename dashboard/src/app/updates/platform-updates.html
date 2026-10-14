@@ -47,6 +47,64 @@
     <p class="warning">{{ warning }}</p>
   }
 
+  @if (view()?.pending; as pending) {
+    <p class="warning">
+      Platform update {{ pending.component }} {{ pending.from_version }} →
+      {{ pending.to_version }} is awaiting finalization after the daemon
+      restart (operation {{ pending.op_id }}).
+    </p>
+  }
+  @if (applyOperation(); as id) {
+    <p>
+      Platform update started. The daemon restarts to finish, so this page
+      pauses briefly.
+      <a [routerLink]="['/operations', id]">Follow operation {{ id }}</a>
+    </p>
+  }
+
+  <h3>Apply a verified release</h3>
+  <p>
+    Applies the artifact named under Artifact below: its bytes must still match
+    what was verified. The previous binary is kept for manual restore.
+  </p>
+  @for (release of view()?.releases ?? []; track release.component) {
+    @if (release.state === 'verified' && release.version) {
+      <div>
+        <p>Apply {{ release.component }} {{ release.version }} (counter {{ release.counter }})</p>
+        <label>
+          <input
+            type="checkbox"
+            [name]="'apply-confirm-' + release.component"
+            (change)="applyConfirmed = $any($event.target).checked"
+          />
+          I confirm applying this platform update
+          @if (release.component === 'homestead-server') {
+            (the daemon restarts; the API and dashboard pause briefly)
+          }
+        </label>
+        @if (needsOlder(release)) {
+          <label>
+            <input
+              type="checkbox"
+              [name]="'apply-older-' + release.component"
+              (change)="applyOlderConfirmed = $any($event.target).checked"
+            />
+            I confirm applying an older release (recorded in the audit trail)
+          </label>
+        }
+        <button type="button" (click)="apply(release)" [disabled]="busy() || !artifact || !applyConfirmed">
+          Apply {{ release.component }} {{ release.version }}
+        </button>
+      </div>
+    }
+  }
+  @for (entry of view()?.previous | keyvalue; track entry.key) {
+    <p>
+      Previous {{ entry.key }} kept: {{ entry.value.version }} at
+      {{ entry.value.path }} (sha256 {{ entry.value.sha256 }})
+    </p>
+  }
+
   <h3>Verify local release files</h3>
   <p>Absolute paths to files already on the appliance; nothing is downloaded.</p>
   <label>

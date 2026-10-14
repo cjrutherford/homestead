@@ -269,3 +269,27 @@ func TestRecover(t *testing.T) {
 		t.Fatalf("status = %q, want cancelled", after.Status)
 	}
 }
+
+func TestRecoverExceptKeepsNamedOperations(t *testing.T) {
+	runner := openRunner(t)
+	mk := func() int64 {
+		op, err := runner.store.Create("test.keep", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := runner.store.Transition(op.ID, StatusRunning, "", ""); err != nil {
+			t.Fatal(err)
+		}
+		return op.ID
+	}
+	kept, failed := mk(), mk()
+	if err := runner.RecoverExcept(kept); err != nil {
+		t.Fatal(err)
+	}
+	if op, _ := runner.store.Get(kept); op.Status != StatusRunning {
+		t.Fatalf("kept op = %s, want running", op.Status)
+	}
+	if op, _ := runner.store.Get(failed); op.Status != StatusCancelled {
+		t.Fatalf("other op = %s, want cancelled", op.Status)
+	}
+}

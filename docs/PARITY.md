@@ -94,6 +94,7 @@ unchanged.
 | POST | /api/v1/data-migrations/{name}/remove-volumes | `runDataRemoveVolumes` | `removeOldVolumes` | Explicit, audited removal of old volumes, refused while referenced (S277) |
 | GET | /api/v1/platform/updates | `"platform"` | `platformUpdates` | Platform plan with per-release verification state on both surfaces (S264) |
 | POST | /api/v1/platform/updates/verify | `"verify"` | `platformVerify` | Local artifact verification, `--allow-older` or confirmed rollback override on both surfaces (S264) |
+| POST | /api/v1/platform/updates/apply | `"apply-platform"` | `platformApply` | Apply a verified platform release as an operation; `updates apply-platform --component --artifact [--allow-older] [--follow]` and the Updates page apply action behind a confirmation, with a separate confirmation for an older release (S265). Plan view also reports the kept previous binaries and any pending apply |
 | GET | /api/v1/platform/trust-keys | `"trust"` | `trustKeys` | Trusted release keys on both surfaces (S264) |
 | POST | /api/v1/platform/trust-keys | `"trust"` | `trustKeyAdd` | Add a trusted key on both surfaces (S264) |
 | PUT | /api/v1/platform/trust-keys/{id} | `"trust"` | `trustKeyReplace` | Replace a trusted key on both surfaces (S264) |

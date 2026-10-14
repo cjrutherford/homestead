@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 32
+const CurrentVersion = 33
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -581,6 +581,40 @@ CREATE TABLE IF NOT EXISTS edge_routes (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
 	routes TEXT NOT NULL,
 	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S265: platform update apply. The single-row marker describes an
+		// apply in flight (written before the binary is replaced, read
+		// and cleared by the next daemon start); the previous-binary
+		// record names what manual restore (and S273 rollback) restores.
+		version: 33,
+		name:    "platform update apply marker and previous binary",
+		sql: `
+CREATE TABLE IF NOT EXISTS platform_apply_marker (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	op_id INTEGER NOT NULL,
+	component TEXT NOT NULL,
+	from_version TEXT NOT NULL,
+	from_counter INTEGER NOT NULL,
+	to_version TEXT NOT NULL,
+	to_counter INTEGER NOT NULL,
+	sha256 TEXT NOT NULL,
+	binary_path TEXT NOT NULL,
+	previous_path TEXT NOT NULL,
+	previous_sha256 TEXT NOT NULL,
+	override INTEGER NOT NULL DEFAULT 0,
+	override_reason TEXT NOT NULL DEFAULT '',
+	actor TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS platform_previous (
+	component TEXT PRIMARY KEY,
+	version TEXT NOT NULL,
+	counter INTEGER NOT NULL,
+	sha256 TEXT NOT NULL,
+	path TEXT NOT NULL,
+	recorded_at TEXT NOT NULL
 );`,
 	},
 }

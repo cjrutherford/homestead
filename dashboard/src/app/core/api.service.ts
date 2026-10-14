@@ -323,6 +323,25 @@ export interface PlatformUpdates {
   releases: PlatformRelease[];
   /** Failed or unverified releases: shown, never planned. */
   refused?: PlatformRelease[];
+  /** Binaries kept before the last replacement (manual restore). */
+  previous?: Record<
+    string,
+    { component: string; version: string; counter: number; sha256: string; path: string }
+  >;
+  /** An apply awaiting finalization after the daemon restart. */
+  pending?: {
+    op_id: number;
+    component: string;
+    from_version: string;
+    to_version: string;
+  } | null;
+}
+
+/** POST /api/v1/platform/updates/apply — a verified release's artifact. */
+export interface PlatformApplyBody {
+  component: string;
+  artifact: string;
+  allow_older: boolean;
 }
 
 /** POST /api/v1/platform/updates/verify — owner-supplied local files. */
@@ -775,6 +794,13 @@ export class ApiService {
   platformVerify(body: PlatformVerifyBody): Observable<PlatformRelease> {
     return this.http.post<PlatformRelease>(
       '/api/v1/platform/updates/verify',
+      body,
+    );
+  }
+
+  platformApply(body: PlatformApplyBody): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(
+      '/api/v1/platform/updates/apply',
       body,
     );
   }

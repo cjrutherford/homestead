@@ -35,7 +35,9 @@ class TestRunnerContract(unittest.TestCase):
 
     def test_startup_recovery_wired(self):
         main = read("cmd/homestead-server/main.go")
-        self.assertIn(".Recover()", main)
+        # S265: recovery keeps only the in-flight platform update's
+        # operation, which the next start finalizes from its marker.
+        self.assertTrue(".Recover()" in main or ".RecoverExcept(" in main)
 
     def test_no_serving_or_streaming(self):
         """Events are S062, audit S063, UI later still."""

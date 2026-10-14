@@ -21,6 +21,7 @@ import (
 	"homestead/internal/audit"
 	"homestead/internal/auth"
 	"homestead/internal/doctor"
+	"homestead/internal/platformapply"
 	"homestead/internal/release"
 	"homestead/internal/store"
 	"homestead/internal/version"
@@ -48,7 +49,7 @@ func newPlatformEnv(t *testing.T) *platformEnv {
 	env := &platformEnv{t: t, st: st, dir: dir}
 	env.pub, env.priv, _ = ed25519.GenerateKey(rand.Reader)
 	_, _ = rand.Read(env.keyID[:])
-	env.h = &platformHandlers{s: srv, rel: release.NewStore(st), audit: audit.New(st), trustYAML: filepath.Join(dir, "platform-trust.yaml")}
+	env.h = &platformHandlers{s: srv, rel: release.NewStore(st), audit: audit.New(st), trustYAML: filepath.Join(dir, "platform-trust.yaml"), marks: platformapply.NewStore(st)}
 	return env
 }
 

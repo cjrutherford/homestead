@@ -5,6 +5,7 @@ import {
   provideHttpClientTesting,
   HttpTestingController,
 } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
 import { PlatformUpdatesPanel } from './platform-updates';
 
 const VIEW = {
@@ -69,7 +70,7 @@ describe('PlatformUpdatesPanel', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [PlatformUpdatesPanel],
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     }).compileComponents();
     fixture = TestBed.createComponent(PlatformUpdatesPanel);
     http = TestBed.inject(HttpTestingController);
@@ -138,6 +139,48 @@ describe('PlatformUpdatesPanel', () => {
     const remove = http.expectOne('/api/v1/platform/trust-keys/ABCD');
     expect(remove.request.method).toBe('DELETE');
     remove.flush(null);
+    reload();
+  });
+
+  it('applies a verified release only after confirmation, then links the operation', () => {
+    const panel = fixture.componentInstance as any;
+    panel.artifact = '/srv/rel/homestead-server';
+    panel.apply(VIEW.releases[0]);
+    http.expectNone('/api/v1/platform/updates/apply');
+    panel.applyConfirmed = true;
+    panel.apply(VIEW.releases[0]);
+    const request = http.expectOne('/api/v1/platform/updates/apply');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({
+      component: 'homestead-server',
+      artifact: '/srv/rel/homestead-server',
+      allow_older: false,
+    });
+    request.flush({ id: 21 });
+    reload();
+    fixture.detectChanges();
+    expect(text()).toContain('Follow operation 21');
+  });
+
+  it('asks for a separate older-release confirmation after an older refusal', () => {
+    const panel = fixture.componentInstance as any;
+    panel.artifact = '/srv/rel/homestead-server';
+    panel.applyConfirmed = true;
+    panel.apply(VIEW.releases[0]);
+    http
+      .expectOne('/api/v1/platform/updates/apply')
+      .flush('release is older than the installed release', {
+        status: 422,
+        statusText: 'Unprocessable Entity',
+      });
+    fixture.detectChanges();
+    expect(text()).toContain('I confirm applying an older release');
+    panel.applyOlderConfirmed = true;
+    panel.applyConfirmed = true;
+    panel.apply(VIEW.releases[0]);
+    const retry = http.expectOne('/api/v1/platform/updates/apply');
+    expect(retry.request.body).toMatchObject({ allow_older: true });
+    retry.flush({ id: 22 });
     reload();
   });
 });

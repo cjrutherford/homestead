@@ -1,5 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
+import { KeyValuePipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import {
   ApiService,
   PlatformRelease,
@@ -16,7 +18,7 @@ import { StateMessage } from '../state/state-message';
  * override; authenticity failures offer none.
  */
 @Component({
-  imports: [StateMessage],
+  imports: [StateMessage, RouterLink, KeyValuePipe],
   selector: 'app-platform-updates',
   templateUrl: './platform-updates.html',
 })
@@ -35,6 +37,10 @@ export class PlatformUpdatesPanel implements OnInit {
   protected checksums = '';
   protected signature = '';
   protected allowOlder = false;
+  protected applyConfirmed = false;
+  protected applyOlderConfirmed = false;
+  protected readonly applyOperation = signal<number | null>(null);
+  protected readonly olderRefused = signal(false);
   protected newKey = '';
   protected newLabel = '';
 
@@ -73,6 +79,48 @@ export class PlatformUpdatesPanel implements OnInit {
           this.refresh();
         },
         error: (failure: HttpErrorResponse) => this.fail(failure),
+      });
+  }
+
+  /** True when applying this verified release moves to an older one. */
+  needsOlder(release: PlatformRelease): boolean {
+    return release.override || !!release.plan_error || this.olderRefused();
+  }
+
+  /**
+   * Applies a verified release (S265). The artifact path is the one
+   * entered above: the daemon re-checks its bytes against the verified
+   * digest. The daemon restarts to finish; progress is the operation.
+   */
+  apply(release: PlatformRelease): void {
+    if (!this.applyConfirmed) {
+      return;
+    }
+    this.busy.set(true);
+    this.error.set(null);
+    this.notice.set(null);
+    this.applyOperation.set(null);
+    this.api
+      .platformApply({
+        component: release.component,
+        artifact: this.artifact,
+        allow_older: this.applyOlderConfirmed,
+      })
+      .subscribe({
+        next: (started) => {
+          this.busy.set(false);
+          this.applyOperation.set(started.id);
+          this.applyConfirmed = false;
+          this.applyOlderConfirmed = false;
+          this.olderRefused.set(false);
+          this.refresh();
+        },
+        error: (failure: HttpErrorResponse) => {
+          if (String(failure.error ?? '').includes('older')) {
+            this.olderRefused.set(true);
+          }
+          this.fail(failure);
+        },
       });
   }
 

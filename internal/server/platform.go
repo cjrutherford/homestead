@@ -10,6 +10,9 @@ import (
 
 	"homestead/internal/audit"
 	"homestead/internal/doctor"
+	"homestead/internal/layout"
+	"homestead/internal/operation"
+	"homestead/internal/platformapply"
 	"homestead/internal/release"
 	"homestead/internal/store"
 	"homestead/internal/update"
@@ -22,7 +25,13 @@ import (
 // artifact, checksums, and signature paths on the appliance. trustYAML
 // is where the trusted-key configuration renders for inspection.
 func (s *Server) MountPlatform(st *store.Store, trustYAML string) {
-	h := &platformHandlers{s: s, rel: release.NewStore(st), audit: audit.New(st), trustYAML: trustYAML}
+	h := &platformHandlers{s: s, rel: release.NewStore(st), audit: audit.New(st), trustYAML: trustYAML,
+		marks: platformapply.NewStore(st)}
+	h.applier = &platformapply.Applier{
+		Releases: h.rel, Markers: h.marks, Runner: operation.NewRunner(st), Ops: operation.New(st), Audit: h.audit,
+		Systemd: platformapply.ExecSystemd{}, BinDir: PlatformBinDir,
+		StagingDir: filepath.Join(layout.LibDir.Path, "staging"), Unit: PlatformUnit, Running: version.Version,
+	}
 	if trustYAML != "" {
 		if err := h.render(); err != nil {
 			s.log.Warn("platform trust yaml render failed", "error", err)
@@ -30,17 +39,28 @@ func (s *Server) MountPlatform(st *store.Store, trustYAML string) {
 	}
 	s.mux.HandleFunc("GET /api/v1/platform/updates", h.plan)
 	s.mux.HandleFunc("POST /api/v1/platform/updates/verify", h.verify)
+	s.mux.HandleFunc("POST /api/v1/platform/updates/apply", h.apply)
 	s.mux.HandleFunc("GET /api/v1/platform/trust-keys", h.listKeys)
 	s.mux.HandleFunc("POST /api/v1/platform/trust-keys", h.addKey)
 	s.mux.HandleFunc("PUT /api/v1/platform/trust-keys/{id}", h.replaceKey)
 	s.mux.HandleFunc("DELETE /api/v1/platform/trust-keys/{id}", h.removeKey)
 }
 
+// Production locations for platform apply (S265): the installed
+// binaries, which the unit grants write access to, and the systemd unit
+// the daemon restarts.
+const (
+	PlatformBinDir = "/usr/local/bin"
+	PlatformUnit   = "homestead-server.service"
+)
+
 type platformHandlers struct {
 	s         *Server
 	rel       *release.Store
 	audit     *audit.Service
 	trustYAML string
+	marks     *platformapply.Store
+	applier   *platformapply.Applier
 }
 
 func (h *platformHandlers) render() error {
@@ -73,6 +93,11 @@ type platformPlanView struct {
 	// enter the plan: nothing unverified is plannable.
 	Refused   []releaseView                `json:"refused"`
 	Installed map[string]release.Installed `json:"installed"`
+	// Previous names the binaries kept before the last replacement
+	// (manual restore, S273 rollback); Pending is the apply awaiting
+	// restart finalization, if any.
+	Previous map[string]platformapply.Previous `json:"previous"`
+	Pending  *platformapply.Marker             `json:"pending"`
 }
 
 func (h *platformHandlers) plan(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +151,63 @@ func (h *platformHandlers) plan(w http.ResponseWriter, r *http.Request) {
 	if plan.Warnings == nil {
 		plan.Warnings = []string{}
 	}
-	writeJSON(w, platformPlanView{Running: running, Plan: plan, Releases: views, Refused: refused, Installed: installed})
+	previous, err := h.marks.AllPrevious()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	view := platformPlanView{Running: running, Plan: plan, Releases: views, Refused: refused, Installed: installed, Previous: previous}
+	if marker, ok, err := h.marks.Pending(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	} else if ok {
+		view.Pending = &marker
+	}
+	writeJSON(w, view)
+}
+
+type platformApplyBody struct {
+	Component  string `json:"component"`
+	Artifact   string `json:"artifact"`
+	AllowOlder bool   `json:"allow_older"`
+}
+
+// apply starts a platform update operation for a verified release
+// (S265). The artifact path must be the file the release was verified
+// from; its bytes are re-checked against the recorded digest. For the
+// daemon the operation ends with a systemd restart and is finalized by
+// the next start.
+func (h *platformHandlers) apply(w http.ResponseWriter, r *http.Request) {
+	op, ok := requireOperator(w, r)
+	if !ok {
+		return
+	}
+	var body platformApplyBody
+	if err := decodeBody(r, &body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	started, err := h.applier.Start(r.Context(), platformapply.Request{
+		Component: body.Component, Artifact: body.Artifact, Actor: op.Session.Username, AllowOlder: body.AllowOlder,
+	})
+	if err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, platformapply.ErrInput):
+			status = http.StatusBadRequest
+		case errors.Is(err, platformapply.ErrNotVerified), errors.Is(err, platformapply.ErrOlder), errors.Is(err, platformapply.ErrDigest):
+			status = http.StatusUnprocessableEntity
+		case errors.Is(err, platformapply.ErrCurrent), errors.Is(err, platformapply.ErrBusy):
+			status = http.StatusConflict
+		}
+		if status != http.StatusInternalServerError {
+			h.record(audit.Entry{Actor: op.Session.Username, Action: platformapply.ActionApply, Outcome: audit.OutcomeError,
+				Detail: "apply refused: " + err.Error()})
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	writeJSON(w, map[string]any{"id": started.ID})
 }
 
 type verifyBody struct {

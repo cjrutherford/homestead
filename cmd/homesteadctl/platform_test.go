@@ -1,12 +1,15 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func platformStub(t *testing.T, verifyState string) string {
@@ -90,5 +93,83 @@ func TestUpdatesTrust(t *testing.T) {
 	}
 	if code, _, _ := invoke(t, []string{"--server", url, "updates", "trust", "add"}); code != exitUsage {
 		t.Fatalf("add without key exit = %d", code)
+	}
+}
+
+func applyPlatformStub(t *testing.T) (string, *[]string) {
+	t.Helper()
+	var bodies []string
+	polls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/platform/updates/apply":
+			raw, _ := io.ReadAll(r.Body)
+			bodies = append(bodies, string(raw))
+			if strings.Contains(string(raw), `"allow_older":false`) && strings.Contains(string(raw), "/srv/older/") {
+				http.Error(w, "platformapply: release is older than the installed release", http.StatusUnprocessableEntity)
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":12}`))
+		case r.URL.Path == "/api/v1/operations/12/events":
+			// The daemon restarts mid-stream: the stream ends non-terminal.
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "event: state\ndata: {\"id\":12,\"type\":\"platform.update\",\"status\":\"running\",\"steps\":[]}\n\n")
+		case r.URL.Path == "/api/v1/operations/12":
+			polls++
+			if polls < 2 {
+				http.Error(w, "restarting", http.StatusBadGateway)
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":12,"type":"platform.update","status":"succeeded","steps":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(ts.Close)
+	return ts.URL, &bodies
+}
+
+func TestUpdatesApplyPlatformFollowsAcrossRestart(t *testing.T) {
+	applyFollowPoll = 5 * time.Millisecond
+	t.Cleanup(func() { applyFollowPoll = 2 * time.Second })
+	url, bodies := applyPlatformStub(t)
+	code, stdout, stderr := invoke(t, []string{"--server", url, "updates", "apply-platform",
+		"--component", "homestead-server", "--artifact", "/srv/rel/homestead-server", "--follow"})
+	if code != exitOK {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	for _, want := range []string{"operation: 12", "succeeded", "passed its health check"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+	if len(*bodies) != 1 || !strings.Contains((*bodies)[0], `"artifact":"/srv/rel/homestead-server"`) {
+		t.Fatalf("bodies = %v", *bodies)
+	}
+}
+
+func TestUpdatesApplyPlatformOlderAndUsage(t *testing.T) {
+	url, bodies := applyPlatformStub(t)
+	code, _, stderr := invoke(t, []string{"--server", url, "updates", "apply-platform",
+		"--component", "homestead-server", "--artifact", "/srv/older/homestead-server"})
+	if code != exitError || !strings.Contains(stderr, "--allow-older") {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	code, stdout, _ := invoke(t, []string{"--server", url, "updates", "apply-platform",
+		"--component", "homestead-server", "--artifact", "/srv/older/homestead-server", "--allow-older"})
+	if code != exitOK || !strings.Contains(stdout, "operation: 12") {
+		t.Fatalf("override exit = %d, stdout = %q", code, stdout)
+	}
+	if !strings.Contains((*bodies)[1], `"allow_older":true`) {
+		t.Fatalf("bodies = %v", *bodies)
+	}
+	for _, args := range [][]string{
+		{"updates", "apply-platform"},
+		{"updates", "apply-platform", "--component", "homestead-server"},
+		{"updates", "apply-platform", "--bogus"},
+	} {
+		if code, _, _ := invoke(t, append([]string{"--server", url}, args...)); code != exitUsage {
+			t.Fatalf("%v exit = %d, want usage", args, code)
+		}
 	}
 }

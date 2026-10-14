@@ -155,6 +155,7 @@ var routeClasses = map[string]RouteClass{
 	"GET /api/v1/updates":                                ClassSession,
 	"GET /api/v1/platform/updates":                       ClassSession,
 	"POST /api/v1/platform/updates/verify":               ClassSession,
+	"POST /api/v1/platform/updates/apply":                ClassSession,
 	"GET /api/v1/platform/trust-keys":                    ClassSession,
 	"POST /api/v1/platform/trust-keys":                   ClassSession,
 	"PUT /api/v1/platform/trust-keys/{id}":               ClassSession,

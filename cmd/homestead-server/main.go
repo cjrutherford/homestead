@@ -23,6 +23,7 @@ import (
 	"homestead/internal/layout"
 	"homestead/internal/mdns"
 	"homestead/internal/operation"
+	"homestead/internal/platformapply"
 	"homestead/internal/secret"
 	"homestead/internal/server"
 	"homestead/internal/store"
@@ -57,7 +58,16 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	defer st.Close()
 	// No operation record may claim to run forever: fail anything a dead
 	// daemon left behind (S061).
-	if err := operation.NewRunner(st).Recover(); err != nil {
+	// An in-flight platform update (S265) ended this process on purpose:
+	// its operation is finalized below from the persisted marker, so
+	// recovery must not fail it as interrupted first.
+	var keep []int64
+	if marker, ok, err := platformapply.NewStore(st).Pending(); err != nil {
+		return err
+	} else if ok {
+		keep = append(keep, marker.OpID)
+	}
+	if err := operation.NewRunner(st).RecoverExcept(keep...); err != nil {
 		return err
 	}
 	// Domain slices register their routes in server.MountApp, shared with
@@ -112,6 +122,9 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	go func() {
 		unixErr <- srv.RunUnix(ctx, socketPath)
 	}()
+	// Finalize a pending platform update (S265) once the listeners are
+	// answering: health check, operation finalization, installed record.
+	go finalizePlatformApply(ctx, st, listen, socketPath)
 	if err := srv.Run(ctx); err != nil {
 		return err
 	}

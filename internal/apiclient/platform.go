@@ -49,6 +49,23 @@ type PlatformInstalled struct {
 	Counter int64  `json:"Counter"`
 }
 
+// PlatformPrevious is a preserved previous binary (manual restore).
+type PlatformPrevious struct {
+	Component string `json:"component"`
+	Version   string `json:"version"`
+	Counter   int64  `json:"counter"`
+	SHA256    string `json:"sha256"`
+	Path      string `json:"path"`
+}
+
+// PlatformPending is an apply awaiting finalization after restart.
+type PlatformPending struct {
+	OpID        int64  `json:"op_id"`
+	Component   string `json:"component"`
+	FromVersion string `json:"from_version"`
+	ToVersion   string `json:"to_version"`
+}
+
 // PlatformUpdates is GET /api/v1/platform/updates.
 type PlatformUpdates struct {
 	Running   map[string]string            `json:"running"`
@@ -56,6 +73,10 @@ type PlatformUpdates struct {
 	Releases  []PlatformRelease            `json:"releases"`
 	Refused   []PlatformRelease            `json:"refused"`
 	Installed map[string]PlatformInstalled `json:"installed"`
+	// Previous names the binaries kept before the last replacement.
+	Previous map[string]PlatformPrevious `json:"previous"`
+	// Pending is an apply awaiting restart finalization, if any.
+	Pending *PlatformPending `json:"pending"`
 }
 
 // TrustKey is one trusted release-signing key.
@@ -141,4 +162,19 @@ func (c *Client) TrustKeyRemove(ctx context.Context, keyID string) error {
 		return fmt.Errorf("api: %w", err)
 	}
 	return c.roundTrip(req, http.StatusNoContent, nil)
+}
+
+// PlatformApply starts applying a verified platform release (S265) and
+// returns the operation id. artifact is the verified file's absolute
+// path on the appliance. allowOlder is the explicit, audited override
+// for an older counter.
+func (c *Client) PlatformApply(ctx context.Context, component, artifact string, allowOlder bool) (int64, error) {
+	var out struct {
+		ID int64 `json:"id"`
+	}
+	body := map[string]any{"component": component, "artifact": artifact, "allow_older": allowOlder}
+	if err := c.postJSON(ctx, "/api/v1/platform/updates/apply", body, &out); err != nil {
+		return 0, err
+	}
+	return out.ID, nil
 }

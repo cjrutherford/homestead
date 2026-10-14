@@ -85,17 +85,22 @@
   listings need a token flow before Immich updates discover
   upstream.
 - Platform release acquisition: S194 models desired versions only;
-  fetching releases, replacing binaries, and restarting the daemon
-  belong with distribution work (S264 verifies owner-supplied local
-  files but fetches nothing).
-- Platform update actuation: S194 refuses downgrades and plans
-  backups-first, and S264 surfaces the plan with verification state
-  on the API, CLI, and dashboard, but no operation executes platform
-  moves or rolls back failed replacements yet (S265). S265 must
-  refuse unverified or failed releases and call
-  `release.Store.RecordInstalled` after a successful replacement; no
-  installed counter is recorded before then, so rollback protection
-  only engages once one exists.
+  fetching releases belongs with distribution work (S264 verifies
+  owner-supplied local files but fetches nothing; S265 applies them).
+- Platform update rollback: S265 applies verified platform updates
+  (stage, keep the previous binary, replace, restart, health check on
+  the next start) but a failed health check only marks the operation
+  failed and prints the documented manual restore command; automatic
+  restore and a manual rollback route belong to S273.
+- Platform apply follow-ups (S265): the plan still says a state backup
+  precedes platform moves, but no daemon-state (SQLite/YAML) backup
+  exists yet, so apply does not run one (back up with the documented
+  backup tooling first); only one previous binary is kept per
+  component, so applying a second time after a failed health check
+  overwrites the last good previous; a new binary that crashes before
+  finalizing is restarted by systemd (`Restart=on-failure`) with its
+  marker pending and no attempt limit; the plan's "running" CLI
+  version is the daemon's version, not the installed CLI's.
 - Production release signing key: the HAI public key embedded by S264
   (`internal/release.EmbeddedPublicKey`) is a labelled placeholder
   whose private half was discarded. The real key, signing ceremony,
