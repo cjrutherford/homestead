@@ -45,11 +45,6 @@ type Runner struct {
 	RecordInstalled func(component, version string, counter int64) error
 	// RetryWait paces RecordInstalled retries.
 	RetryWait time.Duration
-	// OnFailure runs after a failed apply has been marked failed and
-	// audited, before the marker is cleared. It is S273's seam: the apply
-	// unit is where automatic restore happens. S265 leaves it nil, which
-	// keeps the previous binary for manual restore.
-	OnFailure func(ctx context.Context, m Marker, cause error)
 }
 
 type unitRun struct {
@@ -75,6 +70,9 @@ func (r *Runner) Run(ctx context.Context) error {
 		// The owner cancelled or cleared the operation: change nothing.
 		return u.fail(ctx, errors.New("the operation is no longer open; nothing was changed"))
 	}
+	if m.Kind == KindRollback {
+		return u.runRollback(ctx)
+	}
 	if err := u.step(ctx, "verify-staged", u.verify); err != nil {
 		return u.fail(ctx, err)
 	}
@@ -89,8 +87,8 @@ func (r *Runner) Run(ctx context.Context) error {
 			return u.fail(ctx, err)
 		}
 	}
-	if err := u.step(ctx, "health-check", u.healthy); err != nil {
-		return u.fail(ctx, err)
+	if err := u.step(ctx, "health-check", func(ctx context.Context) error { return u.healthy(ctx, u.m) }); err != nil {
+		return u.rollbackAfter(ctx, err)
 	}
 	return u.succeed(ctx)
 }
@@ -204,6 +202,9 @@ func (u *unitRun) restart(ctx context.Context) error {
 	if err == nil {
 		return nil
 	}
+	if u.m.Kind == KindRollback {
+		return fmt.Errorf("restart after restoring the previous binary failed: %w", err)
+	}
 	// A restart that could not even run never started the new binary;
 	// put the old one back so the file matches the running process.
 	if rerr := RestorePrevious(u.m.BinaryPath, u.m.PreviousPath, u.m.PreviousSHA); rerr != nil {
@@ -227,9 +228,9 @@ func (u *unitRun) execDigest(pid int) (string, error) {
 
 // check is one health attempt. For the daemon: the main process runs the
 // verified digest, the database opens, and the listeners answer with the
-// target version. The CLI is checked on disk by digest.
-func (u *unitRun) check(ctx context.Context) error {
-	m := u.m
+// target version (m names the target: SHA256 and ToVersion). The CLI is
+// checked on disk by digest.
+func (u *unitRun) check(ctx context.Context, m Marker) error {
 	if m.Component != update.ComponentDaemon {
 		got, err := hashFile(m.BinaryPath)
 		if err != nil {
@@ -266,7 +267,7 @@ func (u *unitRun) check(ctx context.Context) error {
 }
 
 // healthy polls check until it passes or HealthTimeout elapses.
-func (u *unitRun) healthy(ctx context.Context) error {
+func (u *unitRun) healthy(ctx context.Context, m Marker) error {
 	timeout, interval := u.r.HealthTimeout, u.r.HealthInterval
 	if timeout <= 0 {
 		timeout = 90 * time.Second
@@ -276,12 +277,12 @@ func (u *unitRun) healthy(ctx context.Context) error {
 	}
 	deadline := time.Now().Add(timeout)
 	for {
-		err := u.check(ctx)
+		err := u.check(ctx, m)
 		if err == nil {
 			return nil
 		}
 		if time.Now().After(deadline) || ctx.Err() != nil {
-			return fmt.Errorf("%s was not healthy within %s: %w", u.m.Component, timeout, err)
+			return fmt.Errorf("%s was not healthy within %s: %w", m.Component, timeout, err)
 		}
 		select {
 		case <-ctx.Done():
@@ -294,6 +295,14 @@ func (r *Runner) record(entry audit.Entry) { _, _ = r.Audit.Record(entry) }
 
 func (u *unitRun) failureMessage(cause error) string {
 	m := u.m
+	if m.Kind == KindRollback {
+		if !u.swapped {
+			return fmt.Sprintf("rollback of %s to %s failed: %v; the installed binary was not changed", m.Component, m.ToVersion, cause)
+		}
+		return fmt.Sprintf("rollback failed: %s to %s: %v; the previous binary is restored at %s and the replaced binary is kept at %s; "+
+			"if the daemon is down, restart it with: %s",
+			m.Component, m.ToVersion, cause, m.BinaryPath, m.BinaryPath+rolledBackSuffix, RestoreCommand(m, u.r.Unit))
+	}
 	if !u.swapped {
 		return fmt.Sprintf("apply of %s %s failed: %v; the installed binary was not changed", m.Component, m.ToVersion, cause)
 	}
@@ -302,19 +311,21 @@ func (u *unitRun) failureMessage(cause error) string {
 }
 
 // fail finalizes a failed apply from outside the daemon: the operation
-// failed, audited loudly, the S273 seam, the marker always cleared so it
+// failed, audited loudly, the marker always cleared so it
 // can never block future applies, and the previous binary left alone.
 func (u *unitRun) fail(ctx context.Context, cause error) error {
-	msg := u.failureMessage(cause)
+	return u.finish(u.failureMessage(cause))
+}
+
+// finish marks the operation failed with msg, audits it loudly, and
+// always clears the marker so it can never block future applies.
+func (u *unitRun) finish(msg string) error {
 	advanceOp(u.r.Ops, u.m, false, "", msg)
 	entry := audit.Entry{Actor: u.m.Actor, Action: ActionFinalize, Outcome: audit.OutcomeError, Detail: msg}
 	if u.m.Override {
 		entry.Override, entry.OverrideReason = true, u.m.OverrideWhy
 	}
 	u.r.record(entry)
-	if u.r.OnFailure != nil {
-		u.r.OnFailure(ctx, u.m, cause)
-	}
 	_ = u.r.Markers.Clear(u.m.OpID)
 	cleanDir(u.r.StagingDir)
 	return errors.New(msg)
@@ -345,12 +356,16 @@ func (u *unitRun) succeed(ctx context.Context) error {
 	m := u.m
 	result, _ := json.Marshal(map[string]any{
 		"component": m.Component, "from_version": m.FromVersion, "to_version": m.ToVersion,
-		"from_counter": m.FromCounter, "to_counter": m.ToCounter,
+		"from_counter": m.FromCounter, "to_counter": m.ToCounter, "rollback": m.Kind == KindRollback,
 	})
 	advanceOp(u.r.Ops, m, true, string(result), "")
+	verb := "applied"
+	if m.Kind == KindRollback {
+		verb = "rolled back"
+	}
 	entry := audit.Entry{Actor: m.Actor, Action: ActionFinalize, Outcome: audit.OutcomeOK,
-		Detail: fmt.Sprintf("applied %s: %s (counter %d) -> %s (counter %d), operation %d healthy",
-			m.Component, m.FromVersion, m.FromCounter, m.ToVersion, m.ToCounter, m.OpID)}
+		Detail: fmt.Sprintf("%s %s: %s (counter %d) -> %s (counter %d), operation %d healthy",
+			verb, m.Component, m.FromVersion, m.FromCounter, m.ToVersion, m.ToCounter, m.OpID)}
 	if m.Override {
 		entry.Override, entry.OverrideReason = true, m.OverrideWhy
 	}

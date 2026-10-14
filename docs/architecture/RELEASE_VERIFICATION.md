@@ -164,11 +164,48 @@ older than 15 minutes, and `homesteadctl updates platform clear-apply` (or
 the dashboard Clear stale apply button) marks the operation failed and
 clears it, audited; it refuses while the unit is running.
 
-### Manual restore
+### Automatic rollback
 
-After a failed apply (the operation error prints this command), put the
-previous binary back; `homestead-server.previous` is exactly the binary that
-ran before:
+If the restarted daemon is not healthy within the health timeout (the
+process runs a different binary, the listeners do not answer with the
+target version, or the database does not open), the apply unit does not
+leave the appliance on the bad binary. In the same run it keeps a copy of
+the failed binary as `homestead-server.rolledback`, restores
+`homestead-server.previous` (atomic rename; the copy's digest must equal
+the digest recorded when it was preserved), runs `reset-failed` and
+restarts the daemon, and waits for it to be healthy. The operation ends
+`failed (rolled back)`; the audit trail records both versions and the
+installed release record still names the previous release (the failed
+release is never recorded). `doctor` reports `platform-apply` as failed
+until a later apply succeeds. The homesteadctl component has no restart:
+its health check is the on-disk digest, and rollback restores the file.
+
+### Manual rollback
+
+```
+homesteadctl updates rollback-platform [--component homestead-server|homesteadctl] [--allow-older] [--follow]
+```
+
+The Updates page offers the same action behind a confirmation. It runs
+through the same apply unit, which re-verifies the recorded previous
+binary's digest (and that it is the sibling `<binary>.previous`), restores
+it, restarts the daemon (not for the CLI), health-checks it, and records
+the previous release as the installed baseline. It is refused when no
+previous binary is recorded, when the component already runs the previous
+binary, and while another apply or rollback is pending. Rolling back to an
+older counter than the installed release is an explicit owner override
+(ADR-025): without `--allow-older` (or the second dashboard confirmation) it
+is refused; with it, the audit trail records the override with both
+versions.
+
+### If rollback fails
+
+The operation ends `rollback failed` with the cause, `doctor` fails, the
+audit trail and the `homestead-apply` journal
+(`journalctl -u homestead-apply`) carry the error, and both binaries stay
+on disk: `homestead-server.previous` (the last good binary) and
+`homestead-server.rolledback` (the binary that was replaced). The error
+prints the manual restore command; the daemon may be down:
 
 ```
 sha256sum /usr/local/bin/homestead-server.previous   # compare with GET /api/v1/platform/updates "previous"
@@ -178,13 +215,9 @@ sudo systemctl reset-failed homestead-server
 sudo systemctl restart homestead-server
 ```
 
-The `mv` is atomic and safe while the binary runs. The installed release
-record still names the old version after a failed apply, so rollback
-protection is unchanged. If a binary from before the apply unit existed is
-restored while a marker still shows in `homesteadctl updates platform`, run
-`clear-apply` once the daemon is back. Automatic restore and a rollback
-route are S273: the apply unit is where it restores (`Runner.OnFailure`,
-`platformapply.RestorePrevious`).
+The `mv` is atomic and safe while the binary runs. If a marker still shows
+in `homesteadctl updates platform` afterwards, run `clear-apply` once the
+daemon is back.
 
 ### Building a test release
 

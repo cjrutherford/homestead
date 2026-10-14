@@ -30,6 +30,11 @@ func runUpdatesPlatform(ctx context.Context, client *apiclient.Client, args []st
 	if len(view.Releases) == 0 {
 		fmt.Fprintln(stdout, "no platform releases verified yet; run `homesteadctl updates verify`")
 	}
+	for _, component := range []string{"homestead-server", "homesteadctl"} {
+		if v, ok := view.Running[component]; ok {
+			fmt.Fprintf(stdout, "running %s: %s\n", component, v)
+		}
+	}
 	for _, rel := range view.Releases {
 		fmt.Fprintf(stdout, "%s %s (counter %d): %s\n", rel.Component, orDash(rel.Version), rel.Counter, rel.State)
 		if rel.State != "verified" && rel.Detail != "" {
@@ -53,7 +58,8 @@ func runUpdatesPlatform(ctx context.Context, client *apiclient.Client, args []st
 			view.Pending.Component, view.Pending.FromVersion, view.Pending.ToVersion, view.Pending.OpID)
 	}
 	for _, prev := range view.Previous {
-		fmt.Fprintf(stdout, "previous %s kept: %s at %s (sha256 %s)\n", prev.Component, prev.Version, prev.Path, prev.SHA256)
+		fmt.Fprintf(stdout, "previous %s kept: %s at %s (sha256 %s); roll back with `homesteadctl updates rollback-platform --component %s`\n",
+			prev.Component, prev.Version, prev.Path, prev.SHA256, prev.Component)
 	}
 	for _, warning := range view.Plan.Warnings {
 		fmt.Fprintf(stdout, "  warning: %s\n", warning)
@@ -340,4 +346,61 @@ func followAcrossRestart(ctx context.Context, client *apiclient.Client, id int64
 		}
 	}
 	return last, nil
+}
+
+const rollbackPlatformUsage = "usage: homesteadctl updates rollback-platform [--component NAME] [--allow-older] [--follow]"
+
+// runUpdatesRollbackPlatform rolls a platform component back to the
+// previous binary the last apply kept (S273). It runs through the same
+// privileged apply unit. Rolling back to an older counter than the
+// installed release needs --allow-older (audited with both versions).
+func runUpdatesRollbackPlatform(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	component := "homestead-server"
+	allowOlder, follow := false, false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--allow-older":
+			allowOlder = true
+		case "--follow":
+			follow = true
+		case "--component":
+			if i+1 >= len(args) {
+				fmt.Fprintln(stderr, rollbackPlatformUsage)
+				return exitUsage
+			}
+			component = args[i+1]
+			i++
+		default:
+			fmt.Fprintf(stderr, "unknown argument %q\n%s\n", args[i], rollbackPlatformUsage)
+			return exitUsage
+		}
+	}
+	id, err := client.PlatformRollback(ctx, component, allowOlder)
+	if err != nil {
+		if strings.Contains(err.Error(), "older") && !allowOlder {
+			fmt.Fprintln(stderr, "re-run with --allow-older to roll back to an older release (audited with both versions)")
+		}
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "operation: %d\n", id)
+	if !follow {
+		return exitOK
+	}
+	last, err := followAcrossRestart(ctx, client, id, stdout)
+	if err != nil {
+		if ctx.Err() != nil {
+			return exitOK
+		}
+		return fail(stderr, err)
+	}
+	if last.Status != operation.StatusSucceeded {
+		if last.Error != "" {
+			fmt.Fprintln(stderr, last.Error)
+		}
+		return exitError
+	}
+	if component == "homestead-server" {
+		fmt.Fprintln(stdout, "daemon restarted on the previous binary and passed its health check")
+	}
+	return exitOK
 }

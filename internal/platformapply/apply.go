@@ -8,8 +8,9 @@
 // side, `homestead-server apply-platform`) independently re-verifies the
 // staged files, keeps the previous binary, swaps atomically, restarts
 // the daemon, waits for it to be healthy, and finalizes the same
-// operation record from outside the daemon. Automatic rollback is S273:
-// Runner.OnFailure and RestorePrevious are its seams.
+// operation record from outside the daemon. A failed health check
+// rolls back inside the same unit run, and the owner can roll back
+// manually through the same unit (S273, rollback.go).
 package platformapply
 
 import (
@@ -47,6 +48,7 @@ const (
 	ActionApply    = "platform.apply"
 	ActionFinalize = "platform.apply.finalize"
 	ActionClear    = "platform.apply.clear"
+	ActionRollback = "platform.rollback"
 )
 
 // Refusals, mapped to HTTP statuses by the route.

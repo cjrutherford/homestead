@@ -8,6 +8,15 @@
     <app-state-message kind="status" [headline]="notice()" />
   }
 
+  @if (view()?.running; as running) {
+    <h3>Running versions</h3>
+    <ul>
+      @for (entry of running | keyvalue; track entry.key) {
+        <li>{{ entry.key }}: {{ entry.value }}</li>
+      }
+    </ul>
+  }
+
   <h3>Verification state</h3>
   <ul>
     @for (release of view()?.releases ?? []; track release.component) {
@@ -67,7 +76,7 @@
   <p>
     Applies the files named under Artifact, Checksums file and Signature file
     below: they are verified again and staged, and a separate privileged unit
-    verifies the staged copies once more before replacing anything. The previous binary is kept for manual restore.
+    verifies the staged copies once more before replacing anything. The previous binary is kept; a failed health check restores it automatically, and you can roll back manually below.
   </p>
   @for (release of view()?.releases ?? []; track release.component) {
     @if (release.state === 'verified' && release.version) {
@@ -101,10 +110,36 @@
     }
   }
   @for (entry of view()?.previous | keyvalue; track entry.key) {
-    <p>
-      Previous {{ entry.key }} kept: {{ entry.value.version }} at
-      {{ entry.value.path }} (sha256 {{ entry.value.sha256 }})
-    </p>
+    <div>
+      <p>
+        Previous {{ entry.key }} kept: {{ entry.value.version }} at
+        {{ entry.value.path }} (sha256 {{ entry.value.sha256 }})
+      </p>
+      <label>
+        <input
+          type="checkbox"
+          [name]="'rollback-confirm-' + entry.key"
+          (change)="rollbackConfirmed = $any($event.target).checked"
+        />
+        I confirm rolling {{ entry.key }} back to {{ entry.value.version }}
+        @if (entry.key === 'homestead-server') {
+          (the daemon restarts; the API and dashboard pause briefly)
+        }
+      </label>
+      @if (rollbackOlderRefused()) {
+        <label>
+          <input
+            type="checkbox"
+            [name]="'rollback-older-' + entry.key"
+            (change)="rollbackOlderConfirmed = $any($event.target).checked"
+          />
+          I confirm rolling back to an older release (recorded in the audit trail with both versions)
+        </label>
+      }
+      <button type="button" (click)="rollback(entry.key)" [disabled]="busy() || !rollbackConfirmed">
+        Roll back {{ entry.key }} to {{ entry.value.version }}
+      </button>
+    </div>
   }
 
   <h3>Verify local release files</h3>

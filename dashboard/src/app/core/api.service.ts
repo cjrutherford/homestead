@@ -346,6 +346,12 @@ export interface PlatformApplyBody {
   allow_older: boolean;
 }
 
+/** POST /api/v1/platform/updates/rollback — restore the kept previous binary. */
+export interface PlatformRollbackBody {
+  component: string;
+  allow_older: boolean;
+}
+
 /** POST /api/v1/platform/updates/verify — owner-supplied local files. */
 export interface PlatformVerifyBody {
   component: string;
@@ -803,6 +809,14 @@ export class ApiService {
   platformApply(body: PlatformApplyBody): Observable<OperationStarted> {
     return this.http.post<OperationStarted>(
       '/api/v1/platform/updates/apply',
+      body,
+    );
+  }
+
+  /** POST /api/v1/platform/updates/rollback — manual platform rollback (S273). */
+  platformRollback(body: PlatformRollbackBody): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(
+      '/api/v1/platform/updates/rollback',
       body,
     );
   }

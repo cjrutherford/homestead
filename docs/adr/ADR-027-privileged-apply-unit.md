@@ -41,10 +41,17 @@ record from outside the daemon by opening the store itself (SQLite
 restarted main process runs the verified digest, answers its listeners
 reporting the target version, and the database opens.
 
-On failure the apply unit marks the operation failed, clears the marker,
-keeps the previous binary, audits the failure loudly, and records the
-manual restore command. Automatic restore is S273, and the apply unit is
-where S273 restores: the failure path has a seam for it.
+On a failed apply the apply unit marks the operation failed, clears the
+marker, audits the failure loudly, and records the manual restore command.
+When the post-restart health check fails (S273) the same unit run first
+restores the previous binary (atomic swap, digest checked against the
+recorded previous digest), restarts the daemon, waits for it to be
+healthy, and ends the operation `failed (rolled back)` with both versions
+audited; the installed release record is never moved to the failed
+release. If the rollback itself fails the operation says `rollback failed`,
+both binaries stay on disk (the previous and `<binary>.rolledback`), and
+the manual restore command is printed. A manual rollback is the same unit
+run with a rollback marker.
 
 Crash loops are bounded: `homestead-server.service` sets
 `StartLimitIntervalSec` and `StartLimitBurst`, so a new binary that dies at
@@ -71,6 +78,8 @@ latest apply failed.
   advances and finalizes the same operation record. Startup recovery
   excludes the marker's operation.
 - S273 adds automatic and manual rollback in the apply unit using the
-  previous binary and its recorded digest.
+  previous binary and its recorded digest. A manual rollback to an older
+  counter than the installed release is the explicit, audited ADR-025
+  owner override.
 - Implementation must preserve this boundary.
 - Changes require a superseding ADR.

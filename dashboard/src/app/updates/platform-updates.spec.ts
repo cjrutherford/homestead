@@ -9,7 +9,16 @@ import { provideRouter } from '@angular/router';
 import { PlatformUpdatesPanel } from './platform-updates';
 
 const VIEW = {
-  running: { 'homestead-server': '0.0.0-s002' },
+  running: { 'homestead-server': '0.0.0-s002', homesteadctl: 'unrecorded' },
+  previous: {
+    'homestead-server': {
+      component: 'homestead-server',
+      version: '0.0.0-s001',
+      counter: 2,
+      sha256: 'abc',
+      path: '/usr/local/bin/homestead-server.previous',
+    },
+  },
   plan: {
     Components: [
       {
@@ -204,5 +213,35 @@ describe('PlatformUpdatesPanel', () => {
     reload();
     fixture.detectChanges();
     expect(text()).toContain('Cleared the pending apply of homestead-server');
+  });
+
+  it('shows each component\'s own running version', () => {
+    expect(text()).toContain('homestead-server: 0.0.0-s002');
+    expect(text()).toContain('homesteadctl: unrecorded');
+  });
+
+  it('rolls back only after confirmation, asking separately for an older release', () => {
+    const panel = fixture.componentInstance as any;
+    panel.rollback('homestead-server');
+    http.expectNone('/api/v1/platform/updates/rollback');
+    panel.rollbackConfirmed = true;
+    panel.rollback('homestead-server');
+    http
+      .expectOne('/api/v1/platform/updates/rollback')
+      .flush('platformapply: 0.0.0-s001 is older than the installed release', {
+        status: 422,
+        statusText: 'Unprocessable Entity',
+      });
+    fixture.detectChanges();
+    expect(text()).toContain('I confirm rolling back to an older release');
+    panel.rollbackOlderConfirmed = true;
+    panel.rollbackConfirmed = true;
+    panel.rollback('homestead-server');
+    const retry = http.expectOne('/api/v1/platform/updates/rollback');
+    expect(retry.request.body).toEqual({ component: 'homestead-server', allow_older: true });
+    retry.flush({ id: 30 });
+    reload();
+    fixture.detectChanges();
+    expect(text()).toContain('Follow operation 30');
   });
 });

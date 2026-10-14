@@ -12,7 +12,7 @@ import (
 
 func runUpdates(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl updates <list|apply|platform|verify|apply-platform|trust> [flags]")
+		fmt.Fprintln(stderr, "usage: homesteadctl updates <list|apply|platform|verify|apply-platform|rollback-platform|trust> [flags]")
 		return exitUsage
 	}
 	switch args[0] {
@@ -26,6 +26,8 @@ func runUpdates(ctx context.Context, client *apiclient.Client, args []string, st
 		return runUpdatesVerify(ctx, client, args[1:], stdout, stderr)
 	case "apply-platform":
 		return runUpdatesApplyPlatform(ctx, client, args[1:], stdout, stderr)
+	case "rollback-platform":
+		return runUpdatesRollbackPlatform(ctx, client, args[1:], stdout, stderr)
 	case "trust":
 		return runUpdatesTrust(ctx, client, args[1:], stdout, stderr)
 	default:

@@ -43,6 +43,7 @@ func (s *Server) MountPlatform(st *store.Store, trustYAML string) {
 	s.mux.HandleFunc("POST /api/v1/platform/updates/verify", h.verify)
 	s.mux.HandleFunc("POST /api/v1/platform/updates/apply", h.apply)
 	s.mux.HandleFunc("POST /api/v1/platform/updates/clear-apply", h.clearApply)
+	s.mux.HandleFunc("POST /api/v1/platform/updates/rollback", h.rollback)
 	s.mux.HandleFunc("GET /api/v1/platform/trust-keys", h.listKeys)
 	s.mux.HandleFunc("POST /api/v1/platform/trust-keys", h.addKey)
 	s.mux.HandleFunc("PUT /api/v1/platform/trust-keys/{id}", h.replaceKey)
@@ -111,16 +112,28 @@ func (h *platformHandlers) plan(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// The daemon and CLI ship from one build, so both run this version.
-	running := map[string]string{update.ComponentDaemon: version.Version, update.ComponentCLI: version.Version}
+	// Each component reports its own version: the daemon knows what it
+	// runs; the CLI is only known by its installed record (the daemon's
+	// version says nothing about the installed homesteadctl).
+	running := map[string]string{update.ComponentDaemon: version.Version}
 	installed := map[string]release.Installed{}
-	for component := range running {
+	for _, component := range []string{update.ComponentDaemon, update.ComponentCLI} {
 		in, err := h.rel.Installed(component)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		installed[component] = in
+		if component != update.ComponentDaemon {
+			running[component] = in.Version
+			if in.Version == "" {
+				running[component] = unrecordedVersion
+			}
+		}
+	}
+	planRunning := map[string]string{update.ComponentDaemon: version.Version}
+	if v := installed[update.ComponentCLI].Version; v != "" {
+		planRunning[update.ComponentCLI] = v
 	}
 	views := make([]releaseView, 0, len(releases))
 	refused := []releaseView{}
@@ -137,7 +150,9 @@ func (h *platformHandlers) plan(w http.ResponseWriter, r *http.Request) {
 			refused = append(refused, view)
 		} else if rel.Version != "" {
 			candidate := update.PlatformRelease{Component: rel.Component, Version: rel.Version, Verification: rel.State}
-			if _, err := update.PlanPlatform(running, []update.PlatformRelease{candidate}); err != nil {
+			if _, known := planRunning[rel.Component]; !known {
+				view.PlanError = "installed version is unrecorded, so no move can be planned; apply still works"
+			} else if _, err := update.PlanPlatform(planRunning, []update.PlatformRelease{candidate}); err != nil {
 				view.PlanError = err.Error()
 			} else {
 				desired = append(desired, candidate)
@@ -145,7 +160,7 @@ func (h *platformHandlers) plan(w http.ResponseWriter, r *http.Request) {
 		}
 		views = append(views, view)
 	}
-	plan, err := update.PlanPlatform(running, desired)
+	plan, err := update.PlanPlatform(planRunning, desired)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 		return
@@ -190,6 +205,53 @@ func (h *platformHandlers) clearApply(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, m)
 	}
+}
+
+// unrecordedVersion is what the plan reports for a component with no
+// installed record.
+const unrecordedVersion = "unrecorded"
+
+type platformRollbackBody struct {
+	Component  string `json:"component"`
+	AllowOlder bool   `json:"allow_older"`
+}
+
+// rollback starts a manual rollback to the previous binary an earlier
+// apply recorded (S273, ADR-027). It runs through the same privileged
+// apply unit, which re-verifies the previous binary's digest. Rolling
+// back to an older counter is the explicit, audited owner override
+// (ADR-025).
+func (h *platformHandlers) rollback(w http.ResponseWriter, r *http.Request) {
+	op, ok := requireOperator(w, r)
+	if !ok {
+		return
+	}
+	var body platformRollbackBody
+	if err := decodeBody(r, &body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	started, err := h.applier.Rollback(r.Context(), platformapply.RollbackRequest{
+		Component: body.Component, Actor: op.Session.Username, AllowOlder: body.AllowOlder,
+	})
+	if err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, platformapply.ErrInput):
+			status = http.StatusBadRequest
+		case errors.Is(err, platformapply.ErrOlder), errors.Is(err, platformapply.ErrDigest), errors.Is(err, platformapply.ErrPrevious):
+			status = http.StatusUnprocessableEntity
+		case errors.Is(err, platformapply.ErrNoPrevious), errors.Is(err, platformapply.ErrCurrent), errors.Is(err, platformapply.ErrBusy):
+			status = http.StatusConflict
+		}
+		if status != http.StatusInternalServerError {
+			h.record(audit.Entry{Actor: op.Session.Username, Action: platformapply.ActionRollback, Outcome: audit.OutcomeError,
+				Detail: "rollback refused: " + err.Error()})
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	writeJSON(w, map[string]any{"id": started.ID})
 }
 
 type platformApplyBody struct {

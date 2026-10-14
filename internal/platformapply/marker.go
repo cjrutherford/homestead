@@ -42,7 +42,16 @@ type Marker struct {
 	AllowOlder      bool   `json:"allow_older"`
 	Listen          string `json:"listen"`
 	SocketPath      string `json:"socket_path"`
+	// Kind is KindApply or KindRollback (S273).
+	Kind string `json:"kind"`
 }
+
+// Marker kinds. A rollback marker carries no staged files: the unit
+// restores the recorded previous binary, re-verifying its digest.
+const (
+	KindApply    = "apply"
+	KindRollback = "rollback"
+)
 
 // Previous names the binary kept before the last replacement: what a
 // manual restore (and S273 rollback) puts back.
@@ -65,17 +74,20 @@ func NewStore(s *store.Store) *Store { return &Store{db: s.DB()} }
 
 // Begin writes the marker. A marker that already exists is ErrPending.
 func (s *Store) Begin(m Marker) error {
+	if m.Kind == "" {
+		m.Kind = KindApply
+	}
 	if m.CreatedAt.IsZero() {
 		m.CreatedAt = time.Now().UTC()
 	}
 	_, err := s.db.Exec(`INSERT INTO platform_apply_marker
 		(id, op_id, component, from_version, from_counter, to_version, to_counter, sha256, binary_path,
 		 previous_path, previous_sha256, override, override_reason, actor, created_at,
-		 staged_artifact, staged_checksums, staged_signature, allow_older, listen, socket_path)
-		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 staged_artifact, staged_checksums, staged_signature, allow_older, listen, socket_path, kind)
+		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.OpID, m.Component, m.FromVersion, m.FromCounter, m.ToVersion, m.ToCounter, m.SHA256, m.BinaryPath,
 		m.PreviousPath, m.PreviousSHA, m.Override, m.OverrideWhy, m.Actor, m.CreatedAt.Format(time.RFC3339Nano),
-		m.StagedArtifact, m.StagedChecksums, m.StagedSignature, m.AllowOlder, m.Listen, m.SocketPath)
+		m.StagedArtifact, m.StagedChecksums, m.StagedSignature, m.AllowOlder, m.Listen, m.SocketPath, m.Kind)
 	if err != nil {
 		if strings.Contains(err.Error(), "constraint") {
 			return ErrPending
@@ -91,11 +103,11 @@ func (s *Store) Pending() (Marker, bool, error) {
 	var created string
 	err := s.db.QueryRow(`SELECT op_id, component, from_version, from_counter, to_version, to_counter, sha256,
 		binary_path, previous_path, previous_sha256, override, override_reason, actor, created_at,
-		staged_artifact, staged_checksums, staged_signature, allow_older, listen, socket_path
+		staged_artifact, staged_checksums, staged_signature, allow_older, listen, socket_path, kind
 		FROM platform_apply_marker WHERE id = 1`).Scan(
 		&m.OpID, &m.Component, &m.FromVersion, &m.FromCounter, &m.ToVersion, &m.ToCounter, &m.SHA256,
 		&m.BinaryPath, &m.PreviousPath, &m.PreviousSHA, &m.Override, &m.OverrideWhy, &m.Actor, &created,
-		&m.StagedArtifact, &m.StagedChecksums, &m.StagedSignature, &m.AllowOlder, &m.Listen, &m.SocketPath)
+		&m.StagedArtifact, &m.StagedChecksums, &m.StagedSignature, &m.AllowOlder, &m.Listen, &m.SocketPath, &m.Kind)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Marker{}, false, nil
 	}

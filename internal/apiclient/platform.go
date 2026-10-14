@@ -190,3 +190,17 @@ func (c *Client) PlatformClearApply(ctx context.Context) (PlatformPending, error
 	}
 	return out, nil
 }
+
+// PlatformRollback starts a manual rollback of component to its recorded
+// previous binary (S273) and returns the operation id. allowOlder is the
+// explicit, audited override for rolling back to an older counter.
+func (c *Client) PlatformRollback(ctx context.Context, component string, allowOlder bool) (int64, error) {
+	var out struct {
+		ID int64 `json:"id"`
+	}
+	body := map[string]any{"component": component, "allow_older": allowOlder}
+	if err := c.postJSON(ctx, "/api/v1/platform/updates/rollback", body, &out); err != nil {
+		return 0, err
+	}
+	return out.ID, nil
+}

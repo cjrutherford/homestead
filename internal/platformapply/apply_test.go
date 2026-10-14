@@ -350,12 +350,40 @@ func TestStagedFilesReverifiedFromFiles(t *testing.T) {
 	}
 }
 
-func TestHealthFailureMarksFailedKeepsPrevious(t *testing.T) {
+// A failed post-restart health check (S273) restores the previous binary
+// inside the apply unit, restarts, and finalizes the operation as
+// failed (rolled back) with both versions audited. The baseline never
+// records the failed release.
+func TestHealthFailureRollsBackAutomatically(t *testing.T) {
 	cases := map[string]func(e *env){
-		"wrong digest":  func(e *env) { e.execSHA = func(int) (string, error) { return "deadbeef", nil } },
-		"never running": func(e *env) { e.sd.pid = 0 },
+		"wrong digest": func(e *env) {
+			e.execSHA = func(int) (string, error) {
+				h, _ := hashFile(filepath.Join(e.bin, "homestead-server"))
+				if h == sum([]byte("new daemon")) {
+					return "deadbeef", nil
+				}
+				return h, nil
+			}
+		},
+		"never running": func(e *env) {
+			e.sd.restartFn = func() error {
+				e.sd.mu.Lock()
+				defer e.sd.mu.Unlock()
+				if len(e.sd.restarts) == 1 {
+					e.sd.pid = 0
+				} else {
+					e.sd.pid = 4242
+				}
+				return nil
+			}
+		},
 		"probe fails": func(e *env) {
-			e.r.Probe = func(context.Context, Marker) error { return errors.New("listener down") }
+			e.r.Probe = func(_ context.Context, m Marker) error {
+				if m.ToVersion == "0.2.0" {
+					return errors.New("listener down")
+				}
+				return nil
+			}
 		},
 	}
 	for name, setup := range cases {
@@ -367,43 +395,270 @@ func TestHealthFailureMarksFailedKeepsPrevious(t *testing.T) {
 			}
 			op := e.start(req)
 			setup(e)
-			var hooked bool
-			e.r.OnFailure = func(context.Context, Marker, error) { hooked = true }
 			err := e.r.Run(context.Background())
 			if err == nil {
-				t.Fatal("expected failure")
+				t.Fatal("expected the operation to end failed")
 			}
-			for _, want := range []string{"was not healthy within", "restore manually", "homestead-server.previous", "systemctl restart"} {
+			for _, want := range []string{"failed (rolled back)", "was not healthy within", "rolled back to 0.1.0", "0.2.0"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Fatalf("error %q missing %q", err, want)
 				}
 			}
-			if !hooked {
-				t.Fatal("S273 seam not invoked")
-			}
 			got := e.wait(op.ID)
-			if got.Status != operation.StatusFailed || !strings.Contains(got.Error, "restore manually") {
+			if got.Status != operation.StatusFailed || !strings.HasPrefix(got.Error, "failed (rolled back)") {
 				t.Fatalf("op = %+v", got)
 			}
-			if e.read("homestead-server.previous") != "old daemon" {
-				t.Fatal("previous lost")
+			if e.read("homestead-server") != "old daemon" || e.read("homestead-server.previous") != "old daemon" ||
+				e.read("homestead-server.rolledback") != "new daemon" {
+				t.Fatal("binaries: previous must be installed again, with the failed one kept")
+			}
+			if len(e.sd.restarts) != 2 {
+				t.Fatalf("restarts = %v, want the apply restart and the rollback restart", e.sd.restarts)
 			}
 			if in, _ := e.a.Releases.Installed("homestead-server"); in.Version != "0.1.0" || in.Counter != 3 {
-				t.Fatalf("installed changed: %+v", in)
+				t.Fatalf("baseline recorded the failed release: %+v", in)
 			}
 			if _, ok, _ := e.a.Markers.Pending(); ok {
 				t.Fatal("marker left to block future applies")
 			}
 			var audited bool
 			for _, en := range e.entries() {
-				if en.Action == ActionFinalize && en.Outcome == audit.OutcomeError && strings.Contains(en.Detail, "restore manually") {
+				if en.Action == ActionFinalize && en.Outcome == audit.OutcomeError && strings.Contains(en.Detail, "failed (rolled back)") &&
+					strings.Contains(en.Detail, "0.2.0 (counter 7)") && strings.Contains(en.Detail, "0.1.0 (counter 3") {
 					audited = true
 				}
 			}
 			if !audited {
-				t.Fatal("failure not audited loudly")
+				t.Fatalf("rollback not audited with both versions: %+v", e.entries())
 			}
 		})
+	}
+}
+
+// The rollback itself failing is surfaced loudly and nothing is deleted.
+func TestRollbackRestartFailureIsLoudAndKeepsBothBinaries(t *testing.T) {
+	e := newEnv(t)
+	req := e.release("homestead-server", "0.2.0", 7, "new daemon")
+	_ = e.a.Releases.RecordInstalled("homestead-server", "0.1.0", 3)
+	op := e.start(req)
+	e.execSHA = func(int) (string, error) { return "deadbeef", nil }
+	e.sd.restartFn = func() error {
+		if len(e.sd.restarts) >= 2 {
+			return errors.New("systemd refused")
+		}
+		return nil
+	}
+	err := e.r.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	for _, want := range []string{"rollback failed", "systemd refused", "both binaries are kept", "homestead-server.previous", "homestead-server.rolledback", "systemctl restart"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q missing %q", err, want)
+		}
+	}
+	got := e.wait(op.ID)
+	if got.Status != operation.StatusFailed || !strings.HasPrefix(got.Error, "rollback failed") {
+		t.Fatalf("op = %+v", got)
+	}
+	if e.read("homestead-server.previous") != "old daemon" || e.read("homestead-server.rolledback") != "new daemon" {
+		t.Fatal("a binary was lost")
+	}
+	if in, _ := e.a.Releases.Installed("homestead-server"); in.Version != "0.1.0" {
+		t.Fatalf("baseline = %+v", in)
+	}
+	var audited bool
+	for _, en := range e.entries() {
+		if en.Action == ActionFinalize && en.Outcome == audit.OutcomeError && strings.Contains(en.Detail, "rollback failed") {
+			audited = true
+		}
+	}
+	if !audited {
+		t.Fatal("rollback failure not audited")
+	}
+	if _, ok, _ := e.a.Markers.Pending(); ok {
+		t.Fatal("marker left behind")
+	}
+}
+
+// applied applies release content as `from` then returns, leaving a
+// recorded previous binary behind.
+func (e *env) applied(component, content string, counter int64, version string) {
+	e.t.Helper()
+	req := e.release(component, version, counter, content)
+	e.start(req)
+	if err := e.r.Run(context.Background()); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+func (e *env) rollbackStart(req RollbackRequest) (operation.Operation, error) {
+	e.t.Helper()
+	op, err := e.a.Rollback(context.Background(), req)
+	if err != nil {
+		return op, err
+	}
+	select {
+	case <-e.sd.startedCh:
+	case <-time.After(5 * time.Second):
+		e.t.Fatal("apply unit was never started")
+	}
+	return op, nil
+}
+
+func TestManualRollbackDaemon(t *testing.T) {
+	e := newEnv(t)
+	_ = e.a.Releases.RecordInstalled("homestead-server", "0.1.0", 9)
+	// The apply moves the baseline to counter 10; the previous is counter 9.
+	e.applied("homestead-server", "new daemon", 10, "0.2.0")
+	e.a.Running = "0.2.0"
+	// Counter 9 < installed 10: refused without the override, and audited.
+	if _, err := e.a.Rollback(context.Background(), RollbackRequest{Component: "homestead-server", Actor: "owner"}); !errors.Is(err, ErrOlder) {
+		t.Fatalf("err = %v, want ErrOlder", err)
+	}
+	if e.read("homestead-server") != "new daemon" {
+		t.Fatal("refusal changed the binary")
+	}
+	op, err := e.rollbackStart(RollbackRequest{Component: "homestead-server", Actor: "owner", AllowOlder: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, ok, _ := e.a.Markers.Pending()
+	if !ok || m.Kind != KindRollback || m.ToVersion != "0.1.0" || m.FromVersion != "0.2.0" || !m.Override {
+		t.Fatalf("marker = %+v", m)
+	}
+	// The apply unit runs with a daemon reporting the restored binary.
+	if err := e.r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := e.wait(op.ID)
+	if got.Status != operation.StatusSucceeded || !strings.Contains(got.Result, `"rollback":true`) {
+		t.Fatalf("op = %+v", got)
+	}
+	if e.read("homestead-server") != "old daemon" || e.read("homestead-server.rolledback") != "new daemon" || e.read("homestead-server.previous") != "old daemon" {
+		t.Fatal("binary state wrong after rollback")
+	}
+	if in, _ := e.a.Releases.Installed("homestead-server"); in.Version != "0.1.0" || in.Counter != 9 {
+		t.Fatalf("installed = %+v", in)
+	}
+	if len(e.sd.restarts) != 2 {
+		t.Fatalf("restarts = %v", e.sd.restarts)
+	}
+	var started, finalized bool
+	for _, en := range e.entries() {
+		if en.Action == ActionRollback && en.Override && strings.Contains(en.Detail, "0.2.0 (counter 10) -> 0.1.0 (counter 9)") &&
+			strings.Contains(en.OverrideReason, "0.2.0") && strings.Contains(en.OverrideReason, "0.1.0") {
+			started = true
+		}
+		if en.Action == ActionFinalize && en.Outcome == audit.OutcomeOK && en.Override && strings.Contains(en.Detail, "rolled back homestead-server") {
+			finalized = true
+		}
+	}
+	if !started || !finalized {
+		t.Fatalf("audit: started=%v finalized=%v: %+v", started, finalized, e.entries())
+	}
+	// Already on the previous binary: nothing to roll back.
+	if _, err := e.a.Rollback(context.Background(), RollbackRequest{Component: "homestead-server", Actor: "owner", AllowOlder: true}); !errors.Is(err, ErrCurrent) {
+		t.Fatalf("err = %v, want ErrCurrent", err)
+	}
+}
+
+func TestManualRollbackRefusals(t *testing.T) {
+	e := newEnv(t)
+	// No previous recorded.
+	if _, err := e.a.Rollback(context.Background(), RollbackRequest{Component: "homestead-server", Actor: "owner"}); !errors.Is(err, ErrNoPrevious) {
+		t.Fatalf("err = %v, want ErrNoPrevious", err)
+	}
+	if _, err := e.a.Rollback(context.Background(), RollbackRequest{Component: "nope", Actor: "owner"}); !errors.Is(err, ErrInput) {
+		t.Fatalf("err = %v", err)
+	}
+	// A previous binary that no longer matches its record is refused.
+	if err := e.a.Markers.SavePrevious(Previous{Component: "homestead-server", Version: "0.0.9", Counter: 0, SHA256: sum([]byte("old daemon")), Path: filepath.Join(e.bin, "homestead-server.previous")}); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(e.bin, "homestead-server.previous"), []byte("older daemon"), 0o755)
+	if _, err := e.a.Rollback(context.Background(), RollbackRequest{Component: "homestead-server", Actor: "owner"}); !errors.Is(err, ErrDigest) {
+		t.Fatalf("a previous binary that does not match its record must be refused: %v", err)
+	}
+}
+
+func TestManualRollbackReverifiesPreviousDigestInTheUnit(t *testing.T) {
+	e := newEnv(t)
+	_ = e.a.Releases.RecordInstalled("homestead-server", "0.1.0", 3)
+	e.applied("homestead-server", "new daemon", 7, "0.2.0")
+	e.a.Running = "0.2.0"
+	op, err := e.rollbackStart(RollbackRequest{Component: "homestead-server", Actor: "owner", AllowOlder: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Swapped after the daemon checked it: the unit must notice.
+	_ = os.WriteFile(filepath.Join(e.bin, "homestead-server.previous"), []byte("evil"), 0o755)
+	if err := e.r.Run(context.Background()); err == nil {
+		t.Fatal("expected refusal")
+	}
+	if got := e.wait(op.ID); got.Status != operation.StatusFailed {
+		t.Fatalf("op = %+v", got)
+	}
+	if e.read("homestead-server") != "new daemon" {
+		t.Fatal("binary changed despite a bad previous")
+	}
+	if _, ok, _ := e.a.Markers.Pending(); ok {
+		t.Fatal("marker left")
+	}
+}
+
+func TestManualRollbackCLIComponentWithoutRestart(t *testing.T) {
+	e := newEnv(t)
+	_ = e.a.Releases.RecordInstalled("homesteadctl", "0.1.0", 3)
+	e.applied("homesteadctl", "new ctl", 7, "0.2.0")
+	restartsBefore := len(e.sd.restarts)
+	op, err := e.rollbackStart(RollbackRequest{Component: "homesteadctl", Actor: "owner", AllowOlder: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.wait(op.ID); got.Status != operation.StatusSucceeded {
+		t.Fatalf("op = %+v", got)
+	}
+	if e.read("homesteadctl") != "old ctl" {
+		t.Fatal("CLI not restored")
+	}
+	if len(e.sd.restarts) != restartsBefore {
+		t.Fatal("CLI rollback must not restart the daemon")
+	}
+	if in, _ := e.a.Releases.Installed("homesteadctl"); in.Version != "0.1.0" || in.Counter != 3 {
+		t.Fatalf("installed = %+v", in)
+	}
+}
+
+func TestAutomaticRollbackCLIComponent(t *testing.T) {
+	e := newEnv(t)
+	_ = e.a.Releases.RecordInstalled("homesteadctl", "0.1.0", 3)
+	req := e.release("homesteadctl", "0.2.0", 7, "new ctl")
+	op := e.start(req)
+	// The installed CLI is corrupted right after the swap (the directory
+	// sync hook runs then), so the on-disk digest check fails; the
+	// restored previous passes.
+	orig := syncDir
+	t.Cleanup(func() { syncDir = orig })
+	syncDir = func(dir string) error {
+		path := filepath.Join(e.bin, "homesteadctl")
+		if b, _ := os.ReadFile(path); string(b) == "new ctl" {
+			_ = os.WriteFile(path, []byte("corrupt"), 0o755)
+		}
+		return orig(dir)
+	}
+	err := e.r.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "failed (rolled back)") {
+		t.Fatalf("err = %v", err)
+	}
+	if e.read("homesteadctl") != "old ctl" || len(e.sd.restarts) != 0 {
+		t.Fatalf("CLI rollback state wrong (restarts %v)", e.sd.restarts)
+	}
+	if got := e.wait(op.ID); got.Status != operation.StatusFailed {
+		t.Fatalf("op = %+v", got)
 	}
 }
 

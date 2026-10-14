@@ -190,3 +190,50 @@ func TestUpdatesPlatformClearApply(t *testing.T) {
 		t.Fatalf("exit = %d, want usage", code)
 	}
 }
+
+func TestUpdatesRollbackPlatform(t *testing.T) {
+	applyFollowPoll = 5 * time.Millisecond
+	t.Cleanup(func() { applyFollowPoll = 2 * time.Second })
+	var bodies []string
+	polls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/platform/updates/rollback":
+			raw, _ := io.ReadAll(r.Body)
+			bodies = append(bodies, string(raw))
+			if strings.Contains(string(raw), `"allow_older":false`) {
+				http.Error(w, "platformapply: release is older than the installed release", http.StatusUnprocessableEntity)
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":12}`))
+		case "/api/v1/operations/12/events":
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "event: state\ndata: {\"id\":12,\"type\":\"platform.update\",\"status\":\"running\",\"steps\":[]}\n\n")
+		case "/api/v1/operations/12":
+			polls++
+			_, _ = w.Write([]byte(`{"id":12,"type":"platform.update","status":"succeeded","steps":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(ts.Close)
+	code, _, stderr := invoke(t, []string{"--server", ts.URL, "updates", "rollback-platform"})
+	if code != exitError || !strings.Contains(stderr, "--allow-older") {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	code, stdout, stderr := invoke(t, []string{"--server", ts.URL, "updates", "rollback-platform",
+		"--component", "homesteadctl", "--allow-older", "--follow"})
+	if code != exitOK || !strings.Contains(stdout, "operation: 12") || !strings.Contains(stdout, "succeeded") {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", code, stdout, stderr)
+	}
+	if strings.Contains(stdout, "daemon restarted") {
+		t.Fatalf("a CLI rollback does not restart the daemon: %s", stdout)
+	}
+	if len(bodies) != 2 || !strings.Contains(bodies[0], `"component":"homestead-server"`) || !strings.Contains(bodies[1], `"component":"homesteadctl"`) ||
+		!strings.Contains(bodies[1], `"allow_older":true`) {
+		t.Fatalf("bodies = %v", bodies)
+	}
+	if code, _, _ := invoke(t, []string{"--server", ts.URL, "updates", "rollback-platform", "--bogus"}); code != exitUsage {
+		t.Fatalf("exit = %d, want usage", code)
+	}
+}

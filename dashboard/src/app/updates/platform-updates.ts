@@ -41,6 +41,9 @@ export class PlatformUpdatesPanel implements OnInit {
   protected applyOlderConfirmed = false;
   protected readonly applyOperation = signal<number | null>(null);
   protected readonly olderRefused = signal(false);
+  protected rollbackConfirmed = false;
+  protected rollbackOlderConfirmed = false;
+  protected readonly rollbackOlderRefused = signal(false);
   protected newKey = '';
   protected newLabel = '';
 
@@ -120,6 +123,42 @@ export class PlatformUpdatesPanel implements OnInit {
         error: (failure: HttpErrorResponse) => {
           if (String(failure.error ?? '').includes('older')) {
             this.olderRefused.set(true);
+          }
+          this.fail(failure);
+        },
+      });
+  }
+
+  /**
+   * Rolls a component back to the previous binary the last apply kept
+   * (S273). Runs through the same privileged apply unit; an older counter
+   * needs its own, audited confirmation after the daemon asks for it.
+   */
+  rollback(component: string): void {
+    if (!this.rollbackConfirmed) {
+      return;
+    }
+    this.busy.set(true);
+    this.error.set(null);
+    this.notice.set(null);
+    this.applyOperation.set(null);
+    this.api
+      .platformRollback({
+        component,
+        allow_older: this.rollbackOlderConfirmed,
+      })
+      .subscribe({
+        next: (started) => {
+          this.busy.set(false);
+          this.applyOperation.set(started.id);
+          this.rollbackConfirmed = false;
+          this.rollbackOlderConfirmed = false;
+          this.rollbackOlderRefused.set(false);
+          this.refresh();
+        },
+        error: (failure: HttpErrorResponse) => {
+          if (String(failure.error ?? '').includes('older')) {
+            this.rollbackOlderRefused.set(true);
           }
           this.fail(failure);
         },

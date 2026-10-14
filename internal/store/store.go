@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 34
+const CurrentVersion = 35
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -650,6 +650,38 @@ CREATE TABLE platform_apply_marker (
 	allow_older INTEGER NOT NULL DEFAULT 0,
 	listen TEXT NOT NULL DEFAULT '',
 	socket_path TEXT NOT NULL DEFAULT ''
+);`,
+	},
+	{
+		// S273: the same apply unit performs manual rollback, so the
+		// marker says which kind of run it carries.
+		version: 35,
+		name:    "platform apply marker kind for rollback",
+		sql: `
+DROP TABLE IF EXISTS platform_apply_marker;
+CREATE TABLE platform_apply_marker (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	op_id INTEGER NOT NULL,
+	component TEXT NOT NULL,
+	from_version TEXT NOT NULL,
+	from_counter INTEGER NOT NULL,
+	to_version TEXT NOT NULL,
+	to_counter INTEGER NOT NULL,
+	sha256 TEXT NOT NULL,
+	binary_path TEXT NOT NULL,
+	previous_path TEXT NOT NULL,
+	previous_sha256 TEXT NOT NULL,
+	override INTEGER NOT NULL DEFAULT 0,
+	override_reason TEXT NOT NULL DEFAULT '',
+	actor TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	staged_artifact TEXT NOT NULL DEFAULT '',
+	staged_checksums TEXT NOT NULL DEFAULT '',
+	staged_signature TEXT NOT NULL DEFAULT '',
+	allow_older INTEGER NOT NULL DEFAULT 0,
+	listen TEXT NOT NULL DEFAULT '',
+	socket_path TEXT NOT NULL DEFAULT '',
+	kind TEXT NOT NULL DEFAULT 'apply'
 );`,
 	},
 }
