@@ -1082,6 +1082,46 @@ The dashboard Certificates page (`/tls`) does the same through the same API
   a `test` CA. Trusting a private CA for the directory uses Go's
   standard `SSL_CERT_FILE`.
 
+- Proven live in KVM (S278, c8919e5 + 55c8dd9 + 00813a6 + 45cc807, deployed
+  with `scripts/install-systemd.sh` on VM 2 against a local Pebble 2.10.1,
+  pebble-challtestsrv and the shim; no public CA was used by Homestead): the
+  plan named names, provider, zone, challenge, directory (class `test`),
+  placement, served route and a digest, and neither Pebble nor challtestsrv
+  saw a request before approval. Approval without terms was refused (422), a
+  wrong digest 409, and an apply after the directory changed 409. Apply ran
+  `issue-and-place`, `refresh-routes`, `reload-edge` to success: the
+  directory was 0700 and the key 0600 (root), key and chain paired, the
+  snippet gained `tls <chain> <key>`, `curl --cacert <Pebble root>
+  --resolve` got the nginx upstream through the Pebble-issued leaf,
+  `cert_issuances` recorded it and `tls renewal` reported it ok. The account
+  key lived at `sys_acme_account_<hash>`; plan and approval JSON carry only
+  that name; audit held `credentials` (field names), `approve` (including
+  the refused attempts), `start` and `cert.issuance`, with no token or key
+  text anywhere; the challenge TXT was gone from challtestsrv after issue.
+  A directory on a non-private host classed `production`: with the
+  plain-http Cloudflare override the plan was blocked, without it approval
+  needed `--confirm-production` (422); doctor warned `acme-overrides` while
+  the drop-in was set and was `ok` after. With a bad snippet placed beside
+  the route, a re-apply issued, placed, then failed at `reload-edge` with the
+  route snippet restored byte for byte; after removing the bad snippet a
+  retry succeeded with no new Pebble order. Against 20-day Pebble
+  certificates with `Auto=false`, `tls renewal` and doctor
+  (`tls-renewal:app`) reported `renewal-due`. VM 2 had no edge before: the
+  stack, upstream, network, drop-in, helpers, dummy credential, account
+  secret, wizard states and issuance rows were removed afterwards and doctor
+  matched the baseline plus an ok `acme-overrides`.
+- Found and fixed in KVM: (1) a CA that reuses a valid authorization (Pebble
+  half the time, Let's Encrypt for about 30 days) made every authorization
+  already valid, so there were no TXT values and issuance failed with
+  "authorizations must not be empty"; it now skips placement and finalizes
+  (00813a6). (2) Re-issuing rewrites the certificate files under an
+  unchanged snippet, so a plain `caddy reload` was a no-op and Caddy kept
+  serving the old certificate while the operation succeeded; the reload is
+  now `--force` (45cc807). Corrected steps: challtestsrv takes `-dnsserver`
+  not `-dns01` (and `-doh ""`), and Pebble's config paths are
+  relative. Not proven live: the Angular Certificates page in a browser and
+  real Let's Encrypt staging.
+
 ### KVM validation without public DNS (Pebble)
 
 Pebble is a small ACME test CA; `pebble-challtestsrv` is its DNS test server,
@@ -1090,15 +1130,19 @@ DNS-01 values into it. Nothing leaves the VM. Use a name that is not under a
 private suffix (`.test`, `.lan`, `.example`... are refused for automatic TLS),
 for example `app.pebble-lab.net` in zone `pebble-lab.net`.
 
-1. On the host, build Pebble and copy it with its test certs to the VM:
-   `git clone https://github.com/letsencrypt/pebble && cd pebble &&
-   go build -o /tmp/pebble ./cmd/pebble && go build -o /tmp/challtestsrv
-   ./cmd/pebble-challtestsrv`; copy `/tmp/pebble`, `/tmp/challtestsrv`,
-   `test/certs/` and `test/config/pebble-config.json` to `/opt/pebble/` on the
-   VM, with `scripts/pebble-dns-shim.py`.
+1. On the host, build Pebble (outside the repo) and copy it with its test
+   certs to the VM: `GOBIN=/tmp/pebblebuild go install
+   github.com/letsencrypt/pebble/v2/cmd/pebble@latest
+   github.com/letsencrypt/pebble/v2/cmd/pebble-challtestsrv@latest`. From the
+   module's `test/` directory take `certs/` and `config/pebble-config.json`
+   and copy them, the two binaries (rename `pebble-challtestsrv` to
+   `challtestsrv`) and `scripts/pebble-dns-shim.py` to `/opt/pebble/` on the
+   VM. The config names its certificates relative to the working directory,
+   so rewrite them: `sed 's#test/certs#/opt/pebble/certs#'
+   pebble-config.json > /opt/pebble/pebble-config.json`.
 2. On the VM, as root, start the three helpers (separate shells or units):
-   - `challtestsrv -http01 "" -https01 "" -tlsalpn01 "" -dns01 :8053
-     -management :8055 -defaultIPv4 127.0.0.1`
+   - `challtestsrv -http01 "" -https01 "" -tlsalpn01 "" -doh ""
+     -dnsserver :8053 -management :8055 -defaultIPv4 127.0.0.1`
    - `PEBBLE_VA_NOSLEEP=1 pebble -config /opt/pebble/pebble-config.json
      -dnsserver 127.0.0.1:8053` (listens on https://localhost:14000/dir; its
      test certificate is valid for `localhost` and `127.0.0.1`)
@@ -1114,7 +1158,12 @@ for example `app.pebble-lab.net` in zone `pebble-lab.net`.
    --follow`; `docker run -d --name tls-upstream --network homestead-edge
    nginx:alpine`; reconcile one route (host `app.pebble-lab.net`, target
    `tls-upstream:80`, exposure `local`, TLS `auto`) with `homesteadctl edge
-   routes set -f routes.json --follow`.
+   routes set -f routes.json --follow`. A `tls: auto` route makes Caddy
+   itself try to obtain a certificate for the host from Let's Encrypt as soon
+   as it is reloaded (that is Caddy's automatic HTTPS, not Homestead's
+   issuance); with a name nobody serves it fails and retries quietly until
+   Homestead places a certificate, but it is a real request to a real CA, so
+   only use a hostname you are content to name there.
 5. Save the domain setup and TLS strategy through `PUT /api/v1/wizards/domain`
    (`{"step":"zone","payload":{"provider":"cloudflare","zone":"pebble-lab.net"}}`)
    and `PUT /api/v1/wizards/tls` (`{"step":"strategy","payload":{"certificates":
@@ -1134,12 +1183,21 @@ for example `app.pebble-lab.net` in zone `pebble-lab.net`.
    --cacert /tmp/pebble-root.pem --resolve app.pebble-lab.net:443:127.0.0.1
    https://app.pebble-lab.net/` succeeds (Caddy serves the issued chain), and
    `openssl s_client -connect 127.0.0.1:443 -servername app.pebble-lab.net
-   </dev/null | openssl x509 -noout -issuer -dates` names Pebble's CA. The
+   </dev/null | openssl x509 -noout -issuer -serial` names Pebble's CA and
+   the placed certificate's serial (also after a re-issue). The
    audit trail shows `cert.issuance.approve`, `cert.issuance.start`, and
    `cert.issuance`, none with key or credential values.
 8. Restore: remove the systemd drop-in and restart the daemon, stop the
    helpers, delete the route, `docker rm -f tls-upstream`, and remove the
    `certs/app` directory.
+
+Pebble keeps its accounts and root in memory: restarting it invalidates the
+ACME account Homestead stored (the next apply fails with
+`accountDoesNotExist`; see docs/DEFERRED.md) and changes the issuing root, so
+fetch `/roots/0` again. Pebble also reuses a recent authorization for the
+same name about half the time and a certificate lifetime comes from
+`validityPeriod` in its config, which a shorter value (for example 1728000
+for 20 days) uses to exercise the `renewal-due` warning.
 
 Real Let's Encrypt staging additionally needs a real public zone and
 provider token; that run is the owner's, not Pebble's.

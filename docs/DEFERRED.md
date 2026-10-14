@@ -261,3 +261,9 @@
   entries older than that window are unreachable from the dashboard and
   CLI. Server-side filters, a cursor, and audit-list CLI
   filter flags belong to one coordinated API, CLI, and dashboard change.
+- ACME account loss recovery (S278 KVM): the stored account URL is reused
+  without re-checking it, so a CA that forgets the account (Pebble after a
+  restart, or a deactivated account) fails every apply with
+  `accountDoesNotExist` and no owner route can clear the `sys_acme_account_*`
+  secret. Recovery should re-register once on that error or offer an
+  explicit reset in the plan.
