@@ -174,6 +174,9 @@ func TestReconcileDefinitionFlow(t *testing.T) {
 			t.Fatalf("calls = %v, want %q", *calls, want)
 		}
 	}
+	if !strings.Contains(joined, "caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --force") {
+		t.Fatalf("reload must be forced so rewritten certificate files are re-read: %v", *calls)
+	}
 	snippet, err := os.ReadFile(filepath.Join(stack.Dir, "routes", "app.lan.caddy"))
 	if err != nil {
 		t.Fatalf("snippet: %v", err)

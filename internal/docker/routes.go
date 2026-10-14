@@ -195,13 +195,17 @@ func ReconcileRoutes(dir string, set, prior RouteSet) (undo func() error, err er
 
 // ReloadProxy asks the running proxy to adopt the reconciled snippets.
 // Caddy validates before swapping, so a bad snippet keeps the old config
-// and this returns the failure instead of serving it.
+// and this returns the failure instead of serving it. The reload is
+// forced: a re-issued certificate is rewritten in place under the same
+// snippet, so the adapted config is identical and Caddy would otherwise
+// skip the reload and keep serving the old certificate from memory.
 func ReloadProxy(ctx context.Context) error {
 	if _, err := execRun(ctx, "docker",
 		"exec", CaddyContainerName,
 		"caddy", "reload",
 		"--config", "/etc/caddy/Caddyfile",
-		"--adapter", "caddyfile"); err != nil {
+		"--adapter", "caddyfile",
+		"--force"); err != nil {
 		return fmt.Errorf("reload proxy: %w", err)
 	}
 	return nil
