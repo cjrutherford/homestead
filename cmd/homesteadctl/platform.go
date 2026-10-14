@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -290,7 +291,7 @@ func runUpdatesApplyPlatform(ctx context.Context, client *apiclient.Client, args
 	}
 	id, err := client.PlatformApply(ctx, abs["--component"], abs["--artifact"], abs["--checksums"], abs["--signature"], allowOlder)
 	if err != nil {
-		if strings.Contains(err.Error(), "older") && !allowOlder {
+		if olderRefusal(err) && !allowOlder {
 			fmt.Fprintln(stderr, "re-run with --allow-older to apply an older release (audited with both versions)")
 		}
 		return fail(stderr, err)
@@ -377,7 +378,7 @@ func runUpdatesRollbackPlatform(ctx context.Context, client *apiclient.Client, a
 	}
 	id, err := client.PlatformRollback(ctx, component, allowOlder)
 	if err != nil {
-		if strings.Contains(err.Error(), "older") && !allowOlder {
+		if olderRefusal(err) && !allowOlder {
 			fmt.Fprintln(stderr, "re-run with --allow-older to roll back to an older release (audited with both versions)")
 		}
 		return fail(stderr, err)
@@ -403,4 +404,11 @@ func runUpdatesRollbackPlatform(ctx context.Context, client *apiclient.Client, a
 		fmt.Fprintln(stdout, "daemon restarted on the previous binary and passed its health check")
 	}
 	return exitOK
+}
+
+// olderRefusal reports whether the daemon refused only for lack of the
+// older-release override, by its stable error code (not message text).
+func olderRefusal(err error) bool {
+	var statusErr *apiclient.StatusError
+	return errors.As(err, &statusErr) && statusErr.Code == "older-release-needs-override"
 }

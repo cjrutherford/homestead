@@ -147,7 +147,10 @@ func TestPlatformRollbackRoute(t *testing.T) {
 	if err := e.h.rel.RecordInstalled("homestead-server", "0.1.0", 9); err != nil {
 		t.Fatal(err)
 	}
-	// Older counter without the override is refused and audited.
+	// Older counter without the override is refused with a stable code and audited.
+	if rec := opRequest(http.MethodPost, `{"component":"homestead-server"}`, e.h.rollback, ""); rec.Header().Get(ErrorCodeHeader) != ErrorCodeOlderRelease {
+		t.Fatalf("older refusal code = %q", rec.Header().Get(ErrorCodeHeader))
+	}
 	if code, msg := roll(`{"component":"homestead-server"}`); code != http.StatusUnprocessableEntity || !strings.Contains(msg, "older") {
 		t.Fatalf("older without override = %d %s", code, msg)
 	}
@@ -210,5 +213,31 @@ func TestPlatformPlanReportsEachComponentsOwnVersion(t *testing.T) {
 	view = e.planView()
 	if view.Running["homesteadctl"] != "0.0.5" || view.Running["homestead-server"] != version.Version {
 		t.Fatalf("running = %+v", view.Running)
+	}
+}
+
+// Doctor fails after a failed rollback and clears after a later
+// successful platform operation (including a rollback).
+func TestPlatformDoctorFailsAfterFailedRollbackAndClearsOnSuccess(t *testing.T) {
+	e := newPlatformEnv(t)
+	ops := operation.New(e.st)
+	finish := func(status, msg string) {
+		op, err := ops.Create(platformapply.OperationType, "{}")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = ops.Transition(op.ID, operation.StatusRunning, "", "")
+		if err := ops.Transition(op.ID, status, "", msg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	finish(operation.StatusFailed, "rollback failed: the daemon is still on the failed binary")
+	checks := platformApplyDoctorCheck(e.st, time.Now)()
+	if checks[0].Status != doctor.StatusFail || !strings.Contains(checks[0].Detail, "rollback failed") {
+		t.Fatalf("after failed rollback = %+v", checks)
+	}
+	finish(operation.StatusSucceeded, "")
+	if checks := platformApplyDoctorCheck(e.st, time.Now)(); checks[0].Status != doctor.StatusOK {
+		t.Fatalf("after successful rollback = %+v", checks)
 	}
 }

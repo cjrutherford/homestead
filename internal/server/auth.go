@@ -45,6 +45,9 @@ func (s *Server) MountAuth(svc *auth.Service, auditSvc *audit.Service) {
 const (
 	ErrorCodeHeader                 = "X-Homestead-Error"
 	ErrorCodeInvalidCurrentPassword = "invalid-current-password"
+	// ErrorCodeOlderRelease marks a platform apply or rollback refused
+	// only because it moves to an older counter without the owner override.
+	ErrorCodeOlderRelease = "older-release-needs-override"
 )
 
 func (s *Server) handleAdminSetup(svc *auth.Service, auditSvc *audit.Service) http.HandlerFunc {

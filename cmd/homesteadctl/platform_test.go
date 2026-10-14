@@ -106,6 +106,7 @@ func applyPlatformStub(t *testing.T) (string, *[]string) {
 			raw, _ := io.ReadAll(r.Body)
 			bodies = append(bodies, string(raw))
 			if strings.Contains(string(raw), `"allow_older":false`) && strings.Contains(string(raw), "/srv/older/") {
+				w.Header().Set("X-Homestead-Error", "older-release-needs-override")
 				http.Error(w, "platformapply: release is older than the installed release", http.StatusUnprocessableEntity)
 				return
 			}
@@ -202,6 +203,7 @@ func TestUpdatesRollbackPlatform(t *testing.T) {
 			raw, _ := io.ReadAll(r.Body)
 			bodies = append(bodies, string(raw))
 			if strings.Contains(string(raw), `"allow_older":false`) {
+				w.Header().Set("X-Homestead-Error", "older-release-needs-override")
 				http.Error(w, "platformapply: release is older than the installed release", http.StatusUnprocessableEntity)
 				return
 			}
@@ -235,5 +237,17 @@ func TestUpdatesRollbackPlatform(t *testing.T) {
 	}
 	if code, _, _ := invoke(t, []string{"--server", ts.URL, "updates", "rollback-platform", "--bogus"}); code != exitUsage {
 		t.Fatalf("exit = %d, want usage", code)
+	}
+}
+
+// Only the stable error code triggers the override hint, never message text.
+func TestUpdatesRollbackPlatformHintUsesErrorCodeNotText(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "the previous release is older but this is a different refusal", http.StatusUnprocessableEntity)
+	}))
+	t.Cleanup(ts.Close)
+	code, _, stderr := invoke(t, []string{"--server", ts.URL, "updates", "rollback-platform"})
+	if code != exitError || strings.Contains(stderr, "--allow-older") {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
 }

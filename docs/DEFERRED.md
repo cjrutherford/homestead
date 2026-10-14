@@ -96,11 +96,9 @@
   apply unit trusts the trusted keys and baseline stored in the database,
   so a compromised daemon could still alter trust.
 - Platform rollback follow-ups (S273): a rollback keeps the binary it
-  replaced only as `<binary>.rolledback` (one copy, overwritten by the
-  next rollback) and does not make it the new "previous", so there is no
-  one-step roll-forward; rolling back to a previous release whose counter
-  was never recorded records the baseline with counter 0 (no rollback
-  protection until the next verified apply).
+  replaced only as the last two `<binary>.rolledback-<stamp>` copies and
+  does not make it the new "previous", so there is no one-step
+  roll-forward.
 - Production release signing key: the HAI public key embedded by S264
   (`internal/release.EmbeddedPublicKey`) is a labelled placeholder
   whose private half was discarded. The real key, signing ceremony,

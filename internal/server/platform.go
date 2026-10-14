@@ -239,10 +239,14 @@ func (h *platformHandlers) rollback(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, platformapply.ErrInput):
 			status = http.StatusBadRequest
-		case errors.Is(err, platformapply.ErrOlder), errors.Is(err, platformapply.ErrDigest), errors.Is(err, platformapply.ErrPrevious):
+		case errors.Is(err, platformapply.ErrOlder), errors.Is(err, platformapply.ErrDigest), errors.Is(err, platformapply.ErrPrevious),
+			errors.Is(err, platformapply.ErrCounterUnknown), errors.Is(err, platformapply.ErrCounterConflict):
 			status = http.StatusUnprocessableEntity
 		case errors.Is(err, platformapply.ErrNoPrevious), errors.Is(err, platformapply.ErrCurrent), errors.Is(err, platformapply.ErrBusy):
 			status = http.StatusConflict
+		}
+		if errors.Is(err, platformapply.ErrOlder) {
+			w.Header().Set(ErrorCodeHeader, ErrorCodeOlderRelease)
 		}
 		if status != http.StatusInternalServerError {
 			h.record(audit.Entry{Actor: op.Session.Username, Action: platformapply.ActionRollback, Outcome: audit.OutcomeError,
@@ -290,6 +294,9 @@ func (h *platformHandlers) apply(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusUnprocessableEntity
 		case errors.Is(err, platformapply.ErrCurrent), errors.Is(err, platformapply.ErrBusy):
 			status = http.StatusConflict
+		}
+		if errors.Is(err, platformapply.ErrOlder) {
+			w.Header().Set(ErrorCodeHeader, ErrorCodeOlderRelease)
 		}
 		if status != http.StatusInternalServerError {
 			h.record(audit.Entry{Actor: op.Session.Username, Action: platformapply.ActionApply, Outcome: audit.OutcomeError,

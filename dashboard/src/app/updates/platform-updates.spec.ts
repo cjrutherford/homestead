@@ -185,6 +185,7 @@ describe('PlatformUpdatesPanel', () => {
     http
       .expectOne('/api/v1/platform/updates/apply')
       .flush('release is older than the installed release', {
+        headers: { 'X-Homestead-Error': 'older-release-needs-override' },
         status: 422,
         statusText: 'Unprocessable Entity',
       });
@@ -229,6 +230,7 @@ describe('PlatformUpdatesPanel', () => {
     http
       .expectOne('/api/v1/platform/updates/rollback')
       .flush('platformapply: 0.0.0-s001 is older than the installed release', {
+        headers: { 'X-Homestead-Error': 'older-release-needs-override' },
         status: 422,
         statusText: 'Unprocessable Entity',
       });

@@ -156,6 +156,7 @@ func (c *Client) roundTrip(req *http.Request, okStatus int, out any) error {
 			Path:   req.URL.Path,
 			Status: res.StatusCode,
 			Body:   strings.TrimSpace(string(excerpt)),
+			Code:   res.Header.Get("X-Homestead-Error"),
 		}
 	}
 	if out == nil {

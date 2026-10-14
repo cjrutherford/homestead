@@ -51,6 +51,11 @@ type unitRun struct {
 	r       *Runner
 	m       Marker
 	swapped bool
+	// restored is set once a rollback has put the previous binary back;
+	// keptPath/keepErr describe the copy kept of the replaced binary.
+	restored bool
+	keptPath string
+	keepErr  error
 }
 
 // Run applies the pending marker: verify, preserve, replace, restart,
@@ -299,9 +304,9 @@ func (u *unitRun) failureMessage(cause error) string {
 		if !u.swapped {
 			return fmt.Sprintf("rollback of %s to %s failed: %v; the installed binary was not changed", m.Component, m.ToVersion, cause)
 		}
-		return fmt.Sprintf("rollback failed: %s to %s: %v; the previous binary is restored at %s and the replaced binary is kept at %s; "+
+		return fmt.Sprintf("rollback failed: %s to %s: %v; the previous binary is restored at %s; %s; "+
 			"if the daemon is down, restart it with: %s",
-			m.Component, m.ToVersion, cause, m.BinaryPath, m.BinaryPath+rolledBackSuffix, RestoreCommand(m, u.r.Unit))
+			m.Component, m.ToVersion, cause, m.BinaryPath, u.replacedNote(), RestoreCommand(m, u.r.Unit))
 	}
 	if !u.swapped {
 		return fmt.Sprintf("apply of %s %s failed: %v; the installed binary was not changed", m.Component, m.ToVersion, cause)

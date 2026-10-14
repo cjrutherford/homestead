@@ -10,6 +10,9 @@ import {
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 
+/** Stable daemon error code: refused only for lack of the older-release override. */
+const OLDER_RELEASE_CODE = 'older-release-needs-override';
+
 /**
  * Platform release verification (S264, ADR-025): per-release
  * verification state, local artifact verification, and owner-managed
@@ -121,7 +124,7 @@ export class PlatformUpdatesPanel implements OnInit {
           this.refresh();
         },
         error: (failure: HttpErrorResponse) => {
-          if (String(failure.error ?? '').includes('older')) {
+          if (failure.headers?.get('X-Homestead-Error') === OLDER_RELEASE_CODE) {
             this.olderRefused.set(true);
           }
           this.fail(failure);
@@ -157,7 +160,7 @@ export class PlatformUpdatesPanel implements OnInit {
           this.refresh();
         },
         error: (failure: HttpErrorResponse) => {
-          if (String(failure.error ?? '').includes('older')) {
+          if (failure.headers?.get('X-Homestead-Error') === OLDER_RELEASE_CODE) {
             this.rollbackOlderRefused.set(true);
           }
           this.fail(failure);

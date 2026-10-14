@@ -170,14 +170,15 @@ If the restarted daemon is not healthy within the health timeout (the
 process runs a different binary, the listeners do not answer with the
 target version, or the database does not open), the apply unit does not
 leave the appliance on the bad binary. In the same run it keeps a copy of
-the failed binary as `homestead-server.rolledback`, restores
+the failed binary as `homestead-server.rolledback-<stamp>`, restores
 `homestead-server.previous` (atomic rename; the copy's digest must equal
 the digest recorded when it was preserved), runs `reset-failed` and
 restarts the daemon, and waits for it to be healthy. The operation ends
 `failed (rolled back)`; the audit trail records both versions and the
-installed release record still names the previous release (the failed
-release is never recorded). `doctor` reports `platform-apply` as failed
-until a later apply succeeds. The homesteadctl component has no restart:
+installed release record stays exactly as it was before the apply (the
+failed release is never recorded, and the baseline never drops). `doctor`
+reports `platform-apply` as failed until a later platform operation
+(apply or rollback) succeeds. The homesteadctl component has no restart:
 its health check is the on-disk digest, and rollback restores the file.
 
 ### Manual rollback
@@ -196,16 +197,29 @@ binary, and while another apply or rollback is pending. Rolling back to an
 older counter than the installed release is an explicit owner override
 (ADR-025): without `--allow-older` (or the second dashboard confirmation) it
 is refused; with it, the audit trail records the override with both
-versions.
+versions. A rollback is refused even with the override when the previous
+release has no recorded counter (it would erase the anti-rollback
+baseline) or reuses the installed counter under a different version; in
+that case reinstall the release through a verified apply with its signed
+checksums file. There is no roll-forward: the replaced binary is only kept
+as a timestamped copy, not made the new previous. The last two
+`homestead-server.rolledback-<stamp>` copies are retained (older ones are
+removed); the copy is skipped, and the message says so, if there is not
+enough free space.
 
 ### If rollback fails
 
-The operation ends `rollback failed` with the cause, `doctor` fails, the
+The operation ends `rollback failed` with the cause, `doctor` fails until a
+later platform operation succeeds, the
 audit trail and the `homestead-apply` journal
 (`journalctl -u homestead-apply`) carry the error, and both binaries stay
-on disk: `homestead-server.previous` (the last good binary) and
-`homestead-server.rolledback` (the binary that was replaced). The error
-prints the manual restore command; the daemon may be down:
+on disk where they existed: `homestead-server.previous` (the last good
+binary) and the newest `homestead-server.rolledback-<stamp>` (the binary
+that was replaced). The error states whether the daemon is still on the
+failed binary (for example when `.previous` was missing or corrupt, so
+nothing could be restored: put a known-good binary in place with the same
+cp/mv steps) and prints the manual restore command; the daemon may be
+down:
 
 ```
 sha256sum /usr/local/bin/homestead-server.previous   # compare with GET /api/v1/platform/updates "previous"
