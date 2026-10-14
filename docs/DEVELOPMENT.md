@@ -2388,3 +2388,26 @@ per request or scan, volume mountpoints are looked up once per volume, and
 the host image list is read only when an image ID or digest must be
 resolved; symlinks in bind sources resolve only for a local unix-socket
 Engine (a remote `DOCKER_HOST` compares paths lexically).
+
+- Proven live in KVM (S262, cb1eb26; both VMs with jellyfin, nextcloud,
+  immich, and authentik; VM 1 also runs the homestead-caddy edge and the
+  authentik override): `drift live` reported zero findings on every
+  healthy app (secrets mounts, tmpfs valkey, v4/v6 port pairs,
+  S277-migrated binds). Stopping `immich-machine-learning` gave a
+  `stopped` finding with restore and Restore started it; `docker compose
+  stop` of jellyfin gave `stack_state: stopped` with no finding, no
+  Restore, and no doctor warning (the scan lists it as "stopped (not
+  drift)"); a retagged `immich-cache` image gave an `image` finding that
+  Restore converged; `docker network connect bridge` gave a `network`
+  (recreate) finding that stayed until the hinted `compose rm -sf cache`
+  and Restore; a project-labelled stray container gave `extra` with the
+  `docker rm -f` hint. A 5m scan recorded live findings (doctor warns on
+  real drift only), and with Docker stopped it recorded
+  `live_skipped: Docker engine unreachable` with the drift-scan check
+  still ok; every container returned after Docker restarted. Note: the
+  Engine can list a container as running for a moment after `docker stop`
+  returns (observed on a health-checked container), so a live comparison
+  taken in that instant reads clean; this is an Engine timing artifact,
+  not a comparison bug. Not exercised: an app attached to the
+  `homestead-edge` network (no app is exposed on VM 1; caddy is not a
+  catalog package).
