@@ -164,17 +164,29 @@ func (c *Client) TrustKeyRemove(ctx context.Context, keyID string) error {
 	return c.roundTrip(req, http.StatusNoContent, nil)
 }
 
-// PlatformApply starts applying a verified platform release (S265) and
-// returns the operation id. artifact is the verified file's absolute
-// path on the appliance. allowOlder is the explicit, audited override
-// for an older counter.
-func (c *Client) PlatformApply(ctx context.Context, component, artifact string, allowOlder bool) (int64, error) {
+// PlatformApply starts applying a verified platform release (S265,
+// ADR-027) and returns the operation id. The paths are the files the
+// release was verified from; the daemon and the privileged apply unit
+// verify them again. allowOlder is the explicit, audited override for an
+// older counter.
+func (c *Client) PlatformApply(ctx context.Context, component, artifact, checksums, signature string, allowOlder bool) (int64, error) {
 	var out struct {
 		ID int64 `json:"id"`
 	}
-	body := map[string]any{"component": component, "artifact": artifact, "allow_older": allowOlder}
+	body := map[string]any{"component": component, "artifact": artifact, "checksums": checksums,
+		"signature": signature, "allow_older": allowOlder}
 	if err := c.postJSON(ctx, "/api/v1/platform/updates/apply", body, &out); err != nil {
 		return 0, err
 	}
 	return out.ID, nil
+}
+
+// PlatformClearApply clears a stale apply marker (the apply unit died),
+// marking its operation failed. It returns the cleared marker.
+func (c *Client) PlatformClearApply(ctx context.Context) (PlatformPending, error) {
+	var out PlatformPending
+	if err := c.postJSON(ctx, "/api/v1/platform/updates/clear-apply", map[string]any{}, &out); err != nil {
+		return PlatformPending{}, err
+	}
+	return out, nil
 }

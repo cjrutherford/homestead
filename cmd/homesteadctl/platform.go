@@ -15,7 +15,14 @@ import (
 
 // runUpdatesPlatform shows the platform plan with per-release
 // artifact verification state (S264, ADR-025).
-func runUpdatesPlatform(ctx context.Context, client *apiclient.Client, stdout, stderr io.Writer) int {
+func runUpdatesPlatform(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 1 && args[0] == "clear-apply" {
+		return runUpdatesClearApply(ctx, client, stdout, stderr)
+	}
+	if len(args) != 0 {
+		fmt.Fprintln(stderr, "usage: homesteadctl updates platform [clear-apply]")
+		return exitUsage
+	}
 	view, err := client.PlatformUpdates(ctx)
 	if err != nil {
 		return fail(stderr, err)
@@ -41,6 +48,13 @@ func runUpdatesPlatform(ctx context.Context, client *apiclient.Client, stdout, s
 	for _, move := range view.Plan.Components {
 		fmt.Fprintf(stdout, "plan: %s %s -> %s [%s]\n", move.Component, move.Current, move.Target, move.Verification)
 	}
+	if view.Pending != nil {
+		fmt.Fprintf(stdout, "pending apply: %s %s -> %s (operation %d); if the apply unit died, run `homesteadctl updates platform clear-apply`\n",
+			view.Pending.Component, view.Pending.FromVersion, view.Pending.ToVersion, view.Pending.OpID)
+	}
+	for _, prev := range view.Previous {
+		fmt.Fprintf(stdout, "previous %s kept: %s at %s (sha256 %s)\n", prev.Component, prev.Version, prev.Path, prev.SHA256)
+	}
 	for _, warning := range view.Plan.Warnings {
 		fmt.Fprintf(stdout, "  warning: %s\n", warning)
 	}
@@ -55,6 +69,17 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+// runUpdatesClearApply clears a stale apply marker (audited): the owner's
+// way out when the privileged apply unit died and left an operation open.
+func runUpdatesClearApply(ctx context.Context, client *apiclient.Client, stdout, stderr io.Writer) int {
+	m, err := client.PlatformClearApply(ctx)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "cleared the pending apply of %s %s -> %s (operation %d marked failed)\n", m.Component, m.FromVersion, m.ToVersion, m.OpID)
+	return exitOK
 }
 
 const verifyUsage = "usage: homesteadctl updates verify --component NAME --artifact FILE --checksums FILE --signature FILE [--allow-older]"
@@ -206,7 +231,7 @@ func runUpdatesTrust(ctx context.Context, client *apiclient.Client, args []strin
 	return exitUsage
 }
 
-const applyPlatformUsage = "usage: homesteadctl updates apply-platform --component NAME --artifact FILE [--allow-older] [--follow]"
+const applyPlatformUsage = "usage: homesteadctl updates apply-platform --component NAME --artifact FILE --checksums FILE --signature FILE [--allow-older] [--follow]"
 
 // Poll cadence and bound for following an apply across the daemon
 // restart it causes; variables so tests can shorten them.
@@ -215,11 +240,11 @@ var (
 	applyFollowTimeout = 5 * time.Minute
 )
 
-// runUpdatesApplyPlatform applies a verified platform release (S265):
-// the artifact must be the file `updates verify` verified, which the
-// daemon re-checks against the recorded digest. Applying the daemon
-// restarts it; --follow rides out the restart and reports the
-// finalized outcome. --allow-older is the explicit, audited override
+// runUpdatesApplyPlatform applies a verified platform release (S265,
+// ADR-027): the three files must be the ones `updates verify` verified;
+// the daemon and then the privileged apply unit verify them again.
+// Applying the daemon restarts it; --follow rides out the restart and
+// reports the outcome the apply unit finalizes. --allow-older is the explicit, audited override
 // for an older counter.
 func runUpdatesApplyPlatform(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	values := map[string]string{}
@@ -230,7 +255,7 @@ func runUpdatesApplyPlatform(ctx context.Context, client *apiclient.Client, args
 			allowOlder = true
 		case "--follow":
 			follow = true
-		case "--component", "--artifact":
+		case "--component", "--artifact", "--checksums", "--signature":
 			if i+1 >= len(args) {
 				fmt.Fprintln(stderr, applyPlatformUsage)
 				return exitUsage
@@ -242,15 +267,22 @@ func runUpdatesApplyPlatform(ctx context.Context, client *apiclient.Client, args
 			return exitUsage
 		}
 	}
-	if values["--component"] == "" || values["--artifact"] == "" {
-		fmt.Fprintln(stderr, applyPlatformUsage)
-		return exitUsage
+	abs := map[string]string{}
+	for _, flag := range []string{"--component", "--artifact", "--checksums", "--signature"} {
+		if values[flag] == "" {
+			fmt.Fprintln(stderr, applyPlatformUsage)
+			return exitUsage
+		}
+		abs[flag] = values[flag]
+		if flag != "--component" {
+			path, err := filepath.Abs(values[flag])
+			if err != nil {
+				return fail(stderr, err)
+			}
+			abs[flag] = path
+		}
 	}
-	artifact, err := filepath.Abs(values["--artifact"])
-	if err != nil {
-		return fail(stderr, err)
-	}
-	id, err := client.PlatformApply(ctx, values["--component"], artifact, allowOlder)
+	id, err := client.PlatformApply(ctx, abs["--component"], abs["--artifact"], abs["--checksums"], abs["--signature"], allowOlder)
 	if err != nil {
 		if strings.Contains(err.Error(), "older") && !allowOlder {
 			fmt.Fprintln(stderr, "re-run with --allow-older to apply an older release (audited with both versions)")

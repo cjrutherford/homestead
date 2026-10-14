@@ -91,15 +91,18 @@
   (stage, keep the previous binary, replace, restart, health check on
   the next start) but a failed health check only marks the operation
   failed and prints the documented manual restore command; automatic
-  restore and a manual rollback route belong to S273.
+  restore and a manual rollback route belong to S273, in the privileged
+  apply unit (ADR-027).
 - Platform apply follow-ups (S265): the plan still says a state backup
   precedes platform moves, but no daemon-state (SQLite/YAML) backup
   exists yet, so apply does not run one (back up with the documented
   backup tooling first); only one previous binary is kept per
   component, so applying a second time after a failed health check
   overwrites the last good previous; a new binary that crashes before
-  finalizing is restarted by systemd (`Restart=on-failure`) with its
-  marker pending and no attempt limit; the plan's "running" CLI
+  finalizing is bounded by the start limit and the apply unit's health
+  timeout (ADR-027) but is not restored automatically (S273); the
+  apply unit trusts the trusted keys and baseline stored in the database,
+  so a compromised daemon could still alter trust; the plan's "running" CLI
   version is the daemon's version, not the installed CLI's.
 - Production release signing key: the HAI public key embedded by S264
   (`internal/release.EmbeddedPublicKey`) is a labelled placeholder

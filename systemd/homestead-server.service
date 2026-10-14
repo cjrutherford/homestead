@@ -6,19 +6,26 @@
 #
 # Hardening is intentionally strict. ReadWritePaths grants exactly the state
 # directories the layout owns (S012) plus the stacks directory installs
-# write (S156), /usr/local/bin so a verified platform update can replace
-# the daemon and CLI binaries in place (S265; the rest of /usr stays
-# read-only), the packaged read-only catalog (S160, installed by
+# write (S156), the packaged read-only catalog (S160, installed by
 # install-systemd.sh alongside the binary), and the conventional mount
 # roots owner storage lives under: provisioning and backups write
 # assigned mounts by design, so /mnt and /media stay writable while
-# /etc and /boot (and /usr outside /usr/local/bin) stay read-only. Mounts outside both need a unit
+# /etc//usr//boot stay read-only. Mounts outside both need a unit
 # drop-in extending ReadWritePaths plus a daemon reload.
+#
+# The daemon never writes its own binary or the CLI (ADR-027): platform
+# updates replace them from the separate privileged homestead-apply.service.
+# The start limit bounds a new binary that crashes at startup: after five
+# starts in five minutes systemd stops retrying (the apply unit's health
+# timeout fails the update; restore with the documented manual command,
+# then systemctl reset-failed homestead-server).
 
 [Unit]
 Description=Homestead control daemon
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -28,7 +35,7 @@ Restart=on-failure
 RestartSec=5
 TimeoutStopSec=10
 RuntimeDirectory=homestead
-ReadWritePaths=/etc/homestead /var/lib/homestead /var/log/homestead /opt/homestead/stacks /usr/local/bin /mnt /media
+ReadWritePaths=/etc/homestead /var/lib/homestead /var/log/homestead /opt/homestead/stacks /mnt /media
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

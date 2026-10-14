@@ -44,13 +44,16 @@ type versionResponse struct {
 // Server is the homestead-server HTTP control surface: a TCP mux for the
 // API plus a Unix-socket mux for root-only endpoints (S021).
 type Server struct {
-	addr      string
-	http      *http.Server
-	mux       *recordingMux
-	unix      *http.Server
-	socketMux *http.ServeMux
-	log       *slog.Logger
-	boundary  *boundary
+	addr string
+	// SocketPath is the recovery socket the apply unit health-checks
+	// (ADR-027); main sets it from --socket.
+	SocketPath string
+	http       *http.Server
+	mux        *recordingMux
+	unix       *http.Server
+	socketMux  *http.ServeMux
+	log        *slog.Logger
+	boundary   *boundary
 	// bg bounds background work started by handlers (such as audit
 	// waiters); serve cancels it when the daemon shuts down.
 	bg       context.Context
@@ -59,7 +62,7 @@ type Server struct {
 
 // New returns a Server serving addr. Pass DefaultAddr for local-only binding.
 func New(addr string) *Server {
-	s := &Server{addr: addr, log: slog.Default()}
+	s := &Server{addr: addr, log: slog.Default(), SocketPath: DefaultSocketPath}
 	s.bg, s.bgCancel = context.WithCancel(context.Background())
 	s.mux = newRecordingMux()
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)

@@ -21,7 +21,7 @@ func runUpdates(ctx context.Context, client *apiclient.Client, args []string, st
 	case "apply":
 		return runUpdatesApply(ctx, client, args[1:], stdout, stderr)
 	case "platform":
-		return runUpdatesPlatform(ctx, client, stdout, stderr)
+		return runUpdatesPlatform(ctx, client, args[1:], stdout, stderr)
 	case "verify":
 		return runUpdatesVerify(ctx, client, args[1:], stdout, stderr)
 	case "apply-platform":

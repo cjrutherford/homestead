@@ -337,10 +337,12 @@ export interface PlatformUpdates {
   } | null;
 }
 
-/** POST /api/v1/platform/updates/apply — a verified release's artifact. */
+/** POST /api/v1/platform/updates/apply — the files a release was verified from. */
 export interface PlatformApplyBody {
   component: string;
   artifact: string;
+  checksums: string;
+  signature: string;
   allow_older: boolean;
 }
 
@@ -803,6 +805,21 @@ export class ApiService {
       '/api/v1/platform/updates/apply',
       body,
     );
+  }
+
+  /** POST /api/v1/platform/updates/clear-apply — clears a stale apply marker. */
+  platformClearApply(): Observable<{
+    op_id: number;
+    component: string;
+    from_version: string;
+    to_version: string;
+  }> {
+    return this.http.post<{
+      op_id: number;
+      component: string;
+      from_version: string;
+      to_version: string;
+    }>('/api/v1/platform/updates/clear-apply', {});
   }
 
   trustKeys(): Observable<TrustKey[]> {

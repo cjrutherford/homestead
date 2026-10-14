@@ -77,10 +77,10 @@ rotate or after a leaked HAI key:
 ## Surfaces
 
 `GET /api/v1/platform/updates`, `POST /api/v1/platform/updates/verify`,
-`POST /api/v1/platform/updates/apply` (S265),
+`POST /api/v1/platform/updates/apply` and `/clear-apply` (S265),
 `GET|POST /api/v1/platform/trust-keys`,
 `PUT|DELETE /api/v1/platform/trust-keys/{id}`; `homesteadctl updates
-platform|verify|apply-platform|trust`; the dashboard Updates page. See docs/PARITY.md.
+platform [clear-apply]|verify|apply-platform|trust`; the dashboard Updates page. See docs/PARITY.md.
 
 ## Proven live in KVM (S264, da3362f)
 
@@ -98,87 +98,93 @@ the placeholder embedded key stayed flagged. The test key was removed
 afterwards. As documented, a later verify of an older counter does not
 move the baseline (a successful apply does).
 
-## Applying a verified release (S265)
+## Applying a verified release (S265, ADR-027)
 
 `homesteadctl updates apply-platform --component homestead-server
---artifact /srv/rel/homestead-server [--allow-older] [--follow]`, or the
+--artifact /srv/rel/homestead-server --checksums /srv/rel/SHA256SUMS
+--signature /srv/rel/SHA256SUMS.minisig [--allow-older] [--follow]`, or the
 Apply action on the dashboard Updates page. Only a release that is
-`verified` can be applied (failed, rollback-refused, and unverified
-records never are). `--artifact` is the file the release was verified
-from; the daemon refuses if its SHA-256 no longer matches the verified
-digest. Apply is a `platform.update` operation: the first apply
-requires `make install` to have been re-run so the unit grants write
-access to `/usr/local/bin` (an older unit fails the replace step with a
-read-only filesystem error and leaves everything unchanged).
+`verified` can be applied (failed, rollback-refused, and unverified records
+never are), and the three files must be the ones it was verified from.
+
+Who does what (ADR-027): `homestead-server` never writes executables; its
+unit has no write grant on `/usr/local/bin`. The daemon verifies the files
+again, stages copies into `/var/lib/homestead/staging` (root-only), writes
+the SQLite apply marker, and starts the privileged oneshot
+`homestead-apply.service` (`systemctl --no-block start`). That unit runs
+`homestead-server apply-platform`: the installed binary in apply mode, so
+the component model and checksums are unchanged. It independently
+re-verifies the staged files (signature, checksums, digest, counter against
+the installed baseline; the database `verified` row is not enough), keeps
+the previous binary, swaps it atomically, restarts the daemon, waits for it
+to be healthy, and finalizes the same operation record from outside the
+daemon. `make install` installs the unit; an install from before ADR-027
+must re-run it, or the apply fails at `handoff` before anything changes.
 
 Components: the daemon (`homestead-server`) and the CLI (`homesteadctl`)
-apply separately, each from its own verified release (the checksums file
-lists both). The dashboard is embedded in the daemon, so it updates with
-it. The daemon restarts; the CLI does not. Apply the CLI after the
-daemon so the two match.
+apply separately, each from its own verified release. The dashboard is
+embedded in the daemon. The daemon restarts; the CLI does not. Apply the
+CLI after the daemon so the two match. The CLI's "from" version is its own
+record, or `unrecorded (sha256 ...)` before one exists, never the daemon's.
 
-Policy: an older counter than the installed release (or, with no
-installed record yet, an older version) applies only with
+Policy: only an older counter than the installed release demands
 `--allow-older` (dashboard: a separate confirmation); the apply and its
-finalization are audited as overrides with both versions and counters.
-The same counter with a different version is refused. Applying the
-already installed version is refused (409). One apply at a time (409).
+outcome are audited as overrides with both versions and counters. With no
+installed counter nothing is "older". The same counter with a different
+version is refused; applying the installed version or an identical binary
+is refused (409). One apply at a time (409).
 
-Steps of the operation: `stage` (copy the artifact into
-`/var/lib/homestead/staging`, root-only, verify size and digest),
-`preserve-previous` (copy the current binary to
-`/usr/local/bin/<name>.previous` and record its version, counter, and
-SHA-256 in `platform_previous`), `replace` (verify the staged digest,
-copy to `<name>.new` beside the target, verify again, write the
-SQLite marker, `rename(2)` over the target, fsync the directory), and
-for the daemon `restart`.
+Operation steps: daemon side `stage`, `handoff`, `apply` (waits; it has no
+timeout of its own, so it can never mark the operation failed while the
+apply unit still owns it); apply unit `verify-staged`, `preserve-previous`
+(`/usr/local/bin/<name>.previous` plus version, counter and SHA-256 in
+`platform_previous`), `replace` (digest check, copy to `<name>.new` beside
+the target, check, rename; a failed directory fsync after the rename is
+audited and the swap kept), `restart` (daemon only; a restart that cannot
+run undoes the replacement), `health-check`. Health means, within the
+health timeout (90 s): the daemon's main process runs the verified digest,
+the database opens, `/healthz` reports the target version (a release binary
+must be built with its version, `-ldflags "-X
+homestead/internal/version.Version=<version>"`), and the recovery socket
+accepts connections. The CLI is checked on disk by digest.
 
-Restart: `systemctl --no-block restart homestead-server.service`. The
-job is queued in systemd and the command returns, so it survives the
-daemon (and its cgroup) being stopped; a blocking restart would be
-killed mid-job. The restart step then waits to be stopped (5 minutes)
-and never reports success: the process ends. If the restart cannot be
-queued, the new binary never ran, so the replacement is undone and the
-marker cleared. If it is queued but nothing happens within the wait, the
-operation fails and the marker stays: restarting the unit finalizes the
-apply.
+Outcomes. Success: `RecordInstalled` moves the rollback baseline (retried;
+if it cannot be recorded the apply fails rather than claiming success), the
+operation succeeds, before and after are audited, the marker is cleared.
+Failure at any point: the operation fails, the marker is always cleared (it
+never blocks later applies), the failure is audited, `doctor` reports
+`platform-apply` as failed until a later apply succeeds, and the previous
+binary is kept. Startup recovery excludes the marker's operation
+(`Runner.RecoverExcept`). A new binary that crashes at startup is retried by
+systemd at most five times in five minutes (`StartLimitBurst`), and the
+apply unit's health timeout then fails the operation.
 
-Finalization: the `platform_apply_marker` row (operation, component,
-from and to version and counter, digest, previous binary, override,
-actor) is written before the rename. At startup the daemon excludes that
-operation from the interrupted-operation recovery pass
-(`Runner.RecoverExcept`), and once the listeners answer it runs the
-health check: the process reports the target version (a release binary
-must be built with its version: `-ldflags "-X
-homestead/internal/version.Version=<version>"`), `/proc/self/exe`
-hashes to the verified digest, the database answers, `/healthz` on the
-listen address reports that version, and the recovery socket accepts
-connections. On success the operation is marked succeeded,
-`RecordInstalled` moves the rollback baseline, the audit trail records
-before and after, and the marker is cleared. On failure the operation
-is marked failed, audited, the marker cleared, the installed record left
-alone, and the previous binary kept. The CLI is health-checked in-process
-by digest.
+If the apply unit itself dies, the marker stands: `doctor` warns once it is
+older than 15 minutes, and `homesteadctl updates platform clear-apply` (or
+the dashboard Clear stale apply button) marks the operation failed and
+clears it, audited; it refuses while the unit is running.
 
 ### Manual restore
 
 After a failed apply (the operation error prints this command), put the
-previous binary back; `homestead-server.previous` is exactly the binary
-that ran before:
+previous binary back; `homestead-server.previous` is exactly the binary that
+ran before:
 
 ```
-sha256sum /usr/local/bin/homestead-server.previous   # compare with platform previous (GET /api/v1/platform/updates, "previous")
+sha256sum /usr/local/bin/homestead-server.previous   # compare with GET /api/v1/platform/updates "previous"
 sudo cp -p /usr/local/bin/homestead-server.previous /usr/local/bin/homestead-server.restore
 sudo mv /usr/local/bin/homestead-server.restore /usr/local/bin/homestead-server
+sudo systemctl reset-failed homestead-server
 sudo systemctl restart homestead-server
 ```
 
-The `mv` is atomic and safe while the binary runs. The installed
-release record still names the old version, so rollback protection is
-unchanged. A new binary that crashes at startup is restarted by systemd
-with the marker pending; restore the same way (the marker clears on the
-next healthy start). Automatic restore and a rollback route are S273:
-`Finalizer.OnFailure` and `platformapply.RestorePrevious` are its seams.
+The `mv` is atomic and safe while the binary runs. The installed release
+record still names the old version after a failed apply, so rollback
+protection is unchanged. If a binary from before the apply unit existed is
+restored while a marker still shows in `homesteadctl updates platform`, run
+`clear-apply` once the daemon is back. Automatic restore and a rollback
+route are S273: the apply unit is where it restores (`Runner.OnFailure`,
+`platformapply.RestorePrevious`).
 
 ### Building a test release
 
@@ -188,7 +194,7 @@ printf 'version=0.9.0\ncounter=90\n%s  homestead-server\n' "$(sha256sum /srv/rel
 minisign -G -p test.pub -s test.key   # once; then: homesteadctl updates trust add --key-file test.pub
 minisign -S -s test.key -m /srv/rel/SHA256SUMS   # writes SHA256SUMS.minisig
 homesteadctl updates verify --component homestead-server --artifact /srv/rel/homestead-server --checksums /srv/rel/SHA256SUMS --signature /srv/rel/SHA256SUMS.minisig
-homesteadctl updates apply-platform --component homestead-server --artifact /srv/rel/homestead-server --follow
+homesteadctl updates apply-platform --component homestead-server --artifact /srv/rel/homestead-server --checksums /srv/rel/SHA256SUMS --signature /srv/rel/SHA256SUMS.minisig --follow
 ```
 
-Keep artifacts outside `/home`, `/tmp`, and `/var/tmp`.
+Keep the files outside `/home`, `/tmp`, and `/var/tmp`.

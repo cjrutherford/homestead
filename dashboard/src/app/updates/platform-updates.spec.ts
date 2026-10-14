@@ -145,6 +145,8 @@ describe('PlatformUpdatesPanel', () => {
   it('applies a verified release only after confirmation, then links the operation', () => {
     const panel = fixture.componentInstance as any;
     panel.artifact = '/srv/rel/homestead-server';
+    panel.checksums = '/srv/rel/SUMS';
+    panel.signature = '/srv/rel/SUMS.minisig';
     panel.apply(VIEW.releases[0]);
     http.expectNone('/api/v1/platform/updates/apply');
     panel.applyConfirmed = true;
@@ -154,6 +156,8 @@ describe('PlatformUpdatesPanel', () => {
     expect(request.request.body).toEqual({
       component: 'homestead-server',
       artifact: '/srv/rel/homestead-server',
+      checksums: '/srv/rel/SUMS',
+      signature: '/srv/rel/SUMS.minisig',
       allow_older: false,
     });
     request.flush({ id: 21 });
@@ -165,6 +169,8 @@ describe('PlatformUpdatesPanel', () => {
   it('asks for a separate older-release confirmation after an older refusal', () => {
     const panel = fixture.componentInstance as any;
     panel.artifact = '/srv/rel/homestead-server';
+    panel.checksums = '/srv/rel/SUMS';
+    panel.signature = '/srv/rel/SUMS.minisig';
     panel.applyConfirmed = true;
     panel.apply(VIEW.releases[0]);
     http
@@ -182,5 +188,21 @@ describe('PlatformUpdatesPanel', () => {
     expect(retry.request.body).toMatchObject({ allow_older: true });
     retry.flush({ id: 22 });
     reload();
+  });
+
+  it('clears a stale apply marker through the API', () => {
+    const panel = fixture.componentInstance as any;
+    panel.clearApply();
+    const request = http.expectOne('/api/v1/platform/updates/clear-apply');
+    expect(request.request.method).toBe('POST');
+    request.flush({
+      op_id: 21,
+      component: 'homestead-server',
+      from_version: '0.1.0',
+      to_version: '0.2.0',
+    });
+    reload();
+    fixture.detectChanges();
+    expect(text()).toContain('Cleared the pending apply of homestead-server');
   });
 });

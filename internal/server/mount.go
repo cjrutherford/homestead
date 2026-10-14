@@ -66,6 +66,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 		func() []doctor.Check { return []doctor.Check{driftDoctorCheck(st, time.Now)()} },
 		certDoctorChecks(st, time.Now),
 		platformDoctorCheck(st),
+		platformApplyDoctorCheck(st, time.Now),
 		migrationDoctorChecks(st, c.CatalogDir),
 		backupEncryptionDoctorCheck(st),
 	)

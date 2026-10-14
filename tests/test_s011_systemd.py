@@ -48,10 +48,41 @@ class TestUnitFile(unittest.TestCase):
     def test_writable_paths_cover_state_and_stacks(self):
         paths = load_unit()["Service"]["ReadWritePaths"]
         for want in ("/etc/homestead", "/var/lib/homestead",
-                     "/opt/homestead/stacks", "/mnt", "/media",
-                     "/usr/local/bin"):
+                     "/opt/homestead/stacks", "/mnt", "/media"):
             with self.subTest(want=want):
                 self.assertIn(want, paths)
+
+    def test_daemon_cannot_write_binary_locations(self):
+        """ADR-027: only the privileged apply unit writes /usr/local/bin."""
+        paths = load_unit()["Service"]["ReadWritePaths"].split()
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertFalse(
+                    path == "/usr" or path.startswith("/usr/") or path == "/",
+                    f"homestead-server must not write {path}",
+                )
+
+    def test_start_limit_bounds_crash_loops(self):
+        unit = load_unit()["Unit"]
+        self.assertEqual(unit["StartLimitBurst"], "5")
+        self.assertEqual(unit["StartLimitIntervalSec"], "300")
+
+    def test_apply_unit_is_oneshot_and_the_only_binary_writer(self):
+        apply = configparser.ConfigParser(strict=True)
+        apply.read(REPO / "systemd" / "homestead-apply.service")
+        service = apply["Service"]
+        self.assertEqual(service["Type"], "oneshot")
+        self.assertEqual(service["User"], "root")
+        self.assertIn("/usr/local/bin", service["ReadWritePaths"].split())
+        self.assertIn("apply-platform", service["ExecStart"])
+        self.assertNotIn("Install", apply.sections(), "the apply unit is never enabled")
+
+    def test_apply_unit_installed_and_removed(self):
+        install = (REPO / "scripts" / "install-systemd.sh").read_text()
+        self.assertIn("homestead-apply.service", install)
+        self.assertNotIn("enable homestead-apply", install)
+        uninstall = (REPO / "scripts" / "uninstall-systemd.sh").read_text()
+        self.assertIn("homestead-apply.service", uninstall)
 
     def test_restart_policy(self):
         service = load_unit()["Service"]

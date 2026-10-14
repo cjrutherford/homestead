@@ -53,15 +53,15 @@ func TestProbeOnce(t *testing.T) {
 		}
 	}()
 	ctx := context.Background()
-	if err := probeOnce(ctx, ts.URL, sock); err != nil {
+	if err := probeOnce(ctx, ts.URL, sock, version.Version); err != nil {
 		t.Fatalf("healthy probe: %v", err)
 	}
 	reported.Store("9.9.9")
-	if err := probeOnce(ctx, ts.URL, sock); err == nil || !strings.Contains(err.Error(), "reports version") {
+	if err := probeOnce(ctx, ts.URL, sock, version.Version); err == nil || !strings.Contains(err.Error(), "reports version") {
 		t.Fatalf("version mismatch = %v", err)
 	}
 	reported.Store(version.Version)
-	if err := probeOnce(ctx, ts.URL, filepath.Join(t.TempDir(), "none")); err == nil {
+	if err := probeOnce(ctx, ts.URL, filepath.Join(t.TempDir(), "none"), version.Version); err == nil {
 		t.Fatal("missing socket must fail")
 	}
 }

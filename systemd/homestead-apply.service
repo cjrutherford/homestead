@@ -1,0 +1,27 @@
+# homestead-apply.service — privileged platform update apply (S265; ADR-027).
+#
+# Installed (not enabled) by scripts/install-systemd.sh. The daemon starts it
+# (`systemctl --no-block start`) after staging a verified release and writing
+# the apply marker; nothing else starts it and nothing enables it. It runs the
+# installed binary in apply mode: it re-verifies the staged files, keeps the
+# previous binary, replaces the daemon or CLI binary atomically, restarts
+# homestead-server, waits (bounded) for it to be healthy, and finalizes the
+# operation record from outside the daemon.
+#
+# This is the only unit with write access to /usr/local/bin. It listens on
+# nothing and reads only the apply marker, the staging directory and the
+# database under /var/lib/homestead.
+
+[Unit]
+Description=Homestead platform update apply
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/homestead-server apply-platform --data-dir /var/lib/homestead
+TimeoutStartSec=600
+ReadWritePaths=/var/lib/homestead /usr/local/bin
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true

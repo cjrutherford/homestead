@@ -14,10 +14,11 @@ import (
 // exists. It doubles as the cross-process apply lock.
 var ErrPending = errors.New("platformapply: a platform update is already pending")
 
-// Marker describes an apply in flight. It is written before the binary
-// is replaced and survives the daemon restart the apply causes: the
-// next start reads it, health-checks the new binary, finalizes the
-// operation, and clears it. One row at most, by schema.
+// Marker describes an apply in flight. The daemon writes it after
+// staging and before starting the apply unit (ADR-027); the apply unit
+// reads it, re-verifies, swaps, health-checks, finalizes the operation,
+// and clears it. One row at most, by schema, which makes it the apply
+// lock.
 type Marker struct {
 	OpID         int64     `json:"op_id"`
 	Component    string    `json:"component"`
@@ -33,6 +34,14 @@ type Marker struct {
 	OverrideWhy  string    `json:"override_reason"`
 	Actor        string    `json:"actor"`
 	CreatedAt    time.Time `json:"created_at"`
+	// Staged files the apply unit re-verifies, whether the owner allowed an
+	// older release, and the listeners it health-checks (ADR-027).
+	StagedArtifact  string `json:"staged_artifact"`
+	StagedChecksums string `json:"staged_checksums"`
+	StagedSignature string `json:"staged_signature"`
+	AllowOlder      bool   `json:"allow_older"`
+	Listen          string `json:"listen"`
+	SocketPath      string `json:"socket_path"`
 }
 
 // Previous names the binary kept before the last replacement: what a
@@ -61,10 +70,12 @@ func (s *Store) Begin(m Marker) error {
 	}
 	_, err := s.db.Exec(`INSERT INTO platform_apply_marker
 		(id, op_id, component, from_version, from_counter, to_version, to_counter, sha256, binary_path,
-		 previous_path, previous_sha256, override, override_reason, actor, created_at)
-		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 previous_path, previous_sha256, override, override_reason, actor, created_at,
+		 staged_artifact, staged_checksums, staged_signature, allow_older, listen, socket_path)
+		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.OpID, m.Component, m.FromVersion, m.FromCounter, m.ToVersion, m.ToCounter, m.SHA256, m.BinaryPath,
-		m.PreviousPath, m.PreviousSHA, m.Override, m.OverrideWhy, m.Actor, m.CreatedAt.Format(time.RFC3339Nano))
+		m.PreviousPath, m.PreviousSHA, m.Override, m.OverrideWhy, m.Actor, m.CreatedAt.Format(time.RFC3339Nano),
+		m.StagedArtifact, m.StagedChecksums, m.StagedSignature, m.AllowOlder, m.Listen, m.SocketPath)
 	if err != nil {
 		if strings.Contains(err.Error(), "constraint") {
 			return ErrPending
@@ -79,10 +90,12 @@ func (s *Store) Pending() (Marker, bool, error) {
 	var m Marker
 	var created string
 	err := s.db.QueryRow(`SELECT op_id, component, from_version, from_counter, to_version, to_counter, sha256,
-		binary_path, previous_path, previous_sha256, override, override_reason, actor, created_at
+		binary_path, previous_path, previous_sha256, override, override_reason, actor, created_at,
+		staged_artifact, staged_checksums, staged_signature, allow_older, listen, socket_path
 		FROM platform_apply_marker WHERE id = 1`).Scan(
 		&m.OpID, &m.Component, &m.FromVersion, &m.FromCounter, &m.ToVersion, &m.ToCounter, &m.SHA256,
-		&m.BinaryPath, &m.PreviousPath, &m.PreviousSHA, &m.Override, &m.OverrideWhy, &m.Actor, &created)
+		&m.BinaryPath, &m.PreviousPath, &m.PreviousSHA, &m.Override, &m.OverrideWhy, &m.Actor, &created,
+		&m.StagedArtifact, &m.StagedChecksums, &m.StagedSignature, &m.AllowOlder, &m.Listen, &m.SocketPath)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Marker{}, false, nil
 	}
@@ -97,6 +110,16 @@ func (s *Store) Pending() (Marker, bool, error) {
 func (s *Store) Clear(opID int64) error {
 	if _, err := s.db.Exec(`DELETE FROM platform_apply_marker WHERE id = 1 AND op_id = ?`, opID); err != nil {
 		return fmt.Errorf("platformapply: clear marker: %w", err)
+	}
+	return nil
+}
+
+// SetPrevious records the preserved previous binary on the marker, so a
+// failure report (and S273) can name it.
+func (s *Store) SetPrevious(opID int64, path, sha string) error {
+	if _, err := s.db.Exec(`UPDATE platform_apply_marker SET previous_path = ?, previous_sha256 = ? WHERE id = 1 AND op_id = ?`,
+		path, sha, opID); err != nil {
+		return fmt.Errorf("platformapply: set previous: %w", err)
 	}
 	return nil
 }

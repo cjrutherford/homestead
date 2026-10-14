@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"homestead/internal/audit"
 	"homestead/internal/doctor"
@@ -30,7 +31,8 @@ func (s *Server) MountPlatform(st *store.Store, trustYAML string) {
 	h.applier = &platformapply.Applier{
 		Releases: h.rel, Markers: h.marks, Runner: operation.NewRunner(st), Ops: operation.New(st), Audit: h.audit,
 		Systemd: platformapply.ExecSystemd{}, BinDir: PlatformBinDir,
-		StagingDir: filepath.Join(layout.LibDir.Path, "staging"), Unit: PlatformUnit, Running: version.Version,
+		StagingDir: filepath.Join(layout.LibDir.Path, "staging"), Unit: PlatformUnit, ApplyUnit: PlatformApplyUnit,
+		Running: version.Version, Listen: s.addr, SocketPath: s.SocketPath,
 	}
 	if trustYAML != "" {
 		if err := h.render(); err != nil {
@@ -40,18 +42,21 @@ func (s *Server) MountPlatform(st *store.Store, trustYAML string) {
 	s.mux.HandleFunc("GET /api/v1/platform/updates", h.plan)
 	s.mux.HandleFunc("POST /api/v1/platform/updates/verify", h.verify)
 	s.mux.HandleFunc("POST /api/v1/platform/updates/apply", h.apply)
+	s.mux.HandleFunc("POST /api/v1/platform/updates/clear-apply", h.clearApply)
 	s.mux.HandleFunc("GET /api/v1/platform/trust-keys", h.listKeys)
 	s.mux.HandleFunc("POST /api/v1/platform/trust-keys", h.addKey)
 	s.mux.HandleFunc("PUT /api/v1/platform/trust-keys/{id}", h.replaceKey)
 	s.mux.HandleFunc("DELETE /api/v1/platform/trust-keys/{id}", h.removeKey)
 }
 
-// Production locations for platform apply (S265): the installed
-// binaries, which the unit grants write access to, and the systemd unit
-// the daemon restarts.
+// Production locations for platform apply (S265, ADR-027): the
+// installed binaries (read-only to the daemon; only the apply unit
+// writes them), the daemon unit that restarts, and the privileged apply
+// unit the daemon starts.
 const (
-	PlatformBinDir = "/usr/local/bin"
-	PlatformUnit   = "homestead-server.service"
+	PlatformBinDir    = "/usr/local/bin"
+	PlatformUnit      = "homestead-server.service"
+	PlatformApplyUnit = "homestead-apply.service"
 )
 
 type platformHandlers struct {
@@ -166,17 +171,40 @@ func (h *platformHandlers) plan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, view)
 }
 
+// clearApply is the owner's way out of a stale apply marker (S265): it
+// marks the operation failed, clears the marker, and audits. It refuses
+// while the apply unit is running.
+func (h *platformHandlers) clearApply(w http.ResponseWriter, r *http.Request) {
+	op, ok := requireOperator(w, r)
+	if !ok {
+		return
+	}
+	m, err := h.applier.ClearApply(r.Context(), op.Session.Username)
+	switch {
+	case errors.Is(err, platformapply.ErrNoPending):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, platformapply.ErrBusy):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	default:
+		writeJSON(w, m)
+	}
+}
+
 type platformApplyBody struct {
 	Component  string `json:"component"`
 	Artifact   string `json:"artifact"`
+	Checksums  string `json:"checksums"`
+	Signature  string `json:"signature"`
 	AllowOlder bool   `json:"allow_older"`
 }
 
 // apply starts a platform update operation for a verified release
-// (S265). The artifact path must be the file the release was verified
-// from; its bytes are re-checked against the recorded digest. For the
-// daemon the operation ends with a systemd restart and is finalized by
-// the next start.
+// (S265, ADR-027). The paths are the files the release was verified
+// from; the daemon verifies them again and stages copies, and the
+// privileged apply unit it starts verifies the copies once more before
+// replacing anything. The operation is finalized by the apply unit.
 func (h *platformHandlers) apply(w http.ResponseWriter, r *http.Request) {
 	op, ok := requireOperator(w, r)
 	if !ok {
@@ -188,7 +216,8 @@ func (h *platformHandlers) apply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	started, err := h.applier.Start(r.Context(), platformapply.Request{
-		Component: body.Component, Artifact: body.Artifact, Actor: op.Session.Username, AllowOlder: body.AllowOlder,
+		Component: body.Component, Artifact: body.Artifact, Checksums: body.Checksums, Signature: body.Signature,
+		Actor: op.Session.Username, AllowOlder: body.AllowOlder,
 	})
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -423,6 +452,47 @@ func (h *platformHandlers) removeKey(w http.ResponseWriter, r *http.Request) {
 	}
 	h.record(audit.Entry{Actor: op.Session.Username, Action: "platform.trust.remove", Outcome: audit.OutcomeOK, Detail: "removed trusted key " + id})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ApplyStaleAfter is how long an apply marker may stand before doctor
+// warns: well past the apply unit's health timeout.
+const ApplyStaleAfter = 15 * time.Minute
+
+// platformApplyDoctorCheck reports a stale apply marker (the apply unit
+// died) and fails while the latest platform update failed, so a failed
+// apply stays visible until a later one succeeds.
+func platformApplyDoctorCheck(st *store.Store, now func() time.Time) func() []doctor.Check {
+	return func() []doctor.Check {
+		const name = "platform-apply"
+		var checks []doctor.Check
+		m, pending, err := platformapply.NewStore(st).Pending()
+		if err != nil {
+			return []doctor.Check{{Name: name, Status: doctor.StatusWarn, Detail: "cannot read the apply marker: " + err.Error()}}
+		}
+		if pending && now().Sub(m.CreatedAt) > ApplyStaleAfter {
+			checks = append(checks, doctor.Check{Name: name, Status: doctor.StatusWarn,
+				Detail: fmt.Sprintf("apply of %s %s (operation %d) has been pending since %s; if %s is not running, clear it with homesteadctl updates platform clear-apply",
+					m.Component, m.ToVersion, m.OpID, m.CreatedAt.Format(time.RFC3339), PlatformApplyUnit)})
+		}
+		ops, err := operation.New(st).List(0)
+		if err != nil {
+			return append(checks, doctor.Check{Name: name, Status: doctor.StatusWarn, Detail: "cannot read operations: " + err.Error()})
+		}
+		for _, op := range ops { // newest first
+			if op.Type != platformapply.OperationType || !operation.Terminal(op.Status) {
+				continue
+			}
+			if op.Status == operation.StatusFailed {
+				checks = append(checks, doctor.Check{Name: name, Status: doctor.StatusFail,
+					Detail: fmt.Sprintf("the latest platform update (operation %d) failed: %s", op.ID, op.Error)})
+			}
+			break
+		}
+		if len(checks) == 0 {
+			checks = append(checks, doctor.Check{Name: name, Status: doctor.StatusOK, Detail: "no failed or stale platform update"})
+		}
+		return checks
+	}
 }
 
 // platformDoctorCheck warns while no real release key is trusted: with

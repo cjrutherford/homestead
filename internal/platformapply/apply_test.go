@@ -2,9 +2,13 @@ package platformapply
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,32 +23,67 @@ import (
 )
 
 type fakeSystemd struct {
-	mu     sync.Mutex
-	calls  []string
-	err    error
-	called chan struct{}
+	mu        sync.Mutex
+	started   []string
+	restarts  []string
+	startErr  error
+	restartFn func() error
+	pid       int
+	active    bool
+	startedCh chan struct{}
 }
 
-func newFakeSystemd() *fakeSystemd { return &fakeSystemd{called: make(chan struct{}, 4)} }
+func newFakeSystemd() *fakeSystemd { return &fakeSystemd{pid: 4242, startedCh: make(chan struct{}, 4)} }
+
+func (f *fakeSystemd) Start(_ context.Context, unit string) error {
+	f.mu.Lock()
+	f.started = append(f.started, unit)
+	err := f.startErr
+	f.mu.Unlock()
+	if err == nil {
+		f.startedCh <- struct{}{}
+	}
+	return err
+}
 
 func (f *fakeSystemd) Restart(_ context.Context, unit string) error {
 	f.mu.Lock()
-	f.calls = append(f.calls, unit)
+	f.restarts = append(f.restarts, unit)
+	fn := f.restartFn
 	f.mu.Unlock()
-	f.called <- struct{}{}
-	return f.err
+	if fn != nil {
+		return fn()
+	}
+	return nil
+}
+
+func (f *fakeSystemd) MainPID(context.Context, string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.pid, nil
+}
+
+func (f *fakeSystemd) Active(context.Context, string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.active, nil
 }
 
 type env struct {
-	t        *testing.T
-	dbPath   string
-	st       *store.Store
-	bin      string
-	staging  string
-	artifact string
-	digest   string
-	sd       *fakeSystemd
-	a        *Applier
+	t       *testing.T
+	dir     string
+	st      *store.Store
+	bin     string
+	staging string
+	art     string
+	sd      *fakeSystemd
+	a       *Applier
+	r       *Runner
+	pub     ed25519.PublicKey
+	priv    ed25519.PrivateKey
+	keyID   [8]byte
+	files   release.Inputs
+	execSHA func(pid int) (string, error)
 }
 
 func sum(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
@@ -52,14 +91,14 @@ func sum(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	dir := t.TempDir()
-	e := &env{t: t, dbPath: filepath.Join(dir, "h.db"), bin: filepath.Join(dir, "bin"), staging: filepath.Join(dir, "state", "staging"), sd: newFakeSystemd()}
-	st, err := store.Open(e.dbPath)
+	st, err := store.Open(filepath.Join(dir, "h.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	e.st = st
-	for _, d := range []string{e.bin, filepath.Join(dir, "state"), filepath.Join(dir, "art")} {
+	e := &env{t: t, dir: dir, st: st, bin: filepath.Join(dir, "bin"), staging: filepath.Join(dir, "state", "staging"),
+		art: filepath.Join(dir, "art"), sd: newFakeSystemd()}
+	for _, d := range []string{e.bin, filepath.Join(dir, "state"), e.art} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -69,40 +108,66 @@ func newEnv(t *testing.T) *env {
 			t.Fatal(err)
 		}
 	}
-	e.a = &Applier{
-		Releases: release.NewStore(st), Markers: NewStore(st), Runner: operation.NewRunner(st), Ops: operation.New(st),
-		Audit: audit.New(st), Systemd: e.sd, BinDir: e.bin, StagingDir: e.staging, Unit: "homestead-server.service",
-		Running: "0.1.0", RestartWait: time.Hour,
+	e.pub, e.priv, _ = ed25519.GenerateKey(rand.Reader)
+	_, _ = rand.Read(e.keyID[:])
+	rel := release.NewStore(st)
+	if _, err := rel.AddKey(e.pubText(), "test", "tester"); err != nil {
+		t.Fatal(err)
 	}
-	e.artifact = filepath.Join(dir, "art", "homestead-server")
+	e.a = &Applier{
+		Releases: rel, Markers: NewStore(st), Runner: operation.NewRunner(st), Ops: operation.New(st),
+		Audit: audit.New(st), Systemd: e.sd, BinDir: e.bin, StagingDir: e.staging,
+		Unit: "homestead-server.service", ApplyUnit: "homestead-apply.service", Running: "0.1.0",
+		Listen: "127.0.0.1:8080", SocketPath: "/run/homestead/homestead.sock", AwaitPoll: 5 * time.Millisecond,
+	}
+	e.execSHA = func(int) (string, error) { return hashFile(filepath.Join(e.bin, "homestead-server")) }
+	e.r = &Runner{
+		Releases: rel, Markers: e.a.Markers, Ops: e.a.Ops, Audit: e.a.Audit, Systemd: e.sd,
+		Unit: "homestead-server.service", StagingDir: e.staging,
+		HealthTimeout: 150 * time.Millisecond, HealthInterval: 5 * time.Millisecond,
+		ExecDigest: func(pid int) (string, error) { return e.execSHA(pid) },
+	}
 	return e
 }
 
-// verified records a verified release for component with artifact content.
-func (e *env) verified(component, version string, counter int64, content string) {
+func (e *env) pubText() string {
+	b := append([]byte("Ed"), e.keyID[:]...)
+	b = append(b, e.pub...)
+	return "untrusted comment: test\n" + base64.StdEncoding.EncodeToString(b) + "\n"
+}
+
+func (e *env) sign(sums []byte) string {
+	sig := ed25519.Sign(e.priv, sums)
+	raw := append(append([]byte("Ed"), e.keyID[:]...), sig...)
+	global := ed25519.Sign(e.priv, append(append([]byte(nil), sig...), []byte("t")...))
+	return "untrusted comment: s\n" + base64.StdEncoding.EncodeToString(raw) + "\ntrusted comment: t\n" + base64.StdEncoding.EncodeToString(global) + "\n"
+}
+
+// release writes a signed release for component and records it verified,
+// as `updates verify` would. It returns the request for it.
+func (e *env) release(component, version string, counter int64, content string) Request {
 	e.t.Helper()
-	e.artifact = filepath.Join(filepath.Dir(e.artifact), component)
-	if err := os.WriteFile(e.artifact, []byte(content), 0o644); err != nil {
+	dir, _ := os.MkdirTemp(e.art, "rel")
+	artifact := filepath.Join(dir, component)
+	sums := []byte(fmt.Sprintf("version=%s\ncounter=%d\n%s  %s\n", version, counter, sum([]byte(content)), component))
+	for path, data := range map[string][]byte{artifact: []byte(content), filepath.Join(dir, "SUMS"): sums, filepath.Join(dir, "SUMS.minisig"): []byte(e.sign(sums))} {
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			e.t.Fatal(err)
+		}
+	}
+	inst, _ := e.a.Releases.Installed(component)
+	keys, _ := e.a.Releases.PublicKeys()
+	res, err := release.Verify(release.Inputs{ArtifactPath: artifact, ChecksumsPath: filepath.Join(dir, "SUMS"),
+		SignaturePath: filepath.Join(dir, "SUMS.minisig"), Trusted: keys, Installed: inst, AllowOlder: true})
+	if err != nil {
 		e.t.Fatal(err)
 	}
-	e.digest = sum([]byte(content))
 	if err := e.a.Releases.SaveRelease(release.Release{Component: component, Version: version, Counter: counter,
-		State: release.StateVerified, SHA256: e.digest, KeyID: "K", Actor: "a"}); err != nil {
+		State: release.StateVerified, SHA256: res.SHA256, KeyID: res.KeyID, Override: res.Override, Actor: "a"}); err != nil {
 		e.t.Fatal(err)
 	}
-}
-
-func (e *env) req(component string, allowOlder bool) Request {
-	return Request{Component: component, Artifact: e.artifact, Actor: "owner", AllowOlder: allowOlder}
-}
-
-func (e *env) waitRestart() {
-	e.t.Helper()
-	select {
-	case <-e.sd.called:
-	case <-time.After(5 * time.Second):
-		e.t.Fatal("restart was never requested")
-	}
+	return Request{Component: component, Artifact: artifact, Checksums: filepath.Join(dir, "SUMS"),
+		Signature: filepath.Join(dir, "SUMS.minisig"), Actor: "owner"}
 }
 
 func (e *env) read(name string) string {
@@ -114,7 +179,7 @@ func (e *env) read(name string) string {
 	return string(b)
 }
 
-func (e *env) auditActions() []audit.Entry {
+func (e *env) entries() []audit.Entry {
 	e.t.Helper()
 	entries, err := e.a.Audit.List(0)
 	if err != nil {
@@ -123,243 +188,220 @@ func (e *env) auditActions() []audit.Entry {
 	return entries
 }
 
-// newProcess simulates the daemon restarting: a fresh handle on the same
-// database, the recovery pass that keeps the marker's operation, and a
-// finalizer for the new process.
-func (e *env) newProcess(version, selfDigest string) (*Finalizer, *store.Store) {
+// start begins an apply and waits for the handoff (marker written, apply
+// unit started).
+func (e *env) start(req Request) operation.Operation {
 	e.t.Helper()
-	st, err := store.Open(e.dbPath)
+	op, err := e.a.Start(context.Background(), req)
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	e.t.Cleanup(func() { st.Close() })
-	markers := NewStore(st)
-	var keep []int64
-	if m, ok, err := markers.Pending(); err != nil {
-		e.t.Fatal(err)
-	} else if ok {
-		keep = append(keep, m.OpID)
+	select {
+	case <-e.sd.startedCh:
+	case <-time.After(5 * time.Second):
+		e.t.Fatal("apply unit was never started")
 	}
-	if err := operation.NewRunner(st).RecoverExcept(keep...); err != nil {
-		e.t.Fatal(err)
-	}
-	return &Finalizer{Releases: release.NewStore(st), Markers: markers, Ops: operation.New(st), Audit: audit.New(st),
-		Version: version, Unit: "homestead-server.service", StagingDir: e.staging,
-		SelfDigest: func() (string, error) { return selfDigest, nil }}, st
+	return op
 }
 
-func (e *env) op(st *store.Store, id int64) operation.Operation {
+func (e *env) wait(id int64) operation.Operation {
 	e.t.Helper()
-	op, err := operation.New(st).Get(id)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	op, err := e.a.Runner.Wait(ctx, id)
 	if err != nil {
 		e.t.Fatal(err)
 	}
 	return op
 }
 
-func TestApplySuccessAcrossSimulatedRestart(t *testing.T) {
+func (e *env) staged() []string {
+	entries, _ := os.ReadDir(e.staging)
+	var names []string
+	for _, en := range entries {
+		names = append(names, en.Name())
+	}
+	return names
+}
+
+func TestApplyViaApplyUnit(t *testing.T) {
 	e := newEnv(t)
-	e.verified("homestead-server", "0.2.0", 7, "new daemon")
+	req := e.release("homestead-server", "0.2.0", 7, "new daemon")
 	if err := e.a.Releases.RecordInstalled("homestead-server", "0.1.0", 3); err != nil {
 		t.Fatal(err)
 	}
-	op, err := e.a.Start(context.Background(), e.req("homestead-server", false))
-	if err != nil {
+	op := e.start(req)
+	m, ok, _ := e.a.Markers.Pending()
+	if !ok || m.OpID != op.ID || m.ToVersion != "0.2.0" || m.AllowOlder || m.Listen != "127.0.0.1:8080" {
+		t.Fatalf("marker = %+v ok=%v", m, ok)
+	}
+	if got := e.read("homestead-server"); got != "old daemon" {
+		t.Fatalf("the daemon side must not touch binaries, got %q", got)
+	}
+	if len(e.staged()) != 3 {
+		t.Fatalf("staged = %v", e.staged())
+	}
+	// A restarted daemon's recovery pass keeps the marker's operation.
+	if err := operation.NewRunner(e.st).RecoverExcept(m.OpID); err != nil {
 		t.Fatal(err)
 	}
-	e.waitRestart()
-	if got := e.read("homestead-server"); got != "new daemon" {
-		t.Fatalf("installed binary = %q", got)
-	}
-	if got := e.read("homestead-server.previous"); got != "old daemon" {
-		t.Fatalf("previous = %q", got)
-	}
-	info, _ := os.Stat(filepath.Join(e.bin, "homestead-server"))
-	if info.Mode().Perm() != 0o755 {
-		t.Fatalf("mode = %v", info.Mode())
-	}
-	prev, ok, _ := e.a.Markers.Previous("homestead-server")
-	if !ok || prev.Version != "0.1.0" || prev.Counter != 3 || prev.SHA256 != sum([]byte("old daemon")) {
-		t.Fatalf("previous record = %+v", prev)
-	}
-	// The operation is mid-restart; installed baseline unchanged.
-	if in, _ := e.a.Releases.Installed("homestead-server"); in.Counter != 3 {
-		t.Fatalf("installed moved before finalization: %+v", in)
-	}
-	marker, ok, _ := e.a.Markers.Pending()
-	if !ok || marker.OpID != op.ID || marker.ToVersion != "0.2.0" {
-		t.Fatalf("marker = %+v ok=%v", marker, ok)
-	}
-
-	fin, st := e.newProcess("0.2.0", e.digest)
-	if got := e.op(st, op.ID); got.Status != operation.StatusRunning {
+	if got, _ := e.a.Ops.Get(op.ID); got.Status != operation.StatusRunning {
 		t.Fatalf("recovery touched the marked operation: %s", got.Status)
 	}
-	done, err := fin.Run(context.Background())
-	if err != nil || !done {
-		t.Fatalf("finalize = %v, %v", done, err)
+	if err := e.r.Run(context.Background()); err != nil {
+		t.Fatal(err)
 	}
-	got := e.op(st, op.ID)
+	got := e.wait(op.ID)
 	if got.Status != operation.StatusSucceeded || !strings.Contains(got.Result, `"to_version":"0.2.0"`) {
 		t.Fatalf("op = %+v", got)
 	}
-	for _, step := range got.Steps {
-		if step.Status != operation.StatusSucceeded {
-			t.Fatalf("step %s = %s", step.Name, step.Status)
+	names := []string{}
+	for _, s := range got.Steps {
+		names = append(names, s.Name)
+		if s.Status != operation.StatusSucceeded {
+			t.Fatalf("step %s = %s", s.Name, s.Status)
 		}
 	}
-	if in, _ := release.NewStore(st).Installed("homestead-server"); in.Version != "0.2.0" || in.Counter != 7 {
+	if strings.Join(names, ",") != "stage,handoff,apply,verify-staged,preserve-previous,replace,restart,health-check" {
+		t.Fatalf("steps = %v", names)
+	}
+	if e.read("homestead-server") != "new daemon" || e.read("homestead-server.previous") != "old daemon" {
+		t.Fatal("binary swap or previous wrong")
+	}
+	if info, _ := os.Stat(filepath.Join(e.bin, "homestead-server")); info.Mode().Perm() != 0o755 {
+		t.Fatalf("mode = %v", info.Mode())
+	}
+	if len(e.sd.restarts) != 1 || e.sd.restarts[0] != "homestead-server.service" {
+		t.Fatalf("restarts = %v", e.sd.restarts)
+	}
+	prev, ok, _ := e.a.Markers.Previous("homestead-server")
+	if !ok || prev.Version != "0.1.0" || prev.Counter != 3 || prev.SHA256 != sum([]byte("old daemon")) {
+		t.Fatalf("previous = %+v", prev)
+	}
+	if in, _ := e.a.Releases.Installed("homestead-server"); in.Version != "0.2.0" || in.Counter != 7 {
 		t.Fatalf("installed = %+v", in)
 	}
-	if _, ok, _ := NewStore(st).Pending(); ok {
+	if _, ok, _ := e.a.Markers.Pending(); ok {
 		t.Fatal("marker not cleared")
 	}
-	if entries, _ := os.ReadDir(e.staging); len(entries) != 0 {
-		t.Fatalf("staging not cleaned: %v", entries)
+	if len(e.staged()) != 0 {
+		t.Fatalf("staging not cleaned: %v", e.staged())
 	}
 	var started, finalized bool
-	for _, entry := range e.auditActions() {
-		if entry.Action == ActionApply && strings.Contains(entry.Detail, "0.1.0 (counter 3) -> 0.2.0 (counter 7)") {
+	for _, en := range e.entries() {
+		if en.Action == ActionApply && strings.Contains(en.Detail, "0.1.0 (counter 3) -> 0.2.0 (counter 7)") {
 			started = true
 		}
-		if entry.Action == ActionFinalize && entry.Outcome == audit.OutcomeOK && strings.Contains(entry.Detail, "0.1.0 (counter 3) -> 0.2.0 (counter 7)") {
+		if en.Action == ActionFinalize && en.Outcome == audit.OutcomeOK && strings.Contains(en.Detail, "0.1.0 (counter 3) -> 0.2.0 (counter 7)") {
 			finalized = true
 		}
 	}
 	if !started || !finalized {
-		t.Fatalf("audit missing before/after: started=%v finalized=%v", started, finalized)
+		t.Fatalf("audit before/after: started=%v finalized=%v", started, finalized)
 	}
-	// Finalizing again is a no-op.
-	if done, err := fin.Run(context.Background()); done || err != nil {
-		t.Fatalf("second run = %v, %v", done, err)
-	}
-}
-
-func TestPlainRecoverWouldCancelMarkedOperation(t *testing.T) {
-	e := newEnv(t)
-	e.verified("homestead-server", "0.2.0", 7, "new daemon")
-	op, err := e.a.Start(context.Background(), e.req("homestead-server", false))
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.waitRestart()
-	st, _ := store.Open(e.dbPath)
-	defer st.Close()
-	if err := operation.NewRunner(st).Recover(); err != nil {
-		t.Fatal(err)
-	}
-	if got := e.op(st, op.ID); got.Status != operation.StatusCancelled {
-		t.Fatalf("status = %s", got.Status)
-	}
-	// The marker still finalizes late: the record stays terminal, the
-	// installed release is still recorded and the marker cleared.
-	fin := &Finalizer{Releases: release.NewStore(st), Markers: NewStore(st), Ops: operation.New(st), Audit: audit.New(st),
-		Version: "0.2.0", Unit: "u", SelfDigest: func() (string, error) { return e.digest, nil }}
-	if done, err := fin.Run(context.Background()); !done || err != nil {
-		t.Fatalf("late finalize = %v, %v", done, err)
-	}
-	if in, _ := release.NewStore(st).Installed("homestead-server"); in.Version != "0.2.0" {
-		t.Fatalf("installed = %+v", in)
+	if err := e.r.Run(context.Background()); !errors.Is(err, ErrNoMarker) {
+		t.Fatalf("second run = %v", err)
 	}
 }
 
-func TestDigestChangedBetweenVerifyAndApplyRefused(t *testing.T) {
-	e := newEnv(t)
-	e.verified("homestead-server", "0.2.0", 7, "new daemon")
-	// Swapped before the apply starts.
-	if err := os.WriteFile(e.artifact, []byte("evil"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.a.Start(context.Background(), e.req("homestead-server", false)); !errors.Is(err, ErrDigest) {
-		t.Fatalf("err = %v, want ErrDigest", err)
-	}
-	// Swapped after staging, before replacement.
-	e.verified("homestead-server", "0.2.0", 7, "new daemon")
-	e.a.beforeReplace = func(staged string) {
-		if err := os.WriteFile(staged, []byte("evil"), 0o755); err != nil {
-			t.Error(err)
-		}
-	}
-	op, err := e.a.Start(context.Background(), e.req("homestead-server", false))
-	if err != nil {
-		t.Fatal(err)
-	}
-	done, err := e.a.Runner.Wait(context.Background(), op.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if done.Status != operation.StatusFailed || !strings.Contains(done.Error, "refusing to replace") {
-		t.Fatalf("op = %+v", done)
-	}
-	if got := e.read("homestead-server"); got != "old daemon" {
-		t.Fatalf("binary replaced despite digest change: %q", got)
-	}
-	if _, ok, _ := e.a.Markers.Pending(); ok {
-		t.Fatal("marker written for a refused replacement")
-	}
-	if len(e.sd.calls) != 0 {
-		t.Fatal("systemd restarted")
-	}
-}
-
-func TestHealthCheckFailureMarksFailedKeepsPrevious(t *testing.T) {
-	cases := map[string]func(e *env) (*Finalizer, *store.Store){
-		"wrong digest":  func(e *env) (*Finalizer, *store.Store) { return e.newProcess("0.2.0", "deadbeef") },
-		"wrong version": func(e *env) (*Finalizer, *store.Store) { return e.newProcess("0.1.0", e.digest) },
-		"probe fails": func(e *env) (*Finalizer, *store.Store) {
-			f, st := e.newProcess("0.2.0", e.digest)
-			f.Probe = func(context.Context) error { return errors.New("listener down") }
-			return f, st
+func TestStagedFilesReverifiedFromFiles(t *testing.T) {
+	cases := map[string]func(e *env, m Marker){
+		"tampered artifact": func(e *env, m Marker) { _ = os.WriteFile(m.StagedArtifact, []byte("evil"), 0o755) },
+		"unsigned swap of artifact and checksums": func(e *env, m Marker) {
+			_ = os.WriteFile(m.StagedArtifact, []byte("evil"), 0o755)
+			sums := fmt.Sprintf("version=0.2.0\ncounter=7\n%s  homestead-server\n", sum([]byte("evil")))
+			_ = os.WriteFile(m.StagedChecksums, []byte(sums), 0o600)
+		},
+		"bad signature": func(e *env, m Marker) { _ = os.WriteFile(m.StagedSignature, []byte("junk"), 0o600) },
+		"database row alone is not enough": func(e *env, m Marker) {
+			// A different but validly signed release swapped in: the
+			// database still says the original is verified.
+			other := e.release("homestead-server", "0.3.0", 8, "other daemon")
+			for src, dst := range map[string]string{other.Artifact: m.StagedArtifact, other.Checksums: m.StagedChecksums, other.Signature: m.StagedSignature} {
+				b, _ := os.ReadFile(src)
+				_ = os.WriteFile(dst, b, 0o755)
+			}
 		},
 	}
-	for name, mk := range cases {
+	for name, tamper := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := newEnv(t)
-			e.verified("homestead-server", "0.2.0", 7, "new daemon")
+			req := e.release("homestead-server", "0.2.0", 7, "new daemon")
+			op := e.start(req)
+			m, _, _ := e.a.Markers.Pending()
+			tamper(e, m)
+			err := e.r.Run(context.Background())
+			if err == nil || !strings.Contains(err.Error(), "not changed") {
+				t.Fatalf("err = %v", err)
+			}
+			if e.read("homestead-server") != "old daemon" {
+				t.Fatal("binary replaced from tampered files")
+			}
+			if got := e.wait(op.ID); got.Status != operation.StatusFailed {
+				t.Fatalf("op = %+v", got)
+			}
+			if _, ok, _ := e.a.Markers.Pending(); ok {
+				t.Fatal("marker left")
+			}
+			if len(e.sd.restarts) != 0 {
+				t.Fatal("daemon restarted")
+			}
+		})
+	}
+}
+
+func TestHealthFailureMarksFailedKeepsPrevious(t *testing.T) {
+	cases := map[string]func(e *env){
+		"wrong digest":  func(e *env) { e.execSHA = func(int) (string, error) { return "deadbeef", nil } },
+		"never running": func(e *env) { e.sd.pid = 0 },
+		"probe fails": func(e *env) {
+			e.r.Probe = func(context.Context, Marker) error { return errors.New("listener down") }
+		},
+	}
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t)
+			req := e.release("homestead-server", "0.2.0", 7, "new daemon")
 			if err := e.a.Releases.RecordInstalled("homestead-server", "0.1.0", 3); err != nil {
 				t.Fatal(err)
 			}
-			op, err := e.a.Start(context.Background(), e.req("homestead-server", false))
-			if err != nil {
-				t.Fatal(err)
-			}
-			e.waitRestart()
-			fin, fst := mk(e)
+			op := e.start(req)
+			setup(e)
 			var hooked bool
-			fin.OnFailure = func(context.Context, Marker, error) { hooked = true }
-			done, ferr := fin.Run(context.Background())
-			if !done || ferr == nil {
-				t.Fatalf("finalize = %v, %v", done, ferr)
+			e.r.OnFailure = func(context.Context, Marker, error) { hooked = true }
+			err := e.r.Run(context.Background())
+			if err == nil {
+				t.Fatal("expected failure")
 			}
-			if !hooked {
-				t.Fatal("rollback seam not invoked")
-			}
-			for _, want := range []string{"restore manually", "homestead-server.previous", "systemctl restart"} {
-				if !strings.Contains(ferr.Error(), want) {
-					t.Fatalf("error %q missing %q", ferr, want)
+			for _, want := range []string{"was not healthy within", "restore manually", "homestead-server.previous", "systemctl restart"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("error %q missing %q", err, want)
 				}
 			}
-			got := e.op(fst, op.ID)
+			if !hooked {
+				t.Fatal("S273 seam not invoked")
+			}
+			got := e.wait(op.ID)
 			if got.Status != operation.StatusFailed || !strings.Contains(got.Error, "restore manually") {
 				t.Fatalf("op = %+v", got)
 			}
 			if e.read("homestead-server.previous") != "old daemon" {
-				t.Fatal("previous binary lost")
+				t.Fatal("previous lost")
 			}
-			if in, _ := fin.Releases.Installed("homestead-server"); in.Version != "0.1.0" || in.Counter != 3 {
-				t.Fatalf("installed changed on failure: %+v", in)
+			if in, _ := e.a.Releases.Installed("homestead-server"); in.Version != "0.1.0" || in.Counter != 3 {
+				t.Fatalf("installed changed: %+v", in)
 			}
-			if _, ok, _ := fin.Markers.Pending(); ok {
-				t.Fatal("marker not cleared")
+			if _, ok, _ := e.a.Markers.Pending(); ok {
+				t.Fatal("marker left to block future applies")
 			}
 			var audited bool
-			for _, entry := range e.auditActions() {
-				if entry.Action == ActionFinalize && entry.Outcome == audit.OutcomeError {
+			for _, en := range e.entries() {
+				if en.Action == ActionFinalize && en.Outcome == audit.OutcomeError && strings.Contains(en.Detail, "restore manually") {
 					audited = true
 				}
 			}
 			if !audited {
-				t.Fatal("failure not audited")
+				t.Fatal("failure not audited loudly")
 			}
 		})
 	}
@@ -367,61 +409,92 @@ func TestHealthCheckFailureMarksFailedKeepsPrevious(t *testing.T) {
 
 func TestOlderCounterNeedsOverrideAndIsAudited(t *testing.T) {
 	e := newEnv(t)
-	e.verified("homestead-server", "0.0.9", 5, "older daemon")
+	req := e.release("homestead-server", "0.0.9", 5, "older daemon")
 	if err := e.a.Releases.RecordInstalled("homestead-server", "0.1.0", 10); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.a.Start(context.Background(), e.req("homestead-server", false)); !errors.Is(err, ErrOlder) {
+	if _, err := e.a.Start(context.Background(), req); !errors.Is(err, ErrOlder) {
 		t.Fatalf("err = %v, want ErrOlder", err)
 	}
-	if e.read("homestead-server") != "old daemon" {
-		t.Fatal("binary touched")
-	}
-	op, err := e.a.Start(context.Background(), e.req("homestead-server", true))
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.waitRestart()
+	req.AllowOlder = true
+	op := e.start(req)
 	var override bool
-	for _, entry := range e.auditActions() {
-		if entry.Action == ActionApply && entry.Override &&
-			strings.Contains(entry.OverrideReason, "0.1.0 (counter 10)") && strings.Contains(entry.OverrideReason, "0.0.9 (counter 5)") {
+	for _, en := range e.entries() {
+		if en.Action == ActionApply && en.Override && strings.Contains(en.OverrideReason, "0.1.0 (counter 10)") && strings.Contains(en.OverrideReason, "0.0.9 (counter 5)") {
 			override = true
 		}
 	}
 	if !override {
 		t.Fatal("override not audited with both versions")
 	}
-	fin, st := e.newProcess("0.0.9", e.digest)
-	if done, err := fin.Run(context.Background()); !done || err != nil {
-		t.Fatalf("finalize = %v, %v", done, err)
+	if err := e.r.Run(context.Background()); err != nil {
+		t.Fatal(err)
 	}
-	if in, _ := release.NewStore(st).Installed("homestead-server"); in.Counter != 5 {
+	if got := e.wait(op.ID); got.Status != operation.StatusSucceeded {
+		t.Fatalf("op = %+v", got)
+	}
+	if in, _ := e.a.Releases.Installed("homestead-server"); in.Counter != 5 {
 		t.Fatalf("installed = %+v", in)
 	}
-	_ = op
 }
 
-func TestUnverifiedReleasesNeverApplied(t *testing.T) {
+func TestNoCounterBaselineNeverDemandsOverride(t *testing.T) {
+	// A dev build with an unparseable running version and no installed
+	// record is not an "older counter": it applies without the override.
 	e := newEnv(t)
-	if _, err := e.a.Start(context.Background(), e.req("homestead-server", false)); !errors.Is(err, ErrNotVerified) {
+	e.a.Running = "dev"
+	req := e.release("homestead-server", "0.0.1", 1, "first daemon")
+	op := e.start(req)
+	for _, en := range e.entries() {
+		if en.Override {
+			t.Fatalf("override audited without an older counter: %+v", en)
+		}
+	}
+	if err := e.r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.wait(op.ID); got.Status != operation.StatusSucceeded {
+		t.Fatalf("op = %+v", got)
+	}
+}
+
+func TestUnverifiedAndChangedReleasesNeverApplied(t *testing.T) {
+	e := newEnv(t)
+	if _, err := e.a.Start(context.Background(), Request{Component: "homestead-server", Artifact: "/a", Checksums: "/b", Signature: "/c", Actor: "o"}); !errors.Is(err, ErrNotVerified) {
 		t.Fatalf("no release: %v", err)
 	}
-	e.verified("homestead-server", "0.2.0", 7, "new daemon")
+	req := e.release("homestead-server", "0.2.0", 7, "new daemon")
 	for _, state := range []string{release.StateFailed, release.StateUnverified} {
 		if err := e.a.Releases.SaveRelease(release.Release{Component: "homestead-server", Version: "0.2.0", Counter: 7,
-			State: state, SHA256: e.digest, Refusal: release.RefusalRollback}); err != nil {
+			State: state, SHA256: sum([]byte("new daemon")), Refusal: release.RefusalRollback}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := e.a.Start(context.Background(), e.req("homestead-server", true)); !errors.Is(err, ErrNotVerified) {
+		req.AllowOlder = true
+		if _, err := e.a.Start(context.Background(), req); !errors.Is(err, ErrNotVerified) {
 			t.Fatalf("%s: err = %v", state, err)
 		}
 	}
-	if _, err := e.a.Start(context.Background(), Request{Component: "nope", Artifact: e.artifact, Actor: "o"}); !errors.Is(err, ErrInput) {
-		t.Fatalf("unknown component: %v", err)
+	req = e.release("homestead-server", "0.2.0", 7, "new daemon")
+	if err := os.WriteFile(req.Artifact, []byte("evil"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := e.a.Start(context.Background(), Request{Component: "homestead-server", Artifact: "rel/x", Actor: "o"}); !errors.Is(err, ErrInput) {
-		t.Fatalf("relative path: %v", err)
+	if _, err := e.a.Start(context.Background(), req); !errors.Is(err, ErrNotVerified) {
+		t.Fatalf("tampered artifact: %v", err)
+	}
+	// A different validly signed release than the one verified.
+	other := e.release("homestead-server", "0.3.0", 9, "other")
+	rec := e.release("homestead-server", "0.2.0", 7, "new daemon")
+	_ = rec
+	if _, err := e.a.Start(context.Background(), other); !errors.Is(err, ErrDigest) {
+		t.Fatalf("files differ from the verified record: %v", err)
+	}
+	for _, bad := range []Request{
+		{Component: "nope", Artifact: "/a", Checksums: "/b", Signature: "/c", Actor: "o"},
+		{Component: "homestead-server", Artifact: "rel/x", Checksums: "/b", Signature: "/c", Actor: "o"},
+	} {
+		if _, err := e.a.Start(context.Background(), bad); !errors.Is(err, ErrInput) {
+			t.Fatalf("%+v: %v", bad, err)
+		}
 	}
 	if e.read("homestead-server") != "old daemon" {
 		t.Fatal("binary touched")
@@ -430,31 +503,22 @@ func TestUnverifiedReleasesNeverApplied(t *testing.T) {
 
 func TestSameVersionIsCurrent(t *testing.T) {
 	e := newEnv(t)
-	e.verified("homestead-server", "0.1.0", 7, "same")
-	if _, err := e.a.Start(context.Background(), e.req("homestead-server", false)); !errors.Is(err, ErrCurrent) {
+	req := e.release("homestead-server", "0.1.0", 7, "same")
+	if _, err := e.a.Start(context.Background(), req); !errors.Is(err, ErrCurrent) {
 		t.Fatalf("err = %v", err)
-	}
-	// A plain version downgrade with no counter policy needs the override.
-	e.verified("homestead-server", "0.0.5", 2, "lower")
-	if _, err := e.a.Start(context.Background(), e.req("homestead-server", false)); !errors.Is(err, ErrOlder) {
-		t.Fatalf("downgrade err = %v", err)
 	}
 }
 
 func TestConcurrentApplyRefused(t *testing.T) {
 	e := newEnv(t)
-	e.verified("homestead-server", "0.2.0", 7, "new daemon")
-	if _, err := e.a.Start(context.Background(), e.req("homestead-server", false)); err != nil {
-		t.Fatal(err)
-	}
-	e.waitRestart()
-	if _, err := e.a.Start(context.Background(), e.req("homestead-server", false)); !errors.Is(err, ErrBusy) {
+	req := e.release("homestead-server", "0.2.0", 7, "new daemon")
+	e.start(req)
+	if _, err := e.a.Start(context.Background(), req); !errors.Is(err, ErrBusy) {
 		t.Fatalf("err = %v, want ErrBusy", err)
 	}
-	// The marker alone also refuses (another process, or a restart gap).
 	other := &Applier{Releases: e.a.Releases, Markers: e.a.Markers, Runner: e.a.Runner, Ops: e.a.Ops, Audit: e.a.Audit,
-		Systemd: e.sd, BinDir: e.bin, StagingDir: e.staging, Unit: e.a.Unit, Running: e.a.Running}
-	if _, err := other.Start(context.Background(), e.req("homestead-server", false)); !errors.Is(err, ErrBusy) {
+		Systemd: e.sd, BinDir: e.bin, StagingDir: e.staging, Unit: e.a.Unit, ApplyUnit: e.a.ApplyUnit, Running: e.a.Running}
+	if _, err := other.Start(context.Background(), req); !errors.Is(err, ErrBusy) {
 		t.Fatalf("marker err = %v", err)
 	}
 	if err := e.a.Markers.Begin(Marker{OpID: 99, Component: "x"}); !errors.Is(err, ErrPending) {
@@ -462,74 +526,206 @@ func TestConcurrentApplyRefused(t *testing.T) {
 	}
 }
 
+func TestHandoffFailureClearsEverything(t *testing.T) {
+	e := newEnv(t)
+	e.sd.startErr = errors.New("Unit homestead-apply.service not found")
+	req := e.release("homestead-server", "0.2.0", 7, "new daemon")
+	op, err := e.a.Start(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := e.wait(op.ID)
+	if got.Status != operation.StatusFailed || !strings.Contains(got.Error, "make install") {
+		t.Fatalf("op = %+v", got)
+	}
+	if _, ok, _ := e.a.Markers.Pending(); ok {
+		t.Fatal("marker left")
+	}
+	if len(e.staged()) != 0 {
+		t.Fatalf("staging left: %v", e.staged())
+	}
+}
+
 func TestRestartRequestFailureUndoesReplacement(t *testing.T) {
 	e := newEnv(t)
-	e.verified("homestead-server", "0.2.0", 7, "new daemon")
-	e.sd.err = errors.New("no systemd")
-	op, err := e.a.Start(context.Background(), e.req("homestead-server", false))
-	if err != nil {
-		t.Fatal(err)
-	}
-	done, err := e.a.Runner.Wait(context.Background(), op.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if done.Status != operation.StatusFailed || !strings.Contains(done.Error, "replacement undone") {
-		t.Fatalf("op = %+v", done)
+	e.sd.restartFn = func() error { return errors.New("no systemd") }
+	req := e.release("homestead-server", "0.2.0", 7, "new daemon")
+	op := e.start(req)
+	err := e.r.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "replacement undone") || !strings.Contains(err.Error(), "was not changed") {
+		t.Fatalf("err = %v", err)
 	}
 	if e.read("homestead-server") != "old daemon" {
 		t.Fatal("old binary not back")
 	}
+	if got := e.wait(op.ID); got.Status != operation.StatusFailed {
+		t.Fatalf("op = %+v", got)
+	}
+}
+
+func TestDaemonSideNeverTimesOutOrDoubleFinalizes(t *testing.T) {
+	e := newEnv(t)
+	req := e.release("homestead-server", "0.2.0", 7, "new daemon")
+	op := e.start(req)
+	// The apply unit is slow: the daemon-side wait must not fail the
+	// operation on its own.
+	time.Sleep(150 * time.Millisecond)
+	if got, _ := e.a.Ops.Get(op.ID); got.Status != operation.StatusRunning {
+		t.Fatalf("op = %s while the apply unit still owns it", got.Status)
+	}
+	if err := e.r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := e.wait(op.ID)
+	time.Sleep(50 * time.Millisecond) // let the daemon-side step observe it
+	again, _ := e.a.Ops.Get(op.ID)
+	if got.Status != operation.StatusSucceeded || again.Status != operation.StatusSucceeded || again.Error != "" {
+		t.Fatalf("op = %+v / %+v", got, again)
+	}
+	for _, en := range e.entries() {
+		if en.Outcome == audit.OutcomeError {
+			t.Fatalf("error audit on a successful apply: %+v", en)
+		}
+	}
+}
+
+func TestCancelledOperationAbortsUnitWithoutChange(t *testing.T) {
+	e := newEnv(t)
+	req := e.release("homestead-server", "0.2.0", 7, "new daemon")
+	op := e.start(req)
+	if err := e.a.Runner.Cancel(op.ID); err != nil {
+		t.Fatal(err)
+	}
+	err := e.r.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "no longer open") {
+		t.Fatalf("err = %v", err)
+	}
+	if e.read("homestead-server") != "old daemon" {
+		t.Fatal("binary changed for a cancelled operation")
+	}
 	if _, ok, _ := e.a.Markers.Pending(); ok {
-		t.Fatal("marker left behind")
+		t.Fatal("marker left")
 	}
 }
 
-func TestRestartWaitTimeoutKeepsMarker(t *testing.T) {
+func TestClearApply(t *testing.T) {
 	e := newEnv(t)
-	e.a.RestartWait = 50 * time.Millisecond
-	e.verified("homestead-server", "0.2.0", 7, "new daemon")
-	op, err := e.a.Start(context.Background(), e.req("homestead-server", false))
-	if err != nil {
-		t.Fatal(err)
+	if _, err := e.a.ClearApply(context.Background(), "owner"); !errors.Is(err, ErrNoPending) {
+		t.Fatalf("nothing pending: %v", err)
 	}
-	done, err := e.a.Runner.Wait(context.Background(), op.ID)
-	if err != nil {
-		t.Fatal(err)
+	req := e.release("homestead-server", "0.2.0", 7, "new daemon")
+	op := e.start(req)
+	e.sd.active = true
+	if _, err := e.a.ClearApply(context.Background(), "owner"); !errors.Is(err, ErrBusy) {
+		t.Fatalf("active unit: %v", err)
 	}
-	if done.Status != operation.StatusFailed || !strings.Contains(done.Error, "did not stop") {
-		t.Fatalf("op = %+v", done)
+	e.sd.active = false
+	m, err := e.a.ClearApply(context.Background(), "owner")
+	if err != nil || m.OpID != op.ID {
+		t.Fatalf("clear = %+v, %v", m, err)
 	}
-	if _, ok, _ := e.a.Markers.Pending(); !ok {
-		t.Fatal("marker must stay so a later restart finalizes")
+	got := e.wait(op.ID)
+	if got.Status != operation.StatusFailed || !strings.Contains(got.Error, "cleared by owner") {
+		t.Fatalf("op = %+v", got)
 	}
+	if _, ok, _ := e.a.Markers.Pending(); ok {
+		t.Fatal("marker left")
+	}
+	var audited bool
+	for _, en := range e.entries() {
+		if en.Action == ActionClear && en.Actor == "owner" {
+			audited = true
+		}
+	}
+	if !audited {
+		t.Fatal("clear not audited")
+	}
+	// New applies are possible again.
+	e.start(e.release("homestead-server", "0.2.0", 7, "new daemon"))
 }
 
-func TestCLIComponentAppliesWithoutRestart(t *testing.T) {
+func TestFirstCLIApplyUsesCLIOwnFrom(t *testing.T) {
 	e := newEnv(t)
-	e.verified("homesteadctl", "0.2.0", 7, "new ctl")
-	op, err := e.a.Start(context.Background(), e.req("homesteadctl", false))
-	if err != nil {
+	e.a.Running = "0.2.0" // the daemon already runs the release version
+	req := e.release("homesteadctl", "0.2.0", 7, "new ctl")
+	op := e.start(req)
+	m, _, _ := e.a.Markers.Pending()
+	if strings.Contains(m.FromVersion, "0.2.0") || !strings.HasPrefix(m.FromVersion, "unrecorded (sha256 ") {
+		t.Fatalf("from = %q, must come from the CLI's own state", m.FromVersion)
+	}
+	if err := e.r.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	done, err := e.a.Runner.Wait(context.Background(), op.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if done.Status != operation.StatusSucceeded {
-		t.Fatalf("op = %+v", done)
+	if got := e.wait(op.ID); got.Status != operation.StatusSucceeded {
+		t.Fatalf("op = %+v", got)
 	}
 	if e.read("homesteadctl") != "new ctl" || e.read("homesteadctl.previous") != "old ctl" {
 		t.Fatal("CLI not replaced with previous kept")
 	}
-	if len(e.sd.calls) != 0 {
+	if len(e.sd.restarts) != 0 {
 		t.Fatal("CLI apply must not restart the daemon")
 	}
 	if in, _ := e.a.Releases.Installed("homesteadctl"); in.Version != "0.2.0" || in.Counter != 7 {
 		t.Fatalf("installed = %+v", in)
 	}
-	if _, ok, _ := e.a.Markers.Pending(); ok {
-		t.Fatal("marker left")
+	// The same release again is current (identical binary).
+	if _, err := e.a.Start(context.Background(), req); !errors.Is(err, ErrCurrent) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestSyncDirFailureAfterRenameKeepsTheSwap(t *testing.T) {
+	e := newEnv(t)
+	real := syncDir
+	t.Cleanup(func() { syncDir = real })
+	syncDir = func(dir string) error {
+		if b, _ := os.ReadFile(filepath.Join(e.bin, "homestead-server")); string(b) == "new daemon" {
+			return errors.New("fsync: input/output error")
+		}
+		return real(dir)
+	}
+	req := e.release("homestead-server", "0.2.0", 7, "new daemon")
+	op := e.start(req)
+	if err := e.r.Run(context.Background()); err != nil {
+		t.Fatalf("a durable-only failure must not fail the apply: %v", err)
+	}
+	if got := e.wait(op.ID); got.Status != operation.StatusSucceeded || e.read("homestead-server") != "new daemon" {
+		t.Fatalf("op = %+v", got)
+	}
+	var noted bool
+	for _, en := range e.entries() {
+		if strings.Contains(en.Detail, "fsync of its directory failed") {
+			noted = true
+		}
+	}
+	if !noted {
+		t.Fatal("fsync failure not recorded")
+	}
+}
+
+func TestRecordInstalledFailureFailsOperationAndClearsMarker(t *testing.T) {
+	for _, component := range []string{"homesteadctl", "homestead-server"} {
+		t.Run(component, func(t *testing.T) {
+			e := newEnv(t)
+			e.r.RecordInstalled = func(string, string, int64) error { return errors.New("database is locked") }
+			req := e.release(component, "0.2.0", 7, "new "+component)
+			op := e.start(req)
+			err := e.r.Run(context.Background())
+			if err == nil || !strings.Contains(err.Error(), "could not be recorded") {
+				t.Fatalf("err = %v", err)
+			}
+			if got := e.wait(op.ID); got.Status != operation.StatusFailed {
+				t.Fatalf("op = %+v", got)
+			}
+			if _, ok, _ := e.a.Markers.Pending(); ok {
+				t.Fatal("marker left to block future applies")
+			}
+			// A later apply can start.
+			e.r.RecordInstalled = nil
+			if _, err := e.a.Start(context.Background(), e.release(component, "0.3.0", 8, "newer "+component)); err != nil {
+				t.Fatalf("later apply refused: %v", err)
+			}
+		})
 	}
 }
 
@@ -551,7 +747,7 @@ func TestRestoreCommandAndRestorePrevious(t *testing.T) {
 		t.Fatalf("restored = %q", b)
 	}
 	cmd := RestoreCommand(Marker{BinaryPath: bin, PreviousPath: prev}, "homestead-server")
-	if !strings.Contains(cmd, "mv "+bin+".restore "+bin) || !strings.HasSuffix(cmd, "systemctl restart homestead-server") {
+	if !strings.Contains(cmd, "mv "+bin+".restore "+bin) || !strings.HasSuffix(cmd, "systemctl restart homestead-server") || !strings.Contains(cmd, "reset-failed") {
 		t.Fatalf("command = %s", cmd)
 	}
 }

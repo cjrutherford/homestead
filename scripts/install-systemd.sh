@@ -38,6 +38,10 @@ rm -rf "$CATALOG_DST"
 mkdir -p "$(dirname "$CATALOG_DST")"
 cp -r "$CATALOG_SRC" "$CATALOG_DST"
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"
+# The privileged apply unit (ADR-027) ships disabled: the daemon starts it
+# on demand when a verified platform update is applied. Only this unit may
+# write /usr/local/bin.
+install -m 0644 "$REPO/systemd/homestead-apply.service" /etc/systemd/system/homestead-apply.service
 # The tunnel connector unit ships disabled: tunnel setup enables it once
 # a tunnel exists (S246). Installing the file needs privilege; enabling
 # stays an explicit setup-time act, never a side effect of install.

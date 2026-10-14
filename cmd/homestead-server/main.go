@@ -31,6 +31,14 @@ import (
 )
 
 func main() {
+	// The privileged apply unit runs this binary in apply mode (ADR-027).
+	if len(os.Args) > 1 && os.Args[1] == "apply-platform" {
+		if err := runApplyPlatform(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "homestead-apply:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	listen := flag.String("listen", server.DefaultAddr, "address to bind (loopback by default; see ADR-006)")
 	configPath := flag.String("config", desired.DefaultPath(), "desired-state file (S014)")
 	dataDir := flag.String("data-dir", layout.LibDir.Path, "operational state directory (S012)")
@@ -58,9 +66,10 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	defer st.Close()
 	// No operation record may claim to run forever: fail anything a dead
 	// daemon left behind (S061).
-	// An in-flight platform update (S265) ended this process on purpose:
-	// its operation is finalized below from the persisted marker, so
-	// recovery must not fail it as interrupted first.
+	// An in-flight platform update (S265) restarted this process on
+	// purpose: the privileged apply unit (ADR-027) finalizes its
+	// operation from the persisted marker, so recovery must not fail it
+	// as interrupted first.
 	var keep []int64
 	if marker, ok, err := platformapply.NewStore(st).Pending(); err != nil {
 		return err
@@ -79,6 +88,7 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 		return err
 	}
 	srv := server.New(listen)
+	srv.SocketPath = socketPath
 	app := server.AppConfig{
 		Store: st, ConfigPath: configPath, CatalogDir: catalogDir,
 		SecretKeyPath: secret.DefaultKeyPath(), Port: port,
@@ -122,9 +132,6 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	go func() {
 		unixErr <- srv.RunUnix(ctx, socketPath)
 	}()
-	// Finalize a pending platform update (S265) once the listeners are
-	// answering: health check, operation finalization, installed record.
-	go finalizePlatformApply(ctx, st, listen, socketPath)
 	if err := srv.Run(ctx); err != nil {
 		return err
 	}

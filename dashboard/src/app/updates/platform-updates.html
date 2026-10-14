@@ -50,8 +50,9 @@
   @if (view()?.pending; as pending) {
     <p class="warning">
       Platform update {{ pending.component }} {{ pending.from_version }} →
-      {{ pending.to_version }} is awaiting finalization after the daemon
-      restart (operation {{ pending.op_id }}).
+      {{ pending.to_version }} is being applied by the privileged apply unit (operation {{ pending.op_id }}). If the apply unit died, clear
+      it.
+      <button type="button" (click)="clearApply()" [disabled]="busy()">Clear stale apply</button>
     </p>
   }
   @if (applyOperation(); as id) {
@@ -64,8 +65,9 @@
 
   <h3>Apply a verified release</h3>
   <p>
-    Applies the artifact named under Artifact below: its bytes must still match
-    what was verified. The previous binary is kept for manual restore.
+    Applies the files named under Artifact, Checksums file and Signature file
+    below: they are verified again and staged, and a separate privileged unit
+    verifies the staged copies once more before replacing anything. The previous binary is kept for manual restore.
   </p>
   @for (release of view()?.releases ?? []; track release.component) {
     @if (release.state === 'verified' && release.version) {
@@ -92,7 +94,7 @@
             I confirm applying an older release (recorded in the audit trail)
           </label>
         }
-        <button type="button" (click)="apply(release)" [disabled]="busy() || !artifact || !applyConfirmed">
+        <button type="button" (click)="apply(release)" [disabled]="busy() || !artifact || !checksums || !signature || !applyConfirmed">
           Apply {{ release.component }} {{ release.version }}
         </button>
       </div>

@@ -110,6 +110,8 @@ func applyPlatformStub(t *testing.T) (string, *[]string) {
 				return
 			}
 			_, _ = w.Write([]byte(`{"id":12}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/platform/updates/clear-apply":
+			_, _ = w.Write([]byte(`{"op_id":12,"component":"homestead-server","from_version":"0.1.0","to_version":"0.2.0"}`))
 		case r.URL.Path == "/api/v1/operations/12/events":
 			// The daemon restarts mid-stream: the stream ends non-terminal.
 			w.Header().Set("Content-Type", "text/event-stream")
@@ -134,7 +136,8 @@ func TestUpdatesApplyPlatformFollowsAcrossRestart(t *testing.T) {
 	t.Cleanup(func() { applyFollowPoll = 2 * time.Second })
 	url, bodies := applyPlatformStub(t)
 	code, stdout, stderr := invoke(t, []string{"--server", url, "updates", "apply-platform",
-		"--component", "homestead-server", "--artifact", "/srv/rel/homestead-server", "--follow"})
+		"--component", "homestead-server", "--artifact", "/srv/rel/homestead-server",
+		"--checksums", "/srv/rel/SUMS", "--signature", "/srv/rel/SUMS.minisig", "--follow"})
 	if code != exitOK {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
@@ -143,7 +146,8 @@ func TestUpdatesApplyPlatformFollowsAcrossRestart(t *testing.T) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout)
 		}
 	}
-	if len(*bodies) != 1 || !strings.Contains((*bodies)[0], `"artifact":"/srv/rel/homestead-server"`) {
+	if len(*bodies) != 1 || !strings.Contains((*bodies)[0], `"artifact":"/srv/rel/homestead-server"`) ||
+		!strings.Contains((*bodies)[0], `"checksums":"/srv/rel/SUMS"`) || !strings.Contains((*bodies)[0], `"signature":"/srv/rel/SUMS.minisig"`) {
 		t.Fatalf("bodies = %v", *bodies)
 	}
 }
@@ -151,12 +155,14 @@ func TestUpdatesApplyPlatformFollowsAcrossRestart(t *testing.T) {
 func TestUpdatesApplyPlatformOlderAndUsage(t *testing.T) {
 	url, bodies := applyPlatformStub(t)
 	code, _, stderr := invoke(t, []string{"--server", url, "updates", "apply-platform",
-		"--component", "homestead-server", "--artifact", "/srv/older/homestead-server"})
+		"--component", "homestead-server", "--artifact", "/srv/older/homestead-server",
+		"--checksums", "/srv/older/SUMS", "--signature", "/srv/older/SUMS.minisig"})
 	if code != exitError || !strings.Contains(stderr, "--allow-older") {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
 	code, stdout, _ := invoke(t, []string{"--server", url, "updates", "apply-platform",
-		"--component", "homestead-server", "--artifact", "/srv/older/homestead-server", "--allow-older"})
+		"--component", "homestead-server", "--artifact", "/srv/older/homestead-server",
+		"--checksums", "/srv/older/SUMS", "--signature", "/srv/older/SUMS.minisig", "--allow-older"})
 	if code != exitOK || !strings.Contains(stdout, "operation: 12") {
 		t.Fatalf("override exit = %d, stdout = %q", code, stdout)
 	}
@@ -165,11 +171,22 @@ func TestUpdatesApplyPlatformOlderAndUsage(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"updates", "apply-platform"},
-		{"updates", "apply-platform", "--component", "homestead-server"},
+		{"updates", "apply-platform", "--component", "homestead-server", "--artifact", "/a"},
 		{"updates", "apply-platform", "--bogus"},
 	} {
 		if code, _, _ := invoke(t, append([]string{"--server", url}, args...)); code != exitUsage {
 			t.Fatalf("%v exit = %d, want usage", args, code)
 		}
+	}
+}
+
+func TestUpdatesPlatformClearApply(t *testing.T) {
+	url, _ := applyPlatformStub(t)
+	code, stdout, stderr := invoke(t, []string{"--server", url, "updates", "platform", "clear-apply"})
+	if code != exitOK || !strings.Contains(stdout, "cleared the pending apply") || !strings.Contains(stdout, "operation 12") {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", code, stdout, stderr)
+	}
+	if code, _, _ := invoke(t, []string{"--server", url, "updates", "platform", "bogus"}); code != exitUsage {
+		t.Fatalf("exit = %d, want usage", code)
 	}
 }

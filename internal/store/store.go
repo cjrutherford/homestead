@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 33
+const CurrentVersion = 34
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -615,6 +615,41 @@ CREATE TABLE IF NOT EXISTS platform_previous (
 	sha256 TEXT NOT NULL,
 	path TEXT NOT NULL,
 	recorded_at TEXT NOT NULL
+);`,
+	},
+	{
+		// ADR-027: the daemon stages and hands off to a privileged apply
+		// unit, so the marker names the staged files, the listeners the
+		// unit health-checks, and whether the owner allowed an older
+		// release.
+		version: 34,
+		name:    "platform apply marker staged files for the apply unit",
+		sql: `
+-- The marker is transient (pending applies only), so the table is
+-- rebuilt rather than altered: idempotent for rewound upgrade tests.
+DROP TABLE IF EXISTS platform_apply_marker;
+CREATE TABLE platform_apply_marker (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	op_id INTEGER NOT NULL,
+	component TEXT NOT NULL,
+	from_version TEXT NOT NULL,
+	from_counter INTEGER NOT NULL,
+	to_version TEXT NOT NULL,
+	to_counter INTEGER NOT NULL,
+	sha256 TEXT NOT NULL,
+	binary_path TEXT NOT NULL,
+	previous_path TEXT NOT NULL,
+	previous_sha256 TEXT NOT NULL,
+	override INTEGER NOT NULL DEFAULT 0,
+	override_reason TEXT NOT NULL DEFAULT '',
+	actor TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	staged_artifact TEXT NOT NULL DEFAULT '',
+	staged_checksums TEXT NOT NULL DEFAULT '',
+	staged_signature TEXT NOT NULL DEFAULT '',
+	allow_older INTEGER NOT NULL DEFAULT 0,
+	listen TEXT NOT NULL DEFAULT '',
+	socket_path TEXT NOT NULL DEFAULT ''
 );`,
 	},
 }

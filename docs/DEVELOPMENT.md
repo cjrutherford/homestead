@@ -1326,6 +1326,13 @@ Details:
 - The unit binds loopback only and runs `Restart=on-failure`, with
   `ReadWritePaths` granting exactly the state directories above.
   `/opt/homestead/stacks` follows when stack lifecycle lands (S074+).
+- Platform updates (S265, ADR-027): the daemon unit has no write grant on
+  `/usr/local/bin`. `make install` also installs the oneshot
+  `homestead-apply.service` (never enabled), the only unit that writes the
+  binaries; the daemon starts it to apply a staged, verified release
+  (`homestead-server apply-platform`). `homestead-server.service` bounds
+  crash loops with `StartLimitIntervalSec=300`/`StartLimitBurst=5`. See
+  `docs/architecture/RELEASE_VERIFICATION.md`.
 - Install requires the Go toolchain on the machine. Appliance-side
   provisioning (fetching Go or prebuilt binaries) belongs to the bootstrap
   script (S220), not to this slice.

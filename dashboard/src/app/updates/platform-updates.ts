@@ -104,6 +104,8 @@ export class PlatformUpdatesPanel implements OnInit {
       .platformApply({
         component: release.component,
         artifact: this.artifact,
+        checksums: this.checksums,
+        signature: this.signature,
         allow_older: this.applyOlderConfirmed,
       })
       .subscribe({
@@ -122,6 +124,23 @@ export class PlatformUpdatesPanel implements OnInit {
           this.fail(failure);
         },
       });
+  }
+
+  /** Clears a stale apply marker after the apply unit died (audited). */
+  clearApply(): void {
+    this.busy.set(true);
+    this.error.set(null);
+    this.notice.set(null);
+    this.api.platformClearApply().subscribe({
+      next: (cleared) => {
+        this.busy.set(false);
+        this.notice.set(
+          `Cleared the pending apply of ${cleared.component} (operation ${cleared.op_id} marked failed).`,
+        );
+        this.refresh();
+      },
+      error: (failure: HttpErrorResponse) => this.fail(failure),
+    });
   }
 
   addKey(): void {

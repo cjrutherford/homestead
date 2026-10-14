@@ -30,6 +30,11 @@ func openSource(path string) (*os.File, os.FileInfo, error) {
 // explicitly (umask-proof), data and file fsynced. It returns the
 // SHA-256 and size of the bytes written, bounded by the artifact limit.
 func copyFile(src, dst string, mode os.FileMode) (string, int64, error) {
+	return copyFileLimit(src, dst, mode, release.MaxArtifactBytes)
+}
+
+// copyFileLimit is copyFile bounded by limit bytes.
+func copyFileLimit(src, dst string, mode os.FileMode, limit int64) (string, int64, error) {
 	in, _, err := openSource(src)
 	if err != nil {
 		return "", 0, err
@@ -43,8 +48,8 @@ func copyFile(src, dst string, mode os.FileMode) (string, int64, error) {
 		return "", 0, err
 	}
 	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(out, h), io.LimitReader(in, release.MaxArtifactBytes+1))
-	if err == nil && n > release.MaxArtifactBytes {
+	n, err := io.Copy(io.MultiWriter(out, h), io.LimitReader(in, limit+1))
+	if err == nil && n > limit {
 		err = release.ErrTooLarge
 	}
 	if err == nil {
@@ -78,8 +83,11 @@ func hashFile(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// syncDir fsyncs a directory so a rename inside it is durable.
-func syncDir(dir string) error {
+// syncDir fsyncs a directory so a rename inside it is durable; a
+// variable so tests can inject a failure after the swap.
+var syncDir = syncDirOS
+
+func syncDirOS(dir string) error {
 	d, err := os.Open(dir)
 	if err != nil {
 		return err
