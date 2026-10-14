@@ -2418,3 +2418,47 @@ Engine (a remote `DOCKER_HOST` compares paths lexically).
   not a comparison bug. Not exercised: an app attached to the
   `homestead-edge` network (no app is exposed on VM 1; caddy is not a
   catalog package).
+
+## Platform update apply (S265, ADR-027)
+
+- Proven live in KVM (S265, bb4f451, deployed with
+  `scripts/install-systemd.sh`; both appliances; throwaway Ed25519
+  minisig-format key, releases built with `-ldflags` versions under
+  `/srv/releases`): `homestead-apply.service` was installed and the
+  daemon unit had no `/usr/local/bin` write grant. A daemon apply with
+  `--follow` ran the apply unit (journal), restarted the daemon whose
+  `/proc/<pid>/exe` and installed file matched the artifact digest,
+  succeeded, audited before and after versions, moved the installed
+  baseline, kept `homestead-server.previous` and cleared the marker;
+  `--follow` survived the restart. A CLI apply replaced the binary with
+  no daemon restart. Counter 2 applied; counter 1 afterwards was
+  refused at verify and at apply without `--allow-older`, and with it
+  applied and was audited with both versions and counters. A build that
+  exits at start: the unit's 90 s health timeout failed the operation,
+  the marker was cleared, the previous binary stayed, systemd stopped
+  restarting at the start limit (daemon `failed`), doctor reported
+  `platform-apply` failed and the journal carried the manual restore
+  command, which (with `reset-failed`) brought the daemon back; the
+  operation stayed failed. A binary whose embedded version differed from
+  its checksums version failed the health check on the version probe and
+  was reported truthfully. A tampered file under `/srv` after verify was
+  refused by the daemon; the staged copy tampered while a drop-in delayed
+  the apply unit was refused by the unit's re-verification
+  (`verify-staged`) with the installed binary unchanged. `clear-apply`
+  was refused while the unit ran; after the unit was stopped and the
+  marker aged past 15 minutes (the row's `created_at` edited, the
+  threshold being a constant) doctor warned, `clear-apply` failed the
+  operation and cleared the marker, audited, and a second call answered
+  404.
+- Found and fixed in KVM: verifying a CLI release whose version equalled
+  the daemon's running version seeded the CLI baseline, so the real CLI
+  apply was refused as installed (ff731c7); an open operation event
+  stream held the daemon's graceful shutdown until its timeout, so it
+  exited with an error during an apply restart (876d943); several
+  restarts within five minutes made the apply unit's own restart fail
+  on the start-rate limit and left the daemon down after the undo
+  (bb4f451: reset-failed first, restart again after an undone swap).
+- Not exercised: the dashboard apply and clear actions; a power loss
+  between the rename and the health check; a daemon killed mid-apply.
+  The plan view still reports the daemon's version as the CLI's running
+  version.
