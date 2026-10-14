@@ -36,6 +36,12 @@ func NewCertIssuing(st *store.Store, secrets *secret.Store) (*cert.Issuing, erro
 		StackDir: stackDir, CloudflareAPI: os.Getenv(cert.EnvCloudflareAPI),
 		Probe:  cert.ProbeFromEnv(os.Getenv),
 		Routes: func() ([]docker.Route, error) { return servedCandidateRoutes(st) },
+		// Renewal attempts and account re-registrations are audited, never
+		// with key material (S272).
+		Audit: func(actor, action, outcome, detail string) error {
+			_, err := audit.New(st).Record(audit.Entry{Actor: actor, Action: action, Outcome: outcome, Detail: detail})
+			return err
+		},
 	}, nil
 }
 
@@ -143,6 +149,23 @@ func (s *Server) MountTLSIssuance(st *store.Store, issuing *cert.Issuing) {
 			return
 		}
 		writeJSON(w, map[string]any{"provider": body.Provider, "stored": fields})
+	})
+	// Owner action for a CA that forgot the ACME account (S272): required
+	// for production directories, available for any class. Audited by the
+	// issuance runner (success and failure).
+	s.mux.HandleFunc("POST /api/v1/tls/issuance/account/reregister", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Certificate string `json:"certificate"`
+		}
+		if err := decodeBody(r, &body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := issuing.ReregisterAccount(r.Context(), body.Certificate, operatorActor(r)); err != nil {
+			writeIssuanceError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"certificate": body.Certificate, "reregistered": true})
 	})
 	s.mux.HandleFunc("POST /api/v1/tls/issuance/apply", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {

@@ -100,8 +100,8 @@ func TestRenewalCheckSchedulesQuietlyAndReports(t *testing.T) {
 	now := issuedAt.Add(time.Hour)
 	sched := NewScheduler(st, t.TempDir(), nil, scheduler.WithClock(func() time.Time { return now }))
 	srv := New("127.0.0.1:0")
-	srv.MountTLSRenewal(st, sched.Now)
-	srv.MountDoctor(certDoctorChecks(st, sched.Now))
+	srv.MountTLSRenewal(st, nil, sched.Now)
+	srv.MountDoctor(certDoctorChecks(st, nil, sched.Now))
 
 	// Clean: the check runs as an operation but leaves no audit entry.
 	if err := sched.Tick(context.Background()); err != nil {
@@ -172,7 +172,7 @@ func TestRenewalCheckSchedulesQuietlyAndReports(t *testing.T) {
 	if failed != 1 {
 		t.Fatalf("ops = %+v", ops)
 	}
-	if got := certDoctorChecks(st, func() time.Time { return now })(); len(got) != 1 || got[0].Status != doctor.StatusFail {
+	if got := certDoctorChecks(st, nil, func() time.Time { return now })(); len(got) != 1 || got[0].Status != doctor.StatusFail {
 		t.Fatalf("doctor = %+v", got)
 	}
 }
@@ -184,19 +184,19 @@ func TestRenewalStatusEmptyWithoutStrategy(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 	srv := New("127.0.0.1:0")
-	srv.MountTLSRenewal(st, time.Now)
+	srv.MountTLSRenewal(st, nil, time.Now)
 	recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/tls/renewal", nil)
 	var report cert.RenewalReport
 	if err := json.Unmarshal(recorder.Body.Bytes(), &report); err != nil || recorder.Code != http.StatusOK ||
 		report.Recorded != 0 || !strings.Contains(report.Summary, "no recorded issuances") || report.Certificates == nil {
 		t.Fatalf("response = %d %q", recorder.Code, recorder.Body.String())
 	}
-	checks := certDoctorChecks(st, time.Now)()
+	checks := certDoctorChecks(st, nil, time.Now)()
 	if len(checks) != 1 || checks[0].Name != "tls-renewal" || checks[0].Status != doctor.StatusOK ||
 		!strings.Contains(checks[0].Detail, "no recorded issuances") {
 		t.Fatalf("doctor = %+v", checks)
 	}
-	if err := runRenewalCheck(st, time.Now()); err != nil {
+	if err := runRenewalCheck(st, nil, time.Now()); err != nil {
 		t.Fatalf("no strategy must be quiet: %v", err)
 	}
 }
@@ -216,10 +216,10 @@ func TestRenewalCorruptChainIsErrorAndDoctorFails(t *testing.T) {
 		!strings.Contains(report.Certificates[0].Detail, "corrupt") {
 		t.Fatalf("report = %+v, %v", report, err)
 	}
-	if got := certDoctorChecks(st, func() time.Time { return now })(); len(got) != 1 || got[0].Status != doctor.StatusFail {
+	if got := certDoctorChecks(st, nil, func() time.Time { return now })(); len(got) != 1 || got[0].Status != doctor.StatusFail {
 		t.Fatalf("doctor = %+v", got)
 	}
-	if err := runRenewalCheck(st, now); err == nil {
+	if err := runRenewalCheck(st, nil, now); err == nil {
 		t.Fatal("corrupt chain must fail the scheduled check")
 	}
 }

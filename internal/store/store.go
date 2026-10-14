@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 36
+const CurrentVersion = 37
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -699,6 +699,24 @@ CREATE TABLE IF NOT EXISTS cert_issuance_approvals (
 	agreed_terms INTEGER NOT NULL,
 	confirmed_production INTEGER NOT NULL,
 	approved_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S272 unattended certificate re-issue (ADR-024): the persisted
+		// retry state of each certificate's renewal, so the consecutive
+		// failure counter and next-attempt time survive restarts.
+		version: 37,
+		name:    "certificate renewal state",
+		sql: `
+CREATE TABLE IF NOT EXISTS cert_renewal_state (
+	certificate TEXT PRIMARY KEY,
+	attempts INTEGER NOT NULL DEFAULT 0,
+	next_attempt_at TEXT NOT NULL DEFAULT '',
+	last_attempt_at TEXT NOT NULL DEFAULT '',
+	last_success_at TEXT NOT NULL DEFAULT '',
+	last_error TEXT NOT NULL DEFAULT '',
+	pending_reload INTEGER NOT NULL DEFAULT 0,
+	account_recovery INTEGER NOT NULL DEFAULT 0
 );`,
 	},
 }

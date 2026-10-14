@@ -206,6 +206,9 @@ type Issuing struct {
 	// OnApprove runs before an approval is persisted; its failure aborts
 	// the approval (S278: the audit entry is written first).
 	OnApprove func(Approval) error
+	// Audit records an owner-visible event (account re-registration,
+	// renewal attempts); nil means none. Never given key material.
+	Audit func(actor, action, outcome, detail string) error
 	// Timeout bounds one issuance (DNS propagation can otherwise wait
 	// forever); zero means DefaultIssueTimeout.
 	Timeout time.Duration
@@ -524,6 +527,11 @@ func (i *Issuing) Approve(name, digest, actor string, agreeTerms, confirmProduct
 			return Approval{}, fmt.Errorf("cert: approval not recorded: %w", err)
 		}
 	}
+	// A fresh approval is a new owner decision: failed unattended retries
+	// of the previous one no longer apply.
+	if err := NewRenewalStates(i.Store).Clear(name); err != nil {
+		return Approval{}, err
+	}
 	if _, err := i.Store.DB().Exec(`INSERT INTO cert_issuance_approvals
 (certificate, digest, plan, actor, agreed_terms, confirmed_production, approved_at)
 VALUES (?, ?, ?, ?, 1, ?, ?)
@@ -629,16 +637,57 @@ func (i *Issuing) Definition(name string) (operation.Definition, error) {
 	if err != nil {
 		return operation.Definition{}, err
 	}
-	set, err := i.strategy()
+	certificate, err := i.certificateNamed(name)
 	if err != nil {
 		return operation.Definition{}, err
 	}
-	var certificate Certificate
+	run := &issueRun{plan: plan, certificate: certificate, approval: approval, served: plan.ServedRoutes}
+	def := i.steps(run)
+	// A manual issuance settles any failed unattended renewal (ADR-024):
+	// the stale retry state must not outlive the certificate it was about.
+	last := def.Steps[len(def.Steps)-1].Run
+	def.Steps[len(def.Steps)-1].Run = func(ctx context.Context) error {
+		err := last(ctx)
+		if err == nil {
+			_ = NewRenewalStates(i.Store).Clear(name)
+		}
+		return err
+	}
+	return def, nil
+}
+
+func (i *Issuing) certificateNamed(name string) (Certificate, error) {
+	set, err := i.strategy()
+	if err != nil {
+		return Certificate{}, err
+	}
 	for _, c := range set.Certificates {
 		if c.Name == name {
-			certificate = c
+			return c, nil
 		}
 	}
+	return Certificate{}, fmt.Errorf("%w: %q", ErrNotEligible, name)
+}
+
+// issueRun is one execution of the issuance steps: first issuance and
+// unattended re-issue (S272) share them, so renewal places, serves, and
+// reloads exactly as the owner-approved first issuance does.
+type issueRun struct {
+	plan        IssuancePlan
+	certificate Certificate
+	approval    Approval
+	// served are the hosts whose snippets are refreshed: the plan's for a
+	// first issuance, the approved plan's for a renewal (never wider).
+	served []string
+	// force skips reuse of the placed certificate: a renewal always
+	// orders a new one.
+	force bool
+
+	delivered    bool
+	reloadFailed bool
+}
+
+func (i *Issuing) steps(run *issueRun) operation.Definition {
 	var (
 		undo    func() error
 		warning error
@@ -646,8 +695,9 @@ func (i *Issuing) Definition(name string) (operation.Definition, error) {
 	def := operation.Definition{Type: OperationType}
 	def.Steps = []operation.StepDef{
 		{Name: "issue-and-place", Run: func(ctx context.Context) error {
-			delivered, err := i.issue(ctx, plan, certificate, approval)
+			delivered, err := i.issue(ctx, run.plan, run.certificate, run.approval, run.force)
 			if delivered {
+				run.delivered = true
 				// Issued and placed: later steps must still run so the
 				// edge serves it; the leftover problem is reported last.
 				warning = err
@@ -660,7 +710,7 @@ func (i *Issuing) Definition(name string) (operation.Definition, error) {
 			if err != nil {
 				return err
 			}
-			undo, err = docker.RefreshCertRoutes(i.StackDir, routes, plan.ServedRoutes)
+			undo, err = docker.RefreshCertRoutes(i.StackDir, routes, run.served)
 			return err
 		}},
 		{Name: "reload-edge", Run: func(ctx context.Context) error {
@@ -669,6 +719,7 @@ func (i *Issuing) Definition(name string) (operation.Definition, error) {
 				reload = docker.ReloadProxy
 			}
 			if err := reload(ctx); err != nil {
+				run.reloadFailed = true
 				if undo != nil {
 					if rbErr := undo(); rbErr != nil {
 						err = fmt.Errorf("%w (rollback also failed: %v)", err, rbErr)
@@ -682,15 +733,19 @@ func (i *Issuing) Definition(name string) (operation.Definition, error) {
 			return nil
 		}},
 	}
-	return def, nil
+	return def
 }
 
 // issue runs the ACME order through DNS01.IssueFor. delivered reports
 // that chain and key were placed (the err may still carry a cleanup or
 // recording problem). The account is persisted even when issuance
-// fails, so a registered account is never lost.
-func (i *Issuing) issue(ctx context.Context, plan IssuancePlan, certificate Certificate, approval Approval) (delivered bool, err error) {
-	if i.reusable(plan, approval) {
+// fails, so a registered account is never lost. force skips reuse of an
+// already-placed certificate (renewal). When the CA has forgotten the
+// account (accountDoesNotExist) and the directory is a test or staging CA,
+// a new account key is registered and the order retried once; production
+// directories need the owner's explicit re-registration.
+func (i *Issuing) issue(ctx context.Context, plan IssuancePlan, certificate Certificate, approval Approval, force bool) (delivered bool, err error) {
+	if !force && i.reusable(plan, approval) {
 		// A retry of an approval that already produced a certificate (for
 		// example after a refused reload): the placed, valid, recorded
 		// certificate is kept instead of ordering a new one.
@@ -706,31 +761,68 @@ func (i *Issuing) issue(ctx context.Context, plan IssuancePlan, certificate Cert
 	if err != nil {
 		return false, err
 	}
-	acct, err := i.loadAccount(plan.Directory)
-	if err != nil {
-		return false, err
-	}
-	startKID := acct.KID
-	d := &DNS01{
-		Providers: i.Providers, Secrets: i.Secrets, Client: client,
-		Probe: i.Probe, Interval: i.Interval,
-		Issuances: NewIssuances(i.Store), Now: i.now,
-		Deliver: func(name string, issued Issued) error {
-			if err := docker.PlaceCert(i.StackDir, docker.PlacedCert{Name: name, Names: plan.Names},
-				issued.ChainPEM, issued.KeyPEM); err != nil {
-				return err
-			}
-			delivered = true
-			return nil
-		},
-	}
-	_, issueErr := d.IssueFor(ctx, plan.Certificate, acct, certificate.Issuer, plan.Zone, plan.Names, approval.AgreedTerms)
-	if acct.KID != "" && acct.KID != startKID {
-		if saveErr := i.saveAccount(plan.Directory, acct); saveErr != nil {
-			issueErr = errors.Join(issueErr, fmt.Errorf("cert: saving ACME account location: %w", saveErr))
+	for attempt := 0; ; attempt++ {
+		acct, err := i.loadAccount(plan.Directory)
+		if err != nil {
+			return false, err
 		}
+		startKID := acct.KID
+		d := &DNS01{
+			Providers: i.Providers, Secrets: i.Secrets, Client: client,
+			Probe: i.Probe, Interval: i.Interval,
+			Issuances: NewIssuances(i.Store), Now: i.now,
+			Deliver: func(name string, issued Issued) error {
+				if err := docker.PlaceCert(i.StackDir, docker.PlacedCert{Name: name, Names: plan.Names},
+					issued.ChainPEM, issued.KeyPEM); err != nil {
+					return err
+				}
+				delivered = true
+				return nil
+			},
+		}
+		_, issueErr := d.IssueFor(ctx, plan.Certificate, acct, certificate.Issuer, plan.Zone, plan.Names, approval.AgreedTerms)
+		if acct.KID != "" && acct.KID != startKID {
+			if saveErr := i.saveAccount(plan.Directory, acct); saveErr != nil {
+				issueErr = errors.Join(issueErr, fmt.Errorf("cert: saving ACME account location: %w", saveErr))
+			}
+		}
+		var problem *ProblemError
+		if attempt == 0 && !delivered && errors.As(issueErr, &problem) &&
+			problem.Type == ProblemAccountDoesNotExist && plan.DirectoryClass != DirectoryProduction {
+			if resetErr := i.replaceAccount(plan.Directory); resetErr != nil {
+				return false, errors.Join(issueErr, resetErr)
+			}
+			if auditErr := i.audit("system", "cert.account.reregister", "ok",
+				fmt.Sprintf("%s: the %s CA %s forgot the ACME account; a new account key is registered automatically for %s directories",
+					plan.Certificate, plan.DirectoryClass, plan.Directory, plan.DirectoryClass)); auditErr != nil {
+				return false, errors.Join(issueErr, auditErr)
+			}
+			continue
+		}
+		return delivered, issueErr
 	}
-	return delivered, issueErr
+}
+
+func (i *Issuing) audit(actor, action, outcome, detail string) error {
+	if i.Audit == nil {
+		return nil
+	}
+	if err := i.Audit(actor, action, outcome, detail); err != nil {
+		return fmt.Errorf("cert: audit entry not recorded: %w", err)
+	}
+	return nil
+}
+
+// replaceAccount discards the stored account for a directory and stores
+// a fresh unregistered key, which the next issuance registers.
+func (i *Issuing) replaceAccount(directory string) error {
+	key, err := GenerateAccountKey()
+	if err != nil {
+		return err
+	}
+	i.accountMu.Lock()
+	defer i.accountMu.Unlock()
+	return i.saveAccountLocked(directory, &Account{Key: key})
 }
 
 // StoreCredentials saves a DNS provider's credential values under the

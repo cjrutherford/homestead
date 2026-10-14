@@ -36,6 +36,13 @@ func runTLS(ctx context.Context, client *apiclient.Client, args []string, stdout
 		}
 		fmt.Fprintf(stdout, "%s: %s days=%d expires=%s\n  %s\n",
 			status.Certificate, status.Status, status.DaysRemaining, expires, status.Detail)
+		if status.Attempts > 0 || status.PendingReload {
+			fmt.Fprintf(stdout, "  unattended re-issue: %d failed attempt(s), last: %s; next attempt %s\n",
+				status.Attempts, status.LastError, status.NextAttemptAt.UTC().Format(time.RFC3339))
+		}
+		if status.AccountRecoveryRequired {
+			fmt.Fprintf(stdout, "  owner action required: homesteadctl tls issuance reregister-account %s\n", status.Certificate)
+		}
 		if status.Status == cert.RenewalExpired || status.Status == cert.RenewalError {
 			code = exitError
 		}

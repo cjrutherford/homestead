@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	urlpkg "net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,6 +30,11 @@ const (
 	acmeKeyType      = "EC"
 	acmeKeyCurve     = "P-256"
 	acmeBadNonceType = "urn:ietf:params:acme:error:badNonce"
+	// ProblemRateLimited is the ACME rate-limit problem type.
+	ProblemRateLimited = "urn:ietf:params:acme:error:rateLimited"
+	// ProblemAccountDoesNotExist means the CA no longer knows the account
+	// key (RFC 8555 section 7.3.1): a restarted test CA or a deactivated account.
+	ProblemAccountDoesNotExist = "urn:ietf:params:acme:error:accountDoesNotExist"
 )
 
 // b64url is ACME's unpadded base64url.
@@ -137,6 +143,48 @@ type acmeError struct {
 	Detail string `json:"detail"`
 }
 
+// ProblemError is a CA refusal: the ACME problem type and detail, the
+// HTTP status, and any Retry-After the CA sent. Renewal (ADR-024) reads
+// it to tell rate limits and forgotten accounts from other failures.
+type ProblemError struct {
+	Type       string
+	Detail     string
+	Status     int
+	RetryAfter time.Duration
+}
+
+func (e *ProblemError) Error() string {
+	if e.Detail != "" {
+		return fmt.Sprintf("cert: acme %s: %s", e.Type, e.Detail)
+	}
+	return fmt.Sprintf("cert: acme %s: status %d", e.Type, e.Status)
+}
+
+// RateLimited reports a rate-limit refusal: the ACME problem type, or
+// HTTP 429 (a CA may answer 429 or 503 with Retry-After).
+func (e *ProblemError) RateLimited() bool {
+	return e.Type == ProblemRateLimited || e.Status == http.StatusTooManyRequests
+}
+
+// parseRetryAfter reads a Retry-After header: delay seconds or an HTTP
+// date, relative to now. Zero when absent, malformed, or in the past.
+func parseRetryAfter(value string, now time.Time) time.Duration {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(value); err == nil {
+		if secs < 0 {
+			return 0
+		}
+		return time.Duration(secs) * time.Second
+	}
+	if at, err := http.ParseTime(value); err == nil && at.After(now) {
+		return at.Sub(now)
+	}
+	return 0
+}
+
 // acmeIdentifier, challenge, authorization, order: the order subset.
 type acmeIdentifier struct {
 	Type  string `json:"type"`
@@ -228,7 +276,7 @@ func (c *Client) send(ctx context.Context, acct *Account, url string, body []byt
 			return "", err
 		}
 		var problem acmeError
-		status, nonce, location, raw, err := c.postJSON(ctx, url, signed)
+		status, nonce, location, raw, retryAfter, err := c.postJSON(ctx, url, signed)
 		if err != nil {
 			return "", err
 		}
@@ -247,8 +295,9 @@ func (c *Client) send(ctx context.Context, acct *Account, url string, body []byt
 			c.nonce = ""
 			continue
 		}
-		if problem.Detail != "" {
-			return "", fmt.Errorf("cert: acme %s: %s", problem.Type, problem.Detail)
+		if problem.Detail != "" || problem.Type != "" || status == http.StatusTooManyRequests {
+			return "", &ProblemError{Type: problem.Type, Detail: problem.Detail, Status: status,
+				RetryAfter: parseRetryAfter(retryAfter, time.Now())}
 		}
 		return "", fmt.Errorf("cert: acme %s: status %d", url, status)
 	}
@@ -345,22 +394,22 @@ func (c *Client) discover(ctx context.Context) (acmeDirectory, error) {
 }
 
 // postJSON posts a JWS body, returning status, fresh nonce, and raw body.
-func (c *Client) postJSON(ctx context.Context, url string, signed []byte) (int, string, string, []byte, error) {
+func (c *Client) postJSON(ctx context.Context, url string, signed []byte) (int, string, string, []byte, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(signed))
 	if err != nil {
-		return 0, "", "", nil, fmt.Errorf("cert: acme request: %w", err)
+		return 0, "", "", nil, "", fmt.Errorf("cert: acme request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/jose+json")
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return 0, "", "", nil, fmt.Errorf("cert: acme post: %w", err)
+		return 0, "", "", nil, "", fmt.Errorf("cert: acme post: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return 0, "", "", nil, fmt.Errorf("cert: acme read: %w", err)
+		return 0, "", "", nil, "", fmt.Errorf("cert: acme read: %w", err)
 	}
-	return resp.StatusCode, resp.Header.Get("Replay-Nonce"), resp.Header.Get("Location"), raw, nil
+	return resp.StatusCode, resp.Header.Get("Replay-Nonce"), resp.Header.Get("Location"), raw, resp.Header.Get("Retry-After"), nil
 }
 
 // get fetches an ACME resource (authorizations poll unsigned GETs).
@@ -494,6 +543,12 @@ func (c *Client) ensureAccount(ctx context.Context, acct *Account, agreeTerms bo
 		c.nonce = nonce
 	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		var problem acmeError
+		_ = json.Unmarshal(raw, &problem)
+		if problem.Type != "" || resp.StatusCode == http.StatusTooManyRequests {
+			return fmt.Errorf("cert: acme newAccount: %w", &ProblemError{Type: problem.Type, Detail: problem.Detail,
+				Status: resp.StatusCode, RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After"), time.Now())})
+		}
 		return fmt.Errorf("cert: acme newAccount: status %s: %s", resp.Status, strings.TrimSpace(string(raw)))
 	}
 	if acct.KID = resp.Header.Get("Location"); acct.KID == "" {
@@ -533,7 +588,7 @@ func (c *Client) download(ctx context.Context, acct *Account, url string) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	status, nonce, _, raw, err := c.postJSON(ctx, url, signed)
+	status, nonce, _, raw, _, err := c.postJSON(ctx, url, signed)
 	if err != nil {
 		return nil, err
 	}

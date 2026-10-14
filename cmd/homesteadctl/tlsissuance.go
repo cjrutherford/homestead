@@ -19,7 +19,10 @@ const tlsIssuanceUsage = `usage: homesteadctl tls issuance <subcommand>
   approvals                        list recorded approvals
   approve CERT --digest D --agree-terms [--confirm-production]
                                    approve the reviewed plan digest
-  apply CERT [--follow]            run the approved issuance`
+  apply CERT [--follow]            run the approved issuance
+  reregister-account CERT          register a new ACME account when the CA
+                                   forgot it (owner action; required for
+                                   production directories)`
 
 // runTLSIssuance drives owner-approved first issuance (S278): plan,
 // approve, apply, the same API the dashboard uses.
@@ -54,6 +57,16 @@ func runTLSIssuance(ctx context.Context, client *apiclient.Client, args []string
 		return runTLSIssuanceApprove(ctx, client, args[1:], stdout, stderr)
 	case "apply":
 		return runTLSIssuanceApply(ctx, client, args[1:], stdout, stderr)
+	case "reregister-account":
+		if len(args) != 2 {
+			fmt.Fprintln(stderr, tlsIssuanceUsage)
+			return exitUsage
+		}
+		if err := client.TLSReregisterAccount(ctx, args[1]); err != nil {
+			return fail(stderr, err)
+		}
+		fmt.Fprintf(stdout, "re-registered the ACME account for %s; unattended renewal may resume\n", args[1])
+		return exitOK
 	default:
 		fmt.Fprintf(stderr, "unknown tls issuance subcommand %q\n", args[0])
 		return exitUsage

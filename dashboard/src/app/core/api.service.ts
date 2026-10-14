@@ -585,6 +585,15 @@ export interface TlsRenewalStatus {
   days_remaining: number;
   not_after: string;
   detail: string;
+  /** Unattended re-issue (S272, ADR-024): consecutive failures and retry. */
+  attempts?: number;
+  last_attempt_at?: string;
+  next_attempt_at?: string;
+  last_error?: string;
+  /** Renewed certificate placed, edge reload refused. */
+  pending_reload?: boolean;
+  /** The CA forgot the ACME account; only the owner can re-register it. */
+  account_recovery_required?: boolean;
 }
 
 /** GET /api/v1/tls/renewal — statuses plus the explicit recorded count. */
@@ -1071,6 +1080,13 @@ export class ApiService {
     return this.http.post<{ provider: string; stored: string[] }>(
       '/api/v1/tls/issuance/credentials',
       { provider, values },
+    );
+  }
+
+  tlsReregisterAccount(certificate: string): Observable<{ certificate: string; reregistered: boolean }> {
+    return this.http.post<{ certificate: string; reregistered: boolean }>(
+      '/api/v1/tls/issuance/account/reregister',
+      { certificate },
     );
   }
 

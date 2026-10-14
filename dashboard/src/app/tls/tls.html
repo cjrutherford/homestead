@@ -4,8 +4,8 @@
     First issuance of public certificates through DNS-01. Review the plan,
     approve it under your name, then apply. The plan is only a preview:
     nothing is requested from the certificate authority until you approve
-    and apply. Renewal status is on the
-    <a routerLink="/exposure">Exposure</a> page.
+    and apply. Renewal status is shown
+    here and on the <a routerLink="/exposure">Exposure</a> page.
   </p>
 
   @if (error()) {
@@ -45,6 +45,39 @@
           }
         </ol>
       }
+    </section>
+  }
+
+  @if (renewals().length) {
+    <section aria-label="Renewal status">
+      <h3>Renewal</h3>
+      <p>
+        Homestead re-issues an unchanged, approved certificate on its own
+        when it is within 30 days of expiry. Anything changed needs a new
+        plan and approval.
+      </p>
+      <ul>
+        @for (renewal of renewals(); track renewal.certificate) {
+          <li>
+            {{ renewal.certificate }}: {{ renewal.status }}
+            @if (renewal.status !== 'no-recorded-issuance') {
+              ({{ renewal.days_remaining }} days remaining)
+            }
+            — {{ renewal.detail }}
+            @if (renewal.attempts || renewal.pending_reload) {
+              <app-state-message kind="error"
+                [headline]="'Unattended re-issue failed ' + (renewal.attempts ?? 0) + ' time(s): ' + renewal.last_error + '. Next attempt ' + renewal.next_attempt_at + '.'" />
+            }
+            @if (renewal.account_recovery_required) {
+              <app-state-message kind="error"
+                headline="The certificate authority no longer knows this ACME account. Re-register it to resume renewal." />
+              <button type="button" (click)="reregisterAccount(renewal.certificate)" [disabled]="locked()">
+                Re-register ACME account
+              </button>
+            }
+          </li>
+        }
+      </ul>
     </section>
   }
 

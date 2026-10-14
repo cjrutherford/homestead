@@ -146,3 +146,42 @@ func TestReadCredentialCapsSize(t *testing.T) {
 		t.Fatalf("at the cap = %d %v", len(v), err)
 	}
 }
+
+func TestTLSRenewalShowsFailuresAndOwnerAction(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"recorded_issuances":1,"summary":"1 recorded issuance(s)","certificates":[{"certificate":"www","status":"renewal-due","days_remaining":9,"not_after":"2026-10-23T00:00:00Z","detail":"www expires soon","attempts":3,"last_error":"rate limited","next_attempt_at":"2026-10-15T04:00:00Z","account_recovery_required":true}]}`))
+	}))
+	defer ts.Close()
+	code, stdout, _ := invoke(t, []string{"--server", ts.URL, "tls", "renewal"})
+	if code != exitOK || !strings.Contains(stdout, "3 failed attempt(s), last: rate limited; next attempt 2026-10-15T04:00:00Z") ||
+		!strings.Contains(stdout, "owner action required: homesteadctl tls issuance reregister-account www") {
+		t.Fatalf("exit = %d stdout = %q", code, stdout)
+	}
+}
+
+func TestTLSReregisterAccount(t *testing.T) {
+	var body map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method+" "+r.URL.Path != "POST /api/v1/tls/issuance/account/reregister" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body["certificate"] == "bad" {
+			http.Error(w, "cert: issuance not approved", http.StatusConflict)
+			return
+		}
+		_, _ = w.Write([]byte(`{"certificate":"www","reregistered":true}`))
+	}))
+	defer ts.Close()
+	code, stdout, _ := invoke(t, []string{"--server", ts.URL, "tls", "issuance", "reregister-account", "www"})
+	if code != exitOK || body["certificate"] != "www" || !strings.Contains(stdout, "re-registered the ACME account for www") {
+		t.Fatalf("exit = %d body = %v stdout = %q", code, body, stdout)
+	}
+	if code, _, _ = invoke(t, []string{"--server", ts.URL, "tls", "issuance", "reregister-account", "bad"}); code != exitError {
+		t.Fatalf("refused exit = %d", code)
+	}
+	if code, _, _ = invoke(t, []string{"--server", ts.URL, "tls", "issuance", "reregister-account"}); code != exitUsage {
+		t.Fatalf("usage exit = %d", code)
+	}
+}

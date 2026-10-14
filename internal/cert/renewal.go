@@ -221,7 +221,7 @@ type RenewalReport struct {
 
 // NoIssuancesSummary is the explicit state when no issuance is recorded.
 // The daemon does not itself issue certificates yet (docs/DEFERRED.md).
-const NoIssuancesSummary = "no recorded issuances: no certificate has been issued and recorded through Homestead, so there is nothing to renew (the daemon has no issuance path yet; see docs/DEFERRED.md)"
+const NoIssuancesSummary = "no recorded issuances: no certificate has been issued and recorded through Homestead, so there is nothing to renew (issue one through the plan, approve, apply flow: homesteadctl tls issuance)"
 
 // NewRenewalReport wraps statuses with the recorded-issuance count.
 func NewRenewalReport(statuses []RenewalStatus, recorded int) RenewalReport {
@@ -242,6 +242,18 @@ type RenewalStatus struct {
 	DaysRemaining int       `json:"days_remaining"`
 	NotAfter      time.Time `json:"not_after"`
 	Detail        string    `json:"detail"`
+	// Unattended re-issue state (S272, ADR-024): consecutive failed
+	// attempts, the last failure, and when the next attempt may run.
+	Attempts      int       `json:"attempts"`
+	LastAttemptAt time.Time `json:"last_attempt_at"`
+	NextAttemptAt time.Time `json:"next_attempt_at"`
+	LastError     string    `json:"last_error"`
+	// PendingReload is a renewed certificate placed on disk that the edge
+	// has not adopted yet (the reload was refused).
+	PendingReload bool `json:"pending_reload"`
+	// AccountRecoveryRequired means the CA forgot the ACME account and
+	// only the owner may re-register it (production directory).
+	AccountRecoveryRequired bool `json:"account_recovery_required"`
 }
 
 // RenewalWindowDays is the effective window: the certificate's own
@@ -307,7 +319,7 @@ func CheckRenewals(set Set, issuances []Issuance, now time.Time) ([]RenewalStatu
 			// comes due on its own; the owner is told, not nagged. ACME
 			// issuances recorded by the S278 flow are placed for Caddy to
 			// serve, so Caddy no longer renews them: they warn inside the
-			// window whatever the auto flag says (until S272 re-issues).
+			// window whatever the auto flag says (S272 re-issues dns-01 ones).
 			status.Status = RenewalOK
 			status.Detail = fmt.Sprintf("%s expires %s, inside the %d-day window, but auto-renew is off: renew it manually",
 				certificate.Name, health.NotAfter.Format(time.DateOnly), window)
@@ -315,10 +327,12 @@ func CheckRenewals(set Set, issuances []Issuance, now time.Time) ([]RenewalStatu
 			status.Status = RenewalDue
 			status.Detail = fmt.Sprintf("%s expires %s, inside the %d-day renewal window",
 				certificate.Name, health.NotAfter.Format(time.DateOnly), window)
-			if !certificate.Renewal.Auto {
+			if isDNS01ACME(certificate) && certificate.Renewal.Auto {
+				status.Detail += "; Homestead re-issues it unattended while the approved issuance is unchanged"
+			} else if !certificate.Renewal.Auto {
 				status.Detail += "; Caddy does not renew a certificate Homestead placed and auto-renew is off, so re-run the issuance (plan, approve, apply) before it expires"
 			} else {
-				status.Detail += "; Caddy does not renew a certificate Homestead placed, so re-run the issuance until unattended re-issue exists"
+				status.Detail += "; Caddy does not renew a certificate Homestead placed, so re-run the issuance (plan, approve, apply) before it expires"
 			}
 		default:
 			status.Status = RenewalOK

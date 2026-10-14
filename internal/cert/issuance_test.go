@@ -44,6 +44,7 @@ type issuanceRig struct {
 	routes    []docker.Route
 	provName  string
 	clock     time.Time
+	dbPath    string
 }
 
 func newIssuanceRig(t *testing.T, directory string) *issuanceRig {
@@ -75,11 +76,13 @@ func newIssuanceRig(t *testing.T, directory string) *issuanceRig {
 		t: t, store: st, secrets: secrets, wizards: wizard.New(st), provider: provider,
 		double: double, caCalls: calls, stackDir: filepath.Join(dir, "caddy"),
 		provName: "script", clock: time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC),
+		dbPath: filepath.Join(dir, "test.db"),
 		routes: []docker.Route{{
 			Host: "www.example.com", Target: docker.Target{Host: "www", Port: 80},
 			Exposure: docker.ExposureLocal, TLS: docker.TLSAuto,
 		}},
 	}
+	double.now = func() time.Time { return rig.clock }
 	rig.issuing = &Issuing{
 		Store: st, Wizards: rig.wizards, Secrets: secrets, Providers: registry,
 		StackDir: rig.stackDir,

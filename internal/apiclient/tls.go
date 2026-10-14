@@ -80,3 +80,11 @@ func (c *Client) TLSIssuanceCredentials(ctx context.Context, provider string, va
 	}
 	return out.Stored, nil
 }
+
+// TLSReregisterAccount re-registers the ACME account of a certificate's
+// approved CA directory (S272): the owner action for a CA that forgot the
+// account, required for production directories.
+func (c *Client) TLSReregisterAccount(ctx context.Context, certificate string) error {
+	return c.postJSON(ctx, "/api/v1/tls/issuance/account/reregister",
+		map[string]any{"certificate": certificate}, nil)
+}

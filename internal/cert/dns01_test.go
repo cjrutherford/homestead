@@ -51,6 +51,26 @@ type acmeDouble struct {
 	leafPEM []byte
 	// pollsFinalize counts (forbidden) polls of the finalize URL.
 	orderPolls int
+	// now stamps issued certificates (default time.Now) so renewal tests
+	// can issue "in the future" against an injected clock.
+	now func() time.Time
+	// fault, when set, answers new-order with a problem (S272 backoff and
+	// Retry-After tests); faultTimes limits it (0 means every order).
+	fault      *acmeFault
+	faultTimes int
+	// forgotten makes the CA answer accountDoesNotExist to every order
+	// until an account is registered again (Pebble after a restart).
+	forgotten     bool
+	registrations int
+	orders        int
+}
+
+// acmeFault is a scripted problem response.
+type acmeFault struct {
+	status     int
+	problem    string
+	detail     string
+	retryAfter string
 }
 
 func (d *acmeDouble) freshNonce() string {
@@ -83,13 +103,40 @@ func (d *acmeDouble) handler(w http.ResponseWriter, r *http.Request) {
 		if body == nil {
 			return
 		}
+		d.forgotten = false
+		d.registrations++
 		w.Header().Set("Location", d.base+"/acct/1")
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]any{"status": "valid"})
 	case r.URL.Path == "/new-order":
+		d.orders++
+		if d.forgotten {
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"type": ProblemAccountDoesNotExist, "detail": "unable to find account",
+			})
+			return
+		}
+		if d.fault != nil {
+			f := d.fault
+			if d.faultTimes > 0 {
+				if d.faultTimes--; d.faultTimes == 0 {
+					d.fault = nil
+				}
+			}
+			if f.retryAfter != "" {
+				w.Header().Set("Retry-After", f.retryAfter)
+			}
+			w.WriteHeader(f.status)
+			_ = json.NewEncoder(w).Encode(map[string]any{"type": f.problem, "detail": f.detail})
+			return
+		}
 		if d.verifyJWS(w, r, false) == nil {
 			return
 		}
+		// A new order starts fresh authorizations and finalization.
+		d.authed, d.orderPolls, d.triggered = false, 0, false
 		w.Header().Set("Location", d.base+"/order/1")
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -135,7 +182,7 @@ func (d *acmeDouble) handler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			d.t.Fatalf("csr: %v", err)
 		}
-		d.leafPEM = leafForCSR(d.t, raw)
+		d.leafPEM = leafForCSRAt(d.t, raw, d.clock())
 		d.authed = true
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status": "processing", "finalize": d.base + "/finalize/1",
@@ -229,9 +276,20 @@ func (d *acmeDouble) verifyAsGet(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (d *acmeDouble) clock() time.Time {
+	if d.now != nil {
+		return d.now()
+	}
+	return time.Now()
+}
+
 // leafForCSR issues a real leaf for the CSR's public key and names,
 // signed by a throwaway CA, so placement can prove the key matches.
 func leafForCSR(t *testing.T, der []byte) []byte {
+	return leafForCSRAt(t, der, time.Now())
+}
+
+func leafForCSRAt(t *testing.T, der []byte, now time.Time) []byte {
 	t.Helper()
 	csr, err := x509.ParseCertificateRequest(der)
 	if err != nil {
@@ -240,14 +298,14 @@ func leafForCSR(t *testing.T, der []byte) []byte {
 	caKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	caTemplate := x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Test CA"},
 		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
-		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour)}
+		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24 * time.Hour)}
 	caDER, err := x509.CreateCertificate(rand.Reader, &caTemplate, &caTemplate, &caKey.PublicKey, caKey)
 	if err != nil {
 		t.Fatalf("ca: %v", err)
 	}
 	ca, _ := x509.ParseCertificate(caDER)
 	leaf := x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: csr.DNSNames[0]},
-		DNSNames: csr.DNSNames, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(60 * 24 * time.Hour)}
+		DNSNames: csr.DNSNames, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(60 * 24 * time.Hour)}
 	leafDER, err := x509.CreateCertificate(rand.Reader, &leaf, ca, csr.PublicKey, caKey)
 	if err != nil {
 		t.Fatalf("leaf: %v", err)

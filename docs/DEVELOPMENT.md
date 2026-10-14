@@ -968,14 +968,14 @@ homesteadctl tls renewal
   `renewal-due`, `plan-required` (desired names, provider id, or
   challenge differ from the approved issuance; wildcards compare
   literally), `expired`. Expired fails the operation and exits 1 in the
-  CLI; due and plan-required warn in doctor. Nothing re-issues (S272);
-  first issuance is S278 (below).
+  CLI; due and plan-required warn in doctor. The check itself only
+  reports; unattended re-issue (S272) is below and first issuance is S278.
 - `GET /api/v1/tls/renewal` returns `{recorded_issuances, summary,
   certificates}`. A desired certificate with no recorded issuance reports
   `no-recorded-issuance`; with none recorded at all, `summary` states
   "no recorded issuances" (also an ok `tls-renewal` doctor check, the CLI
-  first line, and the dashboard). Today no daemon path issues
-  certificates, so this is the normal state (docs/DEFERRED.md).
+  first line, and the dashboard). Until a certificate is issued through
+  the S278 flow this is the normal state.
 - Statuses also include `error`: the stored chain does not parse
   (corrupt). It fails doctor, the scheduled check, and exits 1 in the CLI.
   A certificate with `auto` renewal off never reports `renewal-due`; the
@@ -994,6 +994,85 @@ homesteadctl tls renewal
   the matching ok `tls-renewal` check, and `scheduler jobs` listed
   `cert:renewal-check` having run as an operation. No ACME issuance was
   attempted.
+
+## Unattended certificate re-issue (S272, ADR-024)
+
+```bash
+homesteadctl tls renewal                          # status, failures, owner actions
+homesteadctl tls issuance reregister-account CERT # owner action, any CA class
+```
+
+- The daily `cert:renewal-check` job (operation `cert.renewal-check`, steps
+  `reissue`, `check`, `report`) re-issues every ACME dns-01 certificate that
+  is `renewal-due` (30 days or fewer left), has auto-renew on, and whose
+  issuance is unchanged. Its hourly companion `cert:renewal-retry`
+  (operation `cert.renewal-retry`) is declared enabled only while a renewal
+  is failing (or a renewed certificate waits for an edge reload); both only
+  attempt a certificate once its persisted next-attempt time has passed.
+- Unchanged means, beyond the ADR-024 fingerprint (normalized name set, DNS
+  provider id, challenge method; wildcards literal), the same CA directory
+  (so the same class) and DNS zone as the owner's recorded approval, and,
+  for a production directory, an approval that carried the production
+  confirmation. Anything else reads `plan-required` in status, doctor, CLI
+  and dashboard, and nothing is issued; renewal never reaches a CA, class,
+  or zone the owner did not approve. Served routes are never widened: only
+  the approved plan's routes have their snippets refreshed.
+- A re-issue runs the S278 steps (`DNS01.IssueFor`, validated placement of
+  chain and key, route refresh, forced edge reload) and records the new
+  issuance. It always orders a new certificate, except a retry after a
+  refused reload, which only redoes the reload.
+- Retry state lives in `cert_renewal_state` (migration 37): consecutive
+  failures, last error, next attempt. Backoff is 1h, 2h, 4h, 8h, 16h, then
+  24h; success resets it; a CA `Retry-After` (seconds or HTTP date) on a
+  failure extends the wait past the backoff (bounded at 7 days). A new
+  approval or manual issuance clears it. Every attempt writes
+  `cert.renewal.attempt` (ok or error, actor `scheduler`, attempt number and
+  next time, never key material).
+- Account recovery: when the CA answers `accountDoesNotExist`, test and
+  staging directories register a new account key and retry once, audited as
+  `cert.account.reregister` (actor `system`). A production directory stops
+  and waits: status shows `account_recovery_required`, doctor fails, and the
+  owner runs `homesteadctl tls issuance reregister-account CERT` (or the
+  dashboard Certificates button), `POST
+  /api/v1/tls/issuance/account/reregister`, audited under the owner. It
+  registers with the approved directory using the terms agreement already
+  on record and swaps the stored account only after the CA accepted it.
+- Surfaces: `GET /api/v1/tls/renewal` and `tls renewal` carry `attempts`,
+  `last_error`, `next_attempt_at`, `pending_reload`,
+  `account_recovery_required`; doctor warns `tls-renewal:<name>` while
+  failing and fails when the owner must act; the dashboard Certificates page
+  lists them with the re-register button.
+- Tests use the fake ACME CA (`acmeDouble`: scripted faults, Retry-After,
+  forgotten account), fake DNS and an injectable clock; no network.
+
+KVM validation (Pebble, steps of the S278 section below): configure Pebble
+with `"validityPeriod": 1728000` (20 days) so every certificate is already
+inside the window, issue `app` with `Auto=true` through plan, approve, apply,
+and note the serial served on 443. Then
+1. `systemctl restart homestead-server` after
+   `sqlite3 /var/lib/homestead/homestead.db "DELETE FROM scheduler_jobs
+   WHERE job_id='cert:renewal-check'"` (the daily job is otherwise not due
+   again for 24h), or wait for the next daily tick. `homesteadctl scheduler
+   jobs` shows the check run; `homesteadctl tls renewal` reports `ok`, the
+   served serial (`openssl s_client`, as in step 7) changed, the file under
+   `routes/certs/app/` is new, and the audit trail has
+   `cert.renewal.attempt ok` under `scheduler`.
+2. Failure and backoff: stop Pebble, delete the job row again and restart:
+   `tls renewal` shows 1 failed attempt and a next attempt an hour out,
+   doctor warns, `scheduler jobs` lists `cert:renewal-retry` enabled; to
+   see the retry fire without waiting, move the next attempt with `sqlite3
+   ... "UPDATE cert_renewal_state SET next_attempt_at='2000-01-01T00:00:00Z'"`
+   (the hourly job runs within an hour of its last run). Restart Pebble: the
+   next retry fails once with `accountDoesNotExist`, recovers by registering
+   a new account (class `test`) and renews; audit shows
+   `cert.account.reregister` then `cert.renewal.attempt ok`.
+3. Production-class owner action: change the strategy directory to a
+   non-private host name pointing at Pebble (for example via `/etc/hosts`),
+   approve with `--confirm-production`, issue, restart Pebble, trigger a
+   renewal: it stops with `account_recovery_required`; run
+   `reregister-account app`, then the next evaluation renews.
+4. Restore as in the S278 steps; remove `cert_renewal_state` rows
+   for `app`.
 
 ## Certificate first issuance (S278)
 
@@ -1192,8 +1271,9 @@ for example `app.pebble-lab.net` in zone `pebble-lab.net`.
    `certs/app` directory.
 
 Pebble keeps its accounts and root in memory: restarting it invalidates the
-ACME account Homestead stored (the next apply fails with
-`accountDoesNotExist`; see docs/DEFERRED.md) and changes the issuing root, so
+ACME account Homestead stored (an apply or renewal then meets
+`accountDoesNotExist`: test and staging directories register a new account
+automatically, S272; `tls issuance reregister-account` is the owner action) and changes the issuing root, so
 fetch `/roots/0` again. Pebble also reuses a recent authorization for the
 same name about half the time and a certificate lifetime comes from
 `validityPeriod` in its config, which a shorter value (for example 1728000

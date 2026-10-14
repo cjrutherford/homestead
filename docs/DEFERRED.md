@@ -33,17 +33,13 @@
 - Internal CA distribution: the S104 authority mints and signs, but
   installing its certificate into OS/client trust stores (and rotation)
   belongs to the security baseline flow (S222).
-- Renewal re-issue (S272, ADR-024; needs S278 first issuance): S263 schedules the daily renewal
-  check and reports ok / renewal-due / plan-required / expired, but
-  nothing re-issues expiring certificates yet.
 - Certificate issuance gaps left by S278: only ACME dns-01 issuance has an
   owner-approved flow; http-01/tls-alpn-01 stay Caddy-native and are not
   fingerprinted. The internal CA the baseline (S222) mints is still not
   recorded. Placed certificates are served only by automatic-TLS routes
   whose host they cover; applying the issuance to a route that does not
   exist yet needs a reconcile afterwards. Manual-provider DNS-01 (owner
-  pastes TXT values) has no issuance flow. Caddy does not renew a placed
-  certificate; S272 re-issues it. A reload refused after a successful
+  pastes TXT values) has no issuance flow. S272 re-issues placed dns-01 certificates unattended. A reload refused after a successful
   issuance leaves the certificate placed and recorded and requires
   re-running the apply to retry the reload (a reload-only action is not
   provided).
@@ -261,9 +257,10 @@
   entries older than that window are unreachable from the dashboard and
   CLI. Server-side filters, a cursor, and audit-list CLI
   filter flags belong to one coordinated API, CLI, and dashboard change.
-- ACME account loss recovery (S278 KVM): the stored account URL is reused
-  without re-checking it, so a CA that forgets the account (Pebble after a
-  restart, or a deactivated account) fails every apply with
-  `accountDoesNotExist` and no owner route can clear the `sys_acme_account_*`
-  secret. Recovery should re-register once on that error or offer an
-  explicit reset in the plan.
+- Unattended re-issue gaps (S272): http-01 and tls-alpn-01 ACME
+  certificates stay Caddy-native and are never re-issued by Homestead. A
+  re-issue whose edge reload keeps failing is retried (reload only) with the
+  same backoff but has no escalation beyond status and doctor warnings.
+  Retry-After is bounded at 7 days. Re-issue refuses, rather than adapts to,
+  any drift of CA directory, zone, names, provider, or challenge; the owner
+  re-approves. Real Let's Encrypt staging was not exercised.

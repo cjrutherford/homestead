@@ -6,6 +6,7 @@ import {
   ApiService,
   OperationState,
   TlsIssuancePlan,
+  TlsRenewalStatus,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 
@@ -34,6 +35,8 @@ export class Tls implements OnInit, OnDestroy {
   private stream: Subscription | null = null;
 
   protected readonly plans = signal<TlsIssuancePlan[]>([]);
+  /** Renewal status per certificate (S272): failures and owner actions. */
+  protected readonly renewals = signal<TlsRenewalStatus[]>([]);
   protected readonly loading = signal(true);
   protected readonly loadError = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
@@ -61,6 +64,10 @@ export class Tls implements OnInit, OnDestroy {
   }
 
   load(): void {
+    this.api.tlsRenewal().subscribe({
+      next: (report) => this.renewals.set(report.certificates ?? []),
+      error: () => this.renewals.set([]),
+    });
     this.loading.set(true);
     this.loadError.set(null);
     this.api.tlsIssuancePlans().subscribe({
@@ -172,6 +179,28 @@ export class Tls implements OnInit, OnDestroy {
           this.load();
         },
       });
+  }
+
+  /** The CA forgot the ACME account: the owner registers a new one. */
+  reregisterAccount(certificate: string): void {
+    if (this.locked()) {
+      return;
+    }
+    this.busy.set(true);
+    this.error.set(null);
+    this.notice.set(null);
+    this.api.tlsReregisterAccount(certificate).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.notice.set(`Registered a new ACME account for ${certificate}. Unattended renewal may resume.`);
+        this.load();
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.busy.set(false);
+        this.error.set(this.describe(failure));
+        this.load();
+      },
+    });
   }
 
   apply(plan: TlsIssuancePlan): void {

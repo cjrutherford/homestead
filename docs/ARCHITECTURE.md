@@ -28,8 +28,12 @@
   of normalized names, DNS provider id, challenge method, recorded in
   `cert_issuances` by `DNS01.IssueFor`) as ok / renewal-due /
   plan-required / expired / error (corrupt chain), or no-recorded-issuance
-  (none until an issuance is applied, S278). It reports
-  only; clean checks write no audit entry. Status: `GET /api/v1/tls/renewal`, `homesteadctl tls renewal`,
+  (none until an issuance is applied, S278). The check reports; clean
+  checks write no audit entry. With the issuance runner (S272) the same
+  daily job also re-issues unchanged, approved dns-01 certificates, and
+  the hourly `cert:renewal-retry` job runs only while one is failing
+  (backoff 1h doubling to 24h, state in `cert_renewal_state`, every
+  attempt audited). Status: `GET /api/v1/tls/renewal`, `homesteadctl tls renewal`,
   doctor checks `tls-renewal:<name>`, and the dashboard Exposure page.
 - YAML: customer-readable desired configuration and generated artifacts.
 - Docker Engine + Compose v2: application runtime.

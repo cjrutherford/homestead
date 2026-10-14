@@ -102,6 +102,7 @@ var routeClasses = map[string]RouteClass{
 	"GET /api/v1/tls/issuance/approvals":                 ClassSession,
 	"POST /api/v1/tls/issuance/approvals":                ClassSession,
 	"POST /api/v1/tls/issuance/apply":                    ClassSession,
+	"POST /api/v1/tls/issuance/account/reregister":       ClassSession,
 	"POST /api/v1/tls/issuance/credentials":              ClassSession,
 	"GET /api/v1/backups/destination":                    ClassSession,
 	"GET /api/v1/backups/schedules":                      ClassSession,

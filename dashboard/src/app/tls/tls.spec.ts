@@ -51,7 +51,11 @@ describe('Tls', () => {
     http = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
   });
-  afterEach(() => http.verify());
+  afterEach(() => {
+    // Renewal status loads with the plans; tests that do not care leave it unanswered.
+    http.match('/api/v1/tls/renewal').forEach((r) => r.flush({ recorded_issuances: 0, summary: '', certificates: [] }));
+    http.verify();
+  });
 
   const text = () => fixture.nativeElement.textContent as string;
   const load = (plans: TlsIssuancePlan[]) => {
@@ -184,5 +188,42 @@ describe('Tls', () => {
     fixture.detectChanges();
     http.expectNone('/api/v1/tls/issuance/credentials');
     expect(text()).toContain('Fill in every credential field.');
+  });
+
+  it('shows a failing unattended re-issue with its backoff', () => {
+    load([plan()]);
+    http.match('/api/v1/tls/renewal')[0].flush({
+      recorded_issuances: 1,
+      summary: '1 recorded issuance(s)',
+      certificates: [{
+        certificate: 'www', status: 'renewal-due', days_remaining: 9, not_after: '2026-11-01T00:00:00Z',
+        detail: 'www expires soon', attempts: 3, last_error: 'rate limited',
+        next_attempt_at: '2026-10-15T04:00:00Z',
+      }],
+    });
+    fixture.detectChanges();
+    expect(text()).toContain('Unattended re-issue failed 3 time(s): rate limited');
+    expect(text()).toContain('2026-10-15T04:00:00Z');
+    expect(button('Re-register ACME account')).toBeUndefined();
+  });
+
+  it('offers the owner re-registration when the CA forgot the account', () => {
+    load([plan()]);
+    http.match('/api/v1/tls/renewal')[0].flush({
+      recorded_issuances: 1,
+      summary: '',
+      certificates: [{
+        certificate: 'www', status: 'renewal-due', days_remaining: 9, not_after: '2026-11-01T00:00:00Z',
+        detail: 'www expires soon', account_recovery_required: true, last_error: 'accountDoesNotExist',
+      }],
+    });
+    fixture.detectChanges();
+    button('Re-register ACME account').click();
+    const req = http.expectOne('/api/v1/tls/issuance/account/reregister');
+    expect(req.request.body).toEqual({ certificate: 'www' });
+    req.flush({ certificate: 'www', reregistered: true });
+    http.expectOne('/api/v1/tls/issuance/plans').flush({ plans: [plan()] });
+    fixture.detectChanges();
+    expect(text()).toContain('Registered a new ACME account for www');
   });
 });

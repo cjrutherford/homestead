@@ -7,6 +7,7 @@ import (
 
 	"homestead/internal/backup"
 	"homestead/internal/catalog"
+	"homestead/internal/cert"
 	"homestead/internal/operation"
 	"homestead/internal/scheduler"
 	"homestead/internal/store"
@@ -17,10 +18,17 @@ import (
 // register more sources on the returned value. The daemon runs it; the
 // status route only reads it.
 func NewScheduler(st *store.Store, catalogDir string, secrets catalog.SecretStore, opts ...scheduler.Option) *scheduler.Scheduler {
+	return NewSchedulerWith(st, catalogDir, secrets, nil, opts...)
+}
+
+// NewSchedulerWith is NewScheduler with the certificate issuance runner,
+// which lets the renewal jobs re-issue unattended (S272). Without it the
+// certificate job only reports.
+func NewSchedulerWith(st *store.Store, catalogDir string, secrets catalog.SecretStore, issuing *cert.Issuing, opts ...scheduler.Option) *scheduler.Scheduler {
 	s := scheduler.New(st, opts...)
 	s.Register("backup", backupSource(st, catalogDir, secrets, s.Now))
 	s.Register("drift", driftSource(st, s.Now))
-	s.Register("cert", certRenewalSource(st, s.Now))
+	s.Register("cert", certRenewalSource(st, s.Now, issuing))
 	return s
 }
 

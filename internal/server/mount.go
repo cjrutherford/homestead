@@ -63,20 +63,20 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountAudit(audit.New(st))
 	srv.MountRecovery(authSvc)
 	srv.MountWizards(wizard.New(st))
+	issuing, err := NewCertIssuing(st, secrets)
+	if err != nil {
+		return nil, err
+	}
 	srv.MountDoctor(
 		func() []doctor.Check { return []doctor.Check{driftDoctorCheck(st, time.Now)()} },
-		certDoctorChecks(st, time.Now),
+		certDoctorChecks(st, issuing, time.Now),
 		certOverrideDoctorCheck(os.Getenv),
 		platformDoctorCheck(st),
 		platformApplyDoctorCheck(st, time.Now),
 		migrationDoctorChecks(st, c.CatalogDir),
 		backupEncryptionDoctorCheck(st),
 	)
-	srv.MountTLSRenewal(st, time.Now)
-	issuing, err := NewCertIssuing(st, secrets)
-	if err != nil {
-		return nil, err
-	}
+	srv.MountTLSRenewal(st, issuing, time.Now)
 	srv.MountTLSIssuance(st, issuing)
 	srv.MountOperations(operation.New(st))
 	srv.MountCatalog(st, c.CatalogDir, secrets)
@@ -85,7 +85,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountStorage(st)
 	srv.MountBackups(st)
 	srv.MountBackupRecipients(st, secrets, filepath.Join(filepath.Dir(c.ConfigPath), "backup-recipients.yaml"))
-	sched := NewScheduler(st, c.CatalogDir, secrets)
+	sched := NewSchedulerWith(st, c.CatalogDir, secrets, issuing)
 	srv.MountScheduler(sched)
 	srv.MountDriftScan(st, sched.Now)
 	srv.MountDrift(st, c.CatalogDir)
