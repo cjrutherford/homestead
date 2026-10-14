@@ -33,7 +33,7 @@
 - Internal CA distribution: the S104 authority mints and signs, but
   installing its certificate into OS/client trust stores (and rotation)
   belongs to the security baseline flow (S222).
-- Renewal re-issue (S272, ADR-024): S263 schedules the daily renewal
+- Renewal re-issue (S272, ADR-024; needs S278 first issuance): S263 schedules the daily renewal
   check and reports ok / renewal-due / plan-required / expired, but
   nothing re-issues expiring certificates yet.
 - Certificate issuance path (found in the S263 review): no daemon,
@@ -48,8 +48,8 @@
   custody, chain and key placement) calls it, `cert_issuances` stays
   empty. The renewal status therefore reports an explicit "no recorded
   issuances" state in the API (`recorded_issuances`, `summary`), CLI,
-  dashboard, and doctor instead of an empty list. S272 depends on this
-  flow. http-01/tls-alpn-01 issuance is not fingerprinted.
+  dashboard, and doctor instead of an empty list. S278 delivers this
+  flow; S272 depends on it. http-01/tls-alpn-01 issuance is not fingerprinted.
 - Exit-node operation: the S110 model refuses default-route
   advertisement, so serving as an exit node needs its own slice with
   explicit owner consent.
