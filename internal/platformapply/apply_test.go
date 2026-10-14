@@ -1212,3 +1212,65 @@ func TestRollbackAndApplyRefuseEachOther(t *testing.T) {
 		t.Fatalf("apply during rollback: %v", err)
 	}
 }
+
+// A follower starts the next apply as soon as it sees an operation end:
+// staging must already be clean then, or the unit's late cleanup would
+// delete the next apply's staged files (found in KVM validation).
+func TestStagingCleanedBeforeOperationShowsFinished(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		e := newEnv(t)
+		if fail {
+			e.r.RecordInstalled = func(string, string, int64) error { return errors.New("database is locked") }
+		}
+		op := e.start(e.release("homesteadctl", "0.2.0", 7, "new ctl"))
+		done := make(chan struct{})
+		go func() { defer close(done); _ = e.r.Run(context.Background()) }()
+		for {
+			got, err := e.a.Ops.Get(op.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if operation.Terminal(got.Status) {
+				if names := e.staged(); len(names) != 0 {
+					t.Fatalf("fail=%v: operation %s while staging still holds %v", fail, got.Status, names)
+				}
+				break
+			}
+			time.Sleep(50 * time.Microsecond)
+		}
+		<-done
+	}
+}
+
+// The daemon side's end-of-operation cleanup must not delete staging the
+// apply unit owns or the next apply is already using.
+func TestDaemonCleanupLeavesNextApplyStaging(t *testing.T) {
+	e := newEnv(t)
+	op := e.start(e.release("homesteadctl", "0.2.0", 7, "new ctl"))
+	if len(e.staged()) != 3 {
+		t.Fatalf("staged = %v", e.staged())
+	}
+	// An earlier operation's cleanup, run late, with another apply pending.
+	(&run{a: e.a, opID: op.ID + 100}).cleanup()
+	if len(e.staged()) != 3 {
+		t.Fatalf("cleanup removed the pending apply's staging: %v", e.staged())
+	}
+	// Once handed off, the operation's own cleanup is the unit's job.
+	if err := e.r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	e.wait(op.ID)
+	for _, name := range []string{"a", "b", "c"} {
+		if err := os.WriteFile(filepath.Join(e.staging, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	(&run{a: e.a, opID: op.ID, handedOff: true}).cleanup()
+	if len(e.staged()) != 3 {
+		t.Fatalf("handed-off cleanup touched staging: %v", e.staged())
+	}
+	(&run{a: e.a, opID: op.ID}).cleanup()
+	if len(e.staged()) != 0 {
+		t.Fatalf("idle cleanup should clear staging: %v", e.staged())
+	}
+}

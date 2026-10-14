@@ -272,6 +272,9 @@ type run struct {
 	opID   int64
 	ready  chan struct{}
 	staged stagedFiles
+	// handedOff is set once the apply unit owns the staged files and
+	// their cleanup; after that the daemon side never touches staging.
+	handedOff bool
 }
 
 type stagedFiles struct{ artifact, checksums, signature string }
@@ -353,10 +356,27 @@ func (r *run) step(name string, fn func(context.Context) error) operation.StepFu
 	}
 }
 
-// cleanup removes staged files unless the apply unit now owns them.
+// cleanup removes staged files unless the apply unit owns them or
+// another apply has begun staging: this runs after the operation ends,
+// and the next apply may already be using the same staging directory
+// (found in KVM validation, two back-to-back applies).
 func (r *run) cleanup() {
-	if m, ok, err := r.a.Markers.Pending(); err != nil || (ok && m.OpID == r.opID) {
+	if r.handedOff {
 		return
+	}
+	r.a.mu.Lock()
+	defer r.a.mu.Unlock()
+	if _, pending, err := r.a.Markers.Pending(); err != nil || pending {
+		return
+	}
+	ops, err := r.a.Ops.List(0)
+	if err != nil {
+		return
+	}
+	for _, op := range ops {
+		if op.ID != r.opID && op.Type == OperationType && !operation.Terminal(op.Status) {
+			return
+		}
 	}
 	cleanDir(r.a.StagingDir)
 }
@@ -436,8 +456,10 @@ func (r *run) handoff(ctx context.Context) error {
 	if err := r.a.Markers.Begin(marker); err != nil {
 		return err
 	}
+	r.handedOff = true
 	if err := r.a.Systemd.Start(ctx, r.a.ApplyUnit); err != nil {
 		_ = r.a.Markers.Clear(r.opID)
+		r.handedOff = false
 		cleanDir(r.a.StagingDir)
 		return fmt.Errorf("cannot start %s (a pre-ADR-027 install needs `make install` re-run): %w", r.a.ApplyUnit, err)
 	}
@@ -496,13 +518,13 @@ func (a *Applier) ClearApply(ctx context.Context, actor string) (Marker, error) 
 	}
 	msg := fmt.Sprintf("apply of %s %s cleared by %s: its apply unit did not finish. If the binary was changed, check it against %s",
 		m.Component, m.ToVersion, actor, m.PreviousPath)
+	cleanDir(a.StagingDir)
 	advanceOp(a.Ops, m, false, "", msg)
 	a.record(audit.Entry{Actor: actor, Action: ActionClear, Outcome: audit.OutcomeOK,
 		Detail: fmt.Sprintf("cleared stale apply marker for %s %s -> %s (operation %d)", m.Component, m.FromVersion, m.ToVersion, m.OpID)})
 	if err := a.Markers.Clear(m.OpID); err != nil {
 		return Marker{}, err
 	}
-	cleanDir(a.StagingDir)
 	return m, nil
 }
 

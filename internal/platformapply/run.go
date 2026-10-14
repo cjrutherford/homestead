@@ -325,6 +325,10 @@ func (u *unitRun) fail(ctx context.Context, cause error) error {
 // finish marks the operation failed with msg, audits it loudly, and
 // always clears the marker so it can never block future applies.
 func (u *unitRun) finish(msg string) error {
+	// Staged files go before the operation shows as finished and the
+	// marker clears: a follower may start the next apply the moment it
+	// sees the end, and cleaning afterwards would delete its fresh staging.
+	cleanDir(u.r.StagingDir)
 	advanceOp(u.r.Ops, u.m, false, "", msg)
 	entry := audit.Entry{Actor: u.m.Actor, Action: ActionFinalize, Outcome: audit.OutcomeError, Detail: msg}
 	if u.m.Override {
@@ -332,7 +336,6 @@ func (u *unitRun) finish(msg string) error {
 	}
 	u.r.record(entry)
 	_ = u.r.Markers.Clear(u.m.OpID)
-	cleanDir(u.r.StagingDir)
 	return errors.New(msg)
 }
 
@@ -359,6 +362,8 @@ func (u *unitRun) succeed(ctx context.Context) error {
 		return u.fail(ctx, fmt.Errorf("the binary is installed and healthy but the installed release could not be recorded: %w", err))
 	}
 	m := u.m
+	// Clean staging before the operation finishes (see finish).
+	cleanDir(u.r.StagingDir)
 	result, _ := json.Marshal(map[string]any{
 		"component": m.Component, "from_version": m.FromVersion, "to_version": m.ToVersion,
 		"from_counter": m.FromCounter, "to_counter": m.ToCounter, "rollback": m.Kind == KindRollback,
@@ -376,6 +381,5 @@ func (u *unitRun) succeed(ctx context.Context) error {
 	}
 	u.r.record(entry)
 	_ = u.r.Markers.Clear(m.OpID)
-	cleanDir(u.r.StagingDir)
 	return nil
 }
