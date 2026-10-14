@@ -307,8 +307,9 @@ func (h *platformHandlers) verify(w http.ResponseWriter, r *http.Request) {
 		// Seed the rollback baseline: a verified release equal to the
 		// running version is what is installed. Never overwrites a
 		// record, and never seeds from an override (that is by
-		// definition older than a record that exists).
-		if installed.Counter == 0 && res.Version == version.Version {
+		// definition older than a record that exists). Only the daemon
+		// knows its own version; the CLI's is not known to it.
+		if body.Component == update.ComponentDaemon && installed.Counter == 0 && res.Version == version.Version {
 			if seeded, err := h.rel.SeedInstalled(body.Component, res.Version, res.Counter); err != nil {
 				h.s.log.Error("platform installed baseline seed failed", "component", body.Component, "error", err)
 			} else if seeded {

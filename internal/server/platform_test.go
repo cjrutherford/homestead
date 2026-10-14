@@ -62,24 +62,30 @@ func (e *platformEnv) pubText() string {
 // release writes artifact, checksums, and signature files; returns a verify body.
 func (e *platformEnv) release(version string, counter int) verifyBody {
 	e.t.Helper()
+	return e.releaseFor("homestead-server", version, counter)
+}
+
+// releaseFor is release for any component; the file carries the component's name.
+func (e *platformEnv) releaseFor(component, version string, counter int) verifyBody {
+	e.t.Helper()
 	dir, err := os.MkdirTemp(e.dir, "rel")
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	artifact := filepath.Join(dir, "homestead-server")
+	artifact := filepath.Join(dir, component)
 	content := []byte("daemon " + version)
 	sum := sha256.Sum256(content)
-	sums := []byte(fmt.Sprintf("version=%s\ncounter=%d\n%s  homestead-server\n", version, counter, hex.EncodeToString(sum[:])))
+	sums := []byte(fmt.Sprintf("version=%s\ncounter=%d\n%s  %s\n", version, counter, hex.EncodeToString(sum[:]), component))
 	sig := ed25519.Sign(e.priv, sums)
 	raw := append(append([]byte("Ed"), e.keyID[:]...), sig...)
 	global := ed25519.Sign(e.priv, append(append([]byte(nil), sig...), []byte("t")...))
 	sigText := "untrusted comment: s\n" + base64.StdEncoding.EncodeToString(raw) + "\ntrusted comment: t\n" + base64.StdEncoding.EncodeToString(global) + "\n"
-	for name, data := range map[string][]byte{"homestead-server": content, "SUMS": sums, "SUMS.minisig": []byte(sigText)} {
+	for name, data := range map[string][]byte{component: content, "SUMS": sums, "SUMS.minisig": []byte(sigText)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			e.t.Fatal(err)
 		}
 	}
-	return verifyBody{Component: "homestead-server", Artifact: artifact,
+	return verifyBody{Component: component, Artifact: artifact,
 		Checksums: filepath.Join(dir, "SUMS"), Signature: filepath.Join(dir, "SUMS.minisig")}
 }
 
@@ -303,6 +309,22 @@ func TestPlatformSeedsInstalledBaselineThenRefusesOlder(t *testing.T) {
 	}
 	if in, _ := e.h.rel.Installed("homestead-server"); in.Counter != 30 {
 		t.Fatalf("a non-running release changed the baseline: %+v", in)
+	}
+}
+
+// The running version is the daemon's: a CLI release carrying it must not
+// seed the CLI's baseline (found in KVM: the CLI then read as installed).
+func TestPlatformRunningVersionSeedsOnlyTheDaemon(t *testing.T) {
+	e := newPlatformEnv(t)
+	e.trust()
+	old := version.Version
+	version.Version = "3.0.0"
+	t.Cleanup(func() { version.Version = old })
+	if rec, _ := e.verify(e.releaseFor("homesteadctl", "3.0.0", 30)); rec.State != release.StateVerified {
+		t.Fatalf("%+v", rec)
+	}
+	if in, _ := e.h.rel.Installed("homesteadctl"); in.Counter != 0 {
+		t.Fatalf("CLI baseline seeded from the daemon's version: %+v", in)
 	}
 }
 
