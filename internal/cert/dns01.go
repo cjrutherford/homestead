@@ -186,6 +186,12 @@ func (d *DNS01) issue(ctx context.Context, acct *Account, issuer Issuer, zone st
 	if err != nil {
 		return Issued{}, err
 	}
+	if len(values) == 0 {
+		// Every authorization is already valid (the CA reused a recent
+		// validation, RFC 8555 section 7.1.4): there is nothing to prove, so
+		// no TXT value is placed and finalization goes ahead.
+		return d.finish(ctx, acct, order, orderURL, names, nil)
+	}
 	records, err := ChallengeRecords(zone, values)
 	if err != nil {
 		return Issued{}, err

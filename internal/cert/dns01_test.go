@@ -42,6 +42,9 @@ type acmeDouble struct {
 	badNonce  bool
 	usedNonce map[string]bool
 	failFinal bool
+	// reusedAuthz serves the authorization already valid, as a CA that
+	// reuses a recent validation does (RFC 8555 section 7.1.4).
+	reusedAuthz bool
 	// lastPayload is the raw JWS payload of the last verified request.
 	lastPayload string
 	// csrNames/leaf: what the CSR asked for and the leaf issued for it.
@@ -96,7 +99,7 @@ func (d *acmeDouble) handler(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/authz/1":
 		d.verifyAsGet(w, r)
 		status := "pending"
-		if d.triggered {
+		if d.triggered || d.reusedAuthz {
 			status = "valid"
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -373,6 +376,29 @@ func TestIssueFlow(t *testing.T) {
 	// TXT placed carried the exact key-authorization hash, then cleaned.
 	if len(provider.records) != 0 {
 		t.Fatalf("leftovers = %+v", provider.records)
+	}
+}
+
+func TestIssueReusedAuthorization(t *testing.T) {
+	double := &acmeDouble{reusedAuthz: true}
+	client, _ := serveACME(t, double)
+	provider := &scriptDNSProvider{}
+	dns01, _ := openDNS01(t, client, provider)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	issued, err := dns01.Issue(ctx, testAccount(t), scriptIssuer(), "example.com",
+		[]string{"www.example.com"}, true)
+	if err != nil {
+		t.Fatalf("Issue with an already-valid authorization: %v", err)
+	}
+	if len(issued.ChainPEM) == 0 {
+		t.Fatal("no chain issued")
+	}
+	if double.triggered {
+		t.Fatal("a valid authorization had its challenge triggered")
+	}
+	if len(provider.records) != 0 {
+		t.Fatalf("TXT placed for a reused authorization: %+v", provider.records)
 	}
 }
 
