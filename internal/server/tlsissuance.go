@@ -9,6 +9,7 @@ import (
 	"homestead/internal/audit"
 	"homestead/internal/cert"
 	"homestead/internal/docker"
+	"homestead/internal/doctor"
 	"homestead/internal/exposure"
 	"homestead/internal/operation"
 	"homestead/internal/secret"
@@ -24,11 +25,17 @@ func NewCertIssuing(st *store.Store, secrets *secret.Store) (*cert.Issuing, erro
 	if err != nil {
 		return nil, err
 	}
+	stackDir := docker.CaddyStack().Dir
+	// Interrupted placements (staging directories, stale temp files) are
+	// cleaned, or rolled back, before anything else touches them.
+	if err := docker.CleanCertTemps(stackDir); err != nil {
+		return nil, err
+	}
 	return &cert.Issuing{
 		Store: st, Wizards: wizard.New(st), Secrets: secrets, Providers: providers,
-		StackDir: docker.CaddyStack().Dir,
-		Probe:    cert.ProbeFromEnv(os.Getenv),
-		Routes:   func() ([]docker.Route, error) { return servedCandidateRoutes(st) },
+		StackDir: stackDir, CloudflareAPI: os.Getenv(cert.EnvCloudflareAPI),
+		Probe:  cert.ProbeFromEnv(os.Getenv),
+		Routes: func() ([]docker.Route, error) { return servedCandidateRoutes(st) },
 	}, nil
 }
 
@@ -66,6 +73,15 @@ func servedCandidateRoutes(st *store.Store) ([]docker.Route, error) {
 // before an approval of the current plan exists.
 func (s *Server) MountTLSIssuance(st *store.Store, issuing *cert.Issuing) {
 	runner := operation.NewRunner(st)
+	// The approval is audited before it is persisted: if the audit entry
+	// cannot be written, nothing is approved.
+	issuing.OnApprove = func(approval cert.Approval) error {
+		_, err := audit.New(st).Record(audit.Entry{Actor: approval.Actor, Action: "cert.issuance.approve",
+			Outcome: audit.OutcomeOK,
+			Detail: approval.Certificate + " digest " + approval.Digest + " directory " + approval.Plan.Directory +
+				" (" + approval.Plan.DirectoryClass + ")"})
+		return err
+	}
 	s.mux.HandleFunc("GET /api/v1/tls/issuance/plans", func(w http.ResponseWriter, r *http.Request) {
 		plans, err := issuing.Plans()
 		if err != nil {
@@ -99,13 +115,6 @@ func (s *Server) MountTLSIssuance(st *store.Store, issuing *cert.Issuing) {
 			_, _ = audit.New(st).Record(audit.Entry{Actor: actor, Action: "cert.issuance.approve",
 				Outcome: audit.OutcomeError, Detail: body.Certificate + ": " + err.Error()})
 			writeIssuanceError(w, err)
-			return
-		}
-		if _, err := audit.New(st).Record(audit.Entry{Actor: actor, Action: "cert.issuance.approve",
-			Outcome: audit.OutcomeOK,
-			Detail: approval.Certificate + " digest " + approval.Digest + " directory " + approval.Plan.Directory +
-				" (" + approval.Plan.DirectoryClass + ")"}); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, approval)
@@ -167,4 +176,24 @@ func writeIssuanceError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 	}
 	http.Error(w, err.Error(), status)
+}
+
+// certOverrideDoctorCheck warns while a validation-only ACME override is
+// set in the daemon's environment: the Cloudflare API origin or the
+// propagation resolver. They exist for local test CAs and should not stay
+// on an appliance issuing real certificates.
+func certOverrideDoctorCheck(getenv func(string) string) func() []doctor.Check {
+	return func() []doctor.Check {
+		var set []string
+		for _, name := range []string{cert.EnvCloudflareAPI, cert.EnvDNSResolver} {
+			if getenv(name) != "" {
+				set = append(set, name)
+			}
+		}
+		if len(set) == 0 {
+			return []doctor.Check{{Name: "acme-overrides", Status: doctor.StatusOK, Detail: "no ACME validation overrides set"}}
+		}
+		return []doctor.Check{{Name: "acme-overrides", Status: doctor.StatusWarn,
+			Detail: strings.Join(set, ", ") + " set: validation-only overrides redirect DNS-01 and propagation checks; remove them from the service unit for real issuance"}}
+	}
 }

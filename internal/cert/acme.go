@@ -191,30 +191,55 @@ func (c *Client) postJWS(ctx context.Context, acct *Account, url string, payload
 	if err != nil {
 		return fmt.Errorf("cert: acme encode: %w", err)
 	}
+	_, err = c.send(ctx, acct, url, body, out)
+	return err
+}
+
+// postAsGet is RFC 8555 §6.3 POST-as-GET: a signed request with an empty
+// payload (not "{}"). CAs require it to read authorizations, orders, and
+// certificates.
+func (c *Client) postAsGet(ctx context.Context, acct *Account, url string, out any) error {
+	_, err := c.send(ctx, acct, url, nil, out)
+	return err
+}
+
+// postJWSLocation is postJWS returning the response's Location header
+// (newOrder's order URL).
+func (c *Client) postJWSLocation(ctx context.Context, acct *Account, url string, payload any, out any) (string, error) {
+	body, err := json.Marshal(payloadOrEmpty(payload))
+	if err != nil {
+		return "", fmt.Errorf("cert: acme encode: %w", err)
+	}
+	return c.send(ctx, acct, url, body, out)
+}
+
+// send signs and posts body (empty means POST-as-GET), retrying one
+// badNonce, and returns the Location header of a successful response.
+func (c *Client) send(ctx context.Context, acct *Account, url string, body []byte, out any) (string, error) {
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		if c.nonce == "" {
 			if err := c.fetchNonce(ctx); err != nil {
-				return err
+				return "", err
 			}
 		}
 		signed, err := signJWS(acct, url, c.nonce, body)
 		if err != nil {
-			return err
+			return "", err
 		}
 		var problem acmeError
-		status, nonce, raw, err := c.postJSON(ctx, url, signed)
+		status, nonce, location, raw, err := c.postJSON(ctx, url, signed)
 		if err != nil {
-			return err
+			return "", err
 		}
 		c.nonce = nonce
 		if status == http.StatusOK || status == http.StatusCreated {
 			if out != nil {
 				if err := json.Unmarshal(raw, out); err != nil {
-					return fmt.Errorf("cert: acme decode: %w", err)
+					return "", fmt.Errorf("cert: acme decode: %w", err)
 				}
 			}
-			return nil
+			return location, nil
 		}
 		_ = json.Unmarshal(raw, &problem)
 		if problem.Type == acmeBadNonceType {
@@ -223,11 +248,11 @@ func (c *Client) postJWS(ctx context.Context, acct *Account, url string, payload
 			continue
 		}
 		if problem.Detail != "" {
-			return fmt.Errorf("cert: acme %s: %s", problem.Type, problem.Detail)
+			return "", fmt.Errorf("cert: acme %s: %s", problem.Type, problem.Detail)
 		}
-		return fmt.Errorf("cert: acme %s: status %d", url, status)
+		return "", fmt.Errorf("cert: acme %s: status %d", url, status)
 	}
-	return lastErr
+	return "", lastErr
 }
 
 // payloadOrEmpty renders nil payloads as {} per JWS conventions.
@@ -320,22 +345,22 @@ func (c *Client) discover(ctx context.Context) (acmeDirectory, error) {
 }
 
 // postJSON posts a JWS body, returning status, fresh nonce, and raw body.
-func (c *Client) postJSON(ctx context.Context, url string, signed []byte) (int, string, []byte, error) {
+func (c *Client) postJSON(ctx context.Context, url string, signed []byte) (int, string, string, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(signed))
 	if err != nil {
-		return 0, "", nil, fmt.Errorf("cert: acme request: %w", err)
+		return 0, "", "", nil, fmt.Errorf("cert: acme request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/jose+json")
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return 0, "", nil, fmt.Errorf("cert: acme post: %w", err)
+		return 0, "", "", nil, fmt.Errorf("cert: acme post: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return 0, "", nil, fmt.Errorf("cert: acme read: %w", err)
+		return 0, "", "", nil, fmt.Errorf("cert: acme read: %w", err)
 	}
-	return resp.StatusCode, resp.Header.Get("Replay-Nonce"), raw, nil
+	return resp.StatusCode, resp.Header.Get("Replay-Nonce"), resp.Header.Get("Location"), raw, nil
 }
 
 // get fetches an ACME resource (authorizations poll unsigned GETs).
@@ -363,14 +388,14 @@ func (c *Client) get(ctx context.Context, url string, out any) error {
 }
 
 // pollAuthz waits for one authorization to leave pending, polling the
-// unsigned URL until ctx ends. Invalid authorizations report the
+// URL with POST-as-GET until ctx ends. Invalid authorizations report the
 // challenge error, never a bare status.
-func (c *Client) pollAuthz(ctx context.Context, url string, interval time.Duration) (acmeAuthorization, error) {
+func (c *Client) pollAuthz(ctx context.Context, acct *Account, url string, interval time.Duration) (acmeAuthorization, error) {
 	var authz acmeAuthorization
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		if err := c.get(ctx, url, &authz); err != nil {
+		if err := c.postAsGet(ctx, acct, url, &authz); err != nil {
 			return authz, err
 		}
 		switch authz.Status {
@@ -399,7 +424,7 @@ func (c *Client) pollOrder(ctx context.Context, acct *Account, url string, inter
 	defer ticker.Stop()
 	for {
 		var fetch acmeOrder
-		if err := c.postJWS(ctx, acct, url, nil, &fetch); err != nil {
+		if err := c.postAsGet(ctx, acct, url, &fetch); err != nil {
 			return "", err
 		}
 		order = fetch
@@ -499,20 +524,16 @@ func finalizeCSR(names []string) (der, keyPEM []byte, err error) {
 // download fetches the PEM chain, validating at least one certificate
 // block so truncated bodies never pass as chains.
 func (c *Client) download(ctx context.Context, acct *Account, url string) ([]byte, error) {
-	body, err := json.Marshal(map[string]any{})
-	if err != nil {
-		return nil, fmt.Errorf("cert: acme encode: %w", err)
-	}
 	if c.nonce == "" {
 		if err := c.fetchNonce(ctx); err != nil {
 			return nil, err
 		}
 	}
-	signed, err := signJWS(acct, url, c.nonce, body)
+	signed, err := signJWS(acct, url, c.nonce, nil)
 	if err != nil {
 		return nil, err
 	}
-	status, nonce, raw, err := c.postJSON(ctx, url, signed)
+	status, nonce, _, raw, err := c.postJSON(ctx, url, signed)
 	if err != nil {
 		return nil, err
 	}

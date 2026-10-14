@@ -13,6 +13,7 @@ import (
 	"homestead/internal/cert"
 	"homestead/internal/dns"
 	"homestead/internal/docker"
+	"homestead/internal/doctor"
 	"homestead/internal/operation"
 	"homestead/internal/secret"
 	"homestead/internal/store"
@@ -245,4 +246,23 @@ type issuanceTokenDNS struct{ issuanceFakeDNS }
 func (issuanceTokenDNS) Name() string { return "tokendns" }
 func (issuanceTokenDNS) RequiredCredentials() []dns.CredentialField {
 	return []dns.CredentialField{{Name: "api_token", Label: "API token", Secret: true}}
+}
+
+func TestCertOverrideDoctorCheck(t *testing.T) {
+	env := map[string]string{}
+	check := certOverrideDoctorCheck(func(k string) string { return env[k] })
+	if got := check(); got[0].Status != doctor.StatusOK {
+		t.Fatalf("no overrides = %+v", got)
+	}
+	env[cert.EnvDNSResolver] = "127.0.0.1:8053"
+	got := check()
+	if got[0].Status != doctor.StatusWarn || !strings.Contains(got[0].Detail, cert.EnvDNSResolver) {
+		t.Fatalf("resolver override = %+v", got)
+	}
+	env[cert.EnvCloudflareAPI] = "http://127.0.0.1:8081"
+	got = check()
+	if got[0].Status != doctor.StatusWarn || !strings.Contains(got[0].Detail, cert.EnvCloudflareAPI) ||
+		!strings.Contains(got[0].Detail, cert.EnvDNSResolver) {
+		t.Fatalf("both overrides = %+v", got)
+	}
 }

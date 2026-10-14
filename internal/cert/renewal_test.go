@@ -124,11 +124,24 @@ func TestCheckRenewals(t *testing.T) {
 		t.Fatalf("corrupt = %+v", got)
 	}
 
-	// Manual (no auto-renew) never reports renewal-due, even inside the
-	// window; the detail says renewal is manual.
+	// An ACME issuance placed through S278 is served from files Caddy does
+	// not renew, so auto-renew off still warns inside the window.
+	noAuto := renewalSet("www.example.com")
+	noAuto.Certificates[0].Renewal.Auto = false
+	got, err = CheckRenewals(noAuto, issuance, issuedAt.Add(45*24*time.Hour))
+	if err != nil || got[0].Status != RenewalDue || !strings.Contains(got[0].Detail, "Caddy does not renew") {
+		t.Fatalf("auto off = %+v, %v", got, err)
+	}
+	// Outside the window it is still ok.
+	if got, _ := CheckRenewals(noAuto, issuance, issuedAt.Add(time.Hour)); got[0].Status != RenewalOK {
+		t.Fatalf("auto off outside window = %+v", got)
+	}
+	// A manual issuer keeps the old semantics: never due, told to renew by hand.
 	manual := renewalSet("www.example.com")
 	manual.Certificates[0].Renewal.Auto = false
-	got, err = CheckRenewals(manual, issuance, issuedAt.Add(45*24*time.Hour))
+	manual.Certificates[0].Issuer = Issuer{Name: "own", Type: IssuerManual}
+	manualIssuance := []Issuance{{Certificate: "www", Fingerprint: NewFingerprint([]string{"www.example.com"}, "", ""), ChainPEM: issuance[0].ChainPEM}}
+	got, err = CheckRenewals(manual, manualIssuance, issuedAt.Add(45*24*time.Hour))
 	if err != nil || got[0].Status != RenewalOK || !strings.Contains(got[0].Detail, "manually") {
 		t.Fatalf("manual = %+v, %v", got, err)
 	}

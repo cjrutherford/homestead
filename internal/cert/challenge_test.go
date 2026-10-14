@@ -67,6 +67,9 @@ type scriptDNSProvider struct {
 	fields  []dns.CredentialField
 	// deleteErr fails every delete change (cleanup), when set.
 	deleteErr error
+	// applyHook, when set, runs first in ApplyChanges; a non-nil error
+	// fails the call (it may mutate records to simulate partial work).
+	applyHook func(ctx context.Context, changes []dns.Change) error
 }
 
 func (s *scriptDNSProvider) Name() string { return "script" }
@@ -80,7 +83,12 @@ func (s *scriptDNSProvider) ListRecords(_ context.Context, _ string, _ dns.Crede
 	}
 	return s.records, nil
 }
-func (s *scriptDNSProvider) ApplyChanges(_ context.Context, _ string, _ dns.Credentials, changes []dns.Change) error {
+func (s *scriptDNSProvider) ApplyChanges(ctx context.Context, _ string, _ dns.Credentials, changes []dns.Change) error {
+	if s.applyHook != nil {
+		if err := s.applyHook(ctx, changes); err != nil {
+			return err
+		}
+	}
 	for _, change := range changes {
 		if change.Action == dns.ChangeDelete && s.deleteErr != nil {
 			return s.deleteErr

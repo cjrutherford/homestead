@@ -181,6 +181,22 @@ func runTLSIssuanceApply(ctx context.Context, client *apiclient.Client, args []s
 // stdin is the credential-from-stdin source; tests replace it.
 var stdin = func() io.Reader { return os.Stdin }
 
+// maxCredentialBytes caps a credential value read from a file or stdin.
+const maxCredentialBytes = 64 << 10
+
+// readCapped reads at most maxCredentialBytes and refuses anything larger
+// instead of silently truncating a value.
+func readCapped(r io.Reader) ([]byte, error) {
+	raw, err := io.ReadAll(io.LimitReader(r, maxCredentialBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > maxCredentialBytes {
+		return nil, fmt.Errorf("value is larger than %d KiB", maxCredentialBytes>>10)
+	}
+	return raw, nil
+}
+
 // readCredential resolves NAME=@FILE or NAME=- into a value. Values never
 // travel on the command line, where they would land in shell history and
 // the process list. One trailing newline is trimmed.
@@ -192,9 +208,13 @@ func readCredential(spec string, in io.Reader) (name, value string, err error) {
 	var raw []byte
 	switch {
 	case source == "-":
-		raw, err = io.ReadAll(io.LimitReader(in, 64<<10))
+		raw, err = readCapped(in)
 	case strings.HasPrefix(source, "@") && len(source) > 1:
-		raw, err = os.ReadFile(source[1:])
+		var f *os.File
+		if f, err = os.Open(source[1:]); err == nil {
+			raw, err = readCapped(f)
+			f.Close()
+		}
 	default:
 		return "", "", fmt.Errorf("credential %q: values come from @FILE or - (stdin), never the command line", name)
 	}

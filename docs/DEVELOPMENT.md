@@ -1023,8 +1023,11 @@ The dashboard Certificates page (`/tls`) does the same through the same API
   is requested from the CA before then.
 - CA directory: the directory of the certificate's ACME issuer in the TLS
   strategy. There is no default. Classes: `staging` (Let's Encrypt staging),
-  `test` (private or loopback host, for Pebble), `production` (anything
-  else). Test against staging first.
+  `test` (loopback, RFC 1918, unique-local or link-local address, or a
+  private suffix such as `.lan`, `.internal`, `.home.arpa`, `.test`,
+  `.localhost`; for Pebble), `production` (everything else, including public
+  IP literals and single-label names, which may resolve publicly). Test
+  against staging first.
 - DNS credentials had no entry surface before this slice. They are stored
   write-only (`POST /api/v1/tls/issuance/credentials`) under the
   conventional `dns_<provider>_<field>` secret names; the CLI reads values
@@ -1036,8 +1039,8 @@ The dashboard Certificates page (`/tls`) does the same through the same API
 - The apply operation (`cert.issue`): `issue-and-place` runs
   `DNS01.IssueFor`, delivers chain and key to
   `<caddy stack>/routes/certs/<name>/{fullchain.pem,privkey.pem}` (key 0600,
-  directory 0700, written atomically, inside the directory Caddy already
-  mounts) and only then records the S263 fingerprint and chain;
+  directory 0700, inside the directory Caddy already mounts) and only then
+  records the S263 fingerprint and chain;
   `refresh-routes` rewrites the existing snippets of automatic-TLS routes now
   covered (never creating one: an approved but unapplied exposure stays
   unapplied); `reload-edge` reloads Caddy, rolling the snippets back if it is
@@ -1045,13 +1048,38 @@ The dashboard Certificates page (`/tls`) does the same through the same API
   works). Routes with automatic TLS whose host the certificate covers serve
   it through `tls <chain> <key>`; later reconciles and exposure applies keep
   doing so. Wildcards cover one label (`*.example.com` is not the apex).
+  Placement validates first (the key must pair with the chain and the leaf
+  must cover every approved name literally and not be expired), writes key,
+  chain and metadata into a staging directory and swaps the directory in
+  whole, restoring the previous one if the swap fails, so a new key never
+  sits beside an old chain. Symlinked placement directories and files are
+  refused, and a placement that is not a valid pair is ignored by route
+  rendering, never breaking unrelated route applies. Interrupted staging is
+  cleaned (or rolled back) at daemon start. Snippet rewrites are temp file
+  plus rename and only touch the approved served routes; rollback keeps file
+  modes. Retrying an apply after a refused reload keeps the placed, recorded
+  certificate instead of ordering again; a newer approval orders afresh.
   Until S272, Caddy does not renew a placed certificate and nothing
-  re-issues it: the renewal check reports it, and re-running this flow
-  replaces it.
+  re-issues it: the renewal check warns (`renewal-due`) inside the window
+  for ACME issuances whatever `Renewal.Auto` says (it defaults to false when
+  the strategy omits it), and re-running this flow replaces the certificate.
+- The ACME client uses POST-as-GET (RFC 8555 section 6.3) for
+  authorizations, the order and the certificate, and polls the order URL
+  from newOrder's Location header. DNS TXT cleanup runs exactly once on every
+  path on its own 30s context, and a failed propagation check stops before
+  the CA is asked to validate; once the CA has issued, the certificate is
+  delivered and recorded even if cleanup fails (the operation then ends
+  failed with that reason).
+- Caddy's official image runs as root inside the container, which is why the
+  0700 directory and 0600 key written by the daemon are readable there. With
+  Docker user-namespace remapping or a non-root Caddy this would need a group
+  or ownership change; none is made.
 - Environment for validation only (root-owned unit, never API-settable):
   `HOMESTEAD_ACME_CLOUDFLARE_API` (Cloudflare API origin),
   `HOMESTEAD_ACME_DNS_RESOLVER` (host:port the propagation check queries;
-  default 1.1.1.1:53). Trusting a private CA for the directory uses Go's
+  default 1.1.1.1:53). Doctor warns (`acme-overrides`) while either is set,
+  and a plain-http Cloudflare origin blocks the plan unless the directory is
+  a `test` CA. Trusting a private CA for the directory uses Go's
   standard `SSL_CERT_FILE`.
 
 ### KVM validation without public DNS (Pebble)

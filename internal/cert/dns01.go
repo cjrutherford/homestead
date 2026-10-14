@@ -60,6 +60,9 @@ type DNS01 struct {
 	// delivery failure skips recording, so the renewal check never
 	// believes in a certificate that never reached the edge.
 	Deliver func(certName string, issued Issued) error
+	// CleanupTimeout bounds DNS cleanup, which runs on its own context;
+	// zero means 30s.
+	CleanupTimeout time.Duration
 	// Now stamps recorded issuances; nil means time.Now (tests inject).
 	Now func() time.Time
 }
@@ -170,10 +173,14 @@ func (d *DNS01) issue(ctx context.Context, acct *Account, issuer Issuer, zone st
 		return Issued{}, err
 	}
 	var order acmeOrder
-	if err := d.Client.postJWS(ctx, acct, dir.NewOrder, map[string]any{
+	orderURL, err := d.Client.postJWSLocation(ctx, acct, dir.NewOrder, map[string]any{
 		"identifiers": orderIdentifiers(names),
-	}, &order); err != nil {
+	}, &order)
+	if err != nil {
 		return Issued{}, err
+	}
+	if orderURL == "" {
+		return Issued{}, fmt.Errorf("cert: acme newOrder returned no order location")
 	}
 	challengeURLs, values, err := d.authorize(ctx, acct, order)
 	if err != nil {
@@ -183,26 +190,48 @@ func (d *DNS01) issue(ctx context.Context, acct *Account, issuer Issuer, zone st
 	if err != nil {
 		return Issued{}, err
 	}
+	// Cleanup runs exactly once on every path after placement starts
+	// (including a failed or partial Place), on its own short context so
+	// an expired issuance deadline never strands TXT values.
+	cleanup := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), d.cleanupTimeout())
+		defer cancel()
+		return placer.Cleanup(ctx, records)
+	}
 	if err := placer.Place(ctx, records); err != nil {
+		if cleanupErr := cleanup(); cleanupErr != nil {
+			return Issued{}, fmt.Errorf("%v (cleanup also failed: %v)", err, cleanupErr)
+		}
 		return Issued{}, err
 	}
-	cleanupErr := func() error {
-		if err := AwaitPropagation(ctx, d.Probe, zone, records, d.interval()); err != nil {
-			return err
+	// Propagation is a pre-validation step only: if it fails nothing has
+	// been asked of the CA yet, so we stop and clean up. Once the CA has
+	// validated and issued, the certificate is never discarded.
+	if err := AwaitPropagation(ctx, d.Probe, zone, records, d.interval()); err != nil {
+		if cleanupErr := cleanup(); cleanupErr != nil {
+			return Issued{}, fmt.Errorf("%v (cleanup also failed: %v)", err, cleanupErr)
 		}
-		return nil
-	}()
-	issued, issueErr := d.finish(ctx, acct, order, names, challengeURLs)
-	if cleanup := placer.Cleanup(ctx, records); cleanup != nil && issueErr == nil && cleanupErr == nil {
-		return issued, fmt.Errorf("cert: issued but cleanup failed: %w", cleanup)
-	} else if cleanup != nil && issueErr != nil {
-		return Issued{}, fmt.Errorf("%v (cleanup also failed: %v)", issueErr, cleanup)
+		return Issued{}, err
 	}
-	if cleanupErr != nil {
-		_ = placer.Cleanup(ctx, records)
-		return Issued{}, cleanupErr
+	issued, issueErr := d.finish(ctx, acct, order, orderURL, names, challengeURLs)
+	cleanupErr := cleanup()
+	switch {
+	case issueErr != nil && cleanupErr != nil:
+		return Issued{}, fmt.Errorf("%v (cleanup also failed: %v)", issueErr, cleanupErr)
+	case issueErr != nil:
+		return Issued{}, issueErr
+	case cleanupErr != nil:
+		return issued, fmt.Errorf("cert: issued but cleanup failed: %w", cleanupErr)
 	}
-	return issued, issueErr
+	return issued, nil
+}
+
+// cleanupTimeout bounds TXT cleanup independently of the issuance context.
+func (d *DNS01) cleanupTimeout() time.Duration {
+	if d.CleanupTimeout > 0 {
+		return d.CleanupTimeout
+	}
+	return 30 * time.Second
 }
 
 // orderIdentifiers renders the newOrder identifier set.
@@ -222,7 +251,7 @@ func (d *DNS01) authorize(ctx context.Context, acct *Account, order acmeOrder) (
 	values := map[string]string{}
 	for _, authzURL := range order.Authorizations {
 		var authz acmeAuthorization
-		if err := d.Client.get(ctx, authzURL, &authz); err != nil {
+		if err := d.Client.postAsGet(ctx, acct, authzURL, &authz); err != nil {
 			return nil, nil, err
 		}
 		if authz.Status == "valid" {
@@ -251,14 +280,14 @@ func (d *DNS01) authorize(ctx context.Context, acct *Account, order acmeOrder) (
 // finish triggers validation, polls authorizations, finalizes with a
 // fresh CSR for names, polls the order, and downloads the chain,
 // returning the chain plus the fresh certificate key.
-func (d *DNS01) finish(ctx context.Context, acct *Account, order acmeOrder, names, challengeURLs []string) (Issued, error) {
+func (d *DNS01) finish(ctx context.Context, acct *Account, order acmeOrder, orderURL string, names, challengeURLs []string) (Issued, error) {
 	for _, url := range challengeURLs {
 		if err := d.Client.postJWS(ctx, acct, url, nil, nil); err != nil {
 			return Issued{}, fmt.Errorf("cert: trigger challenge: %w", err)
 		}
 	}
 	for _, authzURL := range order.Authorizations {
-		if _, err := d.Client.pollAuthz(ctx, authzURL, d.interval()); err != nil {
+		if _, err := d.Client.pollAuthz(ctx, acct, authzURL, d.interval()); err != nil {
 			return Issued{}, err
 		}
 	}
@@ -272,7 +301,7 @@ func (d *DNS01) finish(ctx context.Context, acct *Account, order acmeOrder, name
 	}, &finalized); err != nil {
 		return Issued{}, err
 	}
-	certURL, err := d.Client.pollOrder(ctx, acct, order.Finalize, d.interval())
+	certURL, err := d.Client.pollOrder(ctx, acct, orderURL, d.interval())
 	if err != nil {
 		return Issued{}, err
 	}

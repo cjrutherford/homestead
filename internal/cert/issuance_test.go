@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -41,6 +42,8 @@ type issuanceRig struct {
 	reloads   int
 	reloadErr error
 	routes    []docker.Route
+	provName  string
+	clock     time.Time
 }
 
 func newIssuanceRig(t *testing.T, directory string) *issuanceRig {
@@ -71,6 +74,7 @@ func newIssuanceRig(t *testing.T, directory string) *issuanceRig {
 	rig := &issuanceRig{
 		t: t, store: st, secrets: secrets, wizards: wizard.New(st), provider: provider,
 		double: double, caCalls: calls, stackDir: filepath.Join(dir, "caddy"),
+		provName: "script", clock: time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC),
 		routes: []docker.Route{{
 			Host: "www.example.com", Target: docker.Target{Host: "www", Port: 80},
 			Exposure: docker.ExposureLocal, TLS: docker.TLSAuto,
@@ -97,7 +101,7 @@ func newIssuanceRig(t *testing.T, directory string) *issuanceRig {
 			rig.reloads++
 			return rig.reloadErr
 		},
-		Now: func() time.Time { return time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC) },
+		Now: func() time.Time { return rig.clock },
 	}
 	rig.saveStrategy(directory, []string{"www.example.com"})
 	rig.saveDomain("script", "example.com")
@@ -111,7 +115,7 @@ func (r *issuanceRig) saveStrategy(directory string, names []string) {
 	set := Set{Certificates: []Certificate{{
 		Name: "www", DNSNames: names, State: StatePending, Renewal: Renewal{Auto: true},
 		Issuer: Issuer{Name: "le", Type: IssuerACME, Directory: directory,
-			Challenge: ChallengeDNS01, DNSProvider: "script"},
+			Challenge: ChallengeDNS01, DNSProvider: r.provName},
 	}}}
 	raw, _ := json.Marshal(map[string]any{"certificates": set.Certificates})
 	var payload map[string]any
@@ -544,5 +548,250 @@ func TestStoreCredentialsAndPlanPresence(t *testing.T) {
 	}
 	if got, err := rig.secrets.Get("dns_script_api_token"); err != nil || got != "hunter2-value" {
 		t.Fatalf("stored under the conventional name: %q %v", got, err)
+	}
+}
+
+func TestPublicIPDirectoryNeedsProductionConfirmation(t *testing.T) {
+	rig := newIssuanceRig(t, "https://8.8.8.8/dir")
+	plan, _ := rig.issuing.Plan("www")
+	if plan.DirectoryClass != DirectoryProduction {
+		t.Fatalf("class = %q", plan.DirectoryClass)
+	}
+	if _, err := rig.issuing.Approve("www", plan.Digest, "owner", true, false); err == nil ||
+		!strings.Contains(err.Error(), "production") {
+		t.Fatalf("approved a public-IP CA without confirmation: %v", err)
+	}
+}
+
+func TestPropagationFailureStopsBeforeValidation(t *testing.T) {
+	rig := newIssuanceRig(t, issuanceDirectory)
+	rig.issuing.Probe = func(context.Context, string, dns.RecordType) ([]string, error) {
+		return nil, errors.New("no such host")
+	}
+	rig.approve()
+	def, _ := rig.issuing.Definition("www")
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	err := def.Steps[0].Run(ctx)
+	if err == nil {
+		t.Fatal("issued without propagation")
+	}
+	if rig.double.triggered {
+		t.Fatal("the CA was asked to validate before the values propagated")
+	}
+	if len(rig.provider.records) != 0 {
+		t.Fatalf("leftover TXT after a propagation failure: %+v", rig.provider.records)
+	}
+	if len(docker.PlacedCerts(rig.stackDir)) != 0 {
+		t.Fatal("placed after a failed issuance")
+	}
+}
+
+func TestCleanupFailureAfterIssuanceStillDeliversAndRecords(t *testing.T) {
+	rig := newIssuanceRig(t, issuanceDirectory)
+	rig.provider.deleteErr = errors.New("provider down")
+	rig.approve()
+	def, _ := rig.issuing.Definition("www")
+	err := rig.run(def)
+	if err == nil || !strings.Contains(err.Error(), "issued, placed and served, but") ||
+		!strings.Contains(err.Error(), "cleanup failed") {
+		t.Fatalf("run = %v", err)
+	}
+	if len(docker.PlacedCerts(rig.stackDir)) != 1 {
+		t.Fatal("an issued certificate was discarded because DNS cleanup failed")
+	}
+	if issuances, _ := NewIssuances(rig.store).List(); len(issuances) != 1 {
+		t.Fatalf("issued certificate not recorded: %+v", issuances)
+	}
+	if rig.reloads != 1 {
+		t.Fatalf("reloads = %d: the edge must still serve the certificate", rig.reloads)
+	}
+}
+
+func TestReloadRetryReusesPlacedCertificate(t *testing.T) {
+	rig := newIssuanceRig(t, issuanceDirectory)
+	rig.approve()
+	rig.reloadErr = errors.New("caddy refused")
+	def, _ := rig.issuing.Definition("www")
+	if err := rig.run(def); err == nil {
+		t.Fatal("reload failure not reported")
+	}
+	calls := rig.caCalls.Load()
+	chainPath, _ := docker.CertPaths(rig.stackDir, "www")
+	placedBefore := mustRead(t, chainPath)
+	rig.reloadErr = nil
+	def, err := rig.issuing.Definition("www")
+	if err != nil {
+		t.Fatalf("Definition on retry: %v", err)
+	}
+	if err := rig.run(def); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if rig.caCalls.Load() != calls {
+		t.Fatalf("retry ordered a new certificate (%d CA calls, was %d)", rig.caCalls.Load(), calls)
+	}
+	if string(mustRead(t, chainPath)) != string(placedBefore) {
+		t.Fatal("placed chain changed on retry")
+	}
+	snippet := mustRead(t, filepath.Join(rig.stackDir, "routes", "www.example.com.caddy"))
+	if !strings.Contains(string(snippet), "privkey.pem") {
+		t.Fatalf("retry did not serve the certificate:\n%s", snippet)
+	}
+	// A newer approval is a deliberate re-issue: never reused. A damaged
+	// placement is not reusable either.
+	plan, _ := rig.issuing.Plan("www")
+	later := Approval{ApprovedAt: rig.clock.Add(time.Hour)}
+	if rig.issuing.reusable(plan, later) {
+		t.Fatal("reused a certificate for a newer approval")
+	}
+	_, keyPath := docker.CertPaths(rig.stackDir, "www")
+	_ = os.WriteFile(keyPath, []byte("garbage"), 0o600)
+	if rig.issuing.reusable(plan, Approval{ApprovedAt: rig.clock}) {
+		t.Fatal("reused a certificate whose key no longer matches")
+	}
+}
+
+func TestApprovalAuditedBeforePersisting(t *testing.T) {
+	rig := newIssuanceRig(t, issuanceDirectory)
+	plan, _ := rig.issuing.Plan("www")
+	var seen Approval
+	rig.issuing.OnApprove = func(a Approval) error { seen = a; return errors.New("audit store down") }
+	if _, err := rig.issuing.Approve("www", plan.Digest, "owner", true, false); err == nil ||
+		!strings.Contains(err.Error(), "not recorded") {
+		t.Fatalf("approve = %v", err)
+	}
+	if seen.Certificate != "www" || seen.Actor != "owner" {
+		t.Fatalf("hook saw %+v", seen)
+	}
+	if approvals, _ := rig.issuing.Approvals(); len(approvals) != 0 {
+		t.Fatalf("persisted an approval whose audit failed: %+v", approvals)
+	}
+	if _, err := rig.issuing.Definition("www"); !errors.Is(err, ErrNotApproved) {
+		t.Fatalf("Definition = %v", err)
+	}
+	rig.issuing.OnApprove = func(Approval) error { return nil }
+	if _, err := rig.issuing.Approve("www", plan.Digest, "owner", true, false); err != nil {
+		t.Fatalf("approve after audit recovers: %v", err)
+	}
+}
+
+func TestConcurrentAccountCreationSharesOneKey(t *testing.T) {
+	rig := newIssuanceRig(t, issuanceDirectory)
+	const n = 8
+	keys := make([]string, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			acct, err := rig.issuing.loadAccount(issuanceDirectory)
+			if err != nil {
+				t.Errorf("loadAccount: %v", err)
+				return
+			}
+			pemKey, _ := EncodeAccountKey(acct.Key)
+			keys[i] = string(pemKey)
+		}(i)
+	}
+	wg.Wait()
+	for _, k := range keys {
+		if k != keys[0] {
+			t.Fatal("concurrent applies generated different account keys; one registration would be orphaned")
+		}
+	}
+}
+
+func TestCloudflareOverrideMustBeHTTPSUnlessTestCA(t *testing.T) {
+	rig := newIssuanceRig(t, issuanceDirectory)
+	cloudflare := &namedProvider{scriptDNSProvider: rig.provider, name: "cloudflare"}
+	registry := dns.NewRegistry()
+	if err := registry.Register(cloudflare); err != nil {
+		t.Fatal(err)
+	}
+	rig.issuing.Providers = registry
+	rig.provName = "cloudflare"
+	rig.saveStrategy(issuanceDirectory, []string{"www.example.com"})
+	rig.saveDomain("cloudflare", "example.com")
+
+	rig.issuing.CloudflareAPI = "http://127.0.0.1:8081/client/v4"
+	plan, _ := rig.issuing.Plan("www")
+	if plan.Ready || !strings.Contains(strings.Join(plan.Blockers, ";"), "not https") {
+		t.Fatalf("http override against staging: ready=%v blockers=%v", plan.Ready, plan.Blockers)
+	}
+	rig.issuing.CloudflareAPI = "https://cf.example.net/client/v4"
+	if plan, _ = rig.issuing.Plan("www"); !plan.Ready {
+		t.Fatalf("https override blocked: %v", plan.Blockers)
+	}
+	rig.issuing.CloudflareAPI = "http://127.0.0.1:8081/client/v4"
+	rig.saveStrategy("https://localhost:14000/dir", []string{"www.example.com"})
+	if plan, _ = rig.issuing.Plan("www"); !plan.Ready || plan.DirectoryClass != DirectoryTest {
+		t.Fatalf("http override against a test CA: class=%q blockers=%v", plan.DirectoryClass, plan.Blockers)
+	}
+}
+
+type namedProvider struct {
+	*scriptDNSProvider
+	name string
+}
+
+func (n *namedProvider) Name() string { return n.name }
+
+func TestPlaceFailureCleansUpOnItsOwnContext(t *testing.T) {
+	double := &acmeDouble{}
+	client, _ := serveACME(t, double)
+	provider := &scriptDNSProvider{}
+	d, _ := openDNS01(t, client, provider)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var cleanupCtxErr error
+	cleaned := false
+	provider.applyHook = func(c context.Context, changes []dns.Change) error {
+		for _, ch := range changes {
+			if ch.Action == dns.ChangeCreate {
+				// Partial work, then the issuance deadline passes.
+				provider.records = append(provider.records, ch.Record)
+				cancel()
+				return errors.New("provider write failed")
+			}
+			cleanupCtxErr = c.Err()
+			cleaned = true
+		}
+		return nil
+	}
+	_, err := d.Issue(ctx, testAccount(t), scriptIssuer(), "example.com", []string{"www.example.com"}, true)
+	if err == nil {
+		t.Fatal("issued despite the Place failure")
+	}
+	if !cleaned || cleanupCtxErr != nil {
+		t.Fatalf("cleanup ran=%v with ctx err %v: it must run on a fresh context", cleaned, cleanupCtxErr)
+	}
+	if len(provider.records) != 0 {
+		t.Fatalf("leftover TXT: %+v", provider.records)
+	}
+}
+
+func TestCleanupHasItsOwnTimeout(t *testing.T) {
+	double := &acmeDouble{}
+	client, _ := serveACME(t, double)
+	provider := &scriptDNSProvider{}
+	d, _ := openDNS01(t, client, provider)
+	d.CleanupTimeout = 50 * time.Millisecond
+	provider.applyHook = func(c context.Context, changes []dns.Change) error {
+		for _, ch := range changes {
+			if ch.Action == dns.ChangeDelete {
+				<-c.Done() // a hung provider
+				return c.Err()
+			}
+		}
+		return nil
+	}
+	start := time.Now()
+	_, err := d.Issue(context.Background(), testAccount(t), scriptIssuer(), "example.com", []string{"www.example.com"}, true)
+	if time.Since(start) > 10*time.Second {
+		t.Fatal("hung cleanup was not bounded")
+	}
+	// The certificate was issued; the failed cleanup is reported with it.
+	if err == nil || !strings.Contains(err.Error(), "cleanup failed") {
+		t.Fatalf("err = %v", err)
 	}
 }

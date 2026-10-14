@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -65,6 +66,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountDoctor(
 		func() []doctor.Check { return []doctor.Check{driftDoctorCheck(st, time.Now)()} },
 		certDoctorChecks(st, time.Now),
+		certOverrideDoctorCheck(os.Getenv),
 		platformDoctorCheck(st),
 		platformApplyDoctorCheck(st, time.Now),
 		migrationDoctorChecks(st, c.CatalogDir),

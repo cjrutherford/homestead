@@ -42,6 +42,12 @@ type acmeDouble struct {
 	badNonce  bool
 	usedNonce map[string]bool
 	failFinal bool
+	// lastPayload is the raw JWS payload of the last verified request.
+	lastPayload string
+	// csrNames/leaf: what the CSR asked for and the leaf issued for it.
+	leafPEM []byte
+	// pollsFinalize counts (forbidden) polls of the finalize URL.
+	orderPolls int
 }
 
 func (d *acmeDouble) freshNonce() string {
@@ -88,6 +94,7 @@ func (d *acmeDouble) handler(w http.ResponseWriter, r *http.Request) {
 			"authorizations": []string{d.base + "/authz/1"},
 		})
 	case r.URL.Path == "/authz/1":
+		d.verifyAsGet(w, r)
 		status := "pending"
 		if d.triggered {
 			status = "valid"
@@ -106,8 +113,12 @@ func (d *acmeDouble) handler(w http.ResponseWriter, r *http.Request) {
 		d.triggered = true
 		_ = json.NewEncoder(w).Encode(map[string]any{"type": "dns-01", "status": "processing"})
 	case r.URL.Path == "/finalize/1":
-		if d.verifyJWS(w, r, false) == nil {
+		payload := d.verifyJWS(w, r, false)
+		if payload == nil {
 			return
+		}
+		if d.authed {
+			d.t.Fatalf("finalize URL polled again: RFC 8555 §7.1.3 says poll the order URL")
 		}
 		if d.failFinal {
 			w.WriteHeader(http.StatusForbidden)
@@ -116,8 +127,20 @@ func (d *acmeDouble) handler(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if !d.authed {
-			d.authed = true
+		csr, _ := payload["csr"].(string)
+		raw, err := base64.RawURLEncoding.DecodeString(csr)
+		if err != nil {
+			d.t.Fatalf("csr: %v", err)
+		}
+		d.leafPEM = leafForCSR(d.t, raw)
+		d.authed = true
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": "processing", "finalize": d.base + "/finalize/1",
+		})
+	case r.URL.Path == "/order/1":
+		d.verifyAsGet(w, r)
+		d.orderPolls++
+		if !d.authed || d.orderPolls < 2 {
 			_ = json.NewEncoder(w).Encode(map[string]any{"status": "processing"})
 			return
 		}
@@ -125,11 +148,9 @@ func (d *acmeDouble) handler(w http.ResponseWriter, r *http.Request) {
 			"status": "valid", "certificate": d.base + "/cert/1",
 		})
 	case r.URL.Path == "/cert/1":
-		if d.verifyJWS(w, r, false) == nil {
-			return
-		}
+		d.verifyAsGet(w, r)
 		w.Header().Set("Content-Type", "application/pem-certificate-chain")
-		_, _ = w.Write(testChain(d.t))
+		_, _ = w.Write(d.leafPEM)
 	default:
 		d.t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
 	}
@@ -160,6 +181,7 @@ func (d *acmeDouble) verifyJWS(w http.ResponseWriter, r *http.Request, register 
 	if err := json.Unmarshal(rawProtected, &protected); err != nil {
 		d.t.Fatalf("protected: %v", err)
 	}
+	d.lastPayload = envelope.Payload
 	if protected.Alg != "ES256" {
 		d.t.Fatalf("alg = %q", protected.Alg)
 	}
@@ -191,6 +213,44 @@ func (d *acmeDouble) verifyJWS(w http.ResponseWriter, r *http.Request, register 
 	rawPayload, _ := base64.RawURLEncoding.DecodeString(envelope.Payload)
 	_ = json.Unmarshal(rawPayload, &payload)
 	return payload
+}
+
+// verifyAsGet verifies a POST-as-GET: signed, with an EMPTY payload.
+func (d *acmeDouble) verifyAsGet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		d.t.Fatalf("%s %s: ACME reads must be POST-as-GET", r.Method, r.URL.Path)
+	}
+	d.verifyJWS(w, r, false)
+	if d.lastPayload != "" {
+		d.t.Fatalf("%s: POST-as-GET payload must be empty, got %q", r.URL.Path, d.lastPayload)
+	}
+}
+
+// leafForCSR issues a real leaf for the CSR's public key and names,
+// signed by a throwaway CA, so placement can prove the key matches.
+func leafForCSR(t *testing.T, der []byte) []byte {
+	t.Helper()
+	csr, err := x509.ParseCertificateRequest(der)
+	if err != nil {
+		t.Fatalf("parse csr: %v", err)
+	}
+	caKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	caTemplate := x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Test CA"},
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour)}
+	caDER, err := x509.CreateCertificate(rand.Reader, &caTemplate, &caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("ca: %v", err)
+	}
+	ca, _ := x509.ParseCertificate(caDER)
+	leaf := x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: csr.DNSNames[0]},
+		DNSNames: csr.DNSNames, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(60 * 24 * time.Hour)}
+	leafDER, err := x509.CreateCertificate(rand.Reader, &leaf, ca, csr.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("leaf: %v", err)
+	}
+	return append(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER}),
+		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})...)
 }
 
 // testChain mints a throwaway certificate PEM for download tests.

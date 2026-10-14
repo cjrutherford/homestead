@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"homestead/internal/dns"
@@ -48,8 +50,14 @@ const (
 // LetsEncryptStagingDirectory is the staging directory URL.
 const LetsEncryptStagingDirectory = "https://acme-staging-v02.api.letsencrypt.org/directory"
 
-// ClassifyDirectory grades a directory URL. Unknown public CAs count as
-// production: confirming is the safe default.
+// testSuffixes are the private or reserved suffixes of test CAs.
+var testSuffixes = []string{"lan", "local", "localhost", "internal", "home.arpa", "test", "example", "invalid"}
+
+// ClassifyDirectory grades a directory URL. "test" is only for hosts that
+// cannot be a public CA: loopback, RFC 1918, unique-local and link-local
+// addresses, and private or reserved suffixes. Public IP literals and
+// single-label or ordinary names (which may resolve publicly) count as
+// production, so confirming is the safe default.
 func ClassifyDirectory(directory string) string {
 	if directory == LetsEncryptStagingDirectory {
 		return DirectoryStaging
@@ -58,8 +66,18 @@ func ClassifyDirectory(directory string) string {
 	if err != nil || u.Hostname() == "" {
 		return DirectoryProduction
 	}
-	if docker.IsPrivateName(docker.Hostname(u.Hostname())) {
-		return DirectoryTest
+	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	if addr, err := netip.ParseAddr(host); err == nil {
+		addr = addr.Unmap()
+		if addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast() {
+			return DirectoryTest
+		}
+		return DirectoryProduction
+	}
+	for _, suffix := range testSuffixes {
+		if host == suffix || strings.HasSuffix(host, "."+suffix) {
+			return DirectoryTest
+		}
 	}
 	return DirectoryProduction
 }
@@ -182,11 +200,19 @@ type Issuing struct {
 	Routes func() ([]docker.Route, error)
 	// Reload asks the edge to adopt the snippets; nil means docker.ReloadProxy.
 	Reload func(context.Context) error
+	// CloudflareAPI is the Cloudflare API origin override in effect
+	// (EnvCloudflareAPI); empty means the production API.
+	CloudflareAPI string
+	// OnApprove runs before an approval is persisted; its failure aborts
+	// the approval (S278: the audit entry is written first).
+	OnApprove func(Approval) error
 	// Timeout bounds one issuance (DNS propagation can otherwise wait
 	// forever); zero means DefaultIssueTimeout.
 	Timeout time.Duration
 	// Now stamps records; nil means time.Now.
 	Now func() time.Time
+
+	accountMu sync.Mutex
 }
 
 // DefaultIssueTimeout bounds one issuance run.
@@ -263,6 +289,10 @@ func (i *Issuing) accountExists(directory string) bool {
 // key on first use. The key is stored before registration so a crash
 // between the two never orphans a registered account.
 func (i *Issuing) loadAccount(directory string) (*Account, error) {
+	// Serialized: two concurrent applies must share one generated key, or
+	// one of them would register an account whose key is then overwritten.
+	i.accountMu.Lock()
+	defer i.accountMu.Unlock()
 	name := AccountSecretName(directory)
 	raw, err := i.Secrets.Get(name)
 	if err == nil {
@@ -284,13 +314,19 @@ func (i *Issuing) loadAccount(directory string) (*Account, error) {
 		return nil, err
 	}
 	acct := &Account{Key: key}
-	if err := i.saveAccount(directory, acct); err != nil {
+	if err := i.saveAccountLocked(directory, acct); err != nil {
 		return nil, err
 	}
 	return acct, nil
 }
 
 func (i *Issuing) saveAccount(directory string, acct *Account) error {
+	i.accountMu.Lock()
+	defer i.accountMu.Unlock()
+	return i.saveAccountLocked(directory, acct)
+}
+
+func (i *Issuing) saveAccountLocked(directory string, acct *Account) error {
 	pemKey, err := EncodeAccountKey(acct.Key)
 	if err != nil {
 		return err
@@ -437,6 +473,10 @@ func (i *Issuing) buildPlan(c Certificate, routes []docker.Route) IssuancePlan {
 			}
 		}
 	}
+	if c.Issuer.DNSProvider == "cloudflare" && i.CloudflareAPI != "" &&
+		!strings.HasPrefix(i.CloudflareAPI, "https://") && plan.DirectoryClass != DirectoryTest {
+		block("the Cloudflare API override %q is not https; plain http is only allowed against a test CA", i.CloudflareAPI)
+	}
 	for _, route := range routes {
 		if docker.WouldServe(fp.Names, route) && docker.RouteSnippetExists(i.StackDir, route.Host) {
 			plan.ServedRoutes = append(plan.ServedRoutes, string(route.Host))
@@ -478,6 +518,11 @@ func (i *Issuing) Approve(name, digest, actor string, agreeTerms, confirmProduct
 	encoded, err := json.Marshal(plan)
 	if err != nil {
 		return Approval{}, err
+	}
+	if i.OnApprove != nil {
+		if err := i.OnApprove(approval); err != nil {
+			return Approval{}, fmt.Errorf("cert: approval not recorded: %w", err)
+		}
 	}
 	if _, err := i.Store.DB().Exec(`INSERT INTO cert_issuance_approvals
 (certificate, digest, plan, actor, agreed_terms, confirmed_production, approved_at)
@@ -541,10 +586,10 @@ func (i *Issuing) approvalMap() (map[string]Approval, error) {
 // there is none.
 func (i *Issuing) approvalFor(name string, plan IssuancePlan) (Approval, error) {
 	var a Approval
-	var digest, actor string
+	var digest, actor, at string
 	var agreed, confirmed int
-	err := i.Store.DB().QueryRow(`SELECT digest, actor, agreed_terms, confirmed_production
-FROM cert_issuance_approvals WHERE certificate = ?`, name).Scan(&digest, &actor, &agreed, &confirmed)
+	err := i.Store.DB().QueryRow(`SELECT digest, actor, agreed_terms, confirmed_production, approved_at
+FROM cert_issuance_approvals WHERE certificate = ?`, name).Scan(&digest, &actor, &agreed, &confirmed, &at)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Approval{}, fmt.Errorf("%w: review and approve the plan for %q first", ErrNotApproved, name)
 	}
@@ -556,6 +601,7 @@ FROM cert_issuance_approvals WHERE certificate = ?`, name).Scan(&digest, &actor,
 	}
 	a = Approval{Certificate: name, Digest: digest, Actor: actor, AgreedTerms: agreed != 0,
 		ConfirmedProduction: confirmed != 0}
+	a.ApprovedAt, _ = time.Parse(time.RFC3339Nano, at)
 	if plan.DirectoryClass == DirectoryProduction && !a.ConfirmedProduction {
 		return Approval{}, fmt.Errorf("%w: production issuance was not confirmed", ErrNotApproved)
 	}
@@ -614,7 +660,7 @@ func (i *Issuing) Definition(name string) (operation.Definition, error) {
 			if err != nil {
 				return err
 			}
-			undo, err = docker.RefreshCertRoutes(i.StackDir, routes)
+			undo, err = docker.RefreshCertRoutes(i.StackDir, routes, plan.ServedRoutes)
 			return err
 		}},
 		{Name: "reload-edge", Run: func(ctx context.Context) error {
@@ -644,6 +690,12 @@ func (i *Issuing) Definition(name string) (operation.Definition, error) {
 // recording problem). The account is persisted even when issuance
 // fails, so a registered account is never lost.
 func (i *Issuing) issue(ctx context.Context, plan IssuancePlan, certificate Certificate, approval Approval) (delivered bool, err error) {
+	if i.reusable(plan, approval) {
+		// A retry of an approval that already produced a certificate (for
+		// example after a refused reload): the placed, valid, recorded
+		// certificate is kept instead of ordering a new one.
+		return true, nil
+	}
 	timeout := i.Timeout
 	if timeout <= 0 {
 		timeout = DefaultIssueTimeout
@@ -712,4 +764,31 @@ func (i *Issuing) StoreCredentials(provider string, values map[string]string) ([
 		}
 	}
 	return names, nil
+}
+
+// reusable reports that this approval was already consumed by an
+// issuance still in place: a recorded issuance made at or after the
+// approval whose chain is exactly the placed chain, valid, paired with
+// its key, and covering the approved names. A fresh approval always
+// orders again, which is how the owner replaces a certificate.
+func (i *Issuing) reusable(plan IssuancePlan, approval Approval) bool {
+	issuances, err := NewIssuances(i.Store).List()
+	if err != nil {
+		return false
+	}
+	for _, rec := range issuances {
+		if rec.Certificate != plan.Certificate {
+			continue
+		}
+		if rec.IssuedAt.Before(approval.ApprovedAt) {
+			return false
+		}
+		want := NewFingerprint(plan.Names, plan.Provider, plan.Challenge)
+		if !rec.Fingerprint.Equal(want) {
+			return false
+		}
+		placed, ok := docker.ReadPlacedChain(i.StackDir, plan.Certificate, plan.Names)
+		return ok && string(placed) == string(rec.ChainPEM)
+	}
+	return false
 }

@@ -1,6 +1,8 @@
 package docker
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Issued certificates (S278) live beside the route snippets, inside the
@@ -82,9 +85,63 @@ func wildcardCover(names []string, host string) bool {
 	return false
 }
 
-// PlaceCert writes a certificate for the edge: key 0600, chain 0644,
-// metadata last, each through a temporary file and rename so Caddy never
-// reads a half-written file. The key is written before the chain.
+// ValidateCertPair proves chain and key belong together and that the
+// leaf covers every name: tls.X509KeyPair rejects a key that does not
+// match the leaf, and each approved name must appear literally in the
+// leaf's SANs (wildcards compare literally). It checks no trust chain.
+func ValidateCertPair(names []string, chainPEM, keyPEM []byte) (*x509.Certificate, error) {
+	pair, err := tls.X509KeyPair(chainPEM, keyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("certs: chain and key do not form a pair: %w", err)
+	}
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		return nil, fmt.Errorf("certs: leaf unreadable: %w", err)
+	}
+	have := map[string]bool{}
+	for _, name := range leaf.DNSNames {
+		have[strings.ToLower(name)] = true
+	}
+	for _, name := range names {
+		if !have[name] {
+			return nil, fmt.Errorf("certs: the certificate does not cover %q", name)
+		}
+	}
+	return leaf, nil
+}
+
+// regularFile reads a file only when it is a regular file (never a
+// symlink), so a planted link cannot redirect key or chain reads.
+func regularFile(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("certs: %s is not a regular file", path)
+	}
+	return os.ReadFile(path)
+}
+
+// plainDir reports an existing real directory (not a symlink).
+func plainDir(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("certs: %s is not a directory", path)
+	}
+	return nil
+}
+
+// PlaceCert validates then places a certificate for the edge. Validation
+// comes first: the chain and key must pair, the leaf must cover the
+// approved names and not be expired. Then key (0600), chain (0644) and
+// metadata are written into a fresh sibling directory and swapped in
+// together by renaming, so a failure never leaves a new key beside an old
+// chain; the previous placement is restored if the swap fails. Symlinked
+// placement directories are refused.
 func PlaceCert(stackDir string, cert PlacedCert, chainPEM, keyPEM []byte) error {
 	if !validCertName.MatchString(cert.Name) {
 		return fmt.Errorf("certs: invalid certificate name %q", cert.Name)
@@ -92,17 +149,41 @@ func PlaceCert(stackDir string, cert PlacedCert, chainPEM, keyPEM []byte) error 
 	if len(cert.Names) == 0 || len(chainPEM) == 0 || len(keyPEM) == 0 {
 		return fmt.Errorf("certs: names, chain and key are all required")
 	}
-	dir := CertDir(stackDir, cert.Name)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	leaf, err := ValidateCertPair(cert.Names, chainPEM, keyPEM)
+	if err != nil {
+		return err
+	}
+	if !time.Now().Before(leaf.NotAfter) {
+		return fmt.Errorf("certs: the certificate is already expired")
+	}
+	parent := filepath.Join(stackDir, "routes", certsDirName)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return fmt.Errorf("certs: dir: %w", err)
 	}
-	if err := os.Chmod(filepath.Dir(dir), 0o700); err != nil {
+	if err := plainDir(parent); err != nil {
+		return err
+	}
+	if err := os.Chmod(parent, 0o700); err != nil {
 		return fmt.Errorf("certs: dir mode: %w", err)
+	}
+	final := filepath.Join(parent, cert.Name)
+	if info, err := os.Lstat(final); err == nil && !info.IsDir() {
+		return fmt.Errorf("certs: %s is not a directory", final)
 	}
 	meta, err := json.Marshal(PlacedCert{Name: cert.Name, Names: cert.Names})
 	if err != nil {
 		return fmt.Errorf("certs: meta: %w", err)
 	}
+	staged, err := os.MkdirTemp(parent, tempPrefix+cert.Name+"~")
+	if err != nil {
+		return fmt.Errorf("certs: stage: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = os.RemoveAll(staged)
+		}
+	}()
 	for _, f := range []struct {
 		name string
 		body []byte
@@ -112,51 +193,138 @@ func PlaceCert(stackDir string, cert PlacedCert, chainPEM, keyPEM []byte) error 
 		{certChainFile, chainPEM, 0o644},
 		{certMetaFile, meta, 0o644},
 	} {
-		if err := writeAtomic(filepath.Join(dir, f.name), f.body, f.mode); err != nil {
+		if err := writeSynced(filepath.Join(staged, f.name), f.body, f.mode); err != nil {
 			return err
+		}
+	}
+	var old string
+	if _, err := os.Lstat(final); err == nil {
+		old, err = os.MkdirTemp(parent, oldPrefix+cert.Name+"~")
+		if err != nil {
+			return fmt.Errorf("certs: swap: %w", err)
+		}
+		_ = os.Remove(old)
+		if err := os.Rename(final, old); err != nil {
+			return fmt.Errorf("certs: swap out previous: %w", err)
+		}
+	}
+	if err := os.Rename(staged, final); err != nil {
+		if old != "" {
+			if rbErr := os.Rename(old, final); rbErr != nil {
+				return fmt.Errorf("certs: swap in: %w (restoring the previous placement also failed: %v)", err, rbErr)
+			}
+		}
+		return fmt.Errorf("certs: swap in: %w", err)
+	}
+	committed = true
+	if old != "" {
+		_ = os.RemoveAll(old)
+	}
+	return nil
+}
+
+const (
+	tempPrefix = ".tmp-"
+	oldPrefix  = ".old-"
+)
+
+func writeSynced(path string, body []byte, mode os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return fmt.Errorf("certs: create %s: %w", filepath.Base(path), err)
+	}
+	if _, err := f.Write(body); err != nil {
+		f.Close()
+		return fmt.Errorf("certs: write %s: %w", filepath.Base(path), err)
+	}
+	if err := f.Chmod(mode); err != nil {
+		f.Close()
+		return fmt.Errorf("certs: mode %s: %w", filepath.Base(path), err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return fmt.Errorf("certs: sync %s: %w", filepath.Base(path), err)
+	}
+	return f.Close()
+}
+
+// CleanCertTemps runs at startup: it removes staging directories and
+// stale temporary files left by an interrupted placement, and restores a
+// previous placement whose swap was interrupted before the new one landed.
+func CleanCertTemps(stackDir string) error {
+	parent := filepath.Join(stackDir, "routes", certsDirName)
+	entries, err := os.ReadDir(parent)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("certs: clean: %w", err)
+	}
+	for _, e := range entries {
+		path := filepath.Join(parent, e.Name())
+		switch {
+		case strings.HasPrefix(e.Name(), tempPrefix):
+			if err := os.RemoveAll(path); err != nil {
+				return fmt.Errorf("certs: clean %s: %w", e.Name(), err)
+			}
+		case strings.HasPrefix(e.Name(), oldPrefix):
+			name := strings.TrimPrefix(e.Name(), oldPrefix)
+			if i := strings.LastIndex(name, "~"); i >= 0 {
+				name = name[:i]
+			}
+			final := filepath.Join(parent, name)
+			if _, err := os.Lstat(final); os.IsNotExist(err) && validCertName.MatchString(name) {
+				if err := os.Rename(path, final); err != nil {
+					return fmt.Errorf("certs: restore %s: %w", name, err)
+				}
+				continue
+			}
+			if err := os.RemoveAll(path); err != nil {
+				return fmt.Errorf("certs: clean %s: %w", e.Name(), err)
+			}
+		case e.IsDir() && validCertName.MatchString(e.Name()):
+			inner, _ := os.ReadDir(path)
+			for _, f := range inner {
+				if strings.HasPrefix(f.Name(), tempPrefix) {
+					_ = os.Remove(filepath.Join(path, f.Name()))
+				}
+			}
 		}
 	}
 	return nil
 }
 
-func writeAtomic(path string, body []byte, mode os.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+// ReadPlacedChain returns the placed chain of name when the placement is
+// a valid pair covering names; used to reuse an already issued
+// certificate after a failed reload.
+func ReadPlacedChain(stackDir, name string, names []string) ([]byte, bool) {
+	dir := CertDir(stackDir, name)
+	chain, err := regularFile(filepath.Join(dir, certChainFile))
 	if err != nil {
-		return fmt.Errorf("certs: temp file: %w", err)
+		return nil, false
 	}
-	name := tmp.Name()
-	cleanup := func() { _ = os.Remove(name) }
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		cleanup()
-		return fmt.Errorf("certs: mode: %w", err)
+	key, err := regularFile(filepath.Join(dir, certKeyFile))
+	if err != nil {
+		return nil, false
 	}
-	if _, err := tmp.Write(body); err != nil {
-		tmp.Close()
-		cleanup()
-		return fmt.Errorf("certs: write: %w", err)
+	leaf, err := ValidateCertPair(names, chain, key)
+	if err != nil || !time.Now().Before(leaf.NotAfter) {
+		return nil, false
 	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		cleanup()
-		return fmt.Errorf("certs: sync: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		cleanup()
-		return fmt.Errorf("certs: close: %w", err)
-	}
-	if err := os.Rename(name, path); err != nil {
-		cleanup()
-		return fmt.Errorf("certs: place %s: %w", filepath.Base(path), err)
-	}
-	return nil
+	return chain, true
 }
 
 // PlacedCerts lists the certificates placed under stackDir (ordered by
-// name). A missing directory is none; an unreadable entry is skipped,
-// never fatal, so one bad placement cannot stop route rendering.
+// name). A missing directory is none. An entry that is a symlink, is not
+// a regular key/chain/meta set, or whose key and chain do not pair and
+// cover its recorded names is skipped, never fatal and never served, so
+// one bad placement cannot stop unrelated route applies.
 func PlacedCerts(stackDir string) []PlacedCert {
-	entries, err := os.ReadDir(filepath.Join(stackDir, "routes", certsDirName))
+	parent := filepath.Join(stackDir, "routes", certsDirName)
+	if plainDir(parent) != nil {
+		return nil
+	}
+	entries, err := os.ReadDir(parent)
 	if err != nil {
 		return nil
 	}
@@ -165,7 +333,8 @@ func PlacedCerts(stackDir string) []PlacedCert {
 		if !entry.IsDir() || !validCertName.MatchString(entry.Name()) {
 			continue
 		}
-		raw, err := os.ReadFile(filepath.Join(CertDir(stackDir, entry.Name()), certMetaFile))
+		dir := CertDir(stackDir, entry.Name())
+		raw, err := regularFile(filepath.Join(dir, certMetaFile))
 		if err != nil {
 			continue
 		}
@@ -173,7 +342,15 @@ func PlacedCerts(stackDir string) []PlacedCert {
 		if json.Unmarshal(raw, &placed) != nil || placed.Name != entry.Name() || len(placed.Names) == 0 {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(CertDir(stackDir, entry.Name()), certKeyFile)); err != nil {
+		chain, err := regularFile(filepath.Join(dir, certChainFile))
+		if err != nil {
+			continue
+		}
+		key, err := regularFile(filepath.Join(dir, certKeyFile))
+		if err != nil {
+			continue
+		}
+		if _, err := ValidateCertPair(placed.Names, chain, key); err != nil {
 			continue
 		}
 		out = append(out, placed)
@@ -228,29 +405,35 @@ func RouteSnippetExists(stackDir string, host Hostname) bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
-// RefreshCertRoutes re-renders the existing snippets of automatic-TLS
-// routes now covered by a placed certificate, so they serve it. Routes
-// without a snippet, with other TLS modes, or without a covering
-// certificate are untouched. The returned undo restores every rewritten
-// snippet; it never reloads.
-func RefreshCertRoutes(stackDir string, routes []Route) (undo func() error, err error) {
+// RefreshCertRoutes re-renders the existing snippets of the named hosts
+// (the approved served routes) now covered by a placed certificate, so
+// they serve it. Routes outside hosts, without a snippet, with other TLS
+// modes, or without a covering certificate are untouched. Each rewrite is
+// a temp file plus rename; the returned undo restores every rewritten
+// snippet with its original mode. It never reloads.
+func RefreshCertRoutes(stackDir string, routes []Route, hosts []string) (undo func() error, err error) {
 	type saved struct {
 		path    string
 		content []byte
+		mode    os.FileMode
 	}
 	var log []saved
 	undo = func() error {
 		var first error
 		for i := len(log) - 1; i >= 0; i-- {
-			if err := os.WriteFile(log[i].path, log[i].content, 0o644); err != nil && first == nil {
+			if err := writeAtomic(log[i].path, log[i].content, log[i].mode); err != nil && first == nil {
 				first = fmt.Errorf("certs: rollback %s: %w", log[i].path, err)
 			}
 		}
 		return first
 	}
+	approved := map[Hostname]bool{}
+	for _, h := range hosts {
+		approved[Hostname(h)] = true
+	}
 	seen := map[Hostname]bool{}
 	for _, r := range routes {
-		if seen[r.Host] || r.TLS != TLSAuto || !RouteSnippetExists(stackDir, r.Host) {
+		if !approved[r.Host] || seen[r.Host] || r.TLS != TLSAuto || !RouteSnippetExists(stackDir, r.Host) {
 			continue
 		}
 		seen[r.Host] = true
@@ -263,6 +446,11 @@ func RefreshCertRoutes(stackDir string, routes []Route) (undo func() error, err 
 			return nil, err
 		}
 		path := filepath.Join(stackDir, "routes", RouteFilename(r.Host))
+		info, err := os.Stat(path)
+		if err != nil {
+			_ = undo()
+			return nil, fmt.Errorf("certs: stat %s: %w", path, err)
+		}
 		prior, err := os.ReadFile(path)
 		if err != nil {
 			_ = undo()
@@ -271,11 +459,46 @@ func RefreshCertRoutes(stackDir string, routes []Route) (undo func() error, err 
 		if string(prior) == content {
 			continue
 		}
-		log = append(log, saved{path, prior})
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		log = append(log, saved{path, prior, info.Mode().Perm()})
+		if err := writeAtomic(path, []byte(content), info.Mode().Perm()); err != nil {
 			_ = undo()
-			return nil, fmt.Errorf("certs: write %s: %w", path, err)
+			return nil, err
 		}
 	}
 	return undo, nil
+}
+
+// writeAtomic writes body through a temporary sibling and renames it
+// over path, so readers never see a partial file.
+func writeAtomic(path string, body []byte, mode os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), tempPrefix+"*")
+	if err != nil {
+		return fmt.Errorf("certs: temp file: %w", err)
+	}
+	name := tmp.Name()
+	cleanup := func() { _ = os.Remove(name) }
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		cleanup()
+		return fmt.Errorf("certs: mode: %w", err)
+	}
+	if _, err := tmp.Write(body); err != nil {
+		tmp.Close()
+		cleanup()
+		return fmt.Errorf("certs: write: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		cleanup()
+		return fmt.Errorf("certs: sync: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return fmt.Errorf("certs: close: %w", err)
+	}
+	if err := os.Rename(name, path); err != nil {
+		cleanup()
+		return fmt.Errorf("certs: place %s: %w", filepath.Base(path), err)
+	}
+	return nil
 }

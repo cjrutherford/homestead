@@ -128,3 +128,21 @@ func TestReadCredentialFromStdin(t *testing.T) {
 		}
 	}
 }
+
+func TestReadCredentialCapsSize(t *testing.T) {
+	big := strings.Repeat("a", 64<<10+1)
+	if _, _, err := readCredential("api_token=-", strings.NewReader(big)); err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("stdin = %v", err)
+	}
+	file := filepath.Join(t.TempDir(), "big")
+	if err := os.WriteFile(file, []byte(big), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := readCredential("api_token=@"+file, strings.NewReader("")); err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("file = %v", err)
+	}
+	ok := strings.Repeat("a", 64<<10)
+	if _, v, err := readCredential("api_token=-", strings.NewReader(ok)); err != nil || len(v) != 64<<10 {
+		t.Fatalf("at the cap = %d %v", len(v), err)
+	}
+}

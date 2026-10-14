@@ -301,9 +301,13 @@ func CheckRenewals(set Set, issuances []Issuance, now time.Time) ([]RenewalStatu
 		case health.Health == HealthMismatch:
 			status.Status = RenewalPlanRequired
 			status.Detail = health.Detail
-		case !now.AddDate(0, 0, window).Before(health.NotAfter) && !certificate.Renewal.Auto:
+		case !now.AddDate(0, 0, window).Before(health.NotAfter) && !certificate.Renewal.Auto &&
+			certificate.Issuer.Type != IssuerACME:
 			// Manual semantics (S100): without auto-renew, renewal never
-			// comes due on its own; the owner is told, not nagged.
+			// comes due on its own; the owner is told, not nagged. ACME
+			// issuances recorded by the S278 flow are placed for Caddy to
+			// serve, so Caddy no longer renews them: they warn inside the
+			// window whatever the auto flag says (until S272 re-issues).
 			status.Status = RenewalOK
 			status.Detail = fmt.Sprintf("%s expires %s, inside the %d-day window, but auto-renew is off: renew it manually",
 				certificate.Name, health.NotAfter.Format(time.DateOnly), window)
@@ -311,6 +315,11 @@ func CheckRenewals(set Set, issuances []Issuance, now time.Time) ([]RenewalStatu
 			status.Status = RenewalDue
 			status.Detail = fmt.Sprintf("%s expires %s, inside the %d-day renewal window",
 				certificate.Name, health.NotAfter.Format(time.DateOnly), window)
+			if !certificate.Renewal.Auto {
+				status.Detail += "; Caddy does not renew a certificate Homestead placed and auto-renew is off, so re-run the issuance (plan, approve, apply) before it expires"
+			} else {
+				status.Detail += "; Caddy does not renew a certificate Homestead placed, so re-run the issuance until unattended re-issue exists"
+			}
 		default:
 			status.Status = RenewalOK
 			status.Detail = fmt.Sprintf("%s valid until %s", certificate.Name, health.NotAfter.Format(time.DateOnly))

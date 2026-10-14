@@ -19,6 +19,7 @@ Implement only the functionality required for this slice. Preserve all accepted 
 - CA directory is configurable: Let's Encrypt staging for testing; production only after an explicit owner choice, never the silent default
 - API, `homesteadctl`, and the dashboard TLS surface have parity; routes classified for ADR-020; `docs/PARITY.md` updated
 - No secret or key material in logs, audit, API responses, or operation payloads
+- Review hardening (2026-10-14): placement validates pair and names and swaps atomically, POST-as-GET and order-URL polling, single TXT cleanup on its own context, S263 warns for placed ACME certificates regardless of auto-renew, validation overrides are guarded and doctor-flagged
 - Tests run against an in-process fake ACME server and a fake DNS provider; no real CA is ever called
 - `docs/DEVELOPMENT.md` documents KVM end-to-end validation without public DNS (Pebble plus pebble-challtestsrv)
 - Narrow the "Certificate issuance path" entry in `docs/DEFERRED.md`
