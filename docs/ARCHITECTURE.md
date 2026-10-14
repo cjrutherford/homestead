@@ -28,7 +28,7 @@
   of normalized names, DNS provider id, challenge method, recorded in
   `cert_issuances` by `DNS01.IssueFor`) as ok / renewal-due /
   plan-required / expired / error (corrupt chain), or no-recorded-issuance
-  (no daemon path issues certificates yet; docs/DEFERRED.md). It reports
+  (none until an issuance is applied, S278). It reports
   only; clean checks write no audit entry. Status: `GET /api/v1/tls/renewal`, `homesteadctl tls renewal`,
   doctor checks `tls-renewal:<name>`, and the dashboard Exposure page.
 - YAML: customer-readable desired configuration and generated artifacts.

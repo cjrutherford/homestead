@@ -29,7 +29,11 @@ func RouteFilename(host Hostname) string {
 // probing is emitted only when a path is set. Automatic mode on a
 // private name is refused: no public CA can issue for it, so rendering
 // would deploy a route Caddy can never bring up (S101) — use internal.
-func RenderRoute(r Route) (string, error) {
+func RenderRoute(r Route) (string, error) { return renderRoute(r, nil) }
+
+// renderRoute is RenderRoute with an optional placed certificate for
+// automatic-TLS routes (S278).
+func renderRoute(r Route, cert *PlacedCert) (string, error) {
 	if err := r.Validate(); err != nil {
 		return "", err
 	}
@@ -46,6 +50,11 @@ func RenderRoute(r Route) (string, error) {
 	var tlsLine, proxy strings.Builder
 	if r.TLS == TLSInternal {
 		tlsLine.WriteString("\ttls internal\n")
+	}
+	if r.TLS == TLSAuto && cert != nil {
+		fmt.Fprintf(&tlsLine, "\ttls %s/%s/%s/%s %s/%s/%s/%s\n",
+			caddyRoutesDir, certsDirName, cert.Name, certChainFile,
+			caddyRoutesDir, certsDirName, cert.Name, certKeyFile)
 	}
 	upstream := fmt.Sprintf("%s:%d", r.Target.Host, r.Target.Port)
 	if r.Health.Path == "" {
@@ -151,7 +160,7 @@ func ReconcileRoutes(dir string, set, prior RouteSet) (undo func() error, err er
 	}
 	wanted := map[string]bool{}
 	for _, r := range set.Sorted() {
-		content, err := RenderRoute(r)
+		content, err := RenderRouteIn(dir, r)
 		if err != nil {
 			return fail(err)
 		}

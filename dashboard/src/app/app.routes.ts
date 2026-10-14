@@ -18,6 +18,7 @@ import { ValidationBoard } from './validation/validation-board';
 import { Backups } from './backups/backups';
 import { StorageSetup } from './storage/storage';
 import { Edge } from './edge/edge';
+import { Tls } from './tls/tls';
 import { AuditLog } from './audit/audit';
 import { Account } from './account/account';
 import { NotFound } from './not-found/not-found';
@@ -39,6 +40,7 @@ export const routes: Routes = [
   { path: 'backups', component: Backups },
   { path: 'storage', component: StorageSetup },
   { path: 'edge', component: Edge },
+  { path: 'tls', component: Tls },
   { path: 'audit', component: AuditLog },
   { path: 'secrets', component: Secrets },
   { path: 'operations', component: Operations },

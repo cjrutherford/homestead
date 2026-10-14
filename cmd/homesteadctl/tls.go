@@ -14,8 +14,11 @@ import (
 // expired or unreadable certificate exits 1, renewal-due and plan-required exit 0
 // (the detail says what to do).
 func runTLS(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "issuance" {
+		return runTLSIssuance(ctx, client, args[1:], stdout, stderr)
+	}
 	if len(args) == 0 || args[0] != "renewal" {
-		fmt.Fprintln(stderr, "usage: homesteadctl tls renewal")
+		fmt.Fprintln(stderr, "usage: homesteadctl tls <renewal | issuance ...>")
 		return exitUsage
 	}
 	report, err := client.TLSRenewal(ctx)

@@ -13,6 +13,7 @@ import { Drift } from './drift/drift';
 import { ValidationBoard } from './validation/validation-board';
 import { Account } from './account/account';
 import { Edge } from './edge/edge';
+import { Tls } from './tls/tls';
 import { AuditLog } from './audit/audit';
 import { NotFound } from './not-found/not-found';
 
@@ -81,6 +82,10 @@ describe('routes', () => {
   it('serves the edge page', () => {
     const edge = routes.find((route) => route.path === 'edge');
     expect(edge?.component).toBe(Edge);
+  });
+
+  it('serves the certificates page', () => {
+    expect(routes.find((route) => route.path === 'tls')?.component).toBe(Tls);
   });
 
   it('serves the account page', () => {

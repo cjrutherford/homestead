@@ -968,7 +968,8 @@ homesteadctl tls renewal
   `renewal-due`, `plan-required` (desired names, provider id, or
   challenge differ from the approved issuance; wildcards compare
   literally), `expired`. Expired fails the operation and exits 1 in the
-  CLI; due and plan-required warn in doctor. Nothing re-issues (S272).
+  CLI; due and plan-required warn in doctor. Nothing re-issues (S272);
+  first issuance is S278 (below).
 - `GET /api/v1/tls/renewal` returns `{recorded_issuances, summary,
   certificates}`. A desired certificate with no recorded issuance reports
   `no-recorded-issuance`; with none recorded at all, `summary` states
@@ -993,6 +994,127 @@ homesteadctl tls renewal
   the matching ok `tls-renewal` check, and `scheduler jobs` listed
   `cert:renewal-check` having run as an operation. No ACME issuance was
   attempted.
+
+## Certificate first issuance (S278)
+
+```bash
+homesteadctl tls issuance credentials cloudflare api_token=@/root/cf-token
+homesteadctl tls issuance plan [CERT]
+homesteadctl tls issuance approve CERT --digest D --agree-terms [--confirm-production]
+homesteadctl tls issuance apply CERT --follow
+homesteadctl tls issuance approvals
+```
+
+The dashboard Certificates page (`/tls`) does the same through the same API
+(`/api/v1/tls/issuance/{plans,approvals,credentials,apply}`).
+
+- Flow (ADR-006, ADR-010): the plan is computed from the saved TLS strategy
+  (S106/S226) and the saved domain setup (S097) with no network access. For
+  each ACME dns-01 certificate it names the normalized names, DNS provider
+  and zone, challenge, CA directory and its class, whether the ACME account
+  exists or will be registered, that approving records agreement to the CA's
+  terms, where chain and key will be placed, which edge routes will serve
+  it, blockers (missing credentials, domain/provider mismatch, names outside
+  the zone), and a digest. Approving binds to that digest, is audited
+  (`cert.issuance.approve`), and needs terms agreement; production CAs also
+  need `--confirm-production`. Apply refuses (409) without an approval of the
+  current digest: any change to names, provider, zone, challenge, directory,
+  placement, or the routes that would serve it needs a fresh review. Nothing
+  is requested from the CA before then.
+- CA directory: the directory of the certificate's ACME issuer in the TLS
+  strategy. There is no default. Classes: `staging` (Let's Encrypt staging),
+  `test` (private or loopback host, for Pebble), `production` (anything
+  else). Test against staging first.
+- DNS credentials had no entry surface before this slice. They are stored
+  write-only (`POST /api/v1/tls/issuance/credentials`) under the
+  conventional `dns_<provider>_<field>` secret names; the CLI reads values
+  from a file or stdin, never argv; only field names are audited.
+- ACME account key: generated on first use per directory, held in the secret
+  store as `sys_acme_account_<directory hash>` (ADR-021: neither owner
+  routes nor the catalog can write `sys_`), stored before registration so
+  the account is never orphaned, never exported or returned.
+- The apply operation (`cert.issue`): `issue-and-place` runs
+  `DNS01.IssueFor`, delivers chain and key to
+  `<caddy stack>/routes/certs/<name>/{fullchain.pem,privkey.pem}` (key 0600,
+  directory 0700, written atomically, inside the directory Caddy already
+  mounts) and only then records the S263 fingerprint and chain;
+  `refresh-routes` rewrites the existing snippets of automatic-TLS routes now
+  covered (never creating one: an approved but unapplied exposure stays
+  unapplied); `reload-edge` reloads Caddy, rolling the snippets back if it is
+  refused (the placed files and the recorded issuance stay, so a retry
+  works). Routes with automatic TLS whose host the certificate covers serve
+  it through `tls <chain> <key>`; later reconciles and exposure applies keep
+  doing so. Wildcards cover one label (`*.example.com` is not the apex).
+  Until S272, Caddy does not renew a placed certificate and nothing
+  re-issues it: the renewal check reports it, and re-running this flow
+  replaces it.
+- Environment for validation only (root-owned unit, never API-settable):
+  `HOMESTEAD_ACME_CLOUDFLARE_API` (Cloudflare API origin),
+  `HOMESTEAD_ACME_DNS_RESOLVER` (host:port the propagation check queries;
+  default 1.1.1.1:53). Trusting a private CA for the directory uses Go's
+  standard `SSL_CERT_FILE`.
+
+### KVM validation without public DNS (Pebble)
+
+Pebble is a small ACME test CA; `pebble-challtestsrv` is its DNS test server,
+and `scripts/pebble-dns-shim.py` lets the daemon's Cloudflare provider place
+DNS-01 values into it. Nothing leaves the VM. Use a name that is not under a
+private suffix (`.test`, `.lan`, `.example`... are refused for automatic TLS),
+for example `app.pebble-lab.net` in zone `pebble-lab.net`.
+
+1. On the host, build Pebble and copy it with its test certs to the VM:
+   `git clone https://github.com/letsencrypt/pebble && cd pebble &&
+   go build -o /tmp/pebble ./cmd/pebble && go build -o /tmp/challtestsrv
+   ./cmd/pebble-challtestsrv`; copy `/tmp/pebble`, `/tmp/challtestsrv`,
+   `test/certs/` and `test/config/pebble-config.json` to `/opt/pebble/` on the
+   VM, with `scripts/pebble-dns-shim.py`.
+2. On the VM, as root, start the three helpers (separate shells or units):
+   - `challtestsrv -http01 "" -https01 "" -tlsalpn01 "" -dns01 :8053
+     -management :8055 -defaultIPv4 127.0.0.1`
+   - `PEBBLE_VA_NOSLEEP=1 pebble -config /opt/pebble/pebble-config.json
+     -dnsserver 127.0.0.1:8053` (listens on https://localhost:14000/dir; its
+     test certificate is valid for `localhost` and `127.0.0.1`)
+   - `python3 /opt/pebble/pebble-dns-shim.py --zone pebble-lab.net`
+3. Give the daemon a CA bundle that trusts Pebble's directory certificate and
+   point the Cloudflare provider and propagation check at the helpers:
+   `cat /etc/ssl/certs/ca-certificates.crt /opt/pebble/certs/pebble.minica.pem
+   > /opt/pebble/bundle.pem`, then `systemctl edit homestead-server` with
+   `[Service]` and `Environment=SSL_CERT_FILE=/opt/pebble/bundle.pem`,
+   `Environment=HOMESTEAD_ACME_CLOUDFLARE_API=http://127.0.0.1:8081/client/v4`,
+   `Environment=HOMESTEAD_ACME_DNS_RESOLVER=127.0.0.1:8053`; restart it.
+4. Deploy the edge and a throwaway upstream: `homesteadctl edge deploy
+   --follow`; `docker run -d --name tls-upstream --network homestead-edge
+   nginx:alpine`; reconcile one route (host `app.pebble-lab.net`, target
+   `tls-upstream:80`, exposure `local`, TLS `auto`) with `homesteadctl edge
+   routes set -f routes.json --follow`.
+5. Save the domain setup and TLS strategy through `PUT /api/v1/wizards/domain`
+   (`{"step":"zone","payload":{"provider":"cloudflare","zone":"pebble-lab.net"}}`)
+   and `PUT /api/v1/wizards/tls` (`{"step":"strategy","payload":{"certificates":
+   [{"Name":"app","DNSNames":["app.pebble-lab.net"],"State":"pending",
+   "Renewal":{"Auto":true},"Issuer":{"Name":"pebble","Type":"acme","Directory":
+   "https://localhost:14000/dir","Challenge":"dns-01","DNSProvider":
+   "cloudflare"}}]}}`), then store any non-empty token: `printf x | homesteadctl
+   tls issuance credentials cloudflare api_token=-`.
+6. `homesteadctl tls issuance plan app`: expect directory class `test`,
+   account `new`, route `app.pebble-lab.net` under "serves", ready yes, and no
+   request in challtestsrv's or Pebble's log yet. Approve with the printed
+   digest and `--agree-terms`; `apply app --follow` should end `succeeded`.
+7. Verify: `ls -l /opt/homestead/stacks/caddy/routes/certs/app/` shows
+   `privkey.pem` mode 0600; `homesteadctl tls renewal` now reports `app`;
+   fetch Pebble's issuing root with `curl -sk
+   https://localhost:15000/roots/0 -o /tmp/pebble-root.pem`, then `curl
+   --cacert /tmp/pebble-root.pem --resolve app.pebble-lab.net:443:127.0.0.1
+   https://app.pebble-lab.net/` succeeds (Caddy serves the issued chain), and
+   `openssl s_client -connect 127.0.0.1:443 -servername app.pebble-lab.net
+   </dev/null | openssl x509 -noout -issuer -dates` names Pebble's CA. The
+   audit trail shows `cert.issuance.approve`, `cert.issuance.start`, and
+   `cert.issuance`, none with key or credential values.
+8. Restore: remove the systemd drop-in and restart the daemon, stop the
+   helpers, delete the route, `docker rm -f tls-upstream`, and remove the
+   `certs/app` directory.
+
+Real Let's Encrypt staging additionally needs a real public zone and
+provider token; that run is the owner's, not Pebble's.
 
 ## Daemon scheduler (S260)
 

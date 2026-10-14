@@ -294,7 +294,7 @@ func applyEdge(st *store.Store, host docker.Hostname, caddyDir string, ctx conte
 	if err != nil {
 		return err
 	}
-	content, err := docker.RenderRoute(approval.Plan.Edge)
+	content, err := docker.RenderRouteIn(caddyDir, approval.Plan.Edge)
 	if err != nil {
 		return err
 	}

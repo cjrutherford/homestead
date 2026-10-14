@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 35
+const CurrentVersion = 36
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -682,6 +682,23 @@ CREATE TABLE platform_apply_marker (
 	listen TEXT NOT NULL DEFAULT '',
 	socket_path TEXT NOT NULL DEFAULT '',
 	kind TEXT NOT NULL DEFAULT 'apply'
+);`,
+	},
+	{
+		// S278 first certificate issuance (ADR-006, ADR-010): the
+		// owner's approval of one previewed issuance plan per
+		// certificate. Plans hold public facts only; keys never land here.
+		version: 36,
+		name:    "certificate issuance approvals",
+		sql: `
+CREATE TABLE IF NOT EXISTS cert_issuance_approvals (
+	certificate TEXT PRIMARY KEY,
+	digest TEXT NOT NULL,
+	plan TEXT NOT NULL,
+	actor TEXT NOT NULL,
+	agreed_terms INTEGER NOT NULL,
+	confirmed_production INTEGER NOT NULL,
+	approved_at TEXT NOT NULL
 );`,
 	},
 }

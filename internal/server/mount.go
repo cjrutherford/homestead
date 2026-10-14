@@ -71,6 +71,11 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 		backupEncryptionDoctorCheck(st),
 	)
 	srv.MountTLSRenewal(st, time.Now)
+	issuing, err := NewCertIssuing(st, secrets)
+	if err != nil {
+		return nil, err
+	}
+	srv.MountTLSIssuance(st, issuing)
 	srv.MountOperations(operation.New(st))
 	srv.MountCatalog(st, c.CatalogDir, secrets)
 	srv.MountAppSecrets(st, c.CatalogDir, secrets)

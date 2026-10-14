@@ -15,6 +15,7 @@ Implement only the functionality required for this slice. Preserve all accepted 
 - ACME account key generated on first use and held in the secret store (ADR-021) under a `sys_` name, never logged or returned; registration and terms acceptance are explicit in the plan
 - The approved issuance runs as an operation through `DNS01.IssueFor`, recording the S263 approved-issuance fingerprint and public chain
 - The private key is written 0600 where the edge serves it; the chain is placed beside it; the edge configuration is reloaded so the certificate is served
+- DNS provider credentials gain a write-only entry surface (discovered during S278: no API stored them, so DNS-01 could never be ready); values never logged, audited, or returned
 - CA directory is configurable: Let's Encrypt staging for testing; production only after an explicit owner choice, never the silent default
 - API, `homesteadctl`, and the dashboard TLS surface have parity; routes classified for ADR-020; `docs/PARITY.md` updated
 - No secret or key material in logs, audit, API responses, or operation payloads

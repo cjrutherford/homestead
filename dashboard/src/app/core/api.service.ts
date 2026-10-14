@@ -595,6 +595,39 @@ export interface TlsRenewalReport {
   certificates: TlsRenewalStatus[];
 }
 
+/** GET /api/v1/tls/issuance/plans — one previewed first issuance (S278). */
+export interface TlsIssuancePlan {
+  certificate: string;
+  names: string[];
+  provider: string;
+  zone: string;
+  challenge: string;
+  directory: string;
+  /** staging | test | production (production needs explicit confirmation). */
+  directory_class: string;
+  account: { state: string; detail: string; secret: string };
+  /** DNS provider credential fields: presence only, never values. */
+  credentials: { name: string; label: string; present: boolean }[];
+  terms: string;
+  placement: { directory: string; chain_file: string; key_file: string; key_mode: string };
+  served_routes: string[];
+  ready: boolean;
+  blockers: string[];
+  digest: string;
+  approved: boolean;
+}
+
+/** GET /api/v1/tls/issuance/approvals — one recorded approval. */
+export interface TlsIssuanceApproval {
+  certificate: string;
+  digest: string;
+  actor: string;
+  agreed_terms: boolean;
+  confirmed_production: boolean;
+  approved_at: string;
+  plan: TlsIssuancePlan;
+}
+
 /** GET /api/v1/tunnel/status — discovery, tunnels, and connector. */
 export interface TunnelStatus {
   preferred: string;
@@ -1012,6 +1045,37 @@ export class ApiService {
 
   tlsRenewal(): Observable<TlsRenewalReport> {
     return this.http.get<TlsRenewalReport>('/api/v1/tls/renewal');
+  }
+
+  tlsIssuancePlans(): Observable<{ plans: TlsIssuancePlan[] }> {
+    return this.http.get<{ plans: TlsIssuancePlan[] }>('/api/v1/tls/issuance/plans');
+  }
+
+  tlsIssuanceApprovals(): Observable<{ approvals: TlsIssuanceApproval[] }> {
+    return this.http.get<{ approvals: TlsIssuanceApproval[] }>('/api/v1/tls/issuance/approvals');
+  }
+
+  tlsIssuanceApprove(body: {
+    certificate: string;
+    digest: string;
+    agree_terms: boolean;
+    confirm_production: boolean;
+  }): Observable<TlsIssuanceApproval> {
+    return this.http.post<TlsIssuanceApproval>('/api/v1/tls/issuance/approvals', body);
+  }
+
+  tlsIssuanceCredentials(
+    provider: string,
+    values: Record<string, string>,
+  ): Observable<{ provider: string; stored: string[] }> {
+    return this.http.post<{ provider: string; stored: string[] }>(
+      '/api/v1/tls/issuance/credentials',
+      { provider, values },
+    );
+  }
+
+  tlsIssuanceApply(certificate: string): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>('/api/v1/tls/issuance/apply', { certificate });
   }
 
   tunnelStatus(): Observable<TunnelStatus> {

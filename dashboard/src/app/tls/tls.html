@@ -1,0 +1,138 @@
+<section aria-label="Certificates">
+  <h2>Certificates</h2>
+  <p>
+    First issuance of public certificates through DNS-01. Review the plan,
+    approve it under your name, then apply. The plan is only a preview:
+    nothing is requested from the certificate authority until you approve
+    and apply. Renewal status is on the
+    <a routerLink="/exposure">Exposure</a> page.
+  </p>
+
+  @if (error()) {
+    <app-state-message kind="error" [headline]="error()" />
+  }
+  @if (notice()) {
+    <app-state-message kind="status" [headline]="notice()" />
+  }
+
+  @if (operationId(); as id) {
+    <section aria-label="Operation progress">
+      <h3>Progress</h3>
+      <p>
+        <a [routerLink]="['/operations', id]">Operation {{ id }}</a>:
+        @if (operation(); as op) {
+          {{ op.status }}
+        } @else {
+          waiting for the first update…
+        }
+      </p>
+      @if (running()) {
+        <app-state-message kind="loading" headline="Working…" />
+      }
+      @if (streamError()) {
+        <app-state-message kind="error" [headline]="streamError()" />
+      }
+      @if (operation(); as op) {
+        @if (op.error) {
+          <app-state-message kind="error" [headline]="op.error" />
+        }
+        @if (op.status === 'succeeded') {
+          <app-state-message kind="status" headline="Certificate issued, placed and served." />
+        }
+        <ol aria-label="Operation steps">
+          @for (step of op.steps; track step.id) {
+            <li>{{ step.name }}: {{ step.status }}</li>
+          }
+        </ol>
+      }
+    </section>
+  }
+
+  @if (loading()) {
+    <app-state-message kind="loading" headline="Loading issuance plans…" />
+  }
+  @if (loadError()) {
+    <app-state-message kind="error" [headline]="loadError()" />
+    <button type="button" (click)="load()">Retry</button>
+  }
+  @if (!loading() && !loadError() && plans().length === 0) {
+    <app-state-message kind="empty" headline="No certificate in the saved TLS strategy uses ACME with DNS-01, so there is nothing to issue here." />
+  }
+
+  <ul aria-label="Issuance plans">
+    @for (plan of plans(); track plan.certificate) {
+      <li class="tls-plan">
+        <h3>{{ plan.certificate }}{{ plan.approved ? ' (approved)' : '' }}</h3>
+        <dl>
+          <dt>Names</dt>
+          <dd>{{ plan.names.join(', ') }}</dd>
+          <dt>Challenge</dt>
+          <dd>{{ plan.challenge }} through {{ plan.provider }}, zone {{ plan.zone || 'not set' }}</dd>
+          <dt>Certificate authority</dt>
+          <dd>{{ plan.directory }} ({{ plan.directory_class }})</dd>
+          <dt>ACME account</dt>
+          <dd>{{ plan.account.state }}: {{ plan.account.detail }}</dd>
+          <dt>Placement</dt>
+          <dd>
+            Chain {{ plan.placement.chain_file }}; private key
+            {{ plan.placement.key_file }} (mode {{ plan.placement.key_mode }}).
+          </dd>
+          <dt>Served by</dt>
+          <dd>
+            @if (plan.served_routes.length) {
+              {{ plan.served_routes.join(', ') }}
+            } @else {
+              No edge route uses it yet. Automatic-TLS routes covered by these names will.
+            }
+          </dd>
+        </dl>
+        @if (plan.directory_class === 'production') {
+          <app-state-message kind="status" headline="This is a production certificate authority. Test against staging first; production has strict rate limits." />
+        }
+        @if (!plan.ready) {
+          <app-state-message kind="error" [headline]="'Not ready: ' + plan.blockers.join('; ')" />
+        }
+        @if (plan.credentials.length) {
+          <form
+            [attr.aria-label]="'DNS credentials for ' + plan.certificate"
+            (submit)="saveCredentials(plan, $any($event.target)); $event.preventDefault()"
+          >
+            <p>
+              {{ plan.provider }} credentials:
+              @for (field of plan.credentials; track field.name) {
+                {{ field.label }} {{ field.present ? 'stored' : 'missing' }};
+              }
+              They are write-only and cannot be read back.
+            </p>
+            @for (field of plan.credentials; track field.name) {
+              <label>
+                {{ field.label }}
+                <input type="password" [name]="field.name" autocomplete="off" [disabled]="locked()" />
+              </label>
+            }
+            <button type="submit" [disabled]="locked()">Store credentials</button>
+          </form>
+        }
+        <p>{{ plan.terms }}</p>
+        <label>
+          <input type="checkbox" [checked]="agreed()[plan.certificate] ?? false" [disabled]="locked()"
+            (change)="setAgreed(plan.certificate, $any($event.target).checked)" />
+          I agree to the certificate authority's terms of service
+        </label>
+        @if (plan.directory_class === 'production') {
+          <label>
+            <input type="checkbox" [checked]="production()[plan.certificate] ?? false" [disabled]="locked()"
+              (change)="setProduction(plan.certificate, $any($event.target).checked)" />
+            I confirm issuing from a production certificate authority
+          </label>
+        }
+        <button type="button" (click)="approve(plan)" [disabled]="!canApprove(plan)">
+          Approve plan
+        </button>
+        <button type="button" (click)="apply(plan)" [disabled]="!plan.approved || locked()">
+          Issue certificate
+        </button>
+      </li>
+    }
+  </ul>
+</section>

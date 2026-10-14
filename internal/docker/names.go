@@ -57,7 +57,7 @@ func WriteNameSnippet(dir string, name FriendlyName) error {
 	if err := name.Validate(); err != nil {
 		return err
 	}
-	content, err := RenderRoute(name.Route)
+	content, err := RenderRouteIn(dir, name.Route)
 	if err != nil {
 		return err
 	}

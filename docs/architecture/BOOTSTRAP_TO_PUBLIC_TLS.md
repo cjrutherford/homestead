@@ -108,6 +108,8 @@ This stage is the key intermediary between local-only setup and public availabil
 
 The owner now has real names and can use valid DNS-based certificate issuance without yet exposing applications publicly.
 
+Issuance is owner-approved (S278): the TLS strategy names the certificate, the DNS provider and the CA directory; Homestead previews the plan (names, provider, zone, CA, account registration and terms, where the chain and key are placed, which routes will serve it), the owner approves that exact plan, and only then does anything reach the CA. Let's Encrypt staging is the place to test; production needs an explicit confirmation. The placed certificate is served by automatic-TLS routes it covers; renewal stays reported (S263) until unattended re-issue (S272).
+
 ## Stage 6 — Private remote access
 
 Optionally configure a private overlay before public exposure.

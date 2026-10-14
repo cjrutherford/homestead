@@ -36,20 +36,17 @@
 - Renewal re-issue (S272, ADR-024; needs S278 first issuance): S263 schedules the daily renewal
   check and reports ok / renewal-due / plan-required / expired, but
   nothing re-issues expiring certificates yet.
-- Certificate issuance path (found in the S263 review): no daemon,
-  API, CLI, or dashboard path issues certificates. `DNS01.Issue` and
-  `IssueFor` (internal/cert/dns01.go) are called only from tests; the
-  TLS wizard (S106/S226, `internal/cert/wizard.go`) saves strategy and
-  proves readiness only, the baseline (S222) mints an internal CA
-  without recording it, and nothing consumes the ACME account key or
-  writes issued chains for Caddy. `IssueFor` records the ADR-024
-  fingerprint and chain (migration 27) and is tested, but until an
-  owner-approved issuance flow (plan, preview, approve, ACME account
-  custody, chain and key placement) calls it, `cert_issuances` stays
-  empty. The renewal status therefore reports an explicit "no recorded
-  issuances" state in the API (`recorded_issuances`, `summary`), CLI,
-  dashboard, and doctor instead of an empty list. S278 delivers this
-  flow; S272 depends on it. http-01/tls-alpn-01 issuance is not fingerprinted.
+- Certificate issuance gaps left by S278: only ACME dns-01 issuance has an
+  owner-approved flow; http-01/tls-alpn-01 stay Caddy-native and are not
+  fingerprinted. The internal CA the baseline (S222) mints is still not
+  recorded. Placed certificates are served only by automatic-TLS routes
+  whose host they cover; applying the issuance to a route that does not
+  exist yet needs a reconcile afterwards. Manual-provider DNS-01 (owner
+  pastes TXT values) has no issuance flow. Caddy does not renew a placed
+  certificate; S272 re-issues it. A reload refused after a successful
+  issuance leaves the certificate placed and recorded and requires
+  re-running the apply to retry the reload (a reload-only action is not
+  provided).
 - Exit-node operation: the S110 model refuses default-route
   advertisement, so serving as an exit node needs its own slice with
   explicit owner consent.

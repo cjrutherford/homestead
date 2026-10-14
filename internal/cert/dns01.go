@@ -15,9 +15,12 @@ import (
 // their production endpoints: Cloudflare, Route 53, and DigitalOcean.
 // Manual stays out — it has no API to place through, so its DNS-01
 // remains the owner pasting rendered values by hand.
-func DefaultProviders() (*dns.Registry, error) {
+func DefaultProviders() (*dns.Registry, error) { return providersWith(dns.CloudflareAPI) }
+
+// providersWith is DefaultProviders with an explicit Cloudflare origin.
+func providersWith(cloudflareAPI string) (*dns.Registry, error) {
 	registry := dns.NewRegistry()
-	cloudflare, err := dns.NewCloudflare(dns.CloudflareAPI)
+	cloudflare, err := dns.NewCloudflare(cloudflareAPI)
 	if err != nil {
 		return nil, err
 	}
@@ -51,6 +54,12 @@ type DNS01 struct {
 	// Issuances, when set, records the approved-issuance fingerprint and
 	// chain of every certificate issued through IssueFor (S263).
 	Issuances *Issuances
+	// Deliver, when set, receives each certificate issued through
+	// IssueFor under a certName before the issuance is recorded (S278:
+	// the owner-approved flow places chain and key for the edge). A
+	// delivery failure skips recording, so the renewal check never
+	// believes in a certificate that never reached the edge.
+	Deliver func(certName string, issued Issued) error
 	// Now stamps recorded issuances; nil means time.Now (tests inject).
 	Now func() time.Time
 }
@@ -128,6 +137,11 @@ func (d *DNS01) IssueFor(ctx context.Context, certName string, acct *Account, is
 		return issued, err
 	}
 	issued.Fingerprint = NewFingerprint(names, issuer.DNSProvider, string(issuer.Challenge))
+	if certName != "" && d.Deliver != nil {
+		if delErr := d.Deliver(certName, issued); delErr != nil {
+			return issued, errors.Join(err, fmt.Errorf("cert: issued but delivery failed: %w", delErr))
+		}
+	}
 	if certName != "" && d.Issuances != nil {
 		if recErr := d.Issuances.Record(certName, issued.Fingerprint, issued.ChainPEM, d.now()); recErr != nil {
 			// Never drop either failure: join with any issue/cleanup error.

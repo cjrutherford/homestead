@@ -24,7 +24,8 @@
   <h3>Certificate renewal</h3>
   <p>
     Daily check of issued certificates; it reports only and never
-    issues. A plan-required status means the desired names, DNS
+    issues. First issuance is planned, previewed and approved on the
+    <a routerLink="/tls">Certificates</a> page. A plan-required status means the desired names, DNS
     provider, or challenge changed since the approved issuance.
   </p>
   @if (renewals(); as report) {
