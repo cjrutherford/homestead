@@ -210,7 +210,12 @@ func (u *unitRun) restart(ctx context.Context) error {
 		return fmt.Errorf("restart failed (%v) and the replacement could not be undone (%v)", err, rerr)
 	}
 	u.swapped = false
-	return fmt.Errorf("restart failed, replacement undone: %w", err)
+	// Do not leave the daemon down with the old binary back on disk: try
+	// to start it again (best effort; the operation is failed either way).
+	if rerr := u.r.Systemd.Restart(ctx, u.r.Unit); rerr != nil {
+		return fmt.Errorf("restart failed, replacement undone, daemon not restarted (%v): %w", rerr, err)
+	}
+	return fmt.Errorf("restart failed, replacement undone, daemon restarted on the previous binary: %w", err)
 }
 
 func (u *unitRun) execDigest(pid int) (string, error) {

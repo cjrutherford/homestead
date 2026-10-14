@@ -558,6 +558,9 @@ func TestRestartRequestFailureUndoesReplacement(t *testing.T) {
 	if e.read("homestead-server") != "old daemon" {
 		t.Fatal("old binary not back")
 	}
+	if len(e.sd.restarts) != 2 {
+		t.Fatalf("expected a second restart attempt on the old binary, got %d", len(e.sd.restarts))
+	}
 	if got := e.wait(op.ID); got.Status != operation.StatusFailed {
 		t.Fatalf("op = %+v", got)
 	}

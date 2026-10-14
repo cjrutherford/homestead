@@ -94,8 +94,12 @@ func (ExecSystemd) Start(ctx context.Context, unit string) error {
 	return err
 }
 
-// Restart restarts unit and waits.
+// Restart restarts unit and waits. The owner asked for this restart, so a
+// start-rate limit left by earlier restarts (several applies within
+// StartLimitIntervalSec, found in KVM) is cleared first; the limit still
+// bounds the crash loop of the new binary afterwards.
 func (ExecSystemd) Restart(ctx context.Context, unit string) error {
+	_, _ = systemctl(ctx, "reset-failed", unit)
 	_, err := systemctl(ctx, "restart", unit)
 	return err
 }
