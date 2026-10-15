@@ -584,23 +584,40 @@ func finalizeCSR(names []string) (der, keyPEM []byte, err error) {
 // download fetches the PEM chain, validating at least one certificate
 // block so truncated bodies never pass as chains.
 func (c *Client) download(ctx context.Context, acct *Account, url string) ([]byte, error) {
-	if c.nonce == "" {
-		if err := c.fetchNonce(ctx); err != nil {
+	var raw []byte
+	for attempt := 0; ; attempt++ {
+		if c.nonce == "" {
+			if err := c.fetchNonce(ctx); err != nil {
+				return nil, err
+			}
+		}
+		signed, err := signJWS(acct, url, c.nonce, nil)
+		if err != nil {
 			return nil, err
 		}
-	}
-	signed, err := signJWS(acct, url, c.nonce, nil)
-	if err != nil {
-		return nil, err
-	}
-	status, nonce, _, raw, _, err := c.postJSON(ctx, url, signed)
-	if err != nil {
-		return nil, err
-	}
-	if nonce != "" {
+		status, nonce, _, body, retryAfter, err := c.postJSON(ctx, url, signed)
+		if err != nil {
+			return nil, err
+		}
 		c.nonce = nonce
-	}
-	if status < 200 || status > 299 {
+		if status >= 200 && status <= 299 {
+			raw = body
+			break
+		}
+		var problem acmeError
+		_ = json.Unmarshal(body, &problem)
+		if problem.Type == acmeBadNonceType {
+			// A CA may reject any nonce (Pebble does so on purpose);
+			// retry once with a fresh one, as send does.
+			c.nonce = ""
+			if attempt == 0 {
+				continue
+			}
+		}
+		if problem.Detail != "" || problem.Type != "" || status == http.StatusTooManyRequests {
+			return nil, &ProblemError{Type: problem.Type, Detail: problem.Detail, Status: status,
+				RetryAfter: parseRetryAfter(retryAfter, time.Now())}
+		}
 		return nil, fmt.Errorf("cert: acme download: status %d", status)
 	}
 	block, _ := pem.Decode(raw)

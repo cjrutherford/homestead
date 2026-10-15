@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -40,8 +41,11 @@ type acmeDouble struct {
 	authed    bool
 	terms     string
 	badNonce  bool
-	usedNonce map[string]bool
-	failFinal bool
+	// certNonceRejects makes the next N certificate downloads answer
+	// badNonce (Pebble rejects a share of nonces on purpose).
+	certNonceRejects int
+	usedNonce        map[string]bool
+	failFinal        bool
 	// reusedAuthz serves the authorization already valid, as a CA that
 	// reuses a recent validation does (RFC 8555 section 7.1.4).
 	reusedAuthz bool
@@ -210,6 +214,15 @@ func (d *acmeDouble) handler(w http.ResponseWriter, r *http.Request) {
 		})
 	case r.URL.Path == "/cert/1":
 		d.verifyAsGet(w, r)
+		if d.certNonceRejects > 0 {
+			d.certNonceRejects--
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"type": acmeBadNonceType, "detail": "JWS has an invalid anti-replay nonce",
+			})
+			return
+		}
 		w.Header().Set("Content-Type", "application/pem-certificate-chain")
 		_, _ = w.Write(d.leafPEM)
 	default:
@@ -468,6 +481,27 @@ func TestIssueReusedAuthorization(t *testing.T) {
 	}
 	if len(provider.records) != 0 {
 		t.Fatalf("TXT placed for a reused authorization: %+v", provider.records)
+	}
+}
+
+func TestIssueRetriesBadNonceOnDownload(t *testing.T) {
+	double := &acmeDouble{certNonceRejects: 1}
+	client, _ := serveACME(t, double)
+	dns01, _ := openDNS01(t, client, &scriptDNSProvider{})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	issued, err := dns01.Issue(ctx, testAccount(t), scriptIssuer(), "example.com",
+		[]string{"www.example.com"}, true)
+	if err != nil || len(issued.ChainPEM) == 0 {
+		t.Fatalf("Issue with one rejected download nonce: %v", err)
+	}
+	double.certNonceRejects = 2
+	double.usedNonce = map[string]bool{}
+	_, err = dns01.Issue(ctx, testAccount(t), scriptIssuer(), "example.com",
+		[]string{"www.example.com"}, true)
+	var problem *ProblemError
+	if !errors.As(err, &problem) || problem.Type != acmeBadNonceType {
+		t.Fatalf("two rejected nonces should surface the problem, got %v", err)
 	}
 }
 
