@@ -15,6 +15,11 @@ reproducible from the upstream release artifact plus a Homestead
 Dockerfile, so owners can rebuild and verify without trusting opaque
 binaries.
 
+## Amended by ADR-028
+The craft suite is vendored storytold release artifacts in HAI-built,
+signed, digest-pinned images, with stateless packages exempt from backup
+schedules; ADR-028 holds the substance.
+
 ## Context
 The storytold craft suite (word/grid/pdf/deck/vector/photo/film/sound
 and kin) ships static wasm web builds with no server component. Docker

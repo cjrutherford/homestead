@@ -112,6 +112,10 @@ once an administrator exists.
   per ADR-006 but is not an identity boundary; defense in depth is needed.
 - External auth proxy: introduces a runtime dependency and lock-in.
 
+## Amended by ADR-029
+Craft-host file routes use a craft-scoped session derived from the operator
+session; ADR-029 holds the substance.
+
 ## Consequences
 - Rollout is staged (report-only, then transport, then atomic enforcement);
   the classification test records every route as public, claim-window, or

@@ -84,3 +84,5 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-025 | Release Artifact Trust Root | Accepted |
 | ADR-026 | Scheduler Unavailable Retry | Accepted |
 | ADR-027 | Privileged Apply Unit for Platform Updates | Accepted |
+| ADR-028 | Craft Suite Packaging and Image Trust | Accepted |
+| ADR-029 | Nextcloud WebDAV Proxy for Craft Apps | Accepted |

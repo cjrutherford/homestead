@@ -65,6 +65,10 @@ verification would be a supply-chain hole.
 ## Amended by ADR-027
 Platform binary replacement happens in a separate privileged apply unit, not in the daemon; see ADR-027.
 
+## Amended by ADR-028
+The same trust chain covers craft container images through a signed image
+manifest verified on the appliance; ADR-028 holds the substance.
+
 ## Consequences
 - Key rotation for HAI is an owner key import (or a binary release).
 - Release process must publish checksums with version and counter, and

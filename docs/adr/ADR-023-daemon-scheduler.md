@@ -26,6 +26,9 @@ normally.
 Unavailable job inputs retry with backoff without spending the window, and
 the outage is audited periodically.
 
+## Amended by ADR-028
+Stateless packages have no backup schedule and no scheduler job.
+
 ## Context
 No scheduler exists. The only periodic mechanisms are the operation runner
 wait loop (`internal/operation/runner.go:171`), SSE polling and heartbeats
