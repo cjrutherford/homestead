@@ -18,11 +18,14 @@ const tlsIssuanceUsage = `usage: homesteadctl tls issuance <subcommand>
   plan [CERT]                      preview first issuance (contacts no CA)
   approvals                        list recorded approvals
   approve CERT --digest D --agree-terms [--confirm-production]
-                                   approve the reviewed plan digest
+              [--renewal auto|manual]
+                                   approve the reviewed plan digest; renewal
+                                   defaults to auto (unattended re-issue)
   apply CERT [--follow]            run the approved issuance
-  reregister-account CERT          register a new ACME account when the CA
-                                   forgot it (owner action; required for
-                                   production directories)`
+  reregister-account CERT [--agree-terms]
+                                   register a new ACME account when the CA
+                                   forgot it (owner action; production needs
+                                   --agree-terms to the terms it prints)`
 
 // runTLSIssuance drives owner-approved first issuance (S278): plan,
 // approve, apply, the same API the dashboard uses.
@@ -58,15 +61,7 @@ func runTLSIssuance(ctx context.Context, client *apiclient.Client, args []string
 	case "apply":
 		return runTLSIssuanceApply(ctx, client, args[1:], stdout, stderr)
 	case "reregister-account":
-		if len(args) != 2 {
-			fmt.Fprintln(stderr, tlsIssuanceUsage)
-			return exitUsage
-		}
-		if err := client.TLSReregisterAccount(ctx, args[1]); err != nil {
-			return fail(stderr, err)
-		}
-		fmt.Fprintf(stdout, "re-registered the ACME account for %s; unattended renewal may resume\n", args[1])
-		return exitOK
+		return runTLSReregister(ctx, client, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown tls issuance subcommand %q\n", args[0])
 		return exitUsage
@@ -125,13 +120,56 @@ func printIssuancePlan(w io.Writer, p cert.IssuancePlan) {
 	fmt.Fprintf(w, "  digest:    %s\n", p.Digest)
 }
 
+func runTLSReregister(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	var name string
+	agree := false
+	for _, a := range args {
+		switch {
+		case a == "--agree-terms":
+			agree = true
+		case strings.HasPrefix(a, "-"):
+			fmt.Fprintf(stderr, "unknown flag %q\n", a)
+			return exitUsage
+		case name == "":
+			name = a
+		default:
+			fmt.Fprintln(stderr, tlsIssuanceUsage)
+			return exitUsage
+		}
+	}
+	if name == "" {
+		fmt.Fprintln(stderr, tlsIssuanceUsage)
+		return exitUsage
+	}
+	terms, err := client.TLSAccountTerms(ctx, name)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "CA %s (%s) terms of service: %s\n", terms.Directory, terms.DirectoryClass, terms.CurrentURL)
+	if terms.Changed {
+		fmt.Fprintf(stdout, "  changed since the account was registered (was %s)\n", terms.RecordedURL)
+	}
+	if terms.AgreementRequired && !agree {
+		fmt.Fprintln(stderr, "a production re-registration needs a fresh agreement: re-run with --agree-terms")
+		return exitUsage
+	}
+	if err := client.TLSReregisterAccount(ctx, name, agree); err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "re-registered the ACME account for %s; unattended renewal may resume\n", name)
+	return exitOK
+}
+
 func runTLSIssuanceApprove(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
-	var name, digest string
+	var name, digest, renewal string
 	var agree, production bool
 	for i := 0; i < len(args); i++ {
 		switch {
 		case args[i] == "--digest" && i+1 < len(args):
 			digest = args[i+1]
+			i++
+		case args[i] == "--renewal" && i+1 < len(args):
+			renewal = args[i+1]
 			i++
 		case args[i] == "--agree-terms":
 			agree = true
@@ -151,11 +189,11 @@ func runTLSIssuanceApprove(ctx context.Context, client *apiclient.Client, args [
 		fmt.Fprintln(stderr, tlsIssuanceUsage)
 		return exitUsage
 	}
-	approval, err := client.TLSIssuanceApprove(ctx, name, digest, agree, production)
+	approval, err := client.TLSIssuanceApprove(ctx, name, digest, agree, production, renewal)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	fmt.Fprintf(stdout, "approved: %s digest %s by %s\n", approval.Certificate, approval.Digest, approval.Actor)
+	fmt.Fprintf(stdout, "approved: %s digest %s by %s (renewal %s)\n", approval.Certificate, approval.Digest, approval.Actor, approval.RenewalMode)
 	return exitOK
 }
 

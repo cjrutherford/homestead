@@ -48,6 +48,10 @@ func b64url(data []byte) string {
 type Account struct {
 	Key *ecdsa.PrivateKey
 	KID string
+	// Terms is the CA's terms-of-service URL at registration: what the
+	// owner agreed to when this account was created. Empty for an
+	// account registered before it was recorded.
+	Terms string
 }
 
 // GenerateAccountKey creates a fresh P-256 account key.
@@ -554,6 +558,7 @@ func (c *Client) ensureAccount(ctx context.Context, acct *Account, agreeTerms bo
 	if acct.KID = resp.Header.Get("Location"); acct.KID == "" {
 		return fmt.Errorf("cert: acme newAccount returned no key location")
 	}
+	acct.Terms = dir.Meta.TermsOfService
 	return nil
 }
 

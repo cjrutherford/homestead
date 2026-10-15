@@ -6,6 +6,7 @@ import {
   ApiService,
   OperationState,
   TlsIssuancePlan,
+  TlsAccountTerms,
   TlsRenewalStatus,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
@@ -45,6 +46,11 @@ export class Tls implements OnInit, OnDestroy {
   /** Per-certificate consent, never preselected. */
   protected readonly agreed = signal<Record<string, boolean>>({});
   protected readonly production = signal<Record<string, boolean>>({});
+  /** Opt-out of unattended renewal, never preselected (auto is the default). */
+  protected readonly manualRenewal = signal<Record<string, boolean>>({});
+  /** Current CA terms per certificate whose account needs re-registering. */
+  protected readonly terms = signal<Record<string, TlsAccountTerms>>({});
+  protected readonly termsAgreed = signal<Record<string, boolean>>({});
   protected readonly operationId = signal<number | null>(null);
   protected readonly operation = signal<OperationState | null>(null);
   protected readonly streamError = signal<string | null>(null);
@@ -65,7 +71,17 @@ export class Tls implements OnInit, OnDestroy {
 
   load(): void {
     this.api.tlsRenewal().subscribe({
-      next: (report) => this.renewals.set(report.certificates ?? []),
+      next: (report) => {
+        this.renewals.set(report.certificates ?? []);
+        for (const status of report.certificates ?? []) {
+          if (status.account_recovery_required) {
+            this.api.tlsAccountTerms(status.certificate).subscribe({
+              next: (t) => this.terms.update((m) => ({ ...m, [status.certificate]: t })),
+              error: () => undefined,
+            });
+          }
+        }
+      },
       error: () => this.renewals.set([]),
     });
     this.loading.set(true);
@@ -100,6 +116,23 @@ export class Tls implements OnInit, OnDestroy {
 
   setAgreed(certificate: string, value: boolean): void {
     this.agreed.update((m) => ({ ...m, [certificate]: value }));
+  }
+
+  setManualRenewal(certificate: string, value: boolean): void {
+    this.manualRenewal.update((m) => ({ ...m, [certificate]: value }));
+  }
+
+  setTermsAgreed(certificate: string, value: boolean): void {
+    this.termsAgreed.update((m) => ({ ...m, [certificate]: value }));
+  }
+
+  /** Production re-registration needs the fresh terms agreement. */
+  protected canReregister(certificate: string): boolean {
+    if (this.locked()) {
+      return false;
+    }
+    const t = this.terms()[certificate];
+    return !(t?.agreement_required ?? true) || !!this.termsAgreed()[certificate];
   }
 
   setProduction(certificate: string, value: boolean): void {
@@ -166,6 +199,7 @@ export class Tls implements OnInit, OnDestroy {
         digest: plan.digest,
         agree_terms: true,
         confirm_production: !!this.production()[plan.certificate],
+        renewal: this.manualRenewal()[plan.certificate] ? 'manual' : 'auto',
       })
       .subscribe({
         next: () => {
@@ -183,13 +217,13 @@ export class Tls implements OnInit, OnDestroy {
 
   /** The CA forgot the ACME account: the owner registers a new one. */
   reregisterAccount(certificate: string): void {
-    if (this.locked()) {
+    if (!this.canReregister(certificate)) {
       return;
     }
     this.busy.set(true);
     this.error.set(null);
     this.notice.set(null);
-    this.api.tlsReregisterAccount(certificate).subscribe({
+    this.api.tlsReregisterAccount(certificate, !!this.termsAgreed()[certificate]).subscribe({
       next: () => {
         this.busy.set(false);
         this.notice.set(`Registered a new ACME account for ${certificate}. Unattended renewal may resume.`);

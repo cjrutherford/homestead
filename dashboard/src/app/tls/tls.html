@@ -63,6 +63,9 @@
             @if (renewal.status !== 'no-recorded-issuance') {
               ({{ renewal.days_remaining }} days remaining)
             }
+            @if (renewal.renewal_mode) {
+              (renewal: {{ renewal.renewal_mode }})
+            }
             — {{ renewal.detail }}
             @if (renewal.attempts || renewal.pending_reload) {
               <app-state-message kind="error"
@@ -71,7 +74,23 @@
             @if (renewal.account_recovery_required) {
               <app-state-message kind="error"
                 headline="The certificate authority no longer knows this ACME account. Re-register it to resume renewal." />
-              <button type="button" (click)="reregisterAccount(renewal.certificate)" [disabled]="locked()">
+              @if (terms()[renewal.certificate]; as t) {
+                <p>
+                  Certificate authority terms of service:
+                  {{ t.current_terms_url || 'none published' }}
+                  @if (t.changed) {
+                    (changed since the account was registered; it was {{ t.recorded_terms_url }})
+                  }
+                </p>
+                @if (t.agreement_required) {
+                  <label>
+                    <input type="checkbox" [checked]="termsAgreed()[renewal.certificate] ?? false" [disabled]="locked()"
+                      (change)="setTermsAgreed(renewal.certificate, $any($event.target).checked)" />
+                    I agree to these terms of service
+                  </label>
+                }
+              }
+              <button type="button" (click)="reregisterAccount(renewal.certificate)" [disabled]="!canReregister(renewal.certificate)">
                 Re-register ACME account
               </button>
             }
@@ -159,6 +178,11 @@
             I confirm issuing from a production certificate authority
           </label>
         }
+        <label>
+          <input type="checkbox" [checked]="manualRenewal()[plan.certificate] ?? false" [disabled]="locked()"
+            (change)="setManualRenewal(plan.certificate, $any($event.target).checked)" />
+          I will renew this certificate myself (leave unticked to let Homestead re-issue it unattended before it expires)
+        </label>
         <button type="button" (click)="approve(plan)" [disabled]="!canApprove(plan)">
           Approve plan
         </button>

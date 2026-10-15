@@ -172,14 +172,24 @@ func (p IssuancePlan) computeDigest() string {
 
 // Approval is the owner's recorded approval of one plan digest.
 type Approval struct {
-	Certificate         string       `json:"certificate"`
-	Digest              string       `json:"digest"`
-	Actor               string       `json:"actor"`
-	AgreedTerms         bool         `json:"agreed_terms"`
-	ConfirmedProduction bool         `json:"confirmed_production"`
-	ApprovedAt          time.Time    `json:"approved_at"`
-	Plan                IssuancePlan `json:"plan"`
+	Certificate         string `json:"certificate"`
+	Digest              string `json:"digest"`
+	Actor               string `json:"actor"`
+	AgreedTerms         bool   `json:"agreed_terms"`
+	ConfirmedProduction bool   `json:"confirmed_production"`
+	// RenewalMode is the owner's choice at approval: RenewalAuto (the
+	// default) lets Homestead re-issue an unchanged certificate unattended
+	// (ADR-024); RenewalManual leaves renewal to the owner.
+	RenewalMode string       `json:"renewal_mode"`
+	ApprovedAt  time.Time    `json:"approved_at"`
+	Plan        IssuancePlan `json:"plan"`
 }
+
+// Renewal modes an approval can record.
+const (
+	RenewalAuto   = "auto"
+	RenewalManual = "manual"
+)
 
 // Issuing runs the first-issuance flow. All collaborators are explicit
 // so tests substitute a fake CA, fake DNS provider, and a temp stack.
@@ -278,6 +288,8 @@ func AccountSecretName(directory string) string {
 type storedAccount struct {
 	KeyPEM string `json:"key_pem"`
 	KID    string `json:"kid"`
+	// Terms is the terms-of-service URL agreed at registration.
+	Terms string `json:"terms,omitempty"`
 }
 
 func (i *Issuing) accountExists(directory string) bool {
@@ -307,7 +319,7 @@ func (i *Issuing) loadAccount(directory string) (*Account, error) {
 		if err != nil {
 			return nil, fmt.Errorf("cert: stored ACME account key is unreadable")
 		}
-		return &Account{Key: key, KID: stored.KID}, nil
+		return &Account{Key: key, KID: stored.KID, Terms: stored.Terms}, nil
 	}
 	if !errors.Is(err, secret.ErrNotFound) {
 		return nil, err
@@ -334,7 +346,7 @@ func (i *Issuing) saveAccountLocked(directory string, acct *Account) error {
 	if err != nil {
 		return err
 	}
-	encoded, err := json.Marshal(storedAccount{KeyPEM: string(pemKey), KID: acct.KID})
+	encoded, err := json.Marshal(storedAccount{KeyPEM: string(pemKey), KID: acct.KID, Terms: acct.Terms})
 	if err != nil {
 		return err
 	}
@@ -495,6 +507,20 @@ func (i *Issuing) buildPlan(c Certificate, routes []docker.Route) IssuancePlan {
 // one, missing terms agreement, and production CAs without an explicit
 // production confirmation. It contacts no one.
 func (i *Issuing) Approve(name, digest, actor string, agreeTerms, confirmProduction bool) (Approval, error) {
+	return i.ApproveWith(name, digest, actor, agreeTerms, confirmProduction, "")
+}
+
+// ApproveWith is Approve with an explicit renewal mode: "auto" (the
+// default when empty) or "manual", the owner's opt-out of unattended
+// re-issue.
+func (i *Issuing) ApproveWith(name, digest, actor string, agreeTerms, confirmProduction bool, renewalMode string) (Approval, error) {
+	switch renewalMode {
+	case "":
+		renewalMode = RenewalAuto
+	case RenewalAuto, RenewalManual:
+	default:
+		return Approval{}, fmt.Errorf("cert: renewal mode must be %q or %q", RenewalAuto, RenewalManual)
+	}
 	if actor == "" {
 		return Approval{}, fmt.Errorf("cert: approval needs an actor")
 	}
@@ -516,7 +542,7 @@ func (i *Issuing) Approve(name, digest, actor string, agreeTerms, confirmProduct
 	}
 	approval := Approval{
 		Certificate: name, Digest: plan.Digest, Actor: actor, AgreedTerms: true,
-		ConfirmedProduction: confirmProduction, ApprovedAt: i.now().UTC(), Plan: plan,
+		ConfirmedProduction: confirmProduction, RenewalMode: renewalMode, ApprovedAt: i.now().UTC(), Plan: plan,
 	}
 	encoded, err := json.Marshal(plan)
 	if err != nil {
@@ -533,13 +559,13 @@ func (i *Issuing) Approve(name, digest, actor string, agreeTerms, confirmProduct
 		return Approval{}, err
 	}
 	if _, err := i.Store.DB().Exec(`INSERT INTO cert_issuance_approvals
-(certificate, digest, plan, actor, agreed_terms, confirmed_production, approved_at)
-VALUES (?, ?, ?, ?, 1, ?, ?)
+(certificate, digest, plan, actor, agreed_terms, confirmed_production, approved_at, renewal_mode)
+VALUES (?, ?, ?, ?, 1, ?, ?, ?)
 ON CONFLICT(certificate) DO UPDATE SET digest = excluded.digest, plan = excluded.plan,
 	actor = excluded.actor, agreed_terms = 1, confirmed_production = excluded.confirmed_production,
-	approved_at = excluded.approved_at`,
+	approved_at = excluded.approved_at, renewal_mode = excluded.renewal_mode`,
 		name, plan.Digest, string(encoded), actor, boolInt(confirmProduction),
-		approval.ApprovedAt.Format(time.RFC3339Nano)); err != nil {
+		approval.ApprovedAt.Format(time.RFC3339Nano), renewalMode); err != nil {
 		return Approval{}, fmt.Errorf("cert: record approval: %w", err)
 	}
 	return approval, nil
@@ -555,7 +581,7 @@ func boolInt(b bool) int {
 // Approvals lists recorded approvals ordered by certificate.
 func (i *Issuing) Approvals() ([]Approval, error) {
 	rows, err := i.Store.DB().Query(`SELECT certificate, digest, plan, actor, agreed_terms,
-confirmed_production, approved_at FROM cert_issuance_approvals ORDER BY certificate`)
+confirmed_production, approved_at, renewal_mode FROM cert_issuance_approvals ORDER BY certificate`)
 	if err != nil {
 		return nil, fmt.Errorf("cert: list approvals: %w", err)
 	}
@@ -565,7 +591,7 @@ confirmed_production, approved_at FROM cert_issuance_approvals ORDER BY certific
 		var a Approval
 		var plan, at string
 		var agreed, confirmed int
-		if err := rows.Scan(&a.Certificate, &a.Digest, &plan, &a.Actor, &agreed, &confirmed, &at); err != nil {
+		if err := rows.Scan(&a.Certificate, &a.Digest, &plan, &a.Actor, &agreed, &confirmed, &at, &a.RenewalMode); err != nil {
 			return nil, err
 		}
 		a.AgreedTerms, a.ConfirmedProduction = agreed != 0, confirmed != 0
@@ -761,6 +787,7 @@ func (i *Issuing) issue(ctx context.Context, plan IssuancePlan, certificate Cert
 	if err != nil {
 		return false, err
 	}
+	var recoveredFrom *string // terms URL of the forgotten account, once recovering
 	for attempt := 0; ; attempt++ {
 		acct, err := i.loadAccount(plan.Directory)
 		if err != nil {
@@ -786,17 +813,32 @@ func (i *Issuing) issue(ctx context.Context, plan IssuancePlan, certificate Cert
 				issueErr = errors.Join(issueErr, fmt.Errorf("cert: saving ACME account location: %w", saveErr))
 			}
 		}
+		if recoveredFrom != nil && acct.KID != startKID {
+			// The new registration is audited with the terms URL it agreed
+			// to, flagging a change since the forgotten account (S272).
+			detail := fmt.Sprintf("%s: the %s CA %s forgot the ACME account; a new account key was registered automatically for %s directories; terms %q",
+				plan.Certificate, plan.DirectoryClass, plan.Directory, plan.DirectoryClass, acct.Terms)
+			if *recoveredFrom != acct.Terms {
+				detail += fmt.Sprintf(" (changed from %q)", *recoveredFrom)
+			}
+			if auditErr := i.audit("system", "cert.account.reregister", "ok", detail); auditErr != nil {
+				issueErr = errors.Join(issueErr, auditErr)
+			}
+		}
+		if recoveredFrom != nil && acct.KID == "" {
+			if auditErr := i.audit("system", "cert.account.reregister", "error",
+				fmt.Sprintf("%s: automatic ACME account re-registration with %s failed: %v", plan.Certificate, plan.Directory, issueErr)); auditErr != nil {
+				issueErr = errors.Join(issueErr, auditErr)
+			}
+		}
 		var problem *ProblemError
 		if attempt == 0 && !delivered && errors.As(issueErr, &problem) &&
 			problem.Type == ProblemAccountDoesNotExist && plan.DirectoryClass != DirectoryProduction {
 			if resetErr := i.replaceAccount(plan.Directory); resetErr != nil {
 				return false, errors.Join(issueErr, resetErr)
 			}
-			if auditErr := i.audit("system", "cert.account.reregister", "ok",
-				fmt.Sprintf("%s: the %s CA %s forgot the ACME account; a new account key is registered automatically for %s directories",
-					plan.Certificate, plan.DirectoryClass, plan.Directory, plan.DirectoryClass)); auditErr != nil {
-				return false, errors.Join(issueErr, auditErr)
-			}
+			terms := acct.Terms
+			recoveredFrom = &terms
 			continue
 		}
 		return delivered, issueErr

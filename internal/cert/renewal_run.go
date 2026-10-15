@@ -3,6 +3,7 @@ package cert
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -202,6 +203,11 @@ func (i *Issuing) Gate(c Certificate, rec Issuance, approval Approval, hasApprov
 		g.Reason = fmt.Sprintf("%s desired issuance differs from the approved one (approved %s; desired %s); re-plan and approve", c.Name, approved, desired)
 		return g
 	}
+	if rec.Directory != "" && rec.Directory != approval.Plan.Directory {
+		g.Reason = fmt.Sprintf("%s was issued from %s but the approval is for %s; re-plan and approve; renewal never reaches a different CA",
+			c.Name, rec.Directory, approval.Plan.Directory)
+		return g
+	}
 	if c.Issuer.Directory != approval.Plan.Directory {
 		g.Reason = fmt.Sprintf("%s CA directory changed since approval (approved %s, now %s); re-plan and approve; renewal never reaches a different CA",
 			c.Name, approval.Plan.Directory, c.Issuer.Directory)
@@ -255,11 +261,22 @@ func (i *Issuing) decorate(set Set, issuances []Issuance, statuses []RenewalStat
 	for n := range statuses {
 		st := &statuses[n]
 		c, rec := byName[st.Certificate], recs[st.Certificate]
-		if st.Status == RenewalDue {
+		if st.Status == RenewalDue || st.Status == RenewalOK {
 			approval, ok := approvals[c.Name]
-			if gate := i.Gate(c, rec, approval, ok); gate.Eligible && gate.Reason != "" {
-				st.Status = RenewalPlanRequired
-				st.Detail = gate.Reason
+			gate := i.Gate(c, rec, approval, ok)
+			if gate.Eligible && ok {
+				st.RenewalMode = approval.RenewalMode
+			}
+			if st.Status == RenewalDue && gate.Eligible {
+				switch {
+				case gate.Reason != "":
+					st.Status = RenewalPlanRequired
+					st.Detail = gate.Reason
+				case approval.RenewalMode == RenewalManual:
+					st.Detail += "; the approval chose manual renewal, so Homestead will not re-issue it: re-run the plan, approve, apply flow before it expires"
+				default:
+					st.Detail += "; Homestead re-issues it unattended while the approved issuance is unchanged"
+				}
 			}
 		}
 		state, ok := states[st.Certificate]
@@ -314,7 +331,7 @@ func (i *Issuing) PendingRenewals(now time.Time) ([]string, error) {
 			continue
 		}
 		for _, c := range set.Certificates {
-			if c.Name == st.Certificate && isDNS01ACME(c) && c.Renewal.Auto {
+			if c.Name == st.Certificate && isDNS01ACME(c) && st.RenewalMode == RenewalAuto {
 				out = append(out, st.Certificate)
 			}
 		}
@@ -432,6 +449,9 @@ func (i *Issuing) renewRun(ctx context.Context, name string, state RenewalState)
 		}
 		return nil, fmt.Errorf("%w: %s", ErrPlanRequired, reason)
 	}
+	if approval.RenewalMode == RenewalManual {
+		return nil, fmt.Errorf("%w: the approval of %s chose manual renewal", ErrPlanRequired, name)
+	}
 	if !plan.Ready {
 		return nil, fmt.Errorf("cert: plan is not ready: %s", strings.Join(plan.Blockers, "; "))
 	}
@@ -458,14 +478,73 @@ func (i *Issuing) renewRun(ctx context.Context, name string, state RenewalState)
 // since the owner approved it.
 var ErrPlanRequired = errors.New("cert: plan required")
 
+// ErrTermsRequired reports a production account re-registration without
+// a fresh agreement to the CA's current terms of service.
+var ErrTermsRequired = errors.New("cert: terms of service agreement required")
+
+// AccountTerms is what the owner needs to re-register an account: the
+// approved directory and its class, the terms URL the CA publishes now,
+// and the one recorded when the account was registered.
+type AccountTerms struct {
+	Directory      string `json:"directory"`
+	DirectoryClass string `json:"directory_class"`
+	// CurrentURL comes from the directory now (empty when the CA
+	// publishes none); RecordedURL from the stored account.
+	CurrentURL  string `json:"current_terms_url"`
+	RecordedURL string `json:"recorded_terms_url"`
+	Changed     bool   `json:"changed"`
+	// AgreementRequired is true for production directories: the owner
+	// must send agree_terms with the re-registration.
+	AgreementRequired bool `json:"agreement_required"`
+}
+
+// AccountTerms reads the approved directory's current terms URL (one
+// directory GET) next to the recorded one.
+func (i *Issuing) AccountTerms(ctx context.Context, name string) (AccountTerms, error) {
+	approval, ok, err := i.approvalNamed(name)
+	if err != nil {
+		return AccountTerms{}, err
+	}
+	if !ok {
+		return AccountTerms{}, fmt.Errorf("%w: approve a plan for %q first", ErrNotApproved, name)
+	}
+	directory := approval.Plan.Directory
+	out := AccountTerms{Directory: directory, DirectoryClass: ClassifyDirectory(directory)}
+	out.AgreementRequired = out.DirectoryClass == DirectoryProduction
+	client, err := i.client(directory)
+	if err != nil {
+		return AccountTerms{}, err
+	}
+	timeout := i.Timeout
+	if timeout <= 0 {
+		timeout = DefaultIssueTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	dir, err := client.discover(ctx)
+	if err != nil {
+		return AccountTerms{}, err
+	}
+	out.CurrentURL = dir.Meta.TermsOfService
+	if raw, err := i.Secrets.Get(AccountSecretName(directory)); err == nil {
+		var stored storedAccount
+		if json.Unmarshal([]byte(raw), &stored) == nil {
+			out.RecordedURL = stored.Terms
+		}
+	}
+	out.Changed = out.RecordedURL != "" && out.RecordedURL != out.CurrentURL
+	return out, nil
+}
+
 // ReregisterAccount is the owner action for a CA that forgot the ACME
 // account: a new account key is generated, registered with the approved
 // directory, and only then replaces the stored one (a failed
-// registration keeps the old). It uses the owner's recorded approval for
-// the terms agreement, never contacts a directory other than the approved
+// registration keeps the old). Test and staging use the terms agreement on
+// the approval; production needs agreeTerms in this very request, a fresh
+// acknowledgement of the CA's current terms. It never contacts a directory other than the approved
 // one, and is audited. Any directory class may use it; it is the only
 // way to recover a production account.
-func (i *Issuing) ReregisterAccount(ctx context.Context, name, actor string) error {
+func (i *Issuing) ReregisterAccount(ctx context.Context, name, actor string, agreeTerms bool) error {
 	if actor == "" {
 		return fmt.Errorf("cert: re-registration needs an actor")
 	}
@@ -479,6 +558,14 @@ func (i *Issuing) ReregisterAccount(ctx context.Context, name, actor string) err
 	directory := approval.Plan.Directory
 	if ClassifyDirectory(directory) == DirectoryProduction && !approval.ConfirmedProduction {
 		return fmt.Errorf("%w: production issuance was not confirmed", ErrNotApproved)
+	}
+	if ClassifyDirectory(directory) == DirectoryProduction && !agreeTerms {
+		terms, termsErr := i.AccountTerms(ctx, name)
+		if termsErr != nil {
+			return termsErr
+		}
+		return fmt.Errorf("%w: a production re-registration needs a fresh agreement (agree_terms) to the CA's current terms %q",
+			ErrTermsRequired, terms.CurrentURL)
 	}
 	fail := func(err error) error {
 		return errors.Join(err, i.audit(actor, "cert.account.reregister", "error", fmt.Sprintf("%s: %s: %v", name, directory, err)))
@@ -498,7 +585,7 @@ func (i *Issuing) ReregisterAccount(ctx context.Context, name, actor string) err
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	if err := client.ensureAccount(ctx, acct, approval.AgreedTerms); err != nil {
+	if err := client.ensureAccount(ctx, acct, approval.AgreedTerms || agreeTerms); err != nil {
 		return fail(err)
 	}
 	if err := i.saveAccount(directory, acct); err != nil {
@@ -515,6 +602,6 @@ func (i *Issuing) ReregisterAccount(ctx context.Context, name, actor string) err
 		return fail(err)
 	}
 	return i.audit(actor, "cert.account.reregister", "ok",
-		fmt.Sprintf("%s: new ACME account registered with %s (%s); unattended renewal may resume",
-			name, directory, ClassifyDirectory(directory)))
+		fmt.Sprintf("%s: new ACME account registered with %s (%s) agreeing to terms %q; unattended renewal may resume",
+			name, directory, ClassifyDirectory(directory), acct.Terms))
 }

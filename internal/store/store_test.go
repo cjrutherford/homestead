@@ -199,6 +199,8 @@ func TestUpgradeFromV23PopulatedDatabase(t *testing.T) {
 		`DROP TABLE scheduler_jobs`,
 		`ALTER TABLE secrets DROP COLUMN key_version`,
 		`ALTER TABLE backup_identity_exports DROP COLUMN acknowledged_at`,
+		`ALTER TABLE cert_issuance_approvals DROP COLUMN renewal_mode`,
+		`ALTER TABLE cert_issuances DROP COLUMN directory`,
 		`DELETE FROM schema_migrations WHERE version >= 24`,
 	} {
 		if _, err := s.DB().Exec(stmt); err != nil {
@@ -237,6 +239,8 @@ func TestUpgradeFromV30KeepsPopulatedBackupRecipients(t *testing.T) {
 		`DROP TABLE backup_identity_exports`,
 		`CREATE TABLE backup_identity_exports (id INTEGER PRIMARY KEY AUTOINCREMENT, fingerprint TEXT NOT NULL, actor TEXT NOT NULL, exported_at TEXT NOT NULL)`,
 		`INSERT INTO backup_identity_exports (fingerprint, actor, exported_at) VALUES ('fp', 'owner', '2026-10-01T00:00:00Z')`,
+		`ALTER TABLE cert_issuance_approvals DROP COLUMN renewal_mode`,
+		`ALTER TABLE cert_issuances DROP COLUMN directory`,
 		`DELETE FROM schema_migrations WHERE version >= 31`,
 	} {
 		if _, err := s.DB().Exec(stmt); err != nil {

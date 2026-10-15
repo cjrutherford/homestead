@@ -146,7 +146,7 @@ func (d *DNS01) IssueFor(ctx context.Context, certName string, acct *Account, is
 		}
 	}
 	if certName != "" && d.Issuances != nil {
-		if recErr := d.Issuances.Record(certName, issued.Fingerprint, issued.ChainPEM, d.now()); recErr != nil {
+		if recErr := d.Issuances.RecordFrom(certName, issued.Fingerprint, issued.ChainPEM, d.now(), issuer.Directory); recErr != nil {
 			// Never drop either failure: join with any issue/cleanup error.
 			err = errors.Join(err, fmt.Errorf("cert: issued but recording failed: %w", recErr))
 		}
@@ -206,7 +206,7 @@ func (d *DNS01) issue(ctx context.Context, acct *Account, issuer Issuer, zone st
 	}
 	if err := placer.Place(ctx, records); err != nil {
 		if cleanupErr := cleanup(); cleanupErr != nil {
-			return Issued{}, fmt.Errorf("%v (cleanup also failed: %v)", err, cleanupErr)
+			return Issued{}, errors.Join(err, fmt.Errorf("cleanup also failed: %w", cleanupErr))
 		}
 		return Issued{}, err
 	}
@@ -215,7 +215,7 @@ func (d *DNS01) issue(ctx context.Context, acct *Account, issuer Issuer, zone st
 	// validated and issued, the certificate is never discarded.
 	if err := AwaitPropagation(ctx, d.Probe, zone, records, d.interval()); err != nil {
 		if cleanupErr := cleanup(); cleanupErr != nil {
-			return Issued{}, fmt.Errorf("%v (cleanup also failed: %v)", err, cleanupErr)
+			return Issued{}, errors.Join(err, fmt.Errorf("cleanup also failed: %w", cleanupErr))
 		}
 		return Issued{}, err
 	}
@@ -223,7 +223,7 @@ func (d *DNS01) issue(ctx context.Context, acct *Account, issuer Issuer, zone st
 	cleanupErr := cleanup()
 	switch {
 	case issueErr != nil && cleanupErr != nil:
-		return Issued{}, fmt.Errorf("%v (cleanup also failed: %v)", issueErr, cleanupErr)
+		return Issued{}, errors.Join(issueErr, fmt.Errorf("cleanup also failed: %w", cleanupErr))
 	case issueErr != nil:
 		return Issued{}, issueErr
 	case cleanupErr != nil:

@@ -105,6 +105,7 @@ describe('Tls', () => {
       digest: 'abc123',
       agree_terms: true,
       confirm_production: false,
+      renewal: 'auto',
     });
     req.flush({});
     http.expectOne('/api/v1/tls/issuance/plans').flush({ plans: [plan({ approved: true })] });
@@ -207,23 +208,61 @@ describe('Tls', () => {
     expect(button('Re-register ACME account')).toBeUndefined();
   });
 
+  const forgotten = () => ({
+    recorded_issuances: 1,
+    summary: '',
+    certificates: [{
+      certificate: 'www', status: 'renewal-due', days_remaining: 9, not_after: '2026-11-01T00:00:00Z',
+      detail: 'www expires soon', account_recovery_required: true, last_error: 'accountDoesNotExist',
+      renewal_mode: 'auto',
+    }],
+  });
+  const terms = (over: Record<string, unknown>) => ({
+    directory: 'https://ca.example/dir', directory_class: 'staging',
+    current_terms_url: 'https://ca.example/terms-v2', recorded_terms_url: 'https://ca.example/terms-v1',
+    changed: true, agreement_required: false, ...over,
+  });
+
   it('offers the owner re-registration when the CA forgot the account', () => {
     load([plan()]);
-    http.match('/api/v1/tls/renewal')[0].flush({
-      recorded_issuances: 1,
-      summary: '',
-      certificates: [{
-        certificate: 'www', status: 'renewal-due', days_remaining: 9, not_after: '2026-11-01T00:00:00Z',
-        detail: 'www expires soon', account_recovery_required: true, last_error: 'accountDoesNotExist',
-      }],
-    });
+    http.match('/api/v1/tls/renewal')[0].flush(forgotten());
+    http.expectOne((r) => r.url === '/api/v1/tls/issuance/account/terms').flush(terms({}));
     fixture.detectChanges();
+    expect(text()).toContain('https://ca.example/terms-v2');
+    expect(text()).toContain('changed since the account was registered');
     button('Re-register ACME account').click();
     const req = http.expectOne('/api/v1/tls/issuance/account/reregister');
-    expect(req.request.body).toEqual({ certificate: 'www' });
+    expect(req.request.body).toEqual({ certificate: 'www', agree_terms: false });
     req.flush({ certificate: 'www', reregistered: true });
     http.expectOne('/api/v1/tls/issuance/plans').flush({ plans: [plan()] });
     fixture.detectChanges();
     expect(text()).toContain('Registered a new ACME account for www');
+  });
+
+  it('production re-registration needs a fresh terms agreement', () => {
+    load([plan()]);
+    http.match('/api/v1/tls/renewal')[0].flush(forgotten());
+    http.expectOne((r) => r.url === '/api/v1/tls/issuance/account/terms')
+      .flush(terms({ directory_class: 'production', agreement_required: true }));
+    fixture.detectChanges();
+    expect(button('Re-register ACME account').disabled).toBe(true);
+    check('I agree to these terms of service');
+    expect(button('Re-register ACME account').disabled).toBe(false);
+    button('Re-register ACME account').click();
+    const req = http.expectOne('/api/v1/tls/issuance/account/reregister');
+    expect(req.request.body).toEqual({ certificate: 'www', agree_terms: true });
+    req.flush({ certificate: 'www', reregistered: true });
+    http.expectOne('/api/v1/tls/issuance/plans').flush({ plans: [] });
+  });
+
+  it('approval defaults to automatic renewal and can opt out', () => {
+    load([plan()]);
+    check('terms of service');
+    check('I will renew this certificate myself');
+    button('Approve plan').click();
+    const req = http.expectOne('/api/v1/tls/issuance/approvals');
+    expect(req.request.body.renewal).toBe('manual');
+    req.flush({});
+    http.expectOne('/api/v1/tls/issuance/plans').flush({ plans: [] });
   });
 });

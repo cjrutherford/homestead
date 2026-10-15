@@ -60,7 +60,10 @@ type acmeDouble struct {
 	faultTimes int
 	// forgotten makes the CA answer accountDoesNotExist to every order
 	// until an account is registered again (Pebble after a restart).
-	forgotten     bool
+	forgotten bool
+	// finalFault answers the finalize request with a problem (the
+	// failure happens after DNS placement, so cleanup runs).
+	finalFault    *acmeFault
 	registrations int
 	orders        int
 }
@@ -169,6 +172,14 @@ func (d *acmeDouble) handler(w http.ResponseWriter, r *http.Request) {
 		}
 		if d.authed {
 			d.t.Fatalf("finalize URL polled again: RFC 8555 §7.1.3 says poll the order URL")
+		}
+		if f := d.finalFault; f != nil {
+			if f.retryAfter != "" {
+				w.Header().Set("Retry-After", f.retryAfter)
+			}
+			w.WriteHeader(f.status)
+			_ = json.NewEncoder(w).Encode(map[string]any{"type": f.problem, "detail": f.detail})
+			return
 		}
 		if d.failFinal {
 			w.WriteHeader(http.StatusForbidden)

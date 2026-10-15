@@ -297,26 +297,188 @@ func TestRenewProductionNeedsConfirmedApproval(t *testing.T) {
 	}
 }
 
-func TestRenewWithoutApprovalOrAutoRenewIsNotAttempted(t *testing.T) {
+func TestRenewalModeComesFromTheApprovalNotTheStrategyFlag(t *testing.T) {
 	rig := newRenewRig(t, issuanceDirectory, false)
 	rig.enterWindow()
-	// Auto-renew off: the owner asked for manual renewal.
-	set := Set{Certificates: []Certificate{{
-		Name: "www", DNSNames: []string{"www.example.com"}, State: StateIssued, Renewal: Renewal{Auto: false},
+	// The strategy omits (or clears) its auto flag: the approval's default
+	// mode, auto, still lets Homestead re-issue; a stored certificate must
+	// never silently stop renewing because a flag decodes false.
+	rig.putStrategy(Set{Certificates: []Certificate{{
+		Name: "www", DNSNames: []string{"www.example.com"}, State: StateIssued,
 		Issuer: Issuer{Name: "le", Type: IssuerACME, Directory: issuanceDirectory,
 			Challenge: ChallengeDNS01, DNSProvider: "script"},
-	}}}
-	rig.putStrategy(set)
-	if got := rig.pending(); len(got) != 0 {
-		t.Fatalf("auto-renew off: pending = %v", got)
+	}}})
+	if st := rig.status(); st.RenewalMode != RenewalAuto || !strings.Contains(st.Detail, "re-issues it unattended") {
+		t.Fatalf("status = %+v", st)
 	}
-	// No approval on record: plan-required, never issued.
-	rig.saveStrategy(issuanceDirectory, []string{"www.example.com"})
+	if got := rig.pending(); len(got) != 1 {
+		t.Fatalf("auto approval with Auto omitted in the strategy: pending = %v", got)
+	}
+	if err := rig.issuing.Renew(context.Background(), "www", "scheduler"); err != nil {
+		t.Fatalf("Renew: %v", err)
+	}
+}
+
+func TestManualRenewalApprovalWarnsOnly(t *testing.T) {
+	rig := newRenewRig(t, issuanceDirectory, false)
+	plan, _ := rig.issuing.Plan("www")
+	approval, err := rig.issuing.ApproveWith("www", plan.Digest, "owner", true, false, RenewalManual)
+	if err != nil || approval.RenewalMode != RenewalManual {
+		t.Fatalf("approval = %+v err %v", approval, err)
+	}
+	if _, err := rig.issuing.ApproveWith("www", plan.Digest, "owner", true, false, "sometimes"); err == nil {
+		t.Fatal("accepted an unknown renewal mode")
+	}
+	rig.enterWindow()
+	st := rig.status()
+	if st.Status != RenewalDue || st.RenewalMode != RenewalManual || !strings.Contains(st.Detail, "manual renewal") {
+		t.Fatalf("status = %+v", st)
+	}
+	if got := rig.pending(); len(got) != 0 {
+		t.Fatalf("manual approval: pending = %v", got)
+	}
+	calls := rig.caCalls.Load()
+	if err := rig.issuing.Renew(context.Background(), "www", "scheduler"); err == nil || rig.caCalls.Load() != calls {
+		t.Fatalf("manual approval renewed: %v", err)
+	}
+}
+
+func TestApprovalsWithoutRecordedModeDefaultToAuto(t *testing.T) {
+	rig := newRenewRig(t, issuanceDirectory, false)
+	// A row written before the mode existed carries the column default.
 	if _, err := rig.store.DB().Exec(`DELETE FROM cert_issuance_approvals`); err != nil {
 		t.Fatal(err)
 	}
-	if st := rig.status(); st.Status != RenewalPlanRequired || !strings.Contains(st.Detail, "no owner approval") {
+	if _, err := rig.store.DB().Exec(`INSERT INTO cert_issuance_approvals
+(certificate, digest, plan, actor, agreed_terms, confirmed_production, approved_at)
+VALUES ('www', 'd', '{}', 'owner', 1, 0, '2026-10-14T12:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	list, err := rig.issuing.Approvals()
+	if err != nil || len(list) != 1 || list[0].RenewalMode != RenewalAuto {
+		t.Fatalf("approvals = %+v err %v", list, err)
+	}
+}
+
+func TestRenewGateComparesTheDirectoryTheCertificateCameFrom(t *testing.T) {
+	rig := newRenewRig(t, issuanceDirectory, false)
+	list, _ := NewIssuances(rig.store).List()
+	if len(list) != 1 || list[0].Directory != issuanceDirectory {
+		t.Fatalf("issuance did not record its directory: %+v", list)
+	}
+	rig.enterWindow()
+	if _, err := rig.store.DB().Exec(`UPDATE cert_issuances SET directory = ?`, prodDirectory); err != nil {
+		t.Fatal(err)
+	}
+	if st := rig.status(); st.Status != RenewalPlanRequired || !strings.Contains(st.Detail, "was issued from") {
 		t.Fatalf("status = %+v", st)
+	}
+	calls := rig.caCalls.Load()
+	if err := rig.issuing.Renew(context.Background(), "www", "scheduler"); !errors.Is(err, ErrPlanRequired) || rig.caCalls.Load() != calls {
+		t.Fatalf("Renew = %v", err)
+	}
+}
+
+func TestProblemSurvivesCleanupFailure(t *testing.T) {
+	// The CA refuses finalization after the TXT value was placed and the
+	// provider then fails the cleanup: Retry-After and the account problem
+	// must still reach the retry logic.
+	t.Run("Retry-After", func(t *testing.T) {
+		rig := newRenewRig(t, issuanceDirectory, false)
+		rig.enterWindow()
+		rig.double.finalFault = &acmeFault{status: http.StatusTooManyRequests, problem: ProblemRateLimited,
+			detail: "slow down", retryAfter: "129600"}
+		rig.provider.deleteErr = errors.New("provider delete refused")
+		err := rig.issuing.Renew(context.Background(), "www", "scheduler")
+		var problem *ProblemError
+		if err == nil || !errors.As(err, &problem) || problem.RetryAfter != 36*time.Hour ||
+			!strings.Contains(err.Error(), "cleanup also failed") {
+			t.Fatalf("err = %v", err)
+		}
+		if s := rig.state(); !s.NextAttemptAt.Equal(rig.clock.Add(36 * time.Hour)) {
+			t.Fatalf("state = %+v", s)
+		}
+	})
+	t.Run("account does not exist (production)", func(t *testing.T) {
+		rig := newRenewRig(t, prodDirectory, true)
+		rig.enterWindow()
+		rig.double.finalFault = &acmeFault{status: http.StatusBadRequest, problem: ProblemAccountDoesNotExist, detail: "gone"}
+		rig.provider.deleteErr = errors.New("provider delete refused")
+		if err := rig.issuing.Renew(context.Background(), "www", "scheduler"); err == nil {
+			t.Fatal("expected failure")
+		}
+		if s := rig.state(); !s.AccountRecovery {
+			t.Fatalf("state = %+v: the production account problem was lost", s)
+		}
+	})
+}
+
+func TestProductionReregistrationNeedsFreshTermsAgreement(t *testing.T) {
+	rig := newIssuanceRig(t, prodDirectory)
+	rig.double.terms = "https://ca.example/terms-v1"
+	plan, _ := rig.issuing.Plan("www")
+	if _, err := rig.issuing.Approve("www", plan.Digest, "owner", true, true); err != nil {
+		t.Fatal(err)
+	}
+	def, _ := rig.issuing.Definition("www")
+	if err := rig.run(def); err != nil {
+		t.Fatal(err)
+	}
+	// The CA publishes new terms.
+	rig.double.terms = "https://ca.example/terms-v2"
+	terms, err := rig.issuing.AccountTerms(context.Background(), "www")
+	if err != nil || !terms.Changed || !terms.AgreementRequired || terms.CurrentURL != "https://ca.example/terms-v2" ||
+		terms.RecordedURL != "https://ca.example/terms-v1" || terms.DirectoryClass != DirectoryProduction {
+		t.Fatalf("terms = %+v err %v", terms, err)
+	}
+	regs := rig.double.registrations
+	err = rig.issuing.ReregisterAccount(context.Background(), "www", "owner", false)
+	if !errors.Is(err, ErrTermsRequired) || !strings.Contains(err.Error(), "terms-v2") || rig.double.registrations != regs {
+		t.Fatalf("without agreement = %v (registrations %d)", err, rig.double.registrations)
+	}
+	if err := rig.issuing.ReregisterAccount(context.Background(), "www", "owner", true); err != nil {
+		t.Fatalf("with agreement: %v", err)
+	}
+	if rig.double.registrations != regs+1 {
+		t.Fatalf("registrations = %d", rig.double.registrations)
+	}
+	again, _ := rig.issuing.AccountTerms(context.Background(), "www")
+	if again.RecordedURL != "https://ca.example/terms-v2" || again.Changed {
+		t.Fatalf("recorded terms after re-registration = %+v", again)
+	}
+}
+
+func TestAutomaticRecoveryAuditsChangedTerms(t *testing.T) {
+	r2 := newIssuanceRig(t, issuanceDirectory)
+	r2.double.terms = "https://ca.example/terms-v1"
+	var audits []auditEntry
+	r2.issuing.Audit = func(actor, action, outcome, detail string) error {
+		audits = append(audits, auditEntry{actor, action, outcome, detail})
+		return nil
+	}
+	plan, _ := r2.issuing.Plan("www")
+	if _, err := r2.issuing.Approve("www", plan.Digest, "owner", true, false); err != nil {
+		t.Fatal(err)
+	}
+	def, _ := r2.issuing.Definition("www")
+	if err := r2.run(def); err != nil {
+		t.Fatal(err)
+	}
+	r2.clock = r2.clock.Add(40 * 24 * time.Hour)
+	r2.double.forgotten = true
+	r2.double.terms = "https://ca.example/terms-v2"
+	if err := r2.issuing.Renew(context.Background(), "www", "scheduler"); err != nil {
+		t.Fatalf("test/staging recovery must proceed despite changed terms: %v", err)
+	}
+	var found bool
+	for _, a := range audits {
+		if a.action == "cert.account.reregister" && strings.Contains(a.detail, "terms-v2") &&
+			strings.Contains(a.detail, "changed from") && strings.Contains(a.detail, "terms-v1") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("audits = %+v", audits)
 	}
 }
 
@@ -514,7 +676,7 @@ func TestRenewForgottenAccountProductionNeedsOwner(t *testing.T) {
 		t.Fatalf("audit = %+v", last)
 	}
 	// The owner route re-registers (audited), then renewal resumes.
-	if err := rig.issuing.ReregisterAccount(context.Background(), "www", "owner"); err != nil {
+	if err := rig.issuing.ReregisterAccount(context.Background(), "www", "owner", true); err != nil {
 		t.Fatalf("ReregisterAccount: %v", err)
 	}
 	if rig.double.registrations != 2 {
@@ -562,14 +724,14 @@ func TestFirstIssuanceForgottenProductionAccountDoesNotAutoRecover(t *testing.T)
 
 func TestReregisterAccountAnyClassAndGuards(t *testing.T) {
 	rig := newRenewRig(t, issuanceDirectory, false)
-	if err := rig.issuing.ReregisterAccount(context.Background(), "www", ""); err == nil {
+	if err := rig.issuing.ReregisterAccount(context.Background(), "www", "", true); err == nil {
 		t.Fatal("accepted no actor")
 	}
-	if err := rig.issuing.ReregisterAccount(context.Background(), "nope", "owner"); !errors.Is(err, ErrNotApproved) {
+	if err := rig.issuing.ReregisterAccount(context.Background(), "nope", "owner", true); !errors.Is(err, ErrNotApproved) {
 		t.Fatalf("unapproved = %v", err)
 	}
 	before, _ := rig.secrets.Get(AccountSecretName(issuanceDirectory))
-	if err := rig.issuing.ReregisterAccount(context.Background(), "www", "owner"); err != nil {
+	if err := rig.issuing.ReregisterAccount(context.Background(), "www", "owner", true); err != nil {
 		t.Fatalf("staging re-registration: %v", err)
 	}
 	if after, _ := rig.secrets.Get(AccountSecretName(issuanceDirectory)); after == before {
@@ -579,7 +741,7 @@ func TestReregisterAccountAnyClassAndGuards(t *testing.T) {
 	rig.double.fault = nil
 	keep, _ := rig.secrets.Get(AccountSecretName(issuanceDirectory))
 	rig.issuing.NewClient = func(string) (*Client, error) { return NewClient("http://127.0.0.1:1/directory") }
-	if err := rig.issuing.ReregisterAccount(context.Background(), "www", "owner"); err == nil {
+	if err := rig.issuing.ReregisterAccount(context.Background(), "www", "owner", true); err == nil {
 		t.Fatal("registered against a dead CA")
 	}
 	if now, _ := rig.secrets.Get(AccountSecretName(issuanceDirectory)); now != keep {

@@ -590,6 +590,8 @@ export interface TlsRenewalStatus {
   last_attempt_at?: string;
   next_attempt_at?: string;
   last_error?: string;
+  /** The approval's renewal choice: auto or manual. */
+  renewal_mode?: string;
   /** Renewed certificate placed, edge reload refused. */
   pending_reload?: boolean;
   /** The CA forgot the ACME account; only the owner can re-register it. */
@@ -626,6 +628,17 @@ export interface TlsIssuancePlan {
   approved: boolean;
 }
 
+/** GET /api/v1/tls/issuance/account/terms — terms to agree to (S272). */
+export interface TlsAccountTerms {
+  directory: string;
+  directory_class: string;
+  current_terms_url: string;
+  recorded_terms_url: string;
+  changed: boolean;
+  /** Production directories need a fresh agreement to re-register. */
+  agreement_required: boolean;
+}
+
 /** GET /api/v1/tls/issuance/approvals — one recorded approval. */
 export interface TlsIssuanceApproval {
   certificate: string;
@@ -633,6 +646,7 @@ export interface TlsIssuanceApproval {
   actor: string;
   agreed_terms: boolean;
   confirmed_production: boolean;
+  renewal_mode?: string;
   approved_at: string;
   plan: TlsIssuancePlan;
 }
@@ -1069,6 +1083,8 @@ export class ApiService {
     digest: string;
     agree_terms: boolean;
     confirm_production: boolean;
+    /** auto (default) re-issues unattended; manual opts out (S272). */
+    renewal?: 'auto' | 'manual';
   }): Observable<TlsIssuanceApproval> {
     return this.http.post<TlsIssuanceApproval>('/api/v1/tls/issuance/approvals', body);
   }
@@ -1083,11 +1099,20 @@ export class ApiService {
     );
   }
 
-  tlsReregisterAccount(certificate: string): Observable<{ certificate: string; reregistered: boolean }> {
+  tlsReregisterAccount(
+    certificate: string,
+    agreeTerms = false,
+  ): Observable<{ certificate: string; reregistered: boolean }> {
     return this.http.post<{ certificate: string; reregistered: boolean }>(
       '/api/v1/tls/issuance/account/reregister',
-      { certificate },
+      { certificate, agree_terms: agreeTerms },
     );
+  }
+
+  tlsAccountTerms(certificate: string): Observable<TlsAccountTerms> {
+    return this.http.get<TlsAccountTerms>('/api/v1/tls/issuance/account/terms', {
+      params: { certificate },
+    });
   }
 
   tlsIssuanceApply(certificate: string): Observable<OperationStarted> {

@@ -2,6 +2,7 @@ package apiclient
 
 import (
 	"context"
+	"net/url"
 
 	"homestead/internal/cert"
 )
@@ -49,11 +50,11 @@ func (c *Client) TLSIssuanceApprovals(ctx context.Context) ([]cert.Approval, err
 }
 
 // TLSIssuanceApprove approves one reviewed plan digest.
-func (c *Client) TLSIssuanceApprove(ctx context.Context, certificate, digest string, agreeTerms, confirmProduction bool) (cert.Approval, error) {
+func (c *Client) TLSIssuanceApprove(ctx context.Context, certificate, digest string, agreeTerms, confirmProduction bool, renewal string) (cert.Approval, error) {
 	var out cert.Approval
 	err := c.postJSON(ctx, "/api/v1/tls/issuance/approvals", map[string]any{
 		"certificate": certificate, "digest": digest,
-		"agree_terms": agreeTerms, "confirm_production": confirmProduction,
+		"agree_terms": agreeTerms, "confirm_production": confirmProduction, "renewal": renewal,
 	}, &out)
 	return out, err
 }
@@ -84,7 +85,17 @@ func (c *Client) TLSIssuanceCredentials(ctx context.Context, provider string, va
 // TLSReregisterAccount re-registers the ACME account of a certificate's
 // approved CA directory (S272): the owner action for a CA that forgot the
 // account, required for production directories.
-func (c *Client) TLSReregisterAccount(ctx context.Context, certificate string) error {
+// Production directories need agreeTerms: a fresh agreement to the CA's
+// current terms (TLSAccountTerms shows them).
+func (c *Client) TLSReregisterAccount(ctx context.Context, certificate string, agreeTerms bool) error {
 	return c.postJSON(ctx, "/api/v1/tls/issuance/account/reregister",
-		map[string]any{"certificate": certificate}, nil)
+		map[string]any{"certificate": certificate, "agree_terms": agreeTerms}, nil)
+}
+
+// TLSAccountTerms returns the terms of service the approved CA publishes
+// now next to the one recorded at registration.
+func (c *Client) TLSAccountTerms(ctx context.Context, certificate string) (cert.AccountTerms, error) {
+	var out cert.AccountTerms
+	err := c.get(ctx, "/api/v1/tls/issuance/account/terms?certificate="+url.QueryEscape(certificate), &out)
+	return out, err
 }

@@ -161,21 +161,28 @@ func TestTLSRenewalShowsFailuresAndOwnerAction(t *testing.T) {
 
 func TestTLSReregisterAccount(t *testing.T) {
 	var body map[string]any
+	class := "staging"
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method+" "+r.URL.Path != "POST /api/v1/tls/issuance/account/reregister" {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/tls/issuance/account/terms":
+			_, _ = w.Write([]byte(`{"directory":"https://ca.example/dir","directory_class":"` + class +
+				`","current_terms_url":"https://ca.example/terms-v2","recorded_terms_url":"https://ca.example/terms-v1","changed":true,"agreement_required":` +
+				map[bool]string{true: "true", false: "false"}[class == "production"] + `}`))
+		case "POST /api/v1/tls/issuance/account/reregister":
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body["certificate"] == "bad" {
+				http.Error(w, "cert: issuance not approved", http.StatusConflict)
+				return
+			}
+			_, _ = w.Write([]byte(`{"certificate":"www","reregistered":true}`))
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		if body["certificate"] == "bad" {
-			http.Error(w, "cert: issuance not approved", http.StatusConflict)
-			return
-		}
-		_, _ = w.Write([]byte(`{"certificate":"www","reregistered":true}`))
 	}))
 	defer ts.Close()
 	code, stdout, _ := invoke(t, []string{"--server", ts.URL, "tls", "issuance", "reregister-account", "www"})
-	if code != exitOK || body["certificate"] != "www" || !strings.Contains(stdout, "re-registered the ACME account for www") {
+	if code != exitOK || body["certificate"] != "www" || body["agree_terms"] != false ||
+		!strings.Contains(stdout, "terms-v2") || !strings.Contains(stdout, "re-registered the ACME account for www") {
 		t.Fatalf("exit = %d body = %v stdout = %q", code, body, stdout)
 	}
 	if code, _, _ = invoke(t, []string{"--server", ts.URL, "tls", "issuance", "reregister-account", "bad"}); code != exitError {
@@ -183,5 +190,15 @@ func TestTLSReregisterAccount(t *testing.T) {
 	}
 	if code, _, _ = invoke(t, []string{"--server", ts.URL, "tls", "issuance", "reregister-account"}); code != exitUsage {
 		t.Fatalf("usage exit = %d", code)
+	}
+	// Production shows the terms and refuses without a fresh agreement.
+	class, body = "production", nil
+	code, stdout, stderr := invoke(t, []string{"--server", ts.URL, "tls", "issuance", "reregister-account", "www"})
+	if code != exitUsage || body != nil || !strings.Contains(stdout, "terms-v2") || !strings.Contains(stderr, "--agree-terms") {
+		t.Fatalf("production without agreement: %d %q %q body=%v", code, stdout, stderr, body)
+	}
+	code, _, _ = invoke(t, []string{"--server", ts.URL, "tls", "issuance", "reregister-account", "www", "--agree-terms"})
+	if code != exitOK || body["agree_terms"] != true {
+		t.Fatalf("production with agreement: %d %v", code, body)
 	}
 }

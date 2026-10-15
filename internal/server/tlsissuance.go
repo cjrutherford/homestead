@@ -110,13 +110,15 @@ func (s *Server) MountTLSIssuance(st *store.Store, issuing *cert.Issuing) {
 			Digest            string `json:"digest"`
 			AgreeTerms        bool   `json:"agree_terms"`
 			ConfirmProduction bool   `json:"confirm_production"`
+			// Renewal is "auto" (default) or "manual" (S272).
+			Renewal string `json:"renewal"`
 		}
 		if err := decodeBody(r, &body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		actor := operatorActor(r)
-		approval, err := issuing.Approve(body.Certificate, body.Digest, actor, body.AgreeTerms, body.ConfirmProduction)
+		approval, err := issuing.ApproveWith(body.Certificate, body.Digest, actor, body.AgreeTerms, body.ConfirmProduction, body.Renewal)
 		if err != nil {
 			_, _ = audit.New(st).Record(audit.Entry{Actor: actor, Action: "cert.issuance.approve",
 				Outcome: audit.OutcomeError, Detail: body.Certificate + ": " + err.Error()})
@@ -153,15 +155,28 @@ func (s *Server) MountTLSIssuance(st *store.Store, issuing *cert.Issuing) {
 	// Owner action for a CA that forgot the ACME account (S272): required
 	// for production directories, available for any class. Audited by the
 	// issuance runner (success and failure).
+	// The terms the owner is asked to agree to before re-registering
+	// (one directory GET; no account is touched).
+	s.mux.HandleFunc("GET /api/v1/tls/issuance/account/terms", func(w http.ResponseWriter, r *http.Request) {
+		terms, err := issuing.AccountTerms(r.Context(), r.URL.Query().Get("certificate"))
+		if err != nil {
+			writeIssuanceError(w, err)
+			return
+		}
+		writeJSON(w, terms)
+	})
 	s.mux.HandleFunc("POST /api/v1/tls/issuance/account/reregister", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Certificate string `json:"certificate"`
+			// AgreeTerms is the fresh terms acknowledgement a production
+			// directory requires.
+			AgreeTerms bool `json:"agree_terms"`
 		}
 		if err := decodeBody(r, &body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := issuing.ReregisterAccount(r.Context(), body.Certificate, operatorActor(r)); err != nil {
+		if err := issuing.ReregisterAccount(r.Context(), body.Certificate, operatorActor(r), body.AgreeTerms); err != nil {
 			writeIssuanceError(w, err)
 			return
 		}

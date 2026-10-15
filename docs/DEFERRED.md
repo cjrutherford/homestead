@@ -261,6 +261,9 @@
   certificates stay Caddy-native and are never re-issued by Homestead. A
   re-issue whose edge reload keeps failing is retried (reload only) with the
   same backoff but has no escalation beyond status and doctor warnings.
-  Retry-After is bounded at 7 days. Re-issue refuses, rather than adapts to,
+  Retry-After is bounded at 7 days. The CA terms URL is recorded when an
+  account is registered, not at approval (approval contacts no CA); accounts
+  registered before this change have none recorded and show no "changed"
+  flag. Re-issue refuses, rather than adapts to,
   any drift of CA directory, zone, names, provider, or challenge; the owner
   re-approves. Real Let's Encrypt staging was not exercised.

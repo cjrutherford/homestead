@@ -157,6 +157,9 @@ type Issuance struct {
 	Fingerprint Fingerprint
 	ChainPEM    []byte
 	IssuedAt    time.Time
+	// Directory is the CA directory the chain was issued from; empty for
+	// an issuance recorded before it was kept.
+	Directory string
 }
 
 // Issuances persists approved issuances in SQLite (migration 27).
@@ -169,6 +172,11 @@ func NewIssuances(st *store.Store) *Issuances { return &Issuances{db: st.DB()} }
 
 // Record stores (replacing) the approved issuance for a certificate.
 func (i *Issuances) Record(name string, fp Fingerprint, chainPEM []byte, at time.Time) error {
+	return i.RecordFrom(name, fp, chainPEM, at, "")
+}
+
+// RecordFrom is Record noting the CA directory the chain came from.
+func (i *Issuances) RecordFrom(name string, fp Fingerprint, chainPEM []byte, at time.Time, directory string) error {
 	if name == "" {
 		return fmt.Errorf("cert: issuance needs a certificate name")
 	}
@@ -176,11 +184,11 @@ func (i *Issuances) Record(name string, fp Fingerprint, chainPEM []byte, at time
 	if err != nil {
 		return err
 	}
-	_, err = i.db.Exec(`INSERT INTO cert_issuances (name, fingerprint, chain_pem, issued_at)
-VALUES (?, ?, ?, ?)
+	_, err = i.db.Exec(`INSERT INTO cert_issuances (name, fingerprint, chain_pem, issued_at, directory)
+VALUES (?, ?, ?, ?, ?)
 ON CONFLICT(name) DO UPDATE SET fingerprint = excluded.fingerprint,
-	chain_pem = excluded.chain_pem, issued_at = excluded.issued_at`,
-		name, string(encoded), string(chainPEM), at.UTC().Format(time.RFC3339Nano))
+	chain_pem = excluded.chain_pem, issued_at = excluded.issued_at, directory = excluded.directory`,
+		name, string(encoded), string(chainPEM), at.UTC().Format(time.RFC3339Nano), directory)
 	if err != nil {
 		return fmt.Errorf("cert: record issuance: %w", err)
 	}
@@ -189,18 +197,18 @@ ON CONFLICT(name) DO UPDATE SET fingerprint = excluded.fingerprint,
 
 // List returns every stored issuance ordered by certificate name.
 func (i *Issuances) List() ([]Issuance, error) {
-	rows, err := i.db.Query(`SELECT name, fingerprint, chain_pem, issued_at FROM cert_issuances ORDER BY name`)
+	rows, err := i.db.Query(`SELECT name, fingerprint, chain_pem, issued_at, directory FROM cert_issuances ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("cert: list issuances: %w", err)
 	}
 	defer rows.Close()
 	var out []Issuance
 	for rows.Next() {
-		var name, fp, chain, at string
-		if err := rows.Scan(&name, &fp, &chain, &at); err != nil {
+		var name, fp, chain, at, directory string
+		if err := rows.Scan(&name, &fp, &chain, &at, &directory); err != nil {
 			return nil, err
 		}
-		issuance := Issuance{Certificate: name, ChainPEM: []byte(chain)}
+		issuance := Issuance{Certificate: name, ChainPEM: []byte(chain), Directory: directory}
 		if err := json.Unmarshal([]byte(fp), &issuance.Fingerprint); err != nil {
 			return nil, fmt.Errorf("cert: issuance %q fingerprint: %w", name, err)
 		}
@@ -251,6 +259,9 @@ type RenewalStatus struct {
 	// PendingReload is a renewed certificate placed on disk that the edge
 	// has not adopted yet (the reload was refused).
 	PendingReload bool `json:"pending_reload"`
+	// RenewalMode is the owner's recorded choice at approval ("auto" or
+	// "manual"); empty when no approval is on record.
+	RenewalMode string `json:"renewal_mode"`
 	// AccountRecoveryRequired means the CA forgot the ACME account and
 	// only the owner may re-register it (production directory).
 	AccountRecoveryRequired bool `json:"account_recovery_required"`
@@ -327,8 +338,9 @@ func CheckRenewals(set Set, issuances []Issuance, now time.Time) ([]RenewalStatu
 			status.Status = RenewalDue
 			status.Detail = fmt.Sprintf("%s expires %s, inside the %d-day renewal window",
 				certificate.Name, health.NotAfter.Format(time.DateOnly), window)
-			if isDNS01ACME(certificate) && certificate.Renewal.Auto {
-				status.Detail += "; Homestead re-issues it unattended while the approved issuance is unchanged"
+			if isDNS01ACME(certificate) {
+				// The approval's renewal mode decides (S272); the report
+				// layer adds the sentence.
 			} else if !certificate.Renewal.Auto {
 				status.Detail += "; Caddy does not renew a certificate Homestead placed and auto-renew is off, so re-run the issuance (plan, approve, apply) before it expires"
 			} else {

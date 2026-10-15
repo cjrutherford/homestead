@@ -196,3 +196,39 @@ func TestOwnerReregisterRouteIsAuditedAndGuarded(t *testing.T) {
 		t.Fatalf("re-registration failure not audited: %+v", entries)
 	}
 }
+
+func TestRenewalRunsNeverWaitOnEachOther(t *testing.T) {
+	_, st, issuing, clock := dueIssuance(t)
+	now := func() time.Time { return clock }
+	issuing.Now = now
+	def := renewalDefinition(st, issuing, now, "cert.renewal-retry", false)
+	// Another run holds the renewal lock (a long issuance): this one must
+	// return at once, audited as skipped, and attempt nothing.
+	renewMu.Lock()
+	done := make(chan error, 1)
+	go func() { done <- def.Steps[0].Run(context.Background()) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("skipped run failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		renewMu.Unlock()
+		t.Fatal("the retry run blocked on the renewal lock")
+	}
+	renewMu.Unlock()
+	entries, _ := audit.New(st).List(20)
+	var skipped bool
+	for _, e := range entries {
+		if e.Action == "cert.renewal.attempt" && e.Outcome == audit.OutcomeSkipped && e.Actor == scheduler.Actor &&
+			strings.Contains(e.Detail, "still in progress") {
+			skipped = true
+		}
+	}
+	if !skipped {
+		t.Fatalf("overlap not audited as skipped: %+v", entries)
+	}
+	if s, _ := cert.NewRenewalStates(st).Get("www"); s.Attempts != 0 {
+		t.Fatalf("a skipped run attempted: %+v", s)
+	}
+}

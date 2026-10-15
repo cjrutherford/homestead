@@ -1004,8 +1004,14 @@ homesteadctl tls issuance reregister-account CERT # owner action, any CA class
 
 - The daily `cert:renewal-check` job (operation `cert.renewal-check`, steps
   `reissue`, `check`, `report`) re-issues every ACME dns-01 certificate that
-  is `renewal-due` (30 days or fewer left), has auto-renew on, and whose
-  issuance is unchanged. Its hourly companion `cert:renewal-retry`
+  is `renewal-due` (30 days or fewer left), whose approval's renewal mode
+  is `auto`, and whose issuance is unchanged. The mode is the owner's
+  choice recorded at approval (`--renewal auto|manual`, API `renewal`,
+  dashboard checkbox; default `auto`, and approvals that predate it read
+  `auto`, migration 38); the strategy's own `Renewal.Auto` flag is not
+  consulted. `manual` leaves renewal to the owner: status and doctor warn
+  `renewal-due` and nothing is issued. Status, `tls renewal` and the
+  dashboard show the mode. Its hourly companion `cert:renewal-retry`
   (operation `cert.renewal-retry`) is declared enabled only while a renewal
   is failing (or a renewed certificate waits for an edge reload); both only
   attempt a certificate once its persisted next-attempt time has passed.
@@ -1013,7 +1019,9 @@ homesteadctl tls issuance reregister-account CERT # owner action, any CA class
   provider id, challenge method; wildcards literal), the same CA directory
   (so the same class) and DNS zone as the owner's recorded approval, and,
   for a production directory, an approval that carried the production
-  confirmation. Anything else reads `plan-required` in status, doctor, CLI
+  confirmation. The directory the existing certificate was actually issued
+  from (`cert_issuances.directory`, kept since migration 38; empty for older
+  rows, which then fall back to the approval's) must match too. Anything else reads `plan-required` in status, doctor, CLI
   and dashboard, and nothing is issued; renewal never reaches a CA, class,
   or zone the owner did not approve. Served routes are never widened: only
   the approved plan's routes have their snippets refreshed.
@@ -1035,8 +1043,18 @@ homesteadctl tls issuance reregister-account CERT # owner action, any CA class
   owner runs `homesteadctl tls issuance reregister-account CERT` (or the
   dashboard Certificates button), `POST
   /api/v1/tls/issuance/account/reregister`, audited under the owner. It
-  registers with the approved directory using the terms agreement already
-  on record and swaps the stored account only after the CA accepted it.
+  registers with the approved directory and swaps the stored account only
+  after the CA accepted it. Test and staging use the terms agreement on the
+  approval. Production needs a fresh acknowledgement: the request must carry
+  `agree_terms: true` (CLI `--agree-terms`, dashboard checkbox) after the
+  owner has seen the CA's current terms URL (`GET
+  /api/v1/tls/issuance/account/terms`, one directory GET, shown beside the
+  URL recorded at registration). The terms URL is stored with the account
+  at registration; an automatic test or staging re-registration proceeds
+  even if it changed, and its audit entry names the new URL and the old one.
+- The daily and hourly runs never block each other: a run that finds the
+  other still working is audited `cert.renewal.attempt` as skipped and
+  tries again at its next evaluation.
 - Surfaces: `GET /api/v1/tls/renewal` and `tls renewal` carry `attempts`,
   `last_error`, `next_attempt_at`, `pending_reload`,
   `account_recovery_required`; doctor warns `tls-renewal:<name>` while

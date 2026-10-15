@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 37
+const CurrentVersion = 38
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -718,6 +718,16 @@ CREATE TABLE IF NOT EXISTS cert_renewal_state (
 	pending_reload INTEGER NOT NULL DEFAULT 0,
 	account_recovery INTEGER NOT NULL DEFAULT 0
 );`,
+	},
+	{
+		// S272 review: the approval records the owner's renewal mode
+		// (existing approvals default to auto, ADR-024) and each recorded
+		// issuance the CA directory it came from.
+		version: 38,
+		name:    "certificate renewal mode and issuance directory",
+		sql: `
+ALTER TABLE cert_issuance_approvals ADD COLUMN renewal_mode TEXT NOT NULL DEFAULT 'auto';
+ALTER TABLE cert_issuances ADD COLUMN directory TEXT NOT NULL DEFAULT '';`,
 	},
 }
 

@@ -107,7 +107,15 @@ func renewalDefinition(st *store.Store, issuing *cert.Issuing, now func() time.T
 	def := operation.Definition{Type: typ}
 	if issuing != nil {
 		def.Steps = append(def.Steps, operation.StepDef{Name: "reissue", Run: func(ctx context.Context) error {
-			renewMu.Lock()
+			// The daily and hourly runs never wait on each other (a
+			// stuck issuance would hold the lock for its whole timeout):
+			// the later run is skipped, audited, and tries again next
+			// evaluation.
+			if !renewMu.TryLock() {
+				_, err := audit.New(st).Record(audit.Entry{Actor: scheduler.Actor, Action: "cert.renewal.attempt",
+					Outcome: audit.OutcomeSkipped, Detail: typ + " skipped: another renewal run is still in progress"})
+				return err
+			}
 			defer renewMu.Unlock()
 			due, err := issuing.PendingRenewals(now())
 			if err != nil {

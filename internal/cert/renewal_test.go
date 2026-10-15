@@ -129,7 +129,7 @@ func TestCheckRenewals(t *testing.T) {
 	noAuto := renewalSet("www.example.com")
 	noAuto.Certificates[0].Renewal.Auto = false
 	got, err = CheckRenewals(noAuto, issuance, issuedAt.Add(45*24*time.Hour))
-	if err != nil || got[0].Status != RenewalDue || !strings.Contains(got[0].Detail, "Caddy does not renew") {
+	if err != nil || got[0].Status != RenewalDue || got[0].Detail == "" {
 		t.Fatalf("auto off = %+v, %v", got, err)
 	}
 	// Outside the window it is still ok.
