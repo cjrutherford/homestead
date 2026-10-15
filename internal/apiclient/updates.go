@@ -22,11 +22,24 @@ type UpdatePlan struct {
 	Warnings  []string        `json:"Warnings"`
 }
 
+// CraftUpdate is the build state of one craft move in an update plan.
+type CraftUpdate struct {
+	Service string        `json:"service"`
+	App     string        `json:"app"`
+	Version string        `json:"version"`
+	Tag     string        `json:"tag"`
+	Built   bool          `json:"built"`
+	Verdict *CraftVerdict `json:"verdict,omitempty"`
+}
+
 // PackageUpdate is one review row: the plan plus whether anything runs.
 type PackageUpdate struct {
 	Package   string     `json:"package"`
 	Installed bool       `json:"installed"`
 	Plan      UpdatePlan `json:"plan"`
+	// Craft is the build status of any locally built craft image the
+	// plan moves (S279).
+	Craft []CraftUpdate `json:"craft,omitempty"`
 }
 
 // UpdatesList returns per-package review rows (S243): drift plans
@@ -46,11 +59,30 @@ func (c *Client) UpdatesList(ctx context.Context) ([]PackageUpdate, error) {
 // for progress streams. Backup-gated plans refuse without backup
 // requested; current packages report id zero with a detail string.
 func (c *Client) ApplyUpdate(ctx context.Context, name string, backup bool, dbPassword string) (int64, string, error) {
+	return c.ApplyUpdateCraft(ctx, name, backup, dbPassword, nil)
+}
+
+// CraftApply carries the optional inputs of an update that rebuilds a
+// locally built craft image (S279): a manifest and signature other than
+// the shipped ones, an owner-supplied artifact (offline use), and the
+// audited counter override.
+type CraftApply struct {
+	Manifest   string `json:"manifest,omitempty"`
+	Signature  string `json:"signature,omitempty"`
+	Artifact   string `json:"artifact,omitempty"`
+	AllowOlder bool   `json:"allow_older,omitempty"`
+}
+
+// ApplyUpdateCraft is ApplyUpdate with craft inputs (nil for none).
+func (c *Client) ApplyUpdateCraft(ctx context.Context, name string, backup bool, dbPassword string, craft *CraftApply) (int64, string, error) {
 	var out struct {
 		ID     int64  `json:"id"`
 		Detail string `json:"detail"`
 	}
 	body := map[string]any{"backup": backup, "db_password": dbPassword}
+	if craft != nil {
+		body["craft"] = craft
+	}
 	if err := c.postJSON(ctx, "/api/v1/updates/"+name+"/apply", body, &out); err != nil {
 		return 0, "", err
 	}

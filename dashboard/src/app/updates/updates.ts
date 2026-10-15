@@ -3,6 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { ApiService, PackageUpdate } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { CraftImagesPanel } from './craft-images';
 import { PlatformUpdatesPanel } from './platform-updates';
 
 /**
@@ -13,7 +14,7 @@ import { PlatformUpdatesPanel } from './platform-updates';
  * out to operation detail for progress; this page never blocks.
  */
 @Component({
-  imports: [StateMessage, RouterLink, PlatformUpdatesPanel],
+  imports: [StateMessage, RouterLink, PlatformUpdatesPanel, CraftImagesPanel],
   selector: 'app-updates',
   templateUrl: './updates.html',
 })
@@ -28,6 +29,10 @@ export class Updates implements OnInit {
 
   protected readonly withBackup = signal<Record<string, boolean>>({});
   protected readonly dbPasswords = signal<Record<string, string>>({});
+  /** Per-package craft inputs for updates that rebuild a craft image (S279). */
+  protected readonly craftInputs = signal<
+    Record<string, { manifest?: string; artifact?: string; allow_older?: boolean }>
+  >({});
 
   ngOnInit(): void {
     this.refresh();
@@ -56,6 +61,20 @@ export class Updates implements OnInit {
     this.dbPasswords.update((passwords) => ({ ...passwords, [name]: value }));
   }
 
+  setCraft(name: string, field: 'manifest' | 'artifact', value: string): void {
+    this.craftInputs.update((all) => ({
+      ...all,
+      [name]: { ...all[name], [field]: value || undefined },
+    }));
+  }
+
+  setCraftOlder(name: string, wanted: boolean): void {
+    this.craftInputs.update((all) => ({
+      ...all,
+      [name]: { ...all[name], allow_older: wanted },
+    }));
+  }
+
   apply(name: string): void {
     this.busy.set(true);
     this.error.set(null);
@@ -65,6 +84,7 @@ export class Updates implements OnInit {
       .applyUpdate(name, {
         backup: this.withBackup()[name] ?? false,
         db_password: this.dbPasswords()[name] ?? '',
+        ...(this.craftInputs()[name] ? { craft: this.craftInputs()[name] } : {}),
       })
       .subscribe({
         next: ({ id, detail }) => {

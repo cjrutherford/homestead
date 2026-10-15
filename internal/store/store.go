@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 38
+const CurrentVersion = 39
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -728,6 +728,56 @@ CREATE TABLE IF NOT EXISTS cert_renewal_state (
 		sql: `
 ALTER TABLE cert_issuance_approvals ADD COLUMN renewal_mode TEXT NOT NULL DEFAULT 'auto';
 ALTER TABLE cert_issuances ADD COLUMN directory TEXT NOT NULL DEFAULT '';`,
+	},
+	{
+		// S279 (ADR-028): craft signing keys (a separate class from the
+		// platform release keys), per-app counter baselines, the latest
+		// verification verdict per app, and the locally built image
+		// records the drift and install checks compare against.
+		version: 39,
+		name:    "craft build pipeline",
+		sql: `
+CREATE TABLE IF NOT EXISTS craft_trust_keys (
+	key_id TEXT PRIMARY KEY,
+	public_key TEXT NOT NULL,
+	label TEXT NOT NULL DEFAULT '',
+	actor TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS craft_trust_removed (
+	key_id TEXT PRIMARY KEY
+);
+CREATE TABLE IF NOT EXISTS craft_baseline (
+	app TEXT PRIMARY KEY,
+	version TEXT NOT NULL,
+	counter INTEGER NOT NULL,
+	recorded_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS craft_verdicts (
+	app TEXT PRIMARY KEY,
+	version TEXT NOT NULL DEFAULT '',
+	counter INTEGER NOT NULL DEFAULT 0,
+	state TEXT NOT NULL,
+	refusal TEXT NOT NULL DEFAULT '',
+	detail TEXT NOT NULL DEFAULT '',
+	key_id TEXT NOT NULL DEFAULT '',
+	override INTEGER NOT NULL DEFAULT 0,
+	actor TEXT NOT NULL DEFAULT '',
+	verified_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS craft_images (
+	app TEXT NOT NULL,
+	version TEXT NOT NULL,
+	tag TEXT NOT NULL,
+	image_id TEXT NOT NULL,
+	counter INTEGER NOT NULL,
+	key_id TEXT NOT NULL,
+	artifact_sha256 TEXT NOT NULL,
+	context_digest TEXT NOT NULL,
+	manifest_sha256 TEXT NOT NULL,
+	built_at TEXT NOT NULL,
+	PRIMARY KEY (app, version)
+);`,
 	},
 }
 

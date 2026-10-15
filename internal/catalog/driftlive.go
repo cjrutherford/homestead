@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+	"homestead/internal/craft"
 	"homestead/internal/docker"
 )
 
@@ -708,6 +709,15 @@ func findImage(images []docker.Image, id string) (docker.Image, bool) {
 func imageDrift(desired string, c docker.Container, images func() []docker.Image) string {
 	if desired == "" {
 		return ""
+	}
+	if _, _, craftRef := craft.ParseRef(desired); craftRef {
+		// Locally built images (S279) compare with the recorded local
+		// digest, not a tag or a published digest.
+		id := c.ImageID
+		if id == "" && imageIDPattern.MatchString(c.Image) {
+			id = c.Image
+		}
+		return craftImageDrift(desired, craftContainer{imageID: id})
 	}
 	want := normalizeImage(desired)
 	byID := func(id string) (docker.Image, bool) { return findImage(images(), id) }

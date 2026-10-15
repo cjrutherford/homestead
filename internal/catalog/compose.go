@@ -187,6 +187,9 @@ type StackFiles struct {
 	// SecretFiles names the secret files the document references
 	// (metadata only); WriteStack materializes them from the store.
 	SecretFiles []SecretFile
+	// Images lists the service images the stack runs, in service order
+	// (S279 uses it to find locally built craft images).
+	Images []string
 }
 
 // Generate renders inspectable Compose artifacts from a manifest plus
@@ -286,6 +289,7 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 			Services: names, Enabled: true,
 		},
 		SecretFiles: secretFiles,
+		Images:      stackImages(manifest),
 	}, nil
 }
 
@@ -341,4 +345,13 @@ func WriteStack(dir string, files StackFiles, secrets SecretStore) error {
 		return fmt.Errorf("catalog: write compose.yaml: %w", err)
 	}
 	return nil
+}
+
+// stackImages lists the manifest's service images in manifest order.
+func stackImages(manifest Manifest) []string {
+	images := make([]string, 0, len(manifest.Services))
+	for _, service := range manifest.Services {
+		images = append(images, service.Image)
+	}
+	return images
 }

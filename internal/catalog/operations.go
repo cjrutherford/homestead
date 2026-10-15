@@ -34,6 +34,12 @@ func lockProject(project string) func() {
 // daemon. Removal shares it (remove.go) rather than growing a second.
 var composeUp = func(ctx context.Context, dir, project string) error {
 	defer lockProject(project)()
+	// Locally built craft images start only while they match their
+	// recorded digest (S279): install, configure, restore and adoption
+	// all come through here.
+	if err := checkCraftStack(ctx, dir, project); err != nil {
+		return err
+	}
 	return composeRun(ctx, dir, project, "up", "-d")
 }
 
@@ -90,6 +96,17 @@ func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string,
 		return operation.Definition{}, err
 	}
 	def := operation.Definition{Type: "catalog.install"}
+	if len(craftImages(plan.Compose.Images)) > 0 {
+		// A craft image must be built and recorded first (S279); the
+		// check also runs again inside composeUp.
+		images := plan.Compose.Images
+		def.Steps = append(def.Steps, operation.StepDef{
+			Name: "verify-craft-images",
+			Run: func(ctx context.Context) error {
+				return checkCraftImages(ctx, images)
+			},
+		})
+	}
 	if len(plan.Compose.SecretFiles) > 0 {
 		// A new database password over an initialised cluster would be
 		// rejected: Postgres applies POSTGRES_PASSWORD_FILE only at

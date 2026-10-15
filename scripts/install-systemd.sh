@@ -37,6 +37,12 @@ go build -o "$CTL_DST" ./cmd/homesteadctl
 rm -rf "$CATALOG_DST"
 mkdir -p "$(dirname "$CATALOG_DST")"
 cp -r "$CATALOG_SRC" "$CATALOG_DST"
+# The shared craft Dockerfile and build context (S279) ship in the catalog
+# directory; a signed craft manifest records the digest of this tree, so a
+# changed file refuses to build until it is re-signed.
+mkdir -p "$CATALOG_DST/craft"
+rm -rf "$CATALOG_DST/craft/context"
+cp -r "$REPO/images/craft" "$CATALOG_DST/craft/context"
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"
 # The privileged apply unit (ADR-027) ships disabled: the daemon starts it
 # on demand when a verified platform update is applied. Only this unit may

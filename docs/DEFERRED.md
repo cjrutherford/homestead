@@ -173,7 +173,9 @@
   removes them (delete them by hand).
 - Dashboard embed in install flow: serving the UI needs the
   node toolchain plus a manual embed build (proven working in
-  KVM); prebuilt packaging belongs to distribution (S240).
+  KVM); prebuilt packaging of the daemon and CLI belongs to distribution
+  (S240). Craft images are not part of it: they are built on the appliance
+  from signed manifests (S279, ADR-028) and no image is ever published.
 - Session boundary follow-ups (S255, S257): rejection audit entries are
   always actor `anonymous` (per-actor attribution of rejected requests
   is unscheduled), and an open SSE stream re-verifies its session only on
@@ -267,3 +269,38 @@
   flag. Re-issue refuses, rather than adapts to,
   any drift of CA directory, zone, names, provider, or challenge; the owner
   re-approves. Real Let's Encrypt staging was not exercised.
+
+## Craft build pipeline (S279, ADR-028)
+
+- Production craft signing key: the embedded HAI craft key is a
+  generated placeholder whose private half was discarded (same status as
+  the platform release key). Until the key ceremony, owners add the
+  published or their own key through the craft trust-key routes (CLI `craft trust add`).
+- storytold release source: still TBD by the owner. No craft manifest or
+  catalog entry exists; S249 adds the first (artifact URLs, licence check,
+  `docs/THIRD_PARTY.md` entry, catalog schema validation of craft tags
+  including refusing registry-qualified references).
+- CI automation of manifest generation and signing: `scripts/craft-manifest.sh`
+  and `scripts/sign-craft-manifest.sh` are run by hand on the signer's
+  machine.
+- Read-only root filesystem: the image writes only under `/tmp`, so a
+  package can declare `/tmp` as its one ephemeral tmpfs, but the catalog
+  schema has no read-only-root field.
+- Multi-arch builds: the base is pinned by its multi-arch index digest and
+  the appliance builds for its own architecture; there is no per-arch
+  digest record or cross-build.
+- Build caching across updates: every build runs from scratch against the
+  fresh context; there is no layer cache reuse policy beyond Docker's own.
+- Doctor and scheduler: no doctor check reports a placeholder-only craft
+  key set or a recorded image that no longer matches (drift and
+  `craft status` report it), and no scheduled re-verification exists.
+- Counter baselines are per app and move when a build is recorded, not
+  when the update applies; a failed update after a successful build leaves
+  the baseline advanced (an older manifest then needs the audited
+  override).
+- Pruning only removes the previous version's tag after a successful
+  update; an image a container still uses, or a version record orphaned by
+  uninstalling the package, stays until the next update or a manual
+  `docker rmi`.
+- Update apply takes one craft move per package; a package mixing several
+  locally built images is refused.

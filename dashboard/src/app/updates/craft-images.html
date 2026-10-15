@@ -1,0 +1,131 @@
+<section aria-label="Craft images">
+  <h2>Craft images</h2>
+
+  @if (error()) {
+    <app-state-message kind="error" [headline]="error()" />
+  }
+  @if (notice()) {
+    <app-state-message kind="status" [headline]="notice()" />
+  }
+  @if (operation(); as id) {
+    <p>
+      Build started.
+      <a [routerLink]="['/operations', id]">Follow operation {{ id }}</a>
+    </p>
+  }
+
+  <p>
+    Craft images are built on this appliance from a signed craft manifest and
+    never pulled. Manifest: {{ status()?.manifest_path }}
+  </p>
+
+  <h3>Built images</h3>
+  <ul>
+    @for (image of status()?.images ?? []; track image.tag) {
+      <li>
+        {{ image.tag }} (counter {{ image.counter }}, {{ image.image_id }}):
+        @if (!image.present) {
+          <strong>missing locally</strong>
+        } @else if (image.match) {
+          <strong>matches the recorded digest</strong>
+        } @else {
+          <strong>differs from the recorded digest ({{ image.live_id }})</strong>
+        }
+      </li>
+    } @empty {
+      <li>No craft images built yet.</li>
+    }
+  </ul>
+
+  <h3>Latest verdicts</h3>
+  <ul>
+    @for (verdict of status()?.verdicts ?? []; track verdict.app) {
+      <li>
+        {{ verdict.app }} {{ verdict.version || '-' }}:
+        <strong>{{ verdict.state }}</strong>
+        @if (verdict.refusal) {
+          <span> ({{ verdict.refusal }} check)</span>
+        }
+        <span> {{ verdict.detail }}</span>
+        @if (verdict.override) {
+          <span> Older manifest allowed by owner override (audited).</span>
+        }
+      </li>
+    } @empty {
+      <li>No craft manifest verified yet.</li>
+    }
+  </ul>
+
+  <h3>Verify and build</h3>
+  <label>
+    App
+    <input name="craft-app" (input)="app = $any($event.target).value" />
+  </label>
+  <label>
+    Manifest file (blank: the shipped manifest)
+    <input name="craft-manifest" (input)="manifest = $any($event.target).value" />
+  </label>
+  <label>
+    Signature file (blank: the manifest path plus .minisig)
+    <input name="craft-signature" (input)="signature = $any($event.target).value" />
+  </label>
+  <label>
+    Local artifact file (blank: fetch from the signed URL)
+    <input name="craft-artifact" (input)="artifact = $any($event.target).value" />
+  </label>
+  @if (result(); as r) {
+    @if (r.verdict.state === 'verified') {
+      <p>
+        Verified {{ r.plan.app }} {{ r.plan.version }} (counter {{ r.plan.counter }})
+        with key {{ r.plan.key_id }}; build context matches; artifact source
+        {{ r.plan.source }}; tag {{ r.plan.tag }}.
+      </p>
+    } @else {
+      <app-state-message
+        kind="error"
+        [headline]="'Refused (' + r.verdict.refusal + ' check): ' + r.verdict.detail"
+      />
+    }
+  }
+  @if (olderRefused()) {
+    <label>
+      <input
+        type="checkbox"
+        name="craft-allow-older"
+        (change)="allowOlder = $any($event.target).checked"
+      />
+      I confirm building from an older manifest (recorded in the audit trail)
+    </label>
+  }
+  <button type="button" (click)="plan()" [disabled]="busy() || !app">Verify</button>
+  <button type="button" (click)="build()" [disabled]="busy() || !app">Verify and build</button>
+
+  <h3>Craft signing keys</h3>
+  <ul>
+    @for (key of keys(); track key.key_id) {
+      <li>
+        {{ key.key_id }} ({{ key.source }}) {{ key.label }}
+        @if (key.placeholder) {
+          <strong> Placeholder: verifies no real manifest.</strong>
+        }
+        <button type="button" (click)="replaceKey(key.key_id)" [disabled]="busy() || !newKey">
+          Replace with new key
+        </button>
+        <button type="button" (click)="removeKey(key.key_id)" [disabled]="busy()">
+          Remove
+        </button>
+      </li>
+    } @empty {
+      <li>No craft keys trusted; no craft manifest will verify.</li>
+    }
+  </ul>
+  <label>
+    Minisign public key
+    <textarea name="craft-new-key" rows="3" (input)="newKey = $any($event.target).value"></textarea>
+  </label>
+  <label>
+    Label
+    <input name="craft-new-label" (input)="newLabel = $any($event.target).value" />
+  </label>
+  <button type="button" (click)="addKey()" [disabled]="busy() || !newKey">Add craft key</button>
+</section>

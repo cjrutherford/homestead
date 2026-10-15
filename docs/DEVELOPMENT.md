@@ -2872,3 +2872,116 @@ Engine (a remote `DOCKER_HOST` compares paths lexically).
   an unrestorable `.previous`; the restart-failure path is covered by the
   fake-systemd tests); the dashboard rollback action; power loss during
   a rollback; the free-space skip of the rolled-back copy.
+
+## Craft build pipeline (S279, ADR-028)
+
+What exists: `internal/craft` (manifest parser, verify-then-build
+operation, recorded-image store and gates), `internal/docker/build.go`
+(`BuildClient`, the docker CLI behind `craft.Builder`), `images/craft/`
+(shared nginx Dockerfile and `nginx.conf`, base pinned by digest),
+`scripts/craft-manifest.sh` and `scripts/sign-craft-manifest.sh`,
+migration 39 (`craft_trust_keys`, `craft_trust_removed`, `craft_baseline`,
+`craft_verdicts`, `craft_images`), `internal/server/craft.go` (routes), the
+`craft` CLI group and the Craft images panel on the Updates page. Formats,
+the check order, signing and the manual digest check are in
+`docs/architecture/RELEASE_VERIFICATION.md`. No manifest, catalog entry or
+storytold source exists yet (S249).
+
+Local testing:
+
+- `go test ./internal/craft` uses a fake docker builder, test keys and a
+  fake fetcher; it also runs the manifest script against the daemon's
+  digest. `HOMESTEAD_DOCKER_TESTS=1 go test ./internal/docker -run
+  TestRealCraftBuild` builds a real image from a synthetic site with a
+  throwaway key (needs Docker and network for the pinned base), runs it
+  with a read-only root and only `/tmp` writable, and checks the `no-cache`
+  HTML, immutable hashed assets and `application/wasm`.
+- Craft routes are session routes (ADR-020); the install gate and the
+  Compose-up gate are package seams in `internal/catalog/craft.go`
+  (`CraftChecker`, `CraftRecordedID`), set by `Server.MountCraft`. S249
+  names a craft image `homestead/craft-<app>:<version>`.
+
+### KVM acceptance steps (synthetic artifact; pending, run on a VM)
+
+On the appliance (Debian 13; `sudo apt-get install -y minisign`), after
+`scripts/install-systemd.sh` has deployed the daemon and catalog (the
+script copies `images/craft` to
+`/usr/local/share/homestead/catalog/craft/context`), and `homesteadctl
+login`:
+
+```
+W=/srv/craft-kvm; sudo mkdir -p $W && sudo chown $USER $W && cd $W && mkdir -p art site
+echo '<html>kvm</html>' > site/index.html; printf '\0asm' > site/app.0123456789ab.wasm
+tar -czf art/synthcraft-1.0.0.tar.gz -C site .
+minisign -G -W -p craft.pub -s craft.key                       # throwaway key
+CTX=/usr/local/share/homestead/catalog/craft/context
+~/homestead/scripts/craft-manifest.sh --counter 5 --artifact-dir art --context $CTX \
+    --app synthcraft 1.0.0 synthcraft-1.0.0.tar.gz > craft-manifest.yaml   # no --url: offline
+~/homestead/scripts/sign-craft-manifest.sh craft-manifest.yaml --key craft.key
+# throwaway catalog entry (not committed); contents in the S279 transcript below
+sudo cp synthcraft.yaml /usr/local/share/homestead/catalog/ && sudo systemctl restart homestead-server
+```
+
+1. Untrusted key: `homesteadctl craft plan synthcraft --manifest
+   $W/craft-manifest.yaml --artifact $W/art/synthcraft-1.0.0.tar.gz`
+   refuses (signature check). `homesteadctl craft trust add --key-file
+   $W/craft.pub` then plan verifies. `craft-trust.yaml` appears beside
+   `desired.yaml`.
+2. `craft build synthcraft ... --follow` (same flags) succeeds with the
+   network blocked (`sudo iptables -I OUTPUT -o ens+ -j REJECT` or
+   equivalent, removed afterwards); `craft status` shows the tag matching
+   its recorded ID. `apps plan/install synthcraft -f body.json` (the
+   acceptance-script body with `container_ports: {"web": 80}`) installs;
+   install is refused before the build (and again after step 5).
+3. Refusals each print the failing check and leave no tag or record
+   (`docker images`, `craft status`): flip one byte of the artifact copy
+   (`artifact-digest`); change a file in
+   `/usr/local/share/homestead/catalog/craft/context` and restore it
+   (`build-context-digest`); a manifest signed by a second, untrusted key
+   (`signature`); an older counter (`counter`, with the override hint) and
+   then `--allow-older` (audited with both counters).
+4. A fetch failure (a manifest with `--url https://127.0.0.1:9/x`) is
+   retryable and leaves nothing.
+5. Replace the image behind the daemon's back (`docker tag alpine:latest
+   homestead/craft-synthcraft:1.0.0`): `craft status` reports it differs,
+   `apps configure`/restore refuse to start the stack, and
+   `homesteadctl drift live synthcraft` reports the image finding; a
+   rebuild repairs it.
+6. Bump to 1.1.0 (catalog entry and a counter 6 manifest):
+   `updates list` shows the craft move, `updates apply synthcraft
+   --craft-manifest ... --craft-signature ... --craft-artifact ...
+   --follow` rebuilds, updates, then prunes 1.0.0 (tag and record).
+7. Remove the throwaway key, catalog entry, stack and images.
+
+The result of this run (date, commit, outcomes) is recorded here when
+performed.
+
+Synthetic catalog entry used above (valid against the S160 schema):
+
+```yaml
+name: synthcraft
+version: 1.0
+title: Synthcraft
+blurb: Synthetic craft image for S279 acceptance.
+description: Throwaway package used only to exercise the craft build pipeline.
+category: media
+icon: mdi:web
+services:
+- name: web
+  image: homestead/craft-synthcraft:1.0.0
+  exposes: web
+  data:
+  - target: /tmp
+    ephemeral: true
+    reason: nginx pid and temporary files
+requirements:
+  memorymb: 64
+  cpucount: 1
+  architectures: [amd64, arm64]
+exposure:
+  package: synthcraft
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: false
+```

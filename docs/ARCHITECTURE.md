@@ -35,6 +35,19 @@
   (backoff 1h doubling to 24h, state in `cert_renewal_state`, every
   attempt audited). Status: `GET /api/v1/tls/renewal`, `homesteadctl tls renewal`,
   doctor checks `tls-renewal:<name>`, and the dashboard Exposure page.
+- Craft build pipeline (S279, ADR-028): `internal/craft` verifies a signed
+  craft manifest (minisign `Ed`, a craft trust-key class separate from the
+  platform release keys, ADR-025 counter semantics kept per app), obtains
+  and digest-checks the upstream artifact (signed HTTPS URL or an
+  owner-supplied local file), checks the digest of the shipped build
+  context, and only then runs `docker build` (`internal/docker.BuildClient`,
+  base image pinned by digest) as the `craft.build` operation. The local
+  image ID is recorded per app and version in SQLite (`craft_images`,
+  migration 39). Install, Compose up and live drift compare against that
+  recorded ID; updates rebuild and prune the previous build afterwards. No
+  registry is involved. See `docs/architecture/RELEASE_VERIFICATION.md`.
+  API: `GET /api/v1/craft`, `POST /api/v1/craft/plan|build`,
+  `/api/v1/craft/trust-keys`; CLI `homesteadctl craft`.
 - YAML: customer-readable desired configuration and generated artifacts.
 - Docker Engine + Compose v2: application runtime.
 - Caddy: application reverse proxy / HTTP edge.

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"homestead/internal/craft"
 	"homestead/internal/operation"
 )
 
@@ -149,13 +150,18 @@ func UpdateDefinition(req UpdateRequest) (operation.Definition, error) {
 			},
 		})
 	}
-	def.Steps = append(def.Steps, operation.StepDef{
-		Name: "pull",
-		Run: func(ctx context.Context) error {
-			_, err := execCompose(ctx, req.StackDir, req.Package, "pull")
-			return err
-		},
-	})
+	// Locally built craft images (S279) are never pulled: only the other
+	// moved services are, and the step disappears when all are craft.
+	if pull := pullServices(req.Moves); pull == nil || len(pull) > 0 {
+		def.Steps = append(def.Steps, operation.StepDef{
+			Name: "pull",
+			Run: func(ctx context.Context) error {
+				args := append([]string{"pull"}, pull...)
+				_, err := execCompose(ctx, req.StackDir, req.Package, args...)
+				return err
+			},
+		})
+	}
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "rewrite",
 		Run: func(ctx context.Context) error {
@@ -184,6 +190,28 @@ func UpdateDefinition(req UpdateRequest) (operation.Definition, error) {
 		},
 	})
 	return def, nil
+}
+
+// pullServices names the moved services that need a registry pull. It
+// returns nil (pull the whole stack, the historic behavior) when no move
+// is a craft image, and an empty non-nil slice when every move is.
+func pullServices(moves []ServiceUpdate) []string {
+	var registry []string
+	craftSeen := false
+	for _, move := range moves {
+		if _, _, ok := craft.ParseRef(move.Target); ok {
+			craftSeen = true
+			continue
+		}
+		registry = append(registry, move.Service)
+	}
+	if !craftSeen {
+		return nil
+	}
+	if registry == nil {
+		return []string{}
+	}
+	return registry
 }
 
 // rollbackImages restores previous pins after a failed update.

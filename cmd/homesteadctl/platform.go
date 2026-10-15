@@ -147,8 +147,24 @@ func runUpdatesVerify(ctx context.Context, client *apiclient.Client, args []stri
 
 const trustUsage = "usage: homesteadctl updates trust <list|add|replace|remove> [KEY_ID] [--key-file FILE] [--label TEXT]"
 
+// trustOps is one trust-key class's API surface: the platform release
+// keys (S264) and the craft signing keys (S279) share the CLI flow.
+type trustOps struct {
+	usage   string
+	list    func(ctx context.Context) ([]apiclient.TrustKey, error)
+	add     func(ctx context.Context, publicKey, label string) (apiclient.TrustKey, error)
+	replace func(ctx context.Context, keyID, publicKey, label string) (apiclient.TrustKey, error)
+	remove  func(ctx context.Context, keyID string) error
+}
+
 // runUpdatesTrust manages trusted release-signing keys over the API.
 func runUpdatesTrust(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	return runTrust(ctx, args, stdout, stderr, trustOps{usage: trustUsage,
+		list: client.TrustKeys, add: client.TrustKeyAdd, replace: client.TrustKeyReplace, remove: client.TrustKeyRemove})
+}
+
+func runTrust(ctx context.Context, args []string, stdout, stderr io.Writer, ops trustOps) int {
+	trustUsage := ops.usage
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, trustUsage)
 		return exitUsage
@@ -185,7 +201,7 @@ func runUpdatesTrust(ctx context.Context, client *apiclient.Client, args []strin
 	}
 	switch action {
 	case "list":
-		keys, err := client.TrustKeys(ctx)
+		keys, err := ops.list(ctx)
 		if err != nil {
 			return fail(stderr, err)
 		}
@@ -202,7 +218,7 @@ func runUpdatesTrust(ctx context.Context, client *apiclient.Client, args []strin
 		if !ok || len(positional) != 0 {
 			return exitUsage
 		}
-		key, err := client.TrustKeyAdd(ctx, text, label)
+		key, err := ops.add(ctx, text, label)
 		if err != nil {
 			return fail(stderr, err)
 		}
@@ -217,7 +233,7 @@ func runUpdatesTrust(ctx context.Context, client *apiclient.Client, args []strin
 		if !ok {
 			return exitUsage
 		}
-		key, err := client.TrustKeyReplace(ctx, positional[0], text, label)
+		key, err := ops.replace(ctx, positional[0], text, label)
 		if err != nil {
 			return fail(stderr, err)
 		}
@@ -228,7 +244,7 @@ func runUpdatesTrust(ctx context.Context, client *apiclient.Client, args []strin
 			fmt.Fprintln(stderr, trustUsage)
 			return exitUsage
 		}
-		if err := client.TrustKeyRemove(ctx, positional[0]); err != nil {
+		if err := ops.remove(ctx, positional[0]); err != nil {
 			return fail(stderr, err)
 		}
 		fmt.Fprintf(stdout, "removed trusted key %s\n", positional[0])

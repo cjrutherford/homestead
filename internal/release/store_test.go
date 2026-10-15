@@ -42,7 +42,7 @@ func TestTrustKeyLifecycle(t *testing.T) {
 		t.Fatalf("replace: %v %+v", err, replaced)
 	}
 	// The owner may remove the embedded key and restore it later.
-	emb := embeddedKey()
+	emb := platformClass.embedded()
 	if err := s.RemoveKey(emb.KeyID); err != nil {
 		t.Fatal(err)
 	}

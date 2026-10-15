@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"homestead/internal/audit"
 	"homestead/internal/backup"
 	"homestead/internal/catalog"
+	"homestead/internal/craft"
 	"homestead/internal/discover"
 	"homestead/internal/docker"
 	"homestead/internal/operation"
@@ -31,8 +33,9 @@ const defaultBackupRetain = 7
 // maxima, and approved application through the safe-update operation.
 // Long executions return operation IDs onto existing streams.
 func (s *Server) MountUpdates(st *store.Store, catalogDir string, client *docker.Client, secrets catalog.SecretStore) {
-	s.mux.HandleFunc("GET /api/v1/updates", handleUpdatesList(st, catalogDir, client))
-	s.mux.HandleFunc("POST /api/v1/updates/{name}/apply", handleUpdatesApply(st, catalogDir, client, secrets))
+	craftPipe := func() *craft.Pipeline { return s.craft }
+	s.mux.HandleFunc("GET /api/v1/updates", handleUpdatesList(st, catalogDir, client, craftPipe))
+	s.mux.HandleFunc("POST /api/v1/updates/{name}/apply", handleUpdatesApply(st, catalogDir, client, secrets, craftPipe))
 }
 
 // packageUpdate is the review row: the plan plus whether anything
@@ -41,6 +44,46 @@ type packageUpdate struct {
 	Package   string            `json:"package"`
 	Installed bool              `json:"installed"`
 	Plan      update.UpdatePlan `json:"plan"`
+	// Craft reports, for a plan that moves a locally built craft image
+	// (S279), whether the target is already built and the app's latest
+	// verification verdict. Applying verifies the manifest and rebuilds.
+	Craft []craftUpdate `json:"craft,omitempty"`
+}
+
+// craftUpdate is the craft build status of one move.
+type craftUpdate struct {
+	Service string         `json:"service"`
+	App     string         `json:"app"`
+	Version string         `json:"version"`
+	Tag     string         `json:"tag"`
+	Built   bool           `json:"built"`
+	Verdict *craft.Verdict `json:"verdict,omitempty"`
+}
+
+// craftUpdates lists the craft moves of a plan with their build state.
+func craftUpdates(pipe *craft.Pipeline, plan update.UpdatePlan) []craftUpdate {
+	var out []craftUpdate
+	for _, move := range plan.Services {
+		app, version, ok := craft.ParseRef(move.Target)
+		if !ok {
+			continue
+		}
+		cu := craftUpdate{Service: move.Service, App: app, Version: version, Tag: move.Target}
+		if pipe != nil {
+			if _, err := pipe.Store.Image(app, version); err == nil {
+				cu.Built = true
+			}
+			if verdicts, err := pipe.Store.Verdicts(); err == nil {
+				for i := range verdicts {
+					if verdicts[i].App == app {
+						cu.Verdict = &verdicts[i]
+					}
+				}
+			}
+		}
+		out = append(out, cu)
+	}
+	return out
 }
 
 // runningImages scopes engine containers by Compose project: service
@@ -72,6 +115,9 @@ func registryMaxima(images map[string]string) map[string][]string {
 	client := &http.Client{Timeout: 8 * time.Second}
 	out := map[string][]string{}
 	for service, image := range images {
+		if _, _, local := craft.ParseRef(image); local {
+			continue // locally built (S279): there is no registry to ask
+		}
 		tag := image
 		if index := strings.LastIndex(image, ":"); index >= 0 {
 			tag = image[index+1:]
@@ -109,7 +155,7 @@ func planPackage(catalogDir string, client *docker.Client, r *http.Request, name
 	return manifest, plan, len(running) > 0, nil
 }
 
-func handleUpdatesList(st *store.Store, catalogDir string, client *docker.Client) http.HandlerFunc {
+func handleUpdatesList(st *store.Store, catalogDir string, client *docker.Client, craftPipe func() *craft.Pipeline) http.HandlerFunc {
 	_ = st
 	return func(w http.ResponseWriter, r *http.Request) {
 		entries, err := catalog.Load(catalogDir)
@@ -124,7 +170,7 @@ func handleUpdatesList(st *store.Store, catalogDir string, client *docker.Client
 				http.Error(w, err.Error(), http.StatusBadGateway)
 				return
 			}
-			out = append(out, packageUpdate{Package: name, Installed: installed, Plan: plan})
+			out = append(out, packageUpdate{Package: name, Installed: installed, Plan: plan, Craft: craftUpdates(craftPipe(), plan)})
 		}
 		if out == nil {
 			out = []packageUpdate{}
@@ -138,6 +184,19 @@ func handleUpdatesList(st *store.Store, catalogDir string, client *docker.Client
 type applyBody struct {
 	Backup     bool   `json:"backup"`
 	DBPassword string `json:"db_password"`
+	// Craft carries the inputs for a craft image move (S279); every field
+	// is optional (the catalog's shipped manifest and the signed URL are
+	// the defaults).
+	Craft *craftApplyInput `json:"craft,omitempty"`
+}
+
+// craftApplyInput is the manifest, signature and optional owner-supplied
+// artifact for a craft update, plus the audited counter override.
+type craftApplyInput struct {
+	Manifest   string `json:"manifest"`
+	Signature  string `json:"signature"`
+	Artifact   string `json:"artifact"`
+	AllowOlder bool   `json:"allow_older"`
 }
 
 // backupSources finds existing package directories under assigned
@@ -331,7 +390,7 @@ func databasePassword(secrets catalog.SecretStore, manifest catalog.Manifest) (s
 	return value, nil
 }
 
-func handleUpdatesApply(st *store.Store, catalogDir string, client *docker.Client, secrets catalog.SecretStore) http.HandlerFunc {
+func handleUpdatesApply(st *store.Store, catalogDir string, client *docker.Client, secrets catalog.SecretStore, craftPipe func() *craft.Pipeline) http.HandlerFunc {
 	runner := operation.NewRunner(st)
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
@@ -401,13 +460,86 @@ func handleUpdatesApply(st *store.Store, catalogDir string, client *docker.Clien
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
+		craftPlan, status, err := withCraftBuild(r, &def, craftPipe(), plan, body.Craft)
+		if err != nil {
+			http.Error(w, err.Error(), status)
+			return
+		}
 		op, err := runner.Start(r.Context(), def, "")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		if craftPlan != nil && craftPlan.Override {
+			_, _ = audit.New(st).Record(audit.Entry{Actor: operatorActor(r), Action: "craft.build.override", Outcome: audit.OutcomeOK, Override: true,
+				Detail: fmt.Sprintf("%s %s (update of %s)", craftPlan.App, craftPlan.Version, name),
+				OverrideReason: fmt.Sprintf("owner allowed older craft manifest: recorded %s, manifest %s counter %d",
+					craftPlan.Baseline, craftPlan.Version, craftPlan.Counter)})
+		}
 		writeJSON(w, map[string]any{"id": op.ID})
 	}
+}
+
+// withCraftBuild adds the verify-then-build steps in front of an update
+// that moves a locally built craft image (S279), and prunes the previous
+// build after the update applied. The manifest is verified here first so
+// a refusal answers immediately (HTTP 422, counter rollbacks with the
+// override code); the operation verifies again before building. A plan
+// with no craft move is left untouched.
+func withCraftBuild(r *http.Request, def *operation.Definition, pipe *craft.Pipeline, plan update.UpdatePlan, in *craftApplyInput) (*craft.Plan, int, error) {
+	var app, version string
+	for _, move := range plan.Services {
+		a, v, ok := craft.ParseRef(move.Target)
+		if !ok {
+			continue
+		}
+		if app != "" {
+			return nil, http.StatusUnprocessableEntity, fmt.Errorf("an update may move only one craft image at a time")
+		}
+		app, version = a, v
+	}
+	if app == "" {
+		return nil, 0, nil
+	}
+	if pipe == nil {
+		return nil, http.StatusUnprocessableEntity, fmt.Errorf("craft builds are not available")
+	}
+	manifest := filepath.Join(pipe.ContextDir, "..", craftManifestFile)
+	req := craft.Request{App: app, Version: version, ManifestPath: filepath.Clean(manifest), SignaturePath: filepath.Clean(manifest) + craftSigSuffix, Actor: operatorActor(r)}
+	if in != nil {
+		if in.Manifest != "" {
+			req.ManifestPath, req.SignaturePath = in.Manifest, in.Signature
+			if req.SignaturePath == "" {
+				req.SignaturePath = in.Manifest + craftSigSuffix
+			}
+		}
+		req.ArtifactPath, req.AllowOlder = in.Artifact, in.AllowOlder
+	}
+	checked, _, err := pipe.Check(r.Context(), req)
+	if err != nil {
+		var ce *craft.CheckError
+		if errors.As(err, &ce) && ce.Check == craft.CheckCounter {
+			return nil, http.StatusUnprocessableEntity, fmt.Errorf("%w (override with allow_older)", err)
+		}
+		return nil, refusalStatus(err), err
+	}
+	build, err := pipe.Definition(req)
+	if err != nil {
+		return nil, refusalStatus(err), err
+	}
+	def.Steps = append(append([]operation.StepDef{}, build.Steps...), def.Steps...)
+	def.Steps = append(def.Steps, operation.StepDef{
+		Name: "prune-craft-images",
+		Run: func(ctx context.Context) error {
+			// The update applied: the previous build can go. A failure to
+			// prune is not an update failure; the image stays recorded and
+			// the next update retries.
+			_, _ = pipe.Prune(ctx, app, version)
+			return nil
+		},
+	})
+	def.Cleanup = build.Cleanup
+	return &checked, 0, nil
 }
 
 // backupKeyStore narrows the secret store to what the backup identity

@@ -290,6 +290,8 @@ export interface PackageUpdate {
   package: string;
   installed: boolean;
   plan: UpdatePlan;
+  /** Build state of locally built craft images the plan moves (S279). */
+  craft?: CraftUpdate[];
 }
 
 /** GET /api/v1/platform/updates — latest verification record per component. */
@@ -369,6 +371,88 @@ export interface TrustKey {
   source: 'embedded' | 'owner';
   /** The embedded key's private half was discarded; it verifies nothing real. */
   placeholder?: boolean;
+}
+
+/** GET /api/v1/craft — a locally built craft image with its live comparison (S279). */
+export interface CraftImage {
+  app: string;
+  version: string;
+  tag: string;
+  image_id: string;
+  counter: number;
+  key_id: string;
+  artifact_sha256: string;
+  context_digest: string;
+  built_at: string;
+  present: boolean;
+  live_id: string;
+  match: boolean;
+}
+
+/** Latest verification or build outcome for one craft app. */
+export interface CraftVerdict {
+  app: string;
+  version: string;
+  counter: number;
+  state: 'verified' | 'built' | 'failed';
+  /** The failing check (signature, counter, artifact-digest, ...); empty when none. */
+  refusal: string;
+  detail: string;
+  key_id: string;
+  override: boolean;
+}
+
+/** GET /api/v1/craft. */
+export interface CraftStatus {
+  images: CraftImage[];
+  verdicts: CraftVerdict[];
+  baselines: Record<string, { Version: string; Counter: number }>;
+  manifest_path: string;
+  signature_path: string;
+  context_dir: string;
+}
+
+/** POST /api/v1/craft/plan and /build body. */
+export interface CraftRequest {
+  app: string;
+  version?: string;
+  manifest?: string;
+  signature?: string;
+  artifact?: string;
+  allow_older?: boolean;
+}
+
+/** What a craft plan checked. */
+export interface CraftPlan {
+  app: string;
+  version: string;
+  counter: number;
+  tag: string;
+  key_id: string;
+  artifact_name: string;
+  artifact_sha256: string;
+  artifact_size: number;
+  source: 'local' | 'download';
+  context_digest: string;
+  override: boolean;
+  disk_required: number;
+  baseline: string;
+}
+
+/** POST /api/v1/craft/plan response. */
+export interface CraftPlanResult {
+  plan: CraftPlan;
+  verdict: CraftVerdict;
+}
+
+/** An update-plan row's craft build state. */
+export interface CraftUpdate {
+  service: string;
+  app: string;
+  version: string;
+  tag: string;
+  built: boolean;
+  verdict?: CraftVerdict;
 }
 
 /** GET /api/v1/audit — one immutable audit entry (snake_case JSON). */
@@ -917,6 +1001,46 @@ export class ApiService {
   trustKeyRemove(keyId: string): Observable<void> {
     return this.http.delete<void>(
       `/api/v1/platform/trust-keys/${encodeURIComponent(keyId)}`,
+    );
+  }
+
+  craftStatus(): Observable<CraftStatus> {
+    return this.http.get<CraftStatus>('/api/v1/craft');
+  }
+
+  craftPlan(body: CraftRequest): Observable<CraftPlanResult> {
+    return this.http.post<CraftPlanResult>('/api/v1/craft/plan', body);
+  }
+
+  craftBuild(body: CraftRequest): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>('/api/v1/craft/build', body);
+  }
+
+  craftTrustKeys(): Observable<TrustKey[]> {
+    return this.http.get<TrustKey[]>('/api/v1/craft/trust-keys');
+  }
+
+  craftTrustKeyAdd(publicKey: string, label: string): Observable<TrustKey> {
+    return this.http.post<TrustKey>('/api/v1/craft/trust-keys', {
+      public_key: publicKey,
+      label,
+    });
+  }
+
+  craftTrustKeyReplace(
+    keyId: string,
+    publicKey: string,
+    label: string,
+  ): Observable<TrustKey> {
+    return this.http.put<TrustKey>(
+      `/api/v1/craft/trust-keys/${encodeURIComponent(keyId)}`,
+      { public_key: publicKey, label },
+    );
+  }
+
+  craftTrustKeyRemove(keyId: string): Observable<void> {
+    return this.http.delete<void>(
+      `/api/v1/craft/trust-keys/${encodeURIComponent(keyId)}`,
     );
   }
 

@@ -16,6 +16,7 @@ import (
 	"os"
 	"time"
 
+	"homestead/internal/craft"
 	"homestead/internal/version"
 )
 
@@ -58,6 +59,8 @@ type Server struct {
 	// waiters); serve cancels it when the daemon shuts down.
 	bg       context.Context
 	bgCancel context.CancelFunc
+	// craft is the verify-then-build pipeline (S279), set by MountCraft.
+	craft *craft.Pipeline
 }
 
 // New returns a Server serving addr. Pass DefaultAddr for local-only binding.

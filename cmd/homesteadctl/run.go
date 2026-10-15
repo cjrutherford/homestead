@@ -78,6 +78,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runData(ctx, client, rest[1:], stdout, stderr)
 	case "updates":
 		return runUpdates(ctx, client, rest[1:], stdout, stderr)
+	case "craft":
+		return runCraft(ctx, client, rest[1:], stdout, stderr)
 	case "secrets":
 		return runSecrets(ctx, client, rest[1:], stdout, stderr)
 	case "backup":
@@ -140,6 +142,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  drift <review|accept|restore> <package> [--follow]  managed-state drift choices (S244)")
 	fmt.Fprintln(w, "  drift schedule [--interval 6h] [--enabled true|false]  periodic scan cadence and last result (S261)")
 	fmt.Fprintln(w, "  data <status|plan|approve|remove-volumes>  app data placement, migration off Docker volumes, and old-volume removal (S277)")
+	fmt.Fprintln(w, "  craft <status|plan|build|trust>  craft image verify-then-build and craft signing keys (S279)")
 	fmt.Fprintln(w, "  updates <list|apply|platform|verify|trust>  application updates (S243); platform release verification and trusted keys (S264)")
 	fmt.Fprintln(w, "  secrets <status|rekey>  secret-store key version and confirmed re-key (S258)")
 	fmt.Fprintln(w, "  backup <destination|schedules|schedule|unschedule>  backup configuration (S238)")

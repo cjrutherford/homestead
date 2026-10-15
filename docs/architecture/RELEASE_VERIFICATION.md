@@ -245,3 +245,140 @@ homesteadctl updates apply-platform --component homestead-server --artifact /srv
 ```
 
 Keep the files outside `/home`, `/tmp`, and `/var/tmp`.
+
+## Craft release manifests (S279, ADR-028)
+
+Craft container images are never pulled or published. The appliance
+verifies a signed craft manifest and the upstream artifact it names, then
+builds the image locally. The trust mechanics are ADR-025's, under a
+separate key class.
+
+### Manifest format
+
+A strict YAML document (unknown fields, duplicate keys, a second document
+and any unlisted shape are refused). The signed message is the file's exact
+bytes.
+
+```yaml
+format: homestead-craft-manifest/1
+counter: 7                        # positive, incremented every manifest
+context_digest: sha256:<64 hex>   # digest of images/craft (Dockerfile + context)
+apps:
+  - name: wordcraft               # ^[a-z][a-z0-9-]*$
+    version: 1.2.3                # 1.2 or 1.2.3
+    artifact:
+      name: wordcraft-1.2.3.tar.gz   # bare .tar.gz, .tgz or .zip name
+      urls:                       # optional https mirrors of the same bytes
+        - https://example.org/wordcraft-1.2.3.tar.gz
+      sha256: <64 hex>
+      size: 12345678              # exact bytes; bounds the download
+```
+
+- `counter` is manifest-wide with ADR-025 semantics, but the baseline is
+  recorded per app (`craft_baseline`, moved when a build is recorded): a
+  lower counter is refused unless the audited override is given (both
+  counters recorded); an equal counter with a different version is refused
+  with no override. An app absent from the manifest cannot be built from
+  it. An update names the version the catalog wants and the manifest must
+  carry exactly it.
+- Signature: minisign non-prehashed `Ed`, as for platform releases;
+  prehashed `ED` is rejected. A craft manifest is verified only against
+  **craft** trust keys (`craft_trust_keys`, rendered to `craft-trust.yaml`
+  beside `desired.yaml`), never platform keys, and the reverse; the embedded
+  HAI craft key is a placeholder until the key ceremony (docs/DEFERRED.md).
+  Manage keys with `homesteadctl craft trust list|add|replace|remove`, the
+  Updates page Craft images panel, or `/api/v1/craft/trust-keys`; the audit
+  actions are `craft.trust.add|replace|remove`.
+- Build-context digest: SHA-256 over the text `<file sha256>  <path>\n`
+  (sha256sum layout, `/` separators, no `./`) for every regular file under
+  the context directory, sorted bytewise by path. Modes, timestamps and
+  empty directories are not part of it. Symlinks, special files, newlines
+  in names and a top-level `artifact` entry are refused. The daemon and
+  `scripts/craft-manifest.sh` compute it identically (tested).
+
+### Signing runbook (HAI and owners alike)
+
+```
+# 1. The artifacts (the upstream release files) sit in one directory.
+scripts/craft-manifest.sh --counter 7 --artifact-dir /path/to/artifacts \
+    --app wordcraft 1.2.3 wordcraft-1.2.3.tar.gz --url https://example.org/wordcraft-1.2.3.tar.gz \
+    > craft-manifest.yaml
+# 2. Sign with minisign (non-prehashed). The key stays off the repository.
+scripts/sign-craft-manifest.sh craft-manifest.yaml --key /secure/craft.key
+# 3. Ship craft-manifest.yaml and craft-manifest.yaml.minisig in the
+#    catalog's craft/ directory (HAI), or keep them anywhere readable.
+```
+
+An owner who builds from their own artifact does the same with their own
+key, then `homesteadctl craft trust add --key-file craft.pub`. Omit `--url`
+for an artifact the owner supplies as a local file (offline). The daemon's
+unit sets `ProtectHome=true` and `PrivateTmp=true`: keep supplied files
+under `/srv` or `/opt`, not `/home`, `/tmp` or `/var/tmp`.
+
+### Verify-then-build (`craft.build` operation)
+
+`craft plan` runs the first four checks without fetching or building; the
+build operation repeats everything. Order and failing-check names:
+
+1. `signature`: the manifest verifies against a trusted craft key
+   (unreadable inputs are `input`, a 400, never a verdict); then `manifest`
+   (strict parse) and `counter` / `counter-conflict` against the app's
+   baseline (only `counter` is overridable).
+2. `disk-space`: free space on the staging directory and the Docker data
+   root must cover 3x the signed artifact size plus 512 MiB, checked before
+   any fetch; the refusal states the shortfall.
+3. `artifact-digest`: the artifact is fetched from the signed URLs (https
+   only, at most 5 https redirects, at most the signed size) or copied from
+   the owner's local file under the S264 path rules (absolute, regular
+   file, no symlink or FIFO, size-bounded); the bytes hashed are the bytes
+   staged, and both SHA-256 and exact size must equal the signed values.
+   `fetch` is a network failure (retryable); a digest mismatch is not.
+4. `build-context-digest`: the catalog's `craft/context` is copied to a
+   private staging tree and the digest is taken of the copy.
+5. `build`: `docker build` of the private copy with `ARTIFACT_FILE` and
+   `ARTIFACT_SHA256` build arguments (the Dockerfile fails on a mismatch
+   itself) to a unique staging tag, output captured (last 32 KiB, with
+   credential shapes redacted). Cancellation is `cancelled`.
+6. `record`: the image ID is read, the final tag
+   `homestead/craft-<app>:<version>` is added, and the build is recorded
+   (`craft_images`: image ID, counter, key id, artifact digest, context
+   digest, manifest digest) with the baseline in one transaction. A failure
+   restores or removes the final tag.
+
+Signature, manifest, artifact-digest and context-digest failures have no
+override. Network, Docker build, cancelled, disk-space and record failures
+are retryable and leave no final tag, no record and no baseline change; the
+staging tag and directory are removed on every path. Every outcome is the
+app's latest verdict (`GET /api/v1/craft`) and the operation is audited as
+`craft.build` (the override as `craft.build.override`, with both counters).
+
+### Using the recorded digest
+
+The install gate (`verify-craft-images` step) and every Compose `up`
+(install, configure, restore, adoption) refuse a stack running a
+`homestead/craft-<app>:<version>` image unless a build is recorded and the
+local image behind the tag has the recorded ID. Live drift (S262) compares
+a running container's image ID with the recorded one, not a tag or a
+published digest. `craft status` shows each image as matching, differing or
+missing. An update that moves a craft image verifies the manifest (shipped
+at `<catalog>/craft/craft-manifest.yaml`, or `--craft-manifest`), rebuilds,
+runs the normal update, and only then removes the previous version's tag
+and record; a failed build or update keeps the previous image.
+
+### Manual check
+
+```
+homesteadctl craft status
+docker image inspect --format '{{.Id}}' homestead/craft-wordcraft:1.2.3
+sqlite3 /var/lib/homestead/homestead.db \
+  "select tag, image_id from craft_images"      # the two IDs must be equal
+```
+
+### Rules for catalog manifests (S249 onward)
+
+A catalog service names a locally built image as
+`homestead/craft-<app>:<version>` (`craft.ParseRef`). Catalog schema
+validation of craft packages (refusing registry-qualified references,
+requiring the tag to be in the craft manifest) belongs to S249; this slice
+only provides the reference convention and the install, start, update and
+drift behavior above.

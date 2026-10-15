@@ -93,8 +93,8 @@ unchanged.
 | GET | /api/v1/backups/identity | `"backup"` | `backupIdentity` | Appliance recipient and export record, never the key, on CLI (`backup identity status`) and dashboard (S271) |
 | POST | /api/v1/backups/identity/export | `"backup"` | `backupIdentityExport` | Explicit, audited, rate-limited recovery identity export, shown once: CLI `--out FILE` (0600, fsync'd) or `--stdout`; dashboard confirmation then copy/download (S271) |
 | POST | /api/v1/backups/identity/ack | `"backup"` | `backupIdentityAck` | Owner confirms the exported key is stored offline (clears the doctor warning) on CLI (`backup identity ack`, or `export --ack`) and dashboard (S271) |
-| GET | /api/v1/updates | `"updates"` | `updates` | Review rows on both surfaces |
-| POST | /api/v1/updates/{name}/apply | `"updates"` | `applyUpdate` | Approved updates on both surfaces |
+| GET | /api/v1/updates | `"updates"` | `updates` | Review rows on both surfaces; rows moving a locally built craft image also report its build state and last verdict (S279) |
+| POST | /api/v1/updates/{name}/apply | `"updates"` | `applyUpdate` | Approved updates on both surfaces. A craft image move verifies the manifest and rebuilds first (S279); `--craft-manifest/--craft-signature/--craft-artifact/--craft-allow-older` and the Updates page craft inputs carry the optional manifest, offline artifact and audited override |
 | GET | /api/v1/data-migrations | `runDataStatus` | `dataMigrations` | App data placement (placed, needs-migration, unknown) plus old volumes pending removal (S277); also surfaced as doctor checks |
 | POST | /api/v1/data-migrations/{name}/plan | `runDataPlan` | `planDataMigration` | Reviewed migration plan with digest, targets, sizes, space, downtime, backup verdict (S277) |
 | POST | /api/v1/data-migrations/{name}/approve | `runDataApprove` | `approveDataMigration` | Approval of the quoted plan digest starts the migration operation; audited (S277) |
@@ -108,6 +108,13 @@ unchanged.
 | POST | /api/v1/platform/trust-keys | `"trust"` | `trustKeyAdd` | Add a trusted key on both surfaces (S264) |
 | PUT | /api/v1/platform/trust-keys/{id} | `"trust"` | `trustKeyReplace` | Replace a trusted key on both surfaces (S264) |
 | DELETE | /api/v1/platform/trust-keys/{id} | `"trust"` | `trustKeyRemove` | Remove a trusted key on both surfaces (S264) |
+| GET | /api/v1/craft | `"craft"` | `craftStatus` | Recorded local craft builds with the live image compared to the recorded digest, latest verdicts per app, counter baselines; `craft status` and the Updates page Craft images panel (S279) |
+| POST | /api/v1/craft/plan | `"craft"` | `craftPlan` | Verify-only: signature, counter, local artifact, build-context digest, disk space, nothing fetched or built; `craft plan APP [--manifest --signature --artifact --allow-older]` and the panel Verify action (S279) |
+| POST | /api/v1/craft/build | `"craft"` | `craftBuild` | Verify-then-build as an operation; refusals name the failing check, only the counter has an audited override (`--allow-older`, a confirmation); `craft build APP [... --follow]` and the panel Verify and build action (S279) |
+| GET | /api/v1/craft/trust-keys | `"craft"` | `craftTrustKeys` | Trusted craft signing keys, a class separate from the platform release keys (S279) |
+| POST | /api/v1/craft/trust-keys | `"craft"` | `craftTrustKeyAdd` | Add a craft signing key on both surfaces (S279) |
+| PUT | /api/v1/craft/trust-keys/{id} | `"craft"` | `craftTrustKeyReplace` | Replace a craft signing key on both surfaces (S279) |
+| DELETE | /api/v1/craft/trust-keys/{id} | `"craft"` | `craftTrustKeyRemove` | Remove a craft signing key on both surfaces (S279) |
 | GET | /api/v1/secrets/key | `"secrets"` | `secretKeyStatus` | Key version on both surfaces (S258) |
 | POST | /api/v1/secrets/rekey | `"secrets"` | `secretRekey` | Confirmed re-key operation on both surfaces (S258) |
 | GET | /api/v1/dockge | n/a | `dockge` | Expert-interface link with assessed policy on dashboard; no command surface yet |

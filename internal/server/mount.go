@@ -93,6 +93,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountDocker(dockerClient)
 	srv.MountDockge(dockerClient)
 	srv.MountEdge(st)
+	srv.MountCraft(st, c.CatalogDir, filepath.Join(filepath.Dir(c.ConfigPath), "craft-trust.yaml"), docker.BuildClient{})
 	srv.MountUpdates(st, c.CatalogDir, dockerClient, secrets)
 	srv.MountPlatform(st, filepath.Join(filepath.Dir(c.ConfigPath), "platform-trust.yaml"))
 	srv.MountFirewall(c.Port, configSvc)

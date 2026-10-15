@@ -45,6 +45,37 @@
             @if (row.plan.Backup) {
               <p>Backup required: {{ row.plan.BackupWhy }}</p>
             }
+            @for (cu of (row.craft ?? []); track cu.tag) {
+              <p>
+                Craft image {{ cu.tag }}:
+                {{ cu.built ? 'already built locally (apply verifies the manifest and rebuilds)' : 'built locally on apply after the manifest verifies' }}.
+                @if (cu.verdict) {
+                  Last verdict: {{ cu.verdict.state }} {{ cu.verdict.detail }}
+                }
+              </p>
+              <label>
+                Craft manifest file (blank: the shipped manifest)
+                <input
+                  [name]="'craft-manifest-' + row.package"
+                  (input)="setCraft(row.package, 'manifest', $any($event.target).value)"
+                />
+              </label>
+              <label>
+                Craft local artifact file (blank: fetch from the signed URL)
+                <input
+                  [name]="'craft-artifact-' + row.package"
+                  (input)="setCraft(row.package, 'artifact', $any($event.target).value)"
+                />
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  [name]="'craft-older-' + row.package"
+                  (change)="setCraftOlder(row.package, $any($event.target).checked)"
+                />
+                Allow an older craft manifest (audited)
+              </label>
+            }
             <label>
               <input
                 type="checkbox"
@@ -80,3 +111,5 @@
   }
 </section>
 <app-platform-updates />
+
+<app-craft-images />

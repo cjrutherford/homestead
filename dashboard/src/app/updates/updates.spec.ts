@@ -62,8 +62,11 @@ describe('Updates', () => {
   afterEach(() => {
     // The embedded platform panel (S264) loads its own data; its
     // behavior is covered in platform-updates.spec.ts.
-    for (const request of http.match((r) =>
-      r.url.startsWith('/api/v1/platform/'),
+    // The craft images panel (S279) is covered in craft-images.spec.ts.
+    for (const request of http.match(
+      (r) =>
+        r.url.startsWith('/api/v1/platform/') ||
+        r.url.startsWith('/api/v1/craft'),
     )) {
       request.flush([]);
     }
@@ -117,5 +120,33 @@ describe('Updates', () => {
     refresh.flush(ROWS);
     fixture.detectChanges();
     expect(text()).toContain('already current');
+  });
+});
+
+describe('Updates craft inputs (S279)', () => {
+  it('sends craft inputs with the apply only when the package has craft moves', async () => {
+    await TestBed.configureTestingModule({
+      imports: [Updates],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(Updates);
+    const http = TestBed.inject(HttpTestingController);
+    const page = fixture.componentInstance as any;
+    page.setCraft('wordcraft', 'manifest', '/srv/m.yaml');
+    page.setCraftOlder('wordcraft', true);
+    page.apply('wordcraft');
+    const request = http.expectOne('/api/v1/updates/wordcraft/apply');
+    expect(request.request.body.craft).toEqual({
+      manifest: '/srv/m.yaml',
+      allow_older: true,
+    });
+    request.flush({ id: 3 });
+    page.apply('jellyfin');
+    const plain = http.expectOne('/api/v1/updates/jellyfin/apply');
+    expect(plain.request.body.craft).toBeUndefined();
+    plain.flush({ id: 4 });
+    for (const r of http.match((x) => x.url.startsWith('/api/v1/craft') || x.url.startsWith('/api/v1/platform/') || x.url === '/api/v1/updates')) {
+      r.flush([]);
+    }
   });
 });

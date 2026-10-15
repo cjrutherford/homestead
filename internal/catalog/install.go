@@ -245,6 +245,9 @@ func planCompose(plan *InstallPlan, req InstallRequest) error {
 		return err
 	}
 	plan.Compose = files
+	for _, image := range craftImages(files.Images) {
+		plan.Notes = append(plan.Notes, fmt.Sprintf("%s is built locally from a signed craft manifest (never pulled): run homesteadctl craft build first; install refuses until the recorded local image matches", image))
+	}
 	plan.Actions = append(plan.Actions, "provision", "up")
 	return nil
 }
