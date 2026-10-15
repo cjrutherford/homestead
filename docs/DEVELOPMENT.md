@@ -2933,6 +2933,10 @@ sudo cp synthcraft.yaml /usr/local/share/homestead/catalog/ && sudo systemctl re
    its recorded ID. `apps plan/install synthcraft -f body.json` (the
    acceptance-script body with `container_ports: {"web": 80}`) installs;
    install is refused before the build (and again after step 5).
+   (Review hardening: a counter below the highest of any craft app is a
+   replay and needs `--allow-older`; archives with `..`, links or devices,
+   or expanding past the cap, are refused; the Dockerfile base must be
+   digest-pinned.)
 3. Refusals each print the failing check and leave no tag or record
    (`docker images`, `craft status`): flip one byte of the artifact copy
    (`artifact-digest`); change a file in

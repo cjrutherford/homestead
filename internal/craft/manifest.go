@@ -262,7 +262,7 @@ func digestFiles(files []contextFile) (string, error) {
 }
 
 func fileDigest(path string) (string, error) {
-	f, err := os.Open(path)
+	f, err := release.OpenRegularFile(path, maxContextBytes)
 	if err != nil {
 		return "", err
 	}
@@ -299,7 +299,7 @@ func copyContext(src, dst string) error {
 			in.Close()
 			return err
 		}
-		_, err = io.Copy(out, in)
+		_, err = io.Copy(out, io.LimitReader(in, maxContextBytes))
 		in.Close()
 		if cerr := out.Close(); err == nil {
 			err = cerr

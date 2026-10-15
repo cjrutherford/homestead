@@ -22,7 +22,9 @@ var _ craft.Builder = BuildClient{}
 // Build runs `docker build` for a prepared context directory, streaming
 // combined output to spec.Output (the caller caps it).
 func (BuildClient) Build(ctx context.Context, spec craft.BuildSpec) error {
-	args := []string{"build", "--tag", spec.Tag, "--progress=plain", "--file", "Dockerfile"}
+	// --network none: the artifact is already staged and verified, so no
+	// build step may reach the network (the base pull is the daemon's).
+	args := []string{"build", "--network", "none", "--tag", spec.Tag, "--progress=plain", "--file", "Dockerfile"}
 	keys := make([]string, 0, len(spec.Args))
 	for k := range spec.Args {
 		keys = append(keys, k)

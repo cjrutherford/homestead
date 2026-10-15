@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -121,7 +122,36 @@ type Pipeline struct {
 	Fetch func(ctx context.Context, rawURL string, dst io.Writer, limit int64) error
 	// FreeBytes reports free bytes on path's filesystem; nil uses statfs.
 	FreeBytes func(path string) (uint64, error)
+	// MaxExpanded caps the total expanded size of an artifact archive
+	// (default DefaultMaxExpanded, 1 GiB); the disk preflight is sized
+	// from it.
+	MaxExpanded int64
+
+	lockOnce sync.Once
+	lock     chan struct{}
 }
+
+func (p *Pipeline) maxExpanded() int64 {
+	if p.MaxExpanded > 0 {
+		return p.MaxExpanded
+	}
+	return DefaultMaxExpanded
+}
+
+// acquire takes the pipeline-wide build lock: one verify-through-record
+// at a time, so the baseline cannot be raced or moved out of order. It
+// returns false when ctx ends first.
+func (p *Pipeline) acquire(ctx context.Context) bool {
+	p.lockOnce.Do(func() { p.lock = make(chan struct{}, 1) })
+	select {
+	case p.lock <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (p *Pipeline) release() { <-p.lock }
 
 // Request is one verify or build request.
 type Request struct {
@@ -193,10 +223,21 @@ func (p *Pipeline) verifyManifest(req Request) (Verified, error) {
 		return Verified{}, err
 	}
 	base := v.Baseline
-	if base.Counter > 0 {
+	high, err := p.Store.HighWater()
+	if err != nil {
+		return Verified{}, err
+	}
+	// One counter sequence per signing train: a manifest below the
+	// highest counter any craft app was built from is a replay, even for
+	// an app with no baseline of its own (ADR-025 rollback rule).
+	floor := base
+	if high > floor.Counter {
+		floor = release.Installed{Version: "(another craft app)", Counter: high}
+	}
+	if floor.Counter > 0 {
 		switch {
-		case m.Counter < base.Counter:
-			err := fmt.Errorf("%w: counter %d (%s) < recorded %d (%s)", release.ErrRollback, m.Counter, app.Version, base.Counter, base.Version)
+		case m.Counter < floor.Counter:
+			err := fmt.Errorf("%w: counter %d (%s) < recorded %d (%s)", release.ErrRollback, m.Counter, app.Version, floor.Counter, floor.Version)
 			if !req.AllowOlder {
 				return v, failed(CheckCounter, err)
 			}
@@ -204,6 +245,16 @@ func (p *Pipeline) verifyManifest(req Request) (Verified, error) {
 		case m.Counter == base.Counter && app.Version != base.Version:
 			return v, failed(CheckCounterConflict, fmt.Errorf("%w: counter %d is %s, recorded is %s",
 				release.ErrCounterConflict, m.Counter, app.Version, base.Version))
+		}
+	}
+	if base.Counter > 0 && m.Counter == base.Counter && app.Version == base.Version {
+		art, ctxDigest, derr := p.Store.BaselineDigests(req.App)
+		if derr != nil {
+			return v, derr
+		}
+		if (art != "" && art != app.Artifact.SHA256) || (ctxDigest != "" && ctxDigest != m.ContextDigest) {
+			return v, failed(CheckCounterConflict, fmt.Errorf("%w: counter %d and version %s were already built from different digests",
+				release.ErrCounterConflict, m.Counter, app.Version))
 		}
 	}
 	return v, nil
@@ -238,7 +289,7 @@ func (p *Pipeline) Preview(ctx context.Context, req Request) (Plan, Verified, er
 	}
 	plan := Plan{App: v.App.Name, Version: v.App.Version, Counter: v.Manifest.Counter, Tag: Tag(v.App.Name, v.App.Version),
 		KeyID: v.KeyID, ArtifactName: v.App.Artifact.Name, ArtifactSHA256: v.App.Artifact.SHA256, ArtifactSize: v.App.Artifact.Size,
-		Source: "download", ContextDigest: v.Manifest.ContextDigest, Override: v.Override, DiskRequired: required(v.App.Artifact.Size)}
+		Source: "download", ContextDigest: v.Manifest.ContextDigest, Override: v.Override, DiskRequired: p.required(v.App.Artifact.Size)}
 	if v.Baseline.Counter > 0 {
 		plan.Baseline = fmt.Sprintf("%s (counter %d)", v.Baseline.Version, v.Baseline.Counter)
 	}
@@ -246,6 +297,9 @@ func (p *Pipeline) Preview(ctx context.Context, req Request) (Plan, Verified, er
 		plan.Source = "local"
 		if err := checkLocalArtifact(req.ArtifactPath, v.App.Artifact); err != nil {
 			return plan, v, err
+		}
+		if err := scanArchive(req.ArtifactPath, v.App.Artifact.Name, p.maxExpanded()); err != nil {
+			return plan, v, failed(CheckArtifact, err)
 		}
 	}
 	got, err := TreeDigest(p.ContextDir)
@@ -289,7 +343,10 @@ func (p *Pipeline) Check(ctx context.Context, req Request) (Plan, Verdict, error
 	return plan, verdict, err
 }
 
-func required(size int64) int64 { return 3*size + DiskHeadroom }
+// required is the free space a build needs: the artifact and its staged
+// copy, the extracted tree and the image layer (each bounded by the
+// expansion cap), plus headroom.
+func (p *Pipeline) required(size int64) int64 { return 2*size + 2*p.maxExpanded() + DiskHeadroom }
 
 func (p *Pipeline) free(path string) (uint64, error) {
 	if p.FreeBytes != nil {
@@ -306,9 +363,9 @@ func (p *Pipeline) free(path string) (uint64, error) {
 // directory or the Docker data root lacks space for the artifact plus
 // layer headroom.
 func (p *Pipeline) preflight(ctx context.Context, size int64) error {
-	need := required(size)
-	if err := os.MkdirAll(p.StagingDir, 0o700); err != nil {
-		return failed(CheckDisk, fmt.Errorf("cannot create the staging directory: %v", err))
+	need := p.required(size)
+	if err := ensureStaging(p.StagingDir); err != nil {
+		return failed(CheckDisk, fmt.Errorf("staging directory: %v", err))
 	}
 	targets := []struct{ what, path string }{{"staging directory", p.StagingDir}}
 	if root, err := p.Builder.RootDir(ctx); err == nil && root != "" {
@@ -323,8 +380,8 @@ func (p *Pipeline) preflight(ctx context.Context, size int64) error {
 			continue // the Docker root may be remote or unreadable
 		}
 		if free < uint64(need) {
-			return failed(CheckDisk, fmt.Errorf("the %s has %d MiB free but this build needs %d MiB (3x the artifact plus %d MiB headroom); free space and retry",
-				t.what, free>>20, need>>20, DiskHeadroom>>20))
+			return failed(CheckDisk, fmt.Errorf("the %s has %d MiB free but this build needs %d MiB (twice the artifact, twice the %d MiB expansion cap, plus %d MiB headroom); free space and retry",
+				t.what, free>>20, need>>20, p.maxExpanded()>>20, DiskHeadroom>>20))
 		}
 	}
 	return nil
@@ -392,6 +449,7 @@ type run struct {
 	stage  string
 	out    *tailBuffer
 	built  bool
+	locked bool
 }
 
 func (p *Pipeline) newRun(req Request) *run {
@@ -421,6 +479,7 @@ func (p *Pipeline) Definition(req Request) (operation.Definition, error) {
 			step("verify-manifest", r.stepVerify),
 			step("preflight-disk", r.stepPreflight),
 			step("obtain-artifact", r.stepArtifact),
+			step("scan-archive", r.stepScan),
 			step("verify-context", r.stepContext),
 			step("build", r.stepBuild),
 			step("record", r.stepRecord),
@@ -430,6 +489,10 @@ func (p *Pipeline) Definition(req Request) (operation.Definition, error) {
 }
 
 func (r *run) stepVerify(ctx context.Context) error {
+	if !r.p.acquire(ctx) {
+		return failed(CheckCancelled, ctx.Err())
+	}
+	r.locked = true
 	v, err := r.p.verifyManifest(r.req)
 	r.v = v
 	return err
@@ -440,7 +503,7 @@ func (r *run) stepPreflight(ctx context.Context) error {
 }
 
 func (r *run) stepArtifact(ctx context.Context) error {
-	if err := os.MkdirAll(r.p.StagingDir, 0o700); err != nil {
+	if err := ensureStaging(r.p.StagingDir); err != nil {
 		return failed(CheckDisk, fmt.Errorf("staging directory: %v", err))
 	}
 	tmp, err := os.MkdirTemp(r.p.StagingDir, "craft-"+r.v.App.Name+"-")
@@ -475,7 +538,8 @@ func (r *run) stepArtifact(ctx context.Context) error {
 	if len(art.URLs) == 0 {
 		return failed(CheckInput, fmt.Errorf("%w: the manifest lists no artifact URL; supply the artifact file locally", ErrInput))
 	}
-	var last error
+	var failures []string
+	mismatch := false
 	for _, raw := range art.URLs {
 		if err := dst.Truncate(0); err != nil {
 			return failed(CheckDisk, err)
@@ -490,12 +554,29 @@ func (r *run) stepArtifact(ctx context.Context) error {
 			return failed(CheckCancelled, ctx.Err())
 		}
 		if err != nil {
-			last = err
+			failures = append(failures, fmt.Sprintf("%s: %v", raw, err))
 			continue
 		}
-		return compareArtifact(hex.EncodeToString(h.Sum(nil)), cw.n, art)
+		if cerr := compareArtifact(hex.EncodeToString(h.Sum(nil)), cw.n, art); cerr != nil {
+			// A mirror serving other bytes is skipped, not trusted; the
+			// next mirror may serve the signed file.
+			mismatch = true
+			failures = append(failures, fmt.Sprintf("%s: %v", raw, errors.Unwrap(cerr)))
+			continue
+		}
+		return nil
 	}
-	return failed(CheckFetch, fmt.Errorf("could not fetch the artifact from any signed URL: %v", last))
+	if mismatch {
+		return failed(CheckArtifact, fmt.Errorf("no signed URL served the signed artifact: %s", strings.Join(failures, "; ")))
+	}
+	return failed(CheckFetch, fmt.Errorf("could not fetch the artifact from any signed URL: %s", strings.Join(failures, "; ")))
+}
+
+func (r *run) stepScan(ctx context.Context) error {
+	if err := scanArchive(r.artTmp, r.v.App.Artifact.Name, r.p.maxExpanded()); err != nil {
+		return failed(CheckArtifact, err)
+	}
+	return nil
 }
 
 type countWriter struct {
@@ -517,30 +598,57 @@ func (p *Pipeline) fetch(ctx context.Context, raw string, dst io.Writer, limit i
 }
 
 func httpFetch(ctx context.Context, raw string, dst io.Writer, limit int64) error {
+	return fetchWith(ctx, nil, raw, dst, limit)
+}
+
+// hardenClient copies base (nil: a default client) with the fetch
+// policy: https only with at most 5 https redirects, a bounded time, and
+// no transparent decompression (the signed digest is over the bytes as
+// published, never over a decoded body).
+func hardenClient(base *http.Client) *http.Client {
+	client := &http.Client{Timeout: 30 * time.Minute}
+	var transport *http.Transport
+	if base != nil {
+		client.Transport = base.Transport
+		if t, ok := base.Transport.(*http.Transport); ok {
+			transport = t.Clone()
+		}
+	} else {
+		transport = http.DefaultTransport.(*http.Transport).Clone()
+	}
+	if transport != nil {
+		transport.DisableCompression = true
+		client.Transport = transport
+	}
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if req.URL.Scheme != "https" || len(via) >= 5 {
+			return errors.New("redirect refused (https only, at most 5)")
+		}
+		return nil
+	}
+	return client
+}
+
+func fetchWith(ctx context.Context, base *http.Client, raw string, dst io.Writer, limit int64) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "https" {
 		return fmt.Errorf("refusing non-https URL")
-	}
-	client := &http.Client{
-		Timeout: 30 * time.Minute,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if req.URL.Scheme != "https" || len(via) >= 5 {
-				return errors.New("redirect refused (https only, at most 5)")
-			}
-			return nil
-		},
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
 	if err != nil {
 		return err
 	}
-	resp, err := client.Do(req)
+	req.Header.Set("Accept-Encoding", "identity")
+	resp, err := hardenClient(base).Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	if enc := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Encoding"))); enc != "" && enc != "identity" {
+		return fmt.Errorf("server applied Content-Encoding %q; the signed digest covers the published bytes", enc)
 	}
 	_, err = io.Copy(dst, io.LimitReader(resp.Body, limit))
 	return err
@@ -558,6 +666,9 @@ func (r *run) stepContext(ctx context.Context) error {
 	}
 	if got != r.v.Manifest.ContextDigest {
 		return failed(CheckContext, fmt.Errorf("build context digest %s does not match the signed %s", got, r.v.Manifest.ContextDigest))
+	}
+	if err := checkDockerfilePinned(filepath.Join(r.ctxDir, "Dockerfile")); err != nil {
+		return failed(CheckContext, err)
 	}
 	artDir := filepath.Join(r.ctxDir, ReservedContextEntry)
 	if err := os.MkdirAll(artDir, 0o700); err != nil {
@@ -614,7 +725,7 @@ func (r *run) stepRecord(ctx context.Context) error {
 	}
 	img := Image{App: app.Name, Version: app.Version, Tag: final, ImageID: id, Counter: r.v.Manifest.Counter, KeyID: r.v.KeyID,
 		ArtifactSHA256: app.Artifact.SHA256, ContextDigest: r.v.Manifest.ContextDigest, ManifestSHA256: r.v.ManifestSHA256, BuiltAt: time.Now().UTC()}
-	if err := r.p.Store.putImage(img); err != nil {
+	if err := r.p.Store.putImage(img, r.v.Override); err != nil {
 		// Restore the previous tag (or drop the new one): no current tag
 		// may point at an unrecorded image.
 		bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
@@ -623,6 +734,9 @@ func (r *run) stepRecord(ctx context.Context) error {
 			_ = r.p.Builder.Tag(bg, prevID, final)
 		} else {
 			_ = r.p.Builder.Remove(bg, final)
+		}
+		if errors.Is(err, ErrBaselineLowered) {
+			return failed(CheckCounter, err)
 		}
 		return failed(CheckRecord, err)
 	}
@@ -647,6 +761,10 @@ func (r *run) recordFailure(ctx context.Context, err error) {
 
 // cleanup removes the staging tree and the staging tag on every path.
 func (r *run) cleanup() {
+	if r.locked {
+		r.locked = false
+		defer r.p.release()
+	}
 	if r.tmp != "" {
 		_ = os.RemoveAll(r.tmp)
 	}

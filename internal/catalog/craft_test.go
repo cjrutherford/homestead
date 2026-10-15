@@ -112,3 +112,60 @@ func TestInstallDefinitionGatesCraftImages(t *testing.T) {
 		t.Fatal("unbuilt/mismatched craft image passed the install gate")
 	}
 }
+
+func TestComposeUpCraftGateFailsClosed(t *testing.T) {
+	id := "sha256:" + strings.Repeat("a", 64)
+	withCraftSeams(t, map[string]string{craftTag: id}, map[string]string{craftTag: "sha256:" + strings.Repeat("b", 64)})
+	ran := false
+	old := composeRun
+	composeRun = func(context.Context, string, string, ...string) error { ran = true; return nil }
+	t.Cleanup(func() { composeRun = old })
+	refuse := func(name, compose, env string) {
+		t.Helper()
+		dir := t.TempDir()
+		_ = os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(compose), 0o644)
+		if env != "" {
+			_ = os.WriteFile(filepath.Join(dir, ".env"), []byte(env), 0o644)
+		}
+		ran = false
+		if err := composeUp(context.Background(), dir, "p"); err == nil || ran {
+			t.Errorf("%s: started (err=%v ran=%v)", name, err, ran)
+		}
+	}
+	refuse("interpolated from .env", "services:\n  web:\n    image: ${IMG}\n", "IMG="+craftTag+"\n")
+	refuse("default value", "services:\n  web:\n    image: ${IMG:-"+craftTag+"}\n", "")
+	refuse("bare $VAR", "services:\n  web:\n    image: $IMG\n", "IMG="+craftTag+"\n")
+	refuse("unparseable compose", "services: [unclosed\n  image: "+craftTag, "")
+	refuse("craft name outside a service image", "services:\n  web:\n    image: nginx:1\n    labels:\n      x: "+craftTag+"\n", "")
+	t.Setenv("CRAFT_IMG_FROM_ENV", craftTag)
+	refuse("daemon environment", "services:\n  web:\n    image: ${CRAFT_IMG_FROM_ENV}\n", "")
+	// A matching recorded digest still starts through interpolation.
+	withCraftSeams(t, map[string]string{craftTag: id}, map[string]string{craftTag: id})
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("services:\n  web:\n    image: ${IMG}\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, ".env"), []byte("IMG="+craftTag+"\n"), 0o644)
+	ran = false
+	if err := composeUp(context.Background(), dir, "p"); err != nil || !ran {
+		t.Fatalf("matching interpolated image refused: %v", err)
+	}
+}
+
+func TestSameImageID(t *testing.T) {
+	full := "sha256:" + strings.Repeat("a", 64)
+	for _, tc := range []struct {
+		a, b string
+		want bool
+	}{
+		{full, full, true},
+		{strings.Repeat("a", 12), full, true},
+		{"sha256:" + strings.Repeat("a", 12), full, true},
+		{strings.Repeat("a", 11), full, false},
+		{"sha256:a", full, false},
+		{"", "", false},
+		{"sha256:" + strings.Repeat("b", 64), full, false},
+	} {
+		if got := sameImageID(tc.a, tc.b); got != tc.want {
+			t.Errorf("sameImageID(%q, %q) = %v", tc.a, tc.b, got)
+		}
+	}
+}

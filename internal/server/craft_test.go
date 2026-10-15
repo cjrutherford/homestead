@@ -1,6 +1,9 @@
 package server
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -70,6 +73,19 @@ func (m *memBuilder) Remove(_ context.Context, ref string) error {
 }
 func (m *memBuilder) RootDir(context.Context) (string, error) { return "", fmt.Errorf("none") }
 
+func siteTarGz(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	body := "<html></html>"
+	_ = tw.WriteHeader(&tar.Header{Name: "index.html", Mode: 0o644, Size: int64(len(body))})
+	_, _ = tw.Write([]byte(body))
+	_ = tw.Close()
+	_ = gz.Close()
+	return buf.Bytes()
+}
+
 type craftEnv struct {
 	t          *testing.T
 	h          *craftHandlers
@@ -91,7 +107,7 @@ func newCraftEnv(t *testing.T) *craftEnv {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	e := &craftEnv{t: t, st: st, dir: dir, catalogDir: filepath.Join(dir, "catalog"), builder: &memBuilder{tags: map[string]string{}}, artifact: []byte("site")}
+	e := &craftEnv{t: t, st: st, dir: dir, catalogDir: filepath.Join(dir, "catalog"), builder: &memBuilder{tags: map[string]string{}}, artifact: siteTarGz(t)}
 	e.pub, e.priv, _ = ed25519.GenerateKey(rand.Reader)
 	_, _ = rand.Read(e.keyID[:])
 	ctxDir := filepath.Join(e.catalogDir, "craft", "context")
@@ -340,5 +356,28 @@ func TestCraftRoutesClassified(t *testing.T) {
 		if c, ok := routeClasses[route]; !ok || c != ClassSession {
 			t.Errorf("%s class = %v ok=%v", route, c, ok)
 		}
+	}
+}
+
+func TestWithCraftBuildChainsCleanup(t *testing.T) {
+	e := newCraftEnv(t)
+	e.trust()
+	body := e.manifest("1.2.0", 2)
+	for _, suffix := range []string{"", ".minisig"} {
+		data, _ := os.ReadFile(body.Manifest + suffix)
+		_ = os.WriteFile(filepath.Join(e.catalogDir, "craft", craftManifestFile+suffix), data, 0o644)
+	}
+	plan := update.UpdatePlan{Package: "wordcraft", Services: []update.ServiceUpdate{
+		{Service: "web", Current: "homestead/craft-wordcraft:1.1.0", Target: "homestead/craft-wordcraft:1.2.0"}}}
+	prevRan := false
+	def := operation.Definition{Type: "app.update", Cleanup: func() { prevRan = true },
+		Steps: []operation.StepDef{{Name: "up", Run: func(context.Context) error { return nil }}}}
+	r := httptest.NewRequest(http.MethodPost, "/x", nil)
+	if _, _, err := withCraftBuild(r, &def, e.h.pipe, plan, &craftApplyInput{Artifact: body.Artifact}); err != nil {
+		t.Fatal(err)
+	}
+	def.Cleanup()
+	if !prevRan {
+		t.Fatal("the update's own Cleanup was overwritten")
 	}
 }

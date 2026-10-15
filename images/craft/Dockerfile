@@ -23,7 +23,7 @@ RUN set -eu; \
     echo "${ARTIFACT_SHA256}  ${f}" | sha256sum -c -; \
     mkdir -p /site; \
     case "${ARTIFACT_FILE}" in \
-      *.tar.gz|*.tgz) tar -xzf "${f}" -C /site ;; \
+      *.tar.gz|*.tgz) tar -xzf "${f}" -C /site --no-same-owner --no-same-permissions ;; \
       *.zip) unzip -q "${f}" -d /site ;; \
       *) echo "unsupported artifact type: ${ARTIFACT_FILE}" >&2; exit 1 ;; \
     esac; \

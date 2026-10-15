@@ -127,6 +127,14 @@ per-app YAML manifests: local craft tag, listed in the craft manifest, own host,
 data, stateless, local-only exposure, image rows in `knownImageVolumes`.
 Per-app manifests stay separate YAML files (one app, one file, one host).
 
+### Implementation notes (S279 review, no change of decision)
+The ADR-025 counter is one sequence per signing train: the rollback check
+compares a manifest against the highest counter recorded for any craft
+app, not only the app's own baseline, and the baseline is moved only
+forward under a single build lock. Archives are scanned before
+extraction, builds run with `--network none`, and the Dockerfile's bases
+must be digest-pinned. See `docs/architecture/RELEASE_VERIFICATION.md`.
+
 ## Consequences
 - Craft package slices add YAML, a Dockerfile, and rows in tests; they
   add no runtime code of their own beyond what S249 and S279 build.

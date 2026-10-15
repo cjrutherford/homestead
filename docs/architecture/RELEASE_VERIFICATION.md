@@ -274,11 +274,16 @@ apps:
       size: 12345678              # exact bytes; bounds the download
 ```
 
-- `counter` is manifest-wide with ADR-025 semantics, but the baseline is
-  recorded per app (`craft_baseline`, moved when a build is recorded): a
-  lower counter is refused unless the audited override is given (both
-  counters recorded); an equal counter with a different version is refused
-  with no override. An app absent from the manifest cannot be built from
+- `counter` is manifest-wide with ADR-025 semantics and one sequence per
+  signing train: the baseline is recorded per app (`craft_baseline`, moved
+  when a build is recorded), but a manifest whose counter is below the
+  highest counter recorded for **any** craft app is refused unless the
+  audited override is given (both counters recorded), so an old manifest
+  cannot be replayed for an app never built. An equal counter with a
+  different version, or with the same version built from different
+  artifact or context digests, is refused with no override. The baseline
+  moves only forward (guarded upsert), and one build holds the pipeline
+  lock from verify through record, so concurrent builds cannot lower it. An app absent from the manifest cannot be built from
   it. An update names the version the catalog wants and the manifest must
   carry exactly it.
 - Signature: minisign non-prehashed `Ed`, as for platform releases;
@@ -324,18 +329,30 @@ build operation repeats everything. Order and failing-check names:
    (unreadable inputs are `input`, a 400, never a verdict); then `manifest`
    (strict parse) and `counter` / `counter-conflict` against the app's
    baseline (only `counter` is overridable).
-2. `disk-space`: free space on the staging directory and the Docker data
-   root must cover 3x the signed artifact size plus 512 MiB, checked before
-   any fetch; the refusal states the shortfall.
+2. `disk-space`: free space on the staging directory (which must be a real
+   directory owned by the daemon; it is forced to 0700, symlinks refused)
+   and the Docker data root must cover twice the signed artifact size plus
+   twice the expansion cap (default 1 GiB) plus 512 MiB, checked before any
+   fetch; the refusal states the shortfall.
 3. `artifact-digest`: the artifact is fetched from the signed URLs (https
    only, at most 5 https redirects, at most the signed size) or copied from
    the owner's local file under the S264 path rules (absolute, regular
    file, no symlink or FIFO, size-bounded); the bytes hashed are the bytes
    staged, and both SHA-256 and exact size must equal the signed values.
-   `fetch` is a network failure (retryable); a digest mismatch is not.
+   `fetch` is a network failure (retryable); a mirror serving other bytes
+   is skipped and the next URL tried, and every failure is reported only
+   if all mirrors fail (`artifact-digest` when any served wrong bytes).
+   Requests send `Accept-Encoding: identity`; a `Content-Encoding` reply
+   is refused. Redirects to http are refused. Then `scan-archive`: the whole
+   archive is read before any extraction and refused (check
+   `artifact-digest`) unless it holds only regular files and directories
+   with relative paths free of `..`, and expands to at most the cap.
 4. `build-context-digest`: the catalog's `craft/context` is copied to a
    private staging tree and the digest is taken of the copy.
-5. `build`: `docker build` of the private copy with `ARTIFACT_FILE` and
+   The build context's Dockerfile must pin every external `FROM` by
+   `@sha256:` digest (global `ARG` defaults are resolved), else
+   `build-context-digest` refuses.
+5. `build`: `docker build --network none` of the private copy with `ARTIFACT_FILE` and
    `ARTIFACT_SHA256` build arguments (the Dockerfile fails on a mismatch
    itself) to a unique staging tag, output captured (last 32 KiB, with
    credential shapes redacted). Cancellation is `cancelled`.

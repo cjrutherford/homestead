@@ -1,6 +1,9 @@
 package craft
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -13,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"homestead/internal/operation"
@@ -63,8 +67,26 @@ func (s *signer) sign(msg []byte, algo string) string {
 		"\ntrusted comment: " + comment + "\n" + base64.StdEncoding.EncodeToString(global) + "\n"
 }
 
+// tarGz builds a gzip tarball from name -> body.
+func tarGz(t testing.TB, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for name, body := range files {
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(body))}); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = tw.Write([]byte(body))
+	}
+	_ = tw.Close()
+	_ = gz.Close()
+	return buf.Bytes()
+}
+
 // fakeBuilder is an in-memory Docker.
 type fakeBuilder struct {
+	mu        sync.Mutex
 	tags      map[string]string
 	builds    []BuildSpec
 	removed   []string
@@ -79,6 +101,8 @@ type fakeBuilder struct {
 func newFakeBuilder() *fakeBuilder { return &fakeBuilder{tags: map[string]string{}} }
 
 func (f *fakeBuilder) Build(ctx context.Context, spec BuildSpec) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.builds = append(f.builds, spec)
 	f.buildArgs = spec.Args
 	// The context must carry the verified artifact and the Dockerfile.
@@ -108,6 +132,8 @@ func (f *fakeBuilder) Build(ctx context.Context, spec BuildSpec) error {
 }
 
 func (f *fakeBuilder) ImageID(_ context.Context, ref string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if id, ok := f.tags[ref]; ok {
 		return id, nil
 	}
@@ -115,6 +141,8 @@ func (f *fakeBuilder) ImageID(_ context.Context, ref string) (string, error) {
 }
 
 func (f *fakeBuilder) Tag(_ context.Context, src, dst string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	id := src
 	if v, ok := f.tags[src]; ok {
 		id = v
@@ -124,6 +152,8 @@ func (f *fakeBuilder) Tag(_ context.Context, src, dst string) error {
 }
 
 func (f *fakeBuilder) Remove(_ context.Context, ref string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.removed = append(f.removed, ref)
 	if _, ok := f.tags[ref]; !ok {
 		return ErrImageMissing
@@ -160,7 +190,7 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	e := &env{t: t, signer: newSigner(t), fb: newFakeBuilder(), dir: t.TempDir(), artifact: []byte("static-site-tarball")}
+	e := &env{t: t, signer: newSigner(t), fb: newFakeBuilder(), dir: t.TempDir(), artifact: tarGz(t, map[string]string{"index.html": "<html></html>"})}
 	e.ctxDir = filepath.Join(e.dir, "context")
 	if err := os.MkdirAll(filepath.Join(e.ctxDir, "conf"), 0o755); err != nil {
 		t.Fatal(err)

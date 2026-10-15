@@ -2,9 +2,14 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 
 	"homestead/internal/craft"
 )
@@ -57,18 +62,130 @@ func checkCraftImages(ctx context.Context, images []string) error {
 	return nil
 }
 
-// checkCraftStack reads the stack's compose files and checks its craft
-// images; stacks without craft images pass untouched.
+// craftMarker is how every craft image reference starts.
+const craftMarker = "homestead/craft-"
+
+// checkCraftStack fails closed: it reads the stack's compose files raw
+// (not through the drift reader, which blanks interpolated images),
+// expands ${VAR} references from the stack .env and the daemon
+// environment, and checks every craft image. A compose file that cannot
+// be read or parsed, or that names a craft image anywhere but a plain
+// service image field (include, extends, labels, anchors), is refused.
+// Stacks with no craft image and no compose file pass untouched (Compose
+// reports a missing file itself).
 func checkCraftStack(ctx context.Context, dir, project string) error {
-	desired, err := loadDesired(project, dir)
-	if err != nil {
-		return nil // unreadable compose is reported by the compose run itself
-	}
 	var images []string
-	for _, svc := range desired.Services {
-		images = append(images, svc.Image)
+	mentioned := false
+	for _, name := range []string{"compose.yaml", OverrideFileName} {
+		raw, err := os.ReadFile(filepath.Join(dir, name))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("catalog: refusing to start %s: cannot read %s to check for craft images: %w", project, name, err)
+		}
+		if strings.Contains(string(raw), craftMarker) {
+			mentioned = true
+		}
+		var doc struct {
+			Services map[string]struct {
+				Image string `yaml:"image"`
+			} `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(raw, &doc); err != nil {
+			return fmt.Errorf("catalog: refusing to start %s: %s does not parse, so its images cannot be checked: %w", project, name, err)
+		}
+		env := dotEnv(dir)
+		for _, svc := range doc.Services {
+			images = append(images, expandCompose(svc.Image, env))
+		}
+	}
+	found := craftImages(images)
+	if mentioned && len(found) == 0 {
+		return fmt.Errorf("catalog: refusing to start %s: its compose files name a craft image outside a plain service image field", project)
 	}
 	return checkCraftImages(ctx, images)
+}
+
+// dotEnv reads the stack's .env (KEY=VALUE lines) for interpolation.
+func dotEnv(dir string) map[string]string {
+	out := map[string]string{}
+	raw, err := os.ReadFile(filepath.Join(dir, ".env"))
+	if err != nil {
+		return out
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(strings.TrimPrefix(line, "export "), "=")
+		if ok {
+			out[strings.TrimSpace(key)] = strings.Trim(strings.TrimSpace(value), `"'`)
+		}
+	}
+	return out
+}
+
+// expandCompose interpolates ${VAR}, ${VAR:-default}, ${VAR-default}
+// and $VAR the way Compose does for an image field; $$ is a literal $.
+func expandCompose(value string, env map[string]string) string {
+	lookup := func(name string) (string, bool) {
+		if v, ok := env[name]; ok {
+			return v, true
+		}
+		return os.LookupEnv(name)
+	}
+	var out strings.Builder
+	for i := 0; i < len(value); i++ {
+		if value[i] != '$' || i+1 >= len(value) {
+			out.WriteByte(value[i])
+			continue
+		}
+		switch next := value[i+1]; {
+		case next == '$':
+			out.WriteByte('$')
+			i++
+		case next == '{':
+			end := strings.IndexByte(value[i:], '}')
+			if end < 0 {
+				out.WriteString(value[i:])
+				return out.String()
+			}
+			expr := value[i+2 : i+end]
+			i += end
+			name, def, op := expr, "", ""
+			for _, sep := range []string{":-", "-", ":?", "?", ":+", "+"} {
+				if k := strings.Index(expr, sep); k > 0 {
+					name, def, op = expr[:k], expr[k+len(sep):], sep
+					break
+				}
+			}
+			v, ok := lookup(name)
+			switch op {
+			case ":-":
+				if v == "" {
+					v = def
+				}
+			case "-":
+				if !ok {
+					v = def
+				}
+			}
+			out.WriteString(v)
+		case next == '_' || (next >= 'A' && next <= 'Z') || (next >= 'a' && next <= 'z'):
+			j := i + 1
+			for j < len(value) && (value[j] == '_' || (value[j] >= 'A' && value[j] <= 'Z') || (value[j] >= 'a' && value[j] <= 'z') || (value[j] >= '0' && value[j] <= '9')) {
+				j++
+			}
+			v, _ := lookup(value[i+1 : j])
+			out.WriteString(v)
+			i = j - 1
+		default:
+			out.WriteByte('$')
+		}
+	}
+	return out.String()
 }
 
 // craftImageDrift compares a running container with the recorded local
@@ -94,10 +211,16 @@ func craftImageDrift(desired string, c craftContainer) string {
 
 type craftContainer struct{ imageID string }
 
+// sameImageID compares image IDs after sha256: normalization: equal, or
+// one a prefix of the other with at least 12 hex digits (the Engine's
+// short form).
 func sameImageID(a, b string) bool {
 	a, b = strings.TrimPrefix(a, "sha256:"), strings.TrimPrefix(b, "sha256:")
+	if a == b {
+		return a != ""
+	}
 	if len(a) > len(b) {
 		a, b = b, a
 	}
-	return a != "" && strings.HasPrefix(b, a)
+	return len(a) >= 12 && strings.HasPrefix(b, a)
 }

@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 39
+const CurrentVersion = 40
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -778,6 +778,16 @@ CREATE TABLE IF NOT EXISTS craft_images (
 	built_at TEXT NOT NULL,
 	PRIMARY KEY (app, version)
 );`,
+	},
+	{
+		// S279 review: the baseline remembers the digests of the build
+		// that set it, so an equal counter and version with different
+		// digests can be refused (ADR-025 consistency).
+		version: 40,
+		name:    "craft baseline digests",
+		sql: `
+ALTER TABLE craft_baseline ADD COLUMN artifact_sha256 TEXT NOT NULL DEFAULT '';
+ALTER TABLE craft_baseline ADD COLUMN context_digest TEXT NOT NULL DEFAULT '';`,
 	},
 }
 

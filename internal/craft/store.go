@@ -68,6 +68,30 @@ func (s *Store) Baseline(app string) (release.Installed, error) {
 	return in, nil
 }
 
+// HighWater is the highest manifest counter any craft app was built
+// from. Manifests of one signing train share one counter sequence, so a
+// manifest below it is a replay even for an app never built before.
+func (s *Store) HighWater() (int64, error) {
+	var n sql.NullInt64
+	if err := s.db.QueryRow(`SELECT MAX(counter) FROM craft_baseline`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("craft: high-water: %w", err)
+	}
+	return n.Int64, nil
+}
+
+// BaselineDigests returns the artifact and build-context digests of the
+// build that set the app's baseline (empty when unknown).
+func (s *Store) BaselineDigests(app string) (artifact, context string, err error) {
+	err = s.db.QueryRow(`SELECT artifact_sha256, context_digest FROM craft_baseline WHERE app = ?`, app).Scan(&artifact, &context)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", nil
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("craft: baseline digests: %w", err)
+	}
+	return artifact, context, nil
+}
+
 // SaveVerdict upserts the latest verdict for an app.
 func (s *Store) SaveVerdict(v Verdict) error {
 	at := v.VerifiedAt
@@ -156,7 +180,12 @@ func scanImage(r scanner) (Image, error) {
 
 // putImage records (or replaces) a build and moves the app's baseline,
 // atomically.
-func (s *Store) putImage(img Image) error {
+// ErrBaselineLowered marks a record refused because a newer manifest
+// finished first and the baseline may not move backwards without the
+// audited override.
+var ErrBaselineLowered = errors.New("craft: a newer manifest was recorded meanwhile; the baseline would move backwards")
+
+func (s *Store) putImage(img Image, override bool) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("craft: begin: %w", err)
@@ -174,10 +203,25 @@ func (s *Store) putImage(img Image) error {
 		img.App, img.Version, img.Tag, img.ImageID, img.Counter, img.KeyID, img.ArtifactSHA256, img.ContextDigest, img.ManifestSHA256, at.Format(time.RFC3339Nano)); err != nil {
 		return fmt.Errorf("craft: record image: %w", err)
 	}
-	if _, err := tx.Exec(`INSERT INTO craft_baseline (app, version, counter, recorded_at) VALUES (?, ?, ?, ?)
-		ON CONFLICT(app) DO UPDATE SET version = excluded.version, counter = excluded.counter, recorded_at = excluded.recorded_at`,
-		img.App, img.Version, img.Counter, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+	// Guarded upsert: the train-wide high-water mark and this app's
+	// baseline may only move forward, unless the owner overrode.
+	var high sql.NullInt64
+	if err := tx.QueryRow(`SELECT MAX(counter) FROM craft_baseline`).Scan(&high); err != nil {
+		return fmt.Errorf("craft: high-water: %w", err)
+	}
+	if !override && img.Counter < high.Int64 {
+		return ErrBaselineLowered
+	}
+	res, err := tx.Exec(`INSERT INTO craft_baseline (app, version, counter, recorded_at, artifact_sha256, context_digest) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(app) DO UPDATE SET version = excluded.version, counter = excluded.counter, recorded_at = excluded.recorded_at,
+			artifact_sha256 = excluded.artifact_sha256, context_digest = excluded.context_digest
+		WHERE excluded.counter >= craft_baseline.counter OR ?`,
+		img.App, img.Version, img.Counter, time.Now().UTC().Format(time.RFC3339Nano), img.ArtifactSHA256, img.ContextDigest, override)
+	if err != nil {
 		return fmt.Errorf("craft: set baseline: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrBaselineLowered
 	}
 	return tx.Commit()
 }

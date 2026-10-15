@@ -538,7 +538,13 @@ func withCraftBuild(r *http.Request, def *operation.Definition, pipe *craft.Pipe
 			return nil
 		},
 	})
-	def.Cleanup = build.Cleanup
+	prevCleanup := def.Cleanup
+	def.Cleanup = func() {
+		build.Cleanup()
+		if prevCleanup != nil {
+			prevCleanup()
+		}
+	}
 	return &checked, 0, nil
 }
 
