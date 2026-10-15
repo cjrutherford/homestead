@@ -2901,7 +2901,7 @@ Local testing:
   (`CraftChecker`, `CraftRecordedID`), set by `Server.MountCraft`. S249
   names a craft image `homestead/craft-<app>:<version>`.
 
-### KVM acceptance steps (synthetic artifact; pending, run on a VM)
+### KVM acceptance steps (synthetic artifact; proven live, see below)
 
 On the appliance (Debian 13; `sudo apt-get install -y minisign`), after
 `scripts/install-systemd.sh` has deployed the daemon and catalog (the
@@ -2928,8 +2928,10 @@ sudo cp synthcraft.yaml /usr/local/share/homestead/catalog/ && sudo systemctl re
    $W/craft.pub` then plan verifies. `craft-trust.yaml` appears beside
    `desired.yaml`.
 2. `craft build synthcraft ... --follow` (same flags) succeeds with the
-   network blocked (`sudo iptables -I OUTPUT -o ens+ -j REJECT` or
-   equivalent, removed afterwards); `craft status` shows the tag matching
+   network blocked (`sudo iptables -I OUTPUT 1 -o ens+ -m conntrack
+   --ctstate NEW -j REJECT`, removed afterwards; a blanket REJECT also
+   kills the SSH session; pre-pull the pinned nginx base with `docker pull`
+   first, since the daemon fetches it); `craft status` shows the tag matching
    its recorded ID. `apps plan/install synthcraft -f body.json` (the
    acceptance-script body with `container_ports: {"web": 80}`) installs;
    install is refused before the build (and again after step 5).
@@ -2937,6 +2939,8 @@ sudo cp synthcraft.yaml /usr/local/share/homestead/catalog/ && sudo systemctl re
    replay and needs `--allow-older`; archives with `..`, links or devices,
    or expanding past the cap, are refused; the Dockerfile base must be
    digest-pinned.)
+   Builds are asynchronous: add `--follow` to see the failing check;
+   without it the CLI prints only the operation ID.
 3. Refusals each print the failing check and leave no tag or record
    (`docker images`, `craft status`): flip one byte of the artifact copy
    (`artifact-digest`); change a file in
@@ -2945,20 +2949,76 @@ sudo cp synthcraft.yaml /usr/local/share/homestead/catalog/ && sudo systemctl re
    (`signature`); an older counter (`counter`, with the override hint) and
    then `--allow-older` (audited with both counters).
 4. A fetch failure (a manifest with `--url https://127.0.0.1:9/x`) is
-   retryable and leaves nothing.
+   retryable and leaves nothing. For mirrors, serve the artifact over local
+   HTTPS (openssl self-signed cert with `subjectAltName=IP:127.0.0.1`) and
+   trust it for the daemon with a drop-in `Environment=SSL_CERT_FILE=...`
+   (daemon-reload and restart; remove afterwards); give the manifest two
+   `--url` flags with the wrong bytes first, and a third URL that 302s to
+   `http://`.
 5. Replace the image behind the daemon's back (`docker tag alpine:latest
    homestead/craft-synthcraft:1.0.0`): `craft status` reports it differs,
-   `apps configure`/restore refuse to start the stack, and
-   `homesteadctl drift live synthcraft` reports the image finding; a
-   rebuild repairs it.
+   `apps configure`/restore refuse to start the stack (the operation
+   fails at `up`, after `write-config`), and a container recreated outside
+   Homestead (`docker compose up -d --force-recreate` on the stack) makes
+   `homesteadctl drift live synthcraft` report the image finding (a running
+   container keeps its image, so the finding needs a recreate); a rebuild
+   repairs it (or re-tag the original image ID). Keep the tag intact before
+   step 6: an update run while the tag points elsewhere fails at `rewrite`.
 6. Bump to 1.1.0 (catalog entry and a counter 6 manifest):
    `updates list` shows the craft move, `updates apply synthcraft
    --craft-manifest ... --craft-signature ... --craft-artifact ...
    --follow` rebuilds, updates, then prunes 1.0.0 (tag and record).
-7. Remove the throwaway key, catalog entry, stack and images.
+7. Remove the throwaway key (`craft trust remove <key id>`), catalog
+   entry, stack (`apps uninstall`), images (`docker rmi` the craft tag and
+   the pulled base) and, if you want no trace, the `craft_images`,
+   `craft_baseline` and `craft_verdicts` rows. `scripts/install-systemd.sh`
+   re-syncs the catalog and deletes the throwaway `synthcraft.yaml`: copy
+   it again after every redeploy.
 
-The result of this run (date, commit, outcomes) is recorded here when
-performed.
+#### Proven live in KVM (2026-10-15, VM 2, main 9d90f8b plus 44801da)
+
+Synthetic artifact (a 205-byte tarball), throwaway minisign key, throwaway
+catalog entry placed only on the VM. All steps above passed:
+
+- Untrusted key: `craft plan` refuses (`signature`); after `craft trust
+  add` it verifies and `craft-trust.yaml` appears. A craft-signed file
+  given to `updates verify` is refused as an untrusted platform key. The
+  reverse (platform-signed craft manifest) is covered only by unit tests:
+  the platform private key is discarded.
+- Offline build with new outbound connections rejected: verified, built
+  with `docker build --network none` (seen in the process list), image
+  recorded by full ID; install served `application/wasm`, `no-cache` HTML
+  and `public, max-age=31536000, immutable` hashed assets from the
+  container; `drift live` clean.
+- Refused before any build, leaving no tag or record: flipped artifact byte
+  (`artifact-digest`), tampered context file (`build-context-digest`),
+  unknown key (`signature`), counter 4 below 5 (`counter`; accepted with
+  `--allow-older`, audited as `craft.build.override` with both counters),
+  counter 5 with another artifact (`counter-conflict`), unpinned `FROM`
+  (`build-context-digest`), archives with a symlink, a `..` entry or 1.5
+  GiB of expansion (`artifact-digest`, scan-archive).
+- Fetch: with the first of two HTTPS mirrors serving wrong bytes the second
+  was used; an https to http redirect was refused; an untrusted
+  certificate failed as a retryable `fetch`.
+- Replacing the image behind the daemon: `craft status` reports DIFFERS,
+  configure refused to start (`local image does not match the recorded
+  digest`), `drift live` reported the image finding after an outside
+  recreate, a rebuild repaired it.
+- Update to 1.1.0 (counter 7): rebuilt, updated, then pruned the 1.0.0 tag
+  and record; the running image was never pruned.
+
+Bug found and fixed (44801da): every build failed with `mkdir
+/root/.docker: read-only file system` under the hardened unit; the build
+now gets a private `DOCKER_CONFIG`.
+
+Not proven live: `${VAR}` image indirection (the override file rejects an
+`image` field and every Homestead start path regenerates `compose.yaml`
+first, so only unit tests cover it); the Compose-up gate for the
+database-only migration start (`composeUpServices`); the edge/proxy route
+to the app (checked on the container address instead); the mirror path
+over a publicly trusted certificate. Note `--allow-older` lowers the
+recorded baseline to the overriding manifest's counter (the baseline moves
+forward otherwise).
 
 Synthetic catalog entry used above (valid against the S160 schema):
 

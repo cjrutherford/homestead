@@ -282,7 +282,7 @@ apps:
   cannot be replayed for an app never built. An equal counter with a
   different version, or with the same version built from different
   artifact or context digests, is refused with no override. The baseline
-  moves only forward (guarded upsert), and one build holds the pipeline
+  moves only forward (guarded upsert) except under the audited override, and one build holds the pipeline
   lock from verify through record, so concurrent builds cannot lower it. An app absent from the manifest cannot be built from
   it. An update names the version the catalog wants and the manifest must
   carry exactly it.
