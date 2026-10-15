@@ -1071,8 +1071,10 @@ and note the serial served on 443. Then
    `sqlite3 /var/lib/homestead/homestead.db "DELETE FROM scheduler_jobs
    WHERE job_id='cert:renewal-check'"` (the daily job is otherwise not due
    again for 24h), or wait for the next daily tick. `homesteadctl scheduler
-   jobs` shows the check run; `homesteadctl tls renewal` reports `ok`, the
-   served serial (`openssl s_client`, as in step 7) changed, the file under
+   jobs` shows the check run; `homesteadctl tls renewal` shows no failure
+   lines (a 20-day certificate is still `renewal-due` until Homestead
+   re-issues one valid for more than 30 days, so a Pebble certificate never
+   reads plain `ok`), the served serial (`openssl s_client`, as in step 7) changed, the file under
    `routes/certs/app/` is new, and the audit trail has
    `cert.renewal.attempt ok` under `scheduler`.
 2. Failure and backoff: stop Pebble, delete the job row again and restart:
@@ -1084,13 +1086,63 @@ and note the serial served on 443. Then
    next retry fails once with `accountDoesNotExist`, recovers by registering
    a new account (class `test`) and renews; audit shows
    `cert.account.reregister` then `cert.renewal.attempt ok`.
-3. Production-class owner action: change the strategy directory to a
-   non-private host name pointing at Pebble (for example via `/etc/hosts`),
-   approve with `--confirm-production`, issue, restart Pebble, trigger a
-   renewal: it stops with `account_recovery_required`; run
-   `reregister-account app`, then the next evaluation renews.
+3. Production-class owner action (verified without issuing, because the
+   Cloudflare shim is plain http and a production-class plan refuses that
+   override): add a second certificate (`prod`, names `prod.pebble-lab.net`)
+   whose directory is `https://ca.pebble-lab.net:14100/dir` with
+   `ca.pebble-lab.net` in the VM's `/etc/hosts` as 127.0.0.1, a throwaway
+   certificate for that name appended to the daemon's `SSL_CERT_FILE` bundle,
+   and a small local HTTPS stand-in serving a directory with
+   `termsOfService`. Remove `HOMESTEAD_ACME_CLOUDFLARE_API` from the drop-in
+   for the moment (nothing is ordered), plan, approve with
+   `--confirm-production`, then `reregister-account prod` is refused
+   (`terms of service agreement required`, the CLI prints the terms URL and
+   asks for `--agree-terms`); `GET /api/v1/tls/issuance/account/terms`
+   returns the URL; with `--agree-terms` the account registers. The full
+   production renewal path (order, `account_recovery_required`) needs a real
+   production-class CA and is covered by the unit tests only.
 4. Restore as in the S278 steps; remove `cert_renewal_state` rows
    for `app`.
+
+- Proven live in KVM (S272, 06cbfd9 plus 1ebc52c, deployed with
+  `scripts/install-systemd.sh` on VM 2 against local Pebble 2.10.1; an
+  nftables rule on the VM rejected outbound 80/443 to non-private addresses
+  for the whole run, so Caddy's automatic HTTPS could not reach Let's
+  Encrypt, and no real CA was contacted): approval defaulted to renewal mode
+  `auto` (shown by `tls renewal`); deleting the `cert:renewal-check` row and
+  restarting re-issued unattended and the served serial changed
+  (386C... then 0BFA... then 19A7...), audit `cert.renewal.attempt ok`
+  under `scheduler` with no key text. Re-approving with `--renewal manual`
+  left the next check at a `renewal-due` warning (doctor `tls-renewal:app`
+  warn) with no order at Pebble. With Pebble stopped, attempts 1 to 7 waited
+  1h, 2h, 4h, 8h, 16h, 24h, 24h (by moving `next_attempt_at` back and
+  deleting the `cert:renewal-retry` row), and the hourly job was enabled
+  while failing and disabled after success. A stand-in CA answering 429
+  `rateLimited` with `Retry-After: 172800` on port 14000 moved the next
+  attempt two days out. Restarting Pebble (accounts forgotten) gave
+  `cert.account.reregister` by `system` naming the terms URL, then
+  `cert.renewal.attempt ok`. A production-class directory refused
+  re-registration without `agree_terms` (422, terms URL shown) and accepted
+  it with. With the daily run held on a stopped (SIGSTOP) Pebble, the
+  simultaneous hourly run was audited `cert.renewal.attempt skipped`. A bad
+  snippet beside the route made the renewal place the new certificate, fail
+  at `reload-edge` (status `pending_reload`, doctor warn), and after the
+  snippet was removed the next retry reloaded with no new order at Pebble.
+  VM 2 was restored to its baseline (no edge, drop-in, Pebble, credentials,
+  approvals, issuances, renewal state, wizard state, edge route row, account
+  secrets or firewall rule; doctor matched).
+- Found and fixed in KVM (S272): the certificate download was the only ACME
+  request that did not retry a `badNonce`, and it dropped the problem body,
+  so a re-issue failed with `acme download: status 400` whenever the CA
+  rejected the nonce (Pebble rejects about 5% on purpose); it now retries
+  once and returns a typed problem (1ebc52c). Corrected steps: Pebble
+  issued some certificates for about 6 days even with `validityPeriod`
+  1728000 (both lengths sit inside the window); repeated daemon restarts
+  within a few seconds hit systemd's start limit (`systemctl reset-failed
+  homestead-server`, and leave about 15 seconds between restarts); the
+  production-class step above replaces the earlier one, which could not work
+  with the plain-http shim. Not proven live: the Angular re-register button
+  and a real production CA.
 
 ## Certificate first issuance (S278)
 
