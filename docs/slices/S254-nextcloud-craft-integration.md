@@ -4,11 +4,11 @@
 Craft apps open and save documents in the owner's Nextcloud through a daemon WebDAV proxy that holds a sealed app password, so documents live in customer-owned storage and no Nextcloud credential reaches the browser (ADR-029).
 
 ## Dependencies
-S249,S170,S266,S257
+S249,S170,S266,S257,S280
 
 ## Scope
 Implement only the functionality required for this slice. Preserve all accepted ADRs and customer-ownership guarantees. Do not pull deferred features into scope without an ADR and slice update.
-Governed by ADR-029 (Accepted 2026-10-14; proxy design approved as written by owner 2026-10-14: launch code to craft-scoped cookie bound to the operator session, 512 MiB default upload limit, owner-configurable), ADR-021 and ADR-020. Dependencies relaxed from S253: the proxy needs one craft package (S249), the Nextcloud package (S170), secret-backed variables and the secret store (S266, ADR-021) and enforced sessions (S257), not the media apps.
+Governed by ADR-029 (Accepted 2026-10-14; proxy design approved as written by owner 2026-10-14: launch code to craft-scoped cookie bound to the operator session, 512 MiB default upload limit, owner-configurable), ADR-021 and ADR-020. Dependencies relaxed from the media apps (now S252) and extended with S280 (the craft host's HTTPS origin is the cookie and same-origin basis): the proxy needs one craft package (S249), the Nextcloud package (S170), secret-backed variables and the secret store (S266, ADR-021) and enforced sessions (S257), not the media apps.
 Homestead enters the file data path; the ADR-029 consequences (authorisation, size limits, streaming, audit without content, same-origin design) are acceptance criteria, not follow-ups.
 
 ## Acceptance Criteria

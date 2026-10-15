@@ -30,13 +30,14 @@
 - Overlay-view DNS application: S098 computes overlay effective tables,
   but no overlay DNS provider exists to receive them; overlay names are
   served through local DNS until a provider lands.
-- Internal CA distribution: the S104 authority mints and signs, but
-  installing its certificate into OS/client trust stores (and rotation)
-  belongs to the security baseline flow (S222).
+- Internal CA distribution: scheduled as S280 (ADR-030, 2026-10-15):
+  persistence, local leaf TLS through the edge, root download with
+  fingerprint, per-OS runbook. Installing the root into client trust
+  stores stays manual by owner decision (no MDM or automatic enrolment).
 - Certificate issuance gaps left by S278: only ACME dns-01 issuance has an
   owner-approved flow; http-01/tls-alpn-01 stay Caddy-native and are not
   fingerprinted. The internal CA the baseline (S222) mints is still not
-  recorded. Placed certificates are served only by automatic-TLS routes
+  recorded (persistence is S280). Placed certificates are served only by automatic-TLS routes
   whose host they cover; applying the issuance to a route that does not
   exist yet needs a reconcile afterwards. Manual-provider DNS-01 (owner
   pastes TXT values) has no issuance flow. S272 re-issues placed dns-01 certificates unattended. A reload refused after a successful
@@ -131,8 +132,9 @@
   probing, IPv6 advertisements, and scoping answers away from
   container bridge addresses belong to later slices.
 - Management TLS provisioning: S222 proves issue-and-verify
-  mechanics only; persisting the internal authority and serving
-  management TLS from the daemon or proxy belong to later slices.
+  mechanics only; persisting the internal authority and edge TLS for local hosts
+  are S280 (ADR-030); serving management TLS from the daemon itself
+  remains for a later slice.
 - Domain onboarding surface: S223 gates, proves, and records in
   code only; API, CLI, and dashboard affordances for connecting
   a domain belong to later slices.
@@ -276,8 +278,9 @@
   generated placeholder whose private half was discarded (same status as
   the platform release key). Until the key ceremony, owners add the
   published or their own key through the craft trust-key routes (CLI `craft trust add`).
-- storytold release source: still TBD by the owner. No craft manifest or
-  catalog entry exists; S249 adds the first (artifact URLs, licence check,
+- storytold release source: recorded 2026-10-15 as
+  `https://github.com/storytold` (ADR-028). No craft manifest or catalog
+  entry exists; S249 adds the first (artifact URLs, licence check,
   `docs/THIRD_PARTY.md` entry, catalog schema validation of craft tags
   including refusing registry-qualified references).
 - CI automation of manifest generation and signing: `scripts/craft-manifest.sh`

@@ -18,3 +18,16 @@ redistribute the image: the appliance builds it locally. Changing the
 digest changes the build-context digest and needs a re-signed craft
 manifest.
 
+
+## storytold craft suite (source recorded 2026-10-15, ADR-028)
+Source: `https://github.com/storytold` (Apache-2.0 across the repositories,
+per the owner's survey; each slice re-reads the licence and NOTICE of the
+exact release it vendors). Each repository's GitHub release ships
+`<app>-web-<version>.zip` and an unsigned `SHA256SUMS.txt`. Release URL
+pattern: `https://github.com/storytold/<repo>/releases/download/<tag>/<asset>`.
+Latest releases at planning: wordcraft v0.7.0, gridcraft v0.7.0, pdfcraft
+v0.8.0, deckcraft v0.7.0, vectorcraft v0.11.0, photocraft v0.9.0, lightcraft
+v0.8.0, figcraft v0.6.0, filmcraft v0.8.0, effectcraft v0.10.0, soundcraft
+v0.7.0, designcraft v0.8.0, cadcraft v0.7.0, craft-launcher v0.4.1 (asset
+`artcraft-launcher-web-0.4.1.zip`). Per-app entries (licence text, version,
+artifact URL and SHA-256) are added by S249 to S253 as each app lands.

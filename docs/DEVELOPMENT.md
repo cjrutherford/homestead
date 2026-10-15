@@ -3020,6 +3020,8 @@ over a publicly trusted certificate. Note `--allow-older` lowers the
 recorded baseline to the overriding manifest's counter (the baseline moves
 forward otherwise).
 
+Planning note (2026-10-15): the Compose-up gate for `composeUpServices` and the edge route to the app are acceptance criteria of S249; local HTTPS for the route comes from S280.
+
 Synthetic catalog entry used above (valid against the S160 schema):
 
 ```yaml

@@ -8,6 +8,29 @@ signing moved to a separate craft key, per owner decision, before any
 implementation. Supersedes the earlier HAI-built, registry-published image
 and image-manifest text. S240 is no longer a dependency.
 
+Owner decisions 2026-10-15 (scope and process; the Decision below is
+unchanged):
+- The suite is 14 apps, not 8: wordcraft, gridcraft, pdfcraft, deckcraft,
+  vectorcraft, photocraft, lightcraft, figcraft, filmcraft, effectcraft,
+  soundcraft, designcraft, cadcraft and Craft Launcher (the suite start
+  page). The earlier list in the Decision is the first eight only.
+- The storytold release source is recorded: https://github.com/storytold
+  (Apache-2.0), each repository's latest GitHub release asset
+  `<app>-web-<version>.zip` (Craft Launcher: `artcraft-launcher-web-<version>.zip`),
+  URL pattern `https://github.com/storytold/<repo>/releases/download/<tag>/<asset>`.
+  The community Docker recipe builds from Rust source and is not used.
+- The craft manifest signing key is generated offline by the owner, who
+  holds the secret. Homestead provides tooling (`scripts/craft-manifest.sh`,
+  `scripts/sign-craft-manifest.sh`) and a runbook; the agent prepares
+  unsigned manifests for the owner to sign. A throwaway key is acceptable
+  for KVM and development and must never ship.
+- Upstream `SHA256SUMS.txt` is unsigned. Our signed craft manifest records
+  the zip's SHA-256, cross-checked against upstream `SHA256SUMS.txt` when the
+  manifest is prepared; trust rests on our signature, not on upstream's file.
+- Craft hosts are HTTPS through the internal CA (ADR-030, S280).
+- Packaging is a shared shape (S249, with WordCraft) plus batches
+  S250 to S253; see the slice files.
+
 Owner decisions 2026-10-14. Amends ADR-018 (Static Container Packages) and
 ADR-023 (Daemon Scheduler); extends ADR-025 (Release Artifact Trust Root)
 to locally built container images.
@@ -33,7 +56,7 @@ and the artifact digest, and the package is not added if the licence does
 not permit redistribution inside a Homestead-built image under the
 customer-ownership principles (the owner can rebuild, inspect, and keep
 running without Homestead). The upstream source location is an
-owner-supplied input: **storytold release source: TBD by owner**. No craft
+owner-supplied input: **storytold release source: `https://github.com/storytold` (recorded 2026-10-15, see the note under Status)**. No craft
 package slice may start until the location is recorded in
 `docs/THIRD_PARTY.md`.
 
