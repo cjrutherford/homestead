@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -34,8 +35,17 @@ func (BuildClient) Build(ctx context.Context, spec craft.BuildSpec) error {
 		args = append(args, "--build-arg", k+"="+spec.Args[k])
 	}
 	args = append(args, ".")
+	// The daemon runs with ProtectHome and ProtectSystem=strict, so the
+	// docker CLI cannot create ~/.docker; give it a private, throwaway
+	// config directory (found in KVM validation).
+	cfg, err := os.MkdirTemp("", "homestead-docker-config-")
+	if err != nil {
+		return fmt.Errorf("docker build config dir: %w", err)
+	}
+	defer os.RemoveAll(cfg)
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = spec.Dir
+	cmd.Env = append(os.Environ(), "DOCKER_CONFIG="+cfg)
 	if spec.Output != nil {
 		cmd.Stdout, cmd.Stderr = spec.Output, spec.Output
 	} else {
