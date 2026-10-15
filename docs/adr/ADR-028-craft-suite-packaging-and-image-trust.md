@@ -3,9 +3,14 @@
 ## Status
 Accepted
 
+Revised 2026-10-14: image publishing replaced by local build only and
+signing moved to a separate craft key, per owner decision, before any
+implementation. Supersedes the earlier HAI-built, registry-published image
+and image-manifest text. S240 is no longer a dependency.
+
 Owner decisions 2026-10-14. Amends ADR-018 (Static Container Packages) and
 ADR-023 (Daemon Scheduler); extends ADR-025 (Release Artifact Trust Root)
-to container images.
+to locally built container images.
 
 ## Decision
 ### Vendoring, not re-implementation
@@ -32,50 +37,55 @@ owner-supplied input: **storytold release source: TBD by owner**. No craft
 package slice may start until the location is recorded in
 `docs/THIRD_PARTY.md`.
 
-### HAI-built, signed images
-Each craft package ships one HAI-built image: a Homestead Dockerfile
-(`nginx`-class, static, no server component) over the pinned upstream
-release artifact. The base image is pinned by digest, the artifact is
-verified against its recorded SHA-256 during the build, and the build is
-reproducible from the Dockerfile plus the artifact so an owner can rebuild
-and compare. The published image is referenced in `catalog/*.yaml` by tag
-**and digest** (`name:tag@sha256:...`); a tag alone is not accepted for
-craft packages.
+### Local build only, from signed craft manifests
+There is **no image registry** and no HAI-published image. The appliance
+builds each craft image locally from two inputs: the verified upstream
+storytold release artifact and the Homestead Dockerfile and build context
+(`images/craft/`, versioned in this repository and shipped in the catalog
+directory of the platform release). The Dockerfile is `nginx`-class,
+static, with no server component, and its base image is **pinned by
+digest**. Builds are reproducible in intent: the same artifact, build
+context and base digest give the same layers, and an owner can rebuild and
+compare. The catalog references the resulting image by a local tag
+(`homestead/craft-<app>:<version>`); no registry reference is used.
 
-### Trust: ADR-025 extended to images
-Image trust reuses the ADR-025 chain with no new trust root and no new
-dependency. The release process publishes a signed **image manifest**: a
-checksums-style file listing, for each craft image, its reference, digest,
-and the vendored artifact digest, carrying the same `version` and monotonic
-`counter` fields as an ADR-025 checksums file, signed with minisign
-non-prehashed Ed25519. The HAI public key embedded in the binary and the
-owner's trusted keys configured over the API and CLI (ADR-025 "Owner
-trust") verify it. An owner who rebuilds images signs their own manifest
-with their own key and adds that key; nothing is hard-wired to HAI.
+### Trust: a separate craft signing key, ADR-025 semantics
+Craft trust reuses the ADR-025 mechanics (minisign non-prehashed Ed25519,
+`version` and monotonic `counter`, counter baseline in SQLite, audited
+`--allow-older` override) but under a **separate HAI image/craft signing
+key**, a distinct key class. It is trusted **alongside, not instead of**,
+the platform release key: neither key verifies the other's artifacts. The
+HAI craft public key is embedded in the binary; the owner can add or
+replace craft trust keys through configuration over the API and CLI, as
+with S264 trust keys. An owner who builds from their own artifact signs
+their own manifest with their own key and adds it.
 
-**Verification happens on the appliance, in the daemon, before install and
-before update**, as part of the plan and again at apply time (the daemon
-never trusts a plan's earlier verdict):
+The signed object is a **craft release manifest** listing, for each craft
+app: the upstream release artifact URL(s) with SHA-256 digests, the
+version, the monotonic counter, and the digest of the Dockerfile and build
+context. The manifest ships beside the catalog in the platform release (or
+is supplied locally by the owner).
 
-1. The signed image manifest verifies against a trusted key, and its
-   counter is not lower than the recorded baseline (the ADR-025 rollback
-   rule and audited `--allow-older` override apply unchanged).
-2. The digest in the catalog entry equals the signed digest for that
-   reference. A mismatch refuses the install or update.
-3. Compose pulls by the pinned digest, and after the pull the daemon
-   inspects the local image and refuses to start the stack unless its
-   `RepoDigests` contain the pinned digest. Docker's content addressing
-   makes the digest the integrity check; the signature is the authenticity
-   check for the digest itself.
+**Verification happens on the appliance, in the daemon, before any build**,
+at plan time and again at apply time (the daemon never trusts an earlier
+verdict):
 
-Signature or digest failure blocks the install or update with no override
-flag; only the counter rollback check is overridable, as in ADR-025.
-Release acquisition is still not fetched by Homestead: the signed image
-manifest ships beside the catalog in the platform release (or is supplied
-locally by the owner), and the image layers come from the registry the
-digest names, exactly as Compose already does for every package. Drift
-detection (S212) reports a running craft container whose image digest
-differs from the pin.
+1. The craft manifest signature verifies against a trusted craft key, and
+   its counter is not lower than the recorded baseline (ADR-025 rollback
+   rule, audited override unchanged).
+2. The artifact is obtained and its SHA-256 equals the signed digest. The
+   artifact is fetched from the signed URL, or the owner supplies the file
+   locally (offline and air-gapped use) and it is verified identically.
+3. The local build context's digest equals the signed build-context digest.
+4. Only then does the daemon run the local build. The built image is tagged
+   and **recorded by its local image ID/digest**; the daemon refuses to
+   start the stack unless the local image matches the recorded digest.
+
+Signature, artifact digest and build-context digest failures block build,
+install and update with no override; only the counter rollback check is
+overridable. Drift detection (S212) and installed checks compare the
+running container's image against the **recorded local digest**, not a
+published one. An update rebuilds from a newly verified manifest.
 
 ### Stateless packages are not backup targets
 A package whose manifest declares no persistent data (every `data`
@@ -113,18 +123,22 @@ default and not a hard refusal. S254 revisits the default.
 
 ### Test shape
 Craft packages share one table-driven test (built in S249) over their
-per-app YAML manifests: pinned digest, own host, port, ephemeral-only
+per-app YAML manifests: local craft tag, listed in the craft manifest, own host, port, ephemeral-only
 data, stateless, local-only exposure, image rows in `knownImageVolumes`.
 Per-app manifests stay separate YAML files (one app, one file, one host).
 
 ## Consequences
 - Craft package slices add YAML, a Dockerfile, and rows in tests; they
   add no runtime code of their own beyond what S249 and S279 build.
-- The release process gains an image build, publish and signing pipeline
-  (S279); a lost HAI signing key has the same remedy as ADR-025 (owners
+- The release process gains craft manifest signing tooling and the
+  appliance gains a verify-then-build operation (S279); no registry is
+  operated. A lost HAI craft key has the same remedy as ADR-025 (owners
   replace the trusted key by configuration).
-- The catalog schema must accept `image:tag@sha256:digest` and craft
-  validation must require the digest.
+- The appliance needs Docker build capability, disk space for build
+  layers, and (unless the owner supplies the artifact) access to the
+  upstream artifact URL at build time; failures leave nothing running.
+- Craft catalog entries use a local tag; the recorded local digest, not a
+  catalog digest, is the integrity reference for drift checks.
 - Every vendored release needs a recorded licence check, a
   `docs/THIRD_PARTY.md` entry, and a pinned artifact digest before merge.
 - Backup, scheduler, and restore surfaces gain a stateless state; a

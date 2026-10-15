@@ -8,7 +8,7 @@ S249,S170,S266,S257
 
 ## Scope
 Implement only the functionality required for this slice. Preserve all accepted ADRs and customer-ownership guarantees. Do not pull deferred features into scope without an ADR and slice update.
-Governed by ADR-029 (Accepted 2026-10-14), ADR-021 and ADR-020. Dependencies relaxed from S253: the proxy needs one craft package (S249), the Nextcloud package (S170), secret-backed variables and the secret store (S266, ADR-021) and enforced sessions (S257), not the media apps.
+Governed by ADR-029 (Accepted 2026-10-14; proxy design approved as written by owner 2026-10-14: launch code to craft-scoped cookie bound to the operator session, 512 MiB default upload limit, owner-configurable), ADR-021 and ADR-020. Dependencies relaxed from S253: the proxy needs one craft package (S249), the Nextcloud package (S170), secret-backed variables and the secret store (S266, ADR-021) and enforced sessions (S257), not the media apps.
 Homestead enters the file data path; the ADR-029 consequences (authorisation, size limits, streaming, audit without content, same-origin design) are acceptance criteria, not follow-ups.
 
 ## Acceptance Criteria
@@ -20,7 +20,7 @@ Homestead enters the file data path; the ADR-029 consequences (authorisation, si
 - Same-origin design: no CORS headers, cross-origin requests and preflights rejected; verify that the edge route reconciler (`/api/v1/edge/routes`, edge code in `internal/server`) can forward a path prefix on a craft host to the daemon; if it cannot, extend it here with drift and validation support, tested
 - Limits: configurable maximum upload size (default 512 MiB), request timeout, per-session concurrency cap; exceeding them returns 413 or 429 with tests using small configured limits
 - Audit without content: each file operation audited (session, craft app, method, normalised path, status, byte count), reads aggregated per path and minute; tests assert no content, app password, cookie or launch code appears in audit, logs, or error bodies
-- Craft app side: the vendored static apps are not modified; a small Homestead-provided adapter file added in the HAI image build (S279 Dockerfile) maps the app's file-provider hooks to `/_homestead/files/`; if an app exposes no hook, record it in `docs/DEFERRED.md` and ship that app browser-local only
+- Craft app side: the vendored static apps are not modified; a small Homestead-provided adapter file added to the locally built image (S279 build context in `images/craft/`, covered by the signed build-context digest) maps the app's file-provider hooks to `/_homestead/files/`; if an app exposes no hook, record it in `docs/DEFERRED.md` and ship that app browser-local only
 - Documents default to Nextcloud once linked, with an explicit per-app local-only opt-out stored as desired config; unlinked apps keep working browser-local
 - Exposure default revisit: with the proxy in place the recommendation for craft hosts stays local-only and the `allowwider` warning text is updated to explain what leaves the LAN; this slice changes `allowwider` only if the owner confirms in the slice review
 - Stateless rule unchanged (ADR-028): craft packages remain stateless backup no-ops; documents are backed up through Nextcloud's own backup (S182)

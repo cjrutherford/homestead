@@ -1,24 +1,24 @@
 # S252 — Deck and Vector Packages
 
 ## Goal
-Deckcraft (presentations) and vectorcraft (vector design) as first-party catalog packages: vendored storytold releases in HAI-built, signed static containers, each on its own internal host, reusing the S249 shape.
+Deckcraft (presentations) and vectorcraft (vector design) as first-party catalog packages: vendored storytold releases in locally built static containers, each on its own internal host, reusing the S249 shape.
 
 ## Dependencies
 S251
 
 ## Scope
 Implement only the functionality required for this slice. Preserve all accepted ADRs and customer-ownership guarantees. Do not pull deferred features into scope without an ADR and slice update.
-Governed by ADR-028 (Accepted 2026-10-14). Reuses the S249 shared shape: no new Go code is expected; if a shared change is needed it is made in the shared place with a test and recorded here.
+Governed by ADR-028 (Accepted 2026-10-14, revised for local build). Images are built on the appliance by S279 from a signed craft manifest; no registry pulls for craft images. Reuses the S249 shared shape: no new Go code is expected; if a shared change is needed it is made in the shared place with a test and recorded here.
 
 ## Acceptance Criteria
 - Deck and Vector Packages implemented and documented
 - Per app (deckcraft, vectorcraft): the licence of that storytold release is read and judged compatible, and its licence, version and artifact SHA-256 are recorded in `docs/THIRD_PARTY.md`; the slice fails acceptance for any app whose licence is not compatible
-- Per app: `catalog/<app>.yaml` following the S249 manifest pattern (digest-pinned image from the S279 pipeline, own internal host and port, ephemeral tmpfs paths verified with `docker diff`, local-only with `allowwider: false`, no backup paths) and descriptions that name the function without the word clean-room
+- Per app: `catalog/<app>.yaml` following the S249 manifest pattern (local craft image tag built by the S279 pipeline (recorded local digest, no registry), own internal host and port, ephemeral tmpfs paths verified with `docker diff`, local-only with `allowwider: false`, no backup paths) and descriptions that name the function without the word clean-room
 - Per app: extend the curated-app list and the `craftPackages` list in `internal/catalog/craft_test.go` (S249); the shared test must pass with the new entries without editing assertions
-- Per app: a `knownImageVolumes` row in `internal/catalog/data_test.go` verified with `docker image inspect` of that tag@digest on the KVM appliance (date and result in the comment)
+- Per app: a `knownImageVolumes` row in `internal/catalog/data_test.go` verified with `docker image inspect` of that locally built tag and recorded digest on the KVM appliance (date and result in the comment)
 - Per app: the S249 wasm MIME and cache header script passes against the running container
 - The two apps are separate packages with separate manifests, images, hosts and digests; neither shares a container
-- KVM acceptance on a fresh appliance: install, confirm the app's own `.lan` route answers with the app loading, remove it cleanly (container, stack directory, route, DNS name, edge entry), reinstall, run an update to a bumped digest, and confirm drift scan (S212, S262) reports clean after install and after update, for each app in this slice, with stateless confirmations (schedule create refused, no scheduler job)
+- KVM acceptance on a fresh appliance: install, confirm the app's own `.lan` route answers with the app loading, remove it cleanly (container, stack directory, route, DNS name, edge entry), reinstall, run an update to a bumped manifest version (rebuild), and confirm drift scan (S212, S262) reports clean after install and after update, for each app in this slice, with stateless confirmations (schedule create refused, no scheduler job)
 - Automated tests cover primary behavior
 - Main build remains green
 
