@@ -71,6 +71,11 @@ the unmodified app's own host protocol (or open-by-URL hook) to
 `/_homestead/files/` on the same origin. It is within this ADR; the detail is
 in `docs/slices/S254-nextcloud-craft-integration.md`.
 
+## Amended by ADR-032
+The edge reaches the daemon over a dedicated unix socket that serves only the
+craft-file handlers; ADR-032 holds the substance (socket, Caddy mount,
+render, Host and Origin trust, drift, ADR-020 class).
+
 ## Consequences
 - The daemon becomes a file-transfer path: its availability, throughput
   and memory bound document access, so streaming and limits are required,

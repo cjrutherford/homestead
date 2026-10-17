@@ -88,3 +88,4 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-029 | Nextcloud WebDAV Proxy for Craft Apps | Accepted |
 | ADR-030 | Internal CA Trust Distribution and Local TLS | Accepted |
 | ADR-031 | Craft Apps Start Page | Proposed |
+| ADR-032 | Craft File Proxy Reaches the Daemon over a Dedicated Unix Socket | Accepted |

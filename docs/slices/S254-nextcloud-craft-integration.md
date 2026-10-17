@@ -20,6 +20,8 @@ In scope: full open and save wiring for GridCraft, CADCraft and PdfCraft; open-o
 
 Homestead enters the file data path; the ADR-029 consequences (authorisation, size limits, streaming, audit without content, same-origin design) are acceptance criteria, not follow-ups.
 
+**Edge reachability (owner decision 2026-10-17, ADR-032).** The daemon listens on loopback and Caddy is a container, so the edge reaches the craft-file handlers over a dedicated unix socket (`/run/homestead-craft/files.sock`, serving only those handlers), mounted read-only as a directory into the Caddy stack. Routes name their craft app and the render puts `/_homestead/files/*` ahead of the nginx proxy on craft hosts only. Drift, redeploy and the unit-file changes are in ADR-032 and are part of this slice.
+
 ## Acceptance Criteria
 - Nextcloud Craft Integration implemented and documented
 - Link flow (API, CLI and dashboard parity): owner supplies a Nextcloud account name and app password, or approves daemon creation of one through Nextcloud's app-password endpoint; the value is stored as an ADR-021 secret, never returned by any route, never in YAML, logs, audit, drift or configuration export; rotation and unlink go through the plan and approve flow
