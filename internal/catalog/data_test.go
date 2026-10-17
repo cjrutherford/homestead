@@ -69,12 +69,14 @@ var knownImageVolumes = map[string]imageVolumes{
 	"homestead/craft-photocraft:0.9.0":   {},
 	"homestead/craft-lightcraft:0.8.0":   {},
 	"homestead/craft-figcraft:0.6.0":     {},
-	// S252 media craft images. Locally built on the dev workstation
-	// 2026-10-17 (real release artifacts through the shared Dockerfile):
-	// Config.Volumes null and user nginx for each, container healthy, and
-	// `docker diff` of the running container empty with /tmp the only
-	// mount (a tmpfs). KVM verification of these rows is PENDING; replace
-	// this comment with the date and result when it runs.
+	// S252 media craft images. Verified on the KVM appliance 2026-10-17
+	// (VM 2, images built by the daemon from a throwaway-signed manifest):
+	// Config.Volumes null and user nginx for each, healthcheck on /healthz,
+	// container healthy, and `docker diff` of the running container empty
+	// with /tmp the only mount (a tmpfs). Digests: filmcraft
+	// sha256:14bc52c4fb5a..., effectcraft sha256:a44e76b0221c...,
+	// soundcraft sha256:d161c915d241... (the same after the 0.8.1/0.10.1/
+	// 0.7.1 update rebuild: the build is reproducible).
 	"homestead/craft-filmcraft:0.8.0":    {},
 	"homestead/craft-effectcraft:0.10.0": {},
 	"homestead/craft-soundcraft:0.7.0":   {},

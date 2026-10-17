@@ -3616,18 +3616,90 @@ wasm equals the zip's. Gates: `make lint`, `go test ./...` (40 packages ok),
 passed) and `ng build`. `TestRealCraftBuild` was not re-run (no
 `images/craft` change).
 
-### KVM acceptance: PENDING
+### KVM acceptance (2026-10-17, VM 2, HEAD 42c413f, dashboard embedded build)
 
-Not run by this slice's implementation. To do on a fresh appliance, per app:
-owner (or throwaway key, counter above 4 if the VM holds a baseline) signs
-the manifest; build, install, curl the `.lan` HTTPS route with the S280 root
-(entry page and wasm, `craft-header-check.sh` through the edge with
-`--unhashed` for filmcraft and effectcraft); confirm the install plan shows
-the browser advisories in the dashboard and `homesteadctl apps plan`; remove
-cleanly (container, stack directory, route, DNS name, edge entry, leaf
-certificate); reinstall; update to a bumped manifest version; drift scan
-(S212, S262) clean after install and update; schedule create refused and no
-scheduler job; `docker image inspect` of the built tag and `docker diff`;
-then finalise the three `knownImageVolumes` comments and the header-table
-rows ("local build, KVM pending"). Also confirm in a real browser that
-EffectCraft's service worker registers over the HTTPS route.
+Run on VM 2 (Debian 13, Docker, internal CA from S280). Binary sha256
+`c7cc58de...` equals a root build of the same tree (with `embeddash`) on the
+guest. A throwaway minisign key (`minisign -G -W`, signed with `-l`) was
+trusted with `craft trust add` and signed the eleven-app manifest at counter 9
+(install; same bytes as the committed manifest apart from the counter) and
+counter 10 (update, versions bumped to filmcraft 0.8.1, effectcraft 0.10.1,
+soundcraft 0.7.1 with the same artifacts, plus matching throwaway edits of the
+installed catalog). Artifacts were downloaded by the daemon over HTTPS and
+matched the recorded SHA-256. Nothing was committed. **All lifecycle steps
+passed for all three apps; two pre-existing dashboard bugs (below) block the
+real-data plan panel and the dashboard install form.**
+
+- **Build and install:** `craft plan` verified (counter 9); `craft build
+  --follow` built `sha256:14bc52c4fb5a...` filmcraft, `a44e76b0221c...`
+  effectcraft, `d161c915d241...` soundcraft; `apps install` through the CLI
+  passed `verify-craft-images`, `write-stack`, `up`; routes `<app>.lan`
+  (local, TLS internal) set with one `edge routes set`.
+- **Image and container:** `Config.Volumes` null, user `nginx`, healthcheck
+  on `/healthz`, containers `healthy`; `docker diff` empty; `/tmp` the only
+  mount (tmpfs). The three `knownImageVolumes` comments are finalised.
+- **HTTPS and headers:** entry page and wasm fetched over `https://<app>.lan/`
+  with the S280 root (no `-k`); `scripts/craft-header-check.sh` PASS for all
+  three (`--unhashed` for filmcraft and effectcraft), gzip through Caddy
+  included: wasm gzip versus identity bytes, filmcraft 13,257,836 versus
+  41,183,059, effectcraft 18,652,595 versus 62,481,427, soundcraft 5,889,741
+  versus 15,463,607; decoded and identity bodies equal. EffectCraft `sw.js`,
+  `worker.js` and `audio-worklet.js` 200 `application/javascript`;
+  `manifest.webmanifest` 200 `application/octet-stream` (deferred), all
+  `no-cache`. Values are in `docs/architecture/CRAFT_HEADER_TABLE.md`.
+- **Service worker (Chromium via Playwright, ssh tunnel to the edge):** the
+  leaf was pinned by SPKI (the profile has no NSS tool to import the root;
+  the chain was verified against the S280 root with `openssl s_client
+  -CAfile`). `https://effectcraft.lan/` loaded in a secure context, and
+  `sw.js` registered and reached `activated`. `crossOriginIsolated` was
+  false, as designed. Headless Chromium used SwiftShader, so GPU speed was not
+  assessed.
+- **Advisories:** `homesteadctl apps plan <app>` prints `browser: <label>
+  [<capability>] (advisory) - <reason>` lines (6, 6 and 4) plus the "appliance
+  cannot see your browser" note; the catalog detail API returns `Browser`
+  with `Label`; the dashboard package page renders the panel with the
+  caveat for each app. The reviewed-plan panel renders the same lines only
+  when the plan response is normalised (bug 1).
+- **Drift:** the scheduled scan (interval set to 5 minutes for the run,
+  restored to 24 h) was clean with 7 packages after install and again after
+  the update, with no `drift accept`; `drift review` clean for each app.
+- **Stateless:** `backup schedule --package <app> --interval 1 --actor alice`
+  answered 422 naming the app; `backup schedules` and `scheduler jobs` list
+  no craft job.
+- **Remove and reinstall:** `apps uninstall` removed the container and
+  compose file (the empty stack directory remains, as for every package);
+  clearing the route table removed the routes. The leaves showed `orphan`
+  and came back with the same serial on reinstall (no re-issue).
+- **Update:** `updates list` showed `homestead/craft-<app>:<old> -> <new>
+  (manifest)`; `updates apply --craft-manifest ... --craft-signature ...`
+  verified (counter 10), built, recorded, rewrote, started and pruned the old
+  tags for all three; header check PASS again; the rebuilt images are
+  byte-identical (same image IDs).
+- **Cleanup:** apps uninstalled, route table emptied, Caddy container and the
+  0.x.1 images removed, trust key removed, secret key shredded, `/srv`
+  work directory deleted, drift interval restored to 24 h, daemon redeployed
+  with `install-systemd.sh`. Left on VM 2: `craft_baseline` at counter 10
+  (filmcraft, effectcraft, soundcraft), 8 (vectorcraft, photocraft,
+  lightcraft, figcraft), 6 (gridcraft, pdfcraft, deckcraft) and 4
+  (wordcraft), orphan `.lan` leaves until the `tls:local-leaves` sweep, the
+  empty stack directories, the `homestead-edge` network and Caddy stack
+  files, and `/home/tester/hs-s252`.
+
+Bugs found (pre-existing, not S252 code; product code untouched, recorded in
+`docs/DEFERRED.md`):
+
+1. **Dashboard reviewed plan does not render for local stateless packages.**
+   `POST /api/v1/catalog/<pkg>/plan` returns `DNS: null` and `Directories:
+   null` for these packages; the template reads `reviewed.DNS.length` and
+   `reviewed.Directories.length`, so rendering stops after "Routes" and the
+   data placement, browser advisories and notes never appear. Repro: log in,
+   Catalog, select FilmCraft, domain `lan`, Review plan. The same happens for
+   WordCraft (the CLI and API are fine). The component spec used fixtures
+   with empty arrays, so it did not catch it.
+2. **Dashboard install form sends the wrong container-port key.** The catalog
+   detail API returns `Services[].Name` (capitalised) but the dashboard type
+   and template read `service.name`, so the field is `port-undefined` and the
+   request carries `container_ports: {"undefined": 8080}`; the plan answers
+   422 `no container port for service "filmcraft"`. Repro: select any
+   package, enter a port, Review plan. Verified for all three apps; by the same code it also
+   affects every earlier craft package.
