@@ -3077,10 +3077,60 @@ SANs, edge presentation only for local-only hosts, renewal with an injected
 clock, rotation plan and stale-digest refusal, route classification, absence
 from the recovery socket, no key in responses, audit or configuration export.
 
-KVM acceptance: PENDING. It is run separately and recorded here when done; no
-results are claimed. Required: fresh appliance, create the CA, compare the
-fingerprint across CLI, dashboard and `openssl x509 -fingerprint -sha256`,
-trust the root on host and guest, `curl https://<local host>` without `-k`,
-renew a leaf with a shortened lifetime and see the edge present it without a
-restart, rotate the root, confirm no private key in the database dump, YAML,
-backups or logs, and that removal leaves no stray certificates.
+KVM acceptance (2026-10-17, VM 2, commit cdd388f deployed with
+`scripts/install-systemd.sh` and an embedded dashboard build; Debian 13,
+Docker, Caddy deployed by `homesteadctl edge deploy`). All steps passed; no
+product bug found.
+
+1. Create and fingerprint: `homesteadctl tls local create`, then the CLI
+   (`tls root show`), the authenticated `GET /api/v1/tls/local-ca`, the
+   unauthenticated `root.pem` and `root.der` (also fetched through an ssh
+   tunnel from the KVM host) and `openssl x509 -fingerprint -sha256` all gave
+   `BD:33:0E:98:...:50:7E:19`; `tls root export` reported the match. No
+   private key in either download. `root.pem` and `root.der` return 200
+   without a session; `local-ca`, `leaves` return 401 and the rejection is
+   audited. The SPA `/trust` route serves and the bundle contains the "Trust
+   this appliance" page (the page was not driven in a browser).
+2. Local HTTPS: route `s280.lan` (Exposure local, TLS internal) to an nginx
+   container on `homestead-edge`. The leaf was issued on the route reconcile
+   and presented by Caddy. `curl --resolve` failed with verify 20 before
+   trust and returned 200 without `-k` after `update-ca-certificates` on the
+   guest, and from the KVM host through a tunnel to 443 with
+   `--cacert root.pem`.
+3. Renewal: with `HOMESTEAD_LOCAL_LEAF_LIFETIME=3h`, `tls local reissue`
+   changed the served serial (`s_client`) with the Caddy container start time
+   and daemon PID unchanged. With `1h` the scheduler job `tls:local-leaves`
+   (every 10 minutes) renewed the leaf unattended at its one-third mark
+   (14:33 to 15:02, serial changed, audited as actor `scheduler`), again with
+   no Caddy or daemon restart.
+4. Rotation: `tls local rotate` printed the plan and digest. A made-up digest
+   and a digest made stale by adding a second route were both refused (409,
+   root unchanged). Approving the fresh digest created generation 2
+   (`BE:76:09:...:DE:E5`, matches CLI, download and `openssl`), re-issued both
+   leaves under it (edge verifies against the new root only; the old root,
+   still trusted on the guest, now fails curl until replaced), and the secret
+   `sys_local_ca_key_1` was replaced by `sys_local_ca_key_2`.
+5. Doctor showed `local-ca` and each `local-leaf:HOST` as ok, before and after
+   rotation.
+6. No plaintext private key: `PRIVATE KEY` is absent from the sqlite dump and
+   the raw database and WAL, `/etc/homestead` (including `internal-ca.yaml`),
+   `config export`, the audit list, and the journal (only my own grep
+   commands matched). The CA key is only the sealed `sys_local_ca_key_N`
+   secret row. The leaf private keys exist as plaintext only in the Caddy
+   routes cert directory (mode 0600, root), which the edge needs, as in S278.
+   Per-package backups (age-encrypted app data) contain no `PRIVATE KEY`
+   match and do not carry the daemon database, so no backup job was run for
+   this check.
+7. Removal: after the routes were cleared the leaves showed as `orphan`; the
+   scheduler removed them after the 15 minute grace (audited
+   `tls.local-leaf.remove`), leaving the cert directory empty and
+   `local_leaves` empty. Root removed from the guest store
+   (`update-ca-certificates --fresh`) and the host's temporary CA file. Not
+   exercised: a database restore (covered by automated tests) and a browser
+   run of the Trust page.
+
+Left behind on VM 2: the S280 daemon build, the internal CA itself
+(generation 2; there is no remove command), the `homestead-edge` network and
+`/opt/homestead/stacks/caddy` files (the Caddy container is removed), and
+`/home/tester/hs-s280`. The test container, unit drop-in and trust-store entry
+were removed. Disk snapshot before the run: `vm2-pre-s280.qcow2`.
