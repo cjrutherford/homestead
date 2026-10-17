@@ -1,0 +1,39 @@
+# FigCraft (S251): a static craft package on the S249 shared shape
+# (docs/architecture/STATIC_CRAFT_PACKAGES.md). The image is built on the
+# appliance by the signed, verify-then-build craft operation (ADR-028); it
+# is never pulled, so there is no registry reference and no catalog digest.
+# The version below is the vendored storytold release and must equal the
+# image tag and the version in catalog/craft/craft-manifest.yaml.
+name: figcraft
+version: 0.6.0
+title: FigCraft
+blurb: Interface design tool that runs in your browser.
+description: FigCraft is an interface design tool for laying out screens, components and prototypes on an infinite canvas. It runs entirely in the browser from a small web server on your appliance, so there is nothing to install on your devices. Designs stay in your browser and download to your device; the app keeps nothing on the appliance. It needs a modern browser with WebGPU or WebGL2 and a secure context, which your Homestead internal CA certificate provides once your device trusts the root; without WebGPU it falls back to WebGL2 on its own. It is served over your local network.
+category: productivity
+icon: mdi:view-dashboard-outline
+services:
+- name: figcraft
+  image: homestead/craft-figcraft:0.6.0
+  exposes: web
+  # The image declares no VOLUME. nginx runs as the unprivileged nginx
+  # user and writes only under /tmp (pid file and temporary paths), so
+  # /tmp is the whole writable surface.
+  data:
+  - target: /tmp
+    ephemeral: true
+    sizemb: 16
+    reason: nginx pid file and request temporary files; nothing to keep or back up.
+requirements:
+  memorymb: 64
+  cpucount: 1
+  architectures: [amd64, arm64]
+exposure:
+  package: figcraft
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: false
+    warnings:
+    - FigCraft stores nothing on the appliance, so widening exposure would offer a public design tool whose designs never reach your storage; keep it local until Nextcloud document storage lands.
+sso:
+  class: unsupported

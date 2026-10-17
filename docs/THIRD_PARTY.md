@@ -26,7 +26,7 @@ exact release it vendors). Each repository's GitHub release ships
 `<app>-web-<version>.zip` and an unsigned `SHA256SUMS.txt`. Release URL
 pattern: `https://github.com/storytold/<repo>/releases/download/<tag>/<asset>`.
 Latest releases at planning: wordcraft v0.7.0, gridcraft v0.7.0, pdfcraft
-v0.8.0, deckcraft v0.7.0, vectorcraft v0.11.0, photocraft v0.9.0, lightcraft
+v0.8.0, deckcraft v0.7.0, vectorcraft v0.11.0 (v0.12.0 by S251), photocraft v0.9.0, lightcraft
 v0.8.0, figcraft v0.6.0, filmcraft v0.8.0, effectcraft v0.10.0, soundcraft
 v0.7.0, designcraft v0.8.0, cadcraft v0.7.0, craft-launcher v0.4.1 (asset
 `artcraft-launcher-web-0.4.1.zip`). Per-app entries (licence text, version,
@@ -399,4 +399,362 @@ Code dependencies
   The per-file `ATTRIBUTION.md` (SHA-256
   `e698cd8478b6b5d8b8dd78bc633948e50700435b57a6634a9f03bb1c6c6f285b`) lives in the same repository at the same tag.
 - Craft image: `homestead/craft-deckcraft:0.7.0`, built locally by S279 from
+  this artifact and `images/craft/` (nginx base pinned above).
+
+### storytold/vectorcraft v0.12.0 (S251)
+- Release: `https://github.com/storytold/vectorcraft/releases/tag/v0.12.0`
+  (tag commit `8bc65329286dc1b84aa392997bb205613c3e96cb`, published 2026-10-16; still the latest release
+  when S251 was implemented on 2026-10-17). VectorCraft was v0.11.0 at planning (2026-10-15); v0.12.0 was published 2026-10-16 and is the version vendored here.
+- Artifact: `vectorcraft-web-0.12.0.zip`, 22585168 bytes,
+  `https://github.com/storytold/vectorcraft/releases/download/v0.12.0/vectorcraft-web-0.12.0.zip`
+- SHA-256: `83ef4aaf0d8e535d8a79224095b5f34ad83c22a0e0bfc4fd19f22784c912529a`,
+  equal to the line for this file in the release's unsigned
+  `SHA256SUMS.txt` (cross-checked 2026-10-17; the download was also
+  hashed independently). Trust rests on the signed Homestead craft manifest
+  (`catalog/craft/craft-manifest.yaml`), which records this digest.
+- Archive contents (one top-level directory `vectorcraft-web-0.12.0/`, stripped by the
+  shared Dockerfile): `index.html`, `vectorcraft-web-<hash>.js`, `vectorcraft-web-<hash>_bg.wasm` (64.7 MB uncompressed), `ASSETS.md`, `NOTICE`, a `licenses/pdf-backend/` tree of third-party licence texts (hayro crates, Foxit and CGATS notices), `LICENSE-APACHE`, `LICENSE-MIT`, `README.md`, `HOSTING.md`, and the sample `_headers` and `.htaccess` (unused). No favicon file, no `fonts/` folder (the optional Arabic fonts folder in `HOSTING.md` is not in this build), no `parts.txt`, no `.part-*` files, no workers, no precompressed files.
+- Licence: `MIT OR Apache-2.0`, at the recipient's option (`LICENSE-MIT`,
+  Copyright (c) 2026 ArtCraft Team and the VectorCraft contributors, SHA-256 `8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71`; `LICENSE-APACHE`, the Apache License
+  2.0 text, SHA-256 `0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594`;
+  both ship inside the artifact and so inside the built image, and both
+  equal the files at the tag in the source repository). Both read in full
+  for the v0.12.0 release. Judgement: compatible with redistribution inside a
+  Homestead-built image, on the same reasoning as WordCraft: the appliance
+  builds the image locally and serves the unmodified release files (adding
+  only `.gz` copies of the same bytes), the MIT option needs only that its
+  copyright and permission notice travel with the files (they do), and
+  nothing in either licence restricts the owner from rebuilding,
+  inspecting or running the image without Homestead.
+- Trademarks: the ArtCraft name, wordmark and logos (`docs/brand/` in the
+  source repository, not in the web artifact) are the ArtCraft Team's and
+  are outside the licence. Homestead ships none of them in the image; the
+  package copy names the app by function and does not use the marks.
+- NOTICE (source repository file at tag v0.12.0; the NOTICE also ships in the web artifact, so it is in the built image, SHA-256
+  `cda4d86b58c5200204e786092ac634e8b60f9beda54219f334726f49e2065e82`). It lists bundled third-party material (Lucide icons under ISC, Source Sans 3, Source Serif 4, Inter and JetBrains Mono under the SIL OFL 1.1, egui default fonts, Adobe CMap resources under BSD-3-Clause, the patched hayro PDF crates under MIT OR Apache-2.0, Foxit standard-14 substitutes under BSD-3-Clause, a CC0 colour profile, the jpeg-encoder crate and the wasmi interpreter). The patched Windows 7 `windows-link` copy it mentions is not part of the web build. Captured verbatim:
+
+```text
+VectorCraft
+Copyright (c) 2026 ArtCraft Team and the VectorCraft contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+The ArtCraft name, wordmark and logos in docs/brand/ are trademarks of the ArtCraft Team. They are
+not open source and are not covered by the license above; their terms are in
+docs/brand/LICENSE-brand.txt.
+
+Third-party material
+
+This product bundles third-party material under its own licenses, listed below. The per-file
+list (author, source, license) is in ASSETS.md.
+
+- Lucide icons (assets/icons/*.svg except dc-*.svg) — ISC License; the icons Lucide derived from Feather are also under the MIT License (Cole Bemis). See assets/icons/LICENSE-lucide.txt.
+- Source Sans 3 and Source Serif 4 (assets/fonts/Source*) — SIL Open Font License 1.1. See assets/fonts/OFL-SourceSans3.txt, OFL-SourceSerif4.txt.
+- Inter (assets/fonts/Inter-*.ttf) — SIL Open Font License 1.1. See assets/fonts/OFL-Inter.txt.
+- JetBrains Mono (assets/fonts/JetBrainsMono-*.ttf) — SIL Open Font License 1.1. See assets/fonts/OFL-JetBrainsMono.txt.
+- egui's default fonts, compiled into the app through the epaint_default_fonts crate — Ubuntu Light
+  (Ubuntu Font Licence 1.0), Hack (MIT), Noto Emoji (SIL Open Font License 1.1) and emoji-icon-font
+  (MIT). Their license texts ship with that crate.
+
+Rust dependencies (vello_cpu, kurbo, peniko, skrifa, harfrust, usvg, linesweeper, egui, eframe, …) are
+fetched through crates.io under their own permissive licenses (mostly MIT and/or Apache-2.0; also
+BSD, ISC, Zlib, BSL-1.0 and Unicode-3.0).
+
+JPEG export uses the jpeg-encoder crate (MIT OR Apache-2.0, and the IJG License): this software is
+based in part on the work of the Independent JPEG Group.
+
+WebAssembly plug-ins run in the wasmi interpreter (MIT OR Apache-2.0); its wasmparser dependency is
+under the Apache License 2.0 with the LLVM exception.
+
+The experimental Windows 7 build (packaging/windows/windows7.ps1) compiles a modified copy of the
+windows-link crate 0.2.1 (vendor/windows-link; Microsoft, MIT OR Apache-2.0) that binds CoTaskMemFree
+through ole32.dll. Its license texts are in vendor/windows-link and ship in that build's ZIP; every
+other build uses the unmodified crate from crates.io.
+
+Builds made with craft-fonts (the CRAFT_FONTS_DIR build option; all official releases) embed the
+fonts listed in https://github.com/storytold/craft-fonts/blob/main/ATTRIBUTION.md (BIZ UDPGothic,
+Shippori Mincho, BIZ UDMincho, Noto Sans CJK SC and Noto Sans Arabic in the current manifest;
+web builds BIZ UDPGothic Regular only) under the SIL
+Open Font License 1.1. Their license texts ship with the release packages as OFL-<family>.txt.
+
+PDF import decodes CJK text with Adobe's CMap resources (https://github.com/adobe-type-tools/cmap-resources),
+compiled into the app through the hayro-cmap crate under the BSD 3-Clause License:
+
+Copyright 1990-2023 Adobe. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.
+
+Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+Neither the name of Adobe nor the names of its contributors may be
+used to endorse or promote products derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Shared PDF backend
+
+The patched hayro-interpret 0.7.0, hayro-syntax 0.7.2 and hayro-jbig2 0.3.0
+are fetched from https://github.com/storytold/craft-libs at revision
+ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d. Their upstream project is
+https://github.com/LaurenzV/hayro, licensed MIT OR Apache-2.0. The snapshot retains each
+crate's upstream licence files. The patch ledger is at
+https://github.com/storytold/craft-libs/blob/ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d/vendor/README.craft-reader.md.
+
+Assets already bundled through Hayro's default features retain their licences:
+- Foxit standard-14 substitutes: Copyright 2014 PDFium Authors. All rights reserved.
+  Original code copyright 2014 Foxit Software Inc. BSD-3-Clause; see
+  licenses/pdf-backend/hayro-interpret/assets/LICENSE_FOXIT.
+- CGATS001Compat-v2-micro.icc: CC0-1.0, Clinton Ingram; see
+  licenses/pdf-backend/hayro-interpret/assets/CGATS_LICENSE.txt.
+- Predefined CMaps: Copyright 1990-2023 Adobe. All rights reserved. BSD-3-Clause,
+  non-visual character-mapping data; see licenses/pdf-backend/hayro-cmap/LICENSE.txt.
+  Adobe and contributor names do not endorse or promote this product.
+Per-file hashes and sources are recorded in ASSETS.md.
+```
+
+  The per-file `ASSETS.md` (SHA-256 `aff82a234214efafae8f7f0037c4901dd23a56535326c589cd390dd4eb62ca40`) ships in the artifact and lives in the same repository at the same tag.
+- Craft image: `homestead/craft-vectorcraft:0.12.0`, built locally by S279 from
+  this artifact and `images/craft/` (nginx base pinned above).
+
+### storytold/photocraft v0.9.0 (S251)
+- Release: `https://github.com/storytold/photocraft/releases/tag/v0.9.0`
+  (tag commit `c699e3cda69f4852b43c0b191ab0091aaeff9d6a`, published 2026-10-14; still the latest release
+  when S251 was implemented on 2026-10-17).
+- Artifact: `photocraft-web-0.9.0.zip`, 11467035 bytes,
+  `https://github.com/storytold/photocraft/releases/download/v0.9.0/photocraft-web-0.9.0.zip`
+- SHA-256: `b3fa5ab6a9d32bc5ff7dfdde31939a2337471a196a2e70f1ff961a61b1bb02e6`,
+  equal to the line for this file in the release's unsigned
+  `SHA256SUMS.txt` (cross-checked 2026-10-17; the download was also
+  hashed independently). Trust rests on the signed Homestead craft manifest
+  (`catalog/craft/craft-manifest.yaml`), which records this digest.
+- Archive contents (one top-level directory `photocraft-web-0.9.0/`, stripped by the
+  shared Dockerfile): `index.html`, `photocraft-web-<hash>.js`, `photocraft-web-<hash>_bg.wasm` (25.0 MB uncompressed), `LICENSE-APACHE`, `LICENSE-MIT`, `README.md`, `HOSTING.md`, and the sample `_headers` and `.htaccess` (unused). No `NOTICE` in the artifact, no favicon file, no `fonts/` folder (optional per `HOSTING.md`, absent here), no `parts.txt`, no `.part-*` files, no workers, no precompressed files.
+- Licence: `MIT OR Apache-2.0`, at the recipient's option (`LICENSE-MIT`,
+  Copyright (c) 2026 ArtCraft Team and the PhotoCraft contributors, SHA-256 `1a8f66d8a86b146f5336fa0d4b1186576c8aa98e60823080c85c7811cfd810af`; `LICENSE-APACHE`, the Apache License
+  2.0 text, SHA-256 `0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594`;
+  both ship inside the artifact and so inside the built image, and both
+  equal the files at the tag in the source repository). Both read in full
+  for the v0.9.0 release. Judgement: compatible with redistribution inside a
+  Homestead-built image, on the same reasoning as WordCraft: the appliance
+  builds the image locally and serves the unmodified release files (adding
+  only `.gz` copies of the same bytes), the MIT option needs only that its
+  copyright and permission notice travel with the files (they do), and
+  nothing in either licence restricts the owner from rebuilding,
+  inspecting or running the image without Homestead.
+- Trademarks: the ArtCraft name, wordmark and logos (`docs/brand/` in the
+  source repository, not in the web artifact) are the ArtCraft Team's and
+  are outside the licence. Homestead ships none of them in the image; the
+  package copy names the app by function and does not use the marks.
+- NOTICE (source repository file at tag v0.9.0; not in the web artifact, SHA-256
+  `fb7d6f0e57c396b6c94f6315d3dba13048a296d81e7546d33e2b7c77c71ea147`). It lists bundled third-party material (Inter and JetBrains Mono under the SIL OFL 1.1, Lucide icons under ISC, the SCOWL English word list under the SCOWL licence). The web artifact itself carries no `NOTICE`, only the two licence files, so the notice is captured here. Captured verbatim:
+
+```text
+PhotoCraft
+Copyright (c) 2026 ArtCraft Team and the PhotoCraft contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+The ArtCraft name, wordmark and logos in docs/brand/ are trademarks of the ArtCraft Team. They are
+not open source and are not covered by the license above; their terms are in
+docs/brand/LICENSE-brand.txt.
+
+Third-party material
+
+This product bundles third-party material under its own licenses, listed below. The per-file
+list (author, source, license) is in ATTRIBUTION.md.
+
+Inter font (assets/fonts/Inter-*.ttf) — SIL Open Font License 1.1. See assets/fonts/OFL-Inter.txt.
+JetBrains Mono font (assets/fonts/JetBrainsMono-Regular.ttf) — SIL Open Font License 1.1. See assets/fonts/OFL-JetBrainsMono.txt.
+Lucide icons (assets/icons/*.svg, except slice-knife.svg) — ISC; icons derived from Feather also MIT. See assets/icons/LICENSE-lucide.txt.
+SCOWL English word list (assets/dict/en_US-scowl-50.txt.gz) — SCOWL license. See assets/dict/LICENSE-SCOWL.txt.
+
+Builds made with craft-fonts (CRAFT_FONTS_DIR; all official releases) also embed the fonts listed in
+https://github.com/storytold/craft-fonts/blob/main/ATTRIBUTION.md (today BIZ UDPGothic, Shippori Mincho and
+BIZ UDMincho; not the web build), under the SIL Open Font License 1.1. Their licence texts
+ship with the package as OFL-<family>.txt.
+```
+
+  The per-file `ATTRIBUTION.md` (SHA-256 `6f5464b818b1273eea0592989d9f980eb8b31d3ccf8dde09067018a7cd210ad3`) lives in the same repository at the same tag.
+- Craft image: `homestead/craft-photocraft:0.9.0`, built locally by S279 from
+  this artifact and `images/craft/` (nginx base pinned above).
+
+### storytold/lightcraft v0.8.0 (S251)
+- Release: `https://github.com/storytold/lightcraft/releases/tag/v0.8.0`
+  (tag commit `16dbb90499d3c63a6582fcbba1b2550a6e2da032`, published 2026-10-14; still the latest release
+  when S251 was implemented on 2026-10-17). LightCraft is marked experimental upstream: its library lives in the browser's own site storage, which the browser may clear.
+- Artifact: `lightcraft-web-0.8.0.zip`, 66660218 bytes,
+  `https://github.com/storytold/lightcraft/releases/download/v0.8.0/lightcraft-web-0.8.0.zip`
+- SHA-256: `bfabb7edecfc8723b9d698ad2b6fa32e99fcdf977628a68b2884c4b06c6f017a`,
+  equal to the line for this file in the release's unsigned
+  `SHA256SUMS.txt` (cross-checked 2026-10-17; the download was also
+  hashed independently). Trust rests on the signed Homestead craft manifest
+  (`catalog/craft/craft-manifest.yaml`), which records this digest.
+- Archive contents (one top-level directory `lightcraft-web-0.8.0/`, stripped by the
+  shared Dockerfile): `index.html`, `lightcraft_web.js` and `lightcraft_web_bg.wasm` (27.3 MB uncompressed) with **unhashed names**, `worker.js` (a module render worker that re-instantiates the same wasm), `lightcraft_zh_hans.otf` (16.4 MB Simplified Chinese UI font), five `OFL-*.txt` font licences, `NOTICE`, `LICENSE-APACHE`, `LICENSE-MIT`, `README.md`, `HOSTING.md`, and the sample `_headers` and `.htaccess` (unused). The artifact ships its own `.gz` and `.br` copies of the html, js, wasm, worker and font (the build overwrites the `.gz` copies it makes itself and keeps the font's `.gz`; the `.br` copies are inert, served as plain files if asked for). No `parts.txt`, no `.part-*` files.
+- Licence: `MIT OR Apache-2.0`, at the recipient's option (`LICENSE-MIT`,
+  Copyright (c) 2026 ArtCraft Team and the LightCraft contributors, SHA-256 `1470a5d44a88a9d385d9530763ea411ca199670d07f561a61d54256323972b92`; `LICENSE-APACHE`, the Apache License
+  2.0 text, SHA-256 `0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594`;
+  both ship inside the artifact and so inside the built image, and both
+  equal the files at the tag in the source repository). Both read in full
+  for the v0.8.0 release. Judgement: compatible with redistribution inside a
+  Homestead-built image, on the same reasoning as WordCraft: the appliance
+  builds the image locally and serves the unmodified release files (adding
+  only `.gz` copies of the same bytes), the MIT option needs only that its
+  copyright and permission notice travel with the files (they do), and
+  nothing in either licence restricts the owner from rebuilding,
+  inspecting or running the image without Homestead.
+- Trademarks: the ArtCraft name, wordmark and logos (`docs/brand/` in the
+  source repository, not in the web artifact) are the ArtCraft Team's and
+  are outside the licence. Homestead ships none of them in the image; the
+  package copy names the app by function and does not use the marks.
+- NOTICE (source repository file at tag v0.8.0; the NOTICE also ships in the web artifact, so it is in the built image, SHA-256
+  `00a7cfc350859e56cb36d28d6e91e997dc1f67137496a1a4a299dd014ff74a56`). It lists bundled third-party material (Inter under the SIL OFL 1.1, public-domain showcase photographs not in the web build, camera matrices derived from Academy Software Foundation rawtoaces-data under Apache-2.0 and the CIE 1931 functions under CC-BY-4.0, inpainting code ported from PhotoCraft under MIT OR Apache-2.0, SAM 3 model code ported from Hugging Face Transformers under Apache-2.0, which makes `crates/segment` Apache-2.0 only, and craft-fonts under the SIL OFL 1.1). It also states what is **not** distributed: the SAM 3 weights (Meta's separate SAM License, downloaded by the user on request), optional AI denoise model weights (a RawNIND checkpoint under GPL-3.0, an opt-in offer that is off in the default build and downloaded by the user after accepting its terms) and GeoNames place names (CC-BY 4.0, downloaded on request). None of those ships in the artifact or the image, and Homestead neither enables nor downloads them. Captured verbatim:
+
+```text
+LightCraft
+Copyright (c) 2026 ArtCraft Team and the LightCraft contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+The ArtCraft name, wordmark and logos in docs/brand/ are trademarks of the ArtCraft Team. They are
+not open source and are not covered by the license above; their terms are in
+docs/brand/LICENSE-brand.txt.
+
+Third-party material
+
+This product bundles third-party material under its own licenses, listed below. The per-file
+list (author, source, license) is in assets/ATTRIBUTION.md.
+
+Inter (assets/fonts/Inter-*.ttf) — SIL Open Font License 1.1. See assets/fonts/OFL-Inter.txt.
+Showcase photographs by Ansel Adams, Dorothea Lange and NASA (docs/images/) — public domain. See assets/ATTRIBUTION.md.
+
+crates/raw/src/spectral_table.rs (lightcraft-raw) holds camera colour matrices derived from the
+camera spectral sensitivities, training reflectances and model alias list of rawtoaces-data
+(https://github.com/AcademySoftwareFoundation/rawtoaces-data, v1.1.0), an Academy Software
+Foundation project licensed under the Apache License 2.0, and from the CIE 1931 colour-matching
+functions it ships (CIE, CC-BY-4.0). The matrices were fitted by the LightCraft contributors
+(2026) with tools/spectral_camera_table.py. See assets/ATTRIBUTION.md.
+
+crates/inpaint (lightcraft-inpaint) ports the inpainting (PatchMatch completion) and Poisson membrane
+fill code of PhotoCraft (https://github.com/storytold/photocraft, crates/algo/src/inpaint.rs and
+poisson.rs), Copyright the PhotoCraft contributors, licensed under the MIT License or the Apache
+License 2.0, at your option. The port was modified by the LightCraft contributors (2026); each
+ported file says so.
+
+crates/segment (lightcraft-segment) ports the SAM 3 model code of Hugging Face Transformers
+(https://github.com/huggingface/transformers, src/transformers/models/sam3 and sam3_tracker),
+Copyright The HuggingFace Team and Meta Platforms, Inc., licensed under the Apache License 2.0.
+The port was modified by the LightCraft contributors (2026): translated from Python/PyTorch to
+Rust on candle and restructured; each ported file says so. Because of this, crates/segment is
+licensed under the Apache License 2.0 only (LICENSE-APACHE), not under the MIT option.
+
+The SAM 3 weights are not part of LightCraft and are never distributed with it. A user downloads
+the facebook/sam3 checkpoint only when they choose to (in the app, or by hand), under Meta's SAM
+License (https://github.com/facebookresearch/sam3/blob/main/LICENSE), a separate, non-OSI
+licence. See docs/ai-masks.md.
+
+AI denoise weights are not part of LightCraft and are never distributed with it.
+The default build offers user-supplied models only. The optional rawnind-model
+feature offers a separately downloaded RawNIND UtNet2 Bayer checkpoint under
+GPL-3.0 (https://www.gnu.org/licenses/gpl-3.0.html), after the user accepts its terms.
+Commercial use is subject to those terms, including applicable source, licence and
+notice obligations on redistribution. Enabling that offer in releases remains a
+maintainer decision. The ONNX reader and CPU/GPU executor are our Rust implementation;
+no darktable, RawSpeed, LibRaw or other GPL decoder/runtime code is included.
+
+Builds made with craft-fonts (the optional CRAFT_FONTS_DIR build input; all official releases)
+also embed the fonts listed in https://github.com/storytold/craft-fonts/blob/main/ATTRIBUTION.md
+(the Japanese fonts BIZ UDPGothic, BIZ UDMincho and Shippori Mincho; the web build embeds only BIZ
+UDPGothic Regular), under the SIL Open Font License 1.1. Release packages include each font's
+licence as OFL-<family>.txt.
+
+Place names for reverse geocoding (Photo > Fill Location from GPS) are not part of LightCraft and
+are never distributed with it. On the user's request (Photo > Download Place Names) the app
+downloads cities15000.zip, admin1CodesASCII.txt and countryInfo.txt from GeoNames
+(https://download.geonames.org/export/dump/) into the settings folder. GeoNames data is licensed
+under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/);
+attribution: "GeoNames, geonames.org". The lookup code (crates/geocode) is our own.
+```
+
+  The per-file `assets/ATTRIBUTION.md` (SHA-256 `4b1497c3ea1afbf162c360708f0377896227b44d7a4141105f8a51dd0b9d6a0d`) lives in the same repository at the same tag.
+- Craft image: `homestead/craft-lightcraft:0.8.0`, built locally by S279 from
+  this artifact and `images/craft/` (nginx base pinned above).
+
+### storytold/figcraft v0.6.0 (S251)
+- Release: `https://github.com/storytold/figcraft/releases/tag/v0.6.0`
+  (tag commit `833f0d2c27f0acbae5394848930ae531fc89c724`, published 2026-10-14; still the latest release
+  when S251 was implemented on 2026-10-17).
+- Artifact: `figcraft-web-0.6.0.zip`, 8892594 bytes,
+  `https://github.com/storytold/figcraft/releases/download/v0.6.0/figcraft-web-0.6.0.zip`
+- SHA-256: `a414970e3857f6613efd7f90bd4c8394e5d51b31c4cf1fa0352f87820695b9c4`,
+  equal to the line for this file in the release's unsigned
+  `SHA256SUMS.txt` (cross-checked 2026-10-17; the download was also
+  hashed independently). Trust rests on the signed Homestead craft manifest
+  (`catalog/craft/craft-manifest.yaml`), which records this digest.
+- Archive contents (one top-level directory `figcraft-web-0.6.0/`, stripped by the
+  shared Dockerfile): `index.html`, `figcraft-web-<hash>.js`, `figcraft-web-<hash>_bg.wasm` (22.5 MB uncompressed), twenty `OFL-*.txt` licence texts for the fonts embedded in the wasm (no font files), `NOTICE`, `LICENSE-APACHE`, `LICENSE-MIT`, `README.md`, `HOSTING.md`, and the sample `_headers` and `.htaccess` (unused). No favicon file, no `parts.txt`, no `.part-*` files, no workers, no precompressed files. The release also has a separate `figcraft-server-<version>-linux-*.tar.gz` that is not part of this package.
+- Licence: `MIT OR Apache-2.0`, at the recipient's option (`LICENSE-MIT`,
+  Copyright (c) 2026 ArtCraft Team and the FigCraft contributors, SHA-256 `360c12b61568ef50808e731c98ae84110ea6f674dc34ac1ecb05d7abb9a6079a`; `LICENSE-APACHE`, the Apache License
+  2.0 text, SHA-256 `0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594`;
+  both ship inside the artifact and so inside the built image, and both
+  equal the files at the tag in the source repository). Both read in full
+  for the v0.6.0 release. Judgement: compatible with redistribution inside a
+  Homestead-built image, on the same reasoning as WordCraft: the appliance
+  builds the image locally and serves the unmodified release files (adding
+  only `.gz` copies of the same bytes), the MIT option needs only that its
+  copyright and permission notice travel with the files (they do), and
+  nothing in either licence restricts the owner from rebuilding,
+  inspecting or running the image without Homestead.
+- Trademarks: the ArtCraft name, wordmark and logos (`docs/brand/` in the
+  source repository, not in the web artifact) are the ArtCraft Team's and
+  are outside the licence. Homestead ships none of them in the image; the
+  package copy names the app by function and does not use the marks.
+- NOTICE (source repository file at tag v0.6.0; the NOTICE also ships in the web artifact, so it is in the built image, SHA-256
+  `3de704e57b81ffcb2a699f21fcf912559b28cb1d0f1584a7fbb3a080b4b695d6`). It lists no bundled third-party fonts, icons or images in the repository; release builds embed the craft-fonts set under the SIL OFL 1.1 (their licence texts ship as `OFL-*.txt`), and Rust dependencies keep their permissive licences, including CDLA-Permissive-2.0 for the webpki-roots certificate list. Captured verbatim:
+
+```text
+FigCraft
+Copyright (c) 2026 ArtCraft Team and the FigCraft contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+The ArtCraft name, wordmark and logos in docs/brand/ are trademarks of the ArtCraft Team. They are
+not open source and are not covered by the license above; their terms are in
+docs/brand/LICENSE-brand.txt.
+
+Third-party material
+
+This product bundles no third-party fonts, icons or images in the repository: every icon is
+drawn in code and original to FigCraft. The per-file list (author, source, license) of any bundled
+asset is in ATTRIBUTION.md.
+
+Release builds made with the optional craft-fonts build input (CRAFT_FONTS_DIR) embed the fonts
+listed in ATTRIBUTION.md (Inter and others, SIL Open Font License 1.1); each package carries their
+licence texts.
+
+Rust crate dependencies keep their own licenses (MIT, Apache-2.0, BSD, ISC, Zlib, OFL for egui's
+default fonts, CDLA-Permissive-2.0 for the root certificate list webpki-roots compiles in, and
+similar permissive licenses); see each crate's metadata.
+```
+
+  The per-file `ATTRIBUTION.md` (SHA-256 `9ec4448e1327edcd1bf1793f6bf04564913c7653cd9398468d8a8c8a3d3b476b`) lives in the same repository at the same tag.
+- Craft image: `homestead/craft-figcraft:0.6.0`, built locally by S279 from
   this artifact and `images/craft/` (nginx base pinned above).

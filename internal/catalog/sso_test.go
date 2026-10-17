@@ -51,14 +51,18 @@ func TestSSOClassEffective(t *testing.T) {
 func TestCuratedSSO(t *testing.T) {
 	catalog := repoCatalog(t)
 	want := map[string]SSODeclaration{
-		"authentik": {Class: SSOUnsupported},
-		"immich":    {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
-		"jellyfin":  {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC, identity.CapabilitySAML}},
-		"nextcloud": {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC, identity.CapabilitySAML, identity.CapabilityLDAP}},
-		"wordcraft": {Class: SSOUnsupported},
-		"gridcraft": {Class: SSOUnsupported},
-		"pdfcraft":  {Class: SSOUnsupported},
-		"deckcraft": {Class: SSOUnsupported},
+		"authentik":   {Class: SSOUnsupported},
+		"immich":      {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
+		"jellyfin":    {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC, identity.CapabilitySAML}},
+		"nextcloud":   {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC, identity.CapabilitySAML, identity.CapabilityLDAP}},
+		"wordcraft":   {Class: SSOUnsupported},
+		"gridcraft":   {Class: SSOUnsupported},
+		"pdfcraft":    {Class: SSOUnsupported},
+		"deckcraft":   {Class: SSOUnsupported},
+		"vectorcraft": {Class: SSOUnsupported},
+		"photocraft":  {Class: SSOUnsupported},
+		"lightcraft":  {Class: SSOUnsupported},
+		"figcraft":    {Class: SSOUnsupported},
 	}
 	for _, name := range catalog.Names() {
 		manifest, err := catalog.Get(name)

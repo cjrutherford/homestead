@@ -54,6 +54,11 @@ S250 to S253 add YAML, manifest entries, test rows and docs, and no Go.
   single top-level directory (the storytold zips unpack into
   `<app>-web-<version>/`). It fails unless `index.html` results.
 
+An app that keeps the same file names across versions (LightCraft, S251) is
+served correctly by these rules without change: unhashed js, wasm, worker
+and font files get `no-cache`, never `immutable`, and the wasm still gets its
+own MIME type. Verify such an app with `craft-header-check.sh --unhashed`.
+
 Anything app-specific beyond these (COOP/COEP for `SharedArrayBuffer`,
 `.part-*` caching) is recorded per app in
 `docs/architecture/CRAFT_HEADER_TABLE.md` and added in that app's slice

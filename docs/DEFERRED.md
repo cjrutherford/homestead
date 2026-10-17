@@ -377,3 +377,33 @@
 - Upstream MPL-2.0 code dependency in DeckCraft (symphonia, unmodified) is
   recorded in `docs/THIRD_PARTY.md`; a future change that patches it needs
   a source-availability review.
+
+## Graphics craft packages (S251)
+
+- Owner signature: the eight-app craft manifest (counter 3) is unsigned; the
+  four graphics apps cannot be built outside a throwaway-key test until the
+  owner signs it. A KVM appliance that already holds a baseline at counter 3
+  or higher from throwaway manifests (the S249 VM held 4) refuses this
+  manifest; use a fresh appliance or a higher throwaway counter there.
+- KVM acceptance for the four apps is pending (see `docs/DEVELOPMENT.md`);
+  the `knownImageVolumes` rows and header-table rows are marked pending until
+  then.
+- VectorCraft moved to v0.12.0 between planning (v0.11.0) and S251; a bump
+  after this commit needs the usual manifest regeneration and re-signing.
+- LightCraft keeps its library in browser storage (OPFS) and is marked
+  experimental upstream; it uses module Web Workers and states a future
+  wasm-threads build will need COOP/COEP. Re-check `SharedArrayBuffer` on
+  every LightCraft bump; adding COOP/COEP for one app would need per-package
+  nginx configuration, which is an architectural change (ADR first).
+- LightCraft ships `.br` copies and the Chinese font `.otf` (served
+  `application/octet-stream`, `.gz` only); the `.br` files are inert without
+  `ngx_brotli`, and a font MIME type is not needed for `fetch()`.
+- FigCraft's web build joins desktop-hosted live sessions over `ws://`, which
+  browsers block from the HTTPS route; sessions with other machines need the
+  upstream standalone server (`figcraft-server-<version>-*.tar.gz`, not
+  packaged here) plus `wss://`.
+- First-load size: uncompressed wasm is 64.7 MB (VectorCraft, 22.5 MB
+  gzip), 25.0 MB (PhotoCraft), 27.3 MB (LightCraft, plus a 16.4 MB font) and
+  22.5 MB (FigCraft); Brotli is not available in the base image.
+- Client-side capability advisory (WebGPU/WebGL2/secure context) is text in
+  the package descriptions only; the S252 mechanism is not a dependency.

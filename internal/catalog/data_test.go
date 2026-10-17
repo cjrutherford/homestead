@@ -56,6 +56,18 @@ var knownImageVolumes = map[string]imageVolumes{
 	"homestead/craft-gridcraft:0.7.0": {},
 	"homestead/craft-pdfcraft:0.8.0":  {},
 	"homestead/craft-deckcraft:0.7.0": {},
+	// S251 graphics craft images (PENDING KVM verification; finalised after
+	// the KVM run). Verified on the dev workstation 2026-10-17 with
+	// `docker image inspect` of a real build of each release through the
+	// shared Dockerfile: no VOLUME (Config.Volumes null), user nginx,
+	// healthy, and `docker diff` of a read-only container with /tmp as
+	// tmpfs is empty. Local image IDs: vectorcraft sha256:10c798820dfa...,
+	// photocraft sha256:0293521da666..., lightcraft sha256:cf098fb75e8b...,
+	// figcraft sha256:9db14c147be1...
+	"homestead/craft-vectorcraft:0.12.0": {},
+	"homestead/craft-photocraft:0.9.0":   {},
+	"homestead/craft-lightcraft:0.8.0":   {},
+	"homestead/craft-figcraft:0.6.0":     {},
 }
 
 func loadCurated(t *testing.T) Catalog {

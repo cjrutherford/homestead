@@ -3438,3 +3438,65 @@ for all three apps; no product bug found.**
   wordcraft at 4), craft verdict and image rows, orphan `.lan` leaves until
   the next sweep, the empty stack directories, the `homestead-edge` network
   and Caddy stack files, and `/home/tester/hs-s250`.
+
+## Graphics craft packages: VectorCraft, PhotoCraft, LightCraft, FigCraft (S251, ADR-028)
+
+Built: four more packages on the S249 shared shape
+(`docs/architecture/STATIC_CRAFT_PACKAGES.md`): YAML, manifest entries, test
+rows, docs, and one script option. No Go code and no change to `images/craft/`
+(the build-context digest `sha256:1880843e...` is unchanged).
+
+- `catalog/vectorcraft.yaml` (0.12.0), `catalog/photocraft.yaml` (0.9.0),
+  `catalog/lightcraft.yaml` (0.8.0), `catalog/figcraft.yaml` (0.6.0): each its
+  own image `homestead/craft-<app>:<version>`, own host, one `ephemeral`
+  `/tmp`, no storage class, no `requirements.ports`, `sso.class: unsupported`,
+  local-only with `allowwider: false`, stateless. Descriptions name the
+  function and carry the WebGPU/WebGL2 and secure-context advisory.
+- Vendored releases (latest on 2026-10-17; each SHA-256 equals upstream
+  `SHA256SUMS.txt` and an independent hash of the download): vectorcraft
+  v0.12.0 (v0.11.0 at planning) `83ef4aaf...` (22,585,168 bytes), photocraft
+  v0.9.0 `b3fa5ab6...` (11,467,035), lightcraft v0.8.0 `bfabb7ed...`
+  (66,660,218), figcraft v0.6.0 `a414970e...` (8,892,594). Licence for all
+  four is `MIT OR Apache-2.0`, judged compatible; full digests, licence
+  hashes and verbatim NOTICE captures are in `docs/THIRD_PARTY.md`. LightCraft's
+  NOTICE records that its optional GPL-3.0 RawNIND weights, SAM 3 weights and
+  GeoNames data are never shipped (user-initiated downloads only).
+- `catalog/craft/craft-manifest.yaml` regenerated with
+  `scripts/craft-manifest.sh`: eight apps, **counter 3** (one above S250), one
+  counter for the whole set, still **unsigned**. No key was generated or
+  committed.
+- Test rows: `curatedPackages`, `craftPackages`, `TestCuratedSSO` and four
+  `knownImageVolumes` rows commented PENDING KVM verification.
+- Header table: four rows and notes. VectorCraft, PhotoCraft and FigCraft are
+  the WordCraft layout. LightCraft keeps unhashed file names (so `no-cache`,
+  never `immutable`), runs a module worker and ships an extra font and
+  precompressed files; the existing shared rules already serve it correctly,
+  so no image change. `scripts/craft-header-check.sh` gained `--unhashed`
+  (expects `no-cache` for wasm and js) and `bash -n` still passes. None of the
+  four needs `SharedArrayBuffer`, COOP or COEP.
+- The stale WordCraft gzip-through-the-edge finding in the header table was
+  rewritten as resolved (fix 37fa9c2, re-verification 2026-10-17).
+
+### Verified locally (dev workstation, 2026-10-17)
+
+Each release was downloaded into a fresh empty directory, hashed, unzipped
+and inspected without running anything from it; the shared Dockerfile was
+built with the real artifact and run with a read-only root, tmpfs `/tmp`,
+all capabilities dropped. `scripts/craft-header-check.sh` passed for all four
+(LightCraft with `--unhashed`): healthz 200, entry `no-cache`,
+`application/wasm`, gzip (also with `Via: 1.1 Caddy`), no COOP/COEP; the
+containers reported `healthy`, `docker diff` was empty, `Config.Volumes` null,
+user `nginx`; gzip-decoded wasm equals the zip's.
+
+### KVM acceptance: PENDING
+
+Not run by this slice's implementation. To do on a fresh appliance, per app:
+owner (or throwaway key) signs the manifest; build, install, curl the `.lan`
+HTTPS route with the S280 root (entry page and wasm, run
+`craft-header-check.sh` through the edge, `--unhashed` for lightcraft);
+remove cleanly (container, stack directory, route, DNS name, edge entry,
+leaf certificate); reinstall; update to a bumped manifest version; drift scan
+(S212, S262) clean after install and update; schedule create refused and no
+scheduler job; `docker image inspect` of the built tag and `docker diff`; then
+finalise the four `knownImageVolumes` comments and the header-table rows
+("local build, KVM pending").

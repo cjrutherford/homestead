@@ -14,10 +14,14 @@ healthcheck, nginx user and port.
 
 | App | Version | wasm MIME | Cache headers | Precompression | COOP/COEP/SAB | WebGPU / WebGL2 / clipboard | Healthcheck | nginx user:port |
 |---|---|---|---|---|---|---|---|---|
-| wordcraft | 0.7.0 | `application/wasm` (hashed and unhashed) | `index.html`, other unhashed files: `no-cache`. Hashed `.js`, `_bg.wasm`, `.ico` (`name-<hex16>[_bg].ext`): `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Build writes `.gz` beside `.html .js .mjs .css .wasm .svg .json .txt .ico`; `gzip_static on` serves them when the client accepts gzip, `gzip on` covers the rest. Measured directly from the container: 39.8 MB wasm served as 14.9 MB; through the Caddy edge it is NOT compressed (open finding below) | Not needed: upstream states WordCraft does not use `SharedArrayBuffer`; no COOP/COEP sent, and the check script fails if either appears | Needs a secure context for WebGPU and the clipboard (HTTPS from the internal CA, ADR-030); falls back to WebGL2 over plain HTTP or when WebGPU is absent (`?webgl` forces it); WebGL2 is the floor | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` uses it every 30 s | `nginx` (uid 101):8080 |
+| wordcraft | 0.7.0 | `application/wasm` (hashed and unhashed) | `index.html`, other unhashed files: `no-cache`. Hashed `.js`, `_bg.wasm`, `.ico` (`name-<hex16>[_bg].ext`): `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Build writes `.gz` beside `.html .js .mjs .css .wasm .svg .json .txt .ico`; `gzip_static on` serves them when the client accepts gzip, `gzip on` covers the rest. 39.8 MB wasm served as 14.9 MB (14,947,550 bytes), both directly and through the Caddy edge since the `gzip_proxied any` fix (KVM re-verification 2026-10-17) | Not needed: upstream states WordCraft does not use `SharedArrayBuffer`; no COOP/COEP sent, and the check script fails if either appears | Needs a secure context for WebGPU and the clipboard (HTTPS from the internal CA, ADR-030); falls back to WebGL2 over plain HTTP or when WebGPU is absent (`?webgl` forces it); WebGL2 is the floor | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` uses it every 30 s | `nginx` (uid 101):8080 |
 | gridcraft | 0.7.0 | `application/wasm` (hashed) | `index.html`, other unhashed files: `no-cache`. Hashed `gridcraft-web-<hex16>.js`, `_bg.wasm`, `.ico`: `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Same build rule as WordCraft; `gzip_static` served the `.gz` beside the wasm: 18.9 MB served as 7.0 MB (7,045,260 bytes) (KVM 2026-10-17, through the Caddy edge with `Accept-Encoding: gzip`; identity size in the notes below) | Not needed: upstream `HOSTING.md` states GridCraft does not use `SharedArrayBuffer`; the JS has no `SharedArrayBuffer`, `crossOriginIsolated` or Worker use; no COOP/COEP sent and the check script fails if either appears | WebGPU through wgpu with WebGL2 fallback (`?webgl` forces it); WebGPU and the clipboard need a secure context (HTTPS from the internal CA, ADR-030); neither WebGPU nor WebGL2 gets an in-page message | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` every 30 s; container reported `healthy` on the KVM appliance (2026-10-17) | `nginx` (uid 101):8080 |
 | pdfcraft | 0.8.0 | `application/wasm` (hashed) | `index.html`, other unhashed files: `no-cache`. Hashed `pdfcraft-web-<hex16>.js`, `_bg.wasm`: `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Same build rule as WordCraft; `gzip_static` served the `.gz` beside the wasm: 38.1 MB served as 14.1 MB (14,064,403 bytes) (KVM 2026-10-17, through the Caddy edge with `Accept-Encoding: gzip`; identity size in the notes below) | Not needed: upstream `HOSTING.md` states PdfCraft does not use `SharedArrayBuffer`; the JS has no `SharedArrayBuffer`, `crossOriginIsolated` or Worker use; no COOP/COEP sent and the check script fails if either appears | WebGPU through wgpu with WebGL2 fallback (`?webgl` forces it); WebGPU and the clipboard need a secure context (HTTPS from the internal CA, ADR-030); neither WebGPU nor WebGL2 gets an in-page message | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` every 30 s; container reported `healthy` on the KVM appliance (2026-10-17) | `nginx` (uid 101):8080 |
 | deckcraft | 0.7.0 | `application/wasm` (hashed) | `index.html`, other unhashed files: `no-cache`. Hashed `deckcraft-web-<hex16>.js`, `_bg.wasm`, `.png`: `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Same build rule as WordCraft; `gzip_static` served the `.gz` beside the wasm: 25.5 MB served as 9.3 MB (9,345,219 bytes) (KVM 2026-10-17, through the Caddy edge with `Accept-Encoding: gzip`; identity size in the notes below) | Not needed: upstream `HOSTING.md` states DeckCraft does not use `SharedArrayBuffer`; the JS has no `SharedArrayBuffer`, `crossOriginIsolated` or Worker use; no COOP/COEP sent and the check script fails if either appears | WebGPU through wgpu with WebGL2 fallback (`?webgl` forces it); WebGPU and the clipboard need a secure context (HTTPS from the internal CA, ADR-030); neither WebGPU nor WebGL2 gets an in-page message | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` every 30 s; container reported `healthy` on the KVM appliance (2026-10-17) | `nginx` (uid 101):8080 |
+| vectorcraft | 0.12.0 | `application/wasm` (hashed) | `index.html`, other unhashed files: `no-cache`. Hashed `vectorcraft-web-<hex16>.js`, `_bg.wasm`: `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Same build rule as WordCraft; `gzip_static` served the `.gz` beside the wasm: 64.7 MB served as 22.5 MB (22,507,398 bytes), also with a `Via: 1.1 Caddy` request (local build, KVM pending) | Not needed: upstream `HOSTING.md` states VectorCraft does not use `SharedArrayBuffer`; the JS has no `SharedArrayBuffer`, `crossOriginIsolated` or Worker use; no COOP/COEP sent and the check script fails if either appears | WebGPU through wgpu with WebGL2 fallback (`?webgl` forces it, `?cpu` forces the CPU canvas); WebGPU and the clipboard need a secure context (HTTPS from the internal CA, ADR-030); a browser with neither gets an upstream in-page message | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` every 30 s; container `healthy` (local build, KVM pending) | `nginx` (uid 101):8080 |
+| photocraft | 0.9.0 | `application/wasm` (hashed) | `index.html`, other unhashed files: `no-cache`. Hashed `photocraft-web-<hex16>.js`, `_bg.wasm`: `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Same build rule as WordCraft; `gzip_static` served the `.gz` beside the wasm: 25.0 MB served as 11.4 MB (11,417,725 bytes), also with a `Via: 1.1 Caddy` request (local build, KVM pending) | Not needed: upstream `HOSTING.md` states PhotoCraft does not use `SharedArrayBuffer`; the JS has no `SharedArrayBuffer`, `crossOriginIsolated` or Worker use; no COOP/COEP sent and the check script fails if either appears | WebGPU through wgpu with WebGL2 fallback (`?webgl` forces it, `?cpu` forces the CPU canvas); WebGPU and the clipboard need a secure context (HTTPS from the internal CA, ADR-030); a browser with neither gets an upstream in-page message | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` every 30 s; container `healthy` (local build, KVM pending) | `nginx` (uid 101):8080 |
+| lightcraft | 0.8.0 | `application/wasm` (unhashed name; the unhashed-wasm rule applies) | **Unhashed file names that stay the same between versions, so no `immutable`** (upstream `HOSTING.md` says so): `index.html`, `lightcraft_web.js`, `lightcraft_web_bg.wasm`, `worker.js`, `lightcraft_zh_hans.otf` all `no-cache`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff`. The shared rules already do this; no image change. Check with `craft-header-check.sh --unhashed` | Build writes `.gz` for html, js, wasm and worker (overwriting the artifact's own); the artifact's `lightcraft_zh_hans.otf.gz` is served by `gzip_static` (16.4 MB served as 13.6 MB, `Content-Type: application/octet-stream`, which `fetch()` does not care about); wasm 27.3 MB served as 10.5 MB (10,458,639 bytes), also with a `Via: 1.1 Caddy` request. The artifact's `.br` copies are inert (nginx has no Brotli module) (local build, KVM pending) | Not needed: upstream `HOSTING.md` states the current build does not use `SharedArrayBuffer` (a future wasm-threads build will; re-check on every version bump); the JS has no `SharedArrayBuffer` or `crossOriginIsolated`; it does start module Web Workers (`worker.js`, same-origin, no isolation needed). No COOP/COEP sent and the check script fails if either appears | WebGL2 only (eframe `glow`; no WebGPU use); a browser without WebGL2 gets an upstream in-page message. Needs a secure context for the Origin Private File System library, module workers and the clipboard (HTTPS from the internal CA, ADR-030); the library lives in browser storage, which the browser may clear (upstream marks the web build experimental) | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` every 30 s; container `healthy` (local build, KVM pending) | `nginx` (uid 101):8080 |
+| figcraft | 0.6.0 | `application/wasm` (hashed) | `index.html`, other unhashed files: `no-cache`. Hashed `figcraft-web-<hex16>.js`, `_bg.wasm`: `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Same build rule as WordCraft; `gzip_static` served the `.gz` beside the wasm: 22.5 MB served as 8.8 MB (8,802,810 bytes), also with a `Via: 1.1 Caddy` request (local build, KVM pending) | Not needed: upstream `HOSTING.md` states FigCraft does not use `SharedArrayBuffer`; the JS has no `SharedArrayBuffer`, `crossOriginIsolated` or Worker use; no COOP/COEP sent and the check script fails if either appears | WebGPU through wgpu with WebGL2 fallback (`?webgl` forces it); WebGPU and the clipboard need a secure context (HTTPS from the internal CA, ADR-030); a browser with neither gets an upstream in-page message | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` every 30 s; container `healthy` (local build, KVM pending) | `nginx` (uid 101):8080 |
 
 Notes for WordCraft v0.7.0 (measured 2026-10-17 on a locally built image
 run with a read-only root, `/tmp` tmpfs, all capabilities dropped):
@@ -47,17 +51,14 @@ run with a read-only root, `/tmp` tmpfs, all capabilities dropped):
   bytes (SHA-256 `c81a3550...` equals the wasm in the upstream zip); hashed
   `.js` `application/javascript`, immutable; no COOP/COEP, and the JS and
   wasm contain no `SharedArrayBuffer`, so none is needed.
-- **Open finding (found on KVM, not fixed in this record):** behind Caddy the
-  wasm is served **uncompressed** (39.8 MB, no `Content-Encoding`), so
-  `scripts/craft-header-check.sh` fails its gzip check through the edge
-  while passing against the container directly (14,947,550 bytes, gzip).
-  Cause: Caddy's upstream request carries a `Via` header and nginx's
-  `gzip_proxied` defaults to `off`, so neither `gzip_static` nor `gzip`
-  answers proxied requests. A container started with `gzip_proxied any;`
-  added after `gzip_vary on;` served the gzip file with a `Via: 1.1 Caddy`
-  request. The fix is that one line in `images/craft/nginx.conf`, which
-  changes the build-context digest, so the craft manifest must be regenerated
-  and re-signed (a follow-up slice, see `docs/DEVELOPMENT.md`).
+- **Resolved (S249 fix 37fa9c2):** behind Caddy the wasm was first served
+  **uncompressed** (39.8 MB, no `Content-Encoding`) because Caddy's upstream
+  request carries a `Via` header and nginx's `gzip_proxied` defaults to
+  `off`. `gzip_proxied any;` in `images/craft/nginx.conf` fixed it
+  (build-context digest regenerated). The KVM re-verification on 2026-10-17
+  recorded `scripts/craft-header-check.sh` PASS through the edge, gzip
+  included: 14,947,550 bytes with `Accept-Encoding: gzip` versus 39,785,016
+  identity. `TestRealCraftBuild` also requests with `Via: 1.1 Caddy`.
 
 Notes for GridCraft v0.7.0, PdfCraft v0.8.0 and DeckCraft v0.7.0 (S250).
 First measured 2026-10-17 on locally built images (read-only root, `/tmp`
@@ -99,16 +100,66 @@ remove and reinstall and after the update rebuild:
   workstation builds differed: `90b1b49768cb...`, `b2b57d93b072...`,
   `4c8dbe82f805...`).
 
+Notes for VectorCraft v0.12.0, PhotoCraft v0.9.0, LightCraft v0.8.0 and
+FigCraft v0.6.0 (S251). Measured 2026-10-17 on locally built images (the real
+release artifact through the shared `images/craft` Dockerfile, run with a
+read-only root, `/tmp` tmpfs, all capabilities dropped); **KVM verification
+is pending** for every figure here:
+
+- Layout: each zip unpacks into one `<app>-web-<version>/` directory. Three
+  (vectorcraft, photocraft, figcraft) are the WordCraft layout: one hashed
+  ES-module `.js`, one hashed `_bg.wasm`, licences, docs and the unused sample
+  `_headers`/`.htaccess` (their `_headers` say hashed assets are immutable;
+  the shared rules agree). No `parts.txt`, no `.part-*`, no service worker,
+  no extra asset classes, no favicon file. VectorCraft adds `ASSETS.md`,
+  `NOTICE` and a `licenses/` tree; FigCraft adds `NOTICE` and twenty `OFL-*.txt`
+  files. PhotoCraft's and VectorCraft's optional `fonts/` folders are not in
+  these zips.
+- LightCraft is the exception: unhashed `lightcraft_web.js` and
+  `lightcraft_web_bg.wasm`, a module `worker.js` that re-instantiates the
+  wasm, a 16.4 MB `lightcraft_zh_hans.otf` that `index.html` fetches in
+  parallel with the wasm, and upstream-supplied `.gz`/`.br` copies. Upstream
+  deliberately forbids `immutable` on these names (an upgrade would otherwise
+  mix old glue with a new module). The shared nginx rules already serve this
+  correctly (`no-cache`, `application/wasm`, JavaScript type for the worker,
+  gzip), so the shared image did not change and the craft-manifest context
+  digest is unchanged. The only shared change is the check script's new
+  `--unhashed` flag (it expects `no-cache` instead of `immutable` for the
+  wasm and js); without the flag the script fails LightCraft, as intended.
+- The `.htaccess` request answers 404 (dotfiles); the sample `_headers` is
+  served as a plain file, unchanged from S249.
+- Browser capabilities, from each `HOSTING.md` and a grep of the shipped JS
+  and wasm: no `SharedArrayBuffer`, `crossOriginIsolated`, service worker or
+  `.part-` use in any JS; the only `Worker` constructor is LightCraft's. Wasm
+  hits for `clipboard` are API names, not isolation features. VectorCraft,
+  PhotoCraft and FigCraft call `requestAdapter` (WebGPU with WebGL2
+  fallback); LightCraft does not (WebGL2 only). COOP/COEP and
+  `Cross-Origin-Resource-Policy` are not needed for any of the four.
+- FigCraft limitation (upstream `HOSTING.md`): the web build joins a live
+  session hosted by the desktop app over plain `ws://`, which a browser
+  blocks from an `https://` page except to the same computer. Under ADR-030
+  the route is HTTPS, so live sessions with other machines do not work there
+  (recorded in docs/DEFERRED.md; nothing is added to the image).
+- Healthcheck and writable paths: all four reported `healthy`, `docker diff`
+  of the running container was empty, `Config.Volumes` is null and the user is
+  `nginx`. Local image IDs: vectorcraft `sha256:10c798820dfa...`, photocraft
+  `sha256:0293521da666...`, lightcraft `sha256:cf098fb75e8b...`, figcraft
+  `sha256:9db14c147be1...`. The gzip-decoded wasm of each equals the wasm
+  inside the upstream zip (SHA-256 compared).
+- `scripts/craft-header-check.sh` PASS against each container over HTTP
+  (LightCraft with `--unhashed`); the check over the S280 HTTPS host is part
+  of the pending KVM run.
+
 ## Checking a row
 
 ```
 scripts/craft-header-check.sh https://wordcraft.lan/ --cacert root.pem \
-    [--resolve wordcraft.lan:443:APPLIANCE_IP] [--coop-coep]
+    [--resolve wordcraft.lan:443:APPLIANCE_IP] [--coop-coep] [--unhashed]
 ```
 
 It prints every response header it inspects and exits 1 on a failure:
 `/healthz` 200, entry `no-cache` and `nosniff`, every `.wasm` referenced by
 `index.html` as `application/wasm`, immutable and gzip, every `.js`
 immutable with a JavaScript type, and COOP/COEP absent (or present with
-`--coop-coep`). Use the internal CA root from the dashboard Trust page or
+`--coop-coep`). With `--unhashed` (LightCraft, whose wasm and js keep the same names across versions) the wasm and js must be `no-cache` instead of immutable. Use the internal CA root from the dashboard Trust page or
 `homesteadctl tls root export` for `--cacert` (ADR-030).

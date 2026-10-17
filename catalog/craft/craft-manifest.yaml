@@ -1,5 +1,5 @@
 format: homestead-craft-manifest/1
-counter: 2
+counter: 3
 context_digest: sha256:1880843e879fb070ea4232b20c0fab5aa1976b20ff235a881f1812c8ef58f802
 apps:
   - name: wordcraft
@@ -34,3 +34,35 @@ apps:
         - https://github.com/storytold/deckcraft/releases/download/v0.7.0/deckcraft-web-0.7.0.zip
       sha256: 4ab91994048c096fa356b7246c31098474d978ecd572e5b252dd825a287d1c40
       size: 9385879
+  - name: vectorcraft
+    version: 0.12.0
+    artifact:
+      name: vectorcraft-web-0.12.0.zip
+      urls:
+        - https://github.com/storytold/vectorcraft/releases/download/v0.12.0/vectorcraft-web-0.12.0.zip
+      sha256: 83ef4aaf0d8e535d8a79224095b5f34ad83c22a0e0bfc4fd19f22784c912529a
+      size: 22585168
+  - name: photocraft
+    version: 0.9.0
+    artifact:
+      name: photocraft-web-0.9.0.zip
+      urls:
+        - https://github.com/storytold/photocraft/releases/download/v0.9.0/photocraft-web-0.9.0.zip
+      sha256: b3fa5ab6a9d32bc5ff7dfdde31939a2337471a196a2e70f1ff961a61b1bb02e6
+      size: 11467035
+  - name: lightcraft
+    version: 0.8.0
+    artifact:
+      name: lightcraft-web-0.8.0.zip
+      urls:
+        - https://github.com/storytold/lightcraft/releases/download/v0.8.0/lightcraft-web-0.8.0.zip
+      sha256: bfabb7edecfc8723b9d698ad2b6fa32e99fcdf977628a68b2884c4b06c6f017a
+      size: 66660218
+  - name: figcraft
+    version: 0.6.0
+    artifact:
+      name: figcraft-web-0.6.0.zip
+      urls:
+        - https://github.com/storytold/figcraft/releases/download/v0.6.0/figcraft-web-0.6.0.zip
+      sha256: a414970e3857f6613efd7f90bd4c8394e5d51b31c4cf1fa0352f87820695b9c4
+      size: 8892594
