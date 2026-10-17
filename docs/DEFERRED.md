@@ -460,3 +460,64 @@
 - SoundCraft audio recording (microphone) was not found in the shipped JS
   or wasm strings (no `getUserMedia`); not declared as a browser capability.
   Re-check on bumps.
+
+## Design, CAD and launcher craft packages (S253)
+
+- **Craft Launcher cannot be wired to the installed apps (gap, owner
+  decision wanted).** Established from the v0.4.1 source at the tag and the
+  shipped web files: the web launcher has a compiled-in list of the suite
+  (`SUITE`), reads no runtime configuration file, and its only query
+  parameter is `?lang=xx`. It shows every suite app with its latest GitHub
+  release and download for the visitor's platform (browser calls to
+  `api.github.com` and `raw.githubusercontent.com`) and links to GitHub, not
+  to any self-hosted copy. There is therefore nothing for Homestead to
+  generate, mount or drift-check, and no per-appliance configuration is baked
+  into the signed build context. The package is shipped unwired: it installs
+  with no other craft app and lists the upstream suite, not "only what is
+  installed" (it cannot know). Owners link the apps manually: bookmark each
+  craft app at its own `https://<app>.lan/` host (the dashboard Apps page shows
+  them). Options for a real start page, each
+  needing an ADR first because none is covered by ADR-018 or ADR-028:
+  (a) ask upstream for a runtime app list (for example a JSON file or
+  `?apps=` parameter) and then generate it from installed craft packages
+  with a drift check; (b) a Homestead-owned start page listing installed
+  craft apps from the existing catalog/route state (new dashboard surface,
+  CLI parity, PARITY row); (c) a generated static page served by nginx beside
+  the launcher (a new generated-config data class and cross-package
+  regeneration on install and remove). Recommendation: (b), because it needs
+  no upstream change and no change to the signed images.
+- The launcher's browser needs outbound access to GitHub and shares its
+  unauthenticated limit of 60 API requests per hour per IP, and it loads
+  pictures from `raw.githubusercontent.com`. This conflicts mildly with
+  local-first for the browser, not the appliance. The closed `browser:`
+  capability set has no network entry, so it is in the description and the
+  exposure warning only. A network-dependency advisory kind, or a
+  self-hosted mirror of the release data, is deferred.
+- DesignCraft and CADCraft web zips ship no `NOTICE` and no `OFL-*.txt`,
+  though DesignCraft's NOTICE lists SIL OFL 1.1 fonts and other
+  third-party material embedded in the wasm and CADCraft's NOTICE discloses
+  the MPL-2.0 `acadrust` crate. The Craft Launcher zip ships its `NOTICE`
+  and `ATTRIBUTION.md` but not the `OFL-*.txt` texts. The built images carry
+  the MIT and Apache texts (and for the launcher NOTICE) only;
+  `docs/THIRD_PARTY.md` records the licences. Ask upstream to include NOTICE
+  and the OFL texts in the web zips.
+- The Craft Launcher zip carries ArtCraft trademarks (logo and "A" mark)
+  that are outside the licence. Homestead serves the release byte for byte,
+  which upstream permits for unmodified distribution; any future
+  Homestead-side modification of the files would have to remove them.
+- Owner signature: the fourteen-app craft manifest (counter 5) is unsigned;
+  DesignCraft, CADCraft and Craft Launcher cannot be built outside a
+  throwaway-key test until the owner signs it. A KVM appliance holding a
+  baseline at counter 5 or higher from throwaway manifests refuses it.
+- KVM acceptance for the three apps is pending (see `docs/DEVELOPMENT.md`);
+  the `knownImageVolumes` rows and header-table rows are marked pending.
+- The app name `craft-launcher` yields the image tag
+  `homestead/craft-craft-launcher:0.4.1` and the host `craft-launcher.lan`.
+  The repetition is cosmetic and correct under the shared rule; renaming
+  the package (for example `launcher`) would change the tag, host and
+  manifest and was not done.
+- No `SharedArrayBuffer`, COOP or COEP is needed by any of the three
+  (upstream `HOSTING.md`, the shipped JS and wasm strings); re-check on
+  bumps. CADCraft is marked "early development" upstream and DesignCraft
+  and CADCraft keep only preferences in the browser; documents and drawings
+  live in the browser or are downloaded until S254.

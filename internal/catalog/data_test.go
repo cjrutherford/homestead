@@ -80,6 +80,16 @@ var knownImageVolumes = map[string]imageVolumes{
 	"homestead/craft-filmcraft:0.8.0":    {},
 	"homestead/craft-effectcraft:0.10.0": {},
 	"homestead/craft-soundcraft:0.7.0":   {},
+	// S253 design, CAD and launcher craft images. Locally built on the dev
+	// workstation 2026-10-17 (real release artifacts through the shared
+	// Dockerfile): Config.Volumes null and user nginx for each, container
+	// healthy, and `docker diff` of the running container empty with /tmp
+	// the only mount (a tmpfs). The launcher's tag is craft-craft-launcher
+	// (the app name is craft-launcher). KVM verification of these rows is
+	// PENDING; replace this comment with the date and result when it runs.
+	"homestead/craft-designcraft:0.8.0":    {},
+	"homestead/craft-cadcraft:0.7.0":       {},
+	"homestead/craft-craft-launcher:0.4.1": {},
 }
 
 func loadCurated(t *testing.T) Catalog {

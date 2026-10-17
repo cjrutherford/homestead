@@ -62,6 +62,15 @@ func TestParseRef(t *testing.T) {
 	if Tag("w", "1.0") != "homestead/craft-w:1.0" {
 		t.Fatal("tag")
 	}
+	// S253: the app name may itself start with "craft-"; the tag then
+	// repeats it and still round-trips, and the artifact name is unrelated.
+	tag := Tag("craft-launcher", "0.4.1")
+	if tag != "homestead/craft-craft-launcher:0.4.1" {
+		t.Fatalf("tag = %q", tag)
+	}
+	if app, v, ok := ParseRef(tag); !ok || app != "craft-launcher" || v != "0.4.1" {
+		t.Fatalf("ParseRef(%q) = %q %q %v", tag, app, v, ok)
+	}
 }
 
 func TestTreeDigestStable(t *testing.T) {

@@ -1,5 +1,5 @@
 format: homestead-craft-manifest/1
-counter: 4
+counter: 5
 context_digest: sha256:1880843e879fb070ea4232b20c0fab5aa1976b20ff235a881f1812c8ef58f802
 apps:
   - name: wordcraft
@@ -90,3 +90,27 @@ apps:
         - https://github.com/storytold/soundcraft/releases/download/v0.7.0/soundcraft-web-0.7.0.zip
       sha256: b735de61fbdc21716977ace2649709bd307de832eda2d848f94d1868acef7c45
       size: 5939077
+  - name: designcraft
+    version: 0.8.0
+    artifact:
+      name: designcraft-web-0.8.0.zip
+      urls:
+        - https://github.com/storytold/designcraft/releases/download/v0.8.0/designcraft-web-0.8.0.zip
+      sha256: f1ebe741d89949ba1d5069a50401f14b297b9a66d9d6cd2d8a88cd83e4c77888
+      size: 15306498
+  - name: cadcraft
+    version: 0.7.0
+    artifact:
+      name: cadcraft-web-0.7.0.zip
+      urls:
+        - https://github.com/storytold/cadcraft/releases/download/v0.7.0/cadcraft-web-0.7.0.zip
+      sha256: 47df17081e31bc25ab586ba88156dc25e07962364c73513004b9c6113b575be7
+      size: 8492921
+  - name: craft-launcher
+    version: 0.4.1
+    artifact:
+      name: artcraft-launcher-web-0.4.1.zip
+      urls:
+        - https://github.com/storytold/craft-launcher/releases/download/v0.4.1/artcraft-launcher-web-0.4.1.zip
+      sha256: 5768d88f6077375b926723cdf7ee56717997b57e99c2e419cbe89b527b497a27
+      size: 4250028

@@ -927,3 +927,169 @@ inside the egui crate under their own open licenses (see ATTRIBUTION.md).
 
 - Craft image: `homestead/craft-soundcraft:0.7.0`, built locally by S279 from
   this artifact and `images/craft/` (nginx base pinned above).
+
+### storytold/designcraft v0.8.0 (S253)
+- Release: `https://github.com/storytold/designcraft/releases/tag/v0.8.0`
+  (tag commit `11a51d5b665aec8d6e675bd107a8a01514f10d00`, published
+  2026-10-14; still the latest release when S253 was implemented on
+  2026-10-17).
+- Artifact: `designcraft-web-0.8.0.zip`, 15306498 bytes,
+  `https://github.com/storytold/designcraft/releases/download/v0.8.0/designcraft-web-0.8.0.zip`
+- SHA-256: `f1ebe741d89949ba1d5069a50401f14b297b9a66d9d6cd2d8a88cd83e4c77888`,
+  equal to the line for this file in the release's unsigned
+  `SHA256SUMS.txt` (cross-checked 2026-10-17; the download was also hashed
+  independently). Trust rests on the signed Homestead craft manifest
+  (`catalog/craft/craft-manifest.yaml`), which records this digest.
+- Archive contents (one top-level directory `designcraft-web-0.8.0/`,
+  stripped by the shared Dockerfile): `index.html`,
+  `designcraft-web-<hash>.js`, `designcraft-web-<hash>_bg.wasm` (39.6 MB
+  uncompressed), `LICENSE-APACHE`, `LICENSE-MIT`, `README.md`, `HOSTING.md`,
+  and the sample `_headers` and `.htaccess` (unused). No `NOTICE`, no
+  workers, no service worker, no precompressed files, no `parts.txt`.
+- Licence: `MIT OR Apache-2.0`, at the recipient's option (`LICENSE-MIT`,
+  Copyright (c) 2026 ArtCraft Team and the DesignCraft contributors, SHA-256
+  `d543d31e3120c64b70abc77cfadcbdc2249c78de1c8efa2e3d62540bb79de816`;
+  `LICENSE-APACHE`, the Apache License 2.0 text, SHA-256
+  `0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594`; both
+  ship inside the artifact and so inside the built image, and both equal the
+  files at the tag in the source repository). Both read for the v0.8.0
+  release. Judgement: compatible with redistribution inside a
+  Homestead-built image, on the same reasoning as WordCraft: the appliance
+  builds the image locally and serves the unmodified release files (adding
+  only `.gz` copies of the same bytes), the MIT option needs only that its
+  copyright and permission notice travel with the files (they do), and
+  nothing in either licence restricts the owner from rebuilding, inspecting
+  or running the image without Homestead.
+- Trademarks: the ArtCraft name, wordmark and logos (`docs/brand/` in the
+  source repository, not in the web artifact) are the ArtCraft Team's and are
+  outside the licence. Homestead ships none of them; the package copy names
+  the app by function and does not use the marks. Adobe and InDesign are not
+  used in the package text.
+- NOTICE (source repository file at tag v0.8.0, SHA-256
+  `59da5d57095806a032148fb768b257b90f9f2de89171d7c3f6c48bf4fea7258e`). The
+  web zip does not ship the NOTICE or the `OFL-*.txt` font licence texts it
+  names, so the built image carries only the MIT and Apache texts (same gap
+  as FilmCraft and EffectCraft, `docs/DEFERRED.md`). Captured in summary; the
+  verbatim file is at the tag. Third-party material it lists: Source Sans 3,
+  Source Serif 4, Inter and JetBrains Mono fonts (SIL OFL 1.1); an English
+  hyphenation word list (derived from the public-domain Moby Hyphenator II)
+  and trained patterns (CC0-1.0); Spanish hyphenation patterns (hyph-es,
+  MIT) and Portuguese patterns (hyph-pt, BSD 3-clause) through the `hypher`
+  crate; Japanese fonts BIZ UDPGothic, BIZ UDMincho and Shippori Mincho from
+  craft-fonts (SIL OFL 1.1) in official releases; UI icons drawn in code;
+  the `hayro` PDF crates (Apache-2.0 OR MIT, patched copies from storytold
+  pdfcraft) with PDFium's Foxit standard-14 fonts (BSD-style) and a CMYK
+  profile (CC0-1.0); Rust dependencies under MIT, Apache-2.0, BSD, ISC or
+  Zlib. All permissive; no copyleft.
+- Craft image: `homestead/craft-designcraft:0.8.0`, built locally by S279
+  from this artifact and `images/craft/` (nginx base pinned above).
+
+### storytold/cadcraft v0.7.0 (S253)
+- Release: `https://github.com/storytold/cadcraft/releases/tag/v0.7.0`
+  (tag commit `fc4e98315a8d771b5ab832f0ade0b5e7b106df7f`, published
+  2026-10-14; still the latest release when S253 was implemented on
+  2026-10-17).
+- Artifact: `cadcraft-web-0.7.0.zip`, 8492921 bytes,
+  `https://github.com/storytold/cadcraft/releases/download/v0.7.0/cadcraft-web-0.7.0.zip`
+- SHA-256: `47df17081e31bc25ab586ba88156dc25e07962364c73513004b9c6113b575be7`,
+  equal to the line for this file in the release's unsigned
+  `SHA256SUMS.txt` (cross-checked 2026-10-17; the download was also hashed
+  independently). Trust rests on the signed Homestead craft manifest
+  (`catalog/craft/craft-manifest.yaml`), which records this digest.
+- Archive contents (one top-level directory `cadcraft-web-0.7.0/`, stripped
+  by the shared Dockerfile): `index.html`, `cadcraft-web-<hash>.js`,
+  `cadcraft-web-<hash>_bg.wasm` (22.5 MB uncompressed), `LICENSE-APACHE`,
+  `LICENSE-MIT`, `README.md`, `HOSTING.md`, and the sample `_headers` and
+  `.htaccess` (unused). No `NOTICE`, no workers, no service worker, no
+  precompressed files, no `parts.txt`.
+- Licence: `MIT OR Apache-2.0`, at the recipient's option (`LICENSE-MIT`,
+  Copyright (c) 2026 ArtCraft Team and the CADCraft contributors, SHA-256
+  `54b0fc87ed7b61b59c20340070dd2b8c7f9d0b53795347819c3bd7c67ea2508a`;
+  `LICENSE-APACHE`, SHA-256
+  `0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594`; both
+  ship inside the artifact and equal the files at the tag). Both read for
+  the v0.7.0 release. Judgement: compatible with redistribution inside a
+  Homestead-built image, on the same reasoning as WordCraft.
+- **MPL-2.0 component.** The NOTICE discloses one weak-copyleft dependency:
+  the `acadrust` crate (DWG reading and writing,
+  `https://github.com/hakanaktt/acadrust`, Mozilla Public License 2.0), used
+  unmodified as a separate library (`crates/dwg`, a dependency of the `io` crate; treated as compiled into the wasm, which is stripped and has no readable crate names to confirm).
+  MPL-2.0 is file-level: it requires the source of the covered files to stay
+  available and the licence notice to be kept, and does not reach the rest
+  of CADCraft or Homestead. Its source is available from crates.io and the
+  repository above, at version 0.6.4 (upstream `Cargo.lock` at the v0.7.0
+  tag). Homestead does not modify the wasm and adds nothing
+  to it. Judgement: compatible; the owner who redistributes the built image
+  should keep this notice with it. The built image does not itself contain
+  the MPL text or the crate source (the web zip ships neither).
+- Trademarks: the ArtCraft marks (`docs/brand/`) are outside the licence and
+  are not shipped. CADCraft is independent of and not endorsed by Autodesk;
+  AutoCAD and DWG are Autodesk trademarks, and the package text does not use
+  them.
+- NOTICE (source repository file at tag v0.7.0, SHA-256
+  `cdfbfa6606bc6c389758cfdc5addeccb47a2a2cc7bfb7fcc4be9a2b783bd1561`). Not in
+  the web zip (deferred, as for DesignCraft). Summary: dual MIT or Apache-2.0
+  with the ArtCraft marks excluded; the MPL-2.0 `acadrust` disclosure above;
+  every bundled asset (icons, drafting font, hatch patterns, linetypes) is
+  original to CADCraft and drawn or defined in code, with the per-file list
+  in `ATTRIBUTION.md`; builds with the optional craft-fonts input embed SIL
+  OFL 1.1 fonts; the Autodesk non-affiliation statement.
+- Craft image: `homestead/craft-cadcraft:0.7.0`, built locally by S279 from
+  this artifact and `images/craft/` (nginx base pinned above).
+
+### storytold/craft-launcher v0.4.1 (S253)
+- Release: `https://github.com/storytold/craft-launcher/releases/tag/v0.4.1`
+  (tag commit `cbae640688c5fa3daa120a7f5e050f8e24148a47`, published
+  2026-10-13; still the latest release when S253 was implemented on
+  2026-10-17). **The repository name differs from the asset name**: the
+  web asset is `artcraft-launcher-web-0.4.1.zip` and unpacks into
+  `artcraft-launcher-web-0.4.1/`. The Homestead app name is `craft-launcher`
+  (the repository), so its image tag is `homestead/craft-craft-launcher:0.4.1`
+  (the shared rule is `homestead/craft-<app>:<version>`).
+- Artifact: `artcraft-launcher-web-0.4.1.zip`, 4250028 bytes,
+  `https://github.com/storytold/craft-launcher/releases/download/v0.4.1/artcraft-launcher-web-0.4.1.zip`
+- SHA-256: `5768d88f6077375b926723cdf7ee56717997b57e99c2e419cbe89b527b497a27`,
+  equal to the line for this file in the release's unsigned
+  `SHA256SUMS.txt` (cross-checked 2026-10-17; the download was also hashed
+  independently). Trust rests on the signed Homestead craft manifest
+  (`catalog/craft/craft-manifest.yaml`), which records this digest.
+- Archive contents: `index.html`, `artcraft-launcher-web-<hash>.js`,
+  `artcraft-launcher-web-<hash>_bg.wasm` (9.6 MB uncompressed),
+  `ai.storyteller.artcraft-launcher-<hash>.png`, `NOTICE`, `ATTRIBUTION.md`,
+  `LICENSE-APACHE`, `LICENSE-MIT`, `README.md`, `HOSTING.md`, and the sample
+  `_headers` and `.htaccess` (unused). No workers, no service worker, no
+  precompressed files, no `parts.txt`.
+- Licence: `MIT OR Apache-2.0`, at the recipient's option (`LICENSE-MIT`,
+  Copyright (c) 2026 ArtCraft Team and the ArtCraft Launcher contributors,
+  SHA-256 `e7bdbd66dea5820c4960db754d7d00c54ff95396b9527b29ac21b8cb0adf7e90`;
+  `LICENSE-APACHE`, SHA-256
+  `0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594`; both
+  ship inside the artifact and equal the files at the tag). Both read for the
+  v0.4.1 release. Judgement: compatible with redistribution inside a
+  Homestead-built image, on the same reasoning as WordCraft.
+- Trademarks: the ArtCraft name, wordmark, logo and "A" mark are the ArtCraft
+  Team's, not open source, and not covered by the licence ("forks and
+  modified versions must remove them", NOTICE). Unlike the other apps, the
+  web launcher shows the ArtCraft logo in its header and the "A" mark as its
+  page icon, and they travel inside the unmodified release files. Homestead
+  serves the release byte for byte, which is the unmodified upstream
+  distribution; it does not alter, rebrand or relicense them, and the
+  package copy names the app by function. Judgement: compatible for
+  unmodified redistribution; a fork that changes the files would have to
+  remove the marks.
+- NOTICE (shipped in the web artifact and at the tag, SHA-256
+  `a20659ce2e1884071edf0cd981c3d91e7e6c11f3fcea12a8de155ec4cd80e7d4`, the same
+  file). Third-party material it lists: social service icons (Simple Icons,
+  CC0-1.0; Font Awesome Free 6.7.2 LinkedIn icon, CC BY 4.0), the Inter,
+  Archivo and Geist Mono fonts (SIL OFL 1.1, texts `assets/fonts/OFL-*.txt`
+  at the tag, not in the web zip, same deferred gap as the other apps), and
+  the suite app icons (each app's repository, MIT OR Apache-2.0). Per-file
+  detail is in `ATTRIBUTION.md`, which does ship. All permissive. Captured
+  in summary; the verbatim file ships inside the image.
+- Network behaviour (recorded because it affects the local-first story):
+  the page, in the visitor's browser, calls `api.github.com` for each app's
+  releases and fetches pictures from `raw.githubusercontent.com`. The
+  appliance makes no such request and the image contains no secrets or
+  telemetry.
+- Craft image: `homestead/craft-craft-launcher:0.4.1`, built locally by S279
+  from this artifact and `images/craft/` (nginx base pinned above).

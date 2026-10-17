@@ -3721,3 +3721,72 @@ started operation 544 and the container became healthy. Non-craft
 packages were affected by the key bug (every install form). Cleaned up:
 app uninstalled, image, trust key and `/srv` directory removed, key shredded.
 No Caddy container was started and the route table stayed empty.
+
+## Design, CAD and launcher craft packages (S253, ADR-028)
+
+Built: three more packages on the S249 shared shape
+(`docs/architecture/STATIC_CRAFT_PACKAGES.md`). No Go product code, no change
+to `images/craft/` (build-context digest `sha256:1880843e...` unchanged),
+no new route, command or dashboard surface (`docs/PARITY.md` needs no row
+change). The `browser` advisories field from S252 is used as is.
+
+- `catalog/designcraft.yaml` (0.8.0), `catalog/cadcraft.yaml` (0.7.0),
+  `catalog/craft-launcher.yaml` (0.4.1): each its own image, own host, one
+  `ephemeral` `/tmp`, no storage class, `sso.class: unsupported`, local-only
+  with `allowwider: false`, stateless; none uses "clean-room".
+- Vendored releases (latest on 2026-10-17, matching planning; each SHA-256
+  equals upstream `SHA256SUMS.txt` and an independent hash): designcraft
+  v0.8.0 `f1ebe741...` (15,306,498 bytes), cadcraft v0.7.0 `47df1708...`
+  (8,492,921), craft-launcher v0.4.1 `5768d88f...` (4,250,028, asset
+  `artcraft-launcher-web-0.4.1.zip`). All three are `MIT OR Apache-2.0`,
+  judged compatible. CADCraft discloses one MPL-2.0 dependency (`acadrust`,
+  unmodified, file-level copyleft) and the launcher carries ArtCraft
+  trademarks outside the licence; both are analysed in `docs/THIRD_PARTY.md`
+  together with the NOTICE records.
+- Naming: the launcher app is `craft-launcher` (the repository) and its
+  asset is `artcraft-launcher-web-0.4.1.zip`. The craft manifest records the
+  asset in `artifact.name`; the image tag is
+  `homestead/craft-craft-launcher:0.4.1` and the host `craft-launcher.lan`.
+  `ParseRef` and the app-name pattern already accept it; `TestParseRef` now
+  pins the round trip and `TestCraftPackages` covers the shipped manifest.
+- `catalog/craft/craft-manifest.yaml`: fourteen apps, **counter 5**, still
+  **unsigned**. The three new entries came from `scripts/craft-manifest.sh
+  --counter 5` and were appended to the existing eleven; the context digest
+  is unchanged. No key was generated or committed.
+- **Launcher discovery (finding):** the launcher has a compiled-in suite
+  list, no runtime configuration and only a `?lang=` query parameter; it
+  lists the upstream suite with GitHub release downloads and cannot link to
+  or list installed Homestead apps. Nothing is generated or mounted, so the
+  signed context stays clean and no architecture change or ADR is needed to
+  ship it. The wiring criterion cannot be met; the gap, manual linking and
+  options (including a Homestead-owned start page, recommended) are in
+  `docs/DEFERRED.md`. "Installable without any other craft app" holds
+  trivially; "lists only what is installed" does not apply (it lists the
+  whole upstream suite).
+- Header table: three rows and notes; all hashed layout, none needs
+  COOP/COEP. Test rows: `curatedPackages`, `craftPackages`, `TestCuratedSSO`,
+  `TestCraftPackagesCarryBrowserAdvisories` (three new rows) and three
+  `knownImageVolumes` rows commented PENDING KVM verification.
+
+### Verified locally (dev workstation, 2026-10-17)
+
+Each release was downloaded into a fresh empty directory, hashed, unzipped
+and inspected without running anything from it; the shared Dockerfile was
+built with the real artifact and run with a read-only root, tmpfs `/tmp`,
+all capabilities dropped, `no-new-privileges`. `scripts/craft-header-check.sh`
+passed for all three: healthz 200, entry `no-cache`, `application/wasm`,
+gzip (also with `Via: 1.1 Caddy`), no COOP/COEP; containers `healthy`,
+`docker diff` empty, `Config.Volumes` null, user `nginx`; gzip-decoded wasm
+equals the zip's.
+
+### KVM acceptance: PENDING
+
+For each app, on a fresh appliance: install (throwaway minisign key signs the
+fourteen-app manifest), `https://<app>.lan/` answers with the S280 root and
+`craft-header-check.sh` passes over HTTPS (entry and wasm fetched), remove
+cleanly (container, stack directory, route, DNS name, edge entry, leaf),
+reinstall, update to a bumped manifest version, drift scan clean after
+install and update, schedule create refused (422) and no scheduler job.
+Also confirm the launcher page loads from `https://craft-launcher.lan/` and
+record whether the browser reaches GitHub. Then finalise the three
+`knownImageVolumes` comments and the header-table rows.

@@ -1,0 +1,48 @@
+# Craft Launcher (S253): a static craft package on the S249 shared shape
+# (docs/architecture/STATIC_CRAFT_PACKAGES.md). The image is built on the
+# appliance by the signed, verify-then-build craft operation (ADR-028); it
+# is never pulled, so there is no registry reference and no catalog digest.
+# The version below is the vendored storytold release and must equal the
+# image tag and the version in catalog/craft/craft-manifest.yaml.
+name: craft-launcher
+version: 0.4.1
+title: Craft Launcher
+blurb: Catalog of the Craft App Suite with each app's latest release.
+description: Craft Launcher is the suite start page of the Craft App Suite. It runs entirely in the browser from a small web server on your appliance and shows the suite's apps with their latest upstream releases and the right download for your device. It is a standalone page and does not read your Homestead installs, so it does not list or link the craft apps on this appliance (open those at their own addresses). To fetch release information and pictures your browser contacts api.github.com and raw.githubusercontent.com directly, so each device needs internet access and shares GitHub's unauthenticated rate limit; the appliance itself makes no such requests. The app keeps nothing on the appliance. It is served over your local network.
+category: productivity
+icon: mdi:view-grid-outline
+services:
+- name: craft-launcher
+  image: homestead/craft-craft-launcher:0.4.1
+  exposes: web
+  # The image declares no VOLUME. nginx runs as the unprivileged nginx
+  # user and writes only under /tmp (pid file and temporary paths), so
+  # /tmp is the whole writable surface.
+  data:
+  - target: /tmp
+    ephemeral: true
+    sizemb: 16
+    reason: nginx pid file and request temporary files; nothing to keep or back up.
+requirements:
+  memorymb: 64
+  cpucount: 1
+  architectures: [amd64, arm64]
+exposure:
+  package: craft-launcher
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: false
+    warnings:
+    - Craft Launcher shows upstream releases only and is not wired to your installed apps; keep it local, since a public copy would only republish the upstream catalog while every visitor's browser contacts GitHub.
+browser:
+- capability: webgpu
+  reason: "The launcher renders with WebGPU where the browser has it and falls back to WebGL2 on its own."
+- capability: webgl2
+  reason: "If WebGPU is missing the launcher uses WebGL2; a browser with neither gets an in-page message instead of the app."
+- capability: secure-context
+  reason: "WebGPU needs a secure context (HTTPS); trust your Homestead root certificate on the device first."
+- capability: browser-storage
+  reason: "Settings such as language and theme are kept in the browser's local storage, which the browser may clear."
+sso:
+  class: unsupported

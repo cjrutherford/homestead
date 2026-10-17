@@ -74,6 +74,19 @@ Nothing refuses install, update or start on them (hard refusals are
 deferred, `docs/DEFERRED.md`). The field is optional metadata in the
 manifest schema; the signed craft manifest is unchanged by it.
 
+Naming (S253): the manifest app name is the catalog package name and the
+repository-style name, not necessarily the release asset's. Craft Launcher's
+app is `craft-launcher` (image `homestead/craft-craft-launcher:<version>`,
+host `craft-launcher.lan`) while its asset is
+`artcraft-launcher-web-<version>.zip`, which unpacks into
+`artcraft-launcher-web-<version>/`. The craft manifest records the asset
+name separately (`artifact.name`) and the shared Dockerfile strips the single
+top-level directory whatever it is called, so the two names never need to
+match; `ParseRef` accepts any `^[a-z][a-z0-9-]*$` app name and
+`TestCraftPackages` pins the pair. The suite start page (Craft Launcher) has
+no runtime configuration and is not wired to installed apps
+(`docs/DEFERRED.md`, S253).
+
 Anything app-specific beyond these (COOP/COEP for `SharedArrayBuffer`,
 `.part-*` caching) is recorded per app in
 `docs/architecture/CRAFT_HEADER_TABLE.md` and added in that app's slice
