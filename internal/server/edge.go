@@ -163,7 +163,8 @@ func handleEdgeRoutes(runner *operation.Runner, st *store.Store, local *cert.Loc
 		if local != nil {
 			// A leaf that cannot be issued never blocks the reconcile: the
 			// route falls back to the edge's own internal issuance and the
-			// failure is audited and shown by doctor.
+			// failure is audited (CA and per-host errors, by EnsureLeaves)
+			// and shown by doctor.
 			_, _, _ = local.EnsureLeaves(body.Routes, false, operatorActor(r))
 		}
 		state := docker.RouteState{

@@ -131,3 +131,22 @@ The root's private key is a custody-sealed system secret (ADR-021). It is never
 written to YAML, logs, audit, API responses, configuration export or the
 inspectable mirror `internal-ca.yaml` (public certificate and metadata only).
 See `BACKUP_RESTORE_RUNBOOK.md` for how the key survives a restore.
+
+## Mismatched restores and leftover keys
+
+Homestead never replaces a live CA key.
+
+- Row present, key missing: `ErrCAKeyMissing` (HTTP 409, doctor fail). Restore the
+  secret key file, or rotate the root explicitly.
+- Key present, row missing (a database-only restore under the current secret
+  store): `ErrCAKeyOrphaned` (HTTP 409, doctor fail `local-ca`). The key is not
+  adopted because the certificate cannot be reconstructed from it. Either restore
+  the database that matches the key, or, if you accept issuing a brand-new root,
+  discard the key explicitly (stop the daemon, then
+  `sqlite3 <db> "DELETE FROM secrets WHERE name='sys_local_ca_key_1'"`, start it)
+  and the next reconcile creates a new root that devices must trust again.
+- A rotation that could not destroy the old key audits `tls.local-ca.key-destroy`
+  as an error and doctor warns (`local-ca-old-key`) until the leftover secret is gone.
+
+Certificates are issued with `NotBefore` one hour in the past so devices with a
+slightly slow clock accept them.

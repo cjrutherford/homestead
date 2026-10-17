@@ -380,6 +380,12 @@ func TestLocalLeafOrphansRemoved(t *testing.T) {
 	e := newLocalEnv(t)
 	e.applyRoutes(localRoute("a.lan"), localRoute("b.lan"))
 	e.routes = []docker.Route{localRoute("a.lan")}
+	// Inside the grace window a fresh leaf is kept (its route table save
+	// may still be in flight).
+	if res, err := e.local.Reconcile(context.Background(), "scheduler", "", false); err != nil || len(res.Removed) != 0 {
+		t.Fatalf("fresh leaf swept: res=%+v err=%v", res, err)
+	}
+	e.clock = e.clock.Add(orphanGrace + time.Minute)
 	res, err := e.local.Reconcile(context.Background(), "scheduler", "", false)
 	if err != nil || len(res.Removed) != 1 || res.Removed[0] != "b.lan" {
 		t.Fatalf("res=%+v err=%v", res, err)
@@ -450,5 +456,107 @@ func TestExpiringRootGrades(t *testing.T) {
 		if got := ExpiringRoot(CAInfo{NotAfter: now.Add(c.left)}, now); got != c.want {
 			t.Errorf("left %v = %q, want %q", c.left, got, c.want)
 		}
+	}
+}
+
+func TestLocalCAOrphanedKeyIsNeverOverwritten(t *testing.T) {
+	e := newLocalEnv(t)
+	if _, _, err := e.ca.Ensure("test"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := e.secs.Get(caKeyName(1))
+	// Database-only restore: the row is gone, the secret remains.
+	if _, err := e.st.DB().Exec(`DELETE FROM internal_ca`); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := e.ca.Ensure("test"); !errors.Is(err, ErrCAKeyOrphaned) {
+		t.Fatalf("Ensure err = %v, want ErrCAKeyOrphaned", err)
+	}
+	if after, _ := e.secs.Get(caKeyName(1)); after != before {
+		t.Fatal("live CA key was replaced")
+	}
+	e.routes = []docker.Route{localRoute("a.lan")}
+	if _, _, err := e.local.EnsureLeaves(e.routes, false, "test"); !errors.Is(err, ErrCAKeyOrphaned) {
+		t.Fatalf("EnsureLeaves err = %v", err)
+	}
+	rep, _ := e.local.Report()
+	if !rep.OrphanedKey {
+		t.Fatal("report does not flag the orphaned key")
+	}
+	if !strings.Contains(strings.Join(e.audits, "\n"), "tls.local-ca.ensure error") {
+		t.Fatalf("CA ensure failure not audited: %v", e.audits)
+	}
+}
+
+func TestLocalCABackdatesNotBefore(t *testing.T) {
+	e := newLocalEnv(t)
+	e.applyRoutes(localRoute("a.lan"))
+	ca, _ := e.ca.Info()
+	if want := e.clock.Add(-ClockSkewBackdate); !ca.NotBefore.Equal(want) {
+		t.Fatalf("CA NotBefore = %s, want %s", ca.NotBefore, want)
+	}
+	leaves, _ := e.local.Leaves()
+	if want := e.clock.Add(-ClockSkewBackdate); !leaves[0].NotBefore.Equal(want) {
+		t.Fatalf("leaf NotBefore = %s, want %s", leaves[0].NotBefore, want)
+	}
+	chain, _ := docker.ReadPlacedChainAny(e.stack, leaves[0].CertName)
+	c, _ := parseCert(chain)
+	if c.KeyUsage&x509.KeyUsageKeyEncipherment != 0 {
+		t.Fatal("ECDSA leaf carries KeyEncipherment")
+	}
+}
+
+func TestLocalCAOldKeyDestroyFailureAudited(t *testing.T) {
+	e := newLocalEnv(t)
+	e.applyRoutes(localRoute("a.lan"))
+	// Make the secret delete fail by dropping the table's delete path.
+	if _, err := e.st.DB().Exec(`CREATE TRIGGER nodel BEFORE DELETE ON secrets BEGIN SELECT RAISE(ABORT, 'locked'); END`); err != nil {
+		t.Fatal(err)
+	}
+	ca, _ := e.ca.Info()
+	if _, _, err := e.ca.Rotate("owner", ca.FingerprintSHA256); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(e.audits, "\n"), "tls.local-ca.key-destroy error") {
+		t.Fatalf("destroy failure not audited: %v", e.audits)
+	}
+	if rep, _ := e.local.Report(); len(rep.LeftoverKeys) != 1 {
+		t.Fatalf("leftover keys = %v", rep.LeftoverKeys)
+	}
+}
+
+func TestLocalCAConcurrentApprovalsRotateOnce(t *testing.T) {
+	e := newLocalEnv(t)
+	e.applyRoutes(localRoute("a.lan"))
+	plan, err := e.local.PlanRotation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const n = 8
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, errs[i] = e.local.Rotate(context.Background(), "owner", plan.Digest)
+		}(i)
+	}
+	wg.Wait()
+	ok := 0
+	for _, err := range errs {
+		if err == nil {
+			ok++
+		} else if !errors.Is(err, ErrStalePlan) {
+			t.Fatalf("unexpected error %v", err)
+		}
+	}
+	cur, _ := e.ca.Info()
+	if ok != 1 || cur.Generation != 2 {
+		t.Fatalf("rotations succeeded = %d, generation = %d; want 1 and 2", ok, cur.Generation)
+	}
+	ca, _ := e.ca.Info()
+	if _, _, err := e.ca.Rotate("owner", "AA:BB"); !errors.Is(err, ErrRotationStale) || ca.Generation != 2 {
+		t.Fatalf("CAS guard: %v", err)
 	}
 }

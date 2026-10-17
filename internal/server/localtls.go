@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"homestead/internal/audit"
@@ -107,7 +108,7 @@ func (s *Server) MountLocalTLS(st *store.Store, local *cert.LocalTLS) {
 		info, created, err := local.CA.Ensure(operatorActor(r))
 		if err != nil {
 			status := http.StatusInternalServerError
-			if errors.Is(err, cert.ErrCAKeyMissing) {
+			if errors.Is(err, cert.ErrCAKeyMissing) || errors.Is(err, cert.ErrCAKeyOrphaned) {
 				status = http.StatusConflict
 			}
 			http.Error(w, err.Error(), status)
@@ -223,6 +224,9 @@ func localTLSDoctorChecks(local *cert.LocalTLS, now func() time.Time) func() []d
 		var checks []doctor.Check
 		ca := report.CA
 		switch {
+		case report.OrphanedKey:
+			checks = append(checks, doctor.Check{Name: "local-ca", Status: doctor.StatusFail,
+				Detail: "a CA private key exists in the secret store but no CA is recorded (database restored without its CA row); it is never overwritten: restore the matching database or discard the key explicitly (see INTERNAL_CA_TRUST.md)"})
 		case !ca.Present && report.Eligible > 0:
 			checks = append(checks, doctor.Check{Name: "local-ca", Status: doctor.StatusWarn,
 				Detail: "local-only HTTPS routes exist but the internal CA is not created; it is created on the next edge reconcile, or create it on the Trust page"})
@@ -242,6 +246,10 @@ func localTLSDoctorChecks(local *cert.LocalTLS, now func() time.Time) func() []d
 			}
 			checks = append(checks, doctor.Check{Name: "local-ca", Status: level,
 				Detail: fmt.Sprintf("%s until %s; SHA-256 %s", note, ca.NotAfter.UTC().Format("2006-01-02"), ca.FingerprintSHA256)})
+		}
+		if len(report.LeftoverKeys) > 0 {
+			checks = append(checks, doctor.Check{Name: "local-ca-old-key", Status: doctor.StatusWarn,
+				Detail: "an old internal CA key was not destroyed after rotation: " + strings.Join(report.LeftoverKeys, ", ")})
 		}
 		for _, leaf := range report.Leaves {
 			level := doctor.StatusOK

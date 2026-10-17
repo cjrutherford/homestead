@@ -70,6 +70,17 @@ func LocalNameAllowed(host string) bool {
 // never silently replaced: the owner decides, via an explicit rotation.
 var ErrCAKeyMissing = errors.New("cert: the internal CA private key is missing from the secret store; restore the secret key file or rotate the root explicitly")
 
+// ErrCAKeyOrphaned reports a private key in the secret store with no CA
+// row: typically a database-only restore under the current secret store.
+// The live key is never overwritten; the owner must either restore the
+// database that matches it or explicitly discard the key (see
+// docs/architecture/INTERNAL_CA_TRUST.md).
+var ErrCAKeyOrphaned = errors.New("cert: an internal CA private key exists in the secret store but no CA is recorded (database restored without its CA row?); restore the matching database, or discard the key explicitly as described in INTERNAL_CA_TRUST.md")
+
+// ErrRotationStale reports a rotation requested against a root that is
+// no longer the one the owner reviewed.
+var ErrRotationStale = errors.New("cert: the internal CA changed since the rotation was reviewed")
+
 // CertFingerprint is the SHA-256 of a DER certificate in the upper-case
 // colon-separated form `openssl x509 -fingerprint -sha256` prints.
 func CertFingerprint(der []byte) string {
@@ -258,7 +269,8 @@ func (l *LocalCA) mint() (Authority, error) {
 // Ensure creates the authority exactly once (idempotent). An existing
 // authority is verified (key present and matching) and returned, never
 // replaced. A key without a row is the debris of an interrupted first
-// creation — nothing was ever recorded or published — and is overwritten.
+// creation only if it is cleaned up here on failure; a key found without
+// a row is therefore never ours to overwrite (ErrCAKeyOrphaned).
 func (l *LocalCA) Ensure(actor string) (CAInfo, bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -270,6 +282,11 @@ func (l *LocalCA) Ensure(actor string) (CAInfo, bool, error) {
 		}
 		return l.infoOf(r), false, nil
 	}
+	if _, err := l.Secrets.Get(caKeyName(1)); err == nil {
+		return CAInfo{}, false, ErrCAKeyOrphaned
+	} else if !errors.Is(err, secret.ErrNotFound) {
+		return CAInfo{}, false, err
+	}
 	authority, err := l.mint()
 	if err != nil {
 		return CAInfo{}, false, err
@@ -279,6 +296,7 @@ func (l *LocalCA) Ensure(actor string) (CAInfo, bool, error) {
 	}
 	r, err := l.insert(authority, 1, "")
 	if err != nil {
+		_ = l.Secrets.Delete(caKeyName(1)) // nothing was recorded or published
 		return CAInfo{}, false, err
 	}
 	info := l.infoOf(r)
@@ -314,7 +332,11 @@ func (l *LocalCA) insert(a Authority, generation int, previous string) (caRow, e
 // the caller re-issues every leaf). Order is crash-safe: the new key is
 // stored first, then the row flips atomically, then the old key is
 // dropped. Returns the previous and new public info.
-func (l *LocalCA) Rotate(actor string) (previous, current CAInfo, err error) {
+//
+// expectFingerprint, when non-empty, is a compare-and-swap guard: the
+// rotation proceeds only if the recorded root still has that fingerprint
+// (checked under the CA lock), otherwise ErrRotationStale.
+func (l *LocalCA) Rotate(actor, expectFingerprint string) (previous, current CAInfo, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	old, ok, err := l.row()
@@ -323,6 +345,9 @@ func (l *LocalCA) Rotate(actor string) (previous, current CAInfo, err error) {
 	}
 	if !ok {
 		return CAInfo{}, CAInfo{}, ErrNoCA
+	}
+	if expectFingerprint != "" && old.fingerprint != expectFingerprint {
+		return CAInfo{}, CAInfo{}, ErrRotationStale
 	}
 	previous = l.infoOf(old)
 	authority, err := l.mint()
@@ -337,12 +362,46 @@ func (l *LocalCA) Rotate(actor string) (previous, current CAInfo, err error) {
 	if err != nil {
 		return CAInfo{}, CAInfo{}, err
 	}
-	_ = l.Secrets.Delete(caKeyName(old.generation))
+	if derr := l.Secrets.Delete(caKeyName(old.generation)); derr != nil {
+		// The rotation stands; the old key must still be destroyed, so
+		// say so loudly (doctor also reports it via LeftoverKeys).
+		l.audit(actor, "tls.local-ca.key-destroy", "error", fmt.Sprintf("old CA key generation %d was not destroyed: %v", old.generation, derr))
+	}
 	current = l.infoOf(r)
 	l.audit(actor, "tls.local-ca.rotate", "ok", fmt.Sprintf("internal CA rotated: %s replaces %s; devices must trust the new root",
 		current.FingerprintSHA256, previous.FingerprintSHA256))
 	l.syncYAML(current)
 	return previous, current, nil
+}
+
+// OrphanedKey reports a CA key secret with no recorded CA.
+func (l *LocalCA) OrphanedKey() bool {
+	_, ok, err := l.row()
+	if err != nil || ok {
+		return false
+	}
+	_, err = l.Secrets.Get(caKeyName(1))
+	return err == nil
+}
+
+// LeftoverKeys names CA key secrets of generations other than the
+// current one (an old key a rotation failed to destroy).
+func (l *LocalCA) LeftoverKeys() []string {
+	r, ok, err := l.row()
+	if err != nil || !ok {
+		return nil
+	}
+	list, err := l.Secrets.List()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, i := range list {
+		if strings.HasPrefix(i.Name, LocalCAKeyPrefix) && i.Name != caKeyName(r.generation) {
+			out = append(out, i.Name)
+		}
+	}
+	return out
 }
 
 // yamlDoc is the inspectable public mirror (ADR-030): never a key.

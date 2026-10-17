@@ -25,6 +25,10 @@ const (
 	// DefaultLocalLeafLifetime keeps leaves short so rotation is routine;
 	// they renew when a third of the lifetime remains (the S272 rule).
 	DefaultLocalLeafLifetime = 90 * 24 * time.Hour
+	// orphanGrace protects a freshly issued leaf from the orphan sweep:
+	// the edge route table is saved asynchronously after issuance, so a
+	// leaf can briefly precede its route.
+	orphanGrace = 15 * time.Minute
 )
 
 // Leaf statuses.
@@ -180,6 +184,10 @@ type Report struct {
 	CA       CAInfo `json:"ca"`
 	Leaves   []Leaf `json:"leaves"`
 	Eligible int    `json:"eligible_routes"`
+	// OrphanedKey: a CA key exists in the secret store with no CA row.
+	OrphanedKey bool `json:"orphaned_key,omitempty"`
+	// LeftoverKeys: old-generation CA key secrets not yet destroyed.
+	LeftoverKeys []string `json:"leftover_keys,omitempty"`
 }
 
 // Report grades the root and all leaves at the injected clock.
@@ -232,7 +240,8 @@ func (t *LocalTLS) Report() (Report, error) {
 	for _, host := range orphans {
 		leaves = append(leaves, t.assess(recs[host], ca, false, docker.Route{}, now))
 	}
-	return Report{CA: ca, Leaves: leaves, Eligible: len(eligible)}, nil
+	return Report{CA: ca, Leaves: leaves, Eligible: len(eligible),
+		OrphanedKey: !ca.Present && t.CA.OrphanedKey(), LeftoverKeys: t.CA.LeftoverKeys()}, nil
 }
 
 // Leaves lists the graded leaves.
@@ -299,10 +308,12 @@ func (t *LocalTLS) ensureLocked(routes []docker.Route, force bool, only, actor s
 		return nil, nil, nil
 	}
 	if _, _, cerr := t.CA.Ensure(actor); cerr != nil {
+		t.audit(actor, "tls.local-ca.ensure", "error", cerr.Error())
 		return nil, nil, cerr
 	}
 	authority, aerr := t.CA.Authority()
 	if aerr != nil {
+		t.audit(actor, "tls.local-ca.ensure", "error", aerr.Error())
 		return nil, nil, aerr
 	}
 	caFP := CertFingerprint(authority.Cert.Raw)
@@ -359,6 +370,10 @@ func (t *LocalTLS) ensureLocked(routes []docker.Route, force bool, only, actor s
 func (t *LocalTLS) Reconcile(ctx context.Context, actor, only string, force bool) (Result, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.reconcileLocked(ctx, actor, only, force)
+}
+
+func (t *LocalTLS) reconcileLocked(ctx context.Context, actor, only string, force bool) (Result, error) {
 	var res Result
 	routes, err := t.Routes()
 	if err != nil {
@@ -446,8 +461,9 @@ func (t *LocalTLS) removeOrphansLocked(routes []docker.Route, actor string) ([]s
 		}
 	}
 	var removed []string
+	now := t.now()
 	for host, rec := range recs {
-		if live[host] {
+		if live[host] || now.Sub(rec.IssuedAt) < orphanGrace {
 			continue
 		}
 		if err := docker.RemoveCert(t.StackDir, rec.CertName); err != nil {
@@ -511,7 +527,13 @@ func (t *LocalTLS) PlanRotation() (RotationPlan, error) {
 var ErrStalePlan = errors.New("cert: the rotation plan changed since it was reviewed; review it again")
 
 // Rotate performs an approved root rotation, then re-issues every leaf.
+//
+// The plan check and the CA swap happen under the LocalTLS lock, and the
+// reviewed fingerprint is re-checked under the CA lock, so two approvals
+// of the same digest rotate exactly once (the loser gets ErrStalePlan).
 func (t *LocalTLS) Rotate(ctx context.Context, actor, digest string) (Result, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	plan, err := t.PlanRotation()
 	if err != nil {
 		return Result{}, err
@@ -519,10 +541,13 @@ func (t *LocalTLS) Rotate(ctx context.Context, actor, digest string) (Result, er
 	if digest != plan.Digest {
 		return Result{}, ErrStalePlan
 	}
-	if _, _, err := t.CA.Rotate(actor); err != nil {
+	if _, _, err := t.CA.Rotate(actor, plan.CurrentFingerprint); err != nil {
+		if errors.Is(err, ErrRotationStale) {
+			return Result{}, ErrStalePlan
+		}
 		return Result{}, err
 	}
-	return t.Reconcile(ctx, actor, "", true)
+	return t.reconcileLocked(ctx, actor, "", true)
 }
 
 // ExpiringRoot grades the root at now: "", "warn" or "fail".

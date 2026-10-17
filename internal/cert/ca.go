@@ -61,6 +61,11 @@ func GenerateCA(commonName string, lifetime time.Duration, now time.Time) (Autho
 // those domains (critical, so a verifier that cannot enforce it refuses
 // the chain rather than ignoring it). S280 constrains the persisted
 // authority to the owner's local suffixes.
+// ClockSkewBackdate is how far certificate NotBefore is set before the
+// issue time, so a device whose clock runs slightly behind still accepts
+// a freshly issued root or leaf.
+const ClockSkewBackdate = time.Hour
+
 func GenerateConstrainedCA(commonName string, lifetime time.Duration, now time.Time, permittedDNS []string) (Authority, error) {
 	if len(commonName) == 0 || len(commonName) > 64 {
 		return Authority{}, fmt.Errorf("cert: CA name must be 1-64 characters")
@@ -79,7 +84,7 @@ func GenerateConstrainedCA(commonName string, lifetime time.Duration, now time.T
 	template := &x509.Certificate{
 		SerialNumber:          serial,
 		Subject:               pkix.Name{CommonName: commonName},
-		NotBefore:             now.UTC(),
+		NotBefore:             now.UTC().Add(-ClockSkewBackdate),
 		NotAfter:              now.UTC().Add(lifetime),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
@@ -185,9 +190,9 @@ func (a Authority) IssueServerCert(dnsNames []string, lifetime time.Duration, no
 		SerialNumber:          serial,
 		Subject:               pkix.Name{CommonName: dnsNames[0]},
 		DNSNames:              dnsNames,
-		NotBefore:             now.UTC(),
+		NotBefore:             now.UTC().Add(-ClockSkewBackdate),
 		NotAfter:              now.UTC().Add(lifetime),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		KeyUsage:              x509.KeyUsageDigitalSignature, // ECDSA keys sign; KeyEncipherment is RSA-only
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 	}

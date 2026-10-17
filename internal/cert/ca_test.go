@@ -32,7 +32,7 @@ func TestGenerateCA(t *testing.T) {
 	if ca.Cert.Subject.CommonName != "Homestead Internal CA" {
 		t.Fatalf("CN = %q", ca.Cert.Subject.CommonName)
 	}
-	if ca.Cert.NotAfter.Sub(ca.Cert.NotBefore) != DefaultCALifetime {
+	if ca.Cert.NotAfter.Sub(ca.Cert.NotBefore) != DefaultCALifetime+ClockSkewBackdate {
 		t.Fatal("CA lifetime wrong")
 	}
 	// Self-signed verifies against itself.
@@ -119,7 +119,7 @@ func TestIssueServerCert(t *testing.T) {
 	if len(leaf.ExtKeyUsage) != 1 || leaf.ExtKeyUsage[0] != x509.ExtKeyUsageServerAuth {
 		t.Fatalf("EKU = %v", leaf.ExtKeyUsage)
 	}
-	if leaf.NotAfter.Sub(leaf.NotBefore) != DefaultServerLifetime {
+	if leaf.NotAfter.Sub(leaf.NotBefore) != DefaultServerLifetime+ClockSkewBackdate {
 		t.Fatal("server lifetime wrong")
 	}
 	if _, err := ParseAccountKey(keyPEM); err != nil {
@@ -150,7 +150,7 @@ func TestIssueServerCert(t *testing.T) {
 	}
 	// Expired authorities still sign math, but verification at issuance
 	// time anchors honesty: not-before/not-after always derive from now.
-	if !leaf.NotBefore.Equal(testTime()) {
+	if !leaf.NotBefore.Equal(testTime().Add(-ClockSkewBackdate)) {
 		t.Fatalf("not-before = %v", leaf.NotBefore)
 	}
 }

@@ -330,3 +330,10 @@ to mint a replacement silently: doctor fails with "private key is missing" and
 the owner chooses either to restore the key file or to rotate the root
 (`homesteadctl tls local rotate`), after which every device must trust the new
 root. A configuration export alone does not recreate the root.
+
+## Internal CA: database restored without its secret key file (or the reverse)
+
+A restored database whose CA key is missing, or a secret store whose CA key has
+no matching database row, is refused and shown by doctor; Homestead never
+generates a replacement silently. See "Mismatched restores and leftover keys" in
+`INTERNAL_CA_TRUST.md` for the explicit recovery steps.

@@ -311,3 +311,7 @@
   `docker rmi`.
 - Update apply takes one craft move per package; a package mixing several
   locally built images is refused.
+
+- S280 review follow-up: a first-class CLI/API action to discard an orphaned
+  internal CA key (today documented as a manual `DELETE FROM secrets`), and
+  automatic retry of old-generation CA key destruction.
