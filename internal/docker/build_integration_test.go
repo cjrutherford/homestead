@@ -2,6 +2,7 @@ package docker
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"context"
 	"crypto/ed25519"
@@ -32,14 +33,23 @@ func TestRealCraftBuild(t *testing.T) {
 	if os.Getenv("HOMESTEAD_DOCKER_TESTS") != "1" {
 		t.Skip("set HOMESTEAD_DOCKER_TESTS=1 to build a real image")
 	}
+	// Both artifact formats the shared Dockerfile extracts (S249).
+	t.Run("tar.gz", func(t *testing.T) { realCraftBuild(t, "9.9.9", "tar.gz", writeTarGz) })
+	t.Run("zip", func(t *testing.T) { realCraftBuild(t, "9.9.8", "zip", writeZip) })
+}
+
+func realCraftBuild(t *testing.T, version, ext string, write func(*testing.T, string, map[string]string)) {
 	repo, _ := filepath.Abs("../..")
 	dir := t.TempDir()
-	// Synthetic site: HTML entry, a hashed wasm, an unhashed js.
-	site := filepath.Join(dir, "wordcraft-9.9.9.tar.gz")
-	writeTarGz(t, site, map[string]string{
+	// Synthetic site: HTML entry, a hashed wasm, an unhashed js, and a
+	// dotfile the build must drop.
+	artifact := "wordcraft-" + version + "." + ext
+	site := filepath.Join(dir, artifact)
+	write(t, site, map[string]string{
 		"index.html":            "<html>hello</html>",
 		"app.0123456789ab.wasm": "\x00asm",
 		"main.js":               "console.log(1)",
+		".secret":               "do not serve",
 	})
 	data, _ := os.ReadFile(site)
 	sum := sha256.Sum256(data)
@@ -47,8 +57,8 @@ func TestRealCraftBuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest := fmt.Sprintf("format: %s\ncounter: 1\ncontext_digest: %s\napps:\n  - name: wordcraft\n    version: 9.9.9\n    artifact:\n      name: wordcraft-9.9.9.tar.gz\n      sha256: %s\n      size: %d\n",
-		craft.ManifestFormat, ctxDigest, hex.EncodeToString(sum[:]), len(data))
+	manifest := fmt.Sprintf("format: %s\ncounter: 1\ncontext_digest: %s\napps:\n  - name: wordcraft\n    version: %s\n    artifact:\n      name: %s\n      sha256: %s\n      size: %d\n",
+		craft.ManifestFormat, ctxDigest, version, artifact, hex.EncodeToString(sum[:]), len(data))
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
 	var id [8]byte
 	_, _ = rand.Read(id[:])
@@ -87,7 +97,7 @@ func TestRealCraftBuild(t *testing.T) {
 			t.Fatalf("step %s: %v", step.Name, err)
 		}
 	}
-	tag := craft.Tag("wordcraft", "9.9.9")
+	tag := craft.Tag("wordcraft", version)
 	t.Cleanup(func() { _ = exec.Command("docker", "rmi", tag).Run() })
 	if err := p.CheckImage(context.Background(), tag); err != nil {
 		t.Fatal(err)
@@ -138,6 +148,10 @@ func TestRealCraftBuild(t *testing.T) {
 	if r := get("/"); r.Header.Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatalf("nosniff missing: %v", r.Header)
 	}
+	// Dotfiles from the artifact are never served.
+	if r := get("/.secret"); r.StatusCode != 404 {
+		t.Fatalf("/.secret = %d, want 404", r.StatusCode)
+	}
 	wasmReq, _ := http.NewRequest(http.MethodGet, base+"/app.0123456789ab.wasm", nil)
 	wasmReq.Header.Set("Accept-Encoding", "gzip")
 	wasmResp, err := (&http.Transport{DisableCompression: true}).RoundTrip(wasmReq)
@@ -161,4 +175,24 @@ func writeTarGz(t *testing.T, path string, files map[string]string) {
 	}
 	_ = tw.Close()
 	_ = gz.Close()
+}
+
+func writeZip(t *testing.T, path string, files map[string]string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zw := zip.NewWriter(f)
+	for name, body := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(body))
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
 }

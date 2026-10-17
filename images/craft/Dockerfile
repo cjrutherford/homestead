@@ -32,6 +32,7 @@ RUN set -eu; \
       root="$(find /raw -mindepth 1 -maxdepth 1)"; \
     fi; \
     cp -a "${root}/." /site/; \
+    find /site -mindepth 1 -name '.*' -prune -exec rm -rf {} +; \
     test -f /site/index.html; \
     find /site -type d -exec chmod 755 {} +; \
     find /site -type f -exec chmod 644 {} +; \

@@ -10,8 +10,9 @@ S250 to S253 add YAML, manifest entries, test rows and docs, and no Go.
 - One catalog manifest `catalog/<app>.yaml`, shaped like
   `catalog/wordcraft.yaml`: one service on the local image
   `homestead/craft-<app>:<version>`, `exposes: web`, tiny `requirements`
-  (memory, CPU, `ports: [8080]`, no storage class), no `backuppaths`, no
-  database, `sso.class: unsupported`, a title, blurb and description that
+  (memory and CPU only: no `ports`, because the container publishes no
+  host port and the daemon itself listens on 8080, and no storage class),
+  no `backuppaths`, no database, `sso.class: unsupported`, a title, blurb and description that
   say what the app does (never "clean-room", which is upstream's own
   statement and not ours).
 - The image is **built on the appliance** from two verified inputs: the
@@ -35,6 +36,9 @@ S250 to S253 add YAML, manifest entries, test rows and docs, and no Go.
 
 - Non-root: `USER nginx`; nginx listens on **8080**; nothing binds a
   privileged port.
+- Dotfiles and dot directories in the artifact are deleted at build and
+  answered 404 by a first regex location, so `.git`, `.env` and editor
+  leftovers are never served.
 - `GET /healthz` returns 200 `ok`; the Dockerfile `HEALTHCHECK` uses it.
 - Zero data and no volumes: no `VOLUME`, no state. The only writable path
   is `/tmp` (pid file and request temp directories), declared by every
@@ -71,6 +75,9 @@ being stateless by itself. Stateless packages:
 - are skipped by a pre-update backup request with a recorded note (the
   apply reply's `detail` and an `update.backup.skipped` audit entry);
   the update proceeds;
+- take no owner volumes: `PlanInstall` refuses `volumes` on a stateless
+  package, because an owner mount would hold data that none of the paths
+  above would ever back up;
 - return `backup.ErrStateless` from `backupJob` and `guardBackupSources`,
   which is distinct from "no sources" (retryable for stateful packages).
 
@@ -85,9 +92,17 @@ warning; the owner can still override through the ADR-006 plan.
   `composeUpServices` of migrations, `composeStart`, and the update `up`):
   the stack's compose files are read raw, `${VAR}` image references are
   expanded, and each craft image must match its recorded local build or the
-  start is refused. With no checker wired, craft images fail closed.
+  start is refused. With no checker wired, craft images fail closed. The
+  gate reads every file Compose could load (the `compose` and
+  `docker-compose` names, overrides, and any `COMPOSE_FILE` from the stack
+  `.env` or the daemon environment), and secret-consumer restarts take it
+  too.
 - The planner always joins a routed stack to the `homestead-edge` network
   (and keeps the project default network when the caller named none).
+  Only the routed services join the edge network the planner adds;
+  databases and caches keep the package network. The network is created
+  when the edge proxy is set up, so an install before that fails at
+  Compose with the missing external network, and the plan notes say so.
   Before S249 the edge network came only from the caller's `networks` list
   (the dashboard sent it, the CLI and acceptance flows did not), so the
   proxy had no path to the app and its route answered nothing.

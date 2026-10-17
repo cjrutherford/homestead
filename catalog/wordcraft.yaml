@@ -34,7 +34,6 @@ requirements:
   memorymb: 64
   cpucount: 1
   architectures: [amd64, arm64]
-  ports: [8080]
 exposure:
   package: wordcraft
   endpoints:

@@ -220,11 +220,16 @@ func ApplyRegistered(ctx context.Context, m Manifest, dir, project, name string,
 	if err := WriteSecretFiles(dir, SecretFilesFor(m), src); err != nil {
 		return err
 	}
-	return composeRun(ctx, dir, project, append([]string{"restart"}, consumerServices(decl)...)...)
+	return restartConsumers(ctx, dir, project, decl)
 }
 
-// restartConsumers restarts the services consuming a secret.
+// restartConsumers restarts the services consuming a secret. Restart
+// starts a stopped container, so it takes the craft image gate like every
+// other start path (S249).
 func restartConsumers(ctx context.Context, dir, project string, decl SecretDecl) error {
+	if err := checkCraftStack(ctx, dir, project); err != nil {
+		return err
+	}
 	return composeRun(ctx, dir, project, append([]string{"restart"}, consumerServices(decl)...)...)
 }
 

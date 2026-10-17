@@ -98,10 +98,14 @@ export class Catalog implements OnInit {
         this.selected.set(manifest);
         const ports: Record<string, string> = {};
         for (const service of manifest.Services) {
+          // Craft packages declare no host port (they publish none); their
+          // shared server listens on 8080 inside the container.
           ports[service.name] =
             manifest.Requirements.Ports.length > 0
               ? String(manifest.Requirements.Ports[0])
-              : '';
+              : service.image.startsWith('homestead/craft-')
+                ? '8080'
+                : '';
         }
         this.containerPorts.set(ports);
         const mounts: Record<string, string> = {};

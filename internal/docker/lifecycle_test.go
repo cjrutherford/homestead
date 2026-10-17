@@ -20,7 +20,7 @@ func testStack(t *testing.T) Stack {
 func TestDefinitionsValidateStack(t *testing.T) {
 	bad := Stack{Name: "Bad!"}
 	for _, build := range []func(Stack, ...string) (operation.Definition, error){
-		PullDefinition, UpDefinition, StopDefinition, RestartDefinition, RedeployDefinition,
+		PullDefinition, StopDefinition,
 	} {
 		if _, err := build(bad); err == nil {
 			t.Fatal("invalid stack accepted")
@@ -37,10 +37,7 @@ func TestDefinitionTypes(t *testing.T) {
 		services []string
 	}{
 		{PullDefinition, OpPull, 1, nil},
-		{UpDefinition, OpUp, 1, []string{"web"}},
 		{StopDefinition, OpStop, 1, nil},
-		{RestartDefinition, OpRestart, 1, nil},
-		{RedeployDefinition, OpRedeploy, 2, nil},
 	}
 	for _, tc := range cases {
 		def, err := tc.build(stack, tc.services...)
@@ -77,61 +74,6 @@ func openLifecycleRunner(t *testing.T) *operation.Runner {
 	}
 	t.Cleanup(func() { s.Close() })
 	return operation.NewRunner(s)
-}
-
-func TestUpRunsCompose(t *testing.T) {
-	calls := stubCompose(t, "")
-	runner := openLifecycleRunner(t)
-	def, err := UpDefinition(testStack(t), "web")
-	if err != nil {
-		t.Fatalf("UpDefinition: %v", err)
-	}
-	op, err := runner.Start(context.Background(), def, "")
-	if err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	done, err := runner.Wait(context.Background(), op.ID)
-	if err != nil {
-		t.Fatalf("Wait: %v", err)
-	}
-	if done.Status != operation.StatusSucceeded {
-		t.Fatalf("status = %q", done.Status)
-	}
-	found := false
-	for _, call := range *calls {
-		if strings.Contains(call, "--project-name demo up -d web") {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("calls = %v", *calls)
-	}
-}
-
-func TestRedeployOrder(t *testing.T) {
-	calls := stubCompose(t, "")
-	runner := openLifecycleRunner(t)
-	def, err := RedeployDefinition(testStack(t))
-	if err != nil {
-		t.Fatalf("RedeployDefinition: %v", err)
-	}
-	op, err := runner.Start(context.Background(), def, "")
-	if err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	done, err := runner.Wait(context.Background(), op.ID)
-	if err != nil {
-		t.Fatalf("Wait: %v", err)
-	}
-	if done.Status != operation.StatusSucceeded {
-		t.Fatalf("status = %q", done.Status)
-	}
-	if len(*calls) != 2 {
-		t.Fatalf("calls = %v, want pull then up", *calls)
-	}
-	if !strings.Contains((*calls)[0], " pull") || !strings.Contains((*calls)[1], " up -d") {
-		t.Fatalf("order = %v", *calls)
-	}
 }
 
 func TestLifecycleFailureAborts(t *testing.T) {

@@ -191,6 +191,13 @@ func planCompose(plan *InstallPlan, req InstallRequest) error {
 	for _, service := range req.Manifest.Services {
 		known[service.Name] = true
 	}
+	// Statelessness derives from the manifest (ADR-028), and backups,
+	// schedules and update backups all trust it. An owner mount on a
+	// stateless package would hold data that is never backed up, so it
+	// is refused rather than silently unprotected.
+	if len(req.Volumes) > 0 && req.Manifest.Stateless() {
+		return fmt.Errorf("catalog: %s is stateless and keeps nothing on the appliance, so it takes no owner volumes (they would never be backed up)", req.Manifest.Name)
+	}
 	for _, volume := range req.Volumes {
 		if !known[volume.Service] {
 			return fmt.Errorf("catalog: volume names unknown service %q", volume.Service)
@@ -241,13 +248,20 @@ func planCompose(plan *InstallPlan, req InstallRequest) error {
 		specs = append(specs, ServiceGeneration{Service: service.Name, Volumes: byService[service.Name]})
 	}
 	networks := req.Networks
+	var edgeServices map[string]bool
 	if len(plan.Routes) > 0 {
 		networks = withEdgeNetwork(req.Networks)
 	}
 	if len(networks) != len(req.Networks) {
-		plan.Notes = append(plan.Notes, fmt.Sprintf("attached to %s so the proxy can reach the routed service", docker.NetworkEdge))
+		// Only the routed services join the edge network the planner
+		// added; databases and caches stay on the package network.
+		edgeServices = map[string]bool{}
+		for _, route := range plan.Routes {
+			edgeServices[route.Target.Host] = true
+		}
+		plan.Notes = append(plan.Notes, fmt.Sprintf("routed services attach to %s so the proxy can reach them; that network is created when the edge proxy is set up, so install fails until it exists", docker.NetworkEdge))
 	}
-	files, err := Generate(req.Manifest, Generation{Networks: networks, Services: specs})
+	files, err := Generate(req.Manifest, Generation{Networks: networks, EdgeServices: edgeServices, Services: specs})
 	if err != nil {
 		return err
 	}

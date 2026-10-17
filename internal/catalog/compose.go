@@ -61,7 +61,12 @@ type ServiceGeneration struct {
 // the manifest itself.
 type Generation struct {
 	Networks []NetworkAttachment
-	Services []ServiceGeneration
+	// EdgeServices, when non-nil, limits the homestead-edge network in
+	// Networks to the named services (the routed ones, S249): data
+	// services such as databases keep the package network only. Nil
+	// attaches every network to every service.
+	EdgeServices map[string]bool
+	Services     []ServiceGeneration
 }
 
 // validate checks generation against the manifest: known services
@@ -250,8 +255,11 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 			}
 		}
 		rendered.Environment, rendered.Secrets = serviceSecretWiring(manifest, name)
-		if len(serviceNetworks) > 0 {
-			rendered.Networks = append([]string(nil), serviceNetworks...)
+		for _, network := range serviceNetworks {
+			if network == docker.NetworkEdge && generation.EdgeServices != nil && !generation.EdgeServices[name] {
+				continue
+			}
+			rendered.Networks = append(rendered.Networks, network)
 		}
 		document.Services[name] = rendered
 	}

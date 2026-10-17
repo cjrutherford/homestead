@@ -10,12 +10,14 @@ import (
 )
 
 // Operation types for stack lifecycle, one per verb for queryability.
+//
+// Verbs that start containers (up, restart, redeploy) are deliberately
+// absent: Compose starts go through the catalog package's craft-gated
+// paths (S249, ADR-028), and an ungated definition here would bypass
+// the recorded-image check.
 const (
-	OpPull     = "stack.pull"
-	OpUp       = "stack.up"
-	OpStop     = "stack.stop"
-	OpRestart  = "stack.restart"
-	OpRedeploy = "stack.redeploy"
+	OpPull = "stack.pull"
+	OpStop = "stack.stop"
 )
 
 // Lifecycle runs through the operation engine (S061): definitions below
@@ -99,25 +101,7 @@ func PullDefinition(stack Stack, services ...string) (operation.Definition, erro
 	return lifecycleDefinition(OpPull, []stepSpec{{"pull", []string{"pull"}}}, stack, services)
 }
 
-// UpDefinition ensures the stack runs (creates or starts, detached).
-func UpDefinition(stack Stack, services ...string) (operation.Definition, error) {
-	return lifecycleDefinition(OpUp, []stepSpec{{"up", []string{"up", "-d"}}}, stack, services)
-}
-
 // StopDefinition stops containers without removing them.
 func StopDefinition(stack Stack, services ...string) (operation.Definition, error) {
 	return lifecycleDefinition(OpStop, []stepSpec{{"stop", []string{"stop"}}}, stack, services)
-}
-
-// RestartDefinition restarts running containers in place.
-func RestartDefinition(stack Stack, services ...string) (operation.Definition, error) {
-	return lifecycleDefinition(OpRestart, []stepSpec{{"restart", []string{"restart"}}}, stack, services)
-}
-
-// RedeployDefinition pulls fresh images then recreates containers.
-func RedeployDefinition(stack Stack, services ...string) (operation.Definition, error) {
-	return lifecycleDefinition(OpRedeploy, []stepSpec{
-		{"pull", []string{"pull"}},
-		{"up", []string{"up", "-d"}},
-	}, stack, services)
 }

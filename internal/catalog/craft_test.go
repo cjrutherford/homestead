@@ -154,6 +154,43 @@ func TestComposeUpCraftGateFailsClosed(t *testing.T) {
 	}
 }
 
+func TestComposeUpCraftGateSeesEveryFileComposeCouldLoad(t *testing.T) {
+	id := "sha256:" + strings.Repeat("a", 64)
+	withCraftSeams(t, map[string]string{craftTag: id}, map[string]string{craftTag: "sha256:" + strings.Repeat("b", 64)})
+	ran := false
+	old := composeRun
+	composeRun = func(context.Context, string, string, ...string) error { ran = true; return nil }
+	t.Cleanup(func() { composeRun = old })
+	craftBody := "services:\n  web:\n    image: " + craftTag + "\n"
+	cases := map[string]map[string]string{
+		"compose.yml":                 {"compose.yml": craftBody},
+		"docker-compose.yaml":         {"docker-compose.yaml": craftBody},
+		"docker-compose.override.yml": {"compose.yaml": "services: {}\n", "docker-compose.override.yml": craftBody},
+		"COMPOSE_FILE in .env":        {"other.yaml": craftBody, ".env": "COMPOSE_FILE=other.yaml\n"},
+		"COMPOSE_FILE list":           {"compose.yaml": "services: {}\n", "extra.yaml": craftBody, ".env": "COMPOSE_FILE=compose.yaml:extra.yaml\n"},
+	}
+	for name, files := range cases {
+		dir := t.TempDir()
+		for file, body := range files {
+			if err := os.WriteFile(filepath.Join(dir, file), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		ran = false
+		if err := composeUp(context.Background(), dir, "p"); err == nil || ran {
+			t.Errorf("%s: started a craft stack past the gate (err=%v ran=%v)", name, err, ran)
+		}
+	}
+	// COMPOSE_FILE from the daemon environment is honoured too.
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, "env.yaml"), []byte(craftBody), 0o644)
+	t.Setenv("COMPOSE_FILE", "env.yaml")
+	ran = false
+	if err := composeUp(context.Background(), dir, "p"); err == nil || ran {
+		t.Errorf("daemon COMPOSE_FILE: started (err=%v ran=%v)", err, ran)
+	}
+}
+
 func TestSameImageID(t *testing.T) {
 	full := "sha256:" + strings.Repeat("a", 64)
 	for _, tc := range []struct {
@@ -186,6 +223,9 @@ func composeUpPaths() map[string]func(ctx context.Context, dir, project string) 
 			return composeUpServices(ctx, dir, project, "web")
 		},
 		"composeStart": composeStart,
+		"restartConsumers": func(ctx context.Context, dir, project string) error {
+			return restartConsumers(ctx, dir, project, SecretDecl{})
+		},
 	}
 }
 
@@ -379,6 +419,57 @@ func TestPlanInstallAttachesRoutedStacksToTheEdgeNetwork(t *testing.T) {
 	}
 }
 
+func TestPlanInstallJoinsOnlyRoutedServicesToTheEdgeNetwork(t *testing.T) {
+	m := craftManifest(t)
+	m.Services = append(m.Services, Service{Name: "cache", Image: "redis:7@sha256:" + strings.Repeat("a", 64),
+		Data: []DataPath{{Target: "/data", Ephemeral: true, Reason: "scratch"}}})
+	for name, networks := range map[string][]NetworkAttachment{
+		"none":        nil,
+		"package net": {{Name: "wordcraft-net"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			plan, err := PlanInstall(InstallRequest{
+				Manifest: m, Host: installHost(), Domain: "lan",
+				ContainerPorts: map[string]int{"wordcraft": 8080}, Networks: networks,
+			})
+			if err != nil {
+				t.Fatalf("PlanInstall: %v", err)
+			}
+			var doc struct {
+				Services map[string]struct {
+					Networks []string `yaml:"networks"`
+				} `yaml:"services"`
+			}
+			if err := yaml.Unmarshal([]byte(plan.Compose.ComposeYAML), &doc); err != nil {
+				t.Fatal(err)
+			}
+			has := func(service string) bool {
+				for _, n := range doc.Services[service].Networks {
+					if n == "homestead-edge" {
+						return true
+					}
+				}
+				return false
+			}
+			if !has("wordcraft") || has("cache") || len(doc.Services["cache"].Networks) == 0 {
+				t.Fatalf("routed service must join the edge, the cache must not:\n%s", plan.Compose.ComposeYAML)
+			}
+		})
+	}
+}
+
+func TestPlanInstallRefusesOwnerVolumesOnAStatelessPackage(t *testing.T) {
+	_, err := PlanInstall(InstallRequest{
+		Manifest: craftManifest(t), Host: installHost(), Domain: "lan",
+		ContainerPorts: map[string]int{"wordcraft": 8080},
+		Storage:        map[storage.Class]string{storage.ClassApplication: "/mnt/data"},
+		Volumes:        []VolumeSpec{{Service: "wordcraft", Class: storage.ClassApplication, Subpath: "docs", Target: "/docs"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "stateless") {
+		t.Fatalf("err = %v, want a stateless refusal", err)
+	}
+}
+
 // craftPackages lists the packages that follow the static craft shape
 // (S249). Each craft slice (S250 to S253) appends its app here and adds
 // its YAML, manifest entry, knownImageVolumes row and THIRD_PARTY.md
@@ -460,8 +551,16 @@ func TestCraftPackages(t *testing.T) {
 				t.Fatalf("host %s is also claimed by %s", host, other)
 			}
 			hosts[host] = name
-			if len(m.Requirements.Ports) != 1 || m.Requirements.Ports[0] != craftContainerPort {
-				t.Fatalf("ports = %v, want [%d]", m.Requirements.Ports, craftContainerPort)
+			// No host port: the container publishes none (edge-only), and the
+			// daemon itself listens on 127.0.0.1:8080, so declaring the
+			// container port as a requirement refused every install.
+			if len(m.Requirements.Ports) != 0 {
+				t.Fatalf("craft packages declare no host ports: %v", m.Requirements.Ports)
+			}
+			hostFacts := installHost()
+			hostFacts.UsedPorts = map[int]bool{craftContainerPort: true}
+			if report, err := Evaluate(m, hostFacts); err != nil || !report.Passed {
+				t.Fatalf("requirements with %d bound on the host = %+v, %v", craftContainerPort, report, err)
 			}
 			if len(m.Requirements.Storage) != 0 {
 				t.Fatalf("craft packages need no storage class: %+v", m.Requirements.Storage)

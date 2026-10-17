@@ -83,8 +83,13 @@ const craftMarker = "homestead/craft-"
 func checkCraftStack(ctx context.Context, dir, project string) error {
 	var images []string
 	mentioned := false
-	for _, name := range []string{"compose.yaml", OverrideFileName} {
-		raw, err := os.ReadFile(filepath.Join(dir, name))
+	env := dotEnv(dir)
+	for _, name := range composeFileCandidates(dir, env) {
+		path := name
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(dir, name)
+		}
+		raw, err := os.ReadFile(path)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
@@ -102,7 +107,6 @@ func checkCraftStack(ctx context.Context, dir, project string) error {
 		if err := yaml.Unmarshal(raw, &doc); err != nil {
 			return fmt.Errorf("catalog: refusing to start %s: %s does not parse, so its images cannot be checked: %w", project, name, err)
 		}
-		env := dotEnv(dir)
 		for _, svc := range doc.Services {
 			images = append(images, expandCompose(svc.Image, env))
 		}
@@ -112,6 +116,39 @@ func checkCraftStack(ctx context.Context, dir, project string) error {
 		return fmt.Errorf("catalog: refusing to start %s: its compose files name a craft image outside a plain service image field", project)
 	}
 	return checkCraftImages(ctx, images)
+}
+
+// composeFileCandidates lists every file name Compose could load for the
+// stack, so the craft gate cannot be sidestepped by a file it does not
+// read: the files Homestead writes, the alternative names Compose
+// discovers on its own, and any COMPOSE_FILE the stack .env or the
+// daemon environment sets (honoured, split on COMPOSE_PATH_SEPARATOR,
+// default ":"). Absolute entries are kept as given.
+func composeFileCandidates(dir string, env map[string]string) []string {
+	names := []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml",
+		OverrideFileName, "compose.override.yml", "docker-compose.override.yaml", "docker-compose.override.yml"}
+	sep := ":"
+	if v, ok := env["COMPOSE_PATH_SEPARATOR"]; ok && v != "" {
+		sep = v
+	} else if v := os.Getenv("COMPOSE_PATH_SEPARATOR"); v != "" {
+		sep = v
+	}
+	for _, list := range []string{env["COMPOSE_FILE"], os.Getenv("COMPOSE_FILE")} {
+		for _, name := range strings.Split(list, sep) {
+			if name = strings.TrimSpace(name); name != "" {
+				names = append(names, name)
+			}
+		}
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, name := range names {
+		if !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // dotEnv reads the stack's .env (KEY=VALUE lines) for interpolation.

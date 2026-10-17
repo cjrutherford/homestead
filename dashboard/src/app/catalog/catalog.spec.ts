@@ -93,6 +93,21 @@ describe('Catalog', () => {
     expect(text()).toContain('Jellyfin');
   });
 
+  it('defaults a craft package container port to 8080 without a host port requirement', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    fixture.componentInstance['select']('wordcraft');
+    http.expectOne('/api/v1/catalog/wordcraft').flush({
+      ...MANIFEST,
+      Name: 'wordcraft',
+      Services: [
+        { name: 'wordcraft', image: 'homestead/craft-wordcraft:0.7.0', exposes: 'web' },
+      ],
+      Requirements: { MemoryMB: 64, Storage: [], Ports: [] },
+    });
+    expect(fixture.componentInstance['containerPorts']()).toEqual({ wordcraft: '8080' });
+  });
+
   it('reviews a plan then installs through operations', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/catalog').flush(PACKAGES);

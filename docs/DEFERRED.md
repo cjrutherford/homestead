@@ -335,16 +335,20 @@
   verified, because an unsigned or absent manifest must not hide the whole
   catalog.
 - `requirements.ports` serves two jobs: the dashboard's default container
-  port and the host-port conflict check. A craft package declares 8080 as the
-  container port, so a host process already bound to 8080 fails the
-  requirements check although the container publishes no host port. The
-  fields should be split.
+  port and the host-port conflict check. Craft packages declare no
+  `requirements.ports` (the container publishes no host port and the daemon
+  itself listens on 8080, so declaring it refused every install); the
+  dashboard defaults a `homestead/craft-` service to container port 8080
+  instead. The fields should still be split so a container port has its own
+  manifest field.
 - Edge network aliases: every service in a routed stack joins
   `homestead-edge` and routes target the bare service name, so two stacks
   using the same service name (for example `web`, `db`) would share an alias
   on that network. Craft packages name their one service after the app; a
   multi-service stack should attach only its exposed service to the edge or
-  route by container name.
+  route by container name. The planner now joins only routed services to an
+  edge network it adds itself; an edge entry supplied by the caller (the
+  dashboard) still attaches to every service.
 - Scheduler surface: a stateless package has no scheduler job, so its
   "no-op" on `GET /api/v1/scheduler/jobs` is absence; the explicit
   `stateless` marker is on the backup schedule routes, `backup schedules`
