@@ -426,7 +426,7 @@ func handleUpdatesApply(st *store.Store, catalogDir string, client *docker.Clien
 			return
 		}
 		req := update.UpdateRequest{
-			Package: name, StackDir: docker.DirFor(name),
+			Package: name, StackDir: docker.DirFor(name), Store: st,
 		}
 		for _, move := range plan.Services {
 			req.Moves = append(req.Moves, move)

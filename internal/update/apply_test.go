@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"homestead/internal/catalog"
 
 	"homestead/internal/operation"
 	"homestead/internal/store"
@@ -69,6 +72,74 @@ func openUpdateRunner(t *testing.T) *operation.Runner {
 	}
 	t.Cleanup(func() { s.Close() })
 	return operation.NewRunner(s)
+}
+
+// driftStore opens a store and records the stack's fingerprints, as an
+// install does, so a test can ask whether an update leaves it clean.
+func driftStore(t *testing.T, dir string) *store.Store {
+	t.Helper()
+	s, err := store.Open(filepath.Join(t.TempDir(), "drift.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	if err := catalog.RecordFingerprints(s, "demo", dir); err != nil {
+		t.Fatalf("RecordFingerprints: %v", err)
+	}
+	return s
+}
+
+func runUpdate(t *testing.T, req UpdateRequest) operation.Operation {
+	t.Helper()
+	def, err := UpdateDefinition(req)
+	if err != nil {
+		t.Fatalf("UpdateDefinition: %v", err)
+	}
+	runner := openUpdateRunner(t)
+	op, err := runner.Start(context.Background(), def, "")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	done, err := runner.Wait(context.Background(), op.ID)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	return done
+}
+
+func assertDriftClean(t *testing.T, s *store.Store, dir string) {
+	t.Helper()
+	res, err := catalog.Scan(s, func(string) string { return dir }, time.Now())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if !res.Clean() {
+		t.Fatalf("drift after update: %+v", res)
+	}
+}
+
+func TestUpdateLeavesDriftClean(t *testing.T) {
+	dir := updateStack(t, map[string]string{"web": "example/web:1.0.0"})
+	s := driftStore(t, dir)
+	stubUpdate(t, "{\"Service\":\"web\",\"State\":\"running\"}\n", false)
+	req := updateRequest(dir)
+	req.Store = s
+	if done := runUpdate(t, req); done.Status != operation.StatusSucceeded {
+		t.Fatalf("status = %q (%+v)", done.Status, done)
+	}
+	assertDriftClean(t, s, dir)
+}
+
+func TestRollbackLeavesDriftClean(t *testing.T) {
+	dir := updateStack(t, map[string]string{"web": "example/web:1.0.0"})
+	s := driftStore(t, dir)
+	stubUpdate(t, "{\"Service\":\"web\",\"State\":\"exited\"}\n", false)
+	req := updateRequest(dir)
+	req.Store = s
+	if done := runUpdate(t, req); done.Status != operation.StatusFailed || !strings.Contains(done.Error, "rolled back") {
+		t.Fatalf("status = %q (%+v)", done.Status, done)
+	}
+	assertDriftClean(t, s, dir)
 }
 
 func TestUpdateFlow(t *testing.T) {

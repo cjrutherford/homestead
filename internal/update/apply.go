@@ -12,6 +12,7 @@ import (
 	"homestead/internal/catalog"
 	"homestead/internal/craft"
 	"homestead/internal/operation"
+	"homestead/internal/store"
 )
 
 // composeYAMLName is the only file updates rewrite: generated stacks
@@ -45,6 +46,10 @@ type UpdateRequest struct {
 	StackDir string
 	Moves    []ServiceUpdate
 	Backup   func(ctx context.Context) error
+	// Store, when set, receives the generated-file fingerprints after the
+	// pins on disk change and settle (a successful up, or a rollback), so
+	// the drift scan does not report Homestead's own rewrite as an edit.
+	Store *store.Store
 }
 
 // Validate checks update shape: named package and directory, at
@@ -187,6 +192,10 @@ func UpdateDefinition(req UpdateRequest) (operation.Definition, error) {
 			}
 			if err := verifyRunning(ctx, req.StackDir, req.Package, req.Moves); err != nil {
 				rollback := rollbackImages(req)
+				recordErr := recordFingerprints(req)
+				if recordErr != nil {
+					err = fmt.Errorf("%v (%v)", err, recordErr)
+				}
 				if gateErr := checkCraftStart(ctx, req.StackDir, req.Package); gateErr != nil {
 					return fmt.Errorf("%v (rolled back to %v, but %v)", err, rollback, gateErr)
 				}
@@ -198,7 +207,7 @@ func UpdateDefinition(req UpdateRequest) (operation.Definition, error) {
 				}
 				return fmt.Errorf("%v (rolled back to previous images)", err)
 			}
-			return nil
+			return recordFingerprints(req)
 		},
 	})
 	return def, nil
@@ -236,4 +245,17 @@ func rollbackImages(req UpdateRequest) []string {
 		images = append(images, move.Current)
 	}
 	return images
+}
+
+// recordFingerprints re-records the stack's managed-file fingerprints
+// from what is on disk now. Update and rollback both rewrite
+// compose.yaml; without this the next drift scan calls that an edit.
+func recordFingerprints(req UpdateRequest) error {
+	if req.Store == nil {
+		return nil
+	}
+	if err := catalog.RecordFingerprints(req.Store, req.Package, req.StackDir); err != nil {
+		return fmt.Errorf("update: record fingerprints: %w", err)
+	}
+	return nil
 }

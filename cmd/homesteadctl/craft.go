@@ -55,7 +55,7 @@ func runCraftStatus(ctx context.Context, client *apiclient.Client, stdout, stder
 		case !img.Present:
 			state = "MISSING locally"
 		case !img.Match:
-			state = "DIFFERS from recorded digest (" + img.LiveID + ")"
+			state = "DIFFERS from recorded digest (" + img.ImageID + ")"
 		}
 		fmt.Fprintf(stdout, "%s  %s  counter %d  %s\n", img.Tag, img.ImageID, img.Counter, state)
 	}

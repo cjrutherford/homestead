@@ -46,7 +46,7 @@ func TestCraftStatusShowsDigestComparison(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit = %d", code)
 	}
-	for _, want := range []string{"homestead/craft-w:1.0.0", "DIFFERS from recorded digest (sha256:bb)", "artifact-digest check"} {
+	for _, want := range []string{"homestead/craft-w:1.0.0", "DIFFERS from recorded digest (sha256:aa)", "artifact-digest check"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout)
 		}

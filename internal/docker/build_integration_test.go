@@ -158,6 +158,15 @@ func realCraftBuild(t *testing.T, version, ext string, write func(*testing.T, st
 	if err != nil || wasmResp.Header.Get("Content-Encoding") != "gzip" {
 		t.Fatalf("wasm not gzip-encoded: %v %v", err, wasmResp)
 	}
+	// Behind the Caddy edge every request carries Via; nginx must still
+	// compress (gzip_proxied any), or the wasm ships at full size.
+	viaReq, _ := http.NewRequest(http.MethodGet, base+"/app.0123456789ab.wasm", nil)
+	viaReq.Header.Set("Accept-Encoding", "gzip")
+	viaReq.Header.Set("Via", "1.1 Caddy")
+	viaResp, err := (&http.Transport{DisableCompression: true}).RoundTrip(viaReq)
+	if err != nil || viaResp.Header.Get("Content-Encoding") != "gzip" {
+		t.Fatalf("wasm not gzip-encoded behind a proxy (Via): %v %v", err, viaResp)
+	}
 }
 
 func writeTarGz(t *testing.T, path string, files map[string]string) {
