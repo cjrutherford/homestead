@@ -3209,46 +3209,108 @@ no COOP/COEP. `HOMESTEAD_DOCKER_TESTS=1 go test ./internal/docker -run
 TestRealCraftBuild` passes with the new shape. The local image was removed
 afterwards. Not a substitute for the appliance run.
 
-### KVM acceptance: PENDING (nothing below has been run)
+### KVM acceptance (2026-10-17, VM 2, HEAD 120d517, dashboard embedded build)
 
-Needs the owner's signature first (an agent must not hold the real key), or a
-throwaway key for the run:
+Run on VM 2 (Debian 13, Docker, internal CA generation 2 from S280; the Caddy
+edge was redeployed with `homesteadctl edge deploy`) with a throwaway minisign
+key (`minisign -G -W`, generated and signed on the guest, trusted with `craft
+trust add`, removed with `craft trust remove` and shredded afterwards; nothing
+committed). The daemon built `wordcraft-web-0.7.0.zip` after downloading it
+over HTTPS from GitHub. Binary sha256 `c41f148a...` equals a root build of the
+same tree on the guest. Disk snapshot before the run: `vm2-pre-s249.qcow2`.
+Two product bugs were found (below); the other steps passed.
 
-1. Sign: owner runs `docs/architecture/CRAFT_SIGNING_RUNBOOK.md` steps 2 to 4
-   on `catalog/craft/craft-manifest.yaml` and commits
-   `craft-manifest.yaml.minisig`. If `images/craft/` or the artifact changes
-   first, regenerate the manifest (the shared test names the command).
-   For KVM alone: `minisign -G -W` throwaway key, `craft trust add`, remove
-   afterwards; never commit it.
-2. Fresh appliance, S280 internal CA created (`tls local create`), root
-   exported. `craft plan wordcraft`, `craft build wordcraft --follow`.
-3. `docker image inspect homestead/craft-wordcraft:0.7.0` of the appliance
-   build: VOLUMEs (expect none), digest; **finalise the `knownImageVolumes`
-   row comment** (currently "PENDING KVM verification") with date and result.
-   `docker diff` of the running container: confirm `/tmp` is the only
-   writable path and finalise the ephemeral declaration if not.
-4. Install through the **CLI** with a body naming only a package network
-   (the old failing shape) and `container_ports {"wordcraft": 8080}`: the
-   plan note shows the edge attach; the app answers on
-   `https://wordcraft.lan/` with a leaf from the internal CA: `scripts/craft-header-check.sh https://wordcraft.lan/ --cacert root.pem`
-   (record the headers; add `--resolve` if the name is not in DNS).
-5. Compose-up gate live: with the app installed, replace the tag
-   (`docker tag alpine:latest homestead/craft-wordcraft:0.7.0`) and exercise
-   every start path: configure/restore (`composeUp`), a migration run that
-   starts the database-only services, and `updates apply`; each must refuse
-   with "local image does not match the recorded digest" and start nothing.
-   Restore the tag (rebuild).
-6. Stateless: `backup schedule --package wordcraft ...` is refused (422
-   naming wordcraft); `GET /api/v1/scheduler/jobs` has no wordcraft job;
-   `backup schedules` shows no schedule; `updates apply wordcraft --backup`
-   (or the Updates page) prints the skipped-backup note and audits
-   `update.backup.skipped`.
-7. Remove: container, stack directory, route, DNS name, edge entry gone.
-   Reinstall. Bump to a test version (catalog entry, craft manifest at a
-   higher counter, throwaway or owner signature), `updates apply wordcraft
-   --craft-manifest ... --craft-signature ... --follow`: rebuilds, updates,
-   prunes the old tag. `drift scan` (S212, S262) clean after install and
-   after update (note the new `default` network entry in the generated
-   compose; `drift live wordcraft`).
-8. Trust refusal on the live system: flip a byte of an artifact copy
-   (`artifact-digest`) and tamper the recorded image (step 5) are refused.
+1. **Verify-then-build and install: pass.** `craft plan` with the signed
+   manifest verified (counter 1); `craft build --follow` verified, fetched,
+   scanned, built (about 9 s) and recorded
+   `sha256:e924534d0a86...`. `apps install wordcraft` through the CLI with a
+   body naming only `wordcraft-net` and `container_ports {"wordcraft": 8080}`
+   passed (`verify-craft-images`, `write-stack`, `up`), the plan note showed
+   the edge attach, and the generated compose joins `homestead-edge`. After
+   `edge routes set` (host `wordcraft.lan`, upstream `wordcraft:8080`, local,
+   TLS internal) the edge answered: the S279 "route returns nothing" finding
+   is closed live. The install does not create the route; the owner or
+   dashboard sets it with the route table (existing behaviour).
+2. **Image and container: pass.** `docker image inspect`: `Config.Volumes`
+   null, user `nginx`, healthcheck on `/healthz`, container `healthy`;
+   `docker diff` empty with `/tmp` the only mount (a tmpfs). The
+   `knownImageVolumes` row comment in `internal/catalog/data_test.go` is
+   finalised.
+3. **HTTPS: pass except gzip through the edge.**
+   `https://wordcraft.lan/` answered with the internal CA leaf (curl with
+   the root, no `-k`, `--resolve` to 127.0.0.1); the page loads its
+   `index.html`, `.js` and `_bg.wasm`, and the wasm equals the upstream zip's.
+   No `SharedArrayBuffer` in the JS or wasm and no COOP/COEP sent. Verified
+   values are in `docs/architecture/CRAFT_HEADER_TABLE.md`. **Bug 1:**
+   `scripts/craft-header-check.sh` FAILS "not gzip-encoded" through Caddy
+   (39,785,016 bytes, no `Content-Encoding`) while the container answers gzip
+   (14,947,550 bytes) when asked directly: nginx `gzip_proxied` defaults to
+   `off` and Caddy adds `Via`. Repro: any `curl -H 'Accept-Encoding: gzip'`
+   of the `_bg.wasm` through `https://wordcraft.lan/` (or directly with `-H
+   'Via: 1.1 Caddy'`). Fix, checked on a container with the config mounted:
+   `gzip_proxied any;` in `images/craft/nginx.conf`, then regenerate and
+   re-sign the craft manifest (the context digest changes). Not applied here.
+4. **Compose-up gate: pass for the reachable paths.** With
+   `homestead/craft-wordcraft:0.7.0` re-tagged to busybox, `craft status`
+   reported DIFFERS; `apps configure` (operation fails at `up` with "local
+   image does not match the recorded digest", after `write-config`) and `drift
+   restore` (after a hand edit of compose.yaml; `restore-files` then `up`
+   refused) both refused and the running container was untouched; `apps
+   install` over the install answers 409. `updates apply` with the swapped tag
+   did not refuse: the update's own verify-then-build ran first and re-tagged
+   the verified image (a rebuild repairs by design), then failed at `rewrite`
+   with `image "sha256:e924..." not found in compose` because the package was
+   already current (cosmetic: the message names an ID, not the tag, and a
+   no-op apply rebuilds). **Not reachable live for wordcraft:** the
+   database-only `composeUpServices` and `composeStart` (migration; `data
+   plan wordcraft` answers 422 "nothing to migrate") and the secret-rotation
+   restart (wordcraft declares no secrets; `--rotate-secret` answers 422).
+   Those gates remain covered by `TestEveryComposeStartPathTakesTheCraftGate`.
+   The tag was restored with `craft build`.
+5. **Stateless: pass.** `backup schedule --package wordcraft` and the API
+   answered 422 naming wordcraft; `GET /backups/schedules/wordcraft` answers
+   200 `stateless: true`; `backup schedules` and `scheduler jobs` list no
+   wordcraft job; `updates apply wordcraft --backup` proceeded and audited
+   `update.backup.skipped` ("wordcraft is stateless and keeps nothing on the
+   appliance").
+6. **Trust refusals: pass.** A copy of the zip with one flipped byte was
+   refused by `craft plan` and `craft build --artifact` ("artifact-digest
+   check failed", audited, no tag change); the recorded-digest mismatch is
+   step 4.
+7. **Lifecycle: install and remove pass; drift after update FAILS (bug 2).**
+   Drift scan (scheduler job `drift:scan`, interval set to 5 minutes for the
+   run and restored to 24 h) reported clean with 5 packages after install.
+   `apps uninstall` removed the container and the generated compose files
+   (the stack directory remains, empty, as for every package); clearing the
+   route removed the Caddy snippet; the leaf showed `orphan` until the S280
+   grace period; the craft image stays. Reinstall passed with the same leaf.
+   Update to a throwaway catalog entry 0.7.1 plus a counter 2 manifest (same
+   artifact, signed with the throwaway key): `updates list` showed the craft
+   move, `updates apply --backup --craft-manifest ... --craft-signature ...
+   --follow` verified, built `0.7.1`, recorded, rewrote, started and pruned
+   the 0.7.0 tag. **Bug 2:** the next scheduled drift scan then reported
+   `drift: wordcraft compose.yaml (modified)` (managed 0.7.0, current 0.7.1).
+   The update applier (`internal/update/apply.go`, `rewriteImages`) rewrites
+   `compose.yaml` but never calls `catalog.RecordFingerprints`, so the stored
+   hash is stale after every update, not only craft updates. Repro: install,
+   `updates apply` any pending move, wait for or run a drift scan. A
+   `drift accept wordcraft` clears it; `drift live` stayed clean. Not fixed here.
+8. **Cleanup: done.** Package uninstalled, route table emptied, throwaway
+   key removed from the appliance and shredded, work directory and
+   temporary files deleted, catalog redeployed with `install-systemd.sh`
+   (the bumped catalog entry and signature are gone), the 0.7.1 craft image
+   removed, the Caddy container removed.
+
+Left behind on VM 2: the S249 daemon build and catalog, the
+`homestead-edge` network and `/opt/homestead/stacks/caddy` files, the empty
+`/opt/homestead/stacks/wordcraft` directory, an orphan `wordcraft.lan` leaf
+awaiting its scheduler cleanup (the daemon removes it after the grace
+period), `craft_baseline`, `craft_verdicts` and `craft_images` rows for the
+throwaway run (counter 2 baseline), Docker build-cache layers from the craft builds
+and `/home/tester/hs-s249`. Daemon hash
+unchanged from the build above.
+
+Follow-up work (not in this slice): bug 1 (`gzip_proxied any;` and a
+re-signed craft manifest) and bug 2 (record fingerprints after an update
+rewrite, with a test and a live drift check); both belong in a fix slice
+before S250 reuses the shape.

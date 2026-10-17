@@ -40,9 +40,10 @@ var knownImageVolumes = map[string]imageVolumes{
 	// Craft images are built locally (S279), so this row is the locally
 	// built tag, not a pulled one. The shared craft Dockerfile declares no
 	// VOLUME (verified on the dev workstation 2026-10-17 with `docker image
-	// inspect` of a real build of this release). PENDING KVM verification
-	// (S249): the KVM agent re-inspects the tag built on the appliance and
-	// replaces this note with the date and result.
+	// inspect` of a real build of this release) and re-verified on the KVM
+	// appliance 2026-10-17 (S249): the image built there by the daemon
+	// (sha256:e924534d0a86...) has Config.Volumes null and user nginx, and
+	// `docker diff` of the running container is empty with /tmp the tmpfs.
 	"homestead/craft-wordcraft:0.7.0": {},
 }
 

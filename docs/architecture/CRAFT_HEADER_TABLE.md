@@ -14,7 +14,7 @@ healthcheck, nginx user and port.
 
 | App | Version | wasm MIME | Cache headers | Precompression | COOP/COEP/SAB | WebGPU / WebGL2 / clipboard | Healthcheck | nginx user:port |
 |---|---|---|---|---|---|---|---|---|
-| wordcraft | 0.7.0 | `application/wasm` (hashed and unhashed) | `index.html`, other unhashed files: `no-cache`. Hashed `.js`, `_bg.wasm`, `.ico` (`name-<hex16>[_bg].ext`): `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Build writes `.gz` beside `.html .js .mjs .css .wasm .svg .json .txt .ico`; `gzip_static on` serves them when the client accepts gzip, `gzip on` covers the rest. Measured: 39.8 MB wasm served as 14.9 MB | Not needed: upstream states WordCraft does not use `SharedArrayBuffer`; no COOP/COEP sent, and the check script fails if either appears | Needs a secure context for WebGPU and the clipboard (HTTPS from the internal CA, ADR-030); falls back to WebGL2 over plain HTTP or when WebGPU is absent (`?webgl` forces it); WebGL2 is the floor | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` uses it every 30 s | `nginx` (uid 101):8080 |
+| wordcraft | 0.7.0 | `application/wasm` (hashed and unhashed) | `index.html`, other unhashed files: `no-cache`. Hashed `.js`, `_bg.wasm`, `.ico` (`name-<hex16>[_bg].ext`): `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Build writes `.gz` beside `.html .js .mjs .css .wasm .svg .json .txt .ico`; `gzip_static on` serves them when the client accepts gzip, `gzip on` covers the rest. Measured directly from the container: 39.8 MB wasm served as 14.9 MB; through the Caddy edge it is NOT compressed (open finding below) | Not needed: upstream states WordCraft does not use `SharedArrayBuffer`; no COOP/COEP sent, and the check script fails if either appears | Needs a secure context for WebGPU and the clipboard (HTTPS from the internal CA, ADR-030); falls back to WebGL2 over plain HTTP or when WebGPU is absent (`?webgl` forces it); WebGL2 is the floor | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` uses it every 30 s | `nginx` (uid 101):8080 |
 
 Notes for WordCraft v0.7.0 (measured 2026-10-17 on a locally built image
 run with a read-only root, `/tmp` tmpfs, all capabilities dropped):
@@ -34,8 +34,27 @@ run with a read-only root, `/tmp` tmpfs, all capabilities dropped):
   extension.
 - Writable paths: only `/tmp` (pid file and request temp directories). A
   running container shows no `docker diff` entries with `/tmp` as tmpfs.
-  The KVM `docker diff` of the appliance-built image is recorded in
-  `docs/DEVELOPMENT.md`.
+  Confirmed on the KVM appliance 2026-10-17 on the daemon-built image:
+  no VOLUME, user `nginx`, healthy, `docker diff` empty.
+- Verified on the KVM appliance 2026-10-17 through the real edge
+  (`https://wordcraft.lan/`, Caddy 2.11.7, internal CA leaf, curl with the
+  root and no `-k`, HTTP/2): `/healthz` 200 `no-store`; `index.html` 200
+  `no-cache`, `X-Content-Type-Options: nosniff`; hashed `_bg.wasm`
+  `application/wasm`, `public, max-age=31536000, immutable`, 39,785,016
+  bytes (SHA-256 `c81a3550...` equals the wasm in the upstream zip); hashed
+  `.js` `application/javascript`, immutable; no COOP/COEP, and the JS and
+  wasm contain no `SharedArrayBuffer`, so none is needed.
+- **Open finding (found on KVM, not fixed in this record):** behind Caddy the
+  wasm is served **uncompressed** (39.8 MB, no `Content-Encoding`), so
+  `scripts/craft-header-check.sh` fails its gzip check through the edge
+  while passing against the container directly (14,947,550 bytes, gzip).
+  Cause: Caddy's upstream request carries a `Via` header and nginx's
+  `gzip_proxied` defaults to `off`, so neither `gzip_static` nor `gzip`
+  answers proxied requests. A container started with `gzip_proxied any;`
+  added after `gzip_vary on;` served the gzip file with a `Via: 1.1 Caddy`
+  request. The fix is that one line in `images/craft/nginx.conf`, which
+  changes the build-context digest, so the craft manifest must be regenerated
+  and re-signed (a follow-up slice, see `docs/DEVELOPMENT.md`).
 
 ## Checking a row
 
