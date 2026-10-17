@@ -3703,3 +3703,21 @@ Bugs found (pre-existing, not S252 code; product code untouched, recorded in
    422 `no container port for service "filmcraft"`. Repro: select any
    package, enter a port, Review plan. Verified for all three apps; by the same code it also
    affects every earlier craft package.
+
+**Re-verification after the dashboard fix (commit 4e3d3ff, VM 2):** the
+dashboard bundle was built locally and embedded; its file-hash digest
+matched on the guest, then `scripts/install-systemd.sh` redeployed. Both
+bugs are fixed, and a third of the same kind surfaced and was fixed in the
+same commit: the catalog detail sends `Storage` and `Requirements.Ports` as
+`null` for stateless crafts, which threw in `select()` and left the port
+field blank (the API service now normalises them). Via Chromium and Playwright
+over an ssh tunnel, logged in as alice: Catalog, SoundCraft, domain `lan`,
+Review plan rendered the whole panel (DNS 0, Directories 0, data placement,
+all four browser advisories, the build note) with `container_ports
+{"soundcraft": 8080}`; WordCraft likewise; Jellyfin's form keyed
+`port-jellyfin` with 8096 (review only). The dashboard Install of SoundCraft
+(throwaway minisign key, counter 11, `craft trust add`, `craft build`)
+started operation 544 and the container became healthy. Non-craft
+packages were affected by the key bug (every install form). Cleaned up:
+app uninstalled, image, trust key and `/srv` directory removed, key shredded.
+No Caddy container was started and the route table stayed empty.
