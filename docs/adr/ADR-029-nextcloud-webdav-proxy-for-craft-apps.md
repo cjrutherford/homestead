@@ -64,6 +64,13 @@ The daemon, not the browser, talks to Nextcloud for document content.
 - Mounting Nextcloud storage into the craft containers: gives static
   containers a credential and a file path, violating ADR-018.
 
+## Clarified 2026-10-17
+Owner decision 2026-10-17, no change to the decision: the "craft-side
+adapter" is a framing wrapper page served from the craft image that bridges
+the unmodified app's own host protocol (or open-by-URL hook) to
+`/_homestead/files/` on the same origin. It is within this ADR; the detail is
+in `docs/slices/S254-nextcloud-craft-integration.md`.
+
 ## Consequences
 - The daemon becomes a file-transfer path: its availability, throughput
   and memory bound document access, so streaming and limits are required,
