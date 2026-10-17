@@ -489,7 +489,11 @@
 - The launcher's browser needs outbound access to GitHub and shares its
   unauthenticated limit of 60 API requests per hour per IP, and it loads
   pictures from `raw.githubusercontent.com`. This conflicts mildly with
-  local-first for the browser, not the appliance. The closed `browser:`
+  local-first for the browser, not the appliance. KVM observation (2026-10-17):
+  the page makes 14 `api.github.com` requests per load (one per suite app) and
+  none to `raw.githubusercontent.com` at load, so about four loads an hour fit
+  under the limit; offline it renders with every card "NOT AVAILABLE HERE".
+  The closed `browser:`
   capability set has no network entry, so it is in the description and the
   exposure warning only. A network-dependency advisory kind, or a
   self-hosted mirror of the release data, is deferred.

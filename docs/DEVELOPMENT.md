@@ -3779,14 +3779,83 @@ gzip (also with `Via: 1.1 Caddy`), no COOP/COEP; containers `healthy`,
 `docker diff` empty, `Config.Volumes` null, user `nginx`; gzip-decoded wasm
 equals the zip's.
 
-### KVM acceptance: PENDING
+### KVM acceptance (2026-10-17, VM 2, HEAD e9a5d10, dashboard embedded build)
 
-For each app, on a fresh appliance: install (throwaway minisign key signs the
-fourteen-app manifest), `https://<app>.lan/` answers with the S280 root and
-`craft-header-check.sh` passes over HTTPS (entry and wasm fetched), remove
-cleanly (container, stack directory, route, DNS name, edge entry, leaf),
-reinstall, update to a bumped manifest version, drift scan clean after
-install and update, schedule create refused (422) and no scheduler job.
-Also confirm the launcher page loads from `https://craft-launcher.lan/` and
-record whether the browser reaches GitHub. Then finalise the three
-`knownImageVolumes` comments and the header-table rows.
+Run on VM 2 (Debian 13, Docker, internal CA from S280). The dashboard bundle
+was built locally (node 24), its file-hash digest matched on the guest, and
+`scripts/install-systemd.sh` deployed the tree. A throwaway minisign key
+(`minisign -G -W`, signed with `-l`, kept on the guest only) was trusted with
+`craft trust add` and signed the fourteen-app manifest at counter 12
+(install; the committed manifest apart from the counter) and counter 13
+(update: designcraft 0.8.1, cadcraft 0.7.1, craft-launcher 0.4.2, same
+artifacts, plus matching throwaway edits of the installed catalog). Artifacts
+were downloaded by the daemon over HTTPS and matched the recorded SHA-256.
+Nothing was committed. **All lifecycle steps passed for all three apps; no
+new product bug found.**
+
+- **Build and install:** `craft plan` verified (counter 12); `craft build
+  --follow` built designcraft `sha256:25732064628610...`, cadcraft
+  `28e681d6d50c...`, craft-craft-launcher `848b59433394...`. The launcher was
+  installed first with no other craft app installed (CLI: passed
+  `verify-craft-images`, `write-stack`, `up`), then designcraft (CLI), then
+  cadcraft through the dashboard (below). Routes `<app>.lan` (local, TLS
+  internal) set with one `edge routes set`.
+- **Dashboard install (Chromium via Playwright, ssh tunnel to the daemon):**
+  cadcraft on a fresh app. The form opened with domain `lan`, port field
+  `port-cadcraft` = 8080 and network `homestead-edge` (external) prefilled;
+  Review plan returned 200 and rendered the panel with the browser
+  advisories; Install returned operation 553 and the container became
+  `healthy`. The request carried `container_ports {"cadcraft": 8080}`, so
+  the S252 form fixes hold on a fresh craft app.
+- **Image and container:** `Config.Volumes` null, user `nginx`, healthcheck
+  on `/healthz`, containers `healthy`; `docker diff` empty; `/tmp` the only
+  mount (tmpfs). The three `knownImageVolumes` comments are finalised.
+- **HTTPS and headers:** entry page and wasm fetched over `https://<app>.lan/`
+  with the S280 root (no `-k`); `scripts/craft-header-check.sh` PASS for all
+  three (hashed names, so no `--unhashed`), gzip through Caddy included:
+  designcraft wasm 15,266,666 bytes gzip versus 39,550,250 identity, cadcraft
+  8,449,110 versus 22,546,717, launcher 4,204,488 versus 9,560,083. Decoded
+  and identity bodies are equal and equal the wasm in the upstream zip.
+  Values are in `docs/architecture/CRAFT_HEADER_TABLE.md`. Chromium loaded
+  designcraft and cadcraft in a secure context; the only console error is the
+  implicit `/favicon.ico` 404 (the zips ship none).
+- **Drift:** the scheduled scan (interval set to the 5 minute minimum for the
+  run, restored to 24 h) was clean with 7 packages after install and again
+  after the update, with no `drift accept`; `drift review` clean for each app.
+- **Stateless:** `backup schedule --package <app> --interval 1 --actor alice`
+  answered 422 "stateless package, nothing to back up" for each; `scheduler
+  jobs` lists no craft job.
+- **Remove and reinstall:** `apps uninstall` removed the container and
+  compose file (the empty stack directory remains, as for every package);
+  clearing the route table removed the routes. The three leaves showed
+  `orphan` and came back `ok` with the same expiry on reinstall (not
+  re-issued; the sweep removes orphans, as in S252). Header check PASS again.
+- **Update:** `updates list` showed `<old> -> <new> (manifest)`; `updates apply
+  --craft-manifest ... --craft-signature ...` verified (counter 13), built,
+  recorded, rewrote, started and pruned the old tags for all three; header
+  check PASS again; the rebuilt images are byte-identical (same image IDs).
+- **Craft Launcher in Chromium** (secure context; headless Chromium on
+  SwiftShader, which needed `--use-angle=swiftshader` to paint the egui
+  canvas): the page titled "ArtCraft Launcher" renders an ArtCraft
+  header, "ALL 13" (the other suite apps; it omits itself) with grid and
+  table views and a card per app showing the latest version and date and a
+  "DOWNLOAD FOR LINUX" button; the footer reads "CHECKED JUST NOW - USING
+  GITHUB". It lists the upstream suite, not the installed apps, as the
+  discovery finding said. External hosts contacted by the browser at load:
+  `api.github.com` only (14 `releases/latest` requests, one per suite app
+  including its own, all 200); `raw.githubusercontent.com` was not contacted.
+  With all non-`.lan` requests aborted (an offline browser) the page still
+  renders and every card shows "NOT AVAILABLE HERE" with a disabled
+  "NOT AVAILABLE" button; the 14 failed calls logged `ERR_INTERNET_DISCONNECTED`
+  console errors and nothing else broke. Other console output: egui
+  software-rasteriser and SetTheme warnings. The 14 API calls per load
+  against the 60 per hour unauthenticated limit allow about four loads an
+  hour per public IP (noted in `docs/DEFERRED.md`).
+- **Cleanup:** apps uninstalled, route table emptied, Caddy container and
+  the 0.x.1 images removed, trust key removed, secret key shredded, `/srv`
+  work directory deleted, drift interval restored to 24 h, daemon redeployed
+  with `install-systemd.sh` (catalog restored). Left on VM 2:
+  `craft_baseline` at counter 13 for the three apps (counter 11 for
+  soundcraft, the previous maximum), orphan `.lan` leaves until the
+  `tls:local-leaves` sweep, the empty stack directories, the `homestead-edge`
+  network and Caddy stack files.
