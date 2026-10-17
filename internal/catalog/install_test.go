@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"encoding/json"
 	"net/netip"
 	"strings"
 	"testing"
@@ -133,5 +134,31 @@ func TestPlanInstallRefusals(t *testing.T) {
 				t.Fatalf("error %q, want %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// TestPlanInstallJSONHasNoNullSections guards the dashboard contract: a
+// local plan has no DNS records, yet every section must serialize as an
+// array, never null (S252 KVM validation).
+func TestPlanInstallJSONHasNoNullSections(t *testing.T) {
+	plan, err := PlanInstall(installRequest())
+	if err != nil {
+		t.Fatalf("PlanInstall: %v", err)
+	}
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sections map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &sections); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"Routes", "DNS", "TLS", "Firewall", "Directories", "Mounts", "BrowserAdvisories", "Notes", "Actions"} {
+		if string(sections[key]) == "null" || sections[key] == nil {
+			t.Errorf("%s = %s, want an array", key, sections[key])
+		}
+	}
+	if string(sections["DNS"]) != "[]" {
+		t.Errorf("DNS = %s, want []", sections["DNS"])
 	}
 }

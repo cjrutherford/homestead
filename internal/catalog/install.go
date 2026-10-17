@@ -122,7 +122,41 @@ func PlanInstall(req InstallRequest) (InstallPlan, error) {
 	planTLS(&plan)
 	planFirewall(&plan)
 	planBrowser(&plan, req.Manifest)
+	plan.emptyNotNil()
 	return plan, nil
+}
+
+// emptyNotNil turns nil sections into empty slices so the JSON API
+// always emits arrays: stateless local packages have no DNS records or
+// directories, and clients must not have to guard against null.
+func (p *InstallPlan) emptyNotNil() {
+	if p.Routes == nil {
+		p.Routes = []docker.Route{}
+	}
+	if p.DNS == nil {
+		p.DNS = []dns.Record{}
+	}
+	if p.TLS == nil {
+		p.TLS = []TLSNeed{}
+	}
+	if p.Firewall == nil {
+		p.Firewall = []firewall.ServicePolicy{}
+	}
+	if p.Directories == nil {
+		p.Directories = []ProvisionDir{}
+	}
+	if p.Mounts == nil {
+		p.Mounts = []PlannedMount{}
+	}
+	if p.BrowserAdvisories == nil {
+		p.BrowserAdvisories = []BrowserRequirement{}
+	}
+	if p.Notes == nil {
+		p.Notes = []string{}
+	}
+	if p.Actions == nil {
+		p.Actions = []string{}
+	}
 }
 
 // defaultHostname names endpoints deterministically: the package base

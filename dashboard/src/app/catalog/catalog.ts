@@ -101,10 +101,10 @@ export class Catalog implements OnInit {
         for (const service of manifest.Services) {
           // Craft packages declare no host port (they publish none); their
           // shared server listens on 8080 inside the container.
-          ports[service.name] =
+          ports[service.Name] =
             manifest.Requirements.Ports.length > 0
               ? String(manifest.Requirements.Ports[0])
-              : service.image.startsWith('homestead/craft-')
+              : service.Image.startsWith('homestead/craft-')
                 ? '8080'
                 : '';
         }
@@ -115,7 +115,7 @@ export class Catalog implements OnInit {
         }
         this.mountpoints.set(mounts);
         this.volumes.set([]);
-        this.configRows.set([{ service: manifest.Services[0]?.name ?? '', key: '', value: '' }]);
+        this.configRows.set([{ service: manifest.Services[0]?.Name ?? '', key: '', value: '' }]);
         this.unsetRows.set([]);
         this.appSecrets.set([]);
         this.secretValues.set({});
@@ -204,7 +204,7 @@ export class Catalog implements OnInit {
     this.volumes.update((rows) => [
       ...rows,
       {
-        service: manifest?.Services[0]?.name ?? '',
+        service: manifest?.Services[0]?.Name ?? '',
         class: manifest?.Requirements.Storage[0]?.Class ?? '',
         subpath: '',
         target: '',
@@ -262,7 +262,7 @@ export class Catalog implements OnInit {
   addConfigRow(unset: boolean): void {
     const manifest = this.selected();
     const row = {
-      service: manifest?.Services[0]?.name ?? '',
+      service: manifest?.Services[0]?.Name ?? '',
       key: '',
       value: '',
     };

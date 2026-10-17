@@ -26,7 +26,7 @@ const MANIFEST = {
   Blurb: 'Media server you control.',
   Description: 'Streams media.',
   Category: 'media',
-  Services: [{ name: 'jellyfin', image: 'jellyfin/jellyfin:12.2', exposes: 'web' }],
+  Services: [{ Name: 'jellyfin', Image: 'jellyfin/jellyfin:12.2', Exposes: 'web' }],
   Requirements: {
     MemoryMB: 2048,
     Storage: [{ Class: 'bulk', MinBytes: 1 }],
@@ -101,11 +101,75 @@ describe('Catalog', () => {
       ...MANIFEST,
       Name: 'wordcraft',
       Services: [
-        { name: 'wordcraft', image: 'homestead/craft-wordcraft:0.7.0', exposes: 'web' },
+        { Name: 'wordcraft', Image: 'homestead/craft-wordcraft:0.7.0', Exposes: 'web' },
       ],
       Requirements: { MemoryMB: 64, Storage: [], Ports: [] },
     });
     expect(fixture.componentInstance['containerPorts']()).toEqual({ wordcraft: '8080' });
+  });
+
+  it('renders the full plan panel when the API sends null sections', () => {
+    const advisories = [
+      { Capability: 'webcodecs', Label: 'Video codecs (WebCodecs)', Reason: 'Hardware video decoding.' },
+    ];
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    fixture.componentInstance['select']('wordcraft');
+    http.expectOne('/api/v1/catalog/wordcraft').flush({
+      ...MANIFEST,
+      Name: 'wordcraft',
+      Services: [{ Name: 'wordcraft', Image: 'homestead/craft-wordcraft:0.7.0', Exposes: 'web' }],
+      Requirements: { MemoryMB: 64, Storage: [], Ports: [] },
+    });
+    fixture.detectChanges();
+    fixture.componentInstance['reviewPlan']();
+    http.expectOne('/api/v1/catalog/wordcraft/plan').flush({
+      ...PLAN,
+      Package: 'wordcraft',
+      DNS: null,
+      TLS: null,
+      Firewall: null,
+      Directories: null,
+      Mounts: null,
+      Notes: null,
+      BrowserAdvisories: advisories,
+    });
+    fixture.detectChanges();
+    expect(text()).toContain('Directories: 0');
+    expect(text()).toContain('Actions: provision, up');
+    expect(text()).toContain('Video codecs (WebCodecs)');
+    expect(text()).toContain('Install');
+  });
+
+  it('defaults the craft port when the API sends null Storage and Ports', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    fixture.componentInstance['select']('soundcraft');
+    http.expectOne('/api/v1/catalog/soundcraft').flush({
+      ...MANIFEST,
+      Name: 'soundcraft',
+      Services: [{ Name: 'soundcraft', Image: 'homestead/craft-soundcraft:0.7.0', Exposes: 'web' }],
+      Requirements: { MemoryMB: 64, Storage: null, Ports: null },
+    });
+    fixture.detectChanges();
+    expect(fixture.componentInstance['containerPorts']()).toEqual({ soundcraft: '8080' });
+    const field = fixture.nativeElement.querySelector('input[name="port-soundcraft"]');
+    expect(field.value).toBe('8080');
+  });
+
+  it('keys the install form and request by the API Name field', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    fixture.componentInstance['select']('jellyfin');
+    http.expectOne('/api/v1/catalog/jellyfin').flush(MANIFEST);
+    fixture.detectChanges();
+    const field = fixture.nativeElement.querySelector('input[name="port-jellyfin"]');
+    expect(field).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('input[name="port-undefined"]')).toBeNull();
+    fixture.componentInstance['reviewPlan']();
+    const req = http.expectOne('/api/v1/catalog/jellyfin/plan');
+    expect(req.request.body.container_ports).toEqual({ jellyfin: 8096 });
+    req.flush(PLAN);
   });
 
   it('reviews a plan then installs through operations', () => {

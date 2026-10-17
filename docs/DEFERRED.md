@@ -460,11 +460,3 @@
 - SoundCraft audio recording (microphone) was not found in the shipped JS
   or wasm strings (no `getUserMedia`); not declared as a browser capability.
   Re-check on bumps.
-- Dashboard plan and install form bugs found in the S252 KVM run (both
-  pre-existing): the plan response sends `DNS` and `Directories` as `null`
-  for local stateless packages, which the reviewed-plan template dereferences
-  (`.length`), so the panel (including browser advisories) does not render;
-  and the install form keys container ports by `service.name` while the API
-  returns `Name`, so the request carries `"undefined"` and the plan answers
-  422. Fix in the dashboard (null-safe reads, `Name`) or in the API
-  (empty arrays), with a spec that uses a real response.

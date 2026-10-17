@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, Subscription } from 'rxjs';
+import { map, Observable, Subscription } from 'rxjs';
 import { ConfigField, FieldError } from '../schema/schema';
 
 /** GET /healthz — always available, even UNCLAIMED. */
@@ -114,9 +114,9 @@ export interface PackageSummary {
 
 /** GET /api/v1/catalog/:name — curated manifest detail. */
 export interface CatalogService {
-  name: string;
-  image: string;
-  exposes: string;
+  Name: string;
+  Image: string;
+  Exposes: string;
 }
 
 export interface CatalogManifest {
@@ -148,6 +148,15 @@ export interface CatalogManifest {
   Secrets?: { Name: string; Immutable: boolean }[];
 }
 
+/** The catalog detail exactly as the API sends it: empty lists may be null. */
+export type RawCatalogManifest = Omit<CatalogManifest, 'Services' | 'Requirements'> & {
+  Services: CatalogService[] | null;
+  Requirements: Omit<CatalogManifest['Requirements'], 'Storage' | 'Ports'> & {
+    Storage: CatalogManifest['Requirements']['Storage'] | null;
+    Ports: number[] | null;
+  };
+};
+
 /** One non-blocking browser capability warning with its reason (S252). */
 export interface BrowserAdvisory {
   Capability: string;
@@ -174,10 +183,11 @@ export interface InstallPlan {
   Requirements: { Passed: boolean };
   Routes: { Host: string; Exposure: string }[];
   Compose: { ComposeYAML: string };
-  DNS: { Name: string; Type: string; Value: string }[];
-  TLS: { Host: string; Issuer: string }[];
-  Firewall: { Service: { Name: string } }[];
-  Directories: { Mountpoint: string }[];
+  /** Sections are arrays from the API, but null-safe reads stay cheap. */
+  DNS?: { Name: string; Type: string; Value: string }[] | null;
+  TLS?: { Host: string; Issuer: string }[] | null;
+  Firewall?: { Service: { Name: string } }[] | null;
+  Directories?: { Mountpoint: string }[] | null;
   Mounts?: PlannedMount[] | null;
   BrowserAdvisories?: BrowserAdvisory[] | null;
   Notes?: string[] | null;
@@ -883,7 +893,19 @@ export class ApiService {
   }
 
   catalogPackage(name: string): Observable<CatalogManifest> {
-    return this.http.get<CatalogManifest>(`/api/v1/catalog/${name}`);
+    return this.http.get<RawCatalogManifest>(`/api/v1/catalog/${name}`).pipe(
+      // The manifest is serialised straight from Go, so empty lists arrive
+      // as null (a stateless craft has Storage and Ports null).
+      map((raw) => ({
+        ...raw,
+        Services: raw.Services ?? [],
+        Requirements: {
+          ...raw.Requirements,
+          Storage: raw.Requirements.Storage ?? [],
+          Ports: raw.Requirements.Ports ?? [],
+        },
+      })),
+    );
   }
 
   planInstall(

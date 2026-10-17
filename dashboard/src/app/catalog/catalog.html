@@ -46,13 +46,13 @@
         (input)="domain.set($any($event.target).value)"
       />
     </label>
-    @for (service of manifest.Services; track service.name) {
+    @for (service of manifest.Services; track service.Name) {
       <label>
-        {{ service.name }} container port
+        {{ service.Name }} container port
         <input
-          [name]="'port-' + service.name"
-          [value]="containerPorts()[service.name] ?? ''"
-          (input)="setContainerPort(service.name, $any($event.target).value)"
+          [name]="'port-' + service.Name"
+          [value]="containerPorts()[service.Name] ?? ''"
+          (input)="setContainerPort(service.Name, $any($event.target).value)"
         />
       </label>
     }
@@ -139,12 +139,12 @@
       <h4>Reviewed plan</h4>
       <ul>
         <li>Requirements: {{ reviewed.Requirements.Passed ? 'met' : 'unmet' }}</li>
-        <li>Routes: {{ reviewed.Routes.length }}</li>
-        <li>DNS records: {{ reviewed.DNS.length }}</li>
-        <li>TLS strategies: {{ reviewed.TLS.length }}</li>
-        <li>Firewall policies: {{ reviewed.Firewall.length }}</li>
-        <li>Directories: {{ reviewed.Directories.length }}</li>
-        <li>Actions: {{ reviewed.Actions.join(', ') }}</li>
+        <li>Routes: {{ (reviewed.Routes ?? []).length }}</li>
+        <li>DNS records: {{ (reviewed.DNS ?? []).length }}</li>
+        <li>TLS strategies: {{ (reviewed.TLS ?? []).length }}</li>
+        <li>Firewall policies: {{ (reviewed.Firewall ?? []).length }}</li>
+        <li>Directories: {{ (reviewed.Directories ?? []).length }}</li>
+        <li>Actions: {{ (reviewed.Actions ?? []).join(', ') }}</li>
       </ul>
       @if (reviewed.Mounts?.length) {
         <h4>Data placement</h4>
