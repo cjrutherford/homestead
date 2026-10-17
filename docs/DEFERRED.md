@@ -407,3 +407,56 @@
   22.5 MB (FigCraft); Brotli is not available in the base image.
 - Client-side capability advisory (WebGPU/WebGL2/secure context) is text in
   the package descriptions only; the S252 mechanism is not a dependency.
+  S252 added the `browser` manifest field, but the four graphics manifests
+  do not declare it yet (see the S252 section).
+
+## Media craft packages (S252)
+
+- Hard install-time refusals on browser capabilities stay deferred (owner
+  decision 2026-10-14): the appliance cannot see the browser, so S252 shows
+  non-blocking advisories only (`browser` manifest field, install plan
+  `BrowserAdvisories`, dashboard panel, CLI `browser:` lines). Nothing in
+  the daemon refuses install, update or start on browser grounds.
+- The `browser` field is declared for filmcraft, effectcraft and soundcraft
+  only. The six earlier craft manifests (wordcraft, gridcraft, pdfcraft,
+  deckcraft and the four S251 graphics apps) still carry the WebGPU/WebGL2
+  note as description text; adding structured `browser` entries to them is a
+  catalog-only follow-up.
+- Owner signature: the eleven-app craft manifest (counter 4) is unsigned;
+  FilmCraft, EffectCraft and SoundCraft cannot be built outside a
+  throwaway-key test until the owner signs it. A KVM appliance holding a
+  baseline at counter 4 or higher from throwaway manifests refuses it.
+- KVM acceptance for the three apps is pending (see `docs/DEVELOPMENT.md`);
+  the `knownImageVolumes` rows and header-table rows are marked pending.
+- None of the three needs `SharedArrayBuffer`, COOP or COEP (upstream
+  builds are single-threaded; their `HOSTING.md` says so). Upstream's local
+  dev servers do send COOP/COEP and EffectCraft's service-worker comments
+  say the page is "cross-origin isolated", but nothing in the shipped JS
+  reads or needs it. A future threaded build (wasm atomics, `rayon`) would
+  need per-package COOP/COEP in the shared nginx config and an ADR first;
+  re-check `SharedArrayBuffer` and `crossOriginIsolated` on every bump. The
+  S254 same-origin proxy design is unaffected today.
+- FilmCraft loads its unhashed `filmcraft_web.js` and `_bg.wasm` with a
+  `?v=<build hash>` query; upstream's `_headers` marks them `immutable`, but
+  the shared nginx keys on the file name only, so they are served
+  `no-cache` (revalidated with an ETag, 304 when unchanged). Correct, just
+  not cached for a year. A query-aware rule would change the shared image
+  and the build-context digest; not done.
+- EffectCraft's `manifest.webmanifest` is served as
+  `application/octet-stream` (the base `mime.types` lacks the extension).
+  Browsers parse manifests regardless of type, so install-as-app is not
+  expected to be affected; unverified in a browser. Fixing it is a one-line
+  shared nginx change plus a manifest re-sign.
+- FilmCraft and EffectCraft web zips ship no `NOTICE` and no OFL texts, but
+  their NOTICE lists SIL OFL 1.1 fonts embedded in the wasm (FilmCraft
+  also craft-fonts families). The built image therefore carries the MIT and
+  Apache texts only. `docs/THIRD_PARTY.md` keeps the NOTICE verbatim; ask
+  upstream to include NOTICE and `OFL-*.txt` in the web zip (FigCraft's
+  already does), as Homestead does not alter vendored files.
+- Heavy workloads: wasm is 41.2 MB (FilmCraft), 62.5 MB (EffectCraft) and
+  15.5 MB (SoundCraft), served gzip at 13.3, 18.7 and 5.9 MB. Large media
+  lives in the browser (memory, OPFS or IndexedDB) until S254; no
+  server-side limit is introduced.
+- SoundCraft audio recording (microphone) was not found in the shipped JS
+  or wasm strings (no `getUserMedia`); not declared as a browser capability.
+  Re-check on bumps.

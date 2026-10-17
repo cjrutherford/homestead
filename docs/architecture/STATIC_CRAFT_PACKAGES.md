@@ -59,6 +59,21 @@ served correctly by these rules without change: unhashed js, wasm, worker
 and font files get `no-cache`, never `immutable`, and the wasm still gets its
 own MIME type. Verify such an app with `craft-header-check.sh --unhashed`.
 
+An app that loads its unhashed files with a `?v=<hash>` query (FilmCraft,
+S252) is served the same way: the rules key on the file name, so those files
+are `no-cache` and the check script runs with `--unhashed`.
+
+Browser capabilities (S252): a manifest may declare a `browser:` list of
+`capability` and `reason` entries (closed set: `webcodecs`, `webgpu`,
+`webgl2`, `webaudio`, `audio-output`, `secure-context`, `clipboard`,
+`browser-storage`; reason 1-300 characters). They are advisories only. The
+install plan returns them as `BrowserAdvisories` with a note that the
+appliance cannot see the browser; the dashboard shows the same list on the
+package page and the reviewed plan, and the CLI prints `browser:` lines.
+Nothing refuses install, update or start on them (hard refusals are
+deferred, `docs/DEFERRED.md`). The field is optional metadata in the
+manifest schema; the signed craft manifest is unchanged by it.
+
 Anything app-specific beyond these (COOP/COEP for `SharedArrayBuffer`,
 `.part-*` caching) is recorded per app in
 `docs/architecture/CRAFT_HEADER_TABLE.md` and added in that app's slice

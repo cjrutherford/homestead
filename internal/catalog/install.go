@@ -79,9 +79,12 @@ type InstallPlan struct {
 	Directories  []ProvisionDir
 	// Mounts lists every resolved container mount with its absolute
 	// host source, declared and owner-supplied alike (S276).
-	Mounts  []PlannedMount
-	Notes   []string
-	Actions []string
+	Mounts []PlannedMount
+	// BrowserAdvisories repeats the manifest's browser requirements
+	// (S252). They never block: the appliance cannot see the browser.
+	BrowserAdvisories []BrowserRequirement
+	Notes             []string
+	Actions           []string
 }
 
 // PlanInstall produces the install change set, refusing unplannable
@@ -118,6 +121,7 @@ func PlanInstall(req InstallRequest) (InstallPlan, error) {
 	}
 	planTLS(&plan)
 	planFirewall(&plan)
+	planBrowser(&plan, req.Manifest)
 	return plan, nil
 }
 
@@ -419,4 +423,14 @@ func exposureRank(exposure docker.Exposure) int {
 	default:
 		return -1
 	}
+}
+
+// planBrowser copies the manifest's browser requirements into the plan
+// with the standing caveat (S252): advisory only, never a refusal.
+func planBrowser(plan *InstallPlan, manifest Manifest) {
+	if len(manifest.Browser) == 0 {
+		return
+	}
+	plan.BrowserAdvisories = append([]BrowserRequirement(nil), manifest.Browser...)
+	plan.Notes = append(plan.Notes, "browser capabilities are advisory: the appliance cannot see your browser, so install is not blocked; check the listed capabilities on the device you will use")
 }

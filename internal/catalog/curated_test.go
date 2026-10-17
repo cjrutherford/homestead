@@ -27,7 +27,7 @@ func repoCatalog(t *testing.T) Catalog {
 // curatedPackages is the one place the expected shipped catalog is listed
 // (sorted, as Names returns it). Adding a package to catalog/ edits this
 // list and nothing else here: each craft slice appends its app.
-var curatedPackages = []string{"authentik", "deckcraft", "figcraft", "gridcraft", "immich", "jellyfin", "lightcraft", "nextcloud", "pdfcraft", "photocraft", "vectorcraft", "wordcraft"}
+var curatedPackages = []string{"authentik", "deckcraft", "effectcraft", "figcraft", "filmcraft", "gridcraft", "immich", "jellyfin", "lightcraft", "nextcloud", "pdfcraft", "photocraft", "soundcraft", "vectorcraft", "wordcraft"}
 
 // assertCuratedNames fails when the shipped catalog and curatedPackages
 // differ, in either direction.

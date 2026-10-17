@@ -1,0 +1,52 @@
+# EffectCraft (S252): a static craft package on the S249 shared shape
+# (docs/architecture/STATIC_CRAFT_PACKAGES.md). The image is built on the
+# appliance by the signed, verify-then-build craft operation (ADR-028); it
+# is never pulled, so there is no registry reference and no catalog digest.
+# The version below is the vendored storytold release and must equal the
+# image tag and the version in catalog/craft/craft-manifest.yaml.
+name: effectcraft
+version: 0.10.0
+title: EffectCraft
+blurb: Motion graphics and visual effects compositor that runs in your browser.
+description: EffectCraft is a motion graphics and visual effects compositor with layers, keyframes, tracking, keying, audio effects and a render queue. It runs entirely in the browser from a small web server on your appliance, so there is nothing to install on your devices. Projects and imported media stay in your browser's storage and export to your device; the app keeps nothing on the appliance, and its service worker lets it start offline after the first visit. Large media is held by the browser, so heavy compositions need a device with plenty of memory. It needs a recent browser with WebGPU, WebCodecs and audio output; the appliance cannot check these, so Homestead lists them as advisories only. It is served over your local network.
+category: productivity
+icon: mdi:movie-open-star-outline
+services:
+- name: effectcraft
+  image: homestead/craft-effectcraft:0.10.0
+  exposes: web
+  # The image declares no VOLUME. nginx runs as the unprivileged nginx
+  # user and writes only under /tmp (pid file and temporary paths), so
+  # /tmp is the whole writable surface.
+  data:
+  - target: /tmp
+    ephemeral: true
+    sizemb: 16
+    reason: nginx pid file and request temporary files; nothing to keep or back up.
+requirements:
+  memorymb: 64
+  cpucount: 1
+  architectures: [amd64, arm64]
+exposure:
+  package: effectcraft
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: false
+    warnings:
+    - EffectCraft stores nothing on the appliance, so widening exposure would offer a public compositor whose projects never reach your storage; keep it local until Nextcloud document storage lands.
+browser:
+- capability: webgpu
+  reason: "Effects render on the GPU through WebGPU, in the page and in render workers; without it EffectCraft falls back to WebGL2 and the CPU, which is much slower."
+- capability: webcodecs
+  reason: "Decoding and encoding of common video formats uses the browser's WebCodecs where it is available."
+- capability: webaudio
+  reason: "Audio preview and meters run in a Web Audio worklet, which the browser must support."
+- capability: audio-output
+  reason: "Preview sound needs a working audio output device on the machine running the browser, and the browser may require a click before it plays sound."
+- capability: secure-context
+  reason: "WebGPU, the offline service worker and browser storage only work over HTTPS; trust your Homestead root certificate on the device first."
+- capability: browser-storage
+  reason: "Projects and imported media are kept in the browser's private file storage, which the browser may clear."
+sso:
+  class: unsupported

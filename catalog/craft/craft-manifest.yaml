@@ -1,5 +1,5 @@
 format: homestead-craft-manifest/1
-counter: 3
+counter: 4
 context_digest: sha256:1880843e879fb070ea4232b20c0fab5aa1976b20ff235a881f1812c8ef58f802
 apps:
   - name: wordcraft
@@ -66,3 +66,27 @@ apps:
         - https://github.com/storytold/figcraft/releases/download/v0.6.0/figcraft-web-0.6.0.zip
       sha256: a414970e3857f6613efd7f90bd4c8394e5d51b31c4cf1fa0352f87820695b9c4
       size: 8892594
+  - name: filmcraft
+    version: 0.8.0
+    artifact:
+      name: filmcraft-web-0.8.0.zip
+      urls:
+        - https://github.com/storytold/filmcraft/releases/download/v0.8.0/filmcraft-web-0.8.0.zip
+      sha256: 6b13956fc741522427663517b1e483d6e0777891063fed02b1bd94bfada8a6c7
+      size: 13326588
+  - name: effectcraft
+    version: 0.10.0
+    artifact:
+      name: effectcraft-web-0.10.0.zip
+      urls:
+        - https://github.com/storytold/effectcraft/releases/download/v0.10.0/effectcraft-web-0.10.0.zip
+      sha256: b922abeda2420391a7fd887f53ebae6948730e63720bad6a6eb3dc48dc1b46a8
+      size: 19031497
+  - name: soundcraft
+    version: 0.7.0
+    artifact:
+      name: soundcraft-web-0.7.0.zip
+      urls:
+        - https://github.com/storytold/soundcraft/releases/download/v0.7.0/soundcraft-web-0.7.0.zip
+      sha256: b735de61fbdc21716977ace2649709bd307de832eda2d848f94d1868acef7c45
+      size: 5939077

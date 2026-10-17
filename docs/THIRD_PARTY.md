@@ -758,3 +758,172 @@ similar permissive licenses); see each crate's metadata.
   The per-file `ATTRIBUTION.md` (SHA-256 `9ec4448e1327edcd1bf1793f6bf04564913c7653cd9398468d8a8c8a3d3b476b`) lives in the same repository at the same tag.
 - Craft image: `homestead/craft-figcraft:0.6.0`, built locally by S279 from
   this artifact and `images/craft/` (nginx base pinned above).
+
+### storytold/filmcraft v0.8.0 (S252)
+- Release: `https://github.com/storytold/filmcraft/releases/tag/v0.8.0`
+  (tag commit `f03e21556d8e3a7155b91892d958debd5255d7af`, published 2026-10-14; still the latest release
+  when S252 was implemented on 2026-10-17).
+- Artifact: `filmcraft-web-0.8.0.zip`, 13326588 bytes,
+  `https://github.com/storytold/filmcraft/releases/download/v0.8.0/filmcraft-web-0.8.0.zip`
+- SHA-256: `6b13956fc741522427663517b1e483d6e0777891063fed02b1bd94bfada8a6c7`,
+  equal to the line for this file in the release's unsigned
+  `SHA256SUMS.txt` (cross-checked 2026-10-17; the download was also
+  hashed independently). Trust rests on the signed Homestead craft manifest
+  (`catalog/craft/craft-manifest.yaml`), which records this digest.
+- Archive contents (one top-level directory `filmcraft-web-0.8.0/`, stripped by the
+  shared Dockerfile): `index.html`, `filmcraft_web.js` (unhashed), `filmcraft_web_bg.wasm` (41.2 MB uncompressed, unhashed name), `audio-worklet.js`, `favicon.png`, `LICENSE-APACHE`, `LICENSE-MIT`, `README.md`, `HOSTING.md`, and the sample `_headers` and `.htaccess` (unused). No `NOTICE` and no font licence texts, no service worker, no precompressed files, no `parts.txt`.
+- Licence: `MIT OR Apache-2.0`, at the recipient's option (`LICENSE-MIT`,
+  Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors, SHA-256 `d2d8416f0883694c23b473e26372506e9e11f5f41b55a92b7388dab921d9a207`; `LICENSE-APACHE`, the Apache License
+  2.0 text, SHA-256 `0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594`;
+  both ship inside the artifact and so inside the built image, and both
+  equal the files at the tag in the source repository). Both read in full
+  for the v0.8.0 release. Judgement: compatible with redistribution inside a
+  Homestead-built image, on the same reasoning as WordCraft: the appliance
+  builds the image locally and serves the unmodified release files (adding
+  only `.gz` copies of the same bytes), the MIT option needs only that its
+  copyright and permission notice travel with the files (they do), and
+  nothing in either licence restricts the owner from rebuilding,
+  inspecting or running the image without Homestead.
+- Trademarks: the ArtCraft name, wordmark and logos (`docs/brand/` in the
+  source repository, not in the web artifact) are the ArtCraft Team's and
+  are outside the licence. Homestead ships none of them in the image; the
+  package copy names the app by function and does not use the marks.
+- NOTICE (source repository file at tag v0.8.0, SHA-256
+  `5761787313b9d6c13dd5f03da2e04209ad7bd08eff8920edfd184141d791195c`). The NOTICE is in the source repository only (it does not ship in the web artifact, and neither do the OFL font texts it lists); the built image therefore carries the MIT and Apache texts but not this NOTICE. It lists Inter, Noto Serif and JetBrains Mono (SIL OFL 1.1) as bundled fonts, plus craft-fonts (BIZ UDPGothic, Shippori Mincho, BIZ UDMincho, OFL 1.1) in release builds, so the release wasm embeds OFL-licensed fonts without their licence text in the artifact. Recorded as deferred work in `docs/DEFERRED.md`; this entry keeps the full NOTICE text for the owner. Captured verbatim:
+
+```text
+FilmCraft
+Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+The ArtCraft name, wordmark and logos in docs/brand/ are trademarks of the ArtCraft Team. They are
+not open source and are not covered by the license above; their terms are in
+docs/brand/LICENSE-brand.txt.
+
+Third-party material
+
+This product bundles third-party material under its own licenses, listed below. The per-file
+list (author, source, license) is in ATTRIBUTION.md.
+
+Inter font (assets/fonts/Inter-*.ttf) — OFL-1.1. See assets/fonts/OFL-Inter.txt.
+Noto Serif font (assets/fonts/NotoSerif-Regular.ttf) — OFL-1.1. See assets/fonts/OFL-NotoSerif.txt.
+JetBrains Mono font (assets/fonts/JetBrainsMono-Regular.ttf) — OFL-1.1. See assets/fonts/OFL-JetBrainsMono.txt.
+Builds made with craft-fonts (CRAFT_FONTS_DIR; all official releases) also embed the fonts listed in
+https://github.com/storytold/craft-fonts/blob/main/ATTRIBUTION.md (BIZ UDPGothic, Shippori Mincho,
+BIZ UDMincho) — OFL-1.1. Their licence texts ship with the packages as OFL-<family>.txt.
+Public-domain film and NASA frames and CC0 music shown in README screenshots (docs/images/) — public domain / CC0-1.0. See ATTRIBUTION.md.
+```
+
+- Craft image: `homestead/craft-filmcraft:0.8.0`, built locally by S279 from
+  this artifact and `images/craft/` (nginx base pinned above).
+
+### storytold/effectcraft v0.10.0 (S252)
+- Release: `https://github.com/storytold/effectcraft/releases/tag/v0.10.0`
+  (tag commit `05955c08b4fd025f1a09882df72e6dbff1a8148a`, published 2026-10-14; still the latest release
+  when S252 was implemented on 2026-10-17).
+- Artifact: `effectcraft-web-0.10.0.zip`, 19031497 bytes,
+  `https://github.com/storytold/effectcraft/releases/download/v0.10.0/effectcraft-web-0.10.0.zip`
+- SHA-256: `b922abeda2420391a7fd887f53ebae6948730e63720bad6a6eb3dc48dc1b46a8`,
+  equal to the line for this file in the release's unsigned
+  `SHA256SUMS.txt` (cross-checked 2026-10-17; the download was also
+  hashed independently). Trust rests on the signed Homestead craft manifest
+  (`catalog/craft/craft-manifest.yaml`), which records this digest.
+- Archive contents (one top-level directory `effectcraft-web-0.10.0/`, stripped by the
+  shared Dockerfile): `index.html`, `effectcraft_web.js` and `effectcraft_web_bg.wasm` (62.5 MB uncompressed; names are the same in every release), `snippets/effectcraft-web-<hash>/js/host.js` (browser glue), `worker.js`, `audio-worklet.js`, `sw.js` (service worker with a precache list), `manifest.webmanifest`, `favicon.svg`, `icon-256.png`, `icon-512.png`, `LICENSE-APACHE`, `LICENSE-MIT`, `README.md`, `HOSTING.md`, and the sample `_headers` and `.htaccess` (unused). No `NOTICE` and no font licence texts, no precompressed files, no `parts.txt`.
+- Licence: `MIT OR Apache-2.0`, at the recipient's option (`LICENSE-MIT`,
+  Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors, SHA-256 `7b6db9a363688683feacdf9b528f059637f2e5d2edbacd8720fc9b26781c9abe`; `LICENSE-APACHE`, the Apache License
+  2.0 text, SHA-256 `0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594`;
+  both ship inside the artifact and so inside the built image, and both
+  equal the files at the tag in the source repository). Both read in full
+  for the v0.10.0 release. Judgement: compatible with redistribution inside a
+  Homestead-built image, on the same reasoning as WordCraft: the appliance
+  builds the image locally and serves the unmodified release files (adding
+  only `.gz` copies of the same bytes), the MIT option needs only that its
+  copyright and permission notice travel with the files (they do), and
+  nothing in either licence restricts the owner from rebuilding,
+  inspecting or running the image without Homestead.
+- Trademarks: the ArtCraft name, wordmark and logos (`docs/brand/` in the
+  source repository, not in the web artifact) are the ArtCraft Team's and
+  are outside the licence. Homestead ships none of them in the image; the
+  package copy names the app by function and does not use the marks.
+- NOTICE (source repository file at tag v0.10.0, SHA-256
+  `d0bf841555c56b6136745a61ec529c9a558c9dd7404d377d82f86d10e0e9b530`). The NOTICE is in the source repository only (it does not ship in the web artifact, and neither do the OFL font texts it lists); the built image therefore carries the MIT and Apache texts but not this NOTICE. It lists Inter, Noto Serif and JetBrains Mono (SIL OFL 1.1) as bundled fonts, which the release wasm embeds without their licence text in the artifact. Recorded as deferred work in `docs/DEFERRED.md`. Captured verbatim:
+
+```text
+EffectCraft
+Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+The ArtCraft name, wordmark and logos in docs/brand/ are trademarks of the ArtCraft Team. They are
+not open source and are not covered by the license above; their terms are in
+docs/brand/LICENSE-brand.txt.
+
+Third-party material
+
+This product bundles third-party material under its own licenses, listed below. The per-file
+list (author, source, license) is in ATTRIBUTION.md.
+
+Inter (assets/fonts/Inter-*.ttf) — SIL Open Font License 1.1. See assets/fonts/OFL-Inter.txt.
+Noto Serif (assets/fonts/NotoSerif-Regular.ttf) — SIL Open Font License 1.1. See assets/fonts/OFL-NotoSerif.txt.
+JetBrains Mono (assets/fonts/JetBrainsMono-Regular.ttf) — SIL Open Font License 1.1. See assets/fonts/OFL-JetBrainsMono.txt.
+```
+
+- Craft image: `homestead/craft-effectcraft:0.10.0`, built locally by S279 from
+  this artifact and `images/craft/` (nginx base pinned above).
+
+### storytold/soundcraft v0.7.0 (S252)
+- Release: `https://github.com/storytold/soundcraft/releases/tag/v0.7.0`
+  (tag commit `3a28a657692c1b98b28c276d8f61df9471074f0f`, published 2026-10-14; still the latest release
+  when S252 was implemented on 2026-10-17).
+- Artifact: `soundcraft-web-0.7.0.zip`, 5939077 bytes,
+  `https://github.com/storytold/soundcraft/releases/download/v0.7.0/soundcraft-web-0.7.0.zip`
+- SHA-256: `b735de61fbdc21716977ace2649709bd307de832eda2d848f94d1868acef7c45`,
+  equal to the line for this file in the release's unsigned
+  `SHA256SUMS.txt` (cross-checked 2026-10-17; the download was also
+  hashed independently). Trust rests on the signed Homestead craft manifest
+  (`catalog/craft/craft-manifest.yaml`), which records this digest.
+- Archive contents (one top-level directory `soundcraft-web-0.7.0/`, stripped by the
+  shared Dockerfile): `index.html`, `soundcraft-web-<hash>.js`, `soundcraft-web-<hash>_bg.wasm` (15.5 MB uncompressed), `ai.storyteller.soundcraft-<hash>.png`, `NOTICE`, `ATTRIBUTION.md`, `LICENSE-APACHE`, `LICENSE-MIT`, `README.md`, `HOSTING.md`, and the sample `_headers` and `.htaccess` (unused). No workers, no service worker, no precompressed files, no `parts.txt`.
+- Licence: `MIT OR Apache-2.0`, at the recipient's option (`LICENSE-MIT`,
+  Copyright (c) 2026 ArtCraft Team and the SoundCraft contributors, SHA-256 `6aff3a3f0d8eb4c2d4fca151a00cdf26d8ff3020889402a453381a12dba3381e`; `LICENSE-APACHE`, the Apache License
+  2.0 text, SHA-256 `0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594`;
+  both ship inside the artifact and so inside the built image, and both
+  equal the files at the tag in the source repository). Both read in full
+  for the v0.7.0 release. Judgement: compatible with redistribution inside a
+  Homestead-built image, on the same reasoning as WordCraft: the appliance
+  builds the image locally and serves the unmodified release files (adding
+  only `.gz` copies of the same bytes), the MIT option needs only that its
+  copyright and permission notice travel with the files (they do), and
+  nothing in either licence restricts the owner from rebuilding,
+  inspecting or running the image without Homestead.
+- Trademarks: the ArtCraft name, wordmark and logos (`docs/brand/` in the
+  source repository, not in the web artifact) are the ArtCraft Team's and
+  are outside the licence. Homestead ships none of them in the image; the
+  package copy names the app by function and does not use the marks.
+- NOTICE (source repository file at tag v0.7.0, SHA-256
+  `977949446409bf907b265d765f024d3194c09251c2a65a4ca418cf5cb2dc84c0`). The NOTICE also ships in the web artifact, so it is in the built image. It lists no bundled third-party material beyond the egui default fonts that live inside the egui crate under their own open licences. Captured verbatim:
+
+```text
+SoundCraft
+Copyright (c) 2026 ArtCraft Team and the SoundCraft contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+The ArtCraft name, wordmark and logos in docs/brand/ are trademarks of the ArtCraft Team. They are
+not open source and are not covered by the license above; their terms are in
+docs/brand/LICENSE-brand.txt.
+
+Third-party material
+
+This product bundles third-party material under its own licenses, listed below. The per-file
+list (author, source, license) is in ATTRIBUTION.md.
+
+None: every bundled asset is original to SoundCraft. Icons are drawn in code; demo audio is
+synthesised in code. The egui default fonts (Ubuntu-Light, Hack, Noto Emoji, Emoji Icon Font) ship
+inside the egui crate under their own open licenses (see ATTRIBUTION.md).
+```
+
+- Craft image: `homestead/craft-soundcraft:0.7.0`, built locally by S279 from
+  this artifact and `images/craft/` (nginx base pinned above).

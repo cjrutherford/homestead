@@ -214,6 +214,58 @@ func (d SSODeclaration) Validate() error {
 	return nil
 }
 
+// BrowserCapability names a client-side browser feature a package relies on.
+type BrowserCapability string
+
+// Known browser capabilities. The set is closed so every capability
+// carries reviewed plain-language wording; extend it with the package
+// that first needs a new one.
+const (
+	BrowserWebCodecs     BrowserCapability = "webcodecs"
+	BrowserWebGPU        BrowserCapability = "webgpu"
+	BrowserWebGL2        BrowserCapability = "webgl2"
+	BrowserWebAudio      BrowserCapability = "webaudio"
+	BrowserAudioOutput   BrowserCapability = "audio-output"
+	BrowserSecureContext BrowserCapability = "secure-context"
+	BrowserClipboard     BrowserCapability = "clipboard"
+	BrowserStorage       BrowserCapability = "browser-storage"
+)
+
+// Valid reports a known capability.
+func (c BrowserCapability) Valid() bool {
+	switch c {
+	case BrowserWebCodecs, BrowserWebGPU, BrowserWebGL2, BrowserWebAudio,
+		BrowserAudioOutput, BrowserSecureContext, BrowserClipboard, BrowserStorage:
+		return true
+	}
+	return false
+}
+
+// BrowserRequirement is one client-side capability a package needs and
+// the plain-language reason, shown as a non-blocking warning on the
+// install plan and package page (S252, ADR-004: one field, both surfaces).
+type BrowserRequirement struct {
+	Capability BrowserCapability
+	Reason     string
+}
+
+func validateBrowser(reqs []BrowserRequirement) error {
+	seen := map[BrowserCapability]bool{}
+	for i, req := range reqs {
+		if !req.Capability.Valid() {
+			return fmt.Errorf("catalog: browser requirement #%d: unknown capability %q", i, req.Capability)
+		}
+		if seen[req.Capability] {
+			return fmt.Errorf("catalog: duplicate browser capability %q", req.Capability)
+		}
+		seen[req.Capability] = true
+		if len(req.Reason) == 0 || len(req.Reason) > 300 {
+			return fmt.Errorf("catalog: browser capability %q needs a reason of 1-300 characters", req.Capability)
+		}
+	}
+	return nil
+}
+
 // Manifest is one first-party application (ADR-014): identity with a
 // pinned semver, UX copy, services, requirements, exposure
 // declaration, backup paths, SSO posture, and optional database export plus
@@ -235,6 +287,10 @@ type Manifest struct {
 	Database     *DatabaseBackup
 	Hooks        []BackupHook
 	SSO          SSODeclaration
+	// Browser lists the browser capabilities the app needs (S252). They
+	// are advisories only: the appliance cannot see the owner's browser,
+	// so nothing refuses install, update or start on these grounds.
+	Browser []BrowserRequirement
 	// Secrets declares secret-backed container variables (S266,
 	// ADR-021): delivered as 0600 files via Compose `secrets:`.
 	Secrets []SecretDecl
@@ -315,6 +371,9 @@ func (m Manifest) Validate() error {
 		}
 	}
 	if err := m.SSO.Validate(); err != nil {
+		return err
+	}
+	if err := validateBrowser(m.Browser); err != nil {
 		return err
 	}
 	if err := validateSecrets(m, services); err != nil {

@@ -63,6 +63,9 @@ func TestCuratedSSO(t *testing.T) {
 		"photocraft":  {Class: SSOUnsupported},
 		"lightcraft":  {Class: SSOUnsupported},
 		"figcraft":    {Class: SSOUnsupported},
+		"filmcraft":   {Class: SSOUnsupported},
+		"effectcraft": {Class: SSOUnsupported},
+		"soundcraft":  {Class: SSOUnsupported},
 	}
 	for _, name := range catalog.Names() {
 		manifest, err := catalog.Get(name)

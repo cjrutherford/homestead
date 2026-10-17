@@ -69,6 +69,15 @@ var knownImageVolumes = map[string]imageVolumes{
 	"homestead/craft-photocraft:0.9.0":   {},
 	"homestead/craft-lightcraft:0.8.0":   {},
 	"homestead/craft-figcraft:0.6.0":     {},
+	// S252 media craft images. Locally built on the dev workstation
+	// 2026-10-17 (real release artifacts through the shared Dockerfile):
+	// Config.Volumes null and user nginx for each, container healthy, and
+	// `docker diff` of the running container empty with /tmp the only
+	// mount (a tmpfs). KVM verification of these rows is PENDING; replace
+	// this comment with the date and result when it runs.
+	"homestead/craft-filmcraft:0.8.0":    {},
+	"homestead/craft-effectcraft:0.10.0": {},
+	"homestead/craft-soundcraft:0.7.0":   {},
 }
 
 func loadCurated(t *testing.T) Catalog {

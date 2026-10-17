@@ -1,0 +1,48 @@
+# SoundCraft (S252): a static craft package on the S249 shared shape
+# (docs/architecture/STATIC_CRAFT_PACKAGES.md). The image is built on the
+# appliance by the signed, verify-then-build craft operation (ADR-028); it
+# is never pulled, so there is no registry reference and no catalog digest.
+# The version below is the vendored storytold release and must equal the
+# image tag and the version in catalog/craft/craft-manifest.yaml.
+name: soundcraft
+version: 0.7.0
+title: SoundCraft
+blurb: Digital audio workstation for recording, editing and mixing in your browser.
+description: SoundCraft is a digital audio workstation with an edit window, a mixer with sends and automation, MIDI and common audio file formats. It runs entirely in the browser from a small web server on your appliance, so there is nothing to install on your devices. Sessions stay in your browser and export to your device; the app keeps nothing on the appliance. Large audio files are held by the browser, so long multitrack sessions need a device with enough memory. It needs a recent browser with WebGL2 or WebGPU and audio output; the appliance cannot check these, so Homestead lists them as advisories only. It is served over your local network.
+category: productivity
+icon: mdi:waveform
+services:
+- name: soundcraft
+  image: homestead/craft-soundcraft:0.7.0
+  exposes: web
+  # The image declares no VOLUME. nginx runs as the unprivileged nginx
+  # user and writes only under /tmp (pid file and temporary paths), so
+  # /tmp is the whole writable surface.
+  data:
+  - target: /tmp
+    ephemeral: true
+    sizemb: 16
+    reason: nginx pid file and request temporary files; nothing to keep or back up.
+requirements:
+  memorymb: 64
+  cpucount: 1
+  architectures: [amd64, arm64]
+exposure:
+  package: soundcraft
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: false
+    warnings:
+    - SoundCraft stores nothing on the appliance, so widening exposure would offer a public audio workstation whose sessions never reach your storage; keep it local until Nextcloud document storage lands.
+browser:
+- capability: webgl2
+  reason: "The interface draws with WebGPU when the browser has it and falls back to WebGL2, so one of them must work."
+- capability: webaudio
+  reason: "Playback, mixing and metering run through the browser's Web Audio engine."
+- capability: audio-output
+  reason: "Playback needs a working audio output device on the machine running the browser, and the browser may require a click before it plays sound."
+- capability: secure-context
+  reason: "WebGPU and the clipboard only work over HTTPS; trust your Homestead root certificate on the device first."
+sso:
+  class: unsupported

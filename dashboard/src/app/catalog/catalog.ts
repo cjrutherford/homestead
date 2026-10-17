@@ -9,6 +9,7 @@ import {
   PackageSummary,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { BrowserAdvisories } from './browser-advisories';
 
 interface VolumeRow {
   service: string;
@@ -36,7 +37,7 @@ interface ConfigRow {
  * link out to operation detail for progress; this page never blocks.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [StateMessage, RouterLink, BrowserAdvisories],
   selector: 'app-catalog',
   templateUrl: './catalog.html',
 })

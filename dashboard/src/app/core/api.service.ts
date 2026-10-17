@@ -142,8 +142,16 @@ export interface CatalogManifest {
     }[];
   };
   BackupPaths: string[];
+  /** Advisory browser capabilities the app needs (S252). */
+  Browser?: BrowserAdvisory[] | null;
   /** Secret-backed container variables the package declares (S266). */
   Secrets?: { Name: string; Immutable: boolean }[];
+}
+
+/** One non-blocking browser capability warning with its reason (S252). */
+export interface BrowserAdvisory {
+  Capability: string;
+  Reason: string;
 }
 
 /** GET /api/v1/catalog/:name/secrets — presence only, never values (S266). */
@@ -169,6 +177,7 @@ export interface InstallPlan {
   Firewall: { Service: { Name: string } }[];
   Directories: { Mountpoint: string }[];
   Mounts?: PlannedMount[] | null;
+  BrowserAdvisories?: BrowserAdvisory[] | null;
   Notes?: string[] | null;
   Actions: string[];
 }

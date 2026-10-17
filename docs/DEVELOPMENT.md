@@ -3547,3 +3547,87 @@ run started from the S250 end state.
   leaves until the `tls:local-leaves` sweep, the empty stack directories,
   the `homestead-edge` network and Caddy stack files, and
   `/home/tester/hs-s251`.
+
+## Media craft packages: FilmCraft, EffectCraft, SoundCraft (S252, ADR-028)
+
+Built: three more packages on the S249 shared shape
+(`docs/architecture/STATIC_CRAFT_PACKAGES.md`) plus the client-side browser
+capability advisories the slice asks for. No change to `images/craft/` (the
+build-context digest `sha256:1880843e...` is unchanged), so no COOP/COEP
+mechanism was needed and none was added.
+
+- `catalog/filmcraft.yaml` (0.8.0), `catalog/effectcraft.yaml` (0.10.0),
+  `catalog/soundcraft.yaml` (0.7.0): each its own image
+  `homestead/craft-<app>:<version>`, own host, one `ephemeral` `/tmp`, no
+  storage class, `sso.class: unsupported`, local-only with
+  `allowwider: false`, stateless. Descriptions name the function, state the
+  media-size caveat (large media lives in the browser until S254) and say
+  Homestead lists the browser needs as advisories; none uses "clean-room".
+- Vendored releases (latest on 2026-10-17, matching planning; each SHA-256
+  equals upstream `SHA256SUMS.txt` and an independent hash): filmcraft v0.8.0
+  `6b13956f...` (13,326,588 bytes), effectcraft v0.10.0 `b922abed...`
+  (19,031,497), soundcraft v0.7.0 `b735de61...` (5,939,077). Licence for all
+  three is `MIT OR Apache-2.0`, judged compatible; digests, licence hashes and
+  verbatim NOTICE captures are in `docs/THIRD_PARTY.md`. FilmCraft and
+  EffectCraft ship no NOTICE or OFL texts in the web zip (deferred).
+- `catalog/craft/craft-manifest.yaml`: eleven apps, **counter 4** (one above
+  S251), one counter for the whole set, still **unsigned**. The three new
+  entries came from `scripts/craft-manifest.sh --counter 4` and were
+  appended to the existing eight; the context digest is unchanged. No key
+  was generated or committed.
+- Browser advisories (the only Go in the slice, an optional additive
+  manifest field, no new route, command or page): `Manifest.Browser` is a
+  list of `capability` and `reason` (closed capability set, one reason of up
+  to 300 characters each, validated). `PlanInstall` copies it to
+  `InstallPlan.BrowserAdvisories` and adds a note that the appliance cannot
+  see the browser; planning still succeeds and nothing in the daemon
+  refuses install, update or start on browser grounds. The existing catalog
+  detail (`Browser`) and plan (`BrowserAdvisories`) responses carry it, so
+  the CLI and dashboard read the same fields (ADR-004). CLI: `apps plan`
+  prints `browser: <capability> (advisory) - <reason>` lines. Dashboard: a
+  shared `app-browser-advisories` component (S248 `StateMessage` for the
+  caveat) on the package page and the reviewed plan. `docs/PARITY.md` notes
+  updated; the parity test needed no row change. Tests:
+  `internal/catalog/browser_test.go`, `apps_test.go`,
+  `browser-advisories.spec.ts`, `catalog.spec.ts`.
+- Header table: three rows and notes. SoundCraft is the hashed layout.
+  FilmCraft (unhashed names loaded with `?v=`) and EffectCraft (unhashed
+  names, workers, service worker, manifest) are served correctly by the
+  shared rules (`no-cache`); both are checked with
+  `craft-header-check.sh --unhashed`. EffectCraft's `.webmanifest` is served
+  as `application/octet-stream` (deferred).
+- Cross-origin isolation: none of the three needs `SharedArrayBuffer`,
+  COOP or COEP (upstream `HOSTING.md`, `docs/web.md`, the shipped JS). The
+  S254 same-origin proxy design is unaffected.
+- Test rows: `curatedPackages`, `craftPackages`, `TestCuratedSSO` and three
+  `knownImageVolumes` rows commented PENDING KVM verification.
+
+### Verified locally (dev workstation, 2026-10-17)
+
+Each release was downloaded into a fresh empty directory, hashed, unzipped
+and inspected without running anything from it; the shared Dockerfile was
+built with the real artifact and run with a read-only root, tmpfs `/tmp`,
+all capabilities dropped. `scripts/craft-header-check.sh` passed for all
+three: healthz 200, entry `no-cache`, `application/wasm`, gzip (also with
+`Via: 1.1 Caddy`), no COOP/COEP; the containers reported `healthy`,
+`docker diff` was empty, `Config.Volumes` null, user `nginx`; gzip-decoded
+wasm equals the zip's. Gates: `make lint`, `go test ./...` (40 packages ok),
+`python3 -m unittest discover -s tests` (601 ok), dashboard `ng test` (280
+passed) and `ng build`. `TestRealCraftBuild` was not re-run (no
+`images/craft` change).
+
+### KVM acceptance: PENDING
+
+Not run by this slice's implementation. To do on a fresh appliance, per app:
+owner (or throwaway key, counter above 4 if the VM holds a baseline) signs
+the manifest; build, install, curl the `.lan` HTTPS route with the S280 root
+(entry page and wasm, `craft-header-check.sh` through the edge with
+`--unhashed` for filmcraft and effectcraft); confirm the install plan shows
+the browser advisories in the dashboard and `homesteadctl apps plan`; remove
+cleanly (container, stack directory, route, DNS name, edge entry, leaf
+certificate); reinstall; update to a bumped manifest version; drift scan
+(S212, S262) clean after install and update; schedule create refused and no
+scheduler job; `docker image inspect` of the built tag and `docker diff`;
+then finalise the three `knownImageVolumes` comments and the header-table
+rows ("local build, KVM pending"). Also confirm in a real browser that
+EffectCraft's service worker registers over the HTTPS route.

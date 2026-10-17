@@ -119,6 +119,9 @@ func runAppsPlan(ctx context.Context, client *apiclient.Client, args []string, s
 		fmt.Fprintf(stdout, "mount: %s\n", formatMount(mount.Service, mount.Target, mount.Source,
 			mount.Class, mount.Database, mount.Ephemeral, mount.ReadOnly, mount.Declared))
 	}
+	for _, advisory := range plan.BrowserAdvisories {
+		fmt.Fprintf(stdout, "browser: %s (advisory) - %s\n", advisory.Capability, advisory.Reason)
+	}
 	for _, note := range plan.Notes {
 		fmt.Fprintf(stdout, "note: %s\n", note)
 	}

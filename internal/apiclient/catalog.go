@@ -38,6 +38,15 @@ type CatalogManifest struct {
 		Ports    []int  `json:"Ports"`
 	} `json:"Requirements"`
 	BackupPaths []string `json:"BackupPaths"`
+	// Browser lists advisory client capabilities (S252).
+	Browser []BrowserAdvisory `json:"Browser"`
+}
+
+// BrowserAdvisory is one non-blocking browser capability warning with its
+// plain-language reason (S252).
+type BrowserAdvisory struct {
+	Capability string `json:"Capability"`
+	Reason     string `json:"Reason"`
 }
 
 // InstallPlanReport is the reviewed change set subset the CLI prints:
@@ -78,8 +87,9 @@ type InstallPlanReport struct {
 		ReadOnly  bool   `json:"ReadOnly"`
 		Declared  bool   `json:"Declared"`
 	} `json:"Mounts"`
-	Notes   []string `json:"Notes"`
-	Actions []string `json:"Actions"`
+	BrowserAdvisories []BrowserAdvisory `json:"BrowserAdvisories"`
+	Notes             []string          `json:"Notes"`
+	Actions           []string          `json:"Actions"`
 }
 
 // OperationStarted carries the started operation id.

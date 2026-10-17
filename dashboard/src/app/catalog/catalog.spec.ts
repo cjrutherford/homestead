@@ -128,6 +128,41 @@ describe('Catalog', () => {
     expect(text()).toContain('#7');
   });
 
+  it('shows browser advisories on the package page and plan without blocking install', () => {
+    const advisories = [
+      { Capability: 'webcodecs', Reason: 'Hardware video decoding.' },
+      { Capability: 'audio-output', Reason: 'Playback needs an audio device.' },
+    ];
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    fixture.componentInstance['select']('jellyfin');
+    http.expectOne('/api/v1/catalog/jellyfin').flush({ ...MANIFEST, Browser: advisories });
+    fixture.detectChanges();
+    expect(text()).toContain('Browser advisories');
+    expect(text()).toContain('Hardware video decoding.');
+    fixture.componentInstance['reviewPlan']();
+    http
+      .expectOne('/api/v1/catalog/jellyfin/plan')
+      .flush({ ...PLAN, BrowserAdvisories: advisories });
+    fixture.detectChanges();
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.browser-advisories').length,
+    ).toBe(2);
+    const button = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('button'),
+    ).find((b) => b.textContent?.trim() === 'Install') as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+  });
+
+  it('shows no advisory panel for packages without browser requirements', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    fixture.componentInstance['select']('jellyfin');
+    http.expectOne('/api/v1/catalog/jellyfin').flush(MANIFEST);
+    fixture.detectChanges();
+    expect(text()).not.toContain('Browser advisories');
+  });
+
   it('disables Install for installed packages', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/catalog').flush([{ ...PACKAGES[0], installed: true }]);

@@ -35,6 +35,7 @@
         <li>Port: {{ port }}</li>
       }
     </ul>
+    <app-browser-advisories [advisories]="manifest.Browser" />
 
     <h4>Install</h4>
     <label>
@@ -161,6 +162,7 @@
           }
         </ul>
       }
+      <app-browser-advisories [advisories]="reviewed.BrowserAdvisories" />
       @for (note of reviewed.Notes ?? []; track note) {
         <p class="plan-note">{{ note }}</p>
       }

@@ -56,8 +56,8 @@ unchanged.
 | POST | /api/v1/storage/assignments | `runStorageAssign` | `storageAssign` | Storage page (`/storage`); S268. Moving a class off a mount holding installed packages' data answers 409 with `affected_packages` unless `acknowledge_impact: true` (audited); CLI `--acknowledge-impact` |
 | GET | /api/v1/doctor | `"doctor"` | `doctor` | Diagnostic report on all three surfaces |
 | GET | /api/v1/catalog | `"apps"` | `catalogPackages` | Package summaries on both surfaces |
-| GET | /api/v1/catalog/{name} | `"apps"` | `catalogPackage` | Manifest detail on both surfaces |
-| POST | /api/v1/catalog/{name}/plan | `"apps"` | `planInstall` | Reviewed install plan on both surfaces |
+| GET | /api/v1/catalog/{name} | `"apps"` | `catalogPackage` | Manifest detail on both surfaces; the optional `Browser` list (advisory capabilities with reasons, S252) shows on the dashboard package page |
+| POST | /api/v1/catalog/{name}/plan | `"apps"` | `planInstall` | Reviewed install plan on both surfaces; `BrowserAdvisories` (non-blocking, S252) print as `browser:` lines on the CLI and as the advisory panel on the dashboard |
 | POST | /api/v1/catalog/{name}/install | `"apps"` | `installPackage` | Approved installation on both surfaces |
 | POST | /api/v1/catalog/{name}/configure | `"apps"` | `configurePackage` | Configuration operation on both surfaces; also secret rotation (one per operation) and adoption of pre-S266 secret wiring (S266) |
 | GET | /api/v1/catalog/{name}/secrets | `"apps"` | `appSecrets` | Declared secret-backed variables, presence only (S266) |
