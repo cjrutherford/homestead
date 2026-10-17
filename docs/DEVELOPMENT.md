@@ -3310,7 +3310,31 @@ throwaway run (counter 2 baseline), Docker build-cache layers from the craft bui
 and `/home/tester/hs-s249`. Daemon hash
 unchanged from the build above.
 
-Follow-up work (not in this slice): bug 1 (`gzip_proxied any;` and a
-re-signed craft manifest) and bug 2 (record fingerprints after an update
-rewrite, with a test and a live drift check); both belong in a fix slice
-before S250 reuses the shape.
+Both bugs were fixed in commit 37fa9c2 and re-verified live (below).
+
+### S249 KVM fix re-verification (2026-10-17, VM 2, HEAD 37fa9c2)
+
+Fixes: `gzip_proxied any;` in `images/craft/nginx.conf` (manifest
+`context_digest` regenerated to `sha256:1880843e...`, still unsigned in the
+repo; `TestRealCraftBuild` now also requests with `Via: 1.1 Caddy`), and
+`internal/update` records generated-file fingerprints after a successful
+update and after a rollback (`UpdateRequest.Store`). `craft status` DIFFERS
+now shows the recorded digest. The no-op-apply error naming an image ID
+remains (DEFERRED). Binary sha256 `792ee683...` equals a build of the same
+tree on the guest. Throwaway minisign key and manifests (counter 3, then 4)
+lived in `/srv/s249fix`, trusted with `craft trust add`; nothing committed.
+
+- Install and edge: `craft build` (counter 3), `apps install wordcraft`,
+  route `wordcraft.lan` (local, TLS internal); `scripts/craft-header-check.sh`
+  **PASS** including gzip through the edge: wasm 14,947,550 bytes with
+  `Accept-Encoding: gzip` versus 39,785,016 identity (before the fix: 39.8 MB
+  either way).
+- Update to 0.7.1 (counter 4, `updates apply --craft-manifest ...`)
+  succeeded; the scheduled drift scan afterwards (16:19Z, 5 packages) was
+  **clean** with no `drift accept`; `drift review wordcraft` also clean.
+- Cleanup: app uninstalled, routes emptied, Caddy container and craft images
+  removed, trust key removed, key shredded, `/srv/s249fix` deleted, drift
+  interval restored to 24 h, catalog and daemon redeployed with
+  `install-systemd.sh`. Left: `craft_baseline` at counter 4, craft rows, the
+  caddy stack files and `homestead-edge` network, the `/home/tester/hs-s249`
+  tree (now at 37fa9c2).

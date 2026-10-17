@@ -359,11 +359,6 @@
   S250 to S253; the nginx config has no per-app include yet.
 - The shared nginx serves `README.md`, `HOSTING.md`, the sample `_headers`
   and `.htaccess` from the upstream archive unchanged.
-- Found in the S249 KVM run (fix before S250 reuses the shape): (1) the shared
-  nginx omits `gzip_proxied any;`, so behind Caddy (`Via` header) precompressed
-  assets are served uncompressed (WordCraft wasm 39.8 MB instead of 14.9 MB);
-  the fix changes `images/craft/nginx.conf`, so the craft manifest must be
-  regenerated and re-signed; (2) `internal/update/apply.go` rewrites
-  `compose.yaml` without `catalog.RecordFingerprints`, so the next drift scan
-  reports `compose.yaml (modified)` after any successful update. Details and
-  repros are in `docs/DEVELOPMENT.md` (S249 KVM acceptance).
+- S249 KVM re-verification leftover: an update whose craft image was swapped
+  for a no-op apply (package already current) still fails at `rewrite` with a
+  message that names an image ID rather than the tag; cosmetic.
