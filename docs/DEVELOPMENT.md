@@ -3338,3 +3338,59 @@ lived in `/srv/s249fix`, trusted with `craft trust add`; nothing committed.
   `install-systemd.sh`. Left: `craft_baseline` at counter 4, craft rows, the
   caddy stack files and `homestead-edge` network, the `/home/tester/hs-s249`
   tree (now at 37fa9c2).
+
+## Office craft packages: GridCraft, PdfCraft, DeckCraft (S250, ADR-028)
+
+Built: three more packages on the S249 shared shape
+(`docs/architecture/STATIC_CRAFT_PACKAGES.md`), YAML, manifest entries, test
+rows and docs only. No Go code and no change to `images/craft/` (the build
+context digest is unchanged).
+
+- `catalog/gridcraft.yaml` (0.7.0), `catalog/pdfcraft.yaml` (0.8.0),
+  `catalog/deckcraft.yaml` (0.7.0): each its own image
+  `homestead/craft-<app>:<version>`, own host, one `ephemeral` `/tmp`, no
+  storage class, no `requirements.ports`, `sso.class: unsupported`,
+  local-only with `allowwider: false`, stateless.
+- Vendored releases (latest on 2026-10-17; each SHA-256 equals upstream
+  `SHA256SUMS.txt` and an independent hash of the download):
+  gridcraft v0.7.0 `ad10af2b...` (7,113,559 bytes), pdfcraft v0.8.0
+  `1f9ea51f...` (14,113,243 bytes), deckcraft v0.7.0 `4ab91994...`
+  (9,385,879 bytes). The full digests, licence judgement (all three
+  `MIT OR Apache-2.0`, compatible) and verbatim NOTICE captures are in
+  `docs/THIRD_PARTY.md`. DeckCraft's NOTICE adds symphonia (MPL-2.0, used
+  unmodified) and Ubuntu Light (Ubuntu Font Licence 1.0).
+- `catalog/craft/craft-manifest.yaml` regenerated with
+  `scripts/craft-manifest.sh`: four apps, **counter 2** (one above the
+  S249 manifest; one counter for the whole set), context digest unchanged,
+  still **unsigned**. No key was generated or committed. The owner signs the
+  four-app manifest per the runbook.
+- Test rows: `curatedPackages`, `craftPackages`, `TestCuratedSSO`, and three
+  `knownImageVolumes` rows commented PENDING KVM verification.
+- Header table: three new rows and notes. Layout is the WordCraft layout in
+  every case (one hashed js, one hashed `_bg.wasm`, optional hashed
+  favicon, no `parts.txt`, `.part-*`, workers or extra asset classes), no
+  `SharedArrayBuffer`, COOP/COEP or workers; WebGPU (wgpu, WebGL2
+  fallback) and the clipboard want a secure context.
+
+### Verified locally (dev workstation, 2026-10-17)
+
+Each release was downloaded into a fresh empty directory, hashed, unzipped
+and inspected without running anything from it; the shared Dockerfile was
+built with the real artifact and run with a read-only root, tmpfs `/tmp`,
+all capabilities dropped. `scripts/craft-header-check.sh` passed for all
+three (healthz 200, entry `no-cache`, `application/wasm`, immutable, gzip,
+no COOP/COEP); containers reported `healthy`, `docker diff` was empty,
+`Config.Volumes` absent, user `nginx`. The `.htaccess` request answers 404.
+
+### KVM acceptance: PENDING
+
+Not run by this slice's implementation. To do on a fresh appliance, per
+app: owner (or throwaway key) signs the manifest; build, install, curl the
+`.lan` HTTPS route with the S280 root (entry page and wasm, run
+`craft-header-check.sh` through the edge, expecting gzip through Caddy);
+remove cleanly (container, stack directory, route, DNS name, edge entry,
+leaf certificate); reinstall; update to a bumped manifest version; drift
+scan (S212, S262) clean after install and update; schedule create refused
+and no scheduler job; `docker image inspect` of the built tag and
+`docker diff`; then finalise the three `knownImageVolumes` comments and the
+header table rows ("local build, KVM pending").

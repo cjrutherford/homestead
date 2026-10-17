@@ -45,6 +45,16 @@ var knownImageVolumes = map[string]imageVolumes{
 	// (sha256:e924534d0a86...) has Config.Volumes null and user nginx, and
 	// `docker diff` of the running container is empty with /tmp the tmpfs.
 	"homestead/craft-wordcraft:0.7.0": {},
+	// S250 office craft images (PENDING KVM verification; finalised after
+	// the KVM run). Verified on the dev workstation 2026-10-17 with
+	// `docker image inspect` of a real build of each release through the
+	// shared Dockerfile: no VOLUME (Config.Volumes absent), user nginx,
+	// healthy, and `docker diff` of a read-only container with /tmp as
+	// tmpfs is empty. Local image IDs: gridcraft sha256:90b1b49768cb...,
+	// pdfcraft sha256:b2b57d93b072..., deckcraft sha256:4c8dbe82f805...
+	"homestead/craft-gridcraft:0.7.0": {},
+	"homestead/craft-pdfcraft:0.8.0":  {},
+	"homestead/craft-deckcraft:0.7.0": {},
 }
 
 func loadCurated(t *testing.T) Catalog {

@@ -1,5 +1,5 @@
 format: homestead-craft-manifest/1
-counter: 1
+counter: 2
 context_digest: sha256:1880843e879fb070ea4232b20c0fab5aa1976b20ff235a881f1812c8ef58f802
 apps:
   - name: wordcraft
@@ -10,3 +10,27 @@ apps:
         - https://github.com/storytold/wordcraft/releases/download/v0.7.0/wordcraft-web-0.7.0.zip
       sha256: 98df7c68a0ac788a9ac0f531fd34c31ab7d89965abb4935f57168d287dab3189
       size: 15009187
+  - name: gridcraft
+    version: 0.7.0
+    artifact:
+      name: gridcraft-web-0.7.0.zip
+      urls:
+        - https://github.com/storytold/gridcraft/releases/download/v0.7.0/gridcraft-web-0.7.0.zip
+      sha256: ad10af2baf9c7ed4ccbd81e32b37698f5075cdf4f26b726fee7fc7938a3a8d27
+      size: 7113559
+  - name: pdfcraft
+    version: 0.8.0
+    artifact:
+      name: pdfcraft-web-0.8.0.zip
+      urls:
+        - https://github.com/storytold/pdfcraft/releases/download/v0.8.0/pdfcraft-web-0.8.0.zip
+      sha256: 1f9ea51f3c1f71cc719c12814e10f236912fa41ef54a7782c7dd4a619d9eee9a
+      size: 14113243
+  - name: deckcraft
+    version: 0.7.0
+    artifact:
+      name: deckcraft-web-0.7.0.zip
+      urls:
+        - https://github.com/storytold/deckcraft/releases/download/v0.7.0/deckcraft-web-0.7.0.zip
+      sha256: 4ab91994048c096fa356b7246c31098474d978ecd572e5b252dd825a287d1c40
+      size: 9385879

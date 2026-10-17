@@ -362,3 +362,18 @@
 - S249 KVM re-verification leftover: an update whose craft image was swapped
   for a no-op apply (package already current) still fails at `rewrite` with a
   message that names an image ID rather than the tag; cosmetic.
+
+## Office craft packages (S250)
+
+- Owner signature: the four-app craft manifest (counter 2) is unsigned;
+  GridCraft, PdfCraft and DeckCraft cannot be built outside a throwaway-key
+  test until the owner signs it.
+- KVM acceptance for the three apps is pending (see
+  `docs/DEVELOPMENT.md`); the `knownImageVolumes` rows and header-table
+  rows are marked pending until then.
+- First-load size: the uncompressed wasm is 18.9 MB (GridCraft), 38.1 MB
+  (PdfCraft) and 25.5 MB (DeckCraft), served gzip at about 37 percent;
+  Brotli would shrink it further but `ngx_brotli` is not in the base image.
+- Upstream MPL-2.0 code dependency in DeckCraft (symphonia, unmodified) is
+  recorded in `docs/THIRD_PARTY.md`; a future change that patches it needs
+  a source-availability review.

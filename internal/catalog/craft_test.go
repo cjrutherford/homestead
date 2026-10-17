@@ -474,7 +474,7 @@ func TestPlanInstallRefusesOwnerVolumesOnAStatelessPackage(t *testing.T) {
 // (S249). Each craft slice (S250 to S253) appends its app here and adds
 // its YAML, manifest entry, knownImageVolumes row and THIRD_PARTY.md
 // entry; nothing else in this file changes.
-var craftPackages = []string{"wordcraft"}
+var craftPackages = []string{"wordcraft", "gridcraft", "pdfcraft", "deckcraft"}
 
 // craftContainerPort is the port the shared nginx.conf listens on.
 const craftContainerPort = 8080
