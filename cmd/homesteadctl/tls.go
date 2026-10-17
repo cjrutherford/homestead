@@ -17,8 +17,11 @@ func runTLS(ctx context.Context, client *apiclient.Client, args []string, stdout
 	if len(args) > 0 && args[0] == "issuance" {
 		return runTLSIssuance(ctx, client, args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && (args[0] == "root" || args[0] == "local") {
+		return runTLSLocal(ctx, client, args, stdout, stderr)
+	}
 	if len(args) == 0 || args[0] != "renewal" {
-		fmt.Fprintln(stderr, "usage: homesteadctl tls <renewal | issuance ...>")
+		fmt.Fprintln(stderr, "usage: homesteadctl tls <renewal | issuance ... | root show|export | local ...>")
 		return exitUsage
 	}
 	report, err := client.TLSRenewal(ctx)

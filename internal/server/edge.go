@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"homestead/internal/cert"
 	"homestead/internal/docker"
 	"homestead/internal/exposure"
 	"homestead/internal/operation"
@@ -22,11 +23,19 @@ import (
 // /api/v1/edge/routes reads back the table the reconciler last wrote.
 // The reconciler owns exactly those hosts; snippets placed by the
 // exposure flow or by hand are never removed by it.
-func (s *Server) MountEdge(st *store.Store) {
+//
+// With a local-TLS issuer (S280), local-only internal-TLS routes get a
+// leaf from the persisted internal CA placed before the snippets render,
+// so the edge presents it from the first reload.
+func (s *Server) MountEdge(st *store.Store, local ...*cert.LocalTLS) {
+	var issuer *cert.LocalTLS
+	if len(local) > 0 {
+		issuer = local[0]
+	}
 	runner := operation.NewRunner(st)
 	s.mux.HandleFunc("POST /api/v1/edge/deploy", handleEdgeDeploy(runner))
 	s.mux.HandleFunc("GET /api/v1/edge/routes", handleEdgeRoutesGet(st))
-	s.mux.HandleFunc("POST /api/v1/edge/routes", handleEdgeRoutes(runner, st))
+	s.mux.HandleFunc("POST /api/v1/edge/routes", handleEdgeRoutes(runner, st, issuer))
 }
 
 // loadEdgeRoutes reads the recorded reconcile table; none yet is empty.
@@ -129,7 +138,7 @@ type routeTableBody struct {
 	Routes []docker.Route `json:"routes"`
 }
 
-func handleEdgeRoutes(runner *operation.Runner, st *store.Store) http.HandlerFunc {
+func handleEdgeRoutes(runner *operation.Runner, st *store.Store, local *cert.LocalTLS) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body routeTableBody
 		if err := decodeBody(r, &body); err != nil {
@@ -150,6 +159,12 @@ func handleEdgeRoutes(runner *operation.Runner, st *store.Store) http.HandlerFun
 			}
 			http.Error(w, err.Error(), status)
 			return
+		}
+		if local != nil {
+			// A leaf that cannot be issued never blocks the reconcile: the
+			// route falls back to the edge's own internal issuance and the
+			// failure is audited and shown by doctor.
+			_, _, _ = local.EnsureLeaves(body.Routes, false, operatorActor(r))
 		}
 		state := docker.RouteState{
 			Load: func() (docker.RouteSet, error) { return loadEdgeRoutes(st) },

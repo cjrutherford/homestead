@@ -312,3 +312,21 @@ Check the application, then delete the `*.before-restore` directories.
 - The run's `format_version` is higher than 2: the layout is newer than
   this runbook; the `age` step still works, and `archives` still names
   each file.
+
+## The internal CA (S280, ADR-030)
+
+The internal CA's public certificate, fingerprint and metadata live in the
+SQLite database (and the `internal-ca.yaml` mirror next to the desired
+configuration), so they travel with a database backup. The private key is a
+custody-sealed `sys_` secret: it is never in `internal-ca.yaml`, never in the
+configuration export (`homesteadctl export`), never in the audit log, and never
+in an API response.
+
+To restore an appliance and keep its root (so devices do not need to re-trust):
+restore the database **and** the secret key file together, as for every other
+secret. The daemon then finds the CA row and its key and does not mint a new
+root. If the database is restored without the matching key, the daemon refuses
+to mint a replacement silently: doctor fails with "private key is missing" and
+the owner chooses either to restore the key file or to rotate the root
+(`homesteadctl tls local rotate`), after which every device must trust the new
+root. A configuration export alone does not recreate the root.

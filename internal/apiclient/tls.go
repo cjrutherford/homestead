@@ -2,7 +2,11 @@ package apiclient
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"net/http"
 	"net/url"
+	"strings"
 
 	"homestead/internal/cert"
 )
@@ -98,4 +102,92 @@ func (c *Client) TLSAccountTerms(ctx context.Context, certificate string) (cert.
 	var out cert.AccountTerms
 	err := c.get(ctx, "/api/v1/tls/issuance/account/terms?certificate="+url.QueryEscape(certificate), &out)
 	return out, err
+}
+
+// LocalCAReport returns the internal CA with its fingerprint and every
+// local leaf graded (S280, ADR-030). Public material only.
+func (c *Client) LocalCAReport(ctx context.Context) (cert.Report, error) {
+	var out cert.Report
+	if err := c.get(ctx, "/api/v1/tls/local-ca", &out); err != nil {
+		return cert.Report{}, err
+	}
+	if out.Leaves == nil {
+		out.Leaves = []cert.Leaf{}
+	}
+	return out, nil
+}
+
+// LocalCACreate creates the internal CA if absent (idempotent).
+func (c *Client) LocalCACreate(ctx context.Context) (cert.CAInfo, bool, error) {
+	var out struct {
+		CA      cert.CAInfo `json:"ca"`
+		Created bool        `json:"created"`
+	}
+	if err := c.postJSON(ctx, "/api/v1/tls/local-ca", map[string]any{}, &out); err != nil {
+		return cert.CAInfo{}, false, err
+	}
+	return out.CA, out.Created, nil
+}
+
+// LocalCALeaves lists the graded local leaves.
+func (c *Client) LocalCALeaves(ctx context.Context) ([]cert.Leaf, error) {
+	var out struct {
+		Leaves []cert.Leaf `json:"leaves"`
+	}
+	if err := c.get(ctx, "/api/v1/tls/local-ca/leaves", &out); err != nil {
+		return nil, err
+	}
+	if out.Leaves == nil {
+		out.Leaves = []cert.Leaf{}
+	}
+	return out.Leaves, nil
+}
+
+// LocalCAReissue re-issues local leaves (one host, or all when empty) and
+// returns the operation id.
+func (c *Client) LocalCAReissue(ctx context.Context, host string) (int64, error) {
+	var out OperationStarted
+	if err := c.postJSON(ctx, "/api/v1/tls/local-ca/leaves/reissue", map[string]any{"host": host}, &out); err != nil {
+		return 0, err
+	}
+	return out.ID, nil
+}
+
+// LocalCARotationPlan previews a root rotation.
+func (c *Client) LocalCARotationPlan(ctx context.Context) (cert.RotationPlan, error) {
+	var out cert.RotationPlan
+	err := c.get(ctx, "/api/v1/tls/local-ca/rotation", &out)
+	return out, err
+}
+
+// LocalCARotate approves the reviewed plan digest and returns the
+// operation id.
+func (c *Client) LocalCARotate(ctx context.Context, digest string) (int64, error) {
+	var out OperationStarted
+	if err := c.postJSON(ctx, "/api/v1/tls/local-ca/rotation", map[string]any{"digest": digest}, &out); err != nil {
+		return 0, err
+	}
+	return out.ID, nil
+}
+
+// LocalCARoot downloads the public root certificate ("pem" or "der"),
+// the same unauthenticated bytes a device fetches (ADR-030).
+func (c *Client) LocalCARoot(ctx context.Context, format string) ([]byte, error) {
+	if format != "pem" && format != "der" {
+		return nil, fmt.Errorf("api: root format must be pem or der")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/v1/tls/local-ca/root."+format, nil)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		excerpt, _ := io.ReadAll(io.LimitReader(res.Body, 512))
+		return nil, &StatusError{Method: req.Method, Path: req.URL.Path, Status: res.StatusCode, Body: strings.TrimSpace(string(excerpt))}
+	}
+	return io.ReadAll(io.LimitReader(res.Body, 1<<20))
 }

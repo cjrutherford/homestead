@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 40
+const CurrentVersion = 41
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -788,6 +788,37 @@ CREATE TABLE IF NOT EXISTS craft_images (
 		sql: `
 ALTER TABLE craft_baseline ADD COLUMN artifact_sha256 TEXT NOT NULL DEFAULT '';
 ALTER TABLE craft_baseline ADD COLUMN context_digest TEXT NOT NULL DEFAULT '';`,
+	},
+	{
+		// S280 (ADR-030): the persisted internal CA. Only PUBLIC material
+		// lives here; the private key is a sys_ secret (ADR-021). One row:
+		// the CA is minted once and never regenerated silently.
+		version: 41,
+		name:    "internal ca and local leaves",
+		sql: `
+CREATE TABLE IF NOT EXISTS internal_ca (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	cert_pem TEXT NOT NULL,
+	fingerprint_sha256 TEXT NOT NULL,
+	serial TEXT NOT NULL,
+	subject TEXT NOT NULL,
+	permitted_dns TEXT NOT NULL,
+	not_before TEXT NOT NULL,
+	not_after TEXT NOT NULL,
+	generation INTEGER NOT NULL,
+	previous_fingerprint TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS local_leaves (
+	host TEXT PRIMARY KEY,
+	cert_name TEXT NOT NULL,
+	serial TEXT NOT NULL,
+	fingerprint_sha256 TEXT NOT NULL,
+	ca_fingerprint TEXT NOT NULL,
+	not_before TEXT NOT NULL,
+	not_after TEXT NOT NULL,
+	issued_at TEXT NOT NULL
+);`,
 	},
 }
 

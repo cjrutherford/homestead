@@ -682,6 +682,45 @@ export interface TlsRenewalStatus {
   account_recovery_required?: boolean;
 }
 
+/** GET /api/v1/tls/local-ca — the internal CA (public material only). */
+export interface LocalCaInfo {
+  present: boolean;
+  subject?: string;
+  serial?: string;
+  fingerprint_sha256?: string;
+  not_before?: string;
+  not_after?: string;
+  permitted_dns?: string[];
+  generation?: number;
+  previous_fingerprint_sha256?: string;
+  key_present: boolean;
+}
+
+export interface LocalLeaf {
+  host: string;
+  cert_name: string;
+  fingerprint_sha256?: string;
+  not_after?: string;
+  status: string;
+  detail?: string;
+}
+
+export interface LocalCaReport {
+  ca: LocalCaInfo;
+  leaves: LocalLeaf[];
+  eligible_routes: number;
+}
+
+export interface LocalCaRotationPlan {
+  current_fingerprint_sha256: string;
+  current_not_after: string;
+  generation: number;
+  leaves_to_reissue: string[];
+  devices_must_retrust: string;
+  steps: string[];
+  digest: string;
+}
+
 /** GET /api/v1/tls/renewal — statuses plus the explicit recorded count. */
 export interface TlsRenewalReport {
   recorded_issuances: number;
@@ -1221,6 +1260,36 @@ export class ApiService {
       '/api/v1/tls/issuance/credentials',
       { provider, values },
     );
+  }
+
+  /** S280 (ADR-030): internal CA status with fingerprint and graded leaves. */
+  localCaStatus(): Observable<LocalCaReport> {
+    return this.http.get<LocalCaReport>('/api/v1/tls/local-ca');
+  }
+
+  localCaCreate(): Observable<{ ca: LocalCaInfo; created: boolean }> {
+    return this.http.post<{ ca: LocalCaInfo; created: boolean }>('/api/v1/tls/local-ca', {});
+  }
+
+  localCaLeaves(): Observable<{ leaves: LocalLeaf[] }> {
+    return this.http.get<{ leaves: LocalLeaf[] }>('/api/v1/tls/local-ca/leaves');
+  }
+
+  localCaReissue(host = ''): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>('/api/v1/tls/local-ca/leaves/reissue', { host });
+  }
+
+  localCaRotationPlan(): Observable<LocalCaRotationPlan> {
+    return this.http.get<LocalCaRotationPlan>('/api/v1/tls/local-ca/rotation');
+  }
+
+  localCaRotate(digest: string): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>('/api/v1/tls/local-ca/rotation', { digest });
+  }
+
+  /** Public root certificate download URL (unauthenticated by design, ADR-030). */
+  localCaRootUrl(format: 'pem' | 'der'): string {
+    return `/api/v1/tls/local-ca/root.${format}`;
   }
 
   tlsReregisterAccount(

@@ -67,6 +67,10 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	if err != nil {
 		return nil, err
 	}
+	local, err := NewLocalTLS(st, secrets, filepath.Join(filepath.Dir(c.ConfigPath), "internal-ca.yaml"), os.Getenv)
+	if err != nil {
+		return nil, err
+	}
 	srv.MountDoctor(
 		func() []doctor.Check { return []doctor.Check{driftDoctorCheck(st, time.Now)()} },
 		certDoctorChecks(st, issuing, time.Now),
@@ -75,7 +79,9 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 		platformApplyDoctorCheck(st, time.Now),
 		migrationDoctorChecks(st, c.CatalogDir),
 		backupEncryptionDoctorCheck(st),
+		localTLSDoctorChecks(local, time.Now),
 	)
+	srv.MountLocalTLS(st, local)
 	srv.MountTLSRenewal(st, issuing, time.Now)
 	srv.MountTLSIssuance(st, issuing)
 	srv.MountOperations(operation.New(st))
@@ -86,13 +92,14 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountBackups(st)
 	srv.MountBackupRecipients(st, secrets, filepath.Join(filepath.Dir(c.ConfigPath), "backup-recipients.yaml"))
 	sched := NewSchedulerWith(st, c.CatalogDir, secrets, issuing)
+	sched.Register("localtls", localTLSSource(local, sched.Now))
 	srv.MountScheduler(sched)
 	srv.MountDriftScan(st, sched.Now)
 	srv.MountDrift(st, c.CatalogDir)
 	dockerClient := docker.NewClient("")
 	srv.MountDocker(dockerClient)
 	srv.MountDockge(dockerClient)
-	srv.MountEdge(st)
+	srv.MountEdge(st, local)
 	srv.MountCraft(st, c.CatalogDir, filepath.Join(filepath.Dir(c.ConfigPath), "craft-trust.yaml"), docker.BuildClient{})
 	srv.MountUpdates(st, c.CatalogDir, dockerClient, secrets)
 	srv.MountPlatform(st, filepath.Join(filepath.Dir(c.ConfigPath), "platform-trust.yaml"))

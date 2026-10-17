@@ -332,3 +332,43 @@ func TestCleanCertTemps(t *testing.T) {
 		t.Fatalf("clean with nothing placed: %v", err)
 	}
 }
+
+func TestLocalCertNameIsValidAndDistinct(t *testing.T) {
+	a, b := LocalCertName("a.b.lan"), LocalCertName("a-b.lan")
+	if a == b || !validCertName.MatchString(a) || !validCertName.MatchString(b) {
+		t.Fatalf("names %q %q", a, b)
+	}
+	long := LocalCertName(Hostname(strings.Repeat("x", 60) + ".lan"))
+	if !validCertName.MatchString(long) {
+		t.Fatalf("long name %q invalid", long)
+	}
+}
+
+func TestInternalRouteServesOnlyLocalPlacements(t *testing.T) {
+	stack := t.TempDir()
+	local := Route{Host: "app.lan", Target: Target{Host: "app", Port: 80}, Exposure: ExposureLocal, TLS: TLSInternal}
+	if out, _ := RenderRouteIn(stack, local); !strings.Contains(out, "tls internal") {
+		t.Fatalf("no placement should keep tls internal:\n%s", out)
+	}
+	// An ordinary (non-local) placement covering the name is ignored by internal routes.
+	chain, key := testPair(t, "app.lan")
+	if err := PlaceCert(stack, PlacedCert{Name: "imported", Names: []string{"app.lan"}}, chain, key); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := RenderRouteIn(stack, local); !strings.Contains(out, "tls internal") {
+		t.Fatalf("imported cert replaced tls internal:\n%s", out)
+	}
+	name := LocalCertName("app.lan")
+	if err := PlaceCert(stack, PlacedCert{Name: name, Names: []string{"app.lan"}}, chain, key); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := RenderRouteIn(stack, local); !strings.Contains(out, "certs/"+name+"/fullchain.pem") || strings.Contains(out, "tls internal") {
+		t.Fatalf("local placement not served:\n%s", out)
+	}
+	if err := RemoveCert(stack, name); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := RenderRouteIn(stack, local); !strings.Contains(out, "tls internal") {
+		t.Fatal("removed placement still served")
+	}
+}

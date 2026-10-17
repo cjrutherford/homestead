@@ -83,6 +83,12 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/admins/setup": ClassPublic,
 	"POST /api/v1/sessions":     ClassPublic,
 	"/":                         ClassPublic, // dashboard static catch-all
+	// ADR-030: the one read-only unauthenticated exception beyond the
+	// above. A device fetching the root cannot have an operator session.
+	// Both serve ONLY the public root certificate; the fingerprint the
+	// authenticated dashboard and CLI show is the owner's check.
+	"GET /api/v1/tls/local-ca/root.pem": ClassPublic,
+	"GET /api/v1/tls/local-ca/root.der": ClassPublic,
 
 	// Claim window: claim-wizard saves, pre-login.
 	"GET /api/v1/wizards/{id}":    ClassClaimWindow,
@@ -98,6 +104,12 @@ var routeClasses = map[string]RouteClass{
 	"GET /api/v1/drift/schedule":                         ClassSession,
 	"POST /api/v1/drift/schedule":                        ClassSession,
 	"GET /api/v1/tls/renewal":                            ClassSession,
+	"GET /api/v1/tls/local-ca":                           ClassSession,
+	"POST /api/v1/tls/local-ca":                          ClassSession,
+	"GET /api/v1/tls/local-ca/leaves":                    ClassSession,
+	"POST /api/v1/tls/local-ca/leaves/reissue":           ClassSession,
+	"GET /api/v1/tls/local-ca/rotation":                  ClassSession,
+	"POST /api/v1/tls/local-ca/rotation":                 ClassSession,
 	"GET /api/v1/tls/issuance/plans":                     ClassSession,
 	"GET /api/v1/tls/issuance/approvals":                 ClassSession,
 	"POST /api/v1/tls/issuance/approvals":                ClassSession,

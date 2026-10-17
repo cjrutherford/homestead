@@ -3051,3 +3051,36 @@ exposure:
     recommended: local
     allowwider: false
 ```
+
+## Internal CA trust distribution and local TLS (S280, ADR-030)
+
+Implemented: persisted internal CA (`internal/cert/localca.go`; key sealed as
+a `sys_` secret, public material in SQLite and `internal-ca.yaml`), leaf
+issuance and renewal for local-only edge hosts (`internal/cert/localtls.go`,
+scheduler job `tls:local-leaves`, edge snippets via the route reconciler),
+API routes under `/api/v1/tls/local-ca` (root.pem/root.der are the one
+unauthenticated read-only exception, ADR-030), `homesteadctl tls root
+show|export` and `tls local status|create|leaves|reissue|rotate`, the
+dashboard Trust page (`/trust`), doctor checks (`local-ca`,
+`local-leaf:HOST`), and docs/architecture/INTERNAL_CA_TRUST.md. Parity rows
+are in docs/PARITY.md. Management TLS served by the daemon itself stays
+deferred (docs/DEFERRED.md).
+
+Leaf lifetime is 90 days; `HOMESTEAD_LOCAL_LEAF_LIFETIME` (a duration of at
+least 1h, root-owned unit only) shortens it for acceptance. Doctor grades the
+root warn inside 365 days and fail inside 30 days of expiry; a leaf is due for
+renewal with a third of its lifetime left.
+
+Automated coverage: CA persistence across restart and restore, missing-key
+refusal, key confined to the secret store, name constraints, leaf chain and
+SANs, edge presentation only for local-only hosts, renewal with an injected
+clock, rotation plan and stale-digest refusal, route classification, absence
+from the recovery socket, no key in responses, audit or configuration export.
+
+KVM acceptance: PENDING. It is run separately and recorded here when done; no
+results are claimed. Required: fresh appliance, create the CA, compare the
+fingerprint across CLI, dashboard and `openssl x509 -fingerprint -sha256`,
+trust the root on host and guest, `curl https://<local host>` without `-k`,
+renew a leaf with a shortened lifetime and see the edge present it without a
+restart, rotate the root, confirm no private key in the database dump, YAML,
+backups or logs, and that removal leaves no stray certificates.

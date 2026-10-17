@@ -1,8 +1,10 @@
 package docker
 
 import (
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -314,6 +316,15 @@ func ReadPlacedChain(stackDir, name string, names []string) ([]byte, bool) {
 	return chain, true
 }
 
+// ReadPlacedChainAny returns the placed chain of name without checking
+// names or expiry (callers grade it themselves).
+func ReadPlacedChainAny(stackDir, name string) ([]byte, error) {
+	if !validCertName.MatchString(name) {
+		return nil, fmt.Errorf("certs: invalid certificate name %q", name)
+	}
+	return regularFile(filepath.Join(CertDir(stackDir, name), certChainFile))
+}
+
 // PlacedCerts lists the certificates placed under stackDir (ordered by
 // name). A missing directory is none. An entry that is a symlink, is not
 // a regular key/chain/meta set, or whose key and chain do not pair and
@@ -378,13 +389,85 @@ func ServingCert(stackDir string, host Hostname) (PlacedCert, bool) {
 	return PlacedCert{}, false
 }
 
+// usesPlacedCert reports the TLS modes that serve a certificate placed
+// under the stack: automatic TLS (S278) and, since S280, the internal
+// mode, where a leaf from Homestead's own CA replaces Caddy's private
+// CA when one covers the host.
+func (r Route) usesPlacedCert() bool { return r.TLS == TLSAuto || r.TLS == TLSInternal }
+
+// LocalCertPrefix names the placements issued by the internal CA
+// (S280). Internal-mode routes serve only these: an owner-imported or
+// ACME certificate that happens to cover the name never replaces
+// Caddy's internal issuance, and a local leaf never serves an
+// automatic-TLS (public-provider) route.
+const LocalCertPrefix = "local-"
+
+// LocalCertName is the placement name for a local-only host: sanitized
+// for the directory-name rules, with a hash so distinct hosts never
+// collide.
+func LocalCertName(host Hostname) string {
+	sum := sha256.Sum256([]byte(host))
+	label := strings.NewReplacer(".", "-").Replace(string(host))
+	if len(label) > 40 {
+		label = label[:40]
+	}
+	return LocalCertPrefix + label + "-" + hex.EncodeToString(sum[:4])
+}
+
+// servingCertFor picks the placed certificate a route would serve: local
+// placements for internal-mode routes, any other for automatic mode;
+// an exact-name match beats a wildcard, ties go to the lowest name.
+func servingCertFor(stackDir string, r Route) (PlacedCert, bool) {
+	var wild *PlacedCert
+	placed := PlacedCerts(stackDir)
+	for i := range placed {
+		if strings.HasPrefix(placed[i].Name, LocalCertPrefix) != (r.TLS == TLSInternal) {
+			continue
+		}
+		if exactCover(placed[i].Names, string(r.Host)) {
+			return placed[i], true
+		}
+		if wild == nil && wildcardCover(placed[i].Names, string(r.Host)) {
+			wild = &placed[i]
+		}
+	}
+	if wild != nil {
+		return *wild, true
+	}
+	return PlacedCert{}, false
+}
+
+// RemoveCert deletes a placed certificate directory (S280: a local leaf
+// whose route is gone). A missing placement is not an error.
+func RemoveCert(stackDir, name string) error {
+	if !validCertName.MatchString(name) {
+		return fmt.Errorf("certs: invalid certificate name %q", name)
+	}
+	parent := filepath.Join(stackDir, "routes", certsDirName)
+	if plainDir(parent) != nil {
+		return nil
+	}
+	return os.RemoveAll(filepath.Join(parent, name))
+}
+
+// RouteServesCert reports whether the on-disk snippet of host loads the
+// chain placed under certName, i.e. the edge is configured to present it.
+func RouteServesCert(stackDir string, host Hostname, certName string) bool {
+	body, err := os.ReadFile(filepath.Join(stackDir, "routes", RouteFilename(host)))
+	if err != nil {
+		return false
+	}
+	want := fmt.Sprintf("%s/%s/%s/%s", caddyRoutesDir, certsDirName, certName, certChainFile)
+	return strings.Contains(string(body), "tls "+want+" ")
+}
+
 // RenderRouteIn renders a route as RenderRoute does, plus: a route
 // using automatic TLS whose host is covered by a certificate placed
 // under stackDir serves that certificate (`tls <chain> <key>`) instead
 // of leaving issuance to Caddy. Other modes are rendered unchanged.
 func RenderRouteIn(stackDir string, r Route) (string, error) {
-	if r.TLS == TLSAuto && stackDir != "" {
-		if cert, ok := ServingCert(stackDir, r.Host); ok {
+	if r.usesPlacedCert() && stackDir != "" {
+		if cert, ok := servingCertFor(stackDir, r); ok {
 			return renderRoute(r, &cert)
 		}
 	}
@@ -394,7 +477,7 @@ func RenderRouteIn(stackDir string, r Route) (string, error) {
 // WouldServe reports whether a route using automatic TLS would serve a
 // certificate covering names, before anything is placed (plan preview).
 func WouldServe(names []string, r Route) bool {
-	return r.TLS == TLSAuto && certNamesCover(names, string(r.Host))
+	return r.usesPlacedCert() && certNamesCover(names, string(r.Host))
 }
 
 // RouteSnippetExists reports whether a route snippet for host is on
@@ -433,11 +516,11 @@ func RefreshCertRoutes(stackDir string, routes []Route, hosts []string) (undo fu
 	}
 	seen := map[Hostname]bool{}
 	for _, r := range routes {
-		if !approved[r.Host] || seen[r.Host] || r.TLS != TLSAuto || !RouteSnippetExists(stackDir, r.Host) {
+		if !approved[r.Host] || seen[r.Host] || !r.usesPlacedCert() || !RouteSnippetExists(stackDir, r.Host) {
 			continue
 		}
 		seen[r.Host] = true
-		if _, ok := ServingCert(stackDir, r.Host); !ok {
+		if _, ok := servingCertFor(stackDir, r); !ok {
 			continue
 		}
 		content, err := RenderRouteIn(stackDir, r)

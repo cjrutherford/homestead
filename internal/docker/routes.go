@@ -48,10 +48,10 @@ func renderRoute(r Route, cert *PlacedCert) (string, error) {
 		site = string(r.Host)
 	}
 	var tlsLine, proxy strings.Builder
-	if r.TLS == TLSInternal {
+	if r.TLS == TLSInternal && cert == nil {
 		tlsLine.WriteString("\ttls internal\n")
 	}
-	if r.TLS == TLSAuto && cert != nil {
+	if cert != nil && r.usesPlacedCert() {
 		fmt.Fprintf(&tlsLine, "\ttls %s/%s/%s/%s %s/%s/%s/%s\n",
 			caddyRoutesDir, certsDirName, cert.Name, certChainFile,
 			caddyRoutesDir, certsDirName, cert.Name, certKeyFile)

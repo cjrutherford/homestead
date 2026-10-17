@@ -30,14 +30,18 @@
 - Overlay-view DNS application: S098 computes overlay effective tables,
   but no overlay DNS provider exists to receive them; overlay names are
   served through local DNS until a provider lands.
-- Internal CA distribution: scheduled as S280 (ADR-030, 2026-10-15):
-  persistence, local leaf TLS through the edge, root download with
-  fingerprint, per-OS runbook. Installing the root into client trust
-  stores stays manual by owner decision (no MDM or automatic enrolment).
+- Internal CA distribution: closed by S280 (ADR-030). The CA is persisted,
+  leaves are issued through the edge, the root downloads with a verified
+  fingerprint, and the per-OS runbook is docs/architecture/INTERNAL_CA_TRUST.md.
+  Still out of scope: MDM or automatic device enrolment (installing the root
+  stays manual by owner decision); an ACME server for local names; DANE or
+  Certificate Transparency for local names; trust-store injection for native
+  apps (they need their own handling); name constraints follow the fixed local
+  suffix set, not an owner-chosen suffix.
 - Certificate issuance gaps left by S278: only ACME dns-01 issuance has an
   owner-approved flow; http-01/tls-alpn-01 stay Caddy-native and are not
-  fingerprinted. The internal CA the baseline (S222) mints is still not
-  recorded (persistence is S280). Placed certificates are served only by automatic-TLS routes
+  fingerprinted. The internal CA the baseline (S222) mints is now
+  persisted (S280). Placed certificates are served only by automatic-TLS routes
   whose host they cover; applying the issuance to a route that does not
   exist yet needs a reconcile afterwards. Manual-provider DNS-01 (owner
   pastes TXT values) has no issuance flow. S272 re-issues placed dns-01 certificates unattended. A reload refused after a successful
@@ -131,10 +135,10 @@
   free and warns otherwise; sharing 5353 with Avahi, name-conflict
   probing, IPv6 advertisements, and scoping answers away from
   container bridge addresses belong to later slices.
-- Management TLS provisioning: S222 proves issue-and-verify
-  mechanics only; persisting the internal authority and edge TLS for local hosts
-  are S280 (ADR-030); serving management TLS from the daemon itself
-  remains for a later slice.
+- Management TLS provisioning: S280 (ADR-030) persisted the internal
+  authority and serves local-only edge hosts from it. Serving management TLS
+  from the daemon itself did not fall out of the edge work and remains
+  deferred; management stays on the local/overlay listener over HTTP.
 - Domain onboarding surface: S223 gates, proves, and records in
   code only; API, CLI, and dashboard affordances for connecting
   a domain belong to later slices.

@@ -53,6 +53,15 @@ func newSerial() (*big.Int, error) {
 // cert-signing usage, single tier, and a P-256 key. now anchors
 // validity for deterministic tests; production passes time.Now.
 func GenerateCA(commonName string, lifetime time.Duration, now time.Time) (Authority, error) {
+	return GenerateConstrainedCA(commonName, lifetime, now, nil)
+}
+
+// GenerateConstrainedCA is GenerateCA with an X.509 name constraint: when
+// permittedDNS is non-empty the CA may only vouch for names at or under
+// those domains (critical, so a verifier that cannot enforce it refuses
+// the chain rather than ignoring it). S280 constrains the persisted
+// authority to the owner's local suffixes.
+func GenerateConstrainedCA(commonName string, lifetime time.Duration, now time.Time, permittedDNS []string) (Authority, error) {
 	if len(commonName) == 0 || len(commonName) > 64 {
 		return Authority{}, fmt.Errorf("cert: CA name must be 1-64 characters")
 	}
@@ -76,6 +85,10 @@ func GenerateCA(commonName string, lifetime time.Duration, now time.Time) (Autho
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 		MaxPathLenZero:        true,
+	}
+	if len(permittedDNS) > 0 {
+		template.PermittedDNSDomainsCritical = true
+		template.PermittedDNSDomains = append([]string(nil), permittedDNS...)
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {

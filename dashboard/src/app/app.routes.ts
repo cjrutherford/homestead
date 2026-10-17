@@ -19,6 +19,7 @@ import { Backups } from './backups/backups';
 import { StorageSetup } from './storage/storage';
 import { Edge } from './edge/edge';
 import { Tls } from './tls/tls';
+import { Trust } from './trust/trust';
 import { AuditLog } from './audit/audit';
 import { Account } from './account/account';
 import { NotFound } from './not-found/not-found';
@@ -41,6 +42,7 @@ export const routes: Routes = [
   { path: 'storage', component: StorageSetup },
   { path: 'edge', component: Edge },
   { path: 'tls', component: Tls },
+  { path: 'trust', component: Trust },
   { path: 'audit', component: AuditLog },
   { path: 'secrets', component: Secrets },
   { path: 'operations', component: Operations },
