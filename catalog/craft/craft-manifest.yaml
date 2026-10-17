@@ -1,0 +1,12 @@
+format: homestead-craft-manifest/1
+counter: 1
+context_digest: sha256:3fe3a6ca4e528f817b16097db76b5ddc2dbbced5ebe13c6f673678f42df9a3f8
+apps:
+  - name: wordcraft
+    version: 0.7.0
+    artifact:
+      name: wordcraft-web-0.7.0.zip
+      urls:
+        - https://github.com/storytold/wordcraft/releases/download/v0.7.0/wordcraft-web-0.7.0.zip
+      sha256: 98df7c68a0ac788a9ac0f531fd34c31ab7d89965abb4935f57168d287dab3189
+      size: 15009187

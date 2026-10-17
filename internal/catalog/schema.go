@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"homestead/internal/craft"
 	"homestead/internal/exposure"
 	"homestead/internal/identity"
 	"homestead/internal/storage"
@@ -294,6 +295,9 @@ func (m Manifest) Validate() error {
 		}
 		seenServices[m.Services[i].Name] = true
 	}
+	if err := validateCraftServices(m); err != nil {
+		return err
+	}
 	if err := m.Requirements.Validate(); err != nil {
 		return err
 	}
@@ -319,6 +323,77 @@ func (m Manifest) Validate() error {
 	for i := range m.Hooks {
 		if err := m.Hooks[i].Validate(services); err != nil {
 			return fmt.Errorf("catalog: hook #%d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// Stateless reports a package that keeps nothing on the appliance
+// (ADR-028): every data declaration is ephemeral (or there are none), and
+// the manifest names no backup paths and no database export. Stateless
+// packages are not backup targets; the rule derives from the manifest, so a
+// package that later declares persistent data stops being stateless.
+func (m Manifest) Stateless() bool {
+	if m.Database != nil || len(m.BackupPaths) > 0 {
+		return false
+	}
+	for _, service := range m.Services {
+		for _, data := range service.Data {
+			if !data.Ephemeral {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// CraftImages returns the locally built craft images (S249) the manifest's
+// services run, in service order.
+func (m Manifest) CraftImages() []string {
+	var out []string
+	for _, service := range m.Services {
+		if _, _, ok := craft.ParseRef(service.Image); ok {
+			out = append(out, service.Image)
+		}
+	}
+	return out
+}
+
+// validateCraftServices checks the craft form (ADR-028): an image that
+// names a craft build must be exactly the local tag
+// `homestead/craft-<app>:<version>`, never registry-qualified (craft
+// images are built on the appliance, not pulled), for the package's own
+// app and at the package's own version, so a manifest version bump and the
+// craft manifest move together.
+func validateCraftServices(m Manifest) error {
+	for _, service := range m.Services {
+		if !strings.Contains(service.Image, craftMarker) {
+			continue
+		}
+		app, version, ok := craft.ParseRef(service.Image)
+		if !ok {
+			return fmt.Errorf("catalog: service %q image %q: craft images use the local tag homestead/craft-<app>:<version> and are built on the appliance, never pulled from a registry", service.Name, service.Image)
+		}
+		if app != m.Name {
+			return fmt.Errorf("catalog: service %q image %q must be the package's own craft app %q", service.Name, service.Image, m.Name)
+		}
+		if version != m.Version {
+			return fmt.Errorf("catalog: service %q image %q must carry the manifest version %q", service.Name, service.Image, m.Version)
+		}
+	}
+	return nil
+}
+
+// ValidateCraftListing requires every craft image of the manifest to be
+// listed (app and version) in the craft release manifest the caller
+// supplies. Shape validation stays pure; listing needs the signed
+// manifest, so callers with one (tests over the shipped manifest, tooling)
+// run this beside Validate.
+func ValidateCraftListing(m Manifest, listed func(app, version string) bool) error {
+	for _, image := range m.CraftImages() {
+		app, version, _ := craft.ParseRef(image)
+		if !listed(app, version) {
+			return fmt.Errorf("catalog: craft image %s is not listed in the craft manifest", image)
 		}
 	}
 	return nil

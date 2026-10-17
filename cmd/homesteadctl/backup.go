@@ -55,6 +55,10 @@ func runBackupSchedules(ctx context.Context, client *apiclient.Client, stdout, s
 		return fail(stderr, err)
 	}
 	for _, schedule := range schedules {
+		if schedule.Stateless {
+			fmt.Fprintf(stdout, "%s stateless (no-op: keeps nothing on the appliance, no job runs)\n", schedule.Package)
+			continue
+		}
 		fmt.Fprintf(stdout, "%s every %ds retain %d enabled=%v by %s\n",
 			schedule.Package, schedule.IntervalSeconds, schedule.Retain, schedule.Enabled, schedule.Actor)
 	}

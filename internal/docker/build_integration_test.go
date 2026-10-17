@@ -92,13 +92,13 @@ func TestRealCraftBuild(t *testing.T) {
 	if err := p.CheckImage(context.Background(), tag); err != nil {
 		t.Fatal(err)
 	}
-	// Run it read-only with only /tmp writable, as S249 will.
+	// Run it read-only with only /tmp writable, as the craft packages do (S249).
 	name := "craft-it-" + hex.EncodeToString(id[:4])
-	if out, err := exec.Command("docker", "run", "-d", "--name", name, "--read-only", "--tmpfs", "/tmp", "-p", "127.0.0.1::80", tag).CombinedOutput(); err != nil {
+	if out, err := exec.Command("docker", "run", "-d", "--name", name, "--read-only", "--tmpfs", "/tmp", "--cap-drop", "ALL", "-p", "127.0.0.1::8080", tag).CombinedOutput(); err != nil {
 		t.Fatalf("run: %v %s", err, out)
 	}
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", name).Run() })
-	port, err := exec.Command("docker", "port", name, "80/tcp").Output()
+	port, err := exec.Command("docker", "port", name, "8080/tcp").Output()
 	if err != nil {
 		logs, _ := exec.Command("docker", "logs", name).CombinedOutput()
 		t.Fatalf("container not serving: %v\n%s", err, logs)
@@ -126,6 +126,23 @@ func TestRealCraftBuild(t *testing.T) {
 	_, _ = io.Copy(io.Discard, r.Body)
 	if r := get("/main.js"); r.Header.Get("Cache-Control") != "no-cache" {
 		t.Fatalf("main.js cache %q", r.Header.Get("Cache-Control"))
+	}
+	// The shared shape (S249): a healthz, a non-root server, nosniff, and
+	// the wasm served gzip-encoded to a client that accepts it.
+	if r := get("/healthz"); r.StatusCode != 200 {
+		t.Fatalf("/healthz = %d", r.StatusCode)
+	}
+	if out, err := exec.Command("docker", "exec", name, "id", "-un").Output(); err != nil || strings.TrimSpace(string(out)) != "nginx" {
+		t.Fatalf("server user = %q (%v)", out, err)
+	}
+	if r := get("/"); r.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("nosniff missing: %v", r.Header)
+	}
+	wasmReq, _ := http.NewRequest(http.MethodGet, base+"/app.0123456789ab.wasm", nil)
+	wasmReq.Header.Set("Accept-Encoding", "gzip")
+	wasmResp, err := (&http.Transport{DisableCompression: true}).RoundTrip(wasmReq)
+	if err != nil || wasmResp.Header.Get("Content-Encoding") != "gzip" {
+		t.Fatalf("wasm not gzip-encoded: %v %v", err, wasmResp)
 	}
 }
 

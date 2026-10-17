@@ -262,6 +262,11 @@ func classifyDestinationError(err error) error {
 // argument overrides it. A missing secret fails naming it. Retention follows the package schedule,
 // defaulting to a week unscheduled.
 func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.SecretStore, password string) (backup.Job, error) {
+	// A stateless package has nothing to copy: a defined result, never
+	// "no sources" and never wrapped in scheduler.ErrUnavailable (ADR-028).
+	if manifest.Stateless() {
+		return backup.Job{}, fmt.Errorf("%w: %q declares no persistent data", backup.ErrStateless, manifest.Name)
+	}
 	sources, err := backupSources(st, manifest.Name)
 	if err != nil {
 		return backup.Job{}, err
@@ -426,7 +431,14 @@ func handleUpdatesApply(st *store.Store, catalogDir string, client *docker.Clien
 		for _, move := range plan.Services {
 			req.Moves = append(req.Moves, move)
 		}
-		if body.Backup {
+		var backupNote string
+		if body.Backup && manifest.Stateless() {
+			// A pre-update backup of a stateless package is skipped, with a
+			// recorded note; the update proceeds (ADR-028).
+			backupNote = fmt.Sprintf("backup skipped: %s is stateless and keeps nothing on the appliance", name)
+			_, _ = audit.New(st).Record(audit.Entry{Actor: operatorActor(r), Action: "update.backup.skipped", Outcome: audit.OutcomeOK,
+				Detail: backupNote})
+		} else if body.Backup {
 			job, err := backupJob(st, manifest, secrets, body.DBPassword)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
@@ -451,7 +463,7 @@ func handleUpdatesApply(st *store.Store, catalogDir string, client *docker.Clien
 				}
 				return nil
 			}
-		} else if plan.Backup {
+		} else if plan.Backup && !manifest.Stateless() {
 			http.Error(w, "backup required: re-apply with backup requested", http.StatusUnprocessableEntity)
 			return
 		}
@@ -476,7 +488,11 @@ func handleUpdatesApply(st *store.Store, catalogDir string, client *docker.Clien
 				OverrideReason: fmt.Sprintf("owner allowed older craft manifest: recorded %s, manifest %s counter %d",
 					craftPlan.Baseline, craftPlan.Version, craftPlan.Counter)})
 		}
-		writeJSON(w, map[string]any{"id": op.ID})
+		reply := map[string]any{"id": op.ID}
+		if backupNote != "" {
+			reply["detail"] = backupNote
+		}
+		writeJSON(w, reply)
 	}
 }
 

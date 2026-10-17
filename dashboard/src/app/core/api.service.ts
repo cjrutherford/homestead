@@ -641,6 +641,8 @@ export interface BackupSchedule {
   enabled: boolean;
   actor: string;
   updated_at: string;
+  /** True for a package that keeps no data: a no-op, never scheduled (ADR-028). */
+  stateless?: boolean;
 }
 
 /** GET /api/v1/scheduler/jobs — one declared job with its run state. */

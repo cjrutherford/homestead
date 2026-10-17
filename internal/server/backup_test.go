@@ -19,7 +19,7 @@ func backupTestServer(t *testing.T) *Server {
 	}
 	t.Cleanup(func() { s.Close() })
 	srv := New("127.0.0.1:0")
-	srv.MountBackups(s)
+	srv.MountBackups(s, t.TempDir())
 	return srv
 }
 
@@ -95,7 +95,7 @@ func TestBackupScheduleStatusCodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := New("127.0.0.1:0")
-	srv.MountBackups(st)
+	srv.MountBackups(st, t.TempDir())
 
 	body := func(actor string, seconds int) map[string]any {
 		return map[string]any{"package": "jellyfin", "interval_seconds": seconds, "retain": 1, "enabled": true, "actor": actor}

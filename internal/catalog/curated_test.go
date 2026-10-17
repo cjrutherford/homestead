@@ -24,6 +24,26 @@ func repoCatalog(t *testing.T) Catalog {
 	return catalog
 }
 
+// curatedPackages is the one place the expected shipped catalog is listed
+// (sorted, as Names returns it). Adding a package to catalog/ edits this
+// list and nothing else here: each craft slice appends its app.
+var curatedPackages = []string{"authentik", "immich", "jellyfin", "nextcloud", "wordcraft"}
+
+// assertCuratedNames fails when the shipped catalog and curatedPackages
+// differ, in either direction.
+func assertCuratedNames(t *testing.T, catalog Catalog) {
+	t.Helper()
+	names := catalog.Names()
+	if len(names) != len(curatedPackages) {
+		t.Fatalf("names = %v, want %v", names, curatedPackages)
+	}
+	for i := range names {
+		if names[i] != curatedPackages[i] {
+			t.Fatalf("names = %v, want %v", names, curatedPackages)
+		}
+	}
+}
+
 func TestCuratedJellyfin(t *testing.T) {
 	catalog := repoCatalog(t)
 	manifest, err := catalog.Get("jellyfin")
@@ -87,9 +107,7 @@ func TestCuratedNextcloud(t *testing.T) {
 	if string(endpoint.Recommended) != "local" || !endpoint.AllowWider {
 		t.Fatalf("endpoint = %+v", endpoint)
 	}
-	if names := catalog.Names(); len(names) != 4 || names[0] != "authentik" || names[1] != "immich" || names[2] != "jellyfin" || names[3] != "nextcloud" {
-		t.Fatalf("names = %v", names)
-	}
+	assertCuratedNames(t, catalog)
 }
 
 func TestCuratedImmich(t *testing.T) {
@@ -136,9 +154,7 @@ func TestCuratedImmich(t *testing.T) {
 	if !report.Passed {
 		t.Fatalf("report = %+v", report)
 	}
-	if names := catalog.Names(); len(names) != 4 || names[0] != "authentik" || names[1] != "immich" || names[2] != "jellyfin" || names[3] != "nextcloud" {
-		t.Fatalf("names = %v", names)
-	}
+	assertCuratedNames(t, catalog)
 }
 
 func TestCuratedAuthentik(t *testing.T) {

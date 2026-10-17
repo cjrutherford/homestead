@@ -202,6 +202,19 @@ describe('Backups', () => {
     expect(text()).toContain('Schedule detail: jellyfin');
   });
 
+  it('shows a stateless package as a no-op', () => {
+    const stateless = { ...SCHEDULE, package: 'wordcraft', stateless: true };
+    load([stateless]);
+    expect(text()).toContain('stateless (no-op');
+    expect(text()).not.toContain('every 1 day');
+    fixture.componentInstance.inspect('wordcraft');
+    http.expectOne('/api/v1/backups/schedules/wordcraft').flush(stateless);
+    fixture.detectChanges();
+    expect(text()).toContain('Schedule detail: wordcraft');
+    expect(text()).toContain('keeps nothing on the appliance');
+    expect(text()).not.toContain('cadence window');
+  });
+
   it('reports a failed inspect', () => {
     load([SCHEDULE]);
     fixture.componentInstance.inspect('jellyfin');

@@ -48,6 +48,11 @@ func assignedMountpoints(assignments []storage.Assignment) map[storage.Class]str
 // catalog does not declare. Read-only binds and owner-supplied extra
 // binds are the owner's libraries and are not judged.
 func guardBackupSources(manifest catalog.Manifest, mountpoints map[storage.Class]string, sources []backup.Source, containers []docker.Container) ([]string, error) {
+	// Zero persistent sources on a stateless package is a defined result,
+	// not a missing-directory failure (ADR-028).
+	if manifest.Stateless() {
+		return nil, fmt.Errorf("%w: %q declares no persistent data", backup.ErrStateless, manifest.Name)
+	}
 	var roots []string
 	for _, source := range sources {
 		roots = append(roots, filepath.Join(source.Mountpoint, source.Path))

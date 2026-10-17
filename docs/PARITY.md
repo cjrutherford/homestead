@@ -73,7 +73,7 @@ unchanged.
 | GET | /api/v1/tunnel/status | `"tunnel"` | `tunnelStatus` | Discovery and health on CLI and dashboard |
 | POST | /api/v1/tunnel/setup | `"tunnel"` | `tunnelSetup` | Tunnel setup on CLI and dashboard |
 | DELETE | /api/v1/tunnel/tunnels/{id} | `"tunnel"` | `tunnelTeardown` | Tunnel teardown on CLI and dashboard |
-| GET | /api/v1/scheduler/jobs | `"scheduler"` | `schedulerJobs` | Scheduled jobs with last run, next due, last error and skip on CLI and the read-only dashboard Backups panel |
+| GET | /api/v1/scheduler/jobs | `"scheduler"` | `schedulerJobs` | Scheduled jobs with last run, next due, last error and skip on CLI and the read-only dashboard Backups panel. A stateless package (no persistent data, ADR-028) never has a job: its absence is the no-op (S249) |
 | GET | /api/v1/tls/renewal | `"tls"` | `tlsRenewal` | Certificate renewal report with explicit no-recorded-issuance state (S263, reporting only) on CLI (`tls renewal`) and the dashboard Exposure page; also surfaced as doctor checks |
 | GET | /api/v1/tls/issuance/plans | `"tls"` | `tlsIssuancePlans` | Previewed first issuance per ACME dns-01 certificate (S278): names, provider, zone, CA directory and class, account state, terms, chain/key placement, routes that will serve it, blockers, digest. Pure preview, no CA contact; CLI `tls issuance plan [CERT]`, dashboard Certificates page (`/tls`) |
 | GET | /api/v1/tls/issuance/approvals | `"tls"` | `tlsIssuanceApprovals` | Recorded issuance approvals (S278); CLI `tls issuance approvals` |
@@ -91,9 +91,9 @@ unchanged.
 | GET | /api/v1/tls/local-ca/rotation | `"local"` | `localCaRotationPlan` | Root rotation plan with digest, leaves re-issued and the devices that must re-trust (S280); CLI `tls local rotation`, Trust page |
 | POST | /api/v1/tls/local-ca/rotation | `"local"` | `localCaRotate` | Approve a reviewed rotation digest (S280); 409 when the digest is stale; audited; CLI `tls local rotate --digest D`, Trust page |
 | GET | /api/v1/backups/destination | `"backup"` | `backupDestination` | Resolved backup root plus `encrypted` and `format_version` (S259) on CLI and dashboard |
-| GET | /api/v1/backups/schedules | `"backup"` | `backupSchedules` | Schedule records on CLI and dashboard |
-| POST | /api/v1/backups/schedules | `"backup"` | `backupScheduleSave` | Schedule save on CLI and dashboard |
-| GET | /api/v1/backups/schedules/{package} | `"backup"` | `backupScheduleGet` | Visible through schedules listing on CLI; per-package inspect on dashboard |
+| GET | /api/v1/backups/schedules | `"backup"` | `backupSchedules` | Schedule records on CLI and dashboard. A schedule for a stateless package is flagged `stateless` (a no-op) on both (S249) |
+| POST | /api/v1/backups/schedules | `"backup"` | `backupScheduleSave` | Schedule save on CLI and dashboard. A stateless package (ADR-028, for example a craft app) is refused with 422 naming it, shown as the error on both (S249) |
+| GET | /api/v1/backups/schedules/{package} | `"backup"` | `backupScheduleGet` | Visible through schedules listing on CLI; per-package inspect on dashboard. A stateless package answers 200 with `stateless: true` instead of 404, shown as a no-op on the dashboard (S249) |
 | DELETE | /api/v1/backups/schedules/{package} | `"backup"` | `backupScheduleDelete` | Schedule removal on CLI and dashboard |
 | GET | /api/v1/backups/recipients | `"backup"` | `backupRecipients` | Appliance and owner age recipients (public keys only) on CLI (`backup recipients list`) and the dashboard Backups page (S271) |
 | POST | /api/v1/backups/recipients | `"backup"` | `backupRecipientAdd` | Add an owner X25519 recipient on CLI and dashboard; applies to new runs only (S271) |
@@ -102,7 +102,7 @@ unchanged.
 | POST | /api/v1/backups/identity/export | `"backup"` | `backupIdentityExport` | Explicit, audited, rate-limited recovery identity export, shown once: CLI `--out FILE` (0600, fsync'd) or `--stdout`; dashboard confirmation then copy/download (S271) |
 | POST | /api/v1/backups/identity/ack | `"backup"` | `backupIdentityAck` | Owner confirms the exported key is stored offline (clears the doctor warning) on CLI (`backup identity ack`, or `export --ack`) and dashboard (S271) |
 | GET | /api/v1/updates | `"updates"` | `updates` | Review rows on both surfaces; rows moving a locally built craft image also report its build state and last verdict (S279) |
-| POST | /api/v1/updates/{name}/apply | `"updates"` | `applyUpdate` | Approved updates on both surfaces. A craft image move verifies the manifest and rebuilds first (S279); `--craft-manifest/--craft-signature/--craft-artifact/--craft-allow-older` and the Updates page craft inputs carry the optional manifest, offline artifact and audited override |
+| POST | /api/v1/updates/{name}/apply | `"updates"` | `applyUpdate` | Approved updates on both surfaces. A pre-update backup of a stateless package is skipped with a recorded note (the reply's `detail`, printed by the CLI as `note:` and shown as the Updates page notice, and an `update.backup.skipped` audit entry; S249). A craft image move verifies the manifest and rebuilds first (S279); `--craft-manifest/--craft-signature/--craft-artifact/--craft-allow-older` and the Updates page craft inputs carry the optional manifest, offline artifact and audited override |
 | GET | /api/v1/data-migrations | `runDataStatus` | `dataMigrations` | App data placement (placed, needs-migration, unknown) plus old volumes pending removal (S277); also surfaced as doctor checks |
 | POST | /api/v1/data-migrations/{name}/plan | `runDataPlan` | `planDataMigration` | Reviewed migration plan with digest, targets, sizes, space, downtime, backup verdict (S277) |
 | POST | /api/v1/data-migrations/{name}/approve | `runDataApprove` | `approveDataMigration` | Approval of the quoted plan digest starts the migration operation; audited (S277) |

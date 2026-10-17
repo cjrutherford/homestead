@@ -2885,7 +2885,7 @@ migration 39 (`craft_trust_keys`, `craft_trust_removed`, `craft_baseline`,
 `craft` CLI group and the Craft images panel on the Updates page. Formats,
 the check order, signing and the manual digest check are in
 `docs/architecture/RELEASE_VERIFICATION.md`. No manifest, catalog entry or
-storytold source exists yet (S249).
+storytold source existed then; S249 added them (below).
 
 Local testing:
 
@@ -3134,3 +3134,121 @@ Left behind on VM 2: the S280 daemon build, the internal CA itself
 `/opt/homestead/stacks/caddy` files (the Caddy container is removed), and
 `/home/tester/hs-s280`. The test container, unit drop-in and trust-store entry
 were removed. Disk snapshot before the run: `vm2-pre-s280.qcow2`.
+
+## WordCraft package and the shared static craft shape (S249, ADR-028)
+
+Built: the first craft package and the shape S250 to S253 reuse
+(`docs/architecture/STATIC_CRAFT_PACKAGES.md`).
+
+- `catalog/wordcraft.yaml` (version 0.7.0, image
+  `homestead/craft-wordcraft:0.7.0`, one `ephemeral` data path `/tmp`, no
+  storage class, local-only exposure with `allowwider: false`).
+- Vendored release storytold/wordcraft v0.7.0 (still the latest on
+  2026-10-17): `wordcraft-web-0.7.0.zip`, SHA-256
+  `98df7c68a0ac788a9ac0f531fd34c31ab7d89965abb4935f57168d287dab3189`,
+  equal to upstream `SHA256SUMS.txt`. Licence `MIT OR Apache-2.0`, judged
+  compatible; details, NOTICE capture and the artifact record are in
+  `docs/THIRD_PARTY.md`.
+- `catalog/craft/craft-manifest.yaml`: the **unsigned** craft manifest
+  (counter 1, built with `scripts/craft-manifest.sh`). No signing key was
+  generated or committed. A test fails if `images/craft/` changes without
+  the manifest being regenerated.
+- `images/craft/` reworked to the shared shape: non-root `nginx` on 8080,
+  `/healthz` and an image `HEALTHCHECK`, precompressed `.gz` assets with
+  `gzip_static`, hashed-asset detection that matches `name-<hex>_bg.wasm`,
+  top-level archive directory stripped, config made readable for the
+  unprivileged user whatever mode the staged context carries (the real
+  Docker integration test found that: a 0600 `nginx.conf` crashed the
+  non-root server).
+- `scripts/craft-header-check.sh` (in `lint-scripts`), the header table
+  (`docs/architecture/CRAFT_HEADER_TABLE.md`) and the signing runbook
+  (`docs/architecture/CRAFT_SIGNING_RUNBOOK.md`).
+- Catalog: craft-tag validation in `Manifest.Validate` (local form only,
+  own app, manifest version), `Manifest.Stateless()`, `CraftImages()`,
+  `ValidateCraftListing`; relaxed curated tests (`curatedPackages`); shared
+  `craftPackages` table test; `knownImageVolumes` row.
+- Stateless backup handling: schedule save 422, per-package read answers
+  `stateless`, no scheduler job, `backup.ErrStateless` from `backupJob` and
+  `guardBackupSources`, pre-update backup skipped with a note and an
+  `update.backup.skipped` audit entry; CLI and Backups/Updates pages show it.
+
+### Inherited S279 items: causes found
+
+Both were reproduced by reading the code, not live; the live proof is the
+KVM acceptance below.
+
+1. **Compose-up gate.** `composeUp` called `checkCraftStack`, but its
+   siblings did not: `composeUpServices` (the database-only
+   `up SERVICE...` of migrations, which also creates dependencies) and
+   `composeStart` were bare `composeRun` calls, and the update applier ran
+   its own `docker compose up -d` without the gate. A craft service could
+   therefore start on those paths with a missing or replaced image. All
+   three now take the same gate (`TestEveryComposeStartPathTakesTheCraftGate`
+   covers mismatch, missing record and no checker for each path).
+2. **Edge route answered nothing.** The planner's route upstream is the bare
+   service name (`web:80`), which resolves only on a network shared with
+   Caddy (`homestead-edge`). The edge network was added only if the caller's
+   `networks` list contained it: the dashboard defaults it in, but the CLI
+   and `scripts/acceptance.sh` send `package-net`, so the stack never joined
+   the edge and the proxy had no path to it (the S280 test route worked
+   because that container was attached by hand). `PlanInstall` now always
+   joins a routed stack to `homestead-edge` (keeping the project default
+   network when none was named) with a plan note
+   (`TestPlanInstallAttachesRoutedStacksToTheEdgeNetwork`).
+
+### Verified locally (dev workstation, 2026-10-17)
+
+A real build of v0.7.0 with the shared Dockerfile (base pinned by digest,
+`--build-arg` artifact digest) run with `--read-only --tmpfs /tmp
+--cap-drop ALL`: `docker image inspect` shows no VOLUME, user `nginx`,
+healthcheck `healthy`, `docker diff` empty. `scripts/craft-header-check.sh`
+PASS: `/healthz` 200; `index.html` `no-cache`; hashed `_bg.wasm`
+`application/wasm`, `public, max-age=31536000, immutable`, gzip (39.8 MB to
+14.9 MB, decompressed SHA-256 equal to the original); hashed `.js` immutable;
+no COOP/COEP. `HOMESTEAD_DOCKER_TESTS=1 go test ./internal/docker -run
+TestRealCraftBuild` passes with the new shape. The local image was removed
+afterwards. Not a substitute for the appliance run.
+
+### KVM acceptance: PENDING (nothing below has been run)
+
+Needs the owner's signature first (an agent must not hold the real key), or a
+throwaway key for the run:
+
+1. Sign: owner runs `docs/architecture/CRAFT_SIGNING_RUNBOOK.md` steps 2 to 4
+   on `catalog/craft/craft-manifest.yaml` and commits
+   `craft-manifest.yaml.minisig`. If `images/craft/` or the artifact changes
+   first, regenerate the manifest (the shared test names the command).
+   For KVM alone: `minisign -G -W` throwaway key, `craft trust add`, remove
+   afterwards; never commit it.
+2. Fresh appliance, S280 internal CA created (`tls local create`), root
+   exported. `craft plan wordcraft`, `craft build wordcraft --follow`.
+3. `docker image inspect homestead/craft-wordcraft:0.7.0` of the appliance
+   build: VOLUMEs (expect none), digest; **finalise the `knownImageVolumes`
+   row comment** (currently "PENDING KVM verification") with date and result.
+   `docker diff` of the running container: confirm `/tmp` is the only
+   writable path and finalise the ephemeral declaration if not.
+4. Install through the **CLI** with a body naming only a package network
+   (the old failing shape) and `container_ports {"wordcraft": 8080}`: the
+   plan note shows the edge attach; the app answers on
+   `https://wordcraft.lan/` with a leaf from the internal CA: `scripts/craft-header-check.sh https://wordcraft.lan/ --cacert root.pem`
+   (record the headers; add `--resolve` if the name is not in DNS).
+5. Compose-up gate live: with the app installed, replace the tag
+   (`docker tag alpine:latest homestead/craft-wordcraft:0.7.0`) and exercise
+   every start path: configure/restore (`composeUp`), a migration run that
+   starts the database-only services, and `updates apply`; each must refuse
+   with "local image does not match the recorded digest" and start nothing.
+   Restore the tag (rebuild).
+6. Stateless: `backup schedule --package wordcraft ...` is refused (422
+   naming wordcraft); `GET /api/v1/scheduler/jobs` has no wordcraft job;
+   `backup schedules` shows no schedule; `updates apply wordcraft --backup`
+   (or the Updates page) prints the skipped-backup note and audits
+   `update.backup.skipped`.
+7. Remove: container, stack directory, route, DNS name, edge entry gone.
+   Reinstall. Bump to a test version (catalog entry, craft manifest at a
+   higher counter, throwaway or owner signature), `updates apply wordcraft
+   --craft-manifest ... --craft-signature ... --follow`: rebuilds, updates,
+   prunes the old tag. `drift scan` (S212, S262) clean after install and
+   after update (note the new `default` network entry in the generated
+   compose; `drift live wordcraft`).
+8. Trust refusal on the live system: flip a byte of an artifact copy
+   (`artifact-digest`) and tamper the recorded image (step 5) are refused.

@@ -62,6 +62,13 @@ func checkCraftImages(ctx context.Context, images []string) error {
 	return nil
 }
 
+// CheckCraftStack is the exported craft gate for start paths outside this
+// package (update apply): nil only when every craft image in the stack's
+// compose files matches its recorded local build.
+func CheckCraftStack(ctx context.Context, dir, project string) error {
+	return checkCraftStack(ctx, dir, project)
+}
+
 // craftMarker is how every craft image reference starts.
 const craftMarker = "homestead/craft-"
 

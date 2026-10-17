@@ -107,6 +107,20 @@ describe('Updates', () => {
     expect(text()).toContain('Follow operation 9');
   });
 
+  it('shows the skipped-backup note of a stateless package with its operation', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/updates').flush(ROWS);
+    fixture.detectChanges();
+    fixture.componentInstance['setBackup']('jellyfin', true);
+    fixture.componentInstance['apply']('jellyfin');
+    http
+      .expectOne('/api/v1/updates/jellyfin/apply')
+      .flush({ id: 11, detail: 'backup skipped: jellyfin is stateless' });
+    fixture.detectChanges();
+    expect(text()).toContain('Follow operation 11');
+    expect(text()).toContain('backup skipped: jellyfin is stateless');
+  });
+
   it('reports no-op updates without opening operations', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/updates').flush(ROWS);

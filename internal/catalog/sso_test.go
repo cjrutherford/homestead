@@ -55,6 +55,7 @@ func TestCuratedSSO(t *testing.T) {
 		"immich":    {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"jellyfin":  {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC, identity.CapabilitySAML}},
 		"nextcloud": {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC, identity.CapabilitySAML, identity.CapabilityLDAP}},
+		"wordcraft": {Class: SSOUnsupported},
 	}
 	for _, name := range catalog.Names() {
 		manifest, err := catalog.Get(name)

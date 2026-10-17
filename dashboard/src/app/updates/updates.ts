@@ -96,6 +96,11 @@ export class Updates implements OnInit {
             this.refresh();
             return;
           }
+          // A note rides with a started operation too (for example a
+          // pre-update backup skipped for a stateless package, S249).
+          if (detail) {
+            this.notice.set(detail);
+          }
           this.operationId.set(id);
         },
         error: (failure: HttpErrorResponse) => {

@@ -283,10 +283,9 @@
   the platform release key). Until the key ceremony, owners add the
   published or their own key through the craft trust-key routes (CLI `craft trust add`).
 - storytold release source: recorded 2026-10-15 as
-  `https://github.com/storytold` (ADR-028). No craft manifest or catalog
-  entry exists; S249 adds the first (artifact URLs, licence check,
-  `docs/THIRD_PARTY.md` entry, catalog schema validation of craft tags
-  including refusing registry-qualified references).
+  `https://github.com/storytold` (ADR-028). S249 added the first craft
+  package (WordCraft), its unsigned manifest and the catalog validation of
+  craft tags; S250 to S253 add the other apps.
 - CI automation of manifest generation and signing: `scripts/craft-manifest.sh`
   and `scripts/sign-craft-manifest.sh` are run by hand on the signer's
   machine.
@@ -315,3 +314,44 @@
 - S280 review follow-up: a first-class CLI/API action to discard an orphaned
   internal CA key (today documented as a manual `DELETE FROM secrets`), and
   automatic retry of old-generation CA key destruction.
+
+## Static craft packages (S249, ADR-028)
+
+- Owner signature: `catalog/craft/craft-manifest.yaml` is committed
+  unsigned; no `.minisig` exists until the owner generates the craft key
+  offline and signs it (`docs/architecture/CRAFT_SIGNING_RUNBOOK.md`). Until
+  then WordCraft cannot be built or installed outside a throwaway-key test.
+- Read-only root filesystem: still no catalog schema field. The craft image
+  runs with a read-only root and `/tmp` tmpfs in tests, but Compose output
+  does not set `read_only: true`, `cap_drop` or `no-new-privileges` for it.
+- Craft apps' document storage: documents live in the browser and download
+  to the device until the Nextcloud WebDAV wiring (S254, ADR-029); widened
+  exposure stays discouraged until then.
+- Runtime craft listing: catalog validation checks the tag shape and
+  version; "listed in the signed craft manifest" is enforced at install and
+  start by the recorded-build gate (a build exists only from a verified
+  manifest) and statically by the shared test over the shipped manifest.
+  There is no catalog-load check against the manifest the daemon last
+  verified, because an unsigned or absent manifest must not hide the whole
+  catalog.
+- `requirements.ports` serves two jobs: the dashboard's default container
+  port and the host-port conflict check. A craft package declares 8080 as the
+  container port, so a host process already bound to 8080 fails the
+  requirements check although the container publishes no host port. The
+  fields should be split.
+- Edge network aliases: every service in a routed stack joins
+  `homestead-edge` and routes target the bare service name, so two stacks
+  using the same service name (for example `web`, `db`) would share an alias
+  on that network. Craft packages name their one service after the app; a
+  multi-service stack should attach only its exposed service to the edge or
+  route by container name.
+- Scheduler surface: a stateless package has no scheduler job, so its
+  "no-op" on `GET /api/v1/scheduler/jobs` is absence; the explicit
+  `stateless` marker is on the backup schedule routes, `backup schedules`
+  and the Backups page. The unwired backup wizard
+  (`internal/backup/wizard.go`) does not check statelessness.
+- Header checks beyond WordCraft: COOP/COEP, `.part-*` files and any
+  Brotli (`ngx_brotli` is not in the base image) are verified per app in
+  S250 to S253; the nginx config has no per-app include yet.
+- The shared nginx serves `README.md`, `HOSTING.md`, the sample `_headers`
+  and `.htaccess` from the upstream archive unchanged.

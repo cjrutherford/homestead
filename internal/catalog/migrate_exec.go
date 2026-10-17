@@ -30,11 +30,21 @@ var (
 	// composeStart restarts the original stopped containers.
 	composeStart = func(ctx context.Context, dir, project string) error {
 		defer lockProject(project)()
+		if err := checkCraftStack(ctx, dir, project); err != nil {
+			return err
+		}
 		return composeRun(ctx, dir, project, "start")
 	}
-	// composeUpServices brings up only the named services.
+	// composeUpServices brings up only the named services. It takes the
+	// same craft gate as composeUp (S249): the database-only start used by
+	// migrations is still a Compose up, and `up <service>` also creates
+	// the services the named ones depend on, so a craft image must match
+	// its recorded digest before any of them starts.
 	composeUpServices = func(ctx context.Context, dir, project string, services ...string) error {
 		defer lockProject(project)()
+		if err := checkCraftStack(ctx, dir, project); err != nil {
+			return err
+		}
 		return composeRun(ctx, dir, project, append([]string{"up", "-d"}, services...)...)
 	}
 	// projectContainers reads the project's containers with mounts.

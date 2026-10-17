@@ -137,8 +137,12 @@
       @for (row of schedules(); track row.package) {
         <li>
           <strong>{{ row.package }}</strong>
-          every {{ hours(row.interval_seconds) }}, retain {{ row.retain === 0 ? 'all runs' : row.retain }},
-          {{ row.enabled ? 'enabled' : 'disabled' }}, by {{ row.actor }}
+          @if (row.stateless) {
+            stateless (no-op: keeps nothing on the appliance, no job runs)
+          } @else {
+            every {{ hours(row.interval_seconds) }}, retain {{ row.retain === 0 ? 'all runs' : row.retain }},
+            {{ row.enabled ? 'enabled' : 'disabled' }}, by {{ row.actor }}
+          }
           <button type="button" (click)="inspect(row.package)">Inspect</button>
           @if (confirmingRemove() === row.package) {
             <span role="alertdialog" [attr.aria-label]="'Confirm removal of ' + row.package">
@@ -166,12 +170,20 @@
 
   @if (inspected(); as one) {
     <h3>Schedule detail: {{ one.package }}</h3>
+    @if (one.stateless) {
+      <p class="stateless">
+        Stateless: {{ one.package }} keeps nothing on the appliance, so there
+        is nothing to back up. No schedule can be set and no job runs; this is
+        a no-op, not a failure.
+      </p>
+    } @else {
     <p>
       Every {{ hours(one.interval_seconds) }}, retain
       {{ one.retain === 0 ? 'all runs' : one.retain }},
       {{ one.enabled ? 'enabled' : 'disabled' }}. Last changed by
       {{ one.actor }}; cadence window anchored at {{ one.updated_at }}.
     </p>
+    }
   }
 
   <h3>Scheduled jobs</h3>

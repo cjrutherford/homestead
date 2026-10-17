@@ -24,6 +24,7 @@ lint-scripts:
 	bash -n scripts/provision-layout.sh
 	bash -n scripts/craft-manifest.sh
 	bash -n scripts/sign-craft-manifest.sh
+	bash -n scripts/craft-header-check.sh
 
 acceptance:
 	sudo ./scripts/acceptance.sh

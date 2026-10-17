@@ -30,6 +30,11 @@ var (
 	ErrInvalidSchedule = errors.New("backup: invalid schedule")
 	// ErrScheduleNotFound marks a package with no schedule (HTTP 404).
 	ErrScheduleNotFound = errors.New("backup: schedule not found")
+	// ErrStateless marks a package that keeps no persistent data on the
+	// appliance (ADR-028): it has no backup schedule and no backup job, and
+	// asking for one is a defined no-op, never "no sources" (which stays
+	// retryable for stateful packages) and never a failure.
+	ErrStateless = errors.New("backup: stateless package, nothing to back up")
 )
 
 // Schedule is one retained backup job: the package, cadence in
@@ -50,6 +55,9 @@ type Schedule struct {
 	// on edits that keep the cadence (retention, actor), so those never
 	// delay the next run.
 	UpdatedAt time.Time `json:"updated_at"`
+	// Stateless is set by the API (never stored) when the package keeps no
+	// persistent data: the schedule is a no-op and no job runs (ADR-028).
+	Stateless bool `json:"stateless,omitempty"`
 }
 
 // Validate checks schedule shape plus actor presence.

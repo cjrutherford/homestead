@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,17 @@ import (
 // packages run at the given image so review and backup-gate paths
 // see moves for each.
 func dockerFake(t *testing.T, image string) *docker.Client {
+	t.Helper()
+	return dockerFakeProjects(t, image, "demo", "plain")
+}
+
+// dockerFakeFor serves one running project at the given image.
+func dockerFakeFor(t *testing.T, project, image string) *docker.Client {
+	t.Helper()
+	return dockerFakeProjects(t, image, project)
+}
+
+func dockerFakeProjects(t *testing.T, image string, projects ...string) *docker.Client {
 	t.Helper()
 	socket := filepath.Join(t.TempDir(), "docker.sock")
 	listener, err := net.Listen("unix", socket)
@@ -41,7 +53,11 @@ func dockerFake(t *testing.T, image string) *docker.Client {
 		_, _ = w.Write([]byte(`{"Driver":"overlayfs"}`))
 	})
 	mux.HandleFunc("/containers/json", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`[{"Id":"abc","Names":["/demo-web-1"],"Image":"` + image + `","State":"running","Status":"Up","Labels":{"com.docker.compose.project":"demo","com.docker.compose.service":"web"}},{"Id":"def","Names":["/plain-web-1"],"Image":"` + image + `","State":"running","Status":"Up","Labels":{"com.docker.compose.project":"plain","com.docker.compose.service":"web"}}]`))
+		var entries []string
+		for i, project := range projects {
+			entries = append(entries, `{"Id":"id`+strconv.Itoa(i)+`","Names":["/`+project+`-web-1"],"Image":"`+image+`","State":"running","Status":"Up","Labels":{"com.docker.compose.project":"`+project+`","com.docker.compose.service":"web"}}`)
+		}
+		_, _ = w.Write([]byte("[" + strings.Join(entries, ",") + "]"))
 	})
 	mux.HandleFunc("/images/json", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`[]`))

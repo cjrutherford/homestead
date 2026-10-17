@@ -372,7 +372,8 @@ app's latest verdict (`GET /api/v1/craft`) and the operation is audited as
 ### Using the recorded digest
 
 The install gate (`verify-craft-images` step) and every Compose `up`
-(install, configure, restore, adoption) refuse a stack running a
+(install, configure, restore, adoption, the migration database-only up and
+start, and the update up) refuse a stack running a
 `homestead/craft-<app>:<version>` image unless a build is recorded and the
 local image behind the tag has the recorded ID. Live drift (S262) compares
 a running container's image ID with the recorded one, not a tag or a
@@ -394,8 +395,10 @@ sqlite3 /var/lib/homestead/homestead.db \
 ### Rules for catalog manifests (S249 onward)
 
 A catalog service names a locally built image as
-`homestead/craft-<app>:<version>` (`craft.ParseRef`). Catalog schema
-validation of craft packages (refusing registry-qualified references,
-requiring the tag to be in the craft manifest) belongs to S249; this slice
-only provides the reference convention and the install, start, update and
-drift behavior above.
+`homestead/craft-<app>:<version>` (`craft.ParseRef`). Catalog validation
+(S249) refuses a registry-qualified reference, a tag for another app and a
+tag whose version differs from the manifest version; `ValidateCraftListing`
+and the shared `craftPackages` test require the tag to be listed in the
+shipped craft manifest. The start gate covers every Compose start path:
+`up`, the database-only `up SERVICE` of migrations, `start`, and the update
+`up` (`docs/architecture/STATIC_CRAFT_PACKAGES.md`).

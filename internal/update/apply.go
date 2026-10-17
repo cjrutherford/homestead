@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"homestead/internal/catalog"
 	"homestead/internal/craft"
 	"homestead/internal/operation"
 )
@@ -29,6 +30,11 @@ var execCompose = func(ctx context.Context, dir, project string, args ...string)
 	}
 	return string(out), nil
 }
+
+// checkCraftStart gates every Compose up an update runs: a stack that
+// runs locally built craft images starts only while each matches its
+// recorded digest (S249, ADR-028). Stubbed in tests.
+var checkCraftStart = catalog.CheckCraftStack
 
 // UpdateRequest scopes one safe update: the package and stack
 // directory, service image moves, and an optional pre-update backup
@@ -173,11 +179,17 @@ func UpdateDefinition(req UpdateRequest) (operation.Definition, error) {
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "up",
 		Run: func(ctx context.Context) error {
+			if err := checkCraftStart(ctx, req.StackDir, req.Package); err != nil {
+				return err
+			}
 			if _, err := execCompose(ctx, req.StackDir, req.Package, "up", "-d"); err != nil {
 				return err
 			}
 			if err := verifyRunning(ctx, req.StackDir, req.Package, req.Moves); err != nil {
 				rollback := rollbackImages(req)
+				if gateErr := checkCraftStart(ctx, req.StackDir, req.Package); gateErr != nil {
+					return fmt.Errorf("%v (rolled back to %v, but %v)", err, rollback, gateErr)
+				}
 				if _, rollbackErr := execCompose(ctx, req.StackDir, req.Package, "up", "-d"); rollbackErr != nil {
 					return fmt.Errorf("%v (rollback %v: %v)", err, rollback, rollbackErr)
 				}

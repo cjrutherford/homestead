@@ -240,7 +240,14 @@ func planCompose(plan *InstallPlan, req InstallRequest) error {
 	for _, service := range req.Manifest.Services {
 		specs = append(specs, ServiceGeneration{Service: service.Name, Volumes: byService[service.Name]})
 	}
-	files, err := Generate(req.Manifest, Generation{Networks: req.Networks, Services: specs})
+	networks := req.Networks
+	if len(plan.Routes) > 0 {
+		networks = withEdgeNetwork(req.Networks)
+	}
+	if len(networks) != len(req.Networks) {
+		plan.Notes = append(plan.Notes, fmt.Sprintf("attached to %s so the proxy can reach the routed service", docker.NetworkEdge))
+	}
+	files, err := Generate(req.Manifest, Generation{Networks: networks, Services: specs})
 	if err != nil {
 		return err
 	}
@@ -250,6 +257,27 @@ func planCompose(plan *InstallPlan, req InstallRequest) error {
 	}
 	plan.Actions = append(plan.Actions, "provision", "up")
 	return nil
+}
+
+// withEdgeNetwork guarantees the stack joins the edge network the proxy
+// reaches applications on (S249). Every install plans at least one
+// route, and a route upstream is a service name that only resolves on a
+// network shared with the proxy: a caller that listed other networks (the
+// CLI and acceptance flows) or none at all produced a stack the edge
+// answered nothing for (the S279 finding). An owner-supplied edge entry
+// is kept as given. With no networks listed the project default network
+// is kept too, so services still reach each other as before.
+func withEdgeNetwork(networks []NetworkAttachment) []NetworkAttachment {
+	for _, network := range networks {
+		if network.Name == docker.NetworkEdge {
+			return networks
+		}
+	}
+	out := append([]NetworkAttachment(nil), networks...)
+	if len(out) == 0 {
+		out = append(out, NetworkAttachment{Name: "default"})
+	}
+	return append(out, NetworkAttachment{Name: docker.NetworkEdge, External: true})
 }
 
 // validateHostPath checks an owner-chosen library path: absolute,

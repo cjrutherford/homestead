@@ -147,6 +147,9 @@ func runUpdatesApply(ctx context.Context, client *apiclient.Client, args []strin
 		return exitOK
 	}
 	fmt.Fprintf(stdout, "operation: %d\n", id)
+	if detail != "" {
+		fmt.Fprintf(stdout, "note: %s\n", detail)
+	}
 	if !follow {
 		return exitOK
 	}

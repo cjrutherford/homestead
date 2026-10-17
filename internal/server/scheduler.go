@@ -44,7 +44,16 @@ func backupSource(st *store.Store, catalogDir string, secrets catalog.SecretStor
 			return nil, err
 		}
 		jobs := make([]scheduler.Job, 0, len(schedules))
+		// Stateless packages (ADR-028) never become jobs, so there is no
+		// ErrUnavailable retry loop and no skipped-run noise for them. A
+		// catalog that cannot be read leaves every schedule a job, as before.
+		entries, catalogErr := catalog.Load(catalogDir)
 		for _, schedule := range schedules {
+			if catalogErr == nil {
+				if manifest, err := entries.Get(schedule.Package); err == nil && manifest.Stateless() {
+					continue
+				}
+			}
 			jobs = append(jobs, scheduler.Job{
 				ID:       "backup:" + schedule.Package,
 				Interval: time.Duration(schedule.IntervalSeconds) * time.Second,

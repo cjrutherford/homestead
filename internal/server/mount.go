@@ -89,7 +89,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountAppSecrets(st, c.CatalogDir, secrets)
 	srv.MountMigrations(st, c.CatalogDir, secrets)
 	srv.MountStorage(st)
-	srv.MountBackups(st)
+	srv.MountBackups(st, c.CatalogDir)
 	srv.MountBackupRecipients(st, secrets, filepath.Join(filepath.Dir(c.ConfigPath), "backup-recipients.yaml"))
 	sched := NewSchedulerWith(st, c.CatalogDir, secrets, issuing)
 	sched.Register("localtls", localTLSSource(local, sched.Now))

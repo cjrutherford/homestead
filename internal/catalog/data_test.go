@@ -37,6 +37,13 @@ var knownImageVolumes = map[string]imageVolumes{
 	"valkey/valkey:9":                                                {},
 	"ghcr.io/goauthentik/server:2026.8.3":                            {},
 	"docker.io/library/postgres:16-alpine":                           {Volumes: []string{"/var/lib/postgresql/data"}},
+	// Craft images are built locally (S279), so this row is the locally
+	// built tag, not a pulled one. The shared craft Dockerfile declares no
+	// VOLUME (verified on the dev workstation 2026-10-17 with `docker image
+	// inspect` of a real build of this release). PENDING KVM verification
+	// (S249): the KVM agent re-inspects the tag built on the appliance and
+	// replaces this note with the date and result.
+	"homestead/craft-wordcraft:0.7.0": {},
 }
 
 func loadCurated(t *testing.T) Catalog {
@@ -167,8 +174,14 @@ func TestCuratedPlansPlaceDataOnMountedStorage(t *testing.T) {
 				}
 			}
 		}
-		if len(plan.Mounts) == 0 {
-			t.Errorf("%s: plan lists no mounts", name)
+		// A zero-mount package (stateless craft) lists only its tmpfs;
+		// every declaration, and nothing else, must appear as a mount.
+		declaredPaths := 0
+		for _, service := range manifest.Services {
+			declaredPaths += len(service.Data)
+		}
+		if len(plan.Mounts) != declaredPaths {
+			t.Errorf("%s: plan lists %d mounts for %d declarations", name, len(plan.Mounts), declaredPaths)
 		}
 		for _, dir := range plan.Directories {
 			if !strings.HasPrefix(dir.Directory.Path, name+"/") {
