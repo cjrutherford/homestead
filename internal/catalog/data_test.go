@@ -56,14 +56,15 @@ var knownImageVolumes = map[string]imageVolumes{
 	"homestead/craft-gridcraft:0.7.0": {},
 	"homestead/craft-pdfcraft:0.8.0":  {},
 	"homestead/craft-deckcraft:0.7.0": {},
-	// S251 graphics craft images (PENDING KVM verification; finalised after
-	// the KVM run). Verified on the dev workstation 2026-10-17 with
-	// `docker image inspect` of a real build of each release through the
-	// shared Dockerfile: no VOLUME (Config.Volumes null), user nginx,
-	// healthy, and `docker diff` of a read-only container with /tmp as
-	// tmpfs is empty. Local image IDs: vectorcraft sha256:10c798820dfa...,
-	// photocraft sha256:0293521da666..., lightcraft sha256:cf098fb75e8b...,
-	// figcraft sha256:9db14c147be1...
+	// S251 graphics craft images. Verified with `docker image inspect` on the
+	// KVM appliance 2026-10-17 (VM 2, images built by the daemon from a
+	// throwaway-signed manifest): Config.Volumes null and user nginx for
+	// each, healthcheck on /healthz, container healthy, and `docker diff`
+	// of the running container empty with /tmp the only mount (a tmpfs).
+	// Digests: vectorcraft sha256:86362484a3f8..., photocraft
+	// sha256:93f9c69875c3..., lightcraft sha256:a03024d960b3..., figcraft
+	// sha256:38609e258554... (the same after the 0.12.1/0.9.1/0.8.1/0.6.1
+	// update rebuild: the build is reproducible).
 	"homestead/craft-vectorcraft:0.12.0": {},
 	"homestead/craft-photocraft:0.9.0":   {},
 	"homestead/craft-lightcraft:0.8.0":   {},

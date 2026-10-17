@@ -3466,7 +3466,7 @@ rows, docs, and one script option. No Go code and no change to `images/craft/`
   counter for the whole set, still **unsigned**. No key was generated or
   committed.
 - Test rows: `curatedPackages`, `craftPackages`, `TestCuratedSSO` and four
-  `knownImageVolumes` rows commented PENDING KVM verification.
+  `knownImageVolumes` rows finalised after the KVM run.
 - Header table: four rows and notes. VectorCraft, PhotoCraft and FigCraft are
   the WordCraft layout. LightCraft keeps unhashed file names (so `no-cache`,
   never `immutable`), runs a module worker and ships an extra font and
@@ -3488,15 +3488,62 @@ all capabilities dropped. `scripts/craft-header-check.sh` passed for all four
 containers reported `healthy`, `docker diff` was empty, `Config.Volumes` null,
 user `nginx`; gzip-decoded wasm equals the zip's.
 
-### KVM acceptance: PENDING
+### KVM acceptance (2026-10-17, VM 2, HEAD fbf4e9e, dashboard embedded build)
 
-Not run by this slice's implementation. To do on a fresh appliance, per app:
-owner (or throwaway key) signs the manifest; build, install, curl the `.lan`
-HTTPS route with the S280 root (entry page and wasm, run
-`craft-header-check.sh` through the edge, `--unhashed` for lightcraft);
-remove cleanly (container, stack directory, route, DNS name, edge entry,
-leaf certificate); reinstall; update to a bumped manifest version; drift scan
-(S212, S262) clean after install and update; schedule create refused and no
-scheduler job; `docker image inspect` of the built tag and `docker diff`; then
-finalise the four `knownImageVolumes` comments and the header-table rows
-("local build, KVM pending").
+Run on VM 2 (Debian 13, Docker, internal CA from S280). Binary sha256
+`a7a06123...` equals a root build of the same tree (with `embeddash`) on the
+guest. A throwaway minisign key (`minisign -G -W`, signed with `-l`, the
+non-prehashed form the daemon requires) was trusted with `craft trust add`
+and signed the eight-app manifest at counter 7 (install; same bytes as the
+committed manifest apart from the counter) and counter 8 (update, versions
+bumped to vectorcraft 0.12.1, photocraft 0.9.1, lightcraft 0.8.1, figcraft
+0.6.1, plus matching throwaway edits of the installed catalog). Artifacts
+were downloaded by the daemon over HTTPS and matched the recorded SHA-256.
+Nothing was committed. **All steps passed for all four apps; no product bug
+found.** An earlier attempt was killed by a rate limit before changing
+anything the daemon kept (no key, manifest, app or image was left), so the
+run started from the S250 end state.
+
+- **Build and install:** `craft plan` verified (counter 7) and `craft build
+  --follow` built each image (`sha256:86362484a3f8...` vectorcraft,
+  `93f9c69875c3...` photocraft, `a03024d960b3...` lightcraft,
+  `38609e258554...` figcraft). `apps install` through the CLI passed
+  `verify-craft-images`, `write-stack`, `up`; routes `<app>.lan` (local, TLS
+  internal) set with one `edge routes set`.
+- **Image and container:** `Config.Volumes` null, user `nginx`, healthcheck
+  on `/healthz`, containers `healthy`; `docker diff` empty; `/tmp` the only
+  mount (tmpfs).
+- **HTTPS and headers:** entry page and wasm fetched over `https://<app>.lan/`
+  with the S280 root (no `-k`); `scripts/craft-header-check.sh` PASS for all
+  four (`--unhashed` for lightcraft), gzip through Caddy included: wasm gzip
+  versus identity bytes, vectorcraft 22,507,398 versus 64,737,882, photocraft
+  11,417,725 versus 25,033,027, lightcraft 10,458,639 versus 27,259,177,
+  figcraft 8,802,810 versus 22,507,647; decoded and identity bodies equal.
+  LightCraft's `worker.js`, `lightcraft_web.js` and the 16.4 MB
+  `lightcraft_zh_hans.otf` (served gzip, 13,588,233 bytes,
+  `application/octet-stream`) all answer 200 with `no-cache`. Values are in
+  `docs/architecture/CRAFT_HEADER_TABLE.md`.
+- **Drift:** the scheduled scan (interval set to 5 minutes for the run,
+  restored to 24 h) was clean with 8 packages after install and again after
+  the update, with no `drift accept`; `drift review` clean for each app.
+- **Stateless:** `backup schedule --package <app> --interval 1 --actor alice`
+  answered 422 naming the app; `backup schedules` and `scheduler jobs` list
+  no craft job.
+- **Remove and reinstall:** `apps uninstall` removed the container and
+  compose file (the empty stack directory remains, as for every package);
+  clearing the route table removed the routes. The leaves showed `orphan`
+  and came back `ok` on reinstall (same expiry, no re-issue).
+- **Update:** `updates list` showed `homestead/craft-<app>:<old> -> <new>
+  (manifest)`; `updates apply --craft-manifest ... --craft-signature ...`
+  verified (counter 8), built, recorded, rewrote, started and pruned the old
+  tags for all four; header check PASS again. The rebuilt images are
+  byte-identical (same image IDs), so the build is reproducible.
+- **Cleanup:** apps uninstalled, route table emptied, Caddy container and the
+  four 0.x.1 images removed, trust key removed, secret key shredded, `/srv`
+  work directory deleted, drift interval restored to 24 h, daemon redeployed
+  with `install-systemd.sh`. Left on VM 2: `craft_baseline` at counter 8
+  (vectorcraft, photocraft, lightcraft, figcraft), 6 (gridcraft, pdfcraft,
+  deckcraft) and 4 (wordcraft), craft verdict and image rows, orphan `.lan`
+  leaves until the `tls:local-leaves` sweep, the empty stack directories,
+  the `homestead-edge` network and Caddy stack files, and
+  `/home/tester/hs-s251`.
