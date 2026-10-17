@@ -3724,6 +3724,18 @@ No Caddy container was started and the route table stayed empty.
 
 ## Design, CAD and launcher craft packages (S253, ADR-028)
 
+> **Owner decision 2026-10-17 (after the KVM validation below): Craft Launcher
+> removed from the catalog.** It has a compiled-in upstream suite list with
+> GitHub download buttons, cannot list installed apps and calls
+> `api.github.com` 14 times per load. `catalog/craft-launcher.yaml` and its
+> manifest entry are gone (manifest now thirteen apps, **counter 6**, still
+> unsigned, context digest unchanged), with the test lists, header-table row
+> and THIRD_PARTY entry; a Homestead-owned "Craft apps" start page (S281,
+> ADR-031 proposed) will replace it. The text below is the historical record
+> of what S253 built and validated. A KVM appliance whose craft baseline is
+> already at counter 13 from throwaway manifests would refuse a counter 6
+> manifest; use a throwaway manifest at a higher counter there.
+
 Built: three more packages on the S249 shared shape
 (`docs/architecture/STATIC_CRAFT_PACKAGES.md`). No Go product code, no change
 to `images/craft/` (build-context digest `sha256:1880843e...` unchanged),

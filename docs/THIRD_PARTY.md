@@ -28,8 +28,8 @@ pattern: `https://github.com/storytold/<repo>/releases/download/<tag>/<asset>`.
 Latest releases at planning: wordcraft v0.7.0, gridcraft v0.7.0, pdfcraft
 v0.8.0, deckcraft v0.7.0, vectorcraft v0.11.0 (v0.12.0 by S251), photocraft v0.9.0, lightcraft
 v0.8.0, figcraft v0.6.0, filmcraft v0.8.0, effectcraft v0.10.0, soundcraft
-v0.7.0, designcraft v0.8.0, cadcraft v0.7.0, craft-launcher v0.4.1 (asset
-`artcraft-launcher-web-0.4.1.zip`). Per-app entries (licence text, version,
+v0.7.0, designcraft v0.8.0, cadcraft v0.7.0 (craft-launcher v0.4.1 was vendored in S253 and then dropped
+from the catalog on 2026-10-17). Per-app entries (licence text, version,
 artifact URL and SHA-256) are added by S249 to S253 as each app lands.
 
 ### storytold/wordcraft v0.7.0 (S249)
@@ -1037,59 +1037,11 @@ inside the egui crate under their own open licenses (see ATTRIBUTION.md).
 - Craft image: `homestead/craft-cadcraft:0.7.0`, built locally by S279 from
   this artifact and `images/craft/` (nginx base pinned above).
 
-### storytold/craft-launcher v0.4.1 (S253)
-- Release: `https://github.com/storytold/craft-launcher/releases/tag/v0.4.1`
-  (tag commit `cbae640688c5fa3daa120a7f5e050f8e24148a47`, published
-  2026-10-13; still the latest release when S253 was implemented on
-  2026-10-17). **The repository name differs from the asset name**: the
-  web asset is `artcraft-launcher-web-0.4.1.zip` and unpacks into
-  `artcraft-launcher-web-0.4.1/`. The Homestead app name is `craft-launcher`
-  (the repository), so its image tag is `homestead/craft-craft-launcher:0.4.1`
-  (the shared rule is `homestead/craft-<app>:<version>`).
-- Artifact: `artcraft-launcher-web-0.4.1.zip`, 4250028 bytes,
-  `https://github.com/storytold/craft-launcher/releases/download/v0.4.1/artcraft-launcher-web-0.4.1.zip`
-- SHA-256: `5768d88f6077375b926723cdf7ee56717997b57e99c2e419cbe89b527b497a27`,
-  equal to the line for this file in the release's unsigned
-  `SHA256SUMS.txt` (cross-checked 2026-10-17; the download was also hashed
-  independently). Trust rests on the signed Homestead craft manifest
-  (`catalog/craft/craft-manifest.yaml`), which records this digest.
-- Archive contents: `index.html`, `artcraft-launcher-web-<hash>.js`,
-  `artcraft-launcher-web-<hash>_bg.wasm` (9.6 MB uncompressed),
-  `ai.storyteller.artcraft-launcher-<hash>.png`, `NOTICE`, `ATTRIBUTION.md`,
-  `LICENSE-APACHE`, `LICENSE-MIT`, `README.md`, `HOSTING.md`, and the sample
-  `_headers` and `.htaccess` (unused). No workers, no service worker, no
-  precompressed files, no `parts.txt`.
-- Licence: `MIT OR Apache-2.0`, at the recipient's option (`LICENSE-MIT`,
-  Copyright (c) 2026 ArtCraft Team and the ArtCraft Launcher contributors,
-  SHA-256 `e7bdbd66dea5820c4960db754d7d00c54ff95396b9527b29ac21b8cb0adf7e90`;
-  `LICENSE-APACHE`, SHA-256
-  `0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594`; both
-  ship inside the artifact and equal the files at the tag). Both read for the
-  v0.4.1 release. Judgement: compatible with redistribution inside a
-  Homestead-built image, on the same reasoning as WordCraft.
-- Trademarks: the ArtCraft name, wordmark, logo and "A" mark are the ArtCraft
-  Team's, not open source, and not covered by the licence ("forks and
-  modified versions must remove them", NOTICE). Unlike the other apps, the
-  web launcher shows the ArtCraft logo in its header and the "A" mark as its
-  page icon, and they travel inside the unmodified release files. Homestead
-  serves the release byte for byte, which is the unmodified upstream
-  distribution; it does not alter, rebrand or relicense them, and the
-  package copy names the app by function. Judgement: compatible for
-  unmodified redistribution; a fork that changes the files would have to
-  remove the marks.
-- NOTICE (shipped in the web artifact and at the tag, SHA-256
-  `a20659ce2e1884071edf0cd981c3d91e7e6c11f3fcea12a8de155ec4cd80e7d4`, the same
-  file). Third-party material it lists: social service icons (Simple Icons,
-  CC0-1.0; Font Awesome Free 6.7.2 LinkedIn icon, CC BY 4.0), the Inter,
-  Archivo and Geist Mono fonts (SIL OFL 1.1, texts `assets/fonts/OFL-*.txt`
-  at the tag, not in the web zip, same deferred gap as the other apps), and
-  the suite app icons (each app's repository, MIT OR Apache-2.0). Per-file
-  detail is in `ATTRIBUTION.md`, which does ship. All permissive. Captured
-  in summary; the verbatim file ships inside the image.
-- Network behaviour (recorded because it affects the local-first story):
-  the page, in the visitor's browser, calls `api.github.com` for each app's
-  releases and fetches pictures from `raw.githubusercontent.com`. The
-  appliance makes no such request and the image contains no secrets or
-  telemetry.
-- Craft image: `homestead/craft-craft-launcher:0.4.1`, built locally by S279
-  from this artifact and `images/craft/` (nginx base pinned above).
+### storytold/craft-launcher v0.4.1 (S253) - not shipped
+Removed from the catalog and the craft manifest by owner decision on
+2026-10-17 (see `docs/DEFERRED.md`, "Craft apps start page"). Homestead no
+longer redistributes this release, so no licence, trademark or NOTICE
+obligations arise from it. It was vendored only during S253 (artifact
+`artcraft-launcher-web-0.4.1.zip`, SHA-256
+`5768d88f6077375b926723cdf7ee56717997b57e99c2e419cbe89b527b497a27`) and the
+KVM validation of that slice.

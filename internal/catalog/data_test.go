@@ -80,19 +80,17 @@ var knownImageVolumes = map[string]imageVolumes{
 	"homestead/craft-filmcraft:0.8.0":    {},
 	"homestead/craft-effectcraft:0.10.0": {},
 	"homestead/craft-soundcraft:0.7.0":   {},
-	// S253 design, CAD and launcher craft images. Verified on the KVM
+	// S253 design and CAD craft images (the Craft Launcher image was
+	// dropped from the catalog by owner decision 2026-10-17). Verified on the KVM
 	// appliance 2026-10-17 (VM 2, images built by the daemon from a
 	// throwaway-signed manifest): Config.Volumes null and user nginx for
 	// each, healthcheck on /healthz, container healthy, and `docker diff` of
 	// the running container empty with /tmp the only mount (a tmpfs).
 	// Digests: designcraft sha256:25732064628610..., cadcraft
-	// sha256:28e681d6d50c..., craft-craft-launcher sha256:848b59433394...
-	// (the same after the 0.8.1/0.7.1/0.4.2 update rebuild: the build is
-	// reproducible). The launcher's tag is craft-craft-launcher (the app
-	// name is craft-launcher).
-	"homestead/craft-designcraft:0.8.0":    {},
-	"homestead/craft-cadcraft:0.7.0":       {},
-	"homestead/craft-craft-launcher:0.4.1": {},
+	// sha256:28e681d6d50c... (the same after the 0.8.1/0.7.1 update rebuild:
+	// the build is reproducible).
+	"homestead/craft-designcraft:0.8.0": {},
+	"homestead/craft-cadcraft:0.7.0":    {},
 }
 
 func loadCurated(t *testing.T) Catalog {

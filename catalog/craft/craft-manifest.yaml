@@ -1,5 +1,5 @@
 format: homestead-craft-manifest/1
-counter: 5
+counter: 6
 context_digest: sha256:1880843e879fb070ea4232b20c0fab5aa1976b20ff235a881f1812c8ef58f802
 apps:
   - name: wordcraft
@@ -106,11 +106,3 @@ apps:
         - https://github.com/storytold/cadcraft/releases/download/v0.7.0/cadcraft-web-0.7.0.zip
       sha256: 47df17081e31bc25ab586ba88156dc25e07962364c73513004b9c6113b575be7
       size: 8492921
-  - name: craft-launcher
-    version: 0.4.1
-    artifact:
-      name: artcraft-launcher-web-0.4.1.zip
-      urls:
-        - https://github.com/storytold/craft-launcher/releases/download/v0.4.1/artcraft-launcher-web-0.4.1.zip
-      sha256: 5768d88f6077375b926723cdf7ee56717997b57e99c2e419cbe89b527b497a27
-      size: 4250028

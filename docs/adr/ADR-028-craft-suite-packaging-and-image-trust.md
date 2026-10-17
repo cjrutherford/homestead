@@ -14,6 +14,9 @@ unchanged):
   vectorcraft, photocraft, lightcraft, figcraft, filmcraft, effectcraft,
   soundcraft, designcraft, cadcraft and Craft Launcher (the suite start
   page). The earlier list in the Decision is the first eight only.
+  (Amended 2026-10-17 by owner decision: Craft Launcher was removed from the
+  catalog, so the suite is 13 apps; a Homestead-owned start page replaces
+  it, see S281 and ADR-031. The trust and packaging Decision is unchanged.)
 - The storytold release source is recorded: https://github.com/storytold
   (Apache-2.0), each repository's latest GitHub release asset
   `<app>-web-<version>.zip` (Craft Launcher: `artcraft-launcher-web-<version>.zip`),

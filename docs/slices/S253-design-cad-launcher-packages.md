@@ -1,5 +1,13 @@
 # S253 — Design, CAD and Launcher Packages
 
+> **Owner decision 2026-10-17: Craft Launcher dropped.** After KVM validation
+> the owner removed `craft-launcher` from the catalog and the craft manifest
+> (counter 6, unsigned): it has a compiled-in list of the upstream suite with
+> GitHub download buttons, cannot list installed apps, and makes 14
+> `api.github.com` calls per load. A Homestead-owned "Craft apps" start page
+> (S281, ADR-031 proposed) replaces it. The launcher criteria below are
+> historical; S253 as shipped is DesignCraft and CADCraft.
+
 ## Goal
 DesignCraft, CadCraft and Craft Launcher as first-party catalog packages; the launcher serves as the suite start page, wired to the installed apps.
 

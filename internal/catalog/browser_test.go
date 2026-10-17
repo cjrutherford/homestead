@@ -41,7 +41,7 @@ func TestBrowserRequirementValidation(t *testing.T) {
 	}
 }
 
-// The media (S252) and design, CAD and launcher (S253) apps carry advisories, and planning surfaces them
+// The media (S252) and design and CAD (S253) apps carry advisories, and planning surfaces them
 // without blocking: the plan still succeeds and says why it cannot check.
 func TestCraftPackagesCarryBrowserAdvisories(t *testing.T) {
 	cat := repoCatalog(t)
@@ -51,9 +51,6 @@ func TestCraftPackagesCarryBrowserAdvisories(t *testing.T) {
 		"soundcraft":  {BrowserWebGL2, BrowserWebAudio, BrowserAudioOutput, BrowserSecureContext},
 		"designcraft": {BrowserWebGPU, BrowserWebGL2, BrowserSecureContext, BrowserClipboard, BrowserStorage},
 		"cadcraft":    {BrowserWebGPU, BrowserWebGL2, BrowserSecureContext, BrowserClipboard, BrowserStorage},
-		// The launcher has no clipboard use; it contacts GitHub from the
-		// browser, which no closed-set capability names (description only).
-		"craft-launcher": {BrowserWebGPU, BrowserWebGL2, BrowserSecureContext, BrowserStorage},
 	}
 	for name, caps := range want {
 		m, err := cat.Get(name)
