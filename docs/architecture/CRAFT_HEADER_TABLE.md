@@ -15,9 +15,9 @@ healthcheck, nginx user and port.
 | App | Version | wasm MIME | Cache headers | Precompression | COOP/COEP/SAB | WebGPU / WebGL2 / clipboard | Healthcheck | nginx user:port |
 |---|---|---|---|---|---|---|---|---|
 | wordcraft | 0.7.0 | `application/wasm` (hashed and unhashed) | `index.html`, other unhashed files: `no-cache`. Hashed `.js`, `_bg.wasm`, `.ico` (`name-<hex16>[_bg].ext`): `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Build writes `.gz` beside `.html .js .mjs .css .wasm .svg .json .txt .ico`; `gzip_static on` serves them when the client accepts gzip, `gzip on` covers the rest. Measured directly from the container: 39.8 MB wasm served as 14.9 MB; through the Caddy edge it is NOT compressed (open finding below) | Not needed: upstream states WordCraft does not use `SharedArrayBuffer`; no COOP/COEP sent, and the check script fails if either appears | Needs a secure context for WebGPU and the clipboard (HTTPS from the internal CA, ADR-030); falls back to WebGL2 over plain HTTP or when WebGPU is absent (`?webgl` forces it); WebGL2 is the floor | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` uses it every 30 s | `nginx` (uid 101):8080 |
-| gridcraft | 0.7.0 | `application/wasm` (hashed) | `index.html`, other unhashed files: `no-cache`. Hashed `gridcraft-web-<hex16>.js`, `_bg.wasm`, `.ico`: `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Same build rule as WordCraft; `gzip_static` served the `.gz` beside the wasm: 18.9 MB served as 7.0 MB (7,045,260 bytes) (local build, KVM pending; local build tested directly and with `Accept-Encoding: gzip`) | Not needed: upstream `HOSTING.md` states GridCraft does not use `SharedArrayBuffer`; the JS has no `SharedArrayBuffer`, `crossOriginIsolated` or Worker use; no COOP/COEP sent and the check script fails if either appears | WebGPU through wgpu with WebGL2 fallback (`?webgl` forces it); WebGPU and the clipboard need a secure context (HTTPS from the internal CA, ADR-030); neither WebGPU nor WebGL2 gets an in-page message | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` every 30 s; container reported `healthy` (local build, KVM pending) | `nginx` (uid 101):8080 |
-| pdfcraft | 0.8.0 | `application/wasm` (hashed) | `index.html`, other unhashed files: `no-cache`. Hashed `pdfcraft-web-<hex16>.js`, `_bg.wasm`: `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Same build rule as WordCraft; `gzip_static` served the `.gz` beside the wasm: 38.1 MB served as 14.1 MB (14,064,403 bytes) (local build, KVM pending; local build tested directly and with `Accept-Encoding: gzip`) | Not needed: upstream `HOSTING.md` states PdfCraft does not use `SharedArrayBuffer`; the JS has no `SharedArrayBuffer`, `crossOriginIsolated` or Worker use; no COOP/COEP sent and the check script fails if either appears | WebGPU through wgpu with WebGL2 fallback (`?webgl` forces it); WebGPU and the clipboard need a secure context (HTTPS from the internal CA, ADR-030); neither WebGPU nor WebGL2 gets an in-page message | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` every 30 s; container reported `healthy` (local build, KVM pending) | `nginx` (uid 101):8080 |
-| deckcraft | 0.7.0 | `application/wasm` (hashed) | `index.html`, other unhashed files: `no-cache`. Hashed `deckcraft-web-<hex16>.js`, `_bg.wasm`, `.png`: `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Same build rule as WordCraft; `gzip_static` served the `.gz` beside the wasm: 25.5 MB served as 9.3 MB (9,345,219 bytes) (local build, KVM pending; local build tested directly and with `Accept-Encoding: gzip`) | Not needed: upstream `HOSTING.md` states DeckCraft does not use `SharedArrayBuffer`; the JS has no `SharedArrayBuffer`, `crossOriginIsolated` or Worker use; no COOP/COEP sent and the check script fails if either appears | WebGPU through wgpu with WebGL2 fallback (`?webgl` forces it); WebGPU and the clipboard need a secure context (HTTPS from the internal CA, ADR-030); neither WebGPU nor WebGL2 gets an in-page message | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` every 30 s; container reported `healthy` (local build, KVM pending) | `nginx` (uid 101):8080 |
+| gridcraft | 0.7.0 | `application/wasm` (hashed) | `index.html`, other unhashed files: `no-cache`. Hashed `gridcraft-web-<hex16>.js`, `_bg.wasm`, `.ico`: `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Same build rule as WordCraft; `gzip_static` served the `.gz` beside the wasm: 18.9 MB served as 7.0 MB (7,045,260 bytes) (KVM 2026-10-17, through the Caddy edge with `Accept-Encoding: gzip`; identity size in the notes below) | Not needed: upstream `HOSTING.md` states GridCraft does not use `SharedArrayBuffer`; the JS has no `SharedArrayBuffer`, `crossOriginIsolated` or Worker use; no COOP/COEP sent and the check script fails if either appears | WebGPU through wgpu with WebGL2 fallback (`?webgl` forces it); WebGPU and the clipboard need a secure context (HTTPS from the internal CA, ADR-030); neither WebGPU nor WebGL2 gets an in-page message | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` every 30 s; container reported `healthy` on the KVM appliance (2026-10-17) | `nginx` (uid 101):8080 |
+| pdfcraft | 0.8.0 | `application/wasm` (hashed) | `index.html`, other unhashed files: `no-cache`. Hashed `pdfcraft-web-<hex16>.js`, `_bg.wasm`: `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Same build rule as WordCraft; `gzip_static` served the `.gz` beside the wasm: 38.1 MB served as 14.1 MB (14,064,403 bytes) (KVM 2026-10-17, through the Caddy edge with `Accept-Encoding: gzip`; identity size in the notes below) | Not needed: upstream `HOSTING.md` states PdfCraft does not use `SharedArrayBuffer`; the JS has no `SharedArrayBuffer`, `crossOriginIsolated` or Worker use; no COOP/COEP sent and the check script fails if either appears | WebGPU through wgpu with WebGL2 fallback (`?webgl` forces it); WebGPU and the clipboard need a secure context (HTTPS from the internal CA, ADR-030); neither WebGPU nor WebGL2 gets an in-page message | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` every 30 s; container reported `healthy` on the KVM appliance (2026-10-17) | `nginx` (uid 101):8080 |
+| deckcraft | 0.7.0 | `application/wasm` (hashed) | `index.html`, other unhashed files: `no-cache`. Hashed `deckcraft-web-<hex16>.js`, `_bg.wasm`, `.png`: `public, max-age=31536000, immutable`. `/healthz`: `no-store`. All: `X-Content-Type-Options: nosniff` | Same build rule as WordCraft; `gzip_static` served the `.gz` beside the wasm: 25.5 MB served as 9.3 MB (9,345,219 bytes) (KVM 2026-10-17, through the Caddy edge with `Accept-Encoding: gzip`; identity size in the notes below) | Not needed: upstream `HOSTING.md` states DeckCraft does not use `SharedArrayBuffer`; the JS has no `SharedArrayBuffer`, `crossOriginIsolated` or Worker use; no COOP/COEP sent and the check script fails if either appears | WebGPU through wgpu with WebGL2 fallback (`?webgl` forces it); WebGPU and the clipboard need a secure context (HTTPS from the internal CA, ADR-030); neither WebGPU nor WebGL2 gets an in-page message | `GET /healthz` returns 200 `ok`; image `HEALTHCHECK` every 30 s; container reported `healthy` on the KVM appliance (2026-10-17) | `nginx` (uid 101):8080 |
 
 Notes for WordCraft v0.7.0 (measured 2026-10-17 on a locally built image
 run with a read-only root, `/tmp` tmpfs, all capabilities dropped):
@@ -59,12 +59,18 @@ run with a read-only root, `/tmp` tmpfs, all capabilities dropped):
   changes the build-context digest, so the craft manifest must be regenerated
   and re-signed (a follow-up slice, see `docs/DEVELOPMENT.md`).
 
-Notes for GridCraft v0.7.0, PdfCraft v0.8.0 and DeckCraft v0.7.0 (S250,
-measured 2026-10-17 on locally built images from the real release
-artifacts, run with a read-only root, `/tmp` tmpfs, all capabilities
-dropped, header script against the container over plain HTTP; **local build,
-KVM pending**: the HTTPS/edge rows and Caddy-proxied gzip are confirmed by
-the KVM run):
+Notes for GridCraft v0.7.0, PdfCraft v0.8.0 and DeckCraft v0.7.0 (S250).
+First measured 2026-10-17 on locally built images (read-only root, `/tmp`
+tmpfs, all capabilities dropped), then **KVM-verified 2026-10-17** on VM 2
+through the real edge (`https://<app>.lan/`, Caddy, internal CA leaf, curl
+with the root and no `-k`, HTTP/2, daemon-built images): `craft-header-check.sh`
+PASS for all three, including gzip through Caddy (`gzip_proxied any`).
+Measured wasm sizes, identity versus gzip: gridcraft 18,886,586 versus
+7,045,260 bytes; pdfcraft 38,059,629 versus 14,064,403; deckcraft 25,537,284
+versus 9,345,219. The gzip-decoded and identity bodies have equal SHA-256 and
+equal the wasm inside the upstream zip. `/healthz` 200 `no-store`, entry
+`no-cache` with `nosniff`, no COOP/COEP. The same check passed again after
+remove and reinstall and after the update rebuild:
 
 - Layout: each zip unpacks into one `<app>-web-<version>/` directory with
   `index.html`, one hashed ES-module `.js`, one hashed `_bg.wasm`, licences,
@@ -88,8 +94,10 @@ the KVM run):
 - Healthcheck and writable paths: all three reported `healthy` and
   `docker diff` of the running container was empty (tmpfs `/tmp` is the only
   writable path); `Config.Volumes` is absent and the user is `nginx`.
-- Local image IDs (not the KVM digest): gridcraft `sha256:90b1b49768cb...`,
-  pdfcraft `sha256:b2b57d93b072...`, deckcraft `sha256:4c8dbe82f805...`.
+- KVM image IDs: gridcraft `sha256:0145d7b5a524...`, pdfcraft
+  `sha256:f6c54ba1dcfb...`, deckcraft `sha256:61127991a062...` (local
+  workstation builds differed: `90b1b49768cb...`, `b2b57d93b072...`,
+  `4c8dbe82f805...`).
 
 ## Checking a row
 

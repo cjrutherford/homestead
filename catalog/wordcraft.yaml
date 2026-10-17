@@ -4,7 +4,7 @@
 # craft operation (ADR-028); it is never pulled, so there is no registry
 # reference and no catalog digest. The version below is the vendored
 # storytold release and must equal the image tag and the version in
-# catalog/craft/manifest.unsigned.yaml.
+# catalog/craft/craft-manifest.yaml.
 name: wordcraft
 version: 0.7.0
 title: WordCraft

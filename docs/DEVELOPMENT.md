@@ -3365,7 +3365,7 @@ context digest is unchanged).
   still **unsigned**. No key was generated or committed. The owner signs the
   four-app manifest per the runbook.
 - Test rows: `curatedPackages`, `craftPackages`, `TestCuratedSSO`, and three
-  `knownImageVolumes` rows commented PENDING KVM verification.
+  `knownImageVolumes` rows (finalised after the KVM run).
 - Header table: three new rows and notes. Layout is the WordCraft layout in
   every case (one hashed js, one hashed `_bg.wasm`, optional hashed
   favicon, no `parts.txt`, `.part-*`, workers or extra asset classes), no
@@ -3382,15 +3382,59 @@ three (healthz 200, entry `no-cache`, `application/wasm`, immutable, gzip,
 no COOP/COEP); containers reported `healthy`, `docker diff` was empty,
 `Config.Volumes` absent, user `nginx`. The `.htaccess` request answers 404.
 
-### KVM acceptance: PENDING
+### KVM acceptance (2026-10-17, VM 2, HEAD fab4a5b, dashboard embedded build)
 
-Not run by this slice's implementation. To do on a fresh appliance, per
-app: owner (or throwaway key) signs the manifest; build, install, curl the
-`.lan` HTTPS route with the S280 root (entry page and wasm, run
-`craft-header-check.sh` through the edge, expecting gzip through Caddy);
-remove cleanly (container, stack directory, route, DNS name, edge entry,
-leaf certificate); reinstall; update to a bumped manifest version; drift
-scan (S212, S262) clean after install and update; schedule create refused
-and no scheduler job; `docker image inspect` of the built tag and
-`docker diff`; then finalise the three `knownImageVolumes` comments and the
-header table rows ("local build, KVM pending").
+Run on VM 2 (Debian 13, Docker, internal CA from S280). Binary sha256
+`b7d26121...` equals a guest build of the same tree (with `embeddash`). A
+throwaway minisign key (`minisign -G -W`, generated on the guest in `/srv`,
+trusted with `craft trust add`) signed a four-app manifest at counter 5
+(install; same bytes as the committed manifest apart from the counter) and
+at counter 6 (update, same artifacts with versions bumped to gridcraft
+0.7.1, pdfcraft 0.8.1, deckcraft 0.7.1, plus matching throwaway edits of
+the installed catalog). Artifacts were downloaded on the guest over HTTPS
+and matched the recorded SHA-256. Nothing was committed. **All steps passed
+for all three apps; no product bug found.**
+
+- **Build and install:** `craft plan` verified (counter 5) and `craft build
+  --follow` built each image (`sha256:0145d7b5a524...` gridcraft,
+  `f6c54ba1dcfb...` pdfcraft, `61127991a062...` deckcraft). `apps install`
+  through the CLI (body: `domain`, the app's own network, `container_ports
+  {app: 8080}`) passed `verify-craft-images`, `write-stack`, `up`. Routes
+  `<app>.lan` (local, TLS internal) set with one `edge routes set`.
+- **Image and container:** `Config.Volumes` null, user `nginx`, healthcheck
+  on `/healthz`, container `healthy`; `docker diff` empty; `/tmp` the only
+  mount (tmpfs); the stack is on its own network plus `homestead-edge`.
+- **HTTPS and headers:** entry page and wasm fetched over `https://<app>.lan/`
+  with the S280 root (no `-k`); `scripts/craft-header-check.sh` PASS for all
+  three, gzip through Caddy included: gridcraft wasm 7,045,260 bytes gzip
+  versus 18,886,586 identity, pdfcraft 14,064,403 versus 38,059,629,
+  deckcraft 9,345,219 versus 25,537,284. Gzip-decoded and identity bodies
+  are equal and equal the wasm in the upstream zip. Values are in
+  `docs/architecture/CRAFT_HEADER_TABLE.md`.
+- **Drift:** the scheduled scan (interval set to 5 minutes for the run,
+  restored to 24 h) was clean with 7 packages after install and again after
+  the update, with no `drift accept`; `drift review` clean for each app.
+- **Stateless:** `backup schedule --package <app>` answered 422 naming the
+  app; `backup schedules` and `scheduler jobs` list no craft job; `updates
+  apply` skipped the pre-update backup with a note.
+- **Remove and reinstall:** `apps uninstall` removed the container and
+  compose file (the empty stack directory remains, as for every package);
+  clearing the route table removed the Caddy snippets and left no upstream.
+  The leaves showed `orphan`; the same leaves came back `ok` on reinstall
+  (same expiry, no re-issue). Orphan leaves are swept by the `tls:local-leaves`
+  job (6 h interval), not at the 15-minute grace, so the orphans were still
+  listed at the end of the run (a `wordcraft.lan` orphan from the S249 run
+  was still there 1 h 50 m later). The craft images stay after uninstall by design.
+- **Update:** `updates list` showed `homestead/craft-<app>:<old> -> <new>
+  (manifest)`; `updates apply --craft-manifest ... --craft-signature ...`
+  verified (counter 6), built, recorded, rewrote, started and pruned the old
+  tags for all three; header check PASS again. The rebuilt images are
+  byte-identical (same image IDs), so the build is reproducible.
+- **Cleanup:** apps uninstalled, route table emptied, Caddy container and
+  the 0.7.1/0.8.1/0.7.1 images removed, trust key removed, secret key
+  shredded, `/srv` work directory deleted, drift interval restored,
+  catalog and daemon redeployed with `install-systemd.sh`. Left on VM 2:
+  `craft_baseline` at counter 6 (gridcraft, pdfcraft, deckcraft at 6,
+  wordcraft at 4), craft verdict and image rows, orphan `.lan` leaves until
+  the next sweep, the empty stack directories, the `homestead-edge` network
+  and Caddy stack files, and `/home/tester/hs-s250`.
