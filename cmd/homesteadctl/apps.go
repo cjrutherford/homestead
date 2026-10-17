@@ -120,7 +120,7 @@ func runAppsPlan(ctx context.Context, client *apiclient.Client, args []string, s
 			mount.Class, mount.Database, mount.Ephemeral, mount.ReadOnly, mount.Declared))
 	}
 	for _, advisory := range plan.BrowserAdvisories {
-		fmt.Fprintf(stdout, "browser: %s (advisory) - %s\n", advisory.Capability, advisory.Reason)
+		fmt.Fprintf(stdout, "browser: %s [%s] (advisory) - %s\n", advisory.Label, advisory.Capability, advisory.Reason)
 	}
 	for _, note := range plan.Notes {
 		fmt.Fprintf(stdout, "note: %s\n", note)

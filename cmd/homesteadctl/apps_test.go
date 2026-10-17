@@ -19,7 +19,7 @@ func appsStub(t *testing.T) string {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/catalog":
 			_, _ = w.Write([]byte(`[{"name":"jellyfin","version":"12.2","title":"Jellyfin","blurb":"Media.","category":"media","icon":"mdi:plex"}]`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/plan"):
-			_, _ = w.Write([]byte(`{"Package":"jellyfin","Requirements":{"Passed":true},"Routes":[{"Host":"jellyfin.lan","Exposure":"local"}],"DNS":[],"TLS":[],"Firewall":[],"Directories":[],"Mounts":[{"Service":"jellyfin","Target":"/config","Source":"/mnt/app/jellyfin/config","Class":"application","Declared":true},{"Service":"cache","Target":"/data","Ephemeral":true,"Declared":true}],"BrowserAdvisories":[{"Capability":"webcodecs","Reason":"Hardware video decoding."}],"Notes":["owner volume ignored"],"Actions":["provision","up"]}`))
+			_, _ = w.Write([]byte(`{"Package":"jellyfin","Requirements":{"Passed":true},"Routes":[{"Host":"jellyfin.lan","Exposure":"local"}],"DNS":[],"TLS":[],"Firewall":[],"Directories":[],"Mounts":[{"Service":"jellyfin","Target":"/config","Source":"/mnt/app/jellyfin/config","Class":"application","Declared":true},{"Service":"cache","Target":"/data","Ephemeral":true,"Declared":true}],"BrowserAdvisories":[{"Capability":"webcodecs","Label":"Video codecs (WebCodecs)","Reason":"Hardware video decoding."}],"Notes":["owner volume ignored"],"Actions":["provision","up"]}`))
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/secrets"):
 			_, _ = w.Write([]byte(`[{"name":"db_password","store_name":"app_authentik_db_password","present":false,"immutable":false,"services":["postgresql","server"],"database_password":true}]`))
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/secrets/"):
@@ -74,7 +74,7 @@ func TestAppsPlan(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit = %d", code)
 	}
-	for _, want := range []string{"package: jellyfin", "route: jellyfin.lan (local)", "actions: provision, up", "mount: jellyfin /config <- /mnt/app/jellyfin/config (application)", "mount: cache /data <- tmpfs (ephemeral)", "note: owner volume ignored", "browser: webcodecs (advisory) - Hardware video decoding."} {
+	for _, want := range []string{"package: jellyfin", "route: jellyfin.lan (local)", "actions: provision, up", "mount: jellyfin /config <- /mnt/app/jellyfin/config (application)", "mount: cache /data <- tmpfs (ephemeral)", "note: owner volume ignored", "browser: Video codecs (WebCodecs) [webcodecs] (advisory) - Hardware video decoding."} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout)
 		}
@@ -82,6 +82,21 @@ func TestAppsPlan(t *testing.T) {
 	code, _, _ = invoke(t, []string{"--server", url, "apps", "plan", "jellyfin"})
 	if code != exitUsage {
 		t.Fatalf("exit = %d, want usage", code)
+	}
+}
+
+func TestAppsPlanWithoutAdvisoriesPrintsNoBrowserLine(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"Package":"jellyfin","Requirements":{"Passed":true},"Routes":[],"BrowserAdvisories":null,"Notes":[],"Actions":["up"]}`))
+	}))
+	defer srv.Close()
+	file := writeInput(t, `{"domain":"lan"}`)
+	code, stdout, _ := invoke(t, []string{"--server", srv.URL, "apps", "plan", "jellyfin", "-f", file})
+	if code != exitOK {
+		t.Fatalf("exit = %d", code)
+	}
+	if strings.Contains(stdout, "browser:") {
+		t.Fatalf("no advisories must print no browser line:\n%s", stdout)
 	}
 }
 

@@ -151,6 +151,8 @@ export interface CatalogManifest {
 /** One non-blocking browser capability warning with its reason (S252). */
 export interface BrowserAdvisory {
   Capability: string;
+  /** Plain-language name supplied by the API. */
+  Label: string;
   Reason: string;
 }
 

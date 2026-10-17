@@ -46,7 +46,9 @@ type CatalogManifest struct {
 // plain-language reason (S252).
 type BrowserAdvisory struct {
 	Capability string `json:"Capability"`
-	Reason     string `json:"Reason"`
+	// Label is the API-supplied plain-language name (single source: Go).
+	Label  string `json:"Label"`
+	Reason string `json:"Reason"`
 }
 
 // InstallPlanReport is the reviewed change set subset the CLI prints:

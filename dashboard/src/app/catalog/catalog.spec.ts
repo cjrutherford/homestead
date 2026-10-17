@@ -130,8 +130,8 @@ describe('Catalog', () => {
 
   it('shows browser advisories on the package page and plan without blocking install', () => {
     const advisories = [
-      { Capability: 'webcodecs', Reason: 'Hardware video decoding.' },
-      { Capability: 'audio-output', Reason: 'Playback needs an audio device.' },
+      { Capability: 'webcodecs', Label: 'Video codecs (WebCodecs)', Reason: 'Hardware video decoding.' },
+      { Capability: 'audio-output', Label: 'Audio output device', Reason: 'Playback needs an audio device.' },
     ];
     fixture.detectChanges();
     http.expectOne('/api/v1/catalog').flush(PACKAGES);

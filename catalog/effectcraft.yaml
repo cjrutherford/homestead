@@ -37,15 +37,15 @@ exposure:
     - EffectCraft stores nothing on the appliance, so widening exposure would offer a public compositor whose projects never reach your storage; keep it local until Nextcloud document storage lands.
 browser:
 - capability: webgpu
-  reason: "Effects render on the GPU through WebGPU, in the page and in render workers; without it EffectCraft falls back to WebGL2 and the CPU, which is much slower."
+  reason: "Effects render on the GPU through WebGPU, in the page and in render workers; without it EffectCraft renders on the CPU instead."
 - capability: webcodecs
-  reason: "Decoding and encoding of common video formats uses the browser's WebCodecs where it is available."
+  reason: "Video decoding and encoding use the browser's WebCodecs where it is available."
 - capability: webaudio
-  reason: "Audio preview and meters run in a Web Audio worklet, which the browser must support."
+  reason: "Audio preview runs through the browser's Web Audio engine, in an audio worklet where the browser supports one."
 - capability: audio-output
   reason: "Preview sound needs a working audio output device on the machine running the browser, and the browser may require a click before it plays sound."
 - capability: secure-context
-  reason: "WebGPU, the offline service worker and browser storage only work over HTTPS; trust your Homestead root certificate on the device first."
+  reason: "WebGPU, the offline service worker and the private file storage need a secure context (HTTPS); trust your Homestead root certificate on the device first."
 - capability: browser-storage
   reason: "Projects and imported media are kept in the browser's private file storage, which the browser may clear."
 sso:

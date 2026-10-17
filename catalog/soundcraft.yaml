@@ -8,7 +8,7 @@ name: soundcraft
 version: 0.7.0
 title: SoundCraft
 blurb: Digital audio workstation for recording, editing and mixing in your browser.
-description: SoundCraft is a digital audio workstation with an edit window, a mixer with sends and automation, MIDI and common audio file formats. It runs entirely in the browser from a small web server on your appliance, so there is nothing to install on your devices. Sessions stay in your browser and export to your device; the app keeps nothing on the appliance. Large audio files are held by the browser, so long multitrack sessions need a device with enough memory. It needs a recent browser with WebGL2 or WebGPU and audio output; the appliance cannot check these, so Homestead lists them as advisories only. It is served over your local network.
+description: SoundCraft is a digital audio workstation with an edit window, a mixer with sends and automation, MIDI and common audio file formats. It runs entirely in the browser from a small web server on your appliance, so there is nothing to install on your devices. Sessions stay in your browser and export to your device; the app keeps nothing on the appliance. Large audio files are held by the browser, so long multitrack sessions need a device with enough memory. It needs a recent browser with WebGL2 (WebGPU is used when available) and audio output; the appliance cannot check these, so Homestead lists them as advisories only. It is served over your local network.
 category: productivity
 icon: mdi:waveform
 services:
@@ -37,9 +37,9 @@ exposure:
     - SoundCraft stores nothing on the appliance, so widening exposure would offer a public audio workstation whose sessions never reach your storage; keep it local until Nextcloud document storage lands.
 browser:
 - capability: webgl2
-  reason: "The interface draws with WebGPU when the browser has it and falls back to WebGL2, so one of them must work."
+  reason: "The interface needs WebGL2; it uses WebGPU when available."
 - capability: webaudio
-  reason: "Playback, mixing and metering run through the browser's Web Audio engine."
+  reason: "Playback goes through the browser's Web Audio engine."
 - capability: audio-output
   reason: "Playback needs a working audio output device on the machine running the browser, and the browser may require a click before it plays sound."
 - capability: secure-context

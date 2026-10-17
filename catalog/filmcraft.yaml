@@ -37,15 +37,15 @@ exposure:
     - FilmCraft stores nothing on the appliance, so widening exposure would offer a public video editor whose projects never reach your storage; keep it local until Nextcloud document storage lands.
 browser:
 - capability: webcodecs
-  reason: "Hardware video decoding for H.264, HEVC, VP9 and AV1 uses the browser's WebCodecs; without it FilmCraft decodes with its own slower software decoders."
+  reason: "H.264, HEVC, VP9 and AV1 video can be decoded by the browser's WebCodecs (usually in hardware); without it FilmCraft uses its own decoders."
 - capability: webgpu
-  reason: "The fast GPU compositor needs WebGPU; without it FilmCraft falls back to WebGL2 and composites frames on the CPU, which is noticeably slower."
+  reason: "FilmCraft's GPU compositor runs on WebGPU; on WebGL2 it composites frames on the CPU instead."
 - capability: webaudio
-  reason: "Audio playback and mixing run in a Web Audio worklet, which the browser must support."
+  reason: "Audio playback runs through a Web Audio worklet, which the browser must support."
 - capability: audio-output
   reason: "Playback needs a working audio output device on the machine running the browser, and the browser may require a click before it plays sound."
 - capability: secure-context
-  reason: "WebGPU, the clipboard and browser storage only work over HTTPS; trust your Homestead root certificate on the device first."
+  reason: "WebGPU, the clipboard and the private file storage need a secure context (HTTPS); trust your Homestead root certificate on the device first."
 - capability: browser-storage
   reason: "The crash-recovery copy and imported media are kept in the browser's private file storage, which the browser may clear."
 sso:

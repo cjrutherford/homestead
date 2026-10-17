@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -20,6 +21,8 @@ func TestBrowserRequirementValidation(t *testing.T) {
 		{"unknown capability", []BrowserRequirement{{Capability: "telepathy", Reason: "x"}}, "unknown capability"},
 		{"duplicate", []BrowserRequirement{{Capability: BrowserWebGPU, Reason: "x"}, {Capability: BrowserWebGPU, Reason: "y"}}, "duplicate"},
 		{"missing reason", []BrowserRequirement{{Capability: BrowserWebGPU}}, "needs a reason"},
+		{"whitespace reason", []BrowserRequirement{{Capability: BrowserWebGPU, Reason: " \t\n "}}, "needs a reason"},
+		{"long reason by runes", []BrowserRequirement{{Capability: BrowserWebGPU, Reason: strings.Repeat("é", 301)}}, "needs a reason"},
 		{"long reason", []BrowserRequirement{{Capability: BrowserWebGPU, Reason: strings.Repeat("x", 301)}}, "needs a reason"},
 	}
 	for _, c := range cases {
@@ -86,5 +89,27 @@ func TestMediaCraftPackagesCarryBrowserAdvisories(t *testing.T) {
 	}
 	if len(plan.BrowserAdvisories) != 0 || strings.Contains(strings.Join(plan.Notes, "\n"), "browser") {
 		t.Fatalf("wordcraft plan = %+v", plan)
+	}
+}
+
+func TestBrowserReasonLimitCountsRunes(t *testing.T) {
+	// 300 two-byte runes is 600 bytes but within the 300-character limit.
+	if err := validateBrowser([]BrowserRequirement{{Capability: BrowserWebGPU, Reason: strings.Repeat("é", 300)}}); err != nil {
+		t.Fatalf("300 characters must be accepted: %v", err)
+	}
+}
+
+func TestBrowserRequirementJSONCarriesLabel(t *testing.T) {
+	raw, err := json.Marshal(BrowserRequirement{Capability: BrowserWebGL2, Reason: "r"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(raw); got != `{"Capability":"webgl2","Label":"Graphics (WebGL2)","Reason":"r"}` {
+		t.Fatalf("json = %s", got)
+	}
+	for _, c := range []BrowserCapability{BrowserWebCodecs, BrowserWebGPU, BrowserWebGL2, BrowserWebAudio, BrowserAudioOutput, BrowserSecureContext, BrowserClipboard, BrowserStorage} {
+		if c.Label() == string(c) {
+			t.Fatalf("capability %q has no label", c)
+		}
 	}
 }

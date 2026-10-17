@@ -18,8 +18,8 @@ describe('BrowserAdvisories', () => {
 
   it('lists each capability with its reason and the non-blocking caveat', () => {
     fixture.componentRef.setInput('advisories', [
-      { Capability: 'webcodecs', Reason: 'Hardware decoding.' },
-      { Capability: 'audio-output', Reason: 'Playback needs speakers.' },
+      { Capability: 'webcodecs', Label: 'Video codecs (WebCodecs)', Reason: 'Hardware decoding.' },
+      { Capability: 'audio-output', Label: 'Audio output device', Reason: 'Playback needs speakers.' },
     ]);
     fixture.detectChanges();
     expect(text()).toContain('Video codecs (WebCodecs)');
@@ -30,8 +30,8 @@ describe('BrowserAdvisories', () => {
     expect(fixture.nativeElement.querySelector('[role="status"]')).not.toBeNull();
   });
 
-  it('falls back to the slug for an unknown capability', () => {
-    fixture.componentRef.setInput('advisories', [{ Capability: 'midi', Reason: 'Keyboards.' }]);
+  it('falls back to the slug when the API sends no label', () => {
+    fixture.componentRef.setInput('advisories', [{ Capability: 'midi', Label: '', Reason: 'Keyboards.' }]);
     fixture.detectChanges();
     expect(text()).toContain('midi');
   });

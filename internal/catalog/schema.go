@@ -1,9 +1,11 @@
 package catalog
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"homestead/internal/craft"
 	"homestead/internal/exposure"
@@ -241,6 +243,36 @@ func (c BrowserCapability) Valid() bool {
 	return false
 }
 
+// browserLabels is the single source of plain-language capability names;
+// the API sends them so the CLI and dashboard never keep their own table.
+var browserLabels = map[BrowserCapability]string{
+	BrowserWebCodecs:     "Video codecs (WebCodecs)",
+	BrowserWebGPU:        "GPU graphics (WebGPU)",
+	BrowserWebGL2:        "Graphics (WebGL2)",
+	BrowserWebAudio:      "Audio engine (Web Audio)",
+	BrowserAudioOutput:   "Audio output device",
+	BrowserSecureContext: "Secure connection (HTTPS)",
+	BrowserClipboard:     "Clipboard access",
+	BrowserStorage:       "Browser storage",
+}
+
+// Label is the plain-language name, or the slug for an unknown capability.
+func (c BrowserCapability) Label() string {
+	if label, ok := browserLabels[c]; ok {
+		return label
+	}
+	return string(c)
+}
+
+// MarshalJSON adds the derived Label to the API shape (S252).
+func (r BrowserRequirement) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Capability BrowserCapability
+		Label      string
+		Reason     string
+	}{r.Capability, r.Capability.Label(), r.Reason})
+}
+
 // BrowserRequirement is one client-side capability a package needs and
 // the plain-language reason, shown as a non-blocking warning on the
 // install plan and package page (S252, ADR-004: one field, both surfaces).
@@ -259,7 +291,7 @@ func validateBrowser(reqs []BrowserRequirement) error {
 			return fmt.Errorf("catalog: duplicate browser capability %q", req.Capability)
 		}
 		seen[req.Capability] = true
-		if len(req.Reason) == 0 || len(req.Reason) > 300 {
+		if strings.TrimSpace(req.Reason) == "" || utf8.RuneCountInString(req.Reason) > 300 {
 			return fmt.Errorf("catalog: browser capability %q needs a reason of 1-300 characters", req.Capability)
 		}
 	}
