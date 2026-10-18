@@ -4019,6 +4019,40 @@ no product bug found.**
   (512, 30, 8); Nextcloud as before (test account, files, trusted domain and
   temporary edge-network attachment removed); `~/hs-s254` source tree.
 
+### S254 Nextcloud link re-verification (2026-10-18, VM 2)
+
+The KVM run needed three hand edits to link `https://nextcloud.lan`.
+Classification: (a) host DNS was a **product gap** (the daemon trusted a
+resolver that does not know the appliance's own routes), fixed by dialling
+linked hosts that are in the edge route table on `127.0.0.1` with the route
+name kept for TLS; (b) trusted domains was a **product gap for fresh installs**
+(the catalog never passed the route host), fixed with `NEXTCLOUD_TRUSTED_DOMAINS`
+from the planned route host, and an **old-install artifact** for VM 2's
+S276 Nextcloud, which already has its `config.php` and needs one `occ` line
+(the link now says so); (c) the edge network was an **old-install artifact**
+(S249 already attaches routed services; VM 2's Nextcloud predates it), now
+reported by doctor `edge-upstream-networks` and by the link error.
+
+Re-run at the fix commit (source tree sha256 `9e524b61...` identical on host
+and guest, deployed with `scripts/install-systemd.sh`; the dashboard bundle
+was unchanged). No `/etc/hosts` entry was added anywhere. Route
+`nextcloud.lan` (local, TLS internal) set; with VM 2's old Nextcloud as it
+was: doctor warned `edge-upstream-networks`; the link failed with the 502
+message naming the edge network; after attaching the container to
+`homestead-edge` (`--alias nextcloud`, the old-install remedy) it failed with
+the 400 message naming trusted domains; after `occ config:system:set
+trusted_domains 1 --value=nextcloud.lan` (the old-install remedy) `craft files
+link --url https://nextcloud.lan --create-app-password` succeeded, resolving
+the name with no hosts entry. GridCraft (throwaway key, counter 15) was built
+and installed, its route set, a launch code exchanged through the edge
+(200), then `PUT` 201, `PROPFIND` 207 listing the file and `GET` 200 through
+`/_homestead/files/f/` with the internal CA root verified by curl.
+Cleaned up: unlinked, gridcraft uninstalled, routes empty, key untrusted and
+shredded, `/srv` directory removed, test account, trusted domain and the
+edge attachment removed. Not exercised live: a fresh Nextcloud install
+picking up `NEXTCLOUD_TRUSTED_DOMAINS` (covered by catalog tests; proving it
+would need wiping VM 2's Nextcloud data).
+
 ### S254 review fixes
 
 Security review of S254 fixed: https required for the Nextcloud link
