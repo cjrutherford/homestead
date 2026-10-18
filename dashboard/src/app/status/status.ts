@@ -1,11 +1,12 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { ApiService, DoctorReport, Health, Identity } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { Loading } from '../ui/loading';
 
 /** Appliance status page: daemon health, claim state, diagnostics (S044). */
 @Component({
   selector: 'app-status',
-  imports: [StateMessage],
+  imports: [StateMessage, Loading],
   templateUrl: './status.html',
 })
 export class Status implements OnInit {
@@ -17,6 +18,11 @@ export class Status implements OnInit {
   protected readonly error = signal<string | null>(null);
 
   ngOnInit(): void {
+    this.load();
+  }
+
+  protected load(): void {
+    this.error.set(null);
     this.api.health().subscribe({
       next: (health) => this.health.set(health),
       error: () => this.unreachable(),

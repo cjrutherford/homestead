@@ -7,19 +7,20 @@
     page and it appears or disappears here on the next load.
   </p>
 
-  @if (loading()) {
-    <app-state-message kind="loading" headline="Loading craft apps…" />
-  }
   @if (error()) {
     <app-state-message kind="error" [headline]="error()" />
     <button type="button" (click)="load()">Retry</button>
   }
 
+  <app-loading [loading]="loading()" shape="list">
   @if (!loading() && !error()) {
     @if (apps().length === 0) {
       <app-state-message
         kind="empty"
-        headline="No craft apps are installed. Install one from the Catalog page, then add an edge route for it."
+        headline="No craft apps are installed."
+        detail="Install one from the Catalog, then add an edge route for it."
+        actionLabel="Browse the catalog"
+        actionLink="/catalog"
       />
     } @else {
       <ul>
@@ -40,4 +41,5 @@
       </ul>
     }
   }
+  </app-loading>
 </section>

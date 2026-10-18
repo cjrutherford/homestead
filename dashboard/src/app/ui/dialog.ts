@@ -10,6 +10,9 @@ import {
 
 let nextId = 0;
 
+/** How long the exit transition runs; matches --duration-fast. */
+export const DIALOG_EXIT_MS = 120;
+
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -75,6 +78,7 @@ export class Dialog implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     const dialog = this.dialog().nativeElement;
+    this.leave(dialog);
     if (typeof dialog.close === 'function' && dialog.open) {
       dialog.close();
     }
@@ -84,6 +88,30 @@ export class Dialog implements AfterViewInit, OnDestroy {
         opener.focus();
       }
     });
+  }
+
+  /**
+   * Exit transition. The page removes this component at once, so a
+   * non-modal copy of the dialog and a fading scrim stay behind for
+   * DIALOG_EXIT_MS and are then removed. Skipped under reduced motion.
+   */
+  private leave(dialog: HTMLDialogElement): void {
+    if (!dialog.open || typeof matchMedia !== 'function' || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+    const ghost = dialog.cloneNode(true) as HTMLDialogElement;
+    ghost.removeAttribute('id');
+    ghost.classList.add('dialog-ghost');
+    ghost.setAttribute('inert', '');
+    ghost.setAttribute('aria-hidden', 'true');
+    const scrim = document.createElement('div');
+    scrim.className = 'dialog-ghost-scrim';
+    scrim.setAttribute('aria-hidden', 'true');
+    document.body.append(scrim, ghost);
+    setTimeout(() => {
+      scrim.remove();
+      ghost.remove();
+    }, DIALOG_EXIT_MS);
   }
 
   protected dismiss(event: Event): void {

@@ -10,6 +10,8 @@ import {
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
+import { Loading } from '../ui/loading';
+import { OperationProgress } from '../ui/operation-progress';
 
 export const EDGE_EXPOSURES = ['local', 'overlay', 'public'] as const;
 export const EDGE_TLS = ['off', 'internal', 'auto'] as const;
@@ -57,7 +59,7 @@ const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
  * and approved on the Exposure page (ADR-006), not here.
  */
 @Component({
-  imports: [StateMessage, Dialog, RouterLink],
+  imports: [OperationProgress, Loading, StateMessage, Dialog, RouterLink],
   selector: 'app-edge',
   templateUrl: './edge.html',
   styles: [
@@ -349,11 +351,6 @@ export class Edge implements OnInit, OnDestroy {
     call.subscribe({
       next: (started: OperationStarted) => {
         this.busy.set(false);
-        this.notice.set(
-          which === 'deploy'
-            ? 'Caddy deployment started.'
-            : `Route reconciliation started for ${this.pending.length} route(s).`,
-        );
         this.follow(started.id);
       },
       error: (failure: HttpErrorResponse) => {

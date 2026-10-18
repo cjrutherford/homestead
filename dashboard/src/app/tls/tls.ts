@@ -9,7 +9,10 @@ import {
   TlsAccountTerms,
   TlsRenewalStatus,
 } from '../core/api.service';
+import { isNotSetUp } from '../core/http-error';
 import { StateMessage } from '../state/state-message';
+import { Loading } from '../ui/loading';
+import { OperationProgress } from '../ui/operation-progress';
 
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
 
@@ -23,7 +26,7 @@ const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
  * shown: the plan names where they are placed, nothing more.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [OperationProgress, Loading, StateMessage, RouterLink],
   selector: 'app-tls',
   templateUrl: './tls.html',
   styles: [
@@ -58,6 +61,7 @@ export class Tls implements OnInit, OnDestroy {
     const op = this.operation();
     return this.operationId() !== null && !this.streamError() && !(op && TERMINAL.has(op.status));
   });
+  protected readonly notSetUp = signal(false);
   protected readonly locked = computed(() => this.busy() || this.running());
 
   ngOnInit(): void {
@@ -85,6 +89,7 @@ export class Tls implements OnInit, OnDestroy {
     });
     this.loading.set(true);
     this.loadError.set(null);
+    this.notSetUp.set(false);
     this.api.tlsIssuancePlans().subscribe({
       next: ({ plans }) => {
         this.loading.set(false);
@@ -93,11 +98,11 @@ export class Tls implements OnInit, OnDestroy {
       error: (failure: HttpErrorResponse) => {
         this.loading.set(false);
         this.plans.set([]);
-        this.loadError.set(
-          failure.status === 404
-            ? 'No TLS strategy is saved yet. Save one in the TLS setup wizard, then come back to review issuance.'
-            : this.describe(failure),
-        );
+        if (isNotSetUp(failure)) {
+          this.notSetUp.set(true);
+          return;
+        }
+        this.loadError.set(this.describe(failure));
       },
     });
   }

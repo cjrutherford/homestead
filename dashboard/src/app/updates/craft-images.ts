@@ -1,6 +1,5 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { RouterLink } from '@angular/router';
 import {
   ApiService,
   CraftPlanResult,
@@ -8,6 +7,7 @@ import {
   TrustKey,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { OperationProgress } from '../ui/operation-progress';
 
 /** Stable daemon error code: refused only for lack of the older-release override. */
 const OLDER_RELEASE_CODE = 'older-release-needs-override';
@@ -20,7 +20,7 @@ const OLDER_RELEASE_CODE = 'older-release-needs-override';
  * override; only an older counter does, behind its own confirmation.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [OperationProgress, StateMessage],
   selector: 'app-craft-images',
   templateUrl: './craft-images.html',
 })

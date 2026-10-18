@@ -47,7 +47,7 @@ describe('ValidationBoard', () => {
       ]) {
         expect(board.querySelector(selector), selector).not.toBeNull();
       }
-      expect(board.querySelectorAll('app-state-message').length).toBe(4);
+      expect(board.querySelectorAll('app-state-message').length).toBe(5);
       expect(board.querySelector('[role="alert"]')).not.toBeNull();
       expect(board.querySelector('[role="status"]')).not.toBeNull();
     });

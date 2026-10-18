@@ -58,13 +58,17 @@ class TestStreamContract(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.assertIn(cmd, src)
 
-    def test_dashboard_helper_without_progress_ui(self):
+    def test_dashboard_helper_and_shared_progress_ui(self):
         src = read_dash("src/app/core/api.service.ts")
         self.assertIn("operation(", src)
         self.assertIn("operationEvents(", src)
         self.assertIn("EventSource", src)
-        names = [p.name for p in (REPO / "dashboard" / "src" / "app").rglob("*")]
-        self.assertNotIn("progress", " ".join(names))
+        # S283 added the shared progress UI (step list, in-page progress and the
+        # work-orders rail) on top of the same helper.
+        for rel in ("ui/operation-progress.ts", "ui/step-list.ts",
+                    "core/work-orders.service.ts"):
+            with self.subTest(rel=rel):
+                self.assertTrue((REPO / "dashboard" / "src" / "app" / rel).exists())
 
     def test_json_tags(self):
         src = read("internal/operation/operation.go")

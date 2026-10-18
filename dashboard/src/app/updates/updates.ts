@@ -1,10 +1,11 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { RouterLink } from '@angular/router';
 import { ApiService, PackageUpdate } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 import { CraftImagesPanel } from './craft-images';
 import { PlatformUpdatesPanel } from './platform-updates';
+import { Loading } from '../ui/loading';
+import { OperationProgress } from '../ui/operation-progress';
 
 /**
  * Update review page (S193): per-package drift plans against running
@@ -14,7 +15,7 @@ import { PlatformUpdatesPanel } from './platform-updates';
  * out to operation detail for progress; this page never blocks.
  */
 @Component({
-  imports: [StateMessage, RouterLink, PlatformUpdatesPanel, CraftImagesPanel],
+  imports: [OperationProgress, Loading, StateMessage, PlatformUpdatesPanel, CraftImagesPanel],
   selector: 'app-updates',
   templateUrl: './updates.html',
 })

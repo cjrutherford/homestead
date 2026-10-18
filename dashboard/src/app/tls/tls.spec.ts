@@ -91,6 +91,9 @@ describe('Tls', () => {
       .flush('no strategy', { status: 404, statusText: 'Not Found' });
     fixture.detectChanges();
     expect(text()).toContain('No TLS strategy is saved yet');
+    // A state with a next action, not a red error.
+    expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('a[href="/config"]')).not.toBeNull();
   });
 
   it('approval needs the terms and posts the shown digest', () => {
@@ -142,10 +145,11 @@ describe('Tls', () => {
     expect(req.request.body).toEqual({ certificate: 'www' });
     req.flush({ id: 9 });
     fixture.detectChanges();
-    expect(text()).toContain('Operation 9');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/9"]')).not.toBeNull();
     events.next({ id: 9, status: 'running', error: '', steps: [{ id: 1, name: 'issue-and-place', status: 'running' }] } as unknown as OperationState);
     fixture.detectChanges();
-    expect(text()).toContain('issue-and-place: running');
+    expect(text()).toContain('issue-and-place');
+    expect(text()).toContain('Running');
     events.next({ id: 9, status: 'failed', error: 'ca said no', steps: [] } as unknown as OperationState);
     fixture.detectChanges();
     expect(text()).toContain('ca said no');

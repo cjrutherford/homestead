@@ -82,15 +82,14 @@ describe('Edge', () => {
     expect(req.request.method).toBe('POST');
     req.flush({ id: 7 });
     fixture.detectChanges();
-    expect(text()).toContain('Operation 7');
-    expect(text()).toContain('Working');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/7"]')).not.toBeNull();
+    expect(text()).toContain('Starting');
     events.next(state('running', ['pull']));
     fixture.detectChanges();
-    expect(text()).toContain('pull: done');
+    expect(text()).toContain('pull');
     events.next(state('succeeded', ['pull', 'up']));
     settleReload();
-    expect(text()).toContain('Operation succeeded.');
-    expect(text()).not.toContain('Working');
+    expect(text()).not.toContain('Starting');
   });
 
   it('cancelling the deploy confirmation sends nothing', () => {
@@ -169,7 +168,7 @@ describe('Edge', () => {
     });
     req.flush({ id: 9 });
     fixture.detectChanges();
-    expect(text()).toContain('Operation 9');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/9"]')).not.toBeNull();
   });
 
   it('warns about public routes and about emptying the table', () => {
@@ -230,7 +229,7 @@ describe('Edge', () => {
     const reconcile = () =>
       (Array.from(again.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
         .find((b) => b.textContent?.trim() === 'Reconcile routes'))!;
-    expect(again.nativeElement.textContent).toContain('Loading the route table');
+    expect(again.nativeElement.querySelector('app-loading[aria-busy="true"]')).not.toBeNull();
     expect(reconcile().disabled).toBe(true);
     http.expectOne('/api/v1/edge/routes').flush('boom', { status: 500, statusText: 'x' });
     again.detectChanges();

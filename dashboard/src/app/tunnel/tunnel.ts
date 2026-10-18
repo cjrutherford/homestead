@@ -1,8 +1,9 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { RouterLink } from '@angular/router';
 import { ApiService, TunnelStatus } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { Loading } from '../ui/loading';
+import { OperationProgress } from '../ui/operation-progress';
 
 /**
  * Tunnel remote access page (S247): discovery with tunnel-first
@@ -12,7 +13,7 @@ import { StateMessage } from '../state/state-message';
  * anything except through setup and teardown.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [OperationProgress, Loading, StateMessage],
   selector: 'app-tunnel',
   templateUrl: './tunnel.html',
 })

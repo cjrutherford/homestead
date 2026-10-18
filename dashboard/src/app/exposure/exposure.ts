@@ -1,4 +1,5 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
+import { isNotSetUp } from '../core/http-error';
 import { StateMessage } from '../state/state-message';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
@@ -8,6 +9,7 @@ import {
   ExposurePlan,
   TlsRenewalReport,
 } from '../core/api.service';
+import { OperationProgress } from '../ui/operation-progress';
 
 /**
  * Exposure review page (S247): select a route and target, review the
@@ -18,7 +20,7 @@ import {
  * changes anything except through approve and apply.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [OperationProgress, StateMessage, RouterLink],
   selector: 'app-exposure',
   templateUrl: './exposure.html',
 })
@@ -53,7 +55,7 @@ export class Exposure implements OnInit {
       error: (failure: HttpErrorResponse) => {
         this.busy.set(false);
         this.plan.set(null);
-        if (failure.status !== 404) {
+        if (!isNotSetUp(failure)) {
           this.error.set(failure.error ?? failure.message);
         }
       },

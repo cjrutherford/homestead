@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { provideRouter } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
@@ -21,7 +22,7 @@ describe('CraftApps', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [CraftApps],
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
     fixture = TestBed.createComponent(CraftApps);
     http = TestBed.inject(HttpTestingController);
@@ -36,7 +37,7 @@ describe('CraftApps', () => {
   };
 
   it('shows a loading state first', () => {
-    expect(text()).toContain('Loading craft apps');
+    expect(fixture.nativeElement.querySelector('app-loading[aria-busy="true"]')).not.toBeNull();
     load([]);
   });
 

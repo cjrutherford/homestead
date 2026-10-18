@@ -2,6 +2,7 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService, CraftApp } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { Loading } from '../ui/loading';
 
 /**
  * Craft apps start page (S281, ADR-031): the installed craft apps with
@@ -11,7 +12,7 @@ import { StateMessage } from '../state/state-message';
  * an app shows on the next load.
  */
 @Component({
-  imports: [StateMessage],
+  imports: [Loading, StateMessage],
   selector: 'app-craft-apps',
   templateUrl: './craft-apps.html',
 })

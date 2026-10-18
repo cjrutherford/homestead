@@ -8,10 +8,7 @@
     <app-state-message kind="status" [headline]="notice()" />
   }
   @if (operation(); as id) {
-    <p>
-      Build started.
-      <a [routerLink]="['/operations', id]">Follow operation {{ id }}</a>
-    </p>
+    <app-operation-progress [id]="id" />
   }
 
   <p>

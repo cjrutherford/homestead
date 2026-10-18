@@ -2,6 +2,7 @@ import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService, AuditEntry } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { Loading } from '../ui/loading';
 
 /** Outcomes the daemon records (ok/error/skipped) plus the legacy "warning". */
 export const KNOWN_OUTCOMES = ['ok', 'error', 'skipped', 'warning'] as const;
@@ -62,7 +63,7 @@ type FilterField = 'actor' | 'action' | 'outcome' | 'since' | 'until';
  */
 @Component({
   selector: 'app-audit',
-  imports: [StateMessage],
+  imports: [Loading, StateMessage],
   templateUrl: './audit.html',
   styles: [
     '.audit-text { overflow-wrap: anywhere; white-space: pre-wrap; }',

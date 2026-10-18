@@ -584,3 +584,27 @@
 - RP-initiated logout (ending the Authentik session on Homestead logout),
   more than one linked identity, SSO for non-owner administrators, and an
   option to disable local password login: out of scope for ADR-033.
+
+## Dashboard states, transitions and work orders (S283)
+- Expected "not set up yet" reads (exposure review, TLS issuance plans) answer
+  404. Pages treat them as states and Angular logs nothing, but Chromium still
+  prints "Failed to load resource" for the response. Removing that needs the
+  API to answer 200 with an empty or `configured: false` body, which changes
+  the CLI contract too; needs its own slice.
+- Edge, TLS and Trust follow their operation's event stream themselves and the
+  work-orders rail follows it again, so those pages hold two streams for one
+  operation. Moving them to the shared store is a clean-up.
+- The rail finds running operations from the operations list (newest 20). An
+  operation older than that, still running, is missed; a `status=running`
+  filter on `GET /api/v1/operations` (with a CLI flag) would be exact.
+- Operation titles for operations found on load come from a type table
+  (`core/operation-labels.ts`) and fall back to the type name; the daemon does
+  not store the app name in a field the dashboard can read.
+- Operation detail has no cancel or retry action; the rail only reports.
+- Backups and Updates have no operation of their own to follow from the page
+  (backup runs start on a schedule); they appear in the rail when running.
+- The `app-dialog` exit transition is an inert copy of the dialog; a native
+  `closing` state or `@starting-style` exit with `allow-discrete` transitions
+  would replace it once the browser floor allows.
+- Several pages still lead with long prose and plain `<ul>` lists; page
+  structure is S284.

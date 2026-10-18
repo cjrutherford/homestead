@@ -57,7 +57,7 @@ describe('AuditLog', () => {
 
   it('shows loading, then entries', () => {
     fixture.detectChanges();
-    expect(text()).toContain('Loading audit log');
+    expect(fixture.nativeElement.querySelector('app-loading[aria-busy="true"]')).not.toBeNull();
     http.expectOne('/api/v1/audit?limit=100').flush([entry(1)]);
     fixture.detectChanges();
     expect(items().length).toBe(1);

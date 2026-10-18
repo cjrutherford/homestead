@@ -7,6 +7,7 @@ import { WizardService } from '../wizard/wizard.service';
 import { WizardShell } from '../wizard/wizard-shell';
 import { httpErrorMessage } from '../core/http-error';
 import { StateMessage } from '../state/state-message';
+import { Loading } from '../ui/loading';
 
 const WIZARD_ID = 'firewall';
 
@@ -22,7 +23,7 @@ const STEP_IDS = ['subnets', 'rules', 'review', 'done'];
  * apply protect the management path.
  */
 @Component({
-  imports: [StateMessage, RouterLink, WizardShell],
+  imports: [Loading, StateMessage, RouterLink, WizardShell],
   selector: 'app-firewall',
   templateUrl: './firewall.html',
 })

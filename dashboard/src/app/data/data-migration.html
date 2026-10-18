@@ -12,17 +12,13 @@
   }
 
   @if (operationId(); as id) {
-    <p>
-      Started.
-      <a [routerLink]="['/operations', id]">Follow operation {{ id }}</a>
-    </p>
+    <app-operation-progress [id]="id" />
   }
 
   <button type="button" (click)="refresh()" [disabled]="busy()">Refresh</button>
 
-  @if (busy() && data().apps.length === 0) {
-    <app-state-message kind="loading" headline="Loading…" />
-  } @else {
+  <app-loading [loading]="busy() && data().apps.length === 0" shape="list">
+    @if (!(busy() && data().apps.length === 0)) {
     <ul>
       @for (app of data().apps; track app.package) {
         <li>
@@ -109,4 +105,5 @@
       }
     </ul>
   }
+  </app-loading>
 </section>

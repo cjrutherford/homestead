@@ -141,7 +141,7 @@
   font-weight: 700;
 }
 
-/* Reserved for the S283 work-orders rail: nothing renders here yet. */
+/* Mount point of the work-orders rail (feedback.css). */
 .sidebar-slot {
   flex: 0 0 auto;
 }

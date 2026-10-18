@@ -65,11 +65,8 @@
     </p>
   }
   @if (applyOperation(); as id) {
-    <p>
-      Platform update started. The daemon restarts to finish, so this page
-      pauses briefly.
-      <a [routerLink]="['/operations', id]">Follow operation {{ id }}</a>
-    </p>
+    <p>The daemon restarts to finish this update, so the page pauses briefly.</p>
+    <app-operation-progress [id]="id" />
   }
 
   <h2>Apply a verified release</h2>

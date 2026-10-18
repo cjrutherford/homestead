@@ -125,6 +125,10 @@
   --sidebar-active-foreground: #1f4d3a;
   --sidebar-border: #3d6a56;
   --sidebar-focus: #ffffff;
+  --rail-bg: #cfe985;
+  --rail-foreground: #14201a;
+  --rail-track: #f3fadb;
+  --rail-fill: #1f4d3a;
   --shadow-sm: 0 1px 2px rgb(28 38 33 / 0.1);
   --shadow-md: 0 2px 8px rgb(28 38 33 / 0.14);
   --shadow-lg: 0 12px 32px rgb(28 38 33 / 0.22);
@@ -170,6 +174,10 @@
     --sidebar-active-foreground: #ffffff;
     --sidebar-border: #2f4338;
     --sidebar-focus: #f2c14e;
+  --rail-bg: #c6e57a;
+  --rail-foreground: #14201a;
+  --rail-track: #f3fadb;
+  --rail-fill: #1f4d3a;
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
     --shadow-md: 0 2px 8px rgb(0 0 0 / 0.5);
     --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.6);
@@ -215,6 +223,10 @@
   --sidebar-active-foreground: #ffffff;
   --sidebar-border: #2f4338;
   --sidebar-focus: #f2c14e;
+  --rail-bg: #c6e57a;
+  --rail-foreground: #14201a;
+  --rail-track: #f3fadb;
+  --rail-fill: #1f4d3a;
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-md: 0 2px 8px rgb(0 0 0 / 0.5);
   --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.6);
@@ -259,6 +271,10 @@
   --sidebar-active-foreground: #000000;
   --sidebar-border: #ffffff;
   --sidebar-focus: #00e5ff;
+  --rail-bg: #ffff00;
+  --rail-foreground: #000000;
+  --rail-track: #ffffff;
+  --rail-fill: #000000;
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: none;

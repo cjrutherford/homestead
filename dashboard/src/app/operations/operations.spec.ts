@@ -42,8 +42,8 @@ describe('Operations', () => {
       { id: 1, type: 'a.one', status: 'succeeded', steps: [] },
     ]);
     fixture.detectChanges();
-    expect(text()).toContain('b.two');
-    expect(text()).toContain('running');
+    expect(text()).toContain('B two');
+    expect(text()).toContain('Running');
     const link = fixture.nativeElement.querySelector('a[href="/operations/2"]');
     expect(link).not.toBeNull();
   });

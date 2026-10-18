@@ -89,15 +89,11 @@
   }
 
   @if (operationId(); as id) {
-    <p>
-      Restore started.
-      <a [routerLink]="['/operations', id]">Follow operation {{ id }}</a>
-    </p>
+    <app-operation-progress [id]="id" />
   }
 
-  @if (busy() && packages().length === 0) {
-    <app-state-message kind="loading" headline="Loading…" />
-  } @else {
+  <app-loading [loading]="busy() && packages().length === 0" shape="list">
+    @if (!(busy() && packages().length === 0)) {
     <ul>
       @for (pkg of packages(); track pkg.name) {
         <li>
@@ -110,6 +106,7 @@
       }
     </ul>
   }
+  </app-loading>
 
   @if (selected(); as name) {
     <h2>{{ name }}</h2>

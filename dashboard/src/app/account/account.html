@@ -19,13 +19,11 @@
   </fieldset>
 
   <h2>Lockout status</h2>
-  @if (loading()) {
-    <app-state-message kind="loading" headline="Loading lockout status…" />
-  }
   @if (loadError()) {
     <app-state-message kind="error" [headline]="loadError()" />
     <button type="button" (click)="loadLockout()">Retry</button>
   }
+  <app-loading [loading]="loading()" shape="lines">
   @if (lockout(); as l) {
     <p>
       Signed in as <strong>{{ l.username }}</strong>.
@@ -46,6 +44,7 @@
   } @else if (!loading() && !loadError()) {
     <app-state-message kind="empty" headline="No lockout information available." />
   }
+  </app-loading>
 
   <h2>Change password</h2>
   <p>
@@ -88,9 +87,6 @@
         <label for="account-confirm">Confirm new password</label>
         <input id="account-confirm" #cf type="password" autocomplete="new-password" [disabled]="busy()" />
       </div>
-      <button type="submit" [disabled]="busy()">Change password</button>
+      <button type="submit" [disabled]="busy()" [attr.aria-busy]="busy() ? 'true' : null">Change password</button>
     </form>
-  @if (busy()) {
-    <app-state-message kind="loading" headline="Changing password…" />
-  }
 </section>

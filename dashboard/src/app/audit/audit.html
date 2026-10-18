@@ -52,9 +52,9 @@
 
   @if (error()) {
     <app-state-message kind="error" [headline]="error()" />
-  } @else if (loading() && rows().length === 0) {
-    <app-state-message kind="loading" headline="Loading audit log…" />
-  } @else if (rows().length === 0) {
+  } @else {
+    <app-loading [loading]="loading() && rows().length === 0" shape="list">
+    @if (rows().length === 0) {
     <app-state-message kind="empty" headline="No audit entries yet." />
   } @else if (filtered().length === 0) {
     <app-state-message kind="empty" headline="No entries match these filters." />
@@ -96,5 +96,7 @@
       <span>Page {{ page() + 1 }} of {{ pageCount() }}</span>
       <button type="button" (click)="go(1)" [disabled]="page() >= pageCount() - 1">Older</button>
     </nav>
+  }
+    </app-loading>
   }
 </section>

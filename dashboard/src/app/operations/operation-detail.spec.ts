@@ -55,8 +55,10 @@ describe('OperationDetail', () => {
       steps: [{ id: 1, name: 'download', status: 'succeeded' }],
     });
     fixture.detectChanges();
+    expect(text()).toContain('Test op');
     expect(text()).toContain('test.op');
-    expect(text()).toContain('download: succeeded');
+    expect(text()).toContain('download');
+    expect(text()).toContain('Done');
   });
 
   it('follows live updates for running operations', () => {
@@ -70,7 +72,7 @@ describe('OperationDetail', () => {
       steps: [],
     });
     fixture.detectChanges();
-    expect(text()).toContain('running');
+    expect(text()).toContain('Running');
     states.next({
       id: 8,
       type: 'test.op',
@@ -83,8 +85,8 @@ describe('OperationDetail', () => {
       steps: [{ id: 1, operation_id: 8, position: 0, name: 'install', status: 'succeeded', started_at: '', finished_at: '', error: '' }],
     });
     fixture.detectChanges();
-    expect(text()).toContain('succeeded');
-    expect(text()).toContain('install: succeeded');
+    expect(text()).toContain('Done');
+    expect(text()).toContain('install');
   });
 
   it('reports unknown operations', () => {

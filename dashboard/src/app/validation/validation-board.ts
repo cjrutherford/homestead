@@ -16,7 +16,7 @@ import { Dialog } from '../ui/dialog';
 })
 export class ValidationBoard {
   readonly themes = ['light', 'dark', 'high-contrast'] as const;
-  readonly kinds: StateKind[] = ['empty', 'loading', 'error', 'status'];
+  readonly kinds: StateKind[] = ['empty', 'error', 'status', 'warning', 'notice'];
   /** The theme whose sample dialog is open, if any. */
   protected readonly dialogTheme = signal<string | null>(null);
 }

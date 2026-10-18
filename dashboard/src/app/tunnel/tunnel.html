@@ -16,13 +16,11 @@
   }
 
   @if (operationId(); as id) {
-    <p>
-      Operation started.
-      <a [routerLink]="['/operations', id]">Follow operation {{ id }}</a>
-    </p>
+    <app-operation-progress [id]="id" />
   }
 
-  @if (status(); as state) {
+  <app-loading [loading]="!status() && !error()" shape="list">
+    @if (status(); as state) {
     <h2>Discovery</h2>
     <p>
       Preferred path: <strong>{{ state.preferred }}</strong>
@@ -86,9 +84,8 @@
         <li>No served hostnames recorded yet.</li>
       }
     </ul>
-  } @else {
-    <app-state-message kind="loading" headline="Loading…" />
   }
+  </app-loading>
 
   <h2>Set up a tunnel</h2>
   <form

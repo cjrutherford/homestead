@@ -5,9 +5,8 @@
     <app-state-message kind="error" [headline]="error()" />
   }
 
-  @if (busy() && packages().length === 0) {
-    <app-state-message kind="loading" headline="Loading…" />
-  } @else {
+  <app-loading [loading]="busy() && packages().length === 0" shape="list">
+    @if (!(busy() && packages().length === 0)) {
     <ul>
       @for (pkg of packages(); track pkg.name) {
         <li>
@@ -21,6 +20,7 @@
       }
     </ul>
   }
+  </app-loading>
 
   @if (selected(); as manifest) {
     <h2>{{ manifest.Title }} {{ manifest.Version }}</h2>
@@ -175,12 +175,8 @@
       <button type="button" (click)="install()" [disabled]="busy() || isInstalled()">Install</button>
     }
 
-    @if (operationId() !== null) {
-      <p>
-        Operation
-        <a [routerLink]="['/operations', operationId()]">#{{ operationId() }}</a>
-        started — follow progress there.
-      </p>
+    @if (operationId(); as id) {
+      <app-operation-progress [id]="id" />
     }
 
     <h3>Configure</h3>

@@ -1,12 +1,13 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { RouterLink } from '@angular/router';
 import {
   ApiService,
   DataMigrationPlan,
   DataMigrations,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { Loading } from '../ui/loading';
+import { OperationProgress } from '../ui/operation-progress';
 
 /**
  * App data placement and migration (S277): where each installed app's
@@ -16,7 +17,7 @@ import { StateMessage } from '../state/state-message';
  * this page without an approve click quoting the plan's digest.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [OperationProgress, Loading, StateMessage],
   selector: 'app-data-migration',
   templateUrl: './data-migration.html',
 })

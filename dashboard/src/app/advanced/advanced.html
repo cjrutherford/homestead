@@ -21,9 +21,7 @@
     Show link
   </button>
 
-  @if (busy() && link() === null) {
-    <app-state-message kind="loading" headline="Loading…" />
-  }
+  <app-loading [loading]="busy() && link() === null" shape="lines" />
 
   @if (link(); as entry) {
     <h2>Dockge</h2>

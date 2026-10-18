@@ -82,7 +82,7 @@ describe('Advanced', () => {
 
   it('shows loading before the link arrives', () => {
     fixture.detectChanges();
-    expect(text()).toContain('Loading');
+    expect(fixture.nativeElement.querySelector('app-loading[aria-busy="true"]')).not.toBeNull();
     http.expectOne('/api/v1/dockge?domain=lan').flush(LINK);
   });
 

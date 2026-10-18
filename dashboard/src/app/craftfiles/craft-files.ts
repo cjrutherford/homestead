@@ -3,6 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { ApiService, CraftFilesPlan, CraftFilesStatus } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { Loading } from '../ui/loading';
 
 /**
  * Craft files (S254, ADR-029): link the craft apps to the owner's
@@ -12,7 +13,7 @@ import { StateMessage } from '../state/state-message';
  * is never shown, stored in the browser, or returned by the daemon.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [Loading, StateMessage, RouterLink],
   selector: 'app-craft-files',
   templateUrl: './craft-files.html',
 })

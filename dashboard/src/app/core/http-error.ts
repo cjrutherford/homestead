@@ -8,6 +8,17 @@ export function isUnreachable(err: HttpErrorResponse): boolean {
   return err.status === 0 || err.status === 502 || err.status === 503 || err.status === 504;
 }
 
+/**
+ * True when a read answered 404 because the thing it describes has
+ * not been set up yet (no saved TLS strategy, no reviewed exposure plan).
+ * Pages treat this as a state with a next action, not as an error. Angular's
+ * HttpClient writes nothing to the console for a handled error; the
+ * browser's own network log still lists the request (see DEFERRED.md).
+ */
+export function isNotSetUp(err: HttpErrorResponse): boolean {
+  return err.status === 404;
+}
+
 /** The server's plain-text error body, when it sent one. */
 function serverMessage(err: HttpErrorResponse): string {
   const body: unknown = err.error;

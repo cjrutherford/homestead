@@ -16,36 +16,10 @@
   }
 
   @if (operationId(); as id) {
-    <section aria-label="Operation progress">
-      <h2>Progress</h2>
-      <p>
-        <a [routerLink]="['/operations', id]">Operation {{ id }}</a>:
-        @if (operation(); as op) {
-          {{ op.status }}
-        } @else {
-          waiting for the first update…
-        }
-      </p>
-      @if (running()) {
-        <app-state-message kind="loading" headline="Working…" />
-      }
-      @if (streamError()) {
-        <app-state-message kind="error" [headline]="streamError()" />
-      }
-      @if (operation(); as op) {
-        @if (op.error) {
-          <app-state-message kind="error" [headline]="op.error" />
-        }
-        @if (op.status === 'succeeded') {
-          <app-state-message kind="status" headline="Operation succeeded." />
-        }
-        <ol aria-label="Operation steps">
-          @for (step of op.steps; track step.id) {
-            <li>{{ step.name }}: {{ step.status }}</li>
-          }
-        </ol>
-      }
-    </section>
+    <app-operation-progress [id]="id" [operation]="operation()" />
+    @if (streamError()) {
+      <app-state-message kind="error" [headline]="streamError()" actionLabel="Open operation" [actionLink]="['/operations', id]" />
+    }
   }
 
   <h2>Caddy deployment</h2>
@@ -79,9 +53,6 @@
     removed. You can also load a route document like the one
     <code>homesteadctl edge routes set</code> takes.
   </p>
-  @if (loading()) {
-    <app-state-message kind="loading" headline="Loading the route table…" />
-  }
   @if (loadError()) {
     <app-state-message kind="error" [headline]="loadError()" />
     <button type="button" (click)="loadRoutes()">Retry loading routes</button>
@@ -95,6 +66,7 @@
     Load document
   </button>
 
+  <app-loading [loading]="loading()" shape="list">
   @if (loaded() && drafts().length === 0) {
     <app-state-message kind="empty" headline="No routes in the table. Reconciling now removes every route the reconciler wrote." />
   }
@@ -155,6 +127,7 @@
     }
   </ul>
 
+  </app-loading>
   <button type="button" (click)="addRoute()" [disabled]="locked() || !!confirming()">Add route</button>
   <button type="button" (click)="askRoutes()" [disabled]="locked() || !loaded() || !!confirming()">
     Reconcile routes

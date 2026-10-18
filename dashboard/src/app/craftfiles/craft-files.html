@@ -13,10 +13,8 @@
   @if (notice()) {
     <app-state-message kind="status" [headline]="notice()" />
   }
-  @if (loading()) {
-    <app-state-message kind="loading" headline="Loading craft file storage." />
-  }
 
+  <app-loading [loading]="loading()" shape="panel">
   @if (status(); as st) {
     <h2>Nextcloud link</h2>
     @if (st.linked) {
@@ -163,4 +161,5 @@
       <a routerLink="/config">Configuration</a> page (Craft file storage).
     </p>
   }
+  </app-loading>
 </section>

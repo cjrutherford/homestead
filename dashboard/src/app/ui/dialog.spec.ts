@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Dialog } from './dialog';
+import { DIALOG_EXIT_MS, Dialog } from './dialog';
 
 @Component({
   imports: [Dialog],
@@ -107,5 +107,40 @@ describe('Dialog', () => {
     fixture.detectChanges();
     await new Promise((resolve) => setTimeout(resolve));
     expect(document.activeElement).toBe(opener);
+  });
+
+  describe('exit transition', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+      document.querySelectorAll('.dialog-ghost, .dialog-ghost-scrim').forEach((el) => el.remove());
+    });
+
+    function stubMotion(reduce: boolean): void {
+      vi.stubGlobal('matchMedia', (query: string) => ({ matches: reduce && query.includes('reduce') }));
+    }
+
+    it('leaves a fading copy behind briefly, then removes it', async () => {
+      stubMotion(false);
+      const { dialog } = await openDialog();
+      expect(dialog).not.toBeNull();
+      vi.useFakeTimers();
+      (fixture.nativeElement.querySelector('#cancel') as HTMLElement).click();
+      fixture.detectChanges();
+      expect(document.querySelector('.dialog-ghost')).not.toBeNull();
+      expect(document.querySelector('.dialog-ghost-scrim')).not.toBeNull();
+      expect(document.querySelector('.dialog-ghost')?.getAttribute('aria-hidden')).toBe('true');
+      vi.advanceTimersByTime(DIALOG_EXIT_MS + 1);
+      expect(document.querySelector('.dialog-ghost')).toBeNull();
+      expect(document.querySelector('.dialog-ghost-scrim')).toBeNull();
+    });
+
+    it('closes at once under reduced motion', async () => {
+      stubMotion(true);
+      await openDialog();
+      (fixture.nativeElement.querySelector('#cancel') as HTMLElement).click();
+      fixture.detectChanges();
+      expect(document.querySelector('.dialog-ghost')).toBeNull();
+    });
   });
 });

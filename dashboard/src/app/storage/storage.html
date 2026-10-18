@@ -17,9 +17,9 @@
   <button type="button" (click)="refresh()" [disabled]="busy()">Refresh</button>
   @if (mountsError()) {
     <app-state-message kind="error" [headline]="mountsError()" />
-  } @else if (mountsLoading() && mounts().length === 0) {
-    <app-state-message kind="loading" headline="Discovering mounts…" />
   } @else {
+    <app-loading [loading]="mountsLoading() && mounts().length === 0" shape="list">
+    @if (!(mountsLoading() && mounts().length === 0)) {
     <ul aria-label="Discovered mounts">
       @for (mount of mounts(); track mount.Mountpoint) {
         <li>
@@ -52,14 +52,16 @@
         <li><app-state-message kind="empty" headline="No mounts discovered." /></li>
       }
     </ul>
+      }
+    </app-loading>
   }
 
   <h2>Registered mounts</h2>
   @if (registrationsError()) {
     <app-state-message kind="error" [headline]="registrationsError()" />
-  } @else if (registrationsLoading() && registrations().length === 0) {
-    <app-state-message kind="loading" headline="Loading registrations…" />
   } @else {
+    <app-loading [loading]="registrationsLoading() && registrations().length === 0" shape="list">
+    @if (!(registrationsLoading() && registrations().length === 0)) {
     <ul aria-label="Registered mounts">
       @for (reg of registrations(); track reg.Mountpoint) {
         <li>
@@ -71,6 +73,8 @@
         <li><app-state-message kind="empty" headline="No mounts registered yet." /></li>
       }
     </ul>
+      }
+    </app-loading>
   }
 
   <h3>Register a mount</h3>
@@ -112,9 +116,9 @@
   <h2>Class assignments</h2>
   @if (assignmentsError()) {
     <app-state-message kind="error" [headline]="assignmentsError()" />
-  } @else if (assignmentsLoading() && assignments().length === 0) {
-    <app-state-message kind="loading" headline="Loading assignments…" />
   } @else {
+    <app-loading [loading]="assignmentsLoading() && assignments().length === 0" shape="list">
+    @if (!(assignmentsLoading() && assignments().length === 0)) {
     <ul aria-label="Class assignments">
       @for (item of assignments(); track item.Class) {
         <li>
@@ -126,6 +130,8 @@
         <li><app-state-message kind="empty" headline="No classes assigned yet." /></li>
       }
     </ul>
+      }
+    </app-loading>
   }
 
   <h3>Assign a class</h3>

@@ -2,6 +2,7 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService, DockgeLink } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { Loading } from '../ui/loading';
 
 /**
  * Advanced administration page (S211): the expert Compose interface
@@ -12,7 +13,7 @@ import { StateMessage } from '../state/state-message';
  */
 @Component({
   selector: 'app-advanced',
-  imports: [StateMessage],
+  imports: [Loading, StateMessage],
   templateUrl: './advanced.html',
   styles: ['.advanced-text { overflow-wrap: anywhere; }'],
 })

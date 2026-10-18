@@ -1,3 +1,17 @@
 @if (headline(); as text) {
-  <p [attr.role]="role()" [class]="'state-message state-' + kind()">{{ text }}</p>
+  <div [attr.role]="role()" [class]="'state-message state-' + kind()">
+    <div class="state-body">
+      <p class="state-headline">{{ text }}</p>
+      @if (detail(); as more) {
+        <p class="state-detail">{{ more }}</p>
+      }
+    </div>
+    @if (actionLabel()) {
+      @if (actionLink(); as link) {
+        <a class="button state-action" [routerLink]="link">{{ actionLabel() }}</a>
+      } @else {
+        <button type="button" class="state-action" (click)="action.emit()">{{ actionLabel() }}</button>
+      }
+    }
+  </div>
 }

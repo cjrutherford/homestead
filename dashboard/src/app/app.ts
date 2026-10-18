@@ -1,10 +1,13 @@
-import { Component, ElementRef, HostListener, computed, inject, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { SessionService } from './auth/session.service';
 import { ApiService, Identity } from './core/api.service';
 import { NAV_GROUPS, NavGroup, visibleGroups } from './core/nav';
 import { ThemeService } from './core/theme.service';
+import { WorkOrders } from './core/work-orders.service';
+import { ToastRegion } from './ui/toast-region';
+import { WorkOrdersRail } from './ui/work-orders-rail';
 
 /**
  * localStorage key for explicit sidebar group choices: group id to open
@@ -43,10 +46,10 @@ function groupOf(url: string): string | null {
  * with collapsible groups, a drawer below the md breakpoint, and the routed
  * content. Logged-out visitors see Status, Login and, while the appliance
  * is unclaimed, Claim. The sidebar keeps an empty slot for the S283
- * work-orders rail.
+ * work-orders rail, which becomes a bottom sheet below md.
  */
 @Component({
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, WorkOrdersRail, ToastRegion],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',
@@ -55,11 +58,17 @@ export class App {
   protected readonly sessions = inject(SessionService);
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
+  private readonly workOrders = inject(WorkOrders);
   // Injected so a stored theme choice is applied at startup.
   protected readonly theme = inject(ThemeService);
 
   private readonly identity = signal<Identity | null>(null);
   protected readonly drawerOpen = signal(false);
+  protected readonly sheetShown = computed(() => this.workOrders.orders().length > 0);
+  /** At md and wider the rail sits in the sidebar; below it is a bottom sheet. */
+  protected readonly desktop = signal(
+    typeof matchMedia !== 'function' || matchMedia(DESKTOP_QUERY).matches,
+  );
   protected readonly choices = signal<Record<string, boolean>>(readChoices());
   private readonly currentGroup = signal<string | null>(groupOf(this.router.url));
   protected readonly groups = computed<NavGroup[]>(() =>
@@ -73,11 +82,20 @@ export class App {
 
   constructor() {
     this.loadIdentity();
+    // Operations already running (started before a reload, or from the CLI) join the rail.
+    effect(() => {
+      if (this.sessions.isLoggedIn()) {
+        this.workOrders.restore(true);
+      }
+    });
     this.router.events.pipe(filter((event) => event instanceof NavigationEnd)).subscribe((event) => {
       this.enter(event.urlAfterRedirects);
       if (this.drawerOpen()) {
         this.close(false);
         this.main()?.nativeElement.focus({ preventScroll: true });
+      }
+      if (this.sessions.isLoggedIn()) {
+        this.workOrders.restore();
       }
       // Claim state only changes while unclaimed or unknown; once claimed, stop asking.
       if (this.identity()?.state !== 'CLAIMED') {
@@ -86,6 +104,7 @@ export class App {
     });
     if (typeof matchMedia === 'function') {
       matchMedia(DESKTOP_QUERY).addEventListener('change', (query) => {
+        this.desktop.set(query.matches);
         if (query.matches && this.drawerOpen()) {
           this.close(false);
         }

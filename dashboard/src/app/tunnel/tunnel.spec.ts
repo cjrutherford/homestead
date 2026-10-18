@@ -81,7 +81,7 @@ describe('Tunnel', () => {
     setup.flush({ id: 23 });
     http.expectOne('/api/v1/tunnel/status').flush(STATUS);
     fixture.detectChanges();
-    expect(text()).toContain('Follow operation 23');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/23"]')).not.toBeNull();
     expect(text()).not.toContain('sealed-token');
   });
 
@@ -100,6 +100,6 @@ describe('Tunnel', () => {
     teardown.flush({ id: 24 });
     http.expectOne('/api/v1/tunnel/status').flush({ ...STATUS, tunnels: [] });
     fixture.detectChanges();
-    expect(text()).toContain('Follow operation 24');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/24"]')).not.toBeNull();
   });
 });

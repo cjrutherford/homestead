@@ -1,4 +1,4 @@
-# Dashboard design (S248, S282)
+# Dashboard design (S248, S282, S283)
 
 Clean-room (ADR-019): plain Angular and CSS custom properties, no UI
 framework, no vendored third-party UI code.
@@ -12,8 +12,8 @@ documented in that file (md, 48rem, is where the sidebar becomes a column).
 Radius and elevation follow hierarchy: controls `--radius-control`, panels
 `--radius-panel` with `--shadow-sm`, dialogs `--radius-dialog` with
 `--shadow-lg`, badges are pills. Motion tokens (`--duration-*`, `--ease-*`)
-exist for S283; today only control state changes transition, within
-`--duration-fast`, and `prefers-reduced-motion` shortens all of it.
+are used by S283 (see States, motion and feedback); `prefers-reduced-motion`
+removes every animation and transition.
 
 ## Themes
 Light (default): Limewash `#F2F4F0` page, Board `#FFFFFF` panels, Pine
@@ -51,7 +51,7 @@ requests. Sentence case everywhere; no all-caps labels.
 - Badges: `.badge` with `.badge-ok`, `-warn`, `-fail`, `-pending`,
   `-running`; plain `.badge` is neutral. The glyph is a CSS mask, so colour
   never stands alone; always include the word.
-- Messages: `app-state-message` (empty, loading, error, status, warning) and
+- Messages: `app-state-message` (empty, error, status, warning, notice) and
   `.warning` callouts. Text stays ink; the kind shows in the start bar and
   glyph. Use `warning` for cautions, `status` only for success.
 - Dialog: `app-dialog` (`heading`, `variant="confirm|danger"`, `(dismissed)`)
@@ -69,7 +69,7 @@ persisted in `localStorage` (`homestead.nav.groups`); current page with `aria-cu
 drawer below md with a menu button, focus management and Escape. Logged-out
 visitors see Status, Log in and, while unclaimed, Claim. Log in, Log out and
 the user name live in the sidebar foot. The slot `data-slot="work-orders"`
-is reserved for S283. Each page has one `<h1>`; the brand is not a heading.
+holds the work-orders rail (S283); below md the rail is a bottom sheet. Each page has one `<h1>`; the brand is not a heading.
 
 ## Voice and copy
 - Plain verbs, sentence case, the owner's vocabulary (not internal names).
@@ -87,3 +87,72 @@ a stored theme before the first paint. The production build sets
 `inlineCritical: false` so the full stylesheet, including the `data-theme`
 blocks, is render-blocking; inlined critical CSS omitted those blocks and
 caused a light flash on reload.
+
+## States, motion and feedback (S283)
+The one bold element is the work-orders rail. Everything else stays quiet.
+
+### Loading
+- Wrap content that waits for data in `<app-loading [loading]="..."
+  shape="lines|list|fields|panel">`. The skeleton appears only after 150 ms
+  and, once shown, stays at least 300 ms, so a fast response never flashes
+  and a slow one never flickers. The content stays hidden until both are
+  done. The wrapper reserves the skeleton's height from the start, so
+  nothing jumps. Choose the shape that matches the content.
+- Skeletons are static: no shimmer, no pulse. Never write "Loading…" or a
+  bare `…`; assistive technology hears "Loading" once the skeleton shows.
+- A button that is busy keeps its label and sets `aria-busy="true"`.
+
+### States
+- One component, `app-state-message`: `empty`, `error`, `status` (success),
+  `warning`, `notice` (neutral). `headline`, optional `detail`, and one next
+  action (`actionLabel` plus `actionLink` or the `(action)` output).
+- Empty states invite the action ("No apps installed yet" with a Browse the
+  catalog action). Errors say what happened and how to fix it; use
+  `httpErrorMessage`.
+- A read that answers 404 because something is not set up yet (no TLS
+  strategy, no reviewed exposure plan) is a state, not an error: use
+  `isNotSetUp(err)` and show an empty state with the next step. Angular
+  writes nothing to the console for a handled `HttpClient` error. The browser
+  still lists the failed request in its network log; avoiding that needs the
+  API to answer 200 (see DEFERRED.md).
+
+### Motion
+- Motion answers a user action, except the rail's progress. No fade-and-slide
+  on sections, no hover animation on cards.
+- Route changes use View Transitions (`withViewTransitions`): only
+  `<main>` crossfades (120 ms out, 200 ms in); the sidebar stays still. The
+  first load never animates. Unsupported browsers just swap the page.
+- Dialogs fade and rise in (200 ms) and out (120 ms). The page removes the
+  component at once, so `app-dialog` leaves an inert copy and scrim behind
+  for the exit.
+- Toasts rise in (200 ms). The rail's bar widens over 320 ms; a running
+  order's glyph pulses slowly.
+- `prefers-reduced-motion: reduce` removes all of it: view transitions are
+  skipped in script (`onViewTransitionCreated`), dialogs close at once,
+  keyframes and transitions are off.
+
+### Feedback
+- A completed action shows a toast (`ToastService.show`), six seconds, errors
+  twelve, always dismissible, never the only record: the result also lives in
+  Operations or on the page. The action keeps one name through the flow:
+  "Reconcile routes" (button), "Reconcile routes?" (dialog), the rail title,
+  then "Routes reconciled" (toast). The names live in
+  `core/operation-labels.ts`.
+- `ToastRegion` (mounted once in the shell) holds a polite `aria-live`
+  region. Step changes and results are announced there
+  (`ToastService.announce`), not on every element.
+
+### Work orders
+- Every operation the dashboard starts joins the rail: a successful POST or
+  DELETE to an operation-starting route is recognised by
+  `workOrderInterceptor` (pages need no code). Operations found running on
+  load, and on navigation (at most every ten seconds), join too, read from
+  the existing operations list, so the rail survives a reload and shows
+  operations started from the CLI.
+- Each order shows title, current step, step count, elapsed time and result,
+  and links to the operation detail. Finished orders leave after 8 seconds
+  (20 on failure); the record stays in Operations. The rail lists three and
+  links to Operations for the rest.
+- Progress is the same everywhere: `app-step-list` (rail detail page and
+  in-page) and `app-operation-progress` for a page that started an
+  operation. No "Operation N: running" text.

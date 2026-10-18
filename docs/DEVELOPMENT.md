@@ -4179,3 +4179,54 @@ are long unbroken lists (grouping, tables); the Status diagnostics list reads
 as a wall of rows; the login heading sits tight to its form; Atkinson's
 slashed zero shows in IPs and versions (font design, left as is).
 
+## S283: Dashboard states, transitions and work orders
+
+Built (all under `dashboard/src`, no daemon, API or CLI change, so
+`docs/PARITY.md` is unchanged; the rail reads the existing
+`GET /api/v1/operations` and `/operations/{id}/events`):
+- `ui/loading.ts` (`app-loading`): delayed (150 ms), minimum-display (300 ms)
+  content-shaped skeletons. Replaced every "Loading…", "Working…" and bare
+  `…` on 24 pages (Config, Firewall, Catalog, Updates, Secrets, Drift,
+  Advanced, Data, Tunnel, Operations and detail, Edge, TLS, Trust, Account,
+  Audit, Backups, Storage, Craft apps, Craft files, Status).
+- `state/state-message`: revised with `detail`, one next action and a
+  `notice` kind; `loading` kind removed. Empty states on operations, backups,
+  craft apps, exposure and TLS now lead with an action.
+- `core/http-error.ts` `isNotSetUp`: TLS issuance and exposure review treat a
+  404 as "not set up yet" (an empty state with a link), not a red error.
+- Page transitions: `withViewTransitions` with only `<main>` crossfading,
+  skipped under reduced motion (`core/view-transition.ts`).
+- Feedback: `core/toast.service.ts` and `ui/toast-region.ts` (polite
+  aria-live region plus dismissible toasts).
+- Work orders: `core/work-orders.service.ts`, `core/work-order.interceptor.ts`,
+  `core/operation-labels.ts`, `core/operation-view.ts`, `ui/work-orders-rail`
+  (sidebar slot, bottom sheet below md), `ui/step-list`,
+  `ui/operation-progress`. Every operation started from the dashboard joins
+  the rail, running operations are re-read on load and on navigation, finished
+  orders settle after 8 seconds. Operation detail, Edge, TLS, Trust, Catalog,
+  Updates (package, platform, craft), Data, Drift, Secrets, Exposure and
+  Tunnel show the same step list; no "Operation N: running" text remains.
+- Dialogs: enter animation and a short exit (inert copy left behind), both off
+  under reduced motion.
+- Scroll fix (commit 2b6c9a3): the router had no scroll handling, so the
+  document kept its offset across route changes and a scrolled-down long page
+  left the next one at its bottom. `withInMemoryScrolling` restores the
+  position on back and forward and starts new pages at the top.
+- New tokens `--rail-*` (contrast-checked in all themes).
+
+Checks: dashboard 511 specs (skeleton timing under fake timers, reduced-motion
+view-transition and dialog exit, rail add/update/finish/reload, toast and
+aria-live output, interceptor, step list, labels). A local headless Chromium
+run against the built bundle with stubbed API data and screenshots in
+`/tmp/hs-s283-local/` (not committed) found and fixed one layout bug: the new
+toast host became a grid cell and pushed `<main>` under the sidebar. Removed
+the redundant "Caddy deployment started." notice, since the progress panel,
+the rail and the toast already say it.
+
+KVM visual review (VM 2): **PENDING.** To do: start a real long operation (a
+small catalog install, then uninstall it), navigate away and back while it
+runs, confirm the rail tracks it to completion; record a short screen
+recording or screenshot sequence and the findings here; leave VM 2 as found.
+Also check the bottom sheet on a phone-sized viewport, a reload mid-operation,
+the toast and polite announcements with a screen reader, and route-change
+scrolling (new page at the top, back restores).

@@ -110,7 +110,7 @@ describe('Exposure', () => {
     http.expectOne('/api/v1/exposure/approvals').flush([]);
     http.expectOne('/api/v1/tls/renewal').flush(NO_RENEWALS);
     fixture.detectChanges();
-    expect(text()).toContain('No reviewed selection yet');
+    expect(text()).toContain('No reviewed plan yet');
   });
 
   it('approves under a named actor and applies', () => {
@@ -137,6 +137,6 @@ describe('Exposure', () => {
     expect(apply.request.body).toMatchObject({ host: 'app.example.com' });
     apply.flush({ id: 17 });
     fixture.detectChanges();
-    expect(text()).toContain('Follow operation 17');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/17"]')).not.toBeNull();
   });
 });

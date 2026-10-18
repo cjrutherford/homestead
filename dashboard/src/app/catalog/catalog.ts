@@ -1,6 +1,5 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { RouterLink } from '@angular/router';
 import {
   ApiService,
   AppSecret,
@@ -10,6 +9,8 @@ import {
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 import { BrowserAdvisories } from './browser-advisories';
+import { Loading } from '../ui/loading';
+import { OperationProgress } from '../ui/operation-progress';
 
 interface VolumeRow {
   service: string;
@@ -37,7 +38,7 @@ interface ConfigRow {
  * link out to operation detail for progress; this page never blocks.
  */
 @Component({
-  imports: [StateMessage, RouterLink, BrowserAdvisories],
+  imports: [OperationProgress, Loading, StateMessage, BrowserAdvisories],
   selector: 'app-catalog',
   templateUrl: './catalog.html',
 })

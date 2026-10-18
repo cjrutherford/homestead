@@ -58,7 +58,7 @@ describe('Trust', () => {
     ) as HTMLButtonElement;
 
   it('shows a loading state, then the fingerprint and downloads', () => {
-    expect(text()).toContain('Loading the internal CA');
+    expect(fixture.nativeElement.querySelector('app-loading[aria-busy="true"]')).not.toBeNull();
     load(report());
     expect(fixture.nativeElement.querySelector('[data-testid="fingerprint"]').textContent).toContain(FP);
     const links = Array.from(fixture.nativeElement.querySelectorAll('a.button')) as HTMLAnchorElement[];
@@ -108,7 +108,7 @@ describe('Trust', () => {
     expect(req.request.body).toEqual({ host: 'app.home.arpa' });
     req.flush({ id: 5 });
     fixture.detectChanges();
-    expect(text()).toContain('#5');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/5"]')).not.toBeNull();
   });
 
   it('requires confirmation before approving a rotation by digest', () => {

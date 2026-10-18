@@ -118,7 +118,7 @@ describe('DataMigration', () => {
     });
     request.flush({ id: 9 });
     fixture.detectChanges();
-    expect(text()).toContain('operation 9');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/9"]')).not.toBeNull();
   });
 
   it('removes old volumes only on the explicit action', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
-import { httpErrorMessage, isUnreachable } from './http-error';
+import { isNotSetUp, httpErrorMessage, isUnreachable } from './http-error';
 
 function failure(status: number, error: unknown = null, headers?: HttpHeaders): HttpErrorResponse {
   return new HttpErrorResponse({ status, error, headers });
@@ -46,5 +46,11 @@ describe('httpErrorMessage', () => {
 
   it('falls back to the status for other codes', () => {
     expect(httpErrorMessage(failure(418), 'Setup')).toBe('Setup failed (HTTP 418).');
+  });
+
+  it('treats a 404 read as not set up yet, and nothing else', () => {
+    expect(isNotSetUp(failure(404))).toBe(true);
+    expect(isNotSetUp(failure(500))).toBe(false);
+    expect(isNotSetUp(failure(0))).toBe(false);
   });
 });

@@ -6,9 +6,8 @@
       <app-state-message kind="error" [headline]="error()" />
     }
 
-    @if (busy() && !status()) {
-      <app-state-message kind="loading" headline="Loading…" />
-    } @else if (stepIndex() === 0) {
+    <app-loading [loading]="busy() && !status()" shape="lines">
+    @if (stepIndex() === 0) {
       <p>Detected LAN subnets. Management stays reachable from these networks.</p>
       <ul>
         @for (subnet of status()?.local_subnets ?? []; track subnet) {
@@ -38,5 +37,6 @@
         Continue on the <a routerLink="/status">status page</a>.
       </p>
     }
+  </app-loading>
   </section>
 </app-wizard-shell>

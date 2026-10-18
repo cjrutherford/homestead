@@ -91,10 +91,11 @@ describe('App', () => {
     fixture.nativeElement.remove();
   });
 
-  it('leaves an empty slot for the work-orders rail', () => {
+  it('mounts the work-orders rail in its slot and renders nothing without orders', () => {
     const slot = fixture.nativeElement.querySelector('[data-slot="work-orders"]') as HTMLElement;
     expect(slot).not.toBeNull();
-    expect(slot.children.length).toBe(0);
+    expect(slot.querySelector('app-work-orders-rail')).not.toBeNull();
+    expect(slot.querySelector('.rail')).toBeNull();
   });
 
   it('opens and closes the drawer with focus management and Escape', async () => {

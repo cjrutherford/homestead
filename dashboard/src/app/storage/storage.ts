@@ -8,6 +8,7 @@ import {
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
+import { Loading } from '../ui/loading';
 
 /** The five class names the daemon accepts (internal/storage/classes.go). */
 export const STORAGE_CLASSES = [
@@ -26,7 +27,7 @@ export const STORAGE_CLASSES = [
  * PascalCase because the Go structs carry no json tags.
  */
 @Component({
-  imports: [StateMessage, Dialog],
+  imports: [Loading, StateMessage, Dialog],
   selector: 'app-storage',
   templateUrl: './storage.html',
   styles: [

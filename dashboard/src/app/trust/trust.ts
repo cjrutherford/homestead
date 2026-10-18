@@ -1,7 +1,6 @@
 import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
-import { RouterLink } from '@angular/router';
 import {
   ApiService,
   LocalCaReport,
@@ -9,6 +8,8 @@ import {
   OperationState,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { Loading } from '../ui/loading';
+import { OperationProgress } from '../ui/operation-progress';
 
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
 
@@ -112,7 +113,7 @@ export const TRUST_GUIDES: TrustGuide[] = [
  * arrives over your signed-in session. The private key is never shown.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [OperationProgress, Loading, StateMessage],
   selector: 'app-trust',
   templateUrl: './trust.html',
   styles: [

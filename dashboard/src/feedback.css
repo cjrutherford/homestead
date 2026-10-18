@@ -1,0 +1,537 @@
+/*
+ * States, motion and feedback (S283). Rules in docs/architecture/DASHBOARD_DESIGN.md.
+ * Motion answers a user action, except the work-orders rail's progress.
+ * prefers-reduced-motion removes every animation and transition here.
+ */
+
+/* Skeletons: static, content-shaped, no shimmer. */
+app-loading {
+  display: block;
+}
+
+app-loading.loading-busy {
+  min-height: 7rem;
+}
+
+app-loading[data-shape='list'].loading-busy {
+  min-height: 13rem;
+}
+
+app-loading[data-shape='fields'].loading-busy {
+  min-height: 12rem;
+}
+
+.skeleton {
+  display: grid;
+  gap: var(--spacing-md);
+}
+
+.skeleton-bar {
+  background: var(--surface-sunken);
+  border-radius: var(--radius-control);
+}
+
+.skeleton-line {
+  height: 1rem;
+}
+
+.skeleton-short {
+  width: 60%;
+}
+
+.skeleton-row {
+  height: 2.5rem;
+}
+
+.skeleton-label {
+  width: 8rem;
+  height: 0.9rem;
+}
+
+.skeleton-field {
+  height: var(--touch-target);
+  max-width: 28rem;
+}
+
+.skeleton-panel {
+  height: 9rem;
+  border-radius: var(--radius-panel);
+}
+
+/* State messages with a next action. */
+.state-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.state-message p {
+  margin: 0;
+}
+
+.state-detail {
+  margin-top: var(--spacing-xs);
+  color: var(--muted);
+}
+
+.state-action {
+  flex: none;
+  margin: 0;
+  align-self: center;
+}
+
+.state-notice::before {
+  content: '';
+  color: var(--muted);
+  mask-image: var(--glyph-neutral);
+  -webkit-mask-image: var(--glyph-neutral);
+}
+
+@media (max-width: 39.9375rem) {
+  .state-message {
+    flex-wrap: wrap;
+  }
+
+  .state-action {
+    width: 100%;
+  }
+}
+
+/* Step list: shared by the rail, operation detail and in-page progress. */
+.step-list {
+  margin: 0 0 var(--spacing-md);
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 1.1rem minmax(0, 1fr) auto;
+  gap: 0 var(--spacing-sm);
+  align-items: baseline;
+  padding: var(--spacing-xs) 0;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.step:last-child {
+  border-bottom: 0;
+}
+
+.step-glyph {
+  width: 1.1rem;
+  height: 1.1rem;
+  align-self: center;
+  background: var(--muted);
+  mask: var(--glyph-pending) center / 100% no-repeat;
+  -webkit-mask: var(--glyph-pending) center / 100% no-repeat;
+}
+
+.step[data-status='succeeded'] .step-glyph {
+  background: var(--success);
+  mask-image: var(--glyph-ok);
+  -webkit-mask-image: var(--glyph-ok);
+}
+
+.step[data-status='running'] .step-glyph {
+  background: var(--running);
+  mask-image: var(--glyph-running);
+  -webkit-mask-image: var(--glyph-running);
+}
+
+.step[data-status='failed'] .step-glyph {
+  background: var(--danger);
+  mask-image: var(--glyph-fail);
+  -webkit-mask-image: var(--glyph-fail);
+}
+
+.step[data-status='running'] .step-name {
+  font-weight: 700;
+}
+
+.step-status {
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+}
+
+.step-error {
+  grid-column: 2 / -1;
+  color: var(--danger);
+}
+
+.step-empty {
+  color: var(--muted);
+}
+
+.operation-progress {
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+}
+
+.operation-progress-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-md);
+  justify-content: space-between;
+  font-weight: 700;
+}
+
+.operation-progress-line a {
+  font-weight: 400;
+}
+
+.operation-progress .step-list {
+  margin-bottom: 0;
+}
+
+/* Hosts must not take a grid cell in the shell. */
+app-toast-region,
+app-work-orders-rail {
+  display: contents;
+}
+
+/* Toasts: quiet, bottom right, answer a finished action. */
+.toasts {
+  position: fixed;
+  right: var(--spacing-md);
+  bottom: var(--spacing-md);
+  z-index: calc(var(--z-index-modal) + 2);
+  display: grid;
+  gap: var(--spacing-sm);
+  width: min(24rem, calc(100vw - 2 * var(--spacing-md)));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--foreground);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-inline-start-width: 4px;
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-md);
+  pointer-events: auto;
+  animation: toast-in var(--duration-base) var(--ease-enter) both;
+}
+
+.toast-status {
+  border-inline-start-color: var(--success);
+}
+
+.toast-error {
+  border-inline-start-color: var(--danger);
+}
+
+.toast-notice {
+  border-inline-start-color: var(--border-strong);
+}
+
+.toast-dismiss {
+  flex: none;
+  margin: 0;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+
+/* Work-orders rail: the one bold element. */
+.sidebar-slot:empty {
+  display: none;
+}
+
+.rail {
+  margin: 0 var(--spacing-xs);
+  padding: var(--spacing-md);
+  color: var(--rail-foreground);
+  background: var(--rail-bg);
+  border-radius: var(--radius-panel);
+}
+
+.rail a {
+  color: var(--rail-foreground);
+}
+
+.sidebar .rail a:focus-visible,
+.rail button:focus-visible {
+  outline-color: var(--rail-foreground);
+}
+
+.rail-heading {
+  margin: 0 0 var(--spacing-sm);
+  font-weight: 700;
+}
+
+.rail-orders {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rail-order {
+  margin: 0 0 var(--spacing-md);
+}
+
+.rail-order:last-child {
+  margin-bottom: 0;
+}
+
+.rail-order p {
+  margin: 0;
+  max-width: none;
+}
+
+.rail-line {
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: space-between;
+  align-items: baseline;
+  font-weight: 700;
+}
+
+.rail-title {
+  overflow-wrap: anywhere;
+}
+
+.rail-time {
+  flex: none;
+  font-weight: 400;
+}
+
+.rail-step {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: baseline;
+  font-size: var(--font-size-sm);
+}
+
+.rail-glyph {
+  flex: none;
+  width: 0.9rem;
+  height: 0.9rem;
+  align-self: center;
+  background: currentcolor;
+  mask: var(--glyph-running) center / 100% no-repeat;
+  -webkit-mask: var(--glyph-running) center / 100% no-repeat;
+}
+
+.rail-order[data-outcome='running'] .rail-glyph {
+  animation: rail-pulse 1.6s ease-in-out infinite;
+}
+
+.rail-order[data-outcome='done'] .rail-glyph {
+  mask-image: var(--glyph-ok);
+  -webkit-mask-image: var(--glyph-ok);
+}
+
+.rail-order[data-outcome='failed'] .rail-glyph {
+  mask-image: var(--glyph-fail);
+  -webkit-mask-image: var(--glyph-fail);
+}
+
+.rail-bar {
+  height: 0.5rem;
+  margin-top: var(--spacing-xs);
+  overflow: hidden;
+  background: var(--rail-track);
+  border: 1px solid var(--rail-foreground);
+  border-radius: var(--radius-pill);
+}
+
+.rail-bar-fill {
+  display: block;
+  height: 100%;
+  min-width: 0.25rem;
+  background: var(--rail-fill);
+  transition: width var(--duration-slow) var(--ease-standard);
+}
+
+.rail-more {
+  display: inline-block;
+  margin-top: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+
+@keyframes rail-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Below md the rail is a bottom sheet opened from a summary bar. */
+.rail-sheet {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: calc(var(--z-index-dropdown) + 10);
+  margin: 0;
+  padding: 0 var(--spacing-md) var(--spacing-sm);
+  border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  box-shadow: var(--shadow-lg);
+  max-height: 70dvh;
+  overflow-y: auto;
+}
+
+.rail-summary {
+  display: flex;
+  width: 100%;
+  min-height: var(--touch-target);
+  margin: 0;
+  gap: var(--spacing-sm);
+  justify-content: space-between;
+  align-items: center;
+  color: var(--rail-foreground);
+  background: transparent;
+  border: 0;
+  font-weight: 700;
+  text-align: start;
+}
+
+.rail-summary:hover {
+  color: var(--rail-foreground);
+  background: transparent;
+}
+
+.rail-summary-cue {
+  flex: none;
+  font-weight: 400;
+}
+
+.rail-sheet .rail-orders {
+  padding-top: var(--spacing-xs);
+  animation: sheet-in var(--duration-base) var(--ease-enter) both;
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+
+@media (max-width: 47.9375rem) {
+  .shell.has-sheet .shell-main {
+    padding-bottom: 6rem;
+  }
+
+  .toasts {
+    bottom: 4.5rem;
+  }
+}
+
+/* Dialogs enter with a short fade and rise; the exit mirrors it. */
+.dialog[open] {
+  animation: dialog-in var(--duration-base) var(--ease-enter) both;
+}
+
+.dialog[open]::backdrop {
+  animation: backdrop-in var(--duration-base) var(--ease-enter) both;
+}
+
+.dialog-ghost {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-index-modal);
+  height: fit-content;
+  animation: dialog-out var(--duration-fast) var(--ease-exit) both;
+}
+
+.dialog-ghost-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-index-modal);
+  background: var(--backdrop);
+  animation: backdrop-out var(--duration-fast) var(--ease-exit) both;
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem) scale(0.98);
+  }
+}
+
+@keyframes dialog-out {
+  to {
+    opacity: 0;
+    transform: translateY(0.25rem) scale(0.99);
+  }
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes backdrop-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* Page transitions: only the main column crossfades; the sidebar stays put. */
+.shell-main {
+  view-transition-name: page;
+}
+
+::view-transition-group(root),
+::view-transition-group(page),
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+
+::view-transition-old(page) {
+  animation: page-out var(--duration-fast) var(--ease-exit) both;
+}
+
+::view-transition-new(page) {
+  animation: page-in var(--duration-base) var(--ease-enter) both;
+}
+
+@keyframes page-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast,
+  .rail-order .rail-glyph,
+  .rail-sheet .rail-orders,
+  .dialog[open],
+  .dialog[open]::backdrop,
+  .dialog-ghost,
+  .dialog-ghost-scrim {
+    animation: none !important;
+  }
+
+  .rail-bar-fill {
+    transition: none;
+  }
+
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

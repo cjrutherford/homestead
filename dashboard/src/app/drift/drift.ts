@@ -1,8 +1,9 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { RouterLink } from '@angular/router';
 import { ApiService, DriftSchedule, FileDrift, LiveDrift, PackageSummary } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { Loading } from '../ui/loading';
+import { OperationProgress } from '../ui/operation-progress';
 
 /**
  * Drift review page (S213): per-package managed-state review with
@@ -16,7 +17,7 @@ import { StateMessage } from '../state/state-message';
  * live finding names the flow that converges it.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [OperationProgress, Loading, StateMessage],
   selector: 'app-drift',
   templateUrl: './drift.html',
 })

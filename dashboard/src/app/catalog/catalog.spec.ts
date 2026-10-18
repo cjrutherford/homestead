@@ -189,7 +189,7 @@ describe('Catalog', () => {
     fixture.componentInstance['install']();
     http.expectOne('/api/v1/catalog/jellyfin/install').flush({ id: 7 });
     fixture.detectChanges();
-    expect(text()).toContain('#7');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/7"]')).not.toBeNull();
   });
 
   it('shows browser advisories on the package page and plan without blocking install', () => {
@@ -254,7 +254,7 @@ describe('Catalog', () => {
     const configure = http.expectOne('/api/v1/catalog/jellyfin/configure');
     configure.flush({ id: 8 });
     fixture.detectChanges();
-    expect(text()).toContain('#8');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/8"]')).not.toBeNull();
   });
 
   it('registers and rotates secret-backed variables without showing values', () => {

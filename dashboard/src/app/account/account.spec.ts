@@ -79,7 +79,7 @@ describe('Account', () => {
   it('shows loading, then an unlocked account', () => {
     fixture = TestBed.createComponent(Account);
     fixture.detectChanges();
-    expect(text()).toContain('Loading lockout status');
+    expect(fixture.nativeElement.querySelector('app-loading[aria-busy="true"]')).not.toBeNull();
     http.expectOne('/api/v1/admins/lockout').flush({ username: 'owner', locked: false });
     fixture.detectChanges();
     expect(text()).toContain('owner');

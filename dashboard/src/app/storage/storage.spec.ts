@@ -92,9 +92,7 @@ describe('StorageSetup', () => {
 
   it('shows loading before data arrives', () => {
     fixture.detectChanges();
-    expect(text()).toContain('Discovering mounts');
-    expect(text()).toContain('Loading registrations');
-    expect(text()).toContain('Loading assignments');
+    expect(fixture.nativeElement.querySelectorAll('app-loading[aria-busy="true"]').length).toBe(3);
     http.match(() => true).forEach((r) => r.flush([]));
   });
 

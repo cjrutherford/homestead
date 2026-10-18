@@ -1,0 +1,51 @@
+@if (store.orders().length > 0) {
+  <section
+    class="rail"
+    [class.rail-sheet]="variant() === 'sheet'"
+    [class.rail-open]="open()"
+    aria-label="Work orders"
+  >
+    @if (variant() === 'sheet') {
+      <button
+        type="button"
+        class="rail-summary"
+        [attr.aria-expanded]="open()"
+        aria-controls="rail-orders"
+        (click)="toggle()"
+      >
+        <span class="rail-summary-text">{{ summary() }}</span>
+        <span class="rail-summary-cue">{{ open() ? 'Hide' : 'Show' }}</span>
+      </button>
+    } @else {
+      <p class="rail-heading">Work orders</p>
+    }
+    <ul id="rail-orders" class="rail-orders" [hidden]="variant() === 'sheet' && !open()">
+      @for (order of store.visible(); track order.id) {
+        <li class="rail-order" [attr.data-outcome]="outcome(order)">
+          <p class="rail-line">
+            <a class="rail-title" [routerLink]="['/operations', order.id]">{{ order.title }}</a>
+            <span class="rail-time mono">{{ elapsed(order) }}</span>
+          </p>
+          <p class="rail-step">
+            <span class="rail-glyph" aria-hidden="true"></span>
+            <span>{{ progress(order).text }}</span>
+          </p>
+          <div
+            class="rail-bar"
+            role="progressbar"
+            [attr.aria-label]="order.title"
+            aria-valuemin="0"
+            [attr.aria-valuemax]="progress(order).total || 1"
+            [attr.aria-valuenow]="progress(order).done"
+            [attr.aria-valuetext]="progress(order).text"
+          >
+            <span class="rail-bar-fill" [style.width.%]="progress(order).fraction * 100"></span>
+          </div>
+        </li>
+      }
+    </ul>
+    @if (store.hiddenCount() > 0 && (variant() === 'rail' || open())) {
+      <a class="rail-more" routerLink="/operations">{{ store.hiddenCount() }} more in Operations</a>
+    }
+  </section>
+}

@@ -1,4 +1,4 @@
-<div class="shell" [class.drawer-open]="drawerOpen()">
+<div class="shell" [class.drawer-open]="drawerOpen()" [class.has-sheet]="!desktop() && sheetShown()">
   <a class="skip-link" href="#main" (click)="skipToMain($event)">Skip to content</a>
 
   <header class="shell-topbar" [attr.inert]="drawerOpen() ? '' : null">
@@ -51,8 +51,11 @@
       }
     </nav>
 
-    <!-- S283: the work-orders rail mounts in this slot. Nothing renders here yet. -->
-    <div class="sidebar-slot" data-slot="work-orders"></div>
+    <div class="sidebar-slot" data-slot="work-orders">
+      @if (desktop()) {
+        <app-work-orders-rail variant="rail" />
+      }
+    </div>
 
     <div class="sidebar-foot">
       @if (sessions.isLoggedIn()) {
@@ -65,6 +68,12 @@
       }
     </div>
   </aside>
+
+  @if (!desktop()) {
+    <app-work-orders-rail variant="sheet" />
+  }
+
+  <app-toast-region />
 
   <main id="main" #main class="shell-main" tabindex="-1" [attr.inert]="drawerOpen() ? '' : null">
     <router-outlet />

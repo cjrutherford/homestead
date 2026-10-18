@@ -14,6 +14,7 @@
   }
 
   <h2>Destination</h2>
+  <app-loading [loading]="!destination() && !destinationError()" shape="lines">
   @if (destination(); as root) {
     <p>Backup root: <code class="backup-root">{{ root }}</code></p>
     @if (encryption(); as scheme) {
@@ -21,9 +22,8 @@
     }
   } @else if (destinationError()) {
     <app-state-message kind="error" [headline]="destinationError()" />
-  } @else {
-    <app-state-message kind="loading" headline="Resolving destination…" />
   }
+  </app-loading>
 
   <h2>Recipients and recovery</h2>
   <p>
@@ -32,6 +32,7 @@
     identity lives only on this appliance, so add a recipient whose private
     key you hold, or export the recovery identity and store it offline.
   </p>
+  <app-loading [loading]="!recipients() && !recipientsError()" shape="list">
   @if (recipientsError()) {
     <app-state-message kind="error" [headline]="recipientsError()" />
   } @else if (recipients(); as view) {
@@ -66,9 +67,8 @@
         </li>
       }
     </ul>
-  } @else {
-    <app-state-message kind="loading" headline="Loading recipients…" />
   }
+  </app-loading>
   <form
     (submit)="addRecipient(recipientKey.value, recipientLabel.value); $event.preventDefault()"
   >
@@ -136,9 +136,7 @@
   <button type="button" (click)="refresh()" [disabled]="loading() || busy()">
     Refresh
   </button>
-  @if (loading() && schedules().length === 0) {
-    <app-state-message kind="loading" headline="Loading schedules…" />
-  } @else {
+  <app-loading [loading]="loading() && schedules().length === 0" shape="list">
     <ul>
       @for (row of schedules(); track row.package) {
         <li>
@@ -170,11 +168,12 @@
         </li>
       } @empty {
         <li>
-          <app-state-message kind="empty" headline="No backup schedules yet." />
+          <app-state-message kind="empty" headline="No backup schedules yet." detail="A schedule backs up an installed app on a fixed interval. Install an app from the catalog first." actionLabel="Browse the catalog" actionLink="/catalog" />
         </li>
       }
     </ul>
-  }
+  
+  </app-loading>
 
   @if (inspected(); as one) {
     <h2>Schedule detail: {{ one.package }}</h2>
@@ -201,9 +200,9 @@
   </p>
   @if (jobsError()) {
     <app-state-message kind="error" [headline]="jobsError()" />
-  } @else if (jobsLoading() && jobs().length === 0) {
-    <app-state-message kind="loading" headline="Loading scheduled jobs…" />
   } @else {
+    <app-loading [loading]="jobsLoading() && jobs().length === 0" shape="list">
+    @if (!(jobsLoading() && jobs().length === 0)) {
     <ul aria-label="Scheduled jobs">
       @for (job of jobs(); track job.id) {
         <li>
@@ -234,6 +233,8 @@
         </li>
       }
     </ul>
+      }
+    </app-loading>
   }
 
   <h2>Save schedule</h2>

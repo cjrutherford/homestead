@@ -5,6 +5,7 @@
 @import './base.css';
 @import './primitives.css';
 @import './shell.css';
+@import './feedback.css';
 
 /* Wizard progress (S036): the steps read as a row, the current one marked. */
 .wizard-steps {

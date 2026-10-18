@@ -1,9 +1,8 @@
 <section aria-label="Configuration">
   <h1>Configuration</h1>
 
-  @if (loading()) {
-    <app-state-message kind="loading" headline="Loading…" />
-  } @else if (loadError()) {
+  <app-loading [loading]="loading()" shape="fields">
+    @if (loadError()) {
     <app-state-message kind="error" [headline]="loadError()" />
   } @else if (reviewing()) {
     <h2>Review changes</h2>
@@ -39,4 +38,5 @@
       Revert to saved
     </button>
   }
+  </app-loading>
 </section>

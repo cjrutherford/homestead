@@ -2,23 +2,24 @@
   <h1>Status</h1>
 
   @if (error()) {
-    <app-state-message kind="error" [headline]="error()" />
+    <app-state-message kind="error" [headline]="error()" detail="Check that the appliance is on and the service is running." actionLabel="Try again" (action)="load()" />
   } @else {
+    <app-loading [loading]="!health() && !identity()" shape="lines">
     <dl>
       <div>
         <dt>Daemon</dt>
-        <dd>{{ health()?.status ?? '…' }}</dd>
+        <dd>{{ health()?.status }}</dd>
       </div>
       <div>
         <dt>Appliance</dt>
-        <dd>{{ identity()?.state ?? '…' }}</dd>
+        <dd>{{ identity()?.state }}</dd>
       </div>
       <div>
         <dt>Version</dt>
-        <dd>{{ health()?.version ?? identity()?.version ?? '…' }}</dd>
+        <dd>{{ health()?.version ?? identity()?.version }}</dd>
       </div>
     </dl>
-
+    </app-loading>
     @if (report(); as diagnostics) {
       <h2>Diagnostics: {{ diagnostics.overall }}</h2>
       <dl>

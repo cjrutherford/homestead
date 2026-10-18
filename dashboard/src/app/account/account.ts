@@ -5,6 +5,7 @@ import { ApiService, LockoutStatus } from '../core/api.service';
 import { ERROR_CODE_HEADER, WRONG_CURRENT_PASSWORD } from '../core/auth.interceptor';
 import { StateMessage } from '../state/state-message';
 import { THEME_PREFERENCES, ThemePreference, ThemeService } from '../core/theme.service';
+import { Loading } from '../ui/loading';
 
 /** Mirrors auth.MinPasswordLength and MaxPasswordLength (both in bytes). */
 export const MIN_PASSWORD_LENGTH = 12;
@@ -41,7 +42,7 @@ export function relativeUntil(iso: string, now: Date = new Date()): string {
  * form controls only and are cleared after every submit.
  */
 @Component({
-  imports: [StateMessage],
+  imports: [Loading, StateMessage],
   selector: 'app-account',
   templateUrl: './account.html',
   styles: ['section { overflow-wrap: anywhere; }'],
