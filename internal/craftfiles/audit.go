@@ -16,8 +16,10 @@ type Event struct {
 	App      string
 	Method   string
 	Path     string // normalised, relative to the root folder
-	Status   int
-	Bytes    int64
+	// Dest is the normalised MOVE/COPY destination (same form as Path).
+	Dest   string
+	Status int
+	Bytes  int64
 	// Count is how many reads an aggregated entry stands for; 1 otherwise.
 	Count int
 }
@@ -58,7 +60,10 @@ func (a *Auditor) Record(ev Event) {
 	if a == nil || a.Sink == nil {
 		return
 	}
-	if !IsRead(ev.Method) {
+	// Writes are recorded one by one, except requests denied before a
+	// session resolved (no session id): anyone on the LAN can send those,
+	// so they aggregate like reads.
+	if !IsRead(ev.Method) && ev.Session != "" {
 		ev.Count = 1
 		a.Sink(ev)
 		return
@@ -71,7 +76,11 @@ func (a *Auditor) Record(ev Event) {
 	if cur, ok := a.reads[k]; ok {
 		cur.Count++
 		cur.Bytes += ev.Bytes
-		cur.Status = ev.Status
+		// Keep the first non-2xx status: the last one would let a later
+		// success hide an earlier failure within the minute.
+		if cur.Status/100 == 2 && ev.Status/100 != 2 {
+			cur.Status = ev.Status
+		}
 	} else {
 		ev.Count = 1
 		a.reads[k] = &ev

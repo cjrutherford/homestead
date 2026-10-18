@@ -335,6 +335,9 @@ func TestNoSecretsInAuditOrErrorBodies(t *testing.T) {
 		}
 	}
 	for _, ev := range events {
+		if ev.Operator == "unauthenticated" && ev.Session == "" && (ev.Status == 401 || ev.Status == 409) && ev.Path != "" {
+			continue // refused before a session resolved
+		}
 		if ev.Session == "" || ev.Operator != "owner" || ev.App != testApp || ev.Method == "" || ev.Path == "" || ev.Status == 0 {
 			t.Errorf("incomplete audit event: %+v", ev)
 		}

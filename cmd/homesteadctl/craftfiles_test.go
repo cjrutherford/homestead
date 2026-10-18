@@ -78,3 +78,17 @@ func TestCraftFilesCLI(t *testing.T) {
 		t.Fatal("link without a password source must be a usage error")
 	}
 }
+
+func TestCraftFilesCLIInsecureHTTPOptIn(t *testing.T) {
+	url, seen := craftFilesStub(t)
+	pw := filepath.Join(t.TempDir(), "pw")
+	if err := os.WriteFile(pw, []byte("the-app-password\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"--server", url, "craft", "files", "link", "--url", "http://cloud.lan", "--account", "alice", "--password-file", pw}
+	invoke(t, args)
+	invoke(t, append(args, "--allow-insecure-http"))
+	if len(*seen) != 2 || strings.Contains((*seen)[0], `"allow_insecure_http":true`) || !strings.Contains((*seen)[1], `"allow_insecure_http":true`) {
+		t.Fatalf("plan requests: %v", *seen)
+	}
+}

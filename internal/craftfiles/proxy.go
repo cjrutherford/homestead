@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -68,6 +69,56 @@ type Proxy struct {
 	LimitsFn func() Limits
 	Audit    *Auditor
 	Log      *slog.Logger
+	// Sessions, when set, is re-checked while a request runs so revoking
+	// the operator session (logout, password change) cancels in-flight
+	// transfers, not just new requests.
+	Sessions *Sessions
+	// RecheckEvery is that interval (default 30s).
+	RecheckEvery time.Duration
+	// Tick supplies the re-check ticks; tests inject a manual one.
+	Tick func(d time.Duration) (<-chan time.Time, func())
+}
+
+const defaultRecheck = 30 * time.Second
+
+// watch cancels a request when its craft session stops being valid. The
+// returned stop func ends the watcher; revoked reports whether it fired.
+func (p *Proxy) watch(ctx context.Context, cancel context.CancelFunc, sess *Session) (stop func(), revoked *atomic.Bool) {
+	revoked = new(atomic.Bool)
+	if p.Sessions == nil {
+		return func() {}, revoked
+	}
+	every := p.RecheckEvery
+	if every <= 0 {
+		every = defaultRecheck
+	}
+	var ticks <-chan time.Time
+	var stopTick func()
+	if p.Tick != nil {
+		ticks, stopTick = p.Tick(every)
+	} else {
+		t := time.NewTicker(every)
+		ticks, stopTick = t.C, t.Stop
+	}
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticks:
+				if !p.Sessions.Alive(sess) {
+					revoked.Store(true)
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	var once sync.Once
+	return func() { once.Do(func() { close(done); stopTick() }) }, revoked
 }
 
 // Methods is the allowed WebDAV subset.
@@ -154,10 +205,12 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, sess *Session, rel
 		lim = p.LimitsFn()
 	}
 	lim = lim.withDefaults()
-	status, bytesMoved := p.serve(w, r, sess, rel, lim)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	var dest string
+	status, bytesMoved := p.serve(w, r, sess, rel, lim, &dest)
 	p.Audit.Record(Event{
 		Operator: sess.Operator, Session: sess.ID, App: sess.App,
-		Method: r.Method, Path: "/" + rel, Status: status, Bytes: bytesMoved,
+		Method: r.Method, Path: "/" + rel, Dest: dest, Status: status, Bytes: bytesMoved,
 	})
 }
 
@@ -166,7 +219,7 @@ func (p *Proxy) fail(w http.ResponseWriter, status int, msg string) int {
 	return status
 }
 
-func (p *Proxy) serve(w http.ResponseWriter, r *http.Request, sess *Session, rel string, lim Limits) (int, int64) {
+func (p *Proxy) serve(w http.ResponseWriter, r *http.Request, sess *Session, rel string, lim Limits, auditDest *string) (int, int64) {
 	if !sess.acquire(lim.PerSession) {
 		w.Header().Set("Retry-After", "1")
 		return p.fail(w, http.StatusTooManyRequests, "too many concurrent requests for this session"), 0
@@ -188,6 +241,8 @@ func (p *Proxy) serve(w http.ResponseWriter, r *http.Request, sess *Session, rel
 
 	ctx, cancel := context.WithTimeout(r.Context(), lim.Timeout)
 	defer cancel()
+	stopWatch, revoked := p.watch(ctx, cancel, sess)
+	defer stopWatch()
 
 	var body io.Reader
 	var lb *limitedBody
@@ -201,6 +256,7 @@ func (p *Proxy) serve(w http.ResponseWriter, r *http.Request, sess *Session, rel
 		body = lb
 		contentLength = r.ContentLength
 	case "PROPFIND":
+		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(30 * time.Second))
 		buf, err := io.ReadAll(io.LimitReader(r.Body, maxPropfindBody+1))
 		if err != nil || len(buf) > maxPropfindBody {
 			return p.fail(w, http.StatusRequestEntityTooLarge, "request body too large"), 0
@@ -231,10 +287,11 @@ func (p *Proxy) serve(w http.ResponseWriter, r *http.Request, sess *Session, rel
 		req.Header.Set("Depth", depth)
 	}
 	if r.Method == "MOVE" || r.Method == "COPY" {
-		dest, err := p.destination(r, link)
+		dest, destRel, err := p.destination(r, link)
 		if err != nil {
 			return p.fail(w, http.StatusBadRequest, err.Error()), 0
 		}
+		*auditDest = "/" + destRel
 		req.Header.Set("Destination", dest)
 	}
 	req.SetBasicAuth(link.Account, password)
@@ -247,6 +304,8 @@ func (p *Proxy) serve(w http.ResponseWriter, r *http.Request, sess *Session, rel
 			return p.fail(w, http.StatusRequestEntityTooLarge, "file exceeds the upload limit"), lb.n
 		case errors.Is(err, context.DeadlineExceeded):
 			return p.fail(w, http.StatusGatewayTimeout, "Nextcloud did not answer in time"), counted(lb)
+		case revoked.Load():
+			return p.fail(w, http.StatusUnauthorized, "craft session ended"), counted(lb)
 		case errors.Is(err, context.Canceled):
 			return 499, counted(lb)
 		}
@@ -261,6 +320,10 @@ func (p *Proxy) serve(w http.ResponseWriter, r *http.Request, sess *Session, rel
 		return p.fail(w, http.StatusBadGateway, "Nextcloud rejected the stored app password; relink Nextcloud in Homestead"), counted(lb)
 	case resp.StatusCode >= 300 && resp.StatusCode < 400:
 		return p.fail(w, http.StatusBadGateway, "Nextcloud answered with an unexpected redirect"), counted(lb)
+	case resp.StatusCode < 200 || resp.StatusCode > 299:
+		// Never relay an upstream error body: with no Content-Type on a
+		// non-GET it could be sniffed as a page on the craft origin.
+		return p.fail(w, resp.StatusCode, fmt.Sprintf("Nextcloud answered %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))), counted(lb)
 	}
 
 	h := w.Header()
@@ -326,30 +389,31 @@ func (p *Proxy) logf(msg, method string, err error) {
 // destination maps a MOVE/COPY Destination header (an absolute URL or
 // path under the proxy prefix on the same host) to the upstream URL,
 // normalised and confined to the root folder.
-func (p *Proxy) destination(r *http.Request, link Link) (string, error) {
+func (p *Proxy) destination(r *http.Request, link Link) (target, rel string, err error) {
 	raw := r.Header.Get("Destination")
 	if raw == "" {
-		return "", errors.New("Destination header required")
+		return "", "", errors.New("Destination header required")
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", errors.New("invalid Destination")
+		return "", "", errors.New("invalid Destination")
 	}
 	if u.Host != "" && !strings.EqualFold(u.Host, r.Host) {
-		return "", errors.New("Destination must be on this host")
+		return "", "", errors.New("Destination must be on this host")
 	}
 	if hasDotSegment(u.Path) {
-		return "", errors.New("invalid Destination path")
+		return "", "", errors.New("invalid Destination path")
 	}
 	rest, ok := strings.CutPrefix(u.Path, FilesPrefix+"/")
 	if !ok && u.Path != FilesPrefix {
-		return "", errors.New("Destination must be under the files path")
+		return "", "", errors.New("Destination must be under the files path")
 	}
-	rel, err := CleanRel(rest)
+	rel, err = CleanRel(rest)
 	if err != nil || rel == "" {
-		return "", errors.New("invalid Destination path")
+		return "", "", errors.New("invalid Destination path")
 	}
-	return upstreamURL(link, rel)
+	target, err = upstreamURL(link, rel)
+	return target, rel, err
 }
 
 // NewClient returns the upstream client: no redirects followed (a

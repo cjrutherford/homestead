@@ -202,8 +202,15 @@
 
   // ---- save ----------------------------------------------------------
 
+  // A save name is one file name: never a path, dot segment or control
+  // character (the daemon refuses these too; this keeps them from being sent).
+  function validName(n) {
+    return n !== '' && n !== '.' && n !== '..' && !/[\/\\\u0000-\u001f\u007f]/.test(n);
+  }
+
   function saveFromApp(msg) {
     var name = typeof msg.name === 'string' && msg.name ? baseName(msg.name) : 'Document';
+    if (!validName(name)) { say('Not saved: "' + name + '" is not a valid file name.'); return; }
     var buf = msg.bytes;
     if (!(buf instanceof ArrayBuffer) && !(buf instanceof Uint8Array)) { return; }
     var overwrite = current && !msg.saveAs && baseName(current.path) === name;

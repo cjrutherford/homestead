@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -94,6 +95,10 @@ type PlanRequest struct {
 	// CreateAppPassword approves the daemon creating the app password
 	// through Nextcloud's app-password endpoint.
 	CreateAppPassword bool `json:"create_app_password"`
+	// AllowInsecureHTTP is the owner's explicit opt-in to a plain http://
+	// Nextcloud address that is not on this machine: the app password
+	// then crosses the network unencrypted. Loopback needs no opt-in.
+	AllowInsecureHTTP bool `json:"allow_insecure_http"`
 }
 
 // Plan is a reviewable, approvable link change.
@@ -104,6 +109,7 @@ type Plan struct {
 	Account   string    `json:"account"`
 	Root      string    `json:"root"`
 	Create    bool      `json:"create_app_password"`
+	Insecure  bool      `json:"allow_insecure_http,omitempty"`
 	Summary   []string  `json:"summary"`
 	Warnings  []string  `json:"warnings"`
 	ExpiresAt time.Time `json:"expires_at"`
@@ -241,18 +247,38 @@ func (m *Manager) Status() (Status, error) {
 	return st, nil
 }
 
-func validateBaseURL(raw string) (string, error) {
-	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
-		u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return "", fmt.Errorf("%w: base_url must be an http(s) URL of your Nextcloud without credentials, query or fragment", ErrInput)
+// isLoopbackHost reports hosts that name this machine itself, where plain
+// http never leaves it.
+func isLoopbackHost(h string) bool {
+	if strings.EqualFold(h, "localhost") {
+		return true
 	}
-	u.Path = strings.TrimSuffix(u.Path, "/")
-	return u.String(), nil
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
 }
 
+// validateBaseURL requires https, except loopback hosts, or any http host
+// when the owner opted in (insecure reports that the opt-in was needed).
+func validateBaseURL(raw string, allowHTTP bool) (base string, insecure bool, err error) {
+	u, perr := url.Parse(strings.TrimSpace(raw))
+	if perr != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
+		u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", false, fmt.Errorf("%w: base_url must be an http(s) URL of your Nextcloud without credentials, query or fragment", ErrInput)
+	}
+	if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
+		if !allowHTTP {
+			return "", false, fmt.Errorf("%w: base_url must use https: the app password would cross the network unencrypted (an http address is accepted only on this machine, or with allow_insecure_http)", ErrInput)
+		}
+		insecure = true
+	}
+	u.Path = strings.TrimSuffix(u.Path, "/")
+	return u.String(), insecure, nil
+}
+
+const insecureWarning = "INSECURE: this Nextcloud address uses plain http, so the app password and every document cross your network unencrypted and can be read or changed by anything on that path. Use https unless you accept this."
+
 func validateAccount(a string) error {
-	if a == "" || len(a) > 128 || strings.ContainsAny(a, "/\\:") {
+	if a == "" || a == "." || a == ".." || len(a) > 128 || strings.ContainsAny(a, "/\\:") {
 		return fmt.Errorf("%w: account must be a Nextcloud account name", ErrInput)
 	}
 	for _, r := range a {
@@ -282,7 +308,7 @@ func (m *Manager) Plan(req PlanRequest, actor string) (Plan, error) {
 		if linked {
 			return Plan{}, ErrAlreadyLinked
 		}
-		base, err := validateBaseURL(req.BaseURL)
+		base, insecure, err := validateBaseURL(req.BaseURL, req.AllowInsecureHTTP)
 		if err != nil {
 			return Plan{}, err
 		}
@@ -302,6 +328,10 @@ func (m *Manager) Plan(req PlanRequest, actor string) (Plan, error) {
 			p.Summary = append(p.Summary, "Homestead will create the app password with your account password, used once and not kept.")
 		}
 		p.Warnings = []string{"Homestead enters the file path: it reads and writes your documents on your behalf, within that folder only."}
+		if insecure {
+			p.Insecure = true
+			p.Warnings = append([]string{insecureWarning}, p.Warnings...)
+		}
 	case ActionRotate:
 		if !linked {
 			return Plan{}, ErrNotLinked
@@ -317,6 +347,12 @@ func (m *Manager) Plan(req PlanRequest, actor string) (Plan, error) {
 			if root, err = CleanRel(req.Root); err != nil || root == "" {
 				return Plan{}, fmt.Errorf("%w: invalid root folder", ErrInput)
 			}
+		}
+		if _, insecure, err := validateBaseURL(cur.BaseURL, req.AllowInsecureHTTP); err != nil {
+			return Plan{}, fmt.Errorf("%w: the linked address is plain http; confirm allow_insecure_http to rotate, or unlink and link over https", ErrInput)
+		} else if insecure {
+			p.Insecure = true
+			p.Warnings = append(p.Warnings, insecureWarning)
 		}
 		p.BaseURL, p.Account, p.Root, p.Create = cur.BaseURL, cur.Account, root, req.CreateAppPassword
 		p.Summary = []string{fmt.Sprintf("Replace the sealed app password for %q at %s.", cur.Account, cur.BaseURL)}
@@ -446,15 +482,19 @@ func (m *Manager) unlink(ctx context.Context) error {
 	if !ok {
 		return ErrNotLinked
 	}
+	// Order matters so a failure never orphans the credential: revoke the
+	// daemon-created app password in Nextcloud (best effort), delete the
+	// sealed secret, and only then forget the row. Any failure leaves the
+	// row in place, so unlinking again retries the remaining steps.
 	pw, _ := m.Secrets.Get(SecretName)
-	if _, err := m.DB.Exec(`DELETE FROM craft_file_link WHERE id = 1`); err != nil {
-		return fmt.Errorf("craftfiles: remove link: %w", err)
+	if old.DaemonCreated && pw != "" {
+		_ = (&nextcloud{client: m.Client(), link: old.Link, password: pw}).revoke(ctx)
 	}
 	if err := m.Secrets.Delete(SecretName); err != nil && !strings.Contains(err.Error(), "not found") {
 		return fmt.Errorf("craftfiles: delete credential: %w", err)
 	}
-	if old.DaemonCreated && pw != "" {
-		_ = (&nextcloud{client: m.Client(), link: old.Link, password: pw}).revoke(ctx)
+	if _, err := m.DB.Exec(`DELETE FROM craft_file_link WHERE id = 1`); err != nil {
+		return fmt.Errorf("craftfiles: remove link: %w", err)
 	}
 	return m.renderYAML()
 }

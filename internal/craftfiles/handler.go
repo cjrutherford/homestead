@@ -44,6 +44,15 @@ type Handler struct {
 	// Info reports the link state for an app; errors fail closed.
 	Info func(app string) (SessionInfo, error)
 	Log  *slog.Logger
+	// Audit, when set, records requests denied before the proxy ran.
+	Audit *Auditor
+}
+
+// deny audits a request refused before Serve. Only the method, the
+// normalised path and the status are recorded: never a launch code or
+// cookie value.
+func (h *Handler) deny(r *http.Request, app, path string, status int) {
+	h.Audit.Record(Event{Operator: "unauthenticated", App: app, Method: r.Method, Path: path, Status: status, Count: 1})
 }
 
 // Route is one pattern and its handler, so the server registers them on
@@ -105,9 +114,13 @@ func (h *Handler) Guard(next http.Handler) http.Handler {
 			http.Error(w, "host does not match the craft host", http.StatusMisdirectedRequest)
 			return
 		}
-		scheme := "http"
-		if strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-			scheme = "https"
+		// The edge sets X-Forwarded-Proto from the route's own TLS mode
+		// (header_up replaces anything the client sent); anything else
+		// means the request did not come through a craft route.
+		scheme := strings.ToLower(r.Header.Get("X-Forwarded-Proto"))
+		if scheme != "http" && scheme != "https" {
+			http.Error(w, "not served through a craft route", http.StatusBadRequest)
+			return
 		}
 		if r.Method == http.MethodOptions {
 			// Preflights are never answered; the design is same-origin.
@@ -154,6 +167,7 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) (*Session, b
 	id := edgeFrom(r.Context())
 	c, err := r.Cookie(CookieName)
 	if err != nil {
+		h.denyFile(r, id.app, http.StatusUnauthorized)
 		http.Error(w, "craft session required", http.StatusUnauthorized)
 		return nil, false
 	}
@@ -162,12 +176,28 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) (*Session, b
 	case err == nil:
 		return sess, true
 	case errors.Is(err, ErrOperatorUnavailable):
+		h.denyFile(r, id.app, http.StatusServiceUnavailable)
 		http.Error(w, "session check unavailable", http.StatusServiceUnavailable)
 	default:
+		h.denyFile(r, id.app, http.StatusUnauthorized)
 		clearCookie(w, id.scheme)
 		http.Error(w, "craft session required", http.StatusUnauthorized)
 	}
 	return nil, false
+}
+
+// denyFile audits a refused request by its normalised path, or a fixed
+// placeholder when the path does not normalise.
+func (h *Handler) denyFile(r *http.Request, app string, status int) {
+	path := SessionPath
+	if v, ok := strings.CutPrefix(r.URL.Path, FilesPrefix); ok {
+		if rel, err := CleanRel(strings.TrimPrefix(v, "/")); err == nil {
+			path = "/" + rel
+		} else {
+			path = "/?"
+		}
+	}
+	h.deny(r, app, path, status)
 }
 
 func clearCookie(w http.ResponseWriter, scheme string) {
@@ -177,6 +207,9 @@ func clearCookie(w http.ResponseWriter, scheme string) {
 
 func (h *Handler) exchange(w http.ResponseWriter, r *http.Request) {
 	id := edgeFrom(r.Context())
+	// The listener has no server-wide ReadTimeout (transfers stream), so
+	// the small control body gets its own deadline.
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(10 * time.Second))
 	var body struct {
 		Code string `json:"code"`
 	}
@@ -201,6 +234,7 @@ func (h *Handler) exchange(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session check unavailable", http.StatusServiceUnavailable)
 		return
 	default:
+		h.deny(r, id.app, SessionPath, http.StatusUnauthorized)
 		http.Error(w, "invalid or expired launch code", http.StatusUnauthorized)
 		return
 	}

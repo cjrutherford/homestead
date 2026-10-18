@@ -63,6 +63,10 @@
             <input type="checkbox" name="create" [checked]="createPassword" (change)="createPassword = $any($event.target).checked" />
             Let Homestead create the app password
           </label>
+          <label>
+            <input type="checkbox" name="insecure" [checked]="allowInsecure" (change)="allowInsecure = $any($event.target).checked" />
+            I accept plain http (only for a Nextcloud address not on this appliance; the app password then crosses the network unencrypted)
+          </label>
           <button type="submit" [disabled]="busy()">Review link</button>
         </form>
       } @else {
@@ -81,6 +85,10 @@
           <label>
             <input type="checkbox" name="rotate-create" [checked]="createPassword" (change)="createPassword = $any($event.target).checked" />
             Let Homestead create the app password
+          </label>
+          <label>
+            <input type="checkbox" name="rotate-insecure" [checked]="allowInsecure" (change)="allowInsecure = $any($event.target).checked" />
+            I accept plain http (only for a Nextcloud address not on this appliance; the app password then crosses the network unencrypted)
           </label>
           <button type="submit" [disabled]="busy()">Review rotation</button>
           <button type="button" [disabled]="busy()" (click)="review('unlink')">Review unlink</button>

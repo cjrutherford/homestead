@@ -148,11 +148,45 @@ as a stream with the client's length, or chunked). No whole-file buffering.
 | `craft_files_timeout_minutes` | 30 | one request's end-to-end bound; exceeded is 504 |
 | `craft_files_per_session` | 8 | concurrent requests per craft session; more get 429 with `Retry-After` |
 
+### Transport to Nextcloud
+
+The link requires an `https://` address. The daemon refuses `http://` unless
+the host is this machine (`localhost`, `127.0.0.0/8`, `::1`) or the plan
+carries the owner's explicit `allow_insecure_http: true` (CLI
+`--allow-insecure-http`, a dashboard checkbox); that plan carries an
+`INSECURE` warning first, and rotating such a link needs the opt-in again.
+
+**The appliance's own Nextcloud.** The documented link address is
+`https://nextcloud.lan` (the package's edge route, `tls internal`, S280). The
+daemon runs on the host and resolves that name through the appliance's own
+resolver. Its upstream HTTP client (`Upstream`) trusts the Homestead internal
+CA root (ADR-030) in addition to the system roots and rebuilds when the CA
+rotates, so the certificate verifies with no `insecure skip verify` anywhere.
+If the Nextcloud route is plain `http` (TLS off), link
+`http://127.0.0.1:<published port>` instead (loopback needs no opt-in) or turn
+the route's TLS on.
+
+### Responses
+
+Upstream non-2xx answers (other than the handled 401 and redirects) are not
+relayed: the browser gets a fixed `text/plain` line with the status, and every
+proxy response carries `X-Content-Type-Options: nosniff`. The scheme the
+handler trusts is `X-Forwarded-Proto`, which the edge sets with `header_up`
+from the route's own TLS mode (anything else is refused). While a request
+runs, its craft session is re-verified every 30 seconds, so logout or a
+password change cancels in-flight transfers; a password change also revokes
+the changer's own craft sessions and pending launch codes. `--craft-socket`
+must be the one path the edge mounts.
+
 ### Audit
 
 Each write (`PUT`, `MKCOL`, `DELETE`, `MOVE`, `COPY`) is audited as
 `craftfiles.file` with actor (operator username), craft app, a short
-non-secret session id, method, normalised path, status and byte count. Reads
+non-secret session id, method, normalised path (and, for `MOVE`/`COPY`, the
+normalised destination), status and byte count. Requests refused before the
+proxy ran (no or unknown cookie, bad launch code) are audited by actor
+`unauthenticated`, method, normalised path and status only, aggregated per
+minute. An aggregated read keeps the first non-2xx status. Reads
 (`GET`, `HEAD`, `PROPFIND`) are aggregated per session, path and minute and
 flushed with a count. File content, the app password, cookies and launch
 codes are never logged or audited, and error bodies are the daemon's own

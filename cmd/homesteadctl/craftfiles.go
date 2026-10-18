@@ -13,8 +13,8 @@ import (
 
 const craftFilesUsage = `usage: homesteadctl craft files <status|link|rotate|unlink|local-only|launch> ...
   status
-  link --url URL --account NAME [--root FOLDER] (--password-file FILE | --create-app-password --login-password-file FILE) [--yes]
-  rotate (--password-file FILE | --create-app-password --login-password-file FILE) [--root FOLDER] [--yes]
+  link --url URL --account NAME [--root FOLDER] [--allow-insecure-http] (--password-file FILE | --create-app-password --login-password-file FILE) [--yes]
+  rotate (--password-file FILE | --create-app-password --login-password-file FILE) [--root FOLDER] [--allow-insecure-http] [--yes]
   unlink [--yes]
   local-only APP on|off
   launch APP`
@@ -102,11 +102,12 @@ func runCraftFilesChange(ctx context.Context, client *apiclient.Client, action s
 	passwordFile := set.String("password-file", "", "file holding the Nextcloud app password")
 	create := set.Bool("create-app-password", false, "have Homestead create the app password (needs --login-password-file)")
 	loginFile := set.String("login-password-file", "", "file holding the account password, used once and not kept")
+	insecure := set.Bool("allow-insecure-http", false, "accept a plain http:// Nextcloud address that is not on this machine (the app password then crosses the network unencrypted)")
 	yes := set.Bool("yes", false, "approve the plan without asking")
 	if err := set.Parse(args); err != nil {
 		return exitUsage
 	}
-	req := craftfiles.PlanRequest{Action: action, BaseURL: *url, Account: *account, Root: *root, CreateAppPassword: *create}
+	req := craftfiles.PlanRequest{Action: action, BaseURL: *url, Account: *account, Root: *root, CreateAppPassword: *create, AllowInsecureHTTP: *insecure}
 	if action == craftfiles.ActionLink && req.Root == "" {
 		req.Root = "Homestead"
 	}

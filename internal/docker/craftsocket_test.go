@@ -32,6 +32,7 @@ gridcraft.lan {
 		reverse_proxy unix//run/homestead-craft/files.sock {
 			header_up X-Homestead-Craft-App gridcraft
 			header_up X-Homestead-Craft-Host gridcraft.lan
+			header_up X-Forwarded-Proto https
 		}
 	}
 	handle {
@@ -175,5 +176,17 @@ func TestRenderCraftRouteDeniedPolicyServesNothing(t *testing.T) {
 	}
 	if strings.Contains(got, "_homestead") || strings.Contains(got, "unix/") {
 		t.Fatalf("a deny-all policy must not forward the craft file path:\n%s", got)
+	}
+}
+
+func TestRenderCraftRouteSetsForwardedProtoFromTLSMode(t *testing.T) {
+	r := craftRoute(nil)
+	r.TLS = TLSOff
+	got, err := RenderRoute(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "header_up X-Forwarded-Proto http\n") || strings.Contains(got, "X-Forwarded-Proto https") {
+		t.Fatalf("plain-http craft route:\n%s", got)
 	}
 }

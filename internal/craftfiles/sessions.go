@@ -51,6 +51,8 @@ type Session struct {
 	Operator string // operator username, for audit
 
 	opToken  string
+	username string
+	key      [32]byte
 	expires  time.Time
 	inflight atomic.Int32
 }
@@ -175,7 +177,7 @@ func (s *Sessions) Exchange(code, app, host string) (string, *Session, error) {
 	}
 	sess := &Session{
 		ID: hex.EncodeToString(h[:4]), App: app, Host: host, Operator: l.username,
-		opToken: l.opToken, expires: exp,
+		opToken: l.opToken, username: l.username, key: h, expires: exp,
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -253,3 +255,45 @@ func (s *Session) acquire(limit int) bool {
 }
 
 func (s *Session) release() { s.inflight.Add(-1) }
+
+// Alive re-verifies a running request's session: it must still be held,
+// unexpired, and bound to an operator session that still verifies. A
+// transient failure to check counts as alive (the next tick retries);
+// the check only ever ends sessions, never extends them.
+func (s *Sessions) Alive(sess *Session) bool {
+	s.mu.Lock()
+	cur, ok := s.sessions[sess.key]
+	s.mu.Unlock()
+	if !ok || cur != sess || !sess.expires.After(s.now()) {
+		return false
+	}
+	if _, err := s.Operator.Check(sess.opToken); err != nil && !errors.Is(err, ErrOperatorUnavailable) {
+		s.mu.Lock()
+		delete(s.sessions, sess.key)
+		s.mu.Unlock()
+		return false
+	}
+	return true
+}
+
+// RevokeOperator ends every craft session and pending launch code of an
+// operator: the password change calls it, because the operator session
+// that made the change survives it.
+func (s *Sessions) RevokeOperator(username string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for k, sess := range s.sessions {
+		if sess.username == username {
+			delete(s.sessions, k)
+			n++
+		}
+	}
+	for k, l := range s.codes {
+		if l.username == username {
+			delete(s.codes, k)
+			n++
+		}
+	}
+	return n
+}

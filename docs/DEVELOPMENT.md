@@ -3958,3 +3958,19 @@ app password in Nextcloud makes the proxy answer 502 `auth-rejected`, and
 that Caddy actually reaches the unix socket through the read-only mount (the
 step the unit tests cannot cover). Check the Chromium console for CSP
 violations from the wrapper.
+
+### S254 review fixes
+
+Security review of S254 fixed: https required for the Nextcloud link
+(loopback or explicit `allow_insecure_http` opt-in, INSECURE plan warning);
+in-flight requests re-verify their session every 30 s and are cancelled on
+revocation; upstream non-2xx bodies are replaced by a fixed text/plain
+message and all proxy responses are nosniff; account `.`/`..` refused; the
+scheme comes from an edge-set `X-Forwarded-Proto` (`header_up`); audit gains
+the MOVE/COPY destination, denied-request events and first-failure read
+aggregation; unlink deletes the secret before the row; the wrapper validates
+save names; `--craft-socket` is pinned to the mounted path, the socket has
+idle and header limits plus per-request read deadlines, and a password
+change revokes the changer's craft sessions. Craft manifest prepared unsigned
+at counter 8 (`context_digest` `sha256:440467bc...`); the owner signs it.
+

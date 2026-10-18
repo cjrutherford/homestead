@@ -518,3 +518,13 @@
   five hooked apps only (by upstream name and port 8080); other craft routes
   need the field from a fresh install plan, which only matters if they ever
   gain a hook.
+
+## S254 review follow-ups
+
+- ADR-032 mentions adding the `homestead-craft` group to the Caddy service
+  with `group_add`. That is a design statement, not a typo, so the accepted
+  record is left as written; a superseding ADR should reword it if the
+  unprivileged-edge case is ever supported (the edge runs as root today).
+- The owner's plain-http opt-in is not persisted: rotating a link that was
+  made with `allow_insecure_http` asks for the flag again. A stored flag
+  would need a schema change.

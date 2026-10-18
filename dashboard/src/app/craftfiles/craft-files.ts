@@ -30,6 +30,7 @@ export class CraftFiles implements OnInit {
   protected account = '';
   protected root = 'Homestead';
   protected createPassword = false;
+  protected allowInsecure = false;
   protected appPassword = '';
   protected accountPassword = '';
 
@@ -57,6 +58,7 @@ export class CraftFiles implements OnInit {
         account: action === 'link' ? this.account : undefined,
         root: action === 'unlink' ? undefined : this.root,
         create_app_password: action === 'unlink' ? undefined : this.createPassword,
+        allow_insecure_http: action === 'unlink' || !this.allowInsecure ? undefined : true,
       })
       .subscribe({
         next: (plan) => {

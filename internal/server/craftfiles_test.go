@@ -289,6 +289,45 @@ func TestCraftSessionEndsWithPasswordChange(t *testing.T) {
 	a.launch(t, login.Token)
 }
 
+// The changer's own operator session survives a password change, so the
+// craft sessions bound to it are revoked explicitly.
+func TestCraftSessionOfTheChangingSessionEndsWithPasswordChange(t *testing.T) {
+	a := newCraftApp(t)
+	a.link(t)
+	rec := a.do(http.MethodPost, "/api/v1/sessions", `{"username":"owner","password":"long-enough-password"}`, nil)
+	var login struct{ Token string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &login)
+	if login.Token == "" {
+		t.Fatalf("second login: %d %s", rec.Code, rec.Body.String())
+	}
+	cookie := a.exchange(t, a.launch(t, login.Token))
+	pending := a.launch(t, login.Token)
+	if rec := a.edge(http.MethodGet, "/_homestead/files/f/Book.xlsx", "", cookie); rec.Code == 401 {
+		t.Fatal("fresh craft session refused")
+	}
+	if code, body := a.api(t, http.MethodPost, "/api/v1/admins/password",
+		map[string]string{"current_password": "long-enough-password", "new_password": "another-long-password"}, login.Token); code != 200 {
+		t.Fatalf("password change = %d %s", code, body)
+	}
+	if rec := a.edge(http.MethodGet, "/_homestead/files/f/Book.xlsx", "", cookie); rec.Code != 401 {
+		t.Fatalf("craft session bound to the changing session = %d, want 401", rec.Code)
+	}
+	if rec := a.edge(http.MethodPost, craftfiles.SessionPath, `{"code":"`+pending+`"}`, nil); rec.Code != 401 {
+		t.Fatalf("pending launch code after password change = %d, want 401", rec.Code)
+	}
+}
+
+func TestCraftSocketPathIsPinned(t *testing.T) {
+	if err := ValidateCraftSocketPath(docker.CraftSocketPath); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"/tmp/x.sock", "/run/other/files.sock", "/etc/passwd", "files.sock", "/run/homestead-craft/../homestead/homestead.sock", ""} {
+		if err := ValidateCraftSocketPath(p); err == nil {
+			t.Errorf("craft socket path %q accepted", p)
+		}
+	}
+}
+
 func TestCraftCookieRequiresTheCraftHost(t *testing.T) {
 	a := newCraftApp(t)
 	a.link(t)
@@ -388,6 +427,7 @@ func TestCraftSocketServesOnlyCraftPaths(t *testing.T) {
 		if edge {
 			req.Header.Set("X-Homestead-Craft-App", "gridcraft")
 			req.Header.Set("X-Homestead-Craft-Host", cfHost)
+			req.Header.Set("X-Forwarded-Proto", "https")
 		}
 		resp, err := client.Do(req)
 		if err != nil {

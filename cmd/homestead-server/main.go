@@ -59,6 +59,9 @@ func main() {
 }
 
 func run(listen, configPath, dataDir, socketPath, craftSocket, catalogDir string) error {
+	if err := server.ValidateCraftSocketPath(craftSocket); err != nil {
+		return err
+	}
 	// The state directory is provisioned by S012 and never created here:
 	// a missing data dir fails loudly instead of scattering state.
 	st, err := store.Open(filepath.Join(dataDir, store.DBFileName))

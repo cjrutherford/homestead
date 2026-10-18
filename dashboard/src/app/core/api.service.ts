@@ -253,6 +253,7 @@ export interface CraftFilesPlanRequest {
   account?: string;
   root?: string;
   create_app_password?: boolean;
+  allow_insecure_http?: boolean;
 }
 
 export interface CraftFilesPlan {

@@ -293,11 +293,11 @@ func newEnv(t *testing.T, lim Limits) *env {
 		Link:     func() (Link, bool, error) { return link, e.linked, nil },
 		Password: func() (string, error) { return testPassword, nil },
 		Client:   func() *http.Client { return NewClient(nil) },
-		Limits:   lim, Audit: e.auditor,
+		Limits:   lim, Audit: e.auditor, Sessions: e.ses,
 	}
 	e.handler = &Handler{Sessions: e.ses, Proxy: e.proxy, Info: func(string) (SessionInfo, error) {
 		return SessionInfo{Linked: e.linked, LocalOnly: e.local, Root: "Homestead", MaxUpload: lim.MaxUpload}, nil
-	}}
+	}, Audit: e.auditor}
 	mux := http.NewServeMux()
 	for _, r := range e.handler.Routes() {
 		mux.HandleFunc(r.Pattern, r.Handler)

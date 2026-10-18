@@ -71,8 +71,14 @@ func renderRoute(r Route, cert *PlacedCert) (string, error) {
 		// The craft file path goes ahead of the upstream and inside the
 		// exposure policy wrapper (ADR-032). header_up replaces anything
 		// the client sent, so the daemon can trust the app and host.
-		wrapped := fmt.Sprintf("\thandle %s* {\n\t\treverse_proxy unix/%s {\n\t\t\theader_up %s %s\n\t\t\theader_up %s %s\n\t\t}\n\t}\n\thandle {\n",
-			CraftFilesPrefix, CraftSocketPath, CraftAppHeader, r.CraftApp, CraftHostHeader, r.Host)
+		// X-Forwarded-Proto is set from the route's own TLS mode, never
+		// from what the client sent.
+		scheme := "https"
+		if r.TLS == TLSOff {
+			scheme = "http"
+		}
+		wrapped := fmt.Sprintf("\thandle %s* {\n\t\treverse_proxy unix/%s {\n\t\t\theader_up %s %s\n\t\t\theader_up %s %s\n\t\t\theader_up X-Forwarded-Proto %s\n\t\t}\n\t}\n\thandle {\n",
+			CraftFilesPrefix, CraftSocketPath, CraftAppHeader, r.CraftApp, CraftHostHeader, r.Host, scheme)
 		for _, line := range strings.Split(strings.TrimSuffix(proxy.String(), "\n"), "\n") {
 			wrapped += "\t" + line + "\n"
 		}

@@ -128,7 +128,7 @@ func (s *Server) MountCraftFiles(c CraftFilesConfig) *CraftFiles {
 	}}
 	proxy := &craftfiles.Proxy{
 		Link: mgr.CurrentLink, Password: mgr.Password, Client: up.Client,
-		Limits: limits, Audit: auditor, Log: s.log,
+		Limits: limits, Audit: auditor, Log: s.log, Sessions: sessions,
 	}
 	if c.Settings != nil {
 		proxy.LimitsFn = limitsCache(c.Settings, limits)
@@ -145,7 +145,7 @@ func (s *Server) MountCraftFiles(c CraftFilesConfig) *CraftFiles {
 		}
 		return i, err
 	}
-	h := &craftfiles.Handler{Sessions: sessions, Proxy: proxy, Info: info, Log: s.log}
+	h := &craftfiles.Handler{Sessions: sessions, Proxy: proxy, Info: info, Log: s.log, Audit: auditor}
 	cf := &CraftFiles{Manager: mgr, Sessions: sessions, Handler: h, Auditor: auditor}
 	s.files = cf
 
@@ -283,6 +283,25 @@ func (s *Server) craftClassified() http.Handler {
 	})
 }
 
+// ValidateCraftSocketPath pins --craft-socket to the one path the edge
+// mounts: RunCraftSocket removes a stale socket and changes the directory's
+// mode and group, which must never touch an arbitrary path.
+func ValidateCraftSocketPath(p string) error {
+	if filepath.Clean(p) != docker.CraftSocketPath {
+		return fmt.Errorf("craft socket must be %s (the path the edge container mounts), got %q", docker.CraftSocketPath, p)
+	}
+	return nil
+}
+
+// RevokeCraftSessions ends an operator's craft sessions and pending
+// launch codes (a password change keeps the operator session, so it must
+// end them explicitly).
+func (s *Server) RevokeCraftSessions(username string) {
+	if s.files != nil {
+		s.files.Sessions.RevokeOperator(username)
+	}
+}
+
 // RunCraftSocket serves the craft file handlers on the dedicated socket
 // until ctx ends (ADR-032): directory 0750, socket 0660, group
 // homestead-craft when it exists. A stale socket is replaced; the
@@ -325,7 +344,13 @@ func (s *Server) RunCraftSocket(ctx context.Context, socketPath string) error {
 	}
 	done := make(chan struct{})
 	go func() { defer close(done); s.files.Auditor.Run(ctx) }()
-	hs := &http.Server{Handler: s.craftHTTP.Handler, ReadHeaderTimeout: 5 * time.Second}
+	// No ReadTimeout/WriteTimeout: uploads and downloads stream for as long
+	// as the proxy's per-request timeout allows (ADR-029); that timeout
+	// and the handler's per-request read deadlines bound each request.
+	hs := &http.Server{
+		Handler: s.craftHTTP.Handler, ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 32 << 10,
+	}
 	err = s.serve(ctx, ln, hs, "craft")
 	<-done
 	return err

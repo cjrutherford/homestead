@@ -279,6 +279,7 @@ func (s *Server) handleChangePassword(svc *auth.Service) http.HandlerFunc {
 			}
 			return
 		}
+		s.RevokeCraftSessions(admin.Username)
 		writeJSON(w, map[string]any{"id": admin.ID, "username": admin.Username})
 	}
 }

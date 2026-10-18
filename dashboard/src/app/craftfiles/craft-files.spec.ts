@@ -96,6 +96,26 @@ describe('CraftFiles', () => {
     expect((fixture.componentInstance as unknown as { appPassword: string }).appPassword).toBe('');
   });
 
+  it('sends the plain-http opt-in only when the owner ticks it', () => {
+    const el = load(UNLINKED);
+    const set = (name: string, value: string) => {
+      const input = el.querySelector(`input[name="${name}"]`) as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+    };
+    set('base-url', 'http://cloud.example');
+    set('account', 'alice');
+    const box = el.querySelector('input[name="insecure"]') as HTMLInputElement;
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    (el.querySelector('form') as HTMLFormElement).dispatchEvent(new Event('submit'));
+    const planReq = http.expectOne('/api/v1/craft/files/plan');
+    expect(planReq.request.body.allow_insecure_http).toBe(true);
+    planReq.flush({ id: 'p2', action: 'link', summary: [], warnings: ['INSECURE: plain http.'] });
+    fixture.detectChanges();
+    expect(el.textContent).toContain('INSECURE: plain http.');
+  });
+
   it('launches an app in a new window and toggles the browser-local opt-out', () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
     const el = load(LINKED);

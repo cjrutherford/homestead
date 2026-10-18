@@ -52,6 +52,12 @@ class TestWrapper(unittest.TestCase):
         self.assertLess(JS.index("history.replaceState"), JS.index("FILES + '/session'", JS.index("history.replaceState")))
         self.assertIn("credentials: 'same-origin'", JS)
 
+    def test_save_names_are_validated_client_side(self):
+        body = JS[JS.index("function validName"):JS.index("function saveFromApp")]
+        for needle in ("n !== '.'", "n !== '..'", "\\/", "\\\\", "\\u0000-\\u001f"):
+            self.assertIn(needle, body)
+        self.assertIn("if (!validName(name))", JS[JS.index("function saveFromApp"):])
+
     def test_only_same_origin_urls(self):
         self.assertNotRegex(JS + HTML, r"https?://(?!\*)")
 
