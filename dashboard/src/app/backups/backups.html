@@ -1,5 +1,5 @@
 <section aria-label="Backups">
-  <h2>Backups</h2>
+  <h1>Backups</h1>
   <p>
     Backups land on the storage you assigned the backup class. These
     controls configure destination and schedules; they do not run a
@@ -13,7 +13,7 @@
     <app-state-message kind="status" [headline]="notice()" />
   }
 
-  <h3>Destination</h3>
+  <h2>Destination</h2>
   @if (destination(); as root) {
     <p>Backup root: <code class="backup-root">{{ root }}</code></p>
     @if (encryption(); as scheme) {
@@ -25,7 +25,7 @@
     <app-state-message kind="loading" headline="Resolving destination…" />
   }
 
-  <h3>Recipients and recovery</h3>
+  <h2>Recipients and recovery</h2>
   <p>
     Every new backup run is encrypted to the appliance identity and to each
     owner recipient below. Existing runs are not re-encrypted. The appliance
@@ -48,13 +48,15 @@
           <code>{{ row.public_key }}</code> ({{ row.fingerprint }})
           @if (row.kind === 'owner') {
             @if (confirmingRecipient() === row.fingerprint) {
-              <span role="alertdialog" [attr.aria-label]="'Confirm removal of recipient ' + row.fingerprint">
-                Remove this recipient? Later runs will not be readable by it.
-                <button type="button" (click)="removeRecipient(row.fingerprint)" [disabled]="busy()">
-                  Confirm remove recipient
-                </button>
-                <button type="button" (click)="cancelRemoveRecipient()" [disabled]="busy()">Cancel</button>
-              </span>
+              <app-dialog heading="Remove this recipient?" variant="danger" (dismissed)="cancelRemoveRecipient()">
+                <p>Later runs will not be readable by recipient <span class="mono">{{ row.fingerprint }}</span>.</p>
+                <div class="dialog-actions">
+                  <button type="button" class="danger" (click)="removeRecipient(row.fingerprint)" [disabled]="busy()">
+                    Confirm remove recipient
+                  </button>
+                  <button type="button" class="quiet" (click)="cancelRemoveRecipient()" [disabled]="busy()">Cancel</button>
+                </div>
+              </app-dialog>
             } @else {
               <button type="button" (click)="askRemoveRecipient(row.fingerprint)" [disabled]="busy()">
                 Remove recipient
@@ -81,7 +83,7 @@
     <button type="submit" [disabled]="busy()">Add recipient</button>
   </form>
 
-  <h4>Recovery identity</h4>
+  <h3>Recovery identity</h3>
   @if (identity(); as status) {
     @if (!status.created) {
       <p>The appliance identity is created by the first backup or by the first export.</p>
@@ -114,19 +116,23 @@
       <button type="button" (click)="dismissExport()">Dismiss without confirming</button>
     </div>
   } @else if (confirmingExport()) {
-    <span role="alertdialog" aria-label="Confirm identity export">
-      This reveals the key that decrypts every backup, and the export is
-      audited. Continue?
-      <button type="button" (click)="confirmExport()" [disabled]="busy()">Confirm export</button>
-      <button type="button" (click)="cancelExport()" [disabled]="busy()">Cancel</button>
-    </span>
+    <app-dialog heading="Export the recovery identity?" variant="danger" (dismissed)="cancelExport()">
+      <p>
+        This reveals the key that decrypts every backup, and the export is
+        audited. Continue?
+      </p>
+      <div class="dialog-actions">
+        <button type="button" class="danger" (click)="confirmExport()" [disabled]="busy()">Confirm export</button>
+        <button type="button" class="quiet" (click)="cancelExport()" [disabled]="busy()">Cancel</button>
+      </div>
+    </app-dialog>
   } @else {
     <button type="button" (click)="askExport()" [disabled]="busy()">
       Export recovery identity
     </button>
   }
 
-  <h3>Schedules</h3>
+  <h2>Schedules</h2>
   <button type="button" (click)="refresh()" [disabled]="loading() || busy()">
     Refresh
   </button>
@@ -145,15 +151,17 @@
           }
           <button type="button" (click)="inspect(row.package)">Inspect</button>
           @if (confirmingRemove() === row.package) {
-            <span role="alertdialog" [attr.aria-label]="'Confirm removal of ' + row.package">
-              Remove the schedule for {{ row.package }}?
-              <button type="button" (click)="remove(row.package)" [disabled]="busy()">
-                Confirm remove
-              </button>
-              <button type="button" (click)="cancelRemove()" [disabled]="busy()">
-                Cancel
-              </button>
-            </span>
+            <app-dialog heading="Remove this schedule?" variant="danger" (dismissed)="cancelRemove()">
+              <p>Remove the schedule for {{ row.package }}?</p>
+              <div class="dialog-actions">
+                <button type="button" class="danger" (click)="remove(row.package)" [disabled]="busy()">
+                  Confirm remove
+                </button>
+                <button type="button" class="quiet" (click)="cancelRemove()" [disabled]="busy()">
+                  Cancel
+                </button>
+              </div>
+            </app-dialog>
           } @else {
             <button type="button" (click)="askRemove(row.package)" [disabled]="busy()">
               Remove
@@ -169,7 +177,7 @@
   }
 
   @if (inspected(); as one) {
-    <h3>Schedule detail: {{ one.package }}</h3>
+    <h2>Schedule detail: {{ one.package }}</h2>
     @if (one.stateless) {
       <p class="stateless">
         Stateless: {{ one.package }} keeps nothing on the appliance, so there
@@ -186,7 +194,7 @@
     }
   }
 
-  <h3>Scheduled jobs</h3>
+  <h2>Scheduled jobs</h2>
   <p>
     Read-only state of the daemon scheduler: when each job last ran, when
     it is next due, and the last error or skipped run.
@@ -228,7 +236,7 @@
     </ul>
   }
 
-  <h3>Save schedule</h3>
+  <h2>Save schedule</h2>
   <form
     (submit)="
       save(

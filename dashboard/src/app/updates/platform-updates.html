@@ -1,5 +1,5 @@
 <section aria-label="Platform release verification">
-  <h2>Platform releases</h2>
+  <h1>Platform releases</h1>
 
   @if (error()) {
     <app-state-message kind="error" [headline]="error()" />
@@ -9,7 +9,7 @@
   }
 
   @if (view()?.running; as running) {
-    <h3>Running versions</h3>
+    <h2>Running versions</h2>
     <ul>
       @for (entry of running | keyvalue; track entry.key) {
         <li>{{ entry.key }}: {{ entry.value }}</li>
@@ -17,7 +17,7 @@
     </ul>
   }
 
-  <h3>Verification state</h3>
+  <h2>Verification state</h2>
   <ul>
     @for (release of view()?.releases ?? []; track release.component) {
       <li>
@@ -39,7 +39,7 @@
     }
   </ul>
   @if ((view()?.refused ?? []).length > 0) {
-    <h3>Refused (never planned)</h3>
+    <h2>Refused (never planned)</h2>
     <ul>
       @for (release of view()?.refused ?? []; track release.component) {
         <li>{{ release.component }} {{ release.version || '-' }}: {{ release.plan_error }}</li>
@@ -72,7 +72,7 @@
     </p>
   }
 
-  <h3>Apply a verified release</h3>
+  <h2>Apply a verified release</h2>
   <p>
     Applies the files named under Artifact, Checksums file and Signature file
     below: they are verified again and staged, and a separate privileged unit
@@ -142,7 +142,7 @@
     </div>
   }
 
-  <h3>Verify local release files</h3>
+  <h2>Verify local release files</h2>
   <p>Absolute paths to files already on the appliance; nothing is downloaded.</p>
   <label>
     Component
@@ -182,7 +182,7 @@
   }
   <button type="button" (click)="verify()" [disabled]="busy()">Verify</button>
 
-  <h3>Trusted keys</h3>
+  <h2>Trusted keys</h2>
   <ul>
     @for (key of keys(); track key.key_id) {
       <li>

@@ -1,5 +1,5 @@
 <section aria-label="Edge">
-  <h2>Edge</h2>
+  <h1>Edge</h1>
   <p>
     The edge is the Caddy reverse proxy that serves your apps by host name.
     Deploying and reconciling change what the appliance serves. Opening a
@@ -17,7 +17,7 @@
 
   @if (operationId(); as id) {
     <section aria-label="Operation progress">
-      <h3>Progress</h3>
+      <h2>Progress</h2>
       <p>
         <a [routerLink]="['/operations', id]">Operation {{ id }}</a>:
         @if (operation(); as op) {
@@ -48,7 +48,7 @@
     </section>
   }
 
-  <h3>Caddy deployment</h3>
+  <h2>Caddy deployment</h2>
   <p>
     Deploys or updates the Caddy proxy stack on the appliance's Docker
     engine. The daemon does not report live proxy status; the progress of
@@ -58,15 +58,19 @@
     Deploy Caddy
   </button>
   @if (confirming() === 'deploy') {
-    <span role="alertdialog" aria-label="Confirm Caddy deployment" appDialogFocus (dismiss)="cancel()">
-      This deploys the Caddy proxy stack and restarts the proxy if it
-      changed, which briefly interrupts every route it serves.
-      <button type="button" (click)="confirm()" [disabled]="locked()">Confirm deploy</button>
-      <button type="button" (click)="cancel()" [disabled]="locked()">Cancel</button>
-    </span>
+    <app-dialog heading="Deploy Caddy?" variant="danger" (dismissed)="cancel()">
+      <p>
+        This deploys the Caddy proxy stack and restarts the proxy if it
+        changed, which briefly interrupts every route it serves.
+      </p>
+      <div class="dialog-actions">
+        <button type="button" class="danger" (click)="confirm()" [disabled]="locked()">Confirm deploy</button>
+        <button type="button" class="quiet" (click)="cancel()" [disabled]="locked()">Cancel</button>
+      </div>
+    </app-dialog>
   }
 
-  <h3>Route table</h3>
+  <h2>Route table</h2>
   <p>
     This is the table the reconciler last wrote. Reconciling replaces it:
     the routes below become the reconciler's routes, and any it wrote
@@ -165,20 +169,24 @@
   }
 
   @if (confirming() === 'routes') {
-    <span role="alertdialog" aria-label="Confirm route reconciliation" appDialogFocus (dismiss)="cancel()">
-      @if (pendingCount() === 0) {
-        This empties the table: every route the reconciler wrote is removed.
-      } @else {
-        This replaces the route table with these {{ pendingCount() }} route(s)
-        and removes the reconciler's other routes. The proxy reloads.
-      }
-      @if (publicHosts().length) {
-        {{ publicHosts().join(', ') }} will be reachable from the public
-        internet without the plan, preview and approval on the Exposure
-        page. Prefer that workflow for public hosts.
-      }
-      <button type="button" (click)="confirm()" [disabled]="locked()">Confirm reconcile</button>
-      <button type="button" (click)="cancel()" [disabled]="locked()">Cancel</button>
-    </span>
+    <app-dialog heading="Reconcile routes?" variant="danger" (dismissed)="cancel()">
+      <p>
+        @if (pendingCount() === 0) {
+          This empties the table: every route the reconciler wrote is removed.
+        } @else {
+          This replaces the route table with these {{ pendingCount() }} route(s)
+          and removes the reconciler's other routes. The proxy reloads.
+        }
+        @if (publicHosts().length) {
+          <span class="mono">{{ publicHosts().join(', ') }}</span> will be reachable from the public
+          internet without the plan, preview and approval on the Exposure
+          page. Prefer that workflow for public hosts.
+        }
+      </p>
+      <div class="dialog-actions">
+        <button type="button" class="danger" (click)="confirm()" [disabled]="locked()">Confirm reconcile</button>
+        <button type="button" class="quiet" (click)="cancel()" [disabled]="locked()">Cancel</button>
+      </div>
+    </app-dialog>
   }
 </section>

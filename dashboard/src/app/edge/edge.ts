@@ -9,7 +9,7 @@ import {
   OperationState,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
-import { DialogFocus } from '../storage/dialog-focus';
+import { Dialog } from '../ui/dialog';
 
 export const EDGE_EXPOSURES = ['local', 'overlay', 'public'] as const;
 export const EDGE_TLS = ['off', 'internal', 'auto'] as const;
@@ -57,14 +57,13 @@ const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
  * and approved on the Exposure page (ADR-006), not here.
  */
 @Component({
-  imports: [StateMessage, DialogFocus, RouterLink],
+  imports: [StateMessage, Dialog, RouterLink],
   selector: 'app-edge',
   templateUrl: './edge.html',
   styles: [
-    'button, input, select, textarea { min-height: 44px; }',
-    'textarea { width: 100%; box-sizing: border-box; font-family: monospace; }',
-    'input, select { max-width: 100%; box-sizing: border-box; }',
-    '.edge-route { overflow-wrap: anywhere; }',
+    'textarea { font-family: var(--font-mono); }',
+    '.edge-route { overflow-wrap: anywhere; list-style: none; margin-bottom: var(--spacing-md); padding: var(--spacing-md) var(--spacing-md) var(--spacing-xs); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-panel); }',
+    'ul:has(> .edge-route) { padding: 0; }',
   ],
 })
 export class Edge implements OnInit, OnDestroy {

@@ -1,9 +1,9 @@
 <section aria-label="Operation detail">
   @if (missing()) {
-    <h2>Operation not found</h2>
+    <h1>Operation not found</h1>
     <p>Back to the <a routerLink="/operations">operations list</a>.</p>
   } @else if (operation(); as op) {
-    <h2>{{ op.type }}</h2>
+    <h1>{{ op.type }}</h1>
     <p>Status: {{ op.status }}</p>
     @if (op.error) {
       <app-state-message kind="error" [headline]="op.error" />

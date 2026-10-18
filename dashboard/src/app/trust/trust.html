@@ -1,5 +1,5 @@
 <section aria-label="Trust this appliance">
-  <h2>Trust this appliance</h2>
+  <h1>Trust this appliance</h1>
   <p>
     Local-only hosts are served over HTTPS from this appliance's own certificate
     authority, so browser features that need a secure context (WebGPU, the
@@ -29,7 +29,7 @@
       />
       <button type="button" [disabled]="busy()" (click)="create()">Create the internal CA</button>
     } @else {
-      <h3>Root certificate</h3>
+      <h2>Root certificate</h2>
       @if (!r.ca.key_present) {
         <app-state-message
           kind="error"
@@ -65,7 +65,7 @@
       </p>
     }
 
-    <h3>Install on a device</h3>
+    <h2>Install on a device</h2>
     @for (guide of guides; track guide.id) {
       <details>
         <summary>{{ guide.title }}</summary>
@@ -78,13 +78,14 @@
       </details>
     }
 
-    <h3>Local certificates</h3>
+    <h2>Local certificates</h2>
     @if (r.leaves.length === 0) {
       <app-state-message
         kind="empty"
         headline="No local-only HTTPS routes use the internal CA yet. Add a route with the internal TLS mode on the Edge page."
       />
     } @else {
+      <div class="table-scroll">
       <table>
         <thead>
           <tr><th>Host</th><th>Status</th><th>Expires</th><th></th></tr>
@@ -102,6 +103,7 @@
           }
         </tbody>
       </table>
+      </div>
       <button type="button" [disabled]="busy()" (click)="reissue()">Re-issue all</button>
       <p>Leaves renew automatically; re-issuing is only needed after a problem.</p>
     }
@@ -114,7 +116,7 @@
     }
 
     @if (r.ca.present) {
-      <h3>Rotate the root</h3>
+      <h2>Rotate the root</h2>
       <p>
         Rotation replaces the root and every leaf. Every device that trusts the
         current root must then trust the new one.

@@ -1,5 +1,5 @@
 <section aria-label="Craft apps">
-  <h2>Craft apps</h2>
+  <h1>Craft apps</h1>
   <p>
     The craft apps installed on this appliance, with the local address each one
     is served at. This list comes from your own catalog and edge routes; nothing
@@ -28,7 +28,7 @@
             <strong>{{ app.title }}</strong>
             <span> version {{ app.version }}, {{ app.status }}</span>
             @if (app.url) {
-              <a class="button" [href]="app.url" target="_blank" rel="noopener noreferrer">
+              <a class="button primary" [href]="app.url" target="_blank" rel="noopener noreferrer">
                 Open {{ app.title }}
               </a>
               <code>{{ app.url }}</code>

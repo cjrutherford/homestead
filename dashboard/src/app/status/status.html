@@ -1,5 +1,5 @@
 <section aria-label="Appliance status">
-  <h2>Status</h2>
+  <h1>Status</h1>
 
   @if (error()) {
     <app-state-message kind="error" [headline]="error()" />
@@ -20,11 +20,11 @@
     </dl>
 
     @if (report(); as diagnostics) {
-      <h3>Diagnostics: {{ diagnostics.overall }}</h3>
+      <h2>Diagnostics: {{ diagnostics.overall }}</h2>
       <dl>
         @for (check of diagnostics.checks; track check.name) {
           <div>
-            <dt>{{ check.name }}: {{ check.status }}</dt>
+            <dt>{{ check.name }}: <span class="badge" [class]="badgeFor(check.status)">{{ check.status }}</span></dt>
             <dd>{{ check.detail }}</dd>
           </div>
         }

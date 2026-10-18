@@ -31,6 +31,20 @@ export class Status implements OnInit {
     });
   }
 
+  /** Badge colour and glyph for a doctor check status; unknown statuses stay neutral. */
+  protected badgeFor(status: string): string {
+    switch (status) {
+      case 'ok':
+        return 'badge-ok';
+      case 'warn':
+        return 'badge-warn';
+      case 'fail':
+        return 'badge-fail';
+      default:
+        return '';
+    }
+  }
+
   private unreachable(): void {
     this.error.set('Daemon unreachable. Is homestead-server running?');
   }

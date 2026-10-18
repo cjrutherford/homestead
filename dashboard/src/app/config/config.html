@@ -1,12 +1,12 @@
 <section aria-label="Configuration">
-  <h2>Configuration</h2>
+  <h1>Configuration</h1>
 
   @if (loading()) {
     <app-state-message kind="loading" headline="Loading…" />
   } @else if (loadError()) {
     <app-state-message kind="error" [headline]="loadError()" />
   } @else if (reviewing()) {
-    <h3>Review changes</h3>
+    <h2>Review changes</h2>
     @if (changes().length === 0) {
       <app-state-message kind="empty" headline="No changes." />
     } @else {

@@ -1045,3 +1045,18 @@ obligations arise from it. It was vendored only during S253 (artifact
 `artcraft-launcher-web-0.4.1.zip`, SHA-256
 `5768d88f6077375b926723cdf7ee56717997b57e99c2e419cbe89b527b497a27`) and the
 KVM validation of that slice.
+
+## Atkinson Hyperlegible Next and Mono (S282)
+Bundled dashboard typefaces: `AtkinsonHyperlegibleNext-Regular.woff2`,
+`AtkinsonHyperlegibleNext-Bold.woff2` and
+`AtkinsonHyperlegibleMono-Regular.woff2` in `dashboard/public/fonts/`,
+served by the daemon with the dashboard (no runtime fetch from any external
+host). Source: the Braille Institute's Atkinson Hyperlegible Next, published
+on GitHub by Google Fonts (`https://github.com/googlefonts/atkinson-hyperlegible-next`
+and `https://github.com/googlefonts/atkinson-hyperlegible-next-mono`,
+`fonts/webfonts/`, main branch, retrieved 2026-10-18). Licence: SIL Open
+Font License 1.1 (Copyright 2020-2024 The Atkinson Hyperlegible Next Project
+Authors and The Atkinson Hyperlegible Mono Project Authors); the OFL texts
+ship beside the fonts as `OFL-Atkinson-Hyperlegible-Next.txt` and
+`OFL-Atkinson-Hyperlegible-Mono.txt`. The files are unmodified.
+

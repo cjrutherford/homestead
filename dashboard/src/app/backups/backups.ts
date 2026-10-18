@@ -9,6 +9,7 @@ import {
   SchedulerJob,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { Dialog } from '../ui/dialog';
 
 /**
  * Backup surfaces (S267): resolved destination plus schedule records,
@@ -19,7 +20,7 @@ import { StateMessage } from '../state/state-message';
  * run (server semantics).
  */
 @Component({
-  imports: [StateMessage],
+  imports: [StateMessage, Dialog],
   selector: 'app-backups',
   templateUrl: './backups.html',
   styles: ['.backup-root { overflow-wrap: anywhere; }'],

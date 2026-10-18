@@ -1,5 +1,5 @@
 <section aria-label="Certificates">
-  <h2>Certificates</h2>
+  <h1>Certificates</h1>
   <p>
     First issuance of public certificates through DNS-01. Review the plan,
     approve it under your name, then apply. The plan is only a preview:
@@ -17,7 +17,7 @@
 
   @if (operationId(); as id) {
     <section aria-label="Operation progress">
-      <h3>Progress</h3>
+      <h2>Progress</h2>
       <p>
         <a [routerLink]="['/operations', id]">Operation {{ id }}</a>:
         @if (operation(); as op) {
@@ -50,7 +50,7 @@
 
   @if (renewals().length) {
     <section aria-label="Renewal status">
-      <h3>Renewal</h3>
+      <h2>Renewal</h2>
       <p>
         Homestead re-issues an unchanged, approved certificate on its own
         when it is within 30 days of expiry. Anything changed needs a new
@@ -114,7 +114,7 @@
   <ul aria-label="Issuance plans">
     @for (plan of plans(); track plan.certificate) {
       <li class="tls-plan">
-        <h3>{{ plan.certificate }}{{ plan.approved ? ' (approved)' : '' }}</h3>
+        <h2>{{ plan.certificate }}{{ plan.approved ? ' (approved)' : '' }}</h2>
         <dl>
           <dt>Names</dt>
           <dd>{{ plan.names.join(', ') }}</dd>

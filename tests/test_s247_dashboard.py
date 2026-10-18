@@ -27,8 +27,8 @@ class TestDashboardExposureSurfaces(unittest.TestCase):
                 self.assertIn(symbol, src)
 
     def test_nav(self):
-        src = read("dashboard/src/app/app.html")
-        for symbol in ('routerLink="/exposure"', 'routerLink="/tunnel"'):
+        src = read("dashboard/src/app/core/nav.ts")
+        for symbol in ("path: '/exposure'", "path: '/tunnel'"):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, src)
 

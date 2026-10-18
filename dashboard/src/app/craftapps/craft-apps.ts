@@ -14,7 +14,6 @@ import { StateMessage } from '../state/state-message';
   imports: [StateMessage],
   selector: 'app-craft-apps',
   templateUrl: './craft-apps.html',
-  styles: ['a.button, button { min-height: 44px; }'],
 })
 export class CraftApps implements OnInit {
   private readonly api = inject(ApiService);

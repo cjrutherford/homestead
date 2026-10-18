@@ -119,9 +119,9 @@
   stopped stack reads as a state, not drift, because Homestead persists
   no per-stack desired run state; an accidentally stopped stack is
   indistinguishable until that state exists.
-- Theme selection: S248 defines light, dark, and high-contrast
-  themes and previews them on the validation board; no user-facing
-  switcher or prefers-color-scheme wiring exists yet.
+- ~~Theme selection~~ closed by S282: themes follow `prefers-color-scheme`,
+  with a persisted manual choice (system, light, dark, high contrast) on the
+  Account page.
 - Visual regression automation: the validation board is checked
   structurally in unit tests; screenshot comparison and an automated
   375px overflow check need a browser harness.
@@ -550,3 +550,25 @@
   before creating the administrator also lands on "already set up", because
   the claim-window wizard route answers 401 once claimed; a pending-admin
   signal on `/api/v1/identity` would let the page offer the form again.
+
+## Dashboard visual foundation (S282)
+- Stored theme flash: the manual theme is applied when the Angular app
+  starts, so a stored dark or high-contrast choice shows the system theme for
+  a moment on reload. An inline pre-bootstrap script would fix it but is
+  deferred until a Content-Security-Policy decision for the dashboard.
+- Config and Firewall keep their inline "Confirm apply" plan panels; they are
+  plan reviews, not alertdialogs, and S284 decides whether they become
+  dialogs.
+- Page content still mixes message kinds: for example the Backups
+  "no owner-held recipient" warning renders as a success status message.
+  Status badges are applied only to Status checks and Audit outcomes; the
+  rest of the pages adopt them in S284.
+- Sidebar links keep the 44px touch target, so the page list scrolls inside
+  the sidebar on short viewports; a denser pointer-fine layout is a design
+  choice for S283/S284.
+- The initial bundle budget warning moved from 500kB to 560kB (initial JS
+  plus CSS, fonts are assets and not counted); trimming the bundle is open.
+- The overflow check is a local headless-Chromium script with stubbed API
+  data, not a CI test; a committed browser harness is still open (see
+  Visual regression automation).
+

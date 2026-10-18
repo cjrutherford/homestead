@@ -3,6 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { ApiService, SecretKeyStatus } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { Dialog } from '../ui/dialog';
 
 /**
  * Secret key custody page (S258, ADR-021): shows the current secret key
@@ -11,7 +12,7 @@ import { StateMessage } from '../state/state-message';
  * operation page. Key material never reaches the browser.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [StateMessage, Dialog, RouterLink],
   selector: 'app-secrets',
   templateUrl: './secrets.html',
 })

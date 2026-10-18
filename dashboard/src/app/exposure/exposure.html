@@ -1,5 +1,5 @@
 <section aria-label="Public exposure">
-  <h2>Exposure</h2>
+  <h1>Exposure</h1>
   <p>
     Review the planned public change before approving it under your
     name, then apply through firewall and edge. Nothing here runs
@@ -21,7 +21,7 @@
     </p>
   }
 
-  <h3>Certificate renewal</h3>
+  <h2>Certificate renewal</h2>
   <p>
     Daily check of issued certificates; it reports only and never
     issues. First issuance is planned, previewed and approved on the
@@ -45,7 +45,7 @@
     </ul>
   }
 
-  <h3>Selection</h3>
+  <h2>Selection</h2>
   <form
     (submit)="
       save(
@@ -89,7 +89,7 @@
     <button type="submit" [disabled]="busy()">Save and review</button>
   </form>
 
-  <h3>Reviewed plan</h3>
+  <h2>Reviewed plan</h2>
   @if (plan(); as reviewed) {
     <p>
       {{ reviewed.Host }}: {{ reviewed.From }} → {{ reviewed.To }}
@@ -103,15 +103,15 @@
         }
       </ul>
     }
-    <h4>DNS records ({{ reviewed.DNS.length }})</h4>
+    <h3>DNS records ({{ reviewed.DNS.length }})</h3>
     <ul>
       @for (record of reviewed.DNS; track record.Name + record.Type) {
         <li>{{ record.Type }} {{ record.Name }} → {{ record.Value }}</li>
       }
     </ul>
-    <h4>TLS: {{ reviewed.TLS.Action }} {{ reviewed.TLS.Name }}</h4>
+    <h3>TLS: {{ reviewed.TLS.Action }} {{ reviewed.TLS.Name }}</h3>
     <p>{{ reviewed.TLS.Detail }}</p>
-    <h4>Firewall policies ({{ reviewed.Firewall.length }})</h4>
+    <h3>Firewall policies ({{ reviewed.Firewall.length }})</h3>
     <ul>
       @for (policy of reviewed.Firewall; track policy.Service.Name) {
         <li>
@@ -121,7 +121,7 @@
       }
     </ul>
 
-    <h3>Approve</h3>
+    <h2>Approve</h2>
     <form
       (submit)="
         approve(actorInput.value, networksInput.value);
@@ -139,7 +139,7 @@
       <button type="submit" [disabled]="busy()">Approve plan</button>
     </form>
 
-    <h3>Approvals ({{ approvals().length }})</h3>
+    <h2>Approvals ({{ approvals().length }})</h2>
     <ul>
       @for (approval of approvals(); track approval.host) {
         <li>

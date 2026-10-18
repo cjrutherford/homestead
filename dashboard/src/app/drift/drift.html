@@ -1,5 +1,5 @@
 <section aria-label="Configuration drift">
-  <h2>Drift</h2>
+  <h1>Drift</h1>
   <p>
     Generated files changed outside Homestead. Review both sides,
     then adopt current files or restore managed state.
@@ -7,7 +7,7 @@
 
   @if (schedule(); as sched) {
     <section aria-label="Scheduled drift scan">
-      <h3>Scheduled scan</h3>
+      <h2>Scheduled scan</h2>
       <p>
         Scans every {{ every(sched.interval_seconds) }};
         {{ sched.enabled ? 'on' : 'off' }}. Scans only detect; nothing is
@@ -112,13 +112,13 @@
   }
 
   @if (selected(); as name) {
-    <h3>{{ name }}</h3>
+    <h2>{{ name }}</h2>
     <button type="button" (click)="refresh()" [disabled]="busy()">
       Refresh review
     </button>
     @if (live(); as liveState) {
       <section aria-label="Running containers">
-        <h4>Running containers</h4>
+        <h3>Running containers</h3>
         @if (!liveState.checked) {
           <app-state-message kind="empty" headline="Docker engine unreachable: running containers were not compared." />
         } @else {
@@ -171,10 +171,10 @@
       <ul>
         @for (file of review(); track file.path) {
           <li>
-            <h4>{{ file.path }} ({{ file.kind }})</h4>
-            <h5>Managed</h5>
+            <h3>{{ file.path }} ({{ file.kind }})</h3>
+            <h4>Managed</h4>
             <pre>{{ file.recorded }}</pre>
-            <h5>Current</h5>
+            <h4>Current</h4>
             <pre>{{ file.current }}</pre>
           </li>
         }

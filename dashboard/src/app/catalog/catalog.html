@@ -1,5 +1,5 @@
 <section aria-label="Application catalog">
-  <h2>Catalog</h2>
+  <h1>Catalog</h1>
 
   @if (error()) {
     <app-state-message kind="error" [headline]="error()" />
@@ -23,9 +23,9 @@
   }
 
   @if (selected(); as manifest) {
-    <h3>{{ manifest.Title }} {{ manifest.Version }}</h3>
+    <h2>{{ manifest.Title }} {{ manifest.Version }}</h2>
     <p>{{ manifest.Description }}</p>
-    <h4>Requirements</h4>
+    <h3>Requirements</h3>
     <ul>
       <li>Memory: {{ manifest.Requirements.MemoryMB }} MB</li>
       @for (need of manifest.Requirements.Storage; track need.Class) {
@@ -37,7 +37,7 @@
     </ul>
     <app-browser-advisories [advisories]="manifest.Browser" />
 
-    <h4>Install</h4>
+    <h3>Install</h3>
     <label>
       Domain
       <input
@@ -66,7 +66,7 @@
         />
       </label>
     }
-    <h5>Volumes</h5>
+    <h4>Volumes</h4>
     <ul>
       @for (row of volumes(); track $index) {
         <li>
@@ -94,7 +94,7 @@
       }
     </ul>
     <button type="button" (click)="addVolumeRow()">Add volume</button>
-    <h5>Networks</h5>
+    <h4>Networks</h4>
     <ul>
       @for (row of networks(); track $index) {
         <li>
@@ -136,7 +136,7 @@
     <button type="button" (click)="reviewPlan()" [disabled]="busy()">Review plan</button>
 
     @if (plan(); as reviewed) {
-      <h4>Reviewed plan</h4>
+      <h3>Reviewed plan</h3>
       <ul>
         <li>Requirements: {{ reviewed.Requirements.Passed ? 'met' : 'unmet' }}</li>
         <li>Routes: {{ (reviewed.Routes ?? []).length }}</li>
@@ -147,7 +147,7 @@
         <li>Actions: {{ (reviewed.Actions ?? []).join(', ') }}</li>
       </ul>
       @if (reviewed.Mounts?.length) {
-        <h4>Data placement</h4>
+        <h3>Data placement</h3>
         <ul class="plan-mounts">
           @for (mount of reviewed.Mounts; track mount.Service + mount.Target) {
             <li>
@@ -183,7 +183,7 @@
       </p>
     }
 
-    <h4>Configure</h4>
+    <h3>Configure</h3>
     <ul>
       @for (row of configRows(); track $index) {
         <li>
@@ -206,7 +206,7 @@
       }
     </ul>
     <button type="button" (click)="addConfigRow(false)">Add variable</button>
-    <h5>Unset variables</h5>
+    <h4>Unset variables</h4>
     <ul>
       @for (row of unsetRows(); track $index) {
         <li>
@@ -227,7 +227,7 @@
     <button type="button" (click)="applyConfig()" [disabled]="busy()">Apply configuration</button>
 
     @if (appSecrets().length > 0) {
-      <h4>Secrets</h4>
+      <h3>Secrets</h3>
       <p class="plan-note">
         Secret-backed variables reach containers as owner-only files, never environment values.
         Registering an existing password adopts it without regenerating the stack.

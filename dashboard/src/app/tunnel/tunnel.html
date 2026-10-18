@@ -1,5 +1,5 @@
 <section aria-label="Tunnel remote access">
-  <h2>Tunnel</h2>
+  <h1>Tunnel</h1>
   <p>
     When the router stays silent — carrier-grade NAT, no admin access,
     no UPnP answers — a tunnel carries public traffic over an
@@ -23,7 +23,7 @@
   }
 
   @if (status(); as state) {
-    <h3>Discovery</h3>
+    <h2>Discovery</h2>
     <p>
       Preferred path: <strong>{{ state.preferred }}</strong>
       @if (state.gateway) {
@@ -49,11 +49,11 @@
       active={{ state.connector.active }}
     </p>
 
-    <h3>Recorded tunnels ({{ state.tunnels.length }})</h3>
+    <h2>Recorded tunnels ({{ state.tunnels.length }})</h2>
     <ul>
       @for (tunnel of state.tunnels; track tunnel.id) {
         <li>
-          <h4>{{ tunnel.name }}: {{ tunnel.status }}</h4>
+          <h3>{{ tunnel.name }}: {{ tunnel.status }}</h3>
           <p>{{ tunnel.connections.length }} connection(s)</p>
           <form
             (submit)="
@@ -78,7 +78,7 @@
       }
     </ul>
 
-    <h3>Routes ({{ state.routes.length }})</h3>
+    <h2>Routes ({{ state.routes.length }})</h2>
     <ul>
       @for (route of state.routes; track route.Hostname) {
         <li>{{ route.Hostname }} → {{ route.Service }}</li>
@@ -90,7 +90,7 @@
     <app-state-message kind="loading" headline="Loading…" />
   }
 
-  <h3>Set up a tunnel</h3>
+  <h2>Set up a tunnel</h2>
   <form
     (submit)="
       setup(

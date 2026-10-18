@@ -1,5 +1,5 @@
 <section aria-label="Storage">
-  <h2>Storage</h2>
+  <h1>Storage</h1>
   <p>
     Homestead uses storage that is already mounted. It never formats or
     partitions a disk. Register a mount you approve, then assign it a class
@@ -13,7 +13,7 @@
     <app-state-message kind="status" [headline]="notice()" />
   }
 
-  <h3>Discovered mounts</h3>
+  <h2>Discovered mounts</h2>
   <button type="button" (click)="refresh()" [disabled]="busy()">Refresh</button>
   @if (mountsError()) {
     <app-state-message kind="error" [headline]="mountsError()" />
@@ -54,7 +54,7 @@
     </ul>
   }
 
-  <h3>Registered mounts</h3>
+  <h2>Registered mounts</h2>
   @if (registrationsError()) {
     <app-state-message kind="error" [headline]="registrationsError()" />
   } @else if (registrationsLoading() && registrations().length === 0) {
@@ -73,7 +73,7 @@
     </ul>
   }
 
-  <h4>Register a mount</h4>
+  <h3>Register a mount</h3>
   <p>
     The mount must be currently discovered, accessible and writable. Labels
     are lowercase letters, digits and hyphens. Registering an already
@@ -97,15 +97,19 @@
     <button type="submit" [disabled]="busy() || !!confirmingRegister()">Register mount</button>
   </form>
   @if (confirmingRegister(); as pending) {
-    <span role="alertdialog" aria-label="Confirm re-registration" appDialogFocus (dismiss)="cancelRegister()">
-      {{ pending.mountpoint }} is already registered. This changes its label
-      to {{ pending.label }}; classes assigned to it stay in place.
-      <button type="button" (click)="confirmRegister()" [disabled]="busy()">Confirm rename</button>
-      <button type="button" (click)="cancelRegister()" [disabled]="busy()">Cancel</button>
-    </span>
+    <app-dialog heading="Rename this mount?" variant="danger" (dismissed)="cancelRegister()">
+      <p>
+        <span class="mono">{{ pending.mountpoint }}</span> is already registered. This changes its label
+        to {{ pending.label }}; classes assigned to it stay in place.
+      </p>
+      <div class="dialog-actions">
+        <button type="button" class="danger" (click)="confirmRegister()" [disabled]="busy()">Confirm rename</button>
+        <button type="button" class="quiet" (click)="cancelRegister()" [disabled]="busy()">Cancel</button>
+      </div>
+    </app-dialog>
   }
 
-  <h3>Class assignments</h3>
+  <h2>Class assignments</h2>
   @if (assignmentsError()) {
     <app-state-message kind="error" [headline]="assignmentsError()" />
   } @else if (assignmentsLoading() && assignments().length === 0) {
@@ -124,7 +128,7 @@
     </ul>
   }
 
-  <h4>Assign a class</h4>
+  <h3>Assign a class</h3>
   <p>
     Database storage needs a local mount. The daemon refuses mounts that are
     unsuitable for the class and explains why.
@@ -155,14 +159,19 @@
     <button type="submit" [disabled]="busy() || !!confirmingAssign()">Assign class</button>
   </form>
   @if (confirmingAssign(); as pending) {
-    <span role="alertdialog" aria-label="Confirm re-assignment" appDialogFocus (dismiss)="cancelAssign()">
-      Moving {{ pending.class }} from {{ pending.from }} to {{ pending.mountpoint }}
-      affects these installed packages: {{ pending.packages.join(', ') }}.
-      Their data stays on {{ pending.from }}, but backups follow the new
-      assignment and will stop finding it, and nothing is moved for you.
-      The acknowledgement is audited.
-      <button type="button" (click)="confirmAssign()" [disabled]="busy()">Confirm re-assign</button>
-      <button type="button" (click)="cancelAssign()" [disabled]="busy()">Cancel</button>
-    </span>
+    <app-dialog heading="Move this storage class?" variant="danger" (dismissed)="cancelAssign()">
+      <p>
+        Moving {{ pending.class }} from <span class="mono">{{ pending.from }}</span> to
+        <span class="mono">{{ pending.mountpoint }}</span>
+        affects these installed packages: {{ pending.packages.join(', ') }}.
+        Their data stays on <span class="mono">{{ pending.from }}</span>, but backups follow the new
+        assignment and will stop finding it, and nothing is moved for you.
+        The acknowledgement is audited.
+      </p>
+      <div class="dialog-actions">
+        <button type="button" class="danger" (click)="confirmAssign()" [disabled]="busy()">Confirm re-assign</button>
+        <button type="button" class="quiet" (click)="cancelAssign()" [disabled]="busy()">Cancel</button>
+      </div>
+    </app-dialog>
   }
 </section>

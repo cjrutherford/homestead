@@ -1,5 +1,5 @@
 <section aria-label="Application updates">
-  <h2>Updates</h2>
+  <h1>Updates</h1>
 
   @if (error()) {
     <app-state-message kind="error" [headline]="error()" />
@@ -25,7 +25,7 @@
     <ul>
       @for (row of rows(); track row.package) {
         <li>
-          <h3>{{ row.package }}</h3>
+          <h2>{{ row.package }}</h2>
           @if (!row.installed) {
             <app-state-message kind="empty" headline="Not installed; nothing to update." />
           } @else if ((row.plan.Services ?? []).length === 0) {

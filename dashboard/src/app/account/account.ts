@@ -4,6 +4,7 @@ import { SessionService } from '../auth/session.service';
 import { ApiService, LockoutStatus } from '../core/api.service';
 import { ERROR_CODE_HEADER, WRONG_CURRENT_PASSWORD } from '../core/auth.interceptor';
 import { StateMessage } from '../state/state-message';
+import { THEME_PREFERENCES, ThemePreference, ThemeService } from '../core/theme.service';
 
 /** Mirrors auth.MinPasswordLength and MaxPasswordLength (both in bytes). */
 export const MIN_PASSWORD_LENGTH = 12;
@@ -43,16 +44,13 @@ export function relativeUntil(iso: string, now: Date = new Date()): string {
   imports: [StateMessage],
   selector: 'app-account',
   templateUrl: './account.html',
-  styles: [
-    'button, input { min-height: 44px; }',
-    'input { max-width: 100%; box-sizing: border-box; }',
-    'section { overflow-wrap: anywhere; }',
-    '.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }',
-  ],
+  styles: ['section { overflow-wrap: anywhere; }'],
 })
 export class Account implements OnInit {
   private readonly api = inject(ApiService);
   protected readonly sessions = inject(SessionService);
+  protected readonly theme = inject(ThemeService);
+  protected readonly themeOptions = THEME_PREFERENCES;
 
   protected readonly minLength = MIN_PASSWORD_LENGTH;
   protected readonly maxLength = MAX_PASSWORD_LENGTH;
@@ -67,6 +65,10 @@ export class Account implements OnInit {
 
   ngOnInit(): void {
     this.loadLockout();
+  }
+
+  protected chooseTheme(preference: ThemePreference): void {
+    this.theme.set(preference);
   }
 
   loadLockout(): void {

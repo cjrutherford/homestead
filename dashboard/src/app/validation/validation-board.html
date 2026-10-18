@@ -2,16 +2,25 @@
 <p>Every primitive under each theme. Resize to 375px to check overflow.</p>
 
 @for (theme of themes; track theme) {
-  <section class="card board-theme" [attr.data-theme]="theme" [attr.data-board]="theme">
+  <section class="panel board-theme" [attr.data-theme]="theme" [attr.data-board]="theme">
     <h2>{{ theme }}</h2>
 
     <h3>Buttons</h3>
     <p>
-      <button type="button">Default</button>
-      <button type="button" disabled>Disabled</button>
+      <button type="button" class="primary">Primary</button>
+      <button type="button">Secondary</button>
+      <button type="button" class="danger">Danger</button>
+      <button type="button" class="quiet">Quiet</button>
+    </p>
+    <p>
+      <button type="button" class="primary" disabled>Primary disabled</button>
+      <button type="button" disabled>Secondary disabled</button>
+      <button type="button" class="danger" disabled>Danger disabled</button>
+      <button type="button" class="primary" aria-busy="true">Primary busy</button>
+      <a class="button" href="#sample">Link button</a>
     </p>
 
-    <h3>Inputs</h3>
+    <h3>Fields</h3>
     <label>
       Text
       <input type="text" name="sample-text-{{ theme }}" value="Sample" />
@@ -24,30 +33,57 @@
       </select>
     </label>
     <label>
+      Textarea
+      <textarea name="sample-area-{{ theme }}">Several lines of text.</textarea>
+    </label>
+    <label>
       <input type="checkbox" name="sample-check-{{ theme }}" checked />
       Checkbox
     </label>
+    <label>
+      With an error
+      <input type="text" name="sample-error-{{ theme }}" value="nas" aria-invalid="true" />
+      <span class="field-error">Use a full host name such as nas.home.arpa.</span>
+    </label>
+    <label>
+      Disabled
+      <input type="text" name="sample-disabled-{{ theme }}" value="Read only" disabled />
+    </label>
+
+    <h3>Badges</h3>
+    <p>
+      <span class="badge badge-ok">Healthy</span>
+      <span class="badge badge-warn">Needs review</span>
+      <span class="badge badge-fail">Failed</span>
+      <span class="badge badge-pending">Pending</span>
+      <span class="badge badge-running">Running</span>
+      <span class="badge">Skipped</span>
+    </p>
 
     <h3>State messages</h3>
     @for (kind of kinds; track kind) {
       <app-state-message [kind]="kind" [headline]="'Sample ' + kind + ' message.'" />
     }
+    <p class="warning">Sample warning: this change needs your review first.</p>
 
     <h3>Table</h3>
-    <table>
-      <thead>
-        <tr><th>Name</th><th>Value</th></tr>
-      </thead>
-      <tbody>
-        <tr><td>alpha</td><td>1</td></tr>
-        <tr><td>beta</td><td>2</td></tr>
-      </tbody>
-    </table>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Name</th><th>Value</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>alpha</td><td>1</td></tr>
+          <tr><td>beta</td><td>2</td></tr>
+        </tbody>
+      </table>
+    </div>
 
-    <h3>Card</h3>
-    <div class="card">Nested card on a themed surface.</div>
+    <h3>Panel</h3>
+    <div class="card">A nested panel on a themed surface.</div>
 
-    <h3>Navigation</h3>
+    <h3>Links and navigation</h3>
+    <p>Body text with an <a href="#inline">inline link</a> in it.</p>
     <nav aria-label="Sample {{ theme }}">
       <a href="#sample">Sample link</a>
       <a href="#other">Other link</a>
@@ -55,5 +91,20 @@
 
     <h3>Code</h3>
     <pre>homesteadctl status</pre>
+    <p>Host <span class="mono">nas.home.arpa</span> with <code>fingerprint</code> value.</p>
+
+    <h3>Dialog</h3>
+    <p>
+      <button type="button" (click)="dialogTheme.set(theme)">Open dialog</button>
+    </p>
+    @if (dialogTheme() === theme) {
+      <app-dialog heading="Remove this sample?" variant="danger" (dismissed)="dialogTheme.set(null)">
+        <p>A danger confirmation. Press Escape or choose Cancel to close it.</p>
+        <div class="dialog-actions">
+          <button type="button" class="danger" (click)="dialogTheme.set(null)">Confirm remove</button>
+          <button type="button" class="quiet" (click)="dialogTheme.set(null)">Cancel</button>
+        </div>
+      </app-dialog>
+    }
   </section>
 }

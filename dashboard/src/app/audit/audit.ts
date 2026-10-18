@@ -5,6 +5,14 @@ import { StateMessage } from '../state/state-message';
 
 /** Outcomes the daemon records (ok/error/skipped) plus the legacy "warning". */
 export const KNOWN_OUTCOMES = ['ok', 'error', 'skipped', 'warning'] as const;
+/** Badge class per outcome: colour, glyph and the outcome word. */
+const BADGE_FOR_OUTCOME: Record<string, string> = {
+  ok: 'badge-ok',
+  error: 'badge-fail',
+  warning: 'badge-warn',
+  skipped: 'badge',
+  other: 'badge',
+};
 export const LIMITS = [100, 250, 500, 1000] as const;
 export const PAGE_SIZE = 25;
 
@@ -58,11 +66,6 @@ type FilterField = 'actor' | 'action' | 'outcome' | 'since' | 'until';
   templateUrl: './audit.html',
   styles: [
     '.audit-text { overflow-wrap: anywhere; white-space: pre-wrap; }',
-    'button, input, select { min-height: 44px; }',
-    '.outcome { border-left: 0.25rem solid currentColor; padding: 0 var(--spacing-sm); font-weight: bold; }',
-    '.outcome-ok { color: var(--success); }',
-    '.outcome-error { color: var(--danger); }',
-    '.outcome-skipped, .outcome-warning, .outcome-other { color: var(--muted); }',
   ],
 })
 export class AuditLog implements OnInit {
@@ -171,9 +174,9 @@ export class AuditLog implements OnInit {
 
   /** CSS class for an outcome; unknown values stay visible with text. */
   outcomeClass(outcome: string): string {
-    return (KNOWN_OUTCOMES as readonly string[]).includes(outcome)
-      ? `outcome-${outcome}`
-      : 'outcome-other';
+    const known = (KNOWN_OUTCOMES as readonly string[]).includes(outcome);
+    const kind = known ? outcome : 'other';
+    return `outcome-${kind} ${BADGE_FOR_OUTCOME[kind]}`;
   }
 
   /** Parses an aggregated session-boundary rejection (ADR-020). */

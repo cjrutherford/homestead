@@ -1,0 +1,483 @@
+/* Primitives (S282): buttons, fields, tables, badges, messages, dialog. */
+
+/*
+ * Buttons. A plain <button> is the secondary style. Variants:
+ * .primary (a submit button is primary by default), .danger, .quiet.
+ * State: :hover, :active, :focus-visible (base.css), :disabled and
+ * [aria-busy='true'] (busy keeps the label and adds a static stripe).
+ * Transitions are limited to colour changes within --duration-fast.
+ */
+button,
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  min-height: var(--touch-target);
+  margin: 0 var(--spacing-sm) var(--spacing-sm) 0;
+  padding: 0 var(--spacing-md);
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--foreground);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+button:hover,
+.button:hover {
+  color: var(--foreground);
+  background: var(--surface-sunken);
+}
+
+button:active,
+.button:active {
+  background: var(--border);
+}
+
+button[type='submit'],
+.primary {
+  color: var(--primary-foreground);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+button[type='submit']:hover,
+.primary:hover {
+  color: var(--primary-foreground);
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+button[type='submit']:active,
+.primary:active {
+  background: var(--primary-active);
+  border-color: var(--primary-active);
+}
+
+.danger {
+  color: var(--danger-foreground);
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.danger:hover {
+  color: var(--danger-foreground);
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
+}
+
+.danger:active {
+  background: var(--danger-active);
+  border-color: var(--danger-active);
+}
+
+.quiet {
+  color: var(--link);
+  background: transparent;
+  border-color: transparent;
+}
+
+.quiet:hover {
+  color: var(--link-hover);
+  background: var(--surface-sunken);
+}
+
+.quiet:active {
+  background: var(--border);
+}
+
+button:disabled,
+.button[aria-disabled='true'] {
+  color: var(--muted);
+  background: var(--surface-sunken);
+  border-color: var(--border);
+  cursor: not-allowed;
+}
+
+button[aria-busy='true'] {
+  cursor: progress;
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 0.5rem,
+    rgb(128 128 128 / 0.22) 0.5rem 1rem
+  );
+}
+
+/*
+ * Fields. Labels wrap or precede their control; the control fills the
+ * label up to a readable measure.
+ */
+label {
+  display: block;
+  margin: 0 0 var(--spacing-md);
+  max-width: 36rem;
+}
+
+label:has(> input[type='checkbox']),
+label:has(> input[type='radio']) {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  min-height: var(--touch-target);
+  padding-block: calc((var(--touch-target) - 1.55em) / 2);
+  margin-bottom: 0;
+}
+
+input,
+select,
+textarea {
+  display: block;
+  width: 100%;
+  max-width: 36rem;
+  min-height: var(--touch-target);
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  font: inherit;
+  color: var(--foreground);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+textarea {
+  max-width: 100%;
+  min-height: 7rem;
+  resize: vertical;
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--foreground);
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  flex: none;
+  width: 1.375rem;
+  height: 1.375rem;
+  min-height: 0;
+  margin: 0.1rem 0 0;
+  padding: 0;
+  accent-color: var(--primary);
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  color: var(--muted);
+  background: var(--surface-sunken);
+  border-color: var(--border);
+  cursor: not-allowed;
+}
+
+input[aria-invalid='true'],
+select[aria-invalid='true'],
+textarea[aria-invalid='true'] {
+  border-color: var(--danger);
+  border-width: 2px;
+}
+
+/* A field error says what happened and how to fix it; the glyph keeps
+   it from relying on colour. */
+.field-error {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: flex-start;
+  margin: var(--spacing-xs) 0 0;
+  color: var(--danger);
+  font-size: var(--font-size-sm);
+}
+
+.field-error::before {
+  content: '';
+  flex: none;
+  width: 1.1em;
+  height: 1.45em;
+  background: currentcolor;
+  mask: var(--glyph-fail) center / 1.1em no-repeat;
+  -webkit-mask: var(--glyph-fail) center / 1.1em no-repeat;
+}
+
+fieldset {
+  margin: 0 0 var(--spacing-md);
+  padding: var(--spacing-md);
+  min-inline-size: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+}
+
+legend {
+  padding: 0 var(--spacing-sm);
+  font-weight: 700;
+}
+
+/* A form is a board: the place where the owner enters something. */
+.shell-main form {
+  max-width: 40rem;
+  margin: 0 0 var(--spacing-lg);
+  padding: var(--spacing-lg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-sm);
+}
+
+.shell-main form form,
+.shell-main fieldset form {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+/* Tables: a scrolling wrapper with a sticky header. */
+.table-scroll {
+  max-width: 100%;
+  max-height: min(70dvh, 40rem);
+  margin: 0 0 var(--spacing-md);
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+}
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table-scroll table {
+  min-width: 28rem;
+}
+
+th,
+td {
+  padding: var(--spacing-sm) var(--spacing-md);
+  text-align: start;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Badges: colour always pairs with a glyph and a word. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 0.1rem var(--spacing-sm) 0.1rem 0.4rem;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--muted);
+  background: var(--pending-bg);
+  border: 1px solid currentcolor;
+  border-radius: var(--radius-pill);
+}
+
+.badge::before {
+  content: '';
+  flex: none;
+  width: 1em;
+  height: 1em;
+  background: currentcolor;
+  mask: var(--glyph-neutral) center / contain no-repeat;
+  -webkit-mask: var(--glyph-neutral) center / contain no-repeat;
+}
+
+.badge-ok {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.badge-ok::before {
+  mask-image: var(--glyph-ok);
+  -webkit-mask-image: var(--glyph-ok);
+}
+
+.badge-warn {
+  color: var(--warn-text);
+  background: var(--warn-bg);
+}
+
+.badge-warn::before {
+  background: var(--warn);
+  mask-image: var(--glyph-warn);
+  -webkit-mask-image: var(--glyph-warn);
+}
+
+.badge-fail {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.badge-fail::before {
+  mask-image: var(--glyph-fail);
+  -webkit-mask-image: var(--glyph-fail);
+}
+
+.badge-pending::before {
+  mask-image: var(--glyph-pending);
+  -webkit-mask-image: var(--glyph-pending);
+}
+
+.badge-running {
+  color: var(--running);
+  background: var(--running-bg);
+}
+
+.badge-running::before {
+  mask-image: var(--glyph-running);
+  -webkit-mask-image: var(--glyph-running);
+}
+
+/* Shared state messages (S248). */
+.state-message {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: flex-start;
+  margin: var(--spacing-sm) 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  max-width: 70ch;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-inline-start: 4px solid var(--border-strong);
+  border-radius: var(--radius-control);
+}
+
+.state-message::before {
+  content: none;
+  flex: none;
+  width: 1.1em;
+  height: 1.55em;
+  background: currentcolor;
+  mask: center / 1.1em no-repeat;
+  -webkit-mask: center / 1.1em no-repeat;
+}
+
+.state-error {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: var(--danger);
+}
+
+.state-error::before {
+  content: '';
+  mask-image: var(--glyph-fail);
+  -webkit-mask-image: var(--glyph-fail);
+}
+
+.state-status {
+  color: var(--success);
+  background: var(--success-bg);
+  border-color: var(--success);
+}
+
+.state-status::before {
+  content: '';
+  mask-image: var(--glyph-ok);
+  -webkit-mask-image: var(--glyph-ok);
+}
+
+.state-loading::before {
+  content: '';
+  mask-image: var(--glyph-running);
+  -webkit-mask-image: var(--glyph-running);
+}
+
+/* Panels: a board surface. Dialogs sit above it. */
+.card,
+.panel {
+  padding: var(--spacing-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Dialog (app-dialog): modal on a native <dialog>. */
+.dialog {
+  width: min(32rem, calc(100vw - 2 * var(--spacing-md)));
+  max-height: calc(100dvh - 2 * var(--spacing-md));
+  margin: auto;
+  padding: var(--spacing-lg);
+  overflow: auto;
+  color: var(--foreground);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-dialog);
+  box-shadow: var(--shadow-lg);
+}
+
+.dialog-danger {
+  border: 2px solid var(--danger);
+}
+
+.dialog::backdrop {
+  background: var(--backdrop);
+}
+
+.dialog-title {
+  margin: 0 0 var(--spacing-sm);
+  padding: 0;
+  border: 0;
+  font-size: var(--font-size-xl);
+}
+
+.dialog-body > :last-child {
+  margin-bottom: 0;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  justify-content: flex-end;
+  margin-top: var(--spacing-lg);
+}
+
+.dialog-actions button {
+  margin: 0;
+}
+
+@media (max-width: 39.9375rem) {
+  .dialog {
+    width: calc(100vw - var(--spacing-md));
+    padding: var(--spacing-md);
+  }
+
+  .dialog-actions button {
+    flex: 1 1 100%;
+  }
+}
+
+@media (forced-colors: active) {
+  .badge,
+  .dialog {
+    border: 2px solid CanvasText;
+  }
+}

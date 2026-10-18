@@ -27,7 +27,6 @@ const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
   selector: 'app-tls',
   templateUrl: './tls.html',
   styles: [
-    'button, input { min-height: 44px; }',
     '.tls-plan { overflow-wrap: anywhere; }',
   ],
 })

@@ -1,6 +1,6 @@
 <app-wizard-shell [steps]="steps" [current]="stepIndex()" (back)="back()">
   <section aria-label="Host firewall setup">
-    <h2>Host firewall</h2>
+    <h1>Host firewall</h1>
 
     @if (error()) {
       <app-state-message kind="error" [headline]="error()" />
@@ -21,7 +21,7 @@
       <pre>{{ plan()?.script }}</pre>
       <button type="button" (click)="next()">Continue</button>
     } @else if (stepIndex() === 2) {
-      <h3>Review changes</h3>
+      <h2>Review changes</h2>
       <ul>
         @for (change of plan()?.changes ?? []; track change.rule + change.action) {
           <li>{{ change.action }} {{ change.rule }}: {{ change.detail }}</li>

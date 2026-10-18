@@ -116,9 +116,8 @@ export const TRUST_GUIDES: TrustGuide[] = [
   selector: 'app-trust',
   templateUrl: './trust.html',
   styles: [
-    'button, a.button { min-height: 44px; }',
     'code, pre { overflow-wrap: anywhere; white-space: pre-wrap; }',
-    '.fingerprint { font-family: monospace; font-size: 1.1em; }',
+    '.fingerprint { font-family: var(--font-mono); }',
   ],
 })
 export class Trust implements OnInit, OnDestroy {

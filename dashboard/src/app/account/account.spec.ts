@@ -57,6 +57,25 @@ describe('Account', () => {
     fixture.detectChanges();
   };
 
+  it('offers a theme choice with the stored preference selected and persists changes', () => {
+    start();
+    const radios = Array.from(
+      fixture.nativeElement.querySelectorAll('input[name="theme"]'),
+    ) as HTMLInputElement[];
+    expect(radios.map((r) => r.value)).toEqual(['system', 'light', 'dark', 'high-contrast']);
+    expect(radios.find((r) => r.checked)?.value).toBe('system');
+    const dark = radios.find((r) => r.value === 'dark') as HTMLInputElement;
+    dark.checked = true;
+    dark.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    expect(localStorage.getItem('homestead.theme')).toBe('dark');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    radios[0].checked = true;
+    radios[0].dispatchEvent(new Event('change'));
+    expect(localStorage.getItem('homestead.theme')).toBeNull();
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+  });
+
   it('shows loading, then an unlocked account', () => {
     fixture = TestBed.createComponent(Account);
     fixture.detectChanges();

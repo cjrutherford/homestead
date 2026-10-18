@@ -1,0 +1,264 @@
+/* Base document styles (S282): type, links, focus, lists, code. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background: var(--background);
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  font-family: var(--font-body);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-body);
+  color: var(--foreground);
+  background: var(--background);
+  overflow-wrap: break-word;
+}
+
+/* One h1 per page; the brand is the site name, not a heading. */
+h1,
+h2,
+h3,
+h4 {
+  margin: var(--spacing-lg) 0 var(--spacing-sm);
+  font-weight: 700;
+  line-height: var(--line-height-tight);
+  text-wrap: balance;
+}
+
+h1 {
+  margin-top: 0;
+  font-size: var(--font-size-xxl);
+}
+
+h2 {
+  font-size: var(--font-size-xl);
+  margin-top: var(--spacing-xl);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--border);
+}
+
+/* The first h2 after the lede reads as the section it opens. */
+h1 + h2 {
+  margin-top: var(--spacing-lg);
+}
+
+h3 {
+  font-size: var(--font-size-lg);
+}
+
+h4 {
+  font-size: var(--font-size-base);
+}
+
+p {
+  margin: 0 0 var(--spacing-md);
+  max-width: 70ch;
+}
+
+ul,
+ol {
+  margin: 0 0 var(--spacing-md);
+  padding-inline-start: var(--spacing-lg);
+}
+
+li {
+  margin-bottom: var(--spacing-xs);
+}
+
+a {
+  color: var(--link);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  color: var(--link-hover);
+  text-decoration-thickness: 0.14em;
+}
+
+strong {
+  font-weight: 700;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: var(--spacing-lg) 0;
+}
+
+/* Code-like values only: hostnames, fingerprints, commands, IDs. */
+code,
+kbd,
+samp,
+pre,
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.94em;
+}
+
+code {
+  padding: 0.08em 0.35em;
+  background: var(--surface-sunken);
+  border-radius: var(--border-radius-sm);
+  overflow-wrap: anywhere;
+}
+
+pre {
+  margin: 0 0 var(--spacing-md);
+  padding: var(--spacing-md);
+  max-width: 100%;
+  overflow-x: auto;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+
+pre code {
+  padding: 0;
+  background: none;
+}
+
+.mono {
+  overflow-wrap: anywhere;
+}
+
+/* Focus: one visible ring in every theme. */
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Definition lists: label and value pairs read as rows. */
+dl {
+  margin: 0 0 var(--spacing-md);
+}
+
+dl > div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 14rem) minmax(0, 1fr);
+  gap: var(--spacing-xs) var(--spacing-md);
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+dl > div:last-child {
+  border-bottom: 0;
+}
+
+dt {
+  color: var(--muted);
+}
+
+dd {
+  margin: 0;
+}
+
+details {
+  margin: 0 0 var(--spacing-md);
+}
+
+summary {
+  min-height: var(--touch-target);
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Notes and callouts used by pages. */
+.hint,
+.stateless {
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+}
+
+.plan-note {
+  padding-inline-start: var(--spacing-md);
+  border-inline-start: 3px solid var(--border-strong);
+  color: var(--muted);
+}
+
+.warning {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: flex-start;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-control);
+}
+
+.warning::before {
+  content: '';
+  flex: none;
+  width: 1.1em;
+  height: 1.55em;
+  background: var(--warn);
+  mask: var(--glyph-warn) center / 1.1em no-repeat;
+  -webkit-mask: var(--glyph-warn) center / 1.1em no-repeat;
+}
+
+/* Audit entries read as ledger rows. */
+ul:has(> .audit-entry) {
+  padding: 0;
+  list-style: none;
+}
+
+.audit-entry {
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.audit-entry p {
+  margin: var(--spacing-xs) 0 0;
+}
+
+/* Fields wrapping a schema-driven input. */
+.field {
+  margin-bottom: var(--spacing-md);
+}
+
+.fingerprint {
+  font-size: 1.05em;
+}
+
+/* Motion respects the owner. Control state changes are the only
+   transitions today; S283 adds the rest through the motion tokens. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 39.9375rem) {
+  dl > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

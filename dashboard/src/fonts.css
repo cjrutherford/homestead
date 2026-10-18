@@ -1,0 +1,29 @@
+/*
+ * Bundled typefaces (S282): Atkinson Hyperlegible Next for all text and
+ * Atkinson Hyperlegible Mono for code-like values only. Files ship in
+ * public/fonts under the SIL OFL (see docs/THIRD_PARTY.md); nothing is
+ * fetched from an external host at runtime.
+ */
+@font-face {
+  font-family: 'Atkinson Hyperlegible Next';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/AtkinsonHyperlegibleNext-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible Next';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/AtkinsonHyperlegibleNext-Bold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/AtkinsonHyperlegibleMono-Regular.woff2') format('woff2');
+}

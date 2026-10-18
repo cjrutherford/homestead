@@ -1,5 +1,5 @@
 <section aria-label="Craft images">
-  <h2>Craft images</h2>
+  <h1>Craft images</h1>
 
   @if (error()) {
     <app-state-message kind="error" [headline]="error()" />
@@ -19,7 +19,7 @@
     never pulled. Manifest: {{ status()?.manifest_path }}
   </p>
 
-  <h3>Built images</h3>
+  <h2>Built images</h2>
   <ul>
     @for (image of status()?.images ?? []; track image.tag) {
       <li>
@@ -37,7 +37,7 @@
     }
   </ul>
 
-  <h3>Latest verdicts</h3>
+  <h2>Latest verdicts</h2>
   <ul>
     @for (verdict of status()?.verdicts ?? []; track verdict.app) {
       <li>
@@ -56,7 +56,7 @@
     }
   </ul>
 
-  <h3>Verify and build</h3>
+  <h2>Verify and build</h2>
   <label>
     App
     <input name="craft-app" (input)="app = $any($event.target).value" />
@@ -100,7 +100,7 @@
   <button type="button" (click)="plan()" [disabled]="busy() || !app">Verify</button>
   <button type="button" (click)="build()" [disabled]="busy() || !app">Verify and build</button>
 
-  <h3>Craft signing keys</h3>
+  <h2>Craft signing keys</h2>
   <ul>
     @for (key of keys(); track key.key_id) {
       <li>

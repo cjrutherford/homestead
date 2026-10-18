@@ -1,8 +1,12 @@
 /*
- * Homestead design tokens (S248). Clean-room scales inspired by the
- * optimistic-tanuki contract — values reimplemented here, no vendored
- * sources. Single custom-property contract every component consumes;
- * pages never hardcode spacing, type, radius, shadow, or breakpoints.
+ * Homestead design tokens (S248, S282). Clean-room scales: values are
+ * reimplemented here, no vendored sources (ADR-019). One custom-property
+ * contract every component consumes; pages never hardcode colour,
+ * spacing, type, radius, shadow, motion or breakpoints. Every text and
+ * control pair below is checked for WCAG AA by theme/tokens-contrast.spec.ts.
+ *
+ * Palette (light): Limewash page, Board panels, Pine brand and primary
+ * actions, Ink text, Signal amber for needs-review, Brick for danger.
  */
 
 :root {
@@ -15,43 +19,48 @@
   --spacing-xxl: 3rem;
 
   /* Type scale. */
-  --font-size-xs: 0.75rem;
-  --font-size-sm: 0.875rem;
+  --font-size-xs: 0.8125rem;
+  --font-size-sm: 0.9375rem;
   --font-size-base: 1rem;
   --font-size-lg: 1.125rem;
-  --font-size-xl: 1.25rem;
-  --font-size-xxl: 1.5rem;
-  --font-body: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: ui-monospace, 'Cascadia Mono', Menlo, monospace;
+  --font-size-xl: 1.375rem;
+  --font-size-xxl: 1.75rem;
+  --line-height-body: 1.55;
+  --line-height-tight: 1.25;
+  --font-body: 'Atkinson Hyperlegible Next', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Code-like values only: hostnames, fingerprints, commands, IDs. */
+  --font-mono: 'Atkinson Hyperlegible Mono', ui-monospace, 'Cascadia Mono', Menlo, monospace;
 
-  /* Shape. */
-  --border-radius-sm: 0.125rem;
-  --border-radius-md: 0.25rem;
-  --border-radius-lg: 0.5rem;
+  /* Shape follows hierarchy: controls are tight, panels softer, dialogs
+     softest, badges are pills. */
+  --radius-control: 0.375rem;
+  --radius-panel: 0.75rem;
+  --radius-dialog: 1rem;
+  --radius-pill: 62.5rem;
+  --border-radius-sm: 0.25rem;
+  --border-radius-md: var(--radius-control);
+  --border-radius-lg: var(--radius-panel);
 
-  /* Elevation. */
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.08);
-  --shadow-md: 0 2px 8px rgb(0 0 0 / 0.12);
-  --shadow-lg: 0 8px 24px rgb(0 0 0 / 0.16);
-
-  /* Surface and text. */
-  --background: #ffffff;
-  --foreground: #1a1a1a;
-  --surface: #f6f6f4;
-  --border: #dddddd;
-  --primary: #1f4fa3;
-  --primary-foreground: #ffffff;
-  --muted: #444444;
-  --danger: #aa0000;
-  --success: #1b6e2f;
+  /* Motion (S282 defines, S283 uses). Control states only for now. */
+  --duration-instant: 80ms;
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
 
   /* Layers. */
   --z-index-dropdown: 1000;
+  --z-index-drawer: 1040;
   --z-index-modal: 1050;
 
-  /* Touch and content. */
+  /* Touch and layout. */
   --touch-target: 2.75rem;
-  --content-width: 60rem;
+  --content-width: 64rem;
+  --sidebar-width: 17rem;
+
+  color-scheme: light;
 }
 
 /*
@@ -61,9 +70,9 @@
  * every @media rule in the dashboard must use one of them:
  *
  *   xs  30rem  (480px)   large phones
- *   sm  40rem  (640px)   shell collapses below this: stacked header,
- *                        wrapping nav, full-bleed content
- *   md  48rem  (768px)   tablets
+ *   sm  40rem  (640px)   full-bleed content, stacked form rows
+ *   md  48rem  (768px)   sidebar becomes a fixed column; below it the
+ *                        sidebar is a drawer behind a menu button
  *   lg  64rem  (1024px)  desktop
  *   xl  80rem  (1280px)  wide desktop
  *
@@ -73,33 +82,188 @@
 
 /*
  * Themes: selected with data-theme on any element (the validation
- * board nests all of them). Light is the default on :root.
+ * board nests all of them; the shell sets it on <html>). Light is the
+ * default. With no data-theme, the system preference picks light or
+ * dark. The dark block below must stay identical to the
+ * [data-theme='dark'] block; a spec enforces it.
  */
+:root,
+[data-theme='light'] {
+  --background: #f2f4f0; /* Limewash */
+  --surface: #ffffff; /* Board */
+  --surface-sunken: #e7ebe4;
+  --surface-raised: #ffffff;
+  --foreground: #1c2621; /* Ink */
+  --muted: #4a5750;
+  --border: #cbd3c7;
+  --border-strong: #75857b;
+  --primary: #1f4d3a; /* Pine */
+  --primary-hover: #173b2c;
+  --primary-active: #102c20;
+  --primary-foreground: #ffffff;
+  --link: #1f4d3a;
+  --link-hover: #102c20;
+  --focus-ring: #0b6e99;
+  --danger: #9e2f1e; /* Brick */
+  --danger-hover: #7f2416;
+  --danger-active: #651c11;
+  --danger-foreground: #ffffff;
+  --danger-bg: #f8e3de;
+  --warn: #b4690e; /* Signal amber: fills, glyphs, borders */
+  --warn-text: #8a4f06; /* Signal amber, darkened for text */
+  --warn-bg: #fbefd9;
+  --success: #2d7a1f; /* Meadow */
+  --success-bg: #e3f3da;
+  --running: #1f4d3a;
+  --running-bg: #dce9e1;
+  --pending-bg: #e7ebe4;
+  --sidebar-bg: #1f4d3a;
+  --sidebar-foreground: #f2f4f0;
+  --sidebar-muted: #c3d6ca;
+  --sidebar-hover-bg: #29604a;
+  --sidebar-active-bg: #e4eee7;
+  --sidebar-active-foreground: #1f4d3a;
+  --sidebar-border: #3d6a56;
+  --sidebar-focus: #ffffff;
+  --shadow-sm: 0 1px 2px rgb(28 38 33 / 0.1);
+  --shadow-md: 0 2px 8px rgb(28 38 33 / 0.14);
+  --shadow-lg: 0 12px 32px rgb(28 38 33 / 0.22);
+  --backdrop: rgb(28 38 33 / 0.55);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --background: #131a16;
+    --surface: #1b2420;
+    --surface-sunken: #0f1512;
+    --surface-raised: #243029;
+    --foreground: #e4ebe6;
+    --muted: #a3b1a8;
+    --border: #2f3d35;
+    --border-strong: #6a7e72;
+    --primary: #7fcba3;
+    --primary-hover: #9ad7b8;
+    --primary-active: #b3e2ca;
+    --primary-foreground: #0e1a13;
+    --link: #8fd3ae;
+    --link-hover: #b3e2ca;
+    --focus-ring: #f2c14e;
+    --danger: #ff9c8a;
+    --danger-hover: #ffb3a5;
+    --danger-active: #ffc8bd;
+    --danger-foreground: #2a0a05;
+    --danger-bg: #3a1e19;
+    --warn: #ebaa55;
+    --warn-text: #ebaa55;
+    --warn-bg: #3a2c15;
+    --success: #7fdb6a;
+    --success-bg: #1e3a22;
+    --running: #8fd3ae;
+    --running-bg: #1f3a2d;
+    --pending-bg: #26312b;
+    --sidebar-bg: #16211b;
+    --sidebar-foreground: #e4ebe6;
+    --sidebar-muted: #a3b1a8;
+    --sidebar-hover-bg: #223329;
+    --sidebar-active-bg: #2d4b3b;
+    --sidebar-active-foreground: #ffffff;
+    --sidebar-border: #2f4338;
+    --sidebar-focus: #f2c14e;
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 2px 8px rgb(0 0 0 / 0.5);
+    --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.6);
+    --backdrop: rgb(5 9 7 / 0.7);
+    color-scheme: dark;
+  }
+}
+
 [data-theme='dark'] {
-  --background: #14161a;
-  --foreground: #ececec;
-  --surface: #1e2127;
-  --border: #3a3f48;
-  --primary: #8ab4ff;
-  --primary-foreground: #101418;
-  --muted: #b4b9c2;
-  --danger: #ff8a80;
-  --success: #7ddc96;
+  --background: #131a16;
+  --surface: #1b2420;
+  --surface-sunken: #0f1512;
+  --surface-raised: #243029;
+  --foreground: #e4ebe6;
+  --muted: #a3b1a8;
+  --border: #2f3d35;
+  --border-strong: #6a7e72;
+  --primary: #7fcba3;
+  --primary-hover: #9ad7b8;
+  --primary-active: #b3e2ca;
+  --primary-foreground: #0e1a13;
+  --link: #8fd3ae;
+  --link-hover: #b3e2ca;
+  --focus-ring: #f2c14e;
+  --danger: #ff9c8a;
+  --danger-hover: #ffb3a5;
+  --danger-active: #ffc8bd;
+  --danger-foreground: #2a0a05;
+  --danger-bg: #3a1e19;
+  --warn: #ebaa55;
+  --warn-text: #ebaa55;
+  --warn-bg: #3a2c15;
+  --success: #7fdb6a;
+  --success-bg: #1e3a22;
+  --running: #8fd3ae;
+  --running-bg: #1f3a2d;
+  --pending-bg: #26312b;
+  --sidebar-bg: #16211b;
+  --sidebar-foreground: #e4ebe6;
+  --sidebar-muted: #a3b1a8;
+  --sidebar-hover-bg: #223329;
+  --sidebar-active-bg: #2d4b3b;
+  --sidebar-active-foreground: #ffffff;
+  --sidebar-border: #2f4338;
+  --sidebar-focus: #f2c14e;
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-md: 0 2px 8px rgb(0 0 0 / 0.5);
-  --shadow-lg: 0 8px 24px rgb(0 0 0 / 0.6);
+  --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.6);
+  --backdrop: rgb(5 9 7 / 0.7);
+  color-scheme: dark;
 }
 
 [data-theme='high-contrast'] {
   --background: #000000;
-  --foreground: #ffffff;
   --surface: #000000;
+  --surface-sunken: #0d0d0d;
+  --surface-raised: #000000;
+  --foreground: #ffffff;
+  --muted: #e6e6e6;
   --border: #ffffff;
+  --border-strong: #ffffff;
   --primary: #ffff00;
+  --primary-hover: #ffff99;
+  --primary-active: #ffffcc;
   --primary-foreground: #000000;
-  --muted: #ffffff;
-  --danger: #ff6b6b;
+  --link: #8fd9ff;
+  --link-hover: #c4ecff;
+  --focus-ring: #00e5ff;
+  --danger: #ff8a80;
+  --danger-hover: #ffb0a8;
+  --danger-active: #ffd0cb;
+  --danger-foreground: #000000;
+  --danger-bg: #000000;
+  --warn: #ffc04d;
+  --warn-text: #ffc04d;
+  --warn-bg: #000000;
   --success: #66ff99;
+  --success-bg: #000000;
+  --running: #8fd9ff;
+  --running-bg: #000000;
+  --pending-bg: #000000;
+  --sidebar-bg: #000000;
+  --sidebar-foreground: #ffffff;
+  --sidebar-muted: #e6e6e6;
+  --sidebar-hover-bg: #262626;
+  --sidebar-active-bg: #ffff00;
+  --sidebar-active-foreground: #000000;
+  --sidebar-border: #ffffff;
+  --sidebar-focus: #00e5ff;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --backdrop: rgb(0 0 0 / 0.85);
+  color-scheme: dark;
 }
 
 [data-theme] {

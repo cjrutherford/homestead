@@ -4119,3 +4119,31 @@ certificates pinned by SPKI.
   throwaway key used, temp Playwright directory removed. Left: Caddy running,
   orphan `.lan` leaves until the sweep, craft baseline for both apps at
   counter 8, `~/hs-s281` source tree.
+
+## S282: Dashboard visual foundation
+
+Built: tokens (palette, type, radius by hierarchy, elevation, motion) in
+`dashboard/src/tokens.css` for light, dark and high-contrast; bundled
+Atkinson Hyperlegible fonts; base, primitive and shell styles
+(`base.css`, `primitives.css`, `shell.css`, `glyphs.css`); grouped sidebar
+shell with a mobile drawer; `app-dialog` on the native `<dialog>` replacing
+every inline `alertdialog` (edge, storage, backups, secrets); `ThemeService`
+and the Account page theme choice; one `<h1>` per page; status badges; the
+updated validation board. Design reference:
+`docs/architecture/DASHBOARD_DESIGN.md`. No route, API or CLI change, so
+`docs/PARITY.md` is unchanged.
+
+Checks: `theme/tokens-contrast.spec.ts` computes WCAG contrast for every
+text and control token pair in all three themes (and that the system-dark
+block equals the dark theme). Specs cover the shell (nav groups, logged-out
+filtering, drawer, collapse persistence, skip link), dialog focus behaviour,
+theme persistence and the board. A local headless Chromium run against the
+built bundle with stubbed API data found no horizontal overflow on 26 routes
+at 375, 390, 768, 1024 and 1440 px; screenshots in `/tmp/hs-s282-local/`
+(not committed). The initial bundle is 514 kB (was 484 kB); fonts add 73 kB
+of assets fetched on demand. The initial budget warning moved to 560kB.
+
+KVM visual review: **PENDING.** Deploy to VM 2, screenshot every route at
+1440 and 390 px in light and dark, review, fix what reads poorly and record
+the screenshot set location and findings here.
+

@@ -14,7 +14,7 @@ import { StateMessage } from '../state/state-message';
   selector: 'app-advanced',
   imports: [StateMessage],
   templateUrl: './advanced.html',
-  styles: ['button, input { min-height: 44px; } .advanced-text { overflow-wrap: anywhere; }'],
+  styles: ['.advanced-text { overflow-wrap: anywhere; }'],
 })
 export class Advanced implements OnInit {
   private readonly api = inject(ApiService);

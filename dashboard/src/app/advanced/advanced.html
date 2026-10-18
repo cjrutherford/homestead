@@ -1,5 +1,5 @@
 <section aria-label="Advanced administration">
-  <h2>Advanced</h2>
+  <h1>Advanced</h1>
   <p>
     Expert tools with full appliance control. Reach them only over the
     local network; nothing here widens access by itself.
@@ -26,7 +26,7 @@
   }
 
   @if (link(); as entry) {
-    <h3>Dockge</h3>
+    <h2>Dockge</h2>
     <p class="advanced-text">
       @if (safeUrl(entry.url)) {
         <a [href]="entry.url" rel="noopener noreferrer">{{ entry.url }}</a>

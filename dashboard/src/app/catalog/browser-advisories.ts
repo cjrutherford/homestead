@@ -14,7 +14,7 @@ import { StateMessage } from '../state/state-message';
   template: `
     @if (advisories()?.length) {
       <section class="browser-advisories" aria-label="Browser advisories">
-        <h4>Browser advisories</h4>
+        <h3>Browser advisories</h3>
         <app-state-message
           kind="status"
           headline="Homestead cannot see your browser's capabilities. These are advisories only and never block install, update or start."

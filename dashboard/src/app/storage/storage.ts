@@ -7,7 +7,7 @@ import {
   StorageRegistration,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
-import { DialogFocus } from './dialog-focus';
+import { Dialog } from '../ui/dialog';
 
 /** The five class names the daemon accepts (internal/storage/classes.go). */
 export const STORAGE_CLASSES = [
@@ -26,12 +26,11 @@ export const STORAGE_CLASSES = [
  * PascalCase because the Go structs carry no json tags.
  */
 @Component({
-  imports: [StateMessage, DialogFocus],
+  imports: [StateMessage, Dialog],
   selector: 'app-storage',
   templateUrl: './storage.html',
   styles: [
-    '.storage-path { overflow-wrap: anywhere; }',
-    'button, input, select { min-height: 44px; }',
+    '.storage-path { font-family: var(--font-mono); font-size: 0.94em; overflow-wrap: anywhere; }',
   ],
 })
 export class StorageSetup implements OnInit {

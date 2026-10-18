@@ -1,5 +1,5 @@
 <section aria-label="Audit log">
-  <h2>Audit log</h2>
+  <h1>Audit log</h1>
   <p>
     Append-only record of security-relevant actions. Entries cannot be
     changed or deleted. The daemon returns the newest entries up to the
@@ -67,7 +67,7 @@
       @for (row of visible(); track row.entry.id) {
         @let entry = row.entry;
         <li class="audit-entry">
-          <span class="outcome" [class]="outcomeClass(entry.outcome)">{{ entry.outcome }}</span>
+          <span class="badge outcome" [class]="outcomeClass(entry.outcome)">{{ entry.outcome }}</span>
           <strong class="audit-text">{{ entry.action }}</strong>
           by <span class="audit-text">{{ entry.actor }}</span>
           at <time [attr.datetime]="entry.created_at">{{ entry.created_at }}</time>

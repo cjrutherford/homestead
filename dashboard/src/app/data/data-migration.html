@@ -1,5 +1,5 @@
 <section aria-label="App data placement">
-  <h2>App data</h2>
+  <h1>App data</h1>
   <p>
     Apps installed before data placement keep their data in Docker volumes,
     outside mounted storage and outside backups. Migrating copies it onto
@@ -26,7 +26,7 @@
     <ul>
       @for (app of data().apps; track app.package) {
         <li>
-          <h3>{{ app.package }}: {{ app.state }}</h3>
+          <h2>{{ app.package }}: {{ app.state }}</h2>
           @if (app.reason) {
             <p>{{ app.reason }}</p>
           }
@@ -44,7 +44,7 @@
             </button>
           }
           @if (pendingVolumes(app.package).length > 0) {
-            <h4>Old volumes pending removal</h4>
+            <h3>Old volumes pending removal</h3>
             <ul>
               @for (volume of pendingVolumes(app.package); track volume.volume) {
                 <li>{{ volume.volume }} ({{ volume.target }}, {{ volume.size_bytes }} bytes)</li>
@@ -57,7 +57,7 @@
           @if (plan(); as p) {
             @if (planFor() === app.package) {
               <div aria-label="Migration plan">
-                <h4>Migration plan</h4>
+                <h3>Migration plan</h3>
                 <ul>
                   @for (item of p.items; track item.dest) {
                     <li>

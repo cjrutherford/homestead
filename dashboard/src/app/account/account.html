@@ -1,7 +1,24 @@
 <section aria-label="Account">
-  <h2>Account</h2>
+  <h1>Account</h1>
 
-  <h3>Lockout status</h3>
+  <h2>Appearance</h2>
+  <fieldset>
+    <legend>Theme</legend>
+    @for (option of themeOptions; track option.value) {
+      <label>
+        <input
+          type="radio"
+          name="theme"
+          [value]="option.value"
+          [checked]="theme.preference() === option.value"
+          (change)="chooseTheme(option.value)"
+        />
+        {{ option.label }}
+      </label>
+    }
+  </fieldset>
+
+  <h2>Lockout status</h2>
   @if (loading()) {
     <app-state-message kind="loading" headline="Loading lockout status…" />
   }
@@ -30,7 +47,7 @@
     <app-state-message kind="empty" headline="No lockout information available." />
   }
 
-  <h3>Change password</h3>
+  <h2>Change password</h2>
   <p>
     Changing your password signs out all your other sessions. This session
     stays signed in.
@@ -59,18 +76,18 @@
         aria-hidden="true"
         [value]="sessions.username() ?? ''"
       />
-      <p>
-        <label for="account-current">Current password</label><br />
+      <div class="field">
+        <label for="account-current">Current password</label>
         <input id="account-current" #cur type="password" autocomplete="current-password" [disabled]="busy()" />
-      </p>
-      <p>
-        <label for="account-new">New password ({{ minLength }} to {{ maxLength }} bytes)</label><br />
+      </div>
+      <div class="field">
+        <label for="account-new">New password ({{ minLength }} to {{ maxLength }} bytes)</label>
         <input id="account-new" #nw type="password" autocomplete="new-password" [disabled]="busy()" />
-      </p>
-      <p>
-        <label for="account-confirm">Confirm new password</label><br />
+      </div>
+      <div class="field">
+        <label for="account-confirm">Confirm new password</label>
         <input id="account-confirm" #cf type="password" autocomplete="new-password" [disabled]="busy()" />
-      </p>
+      </div>
       <button type="submit" [disabled]="busy()">Change password</button>
     </form>
   @if (busy()) {
