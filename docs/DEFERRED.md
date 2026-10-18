@@ -528,3 +528,17 @@
 - The owner's plain-http opt-in is not persisted: rotating a link that was
   made with `allow_insecure_http` asks for the flag again. A stored flag
   would need a schema change.
+
+## S254 local Nextcloud link follow-ups
+
+- Existing Nextcloud installs (before the `{{route_host}}` trusted-domain
+  environment) and later route-host changes need `occ
+  config:system:set trusted_domains` run by the owner; Homestead does not
+  exec `occ` or rewrite trusted domains on a route change. A planned,
+  audited `occ` step would be the fix.
+- Installs before S249 lack the edge network on routed services; doctor
+  reports it but no planned flow attaches it (a package re-apply that
+  regenerates the compose file would).
+- A route whose exposure policy admits only LAN sources refuses the
+  daemon's loopback dial to the edge; the link reports the 403 and the owner
+  links the published loopback port instead.

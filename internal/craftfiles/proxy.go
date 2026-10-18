@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -420,7 +421,12 @@ func (p *Proxy) destination(r *http.Request, link Link) (target, rel string, err
 // redirect could leave the linked Nextcloud), and the response header
 // wait bounded. tlsConfig may add trusted CAs (the internal CA).
 func NewClient(tlsConfig *tls.Config) *http.Client {
+	return newClient(tlsConfig, nil)
+}
+
+func newClient(tlsConfig *tls.Config, dial func(ctx context.Context, network, addr string) (net.Conn, error)) *http.Client {
 	tr := &http.Transport{
+		DialContext:           dial,
 		Proxy:                 nil,
 		MaxIdleConnsPerHost:   4,
 		IdleConnTimeout:       60 * time.Second,
@@ -442,6 +448,14 @@ func NewClient(tlsConfig *tls.Config) *http.Client {
 // changes (CA rotation).
 type Upstream struct {
 	Roots func() []byte
+	// EdgeHosts returns the hostnames this appliance's own edge serves
+	// (the route table). A linked address on one of them is dialled on the
+	// local edge, 127.0.0.1 at the URL's port, instead of resolving the
+	// name: the host does not necessarily resolve its own LAN names
+	// (mDNS and the LAN resolver answer other machines). TLS and the Host
+	// header still carry the name, so the route's certificate is verified
+	// against it. Names not in the table resolve normally.
+	EdgeHosts func() map[string]bool
 
 	mu     sync.Mutex
 	pem    string
@@ -468,6 +482,18 @@ func (u *Upstream) Client() *http.Client {
 		pool.AppendCertsFromPEM(pem)
 		cfg = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
 	}
-	u.client, u.pem = NewClient(cfg), string(pem)
+	u.client, u.pem = newClient(cfg, u.dialEdge), string(pem)
 	return u.client
+}
+
+// dialEdge dials a linked address that is one of this appliance's edge
+// routes on the loopback edge; everything else dials as named.
+func (u *Upstream) dialEdge(ctx context.Context, network, addr string) (net.Conn, error) {
+	d := &net.Dialer{Timeout: 10 * time.Second}
+	if u.EdgeHosts != nil {
+		if host, port, err := net.SplitHostPort(addr); err == nil && u.EdgeHosts()[strings.ToLower(host)] {
+			return d.DialContext(ctx, network, net.JoinHostPort("127.0.0.1", port))
+		}
+	}
+	return d.DialContext(ctx, network, addr)
 }

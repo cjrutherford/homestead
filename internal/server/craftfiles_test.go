@@ -17,6 +17,7 @@ import (
 
 	"homestead/internal/craftfiles"
 	"homestead/internal/docker"
+	"homestead/internal/doctor"
 )
 
 const (
@@ -564,5 +565,35 @@ func TestCraftDoctorCheckReportsEdgeDrift(t *testing.T) {
 	}
 	if got := check(false, nil); got[1] != "ok" {
 		t.Fatalf("no craft routes: %v", got)
+	}
+}
+
+func TestEdgeUpstreamDoctorCheck(t *testing.T) {
+	a := newCraftApp(t)
+	if err := saveEdgeRoutes(a.st, docker.RouteSet{Routes: []docker.Route{{
+		Host: "nextcloud.lan", Target: docker.Target{Host: "nextcloud", Port: 80},
+		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal,
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	caddy := docker.Container{Names: []string{"/" + docker.CaddyContainerName}, Networks: []string{"homestead-edge"}}
+	app := func(networks ...string) docker.Container {
+		return docker.Container{Names: []string{"/nextcloud-nextcloud"}, Networks: networks,
+			Labels: map[string]string{"com.docker.compose.service": "nextcloud"}}
+	}
+	run := func(all ...docker.Container) doctor.Check {
+		return edgeUpstreamDoctorCheck(a.st, func(context.Context) ([]docker.Container, error) { return all, nil })()[0]
+	}
+	if c := run(caddy, app("nextcloud_default")); c.Status != doctor.StatusWarn || !strings.Contains(c.Detail, "nextcloud.lan") || !strings.Contains(c.Detail, "docker network connect") {
+		t.Fatalf("pre-S249 install: %+v", c)
+	}
+	if c := run(caddy, app("nextcloud_default", "homestead-edge")); c.Status != doctor.StatusOK {
+		t.Fatalf("attached: %+v", c)
+	}
+	if c := run(app("nextcloud_default")); c.Status != doctor.StatusOK {
+		t.Fatalf("edge not running: %+v", c)
+	}
+	if c := edgeUpstreamDoctorCheck(a.st, func(context.Context) ([]docker.Container, error) { return nil, fmt.Errorf("down") })()[0]; c.Status != doctor.StatusWarn {
+		t.Fatalf("list error: %+v", c)
 	}
 }

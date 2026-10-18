@@ -157,14 +157,38 @@ carries the owner's explicit `allow_insecure_http: true` (CLI
 `INSECURE` warning first, and rotating such a link needs the opt-in again.
 
 **The appliance's own Nextcloud.** The documented link address is
-`https://nextcloud.lan` (the package's edge route, `tls internal`, S280). The
-daemon runs on the host and resolves that name through the appliance's own
-resolver. Its upstream HTTP client (`Upstream`) trusts the Homestead internal
-CA root (ADR-030) in addition to the system roots and rebuilds when the CA
-rotates, so the certificate verifies with no `insecure skip verify` anywhere.
-If the Nextcloud route is plain `http` (TLS off), link
-`http://127.0.0.1:<published port>` instead (loopback needs no opt-in) or turn
-the route's TLS on.
+`https://nextcloud.lan` (the package's edge route, `tls internal`, S280).
+The host does not necessarily resolve its own LAN names (the LAN resolver
+and mDNS answer other machines; `/etc/hosts` and the system resolver know
+nothing of `.lan` routes), so the upstream client does not rely on DNS for
+them: a linked host that is in this appliance's edge route table is dialled
+on the local edge, `127.0.0.1` at the URL's port, while TLS (SNI and
+certificate verification) and the `Host` header keep the route name. Names
+outside the table resolve normally. The client (`Upstream`) trusts the
+Homestead internal CA root (ADR-030) in addition to the system roots and
+rebuilds when the CA rotates, so the certificate verifies with no `insecure
+skip verify` anywhere. An exposure policy on the route applies to this
+request like any other, and it arrives from the loopback address: a policy
+that admits only LAN sources makes the link fail with a 403 until the owner
+links `http://127.0.0.1:<published port>` instead. If the Nextcloud route is
+plain `http` (TLS off), link that same way or turn the route's TLS on.
+
+Nextcloud answers 400 to a `Host` it does not trust. A fresh Nextcloud
+install therefore gets `NEXTCLOUD_TRUSTED_DOMAINS` set from the planned route
+hostname (the catalog `{{route_host}}` environment token; the image applies it
+once, when it first installs). A Nextcloud installed before this change, or
+one served under another name later, needs the name added by the owner:
+`docker exec -u www-data nextcloud-nextcloud php occ config:system:set
+trusted_domains 1 --value=nextcloud.lan`. The link plan reports the 400 with
+that instruction.
+
+The edge reaches an app only on the `homestead-edge` network. Installs since
+S249 attach routed services to it; an older install lacks it, the edge
+answers 502 for the route and the link reports that. `homesteadctl doctor`
+flags it as `edge-upstream-networks` (reinstall the package, or `docker
+network connect --alias <route target> homestead-edge <container>`; the
+alias must be the route's target name, and the attachment does not survive
+a recreate).
 
 ### Responses
 

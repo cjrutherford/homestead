@@ -10,6 +10,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -82,7 +83,17 @@ func (s *Server) MountCraftFiles(c CraftFilesConfig) *CraftFiles {
 			s.log.Warn("audit record failed", "action", action, "error", err)
 		}
 	}
-	up := &craftfiles.Upstream{}
+	up := &craftfiles.Upstream{EdgeHosts: func() map[string]bool {
+		set, err := loadEdgeRoutes(c.Store)
+		if err != nil {
+			return nil
+		}
+		hosts := map[string]bool{}
+		for _, r := range set.Routes {
+			hosts[string(r.Host)] = true
+		}
+		return hosts
+	}}
 	if c.Local != nil {
 		up.Roots = func() []byte {
 			pem, err := c.Local.CA.RootPEM()
@@ -401,5 +412,66 @@ func craftFilesDoctorCheck(st *store.Store, mounted func(context.Context) (bool,
 				Detail: "the edge container does not mount " + docker.CraftSocketDir + ", so craft file storage cannot reach the daemon: redeploy the edge (homesteadctl edge deploy)"}}
 		}
 		return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "the edge mounts the craft file socket directory"}}
+	}
+}
+
+// edgeUpstreamDoctorCheck flags a routed service that shares no network
+// with the edge proxy (installed before S249 attached routed services to
+// homestead-edge): the edge answers 502 for it and a craft file link to
+// its address fails. lister and the container name are seams for tests.
+func edgeUpstreamDoctorCheck(st *store.Store, lister func(context.Context) ([]docker.Container, error)) func() []doctor.Check {
+	return func() []doctor.Check {
+		const name = "edge-upstream-networks"
+		set, err := loadEdgeRoutes(st)
+		if err != nil {
+			return []doctor.Check{{Name: name, Status: doctor.StatusWarn, Detail: "cannot read the edge route table: " + err.Error()}}
+		}
+		if len(set.Routes) == 0 {
+			return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "no routes recorded"}}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		all, err := lister(ctx)
+		if err != nil {
+			return []doctor.Check{{Name: name, Status: doctor.StatusWarn, Detail: "cannot list containers: " + err.Error()}}
+		}
+		var edge map[string]bool
+		for _, c := range all {
+			for _, n := range c.Names {
+				if strings.TrimPrefix(n, "/") == docker.CaddyContainerName {
+					edge = map[string]bool{}
+					for _, nw := range c.Networks {
+						edge[nw] = true
+					}
+				}
+			}
+		}
+		if edge == nil {
+			return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "the edge proxy is not running; nothing to compare"}}
+		}
+		var bad []string
+		for _, r := range set.Routes {
+			found, shares := false, false
+			for _, c := range all {
+				if c.Labels["com.docker.compose.service"] != r.Target.Host {
+					continue
+				}
+				found = true
+				for _, nw := range c.Networks {
+					if edge[nw] {
+						shares = true
+					}
+				}
+			}
+			if found && !shares {
+				bad = append(bad, fmt.Sprintf("%s (%s)", r.Host, r.Target.Host))
+			}
+		}
+		if len(bad) > 0 {
+			return []doctor.Check{{Name: name, Status: doctor.StatusWarn,
+				Detail: fmt.Sprintf("routed services not attached to %s, so the edge cannot reach them: %s; reinstall the package, or attach the container with `docker network connect --alias <service> %s <container>`, the alias being the route target name (S249 installs attach routed services themselves)",
+					docker.NetworkEdge, strings.Join(bad, ", "), docker.NetworkEdge)}}
+		}
+		return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "every routed service shares a network with the edge"}}
 	}
 }

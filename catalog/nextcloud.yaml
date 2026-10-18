@@ -16,6 +16,13 @@ services:
 - name: nextcloud
   image: nextcloud:35.0.1-apache
   exposes: web
+  # The edge route hostname is a trusted domain from the first install
+  # (S254): the daemon's craft file link and every browser reach
+  # Nextcloud through it, and Nextcloud refuses an unlisted Host. The
+  # image applies this once, when it first installs; an existing install
+  # adds the name with occ (docs/architecture/CRAFT_FILE_PROXY.md).
+  environment:
+    NEXTCLOUD_TRUSTED_DOMAINS: "{{route_host}}"
   # Image VOLUME: /var/www/html (code, config, apps). User files and
   # the default SQLite database live in its data/ directory, mounted
   # nested on bulk storage (not flagged `database`: it is mostly user

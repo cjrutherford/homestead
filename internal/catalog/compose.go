@@ -67,7 +67,18 @@ type Generation struct {
 	// attaches every network to every service.
 	EdgeServices map[string]bool
 	Services     []ServiceGeneration
+	// RouteHosts maps a routed service to the hostname of its edge route.
+	// It fills RouteHostToken in that service's manifest environment, so a
+	// package can trust the name the edge serves it under (Nextcloud's
+	// trusted domains).
+	RouteHosts map[string]string
 }
+
+// RouteHostToken in a service environment value is replaced with the
+// hostname of the route that serves the service (the variable is left out
+// when no route does). Only services that
+// expose an endpoint may use it.
+const RouteHostToken = "{{route_host}}"
 
 // validate checks generation against the manifest: known services
 // only, sane ports and volumes, known networks, no duplicates.
@@ -255,6 +266,17 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 			}
 		}
 		rendered.Environment, rendered.Secrets = serviceSecretWiring(manifest, name)
+		for key, value := range rendered.Environment {
+			if strings.Contains(value, RouteHostToken) {
+				host := generation.RouteHosts[name]
+				if host == "" {
+					// No route serves this service: there is no name to trust.
+					delete(rendered.Environment, key)
+					continue
+				}
+				rendered.Environment[key] = strings.ReplaceAll(value, RouteHostToken, host)
+			}
+		}
 		for _, network := range serviceNetworks {
 			if network == docker.NetworkEdge && generation.EdgeServices != nil && !generation.EdgeServices[name] {
 				continue

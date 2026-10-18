@@ -45,6 +45,20 @@ func (n *nextcloud) davBase() string {
 	return strings.TrimSuffix(n.link.BaseURL, "/") + "/remote.php/dav/files/" + url.PathEscape(n.link.Account)
 }
 
+func (n *nextcloud) statusErr(what string, code int) error {
+	host := n.link.BaseURL
+	if u, err := url.Parse(n.link.BaseURL); err == nil && u.Hostname() != "" {
+		host = u.Hostname()
+	}
+	switch code {
+	case http.StatusBadRequest:
+		return fmt.Errorf("%w: %s answered 400: Nextcloud usually does this when %s is not one of its trusted domains (add it: occ config:system:set trusted_domains <next index> --value=%s)", ErrUpstream, what, host, host)
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return fmt.Errorf("%w: %s answered %d: if %s is a Homestead edge route, the proxy cannot reach the app (is it running, and attached to the homestead-edge network? see homesteadctl doctor)", ErrUpstream, what, code, host)
+	}
+	return statusErr(what, code)
+}
+
 func statusErr(what string, code int) error {
 	switch code {
 	case http.StatusUnauthorized:
@@ -64,7 +78,7 @@ func (n *nextcloud) verify(ctx context.Context) error {
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusMultiStatus {
-		return statusErr("the account's file space", resp.StatusCode)
+		return n.statusErr("the account's file space", resp.StatusCode)
 	}
 	return nil
 }
@@ -84,7 +98,7 @@ func (n *nextcloud) ensureRoot(ctx context.Context) error {
 		switch resp.StatusCode {
 		case http.StatusCreated, http.StatusMethodNotAllowed:
 		default:
-			return statusErr("creating the root folder", resp.StatusCode)
+			return n.statusErr("creating the root folder", resp.StatusCode)
 		}
 	}
 	return nil
@@ -101,7 +115,7 @@ func (n *nextcloud) createAppPassword(ctx context.Context, accountPassword strin
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	if resp.StatusCode != http.StatusOK {
-		return "", statusErr("the app-password endpoint", resp.StatusCode)
+		return "", n.statusErr("the app-password endpoint", resp.StatusCode)
 	}
 	var doc struct {
 		OCS struct {

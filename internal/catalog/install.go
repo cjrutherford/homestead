@@ -299,7 +299,11 @@ func planCompose(plan *InstallPlan, req InstallRequest) error {
 		}
 		plan.Notes = append(plan.Notes, fmt.Sprintf("routed services attach to %s so the proxy can reach them; that network is created when the edge proxy is set up, so install fails until it exists", docker.NetworkEdge))
 	}
-	files, err := Generate(req.Manifest, Generation{Networks: networks, EdgeServices: edgeServices, Services: specs})
+	routeHosts := map[string]string{}
+	for _, route := range plan.Routes {
+		routeHosts[route.Target.Host] = string(route.Host)
+	}
+	files, err := Generate(req.Manifest, Generation{Networks: networks, EdgeServices: edgeServices, Services: specs, RouteHosts: routeHosts})
 	if err != nil {
 		return err
 	}

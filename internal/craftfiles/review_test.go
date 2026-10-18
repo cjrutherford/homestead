@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -347,5 +348,53 @@ func TestRevokeOperatorEndsCraftSessionsAndCodes(t *testing.T) {
 	}
 	if codes, sessions := e.ses.Counts(); codes != 0 || sessions != 0 {
 		t.Fatalf("left over: %d codes, %d sessions", codes, sessions)
+	}
+}
+
+// A linked address that is one of this appliance's edge routes is dialled
+// on the local edge (127.0.0.1) at the URL's port, with the route name kept
+// for TLS: the host need not resolve its own LAN names. Unlisted names
+// still resolve normally.
+func TestUpstreamDialsOwnEdgeRoutesOnLoopback(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Host", r.Host)
+		w.WriteHeader(207)
+	}))
+	defer srv.Close()
+	_, port, _ := net.SplitHostPort(srv.Listener.Addr().String())
+	rootPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	hosts := map[string]bool{}
+	up := &Upstream{Roots: func() []byte { return rootPEM }, EdgeHosts: func() map[string]bool { return hosts }}
+
+	// httptest's certificate is valid for example.com, 127.0.0.1 and ::1,
+	// so the edge-route name verifies only when TLS uses the name: use the
+	// certificate's own DNS name as the route host.
+	routed := "example.com"
+	hosts[routed] = true
+	resp, err := up.Client().Get("https://" + routed + ":" + port + "/")
+	if err != nil {
+		t.Fatalf("route host not dialled on loopback: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 207 || resp.Header.Get("X-Host") != routed+":"+port {
+		t.Fatalf("status %d host %q", resp.StatusCode, resp.Header.Get("X-Host"))
+	}
+
+	delete(hosts, routed)
+	if _, err := up.Client().Get("https://unlisted.invalid:" + port + "/"); err == nil {
+		t.Fatal("a name outside the route table must resolve normally and fail here")
+	}
+}
+
+func TestStatusErrHintsForEdgeAndTrustedDomains(t *testing.T) {
+	n := &nextcloud{link: Link{BaseURL: "https://nextcloud.lan"}}
+	if err := n.statusErr("the account's file space", 400); !strings.Contains(err.Error(), "trusted_domains") || !strings.Contains(err.Error(), "--value=nextcloud.lan") {
+		t.Fatalf("400: %v", err)
+	}
+	if err := n.statusErr("x", 502); !strings.Contains(err.Error(), "homestead-edge") || !strings.Contains(err.Error(), "doctor") {
+		t.Fatalf("502: %v", err)
+	}
+	if err := n.statusErr("x", 401); !strings.Contains(err.Error(), "rejected the credential") {
+		t.Fatalf("401: %v", err)
 	}
 }

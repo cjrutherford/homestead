@@ -87,6 +87,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 		backupEncryptionDoctorCheck(st),
 		localTLSDoctorChecks(local, time.Now),
 		craftFilesDoctorCheck(st, docker.CraftMountPresent, docker.CraftSocketPath),
+		edgeUpstreamDoctorCheck(st, docker.NewClient("").Containers),
 	)
 	srv.MountLocalTLS(st, local)
 	srv.MountTLSRenewal(st, issuing, time.Now)
