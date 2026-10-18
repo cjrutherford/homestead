@@ -52,6 +52,15 @@ describe('StateMessage', () => {
     expect(fixture.nativeElement.querySelector('[role]')).toBeNull();
   });
 
+  it('renders warnings as announced, warning-styled messages', () => {
+    fixture.componentRef.setInput('kind', 'warning');
+    fixture.componentRef.setInput('headline', 'Backups cannot be read if this appliance is lost.');
+    fixture.detectChanges();
+    const el = fixture.nativeElement.querySelector('.state-warning');
+    expect(el?.getAttribute('role')).toBe('status');
+    expect(fixture.nativeElement.querySelector('.state-status')).toBeNull();
+  });
+
   it('renders nothing for a null or empty headline', () => {
     fixture.componentRef.setInput('kind', 'error');
     fixture.componentRef.setInput('headline', null);

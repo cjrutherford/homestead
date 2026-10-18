@@ -139,7 +139,7 @@
           </dd>
         </dl>
         @if (plan.directory_class === 'production') {
-          <app-state-message kind="status" headline="This is a production certificate authority. Test against staging first; production has strict rate limits." />
+          <app-state-message kind="warning" headline="This is a production certificate authority. Test against staging first; production has strict rate limits." />
         }
         @if (!plan.ready) {
           <app-state-message kind="error" [headline]="'Not ready: ' + plan.blockers.join('; ')" />

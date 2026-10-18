@@ -103,7 +103,7 @@
           }
         </ul>
         @for (line of p.warnings; track line) {
-          <app-state-message kind="status" [headline]="line" />
+          <app-state-message kind="warning" [headline]="line" />
         }
         <button type="button" [disabled]="busy()" (click)="approve()">Approve {{ p.action }}</button>
         <button type="button" [disabled]="busy()" (click)="cancel()">Cancel</button>

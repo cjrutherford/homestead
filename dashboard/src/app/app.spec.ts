@@ -6,7 +6,7 @@ import {
   provideHttpClientTesting,
   HttpTestingController,
 } from '@angular/common/http/testing';
-import { App, NAV_COLLAPSED_KEY } from './app';
+import { App, NAV_GROUPS_KEY } from './app';
 import { routes } from './app.routes';
 import { SESSION_STORAGE_KEY } from './auth/session.service';
 
@@ -191,20 +191,46 @@ describe('App logged in', () => {
     ]);
   });
 
-  it('collapses a group and remembers it', async () => {
+  async function visit(fixture: ComponentFixture<App>, url: string): Promise<void> {
+    await TestBed.inject(Router).navigateByUrl(url);
+    fixture.detectChanges();
+    TestBed.inject(HttpTestingController)
+      .match(() => true)
+      .forEach((req) => req.flush({}));
+    fixture.detectChanges();
+  }
+
+  it('opens only the current group by default', async () => {
+    const fixture = await setup('CLAIMED');
+    await visit(fixture, '/advanced');
+    const open = Array.from(fixture.nativeElement.querySelectorAll('.nav-group-toggle'))
+      .filter((b) => (b as HTMLElement).getAttribute('aria-expanded') === 'true')
+      .map((b) => (b as HTMLElement).textContent?.trim());
+    expect(open).toEqual(['System']);
+  });
+
+  it('opens a group on request and remembers it', async () => {
     const fixture = await setup('CLAIMED');
     const toggle = fixture.nativeElement.querySelectorAll('.nav-group-toggle')[1] as HTMLElement;
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    toggle.click();
-    fixture.detectChanges();
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(fixture.nativeElement.querySelector(`#${toggle.getAttribute('aria-controls')}`).hidden).toBe(true);
-    expect(JSON.parse(localStorage.getItem(NAV_COLLAPSED_KEY) ?? '[]')).toEqual(['apps']);
+    toggle.click();
+    fixture.detectChanges();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(JSON.parse(localStorage.getItem(NAV_GROUPS_KEY) ?? '{}')).toEqual({ apps: true });
 
     // A fresh shell reads the persisted state.
     const reloaded = await setup('CLAIMED');
     const again = reloaded.nativeElement.querySelectorAll('.nav-group-toggle')[1] as HTMLElement;
-    expect(again.getAttribute('aria-expanded')).toBe('false');
+    expect(again.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('reopens the current group even after it was closed', async () => {
+    localStorage.setItem(NAV_GROUPS_KEY, JSON.stringify({ system: false }));
+    const fixture = await setup('CLAIMED');
+    await visit(fixture, '/advanced');
+    const toggle = fixture.nativeElement.querySelectorAll('.nav-group-toggle')[4] as HTMLElement;
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('hides Claim once the appliance is claimed', async () => {

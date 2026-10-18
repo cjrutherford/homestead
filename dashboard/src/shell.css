@@ -123,6 +123,13 @@
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
+/* A mouse or trackpad hits a smaller target; touch keeps the full 44px. */
+@media (pointer: fine) {
+  .nav-link {
+    min-height: 2.5rem;
+  }
+}
+
 .nav-link:hover {
   color: var(--sidebar-foreground);
   background: var(--sidebar-hover-bg);

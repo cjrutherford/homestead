@@ -37,7 +37,7 @@
   } @else if (recipients(); as view) {
     @if (!view.owner_held) {
       <app-state-message
-        kind="status"
+        kind="warning"
         headline="No owner-held recipient and no recorded export: if this appliance is lost, backups cannot be read."
       />
     }
@@ -104,7 +104,7 @@
   @if (exported(); as result) {
     <div role="alert" aria-label="Exported recovery identity">
       <app-state-message
-        kind="status"
+        kind="warning"
         headline="Store this offline, off this appliance. It is shown once and cannot be shown again here."
       />
       <pre class="backup-root">{{ result.identity }}</pre>
@@ -217,13 +217,13 @@
           }
           @if (job.unavailable_attempts) {
             <app-state-message
-              kind="status"
+              kind="warning"
               [headline]="'Waiting for inputs since ' + when(job.unavailable_since ?? '', 'unknown') + ' (attempt ' + job.unavailable_attempts + '); retrying with backoff.'"
             />
           }
           @if (job.last_skip_blocking) {
             <app-state-message
-              kind="status"
+              kind="warning"
               [headline]="'Run skipped at ' + when(job.last_skip_at) + ': operation ' + job.last_skip_blocking + ' was still active.'"
             />
           }

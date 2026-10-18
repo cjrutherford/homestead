@@ -6,19 +6,36 @@ import { ApiService, Identity } from './core/api.service';
 import { NAV_GROUPS, NavGroup, visibleGroups } from './core/nav';
 import { ThemeService } from './core/theme.service';
 
-/** localStorage key for the collapsed sidebar group ids. */
-export const NAV_COLLAPSED_KEY = 'homestead.nav.collapsed';
+/**
+ * localStorage key for explicit sidebar group choices: group id to open
+ * (true) or closed (false). A group with no choice is open only while the
+ * current page is inside it.
+ */
+export const NAV_GROUPS_KEY = 'homestead.nav.groups';
 
 /** Width at and above which the sidebar is a column rather than a drawer (md). */
 const DESKTOP_QUERY = '(min-width: 48rem)';
 
-function readCollapsed(): string[] {
+function readChoices(): Record<string, boolean> {
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(NAV_COLLAPSED_KEY) ?? '[]');
-    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+    const parsed: unknown = JSON.parse(localStorage.getItem(NAV_GROUPS_KEY) ?? '{}');
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'),
+    );
   } catch {
-    return [];
+    return {};
   }
+}
+
+function groupOf(url: string): string | null {
+  const path = url.split(/[?#]/)[0];
+  const current = NAV_GROUPS.find((group) =>
+    group.items.some((item) => path === item.path || path.startsWith(`${item.path}/`)),
+  );
+  return current?.id ?? null;
 }
 
 /**
@@ -43,7 +60,8 @@ export class App {
 
   private readonly identity = signal<Identity | null>(null);
   protected readonly drawerOpen = signal(false);
-  protected readonly collapsed = signal<string[]>(readCollapsed());
+  protected readonly choices = signal<Record<string, boolean>>(readChoices());
+  private readonly currentGroup = signal<string | null>(groupOf(this.router.url));
   protected readonly groups = computed<NavGroup[]>(() =>
     visibleGroups(this.sessions.isLoggedIn(), this.identity()?.state === 'UNCLAIMED'),
   );
@@ -56,7 +74,7 @@ export class App {
   constructor() {
     this.loadIdentity();
     this.router.events.pipe(filter((event) => event instanceof NavigationEnd)).subscribe((event) => {
-      this.expandCurrent(event.urlAfterRedirects);
+      this.enter(event.urlAfterRedirects);
       if (this.drawerOpen()) {
         this.close(false);
         this.main()?.nativeElement.focus();
@@ -76,14 +94,11 @@ export class App {
   }
 
   protected isOpen(group: NavGroup): boolean {
-    return !this.collapsed().includes(group.id);
+    return this.choices()[group.id] ?? group.id === this.currentGroup();
   }
 
   protected toggleGroup(group: NavGroup): void {
-    const next = this.isOpen(group)
-      ? [...this.collapsed(), group.id]
-      : this.collapsed().filter((id) => id !== group.id);
-    this.setCollapsed(next);
+    this.setChoices({ ...this.choices(), [group.id]: !this.isOpen(group) });
   }
 
   protected openDrawer(): void {
@@ -147,21 +162,20 @@ export class App {
     });
   }
 
-  /** The group holding the current page never stays collapsed. */
-  private expandCurrent(url: string): void {
-    const path = url.split(/[?#]/)[0];
-    const current = NAV_GROUPS.find((group) =>
-      group.items.some((item) => path === item.path || path.startsWith(`${item.path}/`)),
-    );
-    if (current && this.collapsed().includes(current.id)) {
-      this.setCollapsed(this.collapsed().filter((id) => id !== current.id));
+  /** Moving to a page opens its group, even one the owner closed earlier. */
+  private enter(url: string): void {
+    const id = groupOf(url);
+    this.currentGroup.set(id);
+    if (id !== null && this.choices()[id] === false) {
+      const { [id]: _closed, ...rest } = this.choices();
+      this.setChoices(rest);
     }
   }
 
-  private setCollapsed(ids: string[]): void {
-    this.collapsed.set(ids);
+  private setChoices(choices: Record<string, boolean>): void {
+    this.choices.set(choices);
     try {
-      localStorage.setItem(NAV_COLLAPSED_KEY, JSON.stringify(ids));
+      localStorage.setItem(NAV_GROUPS_KEY, JSON.stringify(choices));
     } catch {
       // Private browsing: the choice holds for this tab only.
     }

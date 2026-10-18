@@ -205,8 +205,9 @@ summary {
   align-items: flex-start;
   padding: var(--spacing-sm) var(--spacing-md);
   background: var(--warn-bg);
-  color: var(--warn-text);
-  border: 1px solid var(--warn);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-inline-start: 4px solid var(--warn);
   border-radius: var(--radius-control);
 }
 
@@ -229,6 +230,10 @@ ul:has(> .audit-entry) {
 .audit-entry {
   padding: var(--spacing-sm) 0;
   border-bottom: 1px solid var(--border);
+}
+
+.audit-entry .badge {
+  margin-inline-end: var(--spacing-xs);
 }
 
 .audit-entry p {

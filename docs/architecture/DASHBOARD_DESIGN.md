@@ -6,7 +6,7 @@ framework, no vendored third-party UI code.
 ## Tokens
 `dashboard/src/tokens.css` is the only place values live; components use
 `var(--...)`. Groups: spacing, type scale, radius, elevation, motion, layers,
-touch target (`--touch-target`, 44px) and colour. Breakpoints are literals
+touch target (`--touch-target`, 44px; sidebar rows drop to 40px on fine pointers) and colour. Breakpoints are literals
 documented in that file (md, 48rem, is where the sidebar becomes a column).
 
 Radius and elevation follow hierarchy: controls `--radius-control`, panels
@@ -51,8 +51,9 @@ requests. Sentence case everywhere; no all-caps labels.
 - Badges: `.badge` with `.badge-ok`, `-warn`, `-fail`, `-pending`,
   `-running`; plain `.badge` is neutral. The glyph is a CSS mask, so colour
   never stands alone; always include the word.
-- Messages: `app-state-message` (empty, loading, error, status) and
-  `.warning` callouts.
+- Messages: `app-state-message` (empty, loading, error, status, warning) and
+  `.warning` callouts. Text stays ink; the kind shows in the start bar and
+  glyph. Use `warning` for cautions, `status` only for success.
 - Dialog: `app-dialog` (`heading`, `variant="confirm|danger"`, `(dismissed)`)
   on a native `<dialog>` opened with `showModal()`, `role="alertdialog"`,
   `aria-modal`, Tab trap, Escape, focus returns to the opener. Put actions in
@@ -62,8 +63,9 @@ requests. Sentence case everywhere; no all-caps labels.
 
 ## Shell
 Skip link, grouped sidebar (`core/nav.ts`: Overview, Apps, Network, Storage
-and backups, System), collapsible groups persisted in `localStorage`
-(`homestead.nav.collapsed`), current page with `aria-current="page"`, a
+and backups, System), collapsible groups: only the group holding the current
+page is open by default, and the owner's explicit open or close choices are
+persisted in `localStorage` (`homestead.nav.groups`); current page with `aria-current="page"`, a
 drawer below md with a menu button, focus management and Escape. Logged-out
 visitors see Status, Log in and, while unclaimed, Claim. Log in, Log out and
 the user name live in the sidebar foot. The slot `data-slot="work-orders"`
@@ -78,3 +80,10 @@ is reserved for S283. Each page has one `<h1>`; the brand is not a heading.
   confirmation heading and the confirm button use the same verb (Deploy
   Caddy, "Deploy Caddy?", Confirm deploy).
 - No middle-dot meta strings, no arrows appended to buttons.
+
+## First paint
+`public/theme-init.js` (same-origin, loaded synchronously in `<head>`) applies
+a stored theme before the first paint. The production build sets
+`inlineCritical: false` so the full stylesheet, including the `data-theme`
+blocks, is render-blocking; inlined critical CSS omitted those blocks and
+caused a light flash on reload.

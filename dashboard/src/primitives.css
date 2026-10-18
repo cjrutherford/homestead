@@ -379,34 +379,62 @@ tbody tr:last-child td {
   -webkit-mask: center / 1.1em no-repeat;
 }
 
+/* Messages stay quiet: ink text on a faint tint, with the kind carried by
+   the start bar and the glyph (colour never stands alone). */
+.state-error,
+.state-status,
+.state-warning {
+  color: var(--foreground);
+}
+
 .state-error {
-  color: var(--danger);
   background: var(--danger-bg);
-  border-color: var(--danger);
+  border-color: var(--border);
+  border-inline-start-color: var(--danger);
 }
 
 .state-error::before {
   content: '';
+  color: var(--danger);
   mask-image: var(--glyph-fail);
   -webkit-mask-image: var(--glyph-fail);
 }
 
 .state-status {
-  color: var(--success);
   background: var(--success-bg);
-  border-color: var(--success);
+  border-color: var(--border);
+  border-inline-start-color: var(--success);
 }
 
 .state-status::before {
   content: '';
+  color: var(--success);
   mask-image: var(--glyph-ok);
   -webkit-mask-image: var(--glyph-ok);
+}
+
+.state-warning {
+  background: var(--warn-bg);
+  border-color: var(--border);
+  border-inline-start-color: var(--warn);
+}
+
+.state-warning::before {
+  content: '';
+  color: var(--warn);
+  mask-image: var(--glyph-warn);
+  -webkit-mask-image: var(--glyph-warn);
 }
 
 .state-loading::before {
   content: '';
   mask-image: var(--glyph-running);
   -webkit-mask-image: var(--glyph-running);
+}
+
+/* A message standing in for a list item is not a bullet point. */
+li:has(> app-state-message:only-child) {
+  list-style: none;
 }
 
 /* Panels: a board surface. Dialogs sit above it. */
