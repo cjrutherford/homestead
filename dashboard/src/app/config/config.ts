@@ -5,6 +5,7 @@ import { forkJoin } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { ConfigField, FieldError, FieldValues } from '../schema/schema';
 import { SchemaForm } from '../schema/schema-form';
+import { httpErrorMessage } from '../core/http-error';
 import { StateMessage } from '../state/state-message';
 
 export interface Change {
@@ -46,8 +47,8 @@ export class Config implements OnInit {
         this.values.set({ ...config.settings });
         this.loading.set(false);
       },
-      error: () => {
-        this.loadError.set('Configuration unavailable. Is the daemon reachable?');
+      error: (err: HttpErrorResponse) => {
+        this.loadError.set(httpErrorMessage(err, 'Loading configuration'));
         this.loading.set(false);
       },
     });
@@ -68,10 +69,10 @@ export class Config implements OnInit {
         this.errors.set([]);
         this.reviewing.set(true);
       },
-      error: () => {
+      error: (err: HttpErrorResponse) => {
         this.busy.set(false);
         this.errors.set([]);
-        this.loadError.set('Configuration unavailable. Is the daemon reachable?');
+        this.loadError.set(httpErrorMessage(err, 'Reviewing configuration'));
       },
     });
   }
@@ -111,9 +112,9 @@ export class Config implements OnInit {
         this.revision.update((revision) => revision + 1);
         this.notice.set('Reverted to saved configuration.');
       },
-      error: () => {
+      error: (err: HttpErrorResponse) => {
         this.busy.set(false);
-        this.loadError.set('Configuration unavailable. Is the daemon reachable?');
+        this.loadError.set(httpErrorMessage(err, 'Reverting configuration'));
       },
     });
   }

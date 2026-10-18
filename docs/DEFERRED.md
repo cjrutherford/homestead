@@ -544,3 +544,9 @@
 - A route whose exposure policy admits only LAN sources refuses the
   daemon's loopback dial to the edge; the link reports the 403 and the owner
   links the published loopback port instead.
+- The daemon sends no `Retry-After` on the 429 account lockout, so the login
+  page cannot show the remaining wait (the dashboard helper reads it if one
+  is ever sent). A claimed appliance whose owner reloads the claim page
+  before creating the administrator also lands on "already set up", because
+  the claim-window wizard route answers 401 once claimed; a pending-admin
+  signal on `/api/v1/identity` would let the page offer the form again.

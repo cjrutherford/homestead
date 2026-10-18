@@ -56,10 +56,10 @@ describe('Operations', () => {
 
   it('reports unreachability', () => {
     http.expectOne('/api/v1/operations').flush('down', {
-      status: 500,
-      statusText: 'Server Error',
+      status: 503,
+      statusText: 'Unavailable',
     });
     fixture.detectChanges();
-    expect(text()).toContain('unavailable');
+    expect(text()).toContain("Can't reach the appliance");
   });
 });

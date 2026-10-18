@@ -1,6 +1,8 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { ApiService, OperationState } from '../core/api.service';
+import { httpErrorMessage } from '../core/http-error';
 import { StateMessage } from '../state/state-message';
 
 /** Operations list page (S064): newest-first records linking to detail. */
@@ -18,7 +20,8 @@ export class Operations implements OnInit {
   ngOnInit(): void {
     this.api.operations().subscribe({
       next: (operations) => this.operations.set(operations),
-      error: () => this.error.set('Operations unavailable. Is the daemon reachable?'),
+      error: (err: HttpErrorResponse) =>
+        this.error.set(httpErrorMessage(err, 'Loading operations')),
     });
   }
 }

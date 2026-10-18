@@ -5,6 +5,7 @@ import { SessionService } from '../auth/session.service';
 import { ApiService } from '../core/api.service';
 import { WizardService } from '../wizard/wizard.service';
 import { WizardShell } from '../wizard/wizard-shell';
+import { httpErrorMessage, isUnreachable } from '../core/http-error';
 import { StateMessage } from '../state/state-message';
 
 type WizardStep = 'token' | 'admin' | 'done';
@@ -52,11 +53,20 @@ export class Claim implements OnInit {
               this.alreadySetup.set(true);
               this.step.set('done');
             } else {
+              // Saved progress short of done: the admin step is pending.
               this.step.set('admin');
             }
           },
-          error: () => {
-            this.step.set('admin');
+          error: (err: HttpErrorResponse) => {
+            // The admin form is only offered when the wizard says it is
+            // pending. A refusal (401/403, claim-window-closed) or a missing
+            // save on a claimed appliance means setup is finished.
+            if (isUnreachable(err) || err.status >= 500) {
+              this.unreachable();
+              return;
+            }
+            this.alreadySetup.set(true);
+            this.step.set('done');
           },
         });
       },
@@ -96,7 +106,7 @@ export class Claim implements OnInit {
         this.error.set(
           err.status === 401
             ? 'Invalid or expired token.'
-            : 'Claim failed. Is the daemon reachable?',
+            : httpErrorMessage(err, 'Claim'),
         );
       },
     });
@@ -130,9 +140,10 @@ export class Claim implements OnInit {
           return;
         }
         this.error.set(
-          err.status === 422
-            ? 'Invalid administrator details (usernames are lowercase, passwords at least 12 characters).'
-            : 'Setup failed. Is the daemon reachable?',
+          httpErrorMessage(err, 'Setup', {
+            403: 'This appliance has not been claimed yet. Enter the claim token first.',
+            422: 'Invalid administrator details (usernames are lowercase, passwords at least 12 characters).',
+          }),
         );
       },
     });
@@ -148,6 +159,6 @@ export class Claim implements OnInit {
   }
 
   private unreachable(): void {
-    this.error.set('Daemon unreachable. Is homestead-server running?');
+    this.error.set("Can't reach the appliance. Check that homestead-server is running.");
   }
 }

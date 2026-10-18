@@ -5,6 +5,7 @@ import { forkJoin } from 'rxjs';
 import { ApiService, FirewallPlan, FirewallStatus } from '../core/api.service';
 import { WizardService } from '../wizard/wizard.service';
 import { WizardShell } from '../wizard/wizard-shell';
+import { httpErrorMessage } from '../core/http-error';
 import { StateMessage } from '../state/state-message';
 
 const WIZARD_ID = 'firewall';
@@ -65,7 +66,7 @@ export class Firewall implements OnInit {
         this.error.set(
           err.status === 503
             ? 'Firewall management needs privilege: run the daemon as root with nftables present.'
-            : 'Firewall unavailable. Is the daemon reachable?',
+            : httpErrorMessage(err, 'Loading the firewall'),
         );
       },
     });

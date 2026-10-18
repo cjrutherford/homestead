@@ -73,11 +73,35 @@ describe('Claim', () => {
     expect(text()).toContain('Claim token');
   });
 
-  it('skips to the admin step when claimed without progress', () => {
+  function refuseWizard(status: number, body: string): void {
+    http.expectOne('/api/v1/wizards/claim').flush(body, { status, statusText: 'x' });
+    fixture.detectChanges();
+  }
+
+  it('shows already set up, not the admin form, when claimed and the wizard load is refused', () => {
     fixture.detectChanges();
     answerIdentity('CLAIMED');
-    answerWizard(null);
-    expect(text()).toContain('Create the first administrator');
+    refuseWizard(403, 'forbidden');
+    expect(text()).toContain('already set up');
+    expect(text()).not.toContain('Create the first administrator');
+    expect(fixture.nativeElement.querySelector('form')).toBeNull();
+    expect(fixture.nativeElement.querySelector('a[href="/login"]')).not.toBeNull();
+  });
+
+  it('shows already set up on the claim-window-closed 401', () => {
+    fixture.detectChanges();
+    answerIdentity('CLAIMED');
+    refuseWizard(401, 'session required');
+    expect(text()).toContain('already set up');
+    expect(fixture.nativeElement.querySelector('form')).toBeNull();
+  });
+
+  it('reports an unreachable appliance when the wizard load fails with 503', () => {
+    fixture.detectChanges();
+    answerIdentity('CLAIMED');
+    refuseWizard(503, 'down');
+    expect(text()).toContain("Can't reach the appliance");
+    expect(text()).not.toContain('Create the first administrator');
   });
 
   it('resumes the admin step from saved progress', () => {
@@ -138,7 +162,7 @@ describe('Claim', () => {
   it('lands on done when the administrator exists', () => {
     fixture.detectChanges();
     answerIdentity('CLAIMED');
-    answerWizard(null);
+    answerWizard('admin');
     submitAdmin('owner', 'long-enough-password', 'long-enough-password');
     const req = http.expectOne('/api/v1/admins/setup');
     req.flush('exists', { status: 409, statusText: 'Conflict' });
@@ -149,10 +173,23 @@ describe('Claim', () => {
   it('rejects mismatched passwords without calling the API', () => {
     fixture.detectChanges();
     answerIdentity('CLAIMED');
-    answerWizard(null);
+    answerWizard('admin');
     submitAdmin('owner', 'long-enough-password', 'different-password');
     http.expectNone('/api/v1/admins/setup');
     fixture.detectChanges();
     expect(text()).toContain('do not match');
+  });
+
+  it('does not say the daemon is unreachable when setup is refused', () => {
+    fixture.detectChanges();
+    answerIdentity('CLAIMED');
+    answerWizard('admin');
+    submitAdmin('owner', 'long-enough-password', 'long-enough-password');
+    http
+      .expectOne('/api/v1/admins/setup')
+      .flush('appliance must be claimed first', { status: 403, statusText: 'Forbidden' });
+    fixture.detectChanges();
+    expect(text()).toContain('not been claimed');
+    expect(text()).not.toContain('reachable');
   });
 });

@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { SessionService } from '../auth/session.service';
+import { httpErrorMessage } from '../core/http-error';
 import { StateMessage } from '../state/state-message';
 
 /** Login page (S033): username plus password, session on success. */
@@ -33,9 +34,10 @@ export class Login {
       error: (err: HttpErrorResponse) => {
         this.busy.set(false);
         this.error.set(
-          err.status === 401
-            ? 'Invalid username or password.'
-            : 'Login failed. Is the daemon reachable?',
+          httpErrorMessage(err, 'Login', {
+            401: 'Invalid username or password.',
+            429: 'This account is temporarily locked after repeated failed attempts. Wait a while and try again.',
+          }),
         );
       },
     });

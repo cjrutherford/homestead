@@ -60,6 +60,26 @@ describe('Login', () => {
     expect(text()).toContain('Invalid username or password');
   });
 
+  it('explains a lockout on 429', () => {
+    fixture.componentInstance['submit']('owner', 'wrong-password-here');
+    http
+      .expectOne('/api/v1/sessions')
+      .flush('account temporarily locked after repeated failures', {
+        status: 429,
+        statusText: 'Too Many Requests',
+      });
+    fixture.detectChanges();
+    expect(text()).toContain('temporarily locked');
+    expect(text()).not.toContain('reachable');
+  });
+
+  it('says the appliance is unreachable on status 0', () => {
+    fixture.componentInstance['submit']('owner', 'wrong-password-here');
+    http.expectOne('/api/v1/sessions').error(new ProgressEvent('error'), { status: 0 });
+    fixture.detectChanges();
+    expect(text()).toContain("Can't reach the appliance");
+  });
+
   it('requires both fields without calling the API', () => {
     fixture.componentInstance['submit']('', '');
     http.expectNone('/api/v1/sessions');
