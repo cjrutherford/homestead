@@ -4086,8 +4086,36 @@ HTTP transport and DNS resolver forbidden, CLI output, dashboard component
 spec. `docs/PARITY.md` has the row. No change to `catalog/craft/` or
 `images/craft/`; the craft manifest signature is untouched.
 
-KVM acceptance: **PENDING**. To do on the appliance: install two craft apps
-with `.lan` routes, open the Craft apps page and confirm each link opens over
-S280 HTTPS, uninstall one and confirm it disappears on reload, watch the
-browser network log and confirm no request leaves the appliance (only
-same-origin calls to the daemon).
+KVM acceptance (2026-10-18, VM 2, HEAD cf079da): **pass, no S281 bug**.
+Deployed with `scripts/install-systemd.sh` (source tree and dashboard bundle
+hashes matched on the guest). Chromium (Playwright's build, headless) reached
+the appliance through ssh tunnels with `--host-resolver-rules` and the leaf
+certificates pinned by SPKI.
+- **Signed manifest: pass.** The shipped manifest (counter 8) verified with the
+  embedded HAI craft key `B03DB3F5AA66DB3E` with no throwaway key and no
+  `craft trust add`: `craft plan` got as far as the counter check. VM 2's
+  baseline (max 15 from throwaway runs) refused it as a rollback ("counter 8
+  < recorded 15", with the `--allow-older` hint), the expected anti-rollback
+  behaviour. `craft plan/build --allow-older` then verified and built
+  soundcraft and gridcraft (audited override, recorded counter now 8).
+  Cosmetic: `craft trust list` still prints `[PLACEHOLDER: verifies no real
+  release]` beside the now-real embedded craft key.
+- **CLI: pass.** With both apps installed and no route, `craft apps` listed
+  both with `(no URL)` and the reason; with routes `soundcraft.lan` and
+  `gridcraft.lan` (local, TLS internal; target host is the service name) it
+  listed `https://...`; with only soundcraft routed gridcraft showed the
+  reason again; none installed prints `no craft apps installed`. (A first
+  route table whose target host was the container name `gridcraft-gridcraft`
+  did not match: the join keys on `CraftApp` or the service name, as designed.)
+- **Browser: pass.** Logged in as alice, `/craft-apps` listed both; each link
+  (new tab) opened over HTTPS in a secure context and the app loaded (a canvas
+  and the GridCraft ribbon). Request hosts for the whole session: the
+  dashboard origin (11 requests), `https://soundcraft.lan` (4) and
+  `https://gridcraft.lan` (4); nothing else, no failed request.
+- **Uninstall: pass.** After `apps uninstall soundcraft` a reload listed only
+  GridCraft; after gridcraft too the page showed the empty state, with no
+  regeneration step.
+- **Cleanup:** apps uninstalled, routes empty, craft images removed, no
+  throwaway key used, temp Playwright directory removed. Left: Caddy running,
+  orphan `.lan` leaves until the sweep, craft baseline for both apps at
+  counter 8, `~/hs-s281` source tree.
