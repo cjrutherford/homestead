@@ -4223,10 +4223,40 @@ toast host became a grid cell and pushed `<main>` under the sidebar. Removed
 the redundant "Caddy deployment started." notice, since the progress panel,
 the rail and the toast already say it.
 
-KVM visual review (VM 2): **PENDING.** To do: start a real long operation (a
-small catalog install, then uninstall it), navigate away and back while it
-runs, confirm the rail tracks it to completion; record a short screen
-recording or screenshot sequence and the findings here; leave VM 2 as found.
-Also check the bottom sheet on a phone-sized viewport, a reload mid-operation,
-the toast and polite announcements with a screen reader, and route-change
-scrolling (new page at the top, back restores).
+KVM visual review (VM 2, 2026-10-18): **done.** Screenshots in
+`/tmp/hs-s283-kvm/` (not committed). Playwright through an ssh tunnel as
+`owner`; logged out at the end; tunnel and settings untouched (public URL 200
+throughout). App used: GridCraft 0.7.0 (signed craft manifest, counter 8): a
+dashboard "Verify and build" (15 s the first time, 3 to 4 s cached) then a
+dashboard install, then a CLI uninstall (the dashboard has no uninstall).
+Passed: the rail followed the build across five sidebar navigations at
+0:00 to 0:15 and settled 8 s after Done; a reload mid-build re-read it (live
+text "started", step moved on); a CLI-started build joined the rail on the
+next navigation; the sheet at 390px (summary bar, open list, content clears
+it, no horizontal overflow); toast "Craft app built" and a polite
+`role=status aria-live` region carrying the step text and the result; skeleton
+absent at 0 and 80 ms API delay, on at 150 ms, held 300 ms (250 ms delay:
+254 to 555 ms), 1.2 s delay on until data; reduced motion gives 1e-5 s
+transitions and no dialog animation, normal motion fades the dialog in and out
+(about 0.2 s) and returns focus; new pages land at scrollY 0.
+Found and fixed (commit cfbe408):
+- Back did not restore scroll (0 instead of 187 and 385): pages load data
+  after the router restores, so the browser clamped to the top. A retry
+  (`core/scroll-restore.ts`) now waits up to 2.5 s for the page to grow and
+  yields to wheel, touch or keys. Back now gives 187 and 385/340.
+- Rail and step list showed raw step slugs ("obtain-artifact"); now words.
+- Operations list kept saying "Running" for a finished order; it refreshes
+  when an order starts or settles.
+- Orders found on load or started from the CLI got generic labels
+  ("Catalog remove"); added labels for install, remove, configure, restore,
+  migrate, reconcile, storage and Docker setup.
+- Backups destination on a fresh appliance (422) was a red error with daemon
+  text; now an empty state linking to Storage.
+- Skeleton bars were nearly invisible on the page background (added a border);
+  Escape now closes the mobile sheet.
+Left (DEFERRED.md): a craft install without the edge network fails at `up` and
+stays recorded as installed; no dashboard uninstall; the browser console still
+logs the 404/422 probe requests. Cleanup on VM 2: uninstalled, craft image,
+`craft_images`/`craft_baseline`/`craft_verdicts` rows, the test
+`homestead-edge` network and stack directory removed; only audit and
+operation history remain.
