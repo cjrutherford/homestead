@@ -3935,29 +3935,89 @@ the daemon over a dedicated unix socket). Guide:
   `HOMESTEAD_DOCKER_TESTS=1 go test ./internal/docker -run TestRealCraftBuild`
   ok.
 
-### KVM acceptance: PENDING
+### KVM acceptance (2026-10-17/18, VM 2, HEAD 257763e)
 
-To run on the appliance (another agent): redeploy the edge
-(`homesteadctl edge deploy --follow`) and the daemon (`sudo make install`, new
-unit) and confirm `/run/homestead-craft/files.sock` (dir 0750, socket 0660,
-group `homestead-craft`) survives `systemctl restart homestead-server`
-without restarting Caddy. Install Nextcloud (S170) and GridCraft; re-apply
-the route table from a fresh install plan (or rely on the inferred
-`CraftApp`) and confirm `doctor` `edge-craft-socket` is ok. Link with an app
-password (and once with `--create-app-password`); open GridCraft with Open
-with Nextcloud files, save a workbook, confirm it is in Nextcloud under the
-root folder, relaunch from a second browser session and open it. Confirm
-`docker inspect` (Caddy, craft container, daemon environment) and browser
-dev tools (cookies, network, storage) show no Nextcloud credential and the
-craft cookie is HttpOnly, SameSite=Strict, Secure. Confirm a browser profile
-without a launch gets 401 on `/_homestead/files/f/`, that logout and a
-password change end the craft session, that `?host=parent` GridCraft,
-CADCraft and PdfCraft round-trip a file, that FilmCraft and EffectCraft
-import a file, that a 600 MiB upload is refused with 413, that revoking the
-app password in Nextcloud makes the proxy answer 502 `auth-rejected`, and
-that Caddy actually reaches the unix socket through the read-only mount (the
-step the unit tests cannot cover). Check the Chromium console for CSP
-violations from the wrapper.
+Run on VM 2 (Debian 13, Docker, Nextcloud 35.0.1 from S276, internal CA from
+S280). Deployed with `scripts/install-systemd.sh` (new unit, dashboard
+embedded build, file-hash digest matched on the guest), `edge deploy
+--follow`, a throwaway minisign key (craft manifest at counter 14, trusted
+and removed), GridCraft built and installed through the CLI, routes
+`gridcraft.lan` and `nextcloud.lan` (local, TLS internal), a throwaway
+Nextcloud account `s254test` and its app password. Chromium (Playwright's
+build, headless, SwiftShader) reached the appliance through an ssh tunnel
+with `--host-resolver-rules` and the leaf certificates pinned by SPKI
+(`--ignore-certificate-errors-spki-list`; no NSS tool to import the root;
+the daemon itself verified `https://nextcloud.lan` against the S280 root,
+no skip-verify). Nothing was committed (keys shredded). **All steps passed;
+no product bug found.**
+
+- **Socket and edge: pass.** `/run/homestead-craft` is `0750 root:homestead-craft`,
+  `files.sock` `0660 root:homestead-craft`. After `systemctl restart
+  homestead-server` the socket inode changed and the **not-restarted** Caddy
+  (started 40 s earlier) still reached it through the read-only directory
+  mount: `https://gridcraft.lan/_homestead/files/f/...` answered 401 from the
+  daemon before and after (an nginx answer would be 404). `doctor`
+  `edge-craft-socket` ok (also "no craft routes recorded" when the table is
+  empty). Over the socket, with the edge headers, `/api/v1/*` and `/` are 404;
+  without them 400. The TCP listener answers the craft paths with the
+  dashboard fallback page or 401, never the proxy.
+- **Link: pass.** `http://nextcloud.lan` refused 422 without the opt-in.
+  `https://nextcloud.lan` linked with an owner app password (plan, `--yes`),
+  and again with `--create-app-password` (the daemon-made `homestead-craftfiles`
+  token appeared in Nextcloud and was revoked by unlink; the owner-supplied
+  one is not, as the plan says). The app password and login password were
+  absent from `craft files status`, the API, `craft-files.yaml`, `config
+  get`, the SQLite file and WAL, the journal, the audit list, `docker inspect`
+  (Caddy, GridCraft, Nextcloud) and the daemon environment. The Craft files
+  page showed the link and the per-app table.
+- **Browser: pass.** Dashboard "Open with Nextcloud files" opened
+  `https://gridcraft.lan/_homestead/open.html`; the fragment was removed, the
+  session exchange returned 200 and the cookie was `homestead_craft`,
+  HttpOnly, Secure, SameSite=Strict, path `/_homestead/files/`, host-only.
+  The wrapper listed the folder (empty), GridCraft loaded at `?host=parent`,
+  a save wrote `Book1.xlsx` (PUT 201, then the list refreshed) and the file
+  was in Nextcloud under `Homestead/` (WebDAV with the app password and the
+  data directory; a valid xlsx). A second browser context with its own login
+  relaunched, listed `Book1.xlsx`, opened it (GET 200, cells present), edited
+  and saved over it (`If-Match`, PUT 204; content confirmed in Nextcloud).
+  Across every request no `Authorization` header, app password, cookie
+  value in a URL or CORS header was seen; `localStorage`, `sessionStorage`
+  and `document.cookie` were empty. No CSP violation; the only console noise
+  is the implicit `/favicon.ico` 404 and the egui software-rasteriser
+  warnings. (Typing fast into the egui canvas drops characters in headless
+  Chromium; keystrokes need a delay. A test artefact, not a product issue.)
+- **Negatives: pass.** No launch: GET, PROPFIND and PUT 401, a forged cookie
+  401. A launch code used twice: second exchange 401. Cross-origin: `Origin:
+  https://evil.example` (GET and PUT), `Sec-Fetch-Site: cross-site` and a PUT
+  without `Origin` are 403; `OPTIONS` is 403 with no `Access-Control-*`
+  header; encoded `..` is 400; `PATCH` 405; GETs carry `attachment`, a
+  sandbox CSP and `nosniff`. Logout: the next craft request is 401. Password
+  change: both the changer's and another session's craft cookies are 401
+  (and the password was restored). Limits: 600 MiB `PUT` at the default 512
+  is 413; with `craft_files_max_upload_mb` 1, 2 MB and 3 MB declared and a 3
+  MB chunked body are 413 and nothing is stored. Revoking the app password in
+  Nextcloud (`occ user:auth-tokens:delete`): once Nextcloud's own token cache
+  expired (a few seconds to a minute; requests kept succeeding until then,
+  as Nextcloud itself did) every request is 502 with `X-Homestead-Upstream:
+  auth-rejected`.
+- **Audit and unlink: pass.** `craftfiles.file` rows carry craft app, short
+  session id, method, path, status and bytes (reads aggregated, `x2`/`x5`),
+  refused requests under actor `unauthenticated`; no content, password,
+  cookie or code anywhere in audit or the journal. Local-only on: launch 409;
+  off again. Unlink through plan and `--yes` deleted `sys_craftfiles_nextcloud`
+  and the row, set `craft-files.yaml` to `linked: false`, and the proxy then
+  answers 401.
+- **Observed, by design:** the limits are cached for up to 5 seconds, so a
+  changed `craft_files_*` setting takes effect within 5 s (documented
+  behaviour of `limitsCache`, not yet in the guide). Not exercised: PdfCraft,
+  CADCraft, FilmCraft and EffectCraft round trips (only GridCraft was
+  installed), the dashboard link form (the CLI linked; the page rendered the
+  state and launched).
+- **Left on VM 2:** the craft baseline for gridcraft at 0.7.0, counter 14
+  (maximum now 14); Caddy deployed (empty route table); orphan `.lan` leaves
+  until the sweep; limits `craft_files_*` explicitly at their defaults
+  (512, 30, 8); Nextcloud as before (test account, files, trusted domain and
+  temporary edge-network attachment removed); `~/hs-s254` source tree.
 
 ### S254 review fixes
 
