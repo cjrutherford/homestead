@@ -1,0 +1,140 @@
+import { Component, inject, OnInit, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { RouterLink } from '@angular/router';
+import { ApiService, CraftFilesPlan, CraftFilesStatus } from '../core/api.service';
+import { StateMessage } from '../state/state-message';
+
+/**
+ * Craft files (S254, ADR-029): link the craft apps to the owner's
+ * Nextcloud through the daemon's WebDAV proxy. Link, rotate and unlink
+ * are planned and then approved; the app password is typed here, sent
+ * once with the approval, and cleared from the component immediately. It
+ * is never shown, stored in the browser, or returned by the daemon.
+ */
+@Component({
+  imports: [StateMessage, RouterLink],
+  selector: 'app-craft-files',
+  templateUrl: './craft-files.html',
+})
+export class CraftFiles implements OnInit {
+  private readonly api = inject(ApiService);
+
+  protected readonly status = signal<CraftFilesStatus | null>(null);
+  protected readonly plan = signal<CraftFilesPlan | null>(null);
+  protected readonly error = signal<string | null>(null);
+  protected readonly notice = signal<string | null>(null);
+  protected readonly busy = signal(false);
+  protected readonly loading = signal(true);
+
+  protected baseUrl = '';
+  protected account = '';
+  protected root = 'Homestead';
+  protected createPassword = false;
+  protected appPassword = '';
+  protected accountPassword = '';
+
+  ngOnInit(): void {
+    this.refresh();
+  }
+
+  refresh(): void {
+    this.api.craftFilesStatus().subscribe({
+      next: (status) => {
+        this.loading.set(false);
+        this.status.set(status);
+      },
+      error: (failure: HttpErrorResponse) => this.fail(failure),
+    });
+  }
+
+  /** Review a link, rotate or unlink before anything changes. */
+  review(action: 'link' | 'rotate' | 'unlink'): void {
+    this.begin();
+    this.api
+      .craftFilesPlan({
+        action,
+        base_url: action === 'link' ? this.baseUrl : undefined,
+        account: action === 'link' ? this.account : undefined,
+        root: action === 'unlink' ? undefined : this.root,
+        create_app_password: action === 'unlink' ? undefined : this.createPassword,
+      })
+      .subscribe({
+        next: (plan) => {
+          this.busy.set(false);
+          this.plan.set(plan);
+        },
+        error: (failure: HttpErrorResponse) => this.fail(failure),
+      });
+  }
+
+  approve(): void {
+    const plan = this.plan();
+    if (!plan) {
+      return;
+    }
+    this.begin();
+    const body = {
+      plan_id: plan.id,
+      app_password: this.createPassword ? undefined : this.appPassword || undefined,
+      account_password: this.createPassword ? this.accountPassword || undefined : undefined,
+    };
+    // The secrets leave the component before the reply arrives.
+    this.appPassword = '';
+    this.accountPassword = '';
+    this.api.craftFilesApprove(body).subscribe({
+      next: (status) => {
+        this.busy.set(false);
+        this.plan.set(null);
+        this.status.set(status);
+        this.notice.set(
+          plan.action === 'unlink'
+            ? 'Nextcloud unlinked. Craft apps keep documents in the browser.'
+            : 'Nextcloud linked. The app password is sealed on the appliance.',
+        );
+      },
+      error: (failure: HttpErrorResponse) => this.fail(failure),
+    });
+  }
+
+  cancel(): void {
+    this.plan.set(null);
+    this.appPassword = '';
+    this.accountPassword = '';
+  }
+
+  toggleLocalOnly(app: string, localOnly: boolean): void {
+    this.begin();
+    this.api.craftFilesLocalOnly(app, localOnly).subscribe({
+      next: (status) => {
+        this.busy.set(false);
+        this.status.set(status);
+      },
+      error: (failure: HttpErrorResponse) => this.fail(failure),
+    });
+  }
+
+  /** Opens the craft host's wrapper page with a one-time launch code in the URL fragment. */
+  launch(app: string): void {
+    this.begin();
+    this.api.craftFilesLaunch(app).subscribe({
+      next: (result) => {
+        this.busy.set(false);
+        window.open(result.url, '_blank', 'noopener');
+      },
+      error: (failure: HttpErrorResponse) => this.fail(failure),
+    });
+  }
+
+  private begin(): void {
+    this.busy.set(true);
+    this.error.set(null);
+    this.notice.set(null);
+  }
+
+  private fail(failure: HttpErrorResponse): void {
+    this.busy.set(false);
+    this.loading.set(false);
+    const text = typeof failure.error === 'string' ? failure.error.trim() : '';
+    this.error.set(text || `Request failed (${failure.status}).`);
+  }
+}

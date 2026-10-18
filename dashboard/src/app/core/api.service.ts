@@ -223,6 +223,53 @@ export interface EdgeRoute {
   TLS: 'off' | 'internal' | 'auto';
   Health: { Path: string; IntervalSeconds: number };
   Policy?: unknown;
+  /** Craft app this host serves (S254); install plans carry it, pass it through. */
+  CraftApp?: string;
+}
+
+/** GET /api/v1/craft/files — Nextcloud link state (S254); never the app password. */
+export interface CraftFilesApp {
+  name: string;
+  title: string;
+  mode: 'open-save' | 'open-only';
+  local_only: boolean;
+  host?: string;
+  ready: boolean;
+}
+
+export interface CraftFilesStatus {
+  linked: boolean;
+  base_url?: string;
+  account?: string;
+  root?: string;
+  credential_stored: boolean;
+  daemon_created: boolean;
+  apps: CraftFilesApp[];
+}
+
+export interface CraftFilesPlanRequest {
+  action: 'link' | 'rotate' | 'unlink';
+  base_url?: string;
+  account?: string;
+  root?: string;
+  create_app_password?: boolean;
+}
+
+export interface CraftFilesPlan {
+  id: string;
+  action: 'link' | 'rotate' | 'unlink';
+  base_url: string;
+  account: string;
+  root: string;
+  summary: string[];
+  warnings: string[];
+  expires_at: string;
+}
+
+export interface CraftFilesLaunch {
+  url: string;
+  app: string;
+  expires_at: string;
 }
 
 /** POST /api/v1/catalog/:name/install — started operation. */
@@ -1076,6 +1123,34 @@ export class ApiService {
     return this.http.delete<void>(
       `/api/v1/platform/trust-keys/${encodeURIComponent(keyId)}`,
     );
+  }
+
+  craftFilesStatus(): Observable<CraftFilesStatus> {
+    return this.http.get<CraftFilesStatus>('/api/v1/craft/files');
+  }
+
+  craftFilesPlan(body: CraftFilesPlanRequest): Observable<CraftFilesPlan> {
+    return this.http.post<CraftFilesPlan>('/api/v1/craft/files/plan', body);
+  }
+
+  /** Secrets travel in this request only; the reply never carries them. */
+  craftFilesApprove(body: {
+    plan_id: string;
+    app_password?: string;
+    account_password?: string;
+  }): Observable<CraftFilesStatus> {
+    return this.http.post<CraftFilesStatus>('/api/v1/craft/files/approve', body);
+  }
+
+  craftFilesLocalOnly(app: string, localOnly: boolean): Observable<CraftFilesStatus> {
+    return this.http.post<CraftFilesStatus>('/api/v1/craft/files/local-only', {
+      app,
+      local_only: localOnly,
+    });
+  }
+
+  craftFilesLaunch(app: string): Observable<CraftFilesLaunch> {
+    return this.http.post<CraftFilesLaunch>('/api/v1/craft/files/launch', { app });
   }
 
   craftStatus(): Observable<CraftStatus> {

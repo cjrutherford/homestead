@@ -11,7 +11,7 @@ import (
 	"homestead/internal/operation"
 )
 
-const craftUsage = "usage: homesteadctl craft <status|plan|build|trust> ..."
+const craftUsage = "usage: homesteadctl craft <status|plan|build|trust|files> ..."
 
 const craftBuildUsage = "usage: homesteadctl craft <plan|build> APP [--manifest FILE --signature FILE] [--artifact FILE] [--allow-older] [--follow]"
 
@@ -32,6 +32,8 @@ func runCraft(ctx context.Context, client *apiclient.Client, args []string, stdo
 		return runCraftBuild(ctx, client, args[1:], false, stdout, stderr)
 	case "build":
 		return runCraftBuild(ctx, client, args[1:], true, stdout, stderr)
+	case "files":
+		return runCraftFiles(ctx, client, args[1:], stdout, stderr)
 	case "trust":
 		return runTrust(ctx, args[1:], stdout, stderr, trustOps{usage: craftTrustUsage,
 			list: client.CraftTrustKeys, add: client.CraftTrustKeyAdd, replace: client.CraftTrustKeyReplace, remove: client.CraftTrustKeyRemove})

@@ -34,6 +34,6 @@ exposure:
     recommended: local
     allowwider: false
     warnings:
-    - VectorCraft stores nothing on the appliance, so widening exposure would offer a public drawing tool whose artwork never reaches your storage; keep it local until Nextcloud document storage lands.
+    - VectorCraft stores nothing on the appliance, so widening exposure would offer a public drawing tool whose artwork never reaches your storage; it has no Nextcloud file hook, so documents stay in each visitor's browser. Keep it local.
 sso:
   class: unsupported

@@ -61,6 +61,11 @@ type Server struct {
 	bgCancel context.CancelFunc
 	// craft is the verify-then-build pipeline (S279), set by MountCraft.
 	craft *craft.Pipeline
+	// files is the craft file proxy (S254), set by MountCraftFiles; the
+	// craft listener serves craftMux and nothing else (ADR-032).
+	files     *CraftFiles
+	craftMux  *recordingMux
+	craftHTTP *http.Server
 }
 
 // New returns a Server serving addr. Pass DefaultAddr for local-only binding.
@@ -73,6 +78,10 @@ func New(addr string) *Server {
 	s.socketMux = http.NewServeMux()
 	s.unix = &http.Server{
 		Handler:           s.socketMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	s.craftHTTP = &http.Server{
+		Handler:           http.NotFoundHandler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	s.http = &http.Server{

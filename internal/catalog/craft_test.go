@@ -665,3 +665,36 @@ func TestCraftBuildContextEnforcesTheSharedShape(t *testing.T) {
 		}
 	}
 }
+
+// Craft packages mark their route with the craft app (S254, ADR-032) so the
+// edge forwards the craft file path; other packages do not.
+func TestCraftRoutesNameTheirApp(t *testing.T) {
+	cat, err := Load("../../catalog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range cat.Names() {
+		m, _ := cat.Get(name)
+		recs, err := RecommendRoutes(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := ""
+		if len(m.CraftImages()) > 0 {
+			want = name
+		}
+		for _, rec := range recs {
+			if rec.CraftApp != want {
+				t.Errorf("%s: recommendation CraftApp = %q, want %q", name, rec.CraftApp, want)
+			}
+			route, err := BuildRoute(rec, "x.lan", "svc", 8080)
+			if err != nil || route.CraftApp != want {
+				t.Errorf("%s: route CraftApp = %q (%v), want %q", name, route.CraftApp, err, want)
+			}
+		}
+	}
+	m, _ := cat.Get("gridcraft")
+	if recs, _ := RecommendRoutes(m); len(recs) == 0 || recs[0].CraftApp != "gridcraft" {
+		t.Fatal("gridcraft is not a craft route")
+	}
+}

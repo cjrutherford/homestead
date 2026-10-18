@@ -167,6 +167,39 @@ func realCraftBuild(t *testing.T, version, ext string, write func(*testing.T, st
 	if err != nil || viaResp.Header.Get("Content-Encoding") != "gzip" {
 		t.Fatalf("wasm not gzip-encoded behind a proxy (Via): %v %v", err, viaResp)
 	}
+	// The Homestead wrapper page (S254) is served from the image with its
+	// own headers, and nginx never serves the file path itself.
+	page := get("/_homestead/open.html")
+	body, _ := io.ReadAll(page.Body)
+	page.Body.Close()
+	if page.StatusCode != 200 || !strings.Contains(page.Header.Get("Content-Type"), "text/html") || !strings.Contains(string(body), "/_homestead/open.js") {
+		t.Fatalf("wrapper page = %d %v", page.StatusCode, page.Header)
+	}
+	csp := page.Header.Get("Content-Security-Policy")
+	for _, want := range []string{"default-src 'none'", "script-src 'self'", "connect-src 'self'", "frame-src 'self'", "frame-ancestors 'none'"} {
+		if !strings.Contains(csp, want) {
+			t.Fatalf("wrapper CSP lacks %q: %q", want, csp)
+		}
+	}
+	if strings.Contains(string(body), "<script>") || strings.Contains(csp, "unsafe-") {
+		t.Fatalf("wrapper must not need inline script or unsafe CSP: %q", csp)
+	}
+	if page.Header.Get("Cache-Control") != "no-cache" || page.Header.Get("X-Content-Type-Options") != "nosniff" || page.Header.Get("Referrer-Policy") != "no-referrer" {
+		t.Fatalf("wrapper headers: %v", page.Header)
+	}
+	for path, wantType := range map[string]string{"/_homestead/open.js": "javascript", "/_homestead/open.css": "text/css"} {
+		r := get(path)
+		_, _ = io.Copy(io.Discard, r.Body)
+		r.Body.Close()
+		if r.StatusCode != 200 || !strings.Contains(r.Header.Get("Content-Type"), wantType) || r.Header.Get("X-Content-Type-Options") != "nosniff" {
+			t.Fatalf("%s = %d %v", path, r.StatusCode, r.Header)
+		}
+	}
+	for _, path := range []string{"/_homestead/files/session", "/_homestead/files/f/a.xlsx", "/_homestead/nope"} {
+		if r := get(path); r.StatusCode != 404 {
+			t.Fatalf("%s = %d, want 404 from nginx", path, r.StatusCode)
+		}
+	}
 }
 
 func writeTarGz(t *testing.T, path string, files map[string]string) {

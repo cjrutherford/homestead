@@ -52,6 +52,7 @@ func (m TLSMode) Valid() bool {
 
 var (
 	validHostnameLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+	validCraftApp      = regexp.MustCompile(`^[a-z][a-z0-9-]{0,40}$`)
 )
 
 // Hostname is a canonical route name: lowercase DNS, single-label LAN
@@ -137,6 +138,10 @@ type Route struct {
 	TLS      TLSMode
 	Health   HealthCheck
 	Policy   *Policy
+	// CraftApp names the craft app (S254, ADR-032) this host serves. A
+	// route that names one also forwards CraftFilesPrefix to the daemon's
+	// craft-file socket, ahead of the upstream. Empty for every other route.
+	CraftApp string `json:",omitempty"`
 }
 
 // Validate checks a route end to end.
@@ -152,6 +157,9 @@ func (r Route) Validate() error {
 	}
 	if !r.TLS.Valid() {
 		return fmt.Errorf("route.tls: must be off, internal, or auto")
+	}
+	if r.CraftApp != "" && !validCraftApp.MatchString(r.CraftApp) {
+		return fmt.Errorf("route.craftapp: must be a lowercase craft app name")
 	}
 	if r.Policy != nil {
 		if err := r.Policy.Validate(); err != nil {

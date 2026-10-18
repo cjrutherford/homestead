@@ -61,13 +61,37 @@ func TestEveryRegisteredRouteIsClassified(t *testing.T) {
 			t.Errorf("route %q is unclassified: add it to routeClasses (ADR-020)", p)
 		}
 	}
+	// The craft-file socket mux (ADR-032) is enumerated too: each of its
+	// routes must be classified craft-session, and no craft-session route
+	// may be registered on the TCP mux.
+	craftRoutes := srv.CraftRoutes()
+	for _, p := range routes {
+		if c, _ := Classify(p); c == ClassCraftSession {
+			t.Errorf("craft-session route %q registered on the TCP mux", p)
+		}
+	}
+	for _, p := range craftRoutes {
+		if registered[p] {
+			t.Errorf("route %q registered on both the TCP and craft muxes", p)
+		}
+		registered[p] = true
+		c, ok := Classify(p)
+		if !ok {
+			t.Errorf("craft route %q is unclassified: add it to routeClasses (ADR-020)", p)
+		} else if c != ClassCraftSession {
+			t.Errorf("craft route %q is class %s, want craft-session", p, c)
+		}
+	}
+	if len(craftRoutes) != 11 {
+		t.Errorf("craft route count = %d, want 11 (update deliberately with routeClasses)", len(craftRoutes))
+	}
 	for p := range routeClasses {
 		if !registered[p] {
 			t.Errorf("routeClasses has stale entry %q (not registered)", p)
 		}
 	}
-	if len(routes) != 109 {
-		t.Errorf("TCP route count = %d, want 109 (update deliberately with routeClasses)", len(routes))
+	if len(routes) != 114 {
+		t.Errorf("TCP route count = %d, want 114 (update deliberately with routeClasses)", len(routes))
 	}
 	counts := map[RouteClass]int{}
 	for _, p := range routes {

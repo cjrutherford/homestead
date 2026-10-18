@@ -3871,3 +3871,90 @@ new product bug found.**
   soundcraft, the previous maximum), orphan `.lan` leaves until the
   `tls:local-leaves` sweep, the empty stack directories, the `homestead-edge`
   network and Caddy stack files.
+
+## S254: Nextcloud craft file proxy
+
+Governed by ADR-029 and ADR-032 (owner decision 2026-10-17: the edge reaches
+the daemon over a dedicated unix socket). Guide:
+`docs/architecture/CRAFT_FILE_PROXY.md`.
+
+- `internal/craftfiles`: the proxy (fixed WebDAV subset, one root folder,
+  traversal refusal, streamed bodies, limits, audit without content), the
+  one-time launch codes and craft sessions bound to the operator session
+  (re-verified on every request), the link manager (plan and approve, sealed
+  app password `sys_craftfiles_nextcloud`, `craft-files.yaml` mirror) and
+  the same-origin guard. Migration 42 adds `craft_file_link` and
+  `craft_file_local_only`.
+- Server: `GET /api/v1/craft/files`, `POST .../plan|approve|local-only|launch`
+  (session class, parity rows in `docs/PARITY.md`); the craft socket mux is
+  classified `craft-session` in `boundary.go` and enumerated by the
+  classification test (TCP 114 routes, craft socket 11). `--craft-socket`,
+  `RunCraftSocket`, doctor check `edge-craft-socket`. Settings
+  `craft_files_max_upload_mb` (512), `craft_files_timeout_minutes` (30) and
+  `craft_files_per_session` (8) join the config schema.
+- Edge: `docker.Route.CraftApp`; craft routes render
+  `handle /_homestead/files/*` to the socket ahead of the nginx upstream,
+  inside the exposure policy; the Caddy compose file mounts
+  `/run/homestead-craft` read-only; reconcile verifies the mount on the
+  running container. Unit: `RuntimeDirectory=homestead homestead-craft`,
+  `RuntimeDirectoryPreserve=yes`; `install-systemd.sh` creates the
+  `homestead-craft` group.
+- Image: wrapper at `images/craft/homestead/` (`/_homestead/open.html`),
+  nginx `location ^~ /_homestead/` with a strict CSP, `/_homestead/files/`
+  404. The craft manifest is prepared UNSIGNED at counter 7 with the new
+  `context_digest` (`sha256:f3873357...`); the owner signs it.
+- Upstream hooks verified from source at the pinned tags (nothing executed):
+  GridCraft v0.7.0 `host.rs` and CADCraft v0.7.0 `host.rs`: app posts
+  `<app>:ready {version}`, `:dirty {dirty}`, `:save {name, bytes}` (a
+  transferred `ArrayBuffer`), `:failed {error}`; parent posts `:open {name,
+  bytes}` with `bytes` an `ArrayBuffer` or `Uint8Array`; only the same-origin
+  parent is heard or answered. PdfCraft v0.8.0 `main.rs` (`mod host`): the
+  same, with `pdfcraft:save {name, saveAs, bytes}`, plus `?file=<url>`
+  (unused). FilmCraft v0.8.0 `api.rs`: `window.filmcraft.importUrl(url,
+  name?)` and `openProject(fileOrUrl)`. EffectCraft v0.10.0 `web/index.html`:
+  `window.effectcraft.addFile(fileOrUrl, name?)` (the exported wasm
+  `addFile(name, Uint8Array)` sits behind it).
+- Tests: `internal/craftfiles` (fake WebDAV server: all methods, traversal,
+  oversize declared and chunked, 256 MiB streamed each way with heap bound,
+  upstream errors, credential never to the client, session exchange valid,
+  reused, expired, wrong host or app, revoked, store failure with an injected
+  clock, concurrency cap, CORS and Host/Origin refusal, audit and error
+  bodies free of content, password, cookie and code, link/rotate/unlink,
+  launch), `internal/server` (end to end, CSRF on launch, revocation by real
+  logout and real password change, TCP listener never serves craft paths,
+  the real socket: permissions, only craft paths, restart over a stale
+  socket, limits through the config API, unlink, opt-out, doctor drift),
+  `internal/docker` (render golden, policy nesting, compose mount,
+  reconcile failing without the mount), `tests/test_s254_craft_wrapper.py`,
+  dashboard spec, CLI test, and under `HOMESTEAD_DOCKER_TESTS=1` the wrapper
+  headers from a real image.
+- Gates at commit: `make lint` and `lint-scripts` clean; `go test ./...`
+  1813 passed, 0 failed, 7 skipped; `go test -race ./internal/craftfiles/`
+  ok; `python3 -m unittest discover -s tests` 610 OK; dashboard `ng test`
+  288 passed (37 files) and `ng build` ok;
+  `HOMESTEAD_DOCKER_TESTS=1 go test ./internal/docker -run TestRealCraftBuild`
+  ok.
+
+### KVM acceptance: PENDING
+
+To run on the appliance (another agent): redeploy the edge
+(`homesteadctl edge deploy --follow`) and the daemon (`sudo make install`, new
+unit) and confirm `/run/homestead-craft/files.sock` (dir 0750, socket 0660,
+group `homestead-craft`) survives `systemctl restart homestead-server`
+without restarting Caddy. Install Nextcloud (S170) and GridCraft; re-apply
+the route table from a fresh install plan (or rely on the inferred
+`CraftApp`) and confirm `doctor` `edge-craft-socket` is ok. Link with an app
+password (and once with `--create-app-password`); open GridCraft with Open
+with Nextcloud files, save a workbook, confirm it is in Nextcloud under the
+root folder, relaunch from a second browser session and open it. Confirm
+`docker inspect` (Caddy, craft container, daemon environment) and browser
+dev tools (cookies, network, storage) show no Nextcloud credential and the
+craft cookie is HttpOnly, SameSite=Strict, Secure. Confirm a browser profile
+without a launch gets 401 on `/_homestead/files/f/`, that logout and a
+password change end the craft session, that `?host=parent` GridCraft,
+CADCraft and PdfCraft round-trip a file, that FilmCraft and EffectCraft
+import a file, that a 600 MiB upload is refused with 413, that revoking the
+app password in Nextcloud makes the proxy answer 502 `auth-rejected`, and
+that Caddy actually reaches the unix socket through the read-only mount (the
+step the unit tests cannot cover). Check the Chromium console for CSP
+violations from the wrapper.

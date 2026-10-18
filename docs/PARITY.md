@@ -123,6 +123,11 @@ unchanged.
 | POST | /api/v1/craft/trust-keys | `"craft"` | `craftTrustKeyAdd` | Add a craft signing key on both surfaces (S279) |
 | PUT | /api/v1/craft/trust-keys/{id} | `"craft"` | `craftTrustKeyReplace` | Replace a craft signing key on both surfaces (S279) |
 | DELETE | /api/v1/craft/trust-keys/{id} | `"craft"` | `craftTrustKeyRemove` | Remove a craft signing key on both surfaces (S279) |
+| GET | /api/v1/craft/files | `"files"` | `craftFilesStatus` | Nextcloud link (never the app password) and per-app file-storage state; `craft files status` and the Craft files page (S254). Session class |
+| POST | /api/v1/craft/files/plan | `"files"` | `craftFilesPlan` | Plan a link, rotate or unlink; `craft files link`, `rotate` and `unlink` and the page's guided form (S254). Session class |
+| POST | /api/v1/craft/files/approve | `"files"` | `craftFilesApprove` | Approve a plan; the app password (or the one-time account password for daemon-created app passwords) is request-only, sealed in the secret store, never returned, logged, audited or exported; `--yes` and the page's Approve (S254). Session class |
+| POST | /api/v1/craft/files/local-only | `"files"` | `craftFilesLocalOnly` | Per-app browser-local opt-out stored as desired config (`craft-files.yaml`); `craft files local-only APP on` or `off` and the page toggle (S254). Session class |
+| POST | /api/v1/craft/files/launch | `"files"` | `craftFilesLaunch` | Mint a one-time launch code (returned in a URL fragment) for the craft host's wrapper page; `craft files launch APP` prints the address, the dashboard's Open with Nextcloud files opens it (S254). Session class with CSRF |
 | GET | /api/v1/secrets/key | `"secrets"` | `secretKeyStatus` | Key version on both surfaces (S258) |
 | POST | /api/v1/secrets/rekey | `"secrets"` | `secretRekey` | Confirmed re-key operation on both surfaces (S258) |
 | GET | /api/v1/dockge | n/a | `dockge` | Expert-interface link with assessed policy on dashboard; no command surface yet |
@@ -133,3 +138,13 @@ unchanged.
 | POST | /api/v1/drift/schedule | `"drift"` | `driftScheduleSave` | Scan interval and enable on CLI (`drift schedule --interval/--enabled`) and the dashboard drift page |
 | GET | / | n/a | `app-root` | The UI itself; the CLI is the other interface. Catch-all also answers HEAD; mux method patterns cannot express both without conflicting, so both rows stand for one Handle |
 | HEAD | / | n/a | `app-root` | Same catch-all as GET / |
+
+Craft file proxy (S254, ADR-029, ADR-032). The proxy itself is not on the
+TCP mux: `POST|GET|DELETE /_homestead/files/session` and the WebDAV subset
+under `/_homestead/files/f/` are served only on the dedicated craft socket
+behind the edge, and are classified **craft-session** in
+`internal/server/boundary.go` (a craft cookie bound to the operator
+session). They are browser-protocol routes used by the craft wrapper page,
+not configuration routes, so they carry no CLI or dashboard row; every
+setting they depend on (link, rotate, unlink, opt-out, limits via the
+`craft_files_*` settings on `/api/v1/config`) is in the rows above.

@@ -34,7 +34,13 @@ ExecStart=/usr/local/bin/homestead-server --listen 127.0.0.1:8080 --catalog-dir 
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=10
-RuntimeDirectory=homestead
+# /run/homestead holds the root-only recovery socket; /run/homestead-craft
+# holds only the craft file socket the Caddy stack bind-mounts (S254,
+# ADR-032). Preserve keeps the directories across a service restart: the
+# edge mounts the directory, and systemd deleting and recreating it on a
+# stop would leave that bind mount pointing at a deleted inode.
+RuntimeDirectory=homestead homestead-craft
+RuntimeDirectoryPreserve=yes
 ReadWritePaths=/etc/homestead /var/lib/homestead /var/log/homestead /opt/homestead/stacks /mnt /media
 NoNewPrivileges=true
 ProtectSystem=strict

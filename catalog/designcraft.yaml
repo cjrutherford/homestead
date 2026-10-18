@@ -34,7 +34,7 @@ exposure:
     recommended: local
     allowwider: false
     warnings:
-    - DesignCraft stores nothing on the appliance, so widening exposure would offer a public layout tool whose documents never reach your storage; keep it local until Nextcloud document storage lands.
+    - DesignCraft stores nothing on the appliance, so widening exposure would offer a public layout tool whose documents never reach your storage; it has no Nextcloud file hook, so documents stay in each visitor's browser. Keep it local.
 browser:
 - capability: webgpu
   reason: "DesignCraft renders with WebGPU where the browser has it and falls back to WebGL2 on its own; ?webgl forces WebGL2 and ?cpu the slower CPU canvas."

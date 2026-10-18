@@ -34,7 +34,7 @@ exposure:
     recommended: local
     allowwider: false
     warnings:
-    - CADCraft stores nothing on the appliance, so widening exposure would offer a public drafting tool whose drawings never reach your storage; keep it local until Nextcloud document storage lands.
+    - CADCraft stores nothing on the appliance, so widening exposure would offer a public drafting tool whose drawings never reach your storage. With Nextcloud file storage linked, this host also forwards its document path (/_homestead/files/) to your appliance, which reads and writes your Nextcloud on the browser's behalf; it needs a Homestead operator session opened from the dashboard, but widening exposure puts the host, that path and your document transfers beyond the LAN. Keep it local.
 browser:
 - capability: webgpu
   reason: "CADCraft renders with WebGPU where the browser has it and falls back to WebGL2 on its own; ?webgl forces WebGL2 and ?cpu the slower CPU canvas."

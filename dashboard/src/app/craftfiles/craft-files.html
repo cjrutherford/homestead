@@ -1,0 +1,156 @@
+<section aria-label="Craft files">
+  <h1>Craft files</h1>
+  <p>
+    Craft apps can open and save documents in your own Nextcloud. Homestead
+    does the transfer for the browser, so no Nextcloud password is ever sent
+    to a craft app or a browser. Without a link, or with an app set to
+    browser-local, documents stay in the browser as before.
+  </p>
+
+  @if (error()) {
+    <app-state-message kind="error" [headline]="error()" />
+  }
+  @if (notice()) {
+    <app-state-message kind="status" [headline]="notice()" />
+  }
+  @if (loading()) {
+    <app-state-message kind="loading" headline="Loading craft file storage." />
+  }
+
+  @if (status(); as st) {
+    <h2>Nextcloud link</h2>
+    @if (st.linked) {
+      <p>
+        Linked to {{ st.base_url }} as {{ st.account }}; documents live in the
+        folder {{ st.root }}.
+        @if (st.credential_stored) {
+          The app password is sealed on this appliance.
+        } @else {
+          <strong>The app password is missing: rotate it.</strong>
+        }
+      </p>
+    } @else {
+      <p>Not linked.</p>
+    }
+
+    @if (!plan()) {
+      @if (!st.linked) {
+        <form (submit)="$event.preventDefault(); review('link')">
+          <label>
+            Nextcloud address
+            <input name="base-url" placeholder="https://nextcloud.lan" (input)="baseUrl = $any($event.target).value" />
+          </label>
+          <label>
+            Nextcloud account
+            <input name="account" autocomplete="off" (input)="account = $any($event.target).value" />
+          </label>
+          <label>
+            Folder for documents
+            <input name="root" [value]="root" (input)="root = $any($event.target).value" />
+          </label>
+          @if (!createPassword) {
+            <label>
+              App password (create one in Nextcloud under Security)
+              <input name="app-password" type="password" autocomplete="off" (input)="appPassword = $any($event.target).value" />
+            </label>
+          } @else {
+            <label>
+              Account password (used once to create an app password; not kept)
+              <input name="account-password" type="password" autocomplete="off" (input)="accountPassword = $any($event.target).value" />
+            </label>
+          }
+          <label>
+            <input type="checkbox" name="create" [checked]="createPassword" (change)="createPassword = $any($event.target).checked" />
+            Let Homestead create the app password
+          </label>
+          <button type="submit" [disabled]="busy()">Review link</button>
+        </form>
+      } @else {
+        <form (submit)="$event.preventDefault(); review('rotate')">
+          @if (!createPassword) {
+            <label>
+              New app password
+              <input name="rotate-password" type="password" autocomplete="off" (input)="appPassword = $any($event.target).value" />
+            </label>
+          } @else {
+            <label>
+              Account password (used once; not kept)
+              <input name="rotate-account-password" type="password" autocomplete="off" (input)="accountPassword = $any($event.target).value" />
+            </label>
+          }
+          <label>
+            <input type="checkbox" name="rotate-create" [checked]="createPassword" (change)="createPassword = $any($event.target).checked" />
+            Let Homestead create the app password
+          </label>
+          <button type="submit" [disabled]="busy()">Review rotation</button>
+          <button type="button" [disabled]="busy()" (click)="review('unlink')">Review unlink</button>
+        </form>
+      }
+    } @else {
+      @if (plan(); as p) {
+        <h3>Review: {{ p.action }}</h3>
+        <ul>
+          @for (line of p.summary; track line) {
+            <li>{{ line }}</li>
+          }
+        </ul>
+        @for (line of p.warnings; track line) {
+          <app-state-message kind="status" [headline]="line" />
+        }
+        <button type="button" [disabled]="busy()" (click)="approve()">Approve {{ p.action }}</button>
+        <button type="button" [disabled]="busy()" (click)="cancel()">Cancel</button>
+      }
+    }
+
+    <h2>Craft apps</h2>
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">App</th>
+          <th scope="col">File hook</th>
+          <th scope="col">Documents</th>
+          <th scope="col">Keep browser-local</th>
+          <th scope="col">Open</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (app of st.apps; track app.name) {
+          <tr>
+            <th scope="row">{{ app.title }}</th>
+            <td>{{ app.mode === 'open-save' ? 'open and save' : 'open only (saves stay in the browser)' }}</td>
+            <td>
+              @if (app.local_only) {
+                browser-local (opted out)
+              } @else if (!st.linked) {
+                browser-local (not linked)
+              } @else if (!app.host) {
+                browser-local (no edge route recorded for this app)
+              } @else {
+                Nextcloud
+              }
+            </td>
+            <td>
+              <input
+                type="checkbox"
+                [attr.aria-label]="'Keep ' + app.title + ' browser-local'"
+                [checked]="app.local_only"
+                [disabled]="busy()"
+                (change)="toggleLocalOnly(app.name, $any($event.target).checked)"
+              />
+            </td>
+            <td>
+              <button type="button" [disabled]="busy() || !app.ready" (click)="launch(app.name)">
+                Open with Nextcloud files
+              </button>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+    <p>
+      Other craft apps have no file hook and stay browser-local. Upload limit,
+      request timeout and per-session concurrency are settings on the
+      <a routerLink="/config">Configuration</a> page (Craft file storage).
+    </p>
+  }
+</section>

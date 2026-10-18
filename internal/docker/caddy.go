@@ -77,6 +77,9 @@ services:
       - ./routes:/etc/caddy/routes:ro
       - ./caddy-data:/data
       - ./caddy-config:/config
+      # Directory holding the daemon's craft-file socket (ADR-032): the
+      # directory, not the socket, so a recreated socket is seen. Read-only.
+      - ` + CraftSocketDir + `:` + CraftSocketDir + `:ro
     networks:
       - homestead-edge
 networks:

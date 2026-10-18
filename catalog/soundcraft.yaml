@@ -34,7 +34,7 @@ exposure:
     recommended: local
     allowwider: false
     warnings:
-    - SoundCraft stores nothing on the appliance, so widening exposure would offer a public audio workstation whose sessions never reach your storage; keep it local until Nextcloud document storage lands.
+    - SoundCraft stores nothing on the appliance, so widening exposure would offer a public audio workstation whose sessions never reach your storage; it has no Nextcloud file hook, so documents stay in each visitor's browser. Keep it local.
 browser:
 - capability: webgl2
   reason: "The interface needs WebGL2; it uses WebGPU when available."

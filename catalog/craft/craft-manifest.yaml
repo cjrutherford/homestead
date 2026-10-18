@@ -1,6 +1,6 @@
 format: homestead-craft-manifest/1
-counter: 6
-context_digest: sha256:1880843e879fb070ea4232b20c0fab5aa1976b20ff235a881f1812c8ef58f802
+counter: 7
+context_digest: sha256:f3873357c753a37c5b6da7e1758fb14f07fa22d7895efab357a1a8422174c045
 apps:
   - name: wordcraft
     version: 0.7.0

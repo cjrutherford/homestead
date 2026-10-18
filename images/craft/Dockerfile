@@ -43,6 +43,11 @@ FROM ${BASE}
 RUN rm -rf /usr/share/nginx/html/* /etc/nginx/conf.d/default.conf
 COPY --from=extract /site/ /usr/share/nginx/html/
 COPY nginx.conf /etc/nginx/nginx.conf
+# The Homestead wrapper page (S254): frames the unmodified app and bridges
+# it to the Nextcloud file path. Static files only; part of the signed
+# build context, so changing them needs a new craft manifest.
+COPY homestead/ /usr/share/nginx/html/_homestead/
+RUN chmod -R a+rX /usr/share/nginx/html/_homestead
 # The unprivileged server must be able to read its config whatever mode the
 # staged build context carried.
 RUN chmod 0644 /etc/nginx/nginx.conf

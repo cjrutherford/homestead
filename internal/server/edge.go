@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"homestead/internal/cert"
+	"homestead/internal/craftfiles"
 	"homestead/internal/docker"
 	"homestead/internal/exposure"
 	"homestead/internal/operation"
@@ -138,6 +139,22 @@ type routeTableBody struct {
 	Routes []docker.Route `json:"routes"`
 }
 
+// inferCraftApps marks routes that front a hooked craft app (S254,
+// ADR-032) when the table predates the CraftApp field: craft packages
+// name their only service after the app, so a route whose upstream is
+// that service is a craft route. Install plans carry CraftApp already;
+// this only keeps tables applied earlier working after an upgrade.
+func inferCraftApps(routes []docker.Route) {
+	for i := range routes {
+		if routes[i].CraftApp != "" {
+			continue
+		}
+		if _, ok := craftfiles.HookedApp(routes[i].Target.Host); ok && routes[i].Target.Port == 8080 {
+			routes[i].CraftApp = routes[i].Target.Host
+		}
+	}
+}
+
 func handleEdgeRoutes(runner *operation.Runner, st *store.Store, local *cert.LocalTLS) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body routeTableBody
@@ -148,6 +165,7 @@ func handleEdgeRoutes(runner *operation.Runner, st *store.Store, local *cert.Loc
 		if body.Routes == nil {
 			body.Routes = []docker.Route{}
 		}
+		inferCraftApps(body.Routes)
 		if err := docker.ValidateRenderable(docker.RouteSet{Routes: body.Routes}); err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return

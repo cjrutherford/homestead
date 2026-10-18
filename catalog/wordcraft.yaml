@@ -41,6 +41,6 @@ exposure:
     recommended: local
     allowwider: false
     warnings:
-    - WordCraft stores nothing on the appliance, so widening exposure would offer a public editor whose documents never reach your storage; keep it local until Nextcloud document storage lands.
+    - WordCraft stores nothing on the appliance, so widening exposure would offer a public editor whose documents never reach your storage; it has no Nextcloud file hook, so documents stay in each visitor's browser. Keep it local.
 sso:
   class: unsupported

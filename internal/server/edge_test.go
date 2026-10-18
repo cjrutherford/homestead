@@ -140,3 +140,18 @@ func TestEdgeRoutesGetReadsRecordedTable(t *testing.T) {
 		t.Fatalf("recorded: %d %s", recorder.Code, recorder.Body.String())
 	}
 }
+
+func TestInferCraftApps(t *testing.T) {
+	routes := []docker.Route{
+		{Host: "gridcraft.lan", Target: docker.Target{Host: "gridcraft", Port: 8080}},
+		{Host: "wiki.lan", Target: docker.Target{Host: "wiki", Port: 8080}},
+		{Host: "wordcraft.lan", Target: docker.Target{Host: "wordcraft", Port: 8080}},
+		{Host: "g2.lan", Target: docker.Target{Host: "gridcraft", Port: 9000}},
+		{Host: "x.lan", Target: docker.Target{Host: "pdfcraft", Port: 8080}, CraftApp: "keep"},
+	}
+	inferCraftApps(routes)
+	got := []string{routes[0].CraftApp, routes[1].CraftApp, routes[2].CraftApp, routes[3].CraftApp, routes[4].CraftApp}
+	if strings.Join(got, ",") != "gridcraft,,,,keep" {
+		t.Fatalf("inferred = %v", got)
+	}
+}

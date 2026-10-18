@@ -21,6 +21,8 @@ test -f "$UNIT_SRC" || { echo "error: unit file missing: $UNIT_SRC" >&2; exit 1;
 
 cd "$REPO"
 "$REPO/scripts/provision-layout.sh"
+# Group allowed on the craft file socket besides root (S254, ADR-032).
+getent group homestead-craft >/dev/null || groupadd --system homestead-craft
 # A built dashboard (make dashboard-build dashboard-embed) travels inside
 # the binary; without one the daemon stays API-only (S031).
 build_tags=()

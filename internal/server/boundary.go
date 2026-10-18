@@ -40,6 +40,11 @@ const (
 	// ClassSession requires a valid operator session and a claimed
 	// appliance.
 	ClassSession
+	// ClassCraftSession is a route on the craft-file unix socket (ADR-032).
+	// The craft listener enforces it: a craft-scoped cookie bound to the
+	// operator session (or, on the exchange route only, a one-time launch
+	// code). Such a route is never registered on the TCP mux.
+	ClassCraftSession
 )
 
 func (c RouteClass) String() string {
@@ -50,6 +55,8 @@ func (c RouteClass) String() string {
 		return "claim-window"
 	case ClassSession:
 		return "session"
+	case ClassCraftSession:
+		return "craft-session"
 	}
 	return "unclassified"
 }
@@ -96,7 +103,25 @@ var routeClasses = map[string]RouteClass{
 	"DELETE /api/v1/wizards/{id}": ClassClaimWindow,
 
 	// Session required.
+	// Craft file proxy, on the dedicated craft socket only (ADR-032).
+	"POST /_homestead/files/session":         ClassCraftSession,
+	"GET /_homestead/files/session":          ClassCraftSession,
+	"DELETE /_homestead/files/session":       ClassCraftSession,
+	"PROPFIND /_homestead/files/f/{path...}": ClassCraftSession,
+	"GET /_homestead/files/f/{path...}":      ClassCraftSession,
+	"PUT /_homestead/files/f/{path...}":      ClassCraftSession,
+	"MKCOL /_homestead/files/f/{path...}":    ClassCraftSession,
+	"DELETE /_homestead/files/f/{path...}":   ClassCraftSession,
+	"MOVE /_homestead/files/f/{path...}":     ClassCraftSession,
+	"COPY /_homestead/files/f/{path...}":     ClassCraftSession,
+	"HEAD /_homestead/files/f/{path...}":     ClassCraftSession,
+
 	"DELETE /api/v1/sessions":                            ClassSession,
+	"GET /api/v1/craft/files":                            ClassSession,
+	"POST /api/v1/craft/files/plan":                      ClassSession,
+	"POST /api/v1/craft/files/approve":                   ClassSession,
+	"POST /api/v1/craft/files/local-only":                ClassSession,
+	"POST /api/v1/craft/files/launch":                    ClassSession,
 	"POST /api/v1/admins/password":                       ClassSession,
 	"GET /api/v1/admins/lockout":                         ClassSession,
 	"GET /api/v1/audit":                                  ClassSession,
@@ -322,6 +347,10 @@ func (b *boundary) check(mux *recordingMux, r *http.Request) (*operatorSession, 
 	class, known := Classify(pattern)
 	if !known {
 		return nil, reject(http.StatusForbidden, "route not classified", pattern, reasonUnclassified)
+	}
+	if class == ClassCraftSession {
+		// Craft-socket routes are never served by the TCP listener.
+		return nil, reject(http.StatusForbidden, "route not served here", pattern, reasonUnclassified)
 	}
 	if pattern == dashboardPattern && !isDashboardRequest(r) {
 		// The method-less catch-all also receives unregistered methods

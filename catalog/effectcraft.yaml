@@ -34,7 +34,7 @@ exposure:
     recommended: local
     allowwider: false
     warnings:
-    - EffectCraft stores nothing on the appliance, so widening exposure would offer a public compositor whose projects never reach your storage; keep it local until Nextcloud document storage lands.
+    - EffectCraft stores nothing on the appliance, so widening exposure would offer a public compositor whose projects never reach your storage. With Nextcloud file storage linked, this host also forwards its document path (/_homestead/files/) to your appliance, which reads and writes your Nextcloud on the browser's behalf; it needs a Homestead operator session opened from the dashboard, but widening exposure puts the host, that path and your document transfers beyond the LAN. Keep it local.
 browser:
 - capability: webgpu
   reason: "Effects render on the GPU through WebGPU, in the page and in render workers; without it EffectCraft renders on the CPU instead."

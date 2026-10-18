@@ -479,9 +479,9 @@
   texts only;
   `docs/THIRD_PARTY.md` records the licences. Ask upstream to include NOTICE
   and the OFL texts in the web zips.
-- Owner signature: the thirteen-app craft manifest (counter 6) is unsigned;
+- Owner signature: the thirteen-app craft manifest (counter 7 since S254) is unsigned;
   DesignCraft and CADCraft cannot be built outside a throwaway-key test until
-  the owner signs it. A KVM appliance holding a baseline at counter 6 or
+  the owner signs it. A KVM appliance holding a baseline at counter 7 or
   higher from throwaway manifests refuses it.
 - KVM acceptance for both apps passed on 2026-10-17 (see `docs/DEVELOPMENT.md`).
 - No `SharedArrayBuffer`, COOP or COEP is needed by either
@@ -489,3 +489,32 @@
   bumps. CADCraft is marked "early development" upstream and DesignCraft
   and CADCraft keep only preferences in the browser; documents and drawings
   live in the browser or are downloaded until S254.
+
+## Nextcloud craft file proxy (S254)
+- Nextcloud OAuth instead of app passwords: the link uses one app password
+  for one account (ADR-029); OAuth would put a bearer token in the browser or
+  need CORS on Nextcloud.
+- Per-user (not single-account) Nextcloud mapping: every operator session
+  reaches the one linked account and root folder.
+- File locking and conflict handling beyond last-writer-wins with ETag
+  checks (`If-Match` on overwrite, a confirmation on 412); no merge, no
+  WebDAV locks, no version picker.
+- Apps without a file hook: WordCraft and the seven others (deckcraft,
+  vectorcraft, photocraft, lightcraft, figcraft, soundcraft, designcraft)
+  stay browser-local. Ask upstream for `?host=parent` style hooks.
+- Save for FilmCraft and EffectCraft: they are open-only (URL hooks); saves
+  stay in the browser and need a manual export.
+- WordCraft `showSaveFilePicker` patching: rejected as fragile.
+- Craft sessions live in daemon memory, so a daemon restart ends them (the
+  owner relaunches); persisting them would put session secrets in SQLite.
+- The wrapper's file list is basic (folders, names). Thumbnails, search,
+  new-folder and rename in the page are not built; the proxy supports the
+  methods already.
+- EffectCraft registers a service worker (`sw.js`); whether it caches
+  responses from `/_homestead/files/` is not verified and needs a KVM look.
+- The Caddy `reverse_proxy` to the craft socket has no request body size
+  limit of its own; the daemon enforces the configured maximum.
+- Existing route tables applied before S254 get `CraftApp` inferred for the
+  five hooked apps only (by upstream name and port 8080); other craft routes
+  need the field from a fresh install plan, which only matters if they ever
+  gain a hook.

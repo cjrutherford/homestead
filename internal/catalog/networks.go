@@ -3,6 +3,7 @@ package catalog
 import (
 	"fmt"
 
+	"homestead/internal/craft"
 	"homestead/internal/docker"
 	"homestead/internal/exposure"
 )
@@ -18,6 +19,9 @@ type RouteRecommendation struct {
 	Recommended docker.Exposure
 	TLS         docker.TLSMode
 	Warnings    []string
+	// CraftApp is set for a craft package's endpoint (S254): its route
+	// forwards the craft file path to the daemon (ADR-032).
+	CraftApp string
 }
 
 // tlsHint grades TLS by exposure without a hostname: local and overlay
@@ -42,6 +46,10 @@ func RecommendRoutes(manifest Manifest) ([]RouteRecommendation, error) {
 	for _, service := range manifest.Services {
 		byEndpoint[service.Exposes] = service.Name
 	}
+	craftApp := ""
+	if images := manifest.CraftImages(); len(images) > 0 {
+		craftApp, _, _ = craft.ParseRef(images[0])
+	}
 	var out []RouteRecommendation
 	for _, endpoint := range manifest.Exposure.Endpoints {
 		service, ok := byEndpoint[endpoint.Endpoint]
@@ -54,6 +62,7 @@ func RecommendRoutes(manifest Manifest) ([]RouteRecommendation, error) {
 			Recommended: endpoint.Recommended,
 			TLS:         tlsHint(endpoint.Recommended),
 			Warnings:    append([]string(nil), endpoint.Warnings...),
+			CraftApp:    craftApp,
 		})
 	}
 	return out, nil
@@ -69,6 +78,7 @@ func BuildRoute(recommendation RouteRecommendation, host docker.Hostname, target
 		Target:   docker.Target{Host: targetHost, Port: targetPort},
 		Exposure: recommendation.Recommended,
 		TLS:      recommendation.TLS,
+		CraftApp: recommendation.CraftApp,
 	}
 	if err := route.Validate(); err != nil {
 		return docker.Route{}, err

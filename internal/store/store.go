@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 41
+const CurrentVersion = 42
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -818,6 +818,28 @@ CREATE TABLE IF NOT EXISTS local_leaves (
 	not_before TEXT NOT NULL,
 	not_after TEXT NOT NULL,
 	issued_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S254 (ADR-029, ADR-032): the Nextcloud link for craft file
+		// storage. Non-secret fields only; the app password is the
+		// sys_craftfiles_nextcloud secret (ADR-021). local-only rows are the
+		// per-app opt-out, desired configuration mirrored to YAML.
+		version: 42,
+		name:    "craft file link",
+		sql: `
+CREATE TABLE IF NOT EXISTS craft_file_link (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	base_url TEXT NOT NULL,
+	account TEXT NOT NULL,
+	root TEXT NOT NULL,
+	daemon_created INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS craft_file_local_only (
+	app TEXT PRIMARY KEY,
+	created_at TEXT NOT NULL
 );`,
 	},
 }

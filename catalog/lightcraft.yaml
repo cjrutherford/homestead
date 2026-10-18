@@ -34,6 +34,6 @@ exposure:
     recommended: local
     allowwider: false
     warnings:
-    - LightCraft stores nothing on the appliance (its library lives in each visitor's browser), so widening exposure would offer a public photo tool whose library never reaches your storage; keep it local until Nextcloud document storage lands.
+    - LightCraft stores nothing on the appliance (its library lives in each visitor's browser), so widening exposure would offer a public photo tool whose library never reaches your storage; it has no Nextcloud file hook, so documents stay in each visitor's browser. Keep it local.
 sso:
   class: unsupported

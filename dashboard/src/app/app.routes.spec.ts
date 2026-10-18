@@ -15,6 +15,7 @@ import { Account } from './account/account';
 import { Edge } from './edge/edge';
 import { Tls } from './tls/tls';
 import { AuditLog } from './audit/audit';
+import { CraftFiles } from './craftfiles/craft-files';
 import { NotFound } from './not-found/not-found';
 
 describe('routes', () => {
@@ -90,5 +91,10 @@ describe('routes', () => {
 
   it('serves the account page', () => {
     expect(routes.find((route) => route.path === 'account')?.component).toBe(Account);
+  });
+
+  it('serves the craft files page', () => {
+    const page = routes.find((route) => route.path === 'craft-files');
+    expect(page?.component).toBe(CraftFiles);
   });
 });

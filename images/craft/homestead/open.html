@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Open with Nextcloud files</title>
+  <link rel="stylesheet" href="/_homestead/open.css">
+</head>
+<body>
+  <!-- Homestead wrapper page (S254, ADR-029, ADR-032). It frames the unmodified
+       craft app on this origin and bridges the app's own host protocol to the
+       same-origin file path /_homestead/files/, which the edge forwards to the
+       Homestead daemon. It holds no credential: the browser sends the
+       HttpOnly craft cookie by itself. -->
+  <header id="bar">
+    <strong id="title">Nextcloud files</strong>
+    <span id="state" role="status" aria-live="polite">Starting</span>
+    <button id="toggle-files" type="button" hidden>Files</button>
+    <a id="local" href="/">Use the app without Nextcloud</a>
+  </header>
+  <div id="layout">
+    <aside id="files" hidden aria-label="Nextcloud files">
+      <div id="crumbs"></div>
+      <div id="files-actions">
+        <button id="up" type="button">Up</button>
+        <button id="refresh" type="button">Refresh</button>
+      </div>
+      <ul id="list"></ul>
+      <p id="note"></p>
+    </aside>
+    <main id="stage">
+      <p id="message" role="alert" hidden></p>
+      <iframe id="app" title="Craft app" hidden allow="clipboard-read; clipboard-write; fullscreen"></iframe>
+    </main>
+  </div>
+  <script src="/_homestead/open.js"></script>
+</body>
+</html>

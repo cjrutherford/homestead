@@ -20,6 +20,7 @@ import (
 	"homestead/internal/dashboard"
 	"homestead/internal/desired"
 	"homestead/internal/discover"
+	"homestead/internal/docker"
 	"homestead/internal/layout"
 	"homestead/internal/mdns"
 	"homestead/internal/operation"
@@ -43,6 +44,7 @@ func main() {
 	configPath := flag.String("config", desired.DefaultPath(), "desired-state file (S014)")
 	dataDir := flag.String("data-dir", layout.LibDir.Path, "operational state directory (S012)")
 	socketPath := flag.String("socket", server.DefaultSocketPath, "root-only recovery socket (S021)")
+	craftSocket := flag.String("craft-socket", docker.CraftSocketPath, "craft file socket the edge forwards to (S254, ADR-032)")
 	catalogDir := flag.String("catalog-dir", "catalog", "curated package directory (S160; packaging installs it)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
@@ -50,13 +52,13 @@ func main() {
 		fmt.Println(version.Version)
 		return
 	}
-	if err := run(*listen, *configPath, *dataDir, *socketPath, *catalogDir); err != nil {
+	if err := run(*listen, *configPath, *dataDir, *socketPath, *craftSocket, *catalogDir); err != nil {
 		fmt.Fprintln(os.Stderr, "homestead-server:", err)
 		os.Exit(1)
 	}
 }
 
-func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
+func run(listen, configPath, dataDir, socketPath, craftSocket, catalogDir string) error {
 	// The state directory is provisioned by S012 and never created here:
 	// a missing data dir fails loudly instead of scattering state.
 	st, err := store.Open(filepath.Join(dataDir, store.DBFileName))
@@ -132,10 +134,20 @@ func run(listen, configPath, dataDir, socketPath, catalogDir string) error {
 	go func() {
 		unixErr <- srv.RunUnix(ctx, socketPath)
 	}()
+	// The craft file socket (ADR-032) is not boot-critical: without it the
+	// craft apps stay browser-local, so a failure only warns.
+	craftDone := make(chan struct{})
+	go func() {
+		defer close(craftDone)
+		if err := srv.RunCraftSocket(ctx, craftSocket); err != nil {
+			fmt.Fprintln(os.Stderr, "homestead-server: craft file socket off:", err)
+		}
+	}()
 	if err := srv.Run(ctx); err != nil {
 		return err
 	}
 	<-schedDone
+	<-craftDone
 	return <-unixErr
 }
 

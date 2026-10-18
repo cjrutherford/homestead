@@ -48,6 +48,12 @@
   registry is involved. See `docs/architecture/RELEASE_VERIFICATION.md`.
   API: `GET /api/v1/craft`, `POST /api/v1/craft/plan|build`,
   `/api/v1/craft/trust-keys`; CLI `homesteadctl craft`.
+- Craft file proxy (S254, ADR-029, ADR-032): `internal/craftfiles` is a
+  Nextcloud WebDAV proxy for the craft apps with a sealed app password. It
+  is served on a dedicated unix socket (`/run/homestead-craft/files.sock`)
+  that the Caddy stack mounts, never on the TCP listener, behind a
+  craft-scoped cookie bound to the operator session. See
+  `docs/architecture/CRAFT_FILE_PROXY.md`.
 - YAML: customer-readable desired configuration and generated artifacts.
 - Docker Engine + Compose v2: application runtime.
 - Caddy: application reverse proxy / HTTP edge.
