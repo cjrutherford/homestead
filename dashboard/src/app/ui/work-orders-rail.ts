@@ -13,6 +13,7 @@ import { WorkOrder, WorkOrders } from '../core/work-orders.service';
   selector: 'app-work-orders-rail',
   imports: [RouterLink],
   templateUrl: './work-orders-rail.html',
+  host: { '(keydown.escape)': 'closeOnEscape($event)' },
 })
 export class WorkOrdersRail {
   protected readonly store = inject(WorkOrders);
@@ -43,6 +44,14 @@ export class WorkOrdersRail {
       return 'running';
     }
     return order.state?.status === 'succeeded' ? 'done' : 'failed';
+  }
+
+  /** Escape closes the open bottom sheet. */
+  protected closeOnEscape(event: Event): void {
+    if (this.open() && this.variant() === 'sheet') {
+      event.stopPropagation();
+      this.open.set(false);
+    }
   }
 
   protected toggle(): void {

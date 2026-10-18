@@ -57,7 +57,7 @@ describe('OperationDetail', () => {
     fixture.detectChanges();
     expect(text()).toContain('Test op');
     expect(text()).toContain('test.op');
-    expect(text()).toContain('download');
+    expect(text()).toContain('Download');
     expect(text()).toContain('Done');
   });
 
@@ -86,7 +86,7 @@ describe('OperationDetail', () => {
     });
     fixture.detectChanges();
     expect(text()).toContain('Done');
-    expect(text()).toContain('install');
+    expect(text()).toContain('Install');
   });
 
   it('reports unknown operations', () => {

@@ -6,6 +6,9 @@ import {
   provideHttpClientTesting,
   HttpTestingController,
 } from '@angular/common/http/testing';
+import { Subject } from 'rxjs';
+import { ApiService, OperationState } from '../core/api.service';
+import { WorkOrders } from '../core/work-orders.service';
 import { Operations } from './operations';
 
 describe('Operations', () => {
@@ -61,5 +64,22 @@ describe('Operations', () => {
     });
     fixture.detectChanges();
     expect(text()).toContain("Can't reach the appliance");
+  });
+
+  it('refreshes when a work order starts or settles while open', () => {
+    const stream = new Subject<OperationState>();
+    TestBed.inject(ApiService).operationEvents = () => stream;
+    http.expectOne('/api/v1/operations').flush([]);
+    fixture.detectChanges();
+
+    TestBed.inject(WorkOrders).track(5, { title: 'Reconcile routes', done: 'Routes reconciled' });
+    fixture.detectChanges();
+    http.expectOne('/api/v1/operations').flush([{ id: 5, type: 'x', status: 'running', steps: [] }]);
+
+    stream.next({ id: 5, type: 'x', status: 'succeeded', steps: [] } as unknown as OperationState);
+    fixture.detectChanges();
+    http.expectOne('/api/v1/operations').flush([{ id: 5, type: 'x', status: 'succeeded', steps: [] }]);
+    fixture.detectChanges();
+    expect(text()).toContain('Done');
   });
 });

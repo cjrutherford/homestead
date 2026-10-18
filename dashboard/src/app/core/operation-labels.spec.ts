@@ -14,6 +14,7 @@ describe('operation labels', () => {
 
   it('labels unknown operation types from the type', () => {
     expect(labelForType('caddy.deploy').title).toBe('Deploy Caddy');
+    expect(labelForType('catalog.remove')).toEqual({ title: 'Remove app', done: 'App removed' });
     expect(labelForType('some.new-thing').title).toBe('Some new thing');
   });
 });

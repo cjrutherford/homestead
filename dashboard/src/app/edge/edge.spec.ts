@@ -86,7 +86,7 @@ describe('Edge', () => {
     expect(text()).toContain('Starting');
     events.next(state('running', ['pull']));
     fixture.detectChanges();
-    expect(text()).toContain('pull');
+    expect(text()).toContain('Pull');
     events.next(state('succeeded', ['pull', 'up']));
     settleReload();
     expect(text()).not.toContain('Starting');

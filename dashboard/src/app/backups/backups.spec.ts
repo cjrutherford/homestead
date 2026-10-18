@@ -120,7 +120,7 @@ describe('Backups', () => {
     expect(text()).toContain('retain all runs');
   });
 
-  it('shows empty state and destination errors', () => {
+  it('shows empty state and a not-yet-assigned destination as a state', () => {
     fixture.detectChanges();
     http
       .expectOne('/api/v1/backups/destination')
@@ -131,7 +131,21 @@ describe('Backups', () => {
     http.expectOne('/api/v1/backups/schedules').flush([]);
     fixture.detectChanges();
     expect(text()).toContain('No backup schedules yet');
-    expect(text()).toContain('no backup storage assigned');
+    expect(text()).toContain('No backup destination yet.');
+    expect(fixture.nativeElement.querySelector('a[href="/storage"]')).not.toBeNull();
+  });
+
+  it('still shows a destination failure that is not a missing assignment', () => {
+    fixture.detectChanges();
+    http
+      .expectOne('/api/v1/backups/destination')
+      .flush('disk unreadable', { status: 500, statusText: 'x' });
+    http.expectOne('/api/v1/scheduler/jobs').flush([]);
+    http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
+    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
+    http.expectOne('/api/v1/backups/schedules').flush([]);
+    fixture.detectChanges();
+    expect(text()).toContain('disk unreadable');
   });
 
   it('saves a schedule with hours converted to seconds and trimmed text', () => {

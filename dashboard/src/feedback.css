@@ -28,6 +28,7 @@ app-loading[data-shape='fields'].loading-busy {
 
 .skeleton-bar {
   background: var(--surface-sunken);
+  border: 1px solid var(--border);
   border-radius: var(--radius-control);
 }
 

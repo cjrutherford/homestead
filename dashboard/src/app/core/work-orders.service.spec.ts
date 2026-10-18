@@ -58,7 +58,7 @@ describe('WorkOrders', () => {
     expect(orders.orders().map((o) => o.title)).toEqual(['Reconcile routes']);
     streams.get(7)!.next(state(7, 'running'));
     expect(orders.stateOf(7)?.status).toBe('running');
-    expect(toast.announcement()).toContain('Reconcile routes: Step 1 of 2: one');
+    expect(toast.announcement()).toContain('Reconcile routes: Step 1 of 2: One');
     streams.get(7)!.next(state(7, 'succeeded'));
     expect(toast.toasts().map((t) => t.message)).toEqual(['Routes reconciled']);
     expect(orders.active()).toBe(0);

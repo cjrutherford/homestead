@@ -19,6 +19,18 @@ export interface OperationProgress {
   fraction: number;
 }
 
+/**
+ * Daemon step names are often slugs ("obtain-artifact", "verify-craft-images").
+ * Show them as words; names that already read as words are left alone.
+ */
+export function stepLabel(name: string): string {
+  if (!name || /\s/.test(name)) {
+    return name;
+  }
+  const words = name.replace(/[-_.]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 export function currentStep(steps: OperationStep[]): number | null {
   const running = steps.findIndex((step) => step.status === 'running');
   if (running >= 0) {
@@ -45,8 +57,8 @@ export function progressOf(op: OperationState | null): OperationProgress {
       done,
       total,
       currentIndex: null,
-      currentName: failed?.name ?? '',
-      text: failed ? `Failed at ${failed.name}` : 'Failed',
+      currentName: stepLabel(failed?.name ?? ''),
+      text: failed ? `Failed at ${stepLabel(failed.name)}` : 'Failed',
       fraction: total ? done / total : 0,
     };
   }
@@ -61,8 +73,8 @@ export function progressOf(op: OperationState | null): OperationProgress {
     done,
     total,
     currentIndex: index,
-    currentName: steps[index].name,
-    text: `Step ${index + 1} of ${total}: ${steps[index].name}`,
+    currentName: stepLabel(steps[index].name),
+    text: `Step ${index + 1} of ${total}: ${stepLabel(steps[index].name)}`,
     fraction: total ? done / total : 0,
   };
 }

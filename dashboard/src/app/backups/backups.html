@@ -14,12 +14,20 @@
   }
 
   <h2>Destination</h2>
-  <app-loading [loading]="!destination() && !destinationError()" shape="lines">
+  <app-loading [loading]="!destination() && !destinationError() && !destinationUnset()" shape="lines">
   @if (destination(); as root) {
     <p>Backup root: <code class="backup-root">{{ root }}</code></p>
     @if (encryption(); as scheme) {
       <p>Encryption: <span class="backup-encryption">{{ scheme }}</span></p>
     }
+  } @else if (destinationUnset()) {
+    <app-state-message
+      kind="empty"
+      headline="No backup destination yet."
+      detail="Backups land on the storage you assign the backup class to. Assign it on the Storage page, then come back."
+      actionLabel="Go to Storage"
+      actionLink="/storage"
+    />
   } @else if (destinationError()) {
     <app-state-message kind="error" [headline]="destinationError()" />
   }

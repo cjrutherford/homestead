@@ -148,7 +148,7 @@ describe('Tls', () => {
     expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/9"]')).not.toBeNull();
     events.next({ id: 9, status: 'running', error: '', steps: [{ id: 1, name: 'issue-and-place', status: 'running' }] } as unknown as OperationState);
     fixture.detectChanges();
-    expect(text()).toContain('issue-and-place');
+    expect(text()).toContain('Issue and place');
     expect(text()).toContain('Running');
     events.next({ id: 9, status: 'failed', error: 'ca said no', steps: [] } as unknown as OperationState);
     fixture.detectChanges();

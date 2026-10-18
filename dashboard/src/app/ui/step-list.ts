@@ -1,5 +1,6 @@
 import { Component, input } from '@angular/core';
 import { OperationStep } from '../core/api.service';
+import { stepLabel } from '../core/operation-view';
 
 const WORDS: Record<string, string> = {
   succeeded: 'Done',
@@ -24,7 +25,7 @@ const WORDS: Record<string, string> = {
         @for (step of steps(); track step.id) {
           <li class="step" [attr.data-status]="step.status">
             <span class="step-glyph" aria-hidden="true"></span>
-            <span class="step-name">{{ step.name }}</span>
+            <span class="step-name">{{ label(step.name) }}</span>
             <span class="step-status">{{ word(step.status) }}</span>
             @if (step.error) {
               <span class="step-error">{{ step.error }}</span>
@@ -38,6 +39,10 @@ const WORDS: Record<string, string> = {
 export class StepList {
   readonly steps = input<OperationStep[]>([]);
   readonly compact = input(false);
+
+  protected label(name: string): string {
+    return stepLabel(name);
+  }
 
   protected word(status: string): string {
     return WORDS[status] ?? status;

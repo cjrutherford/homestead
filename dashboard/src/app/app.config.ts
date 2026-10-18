@@ -1,6 +1,7 @@
-import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { ApplicationConfig, inject, provideAppInitializer, provideBrowserGlobalErrorListeners } from '@angular/core';
 import {
   InMemoryScrollingOptions,
+  Router,
   provideRouter,
   withInMemoryScrolling,
   withViewTransitions,
@@ -10,6 +11,7 @@ import { authInterceptor } from './core/auth.interceptor';
 import { routes } from './app.routes';
 import { workOrderInterceptor } from './core/work-order.interceptor';
 import { viewTransitionOptions } from './core/view-transition';
+import { watchScrollRestore } from './core/scroll-restore';
 
 /**
  * A new page starts at the top; back and forward restore the earlier
@@ -26,6 +28,7 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes, withInMemoryScrolling(SCROLL_OPTIONS), withViewTransitions(viewTransitionOptions)),
+    provideAppInitializer(() => watchScrollRestore(inject(Router))),
     provideHttpClient(withInterceptors([authInterceptor, workOrderInterceptor]))
   ]
 };

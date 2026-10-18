@@ -45,7 +45,7 @@ describe('WorkOrdersRail', () => {
     fixture.detectChanges();
     expect(root.querySelector('.rail-title')?.textContent).toContain('Reconcile routes');
     expect(root.querySelector('.rail-title')?.getAttribute('href')).toBe('/operations/4');
-    expect(root.querySelector('.rail-step')?.textContent).toContain('Step 2 of 3: up');
+    expect(root.querySelector('.rail-step')?.textContent).toContain('Step 2 of 3: Up');
     expect(root.querySelector('.rail-time')?.textContent).toMatch(/\d+:\d\d/);
     const bar = root.querySelector('[role="progressbar"]')!;
     expect(bar.getAttribute('aria-valuenow')).toBe('1');
@@ -82,6 +82,19 @@ describe('WorkOrdersRail', () => {
     fixture.detectChanges();
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect((root.querySelector('.rail-orders') as HTMLElement).hidden).toBe(false);
+  });
+
+  it('closes the open bottom sheet on Escape', () => {
+    const { fixture, orders, root } = setup('sheet');
+    orders.track(4, { title: 'Reconcile routes', done: 'Routes reconciled' });
+    fixture.detectChanges();
+    const summary = root.querySelector<HTMLButtonElement>('.rail-summary')!;
+    summary.click();
+    fixture.detectChanges();
+    expect(summary.getAttribute('aria-expanded')).toBe('true');
+    summary.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    expect(summary.getAttribute('aria-expanded')).toBe('false');
   });
 });
 

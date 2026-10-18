@@ -65,6 +65,14 @@ const TYPES: Record<string, OrderLabel> = {
   'backup.job': { title: 'Run scheduled backup', done: 'Scheduled backup finished' },
   'backup.restore': { title: 'Restore backup', done: 'Backup restored' },
   'app.update': { title: 'Update app', done: 'App updated' },
+  'caddy.reconcile': { title: 'Reconcile routes', done: 'Routes reconciled' },
+  'catalog.install': { title: 'Install app', done: 'App installed' },
+  'catalog.remove': { title: 'Remove app', done: 'App removed' },
+  'catalog.configure': { title: 'Configure app', done: 'App configured' },
+  'catalog.restore': { title: 'Restore app', done: 'App restored' },
+  'catalog.migrate': { title: 'Migrate app data', done: 'App data migrated' },
+  'storage.provision': { title: 'Set up storage', done: 'Storage set up' },
+  'docker.install': { title: 'Install Docker', done: 'Docker installed' },
   'catalog.drift-scan': { title: 'Scan for drift', done: 'Drift scan finished' },
 };
 

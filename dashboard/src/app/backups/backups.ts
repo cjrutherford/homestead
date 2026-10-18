@@ -32,6 +32,8 @@ export class Backups implements OnInit {
   protected readonly destination = signal<string | null>(null);
   protected readonly encryption = signal<string | null>(null);
   protected readonly destinationError = signal<string | null>(null);
+  /** 422: no storage holds the backup class yet. A state, not a failure. */
+  protected readonly destinationUnset = signal(false);
   protected readonly schedules = signal<BackupSchedule[]>([]);
   protected readonly inspected = signal<BackupSchedule | null>(null);
   protected readonly jobs = signal<SchedulerJob[]>([]);
@@ -58,6 +60,7 @@ export class Backups implements OnInit {
     this.loading.set(true);
     this.error.set(null);
     this.destinationError.set(null);
+    this.destinationUnset.set(false);
     this.api.backupDestination().subscribe({
       next: ({ destination, encrypted, format_version }) => {
         this.destination.set(destination);
@@ -67,6 +70,10 @@ export class Backups implements OnInit {
       },
       error: (failure: HttpErrorResponse) => {
         this.destination.set(null);
+        if (failure.status === 422) {
+          this.destinationUnset.set(true);
+          return;
+        }
         this.destinationError.set(failure.error ?? failure.message);
       },
     });
