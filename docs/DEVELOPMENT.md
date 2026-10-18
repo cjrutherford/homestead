@@ -4143,7 +4143,39 @@ at 375, 390, 768, 1024 and 1440 px; screenshots in `/tmp/hs-s282-local/`
 (not committed). The initial bundle is 514 kB (was 484 kB); fonts add 73 kB
 of assets fetched on demand. The initial budget warning moved to 560kB.
 
-KVM visual review: **PENDING.** Deploy to VM 2, screenshot every route at
-1440 and 390 px in light and dark, review, fix what reads poorly and record
-the screenshot set location and findings here.
+KVM visual review (VM 2, 2026-10-18): **done.** Screenshots in
+`/tmp/hs-s282-kvm/` (not committed): every route at 1440x900 and 390x844 in
+light and dark, status/backups/storage in high contrast, the logged-out login
+and status pages, the mobile drawer, and focus rings in three themes. Run
+with Playwright through an ssh tunnel as `owner`, read only; logged out at the
+end. Horizontal overflow: none on 24 routes (including an operation detail)
+at 375, 390, 768, 1024 and 1440 px. No external requests were made.
+
+Found and fixed:
+- Sidebar: all five groups open made a 29-row nav that scrolled at 900px and
+  cut Certificates off in the drawer. Now only the current page's group is
+  open; owner choices persist (`homestead.nav.groups`); rows are 40px on fine
+  pointers, 44px on touch. Logged-in desktop nav went from about 1,400px of
+  links to 5 headers plus the current group.
+- Backups warning ("no owner-held recipient") rendered as a green success
+  callout. Added a `warning` kind to `app-state-message` and moved the
+  caution messages on backups, TLS and craft files to it. Messages and
+  `.warning` callouts now use ink text with a coloured start bar and glyph
+  instead of coloured text on a tint.
+- Empty-state messages inside lists showed a stray bullet; audit badges
+  touched the action text.
+- Theme flash: Angular inlined critical CSS without the `data-theme` blocks,
+  so a stored dark or high-contrast theme painted light first (4 of 5
+  reloads). Fixed with `public/theme-init.js` (same origin, no CSP needed;
+  the daemon sets no dashboard CSP) plus `inlineCritical: false`. Six
+  reloads now paint dark from the first frame.
+- The coloured top bar on the danger dialog is not present in the current
+  build (verified light, dark and 390px); the danger dialog is a brick border
+  only.
+
+Left for S283/S284: the Tunnel "Tear down" button is a primary submit
+(destructive styling belongs with the page restructure); Updates and Storage
+are long unbroken lists (grouping, tables); the Status diagnostics list reads
+as a wall of rows; the login heading sits tight to its form; Atkinson's
+slashed zero shows in IPs and versions (font design, left as is).
 
