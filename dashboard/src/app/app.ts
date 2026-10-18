@@ -77,7 +77,7 @@ export class App {
       this.enter(event.urlAfterRedirects);
       if (this.drawerOpen()) {
         this.close(false);
-        this.main()?.nativeElement.focus();
+        this.main()?.nativeElement.focus({ preventScroll: true });
       }
       // Claim state only changes while unclaimed or unknown; once claimed, stop asking.
       if (this.identity()?.state !== 'CLAIMED') {
@@ -148,7 +148,7 @@ export class App {
   /** The skip link: a bare #main href would navigate the router, so focus directly. */
   protected skipToMain(event: Event): void {
     event.preventDefault();
-    this.main()?.nativeElement.focus();
+    this.main()?.nativeElement.focus({ preventScroll: true });
   }
 
   protected logout(): void {
