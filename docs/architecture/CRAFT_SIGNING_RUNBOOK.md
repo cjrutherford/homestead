@@ -88,7 +88,9 @@ scripts/sign-craft-manifest.sh craft-manifest.yaml --key /secure/craft.key
 ```
 
 This runs `minisign -S -l` (the non-prehashed `Ed` form the daemon
-requires) and writes `craft-manifest.yaml.minisig`. Copy both files over
+requires) and writes `craft-manifest.yaml.minisig`. `TestShippedCraftManifestIsSignedByTheEmbeddedKey`
+(`internal/release`) fails until a changed manifest is re-signed with the
+embedded HAI craft key. Copy both files over
 `catalog/craft/` and commit the signature beside the manifest. Check:
 
 ```

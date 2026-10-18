@@ -85,7 +85,9 @@ class TestWrapper(unittest.TestCase):
         digest = "sha256:" + hashlib.sha256("".join(lines).encode()).hexdigest()
         manifest = (REPO / "catalog" / "craft" / "craft-manifest.yaml").read_text(encoding="utf-8")
         self.assertIn("context_digest: " + digest, manifest)
-        self.assertFalse((REPO / "catalog" / "craft" / "craft-manifest.yaml.minisig").exists(), "the manifest stays unsigned")
+        # Signed by the HAI craft key since 2026-10-17; the Go test
+        # TestShippedCraftManifestIsSignedByTheEmbeddedKey verifies it.
+        self.assertTrue((REPO / "catalog" / "craft" / "craft-manifest.yaml.minisig").exists(), "the shipped manifest is signed")
 
 
 if __name__ == "__main__":
