@@ -1,19 +1,19 @@
 # Craft Apps Start Page
 
 ## Status
-Proposed
+Accepted
 
 Proposed 2026-10-17 after the owner dropped Craft Launcher from the catalog.
-Awaiting owner acceptance; S281 must not be implemented until this ADR is
-Accepted. Related: ADR-018 (static browser apps), ADR-028 (craft packaging),
+Accepted 2026-10-17 by the owner with option (b), the daemon-derived
+dashboard page with CLI and API parity; options (a) and (c) are rejected. Related: ADR-018 (static browser apps), ADR-028 (craft packaging),
 ADR-029 (craft file proxy), ADR-020 (operator session boundary) and
 ADR-030 (local HTTPS).
 
 ## Decision
 Provide a Homestead-owned "Craft apps" start page: a list of the installed
 craft apps with their local HTTPS URLs, built by the daemon from the catalog
-and the existing edge route state, with no external network calls. The
-recommended option is (b) below; the owner picks.
+and the existing edge route state, with no external network calls. The owner
+chose option (b) below.
 
 ## Context
 Upstream Craft Launcher (dropped) has a compiled-in list of the upstream suite
@@ -26,7 +26,7 @@ with GitHub download buttons, cannot list installed apps, and calls
   parameter), restore the launcher package and generate that list from
   installed craft packages with a drift check. Depends on an upstream change
   and an upstream release; the launcher's GitHub calls and trademarks remain.
-- (b) **Recommended.** A Homestead-owned page produced by the daemon: a new
+- (b) **Chosen.** A Homestead-owned page produced by the daemon: a new
   authenticated dashboard page, a CLI command and an API route with
   parity (`docs/PARITY.md` rows), listing installed craft packages and their
   local HTTPS URLs from the catalog and edge route state. No change to the

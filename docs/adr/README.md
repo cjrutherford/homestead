@@ -87,5 +87,5 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-028 | Craft Suite Packaging and Image Trust | Accepted |
 | ADR-029 | Nextcloud WebDAV Proxy for Craft Apps | Accepted |
 | ADR-030 | Internal CA Trust Distribution and Local TLS | Accepted |
-| ADR-031 | Craft Apps Start Page | Proposed |
+| ADR-031 | Craft Apps Start Page | Accepted |
 | ADR-032 | Craft File Proxy Reaches the Daemon over a Dedicated Unix Socket | Accepted |

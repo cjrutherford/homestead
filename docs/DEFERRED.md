@@ -468,7 +468,8 @@
   the upstream suite with GitHub download buttons, cannot list installed apps
   and calls `api.github.com` 14 times per load. A Homestead-owned "Craft apps"
   start page listing installed craft apps replaces it: see
-  `docs/slices/S281-craft-start-page.md` and the proposed ADR-031. Until then
+  `docs/slices/S281-craft-start-page.md` and ADR-031 (Accepted 2026-10-17,
+  option (b): a dashboard page with CLI and API parity). Until then
   owners bookmark each craft app at its own `https://<app>.lan/` host (the
   dashboard Apps page shows them).
 - DesignCraft and CADCraft web zips ship no `NOTICE` and no `OFL-*.txt`,

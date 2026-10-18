@@ -31,4 +31,4 @@ Phases:
 Craft app slices after the phase list (S249 to S254, S279 to S281):
 S254 Nextcloud craft integration (hooked apps: GridCraft, CADCraft, PdfCraft
 full; FilmCraft, EffectCraft open-only), then S281 Craft apps start page
-(`docs/slices/S281-craft-start-page.md`, blocked on ADR-031).
+(`docs/slices/S281-craft-start-page.md`, governed by ADR-031, Accepted 2026-10-17).
