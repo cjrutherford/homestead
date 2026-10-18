@@ -37,3 +37,14 @@ func TestPublishedCraftKeyMatchesTheEmbeddedKey(t *testing.T) {
 		t.Fatalf("catalog/craft/craft.pub differs from EmbeddedCraftPublicKey")
 	}
 }
+
+// The embedded craft key is the production key; only the platform release
+// key is still a placeholder.
+func TestOnlyThePlatformEmbeddedKeyIsAPlaceholder(t *testing.T) {
+	if !platformClass.embedded().Placeholder {
+		t.Fatal("platform embedded key should still be marked placeholder")
+	}
+	if craftClass.embedded().Placeholder {
+		t.Fatal("craft embedded key is the production key and must not be marked placeholder")
+	}
+}

@@ -180,7 +180,7 @@ func TestCraftTrustKeyRoutesAreSeparateFromPlatform(t *testing.T) {
 	e.h.listKeys(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
 	var keys []release.TrustKey
 	_ = json.Unmarshal(rec.Body.Bytes(), &keys)
-	if len(keys) != 1 || keys[0].Source != "embedded" || !keys[0].Placeholder {
+	if len(keys) != 1 || keys[0].Source != "embedded" || keys[0].Placeholder || keys[0].KeyID != "B03DB3F5AA66DB3E" {
 		t.Fatalf("keys = %+v", keys)
 	}
 	e.trust()
