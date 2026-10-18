@@ -20,6 +20,7 @@ import { StorageSetup } from './storage/storage';
 import { Edge } from './edge/edge';
 import { Tls } from './tls/tls';
 import { CraftFiles } from './craftfiles/craft-files';
+import { CraftApps } from './craftapps/craft-apps';
 import { Trust } from './trust/trust';
 import { AuditLog } from './audit/audit';
 import { Account } from './account/account';
@@ -44,6 +45,7 @@ export const routes: Routes = [
   { path: 'edge', component: Edge },
   { path: 'tls', component: Tls },
   { path: 'trust', component: Trust },
+  { path: 'craft-apps', component: CraftApps },
   { path: 'craft-files', component: CraftFiles },
   { path: 'audit', component: AuditLog },
   { path: 'secrets', component: Secrets },

@@ -67,6 +67,30 @@ type CraftStatus struct {
 	ContextDir    string                       `json:"context_dir"`
 }
 
+// CraftApp is one installed craft app on the start page (S281).
+type CraftApp struct {
+	Name      string `json:"name"`
+	Title     string `json:"title"`
+	Version   string `json:"version"`
+	Status    string `json:"status"`
+	URL       string `json:"url"`
+	Host      string `json:"host"`
+	TLS       string `json:"tls"`
+	Exposure  string `json:"exposure"`
+	URLReason string `json:"url_reason"`
+}
+
+// CraftApps reads the installed craft apps with their local URLs.
+func (c *Client) CraftApps(ctx context.Context) ([]CraftApp, error) {
+	var out struct {
+		Apps []CraftApp `json:"apps"`
+	}
+	if err := c.get(ctx, "/api/v1/craft/apps", &out); err != nil {
+		return nil, err
+	}
+	return out.Apps, nil
+}
+
 // CraftRequest names the app and, optionally, the manifest, signature and
 // an owner-supplied local artifact (offline use). AllowOlder is the
 // explicit, audited counter override.

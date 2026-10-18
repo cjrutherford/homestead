@@ -164,3 +164,27 @@ Per app, and nothing else:
    `scripts/craft-header-check.sh`, including the COOP/COEP question for
    that app. Do not copy another app's row.
 6. KVM acceptance as in the slice file.
+
+## Craft apps start page (S281, ADR-031)
+
+`GET /api/v1/craft/apps` (session class, read-only), `homesteadctl craft apps`
+and the dashboard Craft apps page (`/craft-apps`) list the installed craft
+apps. The list is derived on every request and stored nowhere, so there is
+nothing to regenerate, back up or drift-check; install and uninstall show on
+the next load.
+
+- A craft package is a catalog package whose services run a local
+  `homestead/craft-<app>:<version>` image (`Manifest.CraftImages()`); it is
+  listed when it is installed (`catalog.Installed`: recorded stack or
+  `compose.yaml`). Title and version come from the catalog.
+- The URL comes from the recorded edge route table (`edge_routes`): the route
+  whose `CraftApp` names the app, or for tables recorded before that field, an
+  upstream service named after the app. The scheme is `https` unless the
+  route's TLS mode is `off`; an HTTPS route wins over a plain one. An
+  installed app with no route is listed with no URL and the reason.
+- `status` is `installed`. Running state stays on the Apps and Status pages.
+- Only the catalog directory, the SQLite store and the stack directory are
+  read. The handler never dials out, and the page loads no third-party asset;
+  `internal/server/craftapps_test.go` swaps the default HTTP transport and DNS
+  resolver for ones that fail the test and checks the source for network
+  clients.

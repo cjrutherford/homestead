@@ -11,7 +11,7 @@ import (
 	"homestead/internal/operation"
 )
 
-const craftUsage = "usage: homesteadctl craft <status|plan|build|trust|files> ..."
+const craftUsage = "usage: homesteadctl craft <status|apps|plan|build|trust|files> ..."
 
 const craftBuildUsage = "usage: homesteadctl craft <plan|build> APP [--manifest FILE --signature FILE] [--artifact FILE] [--allow-older] [--follow]"
 
@@ -28,6 +28,8 @@ func runCraft(ctx context.Context, client *apiclient.Client, args []string, stdo
 	switch args[0] {
 	case "status":
 		return runCraftStatus(ctx, client, stdout, stderr)
+	case "apps":
+		return runCraftApps(ctx, client, stdout, stderr)
 	case "plan":
 		return runCraftBuild(ctx, client, args[1:], false, stdout, stderr)
 	case "build":
@@ -67,6 +69,27 @@ func runCraftStatus(ctx context.Context, client *apiclient.Client, stdout, stder
 			line += " (" + v.Refusal + " check)"
 		}
 		fmt.Fprintf(stdout, "%s: %s\n", line, v.Detail)
+	}
+	return exitOK
+}
+
+// runCraftApps prints the start page (S281, ADR-031): installed craft apps
+// with title, version, status and local URL. An app with no route says why.
+func runCraftApps(ctx context.Context, client *apiclient.Client, stdout, stderr io.Writer) int {
+	apps, err := client.CraftApps(ctx)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if len(apps) == 0 {
+		fmt.Fprintln(stdout, "no craft apps installed")
+		return exitOK
+	}
+	for _, app := range apps {
+		url := app.URL
+		if url == "" {
+			url = "(no URL) " + app.URLReason
+		}
+		fmt.Fprintf(stdout, "%s  %s  %s  %s  %s\n", app.Name, app.Title, app.Version, app.Status, url)
 	}
 	return exitOK
 }

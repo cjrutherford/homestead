@@ -464,15 +464,16 @@
 
 ## Design and CAD craft packages (S253)
 
-- **Craft apps start page (planned, S281).** Craft Launcher was dropped from
-  the catalog on 2026-10-17 by owner decision: it has a compiled-in list of
-  the upstream suite with GitHub download buttons, cannot list installed apps
-  and calls `api.github.com` 14 times per load. A Homestead-owned "Craft apps"
-  start page listing installed craft apps replaces it: see
-  `docs/slices/S281-craft-start-page.md` and ADR-031 (Accepted 2026-10-17,
-  option (b): a dashboard page with CLI and API parity). Until then
-  owners bookmark each craft app at its own `https://<app>.lan/` host (the
-  dashboard Apps page shows them).
+- **Craft apps start page (landed, S281; closed).** Craft Launcher was dropped
+  from the catalog on 2026-10-17 by owner decision (compiled-in upstream suite
+  list, GitHub download buttons, 14 `api.github.com` calls per load). The
+  Homestead-owned replacement is `GET /api/v1/craft/apps`, the CLI `craft apps`
+  command and the dashboard Craft apps page (ADR-031 option b);
+  see `docs/architecture/STATIC_CRAFT_PACKAGES.md`. Left out of S281: it is
+  not a standalone page for family members without a Homestead session
+  (ADR-031 cost of option b), it shows `installed` rather than live container
+  health (the Status and Apps pages carry that), and it does not show whether
+  Nextcloud files are available for a hooked app (the Craft files page does).
 - DesignCraft and CADCraft web zips ship no `NOTICE` and no `OFL-*.txt`,
   though DesignCraft's NOTICE lists SIL OFL 1.1 fonts and other
   third-party material embedded in the wasm and CADCraft's NOTICE discloses

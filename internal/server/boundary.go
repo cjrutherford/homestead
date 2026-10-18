@@ -117,6 +117,7 @@ var routeClasses = map[string]RouteClass{
 	"HEAD /_homestead/files/f/{path...}":     ClassCraftSession,
 
 	"DELETE /api/v1/sessions":                            ClassSession,
+	"GET /api/v1/craft/apps":                             ClassSession,
 	"GET /api/v1/craft/files":                            ClassSession,
 	"POST /api/v1/craft/files/plan":                      ClassSession,
 	"POST /api/v1/craft/files/approve":                   ClassSession,

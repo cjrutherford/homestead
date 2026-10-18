@@ -432,6 +432,20 @@ export interface PlatformVerifyBody {
   allow_older: boolean;
 }
 
+/** GET /api/v1/craft/apps — one installed craft app (S281). */
+export interface CraftApp {
+  name: string;
+  title: string;
+  version: string;
+  status: string;
+  /** Empty when no edge route serves the app; url_reason says why. */
+  url: string;
+  host?: string;
+  tls?: string;
+  exposure?: string;
+  url_reason?: string;
+}
+
 /** GET /api/v1/platform/trust-keys — one trusted release-signing key. */
 export interface TrustKey {
   key_id: string;
@@ -1152,6 +1166,11 @@ export class ApiService {
 
   craftFilesLaunch(app: string): Observable<CraftFilesLaunch> {
     return this.http.post<CraftFilesLaunch>('/api/v1/craft/files/launch', { app });
+  }
+
+  /** S281 (ADR-031): installed craft apps with their local URLs. */
+  craftApps(): Observable<{ apps: CraftApp[] }> {
+    return this.http.get<{ apps: CraftApp[] }>('/api/v1/craft/apps');
   }
 
   craftStatus(): Observable<CraftStatus> {

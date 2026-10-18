@@ -54,6 +54,7 @@ func (s *Server) MountCraft(st *store.Store, catalogDir, trustYAML string, build
 	s.mux.HandleFunc("GET /api/v1/craft", h.status)
 	s.mux.HandleFunc("POST /api/v1/craft/plan", h.plan)
 	s.mux.HandleFunc("POST /api/v1/craft/build", h.build)
+	s.mux.HandleFunc("GET /api/v1/craft/apps", storeCraftAppsSource(st, catalogDir).handler())
 	s.mux.HandleFunc("GET /api/v1/craft/trust-keys", h.listKeys)
 	s.mux.HandleFunc("POST /api/v1/craft/trust-keys", h.addKey)
 	s.mux.HandleFunc("PUT /api/v1/craft/trust-keys/{id}", h.replaceKey)

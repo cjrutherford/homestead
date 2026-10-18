@@ -1,0 +1,43 @@
+<section aria-label="Craft apps">
+  <h2>Craft apps</h2>
+  <p>
+    The craft apps installed on this appliance, with the local address each one
+    is served at. This list comes from your own catalog and edge routes; nothing
+    is fetched from the internet. Install or remove a craft app on the Catalog
+    page and it appears or disappears here on the next load.
+  </p>
+
+  @if (loading()) {
+    <app-state-message kind="loading" headline="Loading craft apps…" />
+  }
+  @if (error()) {
+    <app-state-message kind="error" [headline]="error()" />
+    <button type="button" (click)="load()">Retry</button>
+  }
+
+  @if (!loading() && !error()) {
+    @if (apps().length === 0) {
+      <app-state-message
+        kind="empty"
+        headline="No craft apps are installed. Install one from the Catalog page, then add an edge route for it."
+      />
+    } @else {
+      <ul>
+        @for (app of apps(); track app.name) {
+          <li data-testid="craft-app">
+            <strong>{{ app.title }}</strong>
+            <span> version {{ app.version }}, {{ app.status }}</span>
+            @if (app.url) {
+              <a class="button" [href]="app.url" target="_blank" rel="noopener noreferrer">
+                Open {{ app.title }}
+              </a>
+              <code>{{ app.url }}</code>
+            } @else {
+              <p data-testid="no-url">No address yet. {{ app.url_reason }}</p>
+            }
+          </li>
+        }
+      </ul>
+    }
+  }
+</section>

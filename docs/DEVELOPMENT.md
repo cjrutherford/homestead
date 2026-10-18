@@ -4068,3 +4068,26 @@ idle and header limits plus per-request read deadlines, and a password
 change revokes the changer's craft sessions. Craft manifest prepared unsigned
 at counter 8 (`context_digest` `sha256:440467bc...`); the owner signs it.
 
+
+## S281: Craft apps start page (ADR-031)
+
+Built: a Homestead-owned start page replacing the dropped Craft Launcher
+(option b). `GET /api/v1/craft/apps` (session class in `routeClasses`,
+read-only), `homesteadctl craft apps`, and the dashboard Craft apps page
+(`/craft-apps`, nav entry "Craft apps"). Data: catalog craft packages
+(`CraftImages()` non-empty) that are installed (`catalog.Installed`), joined
+with the recorded edge route table; the URL is `https://<host>/` (`http` only
+when the route's TLS is off), and an installed app without a route is listed
+with no URL and a reason. No external call, no third-party asset, nothing
+stored or generated. Details in `docs/architecture/STATIC_CRAFT_PACKAGES.md`.
+Tests: empty list, several apps, with and without a route, removed app, route
+classification, a store-backed install/route/uninstall walk with the default
+HTTP transport and DNS resolver forbidden, CLI output, dashboard component
+spec. `docs/PARITY.md` has the row. No change to `catalog/craft/` or
+`images/craft/`; the craft manifest signature is untouched.
+
+KVM acceptance: **PENDING**. To do on the appliance: install two craft apps
+with `.lan` routes, open the Craft apps page and confirm each link opens over
+S280 HTTPS, uninstall one and confirm it disappears on reload, watch the
+browser network log and confirm no request leaves the appliance (only
+same-origin calls to the daemon).
