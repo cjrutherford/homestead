@@ -572,3 +572,15 @@
   data, not a CI test; a committed browser harness is still open (see
   Visual regression automation).
 
+## Dashboard sign-in and setup (ADR-033, ADR-034; owner decisions 2026-10-18)
+- Droplet or relay tunnels for non-Cloudflare providers (for example a
+  WireGuard relay on a DigitalOcean droplet): skipped for now. DigitalOcean,
+  Route 53 and manual cover DNS and certificates only; outside access for
+  them is a router port forward. Cloudflare Tunnel (ADR-017) stays the only
+  tunnel provider. Needs an ADR before any slice.
+- OIDC login for the command line (device authorization grant or
+  browser-assisted loopback flow) against Authentik: deferred by ADR-033;
+  command-line sessions authenticate with the local account only.
+- RP-initiated logout (ending the Authentik session on Homestead logout),
+  more than one linked identity, SSO for non-owner administrators, and an
+  option to disable local password login: out of scope for ADR-033.

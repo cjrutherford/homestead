@@ -4,7 +4,7 @@
 Apply the S282 foundation and S283 state system page by page, so each page leads with what the owner needs and sets risky actions apart.
 
 ## Dependencies
-S283
+S283, S285, S286, S287 (the page passes land last so they style the install wizard, Sign-in and Setup pages too)
 
 ## Scope
 Implement only the functionality required for this slice. Preserve all accepted ADRs and customer-ownership guarantees. Do not pull deferred features into scope without an ADR and slice update.
@@ -13,7 +13,7 @@ Presentation and copy only: no route, API, CLI or behaviour change. Copy follows
 ## Acceptance Criteria
 - Dashboard page passes implemented and documented
 - Status: problems first ("Needs attention" with each warn/fail check, its explanation and the fix action or command), then a collapsed "All good" count; daemon, claim state and version as a compact header; the CLI commands in diagnostics shown as copyable code
-- Catalog and Craft apps: app entries with icon, one-line purpose, state badge, and install/open actions; craft browser advisories in the S252 component, restyled; avoid a uniform card grid where a list reads better
+- Catalog list and Craft apps (the catalog install flow moved to S285, the install wizard, and is not touched here): app entries with icon, one-line purpose, state badge, and install/open actions; craft browser advisories in the S252 component, restyled; avoid a uniform card grid where a list reads better
 - Tables: Operations, Audit, Storage mounts, Backups jobs and schedules, Edge routes, Trust leaves, Craft files as real tables with sortable or grouped columns where useful and the S282 badges
 - Risky actions set apart: Deploy Caddy, Reconcile routes, Apply firewall, rotation, re-key, volume removal and tunnel teardown use the danger or confirm patterns with the change preview next to the button
 - Forms: Account, Backups destination, Tunnel setup, Craft files link, Exposure plan use the S282 field layout with inline validation messages

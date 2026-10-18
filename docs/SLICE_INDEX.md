@@ -38,3 +38,12 @@ ADR-019), one at a time: S282 visual foundation
 (`docs/slices/S282-dashboard-visual-foundation.md`), S283 states,
 transitions and work orders (`docs/slices/S283-dashboard-states-and-transitions.md`),
 S284 page passes (`docs/slices/S284-dashboard-page-passes.md`).
+
+Dashboard order of work (owner direction 2026-10-18): S282 (done) → S283 →
+S285 catalog install wizard (`docs/slices/S285-catalog-install-wizard.md`) →
+S286 dashboard sign-in with Authentik, governed by ADR-033, Accepted
+(`docs/slices/S286-dashboard-sso-authentik.md`) → S287 post-claim setup
+walkthrough, governed by ADR-034, Proposed, so S287 is blocked until the owner
+accepts it (`docs/slices/S287-post-claim-setup-walkthrough.md`) → S284. The
+catalog install flow moved from S284 to S285; S284 now covers the catalog list
+only.

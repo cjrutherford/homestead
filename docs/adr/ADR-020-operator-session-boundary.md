@@ -116,6 +116,10 @@ once an administrator exists.
 Craft-host file routes use a craft-scoped session derived from the operator
 session; ADR-029 holds the substance.
 
+## Amended by ADR-033
+An Authentik OIDC sign-in can mint the same session and adds three public
+SSO routes; ADR-033 holds the substance.
+
 ## Consequences
 - Rollout is staged (report-only, then transport, then atomic enforcement);
   the classification test records every route as public, claim-window, or
