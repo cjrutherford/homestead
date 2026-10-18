@@ -123,7 +123,7 @@ func DeployDefinition(stack Stack) (operation.Definition, error) {
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "ensure-" + NetworkEdge,
 		Run: func(ctx context.Context) error {
-			return ensureNetwork(ctx, NetworkSpec{Name: NetworkEdge, Driver: "bridge"})
+			return EnsureEdgeNetwork(ctx)
 		},
 	})
 	def.Steps = append(def.Steps, operation.StepDef{

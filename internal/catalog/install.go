@@ -83,8 +83,11 @@ type InstallPlan struct {
 	// BrowserAdvisories repeats the manifest's browser requirements
 	// (S252). They never block: the appliance cannot see the browser.
 	BrowserAdvisories []BrowserRequirement
-	Notes             []string
-	Actions           []string
+	// EdgeNetwork is true when routed services join the external edge
+	// network; install creates that network if it is missing.
+	EdgeNetwork bool
+	Notes       []string
+	Actions     []string
 }
 
 // PlanInstall produces the install change set, refusing unplannable
@@ -290,6 +293,10 @@ func planCompose(plan *InstallPlan, req InstallRequest) error {
 	if len(plan.Routes) > 0 {
 		networks = withEdgeNetwork(req.Networks)
 	}
+	plan.EdgeNetwork = len(plan.Routes) > 0
+	if plan.EdgeNetwork {
+		plan.Notes = append(plan.Notes, fmt.Sprintf("install creates the %s network if it is missing so routed services can attach; this does not deploy the edge proxy, so routes will not serve until the proxy is set up on the Edge page", docker.NetworkEdge))
+	}
 	if len(networks) != len(req.Networks) {
 		// Only the routed services join the edge network the planner
 		// added; databases and caches stay on the package network.
@@ -297,7 +304,6 @@ func planCompose(plan *InstallPlan, req InstallRequest) error {
 		for _, route := range plan.Routes {
 			edgeServices[route.Target.Host] = true
 		}
-		plan.Notes = append(plan.Notes, fmt.Sprintf("routed services attach to %s so the proxy can reach them; that network is created when the edge proxy is set up, so install fails until it exists", docker.NetworkEdge))
 	}
 	routeHosts := map[string]string{}
 	for _, route := range plan.Routes {

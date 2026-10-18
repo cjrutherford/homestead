@@ -100,26 +100,7 @@ func RemoveDefinition(removal Removal, dir string, st *store.Store) (operation.D
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "remove-files",
 		Run: func(ctx context.Context) error {
-			// Records clear first: a failed clear leaves files (and
-			// their records) in place for retry, while files removed
-			// without clearing would report phantom drift.
-			if err := ClearFingerprints(st, removal.Package); err != nil {
-				return err
-			}
-			for _, name := range []string{"compose.yaml", OverrideFileName} {
-				path := filepath.Join(dir, name)
-				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-					return fmt.Errorf("catalog: remove %s: %w", name, err)
-				}
-			}
-			// Materialized secret files are plaintext: they go with the
-			// stack, data kept or not. The values stay in the secret
-			// store, so a reinstall re-materializes them. RemoveAll on a
-			// symlinked secrets directory removes the link, not its target.
-			if err := os.RemoveAll(filepath.Join(dir, SecretsDirName)); err != nil {
-				return fmt.Errorf("catalog: remove secret files: %w", err)
-			}
-			return nil
+			return removeStackFiles(st, removal.Package, dir)
 		},
 	})
 	if removal.RemoveData {
@@ -145,4 +126,29 @@ func RemoveDefinition(removal Removal, dir string, st *store.Store) (operation.D
 		})
 	}
 	return def, nil
+}
+
+// removeStackFiles clears the fingerprint records and deletes the
+// generated stack files: never data, never the secret store.
+func removeStackFiles(st *store.Store, pkg, dir string) error {
+	// Records clear first: a failed clear leaves files (and
+	// their records) in place for retry, while files removed
+	// without clearing would report phantom drift.
+	if err := ClearFingerprints(st, pkg); err != nil {
+		return err
+	}
+	for _, name := range []string{"compose.yaml", OverrideFileName} {
+		path := filepath.Join(dir, name)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("catalog: remove %s: %w", name, err)
+		}
+	}
+	// Materialized secret files are plaintext: they go with the
+	// stack, data kept or not. The values stay in the secret
+	// store, so a reinstall re-materializes them. RemoveAll on a
+	// symlinked secrets directory removes the link, not its target.
+	if err := os.RemoveAll(filepath.Join(dir, SecretsDirName)); err != nil {
+		return fmt.Errorf("catalog: remove secret files: %w", err)
+	}
+	return nil
 }

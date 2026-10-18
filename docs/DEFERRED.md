@@ -608,11 +608,9 @@
   would replace it once the browser floor allows.
 - Several pages still lead with long prose and plain `<ul>` lists; page
   structure is S284.
-- S283 KVM review findings left for later: (1) a craft app installed on an
-  appliance with no edge deployed fails at `up` ("network homestead-edge not
-  found") and the failed install stays recorded as installed, so a retry is
-  refused with 409 until `apps uninstall`; install should either create the
-  external network, refuse at plan time, or roll back the record. (2) The
+- S283 KVM review findings: (1) closed (post-S283 fix): install now creates the
+  `homestead-edge` network itself (idempotent, no proxy deployed), and a failed
+  install rolls back its record so the retry is allowed. (2) The
   dashboard has no uninstall action (PARITY marks it CLI-only); the rail picks
   up a CLI-started removal only if it is still running at the next navigation.
   (3) The browser's own console still logs 404/422 network lines for the

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"homestead/internal/docker"
 	"homestead/internal/operation"
 	"homestead/internal/storage"
 	"homestead/internal/store"
@@ -42,6 +43,10 @@ var composeUp = func(ctx context.Context, dir, project string) error {
 	}
 	return composeRun(ctx, dir, project, "up", "-d")
 }
+
+// ensureEdgeNetwork creates the shared edge network when missing, stubbed
+// in tests. It does not deploy the proxy.
+var ensureEdgeNetwork = docker.EnsureEdgeNetwork
 
 // composeDown stops and removes an installed stack's containers and
 // networks without touching volumes or binds: data always survives
@@ -118,6 +123,15 @@ func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string,
 			},
 		})
 	}
+	if plan.EdgeNetwork {
+		// Routed stacks join the external edge network, which only the
+		// proxy deploy used to create. Make it exist (idempotent) so a
+		// fresh appliance can install; the proxy itself is not deployed.
+		def.Steps = append(def.Steps, operation.StepDef{
+			Name: "ensure-" + docker.NetworkEdge,
+			Run:  ensureEdgeNetwork,
+		})
+	}
 	for i := range plan.Directories {
 		provision := plan.Directories[i]
 		def.Steps = append(def.Steps, operation.StepDef{
@@ -137,18 +151,54 @@ func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string,
 				return err
 			}
 			if err := WriteStack(dir, files, secrets); err != nil {
-				return err
+				return rollbackInstall(ctx, st, plan.Package, dir, false, err)
 			}
-			return RecordFingerprints(st, plan.Package, dir)
+			if err := RecordFingerprints(st, plan.Package, dir); err != nil {
+				return rollbackInstall(ctx, st, plan.Package, dir, false, err)
+			}
+			return nil
 		},
 	})
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "up",
 		Run: func(ctx context.Context) error {
-			return composeUp(ctx, dir, plan.Package)
+			if err := composeUp(ctx, dir, plan.Package); err != nil {
+				return rollbackInstall(ctx, st, plan.Package, dir, true, err)
+			}
+			return nil
 		},
 	})
 	return def, nil
+}
+
+// rollbackInstall un-records a failed install so the package reads as not
+// installed and a retry is allowed (the install route answers 409 for any
+// recorded stack). It removes only what the install wrote: containers and
+// networks the failed up created (compose down, never with volumes), the
+// generated stack files and their fingerprint records. Provisioned data
+// directories, bind-mounted data, the edge network and generated secrets
+// stay: they may hold owner data (a partly started database may have
+// initialised on them) and a retry reuses them. Cleanup problems are
+// appended to the original error, which always wins.
+func rollbackInstall(ctx context.Context, st *store.Store, pkg, dir string, started bool, cause error) error {
+	var problems []string
+	if started {
+		// A fresh context: the failure may be a cancelled one.
+		downCtx := ctx
+		if ctx.Err() != nil {
+			downCtx = context.WithoutCancel(ctx)
+		}
+		if err := composeDown(downCtx, dir, pkg); err != nil {
+			problems = append(problems, fmt.Sprintf("stop containers: %v", err))
+		}
+	}
+	if err := removeStackFiles(st, pkg, dir); err != nil {
+		problems = append(problems, fmt.Sprintf("remove generated files: %v", err))
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("%w (install was not rolled back cleanly: %s; run homesteadctl apps uninstall %s)", cause, strings.Join(problems, "; "), pkg)
+	}
+	return fmt.Errorf("%w (rolled back: %s is not installed, your data and settings were kept; fix the problem and install again)", cause, pkg)
 }
 
 // refuseExistingCluster fails when a database password would be newly

@@ -4260,3 +4260,25 @@ logs the 404/422 probe requests. Cleanup on VM 2: uninstalled, craft image,
 `craft_images`/`craft_baseline`/`craft_verdicts` rows, the test
 `homestead-edge` network and stack directory removed; only audit and
 operation history remain.
+
+### Post-S283 fix: install on a factory-fresh appliance
+
+Two KVM findings, one commit.
+- Root cause 1: S249 made `PlanInstall` join every routed stack to the external
+  `homestead-edge` network, but only the Caddy edge deploy created it, so a
+  first install failed at compose `up` with "network homestead-edge not found".
+  The install operation now runs an `ensure-homestead-edge` step first
+  (`docker.EnsureEdgeNetwork`, the same code the edge deploy uses, idempotent).
+  It creates the network only; it does not deploy Caddy. The plan sets
+  `EdgeNetwork` and its note says the network is created and that routes will
+  not serve until the proxy is set up on the Edge page.
+- Root cause 2: `write-stack` records fingerprints and writes `compose.yaml`
+  before `up`, and `Installed` counts either, so a failed `up` left the package
+  installed and the retry answered 409. Install records no failed state; the
+  failure now rolls back (`rollbackInstall`): compose `down` (never with
+  volumes), then the generated files and fingerprint records are removed. The
+  package reads as not installed and the route allows a retry. Kept on
+  purpose: provisioned data directories and bind data, generated secrets (a
+  partly started database may already have initialised with them), and the edge
+  network (shared, harmless). If cleanup itself fails, the error says so and
+  points at `apps uninstall`.

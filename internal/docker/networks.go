@@ -85,6 +85,14 @@ func inspectNetwork(ctx context.Context, name string) (driver string, exists boo
 	return networks[0].Driver, true, nil
 }
 
+// EnsureEdgeNetwork creates the shared edge network when it is missing and
+// verifies it when present. Catalog installs call it so routed stacks can
+// join the external network on an appliance that has no proxy yet; it does
+// not deploy the proxy. Idempotent, and the same code the edge deploy runs.
+func EnsureEdgeNetwork(ctx context.Context) error {
+	return ensureNetwork(ctx, NetworkSpec{Name: NetworkEdge, Driver: "bridge"})
+}
+
 // ensureNetwork creates a missing network with the managed label, or
 // verifies a present one matches.
 func ensureNetwork(ctx context.Context, network NetworkSpec) error {
