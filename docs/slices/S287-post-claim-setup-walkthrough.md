@@ -4,11 +4,11 @@
 After claim and first-admin creation, keep the owner in a resumable setup walkthrough (secure the account, sign-in, domain and access, first apps) until each step is completed or skipped.
 
 ## Dependencies
-S286 (sign-in step), S285 (app selection installs through the wizard). **Blocked until ADR-034 is Accepted.** ADR-034 is Proposed (2026-10-18); do not start this slice, and do not rely on its decisions, until the owner accepts it, as S281 was blocked before ADR-031. If acceptance changes the decisions, update this slice first.
+S286 (sign-in step), S285 (app selection installs through the wizard). ADR-034 was accepted by the owner on 2026-10-18 as written.
 
 ## Scope
 Implement only the functionality required for this slice. Preserve all accepted ADRs and customer-ownership guarantees. Do not pull deferred features into scope without an ADR and slice update.
-Governed by ADR-034 (once Accepted). Orchestration only: nothing is applied except through the existing plan, review and approve flows. Out of scope and in `docs/DEFERRED.md`: droplet or relay tunnels for non-Cloudflare providers (DigitalOcean, Route 53 and manual cover DNS and certificates only; outside access for them is a router port forward), new DNS providers, new router adapters.
+Governed by ADR-034 (Accepted 2026-10-18). Orchestration only: nothing is applied except through the existing plan, review and approve flows. Out of scope and in `docs/DEFERRED.md`: droplet or relay tunnels for non-Cloudflare providers (DigitalOcean, Route 53 and manual cover DNS and certificates only; outside access for them is a router port forward), new DNS providers, new router adapters.
 
 ## Acceptance Criteria
 - Post-claim setup walkthrough implemented and documented
