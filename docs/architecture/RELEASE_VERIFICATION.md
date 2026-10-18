@@ -290,7 +290,7 @@ apps:
   prehashed `ED` is rejected. A craft manifest is verified only against
   **craft** trust keys (`craft_trust_keys`, rendered to `craft-trust.yaml`
   beside `desired.yaml`), never platform keys, and the reverse; the embedded
-  HAI craft key is a placeholder until the key ceremony (docs/DEFERRED.md).
+  HAI craft key is the production key `B03DB3F5AA66DB3E` (2026-10-17).
   Manage keys with `homesteadctl craft trust list|add|replace|remove`, the
   Updates page Craft images panel, or `/api/v1/craft/trust-keys`; the audit
   actions are `craft.trust.add|replace|remove`.

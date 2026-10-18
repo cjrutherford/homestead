@@ -278,10 +278,11 @@
 
 ## Craft build pipeline (S279, ADR-028)
 
-- Production craft signing key: the embedded HAI craft key is a
-  generated placeholder whose private half was discarded (same status as
-  the platform release key). Until the key ceremony, owners add the
-  published or their own key through the craft trust-key routes (CLI `craft trust add`).
+- Production craft signing key: closed 2026-10-17. The binary embeds the
+  HAI craft key `B03DB3F5AA66DB3E` (published as `catalog/craft/craft.pub`;
+  private half held offline by HAI). Still open: an offline, multi-person
+  key ceremony and a documented rotation drill; the platform release key
+  remains a placeholder.
 - storytold release source: recorded 2026-10-15 as
   `https://github.com/storytold` (ADR-028). S249 added the first craft
   package (WordCraft), its unsigned manifest and the catalog validation of

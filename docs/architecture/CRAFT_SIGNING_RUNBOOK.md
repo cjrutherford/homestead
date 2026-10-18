@@ -111,9 +111,11 @@ homesteadctl craft plan wordcraft          # verify only: signature, counter, ar
 homesteadctl craft build wordcraft --follow
 ```
 
-`craft plan` fetches nothing and builds nothing. The embedded HAI craft key
-is a placeholder whose private half was discarded (docs/DEFERRED.md), so
-until the key ceremony an appliance trusts only keys added this way.
+`craft plan` fetches nothing and builds nothing. Since 2026-10-17 the
+binary embeds the HAI craft key (id `B03DB3F5AA66DB3E`, also published as
+`catalog/craft/craft.pub`), so an appliance verifies the shipped, signed
+manifest without this step. Add a key this way only for your own
+artifacts, a rotated HAI key, or development.
 
 ## Key loss and rotation
 
