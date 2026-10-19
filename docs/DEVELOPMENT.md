@@ -4414,7 +4414,56 @@ there is no API); gridcraft and nextcloud images and `craft_images`/
 - Tests: fake OIDC provider and fake Authentik admin API in `internal/sso` and
   `internal/server`; Vitest specs for login, Sign-in, link card, error codes
   and the re-auth dialog.
-- KVM on VM 2: PENDING. To run: install Authentik via the wizard, plan/approve/
-  apply, link, sign in, check CSRF/logout/expiry, refuse an unlinked user, stop
-  Authentik and break the issuer, prove local login works, unlink, restore VM 2.
-  The transcript summary goes here.
+- KVM review on VM 2 (2026-10-19, HEAD e43d9b0, then 4ae6e12): **done.**
+  Screenshots in `/tmp/hs-s286-kvm/` (not committed) with the driver scripts.
+  Deployed with `scripts/install-systemd.sh` (binary sha256 checked against a
+  root build of the same tree); Chromium (Playwright, `google-chrome`) on the
+  host through `ssh -L` to the daemon (origin `http://127.0.0.1:8080`, a planned
+  origin) and to Caddy 443 (`--host-resolver-rules` maps `authentik.lan`). No
+  Cloudflare DNS, route or tunnel was touched (public URL 200 throughout).
+  1. Install Authentik 2026.8.3 through `POST /catalog/authentik/plan` and
+     `/install` (storage `/mnt/app`, host `authentik.lan`) then the edge route:
+     PASS. 2. First-run setup through the flow executor, API token, two users
+     (alice, bob): PASS. 3. `sso plan`, `approve`, `apply --follow`: PASS after
+     fix 1; a re-plan with the token showed both objects "unchanged" and apply
+     audited "provider already matches; application already matches" (a bare
+     second `apply` answers 409 as the plan is spent; see DEFERRED). 4. Link
+     alice through the Account link card and the re-auth dialog: PASS after fix
+     2. 5. Login page button, Authentik sign-in, landed on `/status`; session
+     cookie HttpOnly/Strict, CSRF cookie; a bad CSRF token 403: PASS. 6. Audit
+     `sso.login ok method=oidc subject=...`: PASS. 7. `POST /sso/plan` in an
+     oidc session: 403 `reauth-required`, wrong password 403 `reauth-invalid`,
+     the dialog with the password then showed the plan: PASS. 8. bob refused:
+     `/login?sso_error=unlinked`, audit `refused: unlinked`, no session cookie,
+     one identity row (`owner`): PASS. 9. Authentik containers stopped: button
+     still shown, click returns `?sso_error=unavailable` "Authentik did not
+     answer. Use your local password.", local login works; restarted; then the
+     issuer set to a path Authentik does not serve (the stored config and link
+     edited in SQLite, restored after; the API cannot store a bad issuer because
+     apply verifies it): the same message and local login works: PASS. (With
+     only the config edited and not the link, the button disappears because the
+     link no longer matches the issuer: by design.) 10. Five failed local logins
+     (one was a wrong re-auth password: the counters are shared) locked the
+     account (429); Authentik sign-in still worked, step-up in that session
+     answered 429 `reauth-locked`, and the local login stayed 429 after the SSO
+     success: PASS (the lock rows were deleted from `login_attempts` to continue).
+     11. Unlink with the password file (CLI): the oidc session went from 200 to
+     401; `sso disable`: status "not set up", `/sso/options` 404: PASS.
+  Found and fixed (4ae6e12): (1) Authentik 2026.8 creates an OAuth2 provider
+  with no grant types and then rejects every authorize request ("Invalid
+  grant_type for provider", `invalid_request` at the callback, shown as
+  `denied`). Apply now sets `grant_types` to `authorization_code`; plan reports
+  "grant types" drift; tests cover create and repair. (2) `prompt=login` plus
+  `max_age=0` looped at Authentik's login forever (`prompt` stays on the
+  post-login redirect; `max_age=0` is ignored, `max_age=1` forces a prompt). The
+  link now sends `max_age=30` and no `prompt`; ADR-033 amended, docs updated.
+  Left (DEFERRED.md): `auth_time` not checked, bare second apply 409, the
+  `keep_token` audit redaction, `homesteadctl login` prints the token.
+  Final VM 2 state: Authentik installed and healthy (route `authentik.lan`,
+  `akadmin` kept with a random password on the guest; test users, the API token,
+  and the Homestead provider and application deleted in Authentik); SSO
+  disabled, no link, owner password unchanged, no lockout; Caddy running; tunnel
+  untouched. Not verified: absolute and idle session expiry of an oidc session
+  (same code path as password sessions, covered by tests), a real browser
+  reaching Authentik over the tunnel (deliberately not exposed), the
+  `https://<edge host>` origin for the dashboard.

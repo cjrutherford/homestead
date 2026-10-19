@@ -660,10 +660,19 @@
     names the daemon adds later fall back to the slug with spaces.
 
 ## Dashboard sign-in with Authentik (S286)
-- The KVM acceptance run on VM 2 (real Authentik, break Authentik, unlink) is
-  pending and is recorded in `docs/DEVELOPMENT.md` when done.
-- The Authentik admin API is exercised against an in-process fake; field names
-  for other Authentik versions are verified only by the KVM run.
+- The KVM acceptance run on VM 2 is recorded in `docs/DEVELOPMENT.md`. The
+  Authentik admin API is verified against 2026.8.3 only; the fake in tests does
+  not model Authentik rejecting a provider (it accepted one with no grant types).
+- The link asks Authentik for `max_age=30`, so a browser already signed in to
+  Authentik less than 30 seconds ago links without a new prompt, and Homestead
+  does not check the ID token's `auth_time` against it. Verify `auth_time`
+  when present, or find a way to force a prompt that does not loop.
+- `sso apply` needs a current plan: a second `apply` right after a successful one
+  answers 409 (no current plan). Idempotence is shown by plan, approve, apply.
+- The audit entry for `sso.approve` shows `keep_token=[redacted]` (a boolean,
+  redacted by the field-name rule).
+- `homesteadctl login` prints the session token on stdout; a script that does
+  not redirect it leaks the token into logs.
 - OIDC login for the CLI, RP-initiated logout, multiple links, non-owner SSO
   and disabling local login stay deferred (see the ADR-033 entry above).
 - Hardening: the link URL works as a bearer credential for whoever completes
