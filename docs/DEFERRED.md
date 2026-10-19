@@ -694,4 +694,16 @@
   come from the domain wizard routes and the CLI.
 - The setup state is per appliance, not per owner; a second admin sees the same
   walkthrough. Multiple admins are out of scope for v1.
-- The KVM acceptance run for S287 is pending (see `docs/DEVELOPMENT.md`).
+- KVM findings left open (S287 review): the tunnel permission line for
+  Cloudflare shows only once Cloudflare Tunnel is chosen (a note says so);
+  `homesteadctl tunnel teardown` takes the account ID as an argument, so it
+  lands in argv and shell history (a file or stdin option is needed); the CLI
+  and the Tunnel page ask for the Cloudflare token again even when a DNS
+  credential for the same provider is already sealed; skipping or
+  un-skipping a step that is already done from real state prints the full
+  status without saying the skip was ignored; the install wizard's "Back to
+  the catalog" link is gated and lands on /setup, and the Edge, Trust and
+  catalog pages have no "Back to setup" link; the apps step reads done as
+  soon as an install starts, before it finishes; wizard_state has no
+  in-repo factory-reset command.
+- The KVM acceptance run for S287 is recorded in `docs/DEVELOPMENT.md`.

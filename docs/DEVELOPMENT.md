@@ -4479,30 +4479,61 @@ there is no API); gridcraft and nextcloud images and `craft_images`/
   provider permission copy pinned to the adapters in
   `internal/setup/permissions_test.go`; store migration test; CLI output test;
   Vitest specs for the page, the guard, the exemptions and the legacy behaviour.
-- KVM review on VM 2: **PENDING.** Plan: (1) factory-reset (keep the VM 2
-  tunnel and Cloudflare DNS untouched; do not reset the Cloudflare side),
-  claim, create the first admin; `setup status` must show `origin: fresh`,
-  gated, current `account`; any dashboard URL redirects to `/setup`; API and CLI
-  calls work throughout. (2) Account: export the recovery identity on the
-  Account page, acknowledge, return; the step is still to do until "Confirm my
-  password" is pressed (or `setup step account --acknowledge`); then it reads done. (3) Sign-in: install
-  Authentik through the link (wizard shows "Back to setup"), link, or skip.
-  (4) Domain: choose each provider and check the permission list; with Cloudflare
-  plus Cloudflare Tunnel chosen and no tunnel, the page explains what is missing
-  and `setup step domain --acknowledge` answers 422 naming `/tunnel` (likewise
-  router without an approved exposure plan, naming `/exposure`); home network
-  only confirms on acknowledge alone; store a
-  throwaway credential and confirm `GET /api/v1/secrets` lists only its name;
-  grep the audit log, `wizard_state` rows and journal for the value (none).
-  (5) Apps: install one starter app from the list and watch the rail while
-  finishing the walkthrough. (6) Skip a step with `setup skip`, `unskip`, and do
-  one step from the CLI; both reflect on reload. (7) Review path: on an
-  appliance that already has onboarding and a tunnel (VM 2 as found, with the
-  `legacy` row removed from `wizard_state` so it reads fresh:
-  `DELETE FROM wizard_state WHERE wizard='setup'`), the domain step opens as a
-  review (a domain wizard payload that was never onboarded does not count),
-  "This looks right" changes nothing (compare `tunnel_routes` and the
-  audit log before and after). (8) Legacy: restore the `legacy` row
-  (`{"origin":"legacy"}`); the dashboard is not gated and shows Finish setup.
-  Leave VM 2 as found.
+- KVM review on VM 2 (2026-10-19, HEAD ce943c3, then 64b9838): **done.**
+  Screenshots (1440 and 390 px each) in `/tmp/hs-s287/shots/` (not committed),
+  driver scripts beside them; headless Chrome through `ssh -L` to the daemon
+  (origin `http://127.0.0.1:8080`) and Caddy (`authentik.lan` mapped to the
+  forward). Deployed with `scripts/install-systemd.sh`; the binary sha256
+  matched a guest rebuild of the same tree each time.
+  Factory reset: tunnel `9ccedf12-...` torn down through the API (first
+  attempt hit Cloudflare 1022, see fix 1; the retry deleted it, confirmed in
+  Cloudflare; the tunnels `homestead` and `media-tunnel` untouched), daemon
+  stopped, every stack `compose down -v`, `/opt/homestead/stacks`,
+  `/mnt/app/authentik`, `/var/lib/homestead`, `/etc/homestead` and the
+  tunnel unit removed, HEAD reinstalled, claimed, first admin `owner` with its
+  existing password.
+  1. Fresh: `setup status` origin fresh, gated, next account; `/status`,
+     `/catalog`, `/audit` redirect to `/setup`; `/backups` stays open after
+     fix 2; API and CLI ungated: PASS. 2. Step 1: export on Backups,
+     acknowledge, still to do until "Confirm my password", then done and CLI
+     agrees: PASS (after fix 2). 3. Step 2: Authentik installed through the
+     wizard (edge set up in the wizard, storage registered on the Storage page
+     after fix 3, defaults for host), akadmin first-run through the flow
+     executor, `sso plan`, `approve`, `apply --follow`, `owner` linked through
+     the Sign-in page and Authentik; step reads done: PASS. 4. Step 3: permission copy
+     for all four providers matches the doc; the tunnel option is disabled with
+     a reason for DigitalOcean, Route 53 and Manual; `setup step domain
+     --acknowledge` answered 422 naming `/tunnel`, then `/exposure`; Cloudflare
+     plus Cloudflare Tunnel, tunnel `homestead-vm2` set up from the Tunnel page
+     (new id `941037b6-692b-49ee-bd18-c1159c93fe36`), DNS CNAME `homestead`
+     repointed through the API (proxied), step read done by itself (a tunnel
+     route counts), public URL 200 and the login page; the token and account ID
+     are absent from the setup, wizard and credential responses, the database
+     files (including the WAL), the journals and the audit log: PASS. 5. Step
+     4: Jellyfin install started from the list, the rail showed "Install
+     Jellyfin", the step read done at once and the guard released
+     (`/status` opens): PASS. 6. CLI parity (on the fresh row): `skip account`
+     read Skipped on reload, `unskip account` To do, `step account
+     --acknowledge` Done: PASS. 7. Review path (row deleted): the domain step
+     opened as a review, "This looks right" added one `setup.step` audit entry
+     and changed nothing in `tunnel_routes`, the tunnel or DNS: PASS. 8. Legacy
+     row restored: not gated, nav entry "Finish setup": PASS; real state
+     restored by deleting the row and acknowledging account and domain.
+  Found and fixed (64b9838): (1) tunnel teardown deleted the Cloudflare
+  tunnel before stopping the connector (1022); it now stops first and restarts
+  it if the delete fails. (2) Step 1 pointed to the Account page for the
+  recovery export, which is on Backups, and `/backups` was gated. (3)
+  `/storage`, `/edge`, `/trust` were gated, so a fresh appliance could not
+  register storage from the install wizard. Left: see `docs/DEFERRED.md`.
+  Not verified: the "I have finished here" and "I am finished with apps"
+  buttons (state derived done first), skipping a pending domain or apps step in
+  the dashboard, the Exposure (router) plan path, a throwaway DNS credential
+  stored through the form (`GET` of sealed names not exposed by an API route),
+  absolute session expiry.
+  Final VM 2 state: freshly claimed, owner `owner` with its existing password,
+  setup complete, Authentik installed (akadmin password in `~/ak.admin.pass`,
+  owner's Authentik password in `~/ak.owner.pass`, 600, on the guest), SSO
+  configured and linked to the Authentik user `owner`, Jellyfin installed,
+  tunnel `941037b6-692b-49ee-bd18-c1159c93fe36` (`~/tunnel-id.txt`) serving
+  https://homestead.hopefulaspirationsindustries.com.
 
