@@ -55,3 +55,21 @@ func TestRouteHostTokenNeedsAnEndpoint(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// The edge proxy holds ports 80 and 443 on the host; Nextcloud publishes
+// no host port, so it must still pass its requirements.
+func TestNextcloudRequirementsPassWithTheEdgeOnPorts80And443(t *testing.T) {
+	manifest, err := repoCatalog(t).Get("nextcloud")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Requirements.Ports) != 0 {
+		t.Fatalf("nextcloud declares host ports: %v", manifest.Requirements.Ports)
+	}
+	host := installHost()
+	host.UsedPorts = map[int]bool{80: true, 443: true}
+	report, err := Evaluate(manifest, host)
+	if err != nil || !report.Passed {
+		t.Fatalf("requirements with 80 and 443 bound = %+v, %v", report, err)
+	}
+}

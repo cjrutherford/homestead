@@ -634,10 +634,25 @@
     one failing check at a time as the daemon words it. A route returning the
     structured requirement report without planning would let the wizard list
     every check with its numbers.
-  - Host ports from `requirements.ports` are checked against whatever listens on
-    the host. With Caddy on 80 and 443, a package that lists port 80 (Nextcloud)
-    would fail the port check, though it publishes no host port. Verify on VM 2
-    and decide whether `ports` means host ports at all.
+  - Closed after the S285 KVM review: `requirements.ports` are host ports and
+    Homestead publishes none, so Nextcloud's `ports: [80]` failed once Caddy held
+    80 (confirmed on VM 2). Nextcloud now declares none (as the craft packages
+    do) and the wizard defaults its container port to 80 from curated copy.
+    Left: Jellyfin (8096), Immich (2283) and Authentik (9000) still declare
+    their container ports as host ports, which only conflicts if something else
+    on the host listens there; decide whether `ports` should mean host ports at all.
+  - The plan route's storage floor check read free space only from class
+    assignments, so a mount chosen in the request failed with "no space data".
+    Fixed in the daemon (the chosen mount's free space is read from discovery),
+    and the wizard assigns a chosen mount to a class that has none, so uninstall
+    can name the data folders. There is still no API to unassign a class or
+    unregister a mount.
+  - Uninstall leaves the empty stack directory under `/opt/homestead/stacks`.
+  - The Done step of an app opened later (not in the install session) lists data
+    folders from assignments only; an app on a non-default mount says "on the
+    storage you chose".
+  - The Storage page and the wizard list a mount twice when discovery returns it
+    twice (VM 2 shows `/mnt/app` twice); the wizard dedupes, the Storage page does not.
   - Hostnames, the container port, extra networks and public address records
     can all be set in the wizard; per-endpoint exposure other than the
     manifest's recommendation cannot, by design (ADR-006).

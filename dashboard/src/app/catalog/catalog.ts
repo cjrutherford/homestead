@@ -11,6 +11,7 @@ import { registerPackageTitles } from '../core/operation-labels';
 import { StateMessage } from '../state/state-message';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
+import { InstallDrafts } from './install-drafts';
 import { UninstallApp } from './uninstall-app';
 
 interface ConfigRow {
@@ -32,6 +33,12 @@ interface ConfigRow {
 })
 export class Catalog implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly drafts = inject(InstallDrafts);
+
+  /** The owner started an install here and has not finished with its wizard: the wizard picks it back up. */
+  protected settingUp(name: string): boolean {
+    return this.drafts.get(name)?.installOperation != null;
+  }
 
   protected readonly packages = signal<PackageSummary[]>([]);
   protected readonly selected = signal<CatalogManifest | null>(null);

@@ -48,7 +48,10 @@ requirements:
     minbytes: 2147483648
   - class: bulk
     minbytes: 53687091200
-  ports: [80]
+  # No host port: the container publishes none (the edge serves it), so
+  # declaring its port 80 refused every install once Caddy held 80. The
+  # container port is entered in the install request (the dashboard
+  # defaults it to 80).
 exposure:
   package: nextcloud
   endpoints:

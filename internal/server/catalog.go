@@ -203,6 +203,16 @@ func installRequest(st *store.Store, catalogDir, name string, body installBody) 
 	for class, mountpoint := range body.Storage {
 		mountpoints[class] = mountpoint
 	}
+	if len(body.Storage) > 0 {
+		// A mount chosen in the request has no assignment, so its free
+		// space is read from live discovery instead of failing the floor
+		// check with "no space data".
+		discovered, err := discover.DiscoverStorage()
+		if err != nil {
+			return catalog.InstallRequest{}, fmt.Errorf("storage discovery: %w", err)
+		}
+		applyStorageOverrides(&facts, body.Storage, discovered.Mounts)
+	}
 	var publicIP netip.Addr
 	if body.PublicIP != "" {
 		publicIP, err = netip.ParseAddr(body.PublicIP)
@@ -265,6 +275,26 @@ func hostFacts(st *store.Store) (catalog.HostFacts, error) {
 		facts.UsedPorts[int(port)] = true
 	}
 	return facts, nil
+}
+
+// applyStorageOverrides records the free space of each mount the request
+// chose for a class, from discovered mounts. An unknown or inaccessible
+// mount adds nothing, so the requirement check still fails for it.
+func applyStorageOverrides(facts *catalog.HostFacts, chosen map[storage.Class]string, mounts []discover.Mount) {
+	byPoint := map[string]discover.Mount{}
+	for _, mount := range mounts {
+		byPoint[mount.Mountpoint] = mount
+	}
+	if facts.FreeSpace == nil {
+		facts.FreeSpace = map[storage.Class]uint64{}
+	}
+	for class, mountpoint := range chosen {
+		if mount, ok := byPoint[mountpoint]; ok && mount.Accessible {
+			facts.FreeSpace[class] = mount.FreeBytes
+		} else {
+			delete(facts.FreeSpace, class)
+		}
+	}
 }
 
 // maxJSONBody bounds every JSON request decoded through decodeBody.

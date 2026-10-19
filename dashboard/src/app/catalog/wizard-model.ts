@@ -1,3 +1,4 @@
+import { curatedFor } from './curated-copy';
 import { CatalogManifest, DockerHealth, InstallPlan } from '../core/api.service';
 
 /** The steps of the install wizard (S285), in order. A step that does not apply is left out. */
@@ -116,10 +117,11 @@ export function endpointsOf(manifest: CatalogManifest): { endpoint: string; serv
 
 /** The container port the planner needs for a routed service. */
 export function defaultContainerPort(manifest: CatalogManifest): string {
-  if (manifest.Requirements.Ports.length > 0) {
-    return String(manifest.Requirements.Ports[0]);
+  const declared = manifest.Requirements.Ports ?? [];
+  if (declared.length > 0) {
+    return String(declared[0]);
   }
-  return isCraft(manifest) ? '8080' : '';
+  return curatedFor(manifest.Name)?.containerPort ?? (isCraft(manifest) ? '8080' : '');
 }
 
 export interface EdgeReadiness {

@@ -490,7 +490,7 @@
 
                 <app-browser-advisories [advisories]="plan()?.BrowserAdvisories" />
 
-                @for (note of plan()?.Notes ?? []; track note) {
+                @for (note of planNotes(); track note) {
                   @if (!note.startsWith('browser capabilities')) {
                     <p class="plan-note">{{ sentence(note) }}</p>
                   }
@@ -634,10 +634,12 @@
                   <app-state-message
                     kind="notice"
                     [headline]="m.Title + ' has no address yet.'"
-                    detail="Add its address on the Edge page, then open the app."
-                    actionLabel="Open the Edge page"
-                    actionLink="/edge"
+                    detail="Homestead can give it the usual local address, kept on your network only, or you can add one on the Edge page."
                   />
+                  <p class="wizard-actions">
+                    <button type="button" class="primary" (click)="addMissingRoute()">Give {{ m.Title }} an address</button>
+                    <a class="button" routerLink="/edge">Open the Edge page</a>
+                  </p>
                 }
               }
             }

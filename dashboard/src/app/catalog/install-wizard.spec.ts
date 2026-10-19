@@ -67,6 +67,8 @@ const NEXTCLOUD = {
   SSO: { Class: 'optional', Protocols: ['oidc', 'saml'] },
 };
 
+const NEXTCLOUD_NO_PORTS = { ...NEXTCLOUD, Requirements: { ...NEXTCLOUD.Requirements, Ports: null } };
+
 const AUTHENTIK = {
   ...NEXTCLOUD,
   Name: 'authentik',
@@ -167,7 +169,7 @@ describe('InstallWizard', () => {
 
   function start(
     manifest: Record<string, unknown>,
-    options: { installed?: string[]; health?: unknown; storage?: boolean; craft?: unknown } = {},
+    options: { installed?: string[]; health?: unknown; storage?: boolean; craft?: unknown; mounts?: unknown[]; assignments?: unknown[] } = {},
   ) {
     const name = manifest['Name'] as string;
     TestBed.configureTestingModule({
@@ -195,8 +197,8 @@ describe('InstallWizard', () => {
     }
     if (options.storage ?? (manifest['Requirements'] as { Storage: unknown })['Storage'] !== null) {
       http.expectOne('/api/v1/storage/registrations').flush(REGISTRATIONS);
-      http.expectOne('/api/v1/storage/mounts').flush(MOUNTS);
-      http.expectOne('/api/v1/storage/assignments').flush([]);
+      http.expectOne('/api/v1/storage/mounts').flush(options.mounts ?? MOUNTS);
+      http.expectOne('/api/v1/storage/assignments').flush(options.assignments ?? []);
     }
     if (name === 'gridcraft') {
       http.expectOne('/api/v1/craft').flush(options.craft ?? { images: [], verdicts: [], baselines: {} });
@@ -387,6 +389,18 @@ describe('InstallWizard', () => {
       fixture.detectChanges();
       expect(text()).toContain('/mnt/big/nextcloud/html');
       expect(text()).toContain('/mnt/big/nextcloud/data');
+    });
+
+    it('offers a mount once even when the appliance lists it twice', () => {
+      start(NEXTCLOUD, { mounts: [...MOUNTS, MOUNTS[1]] });
+      to('storage');
+      const options = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('select[name="mount-bulk"] option')).map((o) => o.textContent!.trim());
+      expect(options.filter((o) => o.startsWith('/mnt/big'))).toHaveLength(1);
+    });
+
+    it('defaults the container port to 80 for Nextcloud, which declares no host port', () => {
+      start(NEXTCLOUD_NO_PORTS);
+      expect(c().containerPorts()['nextcloud']).toBe('80');
     });
 
     it('will not continue until each kind of storage has a mount with enough room', () => {
@@ -631,6 +645,21 @@ describe('InstallWizard', () => {
       expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/trust"]')).not.toBeNull();
     });
 
+    it('offers the usual address for an installed app that has none, merged into the table', () => {
+      start(CRAFT, { installed: ['gridcraft'] });
+      const other = { Host: 'notes.lan', Target: { Host: 'notes', Port: 3000 }, Exposure: 'local', TLS: 'internal', Health: { Path: '', IntervalSeconds: 0 } };
+      doneReads([other]);
+      expect(text()).toContain('GridCraft has no address yet.');
+      button('Give GridCraft an address')!.click();
+      doneReads([other]);
+      const reconcile = http.expectOne('/api/v1/edge/routes');
+      expect(reconcile.request.method).toBe('POST');
+      const sent = reconcile.request.body.routes;
+      expect(sent.map((r: { Host: string }) => r.Host)).toEqual(['notes.lan', 'gridcraft.lan']);
+      expect(sent[1]).toMatchObject({ Target: { Host: 'gridcraft', Port: 8080 }, Exposure: 'local', TLS: 'internal', CraftApp: 'gridcraft' });
+      reconcile.flush({ id: 40 });
+    });
+
     it('does not add a route when the edge is not running and says so, offering to set it up', () => {
       start(CRAFT, { installed: ['gridcraft'], health: HEALTH_NO_CADDY });
       doneReads([], HEALTH_NO_CADDY);
@@ -768,6 +797,21 @@ describe('InstallWizard', () => {
       expect(text()).toContain('craft signing keys on the Updates page');
       expect(button('Try again')).toBeDefined();
     });
+  });
+
+  it('assigns a chosen mount to a class that has none, before installing, and leaves existing assignments alone', () => {
+    start(NEXTCLOUD, { assignments: [{ Class: 'bulk', Mountpoint: '/mnt/big', Actor: 'o', CreatedAt: '' }] });
+    c().setMount('application', '/mnt/big');
+    c().setMount('bulk', '/mnt/big');
+    to('review');
+    http.expectOne('/api/v1/catalog/nextcloud/plan').flush(plan('nextcloud'));
+    fixture.detectChanges();
+    button('Install Nextcloud')!.click();
+    const assign = http.expectOne('/api/v1/storage/assignments');
+    expect(assign.request.method).toBe('POST');
+    expect(assign.request.body).toEqual({ class: 'application', mountpoint: '/mnt/big', actor: 'owner' });
+    assign.flush({ Class: 'application', Mountpoint: '/mnt/big', Actor: 'owner', CreatedAt: '' });
+    http.expectOne('/api/v1/catalog/nextcloud/install').flush({ id: 50 });
   });
 
   it('opens straight on the installed summary for an installed package', () => {

@@ -50,3 +50,25 @@ export function removeAppRoutes(
     }),
   );
 }
+
+/**
+ * The address an installed app would have been given: local only, internal TLS,
+ * the same shape the install plan produces. Used when the app is installed and
+ * the table has no route for it (the wizard was closed mid-install, or the CLI
+ * installed it). Public exposure is never chosen here (ADR-006).
+ */
+export function routeFromManifest(manifest: CatalogManifest, host: string, port: number): EdgeRoute | null {
+  const service = manifest.Services.find((entry) => entry.Exposes !== '');
+  if (!service) {
+    return null;
+  }
+  const recommended = manifest.Exposure.Endpoints.find((entry) => entry.Endpoint === service.Exposes)?.Recommended;
+  return {
+    Host: host,
+    Target: { Host: service.Name, Port: port },
+    Exposure: recommended === 'overlay' ? 'overlay' : 'local',
+    TLS: 'internal',
+    Health: { Path: '', IntervalSeconds: 0 },
+    ...(manifest.Services.some((entry) => entry.Image.startsWith('homestead/craft-')) ? { CraftApp: manifest.Name } : {}),
+  };
+}

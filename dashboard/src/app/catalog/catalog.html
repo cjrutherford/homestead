@@ -24,12 +24,17 @@
             <div class="catalog-text">
               <strong>{{ pkg.title }}</strong>
               <span class="hint">Version {{ pkg.version }}</span>
-              @if (pkg.installed) {
+              @if (settingUp(pkg.name)) {
+                <span class="badge badge-pending">Setting up</span>
+              } @else if (pkg.installed) {
                 <span class="badge badge-ok">Installed</span>
               }
               <p>{{ pkg.blurb }}</p>
             </div>
             <div class="catalog-actions">
+              @if (settingUp(pkg.name)) {
+                <a class="button primary" [routerLink]="['/catalog', pkg.name, 'install']">Continue setting up {{ pkg.title }}</a>
+              }
               @if (pkg.installed) {
                 <button type="button" (click)="select(pkg.name)">Manage {{ pkg.title }}</button>
                 <app-uninstall-app [name]="pkg.name" [title]="pkg.title" (uninstalled)="onUninstalled(pkg.name)" />

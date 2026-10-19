@@ -7,6 +7,7 @@ import {
   HttpTestingController,
 } from '@angular/common/http/testing';
 import { Catalog } from './catalog';
+import { InstallDrafts } from './install-drafts';
 
 const PACKAGES = [
   {
@@ -92,6 +93,15 @@ describe('Catalog', () => {
     expect(text()).toContain('Installed');
     expect(text()).toContain('Manage GridCraft');
     expect(text()).toContain('Uninstall GridCraft');
+  });
+
+  it('points an install that is still being set up back to its wizard', () => {
+    TestBed.inject(InstallDrafts).save('gridcraft', { installOperation: 7 } as never);
+    load();
+    const link = (fixture.nativeElement as HTMLElement).querySelector('a[href="/catalog/gridcraft/install"]');
+    expect(link?.textContent?.trim()).toBe('Continue setting up GridCraft');
+    expect(text()).toContain('Setting up');
+    expect(text()).not.toContain('Installed');
   });
 
   it('invites a first step when the catalog is empty', () => {

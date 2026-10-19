@@ -15,6 +15,8 @@ export interface CuratedCopy {
   note?: string;
   /** Replaces the sign-in paragraph where the manifest's class would mislead (Authentik). */
   signIn?: string;
+  /** The port the app listens on inside its container, where the manifest declares no host port. */
+  containerPort?: string;
 }
 
 const TRUST =
@@ -26,6 +28,7 @@ const NO_NEXTCLOUD = 'It has no Nextcloud file link, so files stay in your brows
 
 export const CURATED_COPY: Record<string, CuratedCopy> = {
   nextcloud: {
+    containerPort: '80',
     firstLogin: [
       'Open Nextcloud. The first visit shows its setup page, where you create the administrator account.',
       'Keep that password safe. Homestead does not store it.',

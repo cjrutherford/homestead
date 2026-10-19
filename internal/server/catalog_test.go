@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"homestead/internal/catalog"
 	"homestead/internal/discover"
 	"homestead/internal/storage"
 	"homestead/internal/store"
@@ -351,5 +352,27 @@ func TestCatalogPlanRefusesUnmountedStorage(t *testing.T) {
 		if recorder.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("%s: code = %d (%s)", mount, recorder.Code, recorder.Body.String())
 		}
+	}
+}
+
+func TestApplyStorageOverridesReadsTheChosenMountsFreeSpace(t *testing.T) {
+	facts := catalog.HostFacts{FreeSpace: map[storage.Class]uint64{storage.ClassBulk: 1}}
+	mounts := []discover.Mount{
+		{Mountpoint: "/mnt/app", Accessible: true, FreeBytes: 20},
+		{Mountpoint: "/mnt/dead", Accessible: false, FreeBytes: 99},
+	}
+	applyStorageOverrides(&facts, map[storage.Class]string{
+		storage.ClassApplication: "/mnt/app",
+		storage.ClassBulk:        "/mnt/dead",
+		storage.ClassBackup:      "/mnt/missing",
+	}, mounts)
+	if facts.FreeSpace[storage.ClassApplication] != 20 {
+		t.Fatalf("application free = %d", facts.FreeSpace[storage.ClassApplication])
+	}
+	if _, ok := facts.FreeSpace[storage.ClassBulk]; ok {
+		t.Fatal("an inaccessible mount must not carry free space")
+	}
+	if _, ok := facts.FreeSpace[storage.ClassBackup]; ok {
+		t.Fatal("an unknown mount must not carry free space")
 	}
 }

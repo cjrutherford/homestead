@@ -15,7 +15,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { forkJoin, Observable, of } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
+import { catchError, map, switchMap } from 'rxjs/operators';
 import {
   ApiService,
   CatalogManifest,
@@ -32,7 +32,7 @@ import { StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
-import { appRoutes, mergeRoutes } from './app-routes';
+import { appRoutes, mergeRoutes, routeFromManifest } from './app-routes';
 import { BrowserAdvisories } from './browser-advisories';
 import { curatedFor } from './curated-copy';
 import { FolderRow, InstallDraft, InstallDrafts } from './install-drafts';
@@ -85,7 +85,7 @@ function helpFor(id: StepId, title: string): string {
     case 'preflight':
       return `Homestead checks that this appliance can run ${title} before anything changes.`;
     case 'storage':
-      return `Choose where ${title} keeps its files; only storage you have already mounted and registered is listed.`;
+      return `Choose where ${title} keeps its files; only storage you have already mounted and registered is listed. A kind of storage with no default yet gets your choice as its default.`;
     case 'address':
       return `Choose the name you type to reach ${title} on your network.`;
     case 'sign-in':
@@ -150,6 +150,8 @@ export class InstallWizard implements OnInit {
   protected readonly health = signal<DockerHealth | null>(null);
   protected readonly healthUnknown = signal(false);
   protected readonly mountOptions = signal<MountOption[]>([]);
+  /** Classes that already have an assigned mount, so the install only fills gaps. */
+  private readonly assignedClasses = signal<Record<string, string>>({});
   protected readonly storageError = signal<string | null>(null);
   protected readonly craftBuilt = signal<boolean | null>(null);
   protected readonly buildRefusal = signal<string | null>(null);
@@ -229,6 +231,14 @@ export class InstallWizard implements OnInit {
       immutable: secret.Immutable,
       purpose: SECRET_WORDS[secret.Name] ?? `a secret that ${this.title()} uses`,
     })),
+  );
+  /** The daemon's plan notes, less the ones that are no longer true on this appliance. */
+  protected readonly planNotes = computed(() =>
+    (this.plan()?.Notes ?? []).filter(
+      (note) =>
+        !(note.includes('does not deploy the edge proxy') && this.edge()?.caddyRunning) &&
+        !(note.includes('craft build first') && this.craftBuilt() === true),
+    ),
   );
   protected readonly summary = computed(() => {
     const plan = this.plan();
@@ -439,6 +449,8 @@ export class InstallWizard implements OnInit {
         next: ([registrations, mounts, assignments]) => {
           const registered = new Set(registrations.map((entry) => entry.Mountpoint));
           const options: MountOption[] = mounts
+            // A mount can be listed twice by the appliance; offer it once.
+            .filter((mount: StorageMount, index) => mounts.findIndex((m) => m.Mountpoint === mount.Mountpoint) === index)
             .filter((mount: StorageMount) => registered.has(mount.Mountpoint) && mount.Accessible && !mount.ReadOnly)
             .map((mount) => ({
               mountpoint: mount.Mountpoint,
@@ -447,6 +459,7 @@ export class InstallWizard implements OnInit {
               total: mount.TotalBytes,
             }));
           this.mountOptions.set(options);
+          this.assignedClasses.set(Object.fromEntries(assignments.map((entry) => [entry.Class, entry.Mountpoint])));
           const chosen = { ...this.mountpoints() };
           for (const className of storageClasses(manifest)) {
             if (chosen[className]) {
@@ -804,7 +817,10 @@ export class InstallWizard implements OnInit {
     if (planned) {
       this.routesToAdd.set(planned.filter((route) => route.Exposure !== 'public'));
     }
-    this.api.installPackage(manifest.Name, this.body()).subscribe({
+    const body = this.body();
+    this.assignChosenStorage()
+      .pipe(switchMap(() => this.api.installPackage(manifest.Name, body)))
+      .subscribe({
       next: ({ id }) => {
         this.starting.set(false);
         this.installOperation.set(id);
@@ -820,6 +836,24 @@ export class InstallWizard implements OnInit {
         this.fail(failure);
       },
     });
+  }
+
+  /**
+   * A class with no assigned mount gets the one the owner chose here, through the
+   * storage assignments API, so uninstall can name the data folders and later
+   * installs default to it. A class that already has an assignment is left alone,
+   * and a refusal never stops the install.
+   */
+  private assignChosenStorage(): Observable<unknown> {
+    const assigned = this.assignedClasses();
+    const calls = Object.entries(this.mountpoints())
+      .filter(([className, mount]) => mount !== '' && !assigned[className])
+      .map(([className, mount]) =>
+        this.api
+          .storageAssign({ class: className, mountpoint: mount, actor: 'owner' })
+          .pipe(catchError(() => of(null))),
+      );
+    return calls.length > 0 ? forkJoin(calls) : of([]);
   }
 
   private fail(failure: HttpErrorResponse): void {
@@ -858,6 +892,8 @@ export class InstallWizard implements OnInit {
             }
           } else if (state.status === 'succeeded') {
             this.installed.set(true);
+            // Finished: the catalog stops calling it "setting up".
+            this.installOperation.set(null);
             this.phase.set('ready');
             this.go(this.steps().length - 1);
           } else {
@@ -982,6 +1018,24 @@ export class InstallWizard implements OnInit {
         );
       },
     });
+  }
+
+  /** An installed app with no route: build the usual one from the manifest and the Address choices. */
+  protected addMissingRoute(): void {
+    const manifest = this.manifest();
+    const first = this.endpoints()[0];
+    if (!manifest || !first) {
+      return;
+    }
+    const route = routeFromManifest(
+      manifest,
+      this.hostnameFor(first.endpoint, 0),
+      Number(this.containerPorts()[first.service]),
+    );
+    if (route) {
+      this.routesToAdd.set([route]);
+      this.prepareDone();
+    }
   }
 
   protected retryRoute(): void {
