@@ -176,18 +176,24 @@ func runSSOApprove(ctx context.Context, client *apiclient.Client, args []string,
 	set := flag.NewFlagSet("sso approve", flag.ContinueOnError)
 	set.SetOutput(stderr)
 	digest := set.String("digest", "", "digest of the plan you reviewed")
-	tokenFile := set.String("token-file", "", "file holding the Authentik API token")
+	tokenFile := set.String("token-file", "", "file holding the Authentik API token (optional when one is already sealed)")
 	keep := set.Bool("keep-token", false, "keep the sealed token after apply (default: forget it)")
 	if err := set.Parse(args); err != nil {
 		return exitUsage
 	}
-	if *digest == "" || *tokenFile == "" {
-		fmt.Fprintln(stderr, "approve needs --digest and --token-file")
+	if *digest == "" {
+		fmt.Fprintln(stderr, "approve needs --digest")
 		return exitUsage
 	}
-	token, err := readSecretFile(*tokenFile)
-	if err != nil {
-		return fail(stderr, err)
+	// The token is optional: the server accepts an empty one when a token
+	// is already sealed.
+	token := ""
+	if *tokenFile != "" {
+		var err error
+		token, err = readSecretFile(*tokenFile)
+		if err != nil {
+			return fail(stderr, err)
+		}
 	}
 	st, err := client.SSOApprove(ctx, sso.ApproveRequest{Digest: *digest, APIToken: token, KeepToken: *keep})
 	if err != nil {

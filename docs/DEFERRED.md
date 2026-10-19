@@ -666,3 +666,7 @@
   for other Authentik versions are verified only by the KVM run.
 - OIDC login for the CLI, RP-initiated logout, multiple links, non-owner SSO
   and disabling local login stay deferred (see the ADR-033 entry above).
+- Hardening: the link URL works as a bearer credential for whoever completes
+  it within its 10 minutes (the intent is bound to the admin and the state, as
+  ADR-033 designs). Bind the intent to the owner's browser, or have the
+  dashboard confirm the subject before the link is recorded.

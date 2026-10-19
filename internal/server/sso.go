@@ -146,7 +146,11 @@ func ssoDefaults(st *store.Store, port int) sso.Defaults {
 				d.AuthentikURL = scheme + "://" + host
 			}
 			if r.Target.Port == port && (r.Target.Host == "127.0.0.1" || r.Target.Host == "localhost" || r.Target.Host == "host.docker.internal") {
-				d.Origins = append(d.Origins, "https://"+host)
+				scheme := "https"
+				if r.TLS == "off" {
+					scheme = "http"
+				}
+				d.Origins = append(d.Origins, scheme+"://"+host)
 			}
 		}
 	}
@@ -159,6 +163,15 @@ func ssoDefaults(st *store.Store, port int) sso.Defaults {
 	}
 	d.Origins = append([]string{"http://127.0.0.1:" + strconv.Itoa(port)}, d.Origins...)
 	return d
+}
+
+// clientHost is the peer address as the daemon sees it. Forwarded headers
+// are never consulted.
+func clientHost(r *http.Request) string {
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 func loopbackName(h string) bool {
@@ -229,7 +242,7 @@ func (h *ssoHandlers) login(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if !h.m.Allow() {
+	if !h.m.Allow(clientHost(r)) {
 		h.failRedirect(w, r, "/login", sso.CodeRate)
 		return
 	}
@@ -269,7 +282,7 @@ func (h *ssoHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	back := "/login"
-	if !h.m.Allow() {
+	if !h.m.Allow(clientHost(r)) {
 		h.failRedirect(w, r, back, sso.CodeRate)
 		return
 	}

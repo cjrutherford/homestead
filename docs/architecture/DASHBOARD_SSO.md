@@ -172,6 +172,9 @@ Session class: `GET /api/v1/sso`, `POST /api/v1/sso/plan|approve|apply|link`,
 requests a minute; the first refusal and the window's count are audited, not
 every one). No entry holds a token, a code, a client secret or a cookie.
 
+## Security notes
+The link URL is a bearer credential: whoever completes it at Authentik within its 10 minutes becomes the linked subject, because the intent is bound to the admin and the state, not to the owner's browser (binding it is a hardening item in DEFERRED.md). Sign-in rate limiting is per client address (the peer address the daemon sees, never `X-Forwarded-For`).
+
 ## Not in this slice
 CLI sign-in with Authentik, RP-initiated logout, more than one link, SSO for
 non-owner administrators and disabling local password login: see DEFERRED.md.

@@ -3,6 +3,7 @@ package sso
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -234,8 +235,7 @@ func TestLoginStateNeedsItsCookie(t *testing.T) {
 	code, state := h.startLogin()
 	_, err := h.m.Callback(ctxb(), state, code, "", "")
 	wantCode(t, err, CodeState)
-	// A state cookie from another flow does not satisfy it either, and the
-	// refused attempt used the state up.
+	// A state cookie from another flow does not satisfy it either.
 	code, state = h.startLogin()
 	_, err = h.m.Callback(ctxb(), state, code, "", "another-state")
 	wantCode(t, err, CodeState)
@@ -491,7 +491,7 @@ func TestRateLimitAggregatesInAudit(t *testing.T) {
 	h := newHarness(t)
 	allowed := 0
 	for i := 0; i < 100; i++ {
-		if h.m.Allow() {
+		if h.m.Allow("192.0.2.1") {
 			allowed++
 		}
 	}
@@ -502,7 +502,7 @@ func TestRateLimitAggregatesInAudit(t *testing.T) {
 		t.Fatalf("rate-limit audit entries during the flood = %d, want 1", n)
 	}
 	h.now = h.now.Add(2 * time.Minute)
-	if !h.m.Allow() {
+	if !h.m.Allow("192.0.2.1") {
 		t.Fatal("a new window must allow again")
 	}
 	if n := countAudit(h, "sso.rate-limited"); n != 2 {
@@ -548,5 +548,134 @@ func TestOriginForIgnoresEverythingButHost(t *testing.T) {
 	}
 	if _, ok := OriginFor(spec, "a.example:443"); ok {
 		t.Fatal("an explicit default port is a different Host string and is refused")
+	}
+}
+
+func TestWrongCookieDoesNotBurnALoginState(t *testing.T) {
+	h := newHarness(t)
+	h.configure()
+	h.link()
+	code, state := h.startLogin()
+	_, err := h.m.Callback(ctxb(), state, code, "", "attacker-guess")
+	wantCode(t, err, CodeState)
+	// The rightful browser still completes, once.
+	if _, err := h.m.Callback(ctxb(), state, code, "", state); err != nil {
+		t.Fatalf("legitimate callback after a forged attempt: %v", err)
+	}
+	_, err = h.m.Callback(ctxb(), state, code, "", state)
+	wantCode(t, err, CodeState)
+}
+
+func TestIssuerChangeRevokesOIDCSessions(t *testing.T) {
+	h := newHarness(t)
+	h.configure()
+	h.link()
+	spec := h.spec
+	spec.Issuer = "https://other.example.test/application/o/homestead/"
+	if err := h.m.recordConfig(spec, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := h.m.readLink(); ok {
+		t.Fatal("link must be deleted when the issuer changes")
+	}
+	if len(h.revoked) != 1 || h.revoked[0] != 7 {
+		t.Fatalf("revoked = %v, want [7]", h.revoked)
+	}
+}
+
+func TestUnlinkRevokeFailureCanBeRetried(t *testing.T) {
+	h := newHarness(t)
+	h.configure()
+	h.link()
+	fail := true
+	h.m.RevokeOIDC = func(id int64) error {
+		if fail {
+			return errors.New("boom")
+		}
+		h.revoked = append(h.revoked, id)
+		return nil
+	}
+	if err := h.m.Unlink("owner"); err == nil {
+		t.Fatal("unlink must report the revocation failure")
+	}
+	if _, ok, _ := h.m.readLink(); !ok {
+		t.Fatal("link must survive a failed revocation so a retry revokes")
+	}
+	fail = false
+	if err := h.m.Unlink("owner"); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if len(h.revoked) != 1 || h.revoked[0] != 7 {
+		t.Fatalf("revoked = %v", h.revoked)
+	}
+}
+
+func TestDisableRevokeFailureCanBeRetried(t *testing.T) {
+	h := newHarness(t)
+	h.configure()
+	h.link()
+	fail := true
+	h.m.RevokeOIDC = func(id int64) error {
+		if fail {
+			return errors.New("boom")
+		}
+		h.revoked = append(h.revoked, id)
+		return nil
+	}
+	if err := h.m.Disable("owner"); err == nil {
+		t.Fatal("disable must report the revocation failure")
+	}
+	fail = false
+	if err := h.m.Disable("owner"); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if len(h.revoked) != 1 {
+		t.Fatalf("retry must revoke, revoked = %v", h.revoked)
+	}
+}
+
+type failDeleteSecrets struct{ *memSecrets }
+
+func (failDeleteSecrets) Delete(string) error { return errors.New("disk full") }
+
+func TestDisableSurfacesSecretDeleteErrorsButAbsentIsFine(t *testing.T) {
+	h := newHarness(t)
+	h.configure()
+	h.m.Secrets = failDeleteSecrets{h.secrets}
+	if err := h.m.Disable("owner"); err == nil {
+		t.Fatal("a failed secret delete must be returned")
+	}
+	if n := countAudit(h, "sso.disable"); n != 0 {
+		t.Fatalf("failure must not be audited as success, got %d", n)
+	}
+	// Absent secrets (nothing sealed) are success.
+	h2 := newHarness(t)
+	if err := h2.m.Disable("owner"); err != nil {
+		t.Fatalf("disable with nothing sealed: %v", err)
+	}
+	if n := countAudit(h2, "sso.disable"); n != 1 {
+		t.Fatalf("audit = %d", n)
+	}
+}
+
+func TestRateLimitIsPerAddressAndBounded(t *testing.T) {
+	h := newHarness(t)
+	for i := 0; i < 100; i++ {
+		h.m.Allow("198.51.100.9")
+	}
+	if !h.m.Allow("192.0.2.77") {
+		t.Fatal("a flood from one address must not block another")
+	}
+	// Many distinct addresses: the map stays bounded and old entries prune.
+	for i := 0; i < rateMaxKeys*3; i++ {
+		h.m.Allow(fmt.Sprintf("10.%d.%d.1", i/256, i%256))
+	}
+	if len(h.m.wins) > rateMaxKeys+1 {
+		t.Fatalf("map grew to %d", len(h.m.wins))
+	}
+	h.now = h.now.Add(2 * rateWindowLen)
+	h.m.Allow("203.0.113.5")
+	if len(h.m.wins) > 2 {
+		t.Fatalf("expired entries were not pruned: %d", len(h.m.wins))
 	}
 }

@@ -53,6 +53,11 @@ func TestSSOCLI(t *testing.T) {
 	if code != exitOK || !strings.Contains(out, "redirect URIs (exact)") || !strings.Contains(out, "left untouched") || !strings.Contains(out, "warning:") || !strings.Contains(out, "sso approve --digest d1gest") {
 		t.Fatalf("plan: %d %s", code, out)
 	}
+	// The token is optional when one is already sealed.
+	code, out, _ = invoke(t, []string{"--server", url, "sso", "approve", "--digest", "d1gest"})
+	if code != exitOK {
+		t.Fatalf("approve without a token file: %d %s", code, out)
+	}
 	code, out, _ = invoke(t, []string{"--server", url, "sso", "approve", "--digest", "d1gest", "--token-file", tok, "--keep-token"})
 	if code != exitOK || strings.Contains(out, "ak-token") {
 		t.Fatalf("approve: %d %s", code, out)

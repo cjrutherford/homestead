@@ -12,11 +12,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"homestead/internal/docker"
 	"homestead/internal/sso"
 	"homestead/internal/store"
 )
@@ -693,5 +695,49 @@ func TestSSOSecretsNeverAppearInResponsesOrAudit(t *testing.T) {
 	// Default: the API token was used once and forgotten.
 	if strings.Contains(st, `"api_token_kept":true`) {
 		t.Fatal("the API token was kept without an opt-in")
+	}
+}
+
+func TestSSOLoginRateLimitIsPerRemoteAddrNotForwardedFor(t *testing.T) {
+	a := newSSOApp(t)
+	a.configure(t)
+	a.linkOwner(t)
+	flood := func(r *http.Request) {
+		r.Host = ssoLocal
+		r.RemoteAddr = "198.51.100.9:4000"
+		r.Header.Set("X-Forwarded-For", fmt.Sprintf("10.9.%d.1", time.Now().UnixNano()%250)) // must be ignored
+	}
+	limited := false
+	for i := 0; i < 40; i++ {
+		rec := a.do("GET", "/api/v1/sso/login", "", flood)
+		if strings.Contains(rec.Header().Get("Location"), "sso_error=rate") {
+			limited = true
+		}
+	}
+	if !limited {
+		t.Fatal("the flooding address was never limited")
+	}
+	rec := a.do("GET", "/api/v1/sso/login", "", func(r *http.Request) { r.Host = ssoLocal; r.RemoteAddr = "192.0.2.50:5000" })
+	if rec.Code != http.StatusFound || strings.Contains(rec.Header().Get("Location"), "sso_error") {
+		t.Fatalf("another address was blocked: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+func TestSSODefaultOriginsHonourRouteTLS(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), store.DBFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	if err := saveEdgeRoutes(st, docker.RouteSet{Routes: []docker.Route{
+		{Host: "plain.lan", Target: docker.Target{Host: "127.0.0.1", Port: 8080}, TLS: docker.TLSOff},
+		{Host: "secure.lan", Target: docker.Target{Host: "127.0.0.1", Port: 8080}, TLS: docker.TLSInternal},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	d := ssoDefaults(st, 8080)
+	joined := strings.Join(d.Origins, " ")
+	if !strings.Contains(joined, "http://plain.lan") || strings.Contains(joined, "https://plain.lan") || !strings.Contains(joined, "https://secure.lan") {
+		t.Fatalf("origins = %v", d.Origins)
 	}
 }

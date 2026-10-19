@@ -130,7 +130,7 @@ type Manager struct {
 
 	mu        sync.Mutex
 	providers map[string]*Provider
-	win       rateWindow
+	wins      map[string]*rateWindow
 }
 
 func (m *Manager) now() time.Time {
@@ -525,6 +525,21 @@ func (m *Manager) failed(actor, what string, err error) error {
 	return err
 }
 
+// dropLink ends the identity's oidc sessions and only then deletes the
+// link, so a failed revocation leaves the link in place and a retry revokes
+// again.
+func (m *Manager) dropLink(link linkRow) error {
+	if m.RevokeOIDC != nil {
+		if err := m.RevokeOIDC(link.IdentityID); err != nil {
+			return err
+		}
+	}
+	if _, err := m.DB.Exec(`DELETE FROM sso_link`); err != nil {
+		return fmt.Errorf("sso: remove link: %w", err)
+	}
+	return nil
+}
+
 func (m *Manager) recordConfig(spec Spec, actor string) error {
 	raw, _ := json.Marshal(spec)
 	now := stamp(m.now())
@@ -536,7 +551,9 @@ func (m *Manager) recordConfig(spec Spec, actor string) error {
 	}
 	// A new issuer or client invalidates any link made against another.
 	if link, ok, _ := m.readLink(); ok && link.Issuer != spec.Issuer {
-		_, _ = m.DB.Exec(`DELETE FROM sso_link`)
+		if err := m.dropLink(link); err != nil {
+			return err
+		}
 	}
 	_, _ = m.DB.Exec(`DELETE FROM sso_plan`)
 	m.mu.Lock()
@@ -682,17 +699,24 @@ func (m *Manager) Offered() bool {
 // flow state and both sealed secrets are removed, and oidc sessions end.
 // The local owner is untouched. Objects in Authentik are left as they are.
 func (m *Manager) Disable(actor string) error {
-	link, linked, _ := m.readLink()
-	for _, q := range []string{`DELETE FROM sso_link`, `DELETE FROM sso_config`, `DELETE FROM sso_plan`, `DELETE FROM sso_state`} {
+	link, linked, err := m.readLink()
+	if err != nil {
+		return err
+	}
+	if linked {
+		if err := m.dropLink(link); err != nil {
+			return err
+		}
+	}
+	for _, q := range []string{`DELETE FROM sso_config`, `DELETE FROM sso_plan`, `DELETE FROM sso_state`} {
 		if _, err := m.DB.Exec(q); err != nil {
 			return fmt.Errorf("sso: disable: %w", err)
 		}
 	}
-	_ = m.Secrets.Delete(ClientSecretName)
-	_ = m.Secrets.Delete(APITokenName)
-	if linked && m.RevokeOIDC != nil {
-		if err := m.RevokeOIDC(link.IdentityID); err != nil {
-			return err
+	// Secret deletion is idempotent: an absent secret is success.
+	for _, name := range []string{ClientSecretName, APITokenName} {
+		if err := m.Secrets.Delete(name); err != nil {
+			return fmt.Errorf("sso: disable: remove sealed secret %s: %w", name, err)
 		}
 	}
 	m.mu.Lock()
@@ -706,6 +730,7 @@ func (m *Manager) Disable(actor string) error {
 }
 
 // Unlink removes the single link and ends the owner's oidc sessions.
+// Sessions are revoked first, so a failure can be retried.
 func (m *Manager) Unlink(actor string) error {
 	link, ok, err := m.readLink()
 	if err != nil {
@@ -714,15 +739,10 @@ func (m *Manager) Unlink(actor string) error {
 	if !ok {
 		return ErrNotLinked
 	}
-	if _, err := m.DB.Exec(`DELETE FROM sso_link`); err != nil {
-		return fmt.Errorf("sso: unlink: %w", err)
+	if err := m.dropLink(link); err != nil {
+		return err
 	}
 	_, _ = m.DB.Exec(`DELETE FROM sso_state`)
-	if m.RevokeOIDC != nil {
-		if err := m.RevokeOIDC(link.IdentityID); err != nil {
-			return err
-		}
-	}
 	m.audit(actor, "sso.unlink", "ok", "method=password subject="+link.Sub)
 	return nil
 }
@@ -921,6 +941,14 @@ func (m *Manager) Callback(ctx context.Context, state, code, providerError, cook
 	if state == "" {
 		return Outcome{}, flowErr(CodeState, errors.New("missing state"))
 	}
+	// A login state is bound to the browser that started it: compare the
+	// cookie before consuming, so a third party who knows a pending state
+	// cannot burn it.
+	var pending string
+	if err := m.DB.QueryRow(`SELECT kind FROM sso_state WHERE state_hash = ?`, hashState(state)).Scan(&pending); err == nil &&
+		pending == kindLogin && subtle.ConstantTimeCompare([]byte(cookieState), []byte(state)) != 1 {
+		return Outcome{Kind: pending}, flowErr(CodeState, errors.New("state cookie does not match"))
+	}
 	row, err := m.consume(state)
 	if err != nil {
 		return Outcome{Kind: row.kind, Actor: row.actor}, err
@@ -1024,6 +1052,10 @@ func classify(err error) error {
 const (
 	rateWindowLen = time.Minute
 	rateMax       = 30
+	// rateMaxKeys bounds the per-address map; addresses beyond it share
+	// one overflow bucket.
+	rateMaxKeys  = 1024
+	rateOverflow = "*overflow*"
 )
 
 type rateWindow struct {
@@ -1032,31 +1064,61 @@ type rateWindow struct {
 	rejected int
 }
 
-// Allow counts one flow request against the per-minute budget and reports
-// whether it may proceed. The first rejection of a window and the final
-// count when the window ends are audited, so a flood is one entry, not
-// thousands.
-func (m *Manager) Allow() bool {
+// Allow counts one flow request from addr (the host part of the request's
+// RemoteAddr as the daemon sees it; never a forwarded header) against that
+// address's per-minute budget and reports whether it may proceed. The first
+// rejection of a window and the final count when the window ends are
+// audited, so a flood is one entry, not thousands.
+func (m *Manager) Allow(addr string) bool {
 	m.mu.Lock()
 	now := m.now()
-	var flush int
-	if now.Sub(m.win.start) >= rateWindowLen {
-		flush = m.win.rejected
-		m.win = rateWindow{start: now}
+	if m.wins == nil {
+		m.wins = map[string]*rateWindow{}
 	}
-	m.win.n++
-	allowed := m.win.n <= rateMax
+	type note struct {
+		addr string
+		n    int
+	}
+	var flushes []note
+	if len(m.wins) >= rateMaxKeys {
+		for k, w := range m.wins {
+			if now.Sub(w.start) >= rateWindowLen {
+				if w.rejected > 0 {
+					flushes = append(flushes, note{k, w.rejected})
+				}
+				delete(m.wins, k)
+			}
+		}
+	}
+	key := addr
+	w := m.wins[key]
+	if w == nil && len(m.wins) >= rateMaxKeys {
+		key = rateOverflow
+		w = m.wins[key]
+	}
+	if w != nil && now.Sub(w.start) >= rateWindowLen {
+		if w.rejected > 0 {
+			flushes = append(flushes, note{key, w.rejected})
+		}
+		w = nil
+	}
+	if w == nil {
+		w = &rateWindow{start: now}
+		m.wins[key] = w
+	}
+	w.n++
+	allowed := w.n <= rateMax
 	first := false
 	if !allowed {
-		m.win.rejected++
-		first = m.win.rejected == 1
+		w.rejected++
+		first = w.rejected == 1
 	}
 	m.mu.Unlock()
-	if flush > 0 {
-		m.audit("anonymous", "sso.rate-limited", "error", fmt.Sprintf("%d sign-in requests refused in the previous minute", flush))
+	for _, f := range flushes {
+		m.audit("anonymous", "sso.rate-limited", "error", fmt.Sprintf("%d sign-in requests from %s refused in the previous minute", f.n, f.addr))
 	}
 	if first {
-		m.audit("anonymous", "sso.rate-limited", "error", "sign-in requests are being refused: more than 30 in a minute")
+		m.audit("anonymous", "sso.rate-limited", "error", "sign-in requests from "+key+" are being refused: more than 30 in a minute")
 	}
 	return allowed
 }
