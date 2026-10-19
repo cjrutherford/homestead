@@ -397,6 +397,9 @@ func safeAlg(a string) string {
 
 // Endpoints for the browser and the back channel.
 
+// FreshMaxAge is the oldest Authentik sign-in (seconds) a link accepts.
+const FreshMaxAge = "30"
+
 // AuthURLParams are the inputs of the authorize redirect.
 type AuthURLParams struct {
 	ClientID    string
@@ -404,8 +407,10 @@ type AuthURLParams struct {
 	State       string
 	Nonce       string
 	Challenge   string
-	// Fresh forces a new Authentik login (prompt=login, max_age=0): the
-	// link ceremony proves the owner is present now.
+	// Fresh asks Authentik for a sign-in no older than FreshMaxAge: the link
+	// ceremony proves the owner is present now. prompt=login is not used:
+	// Authentik 2026.8 keeps it on the post-login redirect and asks again
+	// forever, and max_age=0 is ignored (S286 KVM review).
 	Fresh bool
 }
 
@@ -421,8 +426,7 @@ func AuthURL(d Discovery, p AuthURLParams) string {
 	q.Set("code_challenge", p.Challenge)
 	q.Set("code_challenge_method", "S256")
 	if p.Fresh {
-		q.Set("prompt", "login")
-		q.Set("max_age", "0")
+		q.Set("max_age", FreshMaxAge)
 	}
 	sep := "?"
 	if strings.Contains(d.AuthorizationEndpoint, "?") {

@@ -179,3 +179,6 @@ This record amends ADR-020; ADR-020 carries a pointer to it.
 - OIDC for the CLI is deferred; the bearer path stays local-account only.
 - Implementation must preserve this boundary.
 - Changes require a superseding ADR.
+
+## Amendment (S286 KVM review)
+The link flow asks Authentik for `max_age=30` instead of `prompt=login` plus `max_age=0`: on Authentik 2026.8 `prompt=login` survives the post-login redirect and asks again forever, and `max_age=0` is ignored. A sign-in older than 30 seconds is refused by Authentik and re-prompted.

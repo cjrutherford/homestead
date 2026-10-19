@@ -863,7 +863,7 @@ func (m *Manager) StartLogin(ctx context.Context, host string) (FlowStart, error
 
 // CreateLinkIntent mints the single-use, ten minute link intent for the
 // authenticated and re-authenticated owner and returns the URL that runs
-// the flow with prompt=login. origin must be a planned origin; when empty
+// the flow with max_age=30. origin must be a planned origin; when empty
 // the request's host selects one.
 func (m *Manager) CreateLinkIntent(ctx context.Context, identityID int64, actor, host, origin string) (FlowStart, error) {
 	spec, ok, err := m.readConfig()

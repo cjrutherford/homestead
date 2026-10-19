@@ -17,7 +17,7 @@ fresh password check), `dashboard/src/app/sso` (pages), `cmd/homesteadctl/sso.go
    apply runs as the operation `sso.apply`.
 2. **Link (once).** The owner re-enters the local password; the daemon makes a
    single-use link intent (10 minutes, bound to `state`, not to the Strict
-   session cookie) and the browser runs the OIDC flow with `prompt=login`.
+   session cookie) and the browser runs the OIDC flow asking Authentik for a sign-in no older than 30 seconds (`max_age=30`; `prompt=login` loops in Authentik 2026.8, see the KVM review).
    The callback records the pair `(issuer, sub)`. Exactly one link exists.
 3. **Sign in.** The login page shows "Sign in with Authentik" beside the
    password form when the daemon says it is set up and linked (local state

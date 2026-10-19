@@ -3,6 +3,7 @@ package sso
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -202,7 +203,7 @@ func TestPlanWithATokenInspectsAndIsIdempotent(t *testing.T) {
 		t.Fatalf("first apply: posts=%d patches=%d, want 2 creates", ak.posts, ak.patches)
 	}
 	body, _ := json.Marshal(ak.provider)
-	for _, must := range []string{`"client_type":"confidential"`, `"matching_mode":"strict"`, `"signing_key":"key-1"`, `"sub_mode":"hashed_user_id"`,
+	for _, must := range []string{`"client_type":"confidential"`, `"grant_types":["authorization_code"]`, `"matching_mode":"strict"`, `"signing_key":"key-1"`, `"sub_mode":"hashed_user_id"`,
 		"http://127.0.0.1:8080/api/v1/sso/callback", `"client_id":"homestead"`} {
 		if !strings.Contains(string(body), must) {
 			t.Errorf("provider body missing %s: %s", must, body)
@@ -260,12 +261,13 @@ func TestReplanDetectsDriftAndApplyRepairsIt(t *testing.T) {
 	// public client.
 	ak.provider["redirect_uris"] = []any{map[string]any{"matching_mode": "regex", "url": ".*"}}
 	ak.provider["client_type"] = "public"
+	ak.provider["grant_types"] = []any{}
 	plan, err := h.m.Plan(ctxb(), PlanRequest{APIToken: apiToken}, "owner")
 	if err != nil {
 		t.Fatal(err)
 	}
 	o := plan.Objects[0]
-	if o.Action != ActionUpdate || !contains(o.Changes, "redirect URIs") || !contains(o.Changes, "client type becomes confidential") {
+	if o.Action != ActionUpdate || !contains(o.Changes, "redirect URIs") || !contains(o.Changes, "client type becomes confidential") || !contains(o.Changes, "grant types") {
 		t.Fatalf("drift not shown: %+v", o)
 	}
 	for _, c := range o.Changes {
@@ -277,8 +279,8 @@ func TestReplanDetectsDriftAndApplyRepairsIt(t *testing.T) {
 	if err := runDef(t, h); err != nil {
 		t.Fatal(err)
 	}
-	if ak.patches != 1 || ak.provider["client_type"] != "confidential" {
-		t.Fatalf("apply did not repair: patches=%d %v", ak.patches, ak.provider["client_type"])
+	if ak.patches != 1 || ak.provider["client_type"] != "confidential" || fmt.Sprint(ak.provider["grant_types"]) != "[authorization_code]" {
+		t.Fatalf("apply did not repair: patches=%d %v %v", ak.patches, ak.provider["client_type"], ak.provider["grant_types"])
 	}
 }
 

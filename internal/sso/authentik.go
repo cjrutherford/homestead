@@ -163,6 +163,7 @@ type RemoteProvider struct {
 	PK            int              `json:"pk"`
 	Name          string           `json:"name"`
 	ClientType    string           `json:"client_type"`
+	GrantTypes    []string         `json:"grant_types"`
 	ClientID      string           `json:"client_id"`
 	ClientSecret  string           `json:"client_secret"`
 	RedirectURIs  []remoteRedirect `json:"redirect_uris"`
@@ -307,6 +308,12 @@ func providerDiff(have *RemoteProvider, spec Spec, secret string, flowPK, keyPK,
 	if have.ClientType != "confidential" {
 		changes = append(changes, "client type becomes confidential")
 	}
+	// Authentik 2026.x creates a provider with no grant types and then
+	// refuses every authorize request ("Invalid grant_type for provider"),
+	// so the code flow must be named explicitly (S286 KVM review).
+	if !sameSet(have.GrantTypes, []string{"authorization_code"}) {
+		changes = append(changes, "grant types")
+	}
 	if have.ClientID != spec.ClientID {
 		changes = append(changes, "client id")
 	}
@@ -428,6 +435,7 @@ func (a *API) Reconcile(ctx context.Context, spec Spec, secret string, step func
 		"authorization_flow":         flow,
 		"invalidation_flow":          invalid,
 		"client_type":                "confidential",
+		"grant_types":                []string{"authorization_code"},
 		"client_id":                  spec.ClientID,
 		"client_secret":              secret,
 		"redirect_uris":              redirectsOf(spec.RedirectURIs),

@@ -334,8 +334,8 @@ func (h *harness) link() {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	if !strings.Contains(start.URL, "prompt=login") {
-		h.t.Fatalf("link flow must run with prompt=login: %s", start.URL)
+	if !strings.Contains(start.URL, "max_age="+FreshMaxAge) || strings.Contains(start.URL, "prompt=login") {
+		h.t.Fatalf("link flow must ask for a fresh sign-in with max_age and without prompt=login: %s", start.URL)
 	}
 	code, state := h.idp.authorize(start.URL)
 	out, err := h.m.Callback(ctxb(), state, code, "", "")
