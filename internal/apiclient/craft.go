@@ -71,6 +71,7 @@ type CraftStatus struct {
 type CraftApp struct {
 	Name      string `json:"name"`
 	Title     string `json:"title"`
+	Blurb     string `json:"blurb"`
 	Version   string `json:"version"`
 	Status    string `json:"status"`
 	URL       string `json:"url"`

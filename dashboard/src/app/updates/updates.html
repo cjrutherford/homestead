@@ -44,33 +44,36 @@
             @for (cu of (row.craft ?? []); track cu.tag) {
               <p>
                 Craft image {{ cu.tag }}:
-                {{ cu.built ? 'already built locally (apply verifies the manifest and rebuilds)' : 'built locally on apply after the manifest verifies' }}.
+                {{ cu.built ? 'already built locally (applying checks the signed craft app list and rebuilds)' : 'built locally on apply after the signed craft app list checks out' }}.
                 @if (cu.verdict) {
                   Last verdict: {{ cu.verdict.state }} {{ cu.verdict.detail }}
                 }
               </p>
-              <label>
-                Craft manifest file (blank: the shipped manifest)
-                <input
-                  [name]="'craft-manifest-' + row.package"
-                  (input)="setCraft(row.package, 'manifest', $any($event.target).value)"
-                />
-              </label>
-              <label>
-                Craft local artifact file (blank: fetch from the signed URL)
-                <input
-                  [name]="'craft-artifact-' + row.package"
-                  (input)="setCraft(row.package, 'artifact', $any($event.target).value)"
-                />
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  [name]="'craft-older-' + row.package"
-                  (change)="setCraftOlder(row.package, $any($event.target).checked)"
-                />
-                Allow an older craft manifest (audited)
-              </label>
+              <details>
+                <summary>Craft image options</summary>
+                <label>
+                  Craft app list file (blank: the one shipped with Homestead)
+                  <input
+                    [name]="'craft-manifest-' + row.package"
+                    (input)="setCraft(row.package, 'manifest', $any($event.target).value)"
+                  />
+                </label>
+                <label>
+                  Craft local artifact file (blank: fetch from the signed URL)
+                  <input
+                    [name]="'craft-artifact-' + row.package"
+                    (input)="setCraft(row.package, 'artifact', $any($event.target).value)"
+                  />
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    [name]="'craft-older-' + row.package"
+                    (change)="setCraftOlder(row.package, $any($event.target).checked)"
+                  />
+                  Allow an older craft app list (audited)
+                </label>
+              </details>
             }
             <label>
               <input
@@ -101,7 +104,7 @@
           }
         </li>
       } @empty {
-        <li>No packages curated yet.</li>
+        <li>No apps in the catalog yet.</li>
       }
     </ul>
   }

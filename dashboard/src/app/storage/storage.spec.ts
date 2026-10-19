@@ -138,16 +138,16 @@ describe('StorageSetup', () => {
     const c = fixture.componentInstance;
     c.register('', 'main', 'chris');
     fixture.detectChanges();
-    expect(text()).toContain('needs a mountpoint');
+    expect(text()).toContain('Enter the mount path');
     c.register('mnt/data', 'main', 'chris');
     fixture.detectChanges();
     expect(text()).toContain('absolute path');
     c.register('/mnt/data', 'Main_1', 'chris');
     fixture.detectChanges();
-    expect(text()).toContain('Label must start');
+    expect(text()).toContain('Start the label');
     c.register('/mnt/data', 'main', ' ');
     fixture.detectChanges();
-    expect(text()).toContain('named actor');
+    expect(text()).toContain('name of the owner');
   });
 
   it('registers a mount and reloads', () => {
@@ -321,5 +321,18 @@ describe('StorageSetup', () => {
     await new Promise((resolve) => setTimeout(resolve));
     expect(document.activeElement).toBe(opener);
     fixture.nativeElement.remove();
+  });
+
+  it('shows registration problems next to each field', () => {
+    load([MOUNT], [], []);
+    const el = fixture.nativeElement as HTMLElement;
+    fixture.componentInstance.register('', 'Bad_1', '');
+    fixture.detectChanges();
+    const mount = el.querySelector('#reg-mount') as HTMLInputElement;
+    expect(mount.getAttribute('aria-invalid')).toBe('true');
+    expect(mount.getAttribute('aria-describedby')).toBe('reg-mount-error');
+    expect(el.querySelector('#reg-mount-error')?.textContent).toContain('Enter the mount path');
+    expect(el.querySelector('#reg-label-error')?.textContent).toContain('Start the label');
+    expect(el.querySelectorAll('.field-error').length).toBe(3);
   });
 });

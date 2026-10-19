@@ -223,7 +223,7 @@ export class Trust implements OnInit, OnDestroy {
     this.api.localCaReissue(host).subscribe({
       next: (started) => {
         this.busy.set(false);
-        this.notice.set(host ? `Re-issuing the leaf for ${host}.` : 'Re-issuing every local leaf.');
+        this.notice.set(host ? `Re-issuing the certificate for ${host}.` : 'Re-issuing every local certificate.');
         this.follow(started.id);
       },
       error: (failure: HttpErrorResponse) => {

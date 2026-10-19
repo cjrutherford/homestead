@@ -189,22 +189,29 @@ export class StorageSetup implements OnInit {
     this.picked.set(mountpoint);
   }
 
+  protected readonly fieldErrors = signal<Record<string, string>>({});
+
   register(mountpoint: string, label: string, actor: string): void {
     mountpoint = mountpoint.trim();
     label = label.trim();
     actor = actor.trim();
-    if (!mountpoint || !label || !actor) {
-      this.error.set('Registration needs a mountpoint, a label and a named actor.');
-      return;
+    const problems: Record<string, string> = {};
+    if (!mountpoint) {
+      problems['mountpoint'] = 'Enter the mount path, such as /mnt/media.';
+    } else if (!mountpoint.startsWith('/') || mountpoint.length > 1024) {
+      problems['mountpoint'] = 'The mount path must be an absolute path starting with /.';
     }
-    if (!mountpoint.startsWith('/') || mountpoint.length > 1024) {
-      this.error.set('Mountpoint must be an absolute path.');
-      return;
+    if (!label) {
+      problems['label'] = 'Enter a label for the mount.';
+    } else if (!/^[a-z][a-z0-9-]*$/.test(label) || label.length > 32) {
+      problems['label'] =
+        'Start the label with a lowercase letter and use only lowercase letters, digits and hyphens (max 32).';
     }
-    if (!/^[a-z][a-z0-9-]*$/.test(label) || label.length > 32) {
-      this.error.set(
-        'Label must start with a lowercase letter and use only lowercase letters, digits and hyphens (max 32).',
-      );
+    if (!actor) {
+      problems['actor'] = 'Enter the name of the owner making this change.';
+    }
+    this.fieldErrors.set(problems);
+    if (Object.keys(problems).length > 0) {
       return;
     }
     const existing = this.registrationFor(mountpoint);

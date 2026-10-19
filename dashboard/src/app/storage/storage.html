@@ -127,18 +127,33 @@
   <form
     (submit)="register(regMount.value, regLabel.value, regActor.value); $event.preventDefault()"
   >
-    <label>
-      Mount path
-      <input #regMount name="mountpoint" autocomplete="off" [value]="picked()" [disabled]="busy() || !!confirmingRegister()" />
-    </label>
-    <label>
-      Label
-      <input #regLabel name="label" autocomplete="off" [disabled]="busy() || !!confirmingRegister()" />
-    </label>
-    <label>
-      Acting owner
-      <input #regActor name="actor" autocomplete="off" [disabled]="busy() || !!confirmingRegister()" />
-    </label>
+    <div class="field">
+      <label for="reg-mount">Mount path</label>
+      <input id="reg-mount" #regMount name="mountpoint" autocomplete="off" [value]="picked()" [disabled]="busy() || !!confirmingRegister()"
+        [attr.aria-invalid]="fieldErrors()['mountpoint'] ? 'true' : null"
+        [attr.aria-describedby]="fieldErrors()['mountpoint'] ? 'reg-mount-error' : null" />
+      @if (fieldErrors()['mountpoint']; as message) {
+        <p class="field-error" id="reg-mount-error">{{ message }}</p>
+      }
+    </div>
+    <div class="field">
+      <label for="reg-label">Label</label>
+      <input id="reg-label" #regLabel name="label" autocomplete="off" [disabled]="busy() || !!confirmingRegister()"
+        [attr.aria-invalid]="fieldErrors()['label'] ? 'true' : null"
+        [attr.aria-describedby]="fieldErrors()['label'] ? 'reg-label-error' : null" />
+      @if (fieldErrors()['label']; as message) {
+        <p class="field-error" id="reg-label-error">{{ message }}</p>
+      }
+    </div>
+    <div class="field">
+      <label for="reg-actor">Acting owner</label>
+      <input id="reg-actor" #regActor name="actor" autocomplete="off" [disabled]="busy() || !!confirmingRegister()"
+        [attr.aria-invalid]="fieldErrors()['actor'] ? 'true' : null"
+        [attr.aria-describedby]="fieldErrors()['actor'] ? 'reg-actor-error' : null" />
+      @if (fieldErrors()['actor']; as message) {
+        <p class="field-error" id="reg-actor-error">{{ message }}</p>
+      }
+    </div>
     <button type="submit" [disabled]="busy() || !!confirmingRegister()">Register mount</button>
   </form>
   @if (confirmingRegister(); as pending) {

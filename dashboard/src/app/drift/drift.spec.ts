@@ -258,4 +258,17 @@ describe('Drift', () => {
     expect(text()).toContain('Docker engine unreachable');
     expect(text()).not.toContain('Restore managed state');
   });
+
+  it('leads with what needs attention and keeps the schedule collapsed', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/drift/schedule').flush(SCHEDULE);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('h2')?.textContent).toContain('Needs attention');
+    expect(el.querySelector('ul.triage .badge-warn')?.textContent).toContain('drifted');
+    const details = el.querySelector('details') as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(details.textContent).toContain('Save schedule');
+  });
 });

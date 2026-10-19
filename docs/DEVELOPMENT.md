@@ -4553,7 +4553,13 @@ unchanged and the parity test stays green. Patterns are in
 - Forms: Account, Tunnel and Exposure show inline field errors.
 - Copy: shared unreachable message, "Settings" for variables, "certificate"
   for leaf, "Homestead" instead of "daemon" and "reconciler" in user text.
-- Dashboard tests: 66 files, 678 tests.
+- Review fixes: rarely visited pages load on demand (initial bundle 588 kB to
+  385.87 kB; the S283 baseline was 558.66 kB); jargon (manifest, package,
+  raw states) replaced in page copy; Updates craft controls collapsed and
+  Drift leads with problems; craft apps show the manifest blurb (API, CLI and
+  dashboard); inline validation on the Storage register and Backups schedule
+  forms; Account problems carry their field key; `.risky-preview` defined.
+- Dashboard tests: 66 files, 682 tests.
 
 KVM visual review: PENDING. Screenshot at 1440 and 390 px, light and dark, on
 VM 2: /status, /catalog, /craft-apps, /operations, /audit, /storage,

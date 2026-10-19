@@ -89,8 +89,8 @@ describe('DataMigration', () => {
 
   it('shows placement states and pending old volumes', () => {
     load();
-    expect(text()).toContain('nextcloud: needs-migration');
-    expect(text()).toContain('jellyfin: placed');
+    expect(text()).toContain('nextcloud Needs migrating');
+    expect(text()).toContain('jellyfin On mounted storage');
     expect(text()).toContain('old1');
     expect(buttons('Review migration plan').length).toBe(1);
   });

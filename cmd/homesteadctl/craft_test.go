@@ -29,7 +29,7 @@ func craftStub(t *testing.T, verdict string) (string, *[]string) {
 			bodies = append(bodies, string(raw))
 			_, _ = w.Write([]byte(`{"id":12}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/craft/apps":
-			_, _ = w.Write([]byte(`{"apps":[{"name":"gridcraft","title":"GridCraft","version":"0.7.0","status":"installed","url":"https://gridcraft.lan/"},{"name":"pdfcraft","title":"PdfCraft","version":"1.0.0","status":"installed","url":"","url_reason":"No edge route serves this app yet."}]}`))
+			_, _ = w.Write([]byte(`{"apps":[{"name":"gridcraft","title":"GridCraft","blurb":"Spreadsheet that runs in your browser.","version":"0.7.0","status":"installed","url":"https://gridcraft.lan/"},{"name":"pdfcraft","title":"PdfCraft","version":"1.0.0","status":"installed","url":"","url_reason":"No edge route serves this app yet."}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/craft/trust-keys":
 			_, _ = w.Write([]byte(`[{"key_id":"CCCC","source":"embedded","label":"HAI craft","placeholder":true}]`))
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/craft/trust-keys/CCCC":
@@ -98,7 +98,7 @@ func TestCraftAppsPrintsUrlsAndReasons(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit = %d", code)
 	}
-	for _, want := range []string{"gridcraft  GridCraft  0.7.0  installed  https://gridcraft.lan/", "pdfcraft  PdfCraft  1.0.0  installed  (no URL) No edge route serves this app yet."} {
+	for _, want := range []string{"gridcraft  GridCraft  0.7.0  installed  https://gridcraft.lan/", "    Spreadsheet that runs in your browser.", "pdfcraft  PdfCraft  1.0.0  installed  (no URL) No edge route serves this app yet."} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout)
 		}

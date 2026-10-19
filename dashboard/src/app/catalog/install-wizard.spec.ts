@@ -759,7 +759,7 @@ describe('InstallWizard', () => {
       reviewUnbuilt();
       expect(button('Install GridCraft')).toBeUndefined();
       expect(button('Verify and build GridCraft')).toBeDefined();
-      expect(text()).toContain('built on this appliance from a signed package, never pulled');
+      expect(text()).toContain('built on this appliance from a signed download, never pulled');
     });
 
     it('builds, then offers install, and does not skip the verification', () => {

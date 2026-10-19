@@ -29,6 +29,7 @@ import { Loading } from '../ui/loading';
 export class Backups implements OnInit {
   private readonly api = inject(ApiService);
 
+  protected readonly fieldErrors = signal<Record<string, string>>({});
   protected readonly destination = signal<string | null>(null);
   protected readonly encryption = signal<string | null>(null);
   protected readonly destinationError = signal<string | null>(null);
@@ -131,18 +132,23 @@ export class Backups implements OnInit {
     actor = actor.trim();
     hours = hours.trim();
     retain = retain.trim();
-    if (!name || !actor) {
-      this.error.set('A schedule needs a package and a named actor.');
-      return;
+    const problems: Record<string, string> = {};
+    if (!name) {
+      problems['app'] = 'Enter the app to back up.';
+    }
+    if (!actor) {
+      problems['actor'] = 'Enter the name of the owner making this change.';
     }
     const interval = /^\d+$/.test(hours) ? Number(hours) : NaN;
     if (!Number.isSafeInteger(interval) || interval < 1) {
-      this.error.set('Interval must be a whole number of hours, at least 1.');
-      return;
+      problems['interval'] = 'Interval must be a whole number of hours, at least 1.';
     }
     const keep = retain === '' ? 7 : /^\d+$/.test(retain) ? Number(retain) : NaN;
     if (!Number.isSafeInteger(keep)) {
-      this.error.set('Retain must be a whole number of runs, 0 or more.');
+      problems['retain'] = 'Retain must be a whole number of runs, 0 or more.';
+    }
+    this.fieldErrors.set(problems);
+    if (Object.keys(problems).length > 0) {
       return;
     }
     this.busy.set(true);

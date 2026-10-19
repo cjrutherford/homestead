@@ -191,9 +191,9 @@ describe('Backups', () => {
     save('jellyfin', '1', ' 3x ', 'chris');
     expect(text()).toContain('Retain must be a whole number');
     save('jellyfin', '1', '7', '');
-    expect(text()).toContain('named actor');
+    expect(text()).toContain('name of the owner');
     save('jellyfin', '1', '7', '   ');
-    expect(text()).toContain('named actor');
+    expect(text()).toContain('name of the owner');
   });
 
   it('surfaces a server rejection on save', () => {
@@ -415,5 +415,17 @@ describe('Backups', () => {
     expect(setItem).not.toHaveBeenCalled();
     expect(JSON.stringify({ ...localStorage })).not.toContain('AGE-SECRET-KEY');
     setItem.mockRestore();
+  });
+
+  it('shows schedule problems next to each field', () => {
+    load([]);
+    save('', '0', 'x', '');
+    const el = fixture.nativeElement as HTMLElement;
+    const hours = el.querySelector('#sched-interval') as HTMLInputElement;
+    expect(hours.getAttribute('aria-invalid')).toBe('true');
+    expect(hours.getAttribute('aria-describedby')).toBe('sched-interval-error');
+    expect(el.querySelector('#sched-app-error')?.textContent).toContain('Enter the app');
+    expect(el.querySelector('#sched-retain-error')?.textContent).toContain('Retain must be');
+    expect(el.querySelectorAll('.field-error').length).toBe(4);
   });
 });

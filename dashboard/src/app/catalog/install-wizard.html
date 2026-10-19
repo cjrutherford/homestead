@@ -507,8 +507,8 @@
             </app-loading>
             @if (craft() && craftBuilt() !== true && !planProblem() && !planning()) {
               <p class="hint">
-                {{ m.Title }} is built on this appliance from a signed package, never pulled. Homestead
-                verifies the package first, builds it, then you install it.
+                {{ m.Title }} is built on this appliance from a signed download, never pulled. Homestead
+                verifies the download first, builds it, then you install it.
               </p>
             }
           }
@@ -517,7 +517,7 @@
             @switch (phase()) {
               @case ('building') {
                 <h3>Verifying and building {{ m.Title }}</h3>
-                <p>Homestead checks the signature and checksums of the signed package, then builds it here.</p>
+                <p>Homestead checks the signature and checksums of the signed download, then builds it here.</p>
                 @if (buildOperation(); as id) {
                   <app-operation-progress [id]="id" [operation]="operation()" />
                 }
@@ -526,7 +526,7 @@
                 <app-state-message
                   kind="status"
                   [headline]="m.Title + ' is built'"
-                  detail="The package was verified and built on this appliance. Now install it."
+                  detail="The download was verified and built on this appliance. Now install it."
                 />
                 <p>
                   <button type="button" class="primary" [attr.aria-busy]="starting() ? 'true' : null" [disabled]="starting()" (click)="startInstall()">

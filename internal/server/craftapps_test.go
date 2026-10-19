@@ -231,3 +231,10 @@ func TestCraftAppsSourceHasNoNetworkClient(t *testing.T) {
 		}
 	}
 }
+
+func TestCraftAppCarriesManifestBlurb(t *testing.T) {
+	apps := getCraftApps(t, fakeCraftSource(t, map[string]bool{"gridcraft": true}, nil))
+	if len(apps) != 1 || apps[0].Blurb != "Spreadsheet that runs in your browser." {
+		t.Fatalf("apps = %+v", apps)
+	}
+}

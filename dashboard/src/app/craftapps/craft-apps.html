@@ -27,6 +27,9 @@
             <span class="app-icon" aria-hidden="true">{{ app.title.charAt(0) }}</span>
             <div class="catalog-text">
               <strong>{{ app.title }}</strong>
+              @if (app.blurb) {
+                <span class="hint" data-testid="craft-blurb">{{ app.blurb }}</span>
+              }
               <span class="hint">Version {{ app.version }}</span>
               <span class="badge" [class]="badgeFor(app.status)">{{ app.status }}</span>
               @if (app.url) {

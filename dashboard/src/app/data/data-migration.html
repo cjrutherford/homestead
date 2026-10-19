@@ -21,7 +21,9 @@
     <ul>
       @for (app of data().apps; track app.package) {
         <li>
-          <h2>{{ app.package }}: {{ app.state }}</h2>
+          <h2>{{ app.package }}
+            <span class="badge" [class]="stateBadge(app.state)">{{ stateLabel(app.state) }}</span>
+          </h2>
           @if (app.reason) {
             <p>{{ app.reason }}</p>
           }

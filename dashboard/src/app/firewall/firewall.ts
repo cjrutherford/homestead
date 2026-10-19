@@ -66,7 +66,7 @@ export class Firewall implements OnInit {
         this.busy.set(false);
         this.error.set(
           err.status === 503
-            ? 'Firewall management needs privilege: run the daemon as root with nftables present.'
+            ? 'Firewall management needs privilege: run homestead-server as root with nftables present.'
             : httpErrorMessage(err, 'Loading the firewall'),
         );
       },

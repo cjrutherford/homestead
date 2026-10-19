@@ -78,4 +78,11 @@ describe('CraftApps', () => {
     load([app()]);
     expect(text()).toContain('GridCraft');
   });
+
+  it('shows the one-line purpose under the title when the API returns one', () => {
+    load([app({ blurb: 'Spreadsheet that runs in your browser.' }), app({ name: 'pdfcraft', title: 'PdfCraft' })]);
+    const blurbs = fixture.nativeElement.querySelectorAll('[data-testid="craft-blurb"]');
+    expect(blurbs.length).toBe(1);
+    expect(blurbs[0].textContent).toContain('Spreadsheet that runs in your browser.');
+  });
 });

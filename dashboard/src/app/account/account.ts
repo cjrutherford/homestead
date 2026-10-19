@@ -42,6 +42,13 @@ export function relativeUntil(iso: string, now: Date = new Date()): string {
  * unlock time), so that is all this page can show. Passwords live in the
  * form controls only and are cleared after every submit.
  */
+type PasswordField = 'current' | 'new' | 'confirm';
+
+interface PasswordProblem {
+  field: PasswordField;
+  message: string;
+}
+
 @Component({
   imports: [Loading, NgComponentOutlet, StateMessage],
   selector: 'app-account',
@@ -61,7 +68,7 @@ export class Account implements OnInit {
   protected readonly loading = signal(true);
   protected readonly loadError = signal<string | null>(null);
   protected readonly busy = signal(false);
-  protected readonly problems = signal<string[]>([]);
+  protected readonly problems = signal<PasswordProblem[]>([]);
   protected readonly error = signal<string | null>(null);
   protected readonly notice = signal<string | null>(null);
 
@@ -92,31 +99,39 @@ export class Account implements OnInit {
     });
   }
 
-  /** Client rules mirror the daemon: non-empty, at least 12 characters. */
   /** The problems that belong to one field, so each shows under its input. */
-  protected problemsFor(field: 'current' | 'new' | 'confirm'): string[] {
-    const matches: Record<typeof field, RegExp> = {
-      current: /current password\.$/,
-      new: /^The new password must/,
-      confirm: /do not match/,
-    };
-    return this.problems().filter((problem) => matches[field].test(problem));
+  protected problemsFor(field: PasswordField): string[] {
+    return this.problems()
+      .filter((problem) => problem.field === field)
+      .map((problem) => problem.message);
   }
 
+  /** Client rules mirror the daemon: non-empty, at least 12 characters. */
   validate(current: string, next: string, confirm: string): string[] {
-    const out: string[] = [];
+    return this.check(current, next, confirm).map((problem) => problem.message);
+  }
+
+  /** Each problem carries the field it belongs to. */
+  private check(current: string, next: string, confirm: string): PasswordProblem[] {
+    const out: PasswordProblem[] = [];
     if (!current) {
-      out.push('Enter your current password.');
+      out.push({ field: 'current', message: 'Enter your current password.' });
     }
     const bytes = byteLength(next);
     if (bytes < MIN_PASSWORD_LENGTH) {
-      out.push(`The new password must be at least ${MIN_PASSWORD_LENGTH} bytes (letters, digits and symbols are one byte each).`);
+      out.push({
+        field: 'new',
+        message: `The new password must be at least ${MIN_PASSWORD_LENGTH} bytes (letters, digits and symbols are one byte each).`,
+      });
     }
     if (bytes > MAX_PASSWORD_LENGTH) {
-      out.push(`The new password must be at most ${MAX_PASSWORD_LENGTH} bytes (accented and non-Latin characters use two or more bytes each).`);
+      out.push({
+        field: 'new',
+        message: `The new password must be at most ${MAX_PASSWORD_LENGTH} bytes (accented and non-Latin characters use two or more bytes each).`,
+      });
     }
     if (next !== confirm) {
-      out.push('The new password and its confirmation do not match.');
+      out.push({ field: 'confirm', message: 'The new password and its confirmation do not match.' });
     }
     return out;
   }
@@ -124,7 +139,7 @@ export class Account implements OnInit {
   submit(current: string, next: string, confirm: string): void {
     this.error.set(null);
     this.notice.set(null);
-    const problems = this.validate(current, next, confirm);
+    const problems = this.check(current, next, confirm);
     this.problems.set(problems);
     if (problems.length > 0) {
       return;

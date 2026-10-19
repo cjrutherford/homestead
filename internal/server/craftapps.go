@@ -24,8 +24,10 @@ const (
 
 // CraftApp is one installed craft package with its local URL.
 type CraftApp struct {
-	Name    string `json:"name"`
-	Title   string `json:"title"`
+	Name  string `json:"name"`
+	Title string `json:"title"`
+	// Blurb is the manifest's one-line purpose.
+	Blurb   string `json:"blurb,omitempty"`
 	Version string `json:"version"`
 	// Status is "installed": the package has a stack. Running state stays
 	// on the Apps and Status pages.
@@ -74,7 +76,7 @@ func routeFor(app string, routes []docker.Route) (docker.Route, bool) {
 
 // classifyCraftApp builds the row for one installed craft package.
 func classifyCraftApp(m catalog.Manifest, routes []docker.Route) CraftApp {
-	app := CraftApp{Name: m.Name, Title: m.Title, Version: m.Version, Status: "installed"}
+	app := CraftApp{Name: m.Name, Title: m.Title, Blurb: m.Blurb, Version: m.Version, Status: "installed"}
 	route, ok := routeFor(m.Name, routes)
 	if !ok {
 		app.URLReason = craftNoRouteReason

@@ -295,26 +295,46 @@
       $event.preventDefault()
     "
   >
-    <label>
-      Package
-      <input #packageInput name="package" autocomplete="off" [disabled]="busy()" />
-    </label>
-    <label>
-      Interval (hours)
-      <input #hoursInput name="interval" inputmode="numeric" [disabled]="busy()" />
-    </label>
-    <label>
-      Retain (runs to keep; 0 keeps every run)
-      <input #retainInput name="retain" inputmode="numeric" value="7" [disabled]="busy()" />
-    </label>
+    <div class="field">
+      <label for="sched-app">App</label>
+      <input id="sched-app" #packageInput name="package" autocomplete="off" [disabled]="busy()"
+        [attr.aria-invalid]="fieldErrors()['app'] ? 'true' : null"
+        [attr.aria-describedby]="fieldErrors()['app'] ? 'sched-app-error' : null" />
+      @if (fieldErrors()['app']; as message) {
+        <p class="field-error" id="sched-app-error">{{ message }}</p>
+      }
+    </div>
+    <div class="field">
+      <label for="sched-interval">Interval (hours)</label>
+      <input id="sched-interval" #hoursInput name="interval" inputmode="numeric" [disabled]="busy()"
+        [attr.aria-invalid]="fieldErrors()['interval'] ? 'true' : null"
+        [attr.aria-describedby]="fieldErrors()['interval'] ? 'sched-interval-error' : null" />
+      @if (fieldErrors()['interval']; as message) {
+        <p class="field-error" id="sched-interval-error">{{ message }}</p>
+      }
+    </div>
+    <div class="field">
+      <label for="sched-retain">Retain (runs to keep; 0 keeps every run)</label>
+      <input id="sched-retain" #retainInput name="retain" inputmode="numeric" value="7" [disabled]="busy()"
+        [attr.aria-invalid]="fieldErrors()['retain'] ? 'true' : null"
+        [attr.aria-describedby]="fieldErrors()['retain'] ? 'sched-retain-error' : null" />
+      @if (fieldErrors()['retain']; as message) {
+        <p class="field-error" id="sched-retain-error">{{ message }}</p>
+      }
+    </div>
     <label>
       <input #enabledInput type="checkbox" name="enabled" checked [disabled]="busy()" />
       Enabled
     </label>
-    <label>
-      Acting owner
-      <input #actorInput name="actor" autocomplete="off" [disabled]="busy()" />
-    </label>
+    <div class="field">
+      <label for="sched-actor">Acting owner</label>
+      <input id="sched-actor" #actorInput name="actor" autocomplete="off" [disabled]="busy()"
+        [attr.aria-invalid]="fieldErrors()['actor'] ? 'true' : null"
+        [attr.aria-describedby]="fieldErrors()['actor'] ? 'sched-actor-error' : null" />
+      @if (fieldErrors()['actor']; as message) {
+        <p class="field-error" id="sched-actor-error">{{ message }}</p>
+      }
+    </div>
     <button type="submit" [disabled]="busy()">Save schedule</button>
   </form>
 </section>

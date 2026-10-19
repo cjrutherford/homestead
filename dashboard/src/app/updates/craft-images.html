@@ -12,8 +12,8 @@
   }
 
   <p>
-    Craft images are built on this appliance from a signed craft manifest and
-    never pulled. Manifest: {{ status()?.manifest_path }}
+    Craft images are built on this appliance from a signed craft app list and
+    never pulled. Craft app list: {{ status()?.manifest_path }}
   </p>
 
   <h2>Built images</h2>
@@ -45,11 +45,11 @@
         }
         <span> {{ verdict.detail }}</span>
         @if (verdict.override) {
-          <span> Older manifest allowed by owner override (audited).</span>
+          <span> Older craft app list allowed by owner override (audited).</span>
         }
       </li>
     } @empty {
-      <li>No craft manifest verified yet.</li>
+      <li>No craft app list verified yet.</li>
     }
   </ul>
 
@@ -59,11 +59,11 @@
     <input name="craft-app" (input)="app = $any($event.target).value" />
   </label>
   <label>
-    Manifest file (blank: the shipped manifest)
+    Craft app list file (blank: the one shipped with Homestead)
     <input name="craft-manifest" (input)="manifest = $any($event.target).value" />
   </label>
   <label>
-    Signature file (blank: the manifest path plus .minisig)
+    Signature file (blank: the app list path plus .minisig)
     <input name="craft-signature" (input)="signature = $any($event.target).value" />
   </label>
   <label>
@@ -91,7 +91,7 @@
         name="craft-allow-older"
         (change)="allowOlder = $any($event.target).checked"
       />
-      I confirm building from an older manifest (recorded in the audit trail)
+      I confirm building from an older craft app list (recorded in the audit trail)
     </label>
   }
   <button type="button" (click)="plan()" [disabled]="busy() || !app">Verify</button>
@@ -103,7 +103,7 @@
       <li>
         {{ key.key_id }} ({{ key.source }}) {{ key.label }}
         @if (key.placeholder) {
-          <strong> Placeholder: verifies no real manifest.</strong>
+          <strong> Placeholder: verifies no real craft app list.</strong>
         }
         <button type="button" (click)="replaceKey(key.key_id)" [disabled]="busy() || !newKey">
           Replace with new key
@@ -113,7 +113,7 @@
         </button>
       </li>
     } @empty {
-      <li>No craft keys trusted; no craft manifest will verify.</li>
+      <li>No craft keys trusted; no craft app list will verify.</li>
     }
   </ul>
   <label>

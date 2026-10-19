@@ -710,15 +710,15 @@
 
 ## S284 dashboard page passes
 
-- Craft apps rows have no one-line purpose; the API does not return one and
-  adding a call per app would add requests. Needs an API field.
 - Backups has no destination form (the destination is read-only), so inline
-  validation was not added there. The recipient, schedule and Storage forms
-  still use the older layout without inline messages.
+  validation was not added there. The recipient form still uses the older
+  layout without inline messages; the schedule and Storage register forms
+  have them.
 - The Edge route editor table is not tuned for narrow screens beyond
   horizontal scrolling inside `.table-scroll`.
-- Updates and Drift were reworded but not restructured; Updates is still a long
-  list that could be grouped.
+- Updates groups its craft controls under a collapsed section and Drift leads
+  with what needs attention, but the per-app rows in both are still plain
+  lists rather than tables.
 - Exposure apply has no confirm dialog, only the `danger quiet` button and the
   preview beside it.
 - Install wizard, Sign-in and Setup copy were reviewed lightly; "Cannot reach

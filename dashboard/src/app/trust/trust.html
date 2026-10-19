@@ -30,7 +30,7 @@
       @if (!r.ca.key_present) {
         <app-state-message
           kind="error"
-          headline="The CA private key is missing from the secret store. Restore the secret key file, or rotate the root."
+          headline="The CA private key is missing from this appliance's saved secrets. Restore the secret key file, or rotate the root."
         />
       }
       <dl>

@@ -7,19 +7,39 @@
 
   @if (schedule(); as sched) {
     <section aria-label="Scheduled drift scan">
-      <h2>Scheduled scan</h2>
-      <p>
-        Scans every {{ every(sched.interval_seconds) }};
-        {{ sched.enabled ? 'on' : 'off' }}. Scans only detect; nothing is
-        changed until you accept or restore.
-      </p>
       @if (sched.last_scan; as scan) {
-        <p>
-          Last scan {{ scan.scanned_at }}: {{ scan.scanned }} package(s)
-          scanned.
-        </p>
         @if (scan.drifted.length === 0 && scan.errors.length === 0) {
-          <p>Clean: generated files match managed state.</p>
+          <app-state-message kind="status" headline="Nothing needs attention" detail="Clean: generated files match managed state." />
+        } @else {
+          <h2>Needs attention ({{ scan.drifted.length + scan.errors.length }})</h2>
+          <ul class="triage">
+            @for (stack of scan.drifted; track stack.package) {
+              <li data-status="warn">
+                <h3>
+                  {{ stack.package }}
+                  <span class="badge badge-warn">drifted</span>
+                </h3>
+                <p>
+                  @for (file of stack.files; track file.path) {
+                    {{ file.path }} ({{ file.kind }})
+                  }
+                  @for (finding of stack.live ?? []; track $index) {
+                    live {{ finding.kind }} {{ finding.service }}
+                  }
+                  @if (stack.live_error) {
+                    live comparison unreadable: {{ stack.live_error }}
+                  }
+                </p>
+                <button type="button" (click)="select(stack.package)">Review {{ stack.package }}</button>
+              </li>
+            }
+            @for (message of scan.errors; track message) {
+              <li data-status="fail">
+                <h3><span class="badge badge-fail">unreadable</span></h3>
+                <p>Unreadable: {{ message }}</p>
+              </li>
+            }
+          </ul>
         }
         @for (name of scan.stopped ?? []; track name) {
           <p>{{ name }} is stopped (a run state, not drift).</p>
@@ -30,53 +50,43 @@
         @if (scan.live_skipped) {
           <p>Live comparison skipped: {{ scan.live_skipped }}</p>
         }
-        <ul>
-          @for (stack of scan.drifted; track stack.package) {
-            <li>
-              <button type="button" (click)="select(stack.package)">
-                {{ stack.package }}
-              </button>
-              drifted:
-              @for (file of stack.files; track file.path) {
-                {{ file.path }} ({{ file.kind }})
-              }
-              @for (finding of stack.live ?? []; track $index) {
-                live {{ finding.kind }} {{ finding.service }}
-              }
-              @if (stack.live_error) {
-                live comparison unreadable: {{ stack.live_error }}
-              }
-            </li>
-          }
-          @for (message of scan.errors; track message) {
-            <li>Unreadable: {{ message }}</li>
-          }
-        </ul>
+        <p>
+          Last scan {{ scan.scanned_at }}: {{ scan.scanned }} app(s)
+          scanned.
+        </p>
       } @else {
         <p>No scheduled scan has run yet.</p>
       }
-      <form (submit)="$event.preventDefault()">
-        <label>
-          Interval (minutes, at least 5)
-          <input
-            #interval
-            type="number"
-            min="5"
-            step="1"
-            [value]="minutes(sched.interval_seconds)"
-          />
-        </label>
-        <label>
-          <input #enabled type="checkbox" [checked]="sched.enabled" />
-          Enabled
-        </label>
-        <button
-          type="button"
-          (click)="saveSchedule(interval.value, enabled.checked)"
-        >
-          Save schedule
-        </button>
-      </form>
+      <details>
+        <summary>Scan schedule</summary>
+        <p>
+          Scans every {{ every(sched.interval_seconds) }};
+          {{ sched.enabled ? 'on' : 'off' }}. Scans only detect; nothing is
+          changed until you accept or restore.
+        </p>
+        <form (submit)="$event.preventDefault()">
+          <label>
+            Interval (minutes, at least 5)
+            <input
+              #interval
+              type="number"
+              min="5"
+              step="1"
+              [value]="minutes(sched.interval_seconds)"
+            />
+          </label>
+          <label>
+            <input #enabled type="checkbox" [checked]="sched.enabled" />
+            Enabled
+          </label>
+          <button
+            type="button"
+            (click)="saveSchedule(interval.value, enabled.checked)"
+          >
+            Save schedule
+          </button>
+        </form>
+      </details>
     </section>
   }
 
@@ -102,7 +112,7 @@
           </button>
         </li>
       } @empty {
-        <li>No packages curated yet.</li>
+        <li>No apps in the catalog yet.</li>
       }
     </ul>
   }

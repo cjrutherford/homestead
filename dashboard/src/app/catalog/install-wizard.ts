@@ -888,7 +888,7 @@ export class InstallWizard implements OnInit {
               this.phase.set('failed');
               this.failure.set({
                 headline: `${manifest?.Title ?? 'The app'} was not built.`,
-                fix: 'Check the signed craft manifest and your craft signing keys on the Updates page, then try again.',
+                fix: 'Check the signed craft app list and your craft signing keys on the Updates page, then try again.',
                 installed: false,
               });
             }

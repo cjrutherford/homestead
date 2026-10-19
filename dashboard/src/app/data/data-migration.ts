@@ -25,6 +25,31 @@ import { OperationProgress } from '../ui/operation-progress';
 export class DataMigration implements OnInit {
   private readonly api = inject(ApiService);
 
+  protected stateLabel(state: string): string {
+    switch (state) {
+      case 'placed':
+        return 'On mounted storage';
+      case 'needs-migration':
+        return 'Needs migrating';
+      case 'unknown':
+        return 'Placement unclear';
+      default:
+        return state;
+    }
+  }
+
+  protected stateBadge(state: string): string {
+    switch (state) {
+      case 'placed':
+        return 'badge-ok';
+      case 'needs-migration':
+      case 'unknown':
+        return 'badge-warn';
+      default:
+        return '';
+    }
+  }
+
   protected readonly data = signal<DataMigrations>({ apps: [], old_volumes: [] });
   protected readonly plan = signal<DataMigrationPlan | null>(null);
   protected readonly planFor = signal<string | null>(null);

@@ -465,6 +465,8 @@ export interface PlatformVerifyBody {
 export interface CraftApp {
   name: string;
   title: string;
+  /** One-line purpose from the catalog manifest. */
+  blurb?: string;
   version: string;
   status: string;
   /** Empty when no edge route serves the app; url_reason says why. */
