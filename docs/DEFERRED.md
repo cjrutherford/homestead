@@ -749,3 +749,13 @@
 - Existing deployments keep old tokens in their journal until it rotates.
 - `tunnel setup` still accepts `--api-token` and `--account-id` arguments (they
   warn); remove the argv forms in a later slice.
+- A tunnel cannot be set up before claim: `tunnel setup` needs a session and an
+  unclaimed appliance has none. On the S288 fresh install of VM 2 the
+  connector was laid out by hand (Cloudflare API plus the S246 files) so the
+  public URL reaches the Claim page. Decide whether to allow a claim-token
+  authorised tunnel setup, or document the manual route.
+- On an unclaimed appliance the dashboard root (Status) shows "Can't reach the
+  appliance" because `/api/v1/status` answers 403; it should redirect to
+  `/claim`.
+- An existing tunnel set up outside Homestead (no `tunnel_routes` row) has no
+  adopt command; after claim the owner can only replace it through setup.

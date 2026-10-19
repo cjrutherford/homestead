@@ -4621,6 +4621,26 @@ committed). Results:
   prints the session token (`--print-token` does, for scripts).
 - Dashboard: Account "Unlink Authentik" and Trust "Re-issue all" open the
   danger dialog first.
+- Fresh install on VM 2 (HEAD 6480457). Reset as in S287: tunnel
+  `941037b6-...` deleted in Cloudflare (stopped the connector first; direct
+  Cloudflare API call, not the CLI forms; `homestead` and `media-tunnel`
+  untouched), daemon stopped, every stack `compose down -v`, stack dirs,
+  `/mnt/app` data, `/var/lib/homestead`, `/etc/homestead`, old `ak.*.pass`
+  and tunnel-id removed; Docker, OS and disks kept; no snapshots. Dashboard
+  built, rsynced, `scripts/install-systemd.sh`. The installed binary matches a
+  root rebuild of the tree (a rebuild as `tester` differs; the build is not
+  reproducible across users). Unclaimed-boot checks: the journal has the
+  UNCLAIMED line naming `sudo homesteadctl claim token` and no token text
+  (`grep -cF` of the token over the journal: 0); `/run/homestead/claim-token`
+  is 0600 root; `sudo homesteadctl claim token` prints token and expiry.
+  Deviation: a tunnel cannot be created before claim, so tunnel
+  `homestead-vm2` (`85590208-fce0-4396-a8b1-62bf4b1abe0c`) was created through
+  the Cloudflare API and the connector installed by hand
+  (`/etc/homestead/tunnel/{config.yml,token.env}`, `homestead-tunnel.service`
+  enabled); the `homestead` CNAME was repointed, proxied. The public URL
+  returns 200 and `/claim` shows the Claim page. The appliance was left
+  UNCLAIMED for the owner. Tokens re-mint every 30 minutes; get a fresh one
+  with `sudo homesteadctl claim token` on the guest.
 - KVM on VM 2: PENDING (to be run by the owner; steps are in the S288 report:
   unclaimed boot on a second daemon with its own state, `claim token` before
   and after expiry, uninstall/reinstall a small app, unassign/unregister a
