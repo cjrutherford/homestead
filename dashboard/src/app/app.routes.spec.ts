@@ -20,6 +20,11 @@ import { CraftFiles } from './craftfiles/craft-files';
 import { NotFound } from './not-found/not-found';
 
 describe('routes', () => {
+  it('loads the install wizard on demand under the catalog', () => {
+    const wizard = routes.find((route) => route.path === 'catalog/:name/install');
+    expect(wizard?.loadComponent).toBeTypeOf('function');
+  });
+
   it('redirects the root to status', () => {
     const root = routes.find((route) => route.path === '');
     expect(root?.redirectTo).toBe('status');

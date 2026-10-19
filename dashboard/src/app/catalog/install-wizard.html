@@ -1,0 +1,615 @@
+<section aria-label="Install wizard">
+  @if (loadError()) {
+    <h1>Install</h1>
+    <app-state-message
+      kind="error"
+      [headline]="loadError()"
+      actionLabel="Back to the catalog"
+      actionLink="/catalog"
+    />
+  }
+
+  <app-loading [loading]="loading()" shape="panel">
+    @if (!loading() && manifest(); as m) {
+      <h1>{{ current() === 'done' ? title() + ' installed' : 'Install ' + title() }}</h1>
+
+      <ol class="wizard-steps" aria-label="Install steps">
+        @for (step of steps(); track step.id; let index = $index) {
+          <li
+            class="wizard-step"
+            [attr.data-state]="stepState(index)"
+            [attr.aria-current]="index === stepIndex() ? 'step' : null"
+          >
+            <span class="visually-hidden">Step {{ index + 1 }} of {{ steps().length }}: </span>
+            <span class="wizard-step-mark" aria-hidden="true">{{ index + 1 }}</span>
+            <span class="wizard-step-label">{{ step.label }}</span>
+          </li>
+        }
+      </ol>
+
+      <div class="wizard-body">
+        <h2 #stepHeading tabindex="-1">{{ headingText() }}</h2>
+        <p class="wizard-help">{{ help() }}</p>
+
+        @switch (current()) {
+          @case ('about') {
+            <p class="wizard-lead">{{ m.Blurb }}</p>
+            <p>{{ m.Description }}</p>
+            @if (curated().note; as note) {
+              <p class="plan-note">{{ sentence(note) }}</p>
+            }
+            <app-browser-advisories [advisories]="m.Browser" />
+          }
+
+          @case ('preflight') {
+            <h3>What {{ m.Title }} needs</h3>
+            <dl>
+              <div>
+                <dt>Memory</dt>
+                <dd>{{ memory(m.Requirements.MemoryMB) }}</dd>
+              </div>
+              @for (need of m.Requirements.Storage; track need.Class) {
+                <div>
+                  <dt>{{ classWord(need.Class) }}</dt>
+                  <dd>At least {{ size(need.MinBytes) }} free</dd>
+                </div>
+              }
+              @if (m.Requirements.Ports.length > 0) {
+                <div>
+                  <dt>Ports</dt>
+                  <dd>{{ m.Requirements.Ports.join(', ') }} must be free on the appliance</dd>
+                </div>
+              }
+              @if (m.Requirements.Storage.length === 0) {
+                <div>
+                  <dt>Storage</dt>
+                  <dd>None. {{ m.Title }} keeps nothing on the appliance.</dd>
+                </div>
+              }
+            </dl>
+
+            <h3>This appliance</h3>
+            <ul class="wizard-checks">
+              <li>
+                <span class="wizard-check-name">Docker</span>
+                @if (edge(); as e) {
+                  @if (e.dockerReachable) {
+                    <span class="badge badge-ok">Running</span>
+                    @if (e.dockerVersion) {
+                      <span class="hint">version {{ e.dockerVersion }}</span>
+                    }
+                  } @else {
+                    <span class="badge badge-fail">Not reachable</span>
+                    <span class="hint">Start Docker on the appliance, then check again.</span>
+                  }
+                } @else if (healthUnknown()) {
+                  <span class="badge">Unknown</span>
+                  <span class="hint">Could not read Docker's status. The install will say if it cannot run.</span>
+                } @else {
+                  <span class="badge badge-pending">Checking</span>
+                }
+              </li>
+              @if (edge(); as e) {
+                <li>
+                  <span class="wizard-check-name">Edge network</span>
+                  @if (e.networkExists) {
+                    <span class="badge badge-ok">Ready</span>
+                  } @else {
+                    <span class="badge badge-pending">Created on install</span>
+                    <span class="hint">The install adds the homestead-edge network. It does not deploy Caddy.</span>
+                  }
+                </li>
+                <li>
+                  <span class="wizard-check-name">Caddy edge proxy</span>
+                  @if (e.caddyRunning) {
+                    <span class="badge badge-ok">Running</span>
+                  } @else {
+                    <span class="badge badge-warn">Not running</span>
+                  }
+                </li>
+              }
+              @if (craft()) {
+                <li>
+                  <span class="wizard-check-name">Built on this appliance</span>
+                  @if (craftBuilt() === true) {
+                    <span class="badge badge-ok">Built</span>
+                  } @else if (craftBuilt() === false) {
+                    <span class="badge badge-pending">Not built yet</span>
+                    <span class="hint">You verify and build it before installing.</span>
+                  } @else {
+                    <span class="badge">Unknown</span>
+                  }
+                </li>
+              }
+            </ul>
+
+            @if (caddyMissing()) {
+              <div class="warning" role="group" aria-label="Caddy is not running">
+                <div>
+                  <p>
+                    Caddy is not running, so {{ m.Title }}'s address will not serve until you deploy it.
+                    The install still works.
+                    <a routerLink="/edge">Open the Edge page</a> to deploy Caddy.
+                  </p>
+                  <label>
+                    <input
+                      type="checkbox"
+                      [checked]="acknowledgedEdge()"
+                      (change)="acknowledgedEdge.set($any($event.target).checked)"
+                    />
+                    I understand and want to continue
+                  </label>
+                </div>
+              </div>
+            }
+
+            <app-loading [loading]="planning()" shape="lines">
+              @if (planProblem(); as problem) {
+                <app-state-message
+                  kind="error"
+                  [headline]="problem.headline"
+                  [detail]="problem.fix"
+                  [actionLabel]="problem.installed ? 'Back to the catalog' : 'Check again'"
+                  [actionLink]="problem.installed ? '/catalog' : null"
+                  (action)="checkAgain()"
+                />
+              } @else if (plan()) {
+                <app-state-message
+                  kind="status"
+                  headline="This appliance meets the requirements."
+                  detail="Memory, processor, ports and disk space were checked."
+                />
+              } @else if (planDeferred()) {
+                <app-state-message
+                  kind="notice"
+                  headline="Memory, processor, ports and disk space are checked once you choose storage."
+                />
+              }
+            </app-loading>
+          }
+
+          @case ('storage') {
+            @if (storageError()) {
+              <app-state-message kind="error" [headline]="storageError()" actionLabel="Open the Storage page" actionLink="/storage" />
+            } @else if (mountOptions().length === 0) {
+              <app-state-message
+                kind="empty"
+                headline="No storage is registered yet."
+                detail="Mount a disk on the appliance, then register it on the Storage page. Homestead never formats or partitions."
+                actionLabel="Open the Storage page"
+                actionLink="/storage"
+              />
+            }
+            @for (className of classes(); track className) {
+              <fieldset class="wizard-field">
+                <legend>{{ classWord(className) }}</legend>
+                <p class="hint">
+                  {{ classHelp(className) }}
+                  @if (need(className) > 0) {
+                    Needs at least {{ size(need(className)) }}.
+                  }
+                </p>
+                <label>
+                  Mount
+                  <select
+                    [name]="'mount-' + className"
+                    [attr.aria-invalid]="classError(className) ? 'true' : null"
+                    [attr.aria-describedby]="classError(className) ? 'mount-error-' + className : null"
+                    (change)="setMount(className, $any($event.target).value)"
+                  >
+                    <option value="" [selected]="!mountpoints()[className]">Choose a mount</option>
+                    @for (option of mountOptions(); track option.mountpoint) {
+                      <option [value]="option.mountpoint" [selected]="mountpoints()[className] === option.mountpoint">
+                        {{ option.mountpoint }}, {{ size(option.free) }} free
+                      </option>
+                    }
+                  </select>
+                </label>
+                @if (classError(className); as problem) {
+                  <p class="field-error" [id]="'mount-error-' + className">{{ problem }}</p>
+                }
+              </fieldset>
+            }
+
+            @if (dataLocations().length > 0) {
+              <h3>Where the files will be</h3>
+              <ul class="wizard-paths">
+                @for (row of dataLocations(); track row.path) {
+                  <li><code>{{ row.path }}</code></li>
+                }
+              </ul>
+            }
+
+            <details class="wizard-folders">
+              <summary>Add a folder you already have</summary>
+              <p class="hint">
+                Use this for a media library or other folder that already exists inside one of your
+                mounts. Homestead mounts it into the app and never changes it.
+              </p>
+              @for (row of folders(); track $index; let i = $index) {
+                <fieldset class="wizard-folder">
+                  <legend>Folder {{ i + 1 }}</legend>
+                  <label>
+                    Kind
+                    <select (change)="patchFolder(i, { kind: $any($event.target).value })">
+                      <option value="existing" [selected]="row.kind === 'existing'">A folder that already exists</option>
+                      <option value="new" [selected]="row.kind === 'new'">A new folder inside the app's storage</option>
+                    </select>
+                  </label>
+                  <label>
+                    Storage
+                    <select (change)="patchFolder(i, { class: $any($event.target).value })">
+                      @for (className of classes(); track className) {
+                        <option [value]="className" [selected]="row.class === className">{{ classWord(className) }}</option>
+                      }
+                    </select>
+                  </label>
+                  <label>
+                    {{ row.kind === 'existing' ? 'Folder on the appliance' : 'Name of the new folder' }}
+                    <input [value]="row.path" (input)="patchFolder(i, { path: $any($event.target).value })" />
+                  </label>
+                  <label>
+                    Where the app sees it
+                    <input [value]="row.target" (input)="patchFolder(i, { target: $any($event.target).value })" />
+                  </label>
+                  <label>
+                    <input type="checkbox" [checked]="row.readonly" (change)="patchFolder(i, { readonly: $any($event.target).checked })" />
+                    The app can only read it
+                  </label>
+                  <button type="button" class="quiet" (click)="removeFolder(i)">Remove folder {{ i + 1 }}</button>
+                </fieldset>
+              }
+              <button type="button" (click)="addFolder()">Add a folder</button>
+            </details>
+          }
+
+          @case ('address') {
+            <label class="wizard-field">
+              Domain
+              <input
+                name="domain"
+                [value]="domain()"
+                (input)="domain.set($any($event.target).value)"
+                [attr.aria-invalid]="domainError() ? 'true' : null"
+                [attr.aria-describedby]="domainError() ? 'domain-hint domain-error' : 'domain-hint'"
+              />
+            </label>
+            @if (domainError(); as problem) {
+              <p id="domain-error" class="field-error">{{ problem }}</p>
+            }
+            <p id="domain-hint" class="hint">The part after the dot, such as lan in {{ m.Name }}.lan.</p>
+
+            @for (endpoint of endpoints(); track endpoint.endpoint; let i = $index) {
+              <label class="wizard-field">
+                Name for {{ endpoints().length > 1 ? endpoint.endpoint : m.Title }}
+                <input
+                  [name]="'host-' + endpoint.endpoint"
+                  class="mono"
+                  [value]="hostnameFor(endpoint.endpoint, i)"
+                  (input)="setHostname(endpoint.endpoint, $any($event.target).value)"
+                />
+              </label>
+            }
+
+            <h3>Who can reach it</h3>
+            @for (item of m.Exposure.Endpoints; track item.Endpoint) {
+              <p>
+                <span class="badge badge-ok">{{ exposureWords(item.Recommended) }}</span>
+                @if (!item.AllowWider) {
+                  <span class="hint">This app cannot be widened.</span>
+                }
+              </p>
+              @for (warning of item.Warnings; track warning) {
+                <p class="plan-note">{{ warning }}</p>
+              }
+            }
+            <p>
+              Installing never opens {{ m.Title }} to anyone outside your network. To widen it later,
+              plan and approve it on the <a routerLink="/exposure">Exposure page</a>.
+            </p>
+
+            <details>
+              <summary>Advanced</summary>
+              <p class="hint">Most apps need none of this.</p>
+              <p class="hint">Most apps need no change. Edit it only if the app listens on another port.</p>
+              @for (service of routedServices(); track service.Name) {
+                <label class="wizard-field">
+                  {{ service.Name }} port
+                  <input
+                    [name]="'port-' + service.Name"
+                    [value]="containerPorts()[service.Name] ?? ''"
+                    [attr.aria-invalid]="portError(service.Name) ? 'true' : null"
+                    [attr.aria-describedby]="portError(service.Name) ? 'port-error-' + service.Name : null"
+                    (input)="setPort(service.Name, $any($event.target).value)"
+                  />
+                </label>
+                @if (portError(service.Name); as problem) {
+                  <p class="field-error" [id]="'port-error-' + service.Name">{{ problem }}</p>
+                }
+              }
+              <label class="wizard-field">
+                Extra networks
+                <input
+                  name="networks"
+                  [value]="extraNetworks()"
+                  (input)="extraNetworks.set($any($event.target).value)"
+                  aria-describedby="networks-hint"
+                />
+              </label>
+              <p id="networks-hint" class="hint">
+                Names of existing Docker networks to join as well, separated by commas.
+              </p>
+              <label class="wizard-field">
+                Zone for public address records
+                <input name="zone" [value]="zone()" (input)="zone.set($any($event.target).value)" />
+              </label>
+              <label class="wizard-field">
+                Public IP address
+                <input name="public-ip" [value]="publicIp()" (input)="publicIp.set($any($event.target).value)" />
+              </label>
+              <p class="hint">
+                The zone and address are only used to plan DNS records for a public route. They do not
+                expose anything.
+              </p>
+            </details>
+          }
+
+          @case ('sign-in') {
+            @if (secrets().length > 0) {
+              <h3>Passwords Homestead creates</h3>
+              <p>
+                You never type these. Homestead generates them, keeps them in its secret store and
+                gives the containers owner-only files. No value is shown or logged.
+              </p>
+              <ul>
+                @for (secret of secrets(); track secret.name) {
+                  <li>
+                    <code>{{ secret.name }}</code> is {{ secret.purpose }}.
+                    @if (secret.immutable) {
+                      It cannot be changed after install.
+                    }
+                  </li>
+                }
+              </ul>
+            }
+            <h3>Signing in</h3>
+            @if (curated().signIn; as signIn) {
+              <p>{{ signIn }}</p>
+            } @else if (sso() === 'unsupported') {
+              <p>{{ m.Title }} keeps its own accounts and does not sign in through a sign-in service.</p>
+            } @else if (sso() === 'required') {
+              <p>
+                {{ m.Title }} only signs people in through a sign-in service ({{ protocols() }}).
+              </p>
+            } @else {
+              <p>
+                {{ m.Title }} has its own accounts, and it can also sign people in through a sign-in
+                service such as Authentik ({{ protocols() }}). Installing does not change that. Connect
+                it after the install.
+              </p>
+            }
+          }
+
+          @case ('review') {
+            <app-loading [loading]="planning()" shape="panel">
+              @if (planProblem(); as problem) {
+                <app-state-message
+                  kind="error"
+                  [headline]="problem.headline"
+                  [detail]="problem.fix"
+                  [actionLabel]="problem.installed ? 'Back to the catalog' : 'Check again'"
+                  [actionLink]="problem.installed ? '/catalog' : null"
+                  (action)="checkAgain()"
+                />
+              } @else if (summary(); as s) {
+                <div class="panel wizard-summary">
+                  <h3>Homestead will create</h3>
+                  <ul>
+                    @for (line of s.created; track line) {
+                      <li>{{ line }}</li>
+                    }
+                    @for (secret of secrets(); track secret.name) {
+                      <li>A generated secret, {{ secret.name }}, if one is not stored yet</li>
+                    }
+                    <li>{{ m.Services.length === 1 ? '1 container' : m.Services.length + ' containers' }} in a Compose stack named {{ m.Name }}</li>
+                  </ul>
+                  @if (s.changed.length > 0) {
+                    <h3>Homestead will change</h3>
+                    <ul>
+                      @for (line of s.changed; track line) {
+                        <li>{{ line }}</li>
+                      }
+                    </ul>
+                  }
+                  <h3>Homestead will leave alone</h3>
+                  <ul>
+                    @for (line of s.leftAlone; track line) {
+                      <li>{{ line }}</li>
+                    }
+                  </ul>
+                </div>
+
+                @if (plan()?.Mounts?.length) {
+                  <h3>Where its data goes</h3>
+                  <ul class="plan-mounts">
+                    @for (mount of plan()!.Mounts!; track mount.Service + mount.Target) {
+                      <li>
+                        {{ mount.Service }} sees <code>{{ mount.Target }}</code>
+                        @if (mount.Ephemeral) {
+                          as temporary memory that is not kept
+                        } @else {
+                          at <code>{{ mount.Source }}</code>
+                          @if (mount.ReadOnly) {
+                            (read-only)
+                          }
+                        }
+                      </li>
+                    }
+                  </ul>
+                }
+
+                <app-browser-advisories [advisories]="plan()?.BrowserAdvisories" />
+
+                @for (note of plan()?.Notes ?? []; track note) {
+                  @if (!note.startsWith('browser capabilities')) {
+                    <p class="plan-note">{{ sentence(note) }}</p>
+                  }
+                }
+
+                <details>
+                  <summary>Raw plan</summary>
+                  <pre><code>{{ rawPlan() }}</code></pre>
+                </details>
+              }
+            </app-loading>
+            @if (craft() && craftBuilt() !== true && !planProblem() && !planning()) {
+              <p class="hint">
+                {{ m.Title }} is built on this appliance from a signed package, never pulled. Homestead
+                verifies the package first, builds it, then you install it.
+              </p>
+            }
+          }
+
+          @case ('install') {
+            @switch (phase()) {
+              @case ('building') {
+                <h3>Verifying and building {{ m.Title }}</h3>
+                <p>Homestead checks the signature and checksums of the signed package, then builds it here.</p>
+                @if (buildOperation(); as id) {
+                  <app-operation-progress [id]="id" [operation]="operation()" />
+                }
+              }
+              @case ('built') {
+                <app-state-message
+                  kind="status"
+                  [headline]="m.Title + ' is built'"
+                  detail="The package was verified and built on this appliance. Now install it."
+                />
+                <p>
+                  <button type="button" class="primary" [attr.aria-busy]="starting() ? 'true' : null" [disabled]="starting()" (click)="startInstall()">
+                    Install {{ m.Title }}
+                  </button>
+                </p>
+              }
+              @case ('installing') {
+                @if (installOperation(); as id) {
+                  <app-operation-progress [id]="id" [operation]="operation()" />
+                }
+              }
+              @case ('failed') {
+                @if (failure(); as problem) {
+                  <app-state-message kind="error" [headline]="problem.headline" [detail]="problem.fix" />
+                }
+                @if (buildRefusal(); as refusal) {
+                  @if (!installOperation()) {
+                    <p class="plan-note">{{ refusal }}</p>
+                  }
+                }
+                @if (installOperation() ?? buildOperation(); as id) {
+                  <app-operation-progress [id]="id" [operation]="operation()" />
+                }
+                <p class="wizard-actions">
+                  <button type="button" class="primary" (click)="retry()">Try again</button>
+                  <a class="button" routerLink="/catalog">Back to the catalog</a>
+                </p>
+              }
+              @default {
+                <app-state-message kind="notice" headline="Nothing has started yet." detail="Go back to the review and start from there." />
+                <button type="button" (click)="goToId('review')">Back to the review</button>
+              }
+            }
+          }
+
+          @case ('done') {
+            @if (edgeRoute(); as route) {
+              <p>
+                <a class="button primary" [href]="routeUrl(route)" target="_blank" rel="noopener noreferrer">Open {{ m.Title }}</a>
+                <code>{{ route.Host }}</code>
+              </p>
+            } @else {
+              <app-state-message
+                kind="notice"
+                [headline]="m.Title + ' has no address yet.'"
+                detail="Installing does not add the edge route. Add it on the Edge page, then open the app."
+                actionLabel="Open the Edge page"
+                actionLink="/edge"
+              />
+              @if (plannedRoutes().length > 0) {
+                <p class="hint">
+                  Add:
+                  @for (route of plannedRoutes(); track route.Host) {
+                    <code>{{ route.Host }}</code> pointing to <code>{{ route.Target.Host }}:{{ route.Target.Port }}</code>,
+                    {{ exposureWords(route.Exposure).toLowerCase() }}.
+                  }
+                </p>
+              }
+            }
+
+            <h3>First time you open it</h3>
+            <ol>
+              @for (line of curated().firstLogin; track line) {
+                <li>{{ line }}</li>
+              }
+            </ol>
+
+            <h3>Where its data lives</h3>
+            @if (classes().length === 0) {
+              <p>{{ m.Title }} keeps nothing on the appliance. Save your work from the app to your device.</p>
+            } @else {
+              <ul class="wizard-paths">
+                @for (row of dataLocations(); track row.path) {
+                  <li><code>{{ row.path }}</code></li>
+                } @empty {
+                  <li>On the storage you chose, in a folder named {{ m.Name }}.</li>
+                }
+              </ul>
+              <p>Set up a backup schedule for {{ m.Title }} on the <a routerLink="/backups">Backups page</a>.</p>
+            }
+
+            <div class="wizard-actions">
+              <a class="button" routerLink="/catalog" (click)="finish()">Back to the catalog</a>
+              <app-uninstall-app [name]="m.Name" [title]="m.Title" (uninstalled)="onUninstalled()" />
+            </div>
+          }
+        }
+
+        @if (stepProblem(); as problem) {
+          <p class="field-error" role="alert">{{ problem }}</p>
+        }
+
+        @if (current() !== 'install' && current() !== 'done') {
+          <div class="wizard-actions">
+            @if (stepIndex() > 0) {
+              <button type="button" (click)="back()">Back</button>
+            }
+            @if (current() === 'review') {
+              @if (craft() && craftBuilt() !== true) {
+                <button
+                  type="button"
+                  class="primary"
+                  [attr.aria-busy]="starting() ? 'true' : null"
+                  [disabled]="starting() || planning() || planProblem() !== null || plan() === null"
+                  (click)="startBuild()"
+                >
+                  Verify and build {{ m.Title }}
+                </button>
+              } @else {
+                <button
+                  type="button"
+                  class="primary"
+                  [attr.aria-busy]="starting() ? 'true' : null"
+                  [disabled]="starting() || planning() || planProblem() !== null || plan() === null"
+                  (click)="startInstall()"
+                >
+                  Install {{ m.Title }}
+                </button>
+              }
+            } @else {
+              <button type="button" class="primary" (click)="next()">Continue</button>
+            }
+          </div>
+        }
+      </div>
+    }
+  </app-loading>
+</section>

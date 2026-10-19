@@ -12,7 +12,7 @@ function op(status: string, steps: OperationStep[]): OperationState {
 describe('progressOf', () => {
   it('names the current step and counts', () => {
     const p = progressOf(op('running', [step(0, 'pull', 'succeeded'), step(1, 'up', 'running'), step(2, 'check', 'pending')]));
-    expect(p.text).toBe('Step 2 of 3: Up');
+    expect(p.text).toBe('Step 2 of 3: Start the containers');
     expect(p.done).toBe(1);
     expect(p.fraction).toBeCloseTo(1 / 3);
   });
@@ -39,5 +39,12 @@ describe('stepLabel', () => {
     expect(stepLabel('verify_craft_images')).toBe('Verify craft images');
     expect(stepLabel('Render Caddyfile')).toBe('Render Caddyfile');
     expect(stepLabel('')).toBe('');
+  });
+
+  it('names the install and uninstall steps in plain words', () => {
+    expect(stepLabel('ensure-homestead-edge')).toBe('Create the edge network');
+    expect(stepLabel('up')).toBe('Start the containers');
+    expect(stepLabel('down')).toBe('Stop the containers');
+    expect(stepLabel('provision:jellyfin/config')).toBe('Prepare folder jellyfin/config');
   });
 });

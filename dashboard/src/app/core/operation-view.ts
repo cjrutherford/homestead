@@ -23,9 +23,26 @@ export interface OperationProgress {
  * Daemon step names are often slugs ("obtain-artifact", "verify-craft-images").
  * Show them as words; names that already read as words are left alone.
  */
+const STEP_WORDS: Record<string, string> = {
+  'ensure-homestead-edge': 'Create the edge network',
+  'check-existing-database': 'Check for an existing database',
+  'verify-craft-images': 'Check the built craft image',
+  'write-stack': 'Write the stack files',
+  up: 'Start the containers',
+  down: 'Stop the containers',
+  'remove-files': 'Remove the generated files',
+  'remove-data': 'Delete the data',
+};
+
 export function stepLabel(name: string): string {
   if (!name || /\s/.test(name)) {
     return name;
+  }
+  if (STEP_WORDS[name]) {
+    return STEP_WORDS[name];
+  }
+  if (name.startsWith('provision:')) {
+    return `Prepare folder ${name.slice('provision:'.length)}`;
   }
   const words = name.replace(/[-_.]+/g, ' ').trim();
   return words.charAt(0).toUpperCase() + words.slice(1);

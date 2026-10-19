@@ -1,0 +1,164 @@
+/**
+ * Curated copy for the install wizard (S285): what the manifests do not say.
+ * Every line below is drawn from the package manifest, docs/architecture or
+ * docs/THIRD_PARTY.md, or from the upstream project's own first-run behaviour.
+ * Nothing here promises a feature the package does not have. When unsure, the
+ * hint stays generic and true.
+ *
+ * A spec fails when a package in `catalog/` has no entry, so a new package
+ * cannot ship without first-login copy.
+ */
+export interface CuratedCopy {
+  /** What the owner does first, in order. One or two short sentences each. */
+  firstLogin: string[];
+  /** Something to know that the manifest does not say. Optional. */
+  note?: string;
+  /** Replaces the sign-in paragraph where the manifest's class would mislead (Authentik). */
+  signIn?: string;
+}
+
+const TRUST =
+  'Open it from a device that trusts your Homestead root certificate (Trust page), so the browser treats the address as secure.';
+const NO_ACCOUNT = 'There is no account to create.';
+const NEXTCLOUD_LINK =
+  'To open and save files in your Nextcloud, link it on the Craft files page.';
+const NO_NEXTCLOUD = 'It has no Nextcloud file link, so files stay in your browser and download to your device.';
+
+export const CURATED_COPY: Record<string, CuratedCopy> = {
+  nextcloud: {
+    firstLogin: [
+      'Open Nextcloud. The first visit shows its setup page, where you create the administrator account.',
+      'Keep that password safe. Homestead does not store it.',
+      'Your Homestead address is already a trusted domain, so Nextcloud accepts it.',
+    ],
+    note: 'Your files live on bulk storage. To use Nextcloud from your craft apps, link it on the Craft files page.',
+  },
+  jellyfin: {
+    firstLogin: [
+      'Open Jellyfin. The first visit starts its setup wizard, where you create the administrator account.',
+      'Add your media folder as a library. Jellyfin only sees folders that were added to it during install, at the path you gave inside the app.',
+    ],
+    note: 'Jellyfin keeps its settings on application storage and its cache on bulk storage. Your media stays where it is.',
+  },
+  immich: {
+    firstLogin: [
+      'Open Immich and register. The first account you create becomes the administrator.',
+      'In the Immich phone app, enter the same address as the server. Your phone must trust the Homestead root certificate (Trust page) to use the https address.',
+    ],
+    note: 'Your photo library lives on bulk storage. The database password was generated for you and is kept in the secret store.',
+  },
+  authentik: {
+    firstLogin: [
+      'Open /if/flow/initial-setup/ on Authentik’s address to set the password for the akadmin administrator.',
+      'Then create providers and applications in Authentik for the services that should sign in through it.',
+    ],
+    note: 'Authentik is the sign-in service. Other apps use it; it does not use another one.',
+    signIn:
+      'This is the sign-in service. Other apps can sign their people in through it, with OAuth2, OpenID Connect, SAML or LDAP providers. It keeps its own accounts and does not sign in through anything else.',
+  },
+  wordcraft: {
+    firstLogin: [
+      NO_ACCOUNT + ' Open WordCraft and start a document, or open a .docx file.',
+      TRUST,
+      'Save your work to your device. WordCraft keeps nothing on the appliance. ' + NO_NEXTCLOUD,
+    ],
+  },
+  gridcraft: {
+    firstLogin: [
+      NO_ACCOUNT + ' Open GridCraft and start a workbook, or open a workbook file.',
+      TRUST,
+      NEXTCLOUD_LINK,
+    ],
+  },
+  deckcraft: {
+    firstLogin: [
+      NO_ACCOUNT + ' Open DeckCraft and start a presentation, or open a presentation file.',
+      TRUST,
+      'Save your work to your device. ' + NO_NEXTCLOUD,
+    ],
+  },
+  pdfcraft: {
+    firstLogin: [
+      NO_ACCOUNT + ' Open PdfCraft and choose a PDF to read, combine, split or secure. Your documents are not uploaded.',
+      TRUST,
+      NEXTCLOUD_LINK,
+    ],
+  },
+  vectorcraft: {
+    firstLogin: [
+      NO_ACCOUNT + ' Open VectorCraft and start drawing, or import an SVG or PDF.',
+      TRUST + ' Without WebGPU it falls back to WebGL2 on its own.',
+      'Download your artwork to your device. ' + NO_NEXTCLOUD,
+    ],
+  },
+  photocraft: {
+    firstLogin: [
+      NO_ACCOUNT + ' Open PhotoCraft and choose a photo to edit. Your images are not uploaded.',
+      TRUST + ' Without WebGPU it falls back to WebGL2 on its own.',
+      'Export your edits to your device. ' + NO_NEXTCLOUD,
+    ],
+  },
+  lightcraft: {
+    firstLogin: [
+      NO_ACCOUNT + ' Open LightCraft and import photos to build your library. Your photos are not uploaded.',
+      'The library lives in your browser’s site storage, which the browser may clear. Keep your original photos elsewhere and use File, Back Up Library.',
+      TRUST,
+    ],
+    note: 'LightCraft is experimental.',
+  },
+  figcraft: {
+    firstLogin: [
+      NO_ACCOUNT + ' Open FigCraft and start a design on the canvas.',
+      TRUST + ' Without WebGPU it falls back to WebGL2 on its own.',
+      'Download your designs to your device. ' + NO_NEXTCLOUD,
+    ],
+  },
+  filmcraft: {
+    firstLogin: [
+      NO_ACCOUNT + ' Open FilmCraft and import footage to start a project.',
+      'Your footage and projects stay in your browser, with a recovery copy in browser storage. Export to your device when you finish.',
+      NEXTCLOUD_LINK,
+    ],
+    note: 'Large media is held by the browser, so long or high-resolution projects need a device with enough memory.',
+  },
+  effectcraft: {
+    firstLogin: [
+      NO_ACCOUNT + ' Open EffectCraft and start a composition.',
+      'Projects and imported media stay in your browser’s storage. Export to your device when you finish.',
+      NEXTCLOUD_LINK,
+    ],
+    note: 'After the first visit it can start offline. Large media is held by the browser, so heavy compositions need plenty of memory.',
+  },
+  soundcraft: {
+    firstLogin: [
+      NO_ACCOUNT + ' Open SoundCraft and start a session. Your browser may need a click before it plays sound.',
+      TRUST,
+      'Export your sessions to your device. ' + NO_NEXTCLOUD,
+    ],
+    note: 'Large audio files are held by the browser, so long multitrack sessions need a device with enough memory.',
+  },
+  designcraft: {
+    firstLogin: [
+      NO_ACCOUNT + ' Open DesignCraft and start a page layout.',
+      TRUST,
+      'Export your documents to your device. Preferences are kept in the browser. ' + NO_NEXTCLOUD,
+    ],
+  },
+  cadcraft: {
+    firstLogin: [
+      NO_ACCOUNT + ' Open CADCraft and start a drawing with its command line, or open a DXF drawing.',
+      TRUST,
+      NEXTCLOUD_LINK,
+    ],
+    note: 'Upstream marks CADCraft as early development.',
+  },
+};
+
+/** The generic first step, true for any package, when a title has no curated entry. */
+export const GENERIC_COPY: CuratedCopy = {
+  firstLogin: ['Open the app and follow its first-run screen.'],
+};
+
+export function curatedFor(name: string): CuratedCopy {
+  return CURATED_COPY[name] ?? GENERIC_COPY;
+}

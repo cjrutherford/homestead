@@ -191,6 +191,11 @@
 
 /* Below md the sidebar is a drawer behind a menu button. */
 @media (max-width: 47.9375rem) {
+  /* The sticky top bar must not cover what scrolls or takes focus into view. */
+  html {
+    scroll-padding-top: 4.25rem;
+  }
+
   .shell {
     display: block;
   }

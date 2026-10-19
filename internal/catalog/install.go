@@ -106,7 +106,15 @@ func PlanInstall(req InstallRequest) (InstallPlan, error) {
 		return InstallPlan{}, err
 	}
 	if !report.Passed {
-		return InstallPlan{}, fmt.Errorf("catalog: requirements unmet for %q", req.Manifest.Name)
+		// Name every failed check so the owner (and the dashboard's preflight
+		// step) can say what is short and how to fix it.
+		var failed []string
+		for _, check := range report.Checks {
+			if !check.OK {
+				failed = append(failed, check.Name+": "+check.Detail)
+			}
+		}
+		return InstallPlan{}, fmt.Errorf("catalog: requirements unmet for %q: %s", req.Manifest.Name, strings.Join(failed, "; "))
 	}
 	recommendations, err := RecommendRoutes(req.Manifest)
 	if err != nil {

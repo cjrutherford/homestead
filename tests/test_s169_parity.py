@@ -30,7 +30,7 @@ def read(rel: str) -> str:
 
 class TestParityAcceptanceContract(unittest.TestCase):
     def test_body_keys_match(self):
-        dashboard = read("dashboard/src/app/catalog/catalog.ts")
+        dashboard = read("dashboard/src/app/catalog/install-wizard.ts")
         server = read("internal/server/catalog.go")
         for key in KEYS:
             with self.subTest(key=key):

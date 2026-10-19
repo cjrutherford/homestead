@@ -8,6 +8,8 @@ S283 (the work-orders rail and the shared step-list component). S284 no longer o
 
 ## Scope
 Implement only the functionality required for this slice. Preserve all accepted ADRs and customer-ownership guarantees. Do not pull deferred features into scope without an ADR and slice update.
+Scope addition (owner-approved 2026-10-18): the dashboard gains an Uninstall action. It sits on each installed app's wizard done page and next to every installed app in the catalog list, uses the existing `POST /api/v1/catalog/{name}/uninstall` route behind an S282 danger dialog, says in plain words what is removed and what is kept (including the remove-data option with every data root named in full), and shows progress in the work-orders rail. `docs/PARITY.md` flips the uninstall row from CLI-only to both surfaces. No route or CLI command is added or changed. The requirements step also reads the existing `GET /api/v1/docker/health` for Docker and edge readiness, so that row gains a dashboard consumer (`dockerHealth`).
+
 Dashboard only. The existing install API (`POST /api/v1/catalog/{name}/plan`, `.../install`, `.../configure`, secrets routes) and its plan semantics are preserved unchanged: the wizard calls the same routes in the same order the current install flow does, and the plan the owner reviews is the plan that is applied. CLI parity (ADR-004) is unaffected: no route, command or parity row changes; the CLI installs exactly as before. Governed by ADR-004, ADR-006, ADR-013, ADR-014 and ADR-018, all preserved.
 
 ## Acceptance Criteria
@@ -33,7 +35,7 @@ Dashboard only. The existing install API (`POST /api/v1/catalog/{name}/plan`, `.
 ## Required Documentation
 - Update the dashboard design doc with the wizard pattern (step sequence, helper text sources).
 - `docs/DEFERRED.md`: record discovered out-of-scope work.
-- `docs/PARITY.md`: confirm no row changes are needed (state that the install API is unchanged).
+- `docs/PARITY.md`: uninstall row to both surfaces, docker health row gains `dockerHealth`; state that the plan and install routes are unchanged.
 - `docs/DEVELOPMENT.md`: S285 section with the KVM review summary.
 
 ## Handoff

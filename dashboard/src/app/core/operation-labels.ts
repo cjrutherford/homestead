@@ -4,9 +4,22 @@ export interface OrderLabel {
   done: string;
 }
 
+/**
+ * Display names for packages ("GridCraft", not "gridcraft"), filled by the
+ * Catalog pages once they have loaded the catalog. Until then a package is
+ * named from its slug.
+ */
+const packageTitles = new Map<string, string>();
+
+export function registerPackageTitles(titles: { name: string; title: string }[]): void {
+  for (const entry of titles) {
+    packageTitles.set(entry.name, entry.title);
+  }
+}
+
 function name(raw: string): string {
   const decoded = decodeURIComponent(raw);
-  return decoded.charAt(0).toUpperCase() + decoded.slice(1);
+  return packageTitles.get(decoded) ?? decoded.charAt(0).toUpperCase() + decoded.slice(1);
 }
 
 type Rule = [RegExp, (m: RegExpMatchArray) => OrderLabel];
@@ -20,6 +33,7 @@ const RULES: Rule[] = [
   [/^POST \/api\/v1\/edge\/deploy$/, () => ({ title: 'Deploy Caddy', done: 'Caddy deployed' })],
   [/^POST \/api\/v1\/edge\/routes$/, () => ({ title: 'Reconcile routes', done: 'Routes reconciled' })],
   [/^POST \/api\/v1\/catalog\/([^/]+)\/install$/, (m) => ({ title: `Install ${name(m[1])}`, done: `${name(m[1])} installed` })],
+  [/^POST \/api\/v1\/catalog\/([^/]+)\/uninstall$/, (m) => ({ title: `Uninstall ${name(m[1])}`, done: `${name(m[1])} uninstalled` })],
   [/^POST \/api\/v1\/catalog\/([^/]+)\/configure$/, (m) => ({ title: `Configure ${name(m[1])}`, done: `${name(m[1])} configured` })],
   [/^POST \/api\/v1\/catalog\/([^/]+)\/drift$/, (m) => ({ title: `Restore ${name(m[1])}`, done: `${name(m[1])} restored` })],
   [/^POST \/api\/v1\/data-migrations\/([^/]+)\/approve$/, (m) => ({ title: `Migrate ${name(m[1])} data`, done: `${name(m[1])} data migrated` })],
@@ -67,7 +81,7 @@ const TYPES: Record<string, OrderLabel> = {
   'app.update': { title: 'Update app', done: 'App updated' },
   'caddy.reconcile': { title: 'Reconcile routes', done: 'Routes reconciled' },
   'catalog.install': { title: 'Install app', done: 'App installed' },
-  'catalog.remove': { title: 'Remove app', done: 'App removed' },
+  'catalog.remove': { title: 'Uninstall app', done: 'App uninstalled' },
   'catalog.configure': { title: 'Configure app', done: 'App configured' },
   'catalog.restore': { title: 'Restore app', done: 'App restored' },
   'catalog.migrate': { title: 'Migrate app data', done: 'App data migrated' },

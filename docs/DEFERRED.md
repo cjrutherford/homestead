@@ -610,9 +610,31 @@
   structure is S284.
 - S283 KVM review findings: (1) closed (post-S283 fix): install now creates the
   `homestead-edge` network itself (idempotent, no proxy deployed), and a failed
-  install rolls back its record so the retry is allowed. (2) The
-  dashboard has no uninstall action (PARITY marks it CLI-only); the rail picks
-  up a CLI-started removal only if it is still running at the next navigation.
-  (3) The browser's own console still logs 404/422 network lines for the
+  install rolls back its record so the retry is allowed. (2) closed by S285: the dashboard has an Uninstall action. (3) The browser's own console still logs 404/422 network lines for the
   not-set-up probes (TLS, Exposure, Backups destination); the pages show states,
   but silencing the log needs a 200 "not set up" reply from the daemon.
+- S285 discoveries:
+  - Installing does not add the edge route. After the wizard the app has no
+    address until the owner adds it on the Edge page (the done step shows the
+    host and upstream to enter). The wizard could merge the planned routes into
+    the recorded table and reconcile it; that is a second, confirmed operation
+    and was left out.
+  - The sign-in step explains SSO but offers no install-time choice: there is no
+    API to wire an app to Authentik at install. S286 owns that.
+  - Data removal on uninstall names `<mount>/<package>` for each storage class
+    from the owner's assignments. An app installed on a mount chosen only in the
+    install request (not assigned) would fail the last step with a missing
+    directory; the daemon could report the real mounts per installed app.
+  - The requirements check runs through the plan route, so Requirements shows
+    one failing check at a time as the daemon words it. A route returning the
+    structured requirement report without planning would let the wizard list
+    every check with its numbers.
+  - Host ports from `requirements.ports` are checked against whatever listens on
+    the host. With Caddy on 80 and 443, a package that lists port 80 (Nextcloud)
+    would fail the port check, though it publishes no host port. Verify on VM 2
+    and decide whether `ports` means host ports at all.
+  - Hostnames, the container port, extra networks and public address records
+    can all be set in the wizard; per-endpoint exposure other than the
+    manifest's recommendation cannot, by design (ADR-006).
+  - Raw operation step names are mapped to words in `core/operation-view.ts`;
+    names the daemon adds later fall back to the slug with spaces.

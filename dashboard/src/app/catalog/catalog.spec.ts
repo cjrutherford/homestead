@@ -17,6 +17,15 @@ const PACKAGES = [
     category: 'media',
     icon: 'mdi:plex',
   },
+  {
+    name: 'gridcraft',
+    version: '0.7.0',
+    title: 'GridCraft',
+    blurb: 'Spreadsheet that runs in your browser.',
+    category: 'productivity',
+    icon: 'x',
+    installed: true,
+  },
 ];
 
 const MANIFEST = {
@@ -36,31 +45,6 @@ const MANIFEST = {
   BackupPaths: ['config'],
 };
 
-const PLAN = {
-  Package: 'jellyfin',
-  Requirements: { Passed: true },
-  Routes: [{ Host: 'jellyfin.lan', Exposure: 'local' }],
-  Compose: { ComposeYAML: 'name: jellyfin' },
-  DNS: [],
-  TLS: [],
-  Firewall: [],
-  Directories: [],
-  Mounts: [
-    {
-      Service: 'jellyfin',
-      Target: '/config',
-      Source: '/mnt/app/jellyfin/config',
-      Class: 'application',
-      Database: false,
-      Ephemeral: false,
-      ReadOnly: false,
-      Declared: true,
-    },
-  ],
-  Notes: [],
-  Actions: ['provision', 'up'],
-};
-
 describe('Catalog', () => {
   let fixture: ComponentFixture<Catalog>;
   let http: HttpTestingController;
@@ -68,11 +52,7 @@ describe('Catalog', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [Catalog],
-      providers: [
-        provideRouter([]),
-        provideHttpClient(),
-        provideHttpClientTesting(),
-      ],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
     fixture = TestBed.createComponent(Catalog);
     http = TestBed.inject(HttpTestingController);
@@ -83,184 +63,65 @@ describe('Catalog', () => {
   });
 
   function text(): string {
-    return fixture.nativeElement.textContent as string;
+    return (fixture.nativeElement as HTMLElement).textContent!.replace(/\s+/g, ' ');
+  }
+
+  function load(): void {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    fixture.detectChanges();
   }
 
   it('lists curated packages', () => {
-    fixture.detectChanges();
-    http.expectOne('/api/v1/catalog').flush(PACKAGES);
-    fixture.detectChanges();
+    load();
     expect(text()).toContain('Jellyfin');
+    expect(text()).toContain('Media server you control.');
   });
 
-  it('defaults a craft package container port to 8080 without a host port requirement', () => {
-    fixture.detectChanges();
-    http.expectOne('/api/v1/catalog').flush(PACKAGES);
-    fixture.componentInstance['select']('wordcraft');
-    http.expectOne('/api/v1/catalog/wordcraft').flush({
-      ...MANIFEST,
-      Name: 'wordcraft',
-      Services: [
-        { Name: 'wordcraft', Image: 'homestead/craft-wordcraft:0.7.0', Exposes: 'web' },
-      ],
-      Requirements: { MemoryMB: 64, Storage: [], Ports: [] },
-    });
-    expect(fixture.componentInstance['containerPorts']()).toEqual({ wordcraft: '8080' });
+  it('starts the install wizard from a package that is not installed, with no inline install form', () => {
+    load();
+    const link = (fixture.nativeElement as HTMLElement).querySelector('a[href="/catalog/jellyfin/install"]');
+    expect(link?.textContent?.trim()).toBe('Install Jellyfin');
+    expect((fixture.nativeElement as HTMLElement).querySelector('input[name="domain"]')).toBeNull();
+    expect(text()).not.toContain('Review plan');
   });
 
-  it('renders the full plan panel when the API sends null sections', () => {
-    const advisories = [
-      { Capability: 'webcodecs', Label: 'Video codecs (WebCodecs)', Reason: 'Hardware video decoding.' },
-    ];
-    fixture.detectChanges();
-    http.expectOne('/api/v1/catalog').flush(PACKAGES);
-    fixture.componentInstance['select']('wordcraft');
-    http.expectOne('/api/v1/catalog/wordcraft').flush({
-      ...MANIFEST,
-      Name: 'wordcraft',
-      Services: [{ Name: 'wordcraft', Image: 'homestead/craft-wordcraft:0.7.0', Exposes: 'web' }],
-      Requirements: { MemoryMB: 64, Storage: [], Ports: [] },
-    });
-    fixture.detectChanges();
-    fixture.componentInstance['reviewPlan']();
-    http.expectOne('/api/v1/catalog/wordcraft/plan').flush({
-      ...PLAN,
-      Package: 'wordcraft',
-      DNS: null,
-      TLS: null,
-      Firewall: null,
-      Directories: null,
-      Mounts: null,
-      Notes: null,
-      BrowserAdvisories: advisories,
-    });
-    fixture.detectChanges();
-    expect(text()).toContain('Directories: 0');
-    expect(text()).toContain('Actions: provision, up');
-    expect(text()).toContain('Video codecs (WebCodecs)');
-    expect(text()).toContain('Install');
+  it('offers Manage and Uninstall, not Install, for an installed package', () => {
+    load();
+    expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/catalog/gridcraft/install"]')).toBeNull();
+    expect(text()).toContain('Installed');
+    expect(text()).toContain('Manage GridCraft');
+    expect(text()).toContain('Uninstall GridCraft');
   });
 
-  it('defaults the craft port when the API sends null Storage and Ports', () => {
+  it('invites a first step when the catalog is empty', () => {
     fixture.detectChanges();
-    http.expectOne('/api/v1/catalog').flush(PACKAGES);
-    fixture.componentInstance['select']('soundcraft');
-    http.expectOne('/api/v1/catalog/soundcraft').flush({
-      ...MANIFEST,
-      Name: 'soundcraft',
-      Services: [{ Name: 'soundcraft', Image: 'homestead/craft-soundcraft:0.7.0', Exposes: 'web' }],
-      Requirements: { MemoryMB: 64, Storage: null, Ports: null },
-    });
+    http.expectOne('/api/v1/catalog').flush([]);
     fixture.detectChanges();
-    expect(fixture.componentInstance['containerPorts']()).toEqual({ soundcraft: '8080' });
-    const field = fixture.nativeElement.querySelector('input[name="port-soundcraft"]');
-    expect(field.value).toBe('8080');
+    expect(text()).toContain('No apps are in the catalog.');
   });
 
-  it('keys the install form and request by the API Name field', () => {
+  it('says how to fix an unreachable appliance', () => {
     fixture.detectChanges();
-    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/catalog').error(new ProgressEvent('error'), { status: 0 });
+    fixture.detectChanges();
+    expect(text()).toContain('Cannot reach the appliance. Check that homestead-server is running');
+  });
+
+  it('applies configuration variables to an installed package', () => {
+    load();
     fixture.componentInstance['select']('jellyfin');
     http.expectOne('/api/v1/catalog/jellyfin').flush(MANIFEST);
     fixture.detectChanges();
-    const field = fixture.nativeElement.querySelector('input[name="port-jellyfin"]');
-    expect(field).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('input[name="port-undefined"]')).toBeNull();
-    fixture.componentInstance['reviewPlan']();
-    const req = http.expectOne('/api/v1/catalog/jellyfin/plan');
-    expect(req.request.body.container_ports).toEqual({ jellyfin: 8096 });
-    req.flush(PLAN);
-  });
-
-  it('reviews a plan then installs through operations', () => {
-    fixture.detectChanges();
-    http.expectOne('/api/v1/catalog').flush(PACKAGES);
-    fixture.detectChanges();
-    fixture.componentInstance['select']('jellyfin');
-    http.expectOne('/api/v1/catalog/jellyfin').flush(MANIFEST);
-    fixture.detectChanges();
-    expect(text()).toContain('Streams media.');
-    fixture.componentInstance['reviewPlan']();
-    const plan = http.expectOne('/api/v1/catalog/jellyfin/plan');
-    plan.flush(PLAN);
-    fixture.detectChanges();
-    expect(text()).toContain('provision, up');
-    expect(text()).toContain('/mnt/app/jellyfin/config');
-    fixture.componentInstance['install']();
-    http.expectOne('/api/v1/catalog/jellyfin/install').flush({ id: 7 });
-    fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/7"]')).not.toBeNull();
-  });
-
-  it('shows browser advisories on the package page and plan without blocking install', () => {
-    const advisories = [
-      { Capability: 'webcodecs', Label: 'Video codecs (WebCodecs)', Reason: 'Hardware video decoding.' },
-      { Capability: 'audio-output', Label: 'Audio output device', Reason: 'Playback needs an audio device.' },
-    ];
-    fixture.detectChanges();
-    http.expectOne('/api/v1/catalog').flush(PACKAGES);
-    fixture.componentInstance['select']('jellyfin');
-    http.expectOne('/api/v1/catalog/jellyfin').flush({ ...MANIFEST, Browser: advisories });
-    fixture.detectChanges();
-    expect(text()).toContain('Browser advisories');
-    expect(text()).toContain('Hardware video decoding.');
-    fixture.componentInstance['reviewPlan']();
-    http
-      .expectOne('/api/v1/catalog/jellyfin/plan')
-      .flush({ ...PLAN, BrowserAdvisories: advisories });
-    fixture.detectChanges();
-    expect(
-      (fixture.nativeElement as HTMLElement).querySelectorAll('.browser-advisories').length,
-    ).toBe(2);
-    const button = Array.from(
-      (fixture.nativeElement as HTMLElement).querySelectorAll('button'),
-    ).find((b) => b.textContent?.trim() === 'Install') as HTMLButtonElement;
-    expect(button.disabled).toBe(false);
-  });
-
-  it('shows no advisory panel for packages without browser requirements', () => {
-    fixture.detectChanges();
-    http.expectOne('/api/v1/catalog').flush(PACKAGES);
-    fixture.componentInstance['select']('jellyfin');
-    http.expectOne('/api/v1/catalog/jellyfin').flush(MANIFEST);
-    fixture.detectChanges();
-    expect(text()).not.toContain('Browser advisories');
-  });
-
-  it('disables Install for installed packages', () => {
-    fixture.detectChanges();
-    http.expectOne('/api/v1/catalog').flush([{ ...PACKAGES[0], installed: true }]);
-    fixture.detectChanges();
-    fixture.componentInstance['select']('jellyfin');
-    http.expectOne('/api/v1/catalog/jellyfin').flush(MANIFEST);
-    fixture.componentInstance['reviewPlan']();
-    http.expectOne('/api/v1/catalog/jellyfin/plan').flush(PLAN);
-    fixture.detectChanges();
-    expect(text()).toContain('Already installed');
-    const button = Array.from(
-      (fixture.nativeElement as HTMLElement).querySelectorAll('button'),
-    ).find((b) => b.textContent?.trim() === 'Install') as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-  });
-
-  it('applies configuration variables', () => {
-    fixture.detectChanges();
-    http.expectOne('/api/v1/catalog').flush(PACKAGES);
-    fixture.detectChanges();
-    fixture.componentInstance['select']('jellyfin');
-    http.expectOne('/api/v1/catalog/jellyfin').flush(MANIFEST);
-    fixture.detectChanges();
+    expect(text()).toContain('Manage Jellyfin');
     fixture.componentInstance['applyConfig']();
-    const configure = http.expectOne('/api/v1/catalog/jellyfin/configure');
-    configure.flush({ id: 8 });
+    http.expectOne('/api/v1/catalog/jellyfin/configure').flush({ id: 8 });
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/8"]')).not.toBeNull();
   });
 
   it('registers and rotates secret-backed variables without showing values', () => {
-    fixture.detectChanges();
-    http.expectOne('/api/v1/catalog').flush(PACKAGES);
-    fixture.detectChanges();
+    load();
     fixture.componentInstance['select']('jellyfin');
     http
       .expectOne('/api/v1/catalog/jellyfin')

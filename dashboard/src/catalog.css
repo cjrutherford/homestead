@@ -1,0 +1,179 @@
+/*
+ * Catalog and install wizard (S285). Quiet by design: the only motion on
+ * these pages answers an action (the work-orders rail and dialogs already
+ * carry it). Rules in docs/architecture/DASHBOARD_DESIGN.md.
+ */
+
+/* Catalog list: one row per app, actions on the right, stacked on a phone. */
+.catalog-list {
+  margin: 0 0 var(--spacing-lg);
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--spacing-sm);
+}
+
+.catalog-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-lg);
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  padding: var(--spacing-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-sm);
+}
+
+.catalog-text {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.catalog-text p {
+  margin: var(--spacing-xs) 0 0;
+}
+
+.catalog-text .hint {
+  margin-inline: var(--spacing-xs);
+}
+
+.catalog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+/* Wizard steps: a numbered row. Done steps are filled, the current one is outlined heavier. */
+.wizard-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-md);
+  margin: 0 0 var(--spacing-lg);
+  padding: 0;
+  list-style: none;
+}
+
+.wizard-step {
+  display: inline-flex;
+  gap: var(--spacing-xs);
+  align-items: center;
+  margin: 0;
+  color: var(--muted);
+}
+
+.wizard-step-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.wizard-step[data-state='done'] {
+  color: var(--foreground);
+}
+
+.wizard-step[data-state='done'] .wizard-step-mark {
+  color: var(--primary-foreground);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.wizard-step[aria-current='step'] {
+  color: var(--foreground);
+  font-weight: 700;
+}
+
+.wizard-step[aria-current='step'] .wizard-step-mark {
+  border-color: var(--primary);
+  color: var(--foreground);
+}
+
+.wizard-body {
+  max-width: 44rem;
+}
+
+.wizard-body h2:focus {
+  outline: none;
+}
+
+.wizard-help {
+  margin-top: 0;
+  color: var(--muted);
+}
+
+.wizard-lead {
+  font-size: var(--font-size-lg);
+}
+
+.wizard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+  margin-top: var(--spacing-lg);
+}
+
+.wizard-field {
+  display: block;
+  margin: 0 0 var(--spacing-md);
+}
+
+.wizard-checks {
+  margin: 0 0 var(--spacing-md);
+  padding: 0;
+  list-style: none;
+}
+
+.wizard-checks li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  align-items: center;
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.wizard-checks li:last-child {
+  border-bottom: 0;
+}
+
+.wizard-check-name {
+  min-width: 10rem;
+  font-weight: 700;
+}
+
+.wizard-paths {
+  padding-inline-start: var(--spacing-lg);
+}
+
+.wizard-summary h3:first-child {
+  margin-top: 0;
+}
+
+.wizard-folder {
+  margin-bottom: var(--spacing-md);
+}
+
+/* Disclosures: a chevron so they read as controls. It turns when open; nothing animates. */
+.wizard-body summary::before {
+  content: '';
+  flex: none;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-inline-end: var(--spacing-sm);
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.wizard-body details[open] > summary::before {
+  transform: rotate(45deg);
+}

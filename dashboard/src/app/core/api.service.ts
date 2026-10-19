@@ -117,6 +117,23 @@ export interface CatalogService {
   Name: string;
   Image: string;
   Exposes: string;
+  /** Container paths the package keeps (S276); empty for stateless apps. */
+  Data?: CatalogDataPath[] | null;
+}
+
+/** One declared container path: persistent on a storage class, or ephemeral. */
+export interface CatalogDataPath {
+  Target: string;
+  Class: string;
+  Subpath: string;
+  Database?: boolean;
+  Ephemeral?: boolean;
+}
+
+/** How a package relates to single sign-on (S203). */
+export interface CatalogSSO {
+  Class: '' | 'unsupported' | 'optional' | 'recommended' | 'required';
+  Protocols?: string[] | null;
 }
 
 export interface CatalogManifest {
@@ -142,6 +159,8 @@ export interface CatalogManifest {
     }[];
   };
   BackupPaths: string[];
+  /** Single sign-on posture; an empty class reads as unsupported. */
+  SSO?: CatalogSSO | null;
   /** Advisory browser capabilities the app needs (S252). */
   Browser?: BrowserAdvisory[] | null;
   /** Secret-backed container variables the package declares (S266). */
@@ -187,11 +206,13 @@ export interface InstallPlan {
   DNS?: { Name: string; Type: string; Value: string }[] | null;
   TLS?: { Host: string; Issuer: string }[] | null;
   Firewall?: { Service: { Name: string } }[] | null;
-  Directories?: { Mountpoint: string }[] | null;
+  Directories?: { Mountpoint: string; Directory?: { Path: string } }[] | null;
   Mounts?: PlannedMount[] | null;
   BrowserAdvisories?: BrowserAdvisory[] | null;
   Notes?: string[] | null;
   Actions: string[];
+  /** True when routed services join the shared edge network (install creates it). */
+  EdgeNetwork?: boolean;
 }
 
 /** One resolved container mount in an install plan (S276). */
@@ -271,6 +292,14 @@ export interface CraftFilesLaunch {
   url: string;
   app: string;
   expires_at: string;
+}
+
+/** GET /api/v1/docker/health — the parts the install wizard reads. */
+export interface DockerHealth {
+  reachable: boolean;
+  version?: string;
+  containers?: { names: string[]; state: string }[] | null;
+  networks?: { name: string }[] | null;
 }
 
 /** POST /api/v1/catalog/:name/install — started operation. */
@@ -985,6 +1014,23 @@ export class ApiService {
       `/api/v1/catalog/${name}/install`,
       body,
     );
+  }
+
+  /** Removes the app; data stays unless remove_data names explicit roots. */
+  uninstallPackage(
+    name: string,
+    body: {
+      remove_data?: boolean;
+      abandon_volumes?: boolean;
+      data_dirs?: { mountpoint: string; path: string }[];
+    } = {},
+  ): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(`/api/v1/catalog/${name}/uninstall`, body);
+  }
+
+  /** Docker engine health and inventory; the install wizard reads edge readiness from it. */
+  dockerHealth(): Observable<DockerHealth> {
+    return this.http.get<DockerHealth>('/api/v1/docker/health');
   }
 
   configurePackage(

@@ -114,7 +114,7 @@ func TestPlanInstallRefusals(t *testing.T) {
 	}{
 		{"bad manifest", func(r *InstallRequest) { r.Manifest.Name = "Bad!" }, "package must match"},
 		{"no domain", func(r *InstallRequest) { r.Domain = "" }, "domain must not be empty"},
-		{"unmet requirements", func(r *InstallRequest) { r.Host.MemoryMB = 1 }, "requirements unmet"},
+		{"unmet requirements", func(r *InstallRequest) { r.Host.MemoryMB = 1 }, "memory: host offers 1 MB"},
 		{"no container port", func(r *InstallRequest) { r.ContainerPorts = nil }, "no container port"},
 		{"bad hostname", func(r *InstallRequest) {
 			r.Hostnames = map[string]string{"web": "Bad!"}

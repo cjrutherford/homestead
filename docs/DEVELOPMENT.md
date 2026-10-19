@@ -4282,3 +4282,85 @@ Two KVM findings, one commit.
   partly started database may already have initialised with them), and the edge
   network (shared, harmless). If cleanup itself fails, the error says so and
   points at `apps uninstall`.
+
+## S285: Catalog install wizard
+
+Built (dashboard; one small daemon change, below):
+- `catalog/install-wizard.ts` and `.html`, route `/catalog/:name/install`
+  (loaded on demand, so the initial bundle stays at 559.6 kB under the 560 kB
+  budget). The old inline install panel is gone; the Catalog page (`catalog.ts`)
+  is now the list, with Install, Manage and Uninstall per app. Manage keeps the
+  variables and secrets forms (configure, register, rotate, adopt) unchanged.
+- Step model (`catalog/wizard-model.ts`): What it is, Requirements, Storage,
+  Address, Secrets and sign-in, Review, Install, Done; a step that does not
+  apply is left out. Stateless craft app: About, Requirements, Address, Review,
+  Install, Done (6). Storage adds Storage (Nextcloud, Jellyfin, Immich: 8 with
+  sign-in). Secrets and sign-in is shown when the manifest declares secrets or
+  its sso class is not `unsupported` (Authentik: secrets, so shown, with its own
+  "this is the sign-in service" paragraph). Design doc: Wizard pattern.
+- Calls: `GET /catalog/{name}`, `GET /catalog`, `GET /docker/health`, storage
+  registrations, mounts and assignments, `GET /craft`, `POST /catalog/{name}/plan`
+  then `POST /catalog/{name}/install`, `POST /craft/build` for craft apps. The
+  plan route is asked again on every entry to Requirements and Review and when
+  Storage continues, so the reviewed plan is the applied one. Plan and install
+  routes are unchanged.
+- Requirements reads edge readiness from Docker health: the `homestead-edge`
+  network ("created on install" since the post-S283 fix) and the
+  `homestead-caddy` container. Caddy missing is a warning with a link to the
+  Edge page that the owner acknowledges; Docker unreachable and a refused plan
+  are hard stops with the daemon's words and a fix. One daemon change:
+  `PlanInstall`'s "requirements unmet" error now names every failed check
+  ("memory: host offers 1024 MB for 4096 required"), which Requirements shows.
+- Craft verify-and-build: the Review button for a craft app whose image is not
+  built (`GET /craft` has no present, matching image of that version) is
+  "Verify and build GridCraft". It starts `POST /craft/build {app}` (the
+  daemon verifies signature, counter, artifact digest and context again), the
+  Install step follows it, and on success offers "Install GridCraft". A refused
+  build shows the verdict's reason and points at the craft keys on the Updates
+  page. Install is never offered before the image is built.
+- Done: Open the app when its edge route exists, otherwise a notice with the
+  host and upstream to add on the Edge page (install does not add the route);
+  curated first-login hints (`catalog/curated-copy.ts`, 17 packages: nextcloud,
+  jellyfin, immich, authentik and the 13 craft apps; a spec fails when a
+  catalog manifest has none); where the data lives; the backup page; Uninstall.
+- Uninstall (owner-approved scope addition, slice file Scope): `uninstall-app.ts`,
+  a danger dialog on the Catalog list and the done page. It says what is removed
+  and what is kept, lists every data root as `<mount>/<package>` from the
+  storage assignments before "Also delete its data", and offers the
+  abandon-volumes acknowledgement only after a 409 or 502. It uses
+  `POST /catalog/{name}/uninstall`, joins the rail ("Uninstall GridCraft",
+  "GridCraft uninstalled") and shows progress inline. PARITY: uninstall row now
+  `uninstallPackage`; docker health row now `dockerHealth`.
+- Also: `registerPackageTitles` so the rail says "Install GridCraft", not
+  "Install Gridcraft"; step names in words ("Start the containers");
+  `.danger.quiet` outlined destructive button; `scroll-padding-top` below md so
+  the sticky top bar does not cover focused elements.
+
+Checks: dashboard 581 specs (was 511): step sequencing per package shape,
+blocked and acknowledged preflight, Docker down, storage selection and free
+space, existing folder as a host path, back and next keeping entries, plan
+rendering, install start with rail entry, done, failure and retry, resume after
+leaving, craft build then install, build refused, uninstall (keep, delete with
+roots, refused, unknown roots, stateless), curated-copy coverage of every
+manifest. `ng build` clean, `make lint`, Python 611 tests, `go test ./...` all
+green. Local headless Chromium against the built bundle with stubbed API data
+(`/tmp/hs-s285-run/server.js` and `shots.js`, not committed) and screenshots in
+`/tmp/hs-s285-local/` (87 PNGs: light, dark and 390 px for each wizard step of a
+craft app, Nextcloud storage and sign-in, Authentik, done, failure, build, and
+the uninstall dialog). Critique and one iteration: duplicate error text on a
+failed install (message, progress panel and toast all said it) now says it once;
+the secrets list ran name and purpose together, now sentences; storage errors
+tied to their field; disclosures had no marker; the red filled Uninstall
+dominated rows, now outlined; plan notes started lowercase; install step help
+said "working" during a failure. Removed the "Generated Compose file"
+disclosure, which duplicated the raw plan.
+
+KVM review on VM 2: **PENDING** (another agent). To do: install one small app
+(a craft app, so Verify and build is exercised) and one app with storage
+(Nextcloud, with an unmounted-then-mounted storage case if possible) through the
+wizard on a fresh appliance with no Caddy, so the warning and the created edge
+network are both seen; leave the wizard during the install and return to confirm
+the same operation resumes and the rail tracks it; check the done step and the
+first-login hint; check the port 80 question in DEFERRED for Nextcloud with
+Caddy running; uninstall each from the dashboard (once with data kept, once
+with data deleted) and leave VM 2 as found. Record findings and screenshots here.

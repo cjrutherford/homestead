@@ -80,6 +80,18 @@ button[type='submit']:active,
   border-color: var(--danger-active);
 }
 
+/* A destructive action that is not the point of the page: outlined, not filled. */
+.danger.quiet {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.danger.quiet:hover {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: var(--danger);
+}
+
 .quiet {
   color: var(--link);
   background: transparent;

@@ -34,6 +34,11 @@ export const routes: Routes = [
   { path: 'config', component: Config },
   { path: 'firewall', component: Firewall },
   { path: 'catalog', component: Catalog },
+  {
+    // Loaded on demand: the wizard and its curated copy are only needed to install.
+    path: 'catalog/:name/install',
+    loadComponent: () => import('./catalog/install-wizard').then((m) => m.InstallWizard),
+  },
   { path: 'updates', component: Updates },
   { path: 'data', component: DataMigration },
   { path: 'advanced', component: Advanced },

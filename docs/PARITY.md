@@ -48,7 +48,7 @@ unchanged.
 | GET | /api/v1/operations | `runOperationsList` | `operations` | Newest-first records |
 | GET | /api/v1/operations/{id}/events | `runOperationsFollow` | `operationEvents` | Poll-backed SSE state stream |
 | GET | /api/v1/audit | `runAuditList` | `auditList` | Audit page (`/audit`); S269. API supports only `limit`; actor/action/outcome/time filters and paging are client-side over the loaded window |
-| GET | /api/v1/docker/health | `runDockerHealth` | n/a | Engine inventory; stack UI arrives later |
+| GET | /api/v1/docker/health | `runDockerHealth` | `dockerHealth` | Engine inventory; the install wizard's requirements step (S285) reads Docker reachability, the `homestead-caddy` container and the `homestead-edge` network from it |
 | GET | /api/v1/storage/mounts | `runStorageMounts` | `storageMounts` | Storage page (`/storage`); S268. Entries add `registrable` and `registrable_reason` |
 | GET | /api/v1/storage/registrations | `runStorageRegistrations` | `storageRegistrations` | Storage page (`/storage`); S268 |
 | POST | /api/v1/storage/registrations | `runStorageRegister` | `storageRegister` | Storage page (`/storage`); S268 |
@@ -62,7 +62,7 @@ unchanged.
 | POST | /api/v1/catalog/{name}/configure | `"apps"` | `configurePackage` | Configuration operation on both surfaces; also secret rotation (one per operation) and adoption of pre-S266 secret wiring (S266) |
 | GET | /api/v1/catalog/{name}/secrets | `"apps"` | `appSecrets` | Declared secret-backed variables, presence only (S266) |
 | POST | /api/v1/catalog/{name}/secrets/{secret} | `"apps"` | `registerAppSecret` | Register an existing secret for pre-S266 installs; rotation rides configure (S266) |
-| POST | /api/v1/catalog/{name}/uninstall | `"apps"` | n/a | Approved removal on CLI (refuses volume-held data unless `--abandon-volumes`); dashboard surface belongs to later slices |
+| POST | /api/v1/catalog/{name}/uninstall | `"apps"` | `uninstallPackage` | Approved removal on both surfaces (S285). CLI `apps uninstall` (`--remove-data --data-dir MOUNT:PATH`, `--abandon-volumes`); the dashboard asks in a danger dialog on the catalog list and the wizard's done page, names every data root in full before "Also delete its data", offers the abandon-volumes acknowledgement only after a 409 or 502, and follows the operation in the work-orders rail |
 | POST | /api/v1/edge/deploy | `"edge"` | `edgeDeploy` | Edge page (`/edge`); S270. Confirmed deploy with live operation progress; CLI `edge deploy [--follow]` |
 | GET | /api/v1/edge/routes | `"edge"` | `edgeRoutes` | Table the reconciler last wrote; Edge page loads it on open and keeps reconcile disabled until it arrives; CLI `edge routes get` (S270 review) |
 | POST | /api/v1/edge/routes | `"edge"` | `edgeReconcile` | Edge page (`/edge`); S270. Confirmed replace of the reconciler's table with the same validation and route-document shape as CLI `edge routes set -f`. Public routes are refused (422) unless they match a current exposure approval; automatic TLS on a private name is refused up front; only hosts the previous reconcile wrote are removed |

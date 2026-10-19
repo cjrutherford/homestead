@@ -1,4 +1,4 @@
-# Dashboard design (S248, S282, S283)
+# Dashboard design (S248, S282, S283, S285)
 
 Clean-room (ADR-019): plain Angular and CSS custom properties, no UI
 framework, no vendored third-party UI code.
@@ -42,7 +42,10 @@ requests. Sentence case everywhere; no all-caps labels.
 
 ## Primitives (`styles` in `src/*.css`)
 - Buttons: a plain `<button>` is secondary; `button[type=submit]` and
-  `.primary` are primary; `.danger`; `.quiet`; `a.button` for links.
+  `.primary` are primary; `.danger` (filled; the confirm button of a danger
+  dialog); `.danger.quiet` (outlined; a destructive action that is not the point
+  of the page, such as Uninstall on a list row or the done page); `.quiet`;
+  `a.button` for links.
   States: hover, active, `:focus-visible`, `:disabled`, `aria-busy="true"`.
 - Fields: `input`, `select`, `textarea`, checkbox and radio inside `label`;
   `aria-invalid="true"` plus a `.field-error` message with a glyph. A form
@@ -60,6 +63,8 @@ requests. Sentence case everywhere; no all-caps labels.
   an element with class `dialog-actions`. The page owns the pending state
   and renders the component while it is pending.
 - Focus: one `:focus-visible` ring per theme; the sidebar has its own colour.
+  Below md the sticky top bar would cover what takes focus, so `html` carries
+  `scroll-padding-top`.
 
 ## Shell
 Skip link, grouped sidebar (`core/nav.ts`: Overview, Apps, Network, Storage
@@ -156,3 +161,61 @@ The one bold element is the work-orders rail. Everything else stays quiet.
 - Progress is the same everywhere: `app-step-list` (rail detail page and
   in-page) and `app-operation-progress` for a page that started an
   operation. No "Operation N: running" text.
+
+## Wizard pattern (S285)
+The catalog install wizard (`catalog/install-wizard.ts`, route
+`/catalog/:name/install`, loaded on demand) is the model for any multi-step
+flow.
+
+### Steps
+One sequence for every package; a step that does not apply is left out, never
+shown empty. `catalog/wizard-model.ts` (`stepsFor`) decides:
+
+| Step | Shown when | Content |
+| --- | --- | --- |
+| What it is | always | blurb, description, curated note, browser advisories |
+| Requirements | always | what the package needs; Docker, edge network, Caddy and (craft) build state; the daemon's plan check |
+| Storage | the manifest declares storage or persistent data | one mount per storage class from registered mounts, free space, owner-visible paths, folders the owner already has |
+| Address | always | domain, hostname per endpoint, who can reach it, advanced (container port, extra networks, zone and public address) |
+| Secrets and sign-in | the manifest declares secrets or sso is not `unsupported` | generated secrets by name and purpose (never values); how people sign in |
+| Review | always | the plan in plain words (create, change, leave alone), data placement, advisories, notes, raw plan |
+| Install | always | the install operation, or for a craft app Verify and build first |
+| Done | always | open the app or add its address, first-login hints, where data lives, Uninstall |
+
+Package shapes: a stateless craft app is About, Requirements, Address, Review,
+Install, Done. Storage adds Storage. `sso: optional` or declared secrets add
+Secrets and sign-in. Authentik has both and no special case beyond its curated
+sign-in paragraph.
+
+### Rules
+- The step list is an ordered list with `aria-current="step"`; each item has a
+  visually hidden "Step N of M". On a step change focus moves to the step
+  heading (`tabindex="-1"`) and the polite live region announces it.
+- Each step has one sentence of helper text, from manifest fields where they
+  exist and from `catalog/curated-copy.ts` where they do not (first-login
+  hints, per-app notes). A spec fails when a package in `catalog/` has no
+  curated entry.
+- Hard problems (Docker down, a refused plan) keep the owner on the step with
+  what happened and how to fix it. Soft ones (Caddy not running) show a warning
+  the owner acknowledges. Field errors are tied to their field
+  (`aria-invalid`, `aria-describedby`) once Continue was pressed.
+- Back and Next keep every choice (`InstallDrafts`, in memory). A reload starts
+  clean, and the plan is asked for again every time Requirements or Review is
+  entered, so the plan reviewed is the plan applied.
+- The action keeps its name: "Install GridCraft" (title and button), "Install
+  GridCraft" in the rail, "GridCraft installed" (heading, toast). Craft:
+  "Verify and build GridCraft" first. Package names in the rail come from the
+  catalog titles (`registerPackageTitles`).
+- Leaving while an operation runs does not stop it: returning to the wizard
+  picks the same operation back up. After a failure nothing is left installed
+  (the daemon rolls back) and Try again goes through a fresh Review.
+- Uninstall (`catalog/uninstall-app.ts`) is a danger dialog: what is removed,
+  what is kept, an "Also delete its data" box that lists every root in full,
+  and an acknowledgement for data still in Docker volumes only after the
+  daemon refuses.
+
+### Copy
+Curated hints come from the manifests, this folder and `docs/THIRD_PARTY.md`.
+Where a fact is upstream's own first-run behaviour (the first Immich account is
+the administrator; Authentik's `/if/flow/initial-setup/`), it is written once
+and kept generic. Nothing promises a feature the package lacks.
