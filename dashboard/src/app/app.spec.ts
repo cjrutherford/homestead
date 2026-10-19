@@ -137,6 +137,11 @@ describe('App', () => {
   });
 });
 
+const COMPLETE_SETUP = {
+  origin: 'fresh', legacy: false, complete: true, gated: false, current: '',
+  steps: [], choices: {}, facts: {}, providers: [], access: [], starter_apps: [],
+};
+
 describe('App logged in', () => {
   async function setup(state: string): Promise<ComponentFixture<App>> {
     TestBed.resetTestingModule();
@@ -193,11 +198,15 @@ describe('App logged in', () => {
   });
 
   async function visit(fixture: ComponentFixture<App>, url: string): Promise<void> {
-    await TestBed.inject(Router).navigateByUrl(url);
+    // The setup guard asks the daemon before a page opens (S287): answer
+    // it, as a complete walkthrough, while the navigation is pending.
+    const http = TestBed.inject(HttpTestingController);
+    const navigation = TestBed.inject(Router).navigateByUrl(url);
+    await new Promise((resolve) => setTimeout(resolve));
+    http.match('/api/v1/setup').forEach((req) => req.flush(COMPLETE_SETUP));
+    await navigation;
     fixture.detectChanges();
-    TestBed.inject(HttpTestingController)
-      .match(() => true)
-      .forEach((req) => req.flush({}));
+    http.match(() => true).forEach((req) => req.flush({}));
     fixture.detectChanges();
   }
 
@@ -232,6 +241,16 @@ describe('App logged in', () => {
     await visit(fixture, '/advanced');
     const toggle = fixture.nativeElement.querySelectorAll('.nav-group-toggle')[4] as HTMLElement;
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('adds the Setup entry once the walkthrough status is known, and Finish setup for a legacy appliance', async () => {
+    const fixture = await setup('CLAIMED');
+    const link = () => fixture.nativeElement.querySelector('nav a[href="/setup"]') as HTMLElement | null;
+    expect(link()).toBeNull();
+    const http = TestBed.inject(HttpTestingController);
+    http.match('/api/v1/setup').forEach((req) => req.flush({ ...COMPLETE_SETUP, complete: false, legacy: true, origin: 'legacy' }));
+    fixture.detectChanges();
+    expect(link()?.textContent?.trim()).toBe('Finish setup');
   });
 
   it('hides Claim once the appliance is claimed', async () => {

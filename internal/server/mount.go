@@ -125,11 +125,14 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountPlatform(st, filepath.Join(filepath.Dir(c.ConfigPath), "platform-trust.yaml"))
 	srv.MountFirewall(c.Port, configSvc)
 	srv.MountExposure(st, c.Port)
-	srv.MountSSO(SSOConfig{
+	ssoManager := srv.MountSSO(SSOConfig{
 		Store: st, Secrets: secrets, Auth: authSvc, Claim: claimSvc, Local: local,
 		CatalogDir: c.CatalogDir, YAMLPath: ssoYAMLPath(c.ConfigPath), Port: c.Port,
 	})
 	srv.MountTunnel(st, secrets)
+	srv.MountSetup(SetupConfig{
+		Store: st, Secrets: secrets, Wizards: wizard.New(st), SSO: ssoManager, CatalogDir: c.CatalogDir,
+	})
 	if c.Dashboard != nil {
 		srv.MountDashboard(c.Dashboard)
 	}

@@ -7,6 +7,8 @@ export interface NavItem {
   public?: boolean;
   /** Visible only while the appliance is unclaimed. */
   unclaimedOnly?: boolean;
+  /** The setup walkthrough entry (S287): shown with the label the walkthrough chooses. */
+  setup?: boolean;
 }
 
 export interface NavGroup {
@@ -21,6 +23,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: 'Overview',
     items: [
       { label: 'Status', path: '/status', public: true },
+      { label: 'Setup', path: '/setup', setup: true },
       { label: 'Claim', path: '/claim', public: true, unclaimedOnly: true },
     ],
   },
@@ -73,14 +76,25 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 
 /**
  * The groups a visitor sees. Logged-out visitors get Status, and Claim
- * while the appliance is unclaimed; everything else needs a session.
+ * while the appliance is unclaimed; everything else needs a session. The
+ * Setup entry (S287) appears once the walkthrough status is known, and reads
+ * "Finish setup" on an appliance claimed before the walkthrough existed.
  * Empty groups are dropped.
  */
-export function visibleGroups(loggedIn: boolean, unclaimed: boolean): NavGroup[] {
+export function visibleGroups(
+  loggedIn: boolean,
+  unclaimed: boolean,
+  setupLabel: string | null = null,
+): NavGroup[] {
   return NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter(
-      (item) => (!item.unclaimedOnly || unclaimed) && (loggedIn || item.public),
-    ),
+    items: group.items
+      .filter(
+        (item) =>
+          (!item.unclaimedOnly || unclaimed) &&
+          (loggedIn || item.public) &&
+          (!item.setup || (loggedIn && setupLabel !== null)),
+      )
+      .map((item) => (item.setup && setupLabel !== null ? { ...item, label: setupLabel } : item)),
   })).filter((group) => group.items.length > 0);
 }

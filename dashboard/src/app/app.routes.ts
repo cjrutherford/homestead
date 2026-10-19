@@ -24,8 +24,9 @@ import { Trust } from './trust/trust';
 import { AuditLog } from './audit/audit';
 import { Account } from './account/account';
 import { NotFound } from './not-found/not-found';
+import { gateRoutes } from './setup/setup.guard';
 
-export const routes: Routes = [
+const walkthroughRoutes: Routes = [
   { path: '', redirectTo: 'status', pathMatch: 'full' },
   { path: 'status', component: Status },
   { path: 'claim', component: Claim },
@@ -62,6 +63,11 @@ export const routes: Routes = [
   { path: 'validation-board', component: ValidationBoard },
   { path: 'account', component: Account },
   {
+    // Loaded on demand: only the walkthrough needs the page (S287).
+    path: 'setup',
+    loadComponent: () => import('./setup/setup').then((m) => m.Setup),
+  },
+  {
     // Loaded on demand: only the owner configuring Authentik sign-in needs it (S286).
     path: 'sign-in',
     loadComponent: () => import('./sso/sign-in').then((m) => m.SignIn),
@@ -69,3 +75,10 @@ export const routes: Routes = [
   // Later slices register their routes here, before the wildcard.
   { path: '**', component: NotFound },
 ];
+
+/**
+ * The route table. While the post-claim walkthrough holds a fresh appliance's
+ * owner (S287, ADR-034), every route outside SETUP_EXEMPT_PATHS redirects to
+ * /setup. The gate is this guard and nothing else.
+ */
+export const routes: Routes = gateRoutes(walkthroughRoutes);

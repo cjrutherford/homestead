@@ -12,6 +12,9 @@
   <app-loading [loading]="loading()" shape="panel">
     @if (!loading() && manifest(); as m) {
       <h1>{{ current() === 'done' ? title() + ' installed' : 'Install ' + title() }}</h1>
+      @if (fromSetup) {
+        <p><a routerLink="/setup">Back to setup</a></p>
+      }
 
       <ol class="wizard-steps" aria-label="Install steps">
         @for (step of steps(); track step.id; let index = $index) {

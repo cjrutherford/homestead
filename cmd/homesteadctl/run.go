@@ -80,6 +80,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runUpdates(ctx, client, rest[1:], stdout, stderr)
 	case "craft":
 		return runCraft(ctx, client, rest[1:], stdout, stderr)
+	case "setup":
+		return runSetup(ctx, client, rest[1:], stdout, stderr)
 	case "sso":
 		return runSSO(ctx, client, rest[1:], stdout, stderr)
 	case "secrets":
@@ -146,6 +148,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  data <status|plan|approve|remove-volumes>  app data placement, migration off Docker volumes, and old-volume removal (S277)")
 	fmt.Fprintln(w, "  craft <status|plan|build|trust>  craft image verify-then-build and craft signing keys (S279)")
 	fmt.Fprintln(w, "  craft files <status|link|rotate|unlink|local-only|launch>  Nextcloud document storage for craft apps (S254)")
+	fmt.Fprintln(w, "  setup <status|step|skip|unskip>  post-claim setup walkthrough (S287)")
 	fmt.Fprintln(w, "  sso <status|plan|approve|apply|link|unlink|disable>  dashboard sign-in with Authentik (S286)")
 	fmt.Fprintln(w, "  updates <list|apply|platform|verify|trust>  application updates (S243); platform release verification and trusted keys (S264)")
 	fmt.Fprintln(w, "  secrets <status|rekey>  secret-store key version and confirmed re-key (S258)")

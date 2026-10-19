@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 43
+const CurrentVersion = 44
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -887,6 +887,21 @@ CREATE TABLE IF NOT EXISTS sso_state (
 	actor TEXT NOT NULL DEFAULT '',
 	expires_at TEXT NOT NULL
 );`,
+	},
+	{
+		// S287 post-claim setup walkthrough (ADR-034): an appliance that was
+		// already claimed when this migration runs is stamped legacy in the
+		// resumable wizard store (id setup, non-sensitive payload), so the
+		// dashboard never gates it behind the walkthrough. An appliance that
+		// is unclaimed at this point (every fresh install, every factory
+		// reset) gets no row and is a fresh one. Re-running is harmless:
+		// an existing row is never replaced.
+		version: 44,
+		name:    "setup walkthrough legacy stamp",
+		sql: `
+INSERT OR IGNORE INTO wizard_state (wizard, step, payload, updated_at)
+	SELECT 'setup', 'account', '{"origin":"legacy"}', strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+	WHERE EXISTS (SELECT 1 FROM appliance WHERE id = 1 AND state = 'CLAIMED');`,
 	},
 }
 

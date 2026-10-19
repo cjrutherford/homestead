@@ -273,3 +273,69 @@ func TestUpgradeFromV30KeepsPopulatedBackupRecipients(t *testing.T) {
 		t.Fatalf("export ack = %q, %v", ack, err)
 	}
 }
+
+// S287: the setup walkthrough stamp (migration 44) marks an appliance that
+// was already claimed at upgrade time as legacy, and leaves an unclaimed one
+// alone so it is a fresh appliance.
+func TestSetupLegacyStampOnUpgrade(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		claimed bool
+		want    string
+	}{
+		{"claimed before upgrade is legacy", true, `{"origin":"legacy"}`},
+		{"unclaimed at upgrade is fresh", false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "test.db")
+			s, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			steps := []string{`DELETE FROM wizard_state WHERE wizard = 'setup'`, `DELETE FROM schema_migrations WHERE version >= 44`}
+			if tc.claimed {
+				steps = append([]string{`UPDATE appliance SET state = 'CLAIMED' WHERE id = 1`}, steps...)
+			}
+			for _, stmt := range steps {
+				if _, err := s.DB().Exec(stmt); err != nil {
+					t.Fatalf("%s: %v", stmt, err)
+				}
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			up, err := Open(path)
+			if err != nil {
+				t.Fatalf("upgrade: %v", err)
+			}
+			defer up.Close()
+			var payload string
+			err = up.DB().QueryRow(`SELECT payload FROM wizard_state WHERE wizard = 'setup'`).Scan(&payload)
+			if tc.want == "" {
+				if err == nil {
+					t.Fatalf("unclaimed appliance got a setup row: %s", payload)
+				}
+				return
+			}
+			if err != nil || payload != tc.want {
+				t.Fatalf("payload = %q, %v; want %q", payload, err, tc.want)
+			}
+			// A second open never replaces an owner-edited row.
+			if _, err := up.DB().Exec(`UPDATE wizard_state SET payload = '{"origin":"legacy","skipped":["sign-in"]}' WHERE wizard = 'setup'`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := up.DB().Exec(`DELETE FROM schema_migrations WHERE version = 44`); err != nil {
+				t.Fatal(err)
+			}
+			up.Close()
+			again, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer again.Close()
+			if err := again.DB().QueryRow(`SELECT payload FROM wizard_state WHERE wizard = 'setup'`).Scan(&payload); err != nil || payload == tc.want {
+				t.Fatalf("row replaced on re-run: %q, %v", payload, err)
+			}
+		})
+	}
+}

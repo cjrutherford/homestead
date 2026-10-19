@@ -4467,3 +4467,36 @@ there is no API); gridcraft and nextcloud images and `craft_images`/
   (same code path as password sessions, covered by tests), a real browser
   reaching Authentik over the tunnel (deliberately not exposed), the
   `https://<edge host>` origin for the dashboard.
+
+## S287: Post-claim setup walkthrough (ADR-034)
+- `internal/setup` (state, provider copy, access options), `internal/server/setup.go`
+  (`GET /api/v1/setup`, `PUT /api/v1/setup/steps/{name}`, session class), schema
+  migration 44 (legacy stamp, schema v44), `homesteadctl setup ...`, and the
+  dashboard Setup page (`/setup`, lazy), `setupGuard` and the Setup / Finish setup
+  navigation entry. Design and operations: `docs/architecture/SETUP_WALKTHROUGH.md`.
+- Tests: step derivation, resume, skip, review path, tunnel visibility, legacy
+  origin and the secrets-absent check in `internal/setup` and `internal/server`;
+  provider permission copy pinned to the adapters in
+  `internal/setup/permissions_test.go`; store migration test; CLI output test;
+  Vitest specs for the page, the guard, the exemptions and the legacy behaviour.
+- KVM review on VM 2: **PENDING.** Plan: (1) factory-reset (keep the VM 2
+  tunnel and Cloudflare DNS untouched; do not reset the Cloudflare side),
+  claim, create the first admin; `setup status` must show `origin: fresh`,
+  gated, current `account`; any dashboard URL redirects to `/setup`; API and CLI
+  calls work throughout. (2) Account: export the recovery identity on the
+  Account page, acknowledge, return; step reads done. (3) Sign-in: install
+  Authentik through the link (wizard shows "Back to setup"), link, or skip.
+  (4) Domain: choose each provider and check the permission list; store a
+  throwaway credential and confirm `GET /api/v1/secrets` lists only its name;
+  grep the audit log, `wizard_state` rows and journal for the value (none).
+  (5) Apps: install one starter app from the list and watch the rail while
+  finishing the walkthrough. (6) Skip a step with `setup skip`, `unskip`, and do
+  one step from the CLI; both reflect on reload. (7) Review path: on an
+  appliance that already has onboarding and a tunnel (VM 2 as found, with the
+  `legacy` row removed from `wizard_state` so it reads fresh:
+  `DELETE FROM wizard_state WHERE wizard='setup'`), the domain step opens as a
+  review, "This looks right" changes nothing (compare `tunnel_routes` and the
+  audit log before and after). (8) Legacy: restore the `legacy` row
+  (`{"origin":"legacy"}`); the dashboard is not gated and shows Finish setup.
+  Leave VM 2 as found.
+

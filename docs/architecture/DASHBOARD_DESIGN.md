@@ -230,3 +230,11 @@ Curated hints come from the manifests, this folder and `docs/THIRD_PARTY.md`.
 Where a fact is upstream's own first-run behaviour (the first Immich account is
 the administrator; Authentik's `/if/flow/initial-setup/`), it is written once
 and kept generic. Nothing promises a feature the package lacks.
+
+## Setup walkthrough (S287)
+`/setup` (lazy) is the post-claim walkthrough. It uses the shared primitives
+(`app-loading`, `app-state-message`, the `step-list` glyph styles) and one h1.
+It links to existing pages rather than embedding them. `setupGuard` is the only
+gate; the exempt routes are listed in `setup/setup.guard.ts` and
+`docs/architecture/SETUP_WALKTHROUGH.md`. The navigation entry reads "Setup", or
+"Finish setup" on an appliance claimed before the walkthrough existed.

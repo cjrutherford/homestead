@@ -123,6 +123,8 @@ function helpFor(id: StepId, title: string): string {
 export class InstallWizard implements OnInit {
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
+  /** Opened from the setup walkthrough (S287): offer the way back. */
+  protected readonly fromSetup = this.route.snapshot?.queryParamMap?.get('from') === 'setup';
   private readonly drafts = inject(InstallDrafts);
   private readonly toast = inject(ToastService);
   private readonly destroyRef = inject(DestroyRef);

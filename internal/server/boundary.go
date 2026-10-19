@@ -226,6 +226,8 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/data-migrations/{name}/plan":           ClassSession,
 	"POST /api/v1/data-migrations/{name}/approve":        ClassSession,
 	"POST /api/v1/data-migrations/{name}/remove-volumes": ClassSession,
+	"GET /api/v1/setup":                                  ClassSession,
+	"PUT /api/v1/setup/steps/{name}":                     ClassSession,
 	"GET /api/v1/sso":                                    ClassSession,
 	"POST /api/v1/sso/plan":                              ClassSession,
 	"POST /api/v1/sso/approve":                           ClassSession,

@@ -1,11 +1,12 @@
 import { NgComponentOutlet } from '@angular/common';
-import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { SessionService } from './auth/session.service';
 import { ApiService, Identity } from './core/api.service';
 import { NAV_GROUPS, NavGroup, visibleGroups } from './core/nav';
 import { ThemeService } from './core/theme.service';
+import { SetupService } from './setup/setup.service';
 import { WorkOrders } from './core/work-orders.service';
 import { Reauth } from './core/reauth';
 import { ToastRegion } from './ui/toast-region';
@@ -61,6 +62,7 @@ export class App {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
   private readonly workOrders = inject(WorkOrders);
+  private readonly setup = inject(SetupService);
   protected readonly reauth = inject(Reauth);
   // Injected so a stored theme choice is applied at startup.
   protected readonly theme = inject(ThemeService);
@@ -75,7 +77,7 @@ export class App {
   protected readonly choices = signal<Record<string, boolean>>(readChoices());
   private readonly currentGroup = signal<string | null>(groupOf(this.router.url));
   protected readonly groups = computed<NavGroup[]>(() =>
-    visibleGroups(this.sessions.isLoggedIn(), this.identity()?.state === 'UNCLAIMED'),
+    visibleGroups(this.sessions.isLoggedIn(), this.identity()?.state === 'UNCLAIMED', this.setup.navLabel()),
   );
 
   private readonly menuButton = viewChild<ElementRef<HTMLElement>>('menuButton');
@@ -89,6 +91,11 @@ export class App {
     effect(() => {
       if (this.sessions.isLoggedIn()) {
         this.workOrders.restore(true);
+        // The Setup entry needs the walkthrough status (S287). A failure
+        // leaves the entry out; it never blocks the shell.
+        untracked(() => this.setup.setupStatus().subscribe({ error: () => this.setup.clear() }));
+      } else {
+        untracked(() => this.setup.clear());
       }
     });
     this.router.events.pipe(filter((event) => event instanceof NavigationEnd)).subscribe((event) => {

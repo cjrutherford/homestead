@@ -30,6 +30,11 @@ describe('routes', () => {
     expect(page?.loadComponent).toBeTypeOf('function');
   });
 
+  it('loads the setup walkthrough on demand (S287)', () => {
+    const page = routes.find((route) => route.path === 'setup');
+    expect(page?.loadComponent).toBeTypeOf('function');
+  });
+
   it('redirects the root to status', () => {
     const root = routes.find((route) => route.path === '');
     expect(root?.redirectTo).toBe('status');

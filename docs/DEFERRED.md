@@ -671,7 +671,7 @@
   answers 409 (no current plan). Idempotence is shown by plan, approve, apply.
 - The audit entry for `sso.approve` shows `keep_token=[redacted]` (a boolean,
   redacted by the field-name rule).
-- `homesteadctl login` prints the session token on stdout; a script that does
+- The CLI login command prints the session token on stdout; a script that does
   not redirect it leaks the token into logs.
 - OIDC login for the CLI, RP-initiated logout, multiple links, non-owner SSO
   and disabling local login stay deferred (see the ADR-033 entry above).
@@ -679,3 +679,17 @@
   it within its 10 minutes (the intent is bound to the admin and the state, as
   ADR-033 designs). Bind the intent to the owner's browser, or have the
   dashboard confirm the subject before the link is recorded.
+
+## Post-claim setup walkthrough (S287)
+- The walkthrough sends the owner to the existing Tunnel, Exposure, Certificates,
+  Account and Sign-in pages (exempt from the gate) instead of embedding their
+  review and approve steps. Embedding needs those pages split into components
+  without their own heading; today each page owns a single h1.
+- Step 1 does not offer a password change: the daemon has no "generated or
+  temporary password" state to detect. The Account page changes the password.
+- The domain step records the provider and access choice and seals the DNS
+  credential, but does not edit the domain wizard's zone and base; those still
+  come from the domain wizard routes and the CLI.
+- The setup state is per appliance, not per owner; a second admin sees the same
+  walkthrough. Multiple admins are out of scope for v1.
+- The KVM acceptance run for S287 is pending (see `docs/DEVELOPMENT.md`).
