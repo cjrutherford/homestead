@@ -8,8 +8,8 @@ import { SetupService } from './setup.service';
  * Routes that stay reachable while the walkthrough holds the owner (S287,
  * ADR-034): the pages the walkthrough itself sends the owner to, the way
  * out (login) and the claim page. Everything else redirects to /setup.
- * Operation detail is reachable so an install the walkthrough started can
- * be followed.
+ * The operations list and operation detail are reachable so an install the
+ * walkthrough started can be followed.
  */
 export const SETUP_EXEMPT_PATHS: readonly string[] = [
   'setup',
@@ -21,6 +21,7 @@ export const SETUP_EXEMPT_PATHS: readonly string[] = [
   'exposure',
   'tls',
   'catalog/:name/install',
+  'operations',
   'operations/:id',
 ];
 

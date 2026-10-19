@@ -18,7 +18,8 @@ const setupUsage = `usage: homesteadctl setup <status|step|skip|unskip> ...
 
 The post-claim setup walkthrough (ADR-034). It only records your choices and
 reads what is already true; changes go through their own commands:
-  account   homesteadctl backup identity export / ack
+  account   homesteadctl backup identity export / ack, then
+            homesteadctl setup step account --acknowledge (confirms your password)
   sign-in   homesteadctl sso plan / approve / apply / link
   domain    homesteadctl tls, tunnel and exposure commands
   apps      homesteadctl apps install
@@ -67,7 +68,7 @@ func runSetupStep(ctx context.Context, client *apiclient.Client, args []string, 
 	name := args[0]
 	fs := flag.NewFlagSet("setup step", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	ack := fs.Bool("acknowledge", false, "confirm the domain or apps step as finished (changes nothing else)")
+	ack := fs.Bool("acknowledge", false, "account: confirm your password; domain: confirm once the tunnel or exposure plan exists; apps: finished (changes nothing else)")
 	provider := fs.String("provider", "", "DNS provider choice for the domain step")
 	access := fs.String("access", "", "access choice for the domain step: home, tunnel or router")
 	if err := fs.Parse(args[1:]); err != nil {

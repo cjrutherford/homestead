@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -74,7 +75,7 @@ func TestSetupStatusAndSteps(t *testing.T) {
 		{"nope", map[string]string{"state": "skipped"}, 404},
 		{"apps", map[string]string{"bogus": "x"}, 400},
 		{"apps", map[string]string{}, 400},
-		{"account", map[string]string{"state": "done"}, 400},
+		{"sign-in", map[string]string{"state": "done"}, 400},
 		{"domain", map[string]string{"provider": "godaddy"}, 400},
 		{"domain", map[string]string{"access": "tunnel"}, 400},
 	} {
@@ -116,7 +117,7 @@ func TestSetupNeverCarriesCredentials(t *testing.T) {
 		t.Fatalf("expected sealed credentials to be noticed by presence: %+v", s.Facts.Domain)
 	}
 	for _, body := range []map[string]string{
-		{"provider": "cloudflare", "access": "tunnel"},
+		{"provider": "cloudflare", "access": "home"},
 		{"state": "done"},
 	} {
 		rec := serveRequest(t, srv, http.MethodPut, "/api/v1/setup/steps/domain", body)
@@ -153,5 +154,39 @@ func TestSetupNeverCarriesCredentials(t *testing.T) {
 	}
 	if strings.Contains(all.String(), sentinel) {
 		t.Fatal("credential value leaked into a setup response, wizard row or audit entry")
+	}
+}
+
+func TestSetupDomainConfirmNeedsRealSetup(t *testing.T) {
+	srv, st, _ := setupTestServer(t)
+	put := func(body map[string]string) *httptest.ResponseRecorder {
+		return serveRequest(t, srv, http.MethodPut, "/api/v1/setup/steps/domain", body)
+	}
+	if rec := put(map[string]string{"provider": "cloudflare", "access": "tunnel"}); rec.Code != 200 {
+		t.Fatalf("choose: %d %s", rec.Code, rec.Body)
+	}
+	rec := put(map[string]string{"state": "done"})
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "/tunnel") {
+		t.Fatalf("tunnel without a route: %d %s", rec.Code, rec.Body)
+	}
+	if _, err := st.DB().Exec(`INSERT INTO tunnel_routes (hostname, tunnel_id, service, updated_at) VALUES ('a.example.com','t1','http://x','now')`); err != nil {
+		t.Fatal(err)
+	}
+	if rec := put(map[string]string{"state": "done"}); rec.Code != 200 {
+		t.Fatalf("tunnel with a route: %d %s", rec.Code, rec.Body)
+	}
+	if rec := put(map[string]string{"access": "router", "state": "pending"}); rec.Code != 200 {
+		t.Fatalf("router choice: %d %s", rec.Code, rec.Body)
+	}
+	_, _ = st.DB().Exec(`DELETE FROM tunnel_routes`)
+	rec = put(map[string]string{"state": "done"})
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "/exposure") {
+		t.Fatalf("router without a plan: %d %s", rec.Code, rec.Body)
+	}
+	if _, err := st.DB().Exec(`INSERT INTO exposure_approvals (host, plan, actor, updated_at) VALUES ('a.example.com','{}','o','now')`); err != nil {
+		t.Fatal(err)
+	}
+	if rec := put(map[string]string{"state": "done"}); rec.Code != 200 {
+		t.Fatalf("router with a plan: %d %s", rec.Code, rec.Body)
 	}
 }

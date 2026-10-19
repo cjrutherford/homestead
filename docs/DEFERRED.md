@@ -685,8 +685,10 @@
   Account and Sign-in pages (exempt from the gate) instead of embedding their
   review and approve steps. Embedding needs those pages split into components
   without their own heading; today each page owns a single h1.
-- Step 1 does not offer a password change: the daemon has no "generated or
-  temporary password" state to detect. The Account page changes the password.
+- Step 1 does not detect a generated or temporary password: the daemon has no
+  such state. Step 1 links to the Account password change and asks the owner to
+  confirm explicitly. Track generated or temporary passwords so the daemon can
+  require the change itself.
 - The domain step records the provider and access choice and seals the DNS
   credential, but does not edit the domain wizard's zone and base; those still
   come from the domain wizard routes and the CLI.

@@ -17,15 +17,48 @@ finished from the CLI or another page reads `done`.
 
 | Step | Done when | Otherwise |
 | --- | --- | --- |
-| `account` | the latest recovery identity export is acknowledged (`backups/identity`) | pending; skippable |
-| `sign-in` | Authentik sign-in is configured, linked and not dormant (`sso` status) | pending; skippable |
-| `domain` | the owner acknowledged it, or a domain is onboarded, a tunnel route exists, or an exposure plan is approved | pending; skippable |
+| `account` | the latest recovery identity export is acknowledged (`backups/identity`) and the owner confirmed their password | pending; skippable |
+| `sign-in` | Authentik sign-in is configured and linked (`sso` status); a dormant link (Authentik removed) stays done and the detail warns that Authentik sign-in is off and the local password still works | pending; skippable |
+| `domain` | see "Domain completion" below | pending; skippable |
 | `apps` | the owner acknowledged it, or any catalog app other than Authentik is installed | pending; skippable |
 
 The walkthrough is complete when every step is done or skipped.
 
-The domain step has a review mode. When a domain wizard selection, an
-onboarded domain, a tunnel route or an approved exposure plan already exists,
+Step 1 has two parts. The recovery identity is exported and acknowledged
+through the existing `backups/identity` routes. The password is confirmed by
+the owner explicitly ("Confirm my password", beside a link to the Account
+password change; CLI `setup step account --acknowledge`). The daemon has no
+generated or temporary password state to detect, so this is an acknowledgement
+(tracking such passwords is in `docs/DEFERRED.md`). The step is done only when
+both are true. Taking the step back (`unskip`) clears the confirmation.
+
+### Domain completion
+
+What the owner chose (`access`) decides what the step needs:
+
+| Access | Confirming needs |
+| --- | --- |
+| Home network only (default) | the acknowledgement alone |
+| Cloudflare Tunnel | Cloudflare as the stored provider (the choice here, else the one domain onboarding saved) and a tunnel route (`Facts.Tunnels > 0`) |
+| Router port forward | a stored provider and an approved exposure plan (`Facts.Exposures > 0`) |
+
+`PUT /api/v1/setup/steps/domain {"state":"done"}` answers 422 with a plain
+message when those facts are missing, naming the page that fixes it (`/tunnel`
+or `/exposure`). The dashboard reads the same facts and explains what is still
+needed instead of offering "I have finished here". An acknowledgement made
+under home network only does not satisfy a later tunnel or router choice. A
+tunnel route or approved exposure plan that exists already counts as done, as
+does an onboarded domain under home network only. The step's detail text
+reflects the chosen access.
+
+This is how "reviewed and approved in the walkthrough" is met: the plan is
+reviewed and approved on the linked Tunnel or Exposure page (those pages own
+plan, review and approve, ADR-006), and the walkthrough reads back the approved
+state before it lets the owner confirm.
+
+The domain step has a review mode. When a domain is onboarded, or a tunnel
+route or an approved exposure plan already exists (a saved but never-onboarded
+domain wizard payload does not count),
 the step opens as a review of it: links to the Tunnel, Exposure and
 Certificates pages, and a "This looks right" button that only records the
 acknowledgement. The walkthrough never re-runs onboarding or re-creates a
@@ -39,7 +72,12 @@ For each, the page lists the credential fields (read from the adapter's
 not read) and the exact permissions. The permission copy is pinned by
 `internal/setup/permissions_test.go`: each adapter runs against a recording
 server and the test fails if the operations it makes and the grants listed
-differ in either direction.
+differ in either direction. The Cloudflare tunnel grant (`Account:
+Cloudflare Tunnel: Edit`) is pinned the same way by
+`TestTunnelPermissionCopyMatchesClientCalls`, which runs the tunnel client
+(list accounts, create, get, delete) against a recording server. The grant
+wording is our description of the provider console, not verified console text;
+the set of grants is what is pinned.
 
 | Provider | Permissions |
 | --- | --- |
@@ -76,11 +114,23 @@ The gate is a router guard in the dashboard and nothing else. The API, the CLI
 and the acceptance script are never gated; no route reads the `gated` field.
 
 For a fresh appliance the guard redirects every dashboard route to `/setup`
-until the walkthrough is complete, except the pages the walkthrough itself
-sends the owner to: `/setup`, `/login`, `/claim`, `/account`, `/sign-in`,
-`/tunnel`, `/exposure`, `/tls`, `/catalog/:name/install` and
-`/operations/:id`. The guard lets a navigation through when the owner is not
-logged in or the status cannot be read, so it can never lock the owner out.
+until the walkthrough is complete, except the pages below. Each is exempt because the walkthrough sends the owner there:
+
+| Route | Why it is exempt |
+| --- | --- |
+| `/setup` | the walkthrough itself |
+| `/login`, `/claim` | the way in; the owner must be able to sign in or claim |
+| `/account` | export and acknowledge the recovery identity; change the password |
+| `/sign-in` | link or configure Authentik sign-in (step 2) |
+| `/tunnel` | create and approve a tunnel (step 3) |
+| `/exposure` | review and approve an exposure plan (step 3) |
+| `/tls` | certificates and DNS credentials (step 3) |
+| `/catalog/:name/install` | the S285 install wizard for Authentik and starter apps |
+| `/operations`, `/operations/:id` | follow an install the walkthrough started, from the rail or the list |
+
+The guard fails open: it lets a navigation through when the owner is not
+logged in or the status cannot be read (any error from `GET /api/v1/setup`), so
+a daemon fault can never lock the owner out of the dashboard.
 
 An appliance claimed before this slice is not gated. Schema migration 44
 inserts the `setup` wizard row `{"origin":"legacy"}` only when the appliance is
@@ -90,13 +140,26 @@ fixtures and the acceptance flow, which create a store and claim afterwards.
 Legacy appliances see a "Finish setup" navigation entry while steps are
 unfinished; the entry is called "Setup" otherwise, and stays after completion.
 
+## Factory reset
+
+There is no in-repo factory-reset command or script. Resetting an appliance
+means removing its database, `homestead.db` (with its `-wal` and `-shm`
+files). The `setup` wizard row and the legacy stamp live only in that
+database's `wizard_state` table, so they cannot survive a reset. Migration 44
+stamps `legacy` only when the appliance is already `CLAIMED` at the moment the
+migration runs; a new database migrates while unclaimed, gets no `setup` row,
+and a freshly claimed appliance reads `origin: fresh`
+(`TestFreshStoreHasNoSetupRow`). A reset that keeps the database and only
+clears claim state must also delete `wizard_state` where `wizard = 'setup'`.
+
 ## Operating it from the CLI
 
 ```
 homesteadctl setup status            # origin, the four steps, what is next
 homesteadctl setup step domain       # one step's state and detail
 homesteadctl setup step domain --provider cloudflare --access tunnel
-homesteadctl setup step apps --acknowledge   # domain and apps only
+homesteadctl setup step account --acknowledge  # confirm my password
+homesteadctl setup step apps --acknowledge     # also domain, once its tunnel/exposure exists
 homesteadctl setup skip sign-in
 homesteadctl setup unskip sign-in
 ```

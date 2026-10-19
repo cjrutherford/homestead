@@ -18,6 +18,7 @@ export function setupStatus(overrides: Partial<SetupStatus> = {}): SetupStatus {
     facts: {
       recovery_exported: false,
       recovery_acknowledged: false,
+      password_confirmed: false,
       sign_in: { authentik_installed: false, configured: false, linked: false, dormant: false },
       domain: { configured: false, onboarded: false, credentials_sealed: false },
       tunnels: 0,

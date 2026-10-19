@@ -177,6 +177,8 @@ func (s *Server) MountSetup(c SetupConfig) *setup.Service {
 			switch {
 			case errors.Is(err, setup.ErrUnknownStep):
 				http.Error(w, err.Error(), http.StatusNotFound)
+			case errors.Is(err, setup.ErrNotReady):
+				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			case errors.Is(err, setup.ErrInvalid):
 				http.Error(w, err.Error(), http.StatusBadRequest)
 			default:

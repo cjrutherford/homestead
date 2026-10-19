@@ -5,10 +5,11 @@ import (
 )
 
 // Permission is one grant the owner gives a provider credential. Grant is
-// the exact wording the provider's own console uses, so the owner can match
-// it field for field. permissions_test.go runs each adapter against a
-// recording server and fails when the calls an adapter makes and the grants
-// listed here differ, in either direction.
+// our best description of the provider's console wording; nothing verifies
+// the exact console text. What is pinned is the set of grants:
+// permissions_test.go runs each adapter and the tunnel client against a
+// recording server and fails when the calls they make and the grants listed
+// here differ, in either direction.
 type Permission struct {
 	Grant  string `json:"grant"`
 	Reason string `json:"reason"`
@@ -48,7 +49,7 @@ var providerCopy = []Provider{
 			{Grant: "Zone: DNS: Edit", Reason: "list, create and delete the records Homestead manages, and the temporary records for certificates"},
 		},
 		TunnelPermissions: []Permission{
-			{Grant: "Account: Cloudflare Tunnel: Edit", Reason: "create, check and remove the tunnel"},
+			{Grant: "Account: Cloudflare Tunnel: Edit", Reason: "find your account, and create, check and remove the tunnel"},
 		},
 		Notes: []string{
 			"Create an API token (My Profile, API Tokens, Create Token) and limit it to the one zone you chose.",

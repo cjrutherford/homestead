@@ -4484,9 +4484,14 @@ there is no API); gridcraft and nextcloud images and `craft_images`/
   claim, create the first admin; `setup status` must show `origin: fresh`,
   gated, current `account`; any dashboard URL redirects to `/setup`; API and CLI
   calls work throughout. (2) Account: export the recovery identity on the
-  Account page, acknowledge, return; step reads done. (3) Sign-in: install
+  Account page, acknowledge, return; the step is still to do until "Confirm my
+  password" is pressed (or `setup step account --acknowledge`); then it reads done. (3) Sign-in: install
   Authentik through the link (wizard shows "Back to setup"), link, or skip.
-  (4) Domain: choose each provider and check the permission list; store a
+  (4) Domain: choose each provider and check the permission list; with Cloudflare
+  plus Cloudflare Tunnel chosen and no tunnel, the page explains what is missing
+  and `setup step domain --acknowledge` answers 422 naming `/tunnel` (likewise
+  router without an approved exposure plan, naming `/exposure`); home network
+  only confirms on acknowledge alone; store a
   throwaway credential and confirm `GET /api/v1/secrets` lists only its name;
   grep the audit log, `wizard_state` rows and journal for the value (none).
   (5) Apps: install one starter app from the list and watch the rail while
@@ -4495,7 +4500,8 @@ there is no API); gridcraft and nextcloud images and `craft_images`/
   appliance that already has onboarding and a tunnel (VM 2 as found, with the
   `legacy` row removed from `wizard_state` so it reads fresh:
   `DELETE FROM wizard_state WHERE wizard='setup'`), the domain step opens as a
-  review, "This looks right" changes nothing (compare `tunnel_routes` and the
+  review (a domain wizard payload that was never onboarded does not count),
+  "This looks right" changes nothing (compare `tunnel_routes` and the
   audit log before and after). (8) Legacy: restore the `legacy` row
   (`{"origin":"legacy"}`); the dashboard is not gated and shows Finish setup.
   Leave VM 2 as found.

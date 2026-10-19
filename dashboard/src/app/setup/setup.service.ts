@@ -58,6 +58,7 @@ export interface SetupStatus {
   facts: {
     recovery_exported: boolean;
     recovery_acknowledged: boolean;
+    password_confirmed: boolean;
     sign_in: { authentik_installed: boolean; configured: boolean; linked: boolean; dormant: boolean };
     domain: { configured: boolean; provider?: string; zone?: string; onboarded: boolean; credentials_sealed: boolean };
     tunnels: number;

@@ -123,3 +123,17 @@ S286 sign-in), but nothing sequences them.
   per-provider permission copy to the calls each adapter makes.
 - Implementation must preserve this boundary.
 - Changes require a superseding ADR.
+
+## Amendment 2026-10-19 (S287 review)
+Status stays Accepted; this records implementation details, not a change of
+decision.
+- The guard's exemptions also include the operations list (`operations`) as
+  well as `operations/:id`, and the pages the walkthrough links to (`account`,
+  `sign-in`, `tunnel`, `exposure`, `tls`, `catalog/:name/install`). The full
+  list and the reason for each is in `docs/architecture/SETUP_WALKTHROUGH.md`.
+- The guard fails open: when the status cannot be read (or the owner is not
+  logged in) the navigation is allowed, so a daemon fault can never lock the
+  owner out of the dashboard.
+- "Reviewed and approved in the walkthrough" is met by reading back approval:
+  the plan is reviewed and approved on the linked Tunnel or Exposure page, and
+  the walkthrough only confirms once that approved state exists.

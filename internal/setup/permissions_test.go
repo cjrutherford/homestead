@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"homestead/internal/dns"
+	"homestead/internal/router"
 )
 
 // The permission copy is pinned to what each adapter really calls. The
@@ -227,5 +228,57 @@ func TestTunnelOptionAndGrant(t *testing.T) {
 		if (len(p.TunnelPermissions) > 0) != (p.Name == "cloudflare") {
 			t.Fatalf("%s tunnel permissions = %+v", p.Name, p.TunnelPermissions)
 		}
+	}
+}
+
+// The Cloudflare tunnel permission copy is pinned to what the tunnel client
+// really calls: every request goes under /accounts, so the Account-level
+// tunnel grant is the one the copy lists, and nothing zone-level is called.
+func TestTunnelPermissionCopyMatchesClientCalls(t *testing.T) {
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		_, _ = io.Copy(io.Discard, r.Body)
+		result := any(map[string]any{"id": "t1", "name": "n", "token": "tok", "status": "healthy"})
+		if r.URL.Path == "/accounts" {
+			result = []map[string]any{{"id": "0123456789abcdef0123456789abcdef"}}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "errors": []any{}, "result": result})
+	}))
+	t.Cleanup(srv.Close)
+	c, err := router.NewTunnelClient(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	const acct = "0123456789abcdef0123456789abcdef"
+	if _, err := c.ListAccounts(ctx, "tok"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CreateTunnel(ctx, "tok", acct, "home"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.GetTunnel(ctx, "tok", acct, "t1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteTunnel(ctx, "tok", acct, "t1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 4 {
+		t.Fatalf("calls = %v", calls)
+	}
+	for _, call := range calls {
+		_, path, _ := strings.Cut(call, " ")
+		if path != "/accounts" && !strings.HasPrefix(path, "/accounts/") {
+			t.Fatalf("tunnel client called outside the account scope: %s", call)
+		}
+	}
+	prov, _ := ProviderNamed("cloudflare")
+	if len(prov.TunnelPermissions) != 1 || prov.TunnelPermissions[0].Grant != "Account: Cloudflare Tunnel: Edit" {
+		t.Fatalf("tunnel grants = %+v", prov.TunnelPermissions)
+	}
+	if !strings.Contains(prov.TunnelPermissions[0].Reason, "find your account") ||
+		!strings.Contains(prov.TunnelPermissions[0].Reason, "create, check and remove") {
+		t.Fatalf("reason does not cover the calls (list accounts, create, get, delete): %q", prov.TunnelPermissions[0].Reason)
 	}
 }

@@ -46,6 +46,10 @@ func TestSetupCLI(t *testing.T) {
 	if code != exitOK || seen[len(seen)-1] != `PUT /api/v1/setup/steps/apps {"state":"done"}` {
 		t.Fatalf("ack: %d %v", code, seen)
 	}
+	code, _, _ = invoke(t, []string{"--server", ts.URL, "setup", "step", "account", "--acknowledge"})
+	if code != exitOK || seen[len(seen)-1] != `PUT /api/v1/setup/steps/account {"state":"done"}` {
+		t.Fatalf("account ack: %d %v", code, seen)
+	}
 	n := len(seen)
 	code, out, _ = invoke(t, []string{"--server", ts.URL, "setup", "step", "account"})
 	if code != exitOK || len(seen) != n+1 || !strings.HasPrefix(seen[n], "GET /api/v1/setup") || !strings.Contains(out, "Export the recovery identity") {

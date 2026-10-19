@@ -61,6 +61,10 @@ const (
 var (
 	ErrUnknownStep = errors.New("unknown setup step")
 	ErrInvalid     = errors.New("invalid setup request")
+	// ErrNotReady: the request is well formed but the appliance is not in
+	// the state it needs (a tunnel or approved exposure plan is missing).
+	// The API answers 422 with the message, which names the page to use.
+	ErrNotReady = errors.New("setup step is not ready")
 )
 
 // SSOFacts says how far sign-in with Authentik has got.
@@ -102,8 +106,13 @@ type Facts struct {
 	Domain               DomainFacts `json:"domain"`
 	Tunnels              int         `json:"tunnels"`
 	Exposures            int         `json:"exposures"`
-	// ReviewExisting: a domain, tunnel or exposure already exists, so step 3
-	// opens as a review of it, never a redo.
+	// PasswordConfirmed: the owner confirmed their password in step 1. The
+	// daemon has no temporary-password state, so this is an explicit
+	// acknowledgement (see docs/DEFERRED.md).
+	PasswordConfirmed bool `json:"password_confirmed"`
+	// ReviewExisting: a domain was onboarded, or a tunnel route or approved
+	// exposure plan exists, so step 3 opens as a review of it, never a redo.
+	// A saved but never-onboarded domain wizard payload does not count.
 	ReviewExisting bool `json:"review_existing"`
 	AppsInstalled  int  `json:"apps_installed"`
 }
@@ -173,7 +182,7 @@ type Status struct {
 // Update is a change to one step: a state, and/or choices.
 type Update struct {
 	// State is "skipped" (skip), "pending" (unskip, or take back an
-	// acknowledgement) or "done" (acknowledge; only domain and apps).
+	// acknowledgement) or "done" (acknowledge; for account it means "I confirm my password").
 	State    *string
 	Provider *string
 	Access   *string
@@ -213,7 +222,7 @@ func (s *Service) load() (stored, error) {
 	return st, nil
 }
 
-func (s *Service) facts() (Facts, []StarterApp, error) {
+func (s *Service) facts(st stored) (Facts, []StarterApp, error) {
 	var f Facts
 	var starter []StarterApp
 	var err error
@@ -251,7 +260,8 @@ func (s *Service) facts() (Facts, []StarterApp, error) {
 	if starter == nil {
 		starter = []StarterApp{}
 	}
-	f.ReviewExisting = f.Domain.Configured || f.Domain.Onboarded || f.Tunnels > 0 || f.Exposures > 0
+	f.PasswordConfirmed = slices.Contains(st.Acknowledged, StepAccount)
+	f.ReviewExisting = f.Domain.Onboarded || f.Tunnels > 0 || f.Exposures > 0
 	return f, starter, nil
 }
 
@@ -264,11 +274,14 @@ func derive(name string, st stored, f Facts) (state, detail string) {
 	done := false
 	switch name {
 	case StepAccount:
-		done = f.RecoveryAcknowledged
+		done = f.RecoveryAcknowledged && acked
 	case StepSignIn:
-		done = f.SignIn.Configured && f.SignIn.Linked && !f.SignIn.Dormant
+		// A dormant link (Authentik removed) does not re-gate the appliance;
+		// the detail warns instead.
+		done = f.SignIn.Configured && f.SignIn.Linked
 	case StepDomain:
-		done = acked || f.Domain.Onboarded || f.Tunnels > 0 || f.Exposures > 0
+		done = (acked && domainMissing(st, f) == "") || f.Tunnels > 0 || f.Exposures > 0 ||
+			(f.Domain.Onboarded && (st.Access == "" || st.Access == AccessHome))
 	case StepApps:
 		done = acked || f.AppsInstalled > 0
 	}
@@ -280,10 +293,12 @@ func derive(name string, st stored, f Facts) (state, detail string) {
 	default:
 		state = Pending
 	}
-	return state, detailFor(name, state, f)
+	return state, detailFor(name, state, st, f)
 }
 
-func detailFor(name, state string, f Facts) string {
+const dormantNote = "Warning: Authentik is not installed, so sign-in with Authentik is off. Your local password still works."
+
+func detailFor(name, state string, st stored, f Facts) string {
 	switch name {
 	case StepAccount:
 		switch {
@@ -291,16 +306,26 @@ func detailFor(name, state string, f Facts) string {
 			return "The recovery identity is exported and you confirmed it is stored offline."
 		case state == Skipped:
 			return "Skipped. Backups can only be read with this appliance's own key until you export and store the recovery identity."
+		case f.RecoveryAcknowledged && !f.PasswordConfirmed:
+			return "The recovery identity is stored. Confirm that you have set a password only you know."
+		case f.PasswordConfirmed && f.RecoveryExported:
+			return "Password confirmed. Confirm that you stored the exported recovery identity offline."
+		case f.PasswordConfirmed:
+			return "Password confirmed. Export the recovery identity, store it offline, and confirm."
 		case f.RecoveryExported:
-			return "The recovery identity is exported. Confirm that you stored it offline."
+			return "The recovery identity is exported. Confirm that you stored it offline, and confirm your password."
 		}
-		return "Export the recovery identity, store it offline, and confirm. The local owner account stays the way back in."
+		return "Export the recovery identity, store it offline, and confirm. Also confirm your password. The local owner account stays the way back in."
 	case StepSignIn:
 		switch {
+		case state == Done && f.SignIn.Dormant:
+			return "Sign in with Authentik was linked to your account. " + dormantNote
 		case state == Done:
 			return "Sign in with Authentik is set up and linked to your account."
 		case state == Skipped:
 			return "Skipped. You sign in with the local owner account."
+		case f.SignIn.Dormant:
+			return dormantNote
 		case f.SignIn.Configured && !f.SignIn.Linked:
 			return "Authentik is set up. Link your Authentik account to finish."
 		case f.SignIn.Installed:
@@ -309,14 +334,22 @@ func detailFor(name, state string, f Facts) string {
 		return "Install Authentik from the catalog, then link your Authentik account. This is optional."
 	case StepDomain:
 		switch {
-		case state == Done && f.ReviewExisting:
-			return "Your domain and access are set up."
-		case state == Done:
-			return "Home network only. Nothing is open to the internet."
 		case state == Skipped:
 			return "Skipped. The appliance is reachable on your home network only."
-		case f.ReviewExisting:
-			return "A domain or tunnel is already set up. Review it and confirm; nothing is changed."
+		case state == Done && f.Tunnels > 0:
+			return "A Cloudflare Tunnel is set up. Nothing was changed by this step."
+		case state == Done && f.Exposures > 0:
+			return "A router port forward plan is approved. Nothing was changed by this step."
+		case state == Done && f.ReviewExisting:
+			return "Your domain is set up and the appliance is reachable on your home network only."
+		case state == Done:
+			return "Home network only. Nothing is open to the internet."
+		}
+		if miss := domainMissing(st, f); miss != "" {
+			return "Not finished yet: " + miss
+		}
+		if f.ReviewExisting {
+			return "A domain, tunnel or exposure plan is already set up. Review it and confirm; nothing is changed."
 		}
 		return "Choose a DNS provider and how the appliance is reached. The default is your home network only."
 	case StepApps:
@@ -333,6 +366,38 @@ func detailFor(name, state string, f Facts) string {
 	return ""
 }
 
+// effectiveProvider is the DNS provider the walkthrough treats as stored:
+// the owner's choice here, else the one the domain wizard or onboarding saved.
+func effectiveProvider(st stored, f Facts) string {
+	if st.Provider != "" {
+		return st.Provider
+	}
+	return f.Domain.Provider
+}
+
+// domainMissing says, in plain words, what a tunnel or router port forward
+// still needs before the domain step may be confirmed. Empty means ready:
+// always for home network only, which needs no real setup.
+func domainMissing(st stored, f Facts) string {
+	switch st.Access {
+	case AccessTunnel:
+		if effectiveProvider(st, f) != "cloudflare" {
+			return "choose Cloudflare as the DNS provider on this page first."
+		}
+		if f.Tunnels == 0 {
+			return "no tunnel exists yet. Create and approve it on the Tunnel page (/tunnel), then come back."
+		}
+	case AccessRouter:
+		if effectiveProvider(st, f) == "" {
+			return "choose a DNS provider on this page first."
+		}
+		if f.Exposures == 0 {
+			return "no exposure plan is approved yet. Review and approve one on the Exposure page (/exposure), then come back."
+		}
+	}
+	return ""
+}
+
 // Status derives the walkthrough status.
 func (s *Service) Status() (Status, error) {
 	s.mu.Lock()
@@ -345,7 +410,7 @@ func (s *Service) status() (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	f, starter, err := s.facts()
+	f, starter, err := s.facts(st)
 	if err != nil {
 		return Status{}, err
 	}
@@ -427,8 +492,17 @@ func (s *Service) Update(step string, u Update) (Status, error) {
 			st.Skipped = remove(st.Skipped, step)
 			st.Acknowledged = remove(st.Acknowledged, step)
 		case Done:
-			if step != StepDomain && step != StepApps {
-				return Status{}, fmt.Errorf("%w: the %s step completes from real state, not by confirming it", ErrInvalid, step)
+			if step == StepSignIn {
+				return Status{}, fmt.Errorf("%w: the sign-in step completes from real state, not by confirming it", ErrInvalid)
+			}
+			if step == StepDomain {
+				f, _, err := s.facts(st)
+				if err != nil {
+					return Status{}, err
+				}
+				if miss := domainMissing(st, f); miss != "" {
+					return Status{}, fmt.Errorf("%w: %s", ErrNotReady, miss)
+				}
 			}
 			st.Acknowledged = add(st.Acknowledged, step)
 			st.Skipped = remove(st.Skipped, step)
@@ -446,7 +520,7 @@ func (s *Service) Update(step string, u Update) (Status, error) {
 // is, so a reload resumes there.
 func (s *Service) save(st stored) error {
 	step := StepAccount
-	if f, _, err := s.facts(); err == nil {
+	if f, _, err := s.facts(st); err == nil {
 		step = "complete"
 		for _, name := range StepNames {
 			if state, _ := derive(name, st, f); state == Pending {

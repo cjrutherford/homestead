@@ -63,6 +63,20 @@
                   <a class="button" routerLink="/account">Open the Account page</a>
                   <button type="button" (click)="refresh()">Check again</button>
                 </p>
+                <p>
+                  Your password: if you were given a generated or temporary one, change it on the Account
+                  page. Homestead cannot tell, so confirm here when you have a password only you know.
+                </p>
+                @if (s.facts.password_confirmed) {
+                  <p class="hint">Password confirmed.</p>
+                } @else {
+                  <p>
+                    <a routerLink="/account">Change password on the Account page</a>
+                    <button type="button" [disabled]="busy()" (click)="confirmPassword()">
+                      Confirm my password
+                    </button>
+                  </p>
+                }
               }
               @case ('sign-in') {
                 <p>
@@ -84,7 +98,7 @@
                 @if (s.facts.review_existing) {
                   <app-state-message
                     kind="notice"
-                    headline="A domain or tunnel is already set up here."
+                    headline="A domain, tunnel or exposure plan is already set up here."
                     detail="Review it and confirm it is right. Nothing is changed or redone."
                   />
                   <p>
@@ -191,7 +205,12 @@
                     </p>
                   }
                 }
-                @if (!s.facts.review_existing) {
+                @if (domainNeeds(); as needs) {
+                  <app-state-message kind="notice" headline="Not finished yet." [detail]="needs" />
+                  <p>
+                    <button type="button" (click)="refresh()">Check again</button>
+                  </p>
+                } @else if (!s.facts.review_existing) {
                   <p>
                     <button type="button" [disabled]="busy()" (click)="confirm('domain', 'Domain and access confirmed.')">
                       {{ s.choices.access === 'tunnel' || s.choices.access === 'router' ? 'I have finished here' : 'Keep home network only' }}

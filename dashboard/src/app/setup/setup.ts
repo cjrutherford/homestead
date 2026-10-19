@@ -57,6 +57,36 @@ export class Setup implements OnInit {
     return status?.providers.find((p) => p.name === status.choices.provider) ?? null;
   });
   protected readonly access = computed<SetupAccess[]>(() => this.status()?.access ?? []);
+  /**
+   * What a tunnel or router port forward still needs before the walkthrough
+   * may confirm the domain step, or null when it may (always for home
+   * network only). Mirrors the daemon's rule, which answers 422 otherwise.
+   */
+  protected readonly domainNeeds = computed<string | null>(() => {
+    const status = this.status();
+    if (!status) {
+      return null;
+    }
+    const provider = status.choices.provider || status.facts.domain.provider || '';
+    switch (status.choices.access) {
+      case 'tunnel':
+        if (provider !== 'cloudflare') {
+          return 'Choose Cloudflare as the DNS provider above first.';
+        }
+        return status.facts.tunnels > 0
+          ? null
+          : 'No tunnel exists yet. Create and approve it on the Tunnel page, then come back and check again.';
+      case 'router':
+        if (!provider) {
+          return 'Choose a DNS provider above first.';
+        }
+        return status.facts.exposures > 0
+          ? null
+          : 'No exposure plan is approved yet. Review and approve one on the Exposure page, then come back and check again.';
+      default:
+        return null;
+    }
+  });
   protected readonly missingCredentials = computed(() => {
     const status = this.status();
     return !!this.provider()?.credentials?.length && !status?.facts.domain.credentials_sealed;
@@ -103,6 +133,10 @@ export class Setup implements OnInit {
 
   protected confirm(name: SetupStepName, message: string): void {
     this.change(name, { state: 'done' }, message);
+  }
+
+  protected confirmPassword(): void {
+    this.change('account', { state: 'done' }, 'Password confirmed.');
   }
 
   protected chooseProvider(name: string): void {

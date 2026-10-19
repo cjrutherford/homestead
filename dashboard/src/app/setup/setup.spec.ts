@@ -123,13 +123,42 @@ describe('Setup walkthrough (S287)', () => {
     status.facts.review_existing = true;
     status.facts.tunnels = 1;
     await open(status);
-    expect(text()).toContain('A domain or tunnel is already set up here.');
+    expect(text()).toContain('A domain, tunnel or exposure plan is already set up here.');
     expect(text()).toContain('Nothing is changed or redone.');
     button('This looks right')!.click();
     const req = http.expectOne('/api/v1/setup/steps/domain');
     expect(req.request.body).toEqual({ state: 'done' });
     req.flush(status);
     http.expectNone('/api/v1/tls/issuance/credentials');
+  });
+
+  it('confirms the password from step 1 with its own button beside the Account link', async () => {
+    await open();
+    expect(text()).toContain('Change password on the Account page');
+    button('Confirm my password')!.click();
+    const req = http.expectOne('/api/v1/setup/steps/account');
+    expect(req.request.body).toEqual({ state: 'done' });
+    req.flush(setupStatus());
+  });
+
+  it('explains what a tunnel or router choice still needs instead of offering to finish', async () => {
+    await open(setupStatus({ current: 'domain', choices: { provider: 'cloudflare', access: 'tunnel' } }));
+    expect(text()).toContain('No tunnel exists yet.');
+    expect(button('I have finished here')).toBeUndefined();
+    expect(button('Check again')).toBeDefined();
+  });
+
+  it('offers to finish a tunnel choice once the tunnel exists', async () => {
+    const status = setupStatus({ current: 'domain', choices: { provider: 'cloudflare', access: 'tunnel' } });
+    status.facts.tunnels = 1;
+    await open(status);
+    expect(button('I have finished here')).toBeDefined();
+  });
+
+  it('asks for an approved exposure plan before finishing a router choice', async () => {
+    await open(setupStatus({ current: 'domain', choices: { provider: 'manual', access: 'router' } }));
+    expect(text()).toContain('No exposure plan is approved yet.');
+    expect(button('I have finished here')).toBeUndefined();
   });
 
   it('links each starter app to the install wizard with a way back', async () => {

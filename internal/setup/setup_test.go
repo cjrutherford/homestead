@@ -78,6 +78,13 @@ func TestDerivationFromRealState(t *testing.T) {
 	}
 	f.acked = true
 	s, _ = svc.Status()
+	if states(t, s)[StepAccount] != Pending {
+		t.Fatalf("recovery acknowledged without password confirmation must stay pending: %+v", s.Steps[0])
+	}
+	if _, err := svc.Update(StepAccount, Update{State: str(Done)}); err != nil {
+		t.Fatal(err)
+	}
+	s, _ = svc.Status()
 	if states(t, s)[StepAccount] != Done || s.Current != StepSignIn {
 		t.Fatalf("acked: %+v", s)
 	}
@@ -93,14 +100,14 @@ func TestDerivationFromRealState(t *testing.T) {
 	}
 	f.sso.Dormant = true
 	s, _ = svc.Status()
-	if states(t, s)[StepSignIn] != Pending {
-		t.Fatalf("dormant should not be done")
+	if states(t, s)[StepSignIn] != Done || !strings.Contains(s.Steps[1].Detail, "Authentik is not installed") {
+		t.Fatalf("dormant link must not re-gate but must warn: %+v", s.Steps[1])
 	}
 	f.sso.Dormant = false
 	f.domain = DomainFacts{Configured: true, Provider: "cloudflare"}
 	s, _ = svc.Status()
-	if states(t, s)[StepDomain] != Pending || !s.Facts.ReviewExisting {
-		t.Fatalf("configured domain: pending + review, got %+v", s.Steps[2])
+	if states(t, s)[StepDomain] != Pending || s.Facts.ReviewExisting {
+		t.Fatalf("saved but never onboarded domain: pending, no review, got %+v", s.Steps[2])
 	}
 	f.domain.Onboarded = true
 	s, _ = svc.Status()
@@ -133,6 +140,9 @@ func TestOutOfBandCompletionBeatsSkip(t *testing.T) {
 func TestSkipUnskipResumeAndGate(t *testing.T) {
 	svc, f, st := newSvc(t)
 	f.acked = true
+	if _, err := svc.Update(StepAccount, Update{State: str(Done)}); err != nil {
+		t.Fatal(err)
+	}
 	for _, n := range []string{StepSignIn, StepDomain, StepApps} {
 		if _, err := svc.Update(n, Update{State: str(Skipped)}); err != nil {
 			t.Fatal(err)
@@ -185,8 +195,8 @@ func TestAcknowledgeCompletesDomainWithoutChanges(t *testing.T) {
 	if !strings.Contains(s.Steps[2].Detail, "Home network only") {
 		t.Fatalf("detail = %q", s.Steps[2].Detail)
 	}
-	if _, err := svc.Update(StepAccount, Update{State: str(Done)}); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("account cannot be confirmed by hand: %v", err)
+	if _, err := svc.Update(StepSignIn, Update{State: str(Done)}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("sign-in cannot be confirmed by hand: %v", err)
 	}
 }
 
@@ -251,5 +261,118 @@ func TestStoredPayloadHoldsNoSecrets(t *testing.T) {
 		if !allowed[k] {
 			t.Fatalf("unexpected payload key %q", k)
 		}
+	}
+}
+
+func TestDomainConfirmRules(t *testing.T) {
+	svc, f, _ := newSvc(t)
+	// Tunnel: needs Cloudflare and a tunnel route.
+	if _, err := svc.Update(StepDomain, Update{Provider: str("cloudflare"), Access: str(AccessTunnel)}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := svc.Update(StepDomain, Update{State: str(Done)})
+	if !errors.Is(err, ErrNotReady) || !strings.Contains(err.Error(), "/tunnel") {
+		t.Fatalf("tunnel without route: %v", err)
+	}
+	s, _ := svc.Status()
+	if states(t, s)[StepDomain] != Pending || !strings.Contains(s.Steps[2].Detail, "Tunnel page") {
+		t.Fatalf("detail should say what is missing: %+v", s.Steps[2])
+	}
+	f.tunnels = 1
+	s, err = svc.Update(StepDomain, Update{State: str(Done)})
+	if err != nil || states(t, s)[StepDomain] != Done || !strings.Contains(s.Steps[2].Detail, "Tunnel") || strings.Contains(s.Steps[2].Detail, "Home network only") {
+		t.Fatalf("tunnel with route: %v %+v", err, s.Steps[2])
+	}
+	// Router: needs a provider and an approved exposure plan.
+	f.tunnels = 0
+	svc2, f2, _ := newSvc(t)
+	if _, err := svc2.Update(StepDomain, Update{Access: str(AccessRouter)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc2.Update(StepDomain, Update{State: str(Done)}); !errors.Is(err, ErrNotReady) || !strings.Contains(err.Error(), "provider") {
+		t.Fatalf("router without provider: %v", err)
+	}
+	if _, err := svc2.Update(StepDomain, Update{Provider: str("manual")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc2.Update(StepDomain, Update{State: str(Done)}); !errors.Is(err, ErrNotReady) || !strings.Contains(err.Error(), "/exposure") {
+		t.Fatalf("router without plan: %v", err)
+	}
+	f2.exp = 1
+	if s, err := svc2.Update(StepDomain, Update{State: str(Done)}); err != nil || !strings.Contains(s.Steps[2].Detail, "port forward") {
+		t.Fatalf("router with plan: %v %+v", err, s.Steps[2])
+	}
+	// Home network only: acknowledgement is enough.
+	svc3, _, _ := newSvc(t)
+	if _, err := svc3.Update(StepDomain, Update{Access: str(AccessHome), State: str(Done)}); err != nil {
+		t.Fatalf("home: %v", err)
+	}
+}
+
+func TestChangingAccessAfterAckReopensDomain(t *testing.T) {
+	svc, _, _ := newSvc(t)
+	if _, err := svc.Update(StepDomain, Update{State: str(Done)}); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := svc.Update(StepDomain, Update{Provider: str("cloudflare"), Access: str(AccessTunnel)})
+	if states(t, s)[StepDomain] != Pending {
+		t.Fatalf("an earlier home acknowledgement must not satisfy a tunnel choice: %+v", s.Steps[2])
+	}
+}
+
+func TestPasswordConfirmationNeededForAccount(t *testing.T) {
+	svc, f, _ := newSvc(t)
+	f.exported, f.acked = true, true
+	s, _ := svc.Status()
+	if states(t, s)[StepAccount] != Pending || s.Facts.PasswordConfirmed {
+		t.Fatalf("%+v", s.Steps[0])
+	}
+	s, err := svc.Update(StepAccount, Update{State: str(Done)})
+	if err != nil || states(t, s)[StepAccount] != Done || !s.Facts.PasswordConfirmed {
+		t.Fatalf("%v %+v", err, s.Steps[0])
+	}
+	// Password confirmed alone, without the recovery acknowledgement, is not done.
+	svc2, _, _ := newSvc(t)
+	s, _ = svc2.Update(StepAccount, Update{State: str(Done)})
+	if states(t, s)[StepAccount] != Pending {
+		t.Fatalf("password alone: %+v", s.Steps[0])
+	}
+	// Taking it back clears the confirmation.
+	s, _ = svc.Update(StepAccount, Update{State: str(Pending)})
+	if states(t, s)[StepAccount] != Pending || s.Facts.PasswordConfirmed {
+		t.Fatalf("%+v", s.Steps[0])
+	}
+}
+
+func TestSavedUnonboardedDomainIsNotReview(t *testing.T) {
+	svc, f, _ := newSvc(t)
+	f.domain = DomainFacts{Configured: true, Provider: "cloudflare", Zone: "example.com"}
+	if s, _ := svc.Status(); s.Facts.ReviewExisting {
+		t.Fatal("a saved wizard payload alone must not open review mode")
+	}
+	f.domain.Onboarded = true
+	if s, _ := svc.Status(); !s.Facts.ReviewExisting {
+		t.Fatal("onboarded must open review mode")
+	}
+}
+
+func TestDomainDetailReflectsAccess(t *testing.T) {
+	svc, _, _ := newSvc(t)
+	s, _ := svc.Update(StepDomain, Update{Provider: str("cloudflare"), Access: str(AccessTunnel)})
+	if strings.Contains(s.Steps[2].Detail, "Home network only") {
+		t.Fatalf("detail ignores the access choice: %q", s.Steps[2].Detail)
+	}
+}
+
+// A reset must remove homestead.db. By construction a fresh store has no
+// setup row, so a freshly claimed appliance starts the walkthrough as fresh.
+func TestFreshStoreHasNoSetupRow(t *testing.T) {
+	svc, _, st := newSvc(t)
+	if _, err := wizard.New(st).Get(WizardID); !errors.Is(err, wizard.ErrNotFound) {
+		t.Fatalf("fresh store has a setup row: %v", err)
+	}
+	s, _ := svc.Status()
+	if s.Origin != OriginFresh || !s.Gated {
+		t.Fatalf("%+v", s)
 	}
 }
