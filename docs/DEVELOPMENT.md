@@ -4355,12 +4355,52 @@ dominated rows, now outlined; plan notes started lowercase; install step help
 said "working" during a failure. Removed the "Generated Compose file"
 disclosure, which duplicated the raw plan.
 
-KVM review on VM 2: **PENDING** (another agent). To do: install one small app
-(a craft app, so Verify and build is exercised) and one app with storage
-(Nextcloud, with an unmounted-then-mounted storage case if possible) through the
-wizard on a fresh appliance with no Caddy, so the warning and the created edge
-network are both seen; leave the wizard during the install and return to confirm
-the same operation resumes and the rail tracks it; check the done step and the
-first-login hint; check the port 80 question in DEFERRED for Nextcloud with
-Caddy running; uninstall each from the dashboard (once with data kept, once
-with data deleted) and leave VM 2 as found. Record findings and screenshots here.
+Address gap closed (bd7209a, dashboard only, existing edge routes API): after a
+successful install the wizard merges the reviewed plan's routes into the
+recorded table (same host replaced, every other route sent back untouched;
+public routes never added) and reconciles. Requirements offers "Set up the
+edge" (confirm dialog, then the Caddy deploy operation in the rail) or
+acknowledge and carry on; with no proxy, Done says the app is not reachable
+until the edge is set up and offers the same dialog. Done shows the address as
+a link and, when this device cannot open it, a Trust link. Uninstall removes
+the app's route. Initial bundle 555.7 kB (the Catalog page became lazy to make
+room).
+
+KVM review on VM 2 (2026-10-19, HEAD bd7209a then 8dbc557): **done.** Screenshots
+in `/tmp/hs-s285-kvm/` (not committed). Playwright through ssh tunnels as
+`owner`, `--host-resolver-rules` to guest 443 and the leaf pinned by SPKI; the
+tunnel and public URL (200) untouched throughout.
+- GridCraft on a fresh appliance (no Caddy, no image): Requirements showed the
+  edge warning; Set up the edge deployed Caddy (rail "Deploy Caddy"); Verify and
+  build, then install (about 1 s); the route was added by the wizard (rail
+  "Reconcile routes"); `https://gridcraft.lan` loaded the spreadsheet over
+  HTTPS. A browser without the pin showed the Trust note.
+- Nextcloud with storage (registered `/mnt/app` and `/mnt/bulk` on the Storage
+  page): installed; first-login hint shown; route added; `https://nextcloud.lan`
+  answered with Nextcloud. Leaving 0.3 s after Install and returning: the rail
+  tracked it, the Catalog row said "Setting up" with a Continue link, the wizard
+  resumed the same operation and finished on Done with the route added.
+- Uninstall: GridCraft keeping data, Nextcloud deleting data (dialog named
+  `/mnt/app/nextcloud` and `/mnt/bulk/nextcloud`, both gone afterwards). Both
+  routes removed, route table empty, only `homestead-caddy` left.
+Found and fixed (8dbc557): (1) port 80 blocked Nextcloud once Caddy held 80
+(`ports: [80]` is checked as a host port; Nextcloud now declares none). (2) A
+mount chosen in the wizard failed the plan with "no space data" unless the class
+was also assigned (the daemon read free space from assignments only; now also
+from discovery for the chosen mount, with a Go test); the wizard also assigns an
+unassigned class so uninstall can name data roots (before: "cannot tell which
+folders", no delete option). (3) Duplicate mounts in the Storage step. (4)
+Stale daemon notes ("does not deploy the proxy", "run craft build first").
+(5) An install left in flight was unreachable from the Catalog (row said
+Installed): it now shows "Setting up" with Continue. (6) An installed app with no
+route (tab closed mid-install, CLI install) now offers "Give X an address".
+Left (DEFERRED.md): Jellyfin/Immich/Authentik declare container ports as host
+ports; no API to unassign a class or unregister a mount; empty stack directory
+left by uninstall; Done after a later visit names data folders from assignments
+only; the Storage page lists a mount twice; the daemon-side install and route
+as one operation.
+Final VM 2 state: Caddy deployed and running (kept, set up through the wizard)
+and the `homestead-edge` network; no app containers or stacks; no routes;
+storage registrations and class assignments removed (database rows deleted, as
+there is no API); gridcraft and nextcloud images and `craft_images`/
+`craft_verdicts` rows removed; `/mnt/app` and `/mnt/bulk` empty; tunnel running.
