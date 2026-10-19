@@ -1687,6 +1687,20 @@ export class ApiService {
     );
   }
 
+  /** Drops a class binding only; the daemon answers 409 naming apps that still use the mount (S288). */
+  storageUnassign(cls: string): Observable<void> {
+    return this.http.delete<void>(
+      `/api/v1/storage/assignments/${encodeURIComponent(cls)}`,
+    );
+  }
+
+  /** Drops a registration only; never touches the disk (S288). */
+  storageUnregister(mountpoint: string): Observable<void> {
+    return this.http.delete<void>('/api/v1/storage/registrations', {
+      params: { mountpoint },
+    });
+  }
+
   edgeDeploy(): Observable<OperationStarted> {
     return this.http.post<OperationStarted>('/api/v1/edge/deploy', {});
   }

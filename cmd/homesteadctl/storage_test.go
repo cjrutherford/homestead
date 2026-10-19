@@ -114,3 +114,25 @@ func TestStorageAssignImpactFlag(t *testing.T) {
 		t.Fatalf("exit = %d, stdout = %q, stderr = %q", code, stdout, stderr)
 	}
 }
+
+func TestStorageUnassignUnregister(t *testing.T) {
+	serverArgs := []string{"--server", storageDaemon(t)}
+	invoke(t, append(serverArgs, "storage", "register", "--mountpoint", "/", "--label", "root", "--actor", "owner"))
+	invoke(t, append(serverArgs, "storage", "assign", "--class", "bulk", "--mountpoint", "/", "--actor", "owner"))
+	// Registered mount with an assigned class refuses, naming the class.
+	code, _, stderr := invoke(t, append(serverArgs, "storage", "unregister", "--mountpoint", "/"))
+	if code != exitError || !strings.Contains(stderr, "bulk") {
+		t.Fatalf("unregister exit = %d stderr = %q", code, stderr)
+	}
+	code, stdout, stderr := invoke(t, append(serverArgs, "storage", "unassign", "--class", "bulk"))
+	if code != exitOK || !strings.Contains(stdout, "no data on the disk") {
+		t.Fatalf("unassign exit = %d stdout = %q stderr = %q", code, stdout, stderr)
+	}
+	code, stdout, stderr = invoke(t, append(serverArgs, "storage", "unregister", "--mountpoint", "/"))
+	if code != exitOK {
+		t.Fatalf("unregister exit = %d stdout = %q stderr = %q", code, stdout, stderr)
+	}
+	if code, _, _ := invoke(t, append(serverArgs, "storage", "unassign")); code != exitUsage {
+		t.Fatalf("usage exit = %d", code)
+	}
+}

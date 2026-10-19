@@ -60,12 +60,29 @@ describe('SsoLink', () => {
     expect(go).toHaveBeenCalledWith('https://authentik.lan/authorize?x=1');
   });
 
+  it('cancelling the unlink dialog changes nothing', () => {
+    load({ linked: true, subject: 'abcdef0123456789abcdef0123456789' });
+    button('Unlink Authentik').click();
+    fixture.detectChanges();
+    (Array.from(el().querySelectorAll('dialog button')).find((b) => b.textContent?.includes('Cancel')) as HTMLButtonElement).click();
+    fixture.detectChanges();
+    http.expectNone('/api/v1/sso/link');
+    expect(el().querySelector('dialog')).toBeNull();
+  });
+
   it('shows the linked account and unlinks, saying what unlinking does', () => {
     load({ linked: true, subject: 'abcdef0123456789abcdef0123456789' });
     expect(el().textContent).toContain('abcdef...456789');
     expect(el().textContent).toContain('signs out sessions that were started with Authentik');
     expect(el().textContent).toContain('local password still works');
     button('Unlink Authentik').click();
+    fixture.detectChanges();
+    // Nothing is sent until the owner confirms in the danger dialog.
+    http.expectNone('/api/v1/sso/link');
+    expect(el().querySelector('dialog')).not.toBeNull();
+    expect(el().textContent).toContain('Your local password keeps working');
+    const confirm = Array.from(el().querySelectorAll('dialog button')).find((b) => b.textContent?.includes('Unlink Authentik')) as HTMLButtonElement;
+    confirm.click();
     const req = http.expectOne('/api/v1/sso/link');
     expect(req.request.method).toBe('DELETE');
     req.flush({ ...BASE, linked: false });

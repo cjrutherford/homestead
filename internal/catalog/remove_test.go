@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,5 +160,58 @@ func TestRemoveValidation(t *testing.T) {
 	}
 	if done.Status != operation.StatusFailed {
 		t.Fatalf("status = %q, want failed", done.Status)
+	}
+}
+
+func TestRemoveStackFilesRemovesOnlyAnEmptyDirectory(t *testing.T) {
+	st := openDriftStore(t)
+	empty := removeStack(t)
+	if err := removeStackFiles(st, "jellyfin", empty); err != nil {
+		t.Fatalf("removeStackFiles: %v", err)
+	}
+	if _, err := os.Stat(empty); !os.IsNotExist(err) {
+		t.Fatalf("empty stack directory survived: %v", err)
+	}
+	// A directory still holding data keeps itself and the data.
+	kept := removeStack(t)
+	if err := os.MkdirAll(filepath.Join(kept, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(kept, "data", "db"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeStackFiles(st, "jellyfin", kept); err != nil {
+		t.Fatalf("removeStackFiles: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(kept, "data", "db")); err != nil {
+		t.Fatalf("data lost: %v", err)
+	}
+}
+
+func TestSecondRemoveIsNotInstalled(t *testing.T) {
+	dir := removeStack(t)
+	old := composeDown
+	composeDown = func(context.Context, string, string) error { return nil }
+	t.Cleanup(func() { composeDown = old })
+	st := openDriftStore(t)
+	def, err := RemoveDefinition(Removal{Package: "jellyfin"}, dir, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := openInstallRunner(t)
+	op, _ := runner.Start(context.Background(), def, "")
+	if _, err := runner.Wait(context.Background(), op.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RemoveDefinition(Removal{Package: "jellyfin"}, dir, st); !errors.Is(err, ErrNotInstalled) {
+		t.Fatalf("second removal err = %v, want ErrNotInstalled", err)
+	}
+	// A pre-fix leftover empty directory is cleaned up and still reads not installed.
+	left := t.TempDir()
+	if _, err := RemoveDefinition(Removal{Package: "jellyfin"}, left, st); !errors.Is(err, ErrNotInstalled) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Stat(left); !os.IsNotExist(err) {
+		t.Fatal("leftover empty directory not cleaned")
 	}
 }

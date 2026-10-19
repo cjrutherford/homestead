@@ -78,3 +78,45 @@ func TestTunnelTeardown(t *testing.T) {
 		t.Fatalf("exit = %d, want usage", code)
 	}
 }
+
+func TestTunnelTeardownAccountIDFromFileAndStdin(t *testing.T) {
+	url := tunnelStub(t)
+	file := writeTemp(t, "account", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n")
+	code, stdout, stderr := invoke(t, []string{"--server", url, "tunnel", "teardown", "tunnel-id", "--account-id-file", file})
+	if code != exitOK || !strings.Contains(stdout, "operation: 24") {
+		t.Fatalf("file: exit = %d stdout = %q stderr = %q", code, stdout, stderr)
+	}
+	if strings.Contains(stderr, "warning") {
+		t.Fatalf("file form warned: %q", stderr)
+	}
+	old := stdinReader
+	stdinReader = strings.NewReader("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n")
+	t.Cleanup(func() { stdinReader = old })
+	code, stdout, _ = invoke(t, []string{"--server", url, "tunnel", "teardown", "tunnel-id", "--account-id-file", "-"})
+	if code != exitOK || !strings.Contains(stdout, "operation: 24") {
+		t.Fatalf("stdin: exit = %d stdout = %q", code, stdout)
+	}
+	empty := writeTemp(t, "empty", "\n")
+	if code, _, _ := invoke(t, []string{"--server", url, "tunnel", "teardown", "tunnel-id", "--account-id-file", empty}); code != exitError {
+		t.Fatalf("empty file exit = %d, want 1", code)
+	}
+}
+
+func TestTunnelArgvSecretsWarn(t *testing.T) {
+	url := tunnelStub(t)
+	_, _, stderr := invoke(t, []string{"--server", url, "tunnel", "teardown", "tunnel-id", "--account-id", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})
+	if !strings.Contains(stderr, "warning") || !strings.Contains(stderr, "--account-id-file") {
+		t.Fatalf("stderr = %q, want argv warning", stderr)
+	}
+}
+
+func TestTunnelSetupSecretsFromFiles(t *testing.T) {
+	url := tunnelStub(t)
+	tok := writeTemp(t, "tok", "cf-token-value\n")
+	acct := writeTemp(t, "acct", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n")
+	code, _, stderr := invoke(t, []string{"--server", url, "tunnel", "setup", "--name", "n", "--hostname", "h.example.com",
+		"--service", "http://127.0.0.1:80", "--api-token-file", tok, "--account-id-file", acct})
+	if code != exitOK {
+		t.Fatalf("exit = %d stderr = %q", code, stderr)
+	}
+}

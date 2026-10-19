@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"homestead/internal/audit"
 	"homestead/internal/catalog"
@@ -24,6 +25,149 @@ func (s *Server) MountStorage(st *store.Store) {
 	s.mux.HandleFunc("POST /api/v1/storage/registrations", handleStorageRegister(st))
 	s.mux.HandleFunc("GET /api/v1/storage/assignments", handleStorageAssignments(st))
 	s.mux.HandleFunc("POST /api/v1/storage/assignments", handleStorageAssign(st, audit.New(st)))
+	s.mux.HandleFunc("DELETE /api/v1/storage/assignments/{class}", handleStorageUnassign(st, audit.New(st)))
+	s.mux.HandleFunc("DELETE /api/v1/storage/registrations", handleStorageUnregister(st, audit.New(st)))
+}
+
+// storageInUse is the 409 body for unassign and unregister: the apps (and
+// classes) that still use what the owner asked to drop (S288).
+type storageInUse struct {
+	Error            string   `json:"error"`
+	Mountpoint       string   `json:"mountpoint"`
+	AffectedPackages []string `json:"affected_packages"`
+	Classes          []string `json:"classes,omitempty"`
+}
+
+func writeStorageInUse(w http.ResponseWriter, body storageInUse) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+// packagesOnMount lists installed packages holding a `<mount>/<pkg>`
+// directory: the same evidence the reassign impact check uses.
+func packagesOnMount(st *store.Store, mount string) ([]string, error) {
+	stacks, err := catalog.InstalledStacks(st)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, name := range stacks {
+		if info, err := os.Stat(filepath.Join(mount, name)); err == nil && info.IsDir() {
+			out = append(out, name)
+		}
+	}
+	return out, nil
+}
+
+// handleStorageUnassign drops a class binding. It refuses (409) while
+// installed apps keep data on the mount, unless another class keeps that
+// mount in play. Only the binding row goes: nothing on disk is touched.
+func handleStorageUnassign(st *store.Store, auditor auditRecorder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		class := storage.Class(r.PathValue("class"))
+		if !class.Valid() {
+			http.Error(w, "unknown storage class", http.StatusBadRequest)
+			return
+		}
+		assignments := storage.NewAssignments(st)
+		current, err := assignments.Get(class)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("storage class %s has no assignment", class), http.StatusNotFound)
+			return
+		}
+		all, err := assignments.List()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		affected, err := affectedByReassign(st, class, current.Mountpoint, all)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if len(affected) > 0 {
+			writeStorageInUse(w, storageInUse{
+				Error: fmt.Sprintf("cannot unassign %s from %s: installed apps keep data there (%s). Uninstall them or move their data first",
+					class, current.Mountpoint, strings.Join(affected, ", ")),
+				Mountpoint: current.Mountpoint, AffectedPackages: affected,
+			})
+			return
+		}
+		if err := assignments.Unassign(class); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if _, err := auditor.Record(audit.Entry{
+			Actor: operatorActor(r), Action: "storage.unassign", Outcome: audit.OutcomeOK,
+			Detail: fmt.Sprintf("%s unassigned from %s; no data on the disk was touched", class, current.Mountpoint),
+		}); err != nil {
+			http.Error(w, "audit: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// handleStorageUnregister drops a mount's registration (?mountpoint=). It
+// refuses (409) while installed apps keep data on the mount or a class is
+// still assigned to it. Only the registration row goes: the disk, its
+// files and its mount are never touched.
+func handleStorageUnregister(st *store.Store, auditor auditRecorder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		mountpoint := r.URL.Query().Get("mountpoint")
+		if mountpoint == "" {
+			http.Error(w, "mountpoint is required", http.StatusBadRequest)
+			return
+		}
+		registry := storage.NewRegistry(st)
+		if _, err := registry.Get(mountpoint); err != nil {
+			http.Error(w, fmt.Sprintf("%s is not registered", mountpoint), http.StatusNotFound)
+			return
+		}
+		all, err := storage.NewAssignments(st).List()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		var classes []string
+		for _, assignment := range all {
+			if assignment.Mountpoint == mountpoint {
+				classes = append(classes, string(assignment.Class))
+			}
+		}
+		affected, err := packagesOnMount(st, mountpoint)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if len(affected) > 0 || len(classes) > 0 {
+			reasons := []string{}
+			if len(affected) > 0 {
+				reasons = append(reasons, "installed apps keep data there ("+strings.Join(affected, ", ")+")")
+			}
+			if len(classes) > 0 {
+				reasons = append(reasons, "storage classes are assigned to it ("+strings.Join(classes, ", ")+")")
+			}
+			writeStorageInUse(w, storageInUse{
+				Error:      fmt.Sprintf("cannot unregister %s: %s", mountpoint, strings.Join(reasons, " and ")),
+				Mountpoint: mountpoint, AffectedPackages: affected, Classes: classes,
+			})
+			return
+		}
+		if err := registry.Unregister(mountpoint); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if _, err := auditor.Record(audit.Entry{
+			Actor: operatorActor(r), Action: "storage.unregister", Outcome: audit.OutcomeOK,
+			Detail: fmt.Sprintf("%s unregistered; no data on the disk was touched", mountpoint),
+		}); err != nil {
+			http.Error(w, "audit: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
 }
 
 // storageMountView adds registrability to a discovered mount. The

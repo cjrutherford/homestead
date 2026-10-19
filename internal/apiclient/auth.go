@@ -20,7 +20,7 @@ type Admin struct {
 // expires (12h idle, 7d absolute) or is revoked by logout or password
 // change. CSRFToken only matters to browsers; the CLI ignores it.
 type LoginSession struct {
-	Token     string    `json:"token"`
+	Token     string    `json:"token,omitempty"`
 	CSRFToken string    `json:"csrf_token,omitempty"`
 	ExpiresAt time.Time `json:"expires_at"`
 }

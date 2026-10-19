@@ -54,6 +54,8 @@ unchanged.
 | POST | /api/v1/storage/registrations | `runStorageRegister` | `storageRegister` | Storage page (`/storage`); S268 |
 | GET | /api/v1/storage/assignments | `runStorageAssignments` | `storageAssignments` | Storage page (`/storage`); S268 |
 | POST | /api/v1/storage/assignments | `runStorageAssign` | `storageAssign` | Storage page (`/storage`); S268. Moving a class off a mount holding installed packages' data answers 409 with `affected_packages` unless `acknowledge_impact: true` (audited); CLI `--acknowledge-impact` |
+| DELETE | /api/v1/storage/assignments/{class} | `"unassign"` | `storageUnassign` | Storage page (`/storage`); S288. Drops the class binding only; 409 with `affected_packages` while installed apps keep data on the mount; audited (`storage.unassign`); never touches the disk. Dashboard asks through the danger-confirm dialog with the impact shown |
+| DELETE | /api/v1/storage/registrations | `"unregister"` | `storageUnregister` | Storage page (`/storage`); S288. `?mountpoint=`; drops the registration only; 409 naming apps and assigned classes; audited (`storage.unregister`); never touches the disk. Danger-confirm dialog in the dashboard |
 | GET | /api/v1/doctor | `"doctor"` | `doctor` | Diagnostic report on all three surfaces |
 | GET | /api/v1/catalog | `"apps"` | `catalogPackages` | Package summaries on both surfaces |
 | GET | /api/v1/catalog/{name} | `"apps"` | `catalogPackage` | Manifest detail on both surfaces; the optional `Browser` list (advisory capabilities with reasons, S252) shows on the dashboard package page |

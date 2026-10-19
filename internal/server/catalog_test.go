@@ -310,11 +310,12 @@ func TestCatalogUninstall(t *testing.T) {
 	}
 	bare, _ := uninstallTestServer(t, false)
 	recorder = serveRequest(t, bare, http.MethodPost, "/api/v1/catalog/demo/uninstall", map[string]any{})
-	if recorder.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("code = %d", recorder.Code)
+	if recorder.Code != http.StatusNotFound || !strings.Contains(recorder.Body.String(), "not installed") {
+		t.Fatalf("code = %d (%s), want 404 not installed", recorder.Code, recorder.Body.String())
 	}
 	// Data removal without explicit roots refuses.
-	recorder = serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/demo/uninstall", map[string]any{"remove_data": true})
+	fresh, _ := uninstallTestServer(t, true)
+	recorder = serveRequest(t, fresh, http.MethodPost, "/api/v1/catalog/demo/uninstall", map[string]any{"remove_data": true})
 	if recorder.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("code = %d", recorder.Code)
 	}

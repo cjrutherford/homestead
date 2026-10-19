@@ -9,6 +9,7 @@ import {
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 import { ariaSort, nextSort, SortState, sortRows } from '../core/sort';
+import { Observable } from 'rxjs';
 import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
 
@@ -24,9 +25,10 @@ export const STORAGE_CLASSES = [
 /**
  * Storage surfaces (S268): discovered mounts, registration, and class
  * assignment, matching `homesteadctl storage`. Mounted storage only
- * (ADR-013): nothing here formats or partitions. The daemon exposes no
- * unregister or unassign route, so none is offered. Responses are
- * PascalCase because the Go structs carry no json tags.
+ * (ADR-013): nothing here formats or partitions. Unassign and unregister
+ * (S288) drop Homestead's record only, behind a danger-confirm dialog; the
+ * daemon refuses with a 409 naming apps that still use the mount.
+ * Responses are PascalCase because the Go structs carry no json tags.
  */
 @Component({
   imports: [Loading, StateMessage, Dialog, WhenPipe],
@@ -73,6 +75,9 @@ export class StorageSetup implements OnInit {
     packages: string[];
   } | null>(null);
 
+  protected readonly confirmingUnassign = signal<StorageAssignment | null>(null);
+  protected readonly confirmingUnregister = signal<StorageRegistration | null>(null);
+
   protected sortBy(key: string): void {
     this.sort.set(nextSort(this.sort(), key));
   }
@@ -95,7 +100,18 @@ export class StorageSetup implements OnInit {
     this.api.storageMounts().subscribe({
       next: (rows) => {
         this.mountsLoading.set(false);
-        this.mounts.set(rows);
+        // Discovery can return a mount twice (bind mounts, repeated
+        // mountinfo lines); list each path once.
+        const seen = new Set<string>();
+        this.mounts.set(
+          rows.filter((mount) => {
+            if (seen.has(mount.Mountpoint)) {
+              return false;
+            }
+            seen.add(mount.Mountpoint);
+            return true;
+          }),
+        );
       },
       error: (failure: HttpErrorResponse) => {
         this.mountsLoading.set(false);
@@ -312,5 +328,58 @@ export class StorageSetup implements OnInit {
 
   cancelAssign(): void {
     this.confirmingAssign.set(null);
+  }
+
+  askUnassign(item: StorageAssignment): void {
+    this.error.set(null);
+    this.confirmingUnassign.set(item);
+  }
+
+  cancelUnassign(): void {
+    this.confirmingUnassign.set(null);
+  }
+
+  confirmUnassign(): void {
+    const pending = this.confirmingUnassign();
+    if (!pending) {
+      return;
+    }
+    this.confirmingUnassign.set(null);
+    this.drop(this.api.storageUnassign(pending.Class), `Unassigned ${pending.Class} from ${pending.Mountpoint}.`);
+  }
+
+  askUnregister(reg: StorageRegistration): void {
+    this.error.set(null);
+    this.confirmingUnregister.set(reg);
+  }
+
+  cancelUnregister(): void {
+    this.confirmingUnregister.set(null);
+  }
+
+  confirmUnregister(): void {
+    const pending = this.confirmingUnregister();
+    if (!pending) {
+      return;
+    }
+    this.confirmingUnregister.set(null);
+    this.drop(this.api.storageUnregister(pending.Mountpoint), `Unregistered ${pending.Mountpoint}.`);
+  }
+
+  private drop(call: Observable<void>, done: string): void {
+    this.busy.set(true);
+    this.error.set(null);
+    this.notice.set(null);
+    call.subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.notice.set(done);
+        this.refresh();
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.busy.set(false);
+        this.error.set(this.describe(failure));
+      },
+    });
   }
 }

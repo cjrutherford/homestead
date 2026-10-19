@@ -335,4 +335,55 @@ describe('StorageSetup', () => {
     expect(el.querySelector('#reg-label-error')?.textContent).toContain('Start the label');
     expect(el.querySelectorAll('.field-error').length).toBe(3);
   });
+
+  it('lists a mount once when discovery returns it twice', () => {
+    load([MOUNT, { ...MOUNT, ID: 9 }], [], []);
+    expect(fixture.nativeElement.querySelectorAll('table[aria-label="Discovered mounts"] tbody tr').length).toBe(1);
+  });
+
+  describe('unassign and unregister', () => {
+    beforeEach(() => {
+      HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
+    });
+    const dialog = () => (fixture.nativeElement as HTMLElement).querySelector('dialog');
+
+    it('asks before unassigning, then calls the daemon and refreshes', () => {
+      load([MOUNT], [REG], [ASSIGN]);
+      click('Unassign');
+      expect(dialog()).not.toBeNull();
+      expect(text()).toContain('Nothing on the disk is deleted');
+      http.expectNone('/api/v1/storage/assignments/bulk');
+      click('Confirm unassign');
+      const req = http.expectOne('/api/v1/storage/assignments/bulk');
+      expect(req.request.method).toBe('DELETE');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      http.expectOne('/api/v1/storage/mounts').flush([MOUNT]);
+      http.expectOne('/api/v1/storage/registrations').flush([REG]);
+      http.expectOne('/api/v1/storage/assignments').flush([]);
+      fixture.detectChanges();
+      expect(text()).toContain('Unassigned bulk');
+    });
+
+    it('cancelling the dialog sends nothing', () => {
+      load([MOUNT], [REG], [ASSIGN]);
+      click('Unregister');
+      expect(text()).toContain('still holds bulk');
+      click('Cancel');
+      expect(dialog()).toBeNull();
+    });
+
+    it('shows the daemon refusal naming the apps', () => {
+      load([MOUNT], [REG], []);
+      click('Unregister');
+      click('Confirm unregister');
+      const req = http.expectOne((r) => r.url === '/api/v1/storage/registrations' && r.method === 'DELETE');
+      expect(req.request.params.get('mountpoint')).toBe('/mnt/data');
+      req.flush(
+        { error: 'cannot unregister /mnt/data: installed apps keep data there (jellyfin)', affected_packages: ['jellyfin'] },
+        { status: 409, statusText: 'Conflict' },
+      );
+      fixture.detectChanges();
+      expect(text()).toContain('jellyfin');
+    });
+  });
 });

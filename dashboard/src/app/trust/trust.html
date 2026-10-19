@@ -107,7 +107,20 @@
       </table>
       </div>
       <p>Certificates renew on their own. Re-issue them only after a problem.</p>
-      <p><button type="button" [disabled]="busy()" (click)="reissue()">Re-issue all</button></p>
+      <p><button type="button" [disabled]="busy()" (click)="askReissueAll()">Re-issue all</button></p>
+      @if (confirmingReissueAll()) {
+        <app-dialog heading="Re-issue every local certificate?" variant="danger" (dismissed)="cancelReissueAll()">
+          <p>
+            Homestead replaces the certificate for every app on this appliance with a new one signed by
+            the same local CA. Apps may drop connections for a moment while the edge reloads. Your
+            devices keep trusting the CA, so you do not need to reinstall it.
+          </p>
+          <div class="dialog-actions">
+            <button type="button" class="danger" (click)="confirmReissueAll()" [disabled]="busy()">Re-issue all</button>
+            <button type="button" class="quiet" (click)="cancelReissueAll()" [disabled]="busy()">Cancel</button>
+          </div>
+        </app-dialog>
+      }
     }
 
     @if (operationId(); as id) {

@@ -11,7 +11,7 @@
     }
 
     @if (step() === 'token') {
-      <p>Enter the single-use claim token shown on the appliance console.</p>
+      <p>Enter the single-use claim token. On the appliance, run <code>sudo homesteadctl claim token</code> to show it.</p>
       <form
         (submit)="submitToken(tokenInput.value); $event.preventDefault()"
         aria-label="Claim token"

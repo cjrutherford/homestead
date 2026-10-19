@@ -10,6 +10,7 @@ import {
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 import { CopyCode } from '../ui/copy-code';
+import { Dialog } from '../ui/dialog';
 import { ariaSort, nextSort, SortState, sortRows } from '../core/sort';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
@@ -116,7 +117,7 @@ export const TRUST_GUIDES: TrustGuide[] = [
  * arrives over your signed-in session. The private key is never shown.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage, CopyCode, WhenPipe],
+  imports: [OperationProgress, Loading, StateMessage, CopyCode, WhenPipe, Dialog],
   selector: 'app-trust',
   templateUrl: './trust.html',
   styles: [
@@ -216,6 +217,21 @@ export class Trust implements OnInit, OnDestroy {
         this.error.set(this.describe(failure));
       },
     });
+  }
+
+  protected readonly confirmingReissueAll = signal(false);
+
+  askReissueAll(): void {
+    this.confirmingReissueAll.set(true);
+  }
+
+  cancelReissueAll(): void {
+    this.confirmingReissueAll.set(false);
+  }
+
+  confirmReissueAll(): void {
+    this.confirmingReissueAll.set(false);
+    this.reissue();
   }
 
   reissue(host = ''): void {

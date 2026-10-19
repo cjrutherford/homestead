@@ -11,7 +11,7 @@ import (
 
 func runStorage(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl storage <mounts|register|registrations|assign|assignments> [flags]")
+		fmt.Fprintln(stderr, "usage: homesteadctl storage <mounts|register|registrations|unregister|assign|assignments|unassign> [flags]")
 		return exitUsage
 	}
 	switch args[0] {
@@ -21,6 +21,10 @@ func runStorage(ctx context.Context, client *apiclient.Client, args []string, st
 		return runStorageRegister(ctx, client, args[1:], stdout, stderr)
 	case "registrations":
 		return runStorageRegistrations(ctx, client, stdout, stderr)
+	case "unregister":
+		return runStorageUnregister(ctx, client, args[1:], stdout, stderr)
+	case "unassign":
+		return runStorageUnassign(ctx, client, args[1:], stdout, stderr)
 	case "assign":
 		return runStorageAssign(ctx, client, args[1:], stdout, stderr)
 	case "assignments":
@@ -108,5 +112,41 @@ func runStorageAssignments(ctx context.Context, client *apiclient.Client, stdout
 	for _, assignment := range assignments {
 		fmt.Fprintf(stdout, "%s %s by %s\n", assignment.Class, assignment.Mountpoint, assignment.Actor)
 	}
+	return exitOK
+}
+
+func runStorageUnassign(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	set := flag.NewFlagSet("storage unassign", flag.ContinueOnError)
+	set.SetOutput(stderr)
+	class := set.String("class", "", "storage class to unassign")
+	if err := set.Parse(args); err != nil {
+		return exitUsage
+	}
+	if *class == "" {
+		fmt.Fprintln(stderr, "storage unassign requires --class")
+		return exitUsage
+	}
+	if err := client.StorageUnassign(ctx, *class); err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "unassigned %s; no data on the disk was touched\n", *class)
+	return exitOK
+}
+
+func runStorageUnregister(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	set := flag.NewFlagSet("storage unregister", flag.ContinueOnError)
+	set.SetOutput(stderr)
+	mountpoint := set.String("mountpoint", "", "registered mount path to drop")
+	if err := set.Parse(args); err != nil {
+		return exitUsage
+	}
+	if *mountpoint == "" {
+		fmt.Fprintln(stderr, "storage unregister requires --mountpoint")
+		return exitUsage
+	}
+	if err := client.StorageUnregister(ctx, *mountpoint); err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "unregistered %s; no data on the disk was touched\n", *mountpoint)
 	return exitOK
 }

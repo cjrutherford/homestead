@@ -85,7 +85,7 @@ export class Claim implements OnInit {
   protected submitToken(rawToken: string): void {
     const token = rawToken.trim();
     if (!token) {
-      this.error.set('Enter the claim token shown on the console.');
+      this.error.set('Enter the claim token from sudo homesteadctl claim token.');
       return;
     }
     this.busy.set(true);

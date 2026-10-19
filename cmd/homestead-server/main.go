@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -46,19 +47,20 @@ func main() {
 	socketPath := flag.String("socket", server.DefaultSocketPath, "root-only recovery socket (S021)")
 	craftSocket := flag.String("craft-socket", docker.CraftSocketPath, "craft file socket the edge forwards to (S254, ADR-032)")
 	catalogDir := flag.String("catalog-dir", "catalog", "curated package directory (S160; packaging installs it)")
+	claimTokenFile := flag.String("claim-token-file", claim.DefaultTokenPath, "root-only file holding the live claim token while unclaimed (S288)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version.Version)
 		return
 	}
-	if err := run(*listen, *configPath, *dataDir, *socketPath, *craftSocket, *catalogDir); err != nil {
+	if err := run(*listen, *configPath, *dataDir, *socketPath, *craftSocket, *catalogDir, *claimTokenFile); err != nil {
 		fmt.Fprintln(os.Stderr, "homestead-server:", err)
 		os.Exit(1)
 	}
 }
 
-func run(listen, configPath, dataDir, socketPath, craftSocket, catalogDir string) error {
+func run(listen, configPath, dataDir, socketPath, craftSocket, catalogDir, claimTokenFile string) error {
 	if err := server.ValidateCraftSocketPath(craftSocket); err != nil {
 		return err
 	}
@@ -111,11 +113,11 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, catalogDir string
 	// Session boundary (ADR-020, S255): classifies every TCP request;
 	// enforcing since S257. The Unix socket is not wrapped.
 	srv.MountSessionBoundary(svcs.Auth, claimSvc, audit.New(st))
-	if err := ensureClaimToken(claimSvc); err != nil {
-		return err
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if err := startClaimToken(ctx, claimSvc, claimTokenFile, os.Stdout, os.Stderr); err != nil {
+		return err
+	}
 	// First-run local discovery (S221): answer homestead.local plus
 	// the service advertisement on the LAN, with live claim state so
 	// owners spot unclaimed boxes. Discovery is convenience, never
@@ -206,28 +208,26 @@ func daemonPort(listen string) (int, error) {
 	return n, nil
 }
 
-// ensureClaimToken mints the console token for a fresh appliance that has
-// none live. Plaintext appears here once, on the console (journal), and in
-// the owner's hands — never in storage.
-func ensureClaimToken(svc *claim.Service) error {
+// startClaimToken keeps one live claim token in a root-only file while the
+// appliance is unclaimed (S288; ADR-015 unchanged). The plaintext goes to
+// the file only: the journal gets one line per start naming the command
+// that shows it, so tokens no longer pile up in the system log. A
+// background timer mints a fresh token when the current one expires.
+func startClaimToken(ctx context.Context, svc *claim.Service, path string, stdout, stderr io.Writer) error {
 	state, err := svc.CurrentState()
 	if err != nil {
 		return err
 	}
 	if state == claim.StateClaimed {
-		return nil
+		return claim.RemoveTokenFile(path)
 	}
-	live, err := svc.LiveToken()
-	if err != nil {
+	// First mint is synchronous so a bad runtime directory fails the boot.
+	if _, err := svc.EnsureTokenFile(path, claim.TokenTTL); err != nil {
 		return err
 	}
-	if live {
-		return nil
-	}
-	token, err := svc.MintToken(claim.TokenTTL)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("homestead-server: UNCLAIMED — claim token (single use, expires in %v):\n%s\n", claim.TokenTTL, token)
+	fmt.Fprintln(stdout, "homestead-server: UNCLAIMED — run `sudo homesteadctl claim token` to show the claim token")
+	go svc.MaintainTokenFile(ctx, path, claim.TokenTTL, func(err error) {
+		fmt.Fprintln(stderr, "homestead-server: claim token:", err)
+	})
 	return nil
 }

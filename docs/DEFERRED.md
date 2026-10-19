@@ -253,10 +253,9 @@
   reconciliation retries for about four minutes, then leaves the pending
   row for the next daemon start. Nextcloud and
   Jellyfin declare no secrets.
-- Storage unregister and unassign: the daemon has no route for either
-  (the registry and assignments stores can drop rows, but nothing
-  exposes it), so the S268 Storage page and the storage CLI
-  offer neither. Re-assigning a class is refused with a 409 package list
+- Storage unregister and unassign (closed in S288: routes, CLI and Storage page
+  actions exist; impact is judged by `<mount>/<package>` directories, as below).
+  Re-assigning a class is refused with a 409 package list
   until acknowledged; impact is judged by `<old mount>/<package>`
   directories of installed stacks, and S276 declarations are not consulted.
 - Audit server-side query (S269): `GET /api/v1/audit` accepts only
@@ -645,14 +644,13 @@
     assignments, so a mount chosen in the request failed with "no space data".
     Fixed in the daemon (the chosen mount's free space is read from discovery),
     and the wizard assigns a chosen mount to a class that has none, so uninstall
-    can name the data folders. There is still no API to unassign a class or
-    unregister a mount.
-  - Uninstall leaves the empty stack directory under `/opt/homestead/stacks`.
+    can name the data folders. S288 added the unassign and unregister routes.
+  - Closed in S288: uninstall now removes the empty stack directory.
   - The Done step of an app opened later (not in the install session) lists data
     folders from assignments only; an app on a non-default mount says "on the
     storage you chose".
-  - The Storage page and the wizard list a mount twice when discovery returns it
-    twice (VM 2 shows `/mnt/app` twice); the wizard dedupes, the Storage page does not.
+  - Closed in S288: the Storage page now lists a mount once when discovery
+    returns it twice (the root cause in discovery is not investigated).
   - Hostnames, the container port, extra networks and public address records
     can all be set in the wizard; per-endpoint exposure other than the
     manifest's recommendation cannot, by design (ADR-006).
@@ -671,8 +669,8 @@
   answers 409 (no current plan). Idempotence is shown by plan, approve, apply.
 - The audit entry for `sso.approve` shows `keep_token=[redacted]` (a boolean,
   redacted by the field-name rule).
-- The CLI login command prints the session token on stdout; a script that does
-  not redirect it leaks the token into logs.
+- Closed in S288: the CLI login command no longer prints the session token
+  (`--print-token` for scripts).
 - OIDC login for the CLI, RP-initiated logout, multiple links, non-owner SSO
   and disabling local login stay deferred (see the ADR-033 entry above).
 - Hardening: the link URL works as a bearer credential for whoever completes
@@ -696,8 +694,8 @@
   walkthrough. Multiple admins are out of scope for v1.
 - KVM findings left open (S287 review): the tunnel permission line for
   Cloudflare shows only once Cloudflare Tunnel is chosen (a note says so);
-  the CLI tunnel teardown command takes the account ID as an argument, so it
-  lands in argv and shell history (a file or stdin option is needed); the CLI
+  the CLI tunnel teardown account ID in argv is closed in S288 (`--account-id-file`,
+  `-` for stdin; the argv form warns); the CLI
   and the Tunnel page ask for the Cloudflare token again even when a DNS
   credential for the same provider is already sealed; skipping or
   un-skipping a step that is already done from real state prints the full
@@ -738,3 +736,16 @@
 - Mono hostnames break mid-word in narrow table cells.
 - The audit filter form is tall.
 - "Log in" and "Sign in" wording is inconsistent.
+
+## S288 open bug fixes
+- Unassign and unregister judge impact by `<mount>/<package>` directories of
+  installed stacks (as re-assign does); S276 data declarations are not consulted.
+  The dashboard dialogs state the effect but cannot preview the affected apps;
+  the daemon's 409 names them after the owner confirms.
+- Why discovery returns a mount twice is not investigated; the dashboard hides
+  the duplicate.
+- The claim token file is not cleaned if the daemon is killed hard (tmpfs, so a
+  reboot clears it; the next start reuses it only if its token is still live).
+- Existing deployments keep old tokens in their journal until it rotates.
+- `tunnel setup` still accepts `--api-token` and `--account-id` arguments (they
+  warn); remove the argv forms in a later slice.

@@ -429,6 +429,10 @@ func handleCatalogUninstall(s *Server, st *store.Store, catalogDir string, runne
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if !catalog.StackInstalled(stackDirFor(name)) {
+			http.Error(w, fmt.Sprintf("%q is not installed", name), http.StatusNotFound)
+			return
+		}
 		if status, err := uninstallDataStatus(r.Context(), st, catalogDir, name); err != nil && !body.AbandonVolumes {
 			http.Error(w, "cannot confirm where this app's data lives: "+err.Error()+"; pass abandon_volumes to proceed anyway", http.StatusBadGateway)
 			return

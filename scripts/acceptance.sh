@@ -12,7 +12,8 @@
 # Optional:
 #   HOMESTEAD_EXPORT_FILE    export document to import (disaster recovery)
 #   HOMESTEAD_SECRETS_FILE   JSON object file mapping secret names to values
-#   HOMESTEAD_CLAIM_TOKEN  single-use claim token (else must be claimed)
+#   HOMESTEAD_CLAIM_TOKEN  single-use claim token (else read with sudo -n
+#                          homesteadctl claim token; else must be claimed)
 #   HOMESTEAD_ADMIN_USER   administrator username (default owner)
 #   HOMESTEAD_DOMAIN       install domain (default lan)
 #   HOMESTEAD_SERVER       daemon base URL (default http://127.0.0.1:8080)
@@ -76,7 +77,11 @@ fi
 phase "claim"
 state="$(curl -fsSL "$HOMESTEAD_SERVER/api/v1/identity" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')" || fail claim "identity endpoint unreachable"
 if [ "$state" = "UNCLAIMED" ]; then
-	test -n "${HOMESTEAD_CLAIM_TOKEN:-}" || fail claim "appliance unclaimed: set HOMESTEAD_CLAIM_TOKEN from the daemon console (journalctl -u homestead-server)"
+	# The daemon never logs the token (S288): read it from its root-only file.
+	if [ -z "${HOMESTEAD_CLAIM_TOKEN:-}" ]; then
+		HOMESTEAD_CLAIM_TOKEN="$(sudo -n "$CTL" claim token 2>/dev/null | sed -n 's/^token: //p')" || true
+	fi
+	test -n "${HOMESTEAD_CLAIM_TOKEN:-}" || fail claim "appliance unclaimed: set HOMESTEAD_CLAIM_TOKEN from 'sudo homesteadctl claim token'"
 	if ! out="$("$CTL" claim "$HOMESTEAD_CLAIM_TOKEN" 2>&1)"; then
 		case "$out" in
 			*already\ claimed*) echo "claimed concurrently; continuing" ;;
@@ -93,7 +98,7 @@ phase "admin"
 if ! "$CTL" admin setup --username "$HOMESTEAD_ADMIN_USER" --password-file "$HOMESTEAD_PASSWORD_FILE" 2>/dev/null; then
 	echo "admin exists (or setup refused); proving login instead"
 fi
-TOKEN="$("$CTL" login --username "$HOMESTEAD_ADMIN_USER" --password-file "$HOMESTEAD_PASSWORD_FILE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')" || fail admin "login failed"
+TOKEN="$("$CTL" login --username "$HOMESTEAD_ADMIN_USER" --password-file "$HOMESTEAD_PASSWORD_FILE" --print-token | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')" || fail admin "login failed"
 test -n "$TOKEN" || fail admin "login produced no token"
 # Every route except the public allowlist needs a session (ADR-020,
 # S257): prove the boundary is enforcing, then use the session

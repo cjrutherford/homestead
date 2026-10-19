@@ -201,6 +201,8 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/storage/registrations":                 ClassSession,
 	"GET /api/v1/storage/assignments":                    ClassSession,
 	"POST /api/v1/storage/assignments":                   ClassSession,
+	"DELETE /api/v1/storage/assignments/{class}":         ClassSession,
+	"DELETE /api/v1/storage/registrations":               ClassSession,
 	"GET /api/v1/tunnel/status":                          ClassSession,
 	"POST /api/v1/tunnel/setup":                          ClassSession,
 	"DELETE /api/v1/tunnel/tunnels/{id}":                 ClassSession,

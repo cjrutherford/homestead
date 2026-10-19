@@ -135,4 +135,30 @@ describe('Trust', () => {
     expect(req.request.body).toEqual({ digest: 'd1' });
     req.flush({ id: 9 });
   });
+
+  it('asks before re-issuing every certificate', () => {
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
+    load(report());
+    button('Re-issue all').click();
+    fixture.detectChanges();
+    http.expectNone('/api/v1/tls/local-ca/leaves/reissue');
+    expect(fixture.nativeElement.querySelector('dialog')).not.toBeNull();
+    expect(text()).toContain('Your devices keep trusting the CA');
+    const confirm = Array.from(fixture.nativeElement.querySelectorAll('dialog button') as NodeListOf<HTMLButtonElement>).find((b) => b.textContent?.trim() === 'Re-issue all')!;
+    confirm.click();
+    const req = http.expectOne('/api/v1/tls/local-ca/leaves/reissue');
+    expect(req.request.body).toEqual({ host: '' });
+    req.flush({ id: 6 });
+  });
+
+  it('cancelling the re-issue dialog sends nothing', () => {
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
+    load(report());
+    button('Re-issue all').click();
+    fixture.detectChanges();
+    (Array.from(fixture.nativeElement.querySelectorAll('dialog button') as NodeListOf<HTMLButtonElement>).find((b) => b.textContent?.trim() === 'Cancel')!).click();
+    fixture.detectChanges();
+    http.expectNone('/api/v1/tls/local-ca/leaves/reissue');
+    expect(fixture.nativeElement.querySelector('dialog')).toBeNull();
+  });
 });

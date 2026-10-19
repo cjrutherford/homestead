@@ -100,6 +100,7 @@ func runLogin(ctx context.Context, client *apiclient.Client, args []string, stdo
 	set := flag.NewFlagSet("login", flag.ContinueOnError)
 	set.SetOutput(stderr)
 	username, passwordFile := credentialFlags(set)
+	printToken := set.Bool("print-token", false, "include the session token in the output (for scripts); by default it is only stored")
 	if err := set.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -130,6 +131,12 @@ func runLogin(ctx context.Context, client *apiclient.Client, args []string, stdo
 	session.CSRFToken = ""
 	if err := saveSession(storedSession{Server: client.BaseURL(), Token: session.Token, ExpiresAt: session.ExpiresAt}); err != nil {
 		fmt.Fprintln(stderr, "warning: session not stored:", err)
+	}
+	if !*printToken {
+		// The token is stored for later commands; printing it would leak it
+		// into logs and terminals (S288).
+		session.Token = ""
+		fmt.Fprintln(stderr, "logged in; the session is stored (use --print-token to print it for a script)")
 	}
 	writeJSON(stdout, session)
 	return exitOK

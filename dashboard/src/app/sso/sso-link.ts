@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 import { httpErrorMessage } from '../core/http-error';
 import { REAUTH_INVALID, REAUTH_REQUIRED } from '../core/reauth';
 import { StateMessage } from '../state/state-message';
+import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
 import { SsoService, SsoState } from './sso.service';
 
@@ -31,7 +32,7 @@ export function linkErrorMessage(err: HttpErrorResponse, action: string): string
  */
 @Component({
   selector: 'app-sso-link',
-  imports: [Loading, RouterLink, StateMessage],
+  imports: [Dialog, Loading, RouterLink, StateMessage],
   template: `
     <app-loading [loading]="loading()" shape="lines">
       @if (error()) {
@@ -49,9 +50,22 @@ export function linkErrorMessage(err: HttpErrorResponse, action: string): string
             Your local password still works whether or not Authentik is running.
           </p>
           <p>Unlinking signs out sessions that were started with Authentik.</p>
-          <button type="button" class="danger" [disabled]="busy()" [attr.aria-busy]="busy() ? 'true' : null" (click)="unlink()">
+          <button type="button" class="danger" [disabled]="busy()" [attr.aria-busy]="busy() ? 'true' : null" (click)="askUnlink()">
             Unlink Authentik
           </button>
+          @if (confirmingUnlink()) {
+            <app-dialog heading="Unlink Authentik?" variant="danger" (dismissed)="cancelUnlink()">
+              <p>
+                This removes the tie between your owner account and the Authentik account. Anyone
+                signed in through Authentik is signed out, and Authentik can no longer sign you in
+                here. Your local password keeps working. You will be asked for it next.
+              </p>
+              <div class="dialog-actions">
+                <button type="button" class="danger" (click)="confirmUnlink()">Unlink Authentik</button>
+                <button type="button" class="quiet" (click)="cancelUnlink()">Cancel</button>
+              </div>
+            </app-dialog>
+          }
         } @else {
           <p>
             Not linked. Linking sends you to Authentik to sign in once, then ties that account to
@@ -108,6 +122,21 @@ export class SsoLink implements OnInit {
   /** Sends the browser to Authentik to finish the link; a seam for tests. */
   protected go(url: string): void {
     window.location.assign(url);
+  }
+
+  protected readonly confirmingUnlink = signal(false);
+
+  protected askUnlink(): void {
+    this.confirmingUnlink.set(true);
+  }
+
+  protected cancelUnlink(): void {
+    this.confirmingUnlink.set(false);
+  }
+
+  protected confirmUnlink(): void {
+    this.confirmingUnlink.set(false);
+    this.unlink();
   }
 
   protected unlink(): void {

@@ -35,7 +35,7 @@ It does not expose the normal administration API.
 
 ## Stage 2 — Appliance claim
 
-The console displays a short-lived cryptographic claim token.
+The owner reads a short-lived cryptographic claim token with `sudo homesteadctl claim token` (S288). The daemon keeps it in a root-only file in its runtime directory and never writes it to the journal; the journal says once per start that the appliance is unclaimed.
 
 The owner opens the local setup endpoint and supplies the token.
 

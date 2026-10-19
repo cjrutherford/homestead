@@ -206,3 +206,78 @@ func TestStorageMountsReportRegistrability(t *testing.T) {
 		}
 	}
 }
+
+func TestStorageUnassignRefusedThenAllowed(t *testing.T) {
+	srv, s, old := impactFixture(t, true)
+	recorder := serveRequest(t, srv, http.MethodDelete, "/api/v1/storage/assignments/application", nil)
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "jellyfin") {
+		t.Fatalf("code = %d (%s), want 409 naming jellyfin", recorder.Code, recorder.Body.String())
+	}
+	var n int
+	_ = s.DB().QueryRow(`SELECT COUNT(*) FROM storage_assignments`).Scan(&n)
+	if n != 1 {
+		t.Fatal("assignment dropped despite refusal")
+	}
+	// The app's data folder goes away (uninstall): unassign now succeeds,
+	// is audited, and never touches the disk.
+	if err := os.Remove(filepath.Join(old, "jellyfin")); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(old, "keep.txt")
+	if err := os.WriteFile(marker, []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	recorder = serveRequest(t, srv, http.MethodDelete, "/api/v1/storage/assignments/application", nil)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("code = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("unassign touched the disk: %v", err)
+	}
+	var action string
+	if err := s.DB().QueryRow(`SELECT action FROM audit_entries WHERE action='storage.unassign'`).Scan(&action); err != nil {
+		t.Fatalf("audit entry missing: %v", err)
+	}
+	if recorder = serveRequest(t, srv, http.MethodDelete, "/api/v1/storage/assignments/application", nil); recorder.Code != http.StatusNotFound {
+		t.Fatalf("second unassign code = %d", recorder.Code)
+	}
+	if recorder = serveRequest(t, srv, http.MethodDelete, "/api/v1/storage/assignments/bogus", nil); recorder.Code != http.StatusBadRequest {
+		t.Fatalf("bogus class code = %d", recorder.Code)
+	}
+}
+
+func TestStorageUnregister(t *testing.T) {
+	srv, s, old := impactFixture(t, true)
+	if _, err := s.DB().Exec(`INSERT INTO storage_registrations (mountpoint, label, actor, added_at) VALUES (?, 'old', 'owner', '2026-01-01T00:00:00Z')`, old); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/v1/storage/registrations?mountpoint=" + old
+	recorder := serveRequest(t, srv, http.MethodDelete, path, nil)
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "jellyfin") || !strings.Contains(recorder.Body.String(), "application") {
+		t.Fatalf("code = %d (%s), want 409 naming the app and class", recorder.Code, recorder.Body.String())
+	}
+	// Unassigned and app gone: allowed, audited, disk untouched.
+	if _, err := s.DB().Exec(`DELETE FROM storage_assignments`); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(old, "jellyfin")); err != nil {
+		t.Fatal(err)
+	}
+	recorder = serveRequest(t, srv, http.MethodDelete, path, nil)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("code = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+	if _, err := os.Stat(old); err != nil {
+		t.Fatalf("unregister touched the disk: %v", err)
+	}
+	var action string
+	if err := s.DB().QueryRow(`SELECT action FROM audit_entries WHERE action='storage.unregister'`).Scan(&action); err != nil {
+		t.Fatalf("audit entry missing: %v", err)
+	}
+	if recorder = serveRequest(t, srv, http.MethodDelete, path, nil); recorder.Code != http.StatusNotFound {
+		t.Fatalf("second unregister code = %d", recorder.Code)
+	}
+	if recorder = serveRequest(t, srv, http.MethodDelete, "/api/v1/storage/registrations", nil); recorder.Code != http.StatusBadRequest {
+		t.Fatalf("missing mountpoint code = %d", recorder.Code)
+	}
+}

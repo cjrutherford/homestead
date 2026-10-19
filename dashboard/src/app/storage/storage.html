@@ -99,6 +99,7 @@
             <th scope="col">Mount</th>
             <th scope="col">Approved by</th>
             <th scope="col">Added</th>
+            <th scope="col">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -108,6 +109,10 @@
               <td class="storage-path">{{ reg.Mountpoint }}</td>
               <td>{{ reg.Actor }}</td>
               <td><time [attr.datetime]="reg.AddedAt">{{ reg.AddedAt | when }}</time></td>
+              <td>
+                <button type="button" class="danger quiet" (click)="askUnregister(reg)" [disabled]="busy()"
+                  [attr.aria-label]="'Unregister ' + reg.Mountpoint">Unregister</button>
+              </td>
             </tr>
           }
         </tbody>
@@ -186,6 +191,7 @@
             <th scope="col">Mount</th>
             <th scope="col">Set by</th>
             <th scope="col">Set</th>
+            <th scope="col">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -195,6 +201,10 @@
               <td class="storage-path">{{ item.Mountpoint }}</td>
               <td>{{ item.Actor }}</td>
               <td><time [attr.datetime]="item.CreatedAt">{{ item.CreatedAt | when }}</time></td>
+              <td>
+                <button type="button" class="danger quiet" (click)="askUnassign(item)" [disabled]="busy()"
+                  [attr.aria-label]="'Unassign ' + item.Class">Unassign</button>
+              </td>
             </tr>
           }
         </tbody>
@@ -247,6 +257,38 @@
       <div class="dialog-actions">
         <button type="button" class="danger" (click)="confirmAssign()" [disabled]="busy()">Confirm re-assign</button>
         <button type="button" class="quiet" (click)="cancelAssign()" [disabled]="busy()">Cancel</button>
+      </div>
+    </app-dialog>
+  }
+  @if (confirmingUnassign(); as pending) {
+    <app-dialog heading="Unassign this storage class?" variant="danger" (dismissed)="cancelUnassign()">
+      <p>
+        {{ pending.Class }} stops pointing at <span class="mono">{{ pending.Mountpoint }}</span>, so new
+        installs and backups for that class have nowhere to go until you assign it again.
+        Nothing on the disk is deleted. If installed apps still keep data on this mount,
+        Homestead refuses and names them.
+      </p>
+      <div class="dialog-actions">
+        <button type="button" class="danger" (click)="confirmUnassign()" [disabled]="busy()">Confirm unassign</button>
+        <button type="button" class="quiet" (click)="cancelUnassign()" [disabled]="busy()">Cancel</button>
+      </div>
+    </app-dialog>
+  }
+  @if (confirmingUnregister(); as pending) {
+    <app-dialog heading="Unregister this mount?" variant="danger" (dismissed)="cancelUnregister()">
+      <p>
+        Homestead stops using <span class="mono">{{ pending.Mountpoint }}</span> ({{ pending.Label }}).
+        Nothing on the disk is deleted or unmounted.
+        @if (classesOn(pending.Mountpoint).length) {
+          It still holds {{ classesOn(pending.Mountpoint).join(', ') }}, so Homestead will refuse
+          until you unassign {{ classesOn(pending.Mountpoint).length === 1 ? 'that class' : 'those classes' }}.
+        } @else {
+          If installed apps still keep data on it, Homestead refuses and names them.
+        }
+      </p>
+      <div class="dialog-actions">
+        <button type="button" class="danger" (click)="confirmUnregister()" [disabled]="busy()">Confirm unregister</button>
+        <button type="button" class="quiet" (click)="cancelUnregister()" [disabled]="busy()">Cancel</button>
       </div>
     </app-dialog>
   }

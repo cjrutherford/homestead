@@ -159,15 +159,22 @@ homesteadctl admin recover --username owner --password-file ./new.pass  # root-o
 
 ```bash
 mkdir -p /tmp/hs-data   # dev only: production uses provisioned /var/lib/homestead
-go run ./cmd/homestead-server --data-dir /tmp/hs-data
-# ... logs the single-use console token (30min TTL) on fresh start
+go run ./cmd/homestead-server --data-dir /tmp/hs-data --claim-token-file /tmp/hs-data/claim-token
+# ... the journal/console says once that the appliance is UNCLAIMED; the token
+# itself (single use, 30min TTL) is only in the root-only token file
 curl localhost:8080/api/v1/identity              # {"state":"UNCLAIMED",...}
+go run ./cmd/homesteadctl claim token --file /tmp/hs-data/claim-token   # prints token + expiry
+# on an installed appliance: sudo homesteadctl claim token
 go run ./cmd/homesteadctl --server http://127.0.0.1:8080 claim <TOKEN>
 curl localhost:8080/api/v1/identity              # {"state":"CLAIMED",...}
 ```
 
-- Tokens are 24-byte crypto/rand, base64url on the console, SHA-256 hashes
-  in SQLite, constant-time compared, expired ones pruned on mint.
+- Tokens are 24-byte crypto/rand, base64url, SHA-256 hashes in SQLite,
+  constant-time compared, expired ones pruned on mint. Since S288 the daemon
+  never prints a token: it keeps one live token in `/run/homestead/claim-token`
+  (systemd RuntimeDirectory, tmpfs, mode 0600, replaced atomically, removed on
+  claim) and re-mints on a timer when it expires. Read it with
+  `sudo homesteadctl claim token`.
 - The daemon never creates the state directory: without provisioned
   `/var/lib/homestead` (or an existing `--data-dir`) it exits loudly.
 - Claim carries no credentials — the first administrator and sessions
@@ -336,7 +343,7 @@ sudo homesteadctl admin recover --username owner --password-file ./new.pass
 ## Account surfaces (S239)
 
 ```bash
-export HOMESTEAD_TOKEN="$(homesteadctl login --username owner --password-file ./owner.pass | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
+export HOMESTEAD_TOKEN="$(homesteadctl login --username owner --password-file ./owner.pass --print-token | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
 homesteadctl admin lockout
 homesteadctl admin passwd --current-password-file ./owner.pass --new-password-file ./new.pass
 ```
@@ -504,7 +511,7 @@ avahi-browse -r _homestead._tcp   # or open http://homestead.local:8080
 ```bash
 sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
   HOMESTEAD_PASSWORD_FILE=/root/owner.pass \
-  HOMESTEAD_CLAIM_TOKEN=<console-token> ./scripts/acceptance.sh
+  HOMESTEAD_CLAIM_TOKEN=<from sudo homesteadctl claim token> ./scripts/acceptance.sh
 ```
 
 - `scripts/acceptance.sh` walks a fresh supported OS to the base
@@ -596,7 +603,7 @@ docker compose ps
 ```bash
 sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
   HOMESTEAD_PASSWORD_FILE=/root/owner.pass \
-  HOMESTEAD_CLAIM_TOKEN=<console-token> \
+  HOMESTEAD_CLAIM_TOKEN=<from sudo homesteadctl claim token> \
   HOMESTEAD_EXPORT_FILE=/root/homestead-export.yaml \
   HOMESTEAD_SECRETS_FILE=/root/homestead-secrets.json \
   ./scripts/acceptance.sh
@@ -1718,7 +1725,7 @@ no absolute URLs.
 
 ## Claim wizard (S032)
 
-`/claim`: token step (single-use console token, 401 invalid/expired, 409
+`/claim`: token step (single-use claim token from `sudo homesteadctl claim token`, 401 invalid/expired, 409
 skips ahead) then first-administrator step (username, ≥12 password with
 confirmation, 409 lands on done). The wizard reads identity on init so
 already-claimed appliances start at the admin step.
@@ -4580,3 +4587,41 @@ committed). Results:
   Inline validation verified on Account, Tunnel, Storage register, Backups.
 - Not verified: firewall apply and later steps, Trust rotation preview, data
   volume removal flow (all mutating).
+
+## S288: Open bug fixes from the S285-S287 reviews
+
+- Claim token, no log buildup. `internal/claim/tokenfile.go`: while unclaimed
+  the daemon keeps exactly one live token, written to `--claim-token-file`
+  (default `/run/homestead/claim-token`, inside the unit's `RuntimeDirectory`,
+  so it is writable under `ProtectSystem=strict` and on tmpfs; mode 0600 via a
+  temp file in the same directory plus rename). A restart reuses the file's
+  token while it is still live; a lost file (reboot) or an expired token is
+  replaced, and replacing drops every other unused row. The token is never
+  printed: the journal gets one line per start naming `sudo homesteadctl
+  claim token`. Re-minting uses a dedicated timer goroutine
+  (`MaintainTokenFile`) that sleeps until the current token's expiry, rather
+  than a scheduler job (scheduler jobs run through the audited operation runner
+  and persist run state; the token needs an exact-expiry wake and no record).
+  `Service.OnClaimed` removes the file the moment a claim succeeds and stops
+  the loop. `homesteadctl claim token [--file PATH]` is local (no API): it
+  reads the file, prints `token:` and `expires:`, says plainly when the file
+  is root-only, expired, the appliance is claimed (asks the identity route), or
+  the daemon is not running. Acceptance script reads the token that way.
+- Uninstall removes the stack directory with `os.Remove` (only when empty
+  after the stack files go; data folders keep it). A second uninstall answers
+  404 "X is not installed" (also cleans a pre-S288 empty leftover).
+- Storage: `DELETE /api/v1/storage/assignments/{class}` and `DELETE
+  /api/v1/storage/registrations?mountpoint=`; 409 body names
+  `affected_packages` (and `classes` for a mount still assigned); audited as
+  `storage.unassign` / `storage.unregister`; the disk is never touched. CLI
+  `storage unassign --class`, `storage unregister --mountpoint`. The Storage
+  page dedupes mounts and has both actions behind the danger dialog.
+- CLI: `tunnel teardown` and `tunnel setup` take `--account-id-file` and
+  `--api-token-file` (`-` is stdin); the argv forms warn. `login` no longer
+  prints the session token (`--print-token` does, for scripts).
+- Dashboard: Account "Unlink Authentik" and Trust "Re-issue all" open the
+  danger dialog first.
+- KVM on VM 2: PENDING (to be run by the owner; steps are in the S288 report:
+  unclaimed boot on a second daemon with its own state, `claim token` before
+  and after expiry, uninstall/reinstall a small app, unassign/unregister a
+  test mount, the two confirm dialogs).
