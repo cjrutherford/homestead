@@ -47,3 +47,6 @@ walkthrough, governed by ADR-034, Accepted 2026-10-18
 (`docs/slices/S287-post-claim-setup-walkthrough.md`) → S284. The
 catalog install flow moved from S284 to S285; S284 now covers the catalog list
 only.
+
+Then S288 open bug fixes from the S285–S287 reviews (owner direction
+2026-10-19; `docs/slices/S288-open-bug-fixes.md`).
