@@ -726,3 +726,15 @@
 - Doctor fix text and CLI commands are mapped in the dashboard because the API
   returns only name, status and detail. Moving them into the API would let the
   CLI show the same fix text.
+
+## From the S284 KVM review
+- Account "Unlink Authentik" and Trust "Re-issue all" run without a confirm dialog.
+- Expected API 4xx responses (backups/destination 422, tls/issuance/plans 404,
+  exposure/review 404, wizards/firewall 404, logged-out 401s) appear in the
+  browser console.
+- Catalog icons are letter placeholders.
+- Atkinson's slashed zero is visible in versions and IPs.
+- Config help text mentions "413"; Data page bullets and "(bind)" are jargon.
+- Mono hostnames break mid-word in narrow table cells.
+- The audit filter form is tall.
+- "Log in" and "Sign in" wording is inconsistent.

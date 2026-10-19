@@ -4561,7 +4561,22 @@ unchanged and the parity test stays green. Patterns are in
   forms; Account problems carry their field key; `.risky-preview` defined.
 - Dashboard tests: 66 files, 682 tests.
 
-KVM visual review: PENDING. Screenshot at 1440 and 390 px, light and dark, on
-VM 2: /status, /catalog, /craft-apps, /operations, /audit, /storage,
-/backups, /edge, /trust, /craft-files, /tunnel, /exposure, /account, /data,
-/secrets, /firewall, /updates, /login, /setup.
+KVM visual review (VM 2, headless Chrome, non-GET calls blocked or mocked):
+every route screenshotted at 1440 and 390 px, light and dark, plus the
+logged-out pages. Screenshots and driver scripts are in /tmp/hs-s284/ (not
+committed). Results:
+- Horizontal overflow: none at 375, 390, 768, 1024 and 1440 px on every route.
+- Lazy loading: View Transitions crossfade between lazy and eager pages; skeletons
+  appear without flash; the setup guard allows every route; the work-orders
+  rail shows after a tracked POST; back-navigation restores the scroll position
+  exactly on /updates (600 -> 600). No unexpected console errors.
+- Fixed: raw ISO timestamps (now `when` pipe), "(s)" plurals (now `plural`),
+  Status state casing, Exposure summary sentence case, Updates "Not installed"
+  list collapsed, Drift list heading and chips, audit pager, summary chevrons
+  shared globally, Tear down button styling, nowrap on dates and devices,
+  scroll restore shifted by browser scroll anchoring (`overflow-anchor: none`),
+  setup "1 app installed." copy.
+- Risky actions show "What changes" previews; confirm dialogs open and cancel.
+  Inline validation verified on Account, Tunnel, Storage register, Backups.
+- Not verified: firewall apply and later steps, Trust rotation preview, data
+  volume removal flow (all mutating).
