@@ -298,21 +298,24 @@ func (s *Server) handleTunnelTeardown(st *store.Store, secrets *secret.Store) ht
 // record of it.
 func tunnelTeardownDefinition(st *store.Store, apiToken, accountID, tunnelID string) operation.Definition {
 	def := operation.Definition{Type: "tunnel.teardown"}
+	// The connector stops first: the provider refuses to delete a tunnel
+	// that still has live connections (error 1022). If the delete then
+	// fails the connector is started again so the tunnel keeps serving.
+	def.Steps = append(def.Steps, operation.StepDef{
+		Name: "stop-connector",
+		Run: func(ctx context.Context) error {
+			_ = tunnelSystemctl("stop", tunnelUnitName)
+			return nil
+		},
+	})
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "delete-tunnel",
 		Run: func(ctx context.Context) error {
-			client, err := router.NewTunnelClient(router.CloudflareAPIBase)
+			err := deleteProviderTunnel(ctx, apiToken, accountID, tunnelID)
 			if err != nil {
-				return err
+				_ = tunnelSystemctl("start", tunnelUnitName)
 			}
-			if _, err := client.GetTunnel(ctx, apiToken, accountID, tunnelID); err != nil {
-				var refusal *router.TunnelError
-				if errors.As(err, &refusal) {
-					return nil
-				}
-				return err
-			}
-			return client.DeleteTunnel(ctx, apiToken, accountID, tunnelID)
+			return err
 		},
 	})
 	def.Steps = append(def.Steps, operation.StepDef{
@@ -342,4 +345,21 @@ func tunnelTeardownDefinition(st *store.Store, apiToken, accountID, tunnelID str
 		},
 	})
 	return def
+}
+
+// deleteProviderTunnel deletes the provider tunnel; a tunnel the provider
+// no longer knows reads as already gone.
+func deleteProviderTunnel(ctx context.Context, apiToken, accountID, tunnelID string) error {
+	client, err := router.NewTunnelClient(router.CloudflareAPIBase)
+	if err != nil {
+		return err
+	}
+	if _, err := client.GetTunnel(ctx, apiToken, accountID, tunnelID); err != nil {
+		var refusal *router.TunnelError
+		if errors.As(err, &refusal) {
+			return nil
+		}
+		return err
+	}
+	return client.DeleteTunnel(ctx, apiToken, accountID, tunnelID)
 }

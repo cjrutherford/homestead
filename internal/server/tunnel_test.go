@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"path/filepath"
@@ -142,5 +143,31 @@ func TestTunnelTeardown(t *testing.T) {
 	recorder = serveRequest(t, srv, http.MethodDelete, "/api/v1/tunnel/tunnels/tunnel-id?account_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", nil)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("code = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+}
+
+// Teardown stops the connector before it deletes the provider tunnel: the
+// provider refuses to delete a tunnel with live connections (KVM, S287).
+func TestTunnelTeardownStopsConnectorFirst(t *testing.T) {
+	var calls []string
+	prev := tunnelSystemctl
+	tunnelSystemctl = func(args ...string) error {
+		calls = append(calls, strings.Join(args, " "))
+		return nil
+	}
+	t.Cleanup(func() { tunnelSystemctl = prev })
+	def := tunnelTeardownDefinition(nil, "tok", "acct", "tunnel-id")
+	var names []string
+	for _, step := range def.Steps {
+		names = append(names, step.Name)
+	}
+	if got := strings.Join(names, ","); got != "stop-connector,delete-tunnel,remove-connector,forget-routes" {
+		t.Fatalf("steps = %s", got)
+	}
+	if err := def.Steps[0].Run(context.Background()); err != nil {
+		t.Fatalf("stop-connector: %v", err)
+	}
+	if len(calls) != 1 || !strings.HasPrefix(calls[0], "stop ") {
+		t.Fatalf("systemctl calls = %v, want one stop", calls)
 	}
 }

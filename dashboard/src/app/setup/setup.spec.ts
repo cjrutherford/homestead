@@ -46,7 +46,7 @@ describe('Setup walkthrough (S287)', () => {
     expect(names).toEqual(['Secure the owner account', 'Sign-in', 'Domain and access', 'First apps']);
     // State is a word as well as a glyph.
     expect(el().querySelector('.step .step-status')?.textContent?.trim()).toBe('To do');
-    expect(text()).toContain('Open the Account page');
+    expect(text()).toContain('Open the Backups page to export');
     expect(button('Open this step')).toBeDefined();
   });
 

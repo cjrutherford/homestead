@@ -25,7 +25,7 @@ finished from the CLI or another page reads `done`.
 The walkthrough is complete when every step is done or skipped.
 
 Step 1 has two parts. The recovery identity is exported and acknowledged
-through the existing `backups/identity` routes. The password is confirmed by
+on the Backups page, through the existing `backups/identity` routes. The password is confirmed by
 the owner explicitly ("Confirm my password", beside a link to the Account
 password change; CLI `setup step account --acknowledge`). The daemon has no
 generated or temporary password state to detect, so this is an acknowledgement
@@ -120,11 +120,15 @@ until the walkthrough is complete, except the pages below. Each is exempt becaus
 | --- | --- |
 | `/setup` | the walkthrough itself |
 | `/login`, `/claim` | the way in; the owner must be able to sign in or claim |
-| `/account` | export and acknowledge the recovery identity; change the password |
+| `/account` | change the password |
+| `/backups` | export and acknowledge the recovery identity (step 1) |
 | `/sign-in` | link or configure Authentik sign-in (step 2) |
 | `/tunnel` | create and approve a tunnel (step 3) |
 | `/exposure` | review and approve an exposure plan (step 3) |
 | `/tls` | certificates and DNS credentials (step 3) |
+| `/storage` | register mounted storage, which the install wizard needs before any app can be installed (steps 2 and 4) |
+| `/edge` | the install wizard's requirement step links here for the edge proxy |
+| `/trust` | the install wizard's address step links here for the Homestead root certificate |
 | `/catalog/:name/install` | the S285 install wizard for Authentik and starter apps |
 | `/operations`, `/operations/:id` | follow an install the walkthrough started, from the rail or the list |
 

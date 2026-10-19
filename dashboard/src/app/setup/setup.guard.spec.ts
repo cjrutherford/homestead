@@ -72,7 +72,7 @@ describe('setup guard (S287)', () => {
 describe('setup exemptions (S287)', () => {
   it('leaves exactly the walkthrough pages, the way out and the claim page open', () => {
     expect([...SETUP_EXEMPT_PATHS].sort()).toEqual(
-      ['account', 'catalog/:name/install', 'claim', 'exposure', 'login', 'operations', 'operations/:id', 'setup', 'sign-in', 'tls', 'tunnel'].sort(),
+      ['account', 'backups', 'catalog/:name/install', 'claim', 'exposure', 'login', 'operations', 'operations/:id', 'setup', 'sign-in', 'storage', 'edge', 'trust', 'tls', 'tunnel'].sort(),
     );
   });
 
