@@ -1,4 +1,5 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { NgComponentOutlet } from '@angular/common';
+import { Component, inject, OnInit, signal, Type } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { SessionService } from '../auth/session.service';
 import { ApiService, LockoutStatus } from '../core/api.service';
@@ -42,7 +43,7 @@ export function relativeUntil(iso: string, now: Date = new Date()): string {
  * form controls only and are cleared after every submit.
  */
 @Component({
-  imports: [Loading, StateMessage],
+  imports: [Loading, NgComponentOutlet, StateMessage],
   selector: 'app-account',
   templateUrl: './account.html',
   styles: ['section { overflow-wrap: anywhere; }'],
@@ -64,7 +65,11 @@ export class Account implements OnInit {
   protected readonly error = signal<string | null>(null);
   protected readonly notice = signal<string | null>(null);
 
+  /** The Authentik link card, loaded on demand (S286): most visits never need it. */
+  protected readonly ssoCard = signal<Type<unknown> | null>(null);
+
   ngOnInit(): void {
+    void import('../sso/sso-link').then((m) => this.ssoCard.set(m.SsoLink));
     this.loadLockout();
   }
 

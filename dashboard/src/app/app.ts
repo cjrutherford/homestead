@@ -1,3 +1,4 @@
+import { NgComponentOutlet } from '@angular/common';
 import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
@@ -6,6 +7,7 @@ import { ApiService, Identity } from './core/api.service';
 import { NAV_GROUPS, NavGroup, visibleGroups } from './core/nav';
 import { ThemeService } from './core/theme.service';
 import { WorkOrders } from './core/work-orders.service';
+import { Reauth } from './core/reauth';
 import { ToastRegion } from './ui/toast-region';
 import { WorkOrdersRail } from './ui/work-orders-rail';
 
@@ -49,7 +51,7 @@ function groupOf(url: string): string | null {
  * work-orders rail, which becomes a bottom sheet below md.
  */
 @Component({
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, WorkOrdersRail, ToastRegion],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, WorkOrdersRail, ToastRegion, NgComponentOutlet],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',
@@ -59,6 +61,7 @@ export class App {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
   private readonly workOrders = inject(WorkOrders);
+  protected readonly reauth = inject(Reauth);
   // Injected so a stored theme choice is applied at startup.
   protected readonly theme = inject(ThemeService);
 

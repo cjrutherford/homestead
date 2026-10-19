@@ -22,6 +22,11 @@ describe('operation labels', () => {
     });
   });
 
+  it('names the sign-in setup like its button and its rail entry', () => {
+    expect(labelForRequest('POST', '/api/v1/sso/apply')).toEqual({ title: 'Set up sign-in', done: 'Sign-in set up' });
+    expect(labelForType('sso.apply').title).toBe('Set up sign-in');
+  });
+
   it('only labels operation-starting requests', () => {
     expect(labelForRequest('GET', '/api/v1/edge/routes')).toBeNull();
     expect(labelForRequest('POST', '/api/v1/auth/login')).toBeNull();

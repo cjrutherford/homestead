@@ -75,6 +75,10 @@
 
   <app-toast-region />
 
+  @if (reauth.dialog(); as dialog) {
+    <ng-container *ngComponentOutlet="dialog; inputs: { request: reauth.request() }" />
+  }
+
   <main id="main" #main class="shell-main" tabindex="-1" [attr.inert]="drawerOpen() ? '' : null">
     <router-outlet />
   </main>

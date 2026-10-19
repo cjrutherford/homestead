@@ -61,6 +61,11 @@ export const routes: Routes = [
   { path: 'operations/:id', component: OperationDetail },
   { path: 'validation-board', component: ValidationBoard },
   { path: 'account', component: Account },
+  {
+    // Loaded on demand: only the owner configuring Authentik sign-in needs it (S286).
+    path: 'sign-in',
+    loadComponent: () => import('./sso/sign-in').then((m) => m.SignIn),
+  },
   // Later slices register their routes here, before the wildcard.
   { path: '**', component: NotFound },
 ];

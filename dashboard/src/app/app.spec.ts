@@ -187,7 +187,7 @@ describe('App logged in', () => {
       ['Storage and backups', ['Storage', 'Backups']],
       [
         'System',
-        ['Configuration', 'Drift', 'Secrets', 'Operations', 'Audit', 'Account', 'Advanced'],
+        ['Configuration', 'Drift', 'Secrets', 'Sign-in', 'Operations', 'Audit', 'Account', 'Advanced'],
       ],
     ]);
   });

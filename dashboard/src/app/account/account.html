@@ -46,6 +46,11 @@
   }
   </app-loading>
 
+  <h2>Sign in with Authentik</h2>
+  @if (ssoCard(); as card) {
+    <ng-container *ngComponentOutlet="card" />
+  }
+
   <h2>Change password</h2>
   <p>
     Changing your password signs out all your other sessions. This session

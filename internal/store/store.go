@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 42
+const CurrentVersion = 43
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -840,6 +840,52 @@ CREATE TABLE IF NOT EXISTS craft_file_link (
 CREATE TABLE IF NOT EXISTS craft_file_local_only (
 	app TEXT PRIMARY KEY,
 	created_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S286 (ADR-033): dashboard sign-in with Authentik. Sessions record
+		// their method (password or oidc). sso_config is the applied
+		// Authentik-side configuration (non-secret; the client secret and
+		// the optional API token are sealed secrets, ADR-021). sso_plan is
+		// the one pending plan and its digest-bound approval. sso_link is
+		// the single owner link keyed by (issuer, sub). sso_state holds the
+		// single-use state, nonce and PKCE verifier of in-flight flows.
+		version: 43,
+		name:    "dashboard sso",
+		sql: `
+ALTER TABLE sessions ADD COLUMN method TEXT NOT NULL DEFAULT 'password';
+CREATE TABLE IF NOT EXISTS sso_config (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	spec TEXT NOT NULL,
+	applied_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sso_plan (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	digest TEXT NOT NULL,
+	spec TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	approved_digest TEXT NOT NULL DEFAULT '',
+	approved_by TEXT NOT NULL DEFAULT '',
+	approved_at TEXT NOT NULL DEFAULT '',
+	keep_token INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS sso_link (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	issuer TEXT NOT NULL,
+	sub TEXT NOT NULL,
+	identity_id INTEGER NOT NULL,
+	linked_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sso_state (
+	state_hash BLOB PRIMARY KEY,
+	kind TEXT NOT NULL,
+	nonce TEXT NOT NULL,
+	verifier TEXT NOT NULL,
+	redirect_uri TEXT NOT NULL,
+	identity_id INTEGER NOT NULL DEFAULT 0,
+	actor TEXT NOT NULL DEFAULT '',
+	expires_at TEXT NOT NULL
 );`,
 	},
 }

@@ -1,0 +1,170 @@
+<section aria-label="Sign-in with Authentik">
+  <h1>Sign in with Authentik</h1>
+  <p>
+    Sign in to this dashboard with the Authentik that runs on this appliance. Your local owner
+    password always works too, including when Authentik is down or gone.
+  </p>
+
+  @if (error()) {
+    <app-state-message kind="error" [headline]="error()" />
+  }
+  @if (notice()) {
+    <app-state-message kind="status" [headline]="notice()" />
+  }
+
+  <app-loading [loading]="loading()" shape="panel">
+    @if (state(); as s) {
+      @if (operationId(); as id) {
+        <h2>Set up sign-in</h2>
+        <app-operation-progress [id]="id" />
+      } @else if (plan(); as p) {
+        <h2>Review the plan</h2>
+        <p>
+          Homestead will configure Authentik at <strong>{{ p.spec.authentik_url }}</strong>
+          @if (p.spec.authentik_version) {
+            (the catalog pins version {{ p.spec.authentik_version }})
+          }.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">In Authentik</th>
+                <th scope="col">Name</th>
+                <th scope="col">What happens</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (o of p.objects; track o.kind) {
+                <tr>
+                  <th scope="row">{{ o.kind }}</th>
+                  <td>{{ o.name }}</td>
+                  <td>
+                    {{ o.action }}
+                    @if (o.changes?.length) {
+                      ({{ o.changes?.join(', ') }})
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The provider is confidential with the signing key <code>{{ p.spec.signing_key }}</code>,
+          the scopes {{ p.spec.scopes.join(', ') }}, and the flows
+          <code>{{ p.spec.authorization_flow }}</code> and <code>{{ p.spec.invalidation_flow }}</code>.
+          These redirect addresses are matched exactly:
+        </p>
+        <ul>
+          @for (uri of p.spec.redirect_uris; track uri) {
+            <li><code>{{ uri }}</code></li>
+          }
+        </ul>
+        <h3>Left alone</h3>
+        <ul>
+          @for (line of p.untouched; track line) {
+            <li>{{ line }}</li>
+          }
+        </ul>
+        @if (!p.inspected) {
+          <app-state-message kind="notice" headline="Authentik was not read, so the table shows what Homestead will check at apply." detail="Add the API token and review again to see what already exists." />
+        }
+        @for (line of p.warnings; track line) {
+          <app-state-message kind="warning" [headline]="line" />
+        }
+        <div class="field">
+          <label for="sso-approve-token">Authentik API token</label>
+          <input id="sso-approve-token" type="password" autocomplete="off" (input)="apiToken = $any($event.target).value" />
+        </div>
+        <label>
+          <input type="checkbox" name="keep-token" (change)="keepToken = $any($event.target).checked" />
+          Keep the token, sealed on this appliance, for later changes (otherwise it is forgotten after apply)
+        </label>
+        <p>
+          <button type="button" [disabled]="busy()" [attr.aria-busy]="busy() ? 'true' : null" (click)="approve()">Approve and set up sign-in</button>
+          <button type="button" class="quiet" [disabled]="busy()" (click)="cancelReview()">Cancel</button>
+        </p>
+      } @else if (!s.configured || editing()) {
+        @if (!s.authentik_installed && !s.configured) {
+          <app-state-message
+            kind="empty"
+            headline="Authentik is not installed yet."
+            detail="Install it from the catalog, give it an address, then come back here."
+            actionLabel="Install Authentik"
+            actionLink="/catalog/authentik/install"
+          />
+        }
+        <h2>{{ s.configured ? 'Change the setup' : 'Set up sign-in' }}</h2>
+        <form (submit)="$event.preventDefault(); review()">
+          <div class="field">
+            <label for="sso-url">Authentik address</label>
+            <input id="sso-url" name="authentik-url" [value]="authentikUrl" placeholder="https://authentik.lan" (input)="authentikUrl = $any($event.target).value" />
+          </div>
+          <div class="field">
+            <label for="sso-origins">Addresses you open this dashboard at, one per line</label>
+            <textarea id="sso-origins" name="origins" rows="3" [value]="originsText" (input)="originsText = $any($event.target).value"></textarea>
+          </div>
+          <div class="field">
+            <label for="sso-key">Signing key in Authentik (optional)</label>
+            <input id="sso-key" name="signing-key" [value]="signingKey" placeholder="authentik Self-signed Certificate" (input)="signingKey = $any($event.target).value" />
+          </div>
+          <div class="field">
+            <label for="sso-token">Authentik API token (optional here, used once to read what exists)</label>
+            <input id="sso-token" name="api-token" type="password" autocomplete="off" (input)="apiToken = $any($event.target).value" />
+          </div>
+          <button type="submit" [disabled]="busy()" [attr.aria-busy]="busy() ? 'true' : null">Review plan</button>
+          @if (editing()) {
+            <button type="button" class="quiet" (click)="editing.set(false)">Cancel</button>
+          }
+        </form>
+      } @else {
+        <h2>Status</h2>
+        @if (s.offered) {
+          <app-state-message kind="status" headline="The login page offers Sign in with Authentik." />
+        } @else if (s.dormant) {
+          <app-state-message kind="warning" headline="Sign-in is dormant: Authentik is not installed." detail="The link is kept. Install Authentik again and the button returns." />
+        } @else {
+          <app-state-message kind="notice" headline="Set up, but not linked." detail="The login page offers Authentik once you link your account below." />
+        }
+        @if (s.spec; as spec) {
+          <dl>
+            <dt>Authentik</dt>
+            <dd>{{ spec.authentik_url }}</dd>
+            <dt>Issuer</dt>
+            <dd><code>{{ spec.issuer }}</code></dd>
+            <dt>Dashboard addresses</dt>
+            <dd>{{ spec.origins.join(', ') }}</dd>
+            <dt>Client secret</dt>
+            <dd>{{ s.client_secret_sealed ? 'Sealed on this appliance' : 'Missing: set up sign-in again' }}</dd>
+            <dt>API token</dt>
+            <dd>{{ s.api_token_kept ? 'Kept, sealed' : 'Forgotten after setup' }}</dd>
+          </dl>
+        }
+        <h2>Your Authentik account</h2>
+        <app-sso-link />
+        <h2>Change or turn off</h2>
+        <p>
+          Turning sign-in off removes the link and the sealed secret. Your local password and
+          account stay as they are. The Homestead provider and application stay in Authentik until
+          you delete them there.
+        </p>
+        <button type="button" [disabled]="busy()" (click)="openForm()">Change the setup</button>
+        <button type="button" class="danger" [disabled]="busy()" (click)="askTurnOff()">Turn off sign-in</button>
+      }
+    }
+  </app-loading>
+
+  @if (confirmingOff()) {
+    <app-dialog heading="Turn off sign-in with Authentik?" variant="danger" (dismissed)="confirmingOff.set(false)">
+      <p>
+        This removes the link and the sealed client secret and signs out sessions that were started with
+        Authentik. You can still sign in with your local password.
+      </p>
+      <div class="dialog-actions">
+        <button type="button" class="danger" (click)="turnOff()">Turn off sign-in</button>
+        <button type="button" class="quiet" (click)="confirmingOff.set(false)">Cancel</button>
+      </div>
+    </app-dialog>
+  }
+</section>

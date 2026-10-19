@@ -199,7 +199,13 @@ func requestIsTLS(r *http.Request) bool {
 }
 
 func setSessionCookies(w http.ResponseWriter, r *http.Request, session auth.Session) {
-	secure := requestIsTLS(r)
+	setSessionCookiesAs(w, requestIsTLS(r), session)
+}
+
+// setSessionCookiesAs sets the ADR-020 cookies with an explicit Secure
+// flag: the SSO callback knows its scheme from the planned origin, not
+// from request headers.
+func setSessionCookiesAs(w http.ResponseWriter, secure bool, session auth.Session) {
 	http.SetCookie(w, &http.Cookie{
 		Name: SessionCookieName, Value: session.Token, Path: "/",
 		Expires: session.ExpiresAt, HttpOnly: true, Secure: secure,

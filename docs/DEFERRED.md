@@ -658,3 +658,11 @@
     manifest's recommendation cannot, by design (ADR-006).
   - Raw operation step names are mapped to words in `core/operation-view.ts`;
     names the daemon adds later fall back to the slug with spaces.
+
+## Dashboard sign-in with Authentik (S286)
+- The KVM acceptance run on VM 2 (real Authentik, break Authentik, unlink) is
+  pending and is recorded in `docs/DEVELOPMENT.md` when done.
+- The Authentik admin API is exercised against an in-process fake; field names
+  for other Authentik versions are verified only by the KVM run.
+- OIDC login for the CLI, RP-initiated logout, multiple links, non-owner SSO
+  and disabling local login stay deferred (see the ADR-033 entry above).

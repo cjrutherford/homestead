@@ -72,6 +72,7 @@ const (
 	reasonCSRFMissing    = "csrf-missing"
 	reasonCSRFMismatch   = "csrf-mismatch"
 	reasonVerifyError    = "session-verify-error"
+	reasonReauth         = "reauth-required"
 )
 
 // auditActionRejected is the audit action of aggregated rejection entries.
@@ -96,6 +97,12 @@ var routeClasses = map[string]RouteClass{
 	// authenticated dashboard and CLI show is the owner's check.
 	"GET /api/v1/tls/local-ca/root.pem": ClassPublic,
 	"GET /api/v1/tls/local-ca/root.der": ClassPublic,
+	// ADR-033: the three browser-protocol routes of sign-in with Authentik.
+	// Each answers 404 before claim and unless SSO is configured and linked.
+	// Every other SSO route below is session class.
+	"GET /api/v1/sso/options":  ClassPublic,
+	"GET /api/v1/sso/login":    ClassPublic,
+	"GET /api/v1/sso/callback": ClassPublic,
 
 	// Claim window: claim-wizard saves, pre-login.
 	"GET /api/v1/wizards/{id}":    ClassClaimWindow,
@@ -219,7 +226,52 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/data-migrations/{name}/plan":           ClassSession,
 	"POST /api/v1/data-migrations/{name}/approve":        ClassSession,
 	"POST /api/v1/data-migrations/{name}/remove-volumes": ClassSession,
+	"GET /api/v1/sso":                                    ClassSession,
+	"POST /api/v1/sso/plan":                              ClassSession,
+	"POST /api/v1/sso/approve":                           ClassSession,
+	"POST /api/v1/sso/apply":                             ClassSession,
+	"POST /api/v1/sso/link":                              ClassSession,
+	"DELETE /api/v1/sso/link":                            ClassSession,
+	"DELETE /api/v1/sso":                                 ClassSession,
 }
+
+// stepUpMode says who checks the fresh local password for a step-up route.
+type stepUpMode int
+
+const (
+	// stepUpBoundary: the boundary requires the password from an oidc
+	// session before the handler runs. Password sessions pass as before.
+	stepUpBoundary stepUpMode = iota + 1
+	// stepUpHandler: the handler requires a fresh password from every
+	// session (link and unlink do, ADR-033), so the boundary leaves it.
+	stepUpHandler
+)
+
+// stepUpRoutes is the code-declared step-up list (ADR-033): the most
+// damaging actions, where a session obtained through Authentik must present
+// the local password again. The password travels in the ReauthHeader of the
+// request. The list is tested against the registered routes.
+var stepUpRoutes = map[string]stepUpMode{
+	"POST /api/v1/sso/link":                stepUpHandler,
+	"DELETE /api/v1/sso/link":              stepUpHandler,
+	"POST /api/v1/sso/plan":                stepUpBoundary,
+	"POST /api/v1/sso/approve":             stepUpBoundary,
+	"POST /api/v1/sso/apply":               stepUpBoundary,
+	"DELETE /api/v1/sso":                   stepUpBoundary,
+	"POST /api/v1/secrets/rekey":           stepUpBoundary,
+	"POST /api/v1/backups/identity/export": stepUpBoundary,
+}
+
+// ReauthHeader carries the local password for fresh re-authentication.
+const ReauthHeader = "X-Homestead-Reauth"
+
+// Re-authentication error codes (X-Homestead-Error). They ride on 403 and
+// 429, never 401, so the dashboard does not treat them as a dead session.
+const (
+	ErrorCodeReauthRequired = "reauth-required"
+	ErrorCodeReauthInvalid  = "reauth-invalid"
+	ErrorCodeReauthLocked   = "reauth-locked"
+)
 
 // Classify returns the class declared for a registered pattern.
 func Classify(pattern string) (RouteClass, bool) {
@@ -231,6 +283,11 @@ func Classify(pattern string) (RouteClass, bool) {
 // claim.Service the boundary needs; tests inject fakes.
 type sessionVerifier interface {
 	Verify(token string) (auth.VerifiedSession, error)
+}
+
+// passwordVerifier is fresh re-authentication; auth.Service provides it.
+type passwordVerifier interface {
+	VerifyPassword(username, password string) error
 }
 
 type claimReader interface {
@@ -315,6 +372,9 @@ func (b *boundary) wrap(mux *recordingMux) http.Handler {
 			if v.status == http.StatusUnauthorized {
 				w.Header().Set("WWW-Authenticate", "Bearer")
 			}
+			if v.code != "" {
+				w.Header().Set(ErrorCodeHeader, v.code)
+			}
 			http.Error(w, v.message, v.status)
 			return
 		}
@@ -331,6 +391,8 @@ type verdict struct {
 	status          int
 	message         string
 	pattern, reason string
+	// code, when set, is sent as X-Homestead-Error.
+	code string
 }
 
 func reject(status int, message, pattern, reason string) verdict {
@@ -402,10 +464,46 @@ func (b *boundary) check(mux *recordingMux, r *http.Request) (*operatorSession, 
 			return nil, reject(http.StatusForbidden, "CSRF token mismatch", pattern, reasonCSRFMismatch)
 		}
 	}
+	if session.Method == auth.MethodOIDC && stepUpRoutes[pattern] == stepUpBoundary {
+		if v := b.stepUp(r, session.Username, pattern); v.status != 0 {
+			return nil, v
+		}
+	}
 	return &operatorSession{
 		Token: token, Session: session,
 		stillValid: func() bool { _, err := b.sessions.Verify(token); return err == nil },
 	}, verdict{}
+}
+
+// stepUp checks the fresh local password an oidc session must present for
+// the routes in stepUpRoutes. A missing or wrong password is refused with
+// a stable code; wrong guesses feed the same lockout as login.
+func (b *boundary) stepUp(r *http.Request, username, pattern string) verdict {
+	password := r.Header.Get(ReauthHeader)
+	if password == "" {
+		v := reject(http.StatusForbidden, "enter your local password to continue", pattern, reasonReauth)
+		v.code = ErrorCodeReauthRequired
+		return v
+	}
+	pv, ok := b.sessions.(passwordVerifier)
+	if !ok {
+		return reject(http.StatusForbidden, "re-authentication unavailable", pattern, reasonReauth)
+	}
+	switch err := pv.VerifyPassword(username, password); {
+	case err == nil:
+		return verdict{}
+	case errors.Is(err, auth.ErrAccountLocked):
+		v := reject(http.StatusTooManyRequests, "account temporarily locked after repeated failures", pattern, reasonReauth)
+		v.code = ErrorCodeReauthLocked
+		return v
+	case errors.Is(err, auth.ErrInvalidCredentials):
+		v := reject(http.StatusForbidden, "that password is not right", pattern, reasonReauth)
+		v.code = ErrorCodeReauthInvalid
+		return v
+	default:
+		b.log.Warn("session boundary: re-authentication failed", "error", err)
+		return reject(http.StatusServiceUnavailable, "re-authentication unavailable", pattern, reasonVerifyError)
+	}
 }
 
 func isMutating(method string) bool {

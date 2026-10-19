@@ -57,6 +57,22 @@ describe('Account', () => {
     fixture.detectChanges();
   };
 
+  it('offers the Authentik link with a heading, loaded on demand', async () => {
+    start();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('app-sso-link')).not.toBeNull();
+    });
+    expect(text()).toContain('Sign in with Authentik');
+    http.expectOne('/api/v1/sso').flush({
+      state: 'none', configured: false, linked: false, dormant: false, offered: false,
+      client_secret_sealed: false, api_token_kept: false, authentik_installed: false,
+      defaults: { authentik_url: '', origins: [] }, session_method: 'password',
+    });
+    fixture.detectChanges();
+    expect(text()).toContain('Sign-in with Authentik is not set up');
+  });
+
   it('offers a theme choice with the stored preference selected and persists changes', () => {
     start();
     const radios = Array.from(

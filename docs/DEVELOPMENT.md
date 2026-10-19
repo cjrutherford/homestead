@@ -4404,3 +4404,17 @@ and the `homestead-edge` network; no app containers or stacks; no routes;
 storage registrations and class assignments removed (database rows deleted, as
 there is no API); gridcraft and nextcloud images and `craft_images`/
 `craft_verdicts` rows removed; `/mnt/app` and `/mnt/bulk` empty; tunnel running.
+
+## S286: Dashboard sign-in with Authentik (ADR-033)
+- `internal/sso` (ID token validation, Authentik admin client, manager),
+  `internal/server/sso.go` routes, session `method` column (migration 43,
+  schema v43), `stepUpRoutes` in `boundary.go`, `homesteadctl sso ...`, and the
+  dashboard Sign-in page, Account link card, login button, SSO error codes and
+  re-authentication dialog. Design and operations: `docs/architecture/DASHBOARD_SSO.md`.
+- Tests: fake OIDC provider and fake Authentik admin API in `internal/sso` and
+  `internal/server`; Vitest specs for login, Sign-in, link card, error codes
+  and the re-auth dialog.
+- KVM on VM 2: PENDING. To run: install Authentik via the wizard, plan/approve/
+  apply, link, sign in, check CSRF/logout/expiry, refuse an unlinked user, stop
+  Authentik and break the issuer, prove local login works, unlink, restore VM 2.
+  The transcript summary goes here.

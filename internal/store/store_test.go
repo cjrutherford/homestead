@@ -202,6 +202,7 @@ func TestUpgradeFromV23PopulatedDatabase(t *testing.T) {
 		`ALTER TABLE cert_issuance_approvals DROP COLUMN renewal_mode`,
 		`ALTER TABLE cert_issuances DROP COLUMN directory`,
 		`ALTER TABLE craft_baseline DROP COLUMN artifact_sha256`,
+		`ALTER TABLE sessions DROP COLUMN method`,
 		`ALTER TABLE craft_baseline DROP COLUMN context_digest`,
 		`DELETE FROM schema_migrations WHERE version >= 24`,
 	} {
@@ -244,6 +245,7 @@ func TestUpgradeFromV30KeepsPopulatedBackupRecipients(t *testing.T) {
 		`ALTER TABLE cert_issuance_approvals DROP COLUMN renewal_mode`,
 		`ALTER TABLE cert_issuances DROP COLUMN directory`,
 		`ALTER TABLE craft_baseline DROP COLUMN artifact_sha256`,
+		`ALTER TABLE sessions DROP COLUMN method`,
 		`ALTER TABLE craft_baseline DROP COLUMN context_digest`,
 		`DELETE FROM schema_migrations WHERE version >= 31`,
 	} {

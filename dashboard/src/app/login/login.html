@@ -30,5 +30,9 @@
       </label>
       <button type="submit" [disabled]="busy()">Log in</button>
     </form>
+    @if (ssoEnabled()) {
+      <p>Or use the Authentik that runs on this appliance. Your local password keeps working either way.</p>
+      <p><a class="button" [href]="ssoLogin">Sign in with Authentik</a></p>
+    }
   }
 </section>

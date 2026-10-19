@@ -98,10 +98,19 @@ type Session struct {
 	ExpiresAt time.Time
 }
 
+// Session methods (ADR-033): how the session was obtained. An oidc
+// session must re-enter the local password for the step-up routes.
+const (
+	MethodPassword = "password"
+	MethodOIDC     = "oidc"
+)
+
 // VerifiedSession is a proven session with its owner.
 type VerifiedSession struct {
 	IdentityID int64
 	Username   string
+	// Method is MethodPassword or MethodOIDC.
+	Method string
 	// ExpiresAt is the absolute expiry; IdleExpiresAt is when the
 	// session dies if unused.
 	ExpiresAt     time.Time
@@ -236,6 +245,26 @@ func (s *Service) Login(username, password string) (Session, error) {
 	if err := s.clearFailures(username); err != nil {
 		return Session{}, err
 	}
+	return s.mintSession(id, MethodPassword)
+}
+
+// MintOIDCSession mints the standard session for an identity whose
+// Authentik sign-in the caller has already verified (ADR-033). It checks
+// no password and touches no lockout counter: a locked local account does
+// not block SSO and SSO success does not clear local failures.
+func (s *Service) MintOIDCSession(identityID int64) (Session, error) {
+	var found int64
+	if err := s.db.QueryRow(`SELECT id FROM identities WHERE id = ? AND username IS NOT NULL`, identityID).Scan(&found); err != nil {
+		if err == sql.ErrNoRows {
+			return Session{}, ErrInvalidCredentials
+		}
+		return Session{}, fmt.Errorf("auth: find admin: %w", err)
+	}
+	return s.mintSession(identityID, MethodOIDC)
+}
+
+// mintSession creates the session row with the given method.
+func (s *Service) mintSession(id int64, method string) (Session, error) {
 	token, err := randomToken()
 	if err != nil {
 		return Session{}, err
@@ -254,13 +283,49 @@ func (s *Service) Login(username, password string) (Session, error) {
 		return Session{}, fmt.Errorf("auth: sweep sessions: %w", err)
 	}
 	if _, err := s.db.Exec(
-		`INSERT INTO sessions (identity_id, token_hash, csrf_hash, expires_at, last_used_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, sum[:], csrfSum[:], formatTime(expires), stamp, stamp, stamp,
+		`INSERT INTO sessions (identity_id, token_hash, csrf_hash, expires_at, last_used_at, created_at, updated_at, method)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, sum[:], csrfSum[:], formatTime(expires), stamp, stamp, stamp, method,
 	); err != nil {
 		return Session{}, fmt.Errorf("auth: create session: %w", err)
 	}
 	return Session{Token: token, CSRFToken: csrf, ExpiresAt: expires}, nil
+}
+
+// RevokeMethodSessions destroys an identity's sessions of one method:
+// unlinking Authentik ends the owner's oidc sessions (ADR-033).
+func (s *Service) RevokeMethodSessions(identityID int64, method string) error {
+	if _, err := s.db.Exec(`DELETE FROM sessions WHERE identity_id = ? AND method = ?`, identityID, method); err != nil {
+		return fmt.Errorf("auth: revoke sessions: %w", err)
+	}
+	return nil
+}
+
+// VerifyPassword is fresh re-authentication (ADR-033): it checks the
+// local password of username inside the request, not the cached session.
+// Failures feed the same lockout as login, so re-auth is no way around
+// the throttle. It mints nothing and clears nothing on success (login
+// and password change are the only places that forgive failures).
+func (s *Service) VerifyPassword(username, password string) error {
+	locked, err := s.lockedOut(username)
+	if err != nil {
+		return err
+	}
+	if locked {
+		return ErrAccountLocked
+	}
+	var hash []byte
+	err = s.db.QueryRow(`SELECT password_hash FROM identities WHERE username = ?`, username).Scan(&hash)
+	if err == sql.ErrNoRows {
+		return s.recordFailure(username)
+	}
+	if err != nil {
+		return fmt.Errorf("auth: find admin: %w", err)
+	}
+	if err := bcrypt.CompareHashAndPassword(hash, []byte(password)); err != nil {
+		return s.recordFailure(username)
+	}
+	return nil
 }
 
 func randomToken() (string, error) {
@@ -493,10 +558,10 @@ func (s *Service) Verify(token string) (VerifiedSession, error) {
 		expiresAt, createdAt, lastUsed string
 	)
 	err := s.db.QueryRow(
-		`SELECT s.id, s.identity_id, i.username, s.expires_at, s.created_at, s.last_used_at, s.csrf_hash
+		`SELECT s.id, s.identity_id, i.username, s.expires_at, s.created_at, s.last_used_at, s.csrf_hash, s.method
 		 FROM sessions s JOIN identities i ON i.id = s.identity_id
 		 WHERE s.token_hash = ?`, sum[:],
-	).Scan(&id, &v.IdentityID, &v.Username, &expiresAt, &createdAt, &lastUsed, &v.CSRFHash)
+	).Scan(&id, &v.IdentityID, &v.Username, &expiresAt, &createdAt, &lastUsed, &v.CSRFHash, &v.Method)
 	if err == sql.ErrNoRows {
 		return VerifiedSession{}, ErrInvalidSession
 	}
@@ -559,4 +624,17 @@ func (s *Service) Logout(token string) error {
 		return ErrInvalidSession
 	}
 	return nil
+}
+
+// Username names an administrator identity (audit actors).
+func (s *Service) Username(identityID int64) (string, error) {
+	var name string
+	err := s.db.QueryRow(`SELECT username FROM identities WHERE id = ? AND username IS NOT NULL`, identityID).Scan(&name)
+	if err == sql.ErrNoRows {
+		return "", ErrInvalidCredentials
+	}
+	if err != nil {
+		return "", fmt.Errorf("auth: find admin: %w", err)
+	}
+	return name, nil
 }

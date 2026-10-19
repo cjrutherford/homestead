@@ -139,6 +139,16 @@ unchanged.
 | POST | /api/v1/drift/schedule | `"drift"` | `driftScheduleSave` | Scan interval and enable on CLI (`drift schedule --interval/--enabled`) and the dashboard drift page |
 | GET | / | n/a | `app-root` | The UI itself; the CLI is the other interface. Catch-all also answers HEAD; mux method patterns cannot express both without conflicting, so both rows stand for one Handle |
 | HEAD | / | n/a | `app-root` | Same catch-all as GET / |
+| GET | /api/v1/sso/options | n/a | `ssoOptions` | PUBLIC browser-protocol route (S286, ADR-033): `{"enabled":bool}` for the login page, 404 before claim and unless sign-in is configured and linked, and `enabled:false` at an address the plan does not cover; read from local state, never probes Authentik. CLI equivalent: `sso status` (session class) |
+| GET | /api/v1/sso/login | n/a | `ssoLogin` | PUBLIC browser-protocol route (S286): starts the authorization code flow with PKCE, state and nonce; a browser redirect, so the CLI has no equivalent (CLI login stays local, ADR-033). The login page's "Sign in with Authentik" link |
+| GET | /api/v1/sso/callback | n/a | n/a | PUBLIC browser-protocol route (S286): Authentik's return address, 302 to the login page with a session or a fixed error code; no UI surface of its own. `sso link` prints the URL that ends here |
+| GET | /api/v1/sso | `"sso"` | `ssoStatus` | Sign-in state, never a secret or token; `sso status` and the Sign-in page (`/sign-in`, S286). Session class |
+| POST | /api/v1/sso/plan | `"sso"` | `ssoPlan` | Plan the Authentik provider and application with exact redirect URIs; `sso plan` and the Sign-in page. Step-up for oidc sessions (S286) |
+| POST | /api/v1/sso/approve | `"sso"` | `ssoApprove` | Approve the plan by digest; the API token is request-only, sealed, forgotten after apply unless `--keep-token` / the checkbox; `sso approve` and the Sign-in page. Step-up for oidc sessions |
+| POST | /api/v1/sso/apply | `"sso"` | `ssoApply` | Apply as an operation (`sso apply [--follow]`; the page follows it in the rail). Step-up for oidc sessions |
+| POST | /api/v1/sso/link | `"sso"` | `ssoLink` | Mint the single-use 10 minute link intent after a fresh local password (`X-Homestead-Reauth`); `sso link` prints the URL, the page opens it. Account and Sign-in pages |
+| DELETE | /api/v1/sso/link | `"sso"` | `ssoUnlink` | Remove the link and end oidc sessions, after a fresh local password; `sso unlink` and the Sign-in/Account pages |
+| DELETE | /api/v1/sso | `"sso"` | `ssoDisable` | Turn sign-in with Authentik off (recovery path): removes configuration, link and sealed secrets, leaves the local owner; `sso disable` and the Sign-in page. Step-up for oidc sessions |
 
 Craft file proxy (S254, ADR-029, ADR-032). The proxy itself is not on the
 TCP mux: `POST|GET|DELETE /_homestead/files/session` and the WebDAV subset

@@ -1617,6 +1617,15 @@ export class ApiService {
     });
   }
 
+  /**
+   * Whether the login page offers Authentik (S286, ADR-033). Public; answers
+   * 404 until sign-in is set up and linked, and `enabled: false` at an
+   * address the plan does not cover.
+   */
+  ssoOptions(): Observable<{ enabled: boolean }> {
+    return this.http.get<{ enabled: boolean }>('/api/v1/sso/options');
+  }
+
   /** Own lockout status (S274). */
   lockoutStatus(): Observable<LockoutStatus> {
     return this.http.get<LockoutStatus>('/api/v1/admins/lockout');
