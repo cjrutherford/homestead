@@ -4537,3 +4537,25 @@ there is no API); gridcraft and nextcloud images and `craft_images`/
   tunnel `941037b6-692b-49ee-bd18-c1159c93fe36` (`~/tunnel-id.txt`) serving
   https://homestead.hopefulaspirationsindustries.com.
 
+
+## S284: Dashboard page passes
+
+Presentation and copy only. No route, API or CLI change; `docs/PARITY.md` is
+unchanged and the parity test stays green. Patterns are in
+`docs/architecture/DASHBOARD_DESIGN.md` (Page patterns).
+
+- Status: triage list, collapsed "All good", compact facts, copyable commands.
+- Catalog and Craft apps: list rows with icon, badge and actions.
+- Tables: Operations, Audit, Storage, Backups, Edge, Trust, Craft files,
+  Tunnel routes, Data migration volumes.
+- Risky actions: preview beside the button; new confirm dialogs for tunnel
+  teardown and old-volume removal.
+- Forms: Account, Tunnel and Exposure show inline field errors.
+- Copy: shared unreachable message, "Settings" for variables, "certificate"
+  for leaf, "Homestead" instead of "daemon" and "reconciler" in user text.
+- Dashboard tests: 66 files, 678 tests.
+
+KVM visual review: PENDING. Screenshot at 1440 and 390 px, light and dark, on
+VM 2: /status, /catalog, /craft-apps, /operations, /audit, /storage,
+/backups, /edge, /trust, /craft-files, /tunnel, /exposure, /account, /data,
+/secrets, /firewall, /updates, /login, /setup.

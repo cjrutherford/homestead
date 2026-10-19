@@ -117,7 +117,7 @@ describe('Backups', () => {
   it('shows non-integer hours sensibly and unlimited retention', () => {
     load([{ ...SCHEDULE, interval_seconds: 5400, retain: 0 }]);
     expect(text()).toContain('every 1.5h');
-    expect(text()).toContain('retain all runs');
+    expect(text()).toContain('all runs');
   });
 
   it('shows empty state and a not-yet-assigned destination as a state', () => {
@@ -278,8 +278,8 @@ describe('Backups', () => {
     load([SCHEDULE], '/mnt/backup', [JOB]);
     expect(text()).toContain('Scheduled jobs');
     expect(text()).toContain('backup:jellyfin');
-    expect(text()).toContain('last run 2026-01-02T00:00:00Z');
-    expect(text()).toContain('next due 2026-01-03T00:00:00Z');
+    expect(text()).toContain('2026-01-02T00:00:00Z');
+    expect(text()).toContain('2026-01-03T00:00:00Z');
   });
 
   it('shows job errors, skips, and the empty and error states', () => {
@@ -292,7 +292,7 @@ describe('Backups', () => {
         last_skip_blocking: 9,
       },
     ]);
-    expect(text()).toContain('last run never');
+    expect(text()).toContain('never');
     expect(text()).toContain('Last error: catalog unavailable');
     expect(text()).toContain('operation 9 was still active');
 

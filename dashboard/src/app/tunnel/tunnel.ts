@@ -2,6 +2,7 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService, TunnelStatus } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
 
@@ -13,7 +14,7 @@ import { OperationProgress } from '../ui/operation-progress';
  * anything except through setup and teardown.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage],
+  imports: [OperationProgress, Loading, StateMessage, Dialog],
   selector: 'app-tunnel',
   templateUrl: './tunnel.html',
 })
@@ -25,6 +26,13 @@ export class Tunnel implements OnInit {
   protected readonly notice = signal<string | null>(null);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
+
+  /** Inline messages for the setup form, keyed by field name. */
+  protected readonly fieldErrors = signal<Record<string, string>>({});
+  /** The teardown waiting for confirmation. */
+  protected readonly confirming = signal<{ id: string; name: string; accountId: string } | null>(null);
+  /** Message under the Account ID of the tunnel being torn down. */
+  protected readonly teardownError = signal<{ id: string; message: string } | null>(null);
 
   ngOnInit(): void {
     this.refresh();
@@ -52,8 +60,14 @@ export class Tunnel implements OnInit {
     apiToken: string,
     accountId: string,
   ): void {
-    if (!name || !hostname || !service || !apiToken || !accountId) {
-      this.error.set('Name, hostname, service, API token, and account ID are required.');
+    const missing: Record<string, string> = {};
+    if (!name) missing['name'] = 'Enter a name for the tunnel.';
+    if (!hostname) missing['hostname'] = 'Enter the hostname the tunnel will serve.';
+    if (!service) missing['service'] = 'Enter the local address the tunnel forwards to, such as http://127.0.0.1:8080.';
+    if (!apiToken) missing['token'] = 'Enter the API token. Homestead seals it on this appliance.';
+    if (!accountId) missing['account'] = 'Enter your account ID.';
+    this.fieldErrors.set(missing);
+    if (Object.keys(missing).length > 0) {
       return;
     }
     this.busy.set(true);
@@ -74,9 +88,30 @@ export class Tunnel implements OnInit {
     });
   }
 
+  /** Asks first: tearing a tunnel down cuts every hostname it serves. */
+  askTeardown(id: string, name: string, accountId: string): void {
+    if (!accountId) {
+      this.teardownError.set({ id, message: 'Enter the account ID. Homestead never guesses which account a tunnel belongs to.' });
+      return;
+    }
+    this.teardownError.set(null);
+    this.confirming.set({ id, name, accountId });
+  }
+
+  cancelTeardown(): void {
+    this.confirming.set(null);
+  }
+
+  confirmTeardown(): void {
+    const pending = this.confirming();
+    if (!pending) return;
+    this.confirming.set(null);
+    this.teardown(pending.id, pending.accountId);
+  }
+
   teardown(id: string, accountId: string): void {
     if (!accountId) {
-      this.error.set('Teardown needs the account ID; tenancy is never guessed.');
+      this.teardownError.set({ id, message: 'Enter the account ID. Homestead never guesses which account a tunnel belongs to.' });
       return;
     }
     this.busy.set(true);

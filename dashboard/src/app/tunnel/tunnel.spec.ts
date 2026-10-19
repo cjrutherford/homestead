@@ -59,7 +59,8 @@ describe('Tunnel', () => {
     expect(text()).toContain('Preferred path: tunnel');
     expect(text()).toContain('Nothing on the router needs changing');
     expect(text()).toContain('homestead: healthy');
-    expect(text()).toContain('app.example.com → http://127.0.0.1:8080');
+    expect(text()).toContain('app.example.com');
+    expect(text()).toContain('http://127.0.0.1:8080');
   });
 
   it('sets up through operations without echoing the token', () => {
@@ -101,5 +102,40 @@ describe('Tunnel', () => {
     http.expectOne('/api/v1/tunnel/status').flush({ ...STATUS, tunnels: [] });
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/24"]')).not.toBeNull();
+  });
+
+  it('asks before tearing down and only then deletes', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const input = el.querySelector('.risky input[name="account-id"]') as HTMLInputElement;
+    input.value = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    (el.querySelector('.risky form') as HTMLFormElement).dispatchEvent(new Event('submit'));
+    fixture.detectChanges();
+    http.expectNone((req) => req.method === 'DELETE');
+    expect(el.querySelector('app-dialog')?.textContent).toContain('Tear down this tunnel?');
+    const confirm = Array.from(el.querySelectorAll('app-dialog button')).find(
+      (b) => b.textContent?.trim() === 'Confirm tear down',
+    ) as HTMLButtonElement;
+    confirm.click();
+    http
+      .expectOne('/api/v1/tunnel/tunnels/tunnel-id?account_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+      .flush({ id: 5 });
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+  });
+
+  it('shows missing setup fields next to the field', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const forms = el.querySelectorAll('form');
+    forms[forms.length - 1].dispatchEvent(new Event('submit'));
+    fixture.detectChanges();
+    const name = el.querySelector('#tunnel-name') as HTMLInputElement;
+    expect(name.getAttribute('aria-invalid')).toBe('true');
+    expect(el.querySelector('#tunnel-name-error')?.textContent).toContain('Enter a name');
+    expect(el.querySelectorAll('.field-error').length).toBe(5);
   });
 });

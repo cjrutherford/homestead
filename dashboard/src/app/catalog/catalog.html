@@ -1,8 +1,7 @@
 <section aria-label="Application catalog">
   <h1>Catalog</h1>
   <p>
-    Apps that Homestead can install on this appliance. Choose one to see what it needs and install
-    it step by step.
+    Apps you can install on this appliance. Pick one to see what it needs, then install it step by step.
   </p>
 
   @if (error()) {
@@ -14,13 +13,14 @@
       @if (packages().length === 0 && !error()) {
         <app-state-message
           kind="empty"
-          headline="No apps are in the catalog."
+          headline="The catalog is empty."
           detail="The catalog folder on the appliance is empty. Check that homestead-server can read it."
         />
       }
       <ul class="catalog-list">
         @for (pkg of packages(); track pkg.name) {
           <li class="catalog-item">
+            <span class="app-icon" aria-hidden="true">{{ pkg.title.charAt(0) }}</span>
             <div class="catalog-text">
               <strong>{{ pkg.title }}</strong>
               <span class="hint">Version {{ pkg.version }}</span>
@@ -28,6 +28,8 @@
                 <span class="badge badge-pending">Setting up</span>
               } @else if (pkg.installed) {
                 <span class="badge badge-ok">Installed</span>
+              } @else {
+                <span class="badge">Not installed</span>
               }
               <p>{{ pkg.blurb }}</p>
             </div>
@@ -51,7 +53,7 @@
   @if (selected(); as manifest) {
     <h2>Manage {{ manifest.Title }}</h2>
     <p>
-      Change the variables {{ manifest.Title }} starts with, or manage the passwords Homestead keeps for
+      Change the settings {{ manifest.Title }} starts with, or manage the passwords Homestead keeps for
       it.
       <button type="button" class="quiet" (click)="close()">Close</button>
     </p>
@@ -60,7 +62,7 @@
       <app-operation-progress [id]="id" />
     }
 
-    <h3>Variables</h3>
+    <h3>Settings</h3>
     <ul>
       @for (row of configRows(); track $index) {
         <li>
@@ -82,8 +84,8 @@
         </li>
       }
     </ul>
-    <button type="button" (click)="addConfigRow(false)">Add variable</button>
-    <h4>Variables to remove</h4>
+    <button type="button" (click)="addConfigRow(false)">Add a setting</button>
+    <h4>Settings to remove</h4>
     <ul>
       @for (row of unsetRows(); track $index) {
         <li>
@@ -100,7 +102,7 @@
         </li>
       }
     </ul>
-    <button type="button" (click)="addConfigRow(true)">Add a variable to remove</button>
+    <button type="button" (click)="addConfigRow(true)">Add a setting to remove</button>
     <button type="button" class="primary" (click)="applyConfig()" [disabled]="busy()">Apply configuration</button>
 
     @if (appSecrets().length > 0) {

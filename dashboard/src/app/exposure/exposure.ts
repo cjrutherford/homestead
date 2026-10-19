@@ -35,6 +35,9 @@ export class Exposure implements OnInit {
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
 
+  /** Inline messages for the selection and approval forms, keyed by field. */
+  protected readonly fieldErrors = signal<Record<string, string>>({});
+
   ngOnInit(): void {
     this.refresh();
     this.api.tlsRenewal().subscribe({
@@ -76,8 +79,12 @@ export class Exposure implements OnInit {
     publicIp: string,
   ): void {
     const port = Number(targetPort);
-    if (!host || !targetHost || !Number.isInteger(port) || port < 1) {
-      this.error.set('Route host, target host, and target port are required.');
+    const missing: Record<string, string> = {};
+    if (!host) missing['host'] = 'Enter the route host, such as app.example.com.';
+    if (!targetHost) missing['target'] = 'Enter the host the route forwards to.';
+    if (!Number.isInteger(port) || port < 1) missing['port'] = 'Enter the port as a whole number, 1 or higher.';
+    this.fieldErrors.set(missing);
+    if (Object.keys(missing).length > 0) {
       return;
     }
     this.busy.set(true);
@@ -109,9 +116,10 @@ export class Exposure implements OnInit {
 
   approve(actor: string, networksRaw: string): void {
     if (!actor) {
-      this.error.set('Approval needs a named actor.');
+      this.fieldErrors.set({ actor: 'Enter your name. Approvals are recorded under it.' });
       return;
     }
+    this.fieldErrors.set({});
     const networks = networksRaw
       .split(',')
       .map((network) => network.trim())

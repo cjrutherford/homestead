@@ -1,13 +1,12 @@
 <section aria-label="Craft files">
   <h1>Craft files</h1>
   <p>
-    Craft apps can open and save documents in your own Nextcloud. Homestead
-    does the transfer for the browser, so no Nextcloud password is ever sent
-    to a craft app or a browser. Without a link, or with an app set to
-    browser-local, documents stay in the browser as before.
+    Craft apps can open and save documents in your own Nextcloud. Homestead does the transfer, so no
+    Nextcloud password is ever sent to a craft app or a browser. Without a link, or with an app set
+    to browser-local, documents stay in the browser.
   </p>
 
-  @if (error()) {
+  @if (error() && (plan() || status()?.linked === undefined)) {
     <app-state-message kind="error" [headline]="error()" />
   }
   @if (notice()) {
@@ -28,7 +27,7 @@
         }
       </p>
     } @else {
-      <p>Not linked.</p>
+      <app-state-message kind="empty" headline="Not linked to Nextcloud." detail="Link it below so craft apps can open and save documents there." />
     }
 
     @if (!plan()) {
@@ -65,7 +64,10 @@
             <input type="checkbox" name="insecure" [checked]="allowInsecure" (change)="allowInsecure = $any($event.target).checked" />
             I accept plain http (only for a Nextcloud address not on this appliance; the app password then crosses the network unencrypted)
           </label>
-          <button type="submit" [disabled]="busy()">Review link</button>
+          @if (error() && !plan()) {
+            <p class="field-error" role="alert">{{ error() }}</p>
+          }
+          <button type="submit" class="primary" [disabled]="busy()">Review link</button>
         </form>
       } @else {
         <form (submit)="$event.preventDefault(); review('rotate')">
@@ -88,13 +90,18 @@
             <input type="checkbox" name="rotate-insecure" [checked]="allowInsecure" (change)="allowInsecure = $any($event.target).checked" />
             I accept plain http (only for a Nextcloud address not on this appliance; the app password then crosses the network unencrypted)
           </label>
-          <button type="submit" [disabled]="busy()">Review rotation</button>
-          <button type="button" [disabled]="busy()" (click)="review('unlink')">Review unlink</button>
+          @if (error() && !plan()) {
+            <p class="field-error" role="alert">{{ error() }}</p>
+          }
+          <button type="submit" class="primary" [disabled]="busy()">Review rotation</button>
+          <button type="button" class="danger quiet" [disabled]="busy()" (click)="review('unlink')">Review unlink</button>
         </form>
       }
     } @else {
       @if (plan(); as p) {
+        <div class="risky">
         <h3>Review: {{ p.action }}</h3>
+        <p class="risky-preview">What changes:</p>
         <ul>
           @for (line of p.summary; track line) {
             <li>{{ line }}</li>
@@ -103,8 +110,11 @@
         @for (line of p.warnings; track line) {
           <app-state-message kind="warning" [headline]="line" />
         }
-        <button type="button" [disabled]="busy()" (click)="approve()">Approve {{ p.action }}</button>
-        <button type="button" [disabled]="busy()" (click)="cancel()">Cancel</button>
+        <div class="risky-actions">
+          <button type="button" [class]="p.action === 'unlink' ? 'danger' : 'primary'" [disabled]="busy()" (click)="approve()">Approve {{ p.action }}</button>
+          <button type="button" class="quiet" [disabled]="busy()" (click)="cancel()">Cancel</button>
+        </div>
+        </div>
       }
     }
 
@@ -127,13 +137,13 @@
             <td>{{ app.mode === 'open-save' ? 'open and save' : 'open only (saves stay in the browser)' }}</td>
             <td>
               @if (app.local_only) {
-                browser-local (opted out)
+                <span class="badge">browser-local (opted out)</span>
               } @else if (!st.linked) {
-                browser-local (not linked)
+                <span class="badge">browser-local (not linked)</span>
               } @else if (!app.host) {
-                browser-local (no edge route recorded for this app)
+                <span class="badge badge-warn">browser-local (no edge route recorded for this app)</span>
               } @else {
-                Nextcloud
+                <span class="badge badge-ok">Nextcloud</span>
               }
             </td>
             <td>
@@ -156,8 +166,8 @@
     </table>
     </div>
     <p>
-      Other craft apps have no file hook and stay browser-local. Upload limit,
-      request timeout and per-session concurrency are settings on the
+      Other craft apps have no file hook and stay browser-local. The upload limit, request timeout and
+      number of transfers at once are settings on the
       <a routerLink="/config">Configuration</a> page (Craft file storage).
     </p>
   }

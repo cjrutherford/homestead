@@ -124,6 +124,9 @@ describe('DataMigration', () => {
   it('removes old volumes only on the explicit action', () => {
     load();
     buttons('Remove old volumes')[0].click();
+    fixture.detectChanges();
+    http.expectNone('/api/v1/data-migrations/jellyfin/remove-volumes');
+    buttons('Confirm remove volumes')[0].click();
     const request = http.expectOne('/api/v1/data-migrations/jellyfin/remove-volumes');
     expect(request.request.body).toEqual({ volumes: ['old1'] });
     request.flush({ id: 4 });

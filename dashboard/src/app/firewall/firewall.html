@@ -8,7 +8,7 @@
 
     <app-loading [loading]="busy() && !status()" shape="lines">
     @if (stepIndex() === 0) {
-      <p>Detected LAN subnets. Management stays reachable from these networks.</p>
+      <p>These are the networks Homestead found on your LAN. You can still manage the appliance from them.</p>
       <ul>
         @for (subnet of status()?.local_subnets ?? []; track subnet) {
           <li><code>{{ subnet }}</code></li>
@@ -16,17 +16,23 @@
       </ul>
       <button type="button" (click)="next()">Continue</button>
     } @else if (stepIndex() === 1) {
-      <p>Recommended rules for the isolated homestead table:</p>
+      <p>These are the recommended rules, kept in their own table so they stay apart from any others:</p>
       <pre>{{ plan()?.script }}</pre>
       <button type="button" (click)="next()">Continue</button>
     } @else if (stepIndex() === 2) {
       <h2>Review changes</h2>
-      <ul>
-        @for (change of plan()?.changes ?? []; track change.rule + change.action) {
-          <li>{{ change.action }} {{ change.rule }}: {{ change.detail }}</li>
-        }
-      </ul>
-      <button type="button" (click)="confirm()" [disabled]="busy()">Confirm apply</button>
+      <div class="risky">
+        <h3>Apply firewall</h3>
+        <p class="risky-preview">What changes:</p>
+        <ul>
+          @for (change of plan()?.changes ?? []; track change.rule + change.action) {
+            <li>{{ change.action }} {{ change.rule }}: {{ change.detail }}</li>
+          }
+        </ul>
+        <div class="risky-actions">
+          <button type="button" class="danger" (click)="confirm()" [disabled]="busy()">Confirm apply</button>
+        </div>
+      </div>
     } @else {
       <p>
         @if (alreadyApplied()) {

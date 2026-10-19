@@ -58,12 +58,13 @@ describe('CraftApps', () => {
       expect(a.getAttribute('target')).toBe('_blank');
       expect(a.getAttribute('rel')).toContain('noopener');
     }
-    expect(text()).toContain('version 0.7.0');
+    expect(text()).toContain('Version 0.7.0');
   });
 
   it('lists an app without a route with no link and the reason', () => {
     load([app({ url: '', url_reason: 'No edge route serves this app yet.' })]);
-    expect(fixture.nativeElement.querySelectorAll('a').length).toBe(0);
+    const links = Array.from(fixture.nativeElement.querySelectorAll('a')) as HTMLAnchorElement[];
+    expect(links.some((a) => a.getAttribute('target') === '_blank')).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="no-url"]').textContent).toContain(
       'No edge route serves this app yet.',
     );

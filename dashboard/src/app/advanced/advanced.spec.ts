@@ -90,7 +90,7 @@ describe('Advanced', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/dockge?domain=lan').error(new ProgressEvent('error'));
     fixture.detectChanges();
-    expect(text()).toContain('Cannot reach the Homestead daemon');
+    expect(text()).toContain("Can't reach the appliance");
     expect(fixture.nativeElement.querySelector('a')).toBeNull();
   });
 

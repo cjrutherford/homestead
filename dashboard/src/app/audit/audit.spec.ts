@@ -40,7 +40,7 @@ describe('AuditLog', () => {
 
   const el = () => fixture.nativeElement as HTMLElement;
   const text = () => el().textContent as string;
-  const items = () => el().querySelectorAll('li.audit-entry');
+  const items = () => el().querySelectorAll('tr.audit-entry');
 
   function load(rows: AuditEntry[]): void {
     fixture.detectChanges();
@@ -73,7 +73,7 @@ describe('AuditLog', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/audit?limit=100').error(new ProgressEvent('error'));
     fixture.detectChanges();
-    expect(text()).toContain('Cannot reach the Homestead daemon');
+    expect(text()).toContain("Can't reach the appliance");
   });
 
   it('shows server error text', () => {
@@ -174,9 +174,9 @@ describe('AuditLog', () => {
         override_reason: '<i>why</i>',
       }),
     ]);
-    expect(el().querySelector('li img')).toBeNull();
-    expect(el().querySelector('li b')).toBeNull();
-    expect(el().querySelector('li i')).toBeNull();
+    expect(el().querySelector('tr img')).toBeNull();
+    expect(el().querySelector('tr b')).toBeNull();
+    expect(el().querySelector('tr i')).toBeNull();
     expect(text()).toContain('<img src=x onerror=alert(1)>');
     expect(text()).toContain('Owner override: <i>why</i>');
   });

@@ -93,6 +93,16 @@ export class Account implements OnInit {
   }
 
   /** Client rules mirror the daemon: non-empty, at least 12 characters. */
+  /** The problems that belong to one field, so each shows under its input. */
+  protected problemsFor(field: 'current' | 'new' | 'confirm'): string[] {
+    const matches: Record<typeof field, RegExp> = {
+      current: /current password\.$/,
+      new: /^The new password must/,
+      confirm: /do not match/,
+    };
+    return this.problems().filter((problem) => matches[field].test(problem));
+  }
+
   validate(current: string, next: string, confirm: string): string[] {
     const out: string[] = [];
     if (!current) {
@@ -138,7 +148,7 @@ export class Account implements OnInit {
 
   protected describe(failure: HttpErrorResponse): string {
     if (failure.status === 0) {
-      return 'Cannot reach the Homestead daemon. Check that it is running and try again.';
+      return "Can't reach the appliance. Check that homestead-server is running.";
     }
     if (failure.status === 401 && failure.headers?.get(ERROR_CODE_HEADER) === WRONG_CURRENT_PASSWORD) {
       return 'The current password is incorrect. Repeated failures lock the account temporarily.';
@@ -154,6 +164,6 @@ export class Account implements OnInit {
     if (typeof body === 'string' && body.trim()) {
       return body.trim();
     }
-    return `The daemon answered ${failure.status}.`;
+    return `The appliance answered ${failure.status}. Try again, and check its log if it keeps happening.`;
   }
 }

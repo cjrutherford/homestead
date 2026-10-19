@@ -1,10 +1,9 @@
 <section aria-label="App data placement">
   <h1>App data</h1>
   <p>
-    Apps installed before data placement keep their data in Docker volumes,
-    outside mounted storage and outside backups. Migrating copies it onto
-    mounted storage while the app is stopped; old volumes are kept until you
-    remove them.
+    Apps installed before data placement keep their data in Docker volumes, outside mounted storage
+    and outside backups. Migrating copies it onto mounted storage while the app is stopped. The old
+    volumes stay until you remove them.
   </p>
 
   @if (error()) {
@@ -40,15 +39,34 @@
             </button>
           }
           @if (pendingVolumes(app.package).length > 0) {
-            <h3>Old volumes pending removal</h3>
-            <ul>
-              @for (volume of pendingVolumes(app.package); track volume.volume) {
-                <li>{{ volume.volume }} ({{ volume.target }}, {{ volume.size_bytes }} bytes)</li>
-              }
-            </ul>
-            <button type="button" (click)="removeVolumes(app.package)" [disabled]="busy()">
-              Remove old volumes
-            </button>
+            <div class="risky">
+              <h3>Old volumes pending removal</h3>
+              <div class="table-scroll">
+                <table [attr.aria-label]="'Old volumes for ' + app.package">
+                  <thead>
+                    <tr><th scope="col">Volume</th><th scope="col">Used for</th><th scope="col" class="num">Size</th></tr>
+                  </thead>
+                  <tbody>
+                    @for (volume of pendingVolumes(app.package); track volume.volume) {
+                      <tr>
+                        <th scope="row" class="mono">{{ volume.volume }}</th>
+                        <td class="mono">{{ volume.target }}</td>
+                        <td class="num">{{ volume.size_bytes }} bytes</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              <p class="risky-preview">
+                What changes: these Docker volumes are deleted for good. The copy on mounted storage
+                is not touched.
+              </p>
+              <div class="risky-actions">
+                <button type="button" class="danger quiet" (click)="askRemoveVolumes(app.package)" [disabled]="busy()">
+                  Remove old volumes
+                </button>
+              </div>
+            </div>
           }
           @if (plan(); as p) {
             @if (planFor() === app.package) {
@@ -101,9 +119,22 @@
           }
         </li>
       } @empty {
-        <li>No installed apps.</li>
+        <li><app-state-message kind="empty" headline="No installed apps." detail="Install an app from the catalog and its data placement shows here." actionLabel="Browse the catalog" actionLink="/catalog" /></li>
       }
     </ul>
   }
   </app-loading>
+
+  @if (confirmingVolumes(); as name) {
+    <app-dialog heading="Remove old volumes?" variant="danger" (dismissed)="cancelRemoveVolumes()">
+      <p>
+        This deletes the old Docker volumes of {{ name }} for good. Make sure the copy on mounted
+        storage works before you continue.
+      </p>
+      <div class="dialog-actions">
+        <button type="button" class="danger" (click)="confirmRemoveVolumes()" [disabled]="busy()">Confirm remove volumes</button>
+        <button type="button" class="quiet" (click)="cancelRemoveVolumes()" [disabled]="busy()">Cancel</button>
+      </div>
+    </app-dialog>
+  }
 </section>

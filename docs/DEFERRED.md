@@ -696,7 +696,7 @@
   walkthrough. Multiple admins are out of scope for v1.
 - KVM findings left open (S287 review): the tunnel permission line for
   Cloudflare shows only once Cloudflare Tunnel is chosen (a note says so);
-  `homesteadctl tunnel teardown` takes the account ID as an argument, so it
+  the CLI tunnel teardown command takes the account ID as an argument, so it
   lands in argv and shell history (a file or stdin option is needed); the CLI
   and the Tunnel page ask for the Cloudflare token again even when a DNS
   credential for the same provider is already sealed; skipping or
@@ -707,3 +707,22 @@
   soon as an install starts, before it finishes; wizard_state has no
   in-repo factory-reset command.
 - The KVM acceptance run for S287 is recorded in `docs/DEVELOPMENT.md`.
+
+## S284 dashboard page passes
+
+- Craft apps rows have no one-line purpose; the API does not return one and
+  adding a call per app would add requests. Needs an API field.
+- Backups has no destination form (the destination is read-only), so inline
+  validation was not added there. The recipient, schedule and Storage forms
+  still use the older layout without inline messages.
+- The Edge route editor table is not tuned for narrow screens beyond
+  horizontal scrolling inside `.table-scroll`.
+- Updates and Drift were reworded but not restructured; Updates is still a long
+  list that could be grouped.
+- Exposure apply has no confirm dialog, only the `danger quiet` button and the
+  preview beside it.
+- Install wizard, Sign-in and Setup copy were reviewed lightly; "Cannot reach
+  the appliance" strings in the wizard still differ from the shared wording.
+- Doctor fix text and CLI commands are mapped in the dashboard because the API
+  returns only name, status and detail. Moving them into the API would let the
+  CLI show the same fix text.

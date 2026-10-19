@@ -62,11 +62,7 @@ const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
   imports: [OperationProgress, Loading, StateMessage, Dialog, RouterLink],
   selector: 'app-edge',
   templateUrl: './edge.html',
-  styles: [
-    'textarea { font-family: var(--font-mono); }',
-    '.edge-route { overflow-wrap: anywhere; list-style: none; margin-bottom: var(--spacing-md); padding: var(--spacing-md) var(--spacing-md) var(--spacing-xs); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-panel); }',
-    'ul:has(> .edge-route) { padding: 0; }',
-  ],
+  styles: ['textarea { font-family: var(--font-mono); }'],
 })
 export class Edge implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
@@ -138,7 +134,7 @@ export class Edge implements OnInit, OnDestroy {
 
   protected describe(failure: HttpErrorResponse): string {
     if (failure.status === 0) {
-      return 'Cannot reach the Homestead daemon. Check that it is running and try again.';
+      return "Can't reach the appliance. Check that homestead-server is running.";
     }
     const body = failure.error;
     if (typeof body === 'string' && body.trim()) {
@@ -295,6 +291,14 @@ export class Edge implements OnInit, OnDestroy {
   /** Public routes in the prepared table (drives the extra warning). */
   protected publicHosts(): string[] {
     return this.pending.filter((r) => r.Exposure === 'public').map((r) => r.Host);
+  }
+
+  /** Public hosts in the table as it stands now, before validation (the preview beside the button). */
+  protected draftPublicHosts(): string[] {
+    return this.drafts()
+      .filter((row) => row.exposure === 'public')
+      .map((row) => row.host.trim())
+      .filter((host) => host !== '');
   }
 
   protected pendingCount(): number {

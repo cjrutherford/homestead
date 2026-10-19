@@ -1,10 +1,9 @@
 <section aria-label="Tunnel remote access">
   <h1>Tunnel</h1>
   <p>
-    When the router stays silent — carrier-grade NAT, no admin access,
-    no UPnP answers — a tunnel carries public traffic over an
-    outbound-only connection. Router mappings stay available where
-    they work; the tunnel is the path that needs no router at all.
+    When your router cannot open ports (shared internet addresses, no admin access, no UPnP), a
+    tunnel carries public traffic over a connection that only goes out. It needs no router changes.
+    Router port mappings stay available where they work.
   </p>
 
   @if (error()) {
@@ -43,47 +42,69 @@
       <p>Discovery note: {{ state.discovery_error }}</p>
     }
     <p>
-      Connector: installed={{ state.connector.installed }}
-      active={{ state.connector.active }}
+      Connector:
+      <span class="badge" [class]="state.connector.installed ? 'badge-ok' : ''">{{ state.connector.installed ? 'installed' : 'not installed' }}</span>
+      <span class="badge" [class]="state.connector.active ? 'badge-ok' : ''">{{ state.connector.active ? 'active' : 'not active' }}</span>
     </p>
 
     <h2>Recorded tunnels ({{ state.tunnels.length }})</h2>
-    <ul>
-      @for (tunnel of state.tunnels; track tunnel.id) {
-        <li>
-          <h3>{{ tunnel.name }}: {{ tunnel.status }}</h3>
-          <p>{{ tunnel.connections.length }} connection(s)</p>
-          <form
-            (submit)="
-              teardown(tunnel.id, accountInput.value);
-              $event.preventDefault()
-            "
-          >
-            <label>
-              Account ID
-              <input
-                #accountInput
-                name="account-id"
-                autocomplete="off"
-                [disabled]="busy()"
-              />
-            </label>
-            <button type="submit" [disabled]="busy()">Tear down</button>
-          </form>
-        </li>
-      } @empty {
-        <li>No tunnels recorded yet.</li>
-      }
-    </ul>
+    @if (state.tunnels.length === 0) {
+      <app-state-message kind="empty" headline="No tunnels yet." detail="Set one up below to reach an app from outside your network." />
+    }
+    @for (tunnel of state.tunnels; track tunnel.id) {
+      <div class="risky">
+        <h3>{{ tunnel.name }}: {{ tunnel.status }}</h3>
+        <p class="risky-preview">
+          What changes if you tear it down: the tunnel and its {{ tunnel.connections.length }}
+          connection(s) are removed, and every hostname it serves stops working from outside your
+          network.
+        </p>
+        <form
+          (submit)="
+            askTeardown(tunnel.id, tunnel.name, accountInput.value);
+            $event.preventDefault()
+          "
+        >
+          <label>
+            Account ID
+            <input
+              #accountInput
+              name="account-id"
+              autocomplete="off"
+              [disabled]="busy()"
+              [attr.aria-invalid]="teardownError()?.id === tunnel.id ? 'true' : null"
+              [attr.aria-describedby]="teardownError()?.id === tunnel.id ? 'teardown-error-' + tunnel.id : null"
+            />
+          </label>
+          @if (teardownError(); as problem) {
+            @if (problem.id === tunnel.id) {
+              <p class="field-error" [id]="'teardown-error-' + tunnel.id">{{ problem.message }}</p>
+            }
+          }
+          <div class="risky-actions">
+            <button type="submit" class="danger quiet" [disabled]="busy()">Tear down</button>
+          </div>
+        </form>
+      </div>
+    }
 
     <h2>Routes ({{ state.routes.length }})</h2>
-    <ul>
-      @for (route of state.routes; track route.Hostname) {
-        <li>{{ route.Hostname }} → {{ route.Service }}</li>
-      } @empty {
-        <li>No served hostnames recorded yet.</li>
-      }
-    </ul>
+    @if (state.routes.length === 0) {
+      <app-state-message kind="empty" headline="No hostnames served yet." detail="A hostname appears here once a tunnel serves it." />
+    } @else {
+      <div class="table-scroll">
+        <table aria-label="Tunnel routes">
+          <thead>
+            <tr><th scope="col">Hostname</th><th scope="col">Forwards to</th></tr>
+          </thead>
+          <tbody>
+            @for (route of state.routes; track route.Hostname) {
+              <tr><th scope="row" class="mono">{{ route.Hostname }}</th><td class="mono">{{ route.Service }}</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
   }
   </app-loading>
 
@@ -92,51 +113,72 @@
     (submit)="
       setup(
         nameInput.value,
-        hostInput.value,
+        hostnameInput.value,
         serviceInput.value,
         tokenInput.value,
-        accountSetupInput.value
+        setupAccountInput.value
       );
       $event.preventDefault()
     "
   >
-    <label>
-      Tunnel name
-      <input #nameInput name="name" autocomplete="off" [disabled]="busy()" />
-    </label>
-    <label>
-      Hostname
-      <input #hostInput name="hostname" autocomplete="off" [disabled]="busy()" />
-    </label>
-    <label>
-      Local service
-      <input
-        #serviceInput
-        name="service"
-        placeholder="http://127.0.0.1:8080"
-        autocomplete="off"
-        [disabled]="busy()"
-      />
-    </label>
-    <label>
-      API token (sealed server-side, never shown again)
-      <input
-        #tokenInput
-        name="api-token"
-        type="password"
-        autocomplete="off"
-        [disabled]="busy()"
-      />
-    </label>
-    <label>
-      Account ID
-      <input
-        #accountSetupInput
-        name="account-id"
-        autocomplete="off"
-        [disabled]="busy()"
-      />
-    </label>
-    <button type="submit" [disabled]="busy()">Set up tunnel</button>
+    <div class="field">
+      <label for="tunnel-name">Tunnel name</label>
+      <input id="tunnel-name" #nameInput name="name" autocomplete="off" [disabled]="busy()"
+        [attr.aria-invalid]="fieldErrors()['name'] ? 'true' : null"
+        [attr.aria-describedby]="fieldErrors()['name'] ? 'tunnel-name-error' : null" />
+      @if (fieldErrors()['name']; as message) {
+        <p class="field-error" id="tunnel-name-error">{{ message }}</p>
+      }
+    </div>
+    <div class="field">
+      <label for="tunnel-hostname">Hostname</label>
+      <input id="tunnel-hostname" #hostnameInput name="hostname" autocomplete="off" [disabled]="busy()"
+        [attr.aria-invalid]="fieldErrors()['hostname'] ? 'true' : null"
+        [attr.aria-describedby]="fieldErrors()['hostname'] ? 'tunnel-hostname-error' : null" />
+      @if (fieldErrors()['hostname']; as message) {
+        <p class="field-error" id="tunnel-hostname-error">{{ message }}</p>
+      }
+    </div>
+    <div class="field">
+      <label for="tunnel-service">Local service</label>
+      <input id="tunnel-service" #serviceInput name="service" placeholder="http://127.0.0.1:8080" autocomplete="off" [disabled]="busy()"
+        [attr.aria-invalid]="fieldErrors()['service'] ? 'true' : null"
+        [attr.aria-describedby]="fieldErrors()['service'] ? 'tunnel-service-error' : null" />
+      @if (fieldErrors()['service']; as message) {
+        <p class="field-error" id="tunnel-service-error">{{ message }}</p>
+      }
+    </div>
+    <div class="field">
+      <label for="tunnel-token">API token (sealed on this appliance, never shown again)</label>
+      <input id="tunnel-token" #tokenInput name="api-token" type="password" autocomplete="off" [disabled]="busy()"
+        [attr.aria-invalid]="fieldErrors()['token'] ? 'true' : null"
+        [attr.aria-describedby]="fieldErrors()['token'] ? 'tunnel-token-error' : null" />
+      @if (fieldErrors()['token']; as message) {
+        <p class="field-error" id="tunnel-token-error">{{ message }}</p>
+      }
+    </div>
+    <div class="field">
+      <label for="tunnel-account">Account ID</label>
+      <input id="tunnel-account" #setupAccountInput name="account-id" autocomplete="off" [disabled]="busy()"
+        [attr.aria-invalid]="fieldErrors()['account'] ? 'true' : null"
+        [attr.aria-describedby]="fieldErrors()['account'] ? 'tunnel-account-error' : null" />
+      @if (fieldErrors()['account']; as message) {
+        <p class="field-error" id="tunnel-account-error">{{ message }}</p>
+      }
+    </div>
+    <button type="submit" class="primary" [disabled]="busy()">Set up tunnel</button>
   </form>
+
+  @if (confirming(); as pending) {
+    <app-dialog heading="Tear down this tunnel?" variant="danger" (dismissed)="cancelTeardown()">
+      <p>
+        This removes the tunnel <strong>{{ pending.name }}</strong> and its connections. Every
+        hostname it serves stops working from outside your network. Apps stay installed.
+      </p>
+      <div class="dialog-actions">
+        <button type="button" class="danger" (click)="confirmTeardown()" [disabled]="busy()">Confirm tear down</button>
+        <button type="button" class="quiet" (click)="cancelTeardown()" [disabled]="busy()">Cancel</button>
+      </div>
+    </app-dialog>
+  }
 </section>

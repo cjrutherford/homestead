@@ -108,7 +108,7 @@ describe('Catalog', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/catalog').flush([]);
     fixture.detectChanges();
-    expect(text()).toContain('No apps are in the catalog.');
+    expect(text()).toContain('The catalog is empty.');
   });
 
   it('says how to fix an unreachable appliance', () => {

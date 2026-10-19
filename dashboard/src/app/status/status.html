@@ -2,34 +2,68 @@
   <h1>Status</h1>
 
   @if (error()) {
-    <app-state-message kind="error" [headline]="error()" detail="Check that the appliance is on and the service is running." actionLabel="Try again" (action)="load()" />
+    <app-state-message kind="error" [headline]="error()" detail="Check that the appliance is on, then check the service with: systemctl status homestead-server" actionLabel="Try again" (action)="load()" />
   } @else {
     <app-loading [loading]="!health() && !identity()" shape="lines">
-    <dl>
-      <div>
-        <dt>Daemon</dt>
-        <dd>{{ health()?.status }}</dd>
-      </div>
-      <div>
-        <dt>Appliance</dt>
-        <dd>{{ identity()?.state }}</dd>
-      </div>
-      <div>
-        <dt>Version</dt>
-        <dd>{{ health()?.version ?? identity()?.version }}</dd>
-      </div>
-    </dl>
-    </app-loading>
-    @if (report(); as diagnostics) {
-      <h2>Diagnostics: {{ diagnostics.overall }}</h2>
-      <dl>
-        @for (check of diagnostics.checks; track check.name) {
-          <div>
-            <dt>{{ check.name }}: <span class="badge" [class]="badgeFor(check.status)">{{ check.status }}</span></dt>
-            <dd>{{ check.detail }}</dd>
-          </div>
-        }
+      <dl class="facts" aria-label="Appliance">
+        <div>
+          <dt>Service</dt>
+          <dd>{{ health()?.status }}</dd>
+        </div>
+        <div>
+          <dt>Claim</dt>
+          <dd>{{ identity()?.state }}</dd>
+        </div>
+        <div>
+          <dt>Version</dt>
+          <dd class="mono">{{ health()?.version ?? identity()?.version }}</dd>
+        </div>
       </dl>
+    </app-loading>
+
+    @if (report(); as diagnostics) {
+      @if (problems().length) {
+        <h2>Needs attention ({{ problems().length }})</h2>
+        <ul class="triage">
+          @for (check of problems(); track check.name) {
+            <li [attr.data-status]="check.status">
+              <h3>
+                {{ labelFor(check.name) }}
+                <span class="badge" [class]="badgeFor(check.status)">{{ check.status }}</span>
+              </h3>
+              <p>{{ check.detail }}</p>
+              <p class="fix">
+                <span class="fix-label">What to do:</span> {{ fixFor(check.name).text }}
+              </p>
+              @if (fixFor(check.name).command; as command) {
+                <app-copy-code [text]="command" />
+              }
+            </li>
+          }
+        </ul>
+      } @else {
+        <app-state-message kind="status" headline="Nothing needs attention" detail="Every check passed." />
+      }
+
+      @if (good().length) {
+        <details>
+          <summary>All good ({{ good().length }})</summary>
+          <ul class="good-list">
+            @for (check of good(); track check.name) {
+              <li>
+                <span class="badge badge-ok">ok</span>
+                <strong>{{ labelFor(check.name) }}</strong>
+                <span>{{ check.detail }}</span>
+              </li>
+            }
+          </ul>
+        </details>
+      }
+
+      <h2>Diagnostics: run the checks yourself</h2>
+      <p>The same checks are available from a terminal on the appliance.</p>
+      <p><app-copy-code text="homesteadctl doctor" /></p>
+      <p><app-copy-code text="homesteadctl status" /></p>
     }
   }
 </section>

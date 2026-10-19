@@ -238,3 +238,29 @@ It links to existing pages rather than embedding them. `setupGuard` is the only
 gate; the exempt routes are listed in `setup/setup.guard.ts` and
 `docs/architecture/SETUP_WALKTHROUGH.md`. The navigation entry reads "Setup", or
 "Finish setup" on an appliance claimed before the walkthrough existed.
+
+## Page patterns (S284)
+
+Four patterns cover most pages. Each uses only the S282 tokens and primitives.
+
+- **Triage list** (Status). Things that need action come first, worst first,
+  as `.triage` items: a badge, what happened, a "What to do:" line and, when a
+  command helps, an `app-copy-code` block. Healthy items collapse into a
+  `<details>` with a count. Identity facts (service, claim, version) sit in a
+  compact `.facts` list, not a card grid.
+- **App list** (Catalog, Craft apps). One row per app: `.app-icon`, name, a
+  one-line purpose, a state badge and the install or open action. Rows, not a
+  uniform card grid. Craft advisories use the S252 component in `.advisory-list`.
+- **Data table** (Operations, Audit, Storage, Backups, Edge, Trust, Craft
+  files, Tunnel routes). A real `<table>` inside `.table-scroll`, with a
+  `<caption>` or heading, status in `.badge`, numbers in `.num`, and sortable
+  headers where order matters. Use `core/sort.ts` (`nextSort`, `ariaSort`,
+  `sortRows`) and the `th button.sort` style; set `aria-sort` on the header.
+- **Risky action** (Deploy Caddy, Reconcile routes, Apply firewall, rotation,
+  re-key, volume removal, tunnel teardown). A `.risky` block with a "What
+  changes" preview next to the button, a `danger` or `danger quiet` button, and
+  an `app-dialog` (danger variant) that states the consequence before the
+  action runs. The dialog only gates the existing call; it adds no API.
+
+Forms use the `.field` layout with an inline `.field-error` message tied to the
+input by `aria-describedby`. Errors say what happened and how to fix it.

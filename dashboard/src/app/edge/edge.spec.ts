@@ -112,7 +112,7 @@ describe('Edge', () => {
     click('Confirm deploy');
     http.expectOne('/api/v1/edge/deploy').error(new ProgressEvent('error'));
     fixture.detectChanges();
-    expect(text()).toContain('Cannot reach the Homestead daemon');
+    expect(text()).toContain("Can't reach the appliance");
   });
 
   it('reports a lost progress stream', () => {
@@ -237,7 +237,7 @@ describe('Edge', () => {
     expect(reconcile().disabled).toBe(true);
     // Retry succeeds.
     (Array.from(again.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
-      .find((b) => b.textContent?.trim() === 'Retry loading routes'))!.click();
+      .find((b) => b.textContent?.trim() === 'Try loading routes again'))!.click();
     http.expectOne('/api/v1/edge/routes').flush({ routes: [] });
     again.detectChanges();
     expect(reconcile().disabled).toBe(false);

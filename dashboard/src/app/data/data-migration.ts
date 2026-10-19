@@ -6,6 +6,7 @@ import {
   DataMigrations,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
 
@@ -17,7 +18,7 @@ import { OperationProgress } from '../ui/operation-progress';
  * this page without an approve click quoting the plan's digest.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage],
+  imports: [OperationProgress, Loading, StateMessage, Dialog],
   selector: 'app-data-migration',
   templateUrl: './data-migration.html',
 })
@@ -104,6 +105,22 @@ export class DataMigration implements OnInit {
   cancelPlan(): void {
     this.plan.set(null);
     this.planFor.set(null);
+  }
+
+  protected readonly confirmingVolumes = signal<string | null>(null);
+
+  askRemoveVolumes(name: string): void {
+    this.confirmingVolumes.set(name);
+  }
+
+  cancelRemoveVolumes(): void {
+    this.confirmingVolumes.set(null);
+  }
+
+  confirmRemoveVolumes(): void {
+    const name = this.confirmingVolumes();
+    this.confirmingVolumes.set(null);
+    if (name) this.removeVolumes(name);
   }
 
   removeVolumes(name: string): void {

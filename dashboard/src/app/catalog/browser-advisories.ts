@@ -16,16 +16,18 @@ import { StateMessage } from '../state/state-message';
       <section class="browser-advisories" aria-label="Browser advisories">
         <h3>Browser advisories</h3>
         <app-state-message
-          kind="status"
-          headline="Homestead cannot see your browser's capabilities. These are advisories only and never block install, update or start."
+          kind="notice"
+          headline="Homestead cannot see your browser's capabilities."
+          detail="These are advisories only. They never block install, update or start."
         />
-        <ul>
+        <dl class="advisory-list">
           @for (item of advisories(); track item.Capability) {
-            <li>
-              <strong>{{ item.Label || item.Capability }}</strong> &mdash; {{ item.Reason }}
-            </li>
+            <div>
+              <dt>{{ item.Label || item.Capability }}</dt>
+              <dd>{{ item.Reason }}</dd>
+            </div>
           }
-        </ul>
+        </dl>
       </section>
     }
   `,

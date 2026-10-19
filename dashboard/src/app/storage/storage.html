@@ -1,9 +1,8 @@
 <section aria-label="Storage">
   <h1>Storage</h1>
   <p>
-    Homestead uses storage that is already mounted. It never formats or
-    partitions a disk. Register a mount you approve, then assign it a class
-    so installs and backups know where to put data.
+    Homestead uses storage that is already mounted and never formats or partitions a disk. Register a
+    mount you approve, then give it a class so installs and backups know where to put data.
   </p>
 
   @if (error()) {
@@ -20,38 +19,65 @@
   } @else {
     <app-loading [loading]="mountsLoading() && mounts().length === 0" shape="list">
     @if (!(mountsLoading() && mounts().length === 0)) {
-    <ul aria-label="Discovered mounts">
-      @for (mount of mounts(); track mount.Mountpoint) {
-        <li>
-          <strong class="storage-path">{{ mount.Mountpoint }}</strong>
-          <span class="storage-path">({{ mount.Device }}, {{ mount.FSType }})</span>
-          @if (mount.Label) { label {{ mount.Label }}, }
-          @if (mount.Accessible) {
-            {{ size(mount.FreeBytes) }} free of {{ size(mount.TotalBytes) }},
-          } @else {
-            capacity unavailable,
+    @if (mounts().length === 0) {
+      <app-state-message kind="empty" headline="No mounts discovered." detail="Mount a drive on the appliance first. Homestead never formats or partitions a disk." />
+    } @else {
+    <div class="table-scroll">
+      <table aria-label="Discovered mounts">
+        <thead>
+          <tr>
+            <th scope="col" [attr.aria-sort]="ariaFor('mount')">
+              <button type="button" class="sort" [attr.data-dir]="dirFor('mount')" (click)="sortBy('mount')">Mount</button>
+            </th>
+            <th scope="col">Device</th>
+            <th scope="col" class="num" [attr.aria-sort]="ariaFor('free')">
+              <button type="button" class="sort" [attr.data-dir]="dirFor('free')" (click)="sortBy('free')">Free space</button>
+            </th>
+            <th scope="col">State</th>
+            <th scope="col">Use</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (mount of sortedMounts(); track mount.Mountpoint) {
+            <tr>
+              <td>
+                <strong class="storage-path">{{ mount.Mountpoint }}</strong>
+                @if (mount.Label) { <br />Label {{ mount.Label }} }
+              </td>
+              <td class="storage-path">{{ mount.Device }}, {{ mount.FSType }}</td>
+              <td class="num">
+                @if (mount.Accessible) {
+                  {{ size(mount.FreeBytes) }} free of {{ size(mount.TotalBytes) }}
+                } @else {
+                  capacity unavailable
+                }
+              </td>
+              <td>
+                <span class="badge" [class]="mount.Accessible ? 'badge-ok' : 'badge-fail'">{{ mount.Accessible ? 'accessible' : 'not accessible' }}</span>
+                <span class="badge">{{ mount.ReadOnly ? 'read-only' : 'writable' }}</span>
+              </td>
+              <td>
+                @if (registrationFor(mount.Mountpoint); as reg) {
+                  <p>Registered as {{ reg.Label }}
+                  @if (classesOn(mount.Mountpoint).length) {
+                    and holds {{ classesOn(mount.Mountpoint).join(', ') }}
+                  }</p>
+                }
+                @if (unfit(mount); as why) {
+                  <em>Cannot be registered: {{ why }}.</em>
+                } @else {
+                  <button type="button" (click)="pick(mount.Mountpoint)" [disabled]="busy()"
+                    [attr.aria-label]="'Use ' + mount.Mountpoint + ' for registration'">
+                    Use for registration
+                  </button>
+                }
+              </td>
+            </tr>
           }
-          {{ mount.ReadOnly ? 'read-only' : 'writable' }},
-          {{ mount.Accessible ? 'accessible' : 'not accessible' }}
-          @if (registrationFor(mount.Mountpoint); as reg) {
-            , registered as {{ reg.Label }}
-            @if (classesOn(mount.Mountpoint).length) {
-              , holds {{ classesOn(mount.Mountpoint).join(', ') }}
-            }
-          }
-          @if (unfit(mount); as why) {
-            <em> Cannot be registered: {{ why }}.</em>
-          } @else {
-            <button type="button" (click)="pick(mount.Mountpoint)" [disabled]="busy()"
-              [attr.aria-label]="'Use ' + mount.Mountpoint + ' for registration'">
-              Use for registration
-            </button>
-          }
-        </li>
-      } @empty {
-        <li><app-state-message kind="empty" headline="No mounts discovered." /></li>
-      }
-    </ul>
+        </tbody>
+      </table>
+    </div>
+    }
       }
     </app-loading>
   }
@@ -62,17 +88,32 @@
   } @else {
     <app-loading [loading]="registrationsLoading() && registrations().length === 0" shape="list">
     @if (!(registrationsLoading() && registrations().length === 0)) {
-    <ul aria-label="Registered mounts">
-      @for (reg of registrations(); track reg.Mountpoint) {
-        <li>
-          <strong>{{ reg.Label }}</strong>
-          <span class="storage-path">{{ reg.Mountpoint }}</span>,
-          approved by {{ reg.Actor }} at {{ reg.AddedAt }}
-        </li>
-      } @empty {
-        <li><app-state-message kind="empty" headline="No mounts registered yet." /></li>
-      }
-    </ul>
+    @if (registrations().length === 0) {
+      <app-state-message kind="empty" headline="No mounts registered yet." detail="Pick a discovered mount above, then register it below." />
+    } @else {
+    <div class="table-scroll">
+      <table aria-label="Registered mounts">
+        <thead>
+          <tr>
+            <th scope="col">Label</th>
+            <th scope="col">Mount</th>
+            <th scope="col">Approved by</th>
+            <th scope="col">Added</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (reg of registrations(); track reg.Mountpoint) {
+            <tr>
+              <th scope="row">{{ reg.Label }}</th>
+              <td class="storage-path">{{ reg.Mountpoint }}</td>
+              <td>{{ reg.Actor }}</td>
+              <td><time [attr.datetime]="reg.AddedAt">{{ reg.AddedAt }}</time></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    }
       }
     </app-loading>
   }
@@ -87,7 +128,7 @@
     (submit)="register(regMount.value, regLabel.value, regActor.value); $event.preventDefault()"
   >
     <label>
-      Mountpoint
+      Mount path
       <input #regMount name="mountpoint" autocomplete="off" [value]="picked()" [disabled]="busy() || !!confirmingRegister()" />
     </label>
     <label>
@@ -119,25 +160,39 @@
   } @else {
     <app-loading [loading]="assignmentsLoading() && assignments().length === 0" shape="list">
     @if (!(assignmentsLoading() && assignments().length === 0)) {
-    <ul aria-label="Class assignments">
-      @for (item of assignments(); track item.Class) {
-        <li>
-          <strong>{{ item.Class }}</strong> on
-          <span class="storage-path">{{ item.Mountpoint }}</span>,
-          set by {{ item.Actor }} at {{ item.CreatedAt }}
-        </li>
-      } @empty {
-        <li><app-state-message kind="empty" headline="No classes assigned yet." /></li>
-      }
-    </ul>
+    @if (assignments().length === 0) {
+      <app-state-message kind="empty" headline="No classes assigned yet." detail="Assign a class below so installs and backups know where to put data." />
+    } @else {
+    <div class="table-scroll">
+      <table aria-label="Class assignments">
+        <thead>
+          <tr>
+            <th scope="col">Class</th>
+            <th scope="col">Mount</th>
+            <th scope="col">Set by</th>
+            <th scope="col">Set</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (item of assignments(); track item.Class) {
+            <tr>
+              <th scope="row">{{ item.Class }}</th>
+              <td class="storage-path">{{ item.Mountpoint }}</td>
+              <td>{{ item.Actor }}</td>
+              <td><time [attr.datetime]="item.CreatedAt">{{ item.CreatedAt }}</time></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    }
       }
     </app-loading>
   }
 
   <h3>Assign a class</h3>
   <p>
-    Database storage needs a local mount. The daemon refuses mounts that are
-    unsuitable for the class and explains why.
+    Database storage needs a local mount. If a mount does not suit the class, Homestead says why.
   </p>
   <form
     (submit)="assign(asClass.value, asMount.value, asActor.value); $event.preventDefault()"
@@ -169,7 +224,7 @@
       <p>
         Moving {{ pending.class }} from <span class="mono">{{ pending.from }}</span> to
         <span class="mono">{{ pending.mountpoint }}</span>
-        affects these installed packages: {{ pending.packages.join(', ') }}.
+        affects these installed apps: {{ pending.packages.join(', ') }}.
         Their data stays on <span class="mono">{{ pending.from }}</span>, but backups follow the new
         assignment and will stop finding it, and nothing is moved for you.
         The acknowledgement is audited.

@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   ApiService,
@@ -7,6 +7,7 @@ import {
   StorageRegistration,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { ariaSort, nextSort, SortState, sortRows } from '../core/sort';
 import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
 
@@ -39,6 +40,12 @@ export class StorageSetup implements OnInit {
 
   protected readonly classes = STORAGE_CLASSES;
   protected readonly mounts = signal<StorageMount[]>([]);
+  protected readonly sort = signal<SortState | null>(null);
+  protected readonly sortedMounts = computed(() =>
+    sortRows(this.mounts(), this.sort(), (mount, key) =>
+      key === 'free' ? (mount.Accessible ? mount.FreeBytes : -1) : mount.Mountpoint,
+    ),
+  );
   protected readonly registrations = signal<StorageRegistration[]>([]);
   protected readonly assignments = signal<StorageAssignment[]>([]);
   protected readonly mountsError = signal<string | null>(null);
@@ -64,6 +71,18 @@ export class StorageSetup implements OnInit {
     from: string;
     packages: string[];
   } | null>(null);
+
+  protected sortBy(key: string): void {
+    this.sort.set(nextSort(this.sort(), key));
+  }
+
+  protected ariaFor(key: string): 'ascending' | 'descending' | 'none' {
+    return ariaSort(this.sort(), key);
+  }
+
+  protected dirFor(key: string): string {
+    return this.sort()?.key === key ? this.sort()!.dir : '';
+  }
 
   ngOnInit(): void {
     this.refresh();
@@ -114,7 +133,7 @@ export class StorageSetup implements OnInit {
    */
   protected describe(failure: HttpErrorResponse): string {
     if (failure.status === 0) {
-      return 'Cannot reach the Homestead daemon. Check that it is running and try again.';
+      return "Can't reach the appliance. Check that homestead-server is running.";
     }
     const body = failure.error;
     if (typeof body === 'string' && body.trim()) {

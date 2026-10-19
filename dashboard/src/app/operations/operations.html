@@ -16,17 +16,28 @@
       } @else {
         <div class="table-scroll">
           <table>
+            <caption class="visually-hidden">Operations, newest first unless sorted</caption>
             <thead>
               <tr>
-                <th scope="col">Operation</th>
-                <th scope="col">Result</th>
+                <th scope="col" [attr.aria-sort]="ariaFor('type')">
+                  <button type="button" class="sort" [attr.data-dir]="dirFor('type')" (click)="sortBy('type')">Operation</button>
+                </th>
+                <th scope="col" [attr.aria-sort]="ariaFor('status')">
+                  <button type="button" class="sort" [attr.data-dir]="dirFor('status')" (click)="sortBy('status')">Result</button>
+                </th>
+                <th scope="col" class="num">Steps</th>
+                <th scope="col" [attr.aria-sort]="ariaFor('created')">
+                  <button type="button" class="sort" [attr.data-dir]="dirFor('created')" (click)="sortBy('created')">Started</button>
+                </th>
               </tr>
             </thead>
             <tbody>
-              @for (op of operations() ?? []; track op.id) {
+              @for (op of rows(); track op.id) {
                 <tr>
                   <td><a [routerLink]="['/operations', op.id]">{{ labelOf(op.type) }}</a></td>
                   <td><span class="badge" [class]="badgeOf(op.status)">{{ wordOf(op.status) }}</span></td>
+                  <td class="num">{{ stepsOf(op) }}</td>
+                  <td>@if (op.created_at) { <time [attr.datetime]="op.created_at">{{ op.created_at }}</time> }</td>
                 </tr>
               }
             </tbody>

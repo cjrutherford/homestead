@@ -1,4 +1,4 @@
-import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
 import {
@@ -8,6 +8,8 @@ import {
   OperationState,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { CopyCode } from '../ui/copy-code';
+import { ariaSort, nextSort, SortState, sortRows } from '../core/sort';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
 
@@ -113,7 +115,7 @@ export const TRUST_GUIDES: TrustGuide[] = [
  * arrives over your signed-in session. The private key is never shown.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage],
+  imports: [OperationProgress, Loading, StateMessage, CopyCode],
   selector: 'app-trust',
   templateUrl: './trust.html',
   styles: [
@@ -136,6 +138,32 @@ export class Trust implements OnInit, OnDestroy {
   protected readonly operationId = signal<number | null>(null);
   protected readonly operation = signal<OperationState | null>(null);
   private stream?: Subscription;
+
+  protected readonly sort = signal<SortState | null>(null);
+  protected readonly sortedLeaves = computed(() =>
+    sortRows(this.report()?.leaves ?? [], this.sort(), (leaf, key) =>
+      key === 'status' ? leaf.status : key === 'expires' ? (leaf.not_after ?? '') : leaf.host,
+    ),
+  );
+
+  protected sortBy(key: string): void {
+    this.sort.set(nextSort(this.sort(), key));
+  }
+
+  protected ariaFor(key: string): 'ascending' | 'descending' | 'none' {
+    return ariaSort(this.sort(), key);
+  }
+
+  protected dirFor(key: string): string {
+    return this.sort()?.key === key ? this.sort()!.dir : '';
+  }
+
+  /** Badge for a leaf status: ok is fine, renewal-due is a heads-up, the rest need action. */
+  protected leafBadge(status: string): string {
+    if (status === 'ok') return 'badge-ok';
+    if (status === 'renewal-due') return 'badge-warn';
+    return 'badge-fail';
+  }
 
   ngOnInit(): void {
     this.load();
@@ -162,7 +190,7 @@ export class Trust implements OnInit, OnDestroy {
 
   protected describe(failure: HttpErrorResponse): string {
     if (failure.status === 0) {
-      return 'Cannot reach the Homestead daemon. Check that it is running and try again.';
+      return "Can't reach the appliance. Check that homestead-server is running.";
     }
     const body = failure.error;
     if (typeof body === 'string' && body.trim()) {

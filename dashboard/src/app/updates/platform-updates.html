@@ -65,7 +65,7 @@
     </p>
   }
   @if (applyOperation(); as id) {
-    <p>The daemon restarts to finish this update, so the page pauses briefly.</p>
+    <p>Homestead restarts to finish this update, so the page pauses briefly.</p>
     <app-operation-progress [id]="id" />
   }
 
@@ -87,7 +87,7 @@
           />
           I confirm applying this platform update
           @if (release.component === 'homestead-server') {
-            (the daemon restarts; the API and dashboard pause briefly)
+            (Homestead restarts; the API and dashboard pause briefly)
           }
         </label>
         @if (needsOlder(release)) {
@@ -120,7 +120,7 @@
         />
         I confirm rolling {{ entry.key }} back to {{ entry.value.version }}
         @if (entry.key === 'homestead-server') {
-          (the daemon restarts; the API and dashboard pause briefly)
+          (Homestead restarts; the API and dashboard pause briefly)
         }
       </label>
       @if (rollbackOlderRefused()) {

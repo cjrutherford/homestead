@@ -1,9 +1,8 @@
 <section aria-label="Audit log">
   <h1>Audit log</h1>
   <p>
-    Append-only record of security-relevant actions. Entries cannot be
-    changed or deleted. The daemon returns the newest entries up to the
-    limit you choose; the filters below narrow that loaded set.
+    A record of security-relevant actions. Entries cannot be changed or deleted. Homestead loads the
+    newest entries up to the limit you choose, and the filters narrow what is loaded.
   </p>
 
   <label>
@@ -51,11 +50,11 @@
   </fieldset>
 
   @if (error()) {
-    <app-state-message kind="error" [headline]="error()" />
+    <app-state-message kind="error" [headline]="error()" actionLabel="Try again" (action)="load()" />
   } @else {
     <app-loading [loading]="loading() && rows().length === 0" shape="list">
     @if (rows().length === 0) {
-    <app-state-message kind="empty" headline="No audit entries yet." />
+    <app-state-message kind="empty" headline="No audit entries yet." detail="Actions that change the appliance, such as signing in or deploying, are recorded here." />
   } @else if (filtered().length === 0) {
     <app-state-message kind="empty" headline="No entries match these filters." />
   } @else {
@@ -63,34 +62,49 @@
       Showing {{ visible().length }} of {{ filtered().length }} matching
       ({{ rows().length }} loaded).
     </p>
-    <ul aria-label="Audit entries">
-      @for (row of visible(); track row.entry.id) {
-        @let entry = row.entry;
-        <li class="audit-entry">
-          <span class="badge outcome" [class]="outcomeClass(entry.outcome)">{{ entry.outcome }}</span>
-          <strong class="audit-text">{{ entry.action }}</strong>
-          by <span class="audit-text">{{ entry.actor }}</span>
-          at <time [attr.datetime]="entry.created_at">{{ entry.created_at }}</time>
-          @if (row.rejection; as r) {
-            <p class="audit-text">
-              Rejected {{ r.count }} request{{ r.count === 1 ? '' : 's' }} to
-              {{ r.route }} ({{ r.reason }}) since {{ r.since }}
-            </p>
-          } @else if (entry.detail) {
-            <p class="audit-text">{{ entry.detail }}</p>
+    <div class="table-scroll">
+      <table aria-label="Audit entries">
+        <thead>
+          <tr>
+            <th scope="col">Outcome</th>
+            <th scope="col">Action</th>
+            <th scope="col">Actor</th>
+            <th scope="col">When</th>
+            <th scope="col">Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of visible(); track row.entry.id) {
+            @let entry = row.entry;
+            <tr class="audit-entry">
+              <td><span class="badge outcome" [class]="outcomeClass(entry.outcome)">{{ entry.outcome }}</span></td>
+              <td class="audit-text"><strong>{{ entry.action }}</strong></td>
+              <td class="audit-text">{{ entry.actor }}</td>
+              <td><time [attr.datetime]="entry.created_at">{{ entry.created_at }}</time></td>
+              <td>
+                @if (row.rejection; as r) {
+                  <p class="audit-text">
+                    Rejected {{ r.count }} request{{ r.count === 1 ? '' : 's' }} to
+                    {{ r.route }} ({{ r.reason }}) since {{ r.since }}
+                  </p>
+                } @else if (entry.detail) {
+                  <p class="audit-text">{{ entry.detail }}</p>
+                }
+                @if (entry.override) {
+                  <p class="audit-text">Owner override: {{ entry.override_reason }}</p>
+                }
+                @if (entry.plan) {
+                  <details>
+                    <summary>Reviewed plan</summary>
+                    <pre class="audit-text">{{ row.plan }}</pre>
+                  </details>
+                }
+              </td>
+            </tr>
           }
-          @if (entry.override) {
-            <p class="audit-text">Owner override: {{ entry.override_reason }}</p>
-          }
-          @if (entry.plan) {
-            <details>
-              <summary>Reviewed plan</summary>
-              <pre class="audit-text">{{ row.plan }}</pre>
-            </details>
-          }
-        </li>
-      }
-    </ul>
+        </tbody>
+      </table>
+    </div>
     <nav aria-label="Audit pages">
       <button type="button" (click)="go(-1)" [disabled]="page() === 0">Newer</button>
       <span>Page {{ page() + 1 }} of {{ pageCount() }}</span>

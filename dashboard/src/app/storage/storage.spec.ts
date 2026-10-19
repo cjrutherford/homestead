@@ -107,7 +107,7 @@ describe('StorageSetup', () => {
     load([MOUNT, RO, DEAD, TMP], [REG], [ASSIGN]);
     expect(text()).toContain('/mnt/data');
     expect(text()).toContain('1.0 TiB free of 2.0 TiB');
-    expect(text()).toContain('registered as main');
+    expect(text()).toContain('Registered as main');
     expect(text()).toContain('holds bulk');
     expect(text()).toContain('Cannot be registered: "/mnt/ro" is read-only');
     expect(text()).toContain('tmpfs pseudo-filesystem');
@@ -295,7 +295,7 @@ describe('StorageSetup', () => {
     http.expectOne('/api/v1/storage/registrations').flush([]);
     http.expectOne('/api/v1/storage/assignments').flush([]);
     fixture.detectChanges();
-    expect(text()).toContain('Cannot reach the Homestead daemon');
+    expect(text()).toContain("Can't reach the appliance");
     expect(text()).not.toContain('ProgressEvent');
   });
 

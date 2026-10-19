@@ -1,9 +1,8 @@
 <section aria-label="Backups">
   <h1>Backups</h1>
   <p>
-    Backups land on the storage you assigned the backup class. These
-    controls configure destination and schedules; they do not run a
-    backup.
+    Backups land on the storage you gave the backup class. These controls set schedules and who can
+    read backups. They do not run a backup.
   </p>
 
   @if (error()) {
@@ -145,42 +144,59 @@
     Refresh
   </button>
   <app-loading [loading]="loading() && schedules().length === 0" shape="list">
-    <ul>
-      @for (row of schedules(); track row.package) {
-        <li>
-          <strong>{{ row.package }}</strong>
-          @if (row.stateless) {
-            stateless (no-op: keeps nothing on the appliance, no job runs)
-          } @else {
-            every {{ hours(row.interval_seconds) }}, retain {{ row.retain === 0 ? 'all runs' : row.retain }},
-            {{ row.enabled ? 'enabled' : 'disabled' }}, by {{ row.actor }}
+    @if (schedules().length === 0) {
+      <app-state-message kind="empty" headline="No backup schedules yet." detail="A schedule backs up an installed app on a fixed interval. Install an app from the catalog first." actionLabel="Browse the catalog" actionLink="/catalog" />
+    } @else {
+    <div class="table-scroll">
+      <table aria-label="Backup schedules">
+        <thead>
+          <tr>
+            <th scope="col">App</th>
+            <th scope="col">Interval</th>
+            <th scope="col">Keeps</th>
+            <th scope="col">State</th>
+            <th scope="col">Set by</th>
+            <th scope="col">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of schedules(); track row.package) {
+            <tr>
+              <th scope="row">{{ row.package }}</th>
+              @if (row.stateless) {
+                <td colspan="4">stateless (no-op: keeps nothing on the appliance, no job runs)</td>
+              } @else {
+                <td>every {{ hours(row.interval_seconds) }}</td>
+                <td>{{ row.retain === 0 ? 'all runs' : row.retain + ' runs' }}</td>
+                <td><span class="badge" [class]="row.enabled ? 'badge-ok' : ''">{{ row.enabled ? 'enabled' : 'disabled' }}</span></td>
+                <td>{{ row.actor }}</td>
+              }
+              <td>
+                <button type="button" (click)="inspect(row.package)">Inspect</button>
+                @if (confirmingRemove() === row.package) {
+                  <app-dialog heading="Remove this schedule?" variant="danger" (dismissed)="cancelRemove()">
+                    <p>Remove the schedule for {{ row.package }}?</p>
+                    <div class="dialog-actions">
+                      <button type="button" class="danger" (click)="remove(row.package)" [disabled]="busy()">
+                        Confirm remove
+                      </button>
+                      <button type="button" class="quiet" (click)="cancelRemove()" [disabled]="busy()">
+                        Cancel
+                      </button>
+                    </div>
+                  </app-dialog>
+                } @else {
+                  <button type="button" class="danger quiet" (click)="askRemove(row.package)" [disabled]="busy()">
+                    Remove
+                  </button>
+                }
+              </td>
+            </tr>
           }
-          <button type="button" (click)="inspect(row.package)">Inspect</button>
-          @if (confirmingRemove() === row.package) {
-            <app-dialog heading="Remove this schedule?" variant="danger" (dismissed)="cancelRemove()">
-              <p>Remove the schedule for {{ row.package }}?</p>
-              <div class="dialog-actions">
-                <button type="button" class="danger" (click)="remove(row.package)" [disabled]="busy()">
-                  Confirm remove
-                </button>
-                <button type="button" class="quiet" (click)="cancelRemove()" [disabled]="busy()">
-                  Cancel
-                </button>
-              </div>
-            </app-dialog>
-          } @else {
-            <button type="button" (click)="askRemove(row.package)" [disabled]="busy()">
-              Remove
-            </button>
-          }
-        </li>
-      } @empty {
-        <li>
-          <app-state-message kind="empty" headline="No backup schedules yet." detail="A schedule backs up an installed app on a fixed interval. Install an app from the catalog first." actionLabel="Browse the catalog" actionLink="/catalog" />
-        </li>
-      }
-    </ul>
-  
+        </tbody>
+      </table>
+    </div>
+    }
   </app-loading>
 
   @if (inspected(); as one) {
@@ -203,44 +219,65 @@
 
   <h2>Scheduled jobs</h2>
   <p>
-    Read-only state of the daemon scheduler: when each job last ran, when
-    it is next due, and the last error or skipped run.
+    What the scheduler is doing: when each job last ran, when it is next due, and the last error or
+    skipped run.
   </p>
   @if (jobsError()) {
     <app-state-message kind="error" [headline]="jobsError()" />
   } @else {
     <app-loading [loading]="jobsLoading() && jobs().length === 0" shape="list">
     @if (!(jobsLoading() && jobs().length === 0)) {
-    <ul aria-label="Scheduled jobs">
-      @for (job of jobs(); track job.id) {
-        <li>
-          <strong>{{ job.id }}</strong>
-          every {{ hours(job.interval_seconds) }},
-          {{ job.enabled ? 'enabled' : 'disabled' }}{{ job.running ? ', running' : '' }};
-          last run {{ when(job.last_run_at) }};
-          next due {{ job.enabled ? when(job.next_due, 'unknown') : 'not scheduled' }}
-          @if (job.last_error) {
-            <app-state-message kind="error" [headline]="'Last error: ' + job.last_error" />
+    @if (jobs().length === 0) {
+      <app-state-message kind="empty" headline="No scheduled jobs." detail="Jobs appear here once a backup schedule is saved." />
+    } @else {
+    <div class="table-scroll">
+      <table aria-label="Scheduled jobs">
+        <thead>
+          <tr>
+            <th scope="col">Job</th>
+            <th scope="col">Interval</th>
+            <th scope="col">State</th>
+            <th scope="col">Last run</th>
+            <th scope="col">Next due</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (job of jobs(); track job.id) {
+            <tr>
+              <th scope="row">{{ job.id }}</th>
+              <td>every {{ hours(job.interval_seconds) }}</td>
+              <td>
+                <span class="badge" [class]="job.running ? 'badge-running' : job.enabled ? 'badge-ok' : ''">{{ job.running ? 'running' : job.enabled ? 'enabled' : 'disabled' }}</span>
+              </td>
+              <td>{{ when(job.last_run_at) }}</td>
+              <td>{{ job.enabled ? when(job.next_due, 'unknown') : 'not scheduled' }}</td>
+            </tr>
+            @if (job.last_error || job.unavailable_attempts || job.last_skip_blocking) {
+              <tr>
+                <td colspan="5">
+                  @if (job.last_error) {
+                    <app-state-message kind="error" [headline]="'Last error: ' + job.last_error" />
+                  }
+                  @if (job.unavailable_attempts) {
+                    <app-state-message
+                      kind="warning"
+                      [headline]="'Waiting for inputs since ' + when(job.unavailable_since ?? '', 'unknown') + ' (attempt ' + job.unavailable_attempts + '); retrying with backoff.'"
+                    />
+                  }
+                  @if (job.last_skip_blocking) {
+                    <app-state-message
+                      kind="warning"
+                      [headline]="'Run skipped at ' + when(job.last_skip_at) + ': operation ' + job.last_skip_blocking + ' was still active.'"
+                    />
+                  }
+                </td>
+              </tr>
+            }
           }
-          @if (job.unavailable_attempts) {
-            <app-state-message
-              kind="warning"
-              [headline]="'Waiting for inputs since ' + when(job.unavailable_since ?? '', 'unknown') + ' (attempt ' + job.unavailable_attempts + '); retrying with backoff.'"
-            />
-          }
-          @if (job.last_skip_blocking) {
-            <app-state-message
-              kind="warning"
-              [headline]="'Run skipped at ' + when(job.last_skip_at) + ': operation ' + job.last_skip_blocking + ' was still active.'"
-            />
-          }
-        </li>
-      } @empty {
-        <li>
-          <app-state-message kind="empty" headline="No scheduled jobs." />
-        </li>
-      }
-    </ul>
+        </tbody>
+      </table>
+    </div>
+    }
       }
     </app-loading>
   }

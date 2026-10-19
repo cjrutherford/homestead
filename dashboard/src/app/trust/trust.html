@@ -1,15 +1,14 @@
 <section aria-label="Trust this appliance">
   <h1>Trust this appliance</h1>
   <p>
-    Local-only hosts are served over HTTPS from this appliance's own certificate
-    authority, so browser features that need a secure context (WebGPU, the
-    clipboard) work without a public certificate. Install the root certificate
-    on each device you want to trust it. Homestead never installs it for you.
+    Apps on your own network are served over HTTPS from this appliance's own certificate authority,
+    so browser features that need a secure connection (WebGPU, the clipboard) work without a public
+    certificate. Install the root certificate on each device you want to trust it. Homestead never
+    installs it for you.
   </p>
 
   @if (loadError()) {
-    <app-state-message kind="error" [headline]="loadError()" />
-    <button type="button" (click)="load()">Retry</button>
+    <app-state-message kind="error" [headline]="loadError()" actionLabel="Retry" (action)="load()" />
   }
   @if (error()) {
     <app-state-message kind="error" [headline]="error()" />
@@ -48,10 +47,10 @@
       </dl>
       <p>
         After downloading, check the file's fingerprint matches the one above:
-        <code>openssl x509 -in homestead-local-ca.pem -noout -fingerprint -sha256</code>.
-        The download below is served without sign-in so devices can fetch it;
-        this page, shown over your session, is your check against tampering.
+        The download is served without sign-in so devices can fetch it. This page, shown over your
+        session, is your check against tampering.
       </p>
+      <p><app-copy-code text="openssl x509 -in homestead-local-ca.pem -noout -fingerprint -sha256" /></p>
       <p>
         <a class="button" [href]="api.localCaRootUrl('pem')" download="homestead-local-ca.pem">Download PEM</a>
         <a class="button" [href]="api.localCaRootUrl('der')" download="homestead-local-ca.crt">Download .crt (DER)</a>
@@ -86,13 +85,18 @@
       <div class="table-scroll">
       <table>
         <thead>
-          <tr><th>Host</th><th>Status</th><th>Expires</th><th></th></tr>
+          <tr>
+            <th scope="col" [attr.aria-sort]="ariaFor('host')"><button type="button" class="sort" [attr.data-dir]="dirFor('host')" (click)="sortBy('host')">Host</button></th>
+            <th scope="col" [attr.aria-sort]="ariaFor('status')"><button type="button" class="sort" [attr.data-dir]="dirFor('status')" (click)="sortBy('status')">Status</button></th>
+            <th scope="col" [attr.aria-sort]="ariaFor('expires')"><button type="button" class="sort" [attr.data-dir]="dirFor('expires')" (click)="sortBy('expires')">Expires</button></th>
+            <th scope="col">Actions</th>
+          </tr>
         </thead>
         <tbody>
-          @for (leaf of r.leaves; track leaf.host) {
+          @for (leaf of sortedLeaves(); track leaf.host) {
             <tr>
-              <td>{{ leaf.host }}</td>
-              <td>{{ leaf.status }}@if (leaf.detail) { - {{ leaf.detail }} }</td>
+              <th scope="row" class="mono">{{ leaf.host }}</th>
+              <td><span class="badge" [class]="leafBadge(leaf.status)">{{ leaf.status }}</span>@if (leaf.detail) { <br />{{ leaf.detail }} }</td>
               <td>{{ leaf.not_after }}</td>
               <td>
                 <button type="button" [disabled]="busy()" (click)="reissue(leaf.host)">Re-issue</button>
@@ -102,8 +106,8 @@
         </tbody>
       </table>
       </div>
-      <button type="button" [disabled]="busy()" (click)="reissue()">Re-issue all</button>
-      <p>Leaves renew automatically; re-issuing is only needed after a problem.</p>
+      <p>Certificates renew on their own. Re-issue them only after a problem.</p>
+      <p><button type="button" [disabled]="busy()" (click)="reissue()">Re-issue all</button></p>
     }
 
     @if (operationId(); as id) {
@@ -113,14 +117,15 @@
     @if (r.ca.present) {
       <h2>Rotate the root</h2>
       <p>
-        Rotation replaces the root and every leaf. Every device that trusts the
+        Rotation replaces the root and every certificate under it. Every device that trusts the
         current root must then trust the new one.
       </p>
-      <button type="button" [disabled]="busy()" (click)="previewRotation()">Preview rotation</button>
+      <p><button type="button" [disabled]="busy()" (click)="previewRotation()">Preview rotation</button></p>
       @if (plan(); as p) {
-        <section aria-label="Rotation plan">
+        <section class="risky" aria-label="Rotation plan">
+          <h3>What rotation changes</h3>
           <p>Current root <code>{{ p.current_fingerprint_sha256 }}</code> (generation {{ p.generation }}).</p>
-          <p>Leaves re-issued: {{ p.leaves_to_reissue.join(', ') || 'none' }}.</p>
+          <p>Certificates re-issued: {{ p.leaves_to_reissue.join(', ') || 'none' }}.</p>
           <p>{{ p.devices_must_retrust }}</p>
           <ul>
             @for (step of p.steps; track step) {
@@ -135,7 +140,7 @@
             />
             I understand every device must trust the new root.
           </label>
-          <button type="button" [disabled]="busy() || !confirmed()" (click)="approveRotation()">
+          <button type="button" class="danger" [disabled]="busy() || !confirmed()" (click)="approveRotation()">
             Approve rotation
           </button>
         </section>

@@ -113,6 +113,21 @@ describe('Exposure', () => {
     expect(text()).toContain('No reviewed plan yet');
   });
 
+  it('shows missing selection fields next to each field', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/exposure/review').flush(PLAN);
+    http.expectOne('/api/v1/exposure/approvals').flush([]);
+    http.expectOne('/api/v1/tls/renewal').flush(NO_RENEWALS);
+    fixture.detectChanges();
+    fixture.componentInstance['save']('', '', '0', 'public', '', '');
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('#exposure-host')?.getAttribute('aria-invalid')).toBe('true');
+    expect(el.querySelector('#exposure-host-error')?.textContent).toContain('route host');
+    expect(el.querySelector('#exposure-port-error')?.textContent).toContain('whole number');
+    http.expectNone('/api/v1/wizard/exposure');
+  });
+
   it('approves under a named actor and applies', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/exposure/review').flush(PLAN);

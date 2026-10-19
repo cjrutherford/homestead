@@ -37,6 +37,28 @@ describe('Operations', () => {
     return fixture.nativeElement.textContent as string;
   }
 
+  it('sorts by a column when its header is pressed', () => {
+    http.expectOne('/api/v1/operations').flush([
+      { id: 2, type: 'b.two', status: 'running', steps: [{ status: 'succeeded' }, { status: 'running' }] },
+      { id: 1, type: 'a.one', status: 'succeeded', steps: [] },
+    ]);
+    fixture.detectChanges();
+    const names = () =>
+      Array.from(fixture.nativeElement.querySelectorAll('tbody tr td:first-child')).map((c) =>
+        (c as HTMLElement).textContent?.trim(),
+      );
+    expect(names()).toEqual(['B two', 'A one']);
+    expect(text()).toContain('1 of 2');
+    const header = fixture.nativeElement.querySelector('th button.sort') as HTMLButtonElement;
+    header.click();
+    fixture.detectChanges();
+    expect(names()).toEqual(['A one', 'B two']);
+    expect(header.closest('th')?.getAttribute('aria-sort')).toBe('ascending');
+    header.click();
+    fixture.detectChanges();
+    expect(names()).toEqual(['B two', 'A one']);
+  });
+
   it('lists operations newest first', () => {
     const req = http.expectOne('/api/v1/operations');
     expect(req.request.method).toBe('GET');

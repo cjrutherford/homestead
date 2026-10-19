@@ -1,9 +1,8 @@
 <section aria-label="Public exposure">
   <h1>Exposure</h1>
   <p>
-    Review the planned public change before approving it under your
-    name, then apply through firewall and edge. Nothing here runs
-    until you approve and apply.
+    Review the planned public change, approve it under your name, then apply it through the firewall
+    and edge. Nothing runs until you approve and apply.
   </p>
 
   @if (error()) {
@@ -20,8 +19,8 @@
 
   <h2>Certificate renewal</h2>
   <p>
-    Daily check of issued certificates; it reports only and never
-    issues. First issuance is planned, previewed and approved on the
+    Homestead checks issued certificates every day. It reports only and never issues one. First
+    issuance is planned, previewed and approved on the
     <a routerLink="/tls">Certificates</a> page. A plan-required status means the desired names, DNS
     provider, or challenge changed since the approved issuance.
   </p>
@@ -42,7 +41,7 @@
     </ul>
   }
 
-  <h2>Selection</h2>
+  <h2>Choose a route</h2>
   <form
     (submit)="
       save(
@@ -56,34 +55,49 @@
       $event.preventDefault()
     "
   >
-    <label>
-      Route host
-      <input #hostInput name="host" autocomplete="off" [disabled]="busy()" />
-    </label>
-    <label>
-      Target host
-      <input #targetInput name="target" autocomplete="off" [disabled]="busy()" />
-    </label>
-    <label>
-      Target port
-      <input #portInput name="port" inputmode="numeric" [disabled]="busy()" />
-    </label>
-    <label>
-      Target exposure
-      <select #toInput name="to" [disabled]="busy()">
+    <div class="field">
+      <label for="exposure-host">Route host</label>
+      <input id="exposure-host" #hostInput name="host" autocomplete="off" [disabled]="busy()"
+        [attr.aria-invalid]="fieldErrors()['host'] ? 'true' : null"
+        [attr.aria-describedby]="fieldErrors()['host'] ? 'exposure-host-error' : null" />
+      @if (fieldErrors()['host']; as message) {
+        <p class="field-error" id="exposure-host-error">{{ message }}</p>
+      }
+    </div>
+    <div class="field">
+      <label for="exposure-target">Target host</label>
+      <input id="exposure-target" #targetInput name="target" autocomplete="off" [disabled]="busy()"
+        [attr.aria-invalid]="fieldErrors()['target'] ? 'true' : null"
+        [attr.aria-describedby]="fieldErrors()['target'] ? 'exposure-target-error' : null" />
+      @if (fieldErrors()['target']; as message) {
+        <p class="field-error" id="exposure-target-error">{{ message }}</p>
+      }
+    </div>
+    <div class="field">
+      <label for="exposure-port">Target port</label>
+      <input id="exposure-port" #portInput name="port" inputmode="numeric" autocomplete="off" [disabled]="busy()"
+        [attr.aria-invalid]="fieldErrors()['port'] ? 'true' : null"
+        [attr.aria-describedby]="fieldErrors()['port'] ? 'exposure-port-error' : null" />
+      @if (fieldErrors()['port']; as message) {
+        <p class="field-error" id="exposure-port-error">{{ message }}</p>
+      }
+    </div>
+    <div class="field">
+      <label for="exposure-to">Who can reach it</label>
+      <select id="exposure-to" #toInput name="to" [disabled]="busy()">
         <option value="overlay">overlay</option>
         <option value="public">public</option>
       </select>
-    </label>
-    <label>
-      Zone
-      <input #zoneInput name="zone" autocomplete="off" [disabled]="busy()" />
-    </label>
-    <label>
-      Public IP
-      <input #ipInput name="public-ip" autocomplete="off" [disabled]="busy()" />
-    </label>
-    <button type="submit" [disabled]="busy()">Save and review</button>
+    </div>
+    <div class="field">
+      <label for="exposure-zone">Zone</label>
+      <input id="exposure-zone" #zoneInput name="zone" autocomplete="off" [disabled]="busy()" />
+    </div>
+    <div class="field">
+      <label for="exposure-ip">Public IP</label>
+      <input id="exposure-ip" #ipInput name="public-ip" autocomplete="off" [disabled]="busy()" />
+    </div>
+    <button type="submit" class="primary" [disabled]="busy()">Save and review</button>
   </form>
 
   <h2>Reviewed plan</h2>
@@ -125,15 +139,20 @@
         $event.preventDefault()
       "
     >
-      <label>
-        Actor
-        <input #actorInput name="actor" autocomplete="off" [disabled]="busy()" />
-      </label>
-      <label>
-        Networks (comma CIDRs, for wide sources)
-        <input #networksInput name="networks" autocomplete="off" [disabled]="busy()" />
-      </label>
-      <button type="submit" [disabled]="busy()">Approve plan</button>
+      <div class="field">
+        <label for="exposure-actor">Your name</label>
+        <input id="exposure-actor" #actorInput name="actor" autocomplete="off" [disabled]="busy()"
+          [attr.aria-invalid]="fieldErrors()['actor'] ? 'true' : null"
+          [attr.aria-describedby]="fieldErrors()['actor'] ? 'exposure-actor-error' : null" />
+        @if (fieldErrors()['actor']; as message) {
+          <p class="field-error" id="exposure-actor-error">{{ message }}</p>
+        }
+      </div>
+      <div class="field">
+        <label for="exposure-networks">Networks (comma-separated CIDRs, for wide sources)</label>
+        <input id="exposure-networks" #networksInput name="networks" autocomplete="off" [disabled]="busy()" />
+      </div>
+      <button type="submit" class="primary" [disabled]="busy()">Approve plan</button>
     </form>
 
     <h2>Approvals ({{ approvals().length }})</h2>
@@ -141,7 +160,7 @@
       @for (approval of approvals(); track approval.host) {
         <li>
           {{ approval.host }} by {{ approval.actor }}
-          <button type="button" (click)="apply(approval.host)" [disabled]="busy()">
+          <button type="button" class="danger quiet" (click)="apply(approval.host)" [disabled]="busy()">
             Apply
           </button>
         </li>

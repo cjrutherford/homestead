@@ -1,11 +1,9 @@
 <section aria-label="Edge">
   <h1>Edge</h1>
   <p>
-    The edge is the Caddy reverse proxy that serves your apps by host name.
-    Deploying and reconciling change what the appliance serves. Opening a
-    route to the public internet is planned, previewed and approved on the
-    <a routerLink="/exposure">Exposure</a> page; routes saved here are
-    applied as written.
+    The edge is the Caddy reverse proxy that serves your apps by host name. Opening a route to the
+    public internet is planned, previewed and approved on the <a routerLink="/exposure">Exposure</a>
+    page. Routes you save here are applied as written.
   </p>
 
   @if (error()) {
@@ -23,18 +21,23 @@
   }
 
   <h2>Caddy deployment</h2>
-  <p>
-    Deploys or updates the Caddy proxy stack on the appliance's Docker
-    engine. The daemon does not report live proxy status; the progress of
-    the operation is the status.
-  </p>
-  <button type="button" (click)="askDeploy()" [disabled]="locked() || !!confirming()">
-    Deploy Caddy
-  </button>
+  <div class="risky">
+    <h3>Deploy or update Caddy</h3>
+    <p class="risky-preview">
+      What changes: the Caddy proxy stack is deployed or updated on this appliance's Docker engine.
+      If it changed, the proxy restarts and every route it serves is briefly interrupted. Homestead
+      does not report live proxy status, so the progress of the operation is the status.
+    </p>
+    <div class="risky-actions">
+      <button type="button" class="danger quiet" (click)="askDeploy()" [disabled]="locked() || !!confirming()">
+        Deploy Caddy
+      </button>
+    </div>
+  </div>
   @if (confirming() === 'deploy') {
     <app-dialog heading="Deploy Caddy?" variant="danger" (dismissed)="cancel()">
       <p>
-        This deploys the Caddy proxy stack and restarts the proxy if it
+        This deploys the Caddy proxy and restarts the proxy if it
         changed, which briefly interrupts every route it serves.
       </p>
       <div class="dialog-actions">
@@ -46,92 +49,125 @@
 
   <h2>Route table</h2>
   <p>
-    This is the table the reconciler last wrote. Reconciling replaces it:
-    the routes below become the reconciler's routes, and any it wrote
-    earlier but you removed here are removed. Routes placed by the
-    Exposure flow, or by hand, are not part of this table and are never
-    removed. You can also load a route document like the one
-    <code>homesteadctl edge routes set</code> takes.
+    These are the routes Homestead last wrote. Reconciling replaces them with the routes below, and
+    removes any it wrote earlier that you removed here. Routes placed by the Exposure page or by
+    hand are not in this table and are never removed. You can also load a route document in the
+    format <code>homesteadctl edge routes set</code> takes.
   </p>
   @if (loadError()) {
-    <app-state-message kind="error" [headline]="loadError()" />
-    <button type="button" (click)="loadRoutes()">Retry loading routes</button>
+    <app-state-message kind="error" [headline]="loadError()" actionLabel="Try loading routes again" (action)="loadRoutes()" />
   }
 
   <label>
     Route document (JSON with a "routes" list)
     <textarea #doc rows="4" name="route-document" aria-label="Route document" [disabled]="locked()"></textarea>
   </label>
-  <button type="button" (click)="importJson(doc.value)" [disabled]="locked() || !!confirming()">
-    Load document
-  </button>
+  <p>
+    <button type="button" (click)="importJson(doc.value)" [disabled]="locked() || !!confirming()">
+      Load document
+    </button>
+  </p>
 
   <app-loading [loading]="loading()" shape="list">
   @if (loaded() && drafts().length === 0) {
-    <app-state-message kind="empty" headline="No routes in the table. Reconciling now removes every route the reconciler wrote." />
+    <app-state-message kind="empty" headline="No routes in the table." detail="Add a route below. Reconciling an empty table removes every route Homestead wrote." />
   }
-  <ul aria-label="Routes">
-    @for (row of drafts(); track $index; let i = $index) {
-      <li class="edge-route">
-        <label>
-          Host
-          <input name="host-{{ i }}" autocomplete="off" [value]="row.host" [disabled]="locked()"
-            (input)="setField(i, 'host', $any($event.target).value)" />
-        </label>
-        <label>
-          Target host
-          <input name="target-{{ i }}" autocomplete="off" [value]="row.targetHost" [disabled]="locked()"
-            (input)="setField(i, 'targetHost', $any($event.target).value)" />
-        </label>
-        <label>
-          Port
-          <input name="port-{{ i }}" inputmode="numeric" autocomplete="off" [value]="row.port" [disabled]="locked()"
-            (input)="setField(i, 'port', $any($event.target).value)" />
-        </label>
-        <label>
-          Exposure
-          <select name="exposure-{{ i }}" [disabled]="locked()"
-            (change)="setField(i, 'exposure', $any($event.target).value)">
-            @for (option of exposures; track option) {
-              <option [value]="option" [selected]="row.exposure === option">{{ option }}</option>
-            }
-          </select>
-        </label>
-        <label>
-          TLS
-          <select name="tls-{{ i }}" [disabled]="locked()"
-            (change)="setField(i, 'tls', $any($event.target).value)">
-            @for (option of tlsModes; track option) {
-              <option [value]="option" [selected]="row.tls === option">{{ option }}</option>
-            }
-          </select>
-        </label>
-        <label>
-          Health path
-          <input name="health-{{ i }}" autocomplete="off" [value]="row.healthPath" [disabled]="locked()"
-            (input)="setField(i, 'healthPath', $any($event.target).value)" />
-        </label>
-        <label>
-          Health interval (seconds, 0 for default)
-          <input name="interval-{{ i }}" inputmode="numeric" autocomplete="off" [value]="row.interval" [disabled]="locked()"
-            (input)="setField(i, 'interval', $any($event.target).value)" />
-        </label>
-        @if (row.policy !== undefined) {
-          <em>Keeps its exposure policy from the loaded document.</em>
+  @if (drafts().length) {
+  <div class="table-scroll">
+    <table aria-label="Routes" class="edge-table">
+      <thead>
+        <tr>
+          <th scope="col">Host</th>
+          <th scope="col">Target host</th>
+          <th scope="col">Port</th>
+          <th scope="col">Exposure</th>
+          <th scope="col">TLS</th>
+          <th scope="col">Health path</th>
+          <th scope="col">Health interval (seconds, 0 for default)</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of drafts(); track $index; let i = $index) {
+          <tr class="edge-route">
+            <td>
+              <input name="host-{{ i }}" aria-label="Host" autocomplete="off" [value]="row.host" [disabled]="locked()"
+                (input)="setField(i, 'host', $any($event.target).value)" />
+            </td>
+            <td>
+              <input name="target-{{ i }}" aria-label="Target host" autocomplete="off" [value]="row.targetHost" [disabled]="locked()"
+                (input)="setField(i, 'targetHost', $any($event.target).value)" />
+            </td>
+            <td>
+              <input name="port-{{ i }}" aria-label="Port" inputmode="numeric" autocomplete="off" [value]="row.port" [disabled]="locked()"
+                (input)="setField(i, 'port', $any($event.target).value)" />
+            </td>
+            <td>
+              <select name="exposure-{{ i }}" aria-label="Exposure" [disabled]="locked()"
+                (change)="setField(i, 'exposure', $any($event.target).value)">
+                @for (option of exposures; track option) {
+                  <option [value]="option" [selected]="row.exposure === option">{{ option }}</option>
+                }
+              </select>
+              @if (row.exposure === 'public') {
+                <span class="badge badge-warn">public</span>
+              }
+            </td>
+            <td>
+              <select name="tls-{{ i }}" aria-label="TLS" [disabled]="locked()"
+                (change)="setField(i, 'tls', $any($event.target).value)">
+                @for (option of tlsModes; track option) {
+                  <option [value]="option" [selected]="row.tls === option">{{ option }}</option>
+                }
+              </select>
+            </td>
+            <td>
+              <input name="health-{{ i }}" aria-label="Health path" autocomplete="off" [value]="row.healthPath" [disabled]="locked()"
+                (input)="setField(i, 'healthPath', $any($event.target).value)" />
+            </td>
+            <td>
+              <input name="interval-{{ i }}" aria-label="Health interval in seconds" inputmode="numeric" autocomplete="off" [value]="row.interval" [disabled]="locked()"
+                (input)="setField(i, 'interval', $any($event.target).value)" />
+              @if (row.policy !== undefined) {
+                <em>Keeps its exposure policy from the loaded document.</em>
+              }
+            </td>
+            <td>
+              <button type="button" class="danger quiet" (click)="removeRoute(i)" [disabled]="locked() || !!confirming()"
+                [attr.aria-label]="'Remove route ' + (i + 1)">
+                Remove route
+              </button>
+            </td>
+          </tr>
         }
-        <button type="button" (click)="removeRoute(i)" [disabled]="locked() || !!confirming()"
-          [attr.aria-label]="'Remove route ' + (i + 1)">
-          Remove route
-        </button>
-      </li>
-    }
-  </ul>
+      </tbody>
+    </table>
+  </div>
+  }
 
   </app-loading>
-  <button type="button" (click)="addRoute()" [disabled]="locked() || !!confirming()">Add route</button>
-  <button type="button" (click)="askRoutes()" [disabled]="locked() || !loaded() || !!confirming()">
-    Reconcile routes
-  </button>
+  <p><button type="button" (click)="addRoute()" [disabled]="locked() || !!confirming()">Add route</button></p>
+
+  <div class="risky">
+    <h3>Reconcile routes</h3>
+    <p class="risky-preview">
+      What changes:
+      @if (drafts().length === 0) {
+        the table is emptied and every route Homestead wrote is removed.
+      } @else {
+        the routes Homestead wrote are replaced with the {{ drafts().length }} above, and the proxy reloads.
+      }
+      @if (draftPublicHosts().length) {
+        <span class="mono">{{ draftPublicHosts().join(', ') }}</span> would be reachable from the public internet.
+      }
+    </p>
+    <div class="risky-actions">
+      <button type="button" class="danger quiet" (click)="askRoutes()" [disabled]="locked() || !loaded() || !!confirming()">
+        Reconcile routes
+      </button>
+    </div>
+  </div>
+
 
   @if (problems().length) {
     <ul aria-label="Route problems">
@@ -145,10 +181,10 @@
     <app-dialog heading="Reconcile routes?" variant="danger" (dismissed)="cancel()">
       <p>
         @if (pendingCount() === 0) {
-          This empties the table: every route the reconciler wrote is removed.
+          This empties the table: every route Homestead wrote is removed.
         } @else {
           This replaces the route table with these {{ pendingCount() }} route(s)
-          and removes the reconciler's other routes. The proxy reloads.
+          and removes the other routes Homestead wrote. The proxy reloads.
         }
         @if (publicHosts().length) {
           <span class="mono">{{ publicHosts().join(', ') }}</span> will be reachable from the public
