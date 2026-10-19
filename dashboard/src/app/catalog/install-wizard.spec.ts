@@ -189,7 +189,10 @@ describe('InstallWizard', () => {
     fixture.detectChanges();
     http.expectOne(`/api/v1/catalog/${name}`).flush(manifest);
     http.expectOne('/api/v1/catalog').flush(PACKAGES(options.installed));
-    http.expectOne('/api/v1/docker/health').flush(options.health ?? HEALTH_WITH_CADDY);
+    // An installed package opens on Done, which asks for the health once more.
+    for (const request of http.match('/api/v1/docker/health')) {
+      request.flush(options.health ?? HEALTH_WITH_CADDY);
+    }
     if (options.storage ?? (manifest['Requirements'] as { Storage: unknown })['Storage'] !== null) {
       http.expectOne('/api/v1/storage/registrations').flush(REGISTRATIONS);
       http.expectOne('/api/v1/storage/mounts').flush(MOUNTS);
@@ -208,7 +211,22 @@ describe('InstallWizard', () => {
     fixture.detectChanges();
   }
 
+  /** The Done step reads the route table and the edge health. */
+  function doneReads(routes: unknown[], health: object = HEALTH_WITH_CADDY) {
+    http.expectOne('/api/v1/edge/routes').flush({ routes });
+    for (const request of http.match('/api/v1/docker/health')) {
+      request.flush(health);
+    }
+    fixture.detectChanges();
+  }
+
+  beforeEach(() => {
+    // The Done step asks this device to open the address; no network in specs.
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(''))));
+  });
+
   afterEach(() => {
+    vi.unstubAllGlobals();
     http.verify();
   });
 
@@ -284,13 +302,54 @@ describe('InstallWizard', () => {
       to('preflight');
       http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft'));
       fixture.detectChanges();
-      expect(text()).toContain('Caddy is not running');
-      expect(text()).toContain('will not serve until you deploy it');
-      expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/edge"]')).not.toBeNull();
+      expect(text()).toContain('The edge (Caddy');
+      expect(text()).toContain('will not be reachable until it is');
+      expect(button('Set up the edge')).toBeDefined();
       expect(text()).toContain('Created on install');
       c().next();
       expect(c().current()).toBe('preflight');
       expect(c().stepProblem()).toContain('Caddy is not running');
+      c().acknowledgedEdge.set(true);
+      c().next();
+      expect(c().current()).toBe('address');
+    });
+
+    it('offers to set up the edge behind a confirm, deploys Caddy and shows it in the rail', () => {
+      start(CRAFT, { health: HEALTH_NO_CADDY });
+      to('preflight');
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft'));
+      fixture.detectChanges();
+      button('Set up the edge')!.click();
+      fixture.detectChanges();
+      const dialog = (fixture.nativeElement as HTMLElement).querySelector('app-dialog')!;
+      expect(dialog.textContent).toContain('ports');
+      expect(dialog.textContent).toContain('80 and 443');
+      expect(dialog.textContent).toContain('does not open anything to the internet');
+      http.expectNone('/api/v1/edge/deploy');
+      (Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent!.trim() === 'Set up the edge') as HTMLButtonElement).click();
+      http.expectOne('/api/v1/edge/deploy').flush({ id: 21 });
+      fixture.detectChanges();
+      expect(TestBed.inject(WorkOrders).orders().length).toBe(1);
+      expect((fixture.nativeElement as HTMLElement).querySelector('app-operation-progress a[href="/operations/21"]')).not.toBeNull();
+      streams.get(21)!.next(opState(21, 'succeeded'));
+      http.expectOne('/api/v1/docker/health').flush(HEALTH_WITH_CADDY);
+      fixture.detectChanges();
+      expect(text()).toContain('The edge is set up.');
+      expect(c().caddyMissing()).toBe(false);
+      c().next();
+      expect(c().current()).toBe('address');
+    });
+
+    it('lets the owner decline the edge and carry on', () => {
+      start(CRAFT, { health: HEALTH_NO_CADDY });
+      to('preflight');
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft'));
+      fixture.detectChanges();
+      button('Set up the edge')!.click();
+      fixture.detectChanges();
+      (Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('app-dialog button')).find((b) => b.textContent!.trim() === 'Not now') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect((fixture.nativeElement as HTMLElement).querySelector('app-dialog')).toBeNull();
       c().acknowledgedEdge.set(true);
       c().next();
       expect(c().current()).toBe('address');
@@ -504,7 +563,7 @@ describe('InstallWizard', () => {
       expect(text()).toContain('Homestead will change');
       expect(text()).toContain('Firewall rule for web-https');
       expect(text()).toContain('Homestead will leave alone');
-      expect(text()).toContain('does not deploy or restart it');
+      expect(text()).toContain('merged into the route table');
       expect(text()).toContain('WebGL2');
       expect(text()).toContain('install creates the homestead-edge network');
       const raw = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('details')).find((d) =>
@@ -541,23 +600,64 @@ describe('InstallWizard', () => {
       fixture.detectChanges();
       expect(c().current()).toBe('install');
       streams.get(7)!.next(opState(7, 'succeeded'));
-      http.expectOne('/api/v1/edge/routes').flush({ routes: [] });
+      const other = { Host: 'notes.lan', Target: { Host: 'notes', Port: 3000 }, Exposure: 'local', TLS: 'internal', Health: { Path: '', IntervalSeconds: 0 } };
+      doneReads([other]);
+      // The planned route is merged into the table; the existing route stays.
+      const reconcile = http.expectOne('/api/v1/edge/routes');
+      expect(reconcile.request.method).toBe('POST');
+      expect(reconcile.request.body.routes.map((r: { Host: string }) => r.Host)).toEqual(['notes.lan', 'gridcraft.lan']);
+      reconcile.flush({ id: 31 });
       fixture.detectChanges();
       expect(c().current()).toBe('done');
+      expect(text()).toContain('Giving GridCraft an address');
+      streams.get(31)!.next(opState(31, 'succeeded'));
+      fixture.detectChanges();
       expect(text()).toContain('GridCraft installed');
-      expect(text()).toContain('GridCraft has no address yet.');
-      expect(text()).toContain('Open the Edge page');
-      expect(text()).toContain('gridcraft.lan');
+      expect((fixture.nativeElement as HTMLElement).querySelector('a[href="https://gridcraft.lan"]')?.textContent).toContain('Open GridCraft');
+      expect(text()).toContain('https://gridcraft.lan');
       expect(text()).toContain('There is no account to create.');
       expect(text()).toContain('GridCraft keeps nothing on the appliance');
+      expect(c().reach()).toBe('checking');
+    });
+
+    it('says the app is not reachable and links to Trust when this device cannot open the address', async () => {
+      vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('cert'))));
+      start(CRAFT, { installed: ['gridcraft'] });
+      doneReads([{ Host: 'gridcraft.lan', Target: { Host: 'gridcraft', Port: 8080 }, Exposure: 'local', TLS: 'internal', CraftApp: 'gridcraft' }]);
+      await Promise.resolve();
+      await Promise.resolve();
+      fixture.detectChanges();
+      expect(text()).toContain('could not open that address securely');
+      expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/trust"]')).not.toBeNull();
+    });
+
+    it('does not add a route when the edge is not running and says so, offering to set it up', () => {
+      start(CRAFT, { installed: ['gridcraft'], health: HEALTH_NO_CADDY });
+      doneReads([], HEALTH_NO_CADDY);
+      expect(text()).toContain('GridCraft will not be reachable until the edge is set up.');
+      expect(button('Set up the edge')).toBeDefined();
+      expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/edge"]')).not.toBeNull();
+    });
+
+    it('says plainly when the edge refuses the new route and lets the owner retry', () => {
+      start(CRAFT, { craft: { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] } });
+      review();
+      button('Install GridCraft')!.click();
+      http.expectOne('/api/v1/catalog/gridcraft/install').flush({ id: 7 });
+      streams.get(7)!.next(opState(7, 'succeeded'));
+      doneReads([]);
+      http.expectOne('/api/v1/edge/routes').flush('route refused', { status: 422, statusText: 'Unprocessable' });
+      fixture.detectChanges();
+      expect(text()).toContain('GridCraft is installed but has no address yet.');
+      expect(text()).toContain('route refused');
+      button('Try again')!.click();
+      doneReads([]);
+      http.expectOne('/api/v1/edge/routes').flush({ id: 32 });
     });
 
     it('offers the app when its edge route exists', () => {
       start(CRAFT, { installed: ['gridcraft'] });
-      http.expectOne('/api/v1/edge/routes').flush({
-        routes: [{ Host: 'gridcraft.lan', Target: { Host: 'gridcraft', Port: 8080 }, Exposure: 'local', TLS: 'internal', CraftApp: 'gridcraft' }],
-      });
-      fixture.detectChanges();
+      doneReads([{ Host: 'gridcraft.lan', Target: { Host: 'gridcraft', Port: 8080 }, Exposure: 'local', TLS: 'internal', CraftApp: 'gridcraft' }]);
       expect(c().current()).toBe('done');
       const open = (fixture.nativeElement as HTMLElement).querySelector('a[href="https://gridcraft.lan"]');
       expect(open?.textContent).toContain('Open GridCraft');
@@ -672,8 +772,7 @@ describe('InstallWizard', () => {
 
   it('opens straight on the installed summary for an installed package', () => {
     start(NEXTCLOUD, { installed: ['nextcloud'] });
-    http.expectOne('/api/v1/edge/routes').flush({ routes: [] });
-    fixture.detectChanges();
+    doneReads([]);
     expect(c().current()).toBe('done');
     expect(text()).toContain('Nextcloud installed');
     expect(text()).toContain('create the administrator account');

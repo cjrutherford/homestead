@@ -124,23 +124,53 @@
             </ul>
 
             @if (caddyMissing()) {
-              <div class="warning" role="group" aria-label="Caddy is not running">
+              <div class="warning" role="group" aria-label="The edge is not set up">
                 <div>
                   <p>
-                    Caddy is not running, so {{ m.Title }}'s address will not serve until you deploy it.
-                    The install still works.
-                    <a routerLink="/edge">Open the Edge page</a> to deploy Caddy.
+                    The edge (Caddy, the proxy that serves apps by name) is not set up, so
+                    {{ m.Title }} will not be reachable until it is.
                   </p>
-                  <label>
-                    <input
-                      type="checkbox"
-                      [checked]="acknowledgedEdge()"
-                      (change)="acknowledgedEdge.set($any($event.target).checked)"
-                    />
-                    I understand and want to continue
-                  </label>
+                  @if (edgeSetup() === 'running' || edgeSetup() === 'starting') {
+                    @if (edgeOperation(); as id) {
+                      <app-operation-progress [id]="id" [operation]="edgeOpState()" />
+                    }
+                  } @else {
+                    <p class="wizard-actions">
+                      <button type="button" class="primary" (click)="askEdgeSetup()">Set up the edge</button>
+                    </p>
+                    @if (edgeProblem(); as problem) {
+                      <p class="field-error" role="alert">{{ problem }}</p>
+                    }
+                    <label>
+                      <input
+                        type="checkbox"
+                        [checked]="acknowledgedEdge()"
+                        (change)="acknowledgedEdge.set($any($event.target).checked)"
+                      />
+                      Continue without it; I will set up the edge later
+                    </label>
+                  }
                 </div>
               </div>
+            } @else if (edgeSetup() === 'done') {
+              <app-state-message kind="status" headline="The edge is set up." detail="Caddy is running, so apps you install can be reached by name." />
+            }
+            @if (edgeDialog()) {
+              <app-dialog heading="Set up the edge?" (dismissed)="cancelEdgeSetup()">
+                <p>
+                  This starts Caddy, a small proxy container, on this appliance. It listens on ports
+                  80 and 443 on your local network and serves your apps by name, such as
+                  {{ m.Name }}.lan, with certificates from your Homestead internal CA.
+                </p>
+                <p>
+                  It does not open anything to the internet. You can see and change what it serves on
+                  the Edge page.
+                </p>
+                <div class="dialog-actions">
+                  <button type="button" class="primary" [disabled]="edgeSetup() === 'starting'" (click)="confirmEdgeSetup()">Set up the edge</button>
+                  <button type="button" class="quiet" (click)="cancelEdgeSetup()">Not now</button>
+                </div>
+              </app-dialog>
             }
 
             <app-loading [loading]="planning()" shape="lines">
@@ -289,6 +319,16 @@
                   (input)="setHostname(endpoint.endpoint, $any($event.target).value)"
                 />
               </label>
+            }
+
+            @if (endpoints().length > 0) {
+              <p>
+                {{ m.Title }} will be at
+                <code>https://{{ hostnameFor(endpoints()[0].endpoint, 0) }}</code>. The install adds this
+                address to the edge for you, with a certificate from your Homestead internal CA. Your
+                devices need to resolve the name (your router's DNS or a hosts file entry) and trust the
+                <a routerLink="/trust">Homestead root</a>.
+              </p>
             }
 
             <h3>Who can reach it</h3>
@@ -524,24 +564,81 @@
             @if (edgeRoute(); as route) {
               <p>
                 <a class="button primary" [href]="routeUrl(route)" target="_blank" rel="noopener noreferrer">Open {{ m.Title }}</a>
-                <code>{{ route.Host }}</code>
+                <a [href]="routeUrl(route)" target="_blank" rel="noopener noreferrer"><code>{{ routeUrl(route) }}</code></a>
               </p>
+              @if (reach() === 'failed') {
+                <app-state-message
+                  kind="notice"
+                  headline="This device could not open that address securely."
+                  detail="Either the name does not resolve on this device, or this device does not trust the Homestead root yet. Install the root on the Trust page, then open the address again."
+                  actionLabel="Open the Trust page"
+                  actionLink="/trust"
+                />
+              }
             } @else {
-              <app-state-message
-                kind="notice"
-                [headline]="m.Title + ' has no address yet.'"
-                detail="Installing does not add the edge route. Add it on the Edge page, then open the app."
-                actionLabel="Open the Edge page"
-                actionLink="/edge"
-              />
-              @if (plannedRoutes().length > 0) {
-                <p class="hint">
-                  Add:
-                  @for (route of plannedRoutes(); track route.Host) {
-                    <code>{{ route.Host }}</code> pointing to <code>{{ route.Target.Host }}:{{ route.Target.Port }}</code>,
-                    {{ exposureWords(route.Exposure).toLowerCase() }}.
+              @switch (routeState()) {
+                @case ('adding') {
+                  <h3>Giving {{ m.Title }} an address</h3>
+                  @if (routeOperation(); as id) {
+                    <app-operation-progress [id]="id" [operation]="routeOpState()" />
                   }
-                </p>
+                }
+                @case ('failed') {
+                  <app-state-message
+                    kind="error"
+                    [headline]="m.Title + ' is installed but has no address yet.'"
+                    [detail]="routeProblem() ?? 'The edge refused the route.'"
+                    actionLabel="Try again"
+                    (action)="retryRoute()"
+                  />
+                  <p class="hint"><a routerLink="/edge">Open the Edge page</a> to add it by hand.</p>
+                }
+                @case ('no-edge') {
+                  <app-state-message
+                    kind="notice"
+                    [headline]="m.Title + ' will not be reachable until the edge is set up.'"
+                    detail="The edge (Caddy) serves apps by name and it is not running. Set it up and Homestead adds the address for you."
+                  />
+                  <p class="wizard-actions">
+                    @if (edgeSetup() === 'running' || edgeSetup() === 'starting') {
+                      @if (edgeOperation(); as id) {
+                        <app-operation-progress [id]="id" [operation]="edgeOpState()" />
+                      }
+                    } @else {
+                      <button type="button" class="primary" (click)="askEdgeSetup()">Set up the edge</button>
+                      <a class="button" routerLink="/edge">Open the Edge page</a>
+                    }
+                  </p>
+                  @if (edgeProblem(); as problem) {
+                    <p class="field-error" role="alert">{{ problem }}</p>
+                  }
+                  @if (edgeDialog()) {
+                    <app-dialog heading="Set up the edge?" (dismissed)="cancelEdgeSetup()">
+                      <p>
+                        This starts Caddy, a small proxy container, on this appliance. It listens on
+                        ports 80 and 443 on your local network and serves your apps by name, with
+                        certificates from your Homestead internal CA. It does not open anything to the
+                        internet.
+                      </p>
+                      <div class="dialog-actions">
+                        <button type="button" class="primary" [disabled]="edgeSetup() === 'starting'" (click)="confirmEdgeSetup()">Set up the edge</button>
+                        <button type="button" class="quiet" (click)="cancelEdgeSetup()">Not now</button>
+                      </div>
+                    </app-dialog>
+                  }
+                }
+                @case ('checking') {
+                  <app-loading [loading]="true" shape="lines"><span></span></app-loading>
+                }
+                @default {
+                  <app-state-message
+                    kind="notice"
+                    [headline]="m.Title + ' has no address yet.'"
+                    detail="Add its address on the Edge page, then open the app."
+                    actionLabel="Open the Edge page"
+                    actionLink="/edge"
+                  />
+                }
               }
             }
 

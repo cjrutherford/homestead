@@ -29,8 +29,10 @@ import { registerPackageTitles } from '../core/operation-labels';
 import { isTerminal } from '../core/operation-view';
 import { ToastService } from '../core/toast.service';
 import { StateMessage } from '../state/state-message';
+import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
+import { appRoutes, mergeRoutes } from './app-routes';
 import { BrowserAdvisories } from './browser-advisories';
 import { curatedFor } from './curated-copy';
 import { FolderRow, InstallDraft, InstallDrafts } from './install-drafts';
@@ -113,6 +115,7 @@ function helpFor(id: StepId, title: string): string {
     BrowserAdvisories,
     OperationProgress,
     UninstallApp,
+    Dialog,
   ],
   selector: 'app-install-wizard',
   templateUrl: './install-wizard.html',
@@ -151,6 +154,20 @@ export class InstallWizard implements OnInit {
   protected readonly craftBuilt = signal<boolean | null>(null);
   protected readonly buildRefusal = signal<string | null>(null);
   protected readonly edgeRoute = signal<EdgeRoute | null>(null);
+  /** The addresses the reviewed plan gives the app; added to the edge once it is installed. */
+  protected readonly routesToAdd = signal<EdgeRoute[]>([]);
+  /** Where the address stands on the Done step. */
+  protected readonly routeState = signal<'checking' | 'adding' | 'added' | 'failed' | 'no-edge' | 'none'>('checking');
+  protected readonly routeProblem = signal<string | null>(null);
+  protected readonly routeOperation = signal<number | null>(null);
+  protected readonly routeOpState = signal<OperationState | null>(null);
+  /** Whether this device could open the address securely; null until tried. */
+  protected readonly reach = signal<'checking' | 'ok' | 'failed' | null>(null);
+  protected readonly edgeDialog = signal(false);
+  protected readonly edgeSetup = signal<'idle' | 'starting' | 'running' | 'done' | 'failed'>('idle');
+  protected readonly edgeOperation = signal<number | null>(null);
+  protected readonly edgeOpState = signal<OperationState | null>(null);
+  protected readonly edgeProblem = signal<string | null>(null);
 
   protected readonly plan = signal<InstallPlan | null>(null);
   protected readonly planning = signal(false);
@@ -289,6 +306,7 @@ export class InstallWizard implements OnInit {
         networks: this.extraNetworks(),
         buildOperation: this.buildOperation(),
         installOperation: this.installOperation(),
+        routes: this.routesToAdd(),
       };
       this.drafts.save(name, draft);
     });
@@ -365,6 +383,10 @@ export class InstallWizard implements OnInit {
     this.buildOperation.set(null);
     this.installOperation.set(null);
     this.operation.set(null);
+    this.routesToAdd.set([]);
+    this.edgeSetup.set('idle');
+    this.routeState.set('checking');
+    this.reach.set(null);
   }
 
   private restore(draft: InstallDraft): void {
@@ -379,6 +401,7 @@ export class InstallWizard implements OnInit {
     this.extraNetworks.set(draft.networks);
     this.buildOperation.set(draft.buildOperation);
     this.installOperation.set(draft.installOperation);
+    this.routesToAdd.set(draft.routes ?? []);
     const index = this.steps().findIndex((step) => step.id === draft.step);
     this.stepIndex.set(index >= 0 ? index : 0);
   }
@@ -487,7 +510,7 @@ export class InstallWizard implements OnInit {
     } else if (id === 'review') {
       this.replan().subscribe();
     } else if (id === 'done') {
-      this.loadEdgeRoute();
+      this.prepareDone();
     }
     if (moveFocus) {
       this.toast.announce(`Step ${this.stepIndex() + 1} of ${this.steps().length}: ${this.headingText()}`);
@@ -776,6 +799,11 @@ export class InstallWizard implements OnInit {
     }
     this.starting.set(true);
     this.failure.set(null);
+    // The plan the owner reviewed is the plan that is applied, so its routes are the ones to add.
+    const planned = this.plan()?.Routes as unknown as EdgeRoute[] | undefined;
+    if (planned) {
+      this.routesToAdd.set(planned.filter((route) => route.Exposure !== 'public'));
+    }
     this.api.installPackage(manifest.Name, this.body()).subscribe({
       next: ({ id }) => {
         this.starting.set(false);
@@ -864,18 +892,180 @@ export class InstallWizard implements OnInit {
 
   // -------------------------------------------------------------------- done
 
-  private loadEdgeRoute(): void {
-    const name = this.name();
-    this.api.edgeRoutes().subscribe({
-      next: ({ routes }) => {
-        const hosts = (this.plan()?.Routes ?? []).map((route) => route.Host);
-        this.edgeRoute.set(
-          (routes ?? []).find(
-            (route) => hosts.includes(route.Host) || route.CraftApp === name || route.Host.startsWith(`${name}.`),
-          ) ?? null,
+  /**
+   * Reads the edge route table and the edge's health. An existing route for the
+   * app is shown; otherwise, once the app is installed and the proxy runs, the
+   * planned route is merged into the table through the edge routes API.
+   */
+  protected prepareDone(): void {
+    if (this.routeState() === 'adding') {
+      return;
+    }
+    this.routeState.set('checking');
+    this.routeProblem.set(null);
+    forkJoin([
+      this.api.edgeRoutes(),
+      this.api.dockerHealth().pipe(catchError(() => of(null))),
+    ]).subscribe({
+      next: ([{ routes }, health]) => {
+        if (health) {
+          this.health.set(health);
+        }
+        const table = routes ?? [];
+        const manifest = this.manifest();
+        const hosts = this.routesToAdd().map((route) => route.Host);
+        const found =
+          table.find((route) => hosts.includes(route.Host)) ??
+          (manifest ? appRoutes(manifest, table)[0] : undefined) ??
+          null;
+        this.edgeRoute.set(found);
+        if (found) {
+          this.routeState.set('added');
+          this.probe(found);
+        } else if (this.caddyMissing() || (health === null && this.healthUnknown())) {
+          this.routeState.set('no-edge');
+        } else if (this.installed() && this.routesToAdd().length > 0) {
+          this.addRoute(table);
+        } else {
+          this.routeState.set('none');
+        }
+      },
+      error: () => {
+        this.edgeRoute.set(null);
+        this.routeState.set('none');
+      },
+    });
+  }
+
+  /** Merges the planned routes into the table; no existing route is dropped. */
+  private addRoute(table: EdgeRoute[]): void {
+    this.routeState.set('adding');
+    this.api.edgeReconcile(mergeRoutes(table, this.routesToAdd())).subscribe({
+      next: ({ id }) => {
+        this.routeOperation.set(id);
+        this.routeOpState.set(null);
+        this.api
+          .operationEvents(id)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: (state) => {
+              this.routeOpState.set(state);
+              if (!isTerminal(state.status)) {
+                return;
+              }
+              if (state.status === 'succeeded') {
+                const route = this.routesToAdd()[0] ?? null;
+                this.edgeRoute.set(route);
+                this.routeState.set('added');
+                if (route) {
+                  this.probe(route);
+                }
+              } else {
+                this.routeState.set('failed');
+                this.routeProblem.set(state.error || 'The edge refused the route.');
+              }
+            },
+            error: () => {
+              this.routeState.set('failed');
+              this.routeProblem.set('Lost the live connection to the operation. Open it to see how it ended.');
+            },
+          });
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.routeState.set('failed');
+        this.routeProblem.set(
+          failure.status === 0
+            ? 'Cannot reach the appliance.'
+            : typeof failure.error === 'string' && failure.error.trim()
+              ? failure.error.trim()
+              : `The edge refused the route (${failure.status}).`,
         );
       },
-      error: () => this.edgeRoute.set(null),
+    });
+  }
+
+  protected retryRoute(): void {
+    this.prepareDone();
+  }
+
+  /**
+   * Asks this device to open the address. A request that cannot complete means
+   * the name does not resolve here, or this device does not trust the Homestead
+   * root yet; either way the Trust page is the next step.
+   */
+  private probe(route: EdgeRoute): void {
+    this.reach.set('checking');
+    if (typeof fetch !== 'function') {
+      this.reach.set(null);
+      return;
+    }
+    fetch(this.routeUrl(route), { mode: 'no-cors', cache: 'no-store' }).then(
+      () => this.reach.set('ok'),
+      () => this.reach.set('failed'),
+    );
+  }
+
+  // ---------------------------------------------------------------- the edge
+
+  protected askEdgeSetup(): void {
+    this.edgeProblem.set(null);
+    this.edgeDialog.set(true);
+  }
+
+  protected cancelEdgeSetup(): void {
+    this.edgeDialog.set(false);
+  }
+
+  /** Deploys Caddy through the existing edge operation; progress shows here and in the rail. */
+  protected confirmEdgeSetup(): void {
+    this.edgeSetup.set('starting');
+    this.api.edgeDeploy().subscribe({
+      next: ({ id }) => {
+        this.edgeDialog.set(false);
+        this.edgeOperation.set(id);
+        this.edgeOpState.set(null);
+        this.edgeSetup.set('running');
+        this.api
+          .operationEvents(id)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: (state) => {
+              this.edgeOpState.set(state);
+              if (!isTerminal(state.status)) {
+                return;
+              }
+              if (state.status === 'succeeded') {
+                this.edgeSetup.set('done');
+                this.api.dockerHealth().subscribe({
+                  next: (health) => {
+                    this.health.set(health);
+                    if (this.current() === 'done') {
+                      this.prepareDone();
+                    }
+                  },
+                });
+              } else {
+                this.edgeSetup.set('failed');
+                this.edgeProblem.set(state.error || 'The edge could not be set up.');
+              }
+            },
+            error: () => {
+              this.edgeSetup.set('failed');
+              this.edgeProblem.set('Lost the live connection to the operation. Open it to see how it ended.');
+            },
+          });
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.edgeDialog.set(false);
+        this.edgeSetup.set('failed');
+        this.edgeProblem.set(
+          failure.status === 0
+            ? 'Cannot reach the appliance.'
+            : typeof failure.error === 'string' && failure.error.trim()
+              ? failure.error.trim()
+              : `The edge could not be set up (${failure.status}).`,
+        );
+      },
     });
   }
 
@@ -883,7 +1073,7 @@ export class InstallWizard implements OnInit {
     return `${route.TLS === 'off' ? 'http' : 'https'}://${route.Host}`;
   }
 
-  protected plannedRoutes = computed(() => (this.plan()?.Routes ?? []) as unknown as EdgeRoute[]);
+  protected readonly plannedRoutes = computed(() => this.routesToAdd());
 
   /** Called when the owner finishes with this wizard: the draft goes. */
   protected finish(): void {

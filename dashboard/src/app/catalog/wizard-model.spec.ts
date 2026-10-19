@@ -171,6 +171,6 @@ describe('plan summary', () => {
     expect(summary.created).toContain('Address app.lan (local network only)');
     expect(summary.created).toContain('Certificate for app.lan from your Homestead internal CA');
     expect(summary.changed).toEqual(['Firewall rule for web-https']);
-    expect(summary.leftAlone.join(' ')).toContain('does not deploy or restart');
+    expect(summary.leftAlone.join(' ')).toContain('merged into the route table');
   });
 });

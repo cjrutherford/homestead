@@ -8,6 +8,7 @@ import { isTerminal } from '../core/operation-view';
 import { StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
 import { OperationProgress } from '../ui/operation-progress';
+import { removeAppRoutes } from './app-routes';
 import { storageClasses } from './wizard-model';
 
 /** One folder that "also delete its data" would remove, named in full. */
@@ -105,6 +106,14 @@ export interface DataRoot {
           actionLabel="Back to the catalog"
           actionLink="/catalog"
         />
+        @if (routeNote(); as note) {
+          <p class="hint" role="status">{{ note }}</p>
+        }
+        @if (routeProblem(); as problem) {
+          <p class="field-error" role="alert">
+            {{ problem }} <a routerLink="/edge">Open the Edge page</a> to remove it by hand.
+          </p>
+        }
       }
     }
   `,
@@ -132,6 +141,9 @@ export class UninstallApp {
   protected readonly operation = signal<OperationState | null>(null);
   /** What the owner chose when they confirmed, for the result line. */
   protected readonly dataDeleted = signal(false);
+  /** What happened to the app's address in the edge route table. */
+  protected readonly routeNote = signal<string | null>(null);
+  protected readonly routeProblem = signal<string | null>(null);
 
   protected readonly stateless = computed(() => {
     const manifest = this.manifest();
@@ -223,6 +235,45 @@ export class UninstallApp {
     });
   }
 
+  private routesHandled = false;
+
+  /**
+   * Takes the app's address out of the edge route table through the edge
+   * routes API. The rest of the table is sent back unchanged. A table with no
+   * route for the app, or an edge that refuses, never fails the uninstall.
+   */
+  private removeRoutes(): void {
+    const manifest = this.manifest();
+    if (manifest === null) {
+      return;
+    }
+    removeAppRoutes(this.api, manifest).subscribe({
+      next: (removed) => {
+        if (removed === null) {
+          return;
+        }
+        const where = removed.hosts.join(', ');
+        if (removed.operation === null) {
+          this.routeProblem.set(`Its address ${where} is still in the edge route table.`);
+          return;
+        }
+        this.api
+          .operationEvents(removed.operation.id)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe((state) => {
+            if (isTerminal(state.status)) {
+              if (state.status === 'succeeded') {
+                this.routeNote.set(`Its address ${where} was removed from the edge.`);
+              } else {
+                this.routeProblem.set(`Its address ${where} is still in the edge route table.`);
+              }
+            }
+          });
+      },
+      error: () => undefined,
+    });
+  }
+
   private follow(id: number): void {
     this.api
       .operationEvents(id)
@@ -231,6 +282,10 @@ export class UninstallApp {
         next: (state) => {
           this.operation.set(state);
           if (isTerminal(state.status) && state.status === 'succeeded') {
+            if (!this.routesHandled) {
+              this.routesHandled = true;
+              this.removeRoutes();
+            }
             this.uninstalled.emit();
           }
         },

@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { EdgeRoute } from '../core/api.service';
 import { StepId } from './wizard-model';
 
 /** An extra folder the owner adds to an app in the Storage step. */
@@ -27,6 +28,8 @@ export interface InstallDraft {
   /** The verify-and-build operation, for craft apps. */
   buildOperation: number | null;
   installOperation: number | null;
+  /** The addresses the reviewed plan will give the app, added to the edge after install. */
+  routes?: EdgeRoute[];
 }
 
 /**

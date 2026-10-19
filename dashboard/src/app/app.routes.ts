@@ -4,7 +4,6 @@ import { Claim } from './claim/claim';
 import { Login } from './login/login';
 import { Config } from './config/config';
 import { Firewall } from './firewall/firewall';
-import { Catalog } from './catalog/catalog';
 import { Updates } from './updates/updates';
 import { DataMigration } from './data/data-migration';
 import { Advanced } from './advanced/advanced';
@@ -33,7 +32,11 @@ export const routes: Routes = [
   { path: 'login', component: Login },
   { path: 'config', component: Config },
   { path: 'firewall', component: Firewall },
-  { path: 'catalog', component: Catalog },
+  {
+    // Loaded on demand with the wizard it shares the uninstall dialog with.
+    path: 'catalog',
+    loadComponent: () => import('./catalog/catalog').then((m) => m.Catalog),
+  },
   {
     // Loaded on demand: the wizard and its curated copy are only needed to install.
     path: 'catalog/:name/install',

@@ -229,7 +229,7 @@ export function planSummary(plan: InstallPlan): { created: string[]; changed: st
     changed,
     leftAlone: [
       'Your other apps and their data',
-      'The Caddy edge proxy (this install does not deploy or restart it)',
+      'Your other addresses; the new address is merged into the route table, never replacing it',
       'Folders you point the app at; they are mounted, never changed',
     ],
   };

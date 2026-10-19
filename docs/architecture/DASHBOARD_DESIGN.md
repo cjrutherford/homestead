@@ -176,11 +176,11 @@ shown empty. `catalog/wizard-model.ts` (`stepsFor`) decides:
 | What it is | always | blurb, description, curated note, browser advisories |
 | Requirements | always | what the package needs; Docker, edge network, Caddy and (craft) build state; the daemon's plan check |
 | Storage | the manifest declares storage or persistent data | one mount per storage class from registered mounts, free space, owner-visible paths, folders the owner already has |
-| Address | always | domain, hostname per endpoint, who can reach it, advanced (container port, extra networks, zone and public address) |
+| Address | always | domain, hostname per endpoint (the address it will be given, local only, internal TLS), who can reach it, advanced (container port, extra networks, zone and public address) |
 | Secrets and sign-in | the manifest declares secrets or sso is not `unsupported` | generated secrets by name and purpose (never values); how people sign in |
 | Review | always | the plan in plain words (create, change, leave alone), data placement, advisories, notes, raw plan |
 | Install | always | the install operation, or for a craft app Verify and build first |
-| Done | always | open the app or add its address, first-login hints, where data lives, Uninstall |
+| Done | always | the working address as a link (and a trust note when this device cannot open it), first-login hints, where data lives, Uninstall |
 
 Package shapes: a stateless craft app is About, Requirements, Address, Review,
 Install, Done. Storage adds Storage. `sso: optional` or declared secrets add
@@ -196,8 +196,9 @@ sign-in paragraph.
   hints, per-app notes). A spec fails when a package in `catalog/` has no
   curated entry.
 - Hard problems (Docker down, a refused plan) keep the owner on the step with
-  what happened and how to fix it. Soft ones (Caddy not running) show a warning
-  the owner acknowledges. Field errors are tied to their field
+  what happened and how to fix it. Soft ones (Caddy not running) offer "Set up
+  the edge" (a confirm dialog, then the existing Caddy deploy operation, shown in
+  the rail) or let the owner acknowledge and carry on. Field errors are tied to their field
   (`aria-invalid`, `aria-describedby`) once Continue was pressed.
 - Back and Next keep every choice (`InstallDrafts`, in memory). A reload starts
   clean, and the plan is asked for again every time Requirements or Review is
@@ -209,6 +210,16 @@ sign-in paragraph.
 - Leaving while an operation runs does not stop it: returning to the wizard
   picks the same operation back up. After a failure nothing is left installed
   (the daemon rolls back) and Try again goes through a fresh Review.
+- An installed app gets its address from the wizard, through the existing edge
+  routes API only: after the install succeeds, Done reads the route table,
+  merges the reviewed plan's routes into it (a route on the same host is
+  replaced, every other route is sent back unchanged) and reconciles. Public
+  routes are never added (ADR-006). With no running proxy nothing is added: Done
+  says plainly the app is not reachable until the edge is set up and offers the
+  same dialog, then adds the address. Done then asks this device to open the
+  address; if it cannot (name unresolved, or the Homestead root not trusted),
+  it links to Trust. Uninstall takes the app's routes out of the table the same
+  way (`catalog/app-routes.ts`).
 - Uninstall (`catalog/uninstall-app.ts`) is a danger dialog: what is removed,
   what is kept, an "Also delete its data" box that lists every root in full,
   and an acknowledgement for data still in Docker volumes only after the

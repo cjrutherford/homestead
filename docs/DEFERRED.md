@@ -614,11 +614,16 @@
   not-set-up probes (TLS, Exposure, Backups destination); the pages show states,
   but silencing the log needs a 200 "not set up" reply from the daemon.
 - S285 discoveries:
-  - Installing does not add the edge route. After the wizard the app has no
-    address until the owner adds it on the Edge page (the done step shows the
-    host and upstream to enter). The wizard could merge the planned routes into
-    the recorded table and reconcile it; that is a second, confirmed operation
-    and was left out.
+  - Closed after the S285 KVM review (Fix S285: give installed apps an address
+    through the wizard): the wizard adds the app's route through the edge routes
+    API and offers to set up the edge. Left: the add happens in the dashboard
+    after the install operation, so an install started and abandoned in the
+    browser gets its route when the owner returns to the wizard; a daemon-side
+    "install and route" operation would not depend on the browser. A package
+    installed by the CLI still has no route until `edge routes set`.
+  - Two packages whose served container has the same service name (Authentik and
+    Immich both use `server`) would collide on the shared edge network. Route
+    ownership in the dashboard is matched by host name as well for that reason.
   - The sign-in step explains SSO but offers no install-time choice: there is no
     API to wire an app to Authentik at install. S286 owns that.
   - Data removal on uninstall names `<mount>/<package>` for each storage class

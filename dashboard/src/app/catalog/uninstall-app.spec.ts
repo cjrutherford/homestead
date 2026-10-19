@@ -52,6 +52,7 @@ describe('UninstallApp', () => {
   let fixture: ComponentFixture<Host>;
   let http: HttpTestingController;
   let stream: Subject<OperationState>;
+  let routeStreams: Subject<OperationState>;
 
   const text = () => (fixture.nativeElement as HTMLElement).textContent!.replace(/\s+/g, ' ');
   const dialog = () => (fixture.nativeElement as HTMLElement).querySelector('dialog');
@@ -67,13 +68,21 @@ describe('UninstallApp', () => {
       providers: [provideRouter([]), provideHttpClient(withInterceptors([workOrderInterceptor])), provideHttpClientTesting()],
     });
     stream = new Subject();
-    vi.spyOn(TestBed.inject(ApiService), 'operationEvents').mockReturnValue(stream);
+    const routeStream = new Subject<OperationState>();
+    routeStreams = routeStream;
+    vi.spyOn(TestBed.inject(ApiService), 'operationEvents').mockImplementation((id: number) => (id === 22 ? routeStream : stream));
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(Host);
     fixture.detectChanges();
   });
 
-  afterEach(() => http.verify());
+  afterEach(() => {
+    // A finished uninstall looks for the app's address; these specs have none.
+    for (const request of http.match((r) => r.method === 'GET' && r.url === '/api/v1/edge/routes')) {
+      request.flush({ routes: [] });
+    }
+    http.verify();
+  });
 
   function open() {
     find('Uninstall Nextcloud').click();
@@ -115,10 +124,44 @@ describe('UninstallApp', () => {
     expect((fixture.nativeElement as HTMLElement).querySelector('app-operation-progress a[href="/operations/21"]')).not.toBeNull();
     expect(find('Uninstall Nextcloud')).toBeUndefined();
     stream.next(state(21, 'succeeded'));
+    // The app's address leaves the edge table; the other route is sent back untouched.
+    const keep = { Host: 'notes.lan', Target: { Host: 'notes', Port: 3000 }, Exposure: 'local', TLS: 'internal', Health: { Path: '/', IntervalSeconds: 5 }, Policy: { x: 1 } };
+    const mine = { Host: 'nextcloud.lan', Target: { Host: 'nextcloud', Port: 80 }, Exposure: 'local', TLS: 'internal', Health: { Path: '', IntervalSeconds: 0 } };
+    http.expectOne('/api/v1/edge/routes').flush({ routes: [keep, mine] });
+    const reconcile = http.expectOne('/api/v1/edge/routes');
+    expect(reconcile.request.method).toBe('POST');
+    expect(reconcile.request.body).toEqual({ routes: [keep] });
+    reconcile.flush({ id: 22 });
+    routeStreams.next(state(22, 'succeeded'));
     fixture.detectChanges();
     expect(fixture.componentInstance.gone).toBe(1);
     expect(text()).toContain('Nextcloud uninstalled');
     expect(text()).toContain('Its data was kept.');
+    expect(text()).toContain('Its address nextcloud.lan was removed from the edge.');
+  });
+
+  it('leaves the edge alone when the app had no route', () => {
+    open();
+    find('Confirm uninstall').click();
+    http.expectOne('/api/v1/catalog/nextcloud/uninstall').flush({ id: 21 });
+    stream.next(state(21, 'succeeded'));
+    http.expectOne('/api/v1/edge/routes').flush({ routes: [{ Host: 'notes.lan', Target: { Host: 'notes', Port: 3000 }, Exposure: 'local', TLS: 'internal' }] });
+    fixture.detectChanges();
+    expect(text()).toContain('Nextcloud uninstalled');
+    expect(text()).not.toContain('removed from the edge');
+  });
+
+  it('says so when the edge cannot drop the address, and still reports the uninstall', () => {
+    open();
+    find('Confirm uninstall').click();
+    http.expectOne('/api/v1/catalog/nextcloud/uninstall').flush({ id: 21 });
+    stream.next(state(21, 'succeeded'));
+    http.expectOne('/api/v1/edge/routes').flush({ routes: [{ Host: 'nextcloud.lan', Target: { Host: 'nextcloud', Port: 80 }, Exposure: 'local', TLS: 'internal' }] });
+    http.expectOne('/api/v1/edge/routes').flush('proxy down', { status: 500, statusText: 'x' });
+    fixture.detectChanges();
+    expect(text()).toContain('Nextcloud uninstalled');
+    expect(text()).toContain('Its address nextcloud.lan is still in the edge route table.');
+    expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/edge"]')).not.toBeNull();
   });
 
   it('deletes data only when asked, naming every root explicitly', () => {
@@ -138,7 +181,7 @@ describe('UninstallApp', () => {
     });
     request.flush({ id: 22 });
     fixture.detectChanges();
-    stream.next(state(22, 'succeeded'));
+    routeStreams.next(state(22, 'succeeded'));
     fixture.detectChanges();
     expect(text()).toContain('Its data was deleted.');
   });
