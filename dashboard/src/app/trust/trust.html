@@ -41,12 +41,12 @@
         <dt>Serial</dt>
         <dd><code>{{ r.ca.serial }}</code></dd>
         <dt>Valid</dt>
-        <dd>{{ r.ca.not_before }} to {{ r.ca.not_after }}</dd>
+        <dd>{{ r.ca.not_before | when }} to {{ r.ca.not_after | when }}</dd>
         <dt>Can vouch only for</dt>
         <dd>{{ r.ca.permitted_dns?.join(', ') }}</dd>
       </dl>
       <p>
-        After downloading, check the file's fingerprint matches the one above:
+        After downloading, check that the file's fingerprint matches the one above.
         The download is served without sign-in so devices can fetch it. This page, shown over your
         session, is your check against tampering.
       </p>
@@ -97,7 +97,7 @@
             <tr>
               <th scope="row" class="mono">{{ leaf.host }}</th>
               <td><span class="badge" [class]="leafBadge(leaf.status)">{{ leaf.status }}</span>@if (leaf.detail) { <br />{{ leaf.detail }} }</td>
-              <td>{{ leaf.not_after }}</td>
+              <td>{{ leaf.not_after | when }}</td>
               <td>
                 <button type="button" [disabled]="busy()" (click)="reissue(leaf.host)">Re-issue</button>
               </td>

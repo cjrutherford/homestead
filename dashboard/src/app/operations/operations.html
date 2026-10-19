@@ -37,7 +37,7 @@
                   <td><a [routerLink]="['/operations', op.id]">{{ labelOf(op.type) }}</a></td>
                   <td><span class="badge" [class]="badgeOf(op.status)">{{ wordOf(op.status) }}</span></td>
                   <td class="num">{{ stepsOf(op) }}</td>
-                  <td>@if (op.created_at) { <time [attr.datetime]="op.created_at">{{ op.created_at }}</time> }</td>
+                  <td>@if (op.created_at) { <time [attr.datetime]="op.created_at">{{ op.created_at | when }}</time> }</td>
                 </tr>
               }
             </tbody>

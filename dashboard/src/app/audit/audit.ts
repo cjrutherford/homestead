@@ -1,3 +1,4 @@
+import { WhenPipe } from '../core/format-time';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService, AuditEntry } from '../core/api.service';
@@ -63,10 +64,10 @@ type FilterField = 'actor' | 'action' | 'outcome' | 'since' | 'until';
  */
 @Component({
   selector: 'app-audit',
-  imports: [Loading, StateMessage],
+  imports: [Loading, StateMessage, WhenPipe],
   templateUrl: './audit.html',
   styles: [
-    '.audit-text { overflow-wrap: anywhere; white-space: pre-wrap; }',
+    '.audit-text { overflow-wrap: break-word; white-space: pre-wrap; }',
   ],
 })
 export class AuditLog implements OnInit {

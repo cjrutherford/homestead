@@ -162,18 +162,3 @@
   margin-bottom: var(--spacing-md);
 }
 
-/* Disclosures: a chevron so they read as controls. It turns when open; nothing animates. */
-.wizard-body summary::before {
-  content: '';
-  flex: none;
-  width: 0.45rem;
-  height: 0.45rem;
-  margin-inline-end: var(--spacing-sm);
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  transform: rotate(-45deg);
-}
-
-.wizard-body details[open] > summary::before {
-  transform: rotate(45deg);
-}

@@ -107,7 +107,7 @@ describe('Drift', () => {
     const refresh = http.expectOne('/api/v1/catalog/jellyfin/drift');
     refresh.flush([]);
     fixture.detectChanges();
-    expect(text()).toContain('Adopted 1 file(s)');
+    expect(text()).toContain('Adopted 1 file');
     expect(text()).toContain('No drift');
   });
 
@@ -133,8 +133,8 @@ describe('Drift', () => {
     http.expectOne('/api/v1/catalog').flush(PACKAGES);
     http.expectOne('/api/v1/drift/schedule').flush(SCHEDULE);
     fixture.detectChanges();
-    expect(text()).toContain('Scans every 24 hour(s)');
-    expect(text()).toContain('2026-10-11T12:00:00Z');
+    expect(text()).toContain('Scans every 24 hours');
+    expect(text()).toContain('11 Oct 2026, 12:00 UTC');
     expect(text()).toContain('compose.yaml (modified)');
     fixture.componentInstance['saveSchedule']('360', false);
     const save = http.expectOne('/api/v1/drift/schedule');
@@ -142,7 +142,7 @@ describe('Drift', () => {
     expect(save.request.body).toEqual({ interval_seconds: 21600, enabled: false });
     save.flush({ ...SCHEDULE, interval_seconds: 21600, enabled: false });
     fixture.detectChanges();
-    expect(text()).toContain('Scans every 6 hour(s)');
+    expect(text()).toContain('Scans every 6 hours');
     expect(text()).toContain('off');
   });
 
@@ -167,7 +167,7 @@ describe('Drift', () => {
     http.expectOne('/api/v1/catalog').flush(PACKAGES);
     http.expectOne('/api/v1/drift/schedule').flush({ ...SCHEDULE, interval_seconds: 300 });
     fixture.detectChanges();
-    expect(text()).toContain('Scans every 5 minute(s)');
+    expect(text()).toContain('Scans every 5 minutes');
   });
 
   it('shows running-container findings with their resolution path', () => {

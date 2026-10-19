@@ -80,7 +80,7 @@
               <td><span class="badge outcome" [class]="outcomeClass(entry.outcome)">{{ entry.outcome }}</span></td>
               <td class="audit-text"><strong>{{ entry.action }}</strong></td>
               <td class="audit-text">{{ entry.actor }}</td>
-              <td><time [attr.datetime]="entry.created_at">{{ entry.created_at }}</time></td>
+              <td><time [attr.datetime]="entry.created_at">{{ entry.created_at | when }}</time></td>
               <td>
                 @if (row.rejection; as r) {
                   <p class="audit-text">
@@ -105,7 +105,7 @@
         </tbody>
       </table>
     </div>
-    <nav aria-label="Audit pages">
+    <nav class="pager" aria-label="Audit pages">
       <button type="button" (click)="go(-1)" [disabled]="page() === 0">Newer</button>
       <span>Page {{ page() + 1 }} of {{ pageCount() }}</span>
       <button type="button" (click)="go(1)" [disabled]="page() >= pageCount() - 1">Older</button>

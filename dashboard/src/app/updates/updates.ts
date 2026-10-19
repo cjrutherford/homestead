@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService, PackageUpdate } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
@@ -23,6 +23,8 @@ export class Updates implements OnInit {
   private readonly api = inject(ApiService);
 
   protected readonly rows = signal<PackageUpdate[]>([]);
+  protected readonly installedRows = computed(() => this.rows().filter((r) => r.installed));
+  protected readonly notInstalledRows = computed(() => this.rows().filter((r) => !r.installed));
   protected readonly operationId = signal<number | null>(null);
   protected readonly notice = signal<string | null>(null);
   protected readonly busy = signal(false);

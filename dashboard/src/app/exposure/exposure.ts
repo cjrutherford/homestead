@@ -1,4 +1,5 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
+import { SentencePipe } from '../core/format-time';
 import { isNotSetUp } from '../core/http-error';
 import { StateMessage } from '../state/state-message';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -20,7 +21,7 @@ import { OperationProgress } from '../ui/operation-progress';
  * changes anything except through approve and apply.
  */
 @Component({
-  imports: [OperationProgress, StateMessage, RouterLink],
+  imports: [OperationProgress, StateMessage, RouterLink, SentencePipe],
   selector: 'app-exposure',
   templateUrl: './exposure.html',
 })

@@ -43,7 +43,7 @@
             — {{ renewal.detail }}
             @if (renewal.attempts || renewal.pending_reload) {
               <app-state-message kind="error"
-                [headline]="'Unattended re-issue failed ' + (renewal.attempts ?? 0) + ' time(s): ' + renewal.last_error + '. Next attempt ' + renewal.next_attempt_at + '.'" />
+                [headline]="'Unattended re-issue failed ' + plural(renewal.attempts ?? 0, 'time') + ': ' + renewal.last_error + '. Next attempt ' + renewal.next_attempt_at + '.'" />
             }
             @if (renewal.account_recovery_required) {
               <app-state-message kind="error"

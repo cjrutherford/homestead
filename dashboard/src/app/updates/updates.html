@@ -19,12 +19,10 @@
       Refresh plans
     </button>
     <ul>
-      @for (row of rows(); track row.package) {
+      @for (row of installedRows(); track row.package) {
         <li>
           <h2>{{ row.package }}</h2>
-          @if (!row.installed) {
-            <app-state-message kind="empty" headline="Not installed; nothing to update." />
-          } @else if ((row.plan.Services ?? []).length === 0) {
+          @if ((row.plan.Services ?? []).length === 0) {
             <p>Already current.</p>
           } @else {
             <ul>
@@ -104,9 +102,20 @@
           }
         </li>
       } @empty {
-        <li>No apps in the catalog yet.</li>
+        <li>{{ rows().length === 0 ? 'No apps in the catalog yet.' : 'No installed apps to update. Install one from the Catalog.' }}</li>
       }
     </ul>
+    @if (notInstalledRows().length) {
+      <details>
+        <summary>Not installed ({{ notInstalledRows().length }})</summary>
+        <p>These catalog apps have nothing to update until you install them.</p>
+        <ul>
+          @for (row of notInstalledRows(); track row.package) {
+            <li>{{ row.package }}</li>
+          }
+        </ul>
+      </details>
+    }
   }
   </app-loading>
 </section>

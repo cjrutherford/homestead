@@ -207,7 +207,7 @@ describe('Tls', () => {
       }],
     });
     fixture.detectChanges();
-    expect(text()).toContain('Unattended re-issue failed 3 time(s): rate limited');
+    expect(text()).toContain('Unattended re-issue failed 3 times: rate limited');
     expect(text()).toContain('2026-10-15T04:00:00Z');
     expect(button('Re-register ACME account')).toBeUndefined();
   });

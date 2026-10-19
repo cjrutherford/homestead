@@ -46,7 +46,7 @@ describe('Status', () => {
     flushAll();
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('ok');
-    expect(text).toContain('CLAIMED');
+    expect(text).toContain('Claimed');
     expect(text).toContain('0.0.0-s002');
   });
 

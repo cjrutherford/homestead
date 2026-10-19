@@ -86,6 +86,16 @@ describe('Updates', () => {
     expect(text()).toContain('Not installed');
   });
 
+  it('groups apps that are not installed instead of repeating a row for each', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/updates').flush(ROWS);
+    fixture.detectChanges();
+    const notInstalled = ROWS.filter((r) => !r.installed).length;
+    expect(notInstalled).toBeGreaterThan(0);
+    expect(text()).toContain(`Not installed (${notInstalled})`);
+    expect(text()).not.toContain('nothing to update.');
+  });
+
   it('requires backup opt-in before applying guarded updates', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/updates').flush(ROWS);

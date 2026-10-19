@@ -1,3 +1,4 @@
+import { plural } from '../core/plural';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService, TunnelStatus } from '../core/api.service';
@@ -19,6 +20,7 @@ import { OperationProgress } from '../ui/operation-progress';
   templateUrl: './tunnel.html',
 })
 export class Tunnel implements OnInit {
+  protected readonly plural = plural;
   private readonly api = inject(ApiService);
 
   protected readonly status = signal<TunnelStatus | null>(null);

@@ -1,3 +1,4 @@
+import { TitleCasePipe } from '@angular/common';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { ApiService, DoctorReport, Health, Identity } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
@@ -45,7 +46,7 @@ const DEFAULT_FIX: Fix = { text: 'Run the check from a terminal for more detail.
 /** Appliance status page: daemon health, claim state, diagnostics (S044). */
 @Component({
   selector: 'app-status',
-  imports: [StateMessage, Loading, CopyCode],
+  imports: [StateMessage, Loading, CopyCode, TitleCasePipe],
   templateUrl: './status.html',
 })
 export class Status implements OnInit {

@@ -83,6 +83,7 @@ button[type='submit']:active,
 /* A destructive action that is not the point of the page: outlined, not filled. */
 .danger.quiet {
   color: var(--danger);
+  background: transparent;
   border-color: var(--danger);
 }
 
@@ -290,8 +291,20 @@ thead th {
   border-bottom: 1px solid var(--border-strong);
 }
 
-tbody tr:last-child td {
+tbody tr:last-child td,
+tbody tr:last-child th {
   border-bottom: 0;
+}
+
+/* Badges that sit side by side (the Tunnel connector, row states) keep a gap. */
+.badge + .badge {
+  margin-inline-start: var(--spacing-xs);
+}
+
+/* Times, sizes and counts stay on one line so a table cell never breaks mid-value. */
+td time,
+.nowrap {
+  white-space: nowrap;
 }
 
 /* Badges: colour always pairs with a glyph and a word. */
@@ -520,4 +533,26 @@ li:has(> app-state-message:only-child) {
   .dialog {
     border: 2px solid CanvasText;
   }
+}
+
+/* Pager: Newer / page count / Older on one row with room between them. */
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-block: var(--spacing-md);
+}
+
+/* A list of buttons that reads as a set of choices, not bullets. */
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  padding: 0;
+  list-style: none;
+}
+
+.chip-list li {
+  margin: 0;
 }

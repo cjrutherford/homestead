@@ -1,3 +1,4 @@
+import { WhenPipe } from '../core/format-time';
 import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
@@ -115,7 +116,7 @@ export const TRUST_GUIDES: TrustGuide[] = [
  * arrives over your signed-in session. The private key is never shown.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage, CopyCode],
+  imports: [OperationProgress, Loading, StateMessage, CopyCode, WhenPipe],
   selector: 'app-trust',
   templateUrl: './trust.html',
   styles: [

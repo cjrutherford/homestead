@@ -70,7 +70,7 @@ describe('App', () => {
 
   it('renders routed content in the outlet', () => {
     const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('UNCLAIMED');
+    expect(text).toContain('Unclaimed');
   });
 
   it('marks the current page and has one h1', () => {

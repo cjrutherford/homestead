@@ -97,9 +97,9 @@
     }
     <p>
       @if (status.exported) {
-        Exported by {{ status.exported_by }} at {{ status.exported_at }}.
+        Exported by {{ status.exported_by }} at {{ status.exported_at | when }}.
         @if (status.acknowledged) {
-          Confirmed stored offline at {{ status.acknowledged_at }}.
+          Confirmed stored offline at {{ status.acknowledged_at | when }}.
         } @else {
           Not yet confirmed stored offline: the warning stays until you export again and confirm.
         }
@@ -212,7 +212,7 @@
       Every {{ hours(one.interval_seconds) }}, retain
       {{ one.retain === 0 ? 'all runs' : one.retain }},
       {{ one.enabled ? 'enabled' : 'disabled' }}. Last changed by
-      {{ one.actor }}; cadence window anchored at {{ one.updated_at }}.
+      {{ one.actor }}; cadence window anchored at {{ one.updated_at | when }}.
     </p>
     }
   }

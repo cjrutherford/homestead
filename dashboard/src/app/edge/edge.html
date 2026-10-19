@@ -83,7 +83,7 @@
           <th scope="col">Exposure</th>
           <th scope="col">TLS</th>
           <th scope="col">Health path</th>
-          <th scope="col">Health interval (seconds, 0 for default)</th>
+          <th scope="col" title="Seconds between health checks; 0 uses the default">Health interval (s)</th>
           <th scope="col">Actions</th>
         </tr>
       </thead>
@@ -183,7 +183,7 @@
         @if (pendingCount() === 0) {
           This empties the table: every route Homestead wrote is removed.
         } @else {
-          This replaces the route table with these {{ pendingCount() }} route(s)
+          This replaces the route table with these {{ plural(pendingCount(), 'route') }}
           and removes the other routes Homestead wrote. The proxy reloads.
         }
         @if (publicHosts().length) {

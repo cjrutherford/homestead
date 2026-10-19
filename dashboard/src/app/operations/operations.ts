@@ -1,3 +1,4 @@
+import { WhenPipe } from '../core/format-time';
 import { Component, computed, effect, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
@@ -24,7 +25,7 @@ const WORDS: Record<string, string> = {
 
 /** Operations list page (S064, S283): newest-first records linking to detail. */
 @Component({
-  imports: [StateMessage, RouterLink, Loading],
+  imports: [StateMessage, RouterLink, Loading, WhenPipe],
   selector: 'app-operations',
   templateUrl: './operations.html',
 })

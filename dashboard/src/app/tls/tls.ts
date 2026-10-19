@@ -1,3 +1,4 @@
+import { plural } from '../core/plural';
 import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
@@ -34,6 +35,7 @@ const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
   ],
 })
 export class Tls implements OnInit, OnDestroy {
+  protected readonly plural = plural;
   private readonly api = inject(ApiService);
   private stream: Subscription | null = null;
 

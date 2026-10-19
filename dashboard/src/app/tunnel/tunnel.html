@@ -55,8 +55,8 @@
       <div class="risky">
         <h3>{{ tunnel.name }}: {{ tunnel.status }}</h3>
         <p class="risky-preview">
-          What changes if you tear it down: the tunnel and its {{ tunnel.connections.length }}
-          connection(s) are removed, and every hostname it serves stops working from outside your
+          What changes if you tear it down: the tunnel and its {{ plural(tunnel.connections.length, 'connection') }}
+          are removed, and every hostname it serves stops working from outside your
           network.
         </p>
         <form

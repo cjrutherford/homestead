@@ -1,3 +1,4 @@
+import { WhenPipe } from '../core/format-time';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
@@ -28,11 +29,11 @@ export const STORAGE_CLASSES = [
  * PascalCase because the Go structs carry no json tags.
  */
 @Component({
-  imports: [Loading, StateMessage, Dialog],
+  imports: [Loading, StateMessage, Dialog, WhenPipe],
   selector: 'app-storage',
   templateUrl: './storage.html',
   styles: [
-    '.storage-path { font-family: var(--font-mono); font-size: 0.94em; overflow-wrap: anywhere; }',
+    '.storage-path { font-family: var(--font-mono); font-size: 0.94em; overflow-wrap: break-word; }',
   ],
 })
 export class StorageSetup implements OnInit {

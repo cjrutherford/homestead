@@ -1,3 +1,5 @@
+import { plural } from '../core/plural';
+import { WhenPipe } from '../core/format-time';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService, DriftSchedule, FileDrift, LiveDrift, PackageSummary } from '../core/api.service';
@@ -17,11 +19,12 @@ import { OperationProgress } from '../ui/operation-progress';
  * live finding names the flow that converges it.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage],
+  imports: [OperationProgress, Loading, StateMessage, WhenPipe],
   selector: 'app-drift',
   templateUrl: './drift.html',
 })
 export class Drift implements OnInit {
+  protected readonly plural = plural;
   private readonly api = inject(ApiService);
 
   protected readonly packages = signal<PackageSummary[]>([]);
@@ -78,12 +81,12 @@ export class Drift implements OnInit {
   /** Human label that never rounds: exact minutes, with hours when whole. */
   protected every(seconds: number): string {
     if (seconds % 3600 === 0) {
-      return `${seconds / 3600} hour(s)`;
+      return plural(seconds / 3600, 'hour');
     }
     if (seconds % 60 === 0) {
-      return `${seconds / 60} minute(s)`;
+      return plural(seconds / 60, 'minute');
     }
-    return `${seconds} second(s)`;
+    return plural(seconds, 'second');
   }
 
   /** True when restore (compose up) can fix a live finding by itself. */
@@ -137,7 +140,7 @@ export class Drift implements OnInit {
     this.api.driftResolve(name, 'accept').subscribe({
       next: ({ accepted }) => {
         this.busy.set(false);
-        this.notice.set(`Adopted ${(accepted ?? []).length} file(s) as managed.`);
+        this.notice.set(`Adopted ${plural((accepted ?? []).length, 'file')} as managed.`);
         this.refresh();
       },
       error: (failure: HttpErrorResponse) => {

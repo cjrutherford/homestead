@@ -355,7 +355,10 @@ func detailFor(name, state string, st stored, f Facts) string {
 	case StepApps:
 		switch {
 		case state == Done && f.AppsInstalled > 0:
-			return fmt.Sprintf("%d app(s) installed.", f.AppsInstalled)
+			if f.AppsInstalled == 1 {
+				return "1 app installed."
+			}
+			return fmt.Sprintf("%d apps installed.", f.AppsInstalled)
 		case state == Done:
 			return "Finished. Add apps any time from the catalog."
 		case state == Skipped:

@@ -44,8 +44,8 @@
                 <strong class="storage-path">{{ mount.Mountpoint }}</strong>
                 @if (mount.Label) { <br />Label {{ mount.Label }} }
               </td>
-              <td class="storage-path">{{ mount.Device }}, {{ mount.FSType }}</td>
-              <td class="num">
+              <td class="storage-path nowrap">{{ mount.Device }}, {{ mount.FSType }}</td>
+              <td class="num nowrap">
                 @if (mount.Accessible) {
                   {{ size(mount.FreeBytes) }} free of {{ size(mount.TotalBytes) }}
                 } @else {
@@ -107,7 +107,7 @@
               <th scope="row">{{ reg.Label }}</th>
               <td class="storage-path">{{ reg.Mountpoint }}</td>
               <td>{{ reg.Actor }}</td>
-              <td><time [attr.datetime]="reg.AddedAt">{{ reg.AddedAt }}</time></td>
+              <td><time [attr.datetime]="reg.AddedAt">{{ reg.AddedAt | when }}</time></td>
             </tr>
           }
         </tbody>
@@ -194,7 +194,7 @@
               <th scope="row">{{ item.Class }}</th>
               <td class="storage-path">{{ item.Mountpoint }}</td>
               <td>{{ item.Actor }}</td>
-              <td><time [attr.datetime]="item.CreatedAt">{{ item.CreatedAt }}</time></td>
+              <td><time [attr.datetime]="item.CreatedAt">{{ item.CreatedAt | when }}</time></td>
             </tr>
           }
         </tbody>

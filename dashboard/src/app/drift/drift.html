@@ -51,7 +51,7 @@
           <p>Live comparison skipped: {{ scan.live_skipped }}</p>
         }
         <p>
-          Last scan {{ scan.scanned_at }}: {{ scan.scanned }} app(s)
+          Last scan {{ scan.scanned_at | when }}: {{ plural(scan.scanned, 'app') }}
           scanned.
         </p>
       } @else {
@@ -104,7 +104,9 @@
 
   <app-loading [loading]="busy() && packages().length === 0" shape="list">
     @if (!(busy() && packages().length === 0)) {
-    <ul>
+    <h2>Compare an app</h2>
+    <p>Pick an app to see its generated files next to what Homestead manages.</p>
+    <ul class="chip-list">
       @for (pkg of packages(); track pkg.name) {
         <li>
           <button type="button" (click)="select(pkg.name)">

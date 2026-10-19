@@ -1,3 +1,4 @@
+import { plural } from '../core/plural';
 import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
@@ -65,6 +66,7 @@ const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
   styles: ['textarea { font-family: var(--font-mono); }'],
 })
 export class Edge implements OnInit, OnDestroy {
+  protected readonly plural = plural;
   private readonly api = inject(ApiService);
   private stream: Subscription | null = null;
 
@@ -203,7 +205,7 @@ export class Edge implements OnInit, OnDestroy {
       return;
     }
     this.drafts.set((doc.routes as EdgeRoute[]).map((r) => this.toDraft(r)));
-    this.notice.set(`Loaded ${doc.routes.length} route(s). Review them, then reconcile.`);
+    this.notice.set(`Loaded ${plural(doc.routes.length, 'route')}. Review them, then reconcile.`);
   }
 
   /** Shape check for one imported item; value rules run at submit. */

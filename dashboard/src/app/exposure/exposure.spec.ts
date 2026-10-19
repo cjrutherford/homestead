@@ -77,7 +77,7 @@ describe('Exposure', () => {
     http.expectOne('/api/v1/exposure/approvals').flush([]);
     http.expectOne('/api/v1/tls/renewal').flush(NO_RENEWALS);
     fixture.detectChanges();
-    expect(text()).toContain('no recorded issuances');
+    expect(text()).toContain('No recorded issuances');
   });
 
   it('shows certificate renewal status', () => {

@@ -10,6 +10,7 @@ import {
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
+import { formatWhen, WhenPipe } from '../core/format-time';
 import { Loading } from '../ui/loading';
 
 /**
@@ -21,7 +22,7 @@ import { Loading } from '../ui/loading';
  * run (server semantics).
  */
 @Component({
-  imports: [Loading, StateMessage, Dialog],
+  imports: [Loading, StateMessage, Dialog, WhenPipe],
   selector: 'app-backups',
   templateUrl: './backups.html',
   styles: ['.backup-root { overflow-wrap: anywhere; }'],
@@ -191,7 +192,7 @@ export class Backups implements OnInit {
 
   /** Go's zero time means the event never happened. */
   when(iso: string, empty = 'never'): string {
-    return !iso || iso.startsWith('0001-') ? empty : iso;
+    return formatWhen(iso, empty);
   }
 
   remove(name: string): void {

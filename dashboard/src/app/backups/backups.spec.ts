@@ -278,8 +278,8 @@ describe('Backups', () => {
     load([SCHEDULE], '/mnt/backup', [JOB]);
     expect(text()).toContain('Scheduled jobs');
     expect(text()).toContain('backup:jellyfin');
-    expect(text()).toContain('2026-01-02T00:00:00Z');
-    expect(text()).toContain('2026-01-03T00:00:00Z');
+    expect(text()).toContain('2 Jan 2026, 00:00 UTC');
+    expect(text()).toContain('3 Jan 2026, 00:00 UTC');
   });
 
   it('shows job errors, skips, and the empty and error states', () => {
