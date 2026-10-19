@@ -227,6 +227,10 @@ func startClaimToken(ctx context.Context, svc *claim.Service, path string, stdou
 	}
 	fmt.Fprintln(stdout, "homestead-server: UNCLAIMED — run `sudo homesteadctl claim token` to show the claim token")
 	go svc.MaintainTokenFile(ctx, path, claim.TokenTTL, func(err error) {
+		if err == nil {
+			fmt.Fprintln(stderr, "homestead-server: claim token file written again")
+			return
+		}
 		fmt.Fprintln(stderr, "homestead-server: claim token:", err)
 	})
 	return nil

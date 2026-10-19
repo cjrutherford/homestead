@@ -118,7 +118,7 @@ func runStorageAssignments(ctx context.Context, client *apiclient.Client, stdout
 func runStorageUnassign(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	set := flag.NewFlagSet("storage unassign", flag.ContinueOnError)
 	set.SetOutput(stderr)
-	class := set.String("class", "", "storage class to unassign")
+	class := set.String("class", "", "storage class to unassign (refused with the app names while any installed app keeps data under it, even if another class shares the mount)")
 	if err := set.Parse(args); err != nil {
 		return exitUsage
 	}

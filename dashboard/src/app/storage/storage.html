@@ -265,8 +265,9 @@
       <p>
         {{ pending.Class }} stops pointing at <span class="mono">{{ pending.Mountpoint }}</span>, so new
         installs and backups for that class have nowhere to go until you assign it again.
-        Nothing on the disk is deleted. If installed apps still keep data on this mount,
-        Homestead refuses and names them.
+        Nothing on the disk is deleted. If any installed app keeps data under this class,
+        Homestead refuses and names the apps, even when another class shares the same
+        mount.
       </p>
       <div class="dialog-actions">
         <button type="button" class="danger" (click)="confirmUnassign()" [disabled]="busy()">Confirm unassign</button>

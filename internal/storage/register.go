@@ -178,3 +178,11 @@ func (r *Registry) List() ([]Registration, error) {
 	}
 	return out, nil
 }
+
+// UnregisterTx is Unregister inside a caller's transaction.
+func (r *Registry) UnregisterTx(tx *sql.Tx, mountpoint string) error {
+	if _, err := tx.Exec(`DELETE FROM storage_registrations WHERE mountpoint = ?`, mountpoint); err != nil {
+		return fmt.Errorf("storage: unregister %q: %w", mountpoint, err)
+	}
+	return nil
+}

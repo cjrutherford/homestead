@@ -60,6 +60,11 @@ type Service struct {
 
 	mu      sync.Mutex
 	claimed []func()
+
+	// pending is a minted token whose file write has not succeeded yet;
+	// retries reuse it instead of dropping and re-minting rows (S288).
+	pending        string
+	pendingExpires time.Time
 }
 
 // New returns a Service over an open store (S013 migrations provide v2+).

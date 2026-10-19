@@ -352,6 +352,7 @@ describe('StorageSetup', () => {
       click('Unassign');
       expect(dialog()).not.toBeNull();
       expect(text()).toContain('Nothing on the disk is deleted');
+      expect(text()).toContain('even when another class shares');
       http.expectNone('/api/v1/storage/assignments/bulk');
       click('Confirm unassign');
       const req = http.expectOne('/api/v1/storage/assignments/bulk');

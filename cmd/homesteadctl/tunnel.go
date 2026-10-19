@@ -95,6 +95,14 @@ func runTunnelSetup(ctx context.Context, client *apiclient.Client, args []string
 		fmt.Fprintln(stderr, "the account ID and the API token cannot both come from the same file")
 		return exitUsage
 	}
+	if apiToken != "" && apiTokenFile != "" {
+		fmt.Fprintln(stderr, "use either --api-token or --api-token-file, not both")
+		return exitUsage
+	}
+	if accountID != "" && accountIDFile != "" {
+		fmt.Fprintln(stderr, "use either --account-id or --account-id-file, not both")
+		return exitUsage
+	}
 	var err error
 	if apiTokenFile != "" {
 		if apiToken, err = readValueFile(apiTokenFile); err != nil {
@@ -143,6 +151,10 @@ func runTunnelTeardown(ctx context.Context, client *apiclient.Client, args []str
 		default:
 			positional = append(positional, args[i])
 		}
+	}
+	if accountID != "" && accountIDFile != "" {
+		fmt.Fprintln(stderr, "use either --account-id or --account-id-file, not both")
+		return exitUsage
 	}
 	if accountIDFile != "" {
 		var err error

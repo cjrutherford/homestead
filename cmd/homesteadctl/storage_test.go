@@ -136,3 +136,10 @@ func TestStorageUnassignUnregister(t *testing.T) {
 		t.Fatalf("usage exit = %d", code)
 	}
 }
+
+func TestStorageUnassignHelpDescribesTheRefusal(t *testing.T) {
+	_, _, stderr := invoke(t, []string{"storage", "unassign", "-h"})
+	if !strings.Contains(stderr, "even if another class shares the mount") {
+		t.Fatalf("help = %q", stderr)
+	}
+}

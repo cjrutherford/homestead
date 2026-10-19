@@ -115,3 +115,37 @@ func TestClaimTokenDaemonDownAndExpired(t *testing.T) {
 		t.Fatalf("exit = %d stdout = %q stderr = %q", code, stdout, stderr)
 	}
 }
+
+func TestClaimTokenStaleFileDaemonDownPrintsNothing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "claim-token")
+	if err := claim.WriteTokenFile(path, "stale-secret", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := invoke(t, []string{"--server", "http://127.0.0.1:1", "claim", "token", "--file", path})
+	if code != exitError || !strings.Contains(stderr, "Homestead is not running") {
+		t.Fatalf("exit = %d stderr = %q", code, stderr)
+	}
+	if strings.Contains(stdout+stderr, "stale-secret") {
+		t.Fatalf("a dead token was printed: %q %q", stdout, stderr)
+	}
+}
+
+func TestClaimTokenStaleFileClaimedPrintsNothing(t *testing.T) {
+	url, svc := claimDaemon(t)
+	path := filepath.Join(t.TempDir(), "claim-token")
+	if _, err := svc.EnsureTokenFile(path, claim.TokenTTL); err != nil {
+		t.Fatal(err)
+	}
+	tf, _ := claim.ReadTokenFile(path)
+	if err := svc.Claim(tf.Token); err != nil {
+		t.Fatal(err)
+	}
+	// A file left behind (preserved runtime dir) must not be printed.
+	if err := claim.WriteTokenFile(path, tf.Token, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := invoke(t, []string{"--server", url, "claim", "token", "--file", path})
+	if code != exitError || !strings.Contains(stderr, "already claimed") || strings.Contains(stdout, tf.Token) {
+		t.Fatalf("exit = %d stdout = %q stderr = %q", code, stdout, stderr)
+	}
+}

@@ -120,3 +120,19 @@ func TestTunnelSetupSecretsFromFiles(t *testing.T) {
 		t.Fatalf("exit = %d stderr = %q", code, stderr)
 	}
 }
+
+func TestTunnelConflictingSecretFormsAreErrors(t *testing.T) {
+	url := tunnelStub(t)
+	f := writeTemp(t, "v", "value\n")
+	cases := [][]string{
+		{"tunnel", "setup", "--name", "n", "--hostname", "h", "--service", "http://x", "--api-token", "a", "--api-token-file", f, "--account-id-file", f + "2"},
+		{"tunnel", "setup", "--name", "n", "--hostname", "h", "--service", "http://x", "--api-token-file", f, "--account-id", "a", "--account-id-file", f},
+		{"tunnel", "teardown", "tunnel-id", "--account-id", "a", "--account-id-file", f},
+	}
+	for _, c := range cases {
+		code, _, stderr := invoke(t, append([]string{"--server", url}, c...))
+		if code != exitUsage || !strings.Contains(stderr, "not both") {
+			t.Fatalf("%v: exit = %d stderr = %q", c, code, stderr)
+		}
+	}
+}

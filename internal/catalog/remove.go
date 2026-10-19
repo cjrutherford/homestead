@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 
 	"homestead/internal/operation"
@@ -16,16 +17,35 @@ import (
 // ErrNotInstalled reports removal of a package with no installed stack.
 var ErrNotInstalled = errors.New("catalog: not installed")
 
-// StackInstalled reports whether dir holds an installed stack. When it does
-// not, a leftover empty directory (from an uninstall before S288) is
-// removed so it stops cluttering the stacks root; a directory with
-// anything in it is left alone.
+// StackInstalled reports whether dir holds an installed stack. It only
+// checks: it has no side effects, so a concurrent install can never lose
+// its new directory to a check.
 func StackInstalled(dir string) bool {
-	if _, err := os.Stat(filepath.Join(dir, "compose.yaml")); err == nil {
-		return true
+	_, err := os.Stat(filepath.Join(dir, "compose.yaml"))
+	return err == nil
+}
+
+// stackDirMu serializes the stack directory's create-and-write (install)
+// against its empty-directory removal (uninstall), per directory.
+var stackDirMu sync.Map
+
+func lockStackDir(dir string) func() {
+	mu, _ := stackDirMu.LoadOrStore(dir, &sync.Mutex{})
+	m := mu.(*sync.Mutex)
+	m.Lock()
+	return m.Unlock
+}
+
+// RemoveEmptyStackDir removes dir when it is an empty directory with no
+// installed stack (a leftover from an uninstall before S288). It runs in
+// the uninstall path under the same lock install holds while writing the
+// stack, so a directory an install just created is never removed.
+func RemoveEmptyStackDir(dir string) error {
+	defer lockStackDir(dir)()
+	if StackInstalled(dir) {
+		return nil
 	}
-	_ = removeIfEmpty(dir)
-	return false
+	return removeIfEmpty(dir)
 }
 
 // removeIfEmpty removes dir only when it is an empty directory. It never
@@ -119,6 +139,7 @@ func RemoveDefinition(removal Removal, dir string, st *store.Store) (operation.D
 		return operation.Definition{}, fmt.Errorf("catalog: removal needs a store")
 	}
 	if !StackInstalled(dir) {
+		_ = RemoveEmptyStackDir(dir)
 		return operation.Definition{}, fmt.Errorf("%w: %q has no installed stack", ErrNotInstalled, removal.Package)
 	}
 	def := operation.Definition{Type: "catalog.remove"}
@@ -183,7 +204,10 @@ func removeStackFiles(st *store.Store, pkg, dir string) error {
 	}
 	// The now-empty stack directory goes too (S288). Remove, not RemoveAll:
 	// a directory still holding anything (data folders included) stays.
-	if err := removeIfEmpty(dir); err != nil {
+	if err := func() error {
+		defer lockStackDir(dir)()
+		return removeIfEmpty(dir)
+	}(); err != nil {
 		return fmt.Errorf("catalog: remove stack directory: %w", err)
 	}
 	return nil

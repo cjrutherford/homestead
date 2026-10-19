@@ -181,3 +181,12 @@ func (a *Assignments) List() ([]Assignment, error) {
 	}
 	return out, nil
 }
+
+// UnassignTx is Unassign inside a caller's transaction, so an audit record
+// can commit with it.
+func (a *Assignments) UnassignTx(tx *sql.Tx, class Class) error {
+	if _, err := tx.Exec(`DELETE FROM storage_assignments WHERE class = ?`, string(class)); err != nil {
+		return fmt.Errorf("storage: unassign %s: %w", class, err)
+	}
+	return nil
+}

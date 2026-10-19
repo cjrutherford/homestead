@@ -96,7 +96,7 @@ func (s *Service) EnsureTokenFile(path string, ttl time.Duration) (time.Time, er
 			return expiry, nil
 		}
 	}
-	token, expires, err := s.Rotate(ttl)
+	token, expires, err := s.pendingOrRotate(ttl)
 	if errors.Is(err, ErrAlreadyClaimed) {
 		return time.Time{}, RemoveTokenFile(path)
 	}
@@ -106,7 +106,41 @@ func (s *Service) EnsureTokenFile(path string, ttl time.Duration) (time.Time, er
 	if err := WriteTokenFile(path, token, expires); err != nil {
 		return time.Time{}, err
 	}
+	s.mu.Lock()
+	s.pending = ""
+	s.mu.Unlock()
+	if afterTokenWrite != nil {
+		afterTokenWrite()
+	}
+	// A claim may have committed (and run its remove hook) between the
+	// state check and the write: re-check, and if so take the file and the
+	// unused token back out so no dead token is left behind.
+	if state, err := s.CurrentState(); err == nil && state == StateClaimed {
+		_, _ = s.db.Exec(`DELETE FROM claim_tokens WHERE used_at IS NULL`)
+		return time.Time{}, RemoveTokenFile(path)
+	}
 	return expires, nil
+}
+
+// pendingOrRotate returns the minted-but-unwritten token while it is still
+// live, else rotates a new one and remembers it until the file is written.
+func (s *Service) pendingOrRotate(ttl time.Duration) (string, time.Time, error) {
+	s.mu.Lock()
+	token, expires := s.pending, s.pendingExpires
+	s.mu.Unlock()
+	if token != "" && expires.After(time.Now()) {
+		if _, live, err := s.LiveUntil(token); err == nil && live {
+			return token, expires, nil
+		}
+	}
+	token, expires, err := s.Rotate(ttl)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	s.mu.Lock()
+	s.pending, s.pendingExpires = token, expires
+	s.mu.Unlock()
+	return token, expires, nil
 }
 
 // MaintainTokenFile keeps the token file fresh until ctx ends or the
@@ -116,27 +150,47 @@ func (s *Service) EnsureTokenFile(path string, ttl time.Duration) (time.Time, er
 // rather than a scheduler job: scheduler jobs run through the audited
 // operation runner on a coarse cadence and persist last-run state, while
 // the token needs an exact-expiry wake with no restart and no record.
-// onError receives failures; the loop retries after a minute.
+// onError receives failures, deduplicated: the first failure is reported,
+// then the same failure again only after repeatErrorEvery; nil reports
+// recovery once. The loop retries after a minute. On ctx end the file is
+// removed so a clean stop leaves no dead token (the unit preserves the
+// runtime directory across restarts).
 func (s *Service) MaintainTokenFile(ctx context.Context, path string, ttl time.Duration, onError func(error)) {
+	report := func(err error) {
+		if onError != nil {
+			onError(err)
+		}
+	}
 	claimed := make(chan struct{})
 	var once sync.Once
 	s.OnClaimed(func() {
 		once.Do(func() {
-			_ = RemoveTokenFile(path)
+			if err := RemoveTokenFile(path); err != nil {
+				report(err)
+			}
 			close(claimed)
 		})
 	})
+	var failing bool
+	var lastReported time.Time
 	for {
-		wait := time.Minute
+		wait := retryEvery
 		expiry, err := s.EnsureTokenFile(path, ttl)
 		switch {
 		case err != nil:
-			if onError != nil {
-				onError(err)
+			if !failing || time.Since(lastReported) >= repeatErrorEvery {
+				report(err)
+				lastReported = time.Now()
 			}
-		case expiry.IsZero():
-			return
+			failing = true
 		default:
+			if failing {
+				report(nil)
+				failing = false
+			}
+			if expiry.IsZero() {
+				return
+			}
 			wait = time.Until(expiry)
 			if wait < time.Second {
 				wait = time.Second
@@ -146,6 +200,9 @@ func (s *Service) MaintainTokenFile(ctx context.Context, path string, ttl time.D
 		select {
 		case <-ctx.Done():
 			timer.Stop()
+			if err := RemoveTokenFile(path); err != nil {
+				report(err)
+			}
 			return
 		case <-claimed:
 			timer.Stop()
@@ -154,3 +211,14 @@ func (s *Service) MaintainTokenFile(ctx context.Context, path string, ttl time.D
 		}
 	}
 }
+
+// repeatErrorEvery is how long a persistent token file failure stays quiet
+// before it is logged again.
+const repeatErrorEvery = time.Hour
+
+// retryEvery is the wait after a failed ensure; tests shorten it.
+var retryEvery = time.Minute
+
+// afterTokenWrite is a test seam between the file write and the claim
+// state re-check.
+var afterTokenWrite func()

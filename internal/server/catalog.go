@@ -430,6 +430,7 @@ func handleCatalogUninstall(s *Server, st *store.Store, catalogDir string, runne
 			return
 		}
 		if !catalog.StackInstalled(stackDirFor(name)) {
+			_ = catalog.RemoveEmptyStackDir(stackDirFor(name))
 			http.Error(w, fmt.Sprintf("%q is not installed", name), http.StatusNotFound)
 			return
 		}

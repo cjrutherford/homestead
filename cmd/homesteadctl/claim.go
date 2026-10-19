@@ -72,6 +72,18 @@ func runClaimToken(ctx context.Context, client *apiclient.Client, args []string,
 		fmt.Fprintln(stderr, "the claim token has expired; the daemon mints a fresh one within seconds, run this command again")
 		return exitError
 	}
+	// The unit preserves the runtime directory, so the file can outlive the
+	// daemon. Print only when the daemon answers and the appliance is
+	// still unclaimed.
+	id, idErr := client.Identity(ctx)
+	if idErr != nil {
+		fmt.Fprintln(stderr, "Homestead is not running (or not reachable); start it with `sudo systemctl start homestead-server`. Not printing a claim token the daemon may no longer honor")
+		return exitError
+	}
+	if id.State == string(claim.StateClaimed) {
+		fmt.Fprintln(stderr, "this appliance is already claimed; there is no claim token")
+		return exitError
+	}
 	fmt.Fprintf(stdout, "token: %s\nexpires: %s (in %s)\n", tf.Token, tf.Expires.Format(time.RFC3339), remaining)
 	return exitOK
 }

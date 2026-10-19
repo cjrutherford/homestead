@@ -365,6 +365,7 @@ func WriteStack(dir string, files StackFiles, secrets SecretStore) error {
 	if err := files.Stack.Validate(); err != nil {
 		return err
 	}
+	defer lockStackDir(dir)()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("catalog: stack dir: %w", err)
 	}

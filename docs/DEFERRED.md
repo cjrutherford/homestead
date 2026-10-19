@@ -257,7 +257,10 @@
   actions exist; impact is judged by `<mount>/<package>` directories, as below).
   Re-assigning a class is refused with a 409 package list
   until acknowledged; impact is judged by `<old mount>/<package>`
-  directories of installed stacks, and S276 declarations are not consulted.
+  directories of installed stacks and, when the catalog is available, by the
+  storage classes installed apps' manifests require (S288 review fix); an
+  unreadable disk refuses with a 409. S276 per-path declarations are still
+  not consulted.
 - Audit server-side query (S269): `GET /api/v1/audit` accepts only
   `limit` (max 1000), so the dashboard Audit page filters (actor, action,
   outcome, time range) and pages client-side over the loaded window, and
@@ -739,13 +742,19 @@
 
 ## S288 open bug fixes
 - Unassign and unregister judge impact by `<mount>/<package>` directories of
-  installed stacks (as re-assign does); S276 data declarations are not consulted.
-  The dashboard dialogs state the effect but cannot preview the affected apps;
+  installed stacks and by the classes installed apps require (an unreadable disk
+  refuses; unassign ignores other classes sharing the mount). S276 per-path
+  data declarations are not consulted. The dashboard dialogs state the effect but cannot preview the affected apps;
   the daemon's 409 names them after the owner confirms.
 - Why discovery returns a mount twice is not investigated; the dashboard hides
   the duplicate.
-- The claim token file is not cleaned if the daemon is killed hard (tmpfs, so a
-  reboot clears it; the next start reuses it only if its token is still live).
+- The claim token file is removed on a clean daemon stop but not if the daemon is
+  killed hard (tmpfs, so a reboot clears it; the next start reuses it only if its
+  token is still live). the `claim token` CLI command checks the daemon answers and
+  the appliance is unclaimed before printing, so a leftover file is never shown.
+- A stack whose `compose.yaml` is missing (files deleted by hand, records kept)
+  cannot be uninstalled through the API: the route answers 404 "not installed".
+  Cleanup of the leftover records and folders is manual.
 - Existing deployments keep old tokens in their journal until it rotates.
 - `tunnel setup` still accepts `--api-token` and `--account-id` arguments (they
   warn); remove the argv forms in a later slice.

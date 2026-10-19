@@ -215,3 +215,59 @@ func TestSecondRemoveIsNotInstalled(t *testing.T) {
 		t.Fatal("leftover empty directory not cleaned")
 	}
 }
+
+func TestStackInstalledHasNoSideEffects(t *testing.T) {
+	empty := t.TempDir()
+	if StackInstalled(empty) {
+		t.Fatal("empty directory reads installed")
+	}
+	if _, err := os.Stat(empty); err != nil {
+		t.Fatalf("a check removed the directory: %v", err)
+	}
+	if err := RemoveEmptyStackDir(empty); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(empty); !os.IsNotExist(err) {
+		t.Fatal("RemoveEmptyStackDir left an empty leftover")
+	}
+	full := removeStack(t)
+	if err := RemoveEmptyStackDir(full); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(full, "compose.yaml")); err != nil {
+		t.Fatalf("installed stack touched: %v", err)
+	}
+}
+
+func TestEmptyDirRemovalNeverLosesAConcurrentInstall(t *testing.T) {
+	files, err := Generate(composeManifest(), composeGeneration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 50; i++ {
+		dir := filepath.Join(t.TempDir(), "jellyfin")
+		stop := make(chan struct{})
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					_ = RemoveEmptyStackDir(dir)
+					_ = StackInstalled(dir)
+				}
+			}
+		}()
+		err := WriteStack(dir, files, nil)
+		close(stop)
+		<-done
+		if err != nil {
+			t.Fatalf("round %d: install lost its directory: %v", i, err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "compose.yaml")); err != nil {
+			t.Fatalf("round %d: %v", i, err)
+		}
+	}
+}

@@ -54,7 +54,7 @@ unchanged.
 | POST | /api/v1/storage/registrations | `runStorageRegister` | `storageRegister` | Storage page (`/storage`); S268 |
 | GET | /api/v1/storage/assignments | `runStorageAssignments` | `storageAssignments` | Storage page (`/storage`); S268 |
 | POST | /api/v1/storage/assignments | `runStorageAssign` | `storageAssign` | Storage page (`/storage`); S268. Moving a class off a mount holding installed packages' data answers 409 with `affected_packages` unless `acknowledge_impact: true` (audited); CLI `--acknowledge-impact` |
-| DELETE | /api/v1/storage/assignments/{class} | `"unassign"` | `storageUnassign` | Storage page (`/storage`); S288. Drops the class binding only; 409 with `affected_packages` while installed apps keep data on the mount; audited (`storage.unassign`); never touches the disk. Dashboard asks through the danger-confirm dialog with the impact shown |
+| DELETE | /api/v1/storage/assignments/{class} | `"unassign"` | `storageUnassign` | Storage page (`/storage`); S288. Drops the class binding only; 409 with `affected_packages` while any installed app keeps data under the class (data on the mount, or its manifest requires the class), even when another class shares the mount, and 409 when the disk is not readable; the audit record commits in the same transaction; audited (`storage.unassign`); never touches the disk. Dashboard asks through the danger-confirm dialog with the impact shown |
 | DELETE | /api/v1/storage/registrations | `"unregister"` | `storageUnregister` | Storage page (`/storage`); S288. `?mountpoint=`; drops the registration only; 409 naming apps and assigned classes; audited (`storage.unregister`); never touches the disk. Danger-confirm dialog in the dashboard |
 | GET | /api/v1/doctor | `"doctor"` | `doctor` | Diagnostic report on all three surfaces |
 | GET | /api/v1/catalog | `"apps"` | `catalogPackages` | Package summaries on both surfaces |
@@ -153,6 +153,24 @@ unchanged.
 | POST | /api/v1/sso/link | `"sso"` | `ssoLink` | Mint the single-use 10 minute link intent after a fresh local password (`X-Homestead-Reauth`); `sso link` prints the URL, the page opens it. Account and Sign-in pages |
 | DELETE | /api/v1/sso/link | `"sso"` | `ssoUnlink` | Remove the link and end oidc sessions, after a fresh local password; `sso unlink` and the Sign-in/Account pages |
 | DELETE | /api/v1/sso | `"sso"` | `ssoDisable` | Turn sign-in with Authentik off (recovery path): removes configuration, link and sealed secrets, leaves the local owner; `sso disable` and the Sign-in page. Step-up for oidc sessions |
+
+CLI-only local commands and flags (S288). These have no API route, so they
+carry no table row; each is local by design (ADR-015, ADR-033) and the
+dashboard has no equivalent:
+
+- `homesteadctl claim token`: reads the root-only claim token file in the
+  daemon's runtime directory (`--file` overrides the path); the dashboard shows
+  no claim token, and the Claim page redeems one the owner already has.
+  It asks `GET /api/v1/identity` only to refuse when the daemon is down or the
+  appliance is already claimed.
+- `homesteadctl login --print-token`: prints the session token for scripts; the
+  dashboard keeps its session in an HttpOnly cookie and never shows it.
+- `homesteadctl tunnel setup|teardown --account-id-file` and
+  `tunnel setup --api-token-file` (`-` reads stdin): keep Cloudflare
+  credentials out of argv and shell history. The dashboard sends the same
+  `POST /api/v1/tunnel/setup` and `DELETE /api/v1/tunnel/tunnels/{id}` bodies
+  from password fields. Giving both the argument and the file form of one value
+  is a usage error.
 
 Craft file proxy (S254, ADR-029, ADR-032). The proxy itself is not on the
 TCP mux: `POST|GET|DELETE /_homestead/files/session` and the WebDAV subset
