@@ -114,6 +114,27 @@ after. Reaching the claim form does not let anyone claim: the claim token is
 in a root-only file (`internal/claim/tokenfile.go`), so the person claiming
 must already hold root on the appliance.
 
+### Reachable from other machines at install (amendment 2026-10-19)
+Owner requirement: the dashboard must be reachable from other machines on the
+LAN as soon as install finishes. A `.lan` name resolves only once the router's
+DNS or a hosts entry points at the appliance, so it cannot meet that alone.
+The dashboard route therefore answers **two names**:
+
+- the appliance's mDNS name `<hostname>.local`, which the daemon already
+  publishes (S221, `internal/mdns`). It resolves on other machines with no
+  DNS setup, from the moment install finishes;
+- the owner-set local name (default `homestead.lan`), which works once DNS or
+  a hosts entry points at the appliance.
+
+Both names are on the internal-CA leaf, pass the `Host` check, are accepted
+`Origin` values, and join the SSO origins and the walkthrough. The installer
+output and the claim docs give the `.local` address first. A browser warns on
+the first visit until the appliance root is installed on that device: no
+public CA issues certificates for `.lan` or `.local`, so this cannot be
+avoided, and the Trust page offers the root. If the mDNS port is taken on the
+appliance, the S221 rule applies (it fails loudly) and a doctor check says the
+`.local` name is unavailable.
+
 ## Alternatives considered
 - TCP listener on the `homestead-edge` bridge gateway with
   `host.docker.internal:host-gateway`: reachable by every container on the
