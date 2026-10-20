@@ -822,13 +822,13 @@
     - a restored record gets a new Cloudflare ID; a tunnel set up between
       S294 and its fix (72c6702 only) has no replaced records on file, so
       nothing is restored for it.
-  - App names (S295, ADR first): every app gets a new `*.lan` name that the
+  - App names (S295, ADR-039): every app gets a new `*.lan` name that the
     owner must add by hand to router DNS or a hosts file; only
     `homestead.local` is announced.
-  - App sign-in (S295): apps that declare optional OIDC (Immich, Nextcloud,
+  - App sign-in (S298, ADR-039): apps that declare optional OIDC (Immich, Nextcloud,
     Jellyfin) are not offered a wiring to the linked Authentik, and the SSO
     redirect addresses do not include public names.
-  - Backups (S295): setup does not offer a backup schedule for the installed
+  - Backups (S297, ADR-039): setup does not offer a backup schedule for the installed
     apps.
   - The Authentik link callback still redirects to `/sign-in`; the dashboard
     forwards to `/setup` (S292) rather than the daemon carrying a return

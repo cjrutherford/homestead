@@ -27,4 +27,4 @@ Implement only the functionality required for this slice. Preserve all accepted 
 - `docs/PARITY.md`, `docs/DEFERRED.md`, `docs/DEVELOPMENT.md`, `docs/architecture/SETUP_WALKTHROUGH.md`.
 
 ## Handoff
-Next: S290 app routes on the tunnel, built on S296's edge routing.
+Next: S297 nightly backups in setup and S298 app sign-in (ADR-039), then S290 app routes on the tunnel, built on S296's edge routing.

@@ -12,7 +12,7 @@ Implement HAI Homestead one slice at a time. Do not redesign architecture implic
 - Local-first networking; explicit exposure; owner may override recommendations.
 - Single-appliance scope only. No clustering/fleet management.
 - Mounted storage only for v1; no formatting/partitioning.
-- First-party curated catalog only for v1.
+- First-party curated catalog only for v1; the one exception is the pinned Jellyfin SSO plugin inside the Jellyfin package (ADR-039).
 - Public exposure must be planned, previewed, and auditable.
 - Management remains local/overlay by default; the only public management path is the dashboard through the tunnel, behind Authentik sign-in, planned and approved (ADR-037).
 

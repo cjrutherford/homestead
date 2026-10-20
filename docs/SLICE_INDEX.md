@@ -60,3 +60,5 @@ Then S292 setup walkthrough fixes (`docs/slices/S292-setup-walkthrough-fixes.md`
 Then S293 storage step UX (`docs/slices/S293-storage-step.md`): data disks first, class explanations, a suggested layout applied in one approval, and the actor recorded from the session. S294 domain and tunnel (ADR first) and S295 app names, app SSO and backups in setup (ADR first) follow.
 
 Then S294 domain and tunnel plan (ADR-037; `docs/slices/S294-domain-and-tunnel-plan.md`), S295 app names, app SSO and backups in setup (ADR first), and S296 public dashboard behind Authentik (ADR-037; `docs/slices/S296-public-dashboard-behind-authentik.md`). Owner decisions 2026-10-20.
+
+Then S295 app names (ADR-039; `docs/slices/S295-app-names.md`): `<app>.local` over mDNS and an optional daemon resolver for `.lan`. S296 public dashboard behind Authentik, S297 nightly backups in setup (`docs/slices/S297-nightly-backups-in-setup.md`) and S298 app sign-in through Authentik, Jellyfin's pinned plugin included (`docs/slices/S298-app-sign-in.md`), follow. Owner decisions 2026-10-20.
