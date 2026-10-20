@@ -69,6 +69,9 @@ var (
 	// the state it needs (a tunnel or approved exposure plan is missing).
 	// The API answers 422 with the message, which names the page to use.
 	ErrNotReady = errors.New("setup step is not ready")
+	// ErrRefused is a well-formed choice that cannot be used, such as a
+	// local-only domain (422).
+	ErrRefused = errors.New("setup choice refused")
 )
 
 // SSOFacts says how far sign-in with Authentik has got.
@@ -558,7 +561,7 @@ func (s *Service) Update(step string, u Update) (Status, error) {
 	if u.Domain != nil {
 		name, err := NormalizeDomain(*u.Domain)
 		if err != nil {
-			return Status{}, fmt.Errorf("%w: %v", ErrInvalid, err)
+			return Status{}, fmt.Errorf("%w: %v", ErrRefused, err)
 		}
 		st.Domain = name
 	}

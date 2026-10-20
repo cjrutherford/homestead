@@ -4812,3 +4812,21 @@ committed). Results:
 - Tests: a Cloudflare double covers plan refusals, plan, setup and teardown,
   a changed record kept at teardown, and the permission copy maps every
   client call to a listed grant.
+
+### S294 fixes (owner review, 2026-10-20)
+
+- Domain: refused names (local-only, dotless, bad labels) are 422
+  (`setup.ErrRefused`), as the slice specifies; with Cloudflare chosen and
+  its token stored, a domain outside every visible zone is 422 too.
+- Replaced records (ADR-038, migration 46 `tunnel_replaced_records`): setup
+  records each one before deleting it and puts them back when it fails;
+  teardown's `restore-dns` step puts them back unless the name holds an
+  A, AAAA or CNAME record again (audited `tunnel.teardown.dns-not-restored`).
+- Status speed: `router.DiscoverGateway` runs UPnP and NAT-PMP/PCP probes
+  together, and the tunnel status reuses a discovery for 5 minutes while
+  the Cloudflare reads run alongside it. Tests stub the probe.
+- Dashboard: `app-operation-progress` keeps the last state it saw for its
+  operation, so it reads "Done" after the rail drops the order instead of
+  "Starting"; the Tunnel page re-reads status when setup or teardown ends.
+- `tests/test_s235_storage.py` looks for the `actor` flag name, which S293
+  moved into a helper.

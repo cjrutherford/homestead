@@ -73,6 +73,10 @@ The owner chose this over "edge, apps only". It replaces "management remains loc
 ### Until S296 ships
 S294 keeps the owner-entered tunnel service. A plan whose service is the daemon's own listener carries a warning that it publishes the dashboard with password login. The placeholder that suggested it is removed.
 
+## Amended by ADR-038
+Teardown puts back the records setup replaced, unless the name holds a
+record again; ADR-038 holds the substance.
+
 ## Context
 Walking setup from scratch on the KVM VM (2026-10-20) showed:
 - the Domain step stored credentials without the domain they serve;

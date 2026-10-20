@@ -1,4 +1,4 @@
-import { Component, computed, inject, input } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { OperationState } from '../core/api.service';
 import { progressOf } from '../core/operation-view';
@@ -34,6 +34,14 @@ export class OperationProgress {
   /** The page's own followed state, when it follows the stream itself. */
   readonly operation = input<OperationState | null>(null);
 
-  protected readonly state = computed(() => this.operation() ?? this.orders.stateOf(this.id()));
+  /**
+   * The rail drops a finished order after a few seconds; the box keeps the
+   * last state it saw for this id rather than falling back to "Starting".
+   */
+  protected readonly state = linkedSignal<{ id: number; state: OperationState | null }, OperationState | null>({
+    source: () => ({ id: this.id(), state: this.operation() ?? this.orders.stateOf(this.id()) }),
+    computation: (source, previous) =>
+      source.state ?? (previous && previous.source.id === source.id ? previous.value : null),
+  });
   protected readonly progress = computed(() => progressOf(this.state()));
 }

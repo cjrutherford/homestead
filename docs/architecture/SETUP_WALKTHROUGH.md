@@ -126,7 +126,10 @@ the set of grants is what is pinned.
 Domain (S294): the public domain, a non-sensitive choice saved with "Save
 domain" or `setup step domain --domain NAME` (empty clears it). Local-only
 suffixes (`lan`, `local`, `home.arpa`, `internal`, `localhost`) and dotless
-names are refused with 422. The tunnel form suggests its hostname under it.
+names are refused with 422. With Cloudflare as the provider and its token
+stored, a domain no zone the token can see contains is also 422; without a
+token yet, or when Cloudflare cannot be reached, it is saved and the tunnel
+plan reports the zone. The tunnel form suggests its hostname under it.
 The tunnel itself is planned (`tunnel plan`), reviewed and approved by
 digest; see ADR-037.
 

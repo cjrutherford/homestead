@@ -230,3 +230,35 @@ func TestSetupCredentialsSealedForChosenProvider(t *testing.T) {
 		t.Fatalf("a chosen provider alone is not a configured domain: %+v", s.Facts.Domain)
 	}
 }
+
+// A domain is checked against the zones the stored Cloudflare token can
+// see; without a token it is saved and the tunnel plan checks it later.
+func TestSetupDomainCheckedAgainstZones(t *testing.T) {
+	srv, _, secrets := setupTestServer(t)
+	newFakeCloudflare(t)
+	put := func(body map[string]string) *httptest.ResponseRecorder {
+		return serveRequest(t, srv, http.MethodPut, "/api/v1/setup/steps/domain", body)
+	}
+	if rec := put(map[string]string{"provider": "cloudflare", "domain": "other.net"}); rec.Code != http.StatusOK {
+		t.Fatalf("no token yet: %d %s", rec.Code, rec.Body.String())
+	}
+	if err := secrets.Set("dns_cloudflare_api_token", "sealed-token"); err != nil {
+		t.Fatal(err)
+	}
+	rec := put(map[string]string{"domain": "other.net"})
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "no Cloudflare zone") {
+		t.Fatalf("unknown zone: %d %s", rec.Code, rec.Body.String())
+	}
+	for _, ok := range []string{"example.com", "home.example.com", ""} {
+		if rec := put(map[string]string{"domain": ok}); rec.Code != http.StatusOK {
+			t.Fatalf("%q: %d %s", ok, rec.Code, rec.Body.String())
+		}
+	}
+	if rec := put(map[string]string{"domain": "nas.lan"}); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("local name: %d", rec.Code)
+	}
+	// Another provider is not checked against Cloudflare.
+	if rec := put(map[string]string{"provider": "manual", "domain": "other.net"}); rec.Code != http.StatusOK {
+		t.Fatalf("manual: %d %s", rec.Code, rec.Body.String())
+	}
+}

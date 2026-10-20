@@ -7,6 +7,8 @@ import {
   HttpTestingController,
 } from '@angular/common/http/testing';
 import { Tunnel } from './tunnel';
+import { WorkOrders } from '../core/work-orders.service';
+import { OperationState } from '../core/api.service';
 
 const STATUS = {
   preferred: 'tunnel',
@@ -152,6 +154,28 @@ describe('Tunnel', () => {
     fixture.detectChanges();
     expect(el.querySelector('app-operation-progress a[href="/operations/23"]')).not.toBeNull();
     expect(el.querySelector('table[aria-label="DNS changes"]')).toBeNull();
+  });
+
+  it('re-reads the tunnels when setup ends and keeps saying Done after the rail drops it', () => {
+    reviewPlan();
+    fixture.componentInstance['approve']();
+    http.expectOne('/api/v1/tunnel/setup').flush({ id: 23 });
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+    const orders = TestBed.inject(WorkOrders);
+    const finished: OperationState = {
+      id: 23, type: 'tunnel.setup', status: 'succeeded', payload: '', result: '', error: '',
+      created_at: '', updated_at: '', steps: [],
+    };
+    orders.orders.set([{ id: 23, title: 'Set up tunnel', done: 'Tunnel set up', startedAt: 0, state: finished, lost: false, settled: true }]);
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+    fixture.detectChanges();
+    expect(text()).toContain('Done');
+    orders.orders.set([]);
+    fixture.detectChanges();
+    expect(text()).toContain('Done');
+    expect(text()).not.toContain('Starting');
+    http.expectNone('/api/v1/tunnel/status');
   });
 
   it('asks for a fresh review when the plan changed', () => {

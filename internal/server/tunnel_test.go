@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -30,8 +31,10 @@ func tunnelTestServer(t *testing.T) (*Server, *store.Store, *secret.Store) {
 	if err != nil {
 		t.Fatalf("secret.New: %v", err)
 	}
-	// Connector writes stay in temp dirs: no test touches the host.
+	// Connector writes stay in temp dirs, and the router is never probed:
+	// no test touches the host or the network.
 	tunnelConnectorDir = filepath.Join(dir, "tunnel")
+	stubDiscovery(t, new(int))
 	t.Cleanup(func() {
 		tunnelConnectorDir = "/etc/homestead/tunnel"
 	})
@@ -66,6 +69,43 @@ func TestTunnelStatus(t *testing.T) {
 	}
 	if strings.Contains(recorder.Body.String(), "api_token") {
 		t.Fatal("status leaks credential material")
+	}
+}
+
+// stubDiscovery replaces the router probe with one that counts its calls,
+// and empties the cache around the test.
+func stubDiscovery(t *testing.T, calls *int) {
+	t.Helper()
+	prev := discoverGateway
+	discoverGateway = func(context.Context) tunnelDiscovery {
+		*calls++
+		return tunnelDiscovery{Preferred: "tunnel", Protocols: []string{}, Gateway: "192.0.2.1", Interface: "eth0"}
+	}
+	discoveryCache.at = time.Time{}
+	t.Cleanup(func() {
+		discoverGateway = prev
+		discoveryCache.at = time.Time{}
+	})
+}
+
+// The router probe costs seconds, so status reuses it for a while.
+func TestTunnelStatusCachesDiscovery(t *testing.T) {
+	srv, _, _ := tunnelTestServer(t)
+	calls := 0
+	stubDiscovery(t, &calls)
+	for range 3 {
+		recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/tunnel/status", nil)
+		if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"gateway":"192.0.2.1"`) {
+			t.Fatalf("status = %d %s", recorder.Code, recorder.Body.String())
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("discovery ran %d times, want 1", calls)
+	}
+	discoveryCache.at = time.Now().Add(-tunnelDiscoveryTTL)
+	serveRequest(t, srv, http.MethodGet, "/api/v1/tunnel/status", nil)
+	if calls != 2 {
+		t.Fatalf("discovery after expiry ran %d times, want 2", calls)
 	}
 }
 
@@ -270,7 +310,7 @@ func TestTunnelPlanSetupTeardown(t *testing.T) {
 		!plan.DNS[0].Proxied || len(plan.DNS[0].Replaces) != 1 || plan.DNS[0].Replaces[0].Content != "203.0.113.7" {
 		t.Fatalf("plan = %+v", plan)
 	}
-	if len(plan.Warnings) != 1 || !strings.Contains(plan.Warnings[0], "not restored") || plan.Digest == "" {
+	if len(plan.Warnings) != 1 || !strings.Contains(plan.Warnings[0], "put back") || plan.Digest == "" {
 		t.Fatalf("plan = %+v", plan)
 	}
 	if len(cf.records) != 1 || len(cf.tunnels) != 0 {
@@ -331,8 +371,21 @@ func TestTunnelPlanSetupTeardown(t *testing.T) {
 	if op := waitOperation(t, st, recorder.Body.Bytes()); op.Status != operation.StatusSucceeded {
 		t.Fatalf("teardown op = %s: %s", op.Status, op.Error)
 	}
-	if len(cf.tunnels) != 0 || len(cf.records) != 1 || cf.records[foreign] == nil {
+	// The CNAME is gone and the A and AAAA records setup replaced are back.
+	if len(cf.tunnels) != 0 || len(cf.records) != 3 || cf.records[foreign] == nil {
 		t.Fatalf("after teardown records = %v tunnels = %v", cf.records, cf.tunnels)
+	}
+	restored := map[string]string{}
+	for _, record := range cf.records {
+		if record["name"] == "app.example.com" {
+			restored[fmt.Sprint(record["type"])] = fmt.Sprint(record["content"])
+		}
+	}
+	if restored["A"] != "203.0.113.7" || restored["AAAA"] != "2001:db8::7" {
+		t.Fatalf("restored = %v", restored)
+	}
+	if replaced, _ := router.ReplacedRecords(st, tunnelID); len(replaced) != 0 {
+		t.Fatalf("replaced = %v", replaced)
 	}
 	if routes, _ := router.ListRoutes(st); len(routes) != 0 {
 		t.Fatalf("routes = %v", routes)
@@ -359,6 +412,61 @@ func TestTunnelTeardownKeepsChangedRecord(t *testing.T) {
 	var kept int
 	if err := st.DB().QueryRow(`SELECT COUNT(*) FROM audit_entries WHERE action = 'tunnel.teardown.dns-kept'`).Scan(&kept); err != nil || kept != 1 {
 		t.Fatalf("kept audit = %d, %v", kept, err)
+	}
+}
+
+// A replaced record is not put back over a record now at its name.
+func TestTunnelRestoreSkipsOccupiedName(t *testing.T) {
+	_, st, _ := tunnelTestServer(t)
+	cf := newFakeCloudflare(t)
+	cf.addRecord("A", "app.example.com", "198.51.100.9")
+	if err := router.RecordReplaced(st, router.ReplacedRecord{TunnelID: "tunnel-id", ZoneID: "zone1",
+		Record: router.DNSRecord{ID: "old", Type: "A", Name: "app.example.com", Content: "203.0.113.7"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := restoreReplacedRecords(context.Background(), st, "tok", "tunnel-id"); err != nil {
+		t.Fatal(err)
+	}
+	if len(cf.records) != 1 {
+		t.Fatalf("records = %v", cf.records)
+	}
+	var skipped int
+	if err := st.DB().QueryRow(`SELECT COUNT(*) FROM audit_entries WHERE action = 'tunnel.teardown.dns-not-restored'`).Scan(&skipped); err != nil || skipped != 1 {
+		t.Fatalf("skipped audit = %d, %v", skipped, err)
+	}
+	if replaced, _ := router.ReplacedRecords(st, "tunnel-id"); len(replaced) != 0 {
+		t.Fatalf("replaced = %v", replaced)
+	}
+}
+
+// A setup that fails after replacing records puts them back and deletes
+// the tunnel and its CNAME.
+func TestTunnelSetupFailureRestoresRecords(t *testing.T) {
+	srv, st, secrets := tunnelTestServer(t)
+	cf := newFakeCloudflare(t)
+	fakeConnector(t)
+	tunnelLookPath = func(string) (string, error) { return "", errors.New("not found") }
+	if err := secrets.Set("dns_cloudflare_api_token", "sealed-token"); err != nil {
+		t.Fatal(err)
+	}
+	cf.addRecord("A", "app.example.com", "203.0.113.7")
+	request := map[string]any{"name": "homestead", "hostname": "app.example.com", "service": "http://127.0.0.1:3000"}
+	var plan struct{ Digest string }
+	if err := json.Unmarshal(serveRequest(t, srv, http.MethodPost, "/api/v1/tunnel/plan", request).Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	request["digest"] = plan.Digest
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/tunnel/setup", request)
+	if op := waitOperation(t, st, recorder.Body.Bytes()); op.Status != operation.StatusFailed {
+		t.Fatalf("setup op = %s", op.Status)
+	}
+	if len(cf.tunnels) != 0 || len(cf.records) != 1 {
+		t.Fatalf("records = %v tunnels = %v", cf.records, cf.tunnels)
+	}
+	for _, record := range cf.records {
+		if record["type"] != "A" || record["content"] != "203.0.113.7" {
+			t.Fatalf("record = %v", record)
+		}
 	}
 }
 
@@ -410,7 +518,7 @@ func TestTunnelTeardownStopsConnectorFirst(t *testing.T) {
 	for _, step := range def.Steps {
 		names = append(names, step.Name)
 	}
-	if got := strings.Join(names, ","); got != "stop-connector,delete-tunnel,delete-dns,remove-connector,forget-routes" {
+	if got := strings.Join(names, ","); got != "stop-connector,delete-tunnel,delete-dns,restore-dns,remove-connector,forget-routes" {
 		t.Fatalf("steps = %s", got)
 	}
 	if err := def.Steps[0].Run(context.Background()); err != nil {

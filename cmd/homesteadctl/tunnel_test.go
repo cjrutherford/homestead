@@ -23,7 +23,7 @@ func tunnelStub(t *testing.T) string {
 				"zone":"example.com","ingress":[{"hostname":"app.example.com","service":"http://127.0.0.1:3000"}],
 				"dns":[{"name":"app.example.com","type":"CNAME","content":"<new tunnel id>.cfargotunnel.com","proxied":true,
 				"action":"replace","replaces":[{"type":"A","name":"app.example.com","content":"203.0.113.7","proxied":false}]}],
-				"warnings":["Existing records are not restored."],"digest":"d1g"}`))
+				"warnings":["Existing records are put back at teardown."],"digest":"d1g"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tunnel/setup":
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
@@ -65,7 +65,7 @@ func TestTunnelPlan(t *testing.T) {
 	}
 	for _, want := range []string{"tunnel: homestead (zone example.com)", "route: app.example.com -> http://127.0.0.1:3000",
 		"dns replace: CNAME app.example.com -> <new tunnel id>.cfargotunnel.com, proxied",
-		"deletes A app.example.com -> 203.0.113.7", "warning: Existing records are not restored.", "--digest d1g"} {
+		"deletes A app.example.com -> 203.0.113.7", "warning: Existing records are put back at teardown.", "--digest d1g"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout)
 		}

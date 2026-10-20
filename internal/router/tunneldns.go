@@ -64,6 +64,7 @@ type DNSRecord struct {
 	Name    string `json:"name"`
 	Content string `json:"content"`
 	Proxied bool   `json:"proxied"`
+	TTL     int    `json:"ttl"`
 }
 
 type cloudflareRecord struct {
@@ -72,10 +73,11 @@ type cloudflareRecord struct {
 	Name    string `json:"name"`
 	Content string `json:"content"`
 	Proxied bool   `json:"proxied"`
+	TTL     int    `json:"ttl"`
 }
 
 func (r cloudflareRecord) record() DNSRecord {
-	return DNSRecord{ID: r.ID, Type: r.Type, Name: r.Name, Content: r.Content, Proxied: r.Proxied}
+	return DNSRecord{ID: r.ID, Type: r.Type, Name: r.Name, Content: r.Content, Proxied: r.Proxied, TTL: r.TTL}
 }
 
 func validateZoneID(zoneID string) error {
@@ -147,6 +149,31 @@ func (c *TunnelClient) CreateTunnelCNAME(ctx context.Context, token, zoneID, hos
 	return created.record(), nil
 }
 
+// RestoreRecord recreates a record a tunnel replaced, as it was: type,
+// name, content, proxy and TTL, with a comment saying Homestead put it back.
+func (c *TunnelClient) RestoreRecord(ctx context.Context, token, zoneID string, record DNSRecord) (DNSRecord, error) {
+	if err := validateZoneID(zoneID); err != nil {
+		return DNSRecord{}, err
+	}
+	ttl := record.TTL
+	if ttl == 0 {
+		ttl = 1
+	}
+	var created cloudflareRecord
+	body := map[string]any{
+		"type":    record.Type,
+		"name":    record.Name,
+		"content": record.Content,
+		"proxied": record.Proxied,
+		"ttl":     ttl,
+		"comment": "Restored by Homestead when its tunnel was removed",
+	}
+	if err := c.call(ctx, token, http.MethodPost, "/zones/"+zoneID+"/dns_records", body, &created); err != nil {
+		return DNSRecord{}, err
+	}
+	return created.record(), nil
+}
+
 // DeleteRecord deletes one record by ID.
 func (c *TunnelClient) DeleteRecord(ctx context.Context, token, zoneID, recordID string) error {
 	if err := validateZoneID(zoneID); err != nil {
@@ -204,6 +231,63 @@ func OwnedRecords(st *store.Store, tunnelID string) ([]OwnedRecord, error) {
 func ForgetOwned(st *store.Store, recordID string) error {
 	if _, err := st.DB().Exec(`DELETE FROM tunnel_dns_records WHERE record_id = ?`, recordID); err != nil {
 		return fmt.Errorf("router: forget owned dns: %w", err)
+	}
+	return nil
+}
+
+// ReplacedRecord is a record a tunnel's setup deleted to make room for
+// its CNAME. Teardown puts it back (S294).
+type ReplacedRecord struct {
+	TunnelID string
+	ZoneID   string
+	Record   DNSRecord
+}
+
+// RecordReplaced remembers a record setup deleted, before it is deleted.
+func RecordReplaced(st *store.Store, replaced ReplacedRecord) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	r := replaced.Record
+	proxied := 0
+	if r.Proxied {
+		proxied = 1
+	}
+	if _, err := st.DB().Exec(
+		`INSERT OR REPLACE INTO tunnel_replaced_records (record_id, tunnel_id, zone_id, type, name, content, proxied, ttl, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, replaced.TunnelID, replaced.ZoneID, r.Type, r.Name, r.Content, proxied, r.TTL, now,
+	); err != nil {
+		return fmt.Errorf("router: record replaced dns: %w", err)
+	}
+	return nil
+}
+
+// ReplacedRecords lists the records a tunnel's setup deleted.
+func ReplacedRecords(st *store.Store, tunnelID string) ([]ReplacedRecord, error) {
+	rows, err := st.DB().Query(
+		`SELECT record_id, tunnel_id, zone_id, type, name, content, proxied, ttl FROM tunnel_replaced_records
+		 WHERE tunnel_id = ? ORDER BY name, record_id`, tunnelID)
+	if err != nil {
+		return nil, fmt.Errorf("router: list replaced dns: %w", err)
+	}
+	defer rows.Close()
+	out := []ReplacedRecord{}
+	for rows.Next() {
+		var r ReplacedRecord
+		var proxied int
+		if err := rows.Scan(&r.Record.ID, &r.TunnelID, &r.ZoneID, &r.Record.Type, &r.Record.Name,
+			&r.Record.Content, &proxied, &r.Record.TTL); err != nil {
+			return nil, fmt.Errorf("router: scan replaced dns: %w", err)
+		}
+		r.Record.Proxied = proxied != 0
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ForgetReplaced drops a replaced record once it is restored or kept out.
+func ForgetReplaced(st *store.Store, tunnelID, recordID string) error {
+	if _, err := st.DB().Exec(`DELETE FROM tunnel_replaced_records WHERE tunnel_id = ? AND record_id = ?`, tunnelID, recordID); err != nil {
+		return fmt.Errorf("router: forget replaced dns: %w", err)
 	}
 	return nil
 }

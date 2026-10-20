@@ -125,7 +125,7 @@
               </tr>
               @for (old of change.replaces; track $index) {
                 <tr>
-                  <td>Delete</td>
+                  <td>Delete (put back at teardown)</td>
                   <th scope="row" class="mono">{{ old.type }} {{ old.name }}</th>
                   <td class="mono">{{ old.content }}</td>
                 </tr>
@@ -191,8 +191,8 @@
       <p>
         This removes the tunnel <strong>{{ pending.name }}</strong> and its connections, and
         deletes the DNS records Homestead created for it while they still point at the tunnel.
-        Every hostname it serves stops working from outside your network. Records that setup
-        replaced are not restored. Apps stay installed.
+        Every hostname it serves stops working from outside your network. Records that setup replaced are put back, unless something
+        else is at that name by then. Apps stay installed.
       </p>
       <div class="dialog-actions">
         <button type="button" class="danger" (click)="confirmTeardown()" [disabled]="busy()">Confirm tear down</button>

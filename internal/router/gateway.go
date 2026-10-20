@@ -262,11 +262,23 @@ func DiscoverGateway(ctx context.Context, networkInterface, defaultGateway strin
 		return GatewayInfo{}, err
 	}
 	info := GatewayInfo{Gateway: gateway}
-	if upnp, err := DiscoverUPnP(ctx); err == nil && upnp != nil {
-		info.UPnP = upnp
+	// The two probes wait on different sockets, so they run together: the
+	// read costs the longer timeout, not the sum (S294).
+	type upnpResult struct {
+		upnp *UPnPInfo
+		err  error
+	}
+	upnpDone := make(chan upnpResult, 1)
+	go func() {
+		upnp, err := DiscoverUPnP(ctx)
+		upnpDone <- upnpResult{upnp, err}
+	}()
+	version, external, pmpErr := ProbePMP(ctx, gateway.Address.String()+":"+strconv.Itoa(mappingPort))
+	if result := <-upnpDone; result.err == nil && result.upnp != nil {
+		info.UPnP = result.upnp
 		info.Protocols = append(info.Protocols, ProtocolUPnP)
 	}
-	if version, external, err := ProbePMP(ctx, gateway.Address.String()+":"+strconv.Itoa(mappingPort)); err == nil {
+	if err := pmpErr; err == nil {
 		switch version {
 		case 0:
 			info.Protocols = append(info.Protocols, ProtocolNATPMP)

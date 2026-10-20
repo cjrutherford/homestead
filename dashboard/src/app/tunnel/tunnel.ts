@@ -1,7 +1,9 @@
 import { plural } from '../core/plural';
-import { Component, computed, inject, OnInit, signal, input } from '@angular/core';
+import { Component, computed, effect, inject, OnInit, signal, input, untracked } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService, TunnelPlan, TunnelStatus } from '../core/api.service';
+import { isTerminal } from '../core/operation-view';
+import { WorkOrders } from '../core/work-orders.service';
 import { StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
@@ -28,6 +30,7 @@ export class Tunnel implements OnInit {
   protected readonly hostnameHint = computed(() => (this.domain() ? `photos.${this.domain()}` : 'photos.example.com'));
   protected readonly plural = plural;
   private readonly api = inject(ApiService);
+  private readonly orders = inject(WorkOrders);
 
   protected readonly status = signal<TunnelStatus | null>(null);
   protected readonly operationId = signal<number | null>(null);
@@ -41,6 +44,22 @@ export class Tunnel implements OnInit {
   protected readonly plan = signal<TunnelPlan | null>(null);
   /** The teardown waiting for confirmation. */
   protected readonly confirming = signal<{ id: string; name: string } | null>(null);
+
+  constructor() {
+    // When setup or teardown ends, read the tunnels again.
+    let refreshedFor: number | null = null;
+    effect(() => {
+      const id = this.operationId();
+      const op = id === null ? null : this.orders.stateOf(id);
+      if (op && isTerminal(op.status) && refreshedFor !== id) {
+        refreshedFor = id;
+        untracked(() => {
+          if (op.status === 'succeeded') this.notice.set(null);
+          this.refresh();
+        });
+      }
+    });
+  }
 
   ngOnInit(): void {
     this.refresh();

@@ -596,8 +596,8 @@ func TestDomainChoice(t *testing.T) {
 	}
 	for _, bad := range []string{"homestead", "homestead.lan", "homestead.local", "nas.home.arpa", "x.internal",
 		"localhost", "app.localhost", "bad_name.com", "-a.com", "a..com"} {
-		if _, err := svc.Update(StepDomain, Update{Domain: str(bad)}); !errors.Is(err, ErrInvalid) {
-			t.Fatalf("%q: %v, want invalid", bad, err)
+		if _, err := svc.Update(StepDomain, Update{Domain: str(bad)}); !errors.Is(err, ErrRefused) {
+			t.Fatalf("%q: %v, want refused", bad, err)
 		}
 	}
 	if s, _ := svc.Status(); s.Choices.Domain != "example.com" {

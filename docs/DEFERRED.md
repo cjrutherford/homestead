@@ -797,21 +797,28 @@
   - Closed in S294: the Domain step has a domain field; the tunnel plan
     creates the `<id>.cfargotunnel.com` CNAME, reuses the stored token and
     has no placeholder service.
+  - Closed after S294 (S294 fixes): the progress box no longer falls back
+    to "Starting" once the rail drops a finished operation; the tunnel
+    status read probes the router once per 5 minutes, with UPnP and
+    NAT-PMP/PCP in parallel; a Cloudflare domain is checked against the
+    stored token's zones when saved; teardown puts back the records setup
+    replaced (ADR-038).
   - Left open after S294: Authentik's name (chosen at install, default
-    `.lan`) is not tied to the domain (S296); the tunnel progress box can
-    stay on "Starting" while the tunnel is already healthy; the tunnel status
-    read is slow (about 6 s).
+    `.lan`) is not tied to the domain (S296).
   - S294 residuals:
-    - the domain is not checked against a zone the token can see when it is
-      saved; the tunnel plan is where a missing zone is reported;
+    - a domain saved before the Cloudflare token, or while Cloudflare is
+      unreachable, is not checked; the tunnel plan reports a missing zone;
+    - the first tunnel status read after a restart still waits for the
+      router probe (about 3 s);
     - teardown of a tunnel set up before S294 finds its account from the
       route's zone or the token's single account, and deletes no DNS record
       (none was recorded);
     - the tunnel keeps one owner-entered hostname and service; the default
       dashboard and `auth.<domain>` names, edge routing and the
       Authentik-only public sign-in are S296;
-    - a record the plan replaced is not restored when the tunnel is torn
-      down (the plan warns).
+    - a restored record gets a new Cloudflare ID and loses its original
+      comment; a tunnel set up before the fix has no replaced records on
+      file, so nothing is restored for it.
   - App names (S295, ADR first): every app gets a new `*.lan` name that the
     owner must add by hand to router DNS or a hosts file; only
     `homestead.local` is announced.

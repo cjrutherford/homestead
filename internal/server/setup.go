@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 
@@ -11,6 +13,7 @@ import (
 	"homestead/internal/backup"
 	"homestead/internal/catalog"
 	"homestead/internal/domain"
+	"homestead/internal/router"
 	"homestead/internal/secret"
 	"homestead/internal/setup"
 	"homestead/internal/sso"
@@ -187,12 +190,18 @@ func (s *Server) MountSetup(c SetupConfig) *setup.Service {
 			http.Error(w, `invalid request body (want {"state"} and/or {"provider","access","domain"})`, http.StatusBadRequest)
 			return
 		}
+		if body.Domain != nil {
+			if err := checkDomainZone(r.Context(), svc, c.Secrets, *body.Domain, body.Provider); err != nil {
+				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+				return
+			}
+		}
 		st, err := svc.Update(name, setup.Update{State: body.State, Provider: body.Provider, Access: body.Access, Domain: body.Domain})
 		if err != nil {
 			switch {
 			case errors.Is(err, setup.ErrUnknownStep):
 				http.Error(w, err.Error(), http.StatusNotFound)
-			case errors.Is(err, setup.ErrNotReady):
+			case errors.Is(err, setup.ErrNotReady), errors.Is(err, setup.ErrRefused):
 				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			case errors.Is(err, setup.ErrInvalid):
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -224,4 +233,36 @@ func (s *Server) MountSetup(c SetupConfig) *setup.Service {
 		writeJSON(w, st)
 	})
 	return svc
+}
+
+// checkDomainZone refuses a domain no Cloudflare zone the stored token can
+// see contains, when Cloudflare is the provider and its token is stored.
+// Without a token yet, or when Cloudflare cannot be reached, the domain is
+// saved and the tunnel plan reports the zone later (S294).
+func checkDomainZone(ctx context.Context, svc *setup.Service, secrets *secret.Store, raw string, provider *string) error {
+	name, err := setup.NormalizeDomain(raw)
+	if err != nil || name == "" || secrets == nil {
+		return nil // Update refuses a bad name; empty clears the choice.
+	}
+	chosen := ""
+	if provider != nil {
+		chosen = *provider
+	} else if status, err := svc.Status(); err == nil {
+		chosen = status.Choices.Provider
+	}
+	if chosen != "cloudflare" {
+		return nil
+	}
+	token, err := tunnelToken(secrets)
+	if err != nil {
+		return nil
+	}
+	client, err := tunnelClient()
+	if err != nil {
+		return nil
+	}
+	if _, err := client.ZoneFor(ctx, token, name); errors.Is(err, router.ErrNoZone) {
+		return fmt.Errorf("no Cloudflare zone the stored token can see contains %s: add the domain to Cloudflare, or give the token Zone: Read on its zone", name)
+	}
+	return nil
 }
