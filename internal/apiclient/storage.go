@@ -13,15 +13,26 @@ import (
 	"homestead/internal/storage"
 )
 
+// StorageMount is one discovered mount as the daemon reports it: the
+// discovery facts plus whether it can be registered, its kind (data,
+// system or unusable) and the unassigned classes suggested for it (S293).
+type StorageMount struct {
+	discover.Mount
+	Registrable       bool            `json:"registrable"`
+	RegistrableReason string          `json:"registrable_reason"`
+	Kind              string          `json:"kind"`
+	Suggested         []storage.Class `json:"suggested"`
+}
+
 // StorageMounts lists discovered mounts (S235): candidates for
 // registration with accessibility and free bytes.
-func (c *Client) StorageMounts(ctx context.Context) ([]discover.Mount, error) {
-	var out []discover.Mount
+func (c *Client) StorageMounts(ctx context.Context) ([]StorageMount, error) {
+	var out []StorageMount
 	if err := c.get(ctx, "/api/v1/storage/mounts", &out); err != nil {
 		return nil, err
 	}
 	if out == nil {
-		out = []discover.Mount{}
+		out = []StorageMount{}
 	}
 	return out, nil
 }
@@ -38,7 +49,8 @@ func (c *Client) StorageRegistrations(ctx context.Context) ([]storage.Registrati
 	return out, nil
 }
 
-// StorageRegister approves a discovered mount under a label.
+// StorageRegister approves a discovered mount under a label. An empty
+// actor lets the daemon record the caller (S293).
 func (c *Client) StorageRegister(ctx context.Context, mountpoint, label, actor string) (storage.Registration, error) {
 	var out storage.Registration
 	body := map[string]any{"mountpoint": mountpoint, "label": label, "actor": actor}

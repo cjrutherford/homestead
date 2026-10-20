@@ -788,10 +788,17 @@
   assignment itself uses the storage commands (S291).
 - The Sign-in step shows no Authentik link, only guidance, when the sign-in
   defaults are unknown (S291, S292).
+- The storage layout suggestion uses only names and sizes. It does not read
+  whether a disk is solid-state or rotational, never suggests cache, and does
+  not see disks that are attached but not mounted (ADR-013) (S293).
+- Applying the suggested layout is not atomic. A refusal part way leaves the
+  earlier registrations and assignments in place, and the page says so (S293).
+- Disclosures (`<details>`) across the dashboard show no marker: `summary` is
+  `display: flex`, which hides the native triangle, and the chevron rule in
+  `base.css` targets `summary-unused`, so it never applies. Seen on the Storage
+  page's "What the classes mean" (S293); not fixed there because it changes
+  every page.
 - Found walking setup from scratch on the KVM VM, 2026-10-20; not fixed in S292:
-  - Storage step (S293): discovered mounts need the owner to know which
-    class goes where; the step gives no recommendation and no example of
-    mounting a disk that is attached but not mounted.
   - Domain step (S294, ADR first): no domain or zone field, so the provider
     credentials are stored without the domain they serve; Authentik's name
     (chosen at install, default `.lan`) is not tied to the domain.

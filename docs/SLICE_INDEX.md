@@ -56,3 +56,5 @@ Then S289 (done, KVM pending) dashboard on a local network address (ADR-035 firs
 Then S291 step-by-step setup wizard (ADR-036 supersedes ADR-034; `docs/slices/S291-setup-wizard.md`), run before S290. Owner direction 2026-10-20: wizard with inline steps, linear with skip, new Storage step, outside-Homestead tasks explained in each step.
 
 Then S292 setup walkthrough fixes (`docs/slices/S292-setup-walkthrough-fixes.md`): the bugs found walking setup from scratch on the KVM VM, owner direction 2026-10-20. S293 storage step UX, S294 domain and tunnel (ADR first) and S295 app names, app SSO and backups in setup (ADR first) follow.
+
+Then S293 storage step UX (`docs/slices/S293-storage-step.md`): data disks first, class explanations, a suggested layout applied in one approval, and the actor recorded from the session. S294 domain and tunnel (ADR first) and S295 app names, app SSO and backups in setup (ADR first) follow.

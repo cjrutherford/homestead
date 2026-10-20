@@ -5,8 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 
 	"homestead/internal/apiclient"
+	"homestead/internal/storage"
 )
 
 func runStorage(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
@@ -40,14 +43,26 @@ func runStorageMounts(ctx context.Context, client *apiclient.Client, stdout, std
 	if err != nil {
 		return fail(stderr, err)
 	}
+	// Data disks first: they are where classes belong (S293).
+	sort.SliceStable(mounts, func(i, j int) bool {
+		return (mounts[i].Kind == storage.KindData) && (mounts[j].Kind != storage.KindData)
+	})
 	for _, mount := range mounts {
-		fmt.Fprintf(stdout, "%s %s accessible=%v free=%d\n", mount.Mountpoint, mount.FSType, mount.Accessible, mount.FreeBytes)
+		line := fmt.Sprintf("%s %s kind=%s accessible=%v free=%d", mount.Mountpoint, mount.FSType, mount.Kind, mount.Accessible, mount.FreeBytes)
+		if len(mount.Suggested) > 0 {
+			classes := make([]string, len(mount.Suggested))
+			for i, class := range mount.Suggested {
+				classes[i] = string(class)
+			}
+			line += " suggested=" + strings.Join(classes, ",")
+		}
+		fmt.Fprintln(stdout, line)
 	}
 	return exitOK
 }
 
 func storageActorFlags(set *flag.FlagSet) *string {
-	return set.String("actor", "", "acting owner recorded with the change")
+	return set.String("actor", "", "acting owner recorded with the change (default: the signed-in caller)")
 }
 
 func runStorageRegister(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
@@ -59,8 +74,8 @@ func runStorageRegister(ctx context.Context, client *apiclient.Client, args []st
 	if err := set.Parse(args); err != nil {
 		return exitUsage
 	}
-	if *mountpoint == "" || *label == "" || *actor == "" {
-		fmt.Fprintln(stderr, "storage register requires --mountpoint, --label and --actor")
+	if *mountpoint == "" || *label == "" {
+		fmt.Fprintln(stderr, "storage register requires --mountpoint and --label")
 		return exitUsage
 	}
 	registration, err := client.StorageRegister(ctx, *mountpoint, *label, *actor)
@@ -92,8 +107,8 @@ func runStorageAssign(ctx context.Context, client *apiclient.Client, args []stri
 	if err := set.Parse(args); err != nil {
 		return exitUsage
 	}
-	if *class == "" || *mountpoint == "" || *actor == "" {
-		fmt.Fprintln(stderr, "storage assign requires --class, --mountpoint and --actor")
+	if *class == "" || *mountpoint == "" {
+		fmt.Fprintln(stderr, "storage assign requires --class and --mountpoint")
 		return exitUsage
 	}
 	assignment, err := client.StorageAssign(ctx, *class, *mountpoint, *actor, *acknowledge)

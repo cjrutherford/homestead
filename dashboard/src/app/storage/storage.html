@@ -6,6 +6,19 @@
     Homestead uses storage that is already mounted and never formats or partitions a disk. Register a
     mount you approve, then give it a class so installs and backups know where to put data.
   </p>
+  <details class="storage-classes">
+    <summary>What the classes mean</summary>
+    <dl>
+      @for (cls of classes; track cls) {
+        <dt>{{ cls }}</dt>
+        <dd>{{ classHelp[cls] }}</dd>
+      }
+    </dl>
+    <p class="hint">One disk can hold several classes. Apps that need bulk or backup storage ask which registered mount to use when you install them.</p>
+  </details>
+  @if (!assignmentsLoading() && !assignmentsError() && unassigned().length) {
+    <p class="hint">Not assigned yet: {{ unassigned().join(', ') }}.</p>
+  }
 
   @if (error()) {
     <app-state-message kind="error" [headline]="error()" />
@@ -13,6 +26,77 @@
   @if (notice()) {
     <app-state-message kind="status" [headline]="notice()" />
   }
+
+  @if (suggestion().length) {
+    <h2>Suggested layout</h2>
+    <p>Homestead looked at your data disks and proposes these classes for the ones not yet assigned:</p>
+    <ul aria-label="Suggested layout">
+      @for (item of suggestion(); track item.mount.Mountpoint) {
+        <li>
+          <strong class="storage-path">{{ item.mount.Mountpoint }}</strong>
+          @if (item.mount.Accessible) { ({{ size(item.mount.TotalBytes) }}) }:
+          {{ item.classes.join(', ') }}
+          @if (!item.label) { <em>(registered first)</em> }
+        </li>
+      }
+    </ul>
+    <p>
+      <button type="button" (click)="useSuggestion()" [disabled]="busy()" [attr.aria-busy]="busy() ? 'true' : null">Use the suggested layout</button>
+      <span class="hint">Or register and assign by hand below. Nothing changes until you choose.</span>
+    </p>
+  }
+
+  <ng-template #mountRow let-mount>
+    <tr>
+      <td>
+        <strong class="storage-path">{{ mount.Mountpoint }}</strong>
+        @if (mount.Label) { <br />Label {{ mount.Label }} }
+      </td>
+      <td class="storage-path nowrap">{{ mount.Device }}, {{ mount.FSType }}</td>
+      <td class="num nowrap">
+        @if (mount.Accessible) {
+          {{ size(mount.FreeBytes) }} free of {{ size(mount.TotalBytes) }}
+        } @else {
+          capacity unavailable
+        }
+      </td>
+      <td>
+        <span class="badge" [class]="mount.Accessible ? 'badge-ok' : 'badge-fail'">{{ mount.Accessible ? 'accessible' : 'not accessible' }}</span>
+        <span class="badge">{{ mount.ReadOnly ? 'read-only' : 'writable' }}</span>
+      </td>
+      <td>
+        @if (registrationFor(mount.Mountpoint); as reg) {
+          <p>Registered as {{ reg.Label }}
+          @if (classesOn(mount.Mountpoint).length) {
+            and holds {{ classesOn(mount.Mountpoint).join(', ') }}
+          }</p>
+        }
+        @if (unfit(mount); as why) {
+          <em>Cannot be registered: {{ why }}.</em>
+        } @else {
+          <button type="button" (click)="pick(mount.Mountpoint)" [disabled]="busy()"
+            [attr.aria-label]="'Use ' + mount.Mountpoint + ' for registration'">
+            Use for registration
+          </button>
+        }
+      </td>
+    </tr>
+  </ng-template>
+  <ng-template #mountHead>
+    <thead>
+      <tr>
+        <th scope="col" [attr.aria-sort]="ariaFor('mount')">
+          <button type="button" class="sort" [attr.data-dir]="dirFor('mount')" (click)="sortBy('mount')">Mount</button>
+        </th>
+        <th scope="col">Device</th>
+        <th scope="col" class="num" [attr.aria-sort]="ariaFor('free')">
+          <button type="button" class="sort" [attr.data-dir]="dirFor('free')" (click)="sortBy('free')">Free space</button>
+        </th>
+        <th scope="col">State</th>
+        <th scope="col">Use</th>
+      </tr>
+    </thead>
+  </ng-template>
 
   <h2>Discovered mounts</h2>
   <button type="button" (click)="refresh()" [disabled]="busy()">Refresh</button>
@@ -24,61 +108,35 @@
     @if (mounts().length === 0) {
       <app-state-message kind="empty" headline="No mounts discovered." detail="Mount a drive on the appliance first. Homestead never formats or partitions a disk." />
     } @else {
+    @if (dataMounts().length === 0) {
+      <app-state-message kind="empty" headline="No separate data disks found." detail="Only the system disk is mounted. Mount a data disk, or register a path on the system disk from Other mounts below." />
+    } @else {
     <div class="table-scroll">
       <table aria-label="Discovered mounts">
-        <thead>
-          <tr>
-            <th scope="col" [attr.aria-sort]="ariaFor('mount')">
-              <button type="button" class="sort" [attr.data-dir]="dirFor('mount')" (click)="sortBy('mount')">Mount</button>
-            </th>
-            <th scope="col">Device</th>
-            <th scope="col" class="num" [attr.aria-sort]="ariaFor('free')">
-              <button type="button" class="sort" [attr.data-dir]="dirFor('free')" (click)="sortBy('free')">Free space</button>
-            </th>
-            <th scope="col">State</th>
-            <th scope="col">Use</th>
-          </tr>
-        </thead>
+        <ng-container [ngTemplateOutlet]="mountHead" />
         <tbody>
-          @for (mount of sortedMounts(); track mount.Mountpoint) {
-            <tr>
-              <td>
-                <strong class="storage-path">{{ mount.Mountpoint }}</strong>
-                @if (mount.Label) { <br />Label {{ mount.Label }} }
-              </td>
-              <td class="storage-path nowrap">{{ mount.Device }}, {{ mount.FSType }}</td>
-              <td class="num nowrap">
-                @if (mount.Accessible) {
-                  {{ size(mount.FreeBytes) }} free of {{ size(mount.TotalBytes) }}
-                } @else {
-                  capacity unavailable
-                }
-              </td>
-              <td>
-                <span class="badge" [class]="mount.Accessible ? 'badge-ok' : 'badge-fail'">{{ mount.Accessible ? 'accessible' : 'not accessible' }}</span>
-                <span class="badge">{{ mount.ReadOnly ? 'read-only' : 'writable' }}</span>
-              </td>
-              <td>
-                @if (registrationFor(mount.Mountpoint); as reg) {
-                  <p>Registered as {{ reg.Label }}
-                  @if (classesOn(mount.Mountpoint).length) {
-                    and holds {{ classesOn(mount.Mountpoint).join(', ') }}
-                  }</p>
-                }
-                @if (unfit(mount); as why) {
-                  <em>Cannot be registered: {{ why }}.</em>
-                } @else {
-                  <button type="button" (click)="pick(mount.Mountpoint)" [disabled]="busy()"
-                    [attr.aria-label]="'Use ' + mount.Mountpoint + ' for registration'">
-                    Use for registration
-                  </button>
-                }
-              </td>
-            </tr>
+          @for (mount of dataMounts(); track mount.Mountpoint) {
+            <ng-container [ngTemplateOutlet]="mountRow" [ngTemplateOutletContext]="{ $implicit: mount }" />
           }
         </tbody>
       </table>
     </div>
+    }
+    @if (otherMounts().length) {
+      <details>
+        <summary>Other mounts ({{ otherMounts().length }}): the system disk, and paths Homestead cannot register</summary>
+        <div class="table-scroll">
+          <table aria-label="Other mounts">
+            <ng-container [ngTemplateOutlet]="mountHead" />
+            <tbody>
+              @for (mount of otherMounts(); track mount.Mountpoint) {
+                <ng-container [ngTemplateOutlet]="mountRow" [ngTemplateOutletContext]="{ $implicit: mount }" />
+              }
+            </tbody>
+          </table>
+        </div>
+      </details>
+    }
     }
       }
     </app-loading>
@@ -132,7 +190,7 @@
     registered mount renames it.
   </p>
   <form
-    (submit)="register(regMount.value, regLabel.value, regActor.value); $event.preventDefault()"
+    (submit)="register(regMount.value, regLabel.value); $event.preventDefault()"
   >
     <div class="field">
       <label for="reg-mount">Mount path</label>
@@ -150,15 +208,6 @@
         [attr.aria-describedby]="fieldErrors()['label'] ? 'reg-label-error' : null" />
       @if (fieldErrors()['label']; as message) {
         <p class="field-error" id="reg-label-error">{{ message }}</p>
-      }
-    </div>
-    <div class="field">
-      <label for="reg-actor">Acting owner</label>
-      <input id="reg-actor" #regActor name="actor" autocomplete="off" [disabled]="busy() || !!confirmingRegister()"
-        [attr.aria-invalid]="fieldErrors()['actor'] ? 'true' : null"
-        [attr.aria-describedby]="fieldErrors()['actor'] ? 'reg-actor-error' : null" />
-      @if (fieldErrors()['actor']; as message) {
-        <p class="field-error" id="reg-actor-error">{{ message }}</p>
       }
     </div>
     <button type="submit" [disabled]="busy() || !!confirmingRegister()">Register mount</button>
@@ -222,13 +271,13 @@
     Database storage needs a local mount. If a mount does not suit the class, Homestead says why.
   </p>
   <form
-    (submit)="assign(asClass.value, asMount.value, asActor.value); $event.preventDefault()"
+    (submit)="assign(asClass.value, asMount.value); $event.preventDefault()"
   >
     <label>
       Class
       <select #asClass name="class" [disabled]="busy() || !!confirmingAssign()">
         @for (cls of classes; track cls) {
-          <option [value]="cls">{{ cls }}</option>
+          <option [value]="cls">{{ cls }}{{ assignmentFor(cls) ? '' : ' (not assigned)' }}</option>
         }
       </select>
     </label>
@@ -239,10 +288,6 @@
           <option [value]="reg.Mountpoint">{{ reg.Label }} ({{ reg.Mountpoint }})</option>
         }
       </select>
-    </label>
-    <label>
-      Acting owner
-      <input #asActor name="assign-actor" autocomplete="off" [disabled]="busy() || !!confirmingAssign()" />
     </label>
     <button type="submit" [disabled]="busy() || !!confirmingAssign()">Assign class</button>
   </form>

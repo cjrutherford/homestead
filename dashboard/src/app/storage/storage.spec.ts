@@ -5,7 +5,7 @@ import {
   provideHttpClientTesting,
   HttpTestingController,
 } from '@angular/common/http/testing';
-import { StorageSetup } from './storage';
+import { StorageSetup, storageLabel } from './storage';
 
 const MOUNT = {
   ID: 1,
@@ -136,26 +136,23 @@ describe('StorageSetup', () => {
   it('validates registration input without calling the API', () => {
     load([MOUNT], [], []);
     const c = fixture.componentInstance;
-    c.register('', 'main', 'chris');
+    c.register('', 'main');
     fixture.detectChanges();
     expect(text()).toContain('Enter the mount path');
-    c.register('mnt/data', 'main', 'chris');
+    c.register('mnt/data', 'main');
     fixture.detectChanges();
     expect(text()).toContain('absolute path');
-    c.register('/mnt/data', 'Main_1', 'chris');
+    c.register('/mnt/data', 'Main_1');
     fixture.detectChanges();
     expect(text()).toContain('Start the label');
-    c.register('/mnt/data', 'main', ' ');
-    fixture.detectChanges();
-    expect(text()).toContain('name of the owner');
   });
 
   it('registers a mount and reloads', () => {
     load([MOUNT], [], []);
-    fixture.componentInstance.register(' /mnt/data ', ' main ', 'chris');
+    fixture.componentInstance.register(' /mnt/data ', ' main ');
     const req = http.expectOne('/api/v1/storage/registrations');
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ mountpoint: '/mnt/data', label: 'main', actor: 'chris' });
+    expect(req.request.body).toEqual({ mountpoint: '/mnt/data', label: 'main' });
     req.flush(REG);
     http.expectOne('/api/v1/storage/mounts').flush([MOUNT]);
     http.expectOne('/api/v1/storage/registrations').flush([REG]);
@@ -166,7 +163,7 @@ describe('StorageSetup', () => {
 
   it('surfaces the daemon refusal for registration', () => {
     load([MOUNT], [], []);
-    fixture.componentInstance.register('/mnt/data', 'main', 'chris');
+    fixture.componentInstance.register('/mnt/data', 'main');
     http
       .expectOne('/api/v1/storage/registrations')
       .flush('storage: "/mnt/data" is read-only', { status: 422, statusText: 'x' });
@@ -176,13 +173,13 @@ describe('StorageSetup', () => {
 
   it('confirms before renaming an already registered mount', () => {
     load([MOUNT], [REG], []);
-    fixture.componentInstance.register('/mnt/data', 'primary', 'chris');
+    fixture.componentInstance.register('/mnt/data', 'primary');
     fixture.detectChanges();
     http.expectNone('/api/v1/storage/registrations');
     expect(text()).toContain('is already registered. This changes');
     click('Cancel');
     expect(text()).not.toContain('is already registered. This changes');
-    fixture.componentInstance.register('/mnt/data', 'primary', 'chris');
+    fixture.componentInstance.register('/mnt/data', 'primary');
     fixture.detectChanges();
     click('Confirm rename');
     http.expectOne('/api/v1/storage/registrations').flush({ ...REG, Label: 'primary' });
@@ -192,20 +189,20 @@ describe('StorageSetup', () => {
   it('validates assignment input', () => {
     load([MOUNT], [REG], []);
     const c = fixture.componentInstance;
-    c.assign('floppy', '/mnt/data', 'chris');
+    c.assign('floppy', '/mnt/data');
     fixture.detectChanges();
     expect(text()).toContain('Choose a storage class');
-    c.assign('bulk', '', 'chris');
+    c.assign('bulk', '');
     fixture.detectChanges();
-    expect(text()).toContain('registered mount and a named actor');
+    expect(text()).toContain('Choose a registered mount');
   });
 
   it('assigns a class to a new mount without confirmation', () => {
     load([MOUNT], [REG], []);
-    fixture.componentInstance.assign('bulk', '/mnt/data', 'chris');
+    fixture.componentInstance.assign('bulk', '/mnt/data');
     const req = http.expectOne('/api/v1/storage/assignments');
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ class: 'bulk', mountpoint: '/mnt/data', actor: 'chris' });
+    expect(req.request.body).toEqual({ class: 'bulk', mountpoint: '/mnt/data' });
     req.flush(ASSIGN);
     http.expectOne('/api/v1/storage/mounts').flush([MOUNT]);
     http.expectOne('/api/v1/storage/registrations').flush([REG]);
@@ -225,7 +222,7 @@ describe('StorageSetup', () => {
 
   function reassignToImpact() {
     load([MOUNT], [REG, OTHER], [ASSIGN]);
-    fixture.componentInstance.assign('bulk', '/mnt/other', 'chris');
+    fixture.componentInstance.assign('bulk', '/mnt/other');
     const first = http.expectOne('/api/v1/storage/assignments');
     expect(first.request.body.acknowledge_impact).toBeUndefined();
     first.flush(IMPACT, { status: 409, statusText: 'Conflict' });
@@ -242,7 +239,6 @@ describe('StorageSetup', () => {
     expect(second.request.body).toEqual({
       class: 'bulk',
       mountpoint: '/mnt/other',
-      actor: 'chris',
       acknowledge_impact: true,
     });
     second.flush({ ...ASSIGN, Mountpoint: '/mnt/other' });
@@ -270,15 +266,14 @@ describe('StorageSetup', () => {
     reassignToImpact();
     const q = (sel: string) => fixture.nativeElement.querySelector(sel);
     expect(q('select[name=class]').disabled).toBe(true);
-    expect(q('input[name=assign-actor]').disabled).toBe(true);
     expect(q('select[name=assign-mountpoint]').disabled).toBe(true);
   });
 
   it('re-prompts rather than posting when rename values change', () => {
     load([MOUNT], [REG], []);
     const c = fixture.componentInstance;
-    c.register('/mnt/data', 'primary', 'chris');
-    c.register('/mnt/data', 'other-name', 'chris');
+    c.register('/mnt/data', 'primary');
+    c.register('/mnt/data', 'other-name');
     fixture.detectChanges();
     http.expectNone('/api/v1/storage/registrations');
     expect(text()).toContain('label to other-name');
@@ -310,7 +305,7 @@ describe('StorageSetup', () => {
     ).find((b) => b.textContent?.trim() === 'Register mount')!;
     expect(submit).toBeTruthy();
     opener.focus();
-    fixture.componentInstance.register('/mnt/data', 'primary', 'chris');
+    fixture.componentInstance.register('/mnt/data', 'primary');
     fixture.detectChanges();
     await Promise.resolve();
     const dialog = fixture.nativeElement.querySelector('[role=alertdialog]') as HTMLElement;
@@ -326,14 +321,14 @@ describe('StorageSetup', () => {
   it('shows registration problems next to each field', () => {
     load([MOUNT], [], []);
     const el = fixture.nativeElement as HTMLElement;
-    fixture.componentInstance.register('', 'Bad_1', '');
+    fixture.componentInstance.register('', 'Bad_1');
     fixture.detectChanges();
     const mount = el.querySelector('#reg-mount') as HTMLInputElement;
     expect(mount.getAttribute('aria-invalid')).toBe('true');
     expect(mount.getAttribute('aria-describedby')).toBe('reg-mount-error');
     expect(el.querySelector('#reg-mount-error')?.textContent).toContain('Enter the mount path');
     expect(el.querySelector('#reg-label-error')?.textContent).toContain('Start the label');
-    expect(el.querySelectorAll('.field-error').length).toBe(3);
+    expect(el.querySelectorAll('.field-error').length).toBe(2);
   });
 
   it('lists a mount once when discovery returns it twice', () => {
@@ -385,6 +380,88 @@ describe('StorageSetup', () => {
       );
       fixture.detectChanges();
       expect(text()).toContain('jellyfin');
+    });
+  });
+  describe('S293 layout help', () => {
+    const APP = { ...MOUNT, ID: 10, Mountpoint: '/mnt/app', Label: '', TotalBytes: 100 * 1024 ** 3, kind: 'data', suggested: ['application', 'database'] };
+    const BULK = { ...MOUNT, ID: 11, Mountpoint: '/mnt/bulk', Label: 'Media Disk', kind: 'data', suggested: ['bulk'] };
+    const SANDBOX = { ...MOUNT, ID: 12, Device: '/dev/vda2', Mountpoint: '/var/lib/homestead/sandbox', kind: 'system', suggested: [] };
+    const PROC = { ...TMP, ID: 13, kind: 'unusable', suggested: [] };
+
+    it('lists data disks first and folds the rest away', () => {
+      load([SANDBOX, APP, PROC], [], []);
+      const rows = (label: string) =>
+        Array.from(
+          fixture.nativeElement.querySelectorAll(`table[aria-label="${label}"] tbody tr`) as NodeListOf<HTMLElement>,
+        ).map((row) => row.querySelector('strong')?.textContent);
+      expect(rows('Discovered mounts')).toEqual(['/mnt/app']);
+      expect(rows('Other mounts')).toEqual(['/var/lib/homestead/sandbox', '/run/tmp']);
+      expect(fixture.nativeElement.querySelector('details:has(table[aria-label="Other mounts"]) summary').textContent).toContain('Other mounts (2)');
+    });
+
+    it('explains the classes and drops the acting owner fields', () => {
+      load([APP], [], []);
+      expect(text()).toContain('What the classes mean');
+      expect(text()).toContain('large media and libraries');
+      expect(text()).toContain('Apps that need bulk or backup storage ask which registered mount');
+      expect(text()).toContain('Not assigned yet: application, database, bulk, backup, cache.');
+      expect(fixture.nativeElement.querySelector('#reg-actor')).toBeNull();
+      expect(fixture.nativeElement.querySelector('input[name=assign-actor]')).toBeNull();
+      expect(text()).toContain('application (not assigned)');
+    });
+
+    it('applies the suggested layout: register, then assign, one at a time', () => {
+      load([APP, BULK, SANDBOX], [{ ...REG, Mountpoint: '/mnt/bulk', Label: 'media' }], []);
+      expect(text()).toContain('Suggested layout');
+      expect(text()).toContain('application, database');
+      click('Use the suggested layout');
+      const reg = http.expectOne('/api/v1/storage/registrations');
+      expect(reg.request.body).toEqual({ mountpoint: '/mnt/app', label: 'app' });
+      reg.flush(REG);
+      const bodies: unknown[] = [];
+      for (let i = 0; i < 3; i++) {
+        const req = http.expectOne('/api/v1/storage/assignments');
+        bodies.push(req.request.body);
+        req.flush(ASSIGN);
+      }
+      expect(bodies).toEqual([
+        { class: 'application', mountpoint: '/mnt/app' },
+        { class: 'database', mountpoint: '/mnt/app' },
+        { class: 'bulk', mountpoint: '/mnt/bulk' },
+      ]);
+      http.expectOne('/api/v1/storage/mounts').flush([]);
+      http.expectOne('/api/v1/storage/registrations').flush([]);
+      http.expectOne('/api/v1/storage/assignments').flush([]);
+      fixture.detectChanges();
+      expect(text()).toContain('Applied the suggested layout.');
+    });
+
+    it('stops the layout at the first refusal and says so', () => {
+      load([APP], [], []);
+      click('Use the suggested layout');
+      http
+        .expectOne('/api/v1/storage/registrations')
+        .flush('storage: "/mnt/app" is read-only', { status: 422, statusText: 'x' });
+      http.expectOne('/api/v1/storage/mounts').flush([APP]);
+      http.expectOne('/api/v1/storage/registrations').flush([]);
+      http.expectOne('/api/v1/storage/assignments').flush([]);
+      http.expectNone('/api/v1/storage/assignments');
+      fixture.detectChanges();
+      expect(text()).toContain('stopped part way: storage: "/mnt/app" is read-only');
+    });
+
+    it('hides the suggestion when nothing is proposed', () => {
+      load([{ ...APP, suggested: [] }], [], []);
+      expect(text()).not.toContain('Suggested layout');
+    });
+
+    it('derives registration labels from the disk label or path', () => {
+      const taken = new Set(['media-disk']);
+      expect(storageLabel(BULK as never, taken)).toBe('media-disk-2');
+      expect(storageLabel(APP as never, new Set())).toBe('app');
+      expect(storageLabel({ ...APP, Mountpoint: '/srv/2024_Photos!' } as never, new Set())).toBe('photos');
+      expect(storageLabel({ ...APP, Mountpoint: '/' } as never, new Set())).toBe('disk');
+      expect(storageLabel({ ...APP, Label: 'x'.repeat(40) } as never, new Set(['x'.repeat(32)]))).toBe('x'.repeat(30) + '-2');
     });
   });
 });

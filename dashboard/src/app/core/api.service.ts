@@ -745,6 +745,10 @@ export interface StorageMount {
   /** Added by S268; absent from older daemons. */
   registrable?: boolean;
   registrable_reason?: string;
+  /** Added by S293: data disk, system disk path, or never registrable. */
+  kind?: 'data' | 'system' | 'unusable';
+  /** Added by S293: unassigned classes the daemon proposes for this mount. */
+  suggested?: string[];
 }
 
 /** GET/POST /api/v1/storage/registrations (PascalCase). */
@@ -1689,7 +1693,8 @@ export class ApiService {
   storageRegister(body: {
     mountpoint: string;
     label: string;
-    actor: string;
+    /** Omit to record the signed-in caller (S293). */
+    actor?: string;
   }): Observable<StorageRegistration> {
     return this.http.post<StorageRegistration>(
       '/api/v1/storage/registrations',
@@ -1704,7 +1709,8 @@ export class ApiService {
   storageAssign(body: {
     class: string;
     mountpoint: string;
-    actor: string;
+    /** Omit to record the signed-in caller (S293). */
+    actor?: string;
     acknowledge_impact?: boolean;
   }): Observable<StorageAssignment> {
     return this.http.post<StorageAssignment>(

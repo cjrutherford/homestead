@@ -340,7 +340,7 @@ describe('Setup wizard (S291)', () => {
       await open(doneThrough(1));
       expect(button('Next')!.disabled).toBe(true);
       const page = fixture.debugElement.query(By.directive(StorageSetup)).componentInstance as StorageSetup;
-      page.assign('application', '/mnt/data', 'owner');
+      page.assign('application', '/mnt/data');
       await settle();
       expect(wrote('POST', '/api/v1/storage/assignments')[0].body).toMatchObject({ class: 'application', mountpoint: '/mnt/data' });
       // The wizard read the status again by itself.

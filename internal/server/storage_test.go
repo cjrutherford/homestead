@@ -380,3 +380,45 @@ func TestStorageAuditFailureLeavesNothingChanged(t *testing.T) {
 		t.Fatal("unregister applied although the audit failed")
 	}
 }
+
+// TestStorageMountsReportKindAndSuggestion: every mount carries a kind,
+// and the root filesystem is never a data disk (S293).
+func TestStorageMountsReportKindAndSuggestion(t *testing.T) {
+	srv := storageTestServer(t)
+	recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/storage/mounts", nil)
+	var mounts []struct {
+		Mountpoint string   `json:"Mountpoint"`
+		Kind       string   `json:"kind"`
+		Suggested  []string `json:"suggested"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &mounts); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range mounts {
+		if m.Kind != "data" && m.Kind != "system" && m.Kind != "unusable" {
+			t.Fatalf("mount %+v has no kind", m)
+		}
+		if m.Suggested == nil {
+			t.Fatalf("mount %+v: suggested must be a list", m)
+		}
+		if m.Mountpoint == "/" && (m.Kind == "data" || len(m.Suggested) > 0) {
+			t.Fatalf("the root filesystem is not a data disk: %+v", m)
+		}
+	}
+}
+
+// TestStorageActorDefaultsToCaller: the dashboard sends no actor; the
+// caller is recorded ("local" without a session).
+func TestStorageActorDefaultsToCaller(t *testing.T) {
+	srv := storageTestServer(t)
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/storage/registrations",
+		map[string]any{"mountpoint": "/", "label": "root"})
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"Actor":"local"`) {
+		t.Fatalf("register: %d %s", recorder.Code, recorder.Body.String())
+	}
+	recorder = serveRequest(t, srv, http.MethodPost, "/api/v1/storage/assignments",
+		map[string]any{"class": "application", "mountpoint": "/"})
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"Actor":"local"`) {
+		t.Fatalf("assign: %d %s", recorder.Code, recorder.Body.String())
+	}
+}

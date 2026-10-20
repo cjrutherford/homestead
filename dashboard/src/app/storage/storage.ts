@@ -1,5 +1,6 @@
 import { WhenPipe } from '../core/format-time';
 import { Component, computed, inject, OnInit, signal, input } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   ApiService,
@@ -9,7 +10,7 @@ import {
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 import { ariaSort, nextSort, SortState, sortRows } from '../core/sort';
-import { Observable } from 'rxjs';
+import { concatMap, from, Observable } from 'rxjs';
 import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
 
@@ -22,16 +23,54 @@ export const STORAGE_CLASSES = [
   'cache',
 ] as const;
 
+/** What each class is for, in the owner's words (S293). */
+export const STORAGE_CLASS_HELP: Record<(typeof STORAGE_CLASSES)[number], string> = {
+  application: 'app settings and small files; every install needs it',
+  database: 'app databases; must be a local disk, ideally a fast one',
+  bulk: 'large media and libraries, such as photos and films',
+  backup: 'backup copies; best on a different disk from the data it protects',
+  cache: 'throwaway data apps can rebuild; optional',
+};
+
+/**
+ * A registration label from a disk label or path: lowercase letters,
+ * digits and hyphens, starting with a letter, at most 32 long.
+ */
+export function storageLabel(mount: StorageMount, taken: Set<string>): string {
+  const base =
+    (mount.Label || mount.Mountpoint.split('/').filter(Boolean).pop() || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^[^a-z]+/, '')
+      .slice(0, 32)
+      .replace(/-+$/, '') || 'disk';
+  let label = base;
+  for (let n = 2; taken.has(label); n++) {
+    const suffix = `-${n}`;
+    label = base.slice(0, 32 - suffix.length).replace(/-+$/, '') + suffix;
+  }
+  return label;
+}
+
+/** One step of the suggested layout, applied in order. */
+interface LayoutStep {
+  register?: { mountpoint: string; label: string };
+  assign?: { class: string; mountpoint: string };
+}
+
 /**
  * Storage surfaces (S268): discovered mounts, registration, and class
  * assignment, matching `homesteadctl storage`. Mounted storage only
  * (ADR-013): nothing here formats or partitions. Unassign and unregister
  * (S288) drop Homestead's record only, behind a danger-confirm dialog; the
  * daemon refuses with a 409 naming apps that still use the mount.
+ * S293 lists data disks first, folds system paths away, explains the
+ * classes, offers the daemon's suggested layout in one approval, and lets
+ * the daemon record the signed-in owner as the actor.
  * Responses are PascalCase because the Go structs carry no json tags.
  */
 @Component({
-  imports: [Loading, StateMessage, Dialog, WhenPipe],
+  imports: [Loading, StateMessage, Dialog, WhenPipe, NgTemplateOutlet],
   selector: 'app-storage',
   templateUrl: './storage.html',
   styles: [
@@ -44,12 +83,34 @@ export class StorageSetup implements OnInit {
   private readonly api = inject(ApiService);
 
   protected readonly classes = STORAGE_CLASSES;
+  protected readonly classHelp = STORAGE_CLASS_HELP;
   protected readonly mounts = signal<StorageMount[]>([]);
   protected readonly sort = signal<SortState | null>(null);
   protected readonly sortedMounts = computed(() =>
     sortRows(this.mounts(), this.sort(), (mount, key) =>
       key === 'free' ? (mount.Accessible ? mount.FreeBytes : -1) : mount.Mountpoint,
     ),
+  );
+  /** Data disks (and every mount from a daemon older than S293). */
+  protected readonly dataMounts = computed(() =>
+    this.sortedMounts().filter((mount) => !mount.kind || mount.kind === 'data'),
+  );
+  /** System paths and mounts that can never be registered, folded away. */
+  protected readonly otherMounts = computed(() =>
+    this.sortedMounts().filter((mount) => mount.kind && mount.kind !== 'data'),
+  );
+  /** The daemon's proposal: classes per mount, for unassigned classes only. */
+  protected readonly suggestion = computed(() =>
+    this.mounts()
+      .filter((mount) => mount.suggested?.length)
+      .map((mount) => ({
+        mount,
+        label: this.registrationFor(mount.Mountpoint)?.Label ?? null,
+        classes: mount.suggested!,
+      })),
+  );
+  protected readonly unassigned = computed(() =>
+    STORAGE_CLASSES.filter((cls) => !this.assignmentFor(cls)),
   );
   protected readonly registrations = signal<StorageRegistration[]>([]);
   protected readonly assignments = signal<StorageAssignment[]>([]);
@@ -67,12 +128,10 @@ export class StorageSetup implements OnInit {
   protected readonly confirmingRegister = signal<{
     mountpoint: string;
     label: string;
-    actor: string;
   } | null>(null);
   protected readonly confirmingAssign = signal<{
     class: string;
     mountpoint: string;
-    actor: string;
     from: string;
     packages: string[];
   } | null>(null);
@@ -210,10 +269,9 @@ export class StorageSetup implements OnInit {
 
   protected readonly fieldErrors = signal<Record<string, string>>({});
 
-  register(mountpoint: string, label: string, actor: string): void {
+  register(mountpoint: string, label: string): void {
     mountpoint = mountpoint.trim();
     label = label.trim();
-    actor = actor.trim();
     const problems: Record<string, string> = {};
     if (!mountpoint) {
       problems['mountpoint'] = 'Enter the mount path, such as /mnt/media.';
@@ -226,9 +284,6 @@ export class StorageSetup implements OnInit {
       problems['label'] =
         'Start the label with a lowercase letter and use only lowercase letters, digits and hyphens (max 32).';
     }
-    if (!actor) {
-      problems['actor'] = 'Enter the name of the owner making this change.';
-    }
     this.fieldErrors.set(problems);
     if (Object.keys(problems).length > 0) {
       return;
@@ -237,11 +292,10 @@ export class StorageSetup implements OnInit {
     const pending = this.confirmingRegister();
     const confirmed =
       pending?.mountpoint === mountpoint &&
-      pending.label === label &&
-      pending.actor === actor;
+      pending.label === label;
     if (existing && !confirmed) {
       // Re-registering relabels an approved mount: confirm first.
-      this.confirmingRegister.set({ mountpoint, label, actor });
+      this.confirmingRegister.set({ mountpoint, label });
       this.error.set(null);
       return;
     }
@@ -249,7 +303,7 @@ export class StorageSetup implements OnInit {
     this.busy.set(true);
     this.error.set(null);
     this.notice.set(null);
-    this.api.storageRegister({ mountpoint, label, actor }).subscribe({
+    this.api.storageRegister({ mountpoint, label }).subscribe({
       next: (saved) => {
         this.busy.set(false);
         this.notice.set(`Registered ${saved.Mountpoint} as ${saved.Label}.`);
@@ -266,7 +320,7 @@ export class StorageSetup implements OnInit {
   confirmRegister(): void {
     const pending = this.confirmingRegister();
     if (pending) {
-      this.register(pending.mountpoint, pending.label, pending.actor);
+      this.register(pending.mountpoint, pending.label);
     }
   }
 
@@ -274,15 +328,14 @@ export class StorageSetup implements OnInit {
     this.confirmingRegister.set(null);
   }
 
-  assign(cls: string, mountpoint: string, actor: string, acknowledge = false): void {
+  assign(cls: string, mountpoint: string, acknowledge = false): void {
     mountpoint = mountpoint.trim();
-    actor = actor.trim();
     if (!(STORAGE_CLASSES as readonly string[]).includes(cls)) {
       this.error.set('Choose a storage class.');
       return;
     }
-    if (!mountpoint || !actor) {
-      this.error.set('Assignment needs a registered mount and a named actor.');
+    if (!mountpoint) {
+      this.error.set('Choose a registered mount for the class.');
       return;
     }
     this.confirmingAssign.set(null);
@@ -292,7 +345,6 @@ export class StorageSetup implements OnInit {
     const body = {
       class: cls,
       mountpoint,
-      actor,
       ...(acknowledge ? { acknowledge_impact: true } : {}),
     };
     this.api.storageAssign(body).subscribe({
@@ -310,7 +362,6 @@ export class StorageSetup implements OnInit {
           this.confirmingAssign.set({
             class: cls,
             mountpoint,
-            actor,
             from: impact.from ?? '',
             packages: impact.affected_packages,
           });
@@ -324,12 +375,61 @@ export class StorageSetup implements OnInit {
   confirmAssign(): void {
     const pending = this.confirmingAssign();
     if (pending) {
-      this.assign(pending.class, pending.mountpoint, pending.actor, true);
+      this.assign(pending.class, pending.mountpoint, true);
     }
   }
 
   cancelAssign(): void {
     this.confirmingAssign.set(null);
+  }
+
+  /**
+   * Applies the suggested layout (S293): registers each suggested mount
+   * that is not registered yet, then assigns each suggested class, one
+   * call at a time so a refusal stops the rest. Pressing the button is
+   * the owner's approval; every call is audited as usual.
+   */
+  useSuggestion(): void {
+    const taken = new Set(this.registrations().map((r) => r.Label));
+    const steps: LayoutStep[] = [];
+    for (const item of this.suggestion()) {
+      if (!item.label) {
+        const label = storageLabel(item.mount, taken);
+        taken.add(label);
+        steps.push({ register: { mountpoint: item.mount.Mountpoint, label } });
+      }
+    }
+    for (const item of this.suggestion()) {
+      for (const cls of item.classes) {
+        steps.push({ assign: { class: cls, mountpoint: item.mount.Mountpoint } });
+      }
+    }
+    if (steps.length === 0) {
+      return;
+    }
+    this.busy.set(true);
+    this.error.set(null);
+    this.notice.set(null);
+    from(steps)
+      .pipe(
+        concatMap((step): Observable<unknown> =>
+          step.register
+            ? this.api.storageRegister(step.register)
+            : this.api.storageAssign(step.assign!),
+        ),
+      )
+      .subscribe({
+        complete: () => {
+          this.busy.set(false);
+          this.notice.set('Applied the suggested layout.');
+          this.refresh();
+        },
+        error: (failure: HttpErrorResponse) => {
+          this.busy.set(false);
+          this.error.set(`The suggested layout stopped part way: ${this.describe(failure)}`);
+          this.refresh();
+        },
+      });
   }
 
   askUnassign(item: StorageAssignment): void {

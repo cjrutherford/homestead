@@ -30,7 +30,7 @@ func (s *Server) MountStorage(st *store.Store, catalogDir ...string) {
 	if len(catalogDir) > 0 {
 		dir = catalogDir[0]
 	}
-	s.mux.HandleFunc("GET /api/v1/storage/mounts", handleStorageMounts())
+	s.mux.HandleFunc("GET /api/v1/storage/mounts", handleStorageMounts(st))
 	s.mux.HandleFunc("GET /api/v1/storage/registrations", handleStorageRegistrations(st))
 	s.mux.HandleFunc("POST /api/v1/storage/registrations", handleStorageRegister(st))
 	s.mux.HandleFunc("GET /api/v1/storage/assignments", handleStorageAssignments(st))
@@ -312,12 +312,25 @@ type storageMountView struct {
 	discover.Mount
 	Registrable       bool   `json:"registrable"`
 	RegistrableReason string `json:"registrable_reason"`
+	// Kind is data, system or unusable; Suggested lists the unassigned
+	// classes proposed for this mount (S293). A proposal only.
+	Kind      string          `json:"kind"`
+	Suggested []storage.Class `json:"suggested"`
 }
 
-func storageMountViews(mounts []discover.Mount) []storageMountView {
+func storageMountViews(mounts []discover.Mount, assigned map[storage.Class]string) []storageMountView {
+	suggested := storage.Suggest(mounts, assigned)
 	out := make([]storageMountView, 0, len(mounts))
 	for _, mount := range mounts {
-		view := storageMountView{Mount: mount, Registrable: true}
+		view := storageMountView{
+			Mount:       mount,
+			Registrable: true,
+			Kind:        storage.MountKind(mount, mounts),
+			Suggested:   suggested[mount.Mountpoint],
+		}
+		if view.Suggested == nil {
+			view.Suggested = []storage.Class{}
+		}
 		if err := storage.Registrable(mount); err != nil {
 			view.Registrable = false
 			view.RegistrableReason = err.Error()
@@ -354,14 +367,23 @@ func affectedByReassign(st *store.Store, catalogDir string, class storage.Class,
 	return affectedOnMount(st, catalogDir, class, from)
 }
 
-func handleStorageMounts() http.HandlerFunc {
+func handleStorageMounts(st *store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		discovered, err := discover.DiscoverStorage()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, storageMountViews(discovered.Mounts))
+		assignments, err := storage.NewAssignments(st).List()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		assigned := map[storage.Class]string{}
+		for _, a := range assignments {
+			assigned[a.Class] = a.Mountpoint
+		}
+		writeJSON(w, storageMountViews(discovered.Mounts, assigned))
 	}
 }
 
@@ -389,6 +411,10 @@ func handleStorageRegister(st *store.Store) http.HandlerFunc {
 		if err := decodeBody(r, &body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		if body.Actor == "" {
+			// The dashboard sends no actor: the session user is it (S293).
+			body.Actor = operatorActor(r)
 		}
 		discovered, err := discover.DiscoverStorage()
 		if err != nil {
@@ -435,6 +461,9 @@ func handleStorageAssign(st *store.Store, auditor auditRecorder, catalogDir stri
 		if !body.Class.Valid() {
 			http.Error(w, "unknown storage class", http.StatusBadRequest)
 			return
+		}
+		if body.Actor == "" {
+			body.Actor = operatorActor(r)
 		}
 		assignments := storage.NewAssignments(st)
 		if current, err := assignments.Get(body.Class); err == nil && current.Mountpoint != body.Mountpoint {

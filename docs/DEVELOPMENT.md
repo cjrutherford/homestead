@@ -625,8 +625,8 @@ sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
 
 ```bash
 homesteadctl storage mounts
-homesteadctl storage register --mountpoint /mnt/app --label app --actor owner
-homesteadctl storage assign --class application --mountpoint /mnt/app --actor owner
+homesteadctl storage register --mountpoint /mnt/app --label app
+homesteadctl storage assign --class application --mountpoint /mnt/app
 ```
 
 - Mount registration and class assignment over the API and CLI:
@@ -4748,3 +4748,33 @@ committed). Results:
     - the Authentik link return (already linked);
     - the next daily `cert.renewal-check`. The failed run from before the
       fix is operation 1.
+
+## S293: Storage step UX
+
+- Daemon:
+  - `storage.MountKind` classes each discovered mount as data, system or
+    unusable.
+  - `storage.Suggest` proposes classes for unassigned classes on data disks,
+    from name hints, then sizes.
+  - `GET /api/v1/storage/mounts` returns `kind` and `suggested`.
+  - Register and assign default the actor to the caller (`operatorActor`).
+- CLI: `storage mounts` lists data disks first with `kind=` and
+  `suggested=`; `--actor` is optional.
+- Dashboard:
+  - The Storage page shows data disks first and folds the rest into "Other
+    mounts".
+  - It explains the classes and names the unassigned ones.
+  - "Use the suggested layout" registers, then assigns, one call at a time.
+  - The "Acting owner" fields are gone.
+- The Storage step copy says bulk and backup can wait for the install that
+  needs them.
+
+- KVM on VM 2 (2026-10-20, deployed over the existing appliance, no reset):
+  - `GET /api/v1/storage/mounts`: `/mnt/app`, `/mnt/backup` and `/mnt/bulk`
+    are `data`; the other 52 paths are `system` or `unusable`.
+  - The Discovered mounts table lists only the three disks. "Other mounts
+    (52)" is folded away, and no "Acting owner" field remains.
+  - Every class was already assigned there, so `suggested` was empty and the
+    Suggested layout panel did not show, as intended. Applying a layout is
+    covered by specs only; unassigning the owner's classes to show it was
+    not done.

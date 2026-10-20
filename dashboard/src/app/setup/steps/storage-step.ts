@@ -5,7 +5,8 @@ import { StepGuide } from './step-guide';
 /**
  * Step 2: the Storage page itself, embedded: discovered mounts, register,
  * and assign the app, bulk and backup classes. Done is derived from the app
- * class being assigned.
+ * class being assigned (ADR-036); S293 says which classes are still open
+ * and that later installs ask for bulk or backup.
  */
 @Component({
   imports: [StorageSetup, StepGuide],
@@ -24,6 +25,9 @@ import { StepGuide } from './step-guide';
     </app-step-guide>
     <p class="hint">
       Next unlocks when the application class is assigned, or when you skip this step. Installing apps needs it.
+      Bulk and backup can wait: an app that needs them, such as a photo library, asks at install which
+      registered mount to use. When Homestead finds data disks, the suggested layout below registers and
+      assigns them in one step.
     </p>
     <app-storage [embedded]="true" />
   `,

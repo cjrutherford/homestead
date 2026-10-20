@@ -31,8 +31,23 @@ func TestStorageMounts(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	if !strings.Contains(stdout, "/") {
+	if !strings.Contains(stdout, "/") || !strings.Contains(stdout, "kind=") {
 		t.Fatalf("stdout = %q", stdout)
+	}
+}
+
+// The daemon records the caller when --actor is left out (S293).
+func TestStorageActorOptional(t *testing.T) {
+	serverArgs := []string{"--server", storageDaemon(t)}
+	if code, _, stderr := invoke(t, append(serverArgs, "storage", "register", "--mountpoint", "/", "--label", "root")); code != exitOK {
+		t.Fatalf("register exit = %d, stderr = %q", code, stderr)
+	}
+	if code, _, stderr := invoke(t, append(serverArgs, "storage", "assign", "--class", "application", "--mountpoint", "/")); code != exitOK {
+		t.Fatalf("assign exit = %d, stderr = %q", code, stderr)
+	}
+	code, stdout, _ := invoke(t, append(serverArgs, "storage", "registrations"))
+	if code != exitOK || strings.Contains(stdout, "by \n") || !strings.Contains(stdout, "/ root by ") {
+		t.Fatalf("exit = %d, stdout = %q", code, stdout)
 	}
 }
 
