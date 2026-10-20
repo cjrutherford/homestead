@@ -34,6 +34,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	top := flag.NewFlagSet("homesteadctl", flag.ContinueOnError)
 	top.SetOutput(stderr)
 	server := top.String("server", serverURL(), "daemon base URL")
+	caFile := top.String("ca-file", os.Getenv("HOMESTEAD_CA_FILE"), "PEM root certificate to trust for an https server (the appliance root); certificates are always verified")
 	if err := top.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -52,7 +53,16 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "hint:", hint)
 		}
 	}
-	client := apiclient.New(*server, apiclient.WithToken(token))
+	opts := []apiclient.Option{apiclient.WithToken(token)}
+	if *caFile != "" {
+		pem, err := os.ReadFile(*caFile)
+		if err != nil {
+			fmt.Fprintf(stderr, "Error: --ca-file: %v\n", err)
+			return exitUsage
+		}
+		opts = append(opts, apiclient.WithRootCA(pem))
+	}
+	client := apiclient.New(*server, opts...)
 	switch rest[0] {
 	case "status":
 		return runStatus(ctx, client, stdout, stderr)
@@ -92,6 +102,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runTLS(ctx, client, rest[1:], stdout, stderr)
 	case "scheduler":
 		return runScheduler(ctx, client, rest[1:], stdout, stderr)
+	case "dashboard":
+		return runDashboard(ctx, client, rest[1:], stdout, stderr)
 	case "edge":
 		return runEdge(ctx, client, rest[1:], stdout, stderr)
 	case "storage":
@@ -125,7 +137,7 @@ func needsSession(command string) bool {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprintln(w, "usage: homesteadctl [--server URL] <command>")
+	fmt.Fprintln(w, "usage: homesteadctl [--server URL] [--ca-file ROOT.pem] <command>")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "commands:")
 	fmt.Fprintln(w, "  status                 daemon health and version")
@@ -157,6 +169,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  scheduler jobs scheduled jobs, last run and next due (S260)")
 	fmt.Fprintln(w, "  edge deploy [--follow]  deploy the Caddy edge proxy (S237)")
 	fmt.Fprintln(w, "  edge routes <get | set -f FILE [--follow]>  read or reconcile the proxy route table (S237, S270)")
+	fmt.Fprintln(w, "  dashboard address [get | set NAME [--exposure local|overlay] [--follow]]  the dashboard's local network name (S289)")
 	fmt.Fprintln(w, "  storage <mounts|register|registrations|assign|assignments>  mounted storage setup (S235)")
 	fmt.Fprintln(w, "  version                CLI and daemon versions")
 	fmt.Fprintln(w, "  config get             print current desired state")

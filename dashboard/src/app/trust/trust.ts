@@ -2,8 +2,10 @@ import { WhenPipe } from '../core/format-time';
 import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
+import { FormsModule } from '@angular/forms';
 import {
   ApiService,
+  DashboardAddress,
   LocalCaReport,
   LocalCaRotationPlan,
   OperationState,
@@ -117,7 +119,7 @@ export const TRUST_GUIDES: TrustGuide[] = [
  * arrives over your signed-in session. The private key is never shown.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage, CopyCode, WhenPipe, Dialog],
+  imports: [FormsModule, OperationProgress, Loading, StateMessage, CopyCode, WhenPipe, Dialog],
   selector: 'app-trust',
   templateUrl: './trust.html',
   styles: [
@@ -169,6 +171,47 @@ export class Trust implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.load();
+    this.loadAddress();
+  }
+
+  // Dashboard address (S289, ADR-035): the names the dashboard answers on
+  // from other devices on the network. The .local name is listed first.
+  protected readonly address = signal<DashboardAddress | null>(null);
+  protected readonly addressName = signal('');
+  protected readonly addressExposure = signal<'local' | 'overlay'>('local');
+  protected readonly addressError = signal<string | null>(null);
+
+  /** The hosts-file line for a device without router DNS. */
+  protected hostsLine(a: DashboardAddress): string {
+    return `<appliance IP address>  ${a.name}`;
+  }
+
+  loadAddress(): void {
+    this.api.dashboardAddress().subscribe({
+      next: (a) => {
+        this.address.set(a);
+        this.addressName.set(a.name);
+        this.addressExposure.set(a.exposure);
+      },
+      error: (failure: HttpErrorResponse) => this.addressError.set(this.describe(failure)),
+    });
+  }
+
+  saveAddress(): void {
+    this.busy.set(true);
+    this.addressError.set(null);
+    this.api.setDashboardAddress(this.addressName().trim(), this.addressExposure()).subscribe({
+      next: (started) => {
+        this.busy.set(false);
+        this.notice.set(`Setting the dashboard address to ${this.addressName().trim()}.`);
+        this.follow(started.id);
+        this.loadAddress();
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.busy.set(false);
+        this.addressError.set(this.describe(failure));
+      },
+    });
   }
 
   ngOnDestroy(): void {

@@ -22,10 +22,12 @@ var mdnsGroup = net.ParseIP("224.0.0.251")
 // interfaces answering, others silent) would confuse more than help.
 func ListenAndServe(ctx context.Context, cfg Config) error {
 	if err := cfg.Validate(); err != nil {
+		setState(State{Known: true, Err: err.Error()})
 		return err
 	}
 	ifaces, err := multicastInterfaces()
 	if err != nil {
+		setState(State{Known: true, Err: err.Error()})
 		return err
 	}
 	groupAddr := &net.UDPAddr{IP: mdnsGroup, Port: mdnsPort}
@@ -36,11 +38,14 @@ func ListenAndServe(ctx context.Context, cfg Config) error {
 			for _, c := range conns {
 				_ = c.Close()
 			}
+			setState(State{Known: true, Err: err.Error()})
 			return err
 		}
 		conns = append(conns, conn)
 	}
+	setState(State{Known: true, Running: true})
 	serve(ctx, cfg, conns, groupAddr)
+	setState(State{Known: true})
 	return nil
 }
 

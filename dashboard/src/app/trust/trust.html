@@ -62,6 +62,49 @@
       </p>
     }
 
+    <h2>Dashboard address on your network</h2>
+    @if (addressError()) {
+      <app-state-message kind="error" [headline]="addressError()" />
+    }
+    @if (address(); as a) {
+      <p>
+        Open this dashboard from another device on your network. The first address needs no setup;
+        the second needs a router DNS entry or a hosts entry. Both need the root certificate above
+        installed on that device. This is local or overlay only: the Cloudflare tunnel is the public path.
+      </p>
+      @if (a.configured) {
+        <ul data-testid="dashboard-urls">
+          @for (url of a.urls; track url) {
+            <li><code>{{ url }}</code></li>
+          }
+        </ul>
+      } @else {
+        <app-state-message
+          kind="empty"
+          headline="No dashboard address is set yet. Save a name to create it."
+        />
+      }
+      <form (ngSubmit)="saveAddress()">
+        <label>
+          Local name
+          <input name="dashboard-name" [ngModel]="addressName()" (ngModelChange)="addressName.set($event)" />
+        </label>
+        <label>
+          Reachable from
+          <select name="dashboard-exposure" [ngModel]="addressExposure()" (ngModelChange)="addressExposure.set($event)">
+            <option value="local">This network (local)</option>
+            <option value="overlay">Private overlay</option>
+          </select>
+        </label>
+        <button type="submit" [disabled]="busy() || !addressName().trim()">Save the name</button>
+      </form>
+      <p>
+        Point <code>{{ a.name }}</code> at this appliance in your router's DNS, or add a hosts entry on
+        the device: <code data-testid="hosts-line">{{ hostsLine(a) }}</code>. The
+        <code>{{ a.mdns_name }}</code> name works without either when mDNS reaches the device.
+      </p>
+    }
+
     <h2>Install on a device</h2>
     @for (guide of guides; track guide.id) {
       <details>

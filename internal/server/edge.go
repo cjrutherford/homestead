@@ -155,6 +155,25 @@ func inferCraftApps(routes []docker.Route) {
 	}
 }
 
+// preserveDashboardRoute keeps the recorded dashboard route when a posted
+// table omits it: the route is owned by PUT /api/v1/dashboard/address
+// (ADR-035), so an older client replacing the table cannot drop it.
+func preserveDashboardRoute(st *store.Store, routes []docker.Route) []docker.Route {
+	for _, r := range routes {
+		if r.Dashboard {
+			return routes
+		}
+	}
+	set, err := loadEdgeRoutes(st)
+	if err != nil {
+		return routes
+	}
+	if dash, ok := set.DashboardRoute(); ok {
+		return append(routes, dash)
+	}
+	return routes
+}
+
 func handleEdgeRoutes(runner *operation.Runner, st *store.Store, local *cert.LocalTLS) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body routeTableBody
@@ -166,6 +185,7 @@ func handleEdgeRoutes(runner *operation.Runner, st *store.Store, local *cert.Loc
 			body.Routes = []docker.Route{}
 		}
 		inferCraftApps(body.Routes)
+		body.Routes = preserveDashboardRoute(st, body.Routes)
 		if err := docker.ValidateRenderable(docker.RouteSet{Routes: body.Routes}); err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return

@@ -121,7 +121,7 @@ func (s *Server) handleLogin(svc *auth.Service, auditSvc *audit.Service) http.Ha
 			// fail the login itself — they log server-side.
 			if _, recordErr := auditSvc.Record(audit.Entry{
 				Actor: body.Username, Action: "admin.login",
-				Outcome: audit.OutcomeError, Detail: "invalid username or password",
+				Outcome: audit.OutcomeError, Detail: viaEdge(r, "invalid username or password"),
 			}); recordErr != nil {
 				s.log.Warn("audit record failed", "action", "admin.login", "error", recordErr)
 			}
@@ -137,7 +137,7 @@ func (s *Server) handleLogin(svc *auth.Service, auditSvc *audit.Service) http.Ha
 			return
 		}
 		if _, recordErr := auditSvc.Record(audit.Entry{
-			Actor: body.Username, Action: "admin.login", Outcome: audit.OutcomeOK,
+			Actor: body.Username, Action: "admin.login", Outcome: audit.OutcomeOK, Detail: viaEdge(r, ""),
 		}); recordErr != nil {
 			s.log.Warn("audit record failed", "action", "admin.login", "error", recordErr)
 		}

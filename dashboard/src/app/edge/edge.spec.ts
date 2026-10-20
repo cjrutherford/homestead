@@ -312,4 +312,16 @@ describe('Edge', () => {
     fixture.detectChanges();
     expect(text()).toContain('Exposure must be local, overlay or public');
   });
+
+  it('leaves the dashboard route to the Trust page (S289)', () => {
+    c().loadRoutes();
+    http.expectOne('/api/v1/edge/routes').flush({
+      routes: [
+        { Host: 'homestead.lan', Dashboard: true, Aliases: ['homestead.local'], Exposure: 'local', TLS: 'internal' },
+        { Host: 'app.lan', Target: { Host: 'app', Port: 8080 }, Exposure: 'local', TLS: 'internal', Health: { Path: '', IntervalSeconds: 0 } },
+      ],
+    });
+    fixture.detectChanges();
+    expect(c().drafts().map((d: { host: string }) => d.host)).toEqual(['app.lan']);
+  });
 });

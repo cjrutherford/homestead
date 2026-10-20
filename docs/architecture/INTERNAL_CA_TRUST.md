@@ -9,6 +9,9 @@ for you: you do it, on each device, deliberately.
 Hosts that use a public-provider certificate (ACME) are never switched to the
 internal CA.
 
+To open the dashboard itself from another device (`https://homestead.local`
+or the owner-set `.lan` name), see `docs/architecture/LOCAL_DASHBOARD.md`.
+
 ## Get the root and check it
 
 Three places show the same SHA-256 fingerprint:

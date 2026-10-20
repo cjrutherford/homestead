@@ -237,6 +237,8 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/sso/link":                              ClassSession,
 	"DELETE /api/v1/sso/link":                            ClassSession,
 	"DELETE /api/v1/sso":                                 ClassSession,
+	"GET /api/v1/dashboard/address":                      ClassSession,
+	"PUT /api/v1/dashboard/address":                      ClassSession,
 }
 
 // stepUpMode says who checks the fresh local password for a step-up route.
@@ -306,11 +308,19 @@ type auditRecorder interface {
 // reason per window, carrying the count.
 const reportWindow = time.Minute
 
-type reportKey struct{ pattern, reason string }
+type reportKey struct {
+	pattern, reason string
+	// edge: the request came through the dashboard socket (ADR-035).
+	edge bool
+}
+
+// maxReportClients bounds the addresses listed per audit entry.
+const maxReportClients = 5
 
 type reportBucket struct {
-	count int
-	first time.Time
+	count   int
+	first   time.Time
+	clients []string
 }
 
 // boundary is the enforcing session middleware state.
@@ -372,7 +382,7 @@ func (b *boundary) wrap(mux *recordingMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		op, v := b.check(mux, r)
 		if v.status != 0 {
-			b.report(v.pattern, v.reason)
+			b.reportFrom(r, v.pattern, v.reason)
 			if v.status == http.StatusUnauthorized {
 				w.Header().Set("WWW-Authenticate", "Bearer")
 			}
@@ -549,15 +559,34 @@ func (b *boundary) logClaimStateError(err error) {
 // per window, so a polling dashboard cannot flood audit and requests
 // never write audit.
 func (b *boundary) report(pattern, reason string) {
+	b.reportFrom(nil, pattern, reason)
+}
+
+// reportFrom is report for a request: edge requests are counted apart
+// and record the forwarded client addresses (bounded) in the audit entry.
+func (b *boundary) reportFrom(r *http.Request, pattern, reason string) {
 	now := b.now()
+	client, edge := "", false
+	if r != nil {
+		client, edge = edgeClientFrom(r.Context())
+	}
 	b.mu.Lock()
-	key := reportKey{pattern, reason}
+	key := reportKey{pattern: pattern, reason: reason, edge: edge}
 	bucket := b.pending[key]
 	if bucket == nil {
 		bucket = &reportBucket{first: now}
 		b.pending[key] = bucket
 	}
 	bucket.count++
+	if edge && len(bucket.clients) < maxReportClients {
+		known := false
+		for _, c := range bucket.clients {
+			known = known || c == client
+		}
+		if !known {
+			bucket.clients = append(bucket.clients, client)
+		}
+	}
 	b.mu.Unlock()
 }
 
@@ -569,13 +598,18 @@ type flushItem struct {
 func (b *boundary) drainLocked() []flushItem {
 	items := make([]flushItem, 0, len(b.pending))
 	for k, v := range b.pending {
-		items = append(items, flushItem{k, *v})
+		cp := *v
+		cp.clients = append([]string(nil), v.clients...)
+		items = append(items, flushItem{k, cp})
 	}
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].key.pattern != items[j].key.pattern {
 			return items[i].key.pattern < items[j].key.pattern
 		}
-		return items[i].key.reason < items[j].key.reason
+		if items[i].key.reason != items[j].key.reason {
+			return items[i].key.reason < items[j].key.reason
+		}
+		return !items[i].key.edge && items[j].key.edge
 	})
 	b.pending = map[reportKey]*reportBucket{}
 	return items
@@ -593,6 +627,9 @@ func (b *boundary) emit(items []flushItem) {
 	for _, it := range items {
 		detail := fmt.Sprintf("rejected %s (%s) x%d since %s",
 			it.key.pattern, it.key.reason, it.bucket.count, it.bucket.first.UTC().Format(time.RFC3339))
+		if it.key.edge {
+			detail += " via edge from " + strings.Join(it.bucket.clients, ", ")
+		}
 		b.log.Warn("session boundary rejected", "route", it.key.pattern,
 			"reason", it.key.reason, "count", it.bucket.count)
 		if _, err := b.audit.Record(audit.Entry{

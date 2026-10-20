@@ -147,9 +147,14 @@ func handleFirewallPlan(daemonPort int, configSvc *config.Service) http.HandlerF
 }
 
 // requestConnection derives the guard connection from the caller: TCP
-// remotes verify by source IP; Unix-socket callers are same-machine by
-// construction and verify as loopback.
+// remotes verify by source IP; recovery-socket callers are same-machine by
+// construction and verify as loopback; edge callers use the forwarded address.
 func requestConnection(r *http.Request, daemonPort int) firewall.Connection {
+	// A request through the edge is not the machine itself: the dashboard
+	// socket's front wrapper stored the validated client address (ADR-035).
+	if a, ok := edgeClientFrom(r.Context()); ok {
+		return firewall.Connection{SourceIP: a, Protocol: firewall.ProtocolTCP, Port: daemonPort}
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil || host == "" || host == "@" {
 		host = "127.0.0.1"

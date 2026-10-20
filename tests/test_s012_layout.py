@@ -55,7 +55,7 @@ class TestUnitWiring(unittest.TestCase):
     def test_runtime_directory_managed(self):
         service = configparser.ConfigParser(strict=True)
         service.read(REPO / "systemd" / "homestead-server.service")
-        self.assertEqual(service["Service"]["RuntimeDirectory"], "homestead homestead-craft")
+        self.assertEqual(service["Service"]["RuntimeDirectory"], "homestead homestead-craft homestead-dashboard")
         self.assertEqual(service["Service"]["RuntimeDirectoryPreserve"], "yes")
 
     def test_read_write_paths_cover_state_dirs(self):

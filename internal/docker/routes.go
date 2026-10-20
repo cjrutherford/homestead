@@ -47,6 +47,9 @@ func renderRoute(r Route, cert *PlacedCert) (string, error) {
 	default:
 		site = string(r.Host)
 	}
+	for _, a := range r.Aliases {
+		site += ", " + string(a)
+	}
 	var tlsLine, proxy strings.Builder
 	if r.TLS == TLSInternal && cert == nil {
 		tlsLine.WriteString("\ttls internal\n")
@@ -57,7 +60,13 @@ func renderRoute(r Route, cert *PlacedCert) (string, error) {
 			caddyRoutesDir, certsDirName, cert.Name, certKeyFile)
 	}
 	upstream := fmt.Sprintf("%s:%d", r.Target.Host, r.Target.Port)
-	if r.Health.Path == "" {
+	if r.Dashboard {
+		upstream = "unix/" + DashboardSocketPath
+		// The client address comes from the connection, never from what the
+		// client sent (ADR-035): header_up replaces the headers, and
+		// trusted_proxies stays unset. flush_interval -1 streams events.
+		fmt.Fprintf(&proxy, "\treverse_proxy %s {\n\t\tflush_interval -1\n\t\theader_up X-Forwarded-For {http.request.remote.host}\n\t\theader_up X-Forwarded-Proto https\n\t\theader_up X-Forwarded-Host {http.request.host}\n\t}\n", upstream)
+	} else if r.Health.Path == "" {
 		fmt.Fprintf(&proxy, "\treverse_proxy %s\n", upstream)
 	} else {
 		fmt.Fprintf(&proxy, "\treverse_proxy %s {\n", upstream)
@@ -298,7 +307,10 @@ func ReconcileDefinition(stack Stack, set RouteSet, state RouteState) (operation
 			if err := verifyProxy(ctx, stack); err != nil {
 				return err
 			}
-			return verifyCraftMount(ctx, set)
+			if err := verifyCraftMount(ctx, set); err != nil {
+				return err
+			}
+			return verifyDashboardMount(ctx, set)
 		},
 	})
 	return def, nil

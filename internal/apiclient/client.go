@@ -13,7 +13,10 @@ package apiclient
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,6 +43,8 @@ type Client struct {
 	// token, when set, is sent as Authorization: Bearer on every call
 	// (ADR-020, S256).
 	token string
+	// setupErr is an option failure reported by the first call.
+	setupErr error
 }
 
 // Option configures a Client.
@@ -65,6 +70,31 @@ func WithHTTPClient(h *http.Client) Option {
 func WithToken(token string) Option {
 	return func(c *Client) {
 		c.token = token
+	}
+}
+
+// WithRootCA makes the client trust the appliance's internal root (PEM)
+// in addition to the system roots, so it can reach the dashboard on its
+// local https name (S289, ADR-035). Verification is never skipped: a
+// certificate that does not chain to the system roots or this root fails.
+// An unreadable PEM is reported when the first call is made.
+func WithRootCA(pemBytes []byte) Option {
+	return func(c *Client) {
+		pool, err := x509.SystemCertPool()
+		if err != nil || pool == nil {
+			pool = x509.NewCertPool()
+		}
+		if !pool.AppendCertsFromPEM(pemBytes) {
+			c.setupErr = errors.New("api: the root certificate file holds no PEM certificate")
+			return
+		}
+		transport := func() *http.Transport {
+			t := http.DefaultTransport.(*http.Transport).Clone()
+			t.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+			return t
+		}
+		c.http.Transport = transport()
+		c.stream.Transport = transport()
 	}
 }
 
@@ -144,6 +174,9 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 }
 
 func (c *Client) roundTrip(req *http.Request, okStatus int, out any) error {
+	if c.setupErr != nil {
+		return c.setupErr
+	}
 	res, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("api: %w", err)

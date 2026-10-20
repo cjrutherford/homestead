@@ -768,3 +768,17 @@
   `/claim`.
 - An existing tunnel set up outside Homestead (no `tunnel_routes` row) has no
   adopt command; after claim the owner can only replace it through setup.
+- Dashboard names must fall under the internal root's permitted suffixes
+  (`.lan`, `.local`, `.home.arpa`, `.internal`, `.localhost`); a name under the
+  owner's own domain (split DNS) is refused (S289). Supporting one needs an ACME
+  or imported certificate for the dashboard route and an ADR amendment.
+- The default dashboard route is created by the daemon at startup (with retry),
+  not by the installer script (S289). A host that cannot run Docker at boot
+  gets it once the edge can deploy.
+- SSO plans approved before S289 do not list the new dashboard origins; the
+  owner re-runs the Sign-in plan (S289). No automatic re-plan.
+- The mDNS hostname is fixed at `homestead` (S221), so two appliances on one
+  network both claim `homestead.local` (S289). A configurable hostname is not
+  built.
+- The dashboard route has no per-name certificate for a second owner-set alias
+  and no IPv6-only name support (S289).

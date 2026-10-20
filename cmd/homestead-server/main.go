@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 
 	"homestead/internal/audit"
 	"homestead/internal/claim"
@@ -45,6 +46,7 @@ func main() {
 	configPath := flag.String("config", desired.DefaultPath(), "desired-state file (S014)")
 	dataDir := flag.String("data-dir", layout.LibDir.Path, "operational state directory (S012)")
 	socketPath := flag.String("socket", server.DefaultSocketPath, "root-only recovery socket (S021)")
+	dashboardSocket := flag.String("dashboard-socket", docker.DashboardSocketPath, "dashboard socket the edge forwards to (S289, ADR-035)")
 	craftSocket := flag.String("craft-socket", docker.CraftSocketPath, "craft file socket the edge forwards to (S254, ADR-032)")
 	catalogDir := flag.String("catalog-dir", "catalog", "curated package directory (S160; packaging installs it)")
 	claimTokenFile := flag.String("claim-token-file", claim.DefaultTokenPath, "root-only file holding the live claim token while unclaimed (S288)")
@@ -54,14 +56,17 @@ func main() {
 		fmt.Println(version.Version)
 		return
 	}
-	if err := run(*listen, *configPath, *dataDir, *socketPath, *craftSocket, *catalogDir, *claimTokenFile); err != nil {
+	if err := run(*listen, *configPath, *dataDir, *socketPath, *craftSocket, *dashboardSocket, *catalogDir, *claimTokenFile); err != nil {
 		fmt.Fprintln(os.Stderr, "homestead-server:", err)
 		os.Exit(1)
 	}
 }
 
-func run(listen, configPath, dataDir, socketPath, craftSocket, catalogDir, claimTokenFile string) error {
+func run(listen, configPath, dataDir, socketPath, craftSocket, dashboardSocket, catalogDir, claimTokenFile string) error {
 	if err := server.ValidateCraftSocketPath(craftSocket); err != nil {
+		return err
+	}
+	if err := server.ValidateDashboardSocketPath(dashboardSocket); err != nil {
 		return err
 	}
 	// The state directory is provisioned by S012 and never created here:
@@ -148,11 +153,31 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, catalogDir, claim
 			fmt.Fprintln(os.Stderr, "homestead-server: craft file socket off:", err)
 		}
 	}()
+	// The dashboard socket (ADR-035) is not boot-critical either: without
+	// it only the local network address stops working.
+	dashDone := make(chan struct{})
+	go func() {
+		defer close(dashDone)
+		if err := srv.RunDashboardSocket(ctx, dashboardSocket); err != nil {
+			fmt.Fprintln(os.Stderr, "homestead-server: dashboard socket off:", err)
+		}
+	}()
+	// A fresh appliance gets the default dashboard route and a deployed
+	// edge before claim (ADR-035); Docker may arrive later, so retry.
+	ensureDone := make(chan struct{})
+	go func() {
+		defer close(ensureDone)
+		svcs.DashboardAddress.RunEnsure(ctx, 5*time.Minute, func(err error) {
+			fmt.Fprintln(os.Stderr, "homestead-server: dashboard address not ready, will retry:", err)
+		})
+	}()
 	if err := srv.Run(ctx); err != nil {
 		return err
 	}
 	<-schedDone
 	<-craftDone
+	<-dashDone
+	<-ensureDone
 	return <-unixErr
 }
 
@@ -168,7 +193,7 @@ func startLocalDiscovery(ctx context.Context, claimSvc *claim.Service, listen st
 		return
 	}
 	cfg := mdns.Config{
-		Hostname: "homestead",
+		Hostname: mdns.DefaultHostname,
 		Port:     port,
 		Version:  version.Version,
 		State: func() string {

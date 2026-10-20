@@ -7,7 +7,7 @@ import {
   provideHttpClientTesting,
   HttpTestingController,
 } from '@angular/common/http/testing';
-import { ApiService, LocalCaReport, OperationState } from '../core/api.service';
+import { ApiService, DashboardAddress, LocalCaReport, OperationState } from '../core/api.service';
 import { Trust, TRUST_GUIDES } from './trust';
 
 const FP = 'AA:BB:CC:DD';
@@ -29,6 +29,18 @@ const report = (over: Partial<LocalCaReport> = {}): LocalCaReport => ({
   ...over,
 });
 
+const address = (over: Partial<DashboardAddress> = {}): DashboardAddress => ({
+  name: 'homestead.lan',
+  default: 'homestead.lan',
+  configured: true,
+  exposure: 'local',
+  mdns_name: 'homestead.local',
+  names: ['homestead.lan', 'homestead.local'],
+  urls: ['https://homestead.local', 'https://homestead.lan'],
+  root_path: '/api/v1/tls/local-ca/root.pem',
+  ...over,
+});
+
 describe('Trust', () => {
   let fixture: ComponentFixture<Trust>;
   let http: HttpTestingController;
@@ -44,6 +56,7 @@ describe('Trust', () => {
     fixture = TestBed.createComponent(Trust);
     http = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
+    http.expectOne('/api/v1/dashboard/address').flush(address());
   });
   afterEach(() => http.verify());
 
@@ -160,5 +173,52 @@ describe('Trust', () => {
     fixture.detectChanges();
     http.expectNone('/api/v1/tls/local-ca/leaves/reissue');
     expect(fixture.nativeElement.querySelector('dialog')).toBeNull();
+  });
+  it('lists the dashboard URLs with the .local one first', () => {
+    load(report());
+    const urls = Array.from(
+      fixture.nativeElement.querySelectorAll('[data-testid="dashboard-urls"] code'),
+    ).map((c) => (c as HTMLElement).textContent?.trim());
+    expect(urls).toEqual(['https://homestead.local', 'https://homestead.lan']);
+    expect(fixture.nativeElement.querySelector('[data-testid="hosts-line"]').textContent).toContain(
+      'homestead.lan',
+    );
+    expect(text()).toContain('Cloudflare tunnel is the public path');
+  });
+
+  it('saves the local name and follows the operation', async () => {
+    load(report());
+    await fixture.whenStable();
+    const input = fixture.nativeElement.querySelector('input[name="dashboard-name"]') as HTMLInputElement;
+    input.value = 'box.lan';
+    input.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    button('Save the name').click();
+    const req = http.expectOne('/api/v1/dashboard/address');
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({ name: 'box.lan', exposure: 'local' });
+    req.flush({ id: 12 });
+    http.expectOne('/api/v1/dashboard/address').flush(address({ name: 'box.lan' }));
+    fixture.detectChanges();
+    expect(text()).toContain('Setting the dashboard address to box.lan');
+  });
+
+  it('shows the daemon refusal for a name it cannot vouch for', () => {
+    load(report());
+    button('Save the name').click();
+    http
+      .expectOne('/api/v1/dashboard/address')
+      .flush('name is outside the suffixes', { status: 422, statusText: 'Unprocessable Entity' });
+    fixture.detectChanges();
+    expect(text()).toContain('outside the suffixes');
+  });
+
+  it('offers only local and overlay exposure', () => {
+    load(report());
+    const options = Array.from(
+      fixture.nativeElement.querySelectorAll('select[name="dashboard-exposure"] option'),
+    ).map((o) => (o as HTMLOptionElement).value);
+    expect(options).toEqual(['local', 'overlay']);
   });
 });

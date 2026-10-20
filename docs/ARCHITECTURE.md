@@ -54,6 +54,17 @@
   that the Caddy stack mounts, never on the TCP listener, behind a
   craft-scoped cookie bound to the operator session. See
   `docs/architecture/CRAFT_FILE_PROXY.md`.
+- Dashboard on the local network (S289, ADR-035): the daemon also serves the
+  same mux and ADR-020 boundary on a dedicated unix socket
+  (`/run/homestead-dashboard/dashboard.sock`, directory 0750, socket 0660,
+  group `homestead-dashboard`) that the Caddy stack mounts read-only. The one
+  dashboard edge route (`Route.Dashboard`, internal-CA TLS, local or overlay,
+  never public) answers `<hostname>.local` and the owner-set name. A front
+  wrapper on the socket requires exactly one non-loopback `X-Forwarded-For`,
+  checks Host (421) and Origin, and only there is the forwarded address used
+  for rate limits and audit; the TCP listener never reads it. API
+  `GET`/`PUT /api/v1/dashboard/address`, CLI `homesteadctl dashboard address`.
+  See `docs/architecture/LOCAL_DASHBOARD.md`.
 - YAML: customer-readable desired configuration and generated artifacts.
 - Docker Engine + Compose v2: application runtime.
 - Caddy: application reverse proxy / HTTP edge.

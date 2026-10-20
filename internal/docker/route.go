@@ -142,6 +142,22 @@ type Route struct {
 	// route that names one also forwards CraftFilesPrefix to the daemon's
 	// craft-file socket, ahead of the upstream. Empty for every other route.
 	CraftApp string `json:",omitempty"`
+	// Dashboard marks the one route that fronts the daemon's own dashboard
+	// and API over the dashboard unix socket (S289, ADR-035). Its Target is
+	// unused. It is local or overlay only, with internal TLS, and never
+	// public: the tunnel is the public path.
+	Dashboard bool `json:",omitempty"`
+	// Aliases are extra names the dashboard route answers on the same
+	// leaf (the appliance's mDNS .local name, ADR-035 amendment).
+	Aliases []Hostname `json:",omitempty"`
+}
+
+// ErrDashboardPublic explains the refusal of a public dashboard route.
+const ErrDashboardPublic = "the dashboard route is local or overlay only with internal TLS and is never public through the edge: the Cloudflare tunnel is the public path"
+
+// Names lists every name the route answers on: the host, then aliases.
+func (r Route) Names() []Hostname {
+	return append([]Hostname{r.Host}, r.Aliases...)
 }
 
 // Validate checks a route end to end.
@@ -149,7 +165,13 @@ func (r Route) Validate() error {
 	if err := r.Host.Validate(); err != nil {
 		return err
 	}
-	if err := r.Target.Validate(); err != nil {
+	if r.Dashboard {
+		if err := r.validateDashboard(); err != nil {
+			return err
+		}
+	} else if len(r.Aliases) > 0 {
+		return fmt.Errorf("route.aliases: only the dashboard route has aliases")
+	} else if err := r.Target.Validate(); err != nil {
 		return err
 	}
 	if !r.Exposure.Valid() {
@@ -172,6 +194,29 @@ func (r Route) Validate() error {
 	return nil
 }
 
+func (r Route) validateDashboard() error {
+	if r.Exposure == ExposurePublic || r.TLS == TLSAuto {
+		return fmt.Errorf("route.dashboard: %s", ErrDashboardPublic)
+	}
+	if r.TLS != TLSInternal {
+		return fmt.Errorf("route.dashboard: TLS must be internal")
+	}
+	if r.CraftApp != "" {
+		return fmt.Errorf("route.dashboard: cannot also be a craft route")
+	}
+	seen := map[Hostname]bool{r.Host: true}
+	for _, a := range r.Aliases {
+		if err := a.Validate(); err != nil {
+			return err
+		}
+		if seen[a] {
+			return fmt.Errorf("route.aliases: duplicate name %q", a)
+		}
+		seen[a] = true
+	}
+	return nil
+}
+
 // RouteSet is the desired route table the generator (S083) reconciles.
 type RouteSet struct {
 	Routes []Route
@@ -180,14 +225,23 @@ type RouteSet struct {
 // Validate checks every route and hostname uniqueness.
 func (s RouteSet) Validate() error {
 	seen := map[Hostname]bool{}
+	dashboards := 0
 	for i := range s.Routes {
 		if err := s.Routes[i].Validate(); err != nil {
 			return fmt.Errorf("route #%d: %w", i, err)
 		}
-		if seen[s.Routes[i].Host] {
-			return fmt.Errorf("duplicate route host %q", s.Routes[i].Host)
+		if s.Routes[i].Dashboard {
+			dashboards++
 		}
-		seen[s.Routes[i].Host] = true
+		for _, n := range s.Routes[i].Names() {
+			if seen[n] {
+				return fmt.Errorf("duplicate route host %q", n)
+			}
+			seen[n] = true
+		}
+	}
+	if dashboards > 1 {
+		return fmt.Errorf("only one dashboard route is allowed")
 	}
 	return nil
 }

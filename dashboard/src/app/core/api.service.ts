@@ -246,6 +246,23 @@ export interface EdgeRoute {
   Policy?: unknown;
   /** Craft app this host serves (S254); install plans carry it, pass it through. */
   CraftApp?: string;
+  /** The one dashboard route (S289); managed on the Trust page, not the Edge editor. */
+  Dashboard?: boolean;
+  /** Extra names the dashboard route answers on (the .local name). */
+  Aliases?: string[];
+}
+
+/** GET /api/v1/dashboard/address (S289, ADR-035): the dashboard's local network address. */
+export interface DashboardAddress {
+  name: string;
+  default: string;
+  configured: boolean;
+  exposure: 'local' | 'overlay';
+  mdns_name: string;
+  names: string[];
+  /** Full URLs, the .local one first (it needs no DNS setup). */
+  urls: string[];
+  root_path: string;
 }
 
 /** GET /api/v1/craft/files — Nextcloud link state (S254); never the app password. */
@@ -1441,6 +1458,15 @@ export class ApiService {
   }
 
   /** S280 (ADR-030): internal CA status with fingerprint and graded leaves. */
+  dashboardAddress(): Observable<DashboardAddress> {
+    return this.http.get<DashboardAddress>('/api/v1/dashboard/address');
+  }
+
+  /** Sets the local name; public exposure is refused by the daemon (the tunnel is the public path). */
+  setDashboardAddress(name: string, exposure: 'local' | 'overlay'): Observable<OperationStarted> {
+    return this.http.put<OperationStarted>('/api/v1/dashboard/address', { name, exposure });
+  }
+
   localCaStatus(): Observable<LocalCaReport> {
     return this.http.get<LocalCaReport>('/api/v1/tls/local-ca');
   }

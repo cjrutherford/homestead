@@ -100,6 +100,25 @@ func EligibleLocal(r docker.Route) bool {
 	return r.TLS == docker.TLSInternal && r.Exposure != docker.ExposurePublic
 }
 
+func aliasStrings(r docker.Route) []string {
+	var out []string
+	for _, a := range r.Aliases {
+		out = append(out, string(a))
+	}
+	return out
+}
+
+// aliasesAllowed: every extra name of a route must be one the root can
+// vouch for, or the single leaf could not be issued.
+func aliasesAllowed(r docker.Route) bool {
+	for _, a := range r.Aliases {
+		if !LocalNameAllowed(string(a)) {
+			return false
+		}
+	}
+	return true
+}
+
 func (t *LocalTLS) records() (map[string]Leaf, error) {
 	rows, err := t.Store.DB().Query(`SELECT host, cert_name, serial, fingerprint_sha256, ca_fingerprint, not_before, not_after, issued_at FROM local_leaves`)
 	if err != nil {
@@ -159,11 +178,13 @@ func (t *LocalTLS) assess(rec Leaf, ca CAInfo, routeOK bool, route docker.Route,
 			pool.AddCert(rc)
 		}
 	}
-	if _, err := leaf.Verify(x509.VerifyOptions{DNSName: rec.Host, Roots: pool, CurrentTime: now,
-		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}); err != nil {
-		out.Status = LeafMismatch
-		out.Detail = "the placed certificate does not cover " + rec.Host + " under the current root: " + err.Error()
-		return out
+	for _, name := range append([]string{rec.Host}, aliasStrings(route)...) {
+		if _, err := leaf.Verify(x509.VerifyOptions{DNSName: name, Roots: pool, CurrentTime: now,
+			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}); err != nil {
+			out.Status = LeafMismatch
+			out.Detail = "the placed certificate does not cover " + name + " under the current root: " + err.Error()
+			return out
+		}
 	}
 	if !docker.RouteServesCert(t.StackDir, route.Host, rec.CertName) && docker.RouteSnippetExists(t.StackDir, route.Host) {
 		out.Status, out.Detail = LeafNotPresented, "the edge route does not present the internal-CA leaf; re-issue or reconcile"
@@ -259,13 +280,17 @@ type Result struct {
 }
 
 // issue mints and places one leaf, recording it. No reload.
-func (t *LocalTLS) issue(authority Authority, caFP string, host string, now time.Time) (Leaf, error) {
-	chain, key, err := authority.IssueServerCert([]string{host}, t.lifetime(), now)
+func (t *LocalTLS) issue(authority Authority, caFP string, host string, aliases []docker.Hostname, now time.Time) (Leaf, error) {
+	names := []string{host}
+	for _, a := range aliases {
+		names = append(names, string(a))
+	}
+	chain, key, err := authority.IssueServerCert(names, t.lifetime(), now)
 	if err != nil {
 		return Leaf{}, err
 	}
 	name := docker.LocalCertName(docker.Hostname(host))
-	if err := docker.PlaceCert(t.StackDir, docker.PlacedCert{Name: name, Names: []string{host}}, chain, key); err != nil {
+	if err := docker.PlaceCert(t.StackDir, docker.PlacedCert{Name: name, Names: names}, chain, key); err != nil {
 		return Leaf{}, err
 	}
 	cert, err := parseCert(chain)
@@ -297,7 +322,7 @@ func (t *LocalTLS) ensureLocked(routes []docker.Route, force bool, only, actor s
 	byHost := map[string]docker.Route{}
 	for _, r := range routes {
 		h := string(r.Host)
-		if !EligibleLocal(r) || !LocalNameAllowed(h) || (only != "" && only != h) {
+		if !EligibleLocal(r) || !LocalNameAllowed(h) || (only != "" && only != h) || !aliasesAllowed(r) {
 			continue
 		}
 		byHost[h] = r
@@ -342,7 +367,7 @@ func (t *LocalTLS) ensureLocked(routes []docker.Route, force bool, only, actor s
 		if reason == "" {
 			continue
 		}
-		leaf, ierr := t.issue(authority, caFP, host, now)
+		leaf, ierr := t.issue(authority, caFP, host, byHost[host].Aliases, now)
 		if ierr != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", host, ierr))
 			t.audit(actor, "tls.local-leaf.issue", "error", host+": "+ierr.Error())

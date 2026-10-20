@@ -78,6 +78,18 @@ func handleExposureApprove(st *store.Store, wiz *exposure.Wizard) http.HandlerFu
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
+		if plan.To == docker.ExposurePublic {
+			if set, lerr := loadEdgeRoutes(st); lerr == nil {
+				if dash, ok := set.DashboardRoute(); ok {
+					for _, n := range dash.Names() {
+						if n == plan.Host {
+							http.Error(w, "exposure: "+docker.ErrDashboardPublic, http.StatusUnprocessableEntity)
+							return
+						}
+					}
+				}
+			}
+		}
 		approval, err := exposure.Approve(plan, body.Actor, body.Networks)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)

@@ -15,6 +15,7 @@ import (
 	"homestead/internal/docker"
 	"homestead/internal/doctor"
 	"homestead/internal/firewall"
+	"homestead/internal/mdns"
 	"homestead/internal/operation"
 	"homestead/internal/scheduler"
 	"homestead/internal/schema"
@@ -47,6 +48,9 @@ type AppServices struct {
 	Auth  *auth.Service
 	// Scheduler is built and mounted for status; the daemon runs it (S260).
 	Scheduler *scheduler.Scheduler
+	// DashboardAddress owns the dashboard edge route; the daemon calls
+	// RunEnsure so a fresh appliance is claimable on the LAN (S289).
+	DashboardAddress *DashboardAddressService
 }
 
 // MountApp registers every production TCP route on srv.
@@ -88,6 +92,8 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 		localTLSDoctorChecks(local, time.Now),
 		craftFilesDoctorCheck(st, docker.CraftMountPresent, docker.CraftSocketPath),
 		edgeUpstreamDoctorCheck(st, docker.NewClient("").Containers),
+		dashboardSocketDoctorCheck(st, docker.DashboardMountPresent, docker.DashboardSocketPath),
+		mdnsDoctorCheck(mdns.CurrentState),
 	)
 	srv.MountLocalTLS(st, local)
 	srv.MountTLSRenewal(st, issuing, time.Now)
@@ -108,6 +114,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountDocker(dockerClient)
 	srv.MountDockge(dockerClient)
 	srv.MountEdge(st, local)
+	dashAddr := srv.MountDashboardAddress(st, local)
 	srv.MountCraft(st, c.CatalogDir, filepath.Join(filepath.Dir(c.ConfigPath), "craft-trust.yaml"), docker.BuildClient{})
 	srv.MountCraftFiles(CraftFilesConfig{
 		Store: st, Secrets: secrets, Auth: authSvc, Local: local,
@@ -136,5 +143,5 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	if c.Dashboard != nil {
 		srv.MountDashboard(c.Dashboard)
 	}
-	return &AppServices{Claim: claimSvc, Auth: authSvc, Scheduler: sched}, nil
+	return &AppServices{Claim: claimSvc, Auth: authSvc, Scheduler: sched, DashboardAddress: dashAddr}, nil
 }

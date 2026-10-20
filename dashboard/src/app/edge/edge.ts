@@ -109,7 +109,8 @@ export class Edge implements OnInit, OnDestroy {
       next: ({ routes }) => {
         this.loading.set(false);
         this.loaded.set(true);
-        this.drafts.set((routes ?? []).map((r) => this.toDraft(r)));
+        // The dashboard route is managed on the Trust page (S289); the daemon keeps it.
+        this.drafts.set((routes ?? []).filter((r) => !r.Dashboard).map((r) => this.toDraft(r)));
         this.problems.set([]);
       },
       error: (failure: HttpErrorResponse) => {
@@ -204,7 +205,7 @@ export class Edge implements OnInit, OnDestroy {
       this.error.set(bad);
       return;
     }
-    this.drafts.set((doc.routes as EdgeRoute[]).map((r) => this.toDraft(r)));
+    this.drafts.set((doc.routes as EdgeRoute[]).filter((r) => !r.Dashboard).map((r) => this.toDraft(r)));
     this.notice.set(`Loaded ${plural(doc.routes.length, 'route')}. Review them, then reconcile.`);
   }
 

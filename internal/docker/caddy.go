@@ -80,6 +80,8 @@ services:
       # Directory holding the daemon's craft-file socket (ADR-032): the
       # directory, not the socket, so a recreated socket is seen. Read-only.
       - ` + CraftSocketDir + `:` + CraftSocketDir + `:ro
+      # Directory holding the dashboard socket (S289, ADR-035), read-only.
+      - ` + DashboardSocketDir + `:` + DashboardSocketDir + `:ro
     networks:
       - homestead-edge
 networks:

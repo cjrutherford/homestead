@@ -66,6 +66,8 @@ type Server struct {
 	files     *CraftFiles
 	craftMux  *recordingMux
 	craftHTTP *http.Server
+	// dashNames lists the names the dashboard route answers on (S289).
+	dashNames func() []string
 }
 
 // New returns a Server serving addr. Pass DefaultAddr for local-only binding.

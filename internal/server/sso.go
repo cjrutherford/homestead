@@ -145,7 +145,15 @@ func ssoDefaults(st *store.Store, port int) sso.Defaults {
 				}
 				d.AuthentikURL = scheme + "://" + host
 			}
-			if r.Target.Port == port && (r.Target.Host == "127.0.0.1" || r.Target.Host == "localhost" || r.Target.Host == "host.docker.internal") {
+			if r.Dashboard {
+				// The dashboard route answers on every name it carries
+				// (ADR-035), always over HTTPS.
+				for _, n := range r.Names() {
+					d.Origins = append(d.Origins, "https://"+strings.ToLower(string(n)))
+				}
+				continue
+			}
+			if r.Target.Port == port && (r.Target.Host == "127.0.0.1" || r.Target.Host == "localhost") {
 				scheme := "https"
 				if r.TLS == "off" {
 					scheme = "http"
@@ -166,8 +174,14 @@ func ssoDefaults(st *store.Store, port int) sso.Defaults {
 }
 
 // clientHost is the peer address as the daemon sees it. Forwarded headers
-// are never consulted.
+// are never consulted on TCP; on the dashboard socket the front wrapper has
+// already validated X-Forwarded-For and stored the client address.
 func clientHost(r *http.Request) string {
+	// Only the dashboard socket's front wrapper sets this, after it has
+	// validated X-Forwarded-For (ADR-035). TCP never reads the header.
+	if a, ok := edgeClientFrom(r.Context()); ok {
+		return a
+	}
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		return host
 	}

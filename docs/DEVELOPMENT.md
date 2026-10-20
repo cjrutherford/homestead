@@ -4645,3 +4645,45 @@ committed). Results:
   unclaimed boot on a second daemon with its own state, `claim token` before
   and after expiry, uninstall/reinstall a small app, unassign/unregister a
   test mount, the two confirm dialogs).
+
+## S289: Dashboard on a local network address (ADR-035)
+
+- Dashboard socket: `internal/server/dashsocket.go` serves the TCP handler
+  (same mux, same ADR-020 boundary) on `/run/homestead-dashboard/dashboard.sock`
+  (dir 0750, socket 0660, group `homestead-dashboard`, created by
+  `scripts/install-systemd.sh`; `RuntimeDirectory` gains the directory). The
+  `--dashboard-socket` flag only accepts that path. The front wrapper requires
+  exactly one non-loopback, non-unspecified `X-Forwarded-For` (400), checks
+  Host against the dashboard route names (421), refuses cookie plus bearer,
+  checks Origin (https and a route name), and refuses a cookie mutation with no
+  Origin. A bearer without a cookie needs no Origin. On success it stores the
+  client address in the request context and sets `RemoteAddr`; `requestConnection`,
+  `clientHost`, login audit and the boundary report use it. TCP never reads
+  `X-Forwarded-For`.
+- Route model: `docker.Route.Dashboard` and `Aliases`. Validation refuses
+  public exposure, automatic TLS and non-internal TLS; one dashboard route per
+  table; names unique across hosts and aliases. Rendering: one site block with
+  both names, `reverse_proxy unix//run/homestead-dashboard/dashboard.sock`,
+  `header_up` for the client address, `trusted_proxies` unset. Caddy compose
+  mounts `/run/homestead-dashboard` read-only; reconcile verifies the mount
+  and says to redeploy the edge when it is missing. The planner and the
+  exposure approve path refuse a public dashboard.
+- Two names: `homestead.local` (mDNS, `internal/mdns`) and the owner-set name
+  (default `homestead.lan`) share one multi-SAN internal-CA leaf
+  (`cert.LocalTLS`), pass the Host check, are accepted Origins, and are added to
+  the SSO defaults as `https://<name>`. `ssoDefaults` no longer treats a
+  `host.docker.internal` target as a dashboard origin.
+- Owner-set name: `GET`/`PUT /api/v1/dashboard/address` (session class),
+  `homesteadctl dashboard address [get | set NAME [--exposure local|overlay]]`,
+  Trust page section. PUT runs an operation: ensure leaf, deploy the edge, then
+  reconcile. The server keeps the dashboard route when a client replaces the
+  route table without it; the Edge editor hides it. The daemon records the
+  default route and deploys the edge at startup (retry), before claim.
+- CLI: `--ca-file` / `HOMESTEAD_CA_FILE` adds the appliance root to the trusted
+  roots (`apiclient.WithRootCA`); verification is never skipped.
+- Doctor: `edge-dashboard-socket` (route recorded, socket present, edge mount)
+  and `dashboard-mdns-name` (mDNS responder bound; Avahi or systemd-resolved
+  holding UDP 5353 is named).
+- Docs: `docs/architecture/LOCAL_DASHBOARD.md`, PARITY rows, ARCHITECTURE note.
+- KVM on VM 2: PENDING (run by the coordinator).
+

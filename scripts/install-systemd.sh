@@ -23,6 +23,8 @@ cd "$REPO"
 "$REPO/scripts/provision-layout.sh"
 # Group allowed on the craft file socket besides root (S254, ADR-032).
 getent group homestead-craft >/dev/null || groupadd --system homestead-craft
+# Group allowed on the dashboard socket besides root (S289, ADR-035).
+getent group homestead-dashboard >/dev/null || groupadd --system homestead-dashboard
 # A built dashboard (make dashboard-build dashboard-embed) travels inside
 # the binary; without one the daemon stays API-only (S031).
 build_tags=()
@@ -58,3 +60,12 @@ systemctl daemon-reload
 systemctl enable homestead-server.service
 systemctl restart homestead-server.service
 systemctl --no-pager --lines=5 status homestead-server.service
+# The daemon records the default dashboard route (homestead.lan, plus the
+# mDNS name) and deploys the edge itself, before the appliance is claimed
+# (S289, ADR-035). The .local address comes first: it needs no DNS setup.
+echo
+echo "Homestead is installed. Claim it from another machine on this network:"
+echo "  https://homestead.local   (answered by mDNS; no DNS setup needed)"
+echo "  https://homestead.lan     (needs a router DNS entry or a hosts entry)"
+echo "The first visit shows an untrusted certificate until the appliance root"
+echo "is installed; see docs/architecture/LOCAL_DASHBOARD.md."
