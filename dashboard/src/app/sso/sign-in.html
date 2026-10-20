@@ -75,10 +75,14 @@
         @for (line of p.warnings; track line) {
           <app-state-message kind="warning" [headline]="line" />
         }
-        <div class="field">
-          <label for="sso-approve-token">Authentik API token</label>
-          <input id="sso-approve-token" type="password" autocomplete="off" (input)="apiToken = $any($event.target).value" />
-        </div>
+        @if (p.inspected && apiToken.trim()) {
+          <p class="hint">Approving uses the Authentik API token you entered above; it is not stored by the browser.</p>
+        } @else {
+          <div class="field">
+            <label for="sso-approve-token">Authentik API token</label>
+            <input id="sso-approve-token" type="password" autocomplete="off" (input)="apiToken = $any($event.target).value" />
+          </div>
+        }
         <label>
           <input type="checkbox" name="keep-token" (change)="keepToken = $any($event.target).checked" />
           Keep the token, sealed on this appliance, for later changes (otherwise it is forgotten after apply)

@@ -1,6 +1,6 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import {
   provideHttpClientTesting,
@@ -152,11 +152,35 @@ describe('Claim', () => {
     expect(req.request.method).toBe('POST');
     req.flush({ id: 1, username: 'owner', expires_at: '2030-01-01T00:00:00Z' });
     fixture.detectChanges();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     flushSave('done');
     expect(text()).toContain('administrator created');
     expect(text()).toContain('Step 3 of 3');
     // The owner is logged in locally by setup.
     expect(TestBed.inject(SessionService).username()).toBe('owner');
+    // The owner just chose the password: setup's confirmation is recorded,
+    // then the setup wizard opens (S292).
+    const confirm = http.expectOne('/api/v1/setup/steps/account');
+    expect(confirm.request.method).toBe('PUT');
+    expect(confirm.request.body).toEqual({ state: 'done' });
+    expect(navigate).not.toHaveBeenCalled();
+    confirm.flush({});
+    expect(navigate).toHaveBeenCalledWith(['/setup']);
+  });
+
+  it('still opens setup when recording the password confirmation fails', () => {
+    fixture.detectChanges();
+    answerIdentity('UNCLAIMED');
+    submitToken('good-token');
+    http.expectOne('/api/v1/claim').flush({ state: 'CLAIMED' });
+    fixture.detectChanges();
+    submitAdmin('owner', 'long-enough-password', 'long-enough-password');
+    http.expectOne('/api/v1/admins/setup').flush({ id: 1, username: 'owner', expires_at: '2030-01-01T00:00:00Z' });
+    fixture.detectChanges();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    flushSave('done');
+    http.expectOne('/api/v1/setup/steps/account').flush('no', { status: 500, statusText: 'x' });
+    expect(navigate).toHaveBeenCalledWith(['/setup']);
   });
 
   it('lands on done when the administrator exists', () => {

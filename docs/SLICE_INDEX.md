@@ -54,3 +54,5 @@ Then S288 open bug fixes from the S285–S287 reviews (owner direction
 Then S289 (done, KVM pending) dashboard on a local network address (ADR-035 first; `docs/slices/S289-lan-dashboard-address.md`) → S290 public routes for apps on the tunnel, including adopting an existing tunnel (`docs/slices/S290-public-app-routes.md`). Owner direction 2026-10-19: setup testable without the tunnel, and public routes defined in the app.
 
 Then S291 step-by-step setup wizard (ADR-036 supersedes ADR-034; `docs/slices/S291-setup-wizard.md`), run before S290. Owner direction 2026-10-20: wizard with inline steps, linear with skip, new Storage step, outside-Homestead tasks explained in each step.
+
+Then S292 setup walkthrough fixes (`docs/slices/S292-setup-walkthrough-fixes.md`): the bugs found walking setup from scratch on the KVM VM, owner direction 2026-10-20. S293 storage step UX, S294 domain and tunnel (ADR first) and S295 app names, app SSO and backups in setup (ADR first) follow.

@@ -311,7 +311,11 @@ func (i *Issuing) PendingRenewals(now time.Time) ([]string, error) {
 	}
 	set, err := LoadStrategy(i.Wizards)
 	if err != nil {
-		return nil, err
+		if !errors.Is(err, wizard.ErrNotFound) {
+			return nil, err
+		}
+		// A fresh appliance has no TLS strategy yet: nothing is due.
+		set = Set{}
 	}
 	states, err := NewRenewalStates(i.Store).List()
 	if err != nil {

@@ -228,7 +228,7 @@ sign-in paragraph.
 ### Copy
 Curated hints come from the manifests, this folder and `docs/THIRD_PARTY.md`.
 Where a fact is upstream's own first-run behaviour (the first Immich account is
-the administrator; Authentik's `/if/flow/initial-setup/`), it is written once
+the administrator; Authentik's first-run, started from its own address), it is written once
 and kept generic. Nothing promises a feature the package lacks.
 
 ## Setup walkthrough (S287)

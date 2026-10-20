@@ -4716,3 +4716,35 @@ committed). Results:
 - Docs: `SETUP_WALKTHROUGH.md` rewritten; PARITY rows updated; deferred items
   added.
 - KVM on the test VM: PENDING (run by the coordinator).
+
+## S292: Setup walkthrough fixes
+
+- Found walking setup from scratch on the KVM VM (Authentik 2026.8.3).
+- Daemon:
+  - `sso.Defaults` has JSON tags, so the Sign-in form is prefilled.
+  - `cert.PendingRenewals` treats a missing TLS strategy as nothing due, so
+    `cert.renewal-check` no longer fails on a fresh appliance.
+  - The setup `Domain` source receives the provider chosen in the step, and
+    `credentials_sealed` checks it first.
+- Dashboard:
+  - The Status page points an unclaimed appliance to Claim.
+  - Creating the administrator records the password confirmation and opens
+    `/setup`.
+  - The Authentik link callback returns to `/setup` while setup is not
+    complete.
+  - The approve step reuses the token typed for the review.
+  - The Sign-in step and the Authentik "first time" copy use the root
+    address and the real token UI.
+  - The embedded install wizard takes a `closeLabel`, hides Uninstall and
+    dedupes data folders.
+- Out-of-scope findings were added to `DEFERRED.md` for S293 to S295.
+- KVM on VM 2 (2026-10-20, deployed over the existing appliance, no reset):
+  - `GET /api/v1/sso` returns `defaults.authentik_url` and `origins`.
+  - The Sign-in step lists the new outside tasks with `https://authentik.lan/`.
+  - `facts.domain.credentials_sealed` is true for the Cloudflare token stored
+    earlier in the step; before S292 it read false.
+  - Not re-run live, covered by specs only:
+    - claim to setup, F1/F2/F3 (the VM is claimed);
+    - the Authentik link return (already linked);
+    - the next daily `cert.renewal-check`. The failed run from before the
+      fix is operation 1.

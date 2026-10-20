@@ -21,6 +21,16 @@
       </dl>
     </app-loading>
 
+    @if (unclaimed()) {
+      <app-state-message
+        kind="notice"
+        headline="This appliance is not claimed yet."
+        detail="Claim it with the token from sudo homesteadctl claim token on the appliance. Diagnostics show here once it is claimed."
+        actionLabel="Claim this appliance"
+        actionLink="/claim"
+      />
+    }
+
     @if (report(); as diagnostics) {
       @if (problems().length) {
         <h2>Needs attention ({{ problems().length }})</h2>

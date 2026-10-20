@@ -131,6 +131,8 @@ export class InstallWizard implements OnInit {
    * the way out is `closed` instead of a link to the catalog.
    */
   readonly embedded = input(false);
+  /** The label of the button that hands back to the embedding page (S292). */
+  readonly closeLabel = input('Back to the app list');
   readonly appName = input('');
   readonly closed = output<void>();
   /** Opened from the setup walkthrough (S287): offer the way back. */
@@ -301,8 +303,10 @@ export class InstallWizard implements OnInit {
     for (const service of manifest.Services) {
       for (const data of service.Data ?? []) {
         const mount = mounts[data.Class];
-        if (!data.Ephemeral && mount) {
-          rows.push({ path: `${mount}/${manifest.Name}/${data.Subpath}`, class: data.Class });
+        const path = `${mount}/${manifest.Name}/${data.Subpath}`;
+        // Services that share a folder (Authentik's server and worker) list it once (S292).
+        if (!data.Ephemeral && mount && !rows.some((row) => row.path === path)) {
+          rows.push({ path, class: data.Class });
         }
       }
     }

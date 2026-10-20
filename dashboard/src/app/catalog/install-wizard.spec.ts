@@ -169,7 +169,15 @@ describe('InstallWizard', () => {
 
   function start(
     manifest: Record<string, unknown>,
-    options: { installed?: string[]; health?: unknown; storage?: boolean; craft?: unknown; mounts?: unknown[]; assignments?: unknown[] } = {},
+    options: {
+      installed?: string[];
+      health?: unknown;
+      storage?: boolean;
+      craft?: unknown;
+      mounts?: unknown[];
+      assignments?: unknown[];
+      inputs?: Record<string, unknown>;
+    } = {},
   ) {
     const name = manifest['Name'] as string;
     TestBed.configureTestingModule({
@@ -188,6 +196,9 @@ describe('InstallWizard', () => {
     });
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(InstallWizard);
+    for (const [key, value] of Object.entries(options.inputs ?? {})) {
+      fixture.componentRef.setInput(key, value);
+    }
     fixture.detectChanges();
     http.expectOne(`/api/v1/catalog/${name}`).flush(manifest);
     http.expectOne('/api/v1/catalog').flush(PACKAGES(options.installed));
@@ -821,6 +832,30 @@ describe('InstallWizard', () => {
     expect(text()).toContain('Nextcloud installed');
     expect(text()).toContain('create the administrator account');
     expect(text()).toContain('Uninstall Nextcloud');
+  });
+
+  it('inside setup, hands back with the given label, offers no uninstall and lists a shared folder once', () => {
+    const shared = {
+      ...NEXTCLOUD,
+      Services: [
+        NEXTCLOUD.Services[0],
+        { Name: 'worker', Image: 'nextcloud:35.0.1-apache', Data: [{ Target: '/var/www/html', Class: 'application', Subpath: 'html' }] },
+      ],
+    };
+    start(shared, {
+      installed: ['nextcloud'],
+      assignments: [{ Class: 'application', Mountpoint: '/mnt/big', Actor: 'o', CreatedAt: '' }],
+      inputs: { embedded: true, appName: 'nextcloud', closeLabel: 'Continue to sign-in' },
+    });
+    doneReads([]);
+    expect(c().current()).toBe('done');
+    expect(button('Continue to sign-in')).toBeDefined();
+    expect(button('Back to the app list')).toBeUndefined();
+    expect(text()).not.toContain('Uninstall Nextcloud');
+    const paths = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('.wizard-paths code')).map(
+      (code) => code.textContent,
+    );
+    expect(paths.filter((path) => path === '/mnt/big/nextcloud/html').length).toBe(1);
   });
 
   it('says so when the package is not in the catalog', () => {

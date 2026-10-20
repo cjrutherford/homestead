@@ -763,9 +763,6 @@
   connector was laid out by hand (Cloudflare API plus the S246 files) so the
   public URL reaches the Claim page. Decide whether to allow a claim-token
   authorised tunnel setup, or document the manual route.
-- On an unclaimed appliance the dashboard root (Status) shows "Can't reach the
-  appliance" because `/api/v1/status` answers 403; it should redirect to
-  `/claim`.
 - An existing tunnel set up outside Homestead (no `tunnel_routes` row) has no
   adopt command; after claim the owner can only replace it through setup.
 - Dashboard names must fall under the internal root's permitted suffixes
@@ -789,5 +786,29 @@
   free-jump mode was not built (S291).
 - The Storage step is skip and unskip only through the setup API and CLI; the
   assignment itself uses the storage commands (S291).
-- The Authentik initial-setup address falls back to `authentik.<name>` when the
-  sign-in defaults are unknown (S291).
+- The Sign-in step shows no Authentik link, only guidance, when the sign-in
+  defaults are unknown (S291, S292).
+- Found walking setup from scratch on the KVM VM, 2026-10-20; not fixed in S292:
+  - Storage step (S293): discovered mounts need the owner to know which
+    class goes where; the step gives no recommendation and no example of
+    mounting a disk that is attached but not mounted.
+  - Domain step (S294, ADR first): no domain or zone field, so the provider
+    credentials are stored without the domain they serve; Authentik's name
+    (chosen at install, default `.lan`) is not tied to the domain.
+  - Tunnel (S294): `tunnel.setup` never creates the `<id>.cfargotunnel.com`
+    CNAME, so the hostname does not resolve; the tunnel form asks again for
+    the Cloudflare token stored in the domain step; its placeholder service
+    `http://127.0.0.1:8080` publishes the management dashboard with no
+    exposure plan; the progress box can stay on "Starting" while the tunnel
+    is already healthy; the tunnel status read is slow (about 6 s).
+  - App names (S295, ADR first): every app gets a new `*.lan` name that the
+    owner must add by hand to router DNS or a hosts file; only
+    `homestead.local` is announced.
+  - App sign-in (S295): apps that declare optional OIDC (Immich, Nextcloud,
+    Jellyfin) are not offered a wiring to the linked Authentik, and the SSO
+    redirect addresses do not include public names.
+  - Backups (S295): setup does not offer a backup schedule for the installed
+    apps.
+  - The Authentik link callback still redirects to `/sign-in`; the dashboard
+    forwards to `/setup` (S292) rather than the daemon carrying a return
+    path.

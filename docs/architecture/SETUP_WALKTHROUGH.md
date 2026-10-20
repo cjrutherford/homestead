@@ -39,7 +39,7 @@ offers no Undo skip, and never re-gates the appliance.
 | --- | --- |
 | Account | keep the password in a password manager; store the recovery file offline |
 | Storage | the disk must already be mounted (Homestead never formats); an `/etc/fstab` example is shown |
-| Sign-in | reach `authentik.<name>`; trust the root certificate (Trust page); open `https://authentik.<name>/if/flow/initial-setup/` and create `akadmin`; Admin interface, Directory, Tokens and App passwords, Create, intent API |
+| Sign-in | reach `authentik.<name>`; trust the root certificate (Trust page); open `https://authentik.<name>/` (Authentik 2026.8 starts its first-run only from the address itself) and create `akadmin`; Admin interface, Directory, Tokens and App passwords, New Token, user `akadmin`, API Token (checked against Authentik 2026.8.3 on 2026-10-20, S292) |
 | Domain | add the domain to Cloudflare; create the scoped token with the permissions below; the other providers' equivalents; for manual DNS, the record table |
 | Apps | none |
 

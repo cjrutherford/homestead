@@ -19,6 +19,7 @@ type fakes struct {
 	tunnels, exp    int
 	apps            int
 	storage         bool
+	chosen          string
 }
 
 func newSvc(t *testing.T) (*Service, *fakes, *store.Store) {
@@ -33,7 +34,7 @@ func newSvc(t *testing.T) (*Service, *fakes, *store.Store) {
 		Storage:   func() (bool, error) { return f.storage, nil },
 		Recovery:  func() (bool, bool, error) { return f.exported, f.acked, nil },
 		SignIn:    func() (SSOFacts, error) { return f.sso, nil },
-		Domain:    func() (DomainFacts, error) { return f.domain, nil },
+		Domain:    func(chosen string) (DomainFacts, error) { f.chosen = chosen; return f.domain, nil },
 		Tunnels:   func() (int, error) { return f.tunnels, nil },
 		Exposures: func() (int, error) { return f.exp, nil },
 		Apps: func() ([]StarterApp, int, error) {
@@ -569,5 +570,18 @@ func TestDashboardCloudflareCopyMatchesProviders(t *testing.T) {
 		if !want[m] {
 			t.Errorf("domain-step.ts names permission %q that providers.go does not ask for", m)
 		}
+	}
+}
+
+func TestDomainSourceGetsChosenProvider(t *testing.T) {
+	svc, f, _ := newSvc(t)
+	if _, err := svc.Update(StepDomain, Update{Provider: str("cloudflare")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Status(); err != nil {
+		t.Fatal(err)
+	}
+	if f.chosen != "cloudflare" {
+		t.Fatalf("Domain source got %q, want the chosen provider", f.chosen)
 	}
 }

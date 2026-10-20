@@ -52,7 +52,7 @@ export const CURATED_COPY: Record<string, CuratedCopy> = {
   },
   authentik: {
     firstLogin: [
-      'Open /if/flow/initial-setup/ on Authentik’s address to set the password for the akadmin administrator.',
+      'Open Authentik’s address itself (not a page under it): Authentik takes you to its first-run page to set the email and password for the akadmin administrator. Right after the install it can say “Request has been denied” for about a minute while it starts; reload.',
       'Then create providers and applications in Authentik for the services that should sign in through it.',
     ],
     note: 'Authentik is the sign-in service. Other apps use it; it does not use another one.',

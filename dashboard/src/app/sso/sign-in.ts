@@ -1,10 +1,11 @@
 import { Component, DestroyRef, OnInit, effect, inject, signal, untracked, input } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { httpErrorMessage } from '../core/http-error';
 import { isTerminal } from '../core/operation-view';
 import { ssoErrorMessage } from '../core/sso-errors';
 import { WorkOrders } from '../core/work-orders.service';
+import { SetupService } from '../setup/setup.service';
 import { StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
@@ -31,6 +32,8 @@ export class SignIn implements OnInit {
   private readonly sso = inject(SsoService);
   private readonly route = inject(ActivatedRoute);
   private readonly orders = inject(WorkOrders);
+  private readonly router = inject(Router);
+  private readonly setup = inject(SetupService);
 
   protected readonly state = signal<SsoState | null>(null);
   protected readonly plan = signal<SsoPlan | null>(null);
@@ -62,6 +65,9 @@ export class SignIn implements OnInit {
 
   ngOnInit(): void {
     const query = this.route.snapshot.queryParamMap;
+    if (!this.embedded() && (query.get('linked') || query.get('sso_error'))) {
+      this.returnToSetup(query.get('linked'), query.get('sso_error'));
+    }
     if (query.get('linked')) {
       this.notice.set('Authentik is linked. The login page now offers Sign in with Authentik.');
     }
@@ -70,6 +76,25 @@ export class SignIn implements OnInit {
       this.error.set(failure);
     }
     this.refresh();
+  }
+
+  /**
+   * The link round trip through Authentik always lands here. When it was
+   * started from the setup wizard (setup not yet complete), go back to the
+   * wizard with the same outcome so the owner keeps their place (S292).
+   */
+  private returnToSetup(linked: string | null, ssoError: string | null): void {
+    this.setup.setupStatus().subscribe({
+      next: (status) => {
+        if (!status.legacy && !status.complete) {
+          void this.router.navigate(['/setup'], {
+            queryParams: { linked: linked ?? undefined, sso_error: ssoError ?? undefined },
+            replaceUrl: true,
+          });
+        }
+      },
+      error: () => undefined,
+    });
   }
 
   protected refresh(): void {

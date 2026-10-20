@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { TitleCasePipe } from '@angular/common';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { ApiService, DoctorReport, Health, Identity } from '../core/api.service';
@@ -56,6 +57,11 @@ export class Status implements OnInit {
   protected readonly identity = signal<Identity | null>(null);
   protected readonly report = signal<DoctorReport | null>(null);
   protected readonly error = signal<string | null>(null);
+  /** The appliance answers but is not claimed: diagnostics need a claim first (S292). */
+  protected readonly unclaimed = computed(() => {
+    const state = this.identity()?.state;
+    return state !== undefined && state !== 'CLAIMED';
+  });
 
   /** Checks that are not ok, worst first. */
   protected readonly problems = computed(() =>
@@ -81,7 +87,13 @@ export class Status implements OnInit {
     });
     this.api.doctor().subscribe({
       next: (report) => this.report.set(report),
-      error: () => this.unreachable(),
+      // Diagnostics are for the owner: an unclaimed appliance refuses them,
+      // which is not the same as being unreachable.
+      error: (err: HttpErrorResponse) => {
+        if (err.status !== 401 && err.status !== 403) {
+          this.unreachable();
+        }
+      },
     });
   }
 

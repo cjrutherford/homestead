@@ -77,7 +77,7 @@ func setupSources(c SetupConfig) setup.Sources {
 			}
 			return f, nil
 		},
-		Domain: func() (setup.DomainFacts, error) {
+		Domain: func(chosen string) (setup.DomainFacts, error) {
 			var f setup.DomainFacts
 			if state, err := c.Wizards.Get("domain"); err == nil {
 				f.Provider, _ = state.Payload["provider"].(string)
@@ -99,7 +99,13 @@ func setupSources(c SetupConfig) setup.Sources {
 			case !errors.Is(err, sql.ErrNoRows):
 				return f, err
 			}
-			if p, ok := setup.ProviderNamed(f.Provider); ok && c.Secrets != nil {
+			// The setup step stores credentials for the provider chosen there,
+			// before any domain wizard exists, so that provider is checked first.
+			sealedFor := chosen
+			if sealedFor == "" {
+				sealedFor = f.Provider
+			}
+			if p, ok := setup.ProviderNamed(sealedFor); ok && c.Secrets != nil {
 				infos, err := c.Secrets.List()
 				if err != nil {
 					return f, err
@@ -110,7 +116,7 @@ func setupSources(c SetupConfig) setup.Sources {
 				}
 				f.CredentialsSealed = true
 				for _, cf := range p.Credentials {
-					if !have[domain.SecretName(f.Provider, cf.Name)] {
+					if !have[domain.SecretName(sealedFor, cf.Name)] {
 						f.CredentialsSealed = false
 					}
 				}

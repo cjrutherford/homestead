@@ -88,7 +88,8 @@ type DomainFacts struct {
 	// Onboarded: the validated domain is recorded (S223).
 	Onboarded bool `json:"onboarded"`
 	// CredentialsSealed: every credential the provider takes is in the secret
-	// store. Names and presence only; values are never read here.
+	// store, for the provider chosen in setup, else the recorded one.
+	// Names and presence only; values are never read here.
 	CredentialsSealed bool `json:"credentials_sealed"`
 }
 
@@ -130,7 +131,10 @@ type Sources struct {
 	// Storage reports whether the application storage class is assigned.
 	Storage func() (bool, error)
 	SignIn  func() (SSOFacts, error)
-	Domain  func() (DomainFacts, error)
+	// Domain reads the domain facts. chosen is the provider picked in the
+	// setup step (may be empty); the sealed-credentials fact is about it
+	// first, since that is the form the step offers (S292).
+	Domain  func(chosen string) (DomainFacts, error)
 	Tunnels func() (int, error)
 	// Exposures counts approved exposure plans.
 	Exposures func() (int, error)
@@ -304,7 +308,7 @@ func (s *Service) facts(st stored) (Facts, []StarterApp, error) {
 		}
 	}
 	if src.Domain != nil {
-		if f.Domain, err = src.Domain(); err != nil {
+		if f.Domain, err = src.Domain(st.Provider); err != nil {
 			return f, nil, fmt.Errorf("setup: domain: %w", err)
 		}
 	}

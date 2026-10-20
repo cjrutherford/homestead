@@ -361,7 +361,7 @@ describe('Setup wizard (S291)', () => {
   });
 
   describe('sign-in step', () => {
-    it('lists the outside tasks in order with the exact initial-setup address and token menu path', async () => {
+    it('lists the outside tasks in order with the Authentik root address and token menu path', async () => {
       await open(doneThrough(2));
       const tasks = Array.from(el().querySelectorAll('ol.outside-tasks > li')).map((li) =>
         (li.textContent ?? '').replace(/\s+/g, ' ').trim(),
@@ -370,11 +370,14 @@ describe('Setup wizard (S291)', () => {
       expect(tasks[0]).toContain('authentik.lan');
       expect(tasks[1]).toContain('root certificate');
       expect(el().querySelector('a[href="/trust"]')).not.toBeNull();
-      expect(tasks[2]).toContain('https://authentik.lan/if/flow/initial-setup/');
+      expect(tasks[2]).toContain('https://authentik.lan/');
+      expect(tasks[2]).not.toContain('initial-setup');
       expect(tasks[2]).toContain('akadmin');
+      expect(el().querySelector('a[href="https://authentik.lan/"]')).not.toBeNull();
       expect(tasks[3]).toContain('Admin interface, Directory, Tokens and App passwords');
-      expect(tasks[3]).toContain('Create');
-      expect(tasks[3]).toContain('API');
+      expect(tasks[3]).toContain('New Token');
+      expect(tasks[3]).toContain('API Token');
+      expect(text()).not.toContain('to be confirmed');
     });
 
     it('shows guidance, not a fake address, when the sign-in defaults are not known', async () => {
@@ -382,7 +385,7 @@ describe('Setup wizard (S291)', () => {
       await open(doneThrough(2));
       expect(text()).toContain('the Authentik address shown in the Sign-in section below');
       expect(text()).not.toContain('authentik.<name>');
-      expect(el().querySelector('a[href*="initial-setup"]')).toBeNull();
+      expect(el().querySelector('a[href^="https://authentik"]')).toBeNull();
     });
 
     it('offers the install wizard for Authentik first and reads its package', async () => {

@@ -206,3 +206,27 @@ func TestSetupStorageStep(t *testing.T) {
 		t.Fatalf("assigned app class should read done: %+v", s.Steps[1])
 	}
 }
+
+// TestSetupCredentialsSealedForChosenProvider: the setup step stores the
+// credentials for the provider chosen there, with no domain wizard behind
+// it; the fact must notice them (S292).
+func TestSetupCredentialsSealedForChosenProvider(t *testing.T) {
+	srv, _, secrets := setupTestServer(t)
+	rec := serveRequest(t, srv, http.MethodPut, "/api/v1/setup/steps/domain", map[string]string{"provider": "cloudflare"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("put: %d %s", rec.Code, rec.Body)
+	}
+	if s := decodeSetup(t, rec.Body.Bytes()); s.Facts.Domain.CredentialsSealed {
+		t.Fatalf("nothing stored yet, but sealed: %+v", s.Facts.Domain)
+	}
+	if err := secrets.Set("dns_cloudflare_api_token", "x"); err != nil {
+		t.Fatal(err)
+	}
+	s := decodeSetup(t, serveRequest(t, srv, http.MethodGet, "/api/v1/setup", nil).Body.Bytes())
+	if !s.Facts.Domain.CredentialsSealed {
+		t.Fatalf("credentials for the chosen provider not noticed: %+v", s.Facts.Domain)
+	}
+	if s.Facts.Domain.Configured {
+		t.Fatalf("a chosen provider alone is not a configured domain: %+v", s.Facts.Domain)
+	}
+}

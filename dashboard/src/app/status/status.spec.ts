@@ -5,6 +5,7 @@ import {
   provideHttpClientTesting,
   HttpTestingController,
 } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
 import { Status } from './status';
 
 describe('Status', () => {
@@ -14,7 +15,7 @@ describe('Status', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [Status],
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
     fixture = TestBed.createComponent(Status);
     http = TestBed.inject(HttpTestingController);
@@ -48,6 +49,24 @@ describe('Status', () => {
     expect(text).toContain('ok');
     expect(text).toContain('Claimed');
     expect(text).toContain('0.0.0-s002');
+  });
+
+  it('points an unclaimed appliance at the claim page, not at an outage', () => {
+    fixture.detectChanges();
+    for (const req of http.match(() => true)) {
+      if (req.request.url === '/healthz') {
+        req.flush({ status: 'ok', version: '1.0.0' });
+      } else if (req.request.url === '/api/v1/doctor') {
+        req.flush('appliance is not claimed', { status: 403, statusText: 'Forbidden' });
+      } else {
+        req.flush({ state: 'UNCLAIMED', version: '1.0.0' });
+      }
+    }
+    fixture.detectChanges();
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).not.toContain("Can't reach the appliance");
+    expect(text).toContain('This appliance is not claimed yet.');
+    expect(fixture.nativeElement.querySelector('a[href="/claim"]')).not.toBeNull();
   });
 
   it('renders an error when the daemon is unreachable', () => {

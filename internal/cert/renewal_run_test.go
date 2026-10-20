@@ -820,3 +820,13 @@ func TestRenewalReportOnlyAttachesStateOfKnownCertificates(t *testing.T) {
 		t.Fatalf("status = %+v", st)
 	}
 }
+
+// TestPendingRenewalsFreshAppliance: before the TLS strategy is saved there
+// is nothing to renew, and the daily run must not fail (S292).
+func TestPendingRenewalsFreshAppliance(t *testing.T) {
+	rig := newIssuanceRig(t, testDirectory)
+	due, err := rig.issuing.PendingRenewals(rig.clock)
+	if err != nil || len(due) != 0 {
+		t.Fatalf("PendingRenewals on a fresh appliance = %v, %v; want none, nil", due, err)
+	}
+}

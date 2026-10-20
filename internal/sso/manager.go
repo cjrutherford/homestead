@@ -105,8 +105,8 @@ type SecretStore interface {
 // own state (the edge route table, the tunnel hostnames and the daemon
 // port), never from a request.
 type Defaults struct {
-	AuthentikURL string
-	Origins      []string
+	AuthentikURL string   `json:"authentik_url"`
+	Origins      []string `json:"origins"`
 }
 
 // Manager owns the SSO state.

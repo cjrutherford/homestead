@@ -741,3 +741,16 @@ func TestSSODefaultOriginsHonourRouteTLS(t *testing.T) {
 		t.Fatalf("origins = %v", d.Origins)
 	}
 }
+
+// TestSSODefaultsWireNames pins the JSON names the dashboard reads
+// (defaults.authentik_url, defaults.origins); without tags the form showed
+// "undefined" (S292).
+func TestSSODefaultsWireNames(t *testing.T) {
+	raw, err := json.Marshal(sso.Defaults{AuthentikURL: "https://authentik.lan", Origins: []string{"https://homestead.lan"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(raw), `{"authentik_url":"https://authentik.lan","origins":["https://homestead.lan"]}`; got != want {
+		t.Fatalf("defaults JSON = %s, want %s", got, want)
+	}
+}

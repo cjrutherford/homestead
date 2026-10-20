@@ -1,9 +1,9 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { OperationState } from '../core/api.service';
 import { WorkOrders } from '../core/work-orders.service';
 import { SignIn } from './sign-in';
@@ -138,7 +138,9 @@ describe('SignIn', () => {
     expect(text()).toContain('can do anything an Authentik administrator can');
     expect(text()).not.toContain('ak-token-123');
 
-    type('#sso-approve-token', 'ak-token-123');
+    // The token typed for the review is used again; it is not asked twice.
+    expect(el().querySelector('#sso-approve-token')).toBeNull();
+    expect(text()).toContain('uses the Authentik API token you entered above');
     (el().querySelector('input[name="keep-token"]') as HTMLInputElement).click();
     button('Approve and set up sign-in').click();
     const approve = http.expectOne('/api/v1/sso/approve');
@@ -230,16 +232,39 @@ describe('SignIn', () => {
     expect(text()).toContain('dormant');
   });
 
+  const SETUP_DONE = { legacy: false, complete: true };
+
   it('shows what the callback reported', async () => {
     await open({ linked: '1' });
+    http.expectOne('/api/v1/setup').flush(SETUP_DONE);
     status(NONE);
     expect(text()).toContain('Authentik is linked');
   });
 
   it('shows a failed link in words', async () => {
     await open({ sso_error: 'unlinked' });
+    http.expectOne('/api/v1/setup').flush(SETUP_DONE);
     status(NONE);
     expect(text()).toContain('not linked to this appliance');
+  });
+
+  it('goes back to the setup wizard after a link started there', async () => {
+    await open({ linked: '1' });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    http.expectOne('/api/v1/setup').flush({ legacy: false, complete: false });
+    status(NONE);
+    expect(navigate).toHaveBeenCalledWith(['/setup'], {
+      queryParams: { linked: '1', sso_error: undefined },
+      replaceUrl: true,
+    });
+  });
+
+  it('stays on the page once setup is complete', async () => {
+    await open({ linked: '1' });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+    http.expectOne('/api/v1/setup').flush(SETUP_DONE);
+    status(NONE);
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it('says so when setup failed', async () => {

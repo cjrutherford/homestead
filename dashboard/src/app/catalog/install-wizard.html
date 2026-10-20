@@ -560,7 +560,7 @@
                 <p class="wizard-actions">
                   <button type="button" class="primary" (click)="retry()">Try again</button>
                   @if (embedded()) {
-                    <button type="button" (click)="closed.emit()">Back to the app list</button>
+                    <button type="button" (click)="closed.emit()">{{ closeLabel() }}</button>
                   } @else {
                     <a class="button" routerLink="/catalog">Back to the catalog</a>
                   }
@@ -680,11 +680,14 @@
 
             <div class="wizard-actions">
               @if (embedded()) {
-                <button type="button" class="primary" (click)="finish(); closed.emit()">Back to the app list</button>
+                <button type="button" class="primary" (click)="finish(); closed.emit()">{{ closeLabel() }}</button>
               } @else {
                 <a class="button" routerLink="/catalog" (click)="finish()">Back to the catalog</a>
               }
-              <app-uninstall-app [name]="m.Name" [title]="m.Title" (uninstalled)="onUninstalled()" />
+              @if (!embedded()) {
+                <!-- Not offered inside setup: the step just installed it (S292). -->
+                <app-uninstall-app [name]="m.Name" [title]="m.Title" (uninstalled)="onUninstalled()" />
+              }
             </div>
           }
         }
