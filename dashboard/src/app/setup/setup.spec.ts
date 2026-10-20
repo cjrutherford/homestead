@@ -447,6 +447,20 @@ describe('Setup wizard (S291)', () => {
       expect(text()).not.toContain('TOKEN-VALUE-123');
     });
 
+    it('keeps the token but says when it cannot see the domain', async () => {
+      routes['POST /api/v1/tls/issuance/credentials'] = {
+        provider: 'cloudflare',
+        stored: ['api_token'],
+        warning: 'no Cloudflare zone the stored token can see contains other.net',
+      };
+      await open(doneThrough(3, { choices: { provider: 'cloudflare', domain: 'other.net' } }));
+      const input = el().querySelector('input[name="api_token"]') as HTMLInputElement;
+      input.value = 'TOKEN-VALUE-123';
+      input.form!.dispatchEvent(new Event('submit', { cancelable: true }));
+      await settle();
+      expect(text()).toContain('no Cloudflare zone the stored token can see contains other.net');
+    });
+
     it('refuses an empty credential form without calling the daemon', async () => {
       await open(doneThrough(3, { choices: { provider: 'cloudflare' } }));
       (el().querySelector('input[name="api_token"]') as HTMLInputElement).form!.dispatchEvent(

@@ -170,6 +170,8 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, dashboardSocket, 
 			fmt.Fprintln(os.Stderr, "homestead-server: dashboard address not ready, will retry:", err)
 		})
 	}()
+	// Probe the router once now so the Tunnel page opens without the wait.
+	go server.WarmTunnelDiscovery(ctx)
 	if err := srv.Run(ctx); err != nil {
 		return err
 	}

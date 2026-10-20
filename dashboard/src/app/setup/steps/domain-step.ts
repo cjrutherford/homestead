@@ -313,10 +313,12 @@ export class DomainStep {
     this.busy.set(true);
     this.error.set(null);
     this.api.tlsIssuanceCredentials(provider.name, values).subscribe({
-      next: () => {
+      next: ({ warning }) => {
         form.reset();
         this.busy.set(false);
         this.toast.show(`Stored the ${provider.label} credentials. They cannot be read back.`);
+        // The token is kept, but it cannot see the domain's zone (S294).
+        if (warning) this.error.set(warning);
         this.refresh();
       },
       error: (failure: HttpErrorResponse) => {

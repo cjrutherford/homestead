@@ -232,6 +232,17 @@ func (s *Server) MountSetup(c SetupConfig) *setup.Service {
 		}
 		writeJSON(w, st)
 	})
+	s.domainZoneWarning = func(ctx context.Context) string {
+		status, err := svc.Status()
+		if err != nil || status.Choices.Domain == "" {
+			return ""
+		}
+		cloudflare := "cloudflare"
+		if err := checkDomainZone(ctx, svc, c.Secrets, status.Choices.Domain, &cloudflare); err != nil {
+			return err.Error()
+		}
+		return ""
+	}
 	return svc
 }
 

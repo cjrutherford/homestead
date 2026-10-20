@@ -297,10 +297,13 @@ func runTLSIssuanceCredentials(ctx context.Context, client *apiclient.Client, ar
 		}
 		values[name] = value
 	}
-	stored, err := client.TLSIssuanceCredentials(ctx, args[0], values)
+	stored, warning, err := client.TLSIssuanceCredentials(ctx, args[0], values)
 	if err != nil {
 		return fail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "stored %s credentials: %s\n", args[0], strings.Join(stored, ", "))
+	if warning != "" {
+		fmt.Fprintf(stderr, "warning: %s\n", warning)
+	}
 	return exitOK
 }

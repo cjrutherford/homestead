@@ -68,6 +68,9 @@ type Server struct {
 	craftHTTP *http.Server
 	// dashNames lists the names the dashboard route answers on (S289).
 	dashNames func() []string
+	// domainZoneWarning checks the setup domain against the zones a newly
+	// stored Cloudflare token can see (S294), set by MountSetup.
+	domainZoneWarning func(ctx context.Context) string
 }
 
 // New returns a Server serving addr. Pass DefaultAddr for local-only binding.

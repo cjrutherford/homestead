@@ -144,6 +144,13 @@ var discoveryCache struct {
 	found tunnelDiscovery
 }
 
+// WarmTunnelDiscovery probes the router once so the first tunnel status
+// read after start is served from the cache instead of waiting for UPnP
+// and NAT-PMP/PCP. The daemon runs it in the background at start.
+func WarmTunnelDiscovery(ctx context.Context) {
+	cachedDiscovery(ctx)
+}
+
 func cachedDiscovery(ctx context.Context) tunnelDiscovery {
 	discoveryCache.Lock()
 	defer discoveryCache.Unlock()

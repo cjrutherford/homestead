@@ -282,6 +282,7 @@ func TestTunnelPlanSetupTeardown(t *testing.T) {
 		t.Fatal(err)
 	}
 	oldA := cf.addRecord("A", "app.example.com", "203.0.113.7")
+	cf.records[oldA]["comment"] = "home router"
 	request := map[string]any{"name": "homestead", "hostname": "app.example.com", "service": "http://127.0.0.1:3000"}
 	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/tunnel/plan", request)
 	if recorder.Code != http.StatusOK {
@@ -375,14 +376,19 @@ func TestTunnelPlanSetupTeardown(t *testing.T) {
 	if len(cf.tunnels) != 0 || len(cf.records) != 3 || cf.records[foreign] == nil {
 		t.Fatalf("after teardown records = %v tunnels = %v", cf.records, cf.tunnels)
 	}
-	restored := map[string]string{}
+	restored, comments := map[string]string{}, map[string]string{}
 	for _, record := range cf.records {
 		if record["name"] == "app.example.com" {
 			restored[fmt.Sprint(record["type"])] = fmt.Sprint(record["content"])
+			comments[fmt.Sprint(record["type"])] = fmt.Sprint(record["comment"])
 		}
 	}
 	if restored["A"] != "203.0.113.7" || restored["AAAA"] != "2001:db8::7" {
 		t.Fatalf("restored = %v", restored)
+	}
+	// The owner's note comes back; a record without one is marked.
+	if comments["A"] != "home router" || !strings.Contains(comments["AAAA"], "Restored by Homestead") {
+		t.Fatalf("comments = %v", comments)
 	}
 	if replaced, _ := router.ReplacedRecords(st, tunnelID); len(replaced) != 0 {
 		t.Fatalf("replaced = %v", replaced)

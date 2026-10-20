@@ -4830,3 +4830,15 @@ committed). Results:
   "Starting"; the Tunnel page re-reads status when setup or teardown ends.
 - `tests/test_s235_storage.py` looks for the `actor` flag name, which S293
   moved into a helper.
+
+### S294 gaps closed (2026-10-20)
+
+- Storing Cloudflare credentials (`POST /api/v1/tls/issuance/credentials`)
+  checks the setup domain against the token's zones through a hook
+  `MountSetup` sets (`Server.domainZoneWarning`). The token is stored either
+  way; the response carries `warning`, which the Domain step shows and
+  `homesteadctl tls issuance credentials` prints to stderr.
+- `server.WarmTunnelDiscovery` probes the router once at daemon start (from
+  `main`, never from a mount, so tests never probe the network).
+- Migration 47 adds `comment` to `tunnel_replaced_records`; teardown puts
+  the record's own comment back and marks only uncommented records.

@@ -805,20 +805,23 @@
     replaced (ADR-038).
   - Left open after S294: Authentik's name (chosen at install, default
     `.lan`) is not tied to the domain (S296).
+  - Closed after the S294 fixes: storing the Cloudflare token checks a
+    domain saved before it and warns (the token is kept); the daemon probes
+    the router at start, so the first status read is served from the
+    cache; a restored record keeps its original comment.
   - S294 residuals:
-    - a domain saved before the Cloudflare token, or while Cloudflare is
-      unreachable, is not checked; the tunnel plan reports a missing zone;
-    - the first tunnel status read after a restart still waits for the
-      router probe (about 3 s);
-    - teardown of a tunnel set up before S294 finds its account from the
-      route's zone or the token's single account, and deletes no DNS record
-      (none was recorded);
+    - a domain saved while Cloudflare is unreachable is not checked; the
+      tunnel plan reports a missing zone;
+    - a status read during the start-up probe (about 3 s) still waits for it;
+    - a tunnel set up before S294 deleted no records, so nothing needs
+      restoring; its teardown finds the account from the route's zone or the
+      token's single account, and deletes no DNS record (none was recorded);
     - the tunnel keeps one owner-entered hostname and service; the default
       dashboard and `auth.<domain>` names, edge routing and the
       Authentik-only public sign-in are S296;
-    - a restored record gets a new Cloudflare ID and loses its original
-      comment; a tunnel set up before the fix has no replaced records on
-      file, so nothing is restored for it.
+    - a restored record gets a new Cloudflare ID; a tunnel set up between
+      S294 and its fix (72c6702 only) has no replaced records on file, so
+      nothing is restored for it.
   - App names (S295, ADR first): every app gets a new `*.lan` name that the
     owner must add by hand to router DNS or a hosts file; only
     `homestead.local` is announced.

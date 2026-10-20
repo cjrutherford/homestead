@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -260,5 +261,36 @@ func TestSetupDomainCheckedAgainstZones(t *testing.T) {
 	// Another provider is not checked against Cloudflare.
 	if rec := put(map[string]string{"provider": "manual", "domain": "other.net"}); rec.Code != http.StatusOK {
 		t.Fatalf("manual: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A domain saved before the token is checked when the token is stored:
+// the credential route warns through this hook (S294).
+func TestSetupDomainZoneWarningAfterToken(t *testing.T) {
+	srv, _, secrets := setupTestServer(t)
+	newFakeCloudflare(t)
+	ctx := context.Background()
+	if got := srv.domainZoneWarning(ctx); got != "" {
+		t.Fatalf("no domain: %q", got)
+	}
+	if rec := serveRequest(t, srv, http.MethodPut, "/api/v1/setup/steps/domain",
+		map[string]string{"provider": "cloudflare", "domain": "other.net"}); rec.Code != http.StatusOK {
+		t.Fatalf("save: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := srv.domainZoneWarning(ctx); got != "" {
+		t.Fatalf("no token: %q", got)
+	}
+	if err := secrets.Set("dns_cloudflare_api_token", "sealed-token"); err != nil {
+		t.Fatal(err)
+	}
+	if got := srv.domainZoneWarning(ctx); !strings.Contains(got, "no Cloudflare zone") || !strings.Contains(got, "other.net") {
+		t.Fatalf("unknown zone: %q", got)
+	}
+	if rec := serveRequest(t, srv, http.MethodPut, "/api/v1/setup/steps/domain",
+		map[string]string{"domain": "example.com"}); rec.Code != http.StatusOK {
+		t.Fatalf("save: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := srv.domainZoneWarning(ctx); got != "" {
+		t.Fatalf("known zone: %q", got)
 	}
 }

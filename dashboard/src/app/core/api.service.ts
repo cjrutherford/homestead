@@ -1477,8 +1477,8 @@ export class ApiService {
   tlsIssuanceCredentials(
     provider: string,
     values: Record<string, string>,
-  ): Observable<{ provider: string; stored: string[] }> {
-    return this.http.post<{ provider: string; stored: string[] }>(
+  ): Observable<{ provider: string; stored: string[]; warning?: string }> {
+    return this.http.post<{ provider: string; stored: string[]; warning?: string }>(
       '/api/v1/tls/issuance/credentials',
       { provider, values },
     );

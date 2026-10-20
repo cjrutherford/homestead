@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 46
+const CurrentVersion = 47
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -937,6 +937,11 @@ CREATE TABLE IF NOT EXISTS tunnel_replaced_records (
 	created_at TEXT NOT NULL,
 	PRIMARY KEY (tunnel_id, record_id)
 );`,
+	},
+	{
+		version: 47,
+		name:    "tunnel replaced dns record comment",
+		sql:     `ALTER TABLE tunnel_replaced_records ADD COLUMN comment TEXT NOT NULL DEFAULT '';`,
 	},
 }
 

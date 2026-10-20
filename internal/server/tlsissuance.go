@@ -150,7 +150,15 @@ func (s *Server) MountTLSIssuance(st *store.Store, issuing *cert.Issuing) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"provider": body.Provider, "stored": fields})
+		out := map[string]any{"provider": body.Provider, "stored": fields}
+		// A Cloudflare token that cannot see the setup domain's zone is
+		// stored anyway; the owner is told now, not at the tunnel plan.
+		if body.Provider == "cloudflare" && s.domainZoneWarning != nil {
+			if warning := s.domainZoneWarning(r.Context()); warning != "" {
+				out["warning"] = warning
+			}
+		}
+		writeJSON(w, out)
 	})
 	// Owner action for a CA that forgot the ACME account (S272): required
 	// for production directories, available for any class. Audited by the

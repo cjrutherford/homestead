@@ -65,6 +65,9 @@ type DNSRecord struct {
 	Content string `json:"content"`
 	Proxied bool   `json:"proxied"`
 	TTL     int    `json:"ttl"`
+	// Comment is the owner's note on the record, kept so a restored
+	// record carries it back.
+	Comment string `json:"-"`
 }
 
 type cloudflareRecord struct {
@@ -74,10 +77,11 @@ type cloudflareRecord struct {
 	Content string `json:"content"`
 	Proxied bool   `json:"proxied"`
 	TTL     int    `json:"ttl"`
+	Comment string `json:"comment"`
 }
 
 func (r cloudflareRecord) record() DNSRecord {
-	return DNSRecord{ID: r.ID, Type: r.Type, Name: r.Name, Content: r.Content, Proxied: r.Proxied, TTL: r.TTL}
+	return DNSRecord{ID: r.ID, Type: r.Type, Name: r.Name, Content: r.Content, Proxied: r.Proxied, TTL: r.TTL, Comment: r.Comment}
 }
 
 func validateZoneID(zoneID string) error {
@@ -150,7 +154,8 @@ func (c *TunnelClient) CreateTunnelCNAME(ctx context.Context, token, zoneID, hos
 }
 
 // RestoreRecord recreates a record a tunnel replaced, as it was: type,
-// name, content, proxy and TTL, with a comment saying Homestead put it back.
+// name, content, proxy, TTL and comment. A record that had no comment
+// gets one saying Homestead put it back.
 func (c *TunnelClient) RestoreRecord(ctx context.Context, token, zoneID string, record DNSRecord) (DNSRecord, error) {
 	if err := validateZoneID(zoneID); err != nil {
 		return DNSRecord{}, err
@@ -159,6 +164,10 @@ func (c *TunnelClient) RestoreRecord(ctx context.Context, token, zoneID string, 
 	if ttl == 0 {
 		ttl = 1
 	}
+	comment := record.Comment
+	if comment == "" {
+		comment = "Restored by Homestead when its tunnel was removed"
+	}
 	var created cloudflareRecord
 	body := map[string]any{
 		"type":    record.Type,
@@ -166,7 +175,7 @@ func (c *TunnelClient) RestoreRecord(ctx context.Context, token, zoneID string, 
 		"content": record.Content,
 		"proxied": record.Proxied,
 		"ttl":     ttl,
-		"comment": "Restored by Homestead when its tunnel was removed",
+		"comment": comment,
 	}
 	if err := c.call(ctx, token, http.MethodPost, "/zones/"+zoneID+"/dns_records", body, &created); err != nil {
 		return DNSRecord{}, err
@@ -252,9 +261,9 @@ func RecordReplaced(st *store.Store, replaced ReplacedRecord) error {
 		proxied = 1
 	}
 	if _, err := st.DB().Exec(
-		`INSERT OR REPLACE INTO tunnel_replaced_records (record_id, tunnel_id, zone_id, type, name, content, proxied, ttl, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, replaced.TunnelID, replaced.ZoneID, r.Type, r.Name, r.Content, proxied, r.TTL, now,
+		`INSERT OR REPLACE INTO tunnel_replaced_records (record_id, tunnel_id, zone_id, type, name, content, proxied, ttl, comment, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, replaced.TunnelID, replaced.ZoneID, r.Type, r.Name, r.Content, proxied, r.TTL, r.Comment, now,
 	); err != nil {
 		return fmt.Errorf("router: record replaced dns: %w", err)
 	}
@@ -264,7 +273,7 @@ func RecordReplaced(st *store.Store, replaced ReplacedRecord) error {
 // ReplacedRecords lists the records a tunnel's setup deleted.
 func ReplacedRecords(st *store.Store, tunnelID string) ([]ReplacedRecord, error) {
 	rows, err := st.DB().Query(
-		`SELECT record_id, tunnel_id, zone_id, type, name, content, proxied, ttl FROM tunnel_replaced_records
+		`SELECT record_id, tunnel_id, zone_id, type, name, content, proxied, ttl, comment FROM tunnel_replaced_records
 		 WHERE tunnel_id = ? ORDER BY name, record_id`, tunnelID)
 	if err != nil {
 		return nil, fmt.Errorf("router: list replaced dns: %w", err)
@@ -275,7 +284,7 @@ func ReplacedRecords(st *store.Store, tunnelID string) ([]ReplacedRecord, error)
 		var r ReplacedRecord
 		var proxied int
 		if err := rows.Scan(&r.Record.ID, &r.TunnelID, &r.ZoneID, &r.Record.Type, &r.Record.Name,
-			&r.Record.Content, &proxied, &r.Record.TTL); err != nil {
+			&r.Record.Content, &proxied, &r.Record.TTL, &r.Record.Comment); err != nil {
 			return nil, fmt.Errorf("router: scan replaced dns: %w", err)
 		}
 		r.Record.Proxied = proxied != 0

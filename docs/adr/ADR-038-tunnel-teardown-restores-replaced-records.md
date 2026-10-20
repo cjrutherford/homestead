@@ -15,8 +15,8 @@ left deleted. The rest of ADR-037 is unchanged.
 - **When setup fails** after deleting records, the undo deletes the CNAME
   it created, puts the replaced records back, then deletes the tunnel.
 - **At teardown**, after the owned CNAME is deleted, a `restore-dns` step
-  puts each replaced record back as it was, with a comment saying Homestead
-  restored it.
+  puts each replaced record back as it was, comment included; a record
+  that had no comment gets one saying Homestead restored it.
 - **Nothing is overwritten.** If the name holds an A, AAAA or CNAME record
   again when teardown runs (the owner's own, or a Homestead CNAME kept
   because the owner changed it), the replaced records for that name are not
@@ -35,8 +35,9 @@ tunnel returns the hostname to what it served before.
   after setup; refused under the ownership rule.
 
 ## Consequences
-- Teardown gains one step (`restore-dns`), and migration 46 adds the table.
-- Restored records get new Cloudflare IDs. The record comment is not kept,
-  and Homestead does not own the restored record.
+- Teardown gains one step (`restore-dns`), and migration 46 adds the table
+  (migration 47 adds the record comment).
+- Restored records get new Cloudflare IDs, and Homestead does not own the
+  restored record.
 - Tunnels set up before this change have no replaced records on file, so
   nothing is restored for them.
