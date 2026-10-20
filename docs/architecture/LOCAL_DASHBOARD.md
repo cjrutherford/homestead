@@ -10,7 +10,8 @@ needs no Cloudflare tunnel, so you can claim the appliance and finish setup
 The edge answers the dashboard on two names, both on the same certificate
 from the appliance's internal CA (ADR-030):
 
-1. `https://homestead.local` is answered by the appliance itself over mDNS. It
+1. `https://homestead.local` is answered by the appliance itself over mDNS, using only the appliance addresses on the asking device's subnet
+   (all addresses if none match). It
    needs no router or hosts change on most desktops and phones. Use this one
    first. If a device cannot resolve it (some Android versions, some corporate
    networks), use the second.

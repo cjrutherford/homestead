@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -203,7 +202,7 @@ func startLocalDiscovery(ctx context.Context, claimSvc *claim.Service, listen st
 			}
 			return state.String()
 		},
-		Addresses: func() []netip.Addr {
+		Addresses: func() []mdns.LinkAddr {
 			network, err := discover.DiscoverNetwork()
 			if err != nil {
 				return nil

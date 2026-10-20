@@ -4687,3 +4687,15 @@ committed). Results:
 - Docs: `docs/architecture/LOCAL_DASHBOARD.md`, PARITY rows, ARCHITECTURE note.
 - KVM on VM 2: PENDING (run by the coordinator).
 
+### S289 follow-up: mDNS answers per link
+
+- Symptom: on a multi-NIC VM, `homestead.local` resolved to both the LAN
+  address (192.168.1.158) and the QEMU NAT address (10.0.2.15). Browsers that
+  picked the unreachable one hung, so the dashboard looked frozen.
+- Cause: `internal/mdns` answered and announced every up, non-loopback IPv4,
+  including NAT and Docker bridge addresses.
+- Fix: addresses carry their subnet and interface (`mdns.LinkAddr`). A query is
+  answered with the addresses whose subnet contains the query source (RFC 6762
+  section 6.2); an unknown or off-subnet source falls back to all addresses.
+  The startup announcement goes out per interface with only that interface's
+  addresses. `docker0`, `br-*` and `veth*` are never advertised or joined.

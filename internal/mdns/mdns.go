@@ -55,7 +55,7 @@ type Config struct {
 	Port      int
 	Version   string
 	State     func() string
-	Addresses func() []netip.Addr
+	Addresses func() []LinkAddr
 }
 
 // Validate checks responder shape: an RFC label hostname, a usable
@@ -87,13 +87,28 @@ func (c Config) instance() string {
 	return c.Hostname + "." + ServiceName
 }
 
+// LinkAddr is one advertisable address with the subnet and interface
+// it lives on, so answers can be limited to the link a query arrived
+// from (RFC 6762 section 6.2).
+type LinkAddr struct {
+	Addr      netip.Addr
+	Prefix    netip.Prefix
+	Interface string
+}
+
+// dockerBridge reports container-managed bridge interfaces: never the
+// LAN, so never advertised.
+func dockerBridge(name string) bool {
+	return name == "docker0" || strings.HasPrefix(name, "br-") || strings.HasPrefix(name, "veth")
+}
+
 // LANIPv4 selects advertisable addresses from discovery facts: up,
-// non-loopback interfaces, IPv4, neither loopback nor link-local.
-// Sorted for deterministic answers.
-func LANIPv4(network discover.Network) []netip.Addr {
-	var out []netip.Addr
+// non-loopback, non-Docker-bridge interfaces, IPv4, neither loopback
+// nor link-local. Sorted for deterministic answers.
+func LANIPv4(network discover.Network) []LinkAddr {
+	var out []LinkAddr
 	for _, iface := range network.Interfaces {
-		if !iface.Up || iface.Loopback {
+		if !iface.Up || iface.Loopback || dockerBridge(iface.Name) {
 			continue
 		}
 		for _, address := range iface.Addresses {
@@ -101,10 +116,39 @@ func LANIPv4(network discover.Network) []netip.Addr {
 			if err != nil || !ip.Is4() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
 				continue
 			}
-			out = append(out, ip)
+			prefix, _ := netip.ParsePrefix(address.Network)
+			out = append(out, LinkAddr{Addr: ip, Prefix: prefix, Interface: iface.Name})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].String() < out[j].String() })
+	sort.Slice(out, func(i, j int) bool { return out[i].Addr.String() < out[j].Addr.String() })
+	return out
+}
+
+// forSource picks the addresses on the link src queried from. An
+// unknown source, or one off every connected subnet, falls back to
+// all addresses so discovery still works.
+func forSource(addrs []LinkAddr, src netip.Addr) []netip.Addr {
+	var matched, all []netip.Addr
+	for _, a := range addrs {
+		all = append(all, a.Addr)
+		if src.IsValid() && a.Prefix.IsValid() && a.Prefix.Contains(src) {
+			matched = append(matched, a.Addr)
+		}
+	}
+	if len(matched) > 0 {
+		return matched
+	}
+	return all
+}
+
+// forInterface picks the addresses configured on one interface.
+func forInterface(addrs []LinkAddr, name string) []netip.Addr {
+	var out []netip.Addr
+	for _, a := range addrs {
+		if a.Interface == name {
+			out = append(out, a.Addr)
+		}
+	}
 	return out
 }
 
@@ -283,7 +327,8 @@ func answer(id uint16, questions []question, cfg Config, addrs []netip.Addr) []b
 
 // respond parses one incoming message and builds the response: nil
 // means stay silent (unparseable, a response, or nothing we own).
-func respond(msg []byte, cfg Config) ([]byte, bool) {
+// Addresses are limited to src's link; a zero src means all.
+func respond(msg []byte, cfg Config, src netip.Addr) ([]byte, bool) {
 	if len(msg) < 2 {
 		return nil, false
 	}
@@ -299,7 +344,7 @@ func respond(msg []byte, cfg Config) ([]byte, bool) {
 			break
 		}
 	}
-	addrs := cfg.Addresses()
+	addrs := forSource(cfg.Addresses(), src)
 	if len(addrs) == 0 {
 		return nil, false
 	}
@@ -341,7 +386,7 @@ func multicastInterfaces() ([]net.Interface, error) {
 		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagMulticast == 0 {
 			continue
 		}
-		if iface.Flags&net.FlagLoopback != 0 {
+		if iface.Flags&net.FlagLoopback != 0 || dockerBridge(iface.Name) {
 			continue
 		}
 		out = append(out, iface)

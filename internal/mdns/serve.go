@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
 	"sync"
 )
 
@@ -31,17 +32,17 @@ func ListenAndServe(ctx context.Context, cfg Config) error {
 		return err
 	}
 	groupAddr := &net.UDPAddr{IP: mdnsGroup, Port: mdnsPort}
-	var conns []*net.UDPConn
+	var conns []linkConn
 	for _, iface := range ifaces {
 		conn, err := listenOn(iface, groupAddr)
 		if err != nil {
 			for _, c := range conns {
-				_ = c.Close()
+				_ = c.conn.Close()
 			}
 			setState(State{Known: true, Err: err.Error()})
 			return err
 		}
-		conns = append(conns, conn)
+		conns = append(conns, linkConn{iface: iface.Name, conn: conn})
 	}
 	setState(State{Known: true, Running: true})
 	serve(ctx, cfg, conns, groupAddr)
@@ -59,20 +60,28 @@ func listenOn(iface net.Interface, groupAddr *net.UDPAddr) (*net.UDPConn, error)
 	return conn, nil
 }
 
+// linkConn is one multicast socket and the interface it listens on.
+type linkConn struct {
+	iface string
+	conn  *net.UDPConn
+}
+
 // serve announces once per connection, then answers queries on each
 // until ctx ends.
-func serve(ctx context.Context, cfg Config, conns []*net.UDPConn, groupAddr *net.UDPAddr) {
-	// One gratuitous advertisement per connection: newcomers learn us
-	// without asking first.
-	if advertisement := announce(cfg, cfg.Addresses()); advertisement != nil {
-		for _, conn := range conns {
-			_, _ = conn.WriteToUDP(advertisement, groupAddr)
+func serve(ctx context.Context, cfg Config, conns []linkConn, groupAddr *net.UDPAddr) {
+	// One gratuitous advertisement per connection, carrying only that
+	// interface's addresses: newcomers learn us without asking first.
+	addrs := cfg.Addresses()
+	for _, lc := range conns {
+		if advertisement := announce(cfg, forInterface(addrs, lc.iface)); advertisement != nil {
+			_, _ = lc.conn.WriteToUDP(advertisement, groupAddr)
 		}
 	}
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
 	var wg sync.WaitGroup
-	for _, conn := range conns {
+	for _, lc := range conns {
+		conn := lc.conn
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -87,7 +96,7 @@ func serve(ctx context.Context, cfg Config, conns []*net.UDPConn, groupAddr *net
 				if err != nil {
 					return
 				}
-				resp, unicast := respond(buf[:n], cfg)
+				resp, unicast := respond(buf[:n], cfg, srcAddr(src))
 				if resp == nil {
 					continue
 				}
@@ -101,4 +110,16 @@ func serve(ctx context.Context, cfg Config, conns []*net.UDPConn, groupAddr *net
 	}
 	<-ctx.Done()
 	wg.Wait()
+}
+
+// srcAddr extracts a query's source IP; nil yields the zero address.
+func srcAddr(src *net.UDPAddr) netip.Addr {
+	if src == nil {
+		return netip.Addr{}
+	}
+	addr, ok := netip.AddrFromSlice(src.IP)
+	if !ok {
+		return netip.Addr{}
+	}
+	return addr.Unmap()
 }
