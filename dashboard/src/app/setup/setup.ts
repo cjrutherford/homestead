@@ -86,12 +86,20 @@ export class Setup implements OnInit {
   protected readonly pendingSteps = computed(() => this.steps().filter((s) => s.state === 'pending'));
 
   private lastKey: string | null = null;
+  /** Operations already open when the wizard opened: not started from it. */
+  private readonly openAtStart = new Set(untracked(() => this.orders.orders().map((o) => o.id)));
 
   constructor() {
     // Something a step wrote, or an operation it started, may have changed
     // what the status derives from: read it again.
     effect(() => {
-      const key = `${this.setup.changed()}:${this.orders.orders().filter((o) => o.settled).length}`;
+      // Writes are covered by the interceptor; an install finishes later, so
+      // also count operations that settled and were not already open when the
+      // wizard opened.
+      const settled = this.orders
+        .orders()
+        .filter((o) => o.settled && !this.openAtStart.has(o.id)).length;
+      const key = `${this.setup.changed()}:${settled}`;
       if (this.lastKey === null) {
         this.lastKey = key;
         return;
@@ -148,6 +156,9 @@ export class Setup implements OnInit {
   }
 
   protected word(step: SetupStep): string {
+    if (step.waived && step.state === 'skipped') {
+      return 'Not required';
+    }
     return WORDS[step.state] ?? step.state;
   }
 

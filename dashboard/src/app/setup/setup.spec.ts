@@ -181,6 +181,19 @@ describe('Setup wizard (S291)', () => {
       expect(button('Undo skip')).toBeDefined();
     });
 
+    it('shows a waived storage step as not required, with no Undo skip', async () => {
+      const s = doneThrough(1);
+      s.steps[1].state = 'skipped';
+      s.steps[1].waived = true;
+      s.current = 'sign-in';
+      await open(s);
+      button('Back')!.click();
+      await settle();
+      expect(text()).toContain('Not required: setup was finished before this step existed');
+      expect(button('Undo skip')).toBeUndefined();
+      expect(button('Skip this step')).toBeUndefined();
+    });
+
     it('moves forward on Next and always back on Back, and moves focus to the new heading', async () => {
       await open(doneThrough(1));
       expect(button('Next')!.disabled).toBe(true);
@@ -364,10 +377,12 @@ describe('Setup wizard (S291)', () => {
       expect(tasks[3]).toContain('API');
     });
 
-    it('falls back to the placeholder name when the sign-in defaults are not known', async () => {
+    it('shows guidance, not a fake address, when the sign-in defaults are not known', async () => {
       delete routes['GET /api/v1/sso'];
       await open(doneThrough(2));
-      expect(text()).toContain('https://authentik.<name>/if/flow/initial-setup/');
+      expect(text()).toContain('the Authentik address shown in the Sign-in section below');
+      expect(text()).not.toContain('authentik.<name>');
+      expect(el().querySelector('a[href*="initial-setup"]')).toBeNull();
     });
 
     it('offers the install wizard for Authentik first and reads its package', async () => {
@@ -395,8 +410,11 @@ describe('Setup wizard (S291)', () => {
       const tasks = Array.from(el().querySelectorAll('ol.outside-tasks > li')).map((li) => li.textContent ?? '');
       expect(tasks.length).toBe(4);
       expect(tasks[0]).toContain('Cloudflare');
-      expect(tasks[1]).toContain('Zone: DNS: Edit');
-      expect(tasks[1]).toContain('Account: Cloudflare Tunnel: Edit');
+      expect(tasks[1]).toContain('Zone resources');
+      expect(tasks[1]).toContain('Zone: Read');
+      expect(tasks[1]).toContain('DNS: Edit');
+      expect(tasks[1]).toContain('Account resources');
+      expect(tasks[1]).toContain('Cloudflare Tunnel: Edit');
       expect(tasks[3]).toContain('records');
     });
 

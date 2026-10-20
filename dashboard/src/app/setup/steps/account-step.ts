@@ -38,7 +38,7 @@ import { StepGuide } from './step-guide';
       </p>
     }
 
-    <app-recovery-identity (changed)="setup.touch()" />
+    <app-recovery-identity />
   `,
 })
 export class AccountStep {

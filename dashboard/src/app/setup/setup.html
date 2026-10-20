@@ -106,6 +106,12 @@
               <button type="button" [disabled]="setup.busy()" (click)="skip(st.name)">Skip this step</button>
             </p>
           }
+          @if (st.waived && st.state === 'skipped') {
+            <p class="hint">
+              Not required: setup was finished before this step existed. Assign storage on the
+              <a routerLink="/storage">Storage page</a> when you need it.
+            </p>
+          }
           @if (st.skipped && st.state === 'skipped') {
             <p>
               <button type="button" [disabled]="setup.busy()" (click)="unskip(st.name)">Undo skip</button>

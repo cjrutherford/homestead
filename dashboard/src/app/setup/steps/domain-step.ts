@@ -30,14 +30,17 @@ import { StepGuide } from './step-guide';
         Cloudflare gives you.
       </li>
       <li>
-        Cloudflare: create a scoped API token (My Profile, API Tokens, Create Token, Custom token), limited to the one
-        zone, with exactly these permissions, then paste it below:
+        Cloudflare: create one API token (My Profile, API Tokens, Create Token, Custom token). It has two sections, then
+        paste it below:
         <ul>
-          @for (perm of cloudflarePermissions(); track perm.grant) {
-            <li>
-              <strong>{{ perm.grant }}</strong> to {{ perm.reason }}.
-            </li>
-          }
+          <li>
+            <strong>Zone resources:</strong> include the one specific zone, with <strong>Zone: Read</strong> and
+            <strong>DNS: Edit</strong>.
+          </li>
+          <li>
+            <strong>Account resources:</strong> include the one specific account, with
+            <strong>Cloudflare Tunnel: Edit</strong>. This is needed only if you choose the tunnel.
+          </li>
         </ul>
       </li>
       <li>
@@ -201,10 +204,6 @@ export class DomainStep {
   protected readonly provider = computed(() => {
     const status = this.status();
     return status.providers.find((p) => p.name === status.choices.provider) ?? null;
-  });
-  protected readonly cloudflarePermissions = computed(() => {
-    const cf = this.status().providers.find((p) => p.name === 'cloudflare');
-    return [...(cf?.permissions ?? []), ...(cf?.tunnel_permissions ?? [])];
   });
   protected readonly otherProviders = computed(() => this.status().providers.filter((p) => p.name !== 'cloudflare'));
 

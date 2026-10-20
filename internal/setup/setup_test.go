@@ -2,7 +2,9 @@ package setup
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -426,17 +428,37 @@ func TestPreStorageApplianceIsNotRegated(t *testing.T) {
 	if !s.Complete || s.Gated || states(t, s)[StepStorage] != Skipped {
 		t.Fatalf("finished appliance re-gated: %+v", s)
 	}
+	if !s.Steps[1].Waived || s.Steps[1].Skipped || !strings.Contains(s.Steps[1].Detail, "Not required") {
+		t.Fatalf("storage should read as waived, not as an owner skip: %+v", s.Steps[1])
+	}
+	if v := persistedVersion(t, svc); v != storedVersion {
+		t.Fatalf("persisted version = %d, want %d", v, storedVersion)
+	}
 	// The rule is persisted: it does not depend on the facts later on.
-	if again := New(svc.Wizards, svc.Sources); true {
-		f.acked = false // other steps regress; storage stays waived
-		s, _ = again.Status()
-		if states(t, s)[StepStorage] != Skipped {
-			t.Fatalf("waiver not persisted: %+v", s.Steps[1])
+	again := New(svc.Wizards, svc.Sources)
+	f.acked = false // other steps regress; storage stays waived
+	s, _ = again.Status()
+	if states(t, s)[StepStorage] != Skipped || !s.Steps[1].Waived {
+		t.Fatalf("waiver not persisted: %+v", s.Steps[1])
+	}
+	f.acked = true
+	// No unskip or skip attempt re-gates a waived step.
+	for _, state := range []string{Pending, Skipped, Pending} {
+		s, err := svc.Update(StepStorage, Update{State: str(state)})
+		if err != nil {
+			t.Fatalf("%s: %v", state, err)
+		}
+		if s.Gated || !s.Complete || states(t, s)[StepStorage] != Skipped || !s.Steps[1].Waived {
+			t.Fatalf("waived step changed by %q: %+v", state, s)
 		}
 	}
-	// Unskipping still works afterwards.
-	if s, _ = svc.Update(StepStorage, Update{State: str(Pending)}); states(t, s)[StepStorage] != Pending {
-		t.Fatalf("unskip after waiver: %+v", s.Steps[1])
+	if _, err := svc.Update(StepStorage, Update{State: str(Done)}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("done by hand: %v", err)
+	}
+	// Real assignment still reads done.
+	f.storage = true
+	if s, _ = svc.Status(); states(t, s)[StepStorage] != Done {
+		t.Fatalf("assigned storage should read done: %+v", s.Steps[1])
 	}
 
 	// Mid-setup before the step existed: the new step applies.
@@ -446,10 +468,106 @@ func TestPreStorageApplianceIsNotRegated(t *testing.T) {
 		t.Fatalf("mid-setup appliance should see storage: %+v", s)
 	}
 	// And completing it later does not waive storage retroactively.
-	svc2.Update(StepAccount, Update{State: str(Done)})
-	svc2.Update(StepDomain, Update{State: str(Done)})
-	s, _ = svc2.Update(StepApps, Update{State: str(Skipped)})
+	var err error
+	for _, u := range []struct {
+		step, state string
+	}{{StepAccount, Done}, {StepDomain, Done}, {StepApps, Skipped}} {
+		if s, err = svc2.Update(u.step, Update{State: str(u.state)}); err != nil {
+			t.Fatal(u.step, err)
+		}
+	}
 	if s.Complete || states(t, s)[StepStorage] != Pending {
 		t.Fatalf("late completion must not waive storage: %+v", s)
+	}
+}
+
+func persistedVersion(t *testing.T, svc *Service) int {
+	t.Helper()
+	state, err := svc.Wizards.Get(WizardID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, _ := state.Payload["version"].(float64)
+	return int(v)
+}
+
+// A legacy appliance stays ungated, is stamped version 2, and the migration
+// is applied exactly once: a later change to the facts does not redo it.
+func TestLegacyOriginStaysUngatedAndIsStamped(t *testing.T) {
+	svc, f, st := newSvc(t)
+	if _, err := wizard.New(st).Put(WizardID, "complete", map[string]any{"origin": "legacy"}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := svc.Status()
+	if err != nil || s.Gated || !s.Legacy {
+		t.Fatalf("legacy gated: %v %+v", err, s)
+	}
+	if states(t, s)[StepStorage] != Pending || s.Steps[1].Waived {
+		t.Fatalf("legacy appliances get no waiver: %+v", s.Steps[1])
+	}
+	if v := persistedVersion(t, svc); v != 2 {
+		t.Fatalf("persisted version = %d, want 2", v)
+	}
+	f.acked = true
+	f.exported = true
+	if s, _ = svc.Status(); s.Gated || s.Steps[1].Waived {
+		t.Fatalf("migration ran again: %+v", s)
+	}
+}
+
+// A GET must not fail because the migration could not be saved; the next
+// write persists it.
+func TestStatusToleratesFailedMigrationSave(t *testing.T) {
+	svc, f, st := newSvc(t)
+	f.acked = true
+	payload := map[string]any{"origin": "fresh", "acknowledged": []any{"account", "apps"}, "skipped": []any{"sign-in", "domain"}}
+	if _, err := wizard.New(st).Put(WizardID, "complete", payload); err != nil {
+		t.Fatal(err)
+	}
+	svc.putErr = errors.New("disk full")
+	s, err := svc.Status()
+	if err != nil {
+		t.Fatalf("status failed on a failed save: %v", err)
+	}
+	if s.Gated || !s.Steps[1].Waived {
+		t.Fatalf("waiver should hold in memory: %+v", s.Steps[1])
+	}
+	if v := persistedVersion(t, svc); v == storedVersion {
+		t.Fatal("nothing should have been persisted")
+	}
+	svc.putErr = nil
+	if _, err := svc.Update(StepApps, Update{State: str(Done)}); err != nil {
+		t.Fatal(err)
+	}
+	if v := persistedVersion(t, svc); v != storedVersion {
+		t.Fatalf("write did not persist: %d", v)
+	}
+}
+
+// The dashboard's Cloudflare token copy is written by hand in the domain
+// step; it must name exactly the permissions the provider list asks for.
+func TestDashboardCloudflareCopyMatchesProviders(t *testing.T) {
+	raw, err := os.ReadFile("../../dashboard/src/app/setup/steps/domain-step.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(raw)
+	cf, ok := ProviderNamed("cloudflare")
+	if !ok {
+		t.Fatal("no cloudflare provider")
+	}
+	want := map[string]bool{}
+	for _, p := range append(append([]Permission{}, cf.Permissions...), cf.TunnelPermissions...) {
+		// "Zone: DNS: Edit" is shown as "DNS: Edit" under Zone resources.
+		_, name, _ := strings.Cut(p.Grant, ": ")
+		want[name] = true
+		if !strings.Contains(src, name) {
+			t.Errorf("domain-step.ts does not mention %q", name)
+		}
+	}
+	for _, m := range regexp.MustCompile(`[A-Z][A-Za-z ]*: (?:Read|Edit)`).FindAllString(src, -1) {
+		if !want[m] {
+			t.Errorf("domain-step.ts names permission %q that providers.go does not ask for", m)
+		}
 	}
 }

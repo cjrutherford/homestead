@@ -9,11 +9,11 @@ export function setupStatus(overrides: Partial<SetupStatus> = {}): SetupStatus {
     gated: true,
     current: 'account',
     steps: [
-      { name: 'account', title: 'Secure the owner account', state: 'pending', detail: 'Export the recovery identity.', skipped: false, acknowledged: false },
-      { name: 'storage', title: 'Storage', state: 'pending', detail: 'Assign the application storage class.', skipped: false, acknowledged: false },
-      { name: 'sign-in', title: 'Sign-in', state: 'pending', detail: 'Install Authentik.', skipped: false, acknowledged: false },
-      { name: 'domain', title: 'Domain and access', state: 'pending', detail: 'Choose a DNS provider.', skipped: false, acknowledged: false },
-      { name: 'apps', title: 'First apps', state: 'pending', detail: 'Pick a few apps.', skipped: false, acknowledged: false },
+      { name: 'account', title: 'Secure the owner account', state: 'pending', detail: 'Export the recovery identity.', skipped: false, waived: false, acknowledged: false },
+      { name: 'storage', title: 'Storage', state: 'pending', detail: 'Assign the application storage class.', skipped: false, waived: false, acknowledged: false },
+      { name: 'sign-in', title: 'Sign-in', state: 'pending', detail: 'Install Authentik.', skipped: false, waived: false, acknowledged: false },
+      { name: 'domain', title: 'Domain and access', state: 'pending', detail: 'Choose a DNS provider.', skipped: false, waived: false, acknowledged: false },
+      { name: 'apps', title: 'First apps', state: 'pending', detail: 'Pick a few apps.', skipped: false, waived: false, acknowledged: false },
     ],
     choices: {},
     facts: {

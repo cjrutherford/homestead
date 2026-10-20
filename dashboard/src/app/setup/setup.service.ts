@@ -15,6 +15,8 @@ export interface SetupStep {
   state: SetupStepState;
   detail: string;
   skipped: boolean;
+  /** Setup finished before this step existed: not required, and not an owner skip. */
+  waived: boolean;
   acknowledged: boolean;
 }
 

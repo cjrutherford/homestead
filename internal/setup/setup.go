@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"sync"
 
@@ -143,9 +144,13 @@ type Sources struct {
 type stored struct {
 	// Version 2 (S291) added the storage step. A payload without it was
 	// written before the step existed; see migrate.
-	Version      int      `json:"version,omitempty"`
-	Origin       string   `json:"origin,omitempty"`
-	Skipped      []string `json:"skipped,omitempty"`
+	Version int      `json:"version,omitempty"`
+	Origin  string   `json:"origin,omitempty"`
+	Skipped []string `json:"skipped,omitempty"`
+	// Waived lists steps that were never required of this appliance: setup
+	// was finished before the step existed (see migrate). It is not an owner
+	// skip, so it cannot be undone and never re-gates the appliance.
+	Waived       []string `json:"waived,omitempty"`
 	Acknowledged []string `json:"acknowledged,omitempty"`
 	Provider     string   `json:"provider,omitempty"`
 	Access       string   `json:"access,omitempty"`
@@ -169,7 +174,10 @@ type StepStatus struct {
 	Detail string `json:"detail"`
 	// Skipped is the owner's recorded choice, which may be shadowed by real
 	// state (a skipped step that was then completed elsewhere reads done).
-	Skipped      bool `json:"skipped"`
+	Skipped bool `json:"skipped"`
+	// Waived: setup was finished before this step existed, so it is not
+	// required. Real state still wins (an assigned class reads done).
+	Waived       bool `json:"waived"`
 	Acknowledged bool `json:"acknowledged"`
 }
 
@@ -206,6 +214,8 @@ type Service struct {
 	Wizards *wizard.Service
 	Sources Sources
 	mu      sync.Mutex
+	// putErr makes save fail; tests only.
+	putErr error
 }
 
 // New returns a Service.
@@ -238,9 +248,12 @@ func (s *Service) load() (stored, error) {
 // migrate runs once on a payload written before the storage step existed.
 // An appliance whose other steps were all done or skipped at that point had
 // finished setup, so the new step must not send it back into the wizard: the
-// storage step is recorded as skipped (real assignment still reads done). An
-// appliance still mid-setup gets the new step like a fresh one. The result
-// is persisted, so the rule is applied exactly once and never again.
+// storage step is recorded as waived, which is not an owner skip and cannot
+// be undone (real assignment still reads done). An appliance still mid-setup
+// gets the new step like a fresh one. The result is persisted so the rule is
+// applied exactly once. A GET must not fail because of it, so on the read
+// path a failed save is logged and the migrated state is used in memory; the
+// next write persists it.
 func (s *Service) migrate(st stored) (stored, error) {
 	if st.Version >= storedVersion {
 		return st, nil
@@ -260,12 +273,12 @@ func (s *Service) migrate(st stored) (stored, error) {
 			}
 		}
 		if finished {
-			st.Skipped = add(st.Skipped, StepStorage)
+			st.Waived = add(st.Waived, StepStorage)
 		}
 	}
 	st.Version = storedVersion
 	if err := s.save(st); err != nil {
-		return st, err
+		log.Printf("setup: could not persist the storage step migration (will retry on the next write): %v", err)
 	}
 	return st, nil
 }
@@ -323,7 +336,7 @@ func (s *Service) facts(st stored) (Facts, []StarterApp, error) {
 // two steps that have no single observable end (domain and apps).
 func derive(name string, st stored, f Facts) (state, detail string) {
 	acked := slices.Contains(st.Acknowledged, name)
-	skipped := slices.Contains(st.Skipped, name)
+	skipped := slices.Contains(st.Skipped, name) || slices.Contains(st.Waived, name)
 	done := false
 	switch name {
 	case StepAccount:
@@ -375,6 +388,8 @@ func detailFor(name, state string, st stored, f Facts) string {
 		switch {
 		case state == Done:
 			return "The application storage class is assigned to a registered disk."
+		case state == Skipped && slices.Contains(st.Waived, name) && !slices.Contains(st.Skipped, name):
+			return "Not required: setup was finished before this step existed. Assign storage on the Storage page when you need it."
 		case state == Skipped:
 			return "Skipped. Installing apps needs the application storage class; assign it on the Storage page."
 		}
@@ -494,6 +509,7 @@ func (s *Service) status() (Status, error) {
 		out.Steps = append(out.Steps, StepStatus{
 			Name: name, Title: titles[name], State: state, Detail: detail,
 			Skipped:      slices.Contains(st.Skipped, name),
+			Waived:       slices.Contains(st.Waived, name),
 			Acknowledged: slices.Contains(st.Acknowledged, name),
 		})
 		if state == Pending {
@@ -555,7 +571,10 @@ func (s *Service) Update(step string, u Update) (Status, error) {
 		}
 		st.Access = *u.Access
 	}
-	if u.State != nil {
+	// A waived step was never skipped by the owner: skip and unskip leave it
+	// as it is, so it can never re-gate a finished appliance.
+	waived := slices.Contains(st.Waived, step) && u.State != nil && (*u.State == Skipped || *u.State == Pending)
+	if u.State != nil && !waived {
 		switch *u.State {
 		case Skipped:
 			st.Skipped = add(st.Skipped, step)
@@ -591,6 +610,9 @@ func (s *Service) Update(step string, u Update) (Status, error) {
 // save writes the stored struct. The wizard step records where the owner
 // is, so a reload resumes there.
 func (s *Service) save(st stored) error {
+	if s.putErr != nil {
+		return s.putErr
+	}
 	step := StepAccount
 	if f, _, err := s.facts(st); err == nil {
 		step = "complete"

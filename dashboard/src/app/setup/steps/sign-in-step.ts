@@ -20,8 +20,14 @@ import { StepGuide } from './step-guide';
       outside="Authentik has its own first-run and its own admin screens. Do these in order on a device on your home network."
     >
       <li>
-        Make <code>{{ host() }}</code> reachable from the device you are using now: add it to your router's local DNS, or
-        add a hosts-file entry pointing at this appliance's address.
+        Make
+        @if (base()) {
+          <code>{{ host() }}</code>
+        } @else {
+          the Authentik address
+        }
+        reachable from the device you are using now: add it to your router's local DNS, or add a hosts-file entry
+        pointing at this appliance's address.
       </li>
       <li>
         Trust the appliance's root certificate on this device, so the browser accepts the address
@@ -32,7 +38,8 @@ import { StepGuide } from './step-guide';
         @if (base()) {
           <a [href]="initialSetup()" target="_blank" rel="noopener">{{ initialSetup() }}</a>
         } @else {
-          <code>{{ initialSetup() }}</code>
+          the Authentik address shown in the Sign-in section below once Authentik is installed, followed by
+          <code>/if/flow/initial-setup/</code>,
         }
         and create the
         <code>akadmin</code> account. Authentik only offers this page until the account exists.
@@ -40,7 +47,7 @@ import { StepGuide } from './step-guide';
       <li>
         In Authentik, sign in as <code>akadmin</code>, then open Admin interface, Directory, Tokens and App passwords,
         and choose Create. Set the intent to API, create it, copy the key, and paste it into the form below when it asks
-        for the API token. (Menu path checked against Authentik 2025.x on 2026-10-20.)
+        for the API token. (Menu path written 2026-10-20 from Authentik 2025.x documentation; to be confirmed against the live UI in the S291 KVM test.)
       </li>
     </app-step-guide>
 
@@ -60,9 +67,8 @@ export class SignInStep implements OnInit {
   protected readonly installOpen = signal(false);
   protected readonly base = signal('');
 
-  protected readonly host = () => (this.base() ? new URL(this.base()).host : 'authentik.<name>');
-  protected readonly initialSetup = () =>
-    `${this.base() ? this.base().replace(/\/+$/, '') : 'https://authentik.<name>'}/if/flow/initial-setup/`;
+  protected readonly host = () => (this.base() ? new URL(this.base()).host : '');
+  protected readonly initialSetup = () => `${this.base().replace(/\/+$/, '')}/if/flow/initial-setup/`;
 
   ngOnInit(): void {
     this.installOpen.set(!this.status().facts.sign_in.authentik_installed);

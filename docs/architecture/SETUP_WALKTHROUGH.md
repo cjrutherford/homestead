@@ -25,9 +25,13 @@ review and approve flow.
 - The summary lists each step's outcome with a button back to any step.
 - The progress list is not clickable; use Back, Next and the summary.
 
-Menu paths for the outside tasks (Cloudflare, Authentik) were checked on
-2026-10-20. Vendors rename menus; the Authentik path was checked against
-Authentik 2025.x.
+Menu paths for the outside tasks (Cloudflare, Authentik) were written
+2026-10-20 from vendor documentation (Authentik 2025.x); to be confirmed
+against the live UI in the S291 KVM test. Vendors rename menus.
+
+An appliance whose setup was finished before the storage step existed has
+that step recorded as waived (not an owner skip). It reads "Not required",
+offers no Undo skip, and never re-gates the appliance.
 
 ### Outside Homestead, per step
 
