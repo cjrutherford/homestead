@@ -1,7 +1,7 @@
 # Required Post-claim Setup Walkthrough
 
 ## Status
-Accepted
+Superseded by ADR-036 (2026-10-20)
 
 Proposed and accepted by the owner on 2026-10-18, including UI-level gating
 and not forcing appliances claimed earlier through the walkthrough. Related: ADR-004 (parity), ADR-006

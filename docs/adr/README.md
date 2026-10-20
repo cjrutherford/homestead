@@ -90,5 +90,6 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-031 | Craft Apps Start Page | Accepted |
 | ADR-032 | Craft File Proxy Reaches the Daemon over a Dedicated Unix Socket | Accepted |
 | ADR-033 | Dashboard SSO via Authentik with a Break-glass Owner | Accepted |
-| ADR-034 | Required Post-claim Setup Walkthrough | Accepted |
+| ADR-034 | Required Post-claim Setup Walkthrough | Superseded by ADR-036 |
 | ADR-035 | Dashboard on the Local Network through the Edge | Accepted |
+| ADR-036 | Step-by-step Setup Wizard | Accepted |
