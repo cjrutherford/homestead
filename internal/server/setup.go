@@ -14,13 +14,14 @@ import (
 	"homestead/internal/secret"
 	"homestead/internal/setup"
 	"homestead/internal/sso"
+	"homestead/internal/storage"
 	"homestead/internal/store"
 	"homestead/internal/wizard"
 )
 
 // Post-claim setup walkthrough (S287, ADR-034). Two session-class routes:
 //
-//	GET /api/v1/setup                 derived status of the four steps
+//	GET /api/v1/setup                 derived status of the five steps
 //	PUT /api/v1/setup/steps/{name}    {"state"} and/or {"provider","access"}
 //
 // The walkthrough is orchestration. Nothing here changes the appliance;
@@ -49,6 +50,13 @@ func setupSources(c SetupConfig) setup.Sources {
 		return n, err
 	}
 	return setup.Sources{
+		Storage: func() (bool, error) {
+			_, err := storage.NewAssignments(c.Store).Get(storage.ClassApplication)
+			if errors.Is(err, storage.ErrNoAssignment) {
+				return false, nil
+			}
+			return err == nil, err
+		},
 		Recovery: func() (bool, bool, error) {
 			rs := backup.NewRecipientStore(c.Store)
 			_, exported, err := rs.LastExport()

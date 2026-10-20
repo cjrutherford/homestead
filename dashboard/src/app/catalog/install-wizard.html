@@ -1,6 +1,8 @@
 <section aria-label="Install wizard">
   @if (loadError()) {
-    <h1>Install</h1>
+    @if (!embedded()) {
+      <h1>Install</h1>
+    }
     <app-state-message
       kind="error"
       [headline]="loadError()"
@@ -11,8 +13,12 @@
 
   <app-loading [loading]="loading()" shape="panel">
     @if (!loading() && manifest(); as m) {
-      <h1>{{ current() === 'done' ? title() + ' installed' : 'Install ' + title() }}</h1>
-      @if (fromSetup) {
+      @if (embedded()) {
+        <h3>{{ current() === 'done' ? title() + ' installed' : 'Install ' + title() }}</h3>
+      } @else {
+        <h1>{{ current() === 'done' ? title() + ' installed' : 'Install ' + title() }}</h1>
+      }
+      @if (fromSetup && !embedded()) {
         <p><a routerLink="/setup">Back to setup</a></p>
       }
 
@@ -553,7 +559,11 @@
                 }
                 <p class="wizard-actions">
                   <button type="button" class="primary" (click)="retry()">Try again</button>
-                  <a class="button" routerLink="/catalog">Back to the catalog</a>
+                  @if (embedded()) {
+                    <button type="button" (click)="closed.emit()">Back to the app list</button>
+                  } @else {
+                    <a class="button" routerLink="/catalog">Back to the catalog</a>
+                  }
                 </p>
               }
               @default {
@@ -669,7 +679,11 @@
             }
 
             <div class="wizard-actions">
-              <a class="button" routerLink="/catalog" (click)="finish()">Back to the catalog</a>
+              @if (embedded()) {
+                <button type="button" class="primary" (click)="finish(); closed.emit()">Back to the app list</button>
+              } @else {
+                <a class="button" routerLink="/catalog" (click)="finish()">Back to the catalog</a>
+              }
               <app-uninstall-app [name]="m.Name" [title]="m.Title" (uninstalled)="onUninstalled()" />
             </div>
           }

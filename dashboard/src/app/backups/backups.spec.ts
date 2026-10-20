@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
@@ -7,6 +8,7 @@ import {
   HttpTestingController,
 } from '@angular/common/http/testing';
 import { Backups } from './backups';
+import { RecoveryIdentity } from './recovery-identity';
 
 const SCHEDULE = {
   package: 'jellyfin',
@@ -90,7 +92,6 @@ describe('Backups', () => {
     http.expectOne('/api/v1/backups/destination').flush({ destination: '/b' });
     http.expectOne('/api/v1/scheduler/jobs').flush(jobs);
     http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
-    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush(schedules);
     fixture.detectChanges();
   }
@@ -300,7 +301,6 @@ describe('Backups', () => {
     http.expectOne('/api/v1/backups/destination').flush({ destination: '/b' });
     http.expectOne('/api/v1/scheduler/jobs').flush([]);
     http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
-    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush([]);
     fixture.detectChanges();
     expect(text()).toContain('No scheduled jobs.');
@@ -311,7 +311,6 @@ describe('Backups', () => {
       .expectOne('/api/v1/scheduler/jobs')
       .flush('scheduler down', { status: 500, statusText: 'x' });
     http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
-    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush([]);
     fixture.detectChanges();
     expect(text()).toContain('scheduler down');
@@ -337,37 +336,38 @@ describe('Backups', () => {
     http.expectOne('/api/v1/backups/destination').flush({ destination: '/b' });
     http.expectOne('/api/v1/scheduler/jobs').flush([]);
     http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
-    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush([]);
     fixture.detectChanges();
     expect(text()).toContain('not re-encrypted');
   });
 
+  const identityPanel = () =>
+    fixture.debugElement.query(By.directive(RecoveryIdentity)).componentInstance as RecoveryIdentity & {
+      exported(): unknown;
+    };
+  const EXPORT = {
+    identity: 'AGE-SECRET-KEY-TEST',
+    recipient: 'age1appliance',
+    fingerprint: 'aa11',
+    exported_at: 'now',
+    actor: 'chris',
+  };
+
   it('exports the identity only after confirmation and shows it once', () => {
     load([]);
-    fixture.componentInstance.askExport();
+    identityPanel().askExport();
     fixture.detectChanges();
     expect(text()).toContain('audited');
     http.expectNone('/api/v1/backups/identity/export');
-    fixture.componentInstance.confirmExport();
+    identityPanel().confirmExport();
     const req = http.expectOne('/api/v1/backups/identity/export');
     expect(req.request.body).toEqual({ confirm: true });
-    req.flush({
-      identity: 'AGE-SECRET-KEY-TEST',
-      recipient: 'age1appliance',
-      fingerprint: 'aa11',
-      exported_at: 'now',
-      actor: 'chris',
-    });
-    http.expectOne('/api/v1/backups/destination').flush({ destination: '/b' });
-    http.expectOne('/api/v1/scheduler/jobs').flush([]);
-    http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
+    req.flush(EXPORT);
     http.expectOne('/api/v1/backups/identity').flush({ ...IDENTITY, exported: true });
-    http.expectOne('/api/v1/backups/schedules').flush([]);
     fixture.detectChanges();
     expect(text()).toContain('AGE-SECRET-KEY-TEST');
     expect(text()).toContain('Store this offline');
-    fixture.componentInstance.dismissExport();
+    identityPanel().dismissExport();
     fixture.detectChanges();
     expect(text()).not.toContain('AGE-SECRET-KEY-TEST');
   });
@@ -375,43 +375,19 @@ describe('Backups', () => {
   it('keeps the exported key out of storage and drops it on ack or dismiss', () => {
     load([]);
     const setItem = vi.spyOn(Storage.prototype, 'setItem');
-    fixture.componentInstance.confirmExport();
-    http.expectOne('/api/v1/backups/identity/export').flush({
-      identity: 'AGE-SECRET-KEY-TEST',
-      recipient: 'age1appliance',
-      fingerprint: 'aa11',
-      exported_at: 'now',
-      actor: 'chris',
-    });
-    for (const [url, body] of [
-      ['/api/v1/backups/destination', { destination: '/b' }],
-      ['/api/v1/scheduler/jobs', []],
-      ['/api/v1/backups/recipients', RECIPIENTS],
-      ['/api/v1/backups/identity', { ...IDENTITY, exported: true }],
-      ['/api/v1/backups/schedules', []],
-    ] as const) {
-      http.expectOne(url).flush(body);
-    }
+    identityPanel().confirmExport();
+    http.expectOne('/api/v1/backups/identity/export').flush(EXPORT);
+    http.expectOne('/api/v1/backups/identity').flush({ ...IDENTITY, exported: true });
     fixture.detectChanges();
     expect(text()).toContain('AGE-SECRET-KEY-TEST');
-    fixture.componentInstance.acknowledgeExport();
+    identityPanel().acknowledgeExport();
     const ack = http.expectOne('/api/v1/backups/identity/ack');
     expect(ack.request.method).toBe('POST');
     ack.flush({ ...IDENTITY, exported: true, acknowledged: true });
-    for (const [url, body] of [
-      ['/api/v1/backups/destination', { destination: '/b' }],
-      ['/api/v1/scheduler/jobs', []],
-      ['/api/v1/backups/recipients', RECIPIENTS],
-      ['/api/v1/backups/identity', { ...IDENTITY, exported: true, acknowledged: true }],
-      ['/api/v1/backups/schedules', []],
-    ] as const) {
-      http.expectOne(url).flush(body);
-    }
+    http.expectOne('/api/v1/backups/identity').flush({ ...IDENTITY, exported: true, acknowledged: true });
     fixture.detectChanges();
     expect(text()).not.toContain('AGE-SECRET-KEY-TEST');
-    expect(
-      (fixture.componentInstance as unknown as { exported(): unknown }).exported(),
-    ).toBeNull();
+    expect(identityPanel().exported()).toBeNull();
     expect(setItem).not.toHaveBeenCalled();
     expect(JSON.stringify({ ...localStorage })).not.toContain('AGE-SECRET-KEY');
     setItem.mockRestore();

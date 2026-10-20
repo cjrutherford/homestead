@@ -1,12 +1,15 @@
 <section aria-label="Setup">
   <h1>{{ status()?.legacy ? 'Finish setup' : 'Set up your appliance' }}</h1>
   <p>
-    Four short steps. Each one changes nothing by itself: it sends you to the page that does the
-    work, or records that you skipped it. You can skip any step and come back later.
+    Five short steps, one at a time. Each step explains what it does and what you do outside
+    Homestead, and does its work right here. You can skip any step and come back later.
   </p>
 
-  @if (error()) {
+  @if (error() && !failed()) {
     <app-state-message kind="error" [headline]="error()" />
+  }
+  @if (setup.error()) {
+    <app-state-message kind="error" [headline]="setup.error()" />
   }
 
   <app-loading [loading]="loading()" shape="list">
@@ -14,7 +17,7 @@
       <app-state-message
         kind="error"
         headline="Setup status could not be read."
-        detail="The rest of the dashboard still works."
+        [detail]="error() || 'The rest of the dashboard still works.'"
         actionLabel="Try again"
         (action)="refresh()"
       />
@@ -22,256 +25,101 @@
       @if (s.legacy) {
         <app-state-message
           kind="notice"
-          headline="This appliance was set up before the walkthrough existed."
+          headline="This appliance was set up before the wizard existed."
           detail="Nothing here is required. Use it to check the things a new appliance is asked to do."
         />
       }
-      @if (s.complete) {
-        <app-state-message
-          kind="status"
-          headline="Setup is complete."
-          detail="Every step is done or skipped. You can open any step again below."
-          actionLabel="Go to status"
-          actionLink="/status"
-        />
-      }
 
-      <ol class="step-list" aria-label="Setup steps">
-        @for (step of s.steps; track step.name) {
-          <li class="step" [attr.data-status]="glyph(step)">
+      <ol class="step-list" aria-label="Setup progress">
+        @for (st of s.steps; track st.name; let i = $index) {
+          <li class="step" [attr.data-status]="glyph(st)" [attr.aria-current]="i === index() ? 'step' : null">
             <span class="step-glyph" aria-hidden="true"></span>
-            <span class="step-name">{{ step.title }}</span>
-            <span class="step-status">{{ word(step) }}</span>
+            <span class="visually-hidden">Step {{ i + 1 }} of {{ s.steps.length }}: </span>
+            <span class="step-name">{{ st.title }}</span>
+            <span class="step-status">{{ word(st) }}</span>
           </li>
         }
       </ol>
 
-      @for (step of s.steps; track step.name) {
-        <section [attr.aria-labelledby]="'step-' + step.name">
-          <h2 [id]="'step-' + step.name">{{ step.title }}</h2>
-          <p>{{ step.detail }}</p>
-
-          @if (current() === step.name) {
-            @switch (step.name) {
-              @case ('account') {
-                <p>
-                  Backups are encrypted. The recovery identity is the key that reads them if this
-                  appliance is lost. Export it on the Backups page, store it somewhere offline, then
-                  confirm there.
-                </p>
-                <p>
-                  <a class="button" routerLink="/backups">Open the Backups page to export</a>
-                  <button type="button" (click)="refresh()">Check again</button>
-                </p>
-                <p>
-                  Your password: if you were given a generated or temporary one, change it on the Account
-                  page. Homestead cannot tell, so confirm here when you have a password only you know.
-                </p>
-                @if (s.facts.password_confirmed) {
-                  <p class="hint">Password confirmed.</p>
-                } @else {
-                  <p>
-                    <a routerLink="/account">Change password on the Account page</a>
-                    <button type="button" [disabled]="busy()" (click)="confirmPassword()">
-                      Confirm my password
-                    </button>
-                  </p>
-                }
-              }
-              @case ('sign-in') {
-                <p>
-                  Sign-in with Authentik is optional. Your local owner password always works, even
-                  if Authentik is gone.
-                </p>
-                <p>
-                  @if (!s.facts.sign_in.authentik_installed) {
-                    <a class="button" routerLink="/catalog/authentik/install" [queryParams]="{ from: 'setup' }"
-                      >Install Authentik</a
-                    >
-                  } @else {
-                    <a class="button" routerLink="/sign-in">Open sign-in settings</a>
-                  }
-                  <button type="button" (click)="refresh()">Check again</button>
-                </p>
-              }
-              @case ('domain') {
-                @if (s.facts.review_existing) {
-                  <app-state-message
-                    kind="notice"
-                    headline="A domain, tunnel or exposure plan is already set up here."
-                    detail="Review it and confirm it is right. Nothing is changed or redone."
-                  />
-                  <p>
-                    <a class="button" routerLink="/tunnel">Review the tunnel</a>
-                    <a class="button" routerLink="/exposure">Review exposure</a>
-                    <a class="button" routerLink="/tls">Review certificates</a>
-                  </p>
-                }
-
-                <h3>DNS provider</h3>
-                <p>Optional. Pick where your domain's DNS lives, or leave it and stay on your home network.</p>
-                <fieldset [disabled]="busy()">
-                  <legend>DNS provider</legend>
-                  @for (p of s.providers; track p.name) {
-                    <label>
-                      <input
-                        type="radio"
-                        name="provider"
-                        [value]="p.name"
-                        [checked]="s.choices.provider === p.name"
-                        (change)="chooseProvider(p.name)"
-                      />
-                      {{ p.label }}
-                    </label>
-                  }
-                </fieldset>
-
-                @if (provider(); as p) {
-                  <p>{{ p.summary }}</p>
-                  @if (p.permissions?.length) {
-                    <p>Give the credential only these permissions:</p>
-                    <ul>
-                      @for (perm of p.permissions; track perm.grant) {
-                        <li>
-                          <strong>{{ perm.grant }}</strong> to {{ perm.reason }}.
-                        </li>
-                      }
-                      @if (s.choices.access === 'tunnel') {
-                        @for (perm of p.tunnel_permissions; track perm.grant) {
-                          <li>
-                            <strong>{{ perm.grant }}</strong> to {{ perm.reason }}.
-                          </li>
-                        }
-                      }
-                    </ul>
-                  }
-                  @for (note of p.notes ?? []; track note) {
-                    <p class="hint">{{ note }}</p>
-                  }
-                  @if (p.credentials?.length) {
-                    <form #creds (submit)="$event.preventDefault(); saveCredentials(creds)" autocomplete="off">
-                      @for (field of p.credentials; track field.name) {
-                        <p>
-                          <label>
-                            {{ field.label }}
-                            <input
-                              [name]="field.name"
-                              [type]="field.secret ? 'password' : 'text'"
-                              autocomplete="off"
-                              spellcheck="false"
-                            />
-                          </label>
-                        </p>
-                      }
-                      <p class="hint">
-                        {{ s.facts.domain.credentials_sealed ? 'Credentials are stored. Enter new ones to replace them.' : 'Stored sealed on this appliance. They cannot be read back.' }}
-                      </p>
-                      <button type="submit" [disabled]="busy()">Store credentials</button>
-                    </form>
-                  }
-                }
-
-                <h3>How the appliance is reached</h3>
-                <fieldset [disabled]="busy()">
-                  <legend>Access</legend>
-                  @for (opt of access(); track opt.id) {
-                    <label>
-                      <input
-                        type="radio"
-                        name="access"
-                        [value]="opt.id"
-                        [disabled]="!opt.available"
-                        [checked]="s.choices.access === opt.id"
-                        (change)="chooseAccess(opt.id)"
-                      />
-                      {{ opt.label }}
-                    </label>
-                    <p class="hint">{{ opt.available ? opt.description : opt.reason }}</p>
-                  }
-                </fieldset>
-
-                @switch (s.choices.access) {
-                  @case ('tunnel') {
-                    <p>
-                      Set up the tunnel on the Tunnel page. You review the plan before anything is created.
-                      <a class="button" routerLink="/tunnel">Open the Tunnel page</a>
-                    </p>
-                  }
-                  @case ('router') {
-                    <p>
-                      Plan which apps are public on the Exposure page. You review and approve the exact
-                      ports and records before anything opens.
-                      <a class="button" routerLink="/exposure">Open the Exposure page</a>
-                    </p>
-                  }
-                }
-                @if (domainNeeds(); as needs) {
-                  <app-state-message kind="notice" headline="Not finished yet." [detail]="needs" />
-                  <p>
-                    <button type="button" (click)="refresh()">Check again</button>
-                  </p>
-                } @else if (!s.facts.review_existing) {
-                  <p>
-                    <button type="button" [disabled]="busy()" (click)="confirm('domain', 'Domain and access confirmed.')">
-                      {{ s.choices.access === 'tunnel' || s.choices.access === 'router' ? 'I have finished here' : 'Keep home network only' }}
-                    </button>
-                  </p>
-                } @else {
-                  <p>
-                    <button type="button" [disabled]="busy()" (click)="confirm('domain', 'Domain and access confirmed.')">
-                      This looks right
-                    </button>
-                  </p>
-                }
-              }
-              @case ('apps') {
-                @if (s.starter_apps.length === 0) {
-                  <app-state-message
-                    kind="empty"
-                    headline="No starter apps to suggest."
-                    actionLabel="Browse the catalog"
-                    actionLink="/catalog"
-                  />
-                } @else {
-                  <ul>
-                    @for (app of s.starter_apps; track app.name) {
-                      <li>
-                        <strong>{{ app.title }}</strong>: {{ app.blurb }}
-                        @if (app.installed) {
-                          (installed)
-                        } @else {
-                          <a [routerLink]="['/catalog', app.name, 'install']" [queryParams]="{ from: 'setup' }"
-                            >Install {{ app.title }}</a
-                          >
-                        }
-                      </li>
-                    }
-                  </ul>
-                }
-                <p class="hint">Installs run in the background. You do not have to wait for them here.</p>
-                <p>
-                  <button type="button" [disabled]="busy()" (click)="confirm('apps', 'Finished. Add apps any time from the catalog.')">
-                    I am finished with apps
-                  </button>
-                </p>
-              }
-            }
-            @if (step.state === 'pending') {
-              <p>
-                <button type="button" [disabled]="busy()" (click)="skip(step.name)">Skip this step</button>
-              </p>
-            }
+      @if (onSummary()) {
+        <section aria-labelledby="setup-summary">
+          <h2 id="setup-summary" #stepHeading tabindex="-1">Summary</h2>
+          @if (s.complete) {
+            <app-state-message
+              kind="status"
+              headline="Setup is complete."
+              detail="Every step is done or skipped. Skipped steps can be finished any time."
+            />
           } @else {
+            <app-state-message
+              kind="notice"
+              headline="Some steps are still to do."
+              detail="Finish them, or skip them, to complete setup."
+            />
+          }
+          <ul aria-label="Outcome of each step">
+            @for (st of s.steps; track st.name) {
+              <li>
+                <strong>{{ st.title }}</strong>: {{ word(st) }}. {{ st.detail }}
+                @if (st.state !== 'done') {
+                  <button type="button" (click)="goTo(st.name)">
+                    {{ st.state === 'skipped' ? 'Finish this step' : 'Go to this step' }}
+                  </button>
+                }
+              </li>
+            }
+          </ul>
+          <p class="wizard-actions">
+            <button type="button" (click)="back()">Back</button>
+            <a class="button primary" routerLink="/status">Go to status</a>
+          </p>
+        </section>
+      } @else if (step(); as st) {
+        <section [attr.aria-labelledby]="'step-' + st.name">
+          <h2 [id]="'step-' + st.name" #stepHeading tabindex="-1">
+            Step {{ (index() ?? 0) + 1 }} of {{ s.steps.length }}: {{ st.title }}
+          </h2>
+          <p>
+            <strong>{{ word(st) }}.</strong> {{ st.detail }}
+          </p>
+
+          @switch (st.name) {
+            @case ('account') {
+              <app-setup-account-step [status]="s" />
+            }
+            @case ('storage') {
+              <app-setup-storage-step />
+            }
+            @case ('sign-in') {
+              <app-setup-sign-in-step [status]="s" />
+            }
+            @case ('domain') {
+              <app-setup-domain-step [status]="s" />
+            }
+            @case ('apps') {
+              <app-setup-apps-step [status]="s" />
+            }
+          }
+
+          @if (st.state === 'pending') {
             <p>
-              <button type="button" (click)="show(step.name)">
-                {{ step.state === 'pending' ? 'Open this step' : 'Review this step' }}
-              </button>
+              <button type="button" [disabled]="setup.busy()" (click)="skip(st.name)">Skip this step</button>
             </p>
           }
-          @if (step.skipped && step.state === 'skipped') {
+          @if (st.skipped && st.state === 'skipped') {
             <p>
-              <button type="button" [disabled]="busy()" (click)="unskip(step.name)">Undo skip</button>
+              <button type="button" [disabled]="setup.busy()" (click)="unskip(st.name)">Undo skip</button>
             </p>
+          }
+
+          <p class="wizard-actions">
+            <button type="button" [disabled]="index() === 0" (click)="back()">Back</button>
+            <button type="button" class="primary" [disabled]="!canNext()" (click)="next()">
+              {{ index() === s.steps.length - 1 ? 'Next: summary' : 'Next' }}
+            </button>
+          </p>
+          @if (!canNext()) {
+            <p class="hint">Next unlocks when this step is done, or when you skip it.</p>
           }
         </section>
       }

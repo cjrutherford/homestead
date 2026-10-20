@@ -28,16 +28,18 @@ const WizardID = "setup"
 // PUT /api/v1/setup/steps/{name} and the argument of `homesteadctl setup`.
 const (
 	StepAccount = "account"
+	StepStorage = "storage"
 	StepSignIn  = "sign-in"
 	StepDomain  = "domain"
 	StepApps    = "apps"
 )
 
 // StepNames lists the steps in order.
-var StepNames = []string{StepAccount, StepSignIn, StepDomain, StepApps}
+var StepNames = []string{StepAccount, StepStorage, StepSignIn, StepDomain, StepApps}
 
 var titles = map[string]string{
 	StepAccount: "Secure the owner account",
+	StepStorage: "Storage",
 	StepSignIn:  "Sign-in",
 	StepDomain:  "Domain and access",
 	StepApps:    "First apps",
@@ -100,12 +102,15 @@ type StarterApp struct {
 // Facts are the observed facts the states derive from. Reading them never
 // changes anything and never contacts a remote service.
 type Facts struct {
-	RecoveryExported     bool        `json:"recovery_exported"`
-	RecoveryAcknowledged bool        `json:"recovery_acknowledged"`
-	SignIn               SSOFacts    `json:"sign_in"`
-	Domain               DomainFacts `json:"domain"`
-	Tunnels              int         `json:"tunnels"`
-	Exposures            int         `json:"exposures"`
+	RecoveryExported     bool `json:"recovery_exported"`
+	RecoveryAcknowledged bool `json:"recovery_acknowledged"`
+	// StorageAppAssigned: the application storage class is assigned to a
+	// registered mount (S291). The storage step derives from it.
+	StorageAppAssigned bool        `json:"storage_app_assigned"`
+	SignIn             SSOFacts    `json:"sign_in"`
+	Domain             DomainFacts `json:"domain"`
+	Tunnels            int         `json:"tunnels"`
+	Exposures          int         `json:"exposures"`
 	// PasswordConfirmed: the owner confirmed their password in step 1. The
 	// daemon has no temporary-password state, so this is an explicit
 	// acknowledgement (see docs/DEFERRED.md).
@@ -121,9 +126,11 @@ type Facts struct {
 // stores, tests wire fakes.
 type Sources struct {
 	Recovery func() (exported, acknowledged bool, err error)
-	SignIn   func() (SSOFacts, error)
-	Domain   func() (DomainFacts, error)
-	Tunnels  func() (int, error)
+	// Storage reports whether the application storage class is assigned.
+	Storage func() (bool, error)
+	SignIn  func() (SSOFacts, error)
+	Domain  func() (DomainFacts, error)
+	Tunnels func() (int, error)
 	// Exposures counts approved exposure plans.
 	Exposures func() (int, error)
 	// Apps lists the starter apps and how many catalog apps (other than
@@ -134,12 +141,18 @@ type Sources struct {
 // stored is the whole persisted payload. Keep it to choices and progress:
 // a field added here is a field the wizard store holds in clear text.
 type stored struct {
+	// Version 2 (S291) added the storage step. A payload without it was
+	// written before the step existed; see migrate.
+	Version      int      `json:"version,omitempty"`
 	Origin       string   `json:"origin,omitempty"`
 	Skipped      []string `json:"skipped,omitempty"`
 	Acknowledged []string `json:"acknowledged,omitempty"`
 	Provider     string   `json:"provider,omitempty"`
 	Access       string   `json:"access,omitempty"`
 }
+
+// storedVersion is the current payload version.
+const storedVersion = 2
 
 // Choices are the owner's non-sensitive selections.
 type Choices struct {
@@ -203,7 +216,7 @@ func New(w *wizard.Service, src Sources) *Service {
 func (s *Service) load() (stored, error) {
 	state, err := s.Wizards.Get(WizardID)
 	if errors.Is(err, wizard.ErrNotFound) {
-		return stored{Origin: OriginFresh}, nil
+		return stored{Origin: OriginFresh, Version: storedVersion}, nil
 	}
 	if err != nil {
 		return stored{}, err
@@ -222,6 +235,41 @@ func (s *Service) load() (stored, error) {
 	return st, nil
 }
 
+// migrate runs once on a payload written before the storage step existed.
+// An appliance whose other steps were all done or skipped at that point had
+// finished setup, so the new step must not send it back into the wizard: the
+// storage step is recorded as skipped (real assignment still reads done). An
+// appliance still mid-setup gets the new step like a fresh one. The result
+// is persisted, so the rule is applied exactly once and never again.
+func (s *Service) migrate(st stored) (stored, error) {
+	if st.Version >= storedVersion {
+		return st, nil
+	}
+	if st.Origin == OriginFresh {
+		f, _, err := s.facts(st)
+		if err != nil {
+			return st, err
+		}
+		finished := true
+		for _, name := range StepNames {
+			if name == StepStorage {
+				continue
+			}
+			if state, _ := derive(name, st, f); state == Pending {
+				finished = false
+			}
+		}
+		if finished {
+			st.Skipped = add(st.Skipped, StepStorage)
+		}
+	}
+	st.Version = storedVersion
+	if err := s.save(st); err != nil {
+		return st, err
+	}
+	return st, nil
+}
+
 func (s *Service) facts(st stored) (Facts, []StarterApp, error) {
 	var f Facts
 	var starter []StarterApp
@@ -230,6 +278,11 @@ func (s *Service) facts(st stored) (Facts, []StarterApp, error) {
 	if src.Recovery != nil {
 		if f.RecoveryExported, f.RecoveryAcknowledged, err = src.Recovery(); err != nil {
 			return f, nil, fmt.Errorf("setup: recovery identity: %w", err)
+		}
+	}
+	if src.Storage != nil {
+		if f.StorageAppAssigned, err = src.Storage(); err != nil {
+			return f, nil, fmt.Errorf("setup: storage: %w", err)
 		}
 	}
 	if src.SignIn != nil {
@@ -275,6 +328,8 @@ func derive(name string, st stored, f Facts) (state, detail string) {
 	switch name {
 	case StepAccount:
 		done = f.RecoveryAcknowledged && acked
+	case StepStorage:
+		done = f.StorageAppAssigned
 	case StepSignIn:
 		// A dormant link (Authentik removed) does not re-gate the appliance;
 		// the detail warns instead.
@@ -316,6 +371,14 @@ func detailFor(name, state string, st stored, f Facts) string {
 			return "The recovery identity is exported. Confirm that you stored it offline, and confirm your password."
 		}
 		return "Export the recovery identity, store it offline, and confirm. Also confirm your password. The local owner account stays the way back in."
+	case StepStorage:
+		switch {
+		case state == Done:
+			return "The application storage class is assigned to a registered disk."
+		case state == Skipped:
+			return "Skipped. Installing apps needs the application storage class; assign it on the Storage page."
+		}
+		return "Register a mounted disk and assign the application storage class. Homestead never formats or partitions a disk."
 	case StepSignIn:
 		switch {
 		case state == Done && f.SignIn.Dormant:
@@ -413,6 +476,9 @@ func (s *Service) status() (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
+	if st, err = s.migrate(st); err != nil {
+		return Status{}, err
+	}
 	f, starter, err := s.facts(st)
 	if err != nil {
 		return Status{}, err
@@ -444,7 +510,7 @@ func (s *Service) status() (Status, error) {
 // Update records an owner choice for a step and returns the new status.
 func (s *Service) Update(step string, u Update) (Status, error) {
 	if !slices.Contains(StepNames, step) {
-		return Status{}, fmt.Errorf("%w: %q (steps: account, sign-in, domain, apps)", ErrUnknownStep, step)
+		return Status{}, fmt.Errorf("%w: %q (steps: account, storage, sign-in, domain, apps)", ErrUnknownStep, step)
 	}
 	if u.State == nil && u.Provider == nil && u.Access == nil {
 		return Status{}, fmt.Errorf(`%w: want {"state"} and/or {"provider"}, {"access"}`, ErrInvalid)
@@ -453,6 +519,9 @@ func (s *Service) Update(step string, u Update) (Status, error) {
 	defer s.mu.Unlock()
 	st, err := s.load()
 	if err != nil {
+		return Status{}, err
+	}
+	if st, err = s.migrate(st); err != nil {
 		return Status{}, err
 	}
 	if u.Provider != nil || u.Access != nil {
@@ -495,8 +564,8 @@ func (s *Service) Update(step string, u Update) (Status, error) {
 			st.Skipped = remove(st.Skipped, step)
 			st.Acknowledged = remove(st.Acknowledged, step)
 		case Done:
-			if step == StepSignIn {
-				return Status{}, fmt.Errorf("%w: the sign-in step completes from real state, not by confirming it", ErrInvalid)
+			if step == StepSignIn || step == StepStorage {
+				return Status{}, fmt.Errorf("%w: the %s step completes from real state, not by confirming it", ErrInvalid, step)
 			}
 			if step == StepDomain {
 				f, _, err := s.facts(st)

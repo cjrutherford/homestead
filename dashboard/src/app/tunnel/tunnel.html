@@ -1,5 +1,7 @@
 <section aria-label="Tunnel remote access">
-  <h1>Tunnel</h1>
+  @if (!embedded()) {
+    <h1>Tunnel</h1>
+  }
   <p>
     When your router cannot open ports (shared internet addresses, no admin access, no UPnP), a
     tunnel carries public traffic over a connection that only goes out. It needs no router changes.

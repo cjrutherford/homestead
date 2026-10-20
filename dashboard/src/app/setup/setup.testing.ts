@@ -10,6 +10,7 @@ export function setupStatus(overrides: Partial<SetupStatus> = {}): SetupStatus {
     current: 'account',
     steps: [
       { name: 'account', title: 'Secure the owner account', state: 'pending', detail: 'Export the recovery identity.', skipped: false, acknowledged: false },
+      { name: 'storage', title: 'Storage', state: 'pending', detail: 'Assign the application storage class.', skipped: false, acknowledged: false },
       { name: 'sign-in', title: 'Sign-in', state: 'pending', detail: 'Install Authentik.', skipped: false, acknowledged: false },
       { name: 'domain', title: 'Domain and access', state: 'pending', detail: 'Choose a DNS provider.', skipped: false, acknowledged: false },
       { name: 'apps', title: 'First apps', state: 'pending', detail: 'Pick a few apps.', skipped: false, acknowledged: false },
@@ -18,6 +19,7 @@ export function setupStatus(overrides: Partial<SetupStatus> = {}): SetupStatus {
     facts: {
       recovery_exported: false,
       recovery_acknowledged: false,
+      storage_app_assigned: false,
       password_confirmed: false,
       sign_in: { authentik_installed: false, configured: false, linked: false, dormant: false },
       domain: { configured: false, onboarded: false, credentials_sealed: false },

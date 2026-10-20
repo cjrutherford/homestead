@@ -12,6 +12,7 @@ func TestSetupCLI(t *testing.T) {
 	var seen []string
 	body := `{"origin":"fresh","legacy":false,"complete":false,"gated":true,"current":"account","choices":{"provider":"cloudflare","access":"tunnel"},"steps":[` +
 		`{"name":"account","title":"Secure the owner account","state":"pending","detail":"Export the recovery identity."},` +
+		`{"name":"storage","title":"Storage","state":"pending","detail":"Assign the application storage class."},` +
 		`{"name":"sign-in","title":"Sign-in","state":"skipped","detail":"Skipped."},` +
 		`{"name":"domain","title":"Domain and access","state":"pending","detail":"Choose a DNS provider."},` +
 		`{"name":"apps","title":"First apps","state":"done","detail":"Finished."}],"facts":{},"providers":[],"access":[],"starter_apps":[]}`
@@ -54,6 +55,14 @@ func TestSetupCLI(t *testing.T) {
 	code, out, _ = invoke(t, []string{"--server", ts.URL, "setup", "step", "account"})
 	if code != exitOK || len(seen) != n+1 || !strings.HasPrefix(seen[n], "GET /api/v1/setup") || !strings.Contains(out, "Export the recovery identity") {
 		t.Fatalf("show: %d %v %s", code, seen, out)
+	}
+	code, out, _ = invoke(t, []string{"--server", ts.URL, "setup", "skip", "storage"})
+	if code != exitOK || seen[len(seen)-1] != `PUT /api/v1/setup/steps/storage {"state":"skipped"}` || !strings.Contains(out, "storage") {
+		t.Fatalf("skip storage: %d %v %s", code, seen, out)
+	}
+	code, out, _ = invoke(t, []string{"--server", ts.URL, "setup", "step", "storage"})
+	if code != exitOK || !strings.Contains(out, "Assign the application storage class") {
+		t.Fatalf("show storage: %d %s", code, out)
 	}
 	if code, _, _ = invoke(t, []string{"--server", ts.URL, "setup", "bogus"}); code != exitUsage {
 		t.Fatalf("bogus = %d", code)

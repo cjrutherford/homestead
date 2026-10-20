@@ -1,13 +1,43 @@
-# Post-claim setup walkthrough (S287, ADR-034)
+# Post-claim setup wizard (S287, S291, ADR-034, ADR-036)
 
 After claim and first-administrator creation the dashboard walks a new owner
-through four steps: secure the owner account, sign-in, domain and access, first
-apps. It is orchestration only. It reads what is true on the appliance, records
-the owner's skips, acknowledgements and non-sensitive choices, and sends the
-owner to the pages that already make each change. Nothing is applied by the
-walkthrough itself; every change still goes through its own plan, review and
-approve flow (the S285 install wizard, the S286 sign-in flow, the Tunnel and
-Exposure pages).
+through five steps, one on screen at a time: secure the owner account, storage,
+sign-in, domain and access, first apps, then a summary. ADR-036 (S291) turned
+the ADR-034 walkthrough into this wizard. Each step does its work inline by
+embedding the same pages and calling the same API routes as the standalone
+pages, which stay. The wizard is still orchestration only: it reads what is
+true on the appliance, records the owner's skips, acknowledgements and
+non-sensitive choices, and every change still goes through its own plan,
+review and approve flow.
+
+## Wizard behaviour
+
+- Linear: Next is enabled only when the step is done or skipped. Back always
+  works. The wizard opens at the first pending step, or on the summary when
+  none is pending. The progress list marks the current step with
+  `aria-current="step"` and shows each state as a word.
+- On a step change focus moves to the step heading.
+- A step that is finished through an embedded page (an app class assigned, an
+  install finished) is noticed without a reload: the wizard re-reads
+  `GET /api/v1/setup` after any successful non-setup write.
+- Every step shows "What this does" and an ordered "Outside Homestead"
+  checklist of tasks done in other tools.
+- The summary lists each step's outcome with a button back to any step.
+- The progress list is not clickable; use Back, Next and the summary.
+
+Menu paths for the outside tasks (Cloudflare, Authentik) were checked on
+2026-10-20. Vendors rename menus; the Authentik path was checked against
+Authentik 2025.x.
+
+### Outside Homestead, per step
+
+| Step | Tasks, in order |
+| --- | --- |
+| Account | keep the password in a password manager; store the recovery file offline |
+| Storage | the disk must already be mounted (Homestead never formats); an `/etc/fstab` example is shown |
+| Sign-in | reach `authentik.<name>`; trust the root certificate (Trust page); open `https://authentik.<name>/if/flow/initial-setup/` and create `akadmin`; Admin interface, Directory, Tokens and App passwords, Create, intent API |
+| Domain | add the domain to Cloudflare; create the scoped token with the permissions below; the other providers' equivalents; for manual DNS, the record table |
+| Apps | none |
 
 ## The steps and how each is derived
 
@@ -18,6 +48,7 @@ finished from the CLI or another page reads `done`.
 | Step | Done when | Otherwise |
 | --- | --- | --- |
 | `account` | the latest recovery identity export is acknowledged (`backups/identity`) and the owner confirmed their password | pending; skippable |
+| `storage` | the application storage class is assigned (`storage_app_assigned`); real state wins, so assigning it from the CLI or the Storage page reads `done`. Skippable; `PUT .../steps/storage {"state":"done"}` answers 400 | pending |
 | `sign-in` | Authentik sign-in is configured and linked (`sso` status); a dormant link (Authentik removed) stays done and the detail warns that Authentik sign-in is off and the local password still works | pending; skippable |
 | `domain` | see "Domain completion" below | pending; skippable |
 | `apps` | the owner acknowledged it, or any catalog app other than Authentik is installed | pending; skippable |
@@ -101,10 +132,18 @@ present. No credential value is in a wizard payload, an audit detail, a log or
 any setup response; `internal/server/setup_test.go` proves it with a sentinel
 value.
 
+### Appliances set up before the storage step
+
+The stored record carries `version`. A record older than version 2 whose
+other steps were all done or skipped gets storage added to its skipped list the
+first time it is read or updated, so a complete appliance is never re-gated
+by the new step (`TestPreStorageApplianceIsNotRegated`). Legacy appliances stay
+ungated.
+
 ## Where state lives
 
 The wizard store (`wizard_state`, id `setup`) holds only: `origin`, `skipped`,
-`acknowledged`, `provider` and `access`. The step shown after a reload is the
+`acknowledged`, `provider`, `access` and `version`. The step shown after a reload is the
 first one still pending. The generic `PUT` and `DELETE /api/v1/wizards/setup`
 answer 403; the walkthrough changes only through `/api/v1/setup`.
 
@@ -159,12 +198,12 @@ clears claim state must also delete `wizard_state` where `wizard = 'setup'`.
 ## Operating it from the CLI
 
 ```
-homesteadctl setup status            # origin, the four steps, what is next
+homesteadctl setup status            # origin, the five steps, what is next
 homesteadctl setup step domain       # one step's state and detail
 homesteadctl setup step domain --provider cloudflare --access tunnel
 homesteadctl setup step account --acknowledge  # confirm my password
 homesteadctl setup step apps --acknowledge     # also domain, once its tunnel/exposure exists
-homesteadctl setup skip sign-in
+homesteadctl setup skip sign-in      # storage too: skip and unskip only
 homesteadctl setup unskip sign-in
 ```
 

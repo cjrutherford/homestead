@@ -90,54 +90,7 @@
     <button type="submit" [disabled]="busy()">Add recipient</button>
   </form>
 
-  <h3>Recovery identity</h3>
-  @if (identity(); as status) {
-    @if (!status.created) {
-      <p>The appliance identity is created by the first backup or by the first export.</p>
-    }
-    <p>
-      @if (status.exported) {
-        Exported by {{ status.exported_by }} at {{ status.exported_at | when }}.
-        @if (status.acknowledged) {
-          Confirmed stored offline at {{ status.acknowledged_at | when }}.
-        } @else {
-          Not yet confirmed stored offline: the warning stays until you export again and confirm.
-        }
-      } @else {
-        Never exported.
-      }
-    </p>
-  }
-  @if (exported(); as result) {
-    <div role="alert" aria-label="Exported recovery identity">
-      <app-state-message
-        kind="warning"
-        headline="Store this offline, off this appliance. It is shown once and cannot be shown again here."
-      />
-      <pre class="backup-root">{{ result.identity }}</pre>
-      <button type="button" (click)="copyExport()">Copy</button>
-      <button type="button" (click)="downloadExport()">Download</button>
-      <button type="button" (click)="acknowledgeExport()" [disabled]="busy()">
-        I have stored this key offline
-      </button>
-      <button type="button" (click)="dismissExport()">Dismiss without confirming</button>
-    </div>
-  } @else if (confirmingExport()) {
-    <app-dialog heading="Export the recovery identity?" variant="danger" (dismissed)="cancelExport()">
-      <p>
-        This reveals the key that decrypts every backup, and the export is
-        audited. Continue?
-      </p>
-      <div class="dialog-actions">
-        <button type="button" class="danger" (click)="confirmExport()" [disabled]="busy()">Confirm export</button>
-        <button type="button" class="quiet" (click)="cancelExport()" [disabled]="busy()">Cancel</button>
-      </div>
-    </app-dialog>
-  } @else {
-    <button type="button" (click)="askExport()" [disabled]="busy()">
-      Export recovery identity
-    </button>
-  }
+  <app-recovery-identity />
 
   <h2>Schedules</h2>
   <button type="button" (click)="refresh()" [disabled]="loading() || busy()">

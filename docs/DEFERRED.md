@@ -782,3 +782,12 @@
   built.
 - The dashboard route has no per-name certificate for a second owner-set alias
   and no IPv6-only name support (S289).
+- The setup wizard's domain step does not embed the Certificates (TLS) page;
+  it keeps its own provider and credential form and links out for certificates
+  (S291).
+- The wizard progress list is not clickable and the wizard is linear only; a
+  free-jump mode was not built (S291).
+- The Storage step is skip and unskip only through the setup API and CLI; the
+  assignment itself uses the storage commands (S291).
+- The Authentik initial-setup address falls back to `authentik.<name>` when the
+  sign-in defaults are unknown (S291).

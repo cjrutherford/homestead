@@ -1,5 +1,5 @@
 import { WhenPipe } from '../core/format-time';
-import { Component, computed, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal, input } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   ApiService,
@@ -39,6 +39,8 @@ export const STORAGE_CLASSES = [
   ],
 })
 export class StorageSetup implements OnInit {
+  /** Shown inside the setup wizard (S291): the page's own heading is left to the step. */
+  readonly embedded = input(false);
   private readonly api = inject(ApiService);
 
   protected readonly classes = STORAGE_CLASSES;

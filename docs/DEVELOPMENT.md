@@ -4699,3 +4699,20 @@ committed). Results:
   section 6.2); an unknown or off-subnet source falls back to all addresses.
   The startup announcement goes out per interface with only that interface's
   addresses. `docker0`, `br-*` and `veth*` are never advertised or joined.
+
+## S291: Step-by-step setup wizard (ADR-036)
+
+- Daemon: `internal/setup` gains the `storage` step (second, derived from the
+  application storage assignment) and `Facts.StorageAppAssigned`; stored state
+  carries `version` 2 and a one-time migration skips storage for appliances
+  whose other steps were already settled, so none is re-gated. `PUT
+  /api/v1/setup/steps/storage` accepts skip and unskip only. `homesteadctl
+  setup` knows the step. Guard behaviour and exemptions are unchanged.
+- Dashboard: `/setup` is a linear wizard (`setup/setup.ts`, steps under
+  `setup/steps/`). Steps embed the existing pages (`embedded` input on Storage,
+  Sign-in, Tunnel, Exposure, Install wizard) and the extracted `PasswordForm`
+  and `RecoveryIdentity` components. `setupRefreshInterceptor` makes the wizard
+  re-read status after a successful write elsewhere.
+- Docs: `SETUP_WALKTHROUGH.md` rewritten; PARITY rows updated; deferred items
+  added.
+- KVM on the test VM: PENDING (run by the coordinator).

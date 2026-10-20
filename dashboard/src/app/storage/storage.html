@@ -1,5 +1,7 @@
 <section aria-label="Storage">
-  <h1>Storage</h1>
+  @if (!embedded()) {
+    <h1>Storage</h1>
+  }
   <p>
     Homestead uses storage that is already mounted and never formats or partitions a disk. Register a
     mount you approve, then give it a class so installs and backups know where to put data.

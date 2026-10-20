@@ -1,20 +1,28 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  OnInit,
+  afterNextRender,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { ApiService } from '../core/api.service';
 import { httpErrorMessage } from '../core/http-error';
-import { ToastService } from '../core/toast.service';
+import { WorkOrders } from '../core/work-orders.service';
 import { StateMessage } from '../state/state-message';
 import { Loading } from '../ui/loading';
-import {
-  SetupAccess,
-  SetupProvider,
-  SetupService,
-  SetupStatus,
-  SetupStep,
-  SetupStepChange,
-  SetupStepName,
-} from './setup.service';
+import { SetupService, SetupStatus, SetupStep, SetupStepName } from './setup.service';
+import { AccountStep } from './steps/account-step';
+import { AppsStep } from './steps/apps-step';
+import { DomainStep } from './steps/domain-step';
+import { SignInStep } from './steps/sign-in-step';
+import { StorageStep } from './steps/storage-step';
 
 const GLYPH_STATUS: Record<string, string> = {
   done: 'succeeded',
@@ -24,73 +32,88 @@ const GLYPH_STATUS: Record<string, string> = {
 const WORDS: Record<string, string> = { done: 'Done', skipped: 'Skipped', pending: 'To do' };
 
 /**
- * Post-claim setup walkthrough (S287, ADR-034): account, sign-in, domain and
- * access, first apps. It is orchestration only. It reads what is true,
- * records skips, acknowledgements and the non-sensitive provider and access
- * choices, and sends the owner to the existing pages for every change. The
- * one thing typed here is a DNS credential, which goes straight to the
- * sealed secret route and is cleared from the form as soon as it is sent.
+ * The post-claim setup wizard (S291, ADR-036): account, storage, sign-in,
+ * domain and access, apps, then a summary. One step is on screen at a time.
+ * Each step does its work inline by embedding the same components the
+ * standalone pages use, so every call goes through the same API routes.
+ * Next is enabled only when the step is done or skipped; Back always works;
+ * it opens at the first step still to do. This component itself only reads
+ * the derived status and records skips: the status is the single source of
+ * truth and is read again whenever something the steps wrote may have changed
+ * it (see setupRefreshInterceptor).
  */
 @Component({
-  imports: [Loading, RouterLink, StateMessage],
+  imports: [
+    AccountStep,
+    AppsStep,
+    DomainStep,
+    Loading,
+    RouterLink,
+    SignInStep,
+    StateMessage,
+    StorageStep,
+  ],
   selector: 'app-setup',
   templateUrl: './setup.html',
 })
 export class Setup implements OnInit {
-  private readonly setup = inject(SetupService);
-  private readonly api = inject(ApiService);
-  private readonly toast = inject(ToastService);
+  protected readonly setup = inject(SetupService);
+  private readonly orders = inject(WorkOrders);
+  private readonly injector = inject(Injector);
 
-  protected readonly status = signal<SetupStatus | null>(null);
+  private readonly heading = viewChild<ElementRef<HTMLElement>>('stepHeading');
+
+  protected readonly status = this.setup.status;
   protected readonly loading = signal(true);
-  protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly failed = signal(false);
-  /** The step the owner has open. Defaults to the first one still to do. */
-  protected readonly open = signal<SetupStepName | null>(null);
+  /** The step on screen: 0 to 4, or the number of steps for the summary. Null until the status is read. */
+  protected readonly index = signal<number | null>(null);
 
-  protected readonly current = computed<SetupStepName | null>(
-    () => this.open() ?? (this.status()?.current || null),
-  );
-  protected readonly provider = computed<SetupProvider | null>(() => {
-    const status = this.status();
-    return status?.providers.find((p) => p.name === status.choices.provider) ?? null;
+  protected readonly steps = computed<SetupStep[]>(() => this.status()?.steps ?? []);
+  protected readonly onSummary = computed(() => {
+    const index = this.index();
+    return index !== null && index >= this.steps().length;
   });
-  protected readonly access = computed<SetupAccess[]>(() => this.status()?.access ?? []);
-  /**
-   * What a tunnel or router port forward still needs before the walkthrough
-   * may confirm the domain step, or null when it may (always for home
-   * network only). Mirrors the daemon's rule, which answers 422 otherwise.
-   */
-  protected readonly domainNeeds = computed<string | null>(() => {
-    const status = this.status();
-    if (!status) {
-      return null;
-    }
-    const provider = status.choices.provider || status.facts.domain.provider || '';
-    switch (status.choices.access) {
-      case 'tunnel':
-        if (provider !== 'cloudflare') {
-          return 'Choose Cloudflare as the DNS provider above first.';
-        }
-        return status.facts.tunnels > 0
-          ? null
-          : 'No tunnel exists yet. Create and approve it on the Tunnel page, then come back and check again.';
-      case 'router':
-        if (!provider) {
-          return 'Choose a DNS provider above first.';
-        }
-        return status.facts.exposures > 0
-          ? null
-          : 'No exposure plan is approved yet. Review and approve one on the Exposure page, then come back and check again.';
-      default:
-        return null;
-    }
+  protected readonly step = computed<SetupStep | null>(() => {
+    const index = this.index();
+    return index === null ? null : (this.steps()[index] ?? null);
   });
-  protected readonly missingCredentials = computed(() => {
-    const status = this.status();
-    return !!this.provider()?.credentials?.length && !status?.facts.domain.credentials_sealed;
+  protected readonly canNext = computed(() => {
+    const step = this.step();
+    return !!step && step.state !== 'pending';
   });
+  protected readonly pendingSteps = computed(() => this.steps().filter((s) => s.state === 'pending'));
+
+  private lastKey: string | null = null;
+
+  constructor() {
+    // Something a step wrote, or an operation it started, may have changed
+    // what the status derives from: read it again.
+    effect(() => {
+      const key = `${this.setup.changed()}:${this.orders.orders().filter((o) => o.settled).length}`;
+      if (this.lastKey === null) {
+        this.lastKey = key;
+        return;
+      }
+      if (key !== this.lastKey) {
+        this.lastKey = key;
+        untracked(() => this.reload());
+      }
+    });
+    // Moving between steps moves focus to the new step's heading.
+    let previous: number | null = null;
+    effect(() => {
+      const index = this.index();
+      const moved = previous !== null && index !== null && index !== previous;
+      previous = index;
+      if (moved) {
+        untracked(() =>
+          afterNextRender(() => this.heading()?.nativeElement.focus(), { injector: this.injector }),
+        );
+      }
+    });
+  }
 
   ngOnInit(): void {
     this.refresh();
@@ -101,7 +124,9 @@ export class Setup implements OnInit {
       next: (status) => {
         this.loading.set(false);
         this.failed.set(false);
-        this.status.set(status);
+        if (this.index() === null) {
+          this.index.set(this.openingIndex(status));
+        }
       },
       error: (failure: HttpErrorResponse) => {
         this.loading.set(false);
@@ -109,6 +134,17 @@ export class Setup implements OnInit {
         this.error.set(httpErrorMessage(failure, 'setup status'));
       },
     });
+  }
+
+  /** A quiet read: a failure leaves the last status on screen. */
+  private reload(): void {
+    this.setup.setupStatus().subscribe({ error: () => undefined });
+  }
+
+  /** The first step still to do, or the summary when none is. */
+  private openingIndex(status: SetupStatus): number {
+    const first = status.steps.findIndex((s) => s.state === 'pending');
+    return first === -1 ? status.steps.length : first;
   }
 
   protected word(step: SetupStep): string {
@@ -119,88 +155,32 @@ export class Setup implements OnInit {
     return GLYPH_STATUS[step.state] ?? 'pending';
   }
 
-  protected show(name: SetupStepName): void {
-    this.open.set(name);
+  protected next(): void {
+    const index = this.index();
+    if (index !== null && this.canNext()) {
+      this.index.set(Math.min(index + 1, this.steps().length));
+    }
+  }
+
+  protected back(): void {
+    const index = this.index();
+    if (index !== null && index > 0) {
+      this.index.set(index - 1);
+    }
+  }
+
+  protected goTo(name: SetupStepName): void {
+    const index = this.steps().findIndex((s) => s.name === name);
+    if (index !== -1) {
+      this.index.set(index);
+    }
   }
 
   protected skip(name: SetupStepName): void {
-    this.change(name, { state: 'skipped' }, 'Skipped. You can come back to it any time.');
+    this.setup.change(name, { state: 'skipped' }, 'Skipped. You can come back to it any time.');
   }
 
   protected unskip(name: SetupStepName): void {
-    this.change(name, { state: 'pending' }, 'Back on your list.');
-  }
-
-  protected confirm(name: SetupStepName, message: string): void {
-    this.change(name, { state: 'done' }, message);
-  }
-
-  protected confirmPassword(): void {
-    this.change('account', { state: 'done' }, 'Password confirmed.');
-  }
-
-  protected chooseProvider(name: string): void {
-    this.change('domain', { provider: name });
-  }
-
-  protected chooseAccess(id: string): void {
-    this.change('domain', { access: id });
-  }
-
-  /**
-   * Seals the DNS credential typed into the form. The values leave the form
-   * straight for the secret route and the form is cleared either way.
-   */
-  protected saveCredentials(form: HTMLFormElement): void {
-    const provider = this.provider();
-    if (!provider || this.busy()) {
-      return;
-    }
-    const data = new FormData(form);
-    const values: Record<string, string> = {};
-    for (const field of provider.credentials ?? []) {
-      values[field.name] = String(data.get(field.name) ?? '');
-    }
-    if (Object.values(values).some((value) => value === '')) {
-      this.error.set('Fill in every credential field.');
-      return;
-    }
-    this.busy.set(true);
-    this.error.set(null);
-    this.api.tlsIssuanceCredentials(provider.name, values).subscribe({
-      next: () => {
-        form.reset();
-        this.busy.set(false);
-        this.toast.show(`Stored the ${provider.label} credentials. They cannot be read back.`);
-        this.refresh();
-      },
-      error: (failure: HttpErrorResponse) => {
-        form.reset();
-        this.busy.set(false);
-        this.error.set(httpErrorMessage(failure, 'the credentials'));
-      },
-    });
-  }
-
-  private change(name: SetupStepName, change: SetupStepChange, message?: string): void {
-    if (this.busy()) {
-      return;
-    }
-    this.busy.set(true);
-    this.error.set(null);
-    this.setup.setupStep(name, change).subscribe({
-      next: (status) => {
-        this.busy.set(false);
-        this.status.set(status);
-        this.open.set(null);
-        if (message) {
-          this.toast.show(message);
-        }
-      },
-      error: (failure: HttpErrorResponse) => {
-        this.busy.set(false);
-        this.error.set(httpErrorMessage(failure, 'setup'));
-      },
-    });
+    this.setup.change(name, { state: 'pending' }, 'Back on your list.');
   }
 }

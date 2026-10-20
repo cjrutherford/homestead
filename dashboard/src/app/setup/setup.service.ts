@@ -1,9 +1,12 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Observable, tap } from 'rxjs';
+import { httpErrorMessage } from '../core/http-error';
+import { ToastService } from '../core/toast.service';
 
-/** Step names, in order (ADR-034). */
-export type SetupStepName = 'account' | 'sign-in' | 'domain' | 'apps';
+/** Step names, in order (ADR-036). */
+export type SetupStepName = 'account' | 'storage' | 'sign-in' | 'domain' | 'apps';
 export type SetupStepState = 'pending' | 'done' | 'skipped';
 
 export interface SetupStep {
@@ -58,6 +61,7 @@ export interface SetupStatus {
   facts: {
     recovery_exported: boolean;
     recovery_acknowledged: boolean;
+    storage_app_assigned: boolean;
     password_confirmed: boolean;
     sign_in: { authentik_installed: boolean; configured: boolean; linked: boolean; dormant: boolean };
     domain: { configured: boolean; provider?: string; zone?: string; onboarded: boolean; credentials_sealed: boolean };
@@ -78,13 +82,25 @@ export interface SetupStepChange {
 }
 
 /**
- * Setup walkthrough state (S287, ADR-034). Besides the two API calls it
+ * Setup wizard state (S287, ADR-034; S291, ADR-036). Besides the two API calls it
  * keeps the last status, which the router guard and the navigation read.
  * The gate is a dashboard convenience only: the API and CLI never read it.
  */
 @Injectable({ providedIn: 'root' })
 export class SetupService {
   private readonly http = inject(HttpClient);
+  private readonly toast = inject(ToastService);
+
+  /** True while a step change is in flight. */
+  readonly busy = signal(false);
+  /** The last step change that failed, in words; cleared by the next one. */
+  readonly error = signal<string | null>(null);
+  /**
+   * Bumped whenever something the wizard's status derives from may have
+   * changed (a successful write on another route, see setupRefreshInterceptor).
+   * The wizard re-reads the status when it moves.
+   */
+  readonly changed = signal(0);
 
   /** The last status read, or null before the first read or when it failed. */
   readonly status = signal<SetupStatus | null>(null);
@@ -105,6 +121,33 @@ export class SetupService {
     return this.http
       .put<SetupStatus>(`/api/v1/setup/steps/${encodeURIComponent(name)}`, change)
       .pipe(tap((status) => this.status.set(status)));
+  }
+
+  /** Tells the wizard that something its status depends on may have changed. */
+  touch(): void {
+    this.changed.update((n) => n + 1);
+  }
+
+  /** A step change with the busy flag, the error text and an optional toast, shared by the steps. */
+  change(name: SetupStepName, change: SetupStepChange, message?: string, after?: () => void): void {
+    if (this.busy()) {
+      return;
+    }
+    this.busy.set(true);
+    this.error.set(null);
+    this.setupStep(name, change).subscribe({
+      next: () => {
+        this.busy.set(false);
+        if (message) {
+          this.toast.show(message);
+        }
+        after?.();
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.busy.set(false);
+        this.error.set(httpErrorMessage(failure, 'setup'));
+      },
+    });
   }
 
   /** Forgets the cached status (logout, or a factory reset). */

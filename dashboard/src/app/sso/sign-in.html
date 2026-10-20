@@ -1,5 +1,7 @@
 <section aria-label="Sign-in with Authentik">
-  <h1>Sign in with Authentik</h1>
+  @if (!embedded()) {
+    <h1>Sign in with Authentik</h1>
+  }
   <p>
     Sign in to this dashboard with the Authentik that runs on this appliance. Your local owner
     password always works too, including when Authentik is down or gone.

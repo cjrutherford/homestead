@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnInit, signal, input } from '@angular/core';
 import { SentencePipe } from '../core/format-time';
 import { isNotSetUp } from '../core/http-error';
 import { StateMessage } from '../state/state-message';
@@ -26,6 +26,8 @@ import { OperationProgress } from '../ui/operation-progress';
   templateUrl: './exposure.html',
 })
 export class Exposure implements OnInit {
+  /** Shown inside the setup wizard (S291): the page's own heading is left to the step. */
+  readonly embedded = input(false);
   private readonly api = inject(ApiService);
 
   protected readonly plan = signal<ExposurePlan | null>(null);

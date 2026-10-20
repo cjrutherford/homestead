@@ -57,14 +57,14 @@ func TestSetupStatusAndSteps(t *testing.T) {
 		t.Fatalf("code %d %s", rec.Code, rec.Body)
 	}
 	s := decodeSetup(t, rec.Body.Bytes())
-	if !s.Gated || s.Current != "account" || len(s.Steps) != 4 || len(s.Providers) != 4 {
+	if !s.Gated || s.Current != "account" || len(s.Steps) != 5 || len(s.Providers) != 4 {
 		t.Fatalf("status = %+v", s)
 	}
 	if len(s.StarterApps) == 0 {
 		t.Fatal("expected starter apps from the catalog")
 	}
 	rec = serveRequest(t, srv, http.MethodPut, "/api/v1/setup/steps/apps", map[string]string{"state": "skipped"})
-	if rec.Code != http.StatusOK || decodeSetup(t, rec.Body.Bytes()).Steps[3].State != "skipped" {
+	if rec.Code != http.StatusOK || decodeSetup(t, rec.Body.Bytes()).Steps[4].State != "skipped" {
 		t.Fatalf("skip: %d %s", rec.Code, rec.Body)
 	}
 	for _, c := range []struct {
@@ -76,6 +76,7 @@ func TestSetupStatusAndSteps(t *testing.T) {
 		{"apps", map[string]string{"bogus": "x"}, 400},
 		{"apps", map[string]string{}, 400},
 		{"sign-in", map[string]string{"state": "done"}, 400},
+		{"storage", map[string]string{"state": "done"}, 400},
 		{"domain", map[string]string{"provider": "godaddy"}, 400},
 		{"domain", map[string]string{"access": "tunnel"}, 400},
 	} {
@@ -188,5 +189,20 @@ func TestSetupDomainConfirmNeedsRealSetup(t *testing.T) {
 	}
 	if rec := put(map[string]string{"state": "done"}); rec.Code != 200 {
 		t.Fatalf("router with a plan: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestSetupStorageStep(t *testing.T) {
+	srv, st, _ := setupTestServer(t)
+	rec := serveRequest(t, srv, http.MethodPut, "/api/v1/setup/steps/storage", map[string]string{"state": "skipped"})
+	if rec.Code != http.StatusOK || decodeSetup(t, rec.Body.Bytes()).Steps[1].State != "skipped" {
+		t.Fatalf("skip storage: %d %s", rec.Code, rec.Body)
+	}
+	if _, err := st.DB().Exec(`INSERT INTO storage_assignments (class, mountpoint, actor, created_at) VALUES ('application', '/srv/apps', 'test', '2026-10-20T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	s := decodeSetup(t, serveRequest(t, srv, http.MethodGet, "/api/v1/setup", nil).Body.Bytes())
+	if s.Steps[1].Name != "storage" || s.Steps[1].State != "done" || !s.Facts.StorageAppAssigned {
+		t.Fatalf("assigned app class should read done: %+v", s.Steps[1])
 	}
 }

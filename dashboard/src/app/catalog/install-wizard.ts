@@ -7,7 +7,9 @@ import {
   computed,
   effect,
   inject,
+  input,
   OnInit,
+  output,
   signal,
   viewChild,
 } from '@angular/core';
@@ -123,6 +125,14 @@ function helpFor(id: StepId, title: string): string {
 export class InstallWizard implements OnInit {
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
+  /**
+   * Inside the setup wizard's apps step (S291) the package comes from this
+   * input instead of the route, the page heading is left to the step, and
+   * the way out is `closed` instead of a link to the catalog.
+   */
+  readonly embedded = input(false);
+  readonly appName = input('');
+  readonly closed = output<void>();
   /** Opened from the setup walkthrough (S287): offer the way back. */
   protected readonly fromSetup = this.route.snapshot?.queryParamMap?.get('from') === 'setup';
   private readonly drafts = inject(InstallDrafts);
@@ -325,6 +335,11 @@ export class InstallWizard implements OnInit {
   }
 
   ngOnInit(): void {
+    if (this.embedded() && this.appName()) {
+      this.name.set(this.appName());
+      this.load(this.appName());
+      return;
+    }
     this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
       const name = params.get('name') ?? '';
       this.name.set(name);

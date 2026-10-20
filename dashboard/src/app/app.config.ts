@@ -10,6 +10,7 @@ import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { authInterceptor } from './core/auth.interceptor';
 import { reauthInterceptor } from './core/reauth';
 import { routes } from './app.routes';
+import { setupRefreshInterceptor } from './setup/setup-refresh.interceptor';
 import { workOrderInterceptor } from './core/work-order.interceptor';
 import { viewTransitionOptions } from './core/view-transition';
 import { watchScrollRestore } from './core/scroll-restore';
@@ -30,6 +31,6 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes, withInMemoryScrolling(SCROLL_OPTIONS), withViewTransitions(viewTransitionOptions)),
     provideAppInitializer(() => watchScrollRestore(inject(Router))),
-    provideHttpClient(withInterceptors([reauthInterceptor, authInterceptor, workOrderInterceptor]))
+    provideHttpClient(withInterceptors([reauthInterceptor, authInterceptor, workOrderInterceptor, setupRefreshInterceptor]))
   ]
 };

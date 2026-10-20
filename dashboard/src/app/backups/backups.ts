@@ -2,14 +2,13 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   ApiService,
-  BackupIdentityExport,
-  BackupIdentityStatus,
   BackupRecipients,
   BackupSchedule,
   SchedulerJob,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
+import { RecoveryIdentity } from './recovery-identity';
 import { formatWhen, WhenPipe } from '../core/format-time';
 import { Loading } from '../ui/loading';
 
@@ -22,7 +21,7 @@ import { Loading } from '../ui/loading';
  * run (server semantics).
  */
 @Component({
-  imports: [Loading, StateMessage, Dialog, WhenPipe],
+  imports: [Loading, StateMessage, Dialog, RecoveryIdentity, WhenPipe],
   selector: 'app-backups',
   templateUrl: './backups.html',
   styles: ['.backup-root { overflow-wrap: anywhere; }'],
@@ -44,11 +43,7 @@ export class Backups implements OnInit {
   protected readonly confirmingRemove = signal<string | null>(null);
   protected readonly recipients = signal<BackupRecipients | null>(null);
   protected readonly recipientsError = signal<string | null>(null);
-  protected readonly identity = signal<BackupIdentityStatus | null>(null);
   protected readonly confirmingRecipient = signal<string | null>(null);
-  protected readonly confirmingExport = signal(false);
-  /** The exported key, held only until the owner dismisses it. */
-  protected readonly exported = signal<BackupIdentityExport | null>(null);
   protected readonly loading = signal(true);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -84,10 +79,6 @@ export class Backups implements OnInit {
       next: (view) => this.recipients.set(view),
       error: (failure: HttpErrorResponse) =>
         this.recipientsError.set(failure.error ?? failure.message),
-    });
-    this.api.backupIdentity().subscribe({
-      next: (status) => this.identity.set(status),
-      error: () => this.identity.set(null),
     });
     this.jobsLoading.set(true);
     this.jobsError.set(null);
@@ -268,89 +259,5 @@ export class Backups implements OnInit {
         this.error.set(failure.error ?? failure.message);
       },
     });
-  }
-
-  askExport(): void {
-    this.confirmingExport.set(true);
-  }
-
-  cancelExport(): void {
-    this.confirmingExport.set(false);
-  }
-
-  /** Explicit, audited export; the key is shown once, then dropped. */
-  confirmExport(): void {
-    this.confirmingExport.set(false);
-    this.busy.set(true);
-    this.error.set(null);
-    this.notice.set(null);
-    this.api.backupIdentityExport().subscribe({
-      next: (result) => {
-        this.busy.set(false);
-        this.exported.set(result);
-        this.refresh();
-      },
-      error: (failure: HttpErrorResponse) => {
-        this.busy.set(false);
-        this.error.set(failure.error ?? failure.message);
-      },
-    });
-  }
-
-  copyExport(): void {
-    const key = this.exported()?.identity;
-    if (key && navigator.clipboard) {
-      void navigator.clipboard.writeText(key);
-      this.notice.set('Copied. Store it offline, then dismiss it here.');
-    }
-  }
-
-  downloadExport(): void {
-    const result = this.exported();
-    if (!result) {
-      return;
-    }
-    const url = URL.createObjectURL(
-      new Blob([result.identity + '\n'], { type: 'text/plain' }),
-    );
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'homestead-backup-identity.txt';
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
-  /**
-   * Dropping the signal is the only copy the page holds; the key is
-   * never written to storage. Dismissing without acknowledging leaves
-   * the doctor warning in place.
-   */
-  dismissExport(): void {
-    this.exported.set(null);
-    this.notice.set(null);
-  }
-
-  /** The owner confirms the key is stored offline; then it is dropped. */
-  acknowledgeExport(): void {
-    this.busy.set(true);
-    this.error.set(null);
-    this.api.backupIdentityAck().subscribe({
-      next: () => {
-        this.busy.set(false);
-        this.exported.set(null);
-        this.notice.set('Recorded: the recovery identity is stored offline.');
-        this.refresh();
-      },
-      error: (failure: HttpErrorResponse) => {
-        this.busy.set(false);
-        this.error.set(failure.error ?? failure.message);
-      },
-    });
-  }
-
-  /** Exported earlier but never confirmed stored. */
-  pendingAck(): boolean {
-    const status = this.identity();
-    return !!status && status.exported && !status.acknowledged;
   }
 }

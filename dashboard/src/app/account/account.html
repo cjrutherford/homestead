@@ -51,53 +51,5 @@
   }
 
   <h2>Change password</h2>
-  <p>
-    Changing your password signs out every other session. This one stays signed in.
-  </p>
-  @if (error()) {
-    <app-state-message kind="error" [headline]="error()" />
-  }
-  @if (notice()) {
-    <app-state-message kind="status" [headline]="notice()" />
-  }
-    <form #f (submit)="$event.preventDefault(); submit(cur.value, nw.value, cf.value); f.reset()">
-      <input
-        class="visually-hidden"
-        type="text"
-        name="username"
-        autocomplete="username"
-        readonly
-        tabindex="-1"
-        aria-hidden="true"
-        [value]="sessions.username() ?? ''"
-      />
-      <div class="field">
-        <label for="account-current">Current password</label>
-        <input id="account-current" #cur type="password" autocomplete="current-password" [disabled]="busy()"
-          [attr.aria-invalid]="problemsFor('current').length ? 'true' : null"
-          [attr.aria-describedby]="problemsFor('current').length ? 'account-current-error' : null" />
-        @for (message of problemsFor('current'); track message) {
-          <p class="field-error" id="account-current-error">{{ message }}</p>
-        }
-      </div>
-      <div class="field">
-        <label for="account-new">New password ({{ minLength }} to {{ maxLength }} bytes)</label>
-        <input id="account-new" #nw type="password" autocomplete="new-password" [disabled]="busy()"
-          [attr.aria-invalid]="problemsFor('new').length ? 'true' : null"
-          [attr.aria-describedby]="problemsFor('new').length ? 'account-new-error' : null" />
-        @for (message of problemsFor('new'); track message) {
-          <p class="field-error" id="account-new-error">{{ message }}</p>
-        }
-      </div>
-      <div class="field">
-        <label for="account-confirm">Confirm new password</label>
-        <input id="account-confirm" #cf type="password" autocomplete="new-password" [disabled]="busy()"
-          [attr.aria-invalid]="problemsFor('confirm').length ? 'true' : null"
-          [attr.aria-describedby]="problemsFor('confirm').length ? 'account-confirm-error' : null" />
-        @for (message of problemsFor('confirm'); track message) {
-          <p class="field-error" id="account-confirm-error">{{ message }}</p>
-        }
-      </div>
-      <button type="submit" class="primary" [disabled]="busy()" [attr.aria-busy]="busy() ? 'true' : null">Change password</button>
-    </form>
+  <app-password-form (attempted)="loadLockout()" />
 </section>

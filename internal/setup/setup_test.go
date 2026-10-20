@@ -16,6 +16,7 @@ type fakes struct {
 	domain          DomainFacts
 	tunnels, exp    int
 	apps            int
+	storage         bool
 }
 
 func newSvc(t *testing.T) (*Service, *fakes, *store.Store) {
@@ -27,6 +28,7 @@ func newSvc(t *testing.T) (*Service, *fakes, *store.Store) {
 	t.Cleanup(func() { st.Close() })
 	f := &fakes{}
 	svc := New(wizard.New(st), Sources{
+		Storage:   func() (bool, error) { return f.storage, nil },
 		Recovery:  func() (bool, bool, error) { return f.exported, f.acked, nil },
 		SignIn:    func() (SSOFacts, error) { return f.sso, nil },
 		Domain:    func() (DomainFacts, error) { return f.domain, nil },
@@ -85,8 +87,13 @@ func TestDerivationFromRealState(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, _ = svc.Status()
-	if states(t, s)[StepAccount] != Done || s.Current != StepSignIn {
+	if states(t, s)[StepAccount] != Done || s.Current != StepStorage {
 		t.Fatalf("acked: %+v", s)
+	}
+	f.storage = true
+	s, _ = svc.Status()
+	if states(t, s)[StepStorage] != Done || s.Current != StepSignIn {
+		t.Fatalf("storage assigned: %+v", s)
 	}
 	f.sso = SSOFacts{Installed: true, Configured: true}
 	s, _ = svc.Status()
@@ -100,14 +107,14 @@ func TestDerivationFromRealState(t *testing.T) {
 	}
 	f.sso.Dormant = true
 	s, _ = svc.Status()
-	if states(t, s)[StepSignIn] != Done || !strings.Contains(s.Steps[1].Detail, "Authentik is not installed") {
-		t.Fatalf("dormant link must not re-gate but must warn: %+v", s.Steps[1])
+	if states(t, s)[StepSignIn] != Done || !strings.Contains(s.Steps[2].Detail, "Authentik is not installed") {
+		t.Fatalf("dormant link must not re-gate but must warn: %+v", s.Steps[2])
 	}
 	f.sso.Dormant = false
 	f.domain = DomainFacts{Configured: true, Provider: "cloudflare"}
 	s, _ = svc.Status()
 	if states(t, s)[StepDomain] != Pending || s.Facts.ReviewExisting {
-		t.Fatalf("saved but never onboarded domain: pending, no review, got %+v", s.Steps[2])
+		t.Fatalf("saved but never onboarded domain: pending, no review, got %+v", s.Steps[3])
 	}
 	f.domain.Onboarded = true
 	s, _ = svc.Status()
@@ -127,13 +134,13 @@ func TestOutOfBandCompletionBeatsSkip(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, _ := svc.Status()
-	if states(t, s)[StepApps] != Skipped || !s.Steps[3].Skipped {
-		t.Fatalf("skip not recorded: %+v", s.Steps[3])
+	if states(t, s)[StepApps] != Skipped || !s.Steps[4].Skipped {
+		t.Fatalf("skip not recorded: %+v", s.Steps[4])
 	}
 	f.apps = 1 // installed from the CLI
 	s, _ = svc.Status()
 	if states(t, s)[StepApps] != Done {
-		t.Fatalf("real state should win over skip: %+v", s.Steps[3])
+		t.Fatalf("real state should win over skip: %+v", s.Steps[4])
 	}
 }
 
@@ -143,7 +150,7 @@ func TestSkipUnskipResumeAndGate(t *testing.T) {
 	if _, err := svc.Update(StepAccount, Update{State: str(Done)}); err != nil {
 		t.Fatal(err)
 	}
-	for _, n := range []string{StepSignIn, StepDomain, StepApps} {
+	for _, n := range []string{StepStorage, StepSignIn, StepDomain, StepApps} {
 		if _, err := svc.Update(n, Update{State: str(Skipped)}); err != nil {
 			t.Fatal(err)
 		}
@@ -177,12 +184,12 @@ func TestReviewPathForExistingTunnel(t *testing.T) {
 	}
 	// A tunnel already exists, so the step reads done; nothing was redone.
 	if states(t, s)[StepDomain] != Done {
-		t.Fatalf("domain = %+v", s.Steps[2])
+		t.Fatalf("domain = %+v", s.Steps[3])
 	}
 	// Acknowledging records only the acknowledgement.
 	s, err := svc.Update(StepDomain, Update{State: str(Done)})
-	if err != nil || !s.Steps[2].Acknowledged {
-		t.Fatalf("ack: %v %+v", err, s.Steps[2])
+	if err != nil || !s.Steps[3].Acknowledged {
+		t.Fatalf("ack: %v %+v", err, s.Steps[3])
 	}
 }
 
@@ -190,10 +197,10 @@ func TestAcknowledgeCompletesDomainWithoutChanges(t *testing.T) {
 	svc, _, _ := newSvc(t)
 	s, err := svc.Update(StepDomain, Update{State: str(Done)})
 	if err != nil || states(t, s)[StepDomain] != Done {
-		t.Fatalf("%v %+v", err, s.Steps[2])
+		t.Fatalf("%v %+v", err, s.Steps[3])
 	}
-	if !strings.Contains(s.Steps[2].Detail, "Home network only") {
-		t.Fatalf("detail = %q", s.Steps[2].Detail)
+	if !strings.Contains(s.Steps[3].Detail, "Home network only") {
+		t.Fatalf("detail = %q", s.Steps[3].Detail)
 	}
 	if _, err := svc.Update(StepSignIn, Update{State: str(Done)}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("sign-in cannot be confirmed by hand: %v", err)
@@ -256,7 +263,7 @@ func TestStoredPayloadHoldsNoSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	allowed := map[string]bool{"origin": true, "skipped": true, "acknowledged": true, "provider": true, "access": true}
+	allowed := map[string]bool{"origin": true, "skipped": true, "acknowledged": true, "provider": true, "access": true, "version": true}
 	for k := range state.Payload {
 		if !allowed[k] {
 			t.Fatalf("unexpected payload key %q", k)
@@ -275,13 +282,13 @@ func TestDomainConfirmRules(t *testing.T) {
 		t.Fatalf("tunnel without route: %v", err)
 	}
 	s, _ := svc.Status()
-	if states(t, s)[StepDomain] != Pending || !strings.Contains(s.Steps[2].Detail, "Tunnel page") {
-		t.Fatalf("detail should say what is missing: %+v", s.Steps[2])
+	if states(t, s)[StepDomain] != Pending || !strings.Contains(s.Steps[3].Detail, "Tunnel page") {
+		t.Fatalf("detail should say what is missing: %+v", s.Steps[3])
 	}
 	f.tunnels = 1
 	s, err = svc.Update(StepDomain, Update{State: str(Done)})
-	if err != nil || states(t, s)[StepDomain] != Done || !strings.Contains(s.Steps[2].Detail, "Tunnel") || strings.Contains(s.Steps[2].Detail, "Home network only") {
-		t.Fatalf("tunnel with route: %v %+v", err, s.Steps[2])
+	if err != nil || states(t, s)[StepDomain] != Done || !strings.Contains(s.Steps[3].Detail, "Tunnel") || strings.Contains(s.Steps[3].Detail, "Home network only") {
+		t.Fatalf("tunnel with route: %v %+v", err, s.Steps[3])
 	}
 	// Router: needs a provider and an approved exposure plan.
 	f.tunnels = 0
@@ -299,8 +306,8 @@ func TestDomainConfirmRules(t *testing.T) {
 		t.Fatalf("router without plan: %v", err)
 	}
 	f2.exp = 1
-	if s, err := svc2.Update(StepDomain, Update{State: str(Done)}); err != nil || !strings.Contains(s.Steps[2].Detail, "port forward") {
-		t.Fatalf("router with plan: %v %+v", err, s.Steps[2])
+	if s, err := svc2.Update(StepDomain, Update{State: str(Done)}); err != nil || !strings.Contains(s.Steps[3].Detail, "port forward") {
+		t.Fatalf("router with plan: %v %+v", err, s.Steps[3])
 	}
 	// Home network only: acknowledgement is enough.
 	svc3, _, _ := newSvc(t)
@@ -316,7 +323,7 @@ func TestChangingAccessAfterAckReopensDomain(t *testing.T) {
 	}
 	s, _ := svc.Update(StepDomain, Update{Provider: str("cloudflare"), Access: str(AccessTunnel)})
 	if states(t, s)[StepDomain] != Pending {
-		t.Fatalf("an earlier home acknowledgement must not satisfy a tunnel choice: %+v", s.Steps[2])
+		t.Fatalf("an earlier home acknowledgement must not satisfy a tunnel choice: %+v", s.Steps[3])
 	}
 }
 
@@ -359,8 +366,8 @@ func TestSavedUnonboardedDomainIsNotReview(t *testing.T) {
 func TestDomainDetailReflectsAccess(t *testing.T) {
 	svc, _, _ := newSvc(t)
 	s, _ := svc.Update(StepDomain, Update{Provider: str("cloudflare"), Access: str(AccessTunnel)})
-	if strings.Contains(s.Steps[2].Detail, "Home network only") {
-		t.Fatalf("detail ignores the access choice: %q", s.Steps[2].Detail)
+	if strings.Contains(s.Steps[3].Detail, "Home network only") {
+		t.Fatalf("detail ignores the access choice: %q", s.Steps[3].Detail)
 	}
 }
 
@@ -374,5 +381,75 @@ func TestFreshStoreHasNoSetupRow(t *testing.T) {
 	s, _ := svc.Status()
 	if s.Origin != OriginFresh || !s.Gated {
 		t.Fatalf("%+v", s)
+	}
+}
+
+func TestStorageStep(t *testing.T) {
+	svc, f, _ := newSvc(t)
+	s, _ := svc.Status()
+	if s.Steps[1].Name != StepStorage || states(t, s)[StepStorage] != Pending {
+		t.Fatalf("storage should be the second step and pending: %+v", s.Steps)
+	}
+	if _, err := svc.Update(StepStorage, Update{State: str(Done)}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("storage cannot be confirmed by hand: %v", err)
+	}
+	s, err := svc.Update(StepStorage, Update{State: str(Skipped)})
+	if err != nil || states(t, s)[StepStorage] != Skipped {
+		t.Fatalf("skip: %v %+v", err, s.Steps[1])
+	}
+	f.storage = true
+	s, _ = svc.Status()
+	if states(t, s)[StepStorage] != Done || !s.Facts.StorageAppAssigned {
+		t.Fatalf("real state wins over skip: %+v", s.Steps[1])
+	}
+	f.storage = false
+	s, err = svc.Update(StepStorage, Update{State: str(Pending)})
+	if err != nil || states(t, s)[StepStorage] != Pending {
+		t.Fatalf("unskip: %v %+v", err, s.Steps[1])
+	}
+}
+
+// An appliance that finished setup before the storage step existed (a
+// payload without a version, every other step done or skipped) is not sent
+// back into the wizard; one still mid-setup gets the new step.
+func TestPreStorageApplianceIsNotRegated(t *testing.T) {
+	old := func(t *testing.T, payload map[string]any) (*Service, *fakes) {
+		svc, f, st := newSvc(t)
+		if _, err := wizard.New(st).Put(WizardID, "complete", payload); err != nil {
+			t.Fatal(err)
+		}
+		return svc, f
+	}
+	svc, f := old(t, map[string]any{"origin": "fresh", "acknowledged": []any{"account", "apps"}, "skipped": []any{"sign-in", "domain"}})
+	f.acked = true
+	s, _ := svc.Status()
+	if !s.Complete || s.Gated || states(t, s)[StepStorage] != Skipped {
+		t.Fatalf("finished appliance re-gated: %+v", s)
+	}
+	// The rule is persisted: it does not depend on the facts later on.
+	if again := New(svc.Wizards, svc.Sources); true {
+		f.acked = false // other steps regress; storage stays waived
+		s, _ = again.Status()
+		if states(t, s)[StepStorage] != Skipped {
+			t.Fatalf("waiver not persisted: %+v", s.Steps[1])
+		}
+	}
+	// Unskipping still works afterwards.
+	if s, _ = svc.Update(StepStorage, Update{State: str(Pending)}); states(t, s)[StepStorage] != Pending {
+		t.Fatalf("unskip after waiver: %+v", s.Steps[1])
+	}
+
+	// Mid-setup before the step existed: the new step applies.
+	svc2, _ := old(t, map[string]any{"origin": "fresh", "skipped": []any{"sign-in"}})
+	s, _ = svc2.Status()
+	if s.Complete || states(t, s)[StepStorage] != Pending {
+		t.Fatalf("mid-setup appliance should see storage: %+v", s)
+	}
+	// And completing it later does not waive storage retroactively.
+	svc2.Update(StepAccount, Update{State: str(Done)})
+	svc2.Update(StepDomain, Update{State: str(Done)})
+	s, _ = svc2.Update(StepApps, Update{State: str(Skipped)})
+	if s.Complete || states(t, s)[StepStorage] != Pending {
+		t.Fatalf("late completion must not waive storage: %+v", s)
 	}
 }

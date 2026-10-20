@@ -1,4 +1,4 @@
-import { Component, DestroyRef, OnInit, effect, inject, signal, untracked } from '@angular/core';
+import { Component, DestroyRef, OnInit, effect, inject, signal, untracked, input } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute } from '@angular/router';
 import { httpErrorMessage } from '../core/http-error';
@@ -26,6 +26,8 @@ import { SsoPlan, SsoService, SsoState } from './sso.service';
   templateUrl: './sign-in.html',
 })
 export class SignIn implements OnInit {
+  /** Shown inside the setup wizard (S291): the page's own heading is left to the step. */
+  readonly embedded = input(false);
   private readonly sso = inject(SsoService);
   private readonly route = inject(ActivatedRoute);
   private readonly orders = inject(WorkOrders);

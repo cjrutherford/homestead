@@ -12,14 +12,16 @@ import (
 
 const setupUsage = `usage: homesteadctl setup <status|step|skip|unskip> ...
   status
-  step <account|sign-in|domain|apps> [--acknowledge] [--provider NAME] [--access home|tunnel|router]
+  step <account|storage|sign-in|domain|apps> [--acknowledge] [--provider NAME] [--access home|tunnel|router]
   skip <step>
   unskip <step>
 
-The post-claim setup walkthrough (ADR-034). It only records your choices and
+The post-claim setup wizard (ADR-036). It only records your choices and
 reads what is already true; changes go through their own commands:
   account   homesteadctl backup identity export / ack, then
             homesteadctl setup step account --acknowledge (confirms your password)
+  storage   homesteadctl storage register / assign (done when the app class is assigned;
+            skip and unskip are the only choices recorded here)
   sign-in   homesteadctl sso plan / approve / apply / link
   domain    homesteadctl tls, tunnel and exposure commands
   apps      homesteadctl apps install
@@ -104,7 +106,7 @@ func runSetupStep(ctx context.Context, client *apiclient.Client, args []string, 
 			return exitOK
 		}
 	}
-	fmt.Fprintf(stderr, "unknown setup step %q (account, sign-in, domain, apps)\n", name)
+	fmt.Fprintf(stderr, "unknown setup step %q (account, storage, sign-in, domain, apps)\n", name)
 	return exitUsage
 }
 
@@ -123,7 +125,7 @@ func printSetupStep(w io.Writer, s setup.StepStatus) {
 func printSetup(w io.Writer, st setup.Status) {
 	switch {
 	case st.Legacy:
-		fmt.Fprintln(w, "Setup: optional (this appliance was claimed before the walkthrough; the dashboard does not hold you in it)")
+		fmt.Fprintln(w, "Setup: optional (this appliance was claimed before the setup wizard; the dashboard does not hold you in it)")
 	case st.Complete:
 		fmt.Fprintln(w, "Setup: complete")
 	default:

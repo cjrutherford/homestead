@@ -1,5 +1,5 @@
 import { plural } from '../core/plural';
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnInit, signal, input } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService, TunnelStatus } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
@@ -20,6 +20,8 @@ import { OperationProgress } from '../ui/operation-progress';
   templateUrl: './tunnel.html',
 })
 export class Tunnel implements OnInit {
+  /** Shown inside the setup wizard (S291): the page's own heading is left to the step. */
+  readonly embedded = input(false);
   protected readonly plural = plural;
   private readonly api = inject(ApiService);
 

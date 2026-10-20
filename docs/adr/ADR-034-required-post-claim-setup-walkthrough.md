@@ -1,9 +1,9 @@
 # Required Post-claim Setup Walkthrough
 
 ## Status
-Superseded by ADR-036 (2026-10-20)
+Superseded by ADR-036
 
-Proposed and accepted by the owner on 2026-10-18, including UI-level gating
+Superseded 2026-10-20. Proposed and accepted by the owner on 2026-10-18, including UI-level gating
 and not forcing appliances claimed earlier through the walkthrough. Related: ADR-004 (parity), ADR-006
 (exposure), ADR-007 and ADR-009 (domain and DNS), ADR-010 (TLS), ADR-015
 (secure first claim), ADR-017 (tunnel), ADR-020 (session boundary), ADR-021
