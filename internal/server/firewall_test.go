@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -94,5 +95,25 @@ func TestFirewallPlanUnprivileged(t *testing.T) {
 		}
 	} else if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("GET status = %d, want 200 or 503", rec.Code)
+	}
+}
+
+func TestEdgeConnectionGuardsHTTPSPort(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "@"
+	req = req.WithContext(context.WithValue(req.Context(), edgeClientKey{}, "192.168.1.77"))
+	conn := requestConnection(req, 8080)
+	if conn.Port != 443 || conn.SourceIP != "192.168.1.77" {
+		t.Fatalf("edge connection = %+v, want 192.168.1.77:443", conn)
+	}
+	set := firewall.RuleSet{Rules: []firewall.Rule{{
+		Name:     "block-https-lan",
+		Source:   firewall.Source{Zone: firewall.ZoneLocal, CIDR: "192.168.1.0/24"},
+		Service:  firewall.Service{Name: "https", Protocol: firewall.ProtocolTCP, Port: 443},
+		Action:   firewall.ActionDrop,
+		Priority: 100,
+	}}}
+	if err := firewall.Guard(set, conn); err == nil {
+		t.Fatal("guard approved a rule set that cuts off 443 for the forwarded client")
 	}
 }

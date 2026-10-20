@@ -215,6 +215,10 @@ func dashboardSocketDoctorCheck(st *store.Store, mounted func(context.Context) (
 			return []doctor.Check{{Name: name, Status: doctor.StatusWarn, Detail: "cannot read the edge route table: " + err.Error()}}
 		}
 		if _, ok := set.DashboardRoute(); !ok {
+			if held, conflict := defaultNameHolder(set); conflict {
+				return []doctor.Check{{Name: name, Status: doctor.StatusWarn,
+					Detail: fmt.Sprintf("the default dashboard route cannot be created because another edge route already uses %q: rename or remove that route, or choose another dashboard name with homesteadctl dashboard address set NAME", held)}}
+			}
 			return []doctor.Check{{Name: name, Status: doctor.StatusWarn,
 				Detail: "no dashboard route is recorded, so the dashboard has no local network address: set one with homesteadctl dashboard address set NAME"}}
 		}

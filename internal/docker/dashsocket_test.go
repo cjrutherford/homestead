@@ -1,8 +1,13 @@
 package docker
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"homestead/internal/operation"
 )
 
 func dashRoute() Route {
@@ -65,5 +70,62 @@ func TestDashboardRouteValidation(t *testing.T) {
 func TestComposeMountsDashboardDirReadOnly(t *testing.T) {
 	if !strings.Contains(composeFile(), "- "+DashboardSocketDir+":"+DashboardSocketDir+":ro") {
 		t.Fatal("compose does not mount the dashboard socket directory read-only")
+	}
+}
+
+func TestDashboardRouteRendersSourceRestriction(t *testing.T) {
+	out, err := RenderRoute(dashRoute())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"@allowed remote_ip", "192.168.0.0/16", "10.0.0.0/8", "handle @allowed {", "abort"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("local dashboard missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "100.64.0.0/10") {
+		t.Errorf("local dashboard allows overlay range:\n%s", out)
+	}
+	r := dashRoute()
+	r.Exposure = ExposureOverlay
+	out, err = RenderRoute(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "100.64.0.0/10") || !strings.Contains(out, "192.168.0.0/16") {
+		t.Errorf("overlay dashboard ranges:\n%s", out)
+	}
+}
+
+func TestReconcileSkipLeavesNewerRecord(t *testing.T) {
+	stubRoutes(t, false)
+	runner := openCaddyRunner(t)
+	stack := routesStackIn(t)
+	owner := dashRoute()
+	owner.Host = "owner.lan"
+	saved := false
+	state := RouteState{
+		Load: func() (RouteSet, error) { return RouteSet{Routes: []Route{owner}}, nil },
+		Save: func(RouteSet) error { saved = true; return nil },
+		Skip: func(cur RouteSet) bool { _, ok := cur.DashboardRoute(); return ok },
+	}
+	def, err := ReconcileDefinition(stack, RouteSet{Routes: []Route{dashRoute()}}, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err := runner.Start(context.Background(), def, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The verify step needs a live edge mount; only the write step matters.
+	done, err := runner.Wait(context.Background(), op.ID)
+	if err != nil || len(done.Steps) == 0 || done.Steps[0].Status != operation.StatusSucceeded {
+		t.Fatalf("done = %+v err = %v", done, err)
+	}
+	if saved {
+		t.Fatal("stale snapshot was saved over the owner's route")
+	}
+	if _, err := os.Stat(filepath.Join(stack.Dir, "routes", "homestead.lan.caddy")); err == nil {
+		t.Fatal("default snippet was written")
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/netip"
+	"strings"
 
 	"homestead/internal/cert"
 	"homestead/internal/docker"
@@ -36,6 +37,40 @@ func exposureStepIndex(step string) int {
 // and later slices drive it.
 type Wizard struct {
 	wizards *wizard.Service
+	// routes reads the recorded edge route table. The dashboard route is
+	// identified from it, never from the client payload (ADR-035).
+	routes func() (docker.RouteSet, error)
+}
+
+// SetRoutes wires the recorded edge route table, so planning knows which
+// names are the dashboard route whatever the payload says.
+func (w *Wizard) SetRoutes(load func() (docker.RouteSet, error)) { w.routes = load }
+
+// request decodes the planner request and marks the dashboard route from
+// the recorded table; a public target for a dashboard name is refused.
+func (w *Wizard) request(payload map[string]any) (Request, error) {
+	req, err := decodeRequest(payload)
+	if err != nil {
+		return Request{}, err
+	}
+	if w.routes == nil {
+		return req, nil
+	}
+	set, err := w.routes()
+	if err != nil {
+		return Request{}, fmt.Errorf("exposure: read edge routes: %w", err)
+	}
+	if dash, ok := set.DashboardRoute(); ok {
+		for _, n := range dash.Names() {
+			if strings.EqualFold(string(n), string(req.Route.Host)) {
+				req.Route.Dashboard = true
+			}
+		}
+	}
+	if req.Route.Dashboard && req.To == docker.ExposurePublic {
+		return Request{}, fmt.Errorf("exposure: %s", docker.ErrDashboardPublic)
+	}
+	return req, nil
 }
 
 // NewWizard returns a Wizard.
@@ -132,7 +167,7 @@ func (w *Wizard) Save(step string, payload map[string]any) error {
 		return err
 	}
 	if idx >= exposureStepIndex("target") {
-		if _, err := decodeRequest(payload); err != nil {
+		if _, err := w.request(payload); err != nil {
 			return err
 		}
 	}
@@ -147,7 +182,7 @@ func (w *Wizard) Save(step string, payload map[string]any) error {
 
 // planPayload runs the planner over a validated payload.
 func (w *Wizard) planPayload(payload map[string]any) (Plan, error) {
-	req, err := decodeRequest(payload)
+	req, err := w.request(payload)
 	if err != nil {
 		return Plan{}, err
 	}

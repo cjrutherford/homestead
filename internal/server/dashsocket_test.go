@@ -196,10 +196,41 @@ func TestDashboardSocketDoesNotServeRecoveryOrCraft(t *testing.T) {
 	a := newEnforcedApp(t)
 	token := jsonField(t, a.setup(t), "token")
 	for _, p := range []string{"/api/v1/recovery/reset", "/_homestead/craft/files/x"} {
-		code := a.socketDo("POST", p, "{}", bearer(token)).Code
-		if code == http.StatusOK || code == http.StatusCreated {
-			t.Errorf("%s over the socket = %d", p, code)
+		if code := a.socketDo("POST", p, "{}", bearer(token)).Code; code != http.StatusNotFound {
+			t.Errorf("%s over the socket = %d, want 404", p, code)
 		}
+		if code := a.do("POST", p, "{}", bearer(token)).Code; code != http.StatusNotFound {
+			t.Errorf("%s over TCP = %d, want 404", p, code)
+		}
+	}
+}
+
+// The SSO rate limiter keys on the forwarded client address for socket
+// requests: one noisy LAN device cannot lock out another, and the same
+// device is still limited.
+func TestSSOCallbackRateLimitKeysOnForwardedAddress(t *testing.T) {
+	a := newSSOApp(t)
+	a.configure(t)
+	a.linkOwner(t)
+	a.srv.SetDashboardNames(func() []string { return []string{dashLAN, dashLocal} })
+	h := a.srv.dashboardFront(a.srv.Handler())
+	call := func(ip string) string {
+		req := httptest.NewRequest("GET", "/api/v1/sso/callback?state=x&code=y", nil)
+		req.Host = dashLocal
+		req.Header.Set("X-Forwarded-For", ip)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Header().Get("Location")
+	}
+	limited := func(loc string) bool { return strings.Contains(loc, "sso_error=rate-limited") }
+	for i := 0; i < 31; i++ {
+		call("192.168.1.10")
+	}
+	if !limited(call("192.168.1.10")) {
+		t.Fatal("the same forwarded address was not rate limited")
+	}
+	if loc := call("192.168.1.11"); limited(loc) {
+		t.Fatalf("a different forwarded address shares the bucket: %s", loc)
 	}
 }
 
@@ -324,6 +355,14 @@ func TestDashboardSocketDoctorCheck(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "d.sock")
 	if c := dashboardSocketDoctorCheck(st, mounted(true), sock)()[0]; c.Status != doctor.StatusWarn {
 		t.Errorf("no route: %+v", c)
+	}
+	other := docker.Route{Host: docker.Hostname(dashLAN), Target: docker.Target{Host: "app", Port: 80}, Exposure: docker.ExposureLocal, TLS: docker.TLSInternal}
+	if err := saveEdgeRoutes(st, docker.RouteSet{Routes: []docker.Route{other}}); err != nil {
+		t.Fatal(err)
+	}
+	if c := dashboardSocketDoctorCheck(st, mounted(true), sock)()[0]; c.Status != doctor.StatusWarn ||
+		!strings.Contains(c.Detail, dashLAN) || !strings.Contains(c.Detail, "dashboard address set") {
+		t.Errorf("name conflict: %+v", c)
 	}
 	dash, _ := BuildDashboardRoute(dashLAN, "")
 	if err := saveEdgeRoutes(st, docker.RouteSet{Routes: []docker.Route{dash}}); err != nil {

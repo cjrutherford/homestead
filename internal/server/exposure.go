@@ -19,6 +19,7 @@ import (
 // instead of blocking.
 func (s *Server) MountExposure(st *store.Store, daemonPort int) {
 	wiz := exposure.NewWizard(wizard.New(st))
+	wiz.SetRoutes(func() (docker.RouteSet, error) { return loadEdgeRoutes(st) })
 	s.mux.HandleFunc("GET /api/v1/exposure/review", handleExposureReview(wiz))
 	s.mux.HandleFunc("GET /api/v1/exposure/approvals", handleExposureApprovals(st))
 	s.mux.HandleFunc("POST /api/v1/exposure/approvals", handleExposureApprove(st, wiz))

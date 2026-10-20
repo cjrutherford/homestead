@@ -120,8 +120,9 @@ LAN as soon as install finishes. A `.lan` name resolves only once the router's
 DNS or a hosts entry points at the appliance, so it cannot meet that alone.
 The dashboard route therefore answers **two names**:
 
-- the appliance's mDNS name `<hostname>.local`, which the daemon already
-  publishes (S221, `internal/mdns`). It resolves on other machines with no
+- the appliance's mDNS name, `homestead.local` today (S221's fixed name,
+  `internal/mdns` DefaultHostname; a configurable hostname is in
+  `docs/DEFERRED.md`), which the daemon already publishes. It resolves on other machines with no
   DNS setup, from the moment install finishes;
 - the owner-set local name (default `homestead.lan`), which works once DNS or
   a hosts entry points at the appliance.

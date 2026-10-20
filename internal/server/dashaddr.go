@@ -171,6 +171,13 @@ func withDashboardRoute(set docker.RouteSet, route docker.Route) (docker.RouteSe
 // socket mount exists), place the leaf, and reconcile the table. Both parts
 // are idempotent.
 func (d *DashboardAddressService) Definition(route docker.Route, actor string) (operation.Definition, error) {
+	return d.definition(route, actor, false)
+}
+
+// definition is Definition; ifAbsent makes the write step stand down when a
+// dashboard route is recorded by the time it runs, so the default never
+// reverts a name the owner set during the deploy window.
+func (d *DashboardAddressService) definition(route docker.Route, actor string, ifAbsent bool) (operation.Definition, error) {
 	set, err := loadEdgeRoutes(d.st)
 	if err != nil {
 		return operation.Definition{}, err
@@ -195,6 +202,9 @@ func (d *DashboardAddressService) Definition(route docker.Route, actor string) (
 	state := docker.RouteState{
 		Load: func() (docker.RouteSet, error) { return loadEdgeRoutes(d.st) },
 		Save: func(s docker.RouteSet) error { return saveEdgeRoutes(d.st, s) },
+	}
+	if ifAbsent {
+		state.Skip = func(cur docker.RouteSet) bool { _, ok := cur.DashboardRoute(); return ok }
 	}
 	rec, err := docker.ReconcileDefinition(stack, next, state)
 	if err != nil {
@@ -273,7 +283,7 @@ func (d *DashboardAddressService) EnsureDefault(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	def, err := d.Definition(route, "installer")
+	def, err := d.definition(route, "installer", true)
 	if err != nil {
 		return err
 	}
@@ -302,18 +312,46 @@ func (d *DashboardAddressService) EnsureDefault(ctx context.Context) error {
 // Docker may arrive after the daemon at first install. retry is the
 // interval between attempts.
 func (d *DashboardAddressService) RunEnsure(ctx context.Context, retry time.Duration, warn func(error)) {
+	warnedConflict := false
 	for {
 		err := d.EnsureDefault(ctx)
 		if err == nil {
 			return
 		}
-		if warn != nil {
+		// A name conflict only ends when the owner changes the other
+		// route: report it once per start, not on every retry.
+		conflict := errors.Is(err, errNameConflict)
+		if warn != nil && !(conflict && warnedConflict) {
 			warn(err)
 		}
+		warnedConflict = warnedConflict || conflict
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(retry):
 		}
 	}
+}
+
+// defaultNameHolder names the non-dashboard route holding a name the
+// default dashboard route needs, if any.
+func defaultNameHolder(set docker.RouteSet) (docker.Hostname, bool) {
+	route, err := BuildDashboardRoute(string(docker.DefaultDashboardName), docker.ExposureLocal)
+	if err != nil {
+		return "", false
+	}
+	_, err = withDashboardRoute(set, route)
+	if !errors.Is(err, errNameConflict) {
+		return "", false
+	}
+	for _, r := range set.Routes {
+		for _, n := range r.Names() {
+			for _, want := range route.Names() {
+				if n == want {
+					return n, true
+				}
+			}
+		}
+	}
+	return "", true
 }

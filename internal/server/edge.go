@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"homestead/internal/cert"
@@ -155,6 +156,23 @@ func inferCraftApps(routes []docker.Route) {
 	}
 }
 
+// requireLocalDashboardNames refuses a dashboard route whose name or alias
+// is outside the suffixes the internal root can vouch for, the same rule
+// PUT /api/v1/dashboard/address applies.
+func requireLocalDashboardNames(routes []docker.Route) error {
+	for _, r := range routes {
+		if !r.Dashboard {
+			continue
+		}
+		for _, n := range r.Names() {
+			if !cert.LocalNameAllowed(strings.ToLower(string(n))) {
+				return fmt.Errorf("dashboard name %q is outside the suffixes the appliance root certificate can vouch for (%s)", n, strings.Join(cert.LocalPermittedDomains, ", "))
+			}
+		}
+	}
+	return nil
+}
+
 // preserveDashboardRoute keeps the recorded dashboard route when a posted
 // table omits it: the route is owned by PUT /api/v1/dashboard/address
 // (ADR-035), so an older client replacing the table cannot drop it.
@@ -186,6 +204,10 @@ func handleEdgeRoutes(runner *operation.Runner, st *store.Store, local *cert.Loc
 		}
 		inferCraftApps(body.Routes)
 		body.Routes = preserveDashboardRoute(st, body.Routes)
+		if err := requireLocalDashboardNames(body.Routes); err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
 		if err := docker.ValidateRenderable(docker.RouteSet{Routes: body.Routes}); err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return

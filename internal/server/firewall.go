@@ -146,14 +146,19 @@ func handleFirewallPlan(daemonPort int, configSvc *config.Service) http.HandlerF
 	}
 }
 
+// edgeHTTPSPort is the port a LAN client reaches the dashboard on, through
+// the Caddy edge (published 443:443).
+const edgeHTTPSPort = 443
+
 // requestConnection derives the guard connection from the caller: TCP
-// remotes verify by source IP; recovery-socket callers are same-machine by
+// remotes verify by source IP on the daemon port; recovery-socket callers are same-machine by
 // construction and verify as loopback; edge callers use the forwarded address.
 func requestConnection(r *http.Request, daemonPort int) firewall.Connection {
 	// A request through the edge is not the machine itself: the dashboard
 	// socket's front wrapper stored the validated client address (ADR-035).
 	if a, ok := edgeClientFrom(r.Context()); ok {
-		return firewall.Connection{SourceIP: a, Protocol: firewall.ProtocolTCP, Port: daemonPort}
+		// A LAN client reaches the edge on HTTPS, not the daemon port.
+		return firewall.Connection{SourceIP: a, Protocol: firewall.ProtocolTCP, Port: edgeHTTPSPort}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil || host == "" || host == "@" {
