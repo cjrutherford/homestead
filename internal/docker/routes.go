@@ -47,8 +47,12 @@ func renderRoute(r Route, cert *PlacedCert) (string, error) {
 	default:
 		site = string(r.Host)
 	}
-	for _, a := range r.Aliases {
-		site += ", " + string(a)
+	for _, a := range r.ServedAliases() {
+		if r.TLS == TLSOff {
+			site += ", http://" + string(a)
+		} else {
+			site += ", " + string(a)
+		}
 	}
 	var tlsLine, proxy strings.Builder
 	if r.TLS == TLSInternal && cert == nil {

@@ -122,8 +122,16 @@ describe('Catalog', () => {
     load();
     fixture.componentInstance['select']('jellyfin');
     http.expectOne('/api/v1/catalog/jellyfin').flush(MANIFEST);
+    http.expectOne('/api/v1/edge/routes').flush({
+      routes: [{ Host: 'jellyfin.lan', Target: { Host: MANIFEST.Services[0].Name, Port: 8096 }, Exposure: 'local', TLS: 'internal' }],
+    });
+    http.expectOne('/api/v1/names').flush({
+      resolver: { enabled: false, running: false, listening: [], names: [], router_hint: '' },
+      apps: [{ host: 'jellyfin.lan', names: ['jellyfin.lan', 'jellyfin.local'] }],
+    });
     fixture.detectChanges();
     expect(text()).toContain('Manage Jellyfin');
+    expect(text()).toContain('answers at jellyfin.lan, jellyfin.local.');
     fixture.componentInstance['applyConfig']();
     http.expectOne('/api/v1/catalog/jellyfin/configure').flush({ id: 8 });
     fixture.detectChanges();
@@ -136,6 +144,8 @@ describe('Catalog', () => {
     http
       .expectOne('/api/v1/catalog/jellyfin')
       .flush({ ...MANIFEST, Secrets: [{ Name: 'db_password', Immutable: false }] });
+    http.expectOne('/api/v1/edge/routes').flush({ routes: [] });
+    http.expectOne('/api/v1/names').flush({ resolver: { enabled: false, running: false, listening: [], names: [], router_hint: '' }, apps: [] });
     const listed = {
       name: 'db_password',
       store_name: 'app_jellyfin_db_password',

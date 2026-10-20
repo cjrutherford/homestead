@@ -952,6 +952,40 @@ export interface TunnelPlan {
   digest: string;
 }
 
+/** One app route's local names (S295): `<app>.lan` and its `<app>.local`. */
+export interface AppNames {
+  host: string;
+  names: string[];
+}
+
+/** The optional `.lan` resolver (ADR-039). */
+export interface ResolverStatus {
+  enabled: boolean;
+  running: boolean;
+  listening: string[];
+  error?: string;
+  names: string[];
+  router_hint: string;
+}
+
+/** GET /api/v1/names — app names and the resolver. */
+export interface NamesStatus {
+  resolver: ResolverStatus;
+  apps: AppNames[];
+}
+
+/** POST /api/v1/names/resolver/plan — what turning the resolver on or off changes. */
+export interface ResolverPlan {
+  enabled: boolean;
+  changes: string[];
+  listen: string[];
+  names: string[];
+  firewall: { name: string; detail: string }[];
+  warnings: string[];
+  router_hint: string;
+  digest: string;
+}
+
 /** GET /api/v1/wizards/:id — saved wizard progress. */
 export interface WizardState {
   wizard: string;
@@ -1560,6 +1594,21 @@ export class ApiService {
   /** The account is the one stored at setup: teardown never asks for it. */
   tunnelTeardown(id: string): Observable<OperationStarted> {
     return this.http.delete<OperationStarted>(`/api/v1/tunnel/tunnels/${encodeURIComponent(id)}`);
+  }
+
+  /** Each app's local names and the `.lan` resolver state (S295). */
+  names(): Observable<NamesStatus> {
+    return this.http.get<NamesStatus>('/api/v1/names');
+  }
+
+  /** Previews turning the resolver on or off; changes nothing. */
+  resolverPlan(enabled: boolean): Observable<ResolverPlan> {
+    return this.http.post<ResolverPlan>('/api/v1/names/resolver/plan', { enabled });
+  }
+
+  /** Approves a reviewed resolver plan by its digest; 409 when it changed. */
+  resolverApply(enabled: boolean, digest: string): Observable<NamesStatus> {
+    return this.http.post<NamesStatus>('/api/v1/names/resolver/apply', { enabled, digest });
   }
 
   operation(id: number): Observable<OperationState> {

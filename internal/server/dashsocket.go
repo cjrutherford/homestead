@@ -256,6 +256,14 @@ func mdnsDoctorCheck(state func() mdns.State) func() []doctor.Check {
 		case !st.Running:
 			return []doctor.Check{{Name: name, Status: doctor.StatusWarn, Detail: mdns.DefaultHostname + ".local is not answering: the mDNS responder stopped"}}
 		}
-		return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: mdns.DefaultHostname + ".local is answered by the mDNS responder"}}
+		checks := []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: mdns.DefaultHostname + ".local is answered by the mDNS responder"}}
+		if len(st.Conflicts) > 0 {
+			// Homestead does not fight for a name (ADR-039): the owner
+			// renames the app or the other device.
+			checks = append(checks, doctor.Check{Name: "mdns-name-conflict", Status: doctor.StatusWarn,
+				Detail: "another device also answers " + strings.Join(st.Conflicts, ", ") +
+					" over mDNS; devices may reach either. Rename the app's local name or the other device"})
+		}
+		return checks
 	}
 }

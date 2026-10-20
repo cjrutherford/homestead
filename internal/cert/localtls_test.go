@@ -284,7 +284,8 @@ func TestLocalLeafIssuedPlacedAndPresented(t *testing.T) {
 	if _, err := leaf.Verify(x509.VerifyOptions{DNSName: "craft.lan", Roots: pool, CurrentTime: e.clock.Add(time.Minute)}); err != nil {
 		t.Fatalf("leaf does not verify to the root: %v", err)
 	}
-	if len(leaf.DNSNames) != 1 || leaf.DNSNames[0] != "craft.lan" {
+	// The app's mDNS name rides on the same leaf (ADR-039).
+	if len(leaf.DNSNames) != 2 || leaf.DNSNames[0] != "craft.lan" || leaf.DNSNames[1] != "craft.local" {
 		t.Fatalf("SANs = %v", leaf.DNSNames)
 	}
 	report, _ := e.local.Report()

@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 47
+const CurrentVersion = 48
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -942,6 +942,18 @@ CREATE TABLE IF NOT EXISTS tunnel_replaced_records (
 		version: 47,
 		name:    "tunnel replaced dns record comment",
 		sql:     `ALTER TABLE tunnel_replaced_records ADD COLUMN comment TEXT NOT NULL DEFAULT '';`,
+	},
+	{
+		// S295 (ADR-039): the optional appliance resolver for `.lan`
+		// names; off until the owner approves its plan.
+		version: 48,
+		name:    "local resolver",
+		sql: `CREATE TABLE local_resolver (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	enabled INTEGER NOT NULL DEFAULT 0,
+	actor TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL
+);`,
 	},
 }
 

@@ -1,6 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
+import { forkJoin } from 'rxjs';
 import {
   ApiService,
   AppSecret,
@@ -11,6 +12,7 @@ import { registerPackageTitles } from '../core/operation-labels';
 import { StateMessage } from '../state/state-message';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
+import { appRoutes } from './app-routes';
 import { InstallDrafts } from './install-drafts';
 import { UninstallApp } from './uninstall-app';
 
@@ -53,6 +55,8 @@ export class Catalog implements OnInit {
   protected readonly skipVerify = signal(false);
   protected readonly force = signal(false);
   protected readonly secretNotice = signal<string | null>(null);
+  /** The managed app's local names (S295); empty until read or when it has none. */
+  protected readonly localNames = signal<string[]>([]);
 
   ngOnInit(): void {
     this.reload();
@@ -91,6 +95,15 @@ export class Catalog implements OnInit {
         this.appSecrets.set([]);
         this.secretValues.set({});
         this.secretNotice.set(null);
+        this.localNames.set([]);
+        // Names are a convenience here: a failed read leaves them out.
+        forkJoin([this.api.edgeRoutes(), this.api.names()]).subscribe({
+          next: ([table, names]) => {
+            const hosts = new Set(appRoutes(manifest, table.routes ?? []).map((route) => route.Host));
+            this.localNames.set(names.apps.filter((app) => hosts.has(app.host)).flatMap((app) => app.names));
+          },
+          error: () => this.localNames.set([]),
+        });
         if ((manifest.Secrets ?? []).length > 0) {
           this.api.appSecrets(manifest.Name).subscribe({
             next: (secrets) => this.appSecrets.set(secrets),

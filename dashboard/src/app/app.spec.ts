@@ -188,7 +188,7 @@ describe('App logged in', () => {
     expect(groups).toEqual([
       ['Overview', ['Status']],
       ['Apps', ['Catalog', 'Craft apps', 'Craft files', 'Updates', 'Data']],
-      ['Network', ['Edge', 'Exposure', 'Tunnel', 'Certificates', 'Trust', 'Firewall']],
+      ['Network', ['Edge', 'Exposure', 'Tunnel', 'Names', 'Certificates', 'Trust', 'Firewall']],
       ['Storage and backups', ['Storage', 'Backups']],
       [
         'System',

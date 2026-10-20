@@ -86,9 +86,13 @@ interval schedules that setup never offers, so a fresh appliance has none.
   and turns the app's OIDC setting off. App users created by sign-in stay.
 
 ## Consequences
-- The mDNS responder serves a list of names; edge route aliases, which
-  only the dashboard route had (ADR-035), are allowed on app routes for
-  their `.local` name.
+- The mDNS responder serves a list of names. An app route's `.local` name
+  is derived from its `.lan` host when the route is rendered and its
+  certificate issued (S295), not stored as an alias, so existing apps gain
+  it without a migration; stored aliases stay the dashboard route's
+  (ADR-035).
+- The resolver's port 53 firewall rules join the managed firewall's desired
+  set while it is on; they take effect at the next firewall apply.
 - The daemon may listen on port 53, only when the owner enabled the
   resolver. A resolver outage affects only the appliance's names.
 - Backups gain a policy record and a wall-clock scheduler job. Per-app

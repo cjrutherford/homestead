@@ -126,7 +126,12 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, dashboardSocket, 
 	// the service advertisement on the LAN, with live claim state so
 	// owners spot unclaimed boxes. Discovery is convenience, never
 	// boot-critical: failures only warn.
-	startLocalDiscovery(ctx, claimSvc, listen)
+	startLocalDiscovery(ctx, claimSvc, listen, svcs.Names.MDNSLabels)
+	// The optional `.lan` resolver (S295) runs only when the owner
+	// turned it on; a taken port 53 warns and shows in the doctor.
+	go svcs.Names.Run(ctx, func(err error) {
+		fmt.Fprintln(os.Stderr, "homestead-server: .lan resolver off:", err)
+	})
 	// Both listeners share ctx and drain together. A socket failure is
 	// fatal: silent loss of the recovery channel is worse than no start.
 	// Daemon scheduler (S260, ADR-023): enqueues due work through the
@@ -170,6 +175,14 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, dashboardSocket, 
 			fmt.Fprintln(os.Stderr, "homestead-server: dashboard address not ready, will retry:", err)
 		})
 	}()
+	// Bring local leaves in line with the routes once now (S295): a new
+	// `.local` name is then served after an upgrade, not hours later at
+	// the next renewal pass. Failures only warn; the pass retries.
+	go func() {
+		if _, err := svcs.LocalTLS.Reconcile(ctx, "system", "", false); err != nil {
+			fmt.Fprintln(os.Stderr, "homestead-server: local TLS reconcile at start:", err)
+		}
+	}()
 	// Probe the router once now so the Tunnel page opens without the wait.
 	go server.WarmTunnelDiscovery(ctx)
 	if err := srv.Run(ctx); err != nil {
@@ -187,7 +200,7 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, dashboardSocket, 
 // live claim state and LAN addresses. A bad listen address or a
 // taken mDNS port only warns on stderr — discovery must never fail
 // the boot it ornaments.
-func startLocalDiscovery(ctx context.Context, claimSvc *claim.Service, listen string) {
+func startLocalDiscovery(ctx context.Context, claimSvc *claim.Service, listen string, apps func() []string) {
 	port, err := daemonPort(listen)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "homestead-server: local discovery off:", err)
@@ -197,6 +210,7 @@ func startLocalDiscovery(ctx context.Context, claimSvc *claim.Service, listen st
 		Hostname: mdns.DefaultHostname,
 		Port:     port,
 		Version:  version.Version,
+		Apps:     apps,
 		State: func() string {
 			state, err := claimSvc.CurrentState()
 			if err != nil {

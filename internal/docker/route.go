@@ -157,7 +157,61 @@ const ErrDashboardPublic = "the dashboard route is local or overlay only with in
 
 // Names lists every name the route answers on: the host, then aliases.
 func (r Route) Names() []Hostname {
-	return append([]Hostname{r.Host}, r.Aliases...)
+	return append([]Hostname{r.Host}, r.ServedAliases()...)
+}
+
+// localSuffix and mdnsSuffix are the local name an app is installed under
+// and the name it is announced as over mDNS (ADR-039).
+const (
+	localSuffix = ".lan"
+	mdnsSuffix  = ".local"
+)
+
+// mdnsReserved is the dashboard's own mDNS label (ADR-035), never derived
+// for an app.
+const mdnsReserved = "homestead"
+
+// LocalAlias is the mDNS name an app route also answers on (ADR-039):
+// <label>.local for a local or overlay app route whose host is
+// <label>.lan. It is derived, never stored, so it follows the route.
+func (r Route) LocalAlias() (Hostname, bool) {
+	if r.Dashboard || r.Exposure == ExposurePublic || r.TLS == TLSAuto {
+		return "", false
+	}
+	host := strings.ToLower(string(r.Host))
+	label, ok := strings.CutSuffix(host, localSuffix)
+	if !ok || label == "" || strings.Contains(label, ".") || label == mdnsReserved {
+		return "", false
+	}
+	return Hostname(label + mdnsSuffix), true
+}
+
+// ServedAliases lists the route's extra names: the stored aliases (the
+// dashboard's) and the derived mDNS name of an app route.
+func (r Route) ServedAliases() []Hostname {
+	out := append([]Hostname(nil), r.Aliases...)
+	if alias, ok := r.LocalAlias(); ok {
+		out = append(out, alias)
+	}
+	return out
+}
+
+// MDNSLabels lists the single labels the appliance announces for app
+// routes (<label>.local, ADR-039), sorted and without duplicates.
+func (s RouteSet) MDNSLabels() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, r := range s.Routes {
+		if alias, ok := r.LocalAlias(); ok {
+			label := strings.TrimSuffix(string(alias), mdnsSuffix)
+			if !seen[label] {
+				seen[label] = true
+				out = append(out, label)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Validate checks a route end to end.
@@ -261,4 +315,27 @@ func (s RouteSet) Find(host Hostname) (Route, bool) {
 		}
 	}
 	return Route{}, false
+}
+
+// LANNames lists every `.lan` name a non-public route answers on (the
+// dashboard's homestead.lan and each app's <label>.lan), lower-case,
+// sorted and without duplicates: the names the appliance resolver
+// answers (ADR-039).
+func (s RouteSet) LANNames() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, r := range s.Routes {
+		if r.Exposure == ExposurePublic {
+			continue
+		}
+		for _, n := range r.Names() {
+			name := strings.ToLower(string(n))
+			if strings.HasSuffix(name, localSuffix) && !seen[name] {
+				seen[name] = true
+				out = append(out, name)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }

@@ -4842,3 +4842,43 @@ committed). Results:
   `main`, never from a mount, so tests never probe the network).
 - Migration 47 adds `comment` to `tunnel_replaced_records`; teardown puts
   the record's own comment back and marks only uncommented records.
+
+## S295: App names (ADR-039 §1)
+
+- Routes: `Route.LocalAlias` derives `<label>.local` for a non-dashboard,
+  non-public, non-automatic-TLS route named `<label>.lan` (single label, not
+  `homestead`). It is computed, not stored: `ServedAliases` adds it to the
+  rendered site address and `cert.LocalTLS` adds it to the leaf, so an
+  existing leaf mismatches once. The daemon runs one local TLS reconcile at
+  start, so after an upgrade the leaf is reissued and the edge reloaded
+  straight away rather than at the next 6 h `localtls` pass.
+  `RouteSet.MDNSLabels` and `RouteSet.LANNames` feed the responder and the
+  resolver.
+- mDNS: `Config.Apps` adds app labels to the answered names; a 30 s recheck
+  announces new names and drops conflicts for removed ones. An A answer for
+  one of our names from another (non-loopback) address is kept for 15
+  minutes as `State.Conflicts`, which the doctor reports as
+  `mdns-name-conflict`.
+- Resolver: `internal/localdns` answers A for owned `.lan` names (the
+  address on the asker's subnet, else all), NODATA for other types,
+  NXDOMAIN (authoritative) for other `.lan` names, REFUSED otherwise,
+  FORMERR for multi-question and NOTIMP for non-query messages, over UDP and
+  length-prefixed TCP. It never forwards. Binding is all or nothing.
+- Daemon: `server.LocalNames` caches the route table for 10 s, stores the
+  switch (migration 48 `local_resolver`), and runs the listener from `main`.
+  `GET /api/v1/names`, `POST /api/v1/names/resolver/plan` (probes port 53,
+  lists the firewall rules) and `.../apply` (digest, 409, audited
+  `names.resolver.enable`/`disable`). The firewall's desired set gains
+  `firewall.WithLocalResolver` (port 53 accepted from local subnets, dropped
+  from everywhere else) while the switch is on. The doctor's
+  `local-resolver` check warns when it is on but not answering.
+- CLI: `names`, `names resolver plan|apply --on|--off [--digest]`,
+  `apps names`.
+- Live check (VM 2, 2026-10-20): `immich.local` and `authentik.local`
+  answer QU mDNS queries from the host with the VM's address, and the edge
+  serves them with a leaf covering both names. The responder sends
+  ordinary (QM) answers to the group, so `dig -p 5353` unicast gets none;
+  test with avahi or a QU query.
+- Dashboard: the Names page (`/names`, Network) and "Local names" in the
+  catalog Manage panel.
+

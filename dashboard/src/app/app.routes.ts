@@ -31,6 +31,7 @@ const walkthroughRoutes: Routes = [
   { path: 'drift', loadComponent: () => import('./drift/drift').then((m) => m.Drift) },
   { path: 'exposure', loadComponent: () => import('./exposure/exposure').then((m) => m.Exposure) },
   { path: 'tunnel', loadComponent: () => import('./tunnel/tunnel').then((m) => m.Tunnel) },
+  { path: 'names', loadComponent: () => import('./names/names').then((m) => m.Names) },
   { path: 'backups', loadComponent: () => import('./backups/backups').then((m) => m.Backups) },
   { path: 'storage', loadComponent: () => import('./storage/storage').then((m) => m.StorageSetup) },
   { path: 'edge', loadComponent: () => import('./edge/edge').then((m) => m.Edge) },

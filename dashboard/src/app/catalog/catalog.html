@@ -62,6 +62,17 @@
       <app-operation-progress [id]="id" />
     }
 
+    @if (localNames().length > 0) {
+      <h3>Local names</h3>
+      <p>
+        On your network, {{ manifest.Title }} answers at
+        @for (name of localNames(); track name; let last = $last) {
+          <a class="mono" [href]="'https://' + name" target="_blank" rel="noopener">{{ name }}</a>{{ last ? '.' : ', ' }}
+        }
+        <a routerLink="/names">About names</a>
+      </p>
+    }
+
     <h3>Settings</h3>
     <ul>
       @for (row of configRows(); track $index) {

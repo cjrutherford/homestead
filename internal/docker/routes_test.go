@@ -27,7 +27,7 @@ func TestRenderModes(t *testing.T) {
 		t.Fatalf("internal: %v", err)
 	}
 	for _, want := range []string{
-		"app.lan {", "tls internal", "reverse_proxy app:8080 {",
+		"app.lan, app.local {", "tls internal", "reverse_proxy app:8080 {",
 		"health_uri /healthz", "health_interval 30s",
 		"# Exposure: local", "Do not edit",
 	} {
@@ -53,7 +53,7 @@ func TestRenderModes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("off: %v", err)
 	}
-	if !strings.Contains(plain, "http://plain.lan {") {
+	if !strings.Contains(plain, "http://plain.lan, http://plain.local {") {
 		t.Fatalf("off site missing:\n%s", plain)
 	}
 	if strings.Contains(plain, "health_uri") || strings.Contains(plain, "tls") {
@@ -181,7 +181,7 @@ func TestReconcileDefinitionFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("snippet: %v", err)
 	}
-	if !strings.Contains(string(snippet), "app.lan {") {
+	if !strings.Contains(string(snippet), "app.lan, app.local {") {
 		t.Fatalf("snippet wrong:\n%s", snippet)
 	}
 }

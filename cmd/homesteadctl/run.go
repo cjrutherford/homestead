@@ -82,6 +82,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runExposure(ctx, client, rest[1:], stdout, stderr)
 	case "tunnel":
 		return runTunnel(ctx, client, rest[1:], stdout, stderr)
+	case "names":
+		return runNames(ctx, client, rest[1:], stdout, stderr)
 	case "drift":
 		return runDrift(ctx, client, rest[1:], stdout, stderr)
 	case "data":
@@ -148,6 +150,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  apps plan <pkg> -f FILE  review install plan (S168)")
 	fmt.Fprintln(w, "  apps install <pkg> -f FILE [--follow]  install package (S168)")
 	fmt.Fprintln(w, "  apps configure <pkg> --service NAME [--set K=V] [--unset K] [--rotate-secret NAME] | --adopt-secrets  configure service (S168, S266)")
+	fmt.Fprintln(w, "  apps names             each app's local names (S295)")
 	fmt.Fprintln(w, "  apps secrets <pkg>     list secret-backed variables (S266)")
 	fmt.Fprintln(w, "  apps secrets register <pkg> <secret> --value-file PATH|- [--skip-verify] [--force]  register an existing secret (S266)")
 	fmt.Fprintln(w, "  apps uninstall <pkg> [--remove-data --data-dir M:P]... [--abandon-volumes] [--follow]  uninstall package (S236)")
@@ -155,6 +158,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  firewall <status|plan|apply>  host firewall setup (S056)")
 	fmt.Fprintln(w, "  exposure <review|approvals|approve|apply>  public exposure review and apply (S245)")
 	fmt.Fprintln(w, "  tunnel <status|plan|setup|teardown>  tunnel remote access, planned and approved (S246, S294)")
+	fmt.Fprintln(w, "  names [status] | names resolver <plan|apply> --on|--off [--digest D]  app .local/.lan names and the optional .lan resolver (S295)")
 	fmt.Fprintln(w, "  drift <review|accept|restore> <package> [--follow]  managed-state drift choices (S244)")
 	fmt.Fprintln(w, "  drift schedule [--interval 6h] [--enabled true|false]  periodic scan cadence and last result (S261)")
 	fmt.Fprintln(w, "  data <status|plan|approve|remove-volumes>  app data placement, migration off Docker volumes, and old-volume removal (S277)")

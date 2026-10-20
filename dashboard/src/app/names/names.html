@@ -1,0 +1,101 @@
+<section aria-label="App names">
+  <h1>Names</h1>
+  <p>
+    Every app installed under a <code>.lan</code> name is also announced on your network as
+    <code>&lt;app&gt;.local</code>, which phones and computers find without any DNS setup. The
+    <code>.lan</code> names need your router to know about them; the resolver below can answer them.
+  </p>
+
+  @if (error()) {
+    <app-state-message kind="error" [headline]="error()" />
+  }
+  @if (notice()) {
+    <app-state-message kind="status" [headline]="notice()" />
+  }
+
+  <app-loading [loading]="!status() && !error()" shape="list">
+    @if (status(); as state) {
+      <h2>App names</h2>
+      @if (state.apps.length === 0) {
+        <app-state-message kind="empty" headline="No local names yet." detail="Install an app from the catalog to give it a name." />
+      } @else {
+        <div class="table-scroll">
+          <table aria-label="App names">
+            <thead>
+              <tr><th scope="col">App address</th><th scope="col">Also answers</th></tr>
+            </thead>
+            <tbody>
+              @for (app of state.apps; track app.host) {
+                <tr>
+                  <th scope="row" class="mono">{{ app.host }}</th>
+                  <td class="mono">{{ app.names.slice(1).join(', ') || '—' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+
+      <h2>.lan resolver</h2>
+      <p>
+        Status:
+        @if (state.resolver.enabled && state.resolver.running) {
+          <span class="badge badge-ok">on</span> answering on <span class="mono">{{ state.resolver.listening.join(', ') }}</span>
+        } @else if (state.resolver.enabled) {
+          <span class="badge badge-warn">on, not answering</span>
+        } @else {
+          <span class="badge">off</span>
+        }
+      </p>
+      @if (state.resolver.error) {
+        <app-state-message kind="warning" [headline]="state.resolver.error" detail="Free port 53 on the LAN addresses, then turn the resolver off and on again." />
+      }
+      <p>
+        The resolver answers only this appliance's <code>.lan</code> names. Other <code>.lan</code>
+        names get "no such name", every other lookup is refused, and nothing is forwarded, so your
+        network keeps using its own DNS for everything else.
+      </p>
+      <p class="hint">{{ state.resolver.router_hint }}</p>
+
+      @if (plan(); as review) {
+        <div class="risky" aria-label="Resolver plan">
+          <h3>Review the plan</h3>
+          <ul>
+            @for (change of review.changes; track $index) {
+              <li>{{ change }}</li>
+            }
+          </ul>
+          @if (review.enabled) {
+            <p>Listens on <span class="mono">{{ review.listen.join(', ') }}</span>; answers <span class="mono">{{ review.names.join(', ') }}</span>.</p>
+          }
+          <div class="table-scroll">
+            <table aria-label="Firewall rules">
+              <thead>
+                <tr><th scope="col">Firewall rule</th><th scope="col">{{ review.enabled ? 'Adds' : 'Removes' }}</th></tr>
+              </thead>
+              <tbody>
+                @for (rule of review.firewall; track rule.name) {
+                  <tr><th scope="row" class="mono">{{ rule.name }}</th><td>{{ rule.detail }}</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="hint">The rules take effect when you next apply the <a routerLink="/firewall">firewall plan</a>.</p>
+          @for (warning of review.warnings; track $index) {
+            <app-state-message kind="warning" [headline]="warning" />
+          }
+          <div class="risky-actions">
+            <button type="button" class="primary" (click)="approve()" [disabled]="busy()">
+              {{ review.enabled ? 'Approve and turn on' : 'Approve and turn off' }}
+            </button>
+            <button type="button" class="quiet" (click)="discardPlan()" [disabled]="busy()">Cancel</button>
+          </div>
+        </div>
+      } @else {
+        <button type="button" [disabled]="busy()" (click)="review(!state.resolver.enabled)">
+          {{ state.resolver.enabled ? 'Review turning it off' : 'Review turning it on' }}
+        </button>
+      }
+    }
+  </app-loading>
+</section>

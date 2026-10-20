@@ -321,3 +321,56 @@ func TestForInterface(t *testing.T) {
 		t.Fatalf("empty interface announced: %v", got)
 	}
 }
+
+func TestAnswerAppNames(t *testing.T) {
+	cfg := testConfig()
+	cfg.Apps = func() []string { return []string{"immich", "Jellyfin", "homestead", "bad label", "immich"} }
+	if got := strings.Join(cfg.names(), ","); got != "homestead.local,immich.local,jellyfin.local" {
+		t.Fatalf("names = %s", got)
+	}
+	resp, _ := respond(buildQuery(3, "immich.local", typeA, false), cfg, netip.Addr{})
+	if resp == nil {
+		t.Fatal("app name not answered")
+	}
+	if answers, _ := answerCount(t, resp); answers != 2 {
+		t.Fatalf("answers = %d", answers)
+	}
+	if resp, _ := respond(buildQuery(3, "printer.local", typeA, false), cfg, netip.Addr{}); resp != nil {
+		t.Fatal("answered a name it does not own")
+	}
+	// The boot announcement glues every name; a later one only the new.
+	addrs := []netip.Addr{netip.MustParseAddr("192.168.1.10")}
+	if _, glued := answerCount(t, announce(cfg, addrs)); glued != 3 {
+		t.Fatalf("announce glued %d", glued)
+	}
+	msg := announceNames([]string{"paperless.local"}, addrs)
+	if got := answeredNames(msg); len(got) != 1 || got[0] != "paperless.local" {
+		t.Fatalf("announced %v", got)
+	}
+	if announceNames(nil, addrs) != nil {
+		t.Fatal("empty announcement")
+	}
+}
+
+func TestNoticeConflicts(t *testing.T) {
+	cfg := testConfig()
+	cfg.Apps = func() []string { return []string{"immich"} }
+	forgetConflicts(nil)
+	t.Cleanup(func() { forgetConflicts(nil) })
+	other := netip.MustParseAddr("192.168.1.99")
+	addrs := []netip.Addr{other}
+	// Our own echo is not a conflict.
+	noticeConflicts(announceNames([]string{"immich.local"}, addrs), cfg, netip.MustParseAddr("192.168.1.10"))
+	if got := CurrentState().Conflicts; len(got) != 0 {
+		t.Fatalf("own echo flagged: %v", got)
+	}
+	noticeConflicts(announceNames([]string{"immich.local", "printer.local"}, addrs), cfg, other)
+	if got := CurrentState().Conflicts; len(got) != 1 || got[0] != "immich.local (192.168.1.99)" {
+		t.Fatalf("conflicts %v", got)
+	}
+	// Once the app is gone, so is its conflict.
+	forgetConflicts(map[string]bool{"homestead.local": true})
+	if got := CurrentState().Conflicts; len(got) != 0 {
+		t.Fatalf("stale conflicts %v", got)
+	}
+}

@@ -6,7 +6,12 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	"time"
 )
+
+// recheckEvery is how often the responder looks for new app names to
+// announce (ADR-039); a var so tests can shorten it.
+var recheckEvery = 30 * time.Second
 
 // mdnsPort is the shared multicast DNS port: taken on desktops by
 // Avahi and friends, which is why startup conflicts fail loudly
@@ -80,6 +85,43 @@ func serve(ctx context.Context, cfg Config, conns []linkConn, groupAddr *net.UDP
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
 	var wg sync.WaitGroup
+	// Names that appear later (an app installed) are announced once.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		known := map[string]bool{}
+		for _, n := range cfg.names() {
+			known[n] = true
+		}
+		ticker := time.NewTicker(recheckEvery)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			var fresh []string
+			current := map[string]bool{}
+			for _, n := range cfg.names() {
+				current[n] = true
+				if !known[n] {
+					fresh = append(fresh, n)
+				}
+			}
+			known = current
+			forgetConflicts(current)
+			if len(fresh) == 0 {
+				continue
+			}
+			addrs := cfg.Addresses()
+			for _, lc := range conns {
+				if msg := announceNames(fresh, forInterface(addrs, lc.iface)); msg != nil {
+					_, _ = lc.conn.WriteToUDP(msg, groupAddr)
+				}
+			}
+		}
+	}()
 	for _, lc := range conns {
 		conn := lc.conn
 		wg.Add(1)
@@ -96,6 +138,7 @@ func serve(ctx context.Context, cfg Config, conns []linkConn, groupAddr *net.UDP
 				if err != nil {
 					return
 				}
+				noticeConflicts(buf[:n], cfg, srcAddr(src))
 				resp, unicast := respond(buf[:n], cfg, srcAddr(src))
 				if resp == nil {
 					continue
@@ -122,4 +165,26 @@ func srcAddr(src *net.UDPAddr) netip.Addr {
 		return netip.Addr{}
 	}
 	return addr.Unmap()
+}
+
+// noticeConflicts records another device answering one of the
+// responder's names. The responder does not fight for the name (ADR-012,
+// ADR-039); the doctor reports it so the owner can rename one side.
+// Answers from the appliance's own or loopback addresses are its own
+// echoes.
+func noticeConflicts(msg []byte, cfg Config, src netip.Addr) {
+	names := answeredNames(msg)
+	if len(names) == 0 || !src.IsValid() || src.IsLoopback() {
+		return
+	}
+	for _, a := range cfg.Addresses() {
+		if a.Addr == src {
+			return
+		}
+	}
+	for _, name := range names {
+		if cfg.owns(name) {
+			noteConflict(name, src, time.Now())
+		}
+	}
 }

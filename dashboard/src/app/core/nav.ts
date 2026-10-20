@@ -45,6 +45,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { label: 'Edge', path: '/edge' },
       { label: 'Exposure', path: '/exposure' },
       { label: 'Tunnel', path: '/tunnel' },
+      { label: 'Names', path: '/names' },
       { label: 'Certificates', path: '/tls' },
       { label: 'Trust', path: '/trust' },
       { label: 'Firewall', path: '/firewall' },

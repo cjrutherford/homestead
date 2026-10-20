@@ -102,7 +102,7 @@ func EligibleLocal(r docker.Route) bool {
 
 func aliasStrings(r docker.Route) []string {
 	var out []string
-	for _, a := range r.Aliases {
+	for _, a := range r.ServedAliases() {
 		out = append(out, string(a))
 	}
 	return out
@@ -111,7 +111,7 @@ func aliasStrings(r docker.Route) []string {
 // aliasesAllowed: every extra name of a route must be one the root can
 // vouch for, or the single leaf could not be issued.
 func aliasesAllowed(r docker.Route) bool {
-	for _, a := range r.Aliases {
+	for _, a := range r.ServedAliases() {
 		if !LocalNameAllowed(string(a)) {
 			return false
 		}
@@ -367,7 +367,7 @@ func (t *LocalTLS) ensureLocked(routes []docker.Route, force bool, only, actor s
 		if reason == "" {
 			continue
 		}
-		leaf, ierr := t.issue(authority, caFP, host, byHost[host].Aliases, now)
+		leaf, ierr := t.issue(authority, caFP, host, byHost[host].ServedAliases(), now)
 		if ierr != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", host, ierr))
 			t.audit(actor, "tls.local-leaf.issue", "error", host+": "+ierr.Error())

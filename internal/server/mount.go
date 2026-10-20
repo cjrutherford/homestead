@@ -1,6 +1,7 @@
 package server
 
 import (
+	"homestead/internal/cert"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -51,6 +52,13 @@ type AppServices struct {
 	// DashboardAddress owns the dashboard edge route; the daemon calls
 	// RunEnsure so a fresh appliance is claimable on the LAN (S289).
 	DashboardAddress *DashboardAddressService
+	// Names serves app names: the mDNS labels and the optional `.lan`
+	// resolver, which the daemon runs (S295).
+	Names *LocalNames
+	// LocalTLS issues local-only leaves; the daemon reconciles it once at
+	// start so a route's new `.local` name is served after an upgrade
+	// rather than at the next renewal pass (S295).
+	LocalTLS *cert.LocalTLS
 }
 
 // MountApp registers every production TCP route on srv.
@@ -59,6 +67,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	backup.SweepScratch()
 	claimSvc := claim.New(st)
 	authSvc := auth.New(st, claimSvc)
+	names := NewLocalNames(st)
 	fw := firewall.Schema()
 	configSvc := config.New(schema.Schema{Fields: append(fw.Fields, craftfiles.SchemaFields()...)}, c.ConfigPath)
 	srv.MountConfig(configSvc)
@@ -94,6 +103,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 		edgeUpstreamDoctorCheck(st, docker.NewClient("").Containers),
 		dashboardSocketDoctorCheck(st, docker.DashboardMountPresent, docker.DashboardSocketPath),
 		mdnsDoctorCheck(mdns.CurrentState),
+		resolverDoctorCheck(names),
 	)
 	srv.MountLocalTLS(st, local)
 	srv.MountTLSRenewal(st, issuing, time.Now)
@@ -130,7 +140,8 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	})
 	srv.MountUpdates(st, c.CatalogDir, dockerClient, secrets)
 	srv.MountPlatform(st, filepath.Join(filepath.Dir(c.ConfigPath), "platform-trust.yaml"))
-	srv.MountFirewall(c.Port, configSvc)
+	srv.MountFirewall(c.Port, configSvc, names.Enabled)
+	srv.MountNames(names)
 	srv.MountExposure(st, c.Port)
 	ssoManager := srv.MountSSO(SSOConfig{
 		Store: st, Secrets: secrets, Auth: authSvc, Claim: claimSvc, Local: local,
@@ -143,5 +154,5 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	if c.Dashboard != nil {
 		srv.MountDashboard(c.Dashboard)
 	}
-	return &AppServices{Claim: claimSvc, Auth: authSvc, Scheduler: sched, DashboardAddress: dashAddr}, nil
+	return &AppServices{Claim: claimSvc, Auth: authSvc, Scheduler: sched, DashboardAddress: dashAddr, Names: names, LocalTLS: local}, nil
 }

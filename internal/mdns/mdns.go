@@ -3,7 +3,8 @@
 // prerequisites — no DNS server, no directory, no cloud. The daemon
 // serves <hostname>.local A records plus a _homestead._tcp service
 // advertisement carrying claim state, so owners find the box and see
-// whether it still awaits them.
+// whether it still awaits them. Since S295 (ADR-039) it also answers
+// <label>.local for each app route, from a live list.
 //
 // Scope is deliberately narrow: IPv4 only, respond plus one
 // announce, no probing or conflict arbitration. Single-appliance
@@ -56,6 +57,9 @@ type Config struct {
 	Version   string
 	State     func() string
 	Addresses func() []LinkAddr
+	// Apps lists the app labels also answered as <label>.local
+	// (ADR-039). Optional; read per response, so names follow installs.
+	Apps func() []string
 }
 
 // Validate checks responder shape: an RFC label hostname, a usable
@@ -79,6 +83,35 @@ func (c Config) Validate() error {
 // host names the A record: <hostname>.local.
 func (c Config) host() string {
 	return c.Hostname + ".local"
+}
+
+// names lists every A-record name the responder owns: the hostname
+// first, then each valid app label, without duplicates.
+func (c Config) names() []string {
+	out := []string{c.host()}
+	if c.Apps == nil {
+		return out
+	}
+	seen := map[string]bool{c.Hostname: true}
+	for _, label := range c.Apps() {
+		label = strings.ToLower(label)
+		if seen[label] || !validHostnameLabel.MatchString(label) {
+			continue
+		}
+		seen[label] = true
+		out = append(out, label+".local")
+	}
+	return out
+}
+
+// owns reports whether name is one of the responder's A-record names.
+func (c Config) owns(name string) bool {
+	for _, n := range c.names() {
+		if n == name {
+			return true
+		}
+	}
+	return false
 }
 
 // instance names the service instance:
@@ -272,12 +305,12 @@ func header(id uint16, answers, additionals int) []byte {
 	}
 }
 
-// glue appends A records for host to buf, reporting how many.
-func glue(buf []byte, cfg Config, addrs []netip.Addr) ([]byte, int) {
+// glue appends A records for name to buf, reporting how many.
+func glue(buf []byte, name string, addrs []netip.Addr) ([]byte, int) {
 	count := 0
 	for _, addr := range addrs {
 		ip := addr.As4()
-		buf = encodeRR(buf, cfg.host(), typeA, true, responseTTL, ip[:])
+		buf = encodeRR(buf, name, typeA, true, responseTTL, ip[:])
 		count++
 	}
 	return buf, count
@@ -291,16 +324,16 @@ func answer(id uint16, questions []question, cfg Config, addrs []netip.Addr) []b
 	answerCount, additionalCount := 0, 0
 	for _, q := range questions {
 		switch {
-		case (q.Type == typeA || q.Type == typeANY) && q.Name == cfg.host():
+		case (q.Type == typeA || q.Type == typeANY) && cfg.owns(q.Name):
 			var count int
-			answers, count = glue(answers, cfg, addrs)
+			answers, count = glue(answers, q.Name, addrs)
 			answerCount += count
 		case (q.Type == typePTR || q.Type == typeANY) && q.Name == ServiceName:
 			ptr := encodeName(nil, cfg.instance())
 			answers = encodeRR(answers, ServiceName, typePTR, false, responseTTL, ptr)
 			answerCount++
 			var count int
-			additionals, count = glue(additionals, cfg, addrs)
+			additionals, count = glue(additionals, cfg.host(), addrs)
 			additionalCount += count
 		case (q.Type == typeSRV || q.Type == typeTXT || q.Type == typeANY) && q.Name == cfg.instance():
 			if q.Type == typeSRV || q.Type == typeANY {
@@ -313,7 +346,7 @@ func answer(id uint16, questions []question, cfg Config, addrs []netip.Addr) []b
 				answerCount++
 			}
 			var count int
-			additionals, count = glue(additionals, cfg, addrs)
+			additionals, count = glue(additionals, cfg.host(), addrs)
 			additionalCount += count
 		}
 	}
@@ -365,12 +398,103 @@ func announce(cfg Config, addrs []netip.Addr) []byte {
 	answers = encodeRR(answers, ServiceName, typePTR, false, responseTTL, encodeName(nil, cfg.instance()))
 	answers = encodeRR(answers, cfg.instance(), typeSRV, true, responseTTL, encodeSRVData(cfg.Port, cfg.host()))
 	answers = encodeRR(answers, cfg.instance(), typeTXT, true, responseTTL, encodeTXTData("state="+cfg.State(), "version="+cfg.Version))
-	var count int
-	additionals, count = glue(additionals, cfg, addrs)
-	_ = count
-	out := header(0, 3, len(addrs))
+	glued := 0
+	for _, name := range cfg.names() {
+		var count int
+		additionals, count = glue(additionals, name, addrs)
+		glued += count
+	}
+	out := header(0, 3, glued)
 	out = append(out, answers...)
 	return append(out, additionals...)
+}
+
+// announceNames builds an unsolicited A-record advertisement for names
+// that appeared since the last one (an app was installed), or nil.
+func announceNames(names []string, addrs []netip.Addr) []byte {
+	if len(names) == 0 || len(addrs) == 0 {
+		return nil
+	}
+	var answers []byte
+	count := 0
+	for _, name := range names {
+		var n int
+		answers, n = glue(answers, name, addrs)
+		count += n
+	}
+	return append(header(0, count, 0), answers...)
+}
+
+// answeredNames lists the names of A records in a response's answer,
+// authority and additional sections, so the responder can notice another
+// device claiming one of its names. Malformed messages yield what parsed.
+func answeredNames(msg []byte) []string {
+	if len(msg) < 12 || msg[2]&0x80 == 0 {
+		return nil
+	}
+	qd := int(msg[4])<<8 | int(msg[5])
+	rr := (int(msg[6])<<8 | int(msg[7])) + (int(msg[8])<<8 | int(msg[9])) + (int(msg[10])<<8 | int(msg[11]))
+	offset := 12
+	for i := 0; i < qd; i++ {
+		_, next, ok := readName(msg, offset)
+		if !ok || next+4 > len(msg) {
+			return nil
+		}
+		offset = next + 4
+	}
+	var out []string
+	for i := 0; i < rr; i++ {
+		name, next, ok := readName(msg, offset)
+		if !ok || next+10 > len(msg) {
+			return out
+		}
+		rrtype := uint16(msg[next])<<8 | uint16(msg[next+1])
+		length := int(msg[next+8])<<8 | int(msg[next+9])
+		if next+10+length > len(msg) {
+			return out
+		}
+		if rrtype == typeA {
+			out = append(out, name)
+		}
+		offset = next + 10 + length
+	}
+	return out
+}
+
+// readName decodes a possibly compressed name at offset and returns the
+// offset after it where it started. Pointer jumps are bounded so hostile
+// loops end.
+func readName(msg []byte, offset int) (string, int, bool) {
+	var labels []string
+	end := -1
+	for jumps := 0; jumps < 16; {
+		if offset >= len(msg) {
+			return "", 0, false
+		}
+		length := int(msg[offset])
+		switch {
+		case length == 0:
+			if end < 0 {
+				end = offset + 1
+			}
+			return strings.Join(labels, "."), end, true
+		case length&0xc0 == 0xc0:
+			if offset+1 >= len(msg) {
+				return "", 0, false
+			}
+			if end < 0 {
+				end = offset + 2
+			}
+			offset = (length&0x3f)<<8 | int(msg[offset+1])
+			jumps++
+		case length > 63 || offset+1+length > len(msg):
+			return "", 0, false
+		default:
+			labels = append(labels, strings.ToLower(string(msg[offset+1:offset+1+length])))
+			offset += 1 + length
+		}
+	}
+	return "", 0, false
 }
 
 // multicastInterfaces lists usable packet interfaces: up with

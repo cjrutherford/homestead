@@ -34,6 +34,25 @@ the appliance is claimed. The installer prints both addresses.
   `/etc/hosts` (Linux, macOS) or
   `C:\Windows\System32\drivers\etc\hosts` (Windows).
 
+## App names (S295, ADR-039)
+
+Each app installed under a `.lan` name, such as `immich.lan`, also answers at
+`immich.local`. The appliance announces those names over mDNS next to
+`homestead.local`, and the app's certificate covers both. Nothing needs
+setting up. `homesteadctl names` and the **Names** page list every app's
+names; the catalog's Manage panel shows one app's.
+
+The `.lan` names still need DNS. Rather than one router entry per app, turn on
+the appliance's resolver: `homesteadctl names resolver plan --on`, then
+`apply` with the digest, or "Review turning it on" on the Names page. It
+answers only this appliance's `.lan` names on its LAN addresses (port 53, UDP
+and TCP). Other `.lan` names get "no such name", every other lookup is refused,
+and nothing is forwarded. Apply the firewall plan afterwards to add its port 53
+rules. Then, on the router, add a conditional forward (some routers say domain
+forward or DNS override) for the domain `lan` to the appliance's address. To
+try it first, point one device's DNS at the appliance. If another DNS server
+on the appliance already holds port 53, the plan says so and the doctor warns.
+
 ## Trust the root certificate
 
 The first visit shows an untrusted-certificate warning until the device trusts

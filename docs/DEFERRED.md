@@ -822,9 +822,19 @@
     - a restored record gets a new Cloudflare ID; a tunnel set up between
       S294 and its fix (72c6702 only) has no replaced records on file, so
       nothing is restored for it.
-  - App names (S295, ADR-039): every app gets a new `*.lan` name that the
-    owner must add by hand to router DNS or a hosts file; only
-    `homestead.local` is announced.
+  - App names (S295, ADR-039), what remains after S295:
+    - the `.lan` resolver binds the LAN addresses found when it starts; an
+      address that changes later (DHCP) needs it turned off and on again or
+      a daemon restart;
+    - turning it on stores the switch and starts it, but the port 53
+      firewall rules wait for the next firewall apply (the plan says so);
+    - a non-default dashboard name outside `.lan` (`nas.home.arpa`) is not
+      answered by the resolver; apps installed under other suffixes get no
+      `.local` name;
+    - `.local` names are IPv4 only and unprobed, as `homestead.local` is: a
+      clash with another device is a doctor warning, never a rename;
+    - the app page shows names for routes the installer named after the app
+      (`appRoutes`); a renamed route is listed on the Names page only.
   - App sign-in (S298, ADR-039): apps that declare optional OIDC (Immich, Nextcloud,
     Jellyfin) are not offered a wiring to the linked Authentik, and the SSO
     redirect addresses do not include public names.
