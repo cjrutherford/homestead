@@ -232,16 +232,22 @@ func TestTunnelOptionAndGrant(t *testing.T) {
 }
 
 // The Cloudflare tunnel permission copy is pinned to what the tunnel client
-// really calls: every request goes under /accounts, so the Account-level
-// tunnel grant is the one the copy lists, and nothing zone-level is called.
+// really calls (ADR-037): tunnel calls go under /accounts and need the
+// Account tunnel grant; finding the zone and pointing the hostname at the
+// tunnel are zone reads and DNS edits the same token's zone grants cover.
 func TestTunnelPermissionCopyMatchesClientCalls(t *testing.T) {
 	var calls []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, r.Method+" "+r.URL.Path)
 		_, _ = io.Copy(io.Discard, r.Body)
-		result := any(map[string]any{"id": "t1", "name": "n", "token": "tok", "status": "healthy"})
-		if r.URL.Path == "/accounts" {
+		result := any(map[string]any{"id": "t1", "name": "n", "token": "tok", "status": "healthy", "type": "CNAME", "content": "t1.cfargotunnel.com"})
+		switch {
+		case r.URL.Path == "/accounts":
 			result = []map[string]any{{"id": "0123456789abcdef0123456789abcdef"}}
+		case r.URL.Path == "/zones":
+			result = []map[string]any{{"id": "z1", "name": "example.com", "account": map[string]any{"id": "0123456789abcdef0123456789abcdef"}}}
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/dns_records"):
+			result = []map[string]any{}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "errors": []any{}, "result": result})
 	}))
@@ -255,30 +261,69 @@ func TestTunnelPermissionCopyMatchesClientCalls(t *testing.T) {
 	if _, err := c.ListAccounts(ctx, "tok"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := c.ZoneFor(ctx, "tok", "app.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.RecordsAt(ctx, "tok", "z1", "app.example.com"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := c.CreateTunnel(ctx, "tok", acct, "home"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CreateTunnelCNAME(ctx, "tok", "z1", "app.example.com", "t1"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.GetTunnel(ctx, "tok", acct, "t1"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := c.GetRecord(ctx, "tok", "z1", "r1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteRecord(ctx, "tok", "z1", "r1"); err != nil {
+		t.Fatal(err)
+	}
 	if err := c.DeleteTunnel(ctx, "tok", acct, "t1"); err != nil {
 		t.Fatal(err)
 	}
-	if len(calls) != 4 {
-		t.Fatalf("calls = %v", calls)
-	}
+	grants := map[string]bool{}
 	for _, call := range calls {
 		_, path, _ := strings.Cut(call, " ")
-		if path != "/accounts" && !strings.HasPrefix(path, "/accounts/") {
-			t.Fatalf("tunnel client called outside the account scope: %s", call)
+		switch {
+		case path == "/accounts" || strings.HasPrefix(path, "/accounts/"):
+			grants["Account: Cloudflare Tunnel: Edit"] = true
+		case path == "/zones":
+			grants["Zone: Zone: Read"] = true
+		case strings.HasPrefix(path, "/zones/z1/dns_records"):
+			grants["Zone: DNS: Edit"] = true
+		default:
+			t.Fatalf("tunnel client call no listed grant covers: %s", call)
 		}
 	}
 	prov, _ := ProviderNamed("cloudflare")
+	listed := map[string]bool{}
+	for _, p := range append(append([]Permission{}, prov.Permissions...), prov.TunnelPermissions...) {
+		listed[p.Grant] = true
+	}
+	for grant := range grants {
+		if !listed[grant] {
+			t.Fatalf("tunnel calls need %q, which the copy does not list", grant)
+		}
+	}
 	if len(prov.TunnelPermissions) != 1 || prov.TunnelPermissions[0].Grant != "Account: Cloudflare Tunnel: Edit" {
 		t.Fatalf("tunnel grants = %+v", prov.TunnelPermissions)
 	}
-	if !strings.Contains(prov.TunnelPermissions[0].Reason, "find your account") ||
-		!strings.Contains(prov.TunnelPermissions[0].Reason, "create, check and remove") {
-		t.Fatalf("reason does not cover the calls (list accounts, create, get, delete): %q", prov.TunnelPermissions[0].Reason)
+	if !strings.Contains(prov.TunnelPermissions[0].Reason, "create, check and remove") {
+		t.Fatalf("reason does not cover the calls (create, get, delete): %q", prov.TunnelPermissions[0].Reason)
+	}
+	// The DNS grant names the tunnel's record, and the notes say the tunnel
+	// reuses this token rather than asking again.
+	for _, p := range prov.Permissions {
+		if p.Grant == "Zone: DNS: Edit" && !strings.Contains(p.Reason, "tunnel") {
+			t.Fatalf("DNS reason does not mention the tunnel record: %q", p.Reason)
+		}
+	}
+	notes := strings.Join(prov.Notes, " ")
+	if strings.Contains(notes, "asks for the token again") || !strings.Contains(notes, "same token") {
+		t.Fatalf("notes = %q", notes)
 	}
 }

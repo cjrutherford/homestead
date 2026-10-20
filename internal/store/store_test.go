@@ -204,6 +204,9 @@ func TestUpgradeFromV23PopulatedDatabase(t *testing.T) {
 		`ALTER TABLE craft_baseline DROP COLUMN artifact_sha256`,
 		`ALTER TABLE sessions DROP COLUMN method`,
 		`ALTER TABLE craft_baseline DROP COLUMN context_digest`,
+		`ALTER TABLE tunnel_routes DROP COLUMN account_id`,
+		`ALTER TABLE tunnel_routes DROP COLUMN zone_id`,
+		`DROP TABLE tunnel_dns_records`,
 		`DELETE FROM schema_migrations WHERE version >= 24`,
 	} {
 		if _, err := s.DB().Exec(stmt); err != nil {
@@ -247,6 +250,9 @@ func TestUpgradeFromV30KeepsPopulatedBackupRecipients(t *testing.T) {
 		`ALTER TABLE craft_baseline DROP COLUMN artifact_sha256`,
 		`ALTER TABLE sessions DROP COLUMN method`,
 		`ALTER TABLE craft_baseline DROP COLUMN context_digest`,
+		`ALTER TABLE tunnel_routes DROP COLUMN account_id`,
+		`ALTER TABLE tunnel_routes DROP COLUMN zone_id`,
+		`DROP TABLE tunnel_dns_records`,
 		`DELETE FROM schema_migrations WHERE version >= 31`,
 	} {
 		if _, err := s.DB().Exec(stmt); err != nil {
@@ -292,7 +298,9 @@ func TestSetupLegacyStampOnUpgrade(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			steps := []string{`DELETE FROM wizard_state WHERE wizard = 'setup'`, `DELETE FROM schema_migrations WHERE version >= 44`}
+			steps := []string{`DELETE FROM wizard_state WHERE wizard = 'setup'`,
+				`ALTER TABLE tunnel_routes DROP COLUMN account_id`, `ALTER TABLE tunnel_routes DROP COLUMN zone_id`,
+				`DROP TABLE tunnel_dns_records`, `DELETE FROM schema_migrations WHERE version >= 44`}
 			if tc.claimed {
 				steps = append([]string{`UPDATE appliance SET state = 'CLAIMED' WHERE id = 1`}, steps...)
 			}

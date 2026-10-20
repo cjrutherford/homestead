@@ -43,6 +43,16 @@ func TestSetupCLI(t *testing.T) {
 	if seen[len(seen)-1] != `PUT /api/v1/setup/steps/domain {"access":"tunnel","provider":"cloudflare"}` {
 		t.Fatalf("step body: %v", seen)
 	}
+	// --domain is sent even when empty: an explicit empty value clears it.
+	for flagValue, want := range map[string]string{"example.com": `{"domain":"example.com"}`, "": `{"domain":""}`} {
+		code, out, _ = invoke(t, []string{"--server", ts.URL, "setup", "step", "domain", "--domain", flagValue})
+		if code != exitOK || !strings.Contains(out, "domain: ") {
+			t.Fatalf("domain step: %d %s", code, out)
+		}
+		if seen[len(seen)-1] != `PUT /api/v1/setup/steps/domain `+want {
+			t.Fatalf("domain body: %v", seen)
+		}
+	}
 	code, out, _ = invoke(t, []string{"--server", ts.URL, "setup", "step", "apps", "--acknowledge"})
 	if code != exitOK || seen[len(seen)-1] != `PUT /api/v1/setup/steps/apps {"state":"done"}` {
 		t.Fatalf("ack: %d %v", code, seen)

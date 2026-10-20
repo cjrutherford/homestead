@@ -59,7 +59,8 @@ export interface SetupStatus {
   gated: boolean;
   current: SetupStepName | '';
   steps: SetupStep[];
-  choices: { provider?: string; access?: string };
+  /** domain names public hostnames only, such as example.com (ADR-037). */
+  choices: { provider?: string; access?: string; domain?: string };
   facts: {
     recovery_exported: boolean;
     recovery_acknowledged: boolean;
@@ -81,6 +82,7 @@ export interface SetupStepChange {
   state?: SetupStepState;
   provider?: string;
   access?: string;
+  domain?: string;
 }
 
 /**

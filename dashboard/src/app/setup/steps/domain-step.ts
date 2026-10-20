@@ -11,8 +11,9 @@ import { SetupService, SetupStatus } from '../setup.service';
 import { StepGuide } from './step-guide';
 
 /**
- * Step 4: provider and credential, then home only, Cloudflare Tunnel or a
- * router port forward. The tunnel and the exposure plan are the Tunnel and
+ * Step 4: the public domain (S294, ADR-037), provider and credential, then
+ * home only, Cloudflare Tunnel or a router port forward. The tunnel reuses
+ * the Cloudflare token stored here and never asks for it again. The tunnel and the exposure plan are the Tunnel and
  * Exposure pages, embedded, so the plans are reviewed and approved here with
  * the same routes. The only secret typed here is the DNS credential, which
  * goes straight to the sealed secret route and is cleared at once.
@@ -39,7 +40,8 @@ import { StepGuide } from './step-guide';
           </li>
           <li>
             <strong>Account resources:</strong> include the one specific account, with
-            <strong>Cloudflare Tunnel: Edit</strong>. This is needed only if you choose the tunnel.
+            <strong>Cloudflare Tunnel: Edit</strong>. This is needed only if you choose the tunnel, which uses this
+            same token.
           </li>
         </ul>
       </li>
@@ -77,6 +79,30 @@ import { StepGuide } from './step-guide';
     @if (setup.error() || error()) {
       <app-state-message kind="error" [headline]="setup.error() || error()" />
     }
+
+    <h3>Your domain</h3>
+    <p>
+      Optional. The domain your public names live under, such as <code>example.com</code>, so an app can be
+      reached at <code>photos.example.com</code>. It is used only for public names: names on your home
+      network, such as <code>homestead.local</code>, stay as they are.
+    </p>
+    <form (submit)="$event.preventDefault(); saveDomain(domainInput.value)">
+      <p>
+        <label>
+          Domain
+          <input
+            #domainInput
+            name="domain"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="example.com"
+            [value]="s().choices.domain ?? ''"
+            [disabled]="setup.busy()"
+          />
+        </label>
+      </p>
+      <button type="submit" [disabled]="setup.busy()">Save domain</button>
+    </form>
 
     <h3>DNS provider</h3>
     <p>Optional. Pick where your domain's DNS lives, or leave it and stay on your home network.</p>
@@ -167,8 +193,11 @@ import { StepGuide } from './step-guide';
     @switch (s().choices.access) {
       @case ('tunnel') {
         <h3>Cloudflare Tunnel</h3>
-        <p>You review the plan before anything is created. Use the form below, then check again.</p>
-        <app-tunnel [embedded]="true" />
+        <p>
+          The tunnel uses the Cloudflare token stored above. You review a plan of every Cloudflare change, including
+          the DNS record for the hostname, before anything is created. Use the form below, then check again.
+        </p>
+        <app-tunnel [embedded]="true" [domain]="s().choices.domain ?? ''" />
       }
       @case ('router') {
         <h3>Router port forward</h3>
@@ -248,6 +277,11 @@ export class DomainStep {
 
   protected chooseProvider(name: string): void {
     this.setup.change('domain', { provider: name });
+  }
+
+  /** Saves the public domain; the daemon refuses local-only names. */
+  protected saveDomain(value: string): void {
+    this.setup.change('domain', { domain: value.trim() }, value.trim() ? 'Domain saved.' : 'Domain cleared.');
   }
 
   protected chooseAccess(id: string): void {

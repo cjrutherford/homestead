@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 44
+const CurrentVersion = 45
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -902,6 +902,24 @@ CREATE TABLE IF NOT EXISTS sso_state (
 INSERT OR IGNORE INTO wizard_state (wizard, step, payload, updated_at)
 	SELECT 'setup', 'account', '{"origin":"legacy"}', strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 	WHERE EXISTS (SELECT 1 FROM appliance WHERE id = 1 AND state = 'CLAIMED');`,
+	},
+	{
+		// S294 planned tunnel (ADR-037): the Cloudflare account and zone a
+		// tunnel's routes were created under, derived from the hostname and
+		// never shown, and the DNS records Homestead created for a tunnel.
+		// Teardown deletes only those records.
+		version: 45,
+		name:    "tunnel account and owned dns records",
+		sql: `
+ALTER TABLE tunnel_routes ADD COLUMN account_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE tunnel_routes ADD COLUMN zone_id TEXT NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS tunnel_dns_records (
+	record_id TEXT PRIMARY KEY,
+	zone_id TEXT NOT NULL,
+	hostname TEXT NOT NULL,
+	tunnel_id TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);`,
 	},
 }
 

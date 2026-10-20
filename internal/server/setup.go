@@ -179,14 +179,15 @@ func (s *Server) MountSetup(c SetupConfig) *setup.Service {
 			State    *string `json:"state"`
 			Provider *string `json:"provider"`
 			Access   *string `json:"access"`
+			Domain   *string `json:"domain"`
 		}
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&body); err != nil {
-			http.Error(w, `invalid request body (want {"state"} and/or {"provider","access"})`, http.StatusBadRequest)
+			http.Error(w, `invalid request body (want {"state"} and/or {"provider","access","domain"})`, http.StatusBadRequest)
 			return
 		}
-		st, err := svc.Update(name, setup.Update{State: body.State, Provider: body.Provider, Access: body.Access})
+		st, err := svc.Update(name, setup.Update{State: body.State, Provider: body.Provider, Access: body.Access, Domain: body.Domain})
 		if err != nil {
 			switch {
 			case errors.Is(err, setup.ErrUnknownStep):
@@ -211,6 +212,9 @@ func (s *Server) MountSetup(c SetupConfig) *setup.Service {
 		}
 		if body.Access != nil {
 			detail += " access=" + *body.Access
+		}
+		if body.Domain != nil {
+			detail += " domain=" + st.Choices.Domain
 		}
 		if _, err := auditSvc.Record(audit.Entry{
 			Actor: operatorActor(r), Action: "setup.step", Outcome: audit.OutcomeOK, Detail: detail,

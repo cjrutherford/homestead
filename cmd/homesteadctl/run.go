@@ -154,7 +154,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  operations <get|list|follow>  inspect and follow operations (S062/S064)")
 	fmt.Fprintln(w, "  firewall <status|plan|apply>  host firewall setup (S056)")
 	fmt.Fprintln(w, "  exposure <review|approvals|approve|apply>  public exposure review and apply (S245)")
-	fmt.Fprintln(w, "  tunnel <status|setup|teardown>  tunnel remote access (S246)")
+	fmt.Fprintln(w, "  tunnel <status|plan|setup|teardown>  tunnel remote access, planned and approved (S246, S294)")
 	fmt.Fprintln(w, "  drift <review|accept|restore> <package> [--follow]  managed-state drift choices (S244)")
 	fmt.Fprintln(w, "  drift schedule [--interval 6h] [--enabled true|false]  periodic scan cadence and last result (S261)")
 	fmt.Fprintln(w, "  data <status|plan|approve|remove-volumes>  app data placement, migration off Docker volumes, and old-volume removal (S277)")

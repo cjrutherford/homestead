@@ -449,7 +449,9 @@ describe('Setup wizard (S291)', () => {
 
     it('refuses an empty credential form without calling the daemon', async () => {
       await open(doneThrough(3, { choices: { provider: 'cloudflare' } }));
-      el().querySelector('app-setup-domain-step form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+      (el().querySelector('input[name="api_token"]') as HTMLInputElement).form!.dispatchEvent(
+        new Event('submit', { cancelable: true }),
+      );
       await settle();
       expect(wrote('POST', '/api/v1/tls/issuance/credentials').length).toBe(0);
       expect(text()).toContain('Fill in every credential field.');
@@ -492,6 +494,17 @@ describe('Setup wizard (S291)', () => {
       await settle();
       expect(wrote('PUT', '/api/v1/setup/steps/domain')[0].body).toEqual({ state: 'done' });
       expect(wrote('POST', '/api/v1/tls/issuance/credentials').length).toBe(0);
+    });
+
+    it('saves the public domain as a setup choice', async () => {
+      await open(doneThrough(3, { choices: { domain: 'old.example.org' } }));
+      const input = el().querySelector('input[name="domain"]') as HTMLInputElement;
+      expect(input.value).toBe('old.example.org');
+      expect(text()).toContain('homestead.local');
+      input.value = ' example.com ';
+      input.form!.dispatchEvent(new Event('submit', { cancelable: true }));
+      await settle();
+      expect(wrote('PUT', '/api/v1/setup/steps/domain')[0].body).toEqual({ domain: 'example.com' });
     });
 
     it('stays on the home network with one click', async () => {

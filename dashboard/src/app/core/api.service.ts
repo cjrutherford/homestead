@@ -929,6 +929,29 @@ export interface TunnelStatus {
   discovery_error?: string;
 }
 
+/** One DNS change in a tunnel plan (ADR-037). */
+export interface TunnelPlanChange {
+  name: string;
+  type: string;
+  content: string;
+  proxied: boolean;
+  /** create, or replace the listed records. */
+  action: 'create' | 'replace';
+  replaces: { type: string; name: string; content: string; proxied: boolean }[];
+}
+
+/** POST /api/v1/tunnel/plan — what setup would change; never the account or zone IDs. */
+export interface TunnelPlan {
+  name: string;
+  hostname: string;
+  service: string;
+  zone: string;
+  ingress: { hostname: string; service: string }[];
+  dns: TunnelPlanChange[];
+  warnings: string[];
+  digest: string;
+}
+
 /** GET /api/v1/wizards/:id — saved wizard progress. */
 export interface WizardState {
   wizard: string;
@@ -1524,26 +1547,19 @@ export class ApiService {
     return this.http.get<TunnelStatus>('/api/v1/tunnel/status');
   }
 
-  tunnelSetup(
-    name: string,
-    hostname: string,
-    service: string,
-    apiToken: string,
-    accountId: string,
-  ): Observable<OperationStarted> {
-    return this.http.post<OperationStarted>('/api/v1/tunnel/setup', {
-      name,
-      hostname,
-      service,
-      api_token: apiToken,
-      account_id: accountId,
-    });
+  /** Reads Cloudflare and changes nothing (ADR-037). */
+  tunnelPlan(name: string, hostname: string, service: string): Observable<TunnelPlan> {
+    return this.http.post<TunnelPlan>('/api/v1/tunnel/plan', { name, hostname, service });
   }
 
-  tunnelTeardown(id: string, accountId: string): Observable<OperationStarted> {
-    return this.http.delete<OperationStarted>(
-      `/api/v1/tunnel/tunnels/${encodeURIComponent(id)}?account_id=${encodeURIComponent(accountId)}`,
-    );
+  /** Approves a reviewed plan by its digest; 409 when the plan changed since. */
+  tunnelSetup(name: string, hostname: string, service: string, digest: string): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>('/api/v1/tunnel/setup', { name, hostname, service, digest });
+  }
+
+  /** The account is the one stored at setup: teardown never asks for it. */
+  tunnelTeardown(id: string): Observable<OperationStarted> {
+    return this.http.delete<OperationStarted>(`/api/v1/tunnel/tunnels/${encodeURIComponent(id)}`);
   }
 
   operation(id: number): Observable<OperationState> {

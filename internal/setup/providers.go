@@ -46,14 +46,14 @@ var providerCopy = []Provider{
 		Summary: "Homestead reads your zone and edits its DNS records. Certificates use the same token.",
 		Permissions: []Permission{
 			{Grant: "Zone: Zone: Read", Reason: "find the zone you chose and confirm the token can see it"},
-			{Grant: "Zone: DNS: Edit", Reason: "list, create and delete the records Homestead manages, and the temporary records for certificates"},
+			{Grant: "Zone: DNS: Edit", Reason: "list, create and delete the records Homestead manages, the record that points a tunnel hostname at the tunnel, and the temporary records for certificates"},
 		},
 		TunnelPermissions: []Permission{
-			{Grant: "Account: Cloudflare Tunnel: Edit", Reason: "find your account, and create, check and remove the tunnel"},
+			{Grant: "Account: Cloudflare Tunnel: Edit", Reason: "create, check and remove the tunnel (your account is found from the zone)"},
 		},
 		Notes: []string{
 			"Create an API token (My Profile, API Tokens, Create Token) and limit it to the one zone you chose.",
-			"Add the tunnel permission only if you choose Cloudflare Tunnel; the tunnel form asks for the token again and seals it separately.",
+			"Add the tunnel permission only if you choose Cloudflare Tunnel. The tunnel uses this same token; it never asks for it again or for an account ID.",
 		},
 	},
 	{

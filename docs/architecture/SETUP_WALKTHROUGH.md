@@ -40,7 +40,7 @@ offers no Undo skip, and never re-gates the appliance.
 | Account | keep the password in a password manager; store the recovery file offline |
 | Storage | the disk must already be mounted (Homestead never formats); an `/etc/fstab` example is shown |
 | Sign-in | reach `authentik.<name>`; trust the root certificate (Trust page); open `https://authentik.<name>/` (Authentik 2026.8 starts its first-run only from the address itself) and create `akadmin`; Admin interface, Directory, Tokens and App passwords, New Token, user `akadmin`, API Token (checked against Authentik 2026.8.3 on 2026-10-20, S292) |
-| Domain | add the domain to Cloudflare; create the scoped token with the permissions below; the other providers' equivalents; for manual DNS, the record table |
+| Domain | add the domain to Cloudflare; create the scoped token with the permissions below (the tunnel reuses it, S294); the other providers' equivalents; for manual DNS, the record table |
 | Apps | none |
 
 ## The steps and how each is derived
@@ -110,16 +110,25 @@ server and the test fails if the operations it makes and the grants listed
 differ in either direction. The Cloudflare tunnel grant (`Account:
 Cloudflare Tunnel: Edit`) is pinned the same way by
 `TestTunnelPermissionCopyMatchesClientCalls`, which runs the tunnel client
-(list accounts, create, get, delete) against a recording server. The grant
+(zone lookup, DNS record list, create and delete, list accounts, tunnel
+create, get and delete) against a recording server; every call maps to a
+listed grant (S294). The grant
 wording is our description of the provider console, not verified console text;
 the set of grants is what is pinned.
 
 | Provider | Permissions |
 | --- | --- |
-| Cloudflare | Zone: Zone: Read; Zone: DNS: Edit; plus Account: Cloudflare Tunnel: Edit when a tunnel is chosen |
+| Cloudflare | Zone: Zone: Read; Zone: DNS: Edit (also the tunnel hostname's CNAME); plus Account: Cloudflare Tunnel: Edit when a tunnel is chosen. One token: the tunnel never asks for it again or for an account ID |
 | DigitalOcean | a token with Read and Write scope |
 | Route 53 | `route53:ListHostedZones`, `route53:ListResourceRecordSets`, `route53:ChangeResourceRecordSets` |
 | Manual | none; Homestead shows the records and you create them |
+
+Domain (S294): the public domain, a non-sensitive choice saved with "Save
+domain" or `setup step domain --domain NAME` (empty clears it). Local-only
+suffixes (`lan`, `local`, `home.arpa`, `internal`, `localhost`) and dotless
+names are refused with 422. The tunnel form suggests its hostname under it.
+The tunnel itself is planned (`tunnel plan`), reviewed and approved by
+digest; see ADR-037.
 
 Access: home network only (default), Cloudflare Tunnel, router port forward.
 The tunnel option is available only with Cloudflare (ADR-017); for other
@@ -205,6 +214,7 @@ clears claim state must also delete `wizard_state` where `wizard = 'setup'`.
 homesteadctl setup status            # origin, the five steps, what is next
 homesteadctl setup step domain       # one step's state and detail
 homesteadctl setup step domain --provider cloudflare --access tunnel
+homesteadctl setup step domain --domain example.com
 homesteadctl setup step account --acknowledge  # confirm my password
 homesteadctl setup step apps --acknowledge     # also domain, once its tunnel/exposure exists
 homesteadctl setup skip sign-in      # storage too: skip and unskip only

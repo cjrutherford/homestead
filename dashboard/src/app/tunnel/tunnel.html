@@ -61,32 +61,9 @@
           are removed, and every hostname it serves stops working from outside your
           network.
         </p>
-        <form
-          (submit)="
-            askTeardown(tunnel.id, tunnel.name, accountInput.value);
-            $event.preventDefault()
-          "
-        >
-          <label>
-            Account ID
-            <input
-              #accountInput
-              name="account-id"
-              autocomplete="off"
-              [disabled]="busy()"
-              [attr.aria-invalid]="teardownError()?.id === tunnel.id ? 'true' : null"
-              [attr.aria-describedby]="teardownError()?.id === tunnel.id ? 'teardown-error-' + tunnel.id : null"
-            />
-          </label>
-          @if (teardownError(); as problem) {
-            @if (problem.id === tunnel.id) {
-              <p class="field-error" [id]="'teardown-error-' + tunnel.id">{{ problem.message }}</p>
-            }
-          }
-          <div class="risky-actions">
-            <button type="submit" class="danger quiet" [disabled]="busy()">Tear down</button>
-          </div>
-        </form>
+        <div class="risky-actions">
+          <button type="button" class="danger quiet" [disabled]="busy()" (click)="askTeardown(tunnel.id, tunnel.name)">Tear down</button>
+        </div>
       </div>
     }
 
@@ -111,71 +88,111 @@
   </app-loading>
 
   <h2>Set up a tunnel</h2>
-  <form
-    (submit)="
-      setup(
-        nameInput.value,
-        hostnameInput.value,
-        serviceInput.value,
-        tokenInput.value,
-        setupAccountInput.value
-      );
-      $event.preventDefault()
-    "
-  >
-    <div class="field">
-      <label for="tunnel-name">Tunnel name</label>
-      <input id="tunnel-name" #nameInput name="name" autocomplete="off" [disabled]="busy()"
-        [attr.aria-invalid]="fieldErrors()['name'] ? 'true' : null"
-        [attr.aria-describedby]="fieldErrors()['name'] ? 'tunnel-name-error' : null" />
-      @if (fieldErrors()['name']; as message) {
-        <p class="field-error" id="tunnel-name-error">{{ message }}</p>
+  <p>
+    The tunnel uses the Cloudflare token you stored in the setup Domain step, and finds your
+    account from the hostname's zone. First you see a plan of every change in Cloudflare; nothing
+    changes until you approve it.
+  </p>
+  @if (plan(); as review) {
+    <div class="risky" aria-label="Tunnel plan">
+      <h3>Review the plan</h3>
+      <p class="risky-preview">
+        Tunnel <strong>{{ review.name }}</strong> in zone <strong>{{ review.zone }}</strong>.
+      </p>
+      <div class="table-scroll">
+        <table aria-label="Public hostnames">
+          <thead>
+            <tr><th scope="col">Public hostname</th><th scope="col">Forwards to</th></tr>
+          </thead>
+          <tbody>
+            @for (route of review.ingress; track route.hostname) {
+              <tr><th scope="row" class="mono">{{ route.hostname }}</th><td class="mono">{{ route.service }}</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="table-scroll">
+        <table aria-label="DNS changes">
+          <thead>
+            <tr><th scope="col">Change</th><th scope="col">Record</th><th scope="col">Points to</th></tr>
+          </thead>
+          <tbody>
+            @for (change of review.dns; track change.name) {
+              <tr>
+                <td>{{ change.action === 'replace' ? 'Replace' : 'Create' }}</td>
+                <th scope="row" class="mono">{{ change.type }} {{ change.name }}</th>
+                <td class="mono">{{ change.content }}{{ change.proxied ? ' (proxied)' : '' }}</td>
+              </tr>
+              @for (old of change.replaces; track $index) {
+                <tr>
+                  <td>Delete</td>
+                  <th scope="row" class="mono">{{ old.type }} {{ old.name }}</th>
+                  <td class="mono">{{ old.content }}</td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+      @for (warning of review.warnings; track $index) {
+        <app-state-message kind="warning" [headline]="warning" />
       }
+      <div class="risky-actions">
+        <button type="button" class="primary" (click)="approve()" [disabled]="busy()">Approve and set up</button>
+        <button type="button" class="quiet" (click)="discardPlan()" [disabled]="busy()">Change</button>
+      </div>
     </div>
-    <div class="field">
-      <label for="tunnel-hostname">Hostname</label>
-      <input id="tunnel-hostname" #hostnameInput name="hostname" autocomplete="off" [disabled]="busy()"
-        [attr.aria-invalid]="fieldErrors()['hostname'] ? 'true' : null"
-        [attr.aria-describedby]="fieldErrors()['hostname'] ? 'tunnel-hostname-error' : null" />
-      @if (fieldErrors()['hostname']; as message) {
-        <p class="field-error" id="tunnel-hostname-error">{{ message }}</p>
-      }
-    </div>
-    <div class="field">
-      <label for="tunnel-service">Local service</label>
-      <input id="tunnel-service" #serviceInput name="service" placeholder="http://127.0.0.1:8080" autocomplete="off" [disabled]="busy()"
-        [attr.aria-invalid]="fieldErrors()['service'] ? 'true' : null"
-        [attr.aria-describedby]="fieldErrors()['service'] ? 'tunnel-service-error' : null" />
-      @if (fieldErrors()['service']; as message) {
-        <p class="field-error" id="tunnel-service-error">{{ message }}</p>
-      }
-    </div>
-    <div class="field">
-      <label for="tunnel-token">API token (sealed on this appliance, never shown again)</label>
-      <input id="tunnel-token" #tokenInput name="api-token" type="password" autocomplete="off" [disabled]="busy()"
-        [attr.aria-invalid]="fieldErrors()['token'] ? 'true' : null"
-        [attr.aria-describedby]="fieldErrors()['token'] ? 'tunnel-token-error' : null" />
-      @if (fieldErrors()['token']; as message) {
-        <p class="field-error" id="tunnel-token-error">{{ message }}</p>
-      }
-    </div>
-    <div class="field">
-      <label for="tunnel-account">Account ID</label>
-      <input id="tunnel-account" #setupAccountInput name="account-id" autocomplete="off" [disabled]="busy()"
-        [attr.aria-invalid]="fieldErrors()['account'] ? 'true' : null"
-        [attr.aria-describedby]="fieldErrors()['account'] ? 'tunnel-account-error' : null" />
-      @if (fieldErrors()['account']; as message) {
-        <p class="field-error" id="tunnel-account-error">{{ message }}</p>
-      }
-    </div>
-    <button type="submit" class="primary" [disabled]="busy()">Set up tunnel</button>
-  </form>
+  } @else {
+    <form
+      (submit)="
+        review(nameInput.value, hostnameInput.value, serviceInput.value);
+        $event.preventDefault()
+      "
+    >
+      <div class="field">
+        <label for="tunnel-name">Tunnel name</label>
+        <input id="tunnel-name" #nameInput name="name" autocomplete="off" [disabled]="busy()"
+          [attr.aria-invalid]="fieldErrors()['name'] ? 'true' : null"
+          [attr.aria-describedby]="fieldErrors()['name'] ? 'tunnel-name-error' : null" />
+        @if (fieldErrors()['name']; as message) {
+          <p class="field-error" id="tunnel-name-error">{{ message }}</p>
+        }
+      </div>
+      <div class="field">
+        <label for="tunnel-hostname">Public hostname</label>
+        <input id="tunnel-hostname" #hostnameInput name="hostname" autocomplete="off" [disabled]="busy()"
+          [placeholder]="hostnameHint()"
+          [attr.aria-invalid]="fieldErrors()['hostname'] ? 'true' : null"
+          [attr.aria-describedby]="fieldErrors()['hostname'] ? 'tunnel-hostname-error' : null" />
+        @if (fieldErrors()['hostname']; as message) {
+          <p class="field-error" id="tunnel-hostname-error">{{ message }}</p>
+        }
+      </div>
+      <div class="field">
+        <label for="tunnel-service">App address on this appliance</label>
+        <input id="tunnel-service" #serviceInput name="service" autocomplete="off" [disabled]="busy()"
+          [attr.aria-invalid]="fieldErrors()['service'] ? 'true' : null"
+          [attr.aria-describedby]="fieldErrors()['service'] ? 'tunnel-service-error' : 'tunnel-service-hint'" />
+        @if (fieldErrors()['service']; as message) {
+          <p class="field-error" id="tunnel-service-error">{{ message }}</p>
+        } @else {
+          <p class="hint" id="tunnel-service-hint">
+            An app, such as http://127.0.0.1:2283. Do not point it at this dashboard: the plan warns
+            if you do, because it would be on the internet with password sign-in.
+          </p>
+        }
+      </div>
+      <button type="submit" class="primary" [disabled]="busy()">Review plan</button>
+    </form>
+  }
 
   @if (confirming(); as pending) {
     <app-dialog heading="Tear down this tunnel?" variant="danger" (dismissed)="cancelTeardown()">
       <p>
-        This removes the tunnel <strong>{{ pending.name }}</strong> and its connections. Every
-        hostname it serves stops working from outside your network. Apps stay installed.
+        This removes the tunnel <strong>{{ pending.name }}</strong> and its connections, and
+        deletes the DNS records Homestead created for it while they still point at the tunnel.
+        Every hostname it serves stops working from outside your network. Records that setup
+        replaced are not restored. Apps stay installed.
       </p>
       <div class="dialog-actions">
         <button type="button" class="danger" (click)="confirmTeardown()" [disabled]="busy()">Confirm tear down</button>

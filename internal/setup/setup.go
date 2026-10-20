@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"strings"
 	"sync"
 
 	"homestead/internal/wizard"
@@ -158,6 +159,7 @@ type stored struct {
 	Acknowledged []string `json:"acknowledged,omitempty"`
 	Provider     string   `json:"provider,omitempty"`
 	Access       string   `json:"access,omitempty"`
+	Domain       string   `json:"domain,omitempty"`
 }
 
 // storedVersion is the current payload version.
@@ -167,6 +169,9 @@ const storedVersion = 2
 type Choices struct {
 	Provider string `json:"provider,omitempty"`
 	Access   string `json:"access,omitempty"`
+	// Domain names public hostnames only, for example example.com
+	// (ADR-037): local names stay *.lan and homestead.local.
+	Domain string `json:"domain,omitempty"`
 }
 
 // StepStatus is one step as reported.
@@ -211,6 +216,7 @@ type Update struct {
 	State    *string
 	Provider *string
 	Access   *string
+	Domain   *string
 }
 
 // Service derives and stores the walkthrough state.
@@ -505,7 +511,7 @@ func (s *Service) status() (Status, error) {
 	out := Status{
 		Origin: st.Origin, Legacy: st.Origin == OriginLegacy, Complete: true,
 		Facts: f, StarterApps: starter, Providers: Providers(),
-		Choices: Choices{Provider: st.Provider, Access: st.Access},
+		Choices: Choices{Provider: st.Provider, Access: st.Access, Domain: st.Domain},
 		Access:  AccessOptions(st.Provider),
 	}
 	for _, name := range StepNames {
@@ -532,8 +538,8 @@ func (s *Service) Update(step string, u Update) (Status, error) {
 	if !slices.Contains(StepNames, step) {
 		return Status{}, fmt.Errorf("%w: %q (steps: account, storage, sign-in, domain, apps)", ErrUnknownStep, step)
 	}
-	if u.State == nil && u.Provider == nil && u.Access == nil {
-		return Status{}, fmt.Errorf(`%w: want {"state"} and/or {"provider"}, {"access"}`, ErrInvalid)
+	if u.State == nil && u.Provider == nil && u.Access == nil && u.Domain == nil {
+		return Status{}, fmt.Errorf(`%w: want {"state"} and/or {"provider"}, {"access"}, {"domain"}`, ErrInvalid)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -544,10 +550,17 @@ func (s *Service) Update(step string, u Update) (Status, error) {
 	if st, err = s.migrate(st); err != nil {
 		return Status{}, err
 	}
-	if u.Provider != nil || u.Access != nil {
+	if u.Provider != nil || u.Access != nil || u.Domain != nil {
 		if step != StepDomain {
-			return Status{}, fmt.Errorf("%w: a provider or access choice belongs to the domain step", ErrInvalid)
+			return Status{}, fmt.Errorf("%w: a provider, access or domain choice belongs to the domain step", ErrInvalid)
 		}
+	}
+	if u.Domain != nil {
+		name, err := NormalizeDomain(*u.Domain)
+		if err != nil {
+			return Status{}, fmt.Errorf("%w: %v", ErrInvalid, err)
+		}
+		st.Domain = name
 	}
 	if u.Provider != nil {
 		if *u.Provider != "" {
@@ -656,4 +669,36 @@ func remove(list []string, name string) []string {
 		}
 	}
 	return out
+}
+
+// localSuffixes never resolve on the internet, so they cannot be the
+// public domain (ADR-037).
+var localSuffixes = []string{"lan", "local", "home.arpa", "internal", "localhost"}
+
+// NormalizeDomain checks a public domain such as example.com, lowercased
+// and without a trailing dot. Empty clears the choice.
+func NormalizeDomain(name string) (string, error) {
+	name = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ".")
+	if name == "" {
+		return "", nil
+	}
+	if len(name) > 253 || !strings.Contains(name, ".") {
+		return "", fmt.Errorf("the domain must be a public name with a dot, such as example.com")
+	}
+	for _, suffix := range localSuffixes {
+		if name == suffix || strings.HasSuffix(name, "."+suffix) {
+			return "", fmt.Errorf("%s is a local-only name; the domain is for public names such as example.com (local names stay as they are)", name)
+		}
+	}
+	for _, label := range strings.Split(name, ".") {
+		if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return "", fmt.Errorf("invalid domain %q", name)
+		}
+		for _, c := range label {
+			if c != '-' && (c < 'a' || c > 'z') && (c < '0' || c > '9') {
+				return "", fmt.Errorf("invalid domain %q", name)
+			}
+		}
+	}
+	return name, nil
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"homestead/internal/apiclient"
@@ -12,12 +11,14 @@ import (
 
 func runTunnel(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl tunnel <status|setup|teardown> [flags]")
+		fmt.Fprintln(stderr, "usage: homesteadctl tunnel <status|plan|setup|teardown> [flags]")
 		return exitUsage
 	}
 	switch args[0] {
 	case "status":
 		return runTunnelStatus(ctx, client, stdout, stderr)
+	case "plan":
+		return runTunnelPlan(ctx, client, args[1:], stdout, stderr)
 	case "setup":
 		return runTunnelSetup(ctx, client, args[1:], stdout, stderr)
 	case "teardown":
@@ -53,77 +54,105 @@ func runTunnelStatus(ctx context.Context, client *apiclient.Client, stdout, stde
 	return exitOK
 }
 
-func runTunnelSetup(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
-	var name, hostname, service, apiToken, accountID, accountIDFile, apiTokenFile string
-	var follow bool
+// retiredTunnelFlags were the separate token and account inputs before
+// S294 (ADR-037): the tunnel now reuses the Domain step's Cloudflare token
+// and finds the account from the hostname's zone.
+var retiredTunnelFlags = map[string]bool{
+	"--api-token": true, "--api-token-file": true, "--account-id": true, "--account-id-file": true,
+}
+
+const retiredTunnelFlagHelp = "the tunnel no longer takes a token or account ID: store the Cloudflare token in the setup Domain step " +
+	"(homesteadctl tls issuance credentials cloudflare api_token=-), and the account is found from the hostname's zone"
+
+type tunnelFlags struct {
+	name, hostname, service, digest string
+	follow                          bool
+	positional                      []string
+}
+
+func parseTunnelFlags(args []string, allowDigest, allowFollow bool, stderr io.Writer) (tunnelFlags, bool) {
+	var f tunnelFlags
 	for i := 0; i < len(args); i++ {
 		switch {
+		case retiredTunnelFlags[args[i]]:
+			fmt.Fprintf(stderr, "%s: %s\n", args[i], retiredTunnelFlagHelp)
+			return f, false
 		case args[i] == "--name" && i+1 < len(args):
-			name = args[i+1]
+			f.name = args[i+1]
 			i++
 		case args[i] == "--hostname" && i+1 < len(args):
-			hostname = args[i+1]
+			f.hostname = args[i+1]
 			i++
 		case args[i] == "--service" && i+1 < len(args):
-			service = args[i+1]
+			f.service = args[i+1]
 			i++
-		case args[i] == "--api-token" && i+1 < len(args):
-			apiToken = args[i+1]
-			warnArgvSecret(stderr, "--api-token", "--api-token-file")
+		case allowDigest && args[i] == "--digest" && i+1 < len(args):
+			f.digest = args[i+1]
 			i++
-		case args[i] == "--account-id" && i+1 < len(args):
-			accountID = args[i+1]
-			warnArgvSecret(stderr, "--account-id", "--account-id-file")
-			i++
-		case args[i] == "--account-id-file" && i+1 < len(args):
-			accountIDFile = args[i+1]
-			i++
-		case args[i] == "--api-token-file" && i+1 < len(args):
-			apiTokenFile = args[i+1]
-			i++
-		case args[i] == "--follow":
-			follow = true
+		case allowFollow && args[i] == "--follow":
+			f.follow = true
 		case strings.HasPrefix(args[i], "-"):
 			fmt.Fprintf(stderr, "unknown flag %q\n", args[i])
-			return exitUsage
+			return f, false
 		default:
-			fmt.Fprintf(stderr, "unexpected argument %q\n", args[i])
-			return exitUsage
+			f.positional = append(f.positional, args[i])
 		}
 	}
-	if accountIDFile != "" && apiTokenFile == accountIDFile {
-		fmt.Fprintln(stderr, "the account ID and the API token cannot both come from the same file")
+	return f, true
+}
+
+func runTunnelPlan(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	f, ok := parseTunnelFlags(args, false, false, stderr)
+	if !ok || f.name == "" || f.hostname == "" || f.service == "" || len(f.positional) != 0 {
+		fmt.Fprintln(stderr, "usage: homesteadctl tunnel plan --name NAME --hostname HOST --service URL")
 		return exitUsage
 	}
-	if apiToken != "" && apiTokenFile != "" {
-		fmt.Fprintln(stderr, "use either --api-token or --api-token-file, not both")
-		return exitUsage
-	}
-	if accountID != "" && accountIDFile != "" {
-		fmt.Fprintln(stderr, "use either --account-id or --account-id-file, not both")
-		return exitUsage
-	}
-	var err error
-	if apiTokenFile != "" {
-		if apiToken, err = readValueFile(apiTokenFile); err != nil {
-			return fail(stderr, err)
-		}
-	}
-	if accountIDFile != "" {
-		if accountID, err = readValueFile(accountIDFile); err != nil {
-			return fail(stderr, err)
-		}
-	}
-	if name == "" || hostname == "" || service == "" || apiToken == "" || accountID == "" {
-		fmt.Fprintln(stderr, "usage: homesteadctl tunnel setup --name NAME --hostname HOST --service URL --api-token-file FILE|- --account-id-file FILE|- [--follow]")
-		fmt.Fprintln(stderr, "       (use - to read a value from stdin; the --api-token and --account-id arguments land in shell history and are deprecated)")
-		return exitUsage
-	}
-	id, err := client.TunnelSetup(ctx, name, hostname, service, apiToken, accountID)
+	plan, err := client.TunnelPlan(ctx, f.name, f.hostname, f.service)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	if !follow {
+	printTunnelPlan(stdout, plan)
+	fmt.Fprintf(stdout, "approve with: homesteadctl tunnel setup --name %s --hostname %s --service %s --digest %s\n",
+		plan.Name, plan.Hostname, plan.Service, plan.Digest)
+	return exitOK
+}
+
+func printTunnelPlan(w io.Writer, plan apiclient.TunnelPlan) {
+	fmt.Fprintf(w, "tunnel: %s (zone %s)\n", plan.Name, plan.Zone)
+	for _, route := range plan.Ingress {
+		fmt.Fprintf(w, "route: %s -> %s\n", route.Hostname, route.Service)
+	}
+	for _, change := range plan.DNS {
+		proxied := ""
+		if change.Proxied {
+			proxied = ", proxied"
+		}
+		fmt.Fprintf(w, "dns %s: %s %s -> %s%s\n", change.Action, change.Type, change.Name, change.Content, proxied)
+		for _, old := range change.Replaces {
+			fmt.Fprintf(w, "  deletes %s %s -> %s\n", old.Type, old.Name, old.Content)
+		}
+	}
+	for _, warning := range plan.Warnings {
+		fmt.Fprintf(w, "warning: %s\n", warning)
+	}
+	fmt.Fprintf(w, "digest: %s\n", plan.Digest)
+}
+
+func runTunnelSetup(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	f, ok := parseTunnelFlags(args, true, true, stderr)
+	if !ok || f.name == "" || f.hostname == "" || f.service == "" || len(f.positional) != 0 {
+		fmt.Fprintln(stderr, "usage: homesteadctl tunnel setup --name NAME --hostname HOST --service URL --digest DIGEST [--follow]")
+		return exitUsage
+	}
+	if f.digest == "" {
+		fmt.Fprintln(stderr, "setup approves a reviewed plan: run homesteadctl tunnel plan with the same flags, then pass its --digest")
+		return exitUsage
+	}
+	id, err := client.TunnelSetup(ctx, f.name, f.hostname, f.service, f.digest)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if !f.follow {
 		fmt.Fprintf(stdout, "operation: %d\n", id)
 		return exitOK
 	}
@@ -131,77 +160,18 @@ func runTunnelSetup(ctx context.Context, client *apiclient.Client, args []string
 }
 
 func runTunnelTeardown(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
-	var accountID, accountIDFile string
-	var follow bool
-	var positional []string
-	for i := 0; i < len(args); i++ {
-		switch {
-		case args[i] == "--account-id" && i+1 < len(args):
-			accountID = args[i+1]
-			warnArgvSecret(stderr, "--account-id", "--account-id-file")
-			i++
-		case args[i] == "--account-id-file" && i+1 < len(args):
-			accountIDFile = args[i+1]
-			i++
-		case args[i] == "--follow":
-			follow = true
-		case strings.HasPrefix(args[i], "-"):
-			fmt.Fprintf(stderr, "unknown flag %q\n", args[i])
-			return exitUsage
-		default:
-			positional = append(positional, args[i])
-		}
-	}
-	if accountID != "" && accountIDFile != "" {
-		fmt.Fprintln(stderr, "use either --account-id or --account-id-file, not both")
+	f, ok := parseTunnelFlags(args, false, true, stderr)
+	if !ok || len(f.positional) != 1 || f.name != "" || f.hostname != "" || f.service != "" {
+		fmt.Fprintln(stderr, "usage: homesteadctl tunnel teardown <tunnel-id> [--follow]")
 		return exitUsage
 	}
-	if accountIDFile != "" {
-		var err error
-		if accountID, err = readValueFile(accountIDFile); err != nil {
-			return fail(stderr, err)
-		}
-	}
-	if len(positional) != 1 || accountID == "" {
-		fmt.Fprintln(stderr, "usage: homesteadctl tunnel teardown <tunnel-id> --account-id-file FILE|- [--follow]")
-		fmt.Fprintln(stderr, "       (use - to read the account ID from stdin; the --account-id argument lands in shell history and is deprecated)")
-		return exitUsage
-	}
-	id, err := client.TunnelTeardown(ctx, positional[0], accountID)
+	id, err := client.TunnelTeardown(ctx, f.positional[0])
 	if err != nil {
 		return fail(stderr, err)
 	}
-	if !follow {
+	if !f.follow {
 		fmt.Fprintf(stdout, "operation: %d\n", id)
 		return exitOK
 	}
 	return followOperation(ctx, client, id, stdout, stderr)
-}
-
-// stdinReader is where "-" value files read from; tests replace it.
-var stdinReader io.Reader = os.Stdin
-
-// warnArgvSecret tells the owner a credential given as an argument is in
-// argv and shell history (S288).
-func warnArgvSecret(stderr io.Writer, flagName, fileFlag string) {
-	fmt.Fprintf(stderr, "warning: %s on the command line is visible in the process list and shell history; use %s (a file, or - for stdin)\n", flagName, fileFlag)
-}
-
-// readValueFile reads one trimmed value from a file, or from stdin for "-".
-func readValueFile(path string) (string, error) {
-	var data []byte
-	var err error
-	if path == "-" {
-		data, err = io.ReadAll(stdinReader)
-	} else {
-		data, err = os.ReadFile(path)
-	}
-	if err != nil {
-		return "", fmt.Errorf("read %s: %w", path, err)
-	}
-	value := strings.TrimSpace(string(data))
-	if value == "" {
-		return "", fmt.Errorf("empty value in %s", path)
-	}
-	return value, nil
 }

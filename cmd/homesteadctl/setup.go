@@ -12,7 +12,7 @@ import (
 
 const setupUsage = `usage: homesteadctl setup <status|step|skip|unskip> ...
   status
-  step <account|storage|sign-in|domain|apps> [--acknowledge] [--provider NAME] [--access home|tunnel|router]
+  step <account|storage|sign-in|domain|apps> [--acknowledge] [--provider NAME] [--access home|tunnel|router] [--domain example.com]
   skip <step>
   unskip <step>
 
@@ -49,7 +49,7 @@ func runSetup(ctx context.Context, client *apiclient.Client, args []string, stdo
 		if args[0] == "unskip" {
 			state = setup.Pending
 		}
-		st, err := client.SetupUpdate(ctx, args[1], &state, nil, nil)
+		st, err := client.SetupUpdate(ctx, args[1], &state, nil, nil, nil)
 		if err != nil {
 			return fail(stderr, err)
 		}
@@ -73,10 +73,16 @@ func runSetupStep(ctx context.Context, client *apiclient.Client, args []string, 
 	ack := fs.Bool("acknowledge", false, "account: confirm your password; domain: confirm once the tunnel or exposure plan exists; apps: finished (changes nothing else)")
 	provider := fs.String("provider", "", "DNS provider choice for the domain step")
 	access := fs.String("access", "", "access choice for the domain step: home, tunnel or router")
+	domainName := fs.String("domain", "", "public domain for the domain step, such as example.com (empty clears it)")
 	if err := fs.Parse(args[1:]); err != nil {
 		return exitUsage
 	}
-	var state, prov, acc *string
+	var state, prov, acc, dom *string
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "domain" {
+			dom = domainName
+		}
+	})
 	if *ack {
 		s := setup.Done
 		state = &s
@@ -89,10 +95,10 @@ func runSetupStep(ctx context.Context, client *apiclient.Client, args []string, 
 	}
 	var st setup.Status
 	var err error
-	if state == nil && prov == nil && acc == nil {
+	if state == nil && prov == nil && acc == nil && dom == nil {
 		st, err = client.SetupStatus(ctx)
 	} else {
-		st, err = client.SetupUpdate(ctx, name, state, prov, acc)
+		st, err = client.SetupUpdate(ctx, name, state, prov, acc, dom)
 	}
 	if err != nil {
 		return fail(stderr, err)
@@ -101,7 +107,8 @@ func runSetupStep(ctx context.Context, client *apiclient.Client, args []string, 
 		if s.Name == name {
 			printSetupStep(stdout, s)
 			if name == setup.StepDomain {
-				fmt.Fprintf(stdout, "  provider: %s\n  access: %s\n", orNone(st.Choices.Provider), orNone(st.Choices.Access))
+				fmt.Fprintf(stdout, "  provider: %s\n  access: %s\n  domain: %s\n",
+					orNone(st.Choices.Provider), orNone(st.Choices.Access), orNone(st.Choices.Domain))
 			}
 			return exitOK
 		}

@@ -55,26 +55,65 @@ func (c *Client) TunnelStatus(ctx context.Context) (TunnelStatus, error) {
 	return out, nil
 }
 
-// TunnelSetup seals the API token server-side, creates the tunnel,
-// enables its connector, and records the route, returning the
-// operation id for progress streams.
-func (c *Client) TunnelSetup(ctx context.Context, name, hostname, service, apiToken, accountID string) (int64, error) {
-	var out OperationStarted
-	body := map[string]any{
-		"name": name, "hostname": hostname, "service": service,
-		"api_token": apiToken, "account_id": accountID,
+// TunnelPlan is the reviewed tunnel change (ADR-037): the routes, the DNS
+// records it creates or replaces, warnings, and the digest that approves
+// exactly this plan. It never carries the account or zone IDs.
+type TunnelPlan struct {
+	Name     string             `json:"name"`
+	Hostname string             `json:"hostname"`
+	Service  string             `json:"service"`
+	Zone     string             `json:"zone"`
+	Ingress  []TunnelPlanRoute  `json:"ingress"`
+	DNS      []TunnelPlanChange `json:"dns"`
+	Warnings []string           `json:"warnings"`
+	Digest   string             `json:"digest"`
+}
+
+// TunnelPlanRoute is one public hostname and the service it reaches.
+type TunnelPlanRoute struct {
+	Hostname string `json:"hostname"`
+	Service  string `json:"service"`
+}
+
+// TunnelPlanChange is one DNS change: create, or replace the listed
+// records.
+type TunnelPlanChange struct {
+	Name     string             `json:"name"`
+	Type     string             `json:"type"`
+	Content  string             `json:"content"`
+	Proxied  bool               `json:"proxied"`
+	Action   string             `json:"action"`
+	Replaces []router.DNSRecord `json:"replaces"`
+}
+
+// TunnelPlan reads Cloudflare and returns the plan; it changes nothing.
+func (c *Client) TunnelPlan(ctx context.Context, name, hostname, service string) (TunnelPlan, error) {
+	var out TunnelPlan
+	body := map[string]any{"name": name, "hostname": hostname, "service": service}
+	if err := c.postJSON(ctx, "/api/v1/tunnel/plan", body, &out); err != nil {
+		return TunnelPlan{}, err
 	}
+	return out, nil
+}
+
+// TunnelSetup approves a reviewed plan by its digest: the daemon plans
+// again, refuses if anything changed, then creates the tunnel, its DNS
+// record and connector, returning the operation id.
+func (c *Client) TunnelSetup(ctx context.Context, name, hostname, service, digest string) (int64, error) {
+	var out OperationStarted
+	body := map[string]any{"name": name, "hostname": hostname, "service": service, "digest": digest}
 	if err := c.postJSON(ctx, "/api/v1/tunnel/setup", body, &out); err != nil {
 		return 0, err
 	}
 	return out.ID, nil
 }
 
-// TunnelTeardown deletes the provider tunnel, removes its connector,
-// and forgets its routes, returning the operation id.
-func (c *Client) TunnelTeardown(ctx context.Context, id, accountID string) (int64, error) {
+// TunnelTeardown stops the connector, deletes the provider tunnel and the
+// DNS records Homestead created for it, and forgets its routes, returning
+// the operation id. The account is the one stored at setup.
+func (c *Client) TunnelTeardown(ctx context.Context, id string) (int64, error) {
 	var out OperationStarted
-	path := "/api/v1/tunnel/tunnels/" + url.PathEscape(id) + "?account_id=" + url.QueryEscape(accountID)
+	path := "/api/v1/tunnel/tunnels/" + url.PathEscape(id)
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.base+path, nil)
 	if err != nil {
 		return 0, fmt.Errorf("api: %w", err)

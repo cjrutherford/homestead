@@ -4778,3 +4778,37 @@ committed). Results:
     Suggested layout panel did not show, as intended. Applying a layout is
     covered by specs only; unassigning the owner's classes to show it was
     not done.
+
+## S294: Domain and tunnel plan (ADR-037)
+
+- Setup: the `domain` choice (`NormalizeDomain`) on
+  `PUT /api/v1/setup/steps/domain`, `setup step domain --domain` and the
+  Domain step's "Your domain" form; local-only suffixes and dotless names are
+  422.
+- Daemon:
+  - `router` gains zone lookup (`ZoneFor`, longest suffix first), DNS record
+    read, create and delete, and the owned-record table.
+  - Migration 45 adds `account_id` and `zone_id` to `tunnel_routes` and the
+    `tunnel_dns_records` table.
+  - `POST /api/v1/tunnel/plan` is read-only: zone, ingress, the proxied
+    CNAME (create, or replace with the records listed), warnings and a
+    digest. Refusals: 400 validation, 422 no token, no zone, no account,
+    hostname already routed or a non-address record at the name; 502 a
+    Cloudflare error.
+  - `POST /api/v1/tunnel/setup` plans again (409 on a digest change), audits
+    `tunnel.setup`, and runs create-tunnel, dns, connector and record-route,
+    undoing the record and the tunnel when a later step fails.
+  - Teardown takes no account ID, audits `tunnel.teardown`, and deletes only
+    owned CNAMEs that still point at the tunnel (a changed record is kept and
+    audited as `tunnel.teardown.dns-kept`).
+  - The token is the Domain step's `dns_cloudflare_api_token`, else the
+    legacy `router_tunnel_api_token`; bodies carrying `api_token` or
+    `account_id` are 400.
+- CLI: `tunnel plan`, `tunnel setup --digest`, `tunnel teardown <id>`; the
+  old credential flags are a usage error.
+- Dashboard: the Tunnel form has name, hostname (suggested under the setup
+  domain) and service, then a review panel with "Public hostnames", "DNS
+  changes", warnings and "Approve and set up"; a 409 asks for a new review.
+- Tests: a Cloudflare double covers plan refusals, plan, setup and teardown,
+  a changed record kept at teardown, and the permission copy maps every
+  client call to a listed grant.

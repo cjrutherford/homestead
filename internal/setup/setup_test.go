@@ -585,3 +585,28 @@ func TestDomainSourceGetsChosenProvider(t *testing.T) {
 		t.Fatalf("Domain source got %q, want the chosen provider", f.chosen)
 	}
 }
+
+// The domain names public hostnames only (ADR-037): local-only suffixes
+// and dotless names are refused; it is a domain-step choice.
+func TestDomainChoice(t *testing.T) {
+	svc, _, _ := newSvc(t)
+	s, err := svc.Update(StepDomain, Update{Domain: str(" Example.COM. ")})
+	if err != nil || s.Choices.Domain != "example.com" {
+		t.Fatalf("domain = %q, %v", s.Choices.Domain, err)
+	}
+	for _, bad := range []string{"homestead", "homestead.lan", "homestead.local", "nas.home.arpa", "x.internal",
+		"localhost", "app.localhost", "bad_name.com", "-a.com", "a..com"} {
+		if _, err := svc.Update(StepDomain, Update{Domain: str(bad)}); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("%q: %v, want invalid", bad, err)
+		}
+	}
+	if s, _ := svc.Status(); s.Choices.Domain != "example.com" {
+		t.Fatalf("refused update changed the domain: %q", s.Choices.Domain)
+	}
+	if _, err := svc.Update(StepApps, Update{Domain: str("example.com")}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("domain on wrong step: %v", err)
+	}
+	if s, err := svc.Update(StepDomain, Update{Domain: str("")}); err != nil || s.Choices.Domain != "" {
+		t.Fatalf("clear = %q, %v", s.Choices.Domain, err)
+	}
+}

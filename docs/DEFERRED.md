@@ -11,10 +11,6 @@
 - Hosted HAI coordination/control service
 - Multi-appliance dashboard
 - Live storage migration between devices
-- Tunnel DNS route actuation: S246 creates the tunnel and runs its
-  connector, but the public hostname's DNS record still routes
-  through the DNS reconcile path; proxied tunnel CNAME management
-  belongs to a later slice.
 - Connector binary installation: S246 setup refuses with
   instructions when cloudflared is absent; packaging or supervising
   the binary itself belongs to a later slice.
@@ -697,10 +693,9 @@
   walkthrough. Multiple admins are out of scope for v1.
 - KVM findings left open (S287 review): the tunnel permission line for
   Cloudflare shows only once Cloudflare Tunnel is chosen (a note says so);
-  the CLI tunnel teardown account ID in argv is closed in S288 (`--account-id-file`,
-  `-` for stdin; the argv form warns); the CLI
-  and the Tunnel page ask for the Cloudflare token again even when a DNS
-  credential for the same provider is already sealed; skipping or
+  the CLI tunnel teardown account ID in argv is closed in S288 and retired
+  in S294 (no account ID is asked for); the CLI and the Tunnel page asking
+  for the Cloudflare token again is closed in S294; skipping or
   un-skipping a step that is already done from real state prints the full
   status without saying the skip was ignored; the install wizard's "Back to
   the catalog" link is gated and lands on /setup, and the Edge, Trust and
@@ -799,15 +794,24 @@
   page's "What the classes mean" (S293); not fixed there because it changes
   every page.
 - Found walking setup from scratch on the KVM VM, 2026-10-20; not fixed in S292:
-  - Domain step (S294, ADR first): no domain or zone field, so the provider
-    credentials are stored without the domain they serve; Authentik's name
-    (chosen at install, default `.lan`) is not tied to the domain.
-  - Tunnel (S294): `tunnel.setup` never creates the `<id>.cfargotunnel.com`
-    CNAME, so the hostname does not resolve; the tunnel form asks again for
-    the Cloudflare token stored in the domain step; its placeholder service
-    `http://127.0.0.1:8080` publishes the management dashboard with no
-    exposure plan; the progress box can stay on "Starting" while the tunnel
-    is already healthy; the tunnel status read is slow (about 6 s).
+  - Closed in S294: the Domain step has a domain field; the tunnel plan
+    creates the `<id>.cfargotunnel.com` CNAME, reuses the stored token and
+    has no placeholder service.
+  - Left open after S294: Authentik's name (chosen at install, default
+    `.lan`) is not tied to the domain (S296); the tunnel progress box can
+    stay on "Starting" while the tunnel is already healthy; the tunnel status
+    read is slow (about 6 s).
+  - S294 residuals:
+    - the domain is not checked against a zone the token can see when it is
+      saved; the tunnel plan is where a missing zone is reported;
+    - teardown of a tunnel set up before S294 finds its account from the
+      route's zone or the token's single account, and deletes no DNS record
+      (none was recorded);
+    - the tunnel keeps one owner-entered hostname and service; the default
+      dashboard and `auth.<domain>` names, edge routing and the
+      Authentik-only public sign-in are S296;
+    - a record the plan replaced is not restored when the tunnel is torn
+      down (the plan warns).
   - App names (S295, ADR first): every app gets a new `*.lan` name that the
     owner must add by hand to router DNS or a hosts file; only
     `homestead.local` is announced.

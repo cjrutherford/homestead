@@ -204,6 +204,7 @@ var routeClasses = map[string]RouteClass{
 	"DELETE /api/v1/storage/assignments/{class}":         ClassSession,
 	"DELETE /api/v1/storage/registrations":               ClassSession,
 	"GET /api/v1/tunnel/status":                          ClassSession,
+	"POST /api/v1/tunnel/plan":                           ClassSession,
 	"POST /api/v1/tunnel/setup":                          ClassSession,
 	"DELETE /api/v1/tunnel/tunnels/{id}":                 ClassSession,
 	"GET /api/v1/updates":                                ClassSession,

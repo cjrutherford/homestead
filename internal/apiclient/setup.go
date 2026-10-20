@@ -20,8 +20,8 @@ func (c *Client) SetupStatus(ctx context.Context) (setup.Status, error) {
 
 // SetupUpdate records a skip, unskip, acknowledgement or choice for a step.
 // It carries no credential: those go through the existing sealed routes.
-func (c *Client) SetupUpdate(ctx context.Context, step string, state, provider, access *string) (setup.Status, error) {
-	raw, err := json.Marshal(map[string]*string{"state": state, "provider": provider, "access": access})
+func (c *Client) SetupUpdate(ctx context.Context, step string, state, provider, access, domain *string) (setup.Status, error) {
+	raw, err := json.Marshal(map[string]*string{"state": state, "provider": provider, "access": access, "domain": domain})
 	if err != nil {
 		return setup.Status{}, fmt.Errorf("api: encode: %w", err)
 	}
