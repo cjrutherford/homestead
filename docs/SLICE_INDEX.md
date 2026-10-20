@@ -58,3 +58,5 @@ Then S291 step-by-step setup wizard (ADR-036 supersedes ADR-034; `docs/slices/S2
 Then S292 setup walkthrough fixes (`docs/slices/S292-setup-walkthrough-fixes.md`): the bugs found walking setup from scratch on the KVM VM, owner direction 2026-10-20. S293 storage step UX, S294 domain and tunnel (ADR first) and S295 app names, app SSO and backups in setup (ADR first) follow.
 
 Then S293 storage step UX (`docs/slices/S293-storage-step.md`): data disks first, class explanations, a suggested layout applied in one approval, and the actor recorded from the session. S294 domain and tunnel (ADR first) and S295 app names, app SSO and backups in setup (ADR first) follow.
+
+Then S294 domain and tunnel plan (ADR-037; `docs/slices/S294-domain-and-tunnel-plan.md`), S295 app names, app SSO and backups in setup (ADR first), and S296 public dashboard behind Authentik (ADR-037; `docs/slices/S296-public-dashboard-behind-authentik.md`). Owner decisions 2026-10-20.

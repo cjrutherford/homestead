@@ -14,7 +14,7 @@ Implement HAI Homestead one slice at a time. Do not redesign architecture implic
 - Mounted storage only for v1; no formatting/partitioning.
 - First-party curated catalog only for v1.
 - Public exposure must be planned, previewed, and auditable.
-- Management remains local/overlay by default.
+- Management remains local/overlay by default; the only public management path is the dashboard through the tunnel, behind Authentik sign-in, planned and approved (ADR-037).
 
 ## Slice execution rule
 Before coding a slice:

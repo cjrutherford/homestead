@@ -93,3 +93,4 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-034 | Required Post-claim Setup Walkthrough | Superseded by ADR-036 |
 | ADR-035 | Dashboard on the Local Network through the Edge | Accepted |
 | ADR-036 | Step-by-step Setup Wizard | Accepted |
+| ADR-037 | Public Domain, Planned Tunnel, and the Public Dashboard behind Authentik | Accepted |
