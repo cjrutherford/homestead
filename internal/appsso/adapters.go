@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -248,12 +249,13 @@ func (nextcloud) OnSettings(issuer, clientID string) []string {
 		fmt.Sprintf("user_oidc provider %q: client id %s, discovery %s.well-known/openid-configuration, scopes openid email profile.", ProviderKey, clientID, issuer),
 		"user_oidc keeps the password login form (allow_multiple_user_backends 1). Accounts are created at first sign-in.",
 		"Nextcloud trusts the appliance root (security:certificates:import) and may reach addresses on the appliance (allow_local_remote_servers true).",
+		"Nextcloud builds its links with https (overwriteprotocol https): the edge ends TLS for every route, and user_oidc refuses plain http.",
 	}
 }
 
 func (nextcloud) OffSettings() []string {
 	return []string{
-		fmt.Sprintf("user_oidc provider %q: deleted; the user_oidc app: disabled. allow_local_remote_servers is left as it is.", ProviderKey),
+		fmt.Sprintf("user_oidc provider %q: deleted; the user_oidc app: disabled. allow_local_remote_servers and overwriteprotocol are left as they are.", ProviderKey),
 	}
 }
 
@@ -269,12 +271,21 @@ var (
 	readyPause = 4 * time.Second
 )
 
+// ErrNextcloudNotSetUp refuses sign-in on a Nextcloud whose first-run
+// setup is unfinished: occ offers no app commands until it is done.
+var ErrNextcloudNotSetUp = errors.New("appsso: Nextcloud has not finished its first-run setup; open it in a browser, create its admin account, then apply sign-in again")
+
 // ready waits until occ answers: the container was just recreated to
-// pick up the sign-in wiring.
+// pick up the sign-in wiring. A Nextcloud that answers but is not set up
+// yet is refused at once.
 func (a nextcloud) ready(ctx context.Context, t Target) error {
 	var err error
 	for i := 0; i < readyTries; i++ {
-		if _, err = a.occ(ctx, t, "", "status"); err == nil {
+		var out string
+		if out, err = a.occ(ctx, t, "", "status", "--output=json"); err == nil {
+			if strings.Contains(strings.ReplaceAll(out, " ", ""), `"installed":false`) {
+				return ErrNextcloudNotSetUp
+			}
 			return nil
 		}
 		select {
@@ -299,6 +310,7 @@ func (a nextcloud) Enable(ctx context.Context, t Target, s Settings) error {
 		{"security:certificates:import", CAFile},
 		{"config:app:set", "user_oidc", "allow_multiple_user_backends", "--value=1"},
 		{"config:system:set", "allow_local_remote_servers", "--value=true", "--type=boolean"},
+		{"config:system:set", "overwriteprotocol", "--value=https"},
 	}
 	for _, args := range steps {
 		if _, err := a.occ(ctx, t, "", args...); err != nil {
@@ -465,8 +477,12 @@ type xmlStrings struct {
 	Items []string `xml:"string"`
 }
 
+// oidConfig mirrors the plugin's OidConfig, which carries
+// [XmlRoot("PluginConfiguration")]: each dictionary value is a
+// <PluginConfiguration> element. Any other root fails to deserialize, and
+// Jellyfin then silently replaces the whole file with empty settings.
 type oidConfig struct {
-	XMLName                xml.Name   `xml:"OidConfig"`
+	XMLName                xml.Name   `xml:"PluginConfiguration"`
 	OidEndpoint            string     `xml:"OidEndpoint"`
 	OidClientID            string     `xml:"OidClientId"`
 	OidSecret              string     `xml:"OidSecret"`

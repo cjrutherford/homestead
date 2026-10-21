@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -258,11 +259,26 @@ func TestNextcloudAdapterUsesOccAndStdinForTheSecret(t *testing.T) {
 			}
 		}
 	}
-	if strings.Join(verbs, ",") != "status,app:enable,app:install,security:certificates:import,config:app:set,config:system:set,provider" {
+	if strings.Join(verbs, ",") != "status,app:enable,app:install,security:certificates:import,config:app:set,config:system:set,config:system:set,provider" {
 		t.Fatalf("verbs: %v", verbs)
 	}
 	if f.argvHolds(clientSecret) {
 		t.Fatal("secret in argv")
+	}
+	if !strings.Contains(fmt.Sprint(f.calls), "overwriteprotocol --value=https") {
+		t.Fatalf("overwriteprotocol: %+v", f.calls)
+	}
+	// A Nextcloud that has not finished first-run setup is refused before
+	// any app command runs.
+	f.calls = nil
+	f.fail = func(c call) (string, error) {
+		if len(c.args) > 3 && c.args[3] == "status" {
+			return `{"installed":false,"version":"35.0.1.1"}`, nil
+		}
+		return "", nil
+	}
+	if err := a.Enable(context.Background(), target, Settings{ClientSecret: clientSecret}); !errors.Is(err, ErrNextcloudNotSetUp) || len(f.calls) != 1 {
+		t.Fatalf("not set up: %v %+v", err, f.calls)
 	}
 	f.calls, f.fail = nil, nil
 	if err := a.Disable(context.Background(), target); err != nil || f.calls[0].args[3] != "user_oidc:provider:delete" || f.calls[1].args[3] != "app:disable" {
@@ -309,6 +325,7 @@ func TestJellyfinAdapterInstallsOnlyThePinnedBuild(t *testing.T) {
 	conf := f.calls[len(f.calls)-1]
 	if !strings.Contains(conf.stdin, "<OidSecret>"+clientSecret+"</OidSecret>") || !strings.Contains(conf.stdin, "<string>authentik</string>") ||
 		!strings.Contains(conf.stdin, "<OidEndpoint>https://authentik.lan/application/o/homestead-jellyfin/</OidEndpoint>") ||
+		!strings.Contains(strings.Join(strings.Fields(conf.stdin), ""), "<value><PluginConfiguration><OidEndpoint>") || strings.Contains(conf.stdin, "<OidConfig>") ||
 		conf.args[len(conf.args)-1] != jellyfinPluginConf || f.argvHolds(clientSecret) {
 		t.Fatalf("config: %+v", conf)
 	}

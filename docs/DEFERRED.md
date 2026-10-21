@@ -883,6 +883,18 @@
       kept it sealed when setting up dashboard sign-in;
     - SAML, LDAP and apps beyond Immich, Nextcloud and Jellyfin are out of
       scope.
+    - the sign-in plan does not know whether Nextcloud has finished its
+      first-run setup. The apply refuses in `configure-app`, after the
+      Authentik provider exists, and the next apply reconciles it. A
+      plan-time check would need the container (found in the S298 live
+      check);
+    - Nextcloud gets `overwriteprotocol https` only with sign-in. Without
+      it, Nextcloud's own redirects say http and rely on the edge's
+      redirect. The catalog could set `OVERWRITEPROTOCOL` for every
+      install;
+    - the pinned plugin's `meta.json` says `autoUpdate: true`. It is not
+      from a Jellyfin repository, so the update task has nothing to pull,
+      but a later plugin repository entry could replace the pinned build.
 - Public app names and tunnel adoption (S290, ADR-041), what remains:
   - no Authentik forward-auth in front of a public app: the plan warns and
     recommends app sign-in; an edge forward-auth policy is a later ADR;

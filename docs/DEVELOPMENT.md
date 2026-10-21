@@ -4996,8 +4996,33 @@ committed). Results:
   Authentik", and `POST /api/oauth/authorize` fetched discovery through the
   back channel (`authentik.lan` via host-gateway, appliance CA trusted). It
   returned a PKCE authorize URL that Authentik accepted for
-  `homestead-immich`. Still owed: Nextcloud and Jellyfin. Jellyfin depends
-  on the plugin decision (jellyfin-harbor is being evaluated).
+  `homestead-immich`.
+- Live check, Jellyfin and Nextcloud (VM 2, 2026-10-21): both installed from
+  the catalog (ops 23, 24; `lan` domain) and routed through `edge routes`
+  (op 25). Each apply used a short-lived Authentik token, deleted afterwards.
+  The check found two adapter faults, both fixed here:
+  - Jellyfin: the pinned plugin SSO Authentication 4.0.0.4 (targetAbi
+    10.11) loads on `jellyfin:12.2` and shows Active. But the first
+    `/sso/OID/start/authentik` answered 400 "Provider does not exist", and
+    the settings file was back to empty. The plugin's `OidConfig` carries
+    `[XmlRoot("PluginConfiguration")]`; the adapter wrote `<OidConfig>`, the
+    XML failed to deserialize, and Jellyfin silently saved default settings
+    over it. The adapter now writes `<PluginConfiguration>`. After
+    re-applying (op 27), the start URL redirects 302 to Authentik with PKCE
+    and the settings survive a restart. ADR-040 stands: no adapter
+    withdrawal and no image downgrade.
+  - Nextcloud: an apply before Nextcloud's first-run setup failed in
+    `configure-app` with occ's "no commands in the app namespace" (op 28,
+    after the Authentik provider was created). The adapter now refuses with
+    a plain "finish first-run setup" message. After setup (SQLite through
+    `autoconfig.php`), op 29 succeeded, but `/apps/user_oidc/login/1`
+    answered "You must access Nextcloud with HTTPS to use OpenID Connect".
+    Nextcloud saw plain http from the edge. The adapter now also sets
+    `overwriteprotocol https`. After re-applying (op 30), "Login with
+    authentik" redirects 303 to Authentik (PKCE, https redirect URI), and
+    Authentik answers with its login flow.
+  - Not covered: a full browser login with an Authentik user for any of the
+    three apps (account creation at first sign-in).
 
 ## S290: Public app names and tunnel adoption (ADR-041)
 
