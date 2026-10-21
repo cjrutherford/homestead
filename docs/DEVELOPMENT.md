@@ -4949,6 +4949,10 @@ committed). Results:
   The stored record is version 3; an appliance whose older steps were all
   done or skipped has every newer step waived (the storage rule,
   generalized).
+- Live check (VM 2, 2026-10-21): the setup step's proposed policy (02:00,
+  keep 7, Authentik and Immich) was approved and setup read complete. The
+  time was moved to two minutes ahead: both `backup.job` operations ran on
+  time and succeeded. The policy was then set back to 02:00.
 
 ## S298: App sign-in through Authentik (ADR-039 §3, ADR-040)
 
@@ -4986,8 +4990,14 @@ committed). Results:
   in the review and applies the previewed plan once the route lands; the
   catalog Manage panel has a Sign-in with Authentik section
   (`app-app-sign-in`) to review, approve, re-plan or turn it off.
-- Live check (owner, KVM VM): all three apps, including Jellyfin's plugin
-  on the catalog's Jellyfin image.
+- Live check (VM 2, 2026-10-21), Immich only (Jellyfin and Nextcloud are
+  not installed there): the plan and apply ran with a short-lived Authentik
+  token, and every operation step succeeded. Immich then showed "Sign in with
+  Authentik", and `POST /api/oauth/authorize` fetched discovery through the
+  back channel (`authentik.lan` via host-gateway, appliance CA trusted). It
+  returned a PKCE authorize URL that Authentik accepted for
+  `homestead-immich`. Still owed: Nextcloud and Jellyfin. Jellyfin depends
+  on the plugin decision (jellyfin-harbor is being evaluated).
 
 ## S290: Public app names and tunnel adoption (ADR-041)
 
@@ -5022,6 +5032,23 @@ committed). Results:
 - Dashboard: the catalog Manage panel has a Public address section
   (`app-app-public`); the Tunnel page has an adopt field and an "Approve
   and adopt" button.
-- Live check (owner, KVM VM 2): PENDING. Adopt `homestead-vm2`, add and
-  then remove a public name for Jellyfin, and confirm the A record is
-  restored. This replaces the slice's original live steps.
+- Live check (VM 2, 2026-10-21, main at 75cca1e deployed over the claimed
+  appliance). This replaces the slice's original live steps:
+  - the connector files left from a hand-made setup were restored, then
+    `tunnel plan` with `adopt` listed the existing entry as kept, kept the
+    existing dashboard CNAME and created the Authentik one; setup fetched
+    the run token, rewrote the config through the edge, started the
+    connector (healthy, four connections) and audited `tunnel.adopt`; the
+    Domain setup step then read done;
+  - the public dashboard answered 200, and Authentik's public name sent the
+    browser to its login flow;
+  - `immich.<domain>` was added (create), served `/api/server/ping` publicly,
+    then removed: the CNAME was gone from the zone and the connector config
+    dropped it; both operations were audited;
+  - not covered live: replacing and restoring an existing A record (Jellyfin
+    is not installed on VM 2, and the zone has no spare record); the unit
+    tests cover it;
+  - found: the status has no proposed name when the Domain step has no
+    domain recorded (adoption sets up the tunnel without one), and the
+    remove plan shows an empty zone. Both are cosmetic; recorded in
+    DEFERRED.

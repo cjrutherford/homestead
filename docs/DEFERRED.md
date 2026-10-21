@@ -897,3 +897,6 @@
     `apps public`;
   - one public name is added or removed per plan; renaming is remove then
     add.
+  - after adoption without a recorded domain, the app public status has no
+    proposed name and the remove plan shows an empty zone; derive both from
+    the tunnel's zone (found in the S290 live check).
