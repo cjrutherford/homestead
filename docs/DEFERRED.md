@@ -863,9 +863,9 @@
     - the connector token is still passed in the connector's argv
       (pre-existing).
   - App sign-in with Authentik (S298, ADR-039 §3, ADR-040), what remains:
-    - uninstalling an app does not turn its sign-in off: the Authentik
-      provider and application, the sealed client secret and the
-      `app_sign_in` row stay until the owner turns sign-in off first;
+    - closed by S299: uninstall refuses while sign-in is on; with
+      `leave_sign_in` it forgets the sealed secret and the record, and the
+      provider and application stay in Authentik for the owner to delete;
     - turning sign-in off needs Authentik reachable and an API token; a
       failed removal leaves the objects for the owner to delete in
       Authentik;
@@ -898,9 +898,7 @@
 - Public app names and tunnel adoption (S290, ADR-041), what remains:
   - no Authentik forward-auth in front of a public app: the plan warns and
     recommends app sign-in; an edge forward-auth policy is a later ADR;
-  - uninstalling an app leaves its public names (CNAME, recorded route,
-    connector entry) behind; remove them with `apps public apply --off`
-    first;
+  - closed by S299: uninstall refuses while the app has public names;
   - only tunnels configured from a local `config.yml` can be adopted; a
     tunnel configured remotely in the Cloudflare dashboard is refused;
   - adoption drops ingress entries Homestead does not manage (they are
@@ -912,3 +910,13 @@
   - after adoption without a recorded domain, the app public status has no
     proposed name and the remove plan shows an empty zone; derive both from
     the tunnel's zone (found in the S290 live check).
+- Uninstall leftovers (S299), what remains:
+  - leftovers are removed by their own plans first; uninstall does not
+    remove public names or turn sign-in off in the same operation;
+  - Authentik's own public name belongs to the tunnel plan, so uninstalling
+    Authentik does not check it;
+  - uninstalling Authentik (no app sign-in left) still leaves the
+    dashboard's own sign-in (S296) pointing at it;
+  - a `leave_sign_in` uninstall cannot reach Authentik, so the owner deletes
+    the provider and application there by hand (the audit names the client
+    id).

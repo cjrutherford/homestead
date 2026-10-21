@@ -1271,6 +1271,7 @@ export class ApiService {
     body: {
       remove_data?: boolean;
       abandon_volumes?: boolean;
+      leave_sign_in?: boolean;
       data_dirs?: { mountpoint: string; path: string }[];
     } = {},
   ): Observable<OperationStarted> {

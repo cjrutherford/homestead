@@ -422,11 +422,15 @@ func handleCatalogConfigure(s *Server, st *store.Store, catalogDir string, runne
 func handleCatalogUninstall(s *Server, st *store.Store, catalogDir string, runner *operation.Runner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
-		if _, ok := loadPackage(catalogDir, name, w); !ok {
+		manifest, ok := loadPackage(catalogDir, name, w)
+		if !ok {
 			return
 		}
 		var body struct {
 			RemoveData bool `json:"remove_data"`
+			// LeaveSignIn acknowledges leaving the app's provider and
+			// application in Authentik (S299, audited).
+			LeaveSignIn bool `json:"leave_sign_in"`
 			// AbandonVolumes acknowledges uninstalling an app whose
 			// data still lives in Docker volumes (audited).
 			AbandonVolumes bool `json:"abandon_volumes"`
@@ -444,11 +448,21 @@ func handleCatalogUninstall(s *Server, st *store.Store, catalogDir string, runne
 			http.Error(w, fmt.Sprintf("%q is not installed", name), http.StatusNotFound)
 			return
 		}
+		if status, kind, refusal, err := uninstallLeftovers(st, manifest, body.LeaveSignIn); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		} else if status != 0 {
+			w.Header().Set("X-Homestead-Refusal", kind)
+			http.Error(w, refusal, status)
+			return
+		}
 		if status, err := uninstallDataStatus(r.Context(), st, catalogDir, name); err != nil && !body.AbandonVolumes {
+			w.Header().Set("X-Homestead-Refusal", refuseVolumes)
 			http.Error(w, "cannot confirm where this app's data lives: "+err.Error()+"; pass abandon_volumes to proceed anyway", http.StatusBadGateway)
 			return
 		} else if err == nil && status == catalog.DataNeedsMigration {
 			if !body.AbandonVolumes {
+				w.Header().Set("X-Homestead-Refusal", refuseVolumes)
 				http.Error(w, fmt.Sprintf("%q keeps data in Docker volumes outside mounted storage; uninstalling would orphan it. Run `homesteadctl data plan %s` and migrate first, or pass abandon_volumes to acknowledge leaving the data behind", name, name), http.StatusConflict)
 				return
 			}
@@ -465,6 +479,9 @@ func handleCatalogUninstall(s *Server, st *store.Store, catalogDir string, runne
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
+		}
+		if body.LeaveSignIn {
+			def.Steps = append(def.Steps, s.forgetSignInStep(st, name, operatorActor(r)))
 		}
 		op, err := runner.Start(r.Context(), def, "")
 		if err != nil {

@@ -96,6 +96,24 @@ func (r Records) Save(rec Record) error {
 	return nil
 }
 
+// Packages lists the packages with sign-in recorded, sorted.
+func (r Records) Packages() ([]string, error) {
+	rows, err := r.DB.Query(`SELECT package FROM app_sign_in ORDER BY package`)
+	if err != nil {
+		return nil, fmt.Errorf("appsso: list: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var pkg string
+		if err := rows.Scan(&pkg); err != nil {
+			return nil, fmt.Errorf("appsso: list: %w", err)
+		}
+		out = append(out, pkg)
+	}
+	return out, rows.Err()
+}
+
 // Delete removes the package's record.
 func (r Records) Delete(pkg string) error {
 	if _, err := r.DB.Exec(`DELETE FROM app_sign_in WHERE package = ?`, pkg); err != nil {

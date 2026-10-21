@@ -5077,3 +5077,28 @@ committed). Results:
     domain recorded (adoption sets up the tunnel without one), and the
     remove plan shows an empty zone. Both are cosmetic; recorded in
     DEFERRED.
+
+## S299: Uninstall leftovers
+
+- Public names (S290) and sign-in (S298) are removed by plans that need the
+  app installed, so `POST /api/v1/catalog/{name}/uninstall` now refuses
+  with 409 before anything changes:
+  - `public-names`: the app's edge routes carry tunnel names; the message
+    lists them and the `apps public plan <app> --off --hostname NAME` step.
+    No override;
+  - `sign-in`: sign-in is recorded; the message names
+    `apps sign-in plan <app> --off`. `leave_sign_in: true` uninstalls
+    anyway; a final `forget-sign-in` step deletes the sealed client secret
+    and the record and audits `app.uninstall.leave-sign-in` with the client
+    id (never a secret);
+  - `sign-in-dependents`: uninstalling Authentik while apps have sign-in
+    recorded; the message lists them. No override.
+- The refusal kind is sent as `X-Homestead-Refusal` (the volume refusals
+  send `volumes`), so the dashboard offers only the matching
+  acknowledgement: abandon volumes, or "Uninstall anyway and leave its
+  sign-in in Authentik".
+- CLI: `homesteadctl apps uninstall <app> --leave-sign-in`.
+- Tests: `internal/server/uninstallguard_test.go` (each refusal, the
+  acknowledgement, record and audit), `cmd/homesteadctl/apps_test.go`,
+  `dashboard/src/app/catalog/uninstall-app.spec.ts`.
+

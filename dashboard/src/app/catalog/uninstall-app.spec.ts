@@ -191,7 +191,11 @@ describe('UninstallApp', () => {
     find('Confirm uninstall').click();
     http
       .expectOne('/api/v1/catalog/nextcloud/uninstall')
-      .flush('"nextcloud" keeps data in Docker volumes outside mounted storage; uninstalling would orphan it.', { status: 409, statusText: 'Conflict' });
+      .flush('"nextcloud" keeps data in Docker volumes outside mounted storage; uninstalling would orphan it.', {
+        status: 409,
+        statusText: 'Conflict',
+        headers: { 'X-Homestead-Refusal': 'volumes' },
+      });
     fixture.detectChanges();
     expect(dialog()).not.toBeNull();
     expect(text()).toContain('keeps data in Docker volumes');
@@ -204,6 +208,41 @@ describe('UninstallApp', () => {
     const retry = http.expectOne('/api/v1/catalog/nextcloud/uninstall');
     expect(retry.request.body.abandon_volumes).toBe(true);
     retry.flush({ id: 23 });
+  });
+
+  it('offers to leave sign-in in Authentik only for a sign-in refusal', () => {
+    open();
+    find('Confirm uninstall').click();
+    http.expectOne('/api/v1/catalog/nextcloud/uninstall').flush('Nextcloud signs in through Authentik.', {
+      status: 409,
+      statusText: 'Conflict',
+      headers: { 'X-Homestead-Refusal': 'sign-in' },
+    });
+    fixture.detectChanges();
+    expect(text()).toContain('Nextcloud signs in through Authentik.');
+    expect(text()).toContain('leave its sign-in in Authentik');
+    expect(text()).not.toContain('leave that data behind');
+    const leave = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('input[type="checkbox"]')).pop() as HTMLInputElement;
+    leave.click();
+    fixture.detectChanges();
+    find('Confirm uninstall').click();
+    const retry = http.expectOne('/api/v1/catalog/nextcloud/uninstall');
+    expect(retry.request.body.leave_sign_in).toBe(true);
+    expect(retry.request.body.abandon_volumes).toBeUndefined();
+    retry.flush({ id: 24 });
+  });
+
+  it('offers no acknowledgement while public names remain', () => {
+    open();
+    find('Confirm uninstall').click();
+    http.expectOne('/api/v1/catalog/nextcloud/uninstall').flush('Nextcloud still has public names on the tunnel (cloud.example.com).', {
+      status: 409,
+      statusText: 'Conflict',
+      headers: { 'X-Homestead-Refusal': 'public-names' },
+    });
+    fixture.detectChanges();
+    expect(text()).toContain('cloud.example.com');
+    expect(text()).not.toContain('Uninstall anyway');
   });
 
   it('keeps data when Homestead cannot tell where it lives', () => {

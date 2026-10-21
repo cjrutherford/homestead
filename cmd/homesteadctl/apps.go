@@ -412,11 +412,14 @@ func runAppsUninstall(ctx context.Context, client *apiclient.Client, args []stri
 	removeData := false
 	follow := false
 	abandon := false
+	leaveSignIn := false
 	var positional []string
 	for i := 0; i < len(args); i++ {
 		switch {
 		case args[i] == "--abandon-volumes":
 			abandon = true
+		case args[i] == "--leave-sign-in":
+			leaveSignIn = true
 		case args[i] == "--remove-data":
 			removeData = true
 		case args[i] == "--data-dir" && i+1 < len(args):
@@ -432,12 +435,15 @@ func runAppsUninstall(ctx context.Context, client *apiclient.Client, args []stri
 		}
 	}
 	if len(positional) != 1 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps uninstall <package> [--remove-data --data-dir MOUNT:PATH]... [--abandon-volumes] [--follow]")
+		fmt.Fprintln(stderr, "usage: homesteadctl apps uninstall <package> [--remove-data --data-dir MOUNT:PATH]... [--abandon-volumes] [--leave-sign-in] [--follow]")
 		return exitUsage
 	}
 	body := map[string]any{"remove_data": removeData}
 	if abandon {
 		body["abandon_volumes"] = true
+	}
+	if leaveSignIn {
+		body["leave_sign_in"] = true
 	}
 	var dirs []map[string]any
 	for _, dir := range dataDirs {

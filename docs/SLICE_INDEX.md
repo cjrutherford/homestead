@@ -62,3 +62,5 @@ Then S293 storage step UX (`docs/slices/S293-storage-step.md`): data disks first
 Then S294 domain and tunnel plan (ADR-037; `docs/slices/S294-domain-and-tunnel-plan.md`), S295 app names, app SSO and backups in setup (ADR first), and S296 public dashboard behind Authentik (ADR-037; `docs/slices/S296-public-dashboard-behind-authentik.md`). Owner decisions 2026-10-20.
 
 Then S295 app names (ADR-039; `docs/slices/S295-app-names.md`): `<app>.local` over mDNS and an optional daemon resolver for `.lan`. S296 public dashboard behind Authentik, S297 nightly backups in setup (`docs/slices/S297-nightly-backups-in-setup.md`) and S298 app sign-in through Authentik, Jellyfin's pinned plugin included (`docs/slices/S298-app-sign-in.md`), follow. Owner decisions 2026-10-20.
+
+Then S299 uninstall leftovers (`docs/slices/S299-uninstall-leftovers.md`): uninstall refuses while an app has public names or sign-in with Authentik, and Authentik while apps sign in through it; `leave_sign_in` acknowledges leaving the sign-in in Authentik.

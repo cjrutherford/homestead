@@ -87,6 +87,13 @@ export interface DataRoot {
               Uninstall anyway and leave that data behind in Docker volumes
             </label>
           }
+          @if (canLeaveSignIn()) {
+            <label>
+              <input type="checkbox" [checked]="leaveSignIn()" (change)="leaveSignIn.set($any($event.target).checked)" />
+              Uninstall anyway and leave its sign-in in Authentik (delete its provider and application
+              there yourself)
+            </label>
+          }
         }
         <div class="dialog-actions">
           <button type="button" (click)="cancel()">Keep {{ title() }}</button>
@@ -137,6 +144,9 @@ export class UninstallApp {
   protected readonly abandon = signal(false);
   protected readonly refusal = signal<string | null>(null);
   protected readonly canAbandon = signal(false);
+  /** Sign-in with Authentik is still on (S299); the owner may leave it behind. */
+  protected readonly leaveSignIn = signal(false);
+  protected readonly canLeaveSignIn = signal(false);
   protected readonly operationId = signal<number | null>(null);
   protected readonly operation = signal<OperationState | null>(null);
   /** What the owner chose when they confirmed, for the result line. */
@@ -184,6 +194,8 @@ export class UninstallApp {
           this.abandon.set(false);
           this.refusal.set(null);
           this.canAbandon.set(false);
+          this.leaveSignIn.set(false);
+          this.canLeaveSignIn.set(false);
           this.loading.set(false);
           this.confirming.set(true);
         },
@@ -203,13 +215,21 @@ export class UninstallApp {
   }
 
   protected confirm(): void {
-    const body: { remove_data?: boolean; abandon_volumes?: boolean; data_dirs?: { mountpoint: string; path: string }[] } = {};
+    const body: {
+      remove_data?: boolean;
+      abandon_volumes?: boolean;
+      leave_sign_in?: boolean;
+      data_dirs?: { mountpoint: string; path: string }[];
+    } = {};
     if (this.removeData() && this.roots().length > 0) {
       body.remove_data = true;
       body.data_dirs = this.roots();
     }
     if (this.abandon()) {
       body.abandon_volumes = true;
+    }
+    if (this.leaveSignIn()) {
+      body.leave_sign_in = true;
     }
     this.busy.set(true);
     this.refusal.set(null);
@@ -224,8 +244,13 @@ export class UninstallApp {
       error: (failure: HttpErrorResponse) => {
         this.busy.set(false);
         const text = typeof failure.error === 'string' ? failure.error.trim() : '';
-        // 409 means data still sits in Docker volumes; 502 means the appliance could not tell.
-        this.canAbandon.set(failure.status === 409 || failure.status === 502);
+        // The refusal kind says which acknowledgement, if any, applies (S299):
+        // "volumes" when data still sits in Docker volumes or the appliance
+        // could not tell, "sign-in" when sign-in with Authentik is still on.
+        // Public names and Authentik's dependents have none.
+        const kind = failure.headers?.get('X-Homestead-Refusal') ?? '';
+        this.canAbandon.set(this.canAbandon() || kind === 'volumes');
+        this.canLeaveSignIn.set(this.canLeaveSignIn() || kind === 'sign-in');
         this.refusal.set(
           failure.status === 0
             ? `Cannot reach the appliance, so ${this.title()} was not uninstalled.`

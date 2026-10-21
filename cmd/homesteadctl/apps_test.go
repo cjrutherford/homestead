@@ -211,6 +211,10 @@ func TestAppsAdoptAndUninstallFlags(t *testing.T) {
 	if code != exitOK || !strings.Contains(uninstallBody, `"abandon_volumes":true`) {
 		t.Fatalf("exit=%d body=%q", code, uninstallBody)
 	}
+	code, _, _ = invoke(t, []string{"--server", ts.URL, "apps", "uninstall", "immich", "--leave-sign-in"})
+	if code != exitOK || !strings.Contains(uninstallBody, `"leave_sign_in":true`) || strings.Contains(uninstallBody, "abandon") {
+		t.Fatalf("exit=%d body=%q", code, uninstallBody)
+	}
 }
 
 func TestAppsSecretRegisterBoundsAndForce(t *testing.T) {
