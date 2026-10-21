@@ -26,6 +26,17 @@ first). If a block fails, the
 temporary directory is left behind: shred and remove it yourself (it is
 the newest `tmp.*` directory under `${TMPDIR:-/tmp}`).
 
+## Where runs come from
+
+Runs are written by a per-app schedule or by the nightly policy (S297,
+ADR-039 §2). The policy backs up every installed app that keeps data and
+has no schedule of its own, each night at the approved time (appliance
+local time), and keeps the newest N runs of each app. A night missed
+while the appliance was off is run once when it starts. Both write the
+same run format to the backup class's disk, so this runbook applies to
+either. Check the policy with `homesteadctl backup policy` or on the
+Backups page.
+
 ## What you need
 
 - The backup run directory (on the backup-class mount, one directory per

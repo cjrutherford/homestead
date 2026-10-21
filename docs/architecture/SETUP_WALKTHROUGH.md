@@ -1,4 +1,4 @@
-# Post-claim setup wizard (S287, S291, ADR-034, ADR-036)
+# Post-claim setup wizard (S287, S291, S297, ADR-034, ADR-036, ADR-039)
 
 After claim and first-administrator creation the dashboard walks a new owner
 through five steps, one on screen at a time: secure the owner account, storage,
@@ -29,8 +29,8 @@ Menu paths for the outside tasks (Cloudflare, Authentik) were written
 2026-10-20 from vendor documentation (Authentik 2025.x); to be confirmed
 against the live UI in the S291 KVM test. Vendors rename menus.
 
-An appliance whose setup was finished before the storage step existed has
-that step recorded as waived (not an owner skip). It reads "Not required",
+An appliance whose setup was finished before the storage step (or the
+backups step, S297) existed has that step recorded as waived (not an owner skip). It reads "Not required",
 offers no Undo skip, and never re-gates the appliance.
 
 ### Outside Homestead, per step
@@ -42,6 +42,7 @@ offers no Undo skip, and never re-gates the appliance.
 | Sign-in | reach `authentik.<name>`; trust the root certificate (Trust page); open `https://authentik.<name>/` (Authentik 2026.8 starts its first-run only from the address itself) and create `akadmin`; Admin interface, Directory, Tokens and App passwords, New Token, user `akadmin`, API Token (checked against Authentik 2026.8.3 on 2026-10-20, S292) |
 | Domain | add the domain to Cloudflare; create the scoped token with the permissions below (the tunnel reuses it, S294); the other providers' equivalents; for manual DNS, the record table |
 | Apps | none |
+| Backups | assign the backup storage class to a mounted disk first (Storage page) |
 
 ## The steps and how each is derived
 
@@ -56,6 +57,7 @@ finished from the CLI or another page reads `done`.
 | `sign-in` | Authentik sign-in is configured and linked (`sso` status); a dormant link (Authentik removed) stays done and the detail warns that Authentik sign-in is off and the local password still works | pending; skippable |
 | `domain` | see "Domain completion" below | pending; skippable |
 | `apps` | the owner acknowledged it, or any catalog app other than Authentik is installed | pending; skippable |
+| `backups` | a nightly backup policy is approved, on or off (S297, ADR-039 §2). The step shows the proposed policy (02:00 local, keep 7) and the apps it covers and leaves out; without backup storage it explains and links to the Storage page. `PUT .../steps/backups {"state":"done"}` answers 400 | pending; skippable |
 
 The walkthrough is complete when every step is done or skipped.
 
@@ -152,13 +154,14 @@ present. No credential value is in a wizard payload, an audit detail, a log or
 any setup response; `internal/server/setup_test.go` proves it with a sentinel
 value.
 
-### Appliances set up before the storage step
+### Appliances set up before a step existed
 
-The stored record carries `version`. A record older than version 2 whose
-other steps were all done or skipped gets storage added to its skipped list the
-first time it is read or updated, so a complete appliance is never re-gated
-by the new step (`TestPreStorageApplianceIsNotRegated`). Legacy appliances stay
-ungated.
+The stored record carries `version`: 2 added storage (S291), 3 added backups
+(S297). A record older than a step whose older steps were all done or skipped
+gets the newer steps added to its waived list the first time it is read or
+updated, so a complete appliance is never re-gated by a new step
+(`TestPreStorageApplianceIsNotRegated`, `TestPreBackupsApplianceIsNotRegated`).
+Legacy appliances stay ungated.
 
 ## Where state lives
 
@@ -218,13 +221,16 @@ clears claim state must also delete `wizard_state` where `wizard = 'setup'`.
 ## Operating it from the CLI
 
 ```
-homesteadctl setup status            # origin, the five steps, what is next
+homesteadctl setup status            # origin, the six steps, what is next
 homesteadctl setup step domain       # one step's state and detail
 homesteadctl setup step domain --provider cloudflare --access tunnel
 homesteadctl setup step domain --domain example.com
 homesteadctl setup step account --acknowledge  # confirm my password
 homesteadctl setup step apps --acknowledge     # also domain, once its tunnel/exposure exists
-homesteadctl setup skip sign-in      # storage too: skip and unskip only
+homesteadctl setup skip sign-in      # storage and backups too: skip and unskip only
+homesteadctl backup policy           # the backups step: proposal and coverage
+homesteadctl backup policy plan --time 02:00 --retain 7
+homesteadctl backup policy apply --time 02:00 --retain 7 --digest <digest>
 homesteadctl setup unskip sign-in
 ```
 

@@ -20,6 +20,7 @@ import { Loading } from '../ui/loading';
 import { SetupService, SetupStatus, SetupStep, SetupStepName } from './setup.service';
 import { AccountStep } from './steps/account-step';
 import { AppsStep } from './steps/apps-step';
+import { BackupsStep } from './steps/backups-step';
 import { DomainStep } from './steps/domain-step';
 import { SignInStep } from './steps/sign-in-step';
 import { StorageStep } from './steps/storage-step';
@@ -46,6 +47,7 @@ const WORDS: Record<string, string> = { done: 'Done', skipped: 'Skipped', pendin
   imports: [
     AccountStep,
     AppsStep,
+    BackupsStep,
     DomainStep,
     Loading,
     RouterLink,

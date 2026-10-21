@@ -6,7 +6,7 @@ import { httpErrorMessage } from '../core/http-error';
 import { ToastService } from '../core/toast.service';
 
 /** Step names, in order (ADR-036). */
-export type SetupStepName = 'account' | 'storage' | 'sign-in' | 'domain' | 'apps';
+export type SetupStepName = 'account' | 'storage' | 'sign-in' | 'domain' | 'apps' | 'backups';
 export type SetupStepState = 'pending' | 'done' | 'skipped';
 
 export interface SetupStep {
@@ -72,6 +72,8 @@ export interface SetupStatus {
     exposures: number;
     review_existing: boolean;
     apps_installed: number;
+    backup_policy: boolean;
+    backup_storage: boolean;
   };
   providers: SetupProvider[];
   access: SetupAccess[];

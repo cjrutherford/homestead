@@ -4918,3 +4918,34 @@ committed). Results:
   password (`{"enabled":true,"password":true}`). The tunnel setup and the
   public sign-in round trip wait for the owner's session and approval of
   the Cloudflare changes.
+
+## S297: Nightly backups in setup (ADR-039 §2)
+
+- Policy: migration 49 adds `backup_policy` (one row: `time_of_day`,
+  `retain`, `enabled`, actor, `updated_at`). `backup.Policies` keeps it;
+  `updated_at` moves only when the time changes or the policy is switched
+  on, so a retention edit never delays a run. Defaults: 02:00 local, keep
+  7, on; retention 1 to 366.
+- Coverage: every installed catalog app that keeps data and has no
+  per-app schedule. Stateless apps and apps with their own schedule (on or
+  off) are listed as left out, with the reason. Later installs are covered
+  without another approval.
+- Scheduler: `scheduler.Job.At` (`scheduler.Daily`) makes a wall-clock job:
+  it is due at the first policy time after its last run (or after the
+  policy's anchor, or the app's install, whichever is later). A time missed
+  while the appliance was off runs once at the next tick. Policy jobs come
+  from their own source (`backup-policy`), share the `backup:<app>` job ID
+  with per-app schedules, and use the policy's retention.
+- API: `GET /api/v1/backups/policy`, `POST .../policy/plan` (read-only,
+  digest), `POST .../policy/apply` (digest must match, 409 otherwise;
+  audited `backup.policy.set`). Enabling without backup storage is 422.
+- CLI: `homesteadctl backup policy [status|plan|apply]` with `--time`,
+  `--retain`, `--off`, and `--digest` for apply.
+- Dashboard: a Nightly backups section on the Backups page and a sixth
+  setup step, both the shared `app-nightly-policy` component.
+- Setup: step `backups` ("Nightly backups") after apps. Done when a policy
+  is approved (on or off); skippable; `{"state":"done"}` is 400. Without
+  backup storage the detail and the step explain it and link to Storage.
+  The stored record is version 3; an appliance whose older steps were all
+  done or skipped has every newer step waived (the storage rule,
+  generalized).

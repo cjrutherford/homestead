@@ -34,6 +34,14 @@ const SSO_NONE = {
   defaults: { authentik_url: 'https://authentik.lan', origins: [] },
 };
 
+const POLICY_NONE = {
+  proposed: { time_of_day: '02:00', retain: 7, enabled: true },
+  covered: ['nextcloud'],
+  skipped: [],
+  time_zone: 'UTC',
+  backup_storage: false,
+};
+
 describe('Setup wizard (S291)', () => {
   let fixture: ComponentFixture<Setup>;
   let calls: Call[];
@@ -132,19 +140,20 @@ describe('Setup wizard (S291)', () => {
       'GET /api/v1/storage/registrations': [],
       'GET /api/v1/storage/assignments': [],
       'GET /api/v1/sso': SSO_NONE,
+      'GET /api/v1/backups/policy': POLICY_NONE,
     };
   });
 
   afterEach(() => TestBed.resetTestingModule());
 
   describe('navigation', () => {
-    it('shows one heading, the five steps in order and the first step open', async () => {
+    it('shows one heading, the six steps in order and the first step open', async () => {
       await open();
       expect(el().querySelectorAll('h1').length).toBe(1);
       expect(el().querySelector('h1')?.textContent).toContain('Set up your appliance');
       const names = Array.from(el().querySelectorAll('.step .step-name')).map((n) => n.textContent?.trim());
-      expect(names).toEqual(['Secure the owner account', 'Storage', 'Sign-in', 'Domain and access', 'First apps']);
-      expect(heading()).toBe('Step 1 of 5: Secure the owner account');
+      expect(names).toEqual(['Secure the owner account', 'Storage', 'Sign-in', 'Domain and access', 'First apps', 'Nightly backups']);
+      expect(heading()).toBe('Step 1 of 6: Secure the owner account');
       // State is a word as well as a glyph.
       expect(el().querySelector('.step .step-status')?.textContent?.trim()).toBe('To do');
     });
@@ -152,18 +161,18 @@ describe('Setup wizard (S291)', () => {
     it('marks the current step in the progress indicator with aria-current', async () => {
       await open();
       const items = Array.from(el().querySelectorAll('ol[aria-label="Setup progress"] > li'));
-      expect(items.map((i) => i.getAttribute('aria-current'))).toEqual(['step', null, null, null, null]);
+      expect(items.map((i) => i.getAttribute('aria-current'))).toEqual(['step', null, null, null, null, null]);
     });
 
     it('opens at the first pending step, not at step one', async () => {
       await open(doneThrough(1));
-      expect(heading()).toBe('Step 2 of 5: Storage');
+      expect(heading()).toBe('Step 2 of 6: Storage');
       const items = Array.from(el().querySelectorAll('ol[aria-label="Setup progress"] > li'));
       expect(items[1].getAttribute('aria-current')).toBe('step');
     });
 
     it('opens on the summary when nothing is pending', async () => {
-      await open(doneThrough(5));
+      await open(doneThrough(6));
       expect(heading()).toBe('Summary');
       expect(text()).toContain('Setup is complete.');
       expect(wrote('GET', '/api/v1/backups/identity').length).toBe(0);
@@ -201,25 +210,25 @@ describe('Setup wizard (S291)', () => {
       await settle();
       button('Next')!.click();
       await settle();
-      expect(heading()).toBe('Step 3 of 5: Sign-in');
+      expect(heading()).toBe('Step 3 of 6: Sign-in');
       expect(document.activeElement).toBe(el().querySelector('h2'));
       button('Back')!.click();
       await settle();
-      expect(heading()).toBe('Step 2 of 5: Storage');
+      expect(heading()).toBe('Step 2 of 6: Storage');
       expect(document.activeElement).toBe(el().querySelector('h2'));
       // Back works even though the step it returns to is still to do.
       expect(button('Next')!.disabled).toBe(false);
     });
 
     it('leads to a summary of every outcome and back to a skipped step', async () => {
-      const s = doneThrough(4);
+      const s = doneThrough(5);
       s.steps[2].state = 'skipped';
       s.steps[2].skipped = true;
       s.steps[3].state = 'done';
-      s.steps[4].state = 'pending';
-      s.current = 'apps';
+      s.steps[4].state = 'done';
+      s.current = 'backups';
       await open(s);
-      expect(heading()).toBe('Step 5 of 5: First apps');
+      expect(heading()).toBe('Step 6 of 6: Nightly backups');
       button('Skip this step')!.click();
       await settle();
       expect(button('Next: summary')).toBeDefined();
@@ -229,12 +238,34 @@ describe('Setup wizard (S291)', () => {
       const items = Array.from(el().querySelectorAll('ul[aria-label="Outcome of each step"] > li')).map((li) =>
         (li.textContent ?? '').replace(/\s+/g, ' ').trim(),
       );
-      expect(items.length).toBe(5);
+      expect(items.length).toBe(6);
       expect(items[2]).toContain('Skipped');
       expect(items[0]).toContain('Done');
       button('Finish this step')!.click();
       await settle();
-      expect(heading()).toBe('Step 3 of 5: Sign-in');
+      expect(heading()).toBe('Step 3 of 6: Sign-in');
+    });
+
+    it('offers the nightly policy in the backups step and links to Storage without backup storage', async () => {
+      await open(doneThrough(5));
+      expect(heading()).toBe('Step 6 of 6: Nightly backups');
+      expect(text()).toContain('Nightly backups need a disk for the backup storage class.');
+      expect(text()).toContain('Covers: nextcloud.');
+      expect(button('Skip this step')).toBeDefined();
+    });
+
+    it('says a waived backups step is not required and points at the Backups page', async () => {
+      const s = doneThrough(5);
+      s.steps[5] = { ...s.steps[5], state: 'skipped', waived: true };
+      s.current = '';
+      s.complete = true;
+      s.gated = false;
+      await open(s);
+      button('Back')!.click();
+      await settle();
+      expect(heading()).toBe('Step 6 of 6: Nightly backups');
+      expect(text()).toContain('Set a nightly policy on the');
+      expect(el().querySelector('a[href="/backups"]')).not.toBeNull();
     });
 
     it('calls a legacy appliance Finish setup and says nothing is required', async () => {

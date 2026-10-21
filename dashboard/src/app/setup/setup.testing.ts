@@ -14,6 +14,7 @@ export function setupStatus(overrides: Partial<SetupStatus> = {}): SetupStatus {
       { name: 'sign-in', title: 'Sign-in', state: 'pending', detail: 'Install Authentik.', skipped: false, waived: false, acknowledged: false },
       { name: 'domain', title: 'Domain and access', state: 'pending', detail: 'Choose a DNS provider.', skipped: false, waived: false, acknowledged: false },
       { name: 'apps', title: 'First apps', state: 'pending', detail: 'Pick a few apps.', skipped: false, waived: false, acknowledged: false },
+      { name: 'backups', title: 'Nightly backups', state: 'pending', detail: 'Approve the nightly policy.', skipped: false, waived: false, acknowledged: false },
     ],
     choices: {},
     facts: {
@@ -27,6 +28,8 @@ export function setupStatus(overrides: Partial<SetupStatus> = {}): SetupStatus {
       exposures: 0,
       review_existing: false,
       apps_installed: 0,
+      backup_policy: false,
+      backup_storage: false,
     },
     providers: [
       {

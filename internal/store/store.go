@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 48
+const CurrentVersion = 49
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -951,6 +951,20 @@ CREATE TABLE IF NOT EXISTS tunnel_replaced_records (
 		sql: `CREATE TABLE local_resolver (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
 	enabled INTEGER NOT NULL DEFAULT 0,
+	actor TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S297 (ADR-039 §2): the one nightly backup policy for every
+		// stateful app. No row until the owner approves a plan.
+		version: 49,
+		name:    "backup policy",
+		sql: `CREATE TABLE backup_policy (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	time_of_day TEXT NOT NULL,
+	retain INTEGER NOT NULL,
+	enabled INTEGER NOT NULL,
 	actor TEXT NOT NULL DEFAULT '',
 	updated_at TEXT NOT NULL
 );`,

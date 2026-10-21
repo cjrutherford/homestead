@@ -1,7 +1,7 @@
 <section aria-label="Setup">
   <h1>{{ status()?.legacy ? 'Finish setup' : 'Set up your appliance' }}</h1>
   <p>
-    Five short steps, one at a time. Each step explains what it does and what you do outside
+    Six short steps, one at a time. Each step explains what it does and what you do outside
     Homestead, and does its work right here. You can skip any step and come back later.
   </p>
 
@@ -99,6 +99,9 @@
             @case ('apps') {
               <app-setup-apps-step [status]="s" />
             }
+            @case ('backups') {
+              <app-setup-backups-step />
+            }
           }
 
           @if (st.state === 'pending') {
@@ -108,8 +111,13 @@
           }
           @if (st.waived && st.state === 'skipped') {
             <p class="hint">
-              Not required: setup was finished before this step existed. Assign storage on the
-              <a routerLink="/storage">Storage page</a> when you need it.
+              @if (st.name === 'backups') {
+                Not required: setup was finished before this step existed. Set a nightly policy on the
+                <a routerLink="/backups">Backups page</a> when you want one.
+              } @else {
+                Not required: setup was finished before this step existed. Assign storage on the
+                <a routerLink="/storage">Storage page</a> when you need it.
+              }
             </p>
           }
           @if (st.skipped && st.state === 'skipped') {

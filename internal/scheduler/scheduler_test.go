@@ -743,3 +743,79 @@ func TestUnavailableClearsOnSuccess(t *testing.T) {
 		t.Fatalf("status = %+v", status[0])
 	}
 }
+
+func TestDailyAfter(t *testing.T) {
+	at := Daily{Hour: 2, Minute: 0, Location: time.UTC}
+	cases := []struct{ from, want time.Time }{
+		{time.Date(2026, 10, 11, 1, 59, 0, 0, time.UTC), time.Date(2026, 10, 11, 2, 0, 0, 0, time.UTC)},
+		{time.Date(2026, 10, 11, 2, 0, 0, 0, time.UTC), time.Date(2026, 10, 12, 2, 0, 0, 0, time.UTC)},
+		{time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC), time.Date(2026, 10, 12, 2, 0, 0, 0, time.UTC)},
+	}
+	for _, c := range cases {
+		if got := at.After(c.from); !got.Equal(c.want) {
+			t.Errorf("After(%s) = %s, want %s", c.from, got, c.want)
+		}
+	}
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skip("no tzdata")
+	}
+	// Across the November change the wall-clock time holds.
+	local := Daily{Hour: 2, Minute: 30, Location: ny}
+	got := local.After(time.Date(2026, 10, 31, 12, 0, 0, 0, ny))
+	got = local.After(got)
+	if h, m, _ := got.In(ny).Clock(); h != 2 || m != 30 {
+		t.Fatalf("after the change: %s", got.In(ny))
+	}
+}
+
+func TestWallClockJobRunsAtTheFirstTimeAfterItsLastRun(t *testing.T) {
+	st := openStore(t)
+	clock := &fakeClock{now: t0} // 12:00 UTC
+	var runs atomic.Int32
+	job := quickJob("nightly", true, &runs)
+	job.Interval = 24 * time.Hour
+	job.At = &Daily{Hour: 2, Location: time.UTC}
+	s := newSched(st, clock, job)
+	tick := func() {
+		t.Helper()
+		if err := s.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tick()
+	if runs.Load() != 0 {
+		t.Fatal("ran before its time")
+	}
+	status, err := s.Status()
+	if err != nil || len(status) != 1 || status[0].At != "02:00" || !status[0].NextDue.Equal(time.Date(2026, 10, 12, 2, 0, 0, 0, time.UTC)) {
+		t.Fatalf("status: %+v %v", status, err)
+	}
+	clock.Advance(14*time.Hour + time.Minute) // 02:01 next day
+	tick()
+	waitFor(t, func() bool { return runs.Load() == 1 })
+	clock.Advance(time.Hour)
+	tick()
+	time.Sleep(50 * time.Millisecond)
+	if runs.Load() != 1 {
+		t.Fatalf("runs = %d, want 1 until the next night", runs.Load())
+	}
+
+	// Off for three nights: one run at start, then the next 02:00.
+	clock.Advance(72 * time.Hour)
+	again := newSched(st, clock, job)
+	for i := 0; i < 3; i++ {
+		if err := again.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitFor(t, func() bool { return runs.Load() == 2 })
+	time.Sleep(50 * time.Millisecond)
+	if runs.Load() != 2 {
+		t.Fatalf("runs = %d, want exactly one catch-up run", runs.Load())
+	}
+	status, _ = again.Status()
+	if want := time.Date(2026, 10, 16, 2, 0, 0, 0, time.UTC); !status[0].NextDue.Equal(want) {
+		t.Fatalf("next due %s, want %s", status[0].NextDue, want)
+	}
+}

@@ -837,8 +837,17 @@
   - App sign-in (S298, ADR-039): apps that declare optional OIDC (Immich, Nextcloud,
     Jellyfin) are not offered a wiring to the linked Authentik, and the SSO
     redirect addresses do not include public names.
-  - Backups (S297, ADR-039): setup does not offer a backup schedule for the installed
-    apps.
+  - Closed by S297: setup offers a nightly backup policy. What remains:
+    - off-appliance destinations (a second disk, a remote target) are not
+      offered; backups stay on the backup class's disk;
+    - the policy runs in the daemon's local time zone; a time zone change
+      on the host takes effect at the next daemon start and is not
+      surfaced beyond the zone name shown with the policy;
+    - every covered app runs at the same minute; runs are serialized by the
+      operation queue, not staggered;
+    - turning the policy off keeps existing runs; nothing prunes them
+      until a later run of the same app;
+    - an uninstalled app's runs are kept, as with schedules.
   - The Authentik link callback still redirects to `/sign-in`; the dashboard
     forwards to `/setup` (S292) rather than the daemon carrying a return
     path.

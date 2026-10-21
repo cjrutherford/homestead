@@ -8,6 +8,7 @@ import {
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
+import { NightlyPolicy } from './nightly-policy';
 import { RecoveryIdentity } from './recovery-identity';
 import { formatWhen, WhenPipe } from '../core/format-time';
 import { Loading } from '../ui/loading';
@@ -21,7 +22,7 @@ import { Loading } from '../ui/loading';
  * run (server semantics).
  */
 @Component({
-  imports: [Loading, StateMessage, Dialog, RecoveryIdentity, WhenPipe],
+  imports: [Loading, StateMessage, Dialog, NightlyPolicy, RecoveryIdentity, WhenPipe],
   selector: 'app-backups',
   templateUrl: './backups.html',
   styles: ['.backup-root { overflow-wrap: anywhere; }'],

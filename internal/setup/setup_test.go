@@ -20,6 +20,8 @@ type fakes struct {
 	apps            int
 	storage         bool
 	chosen          string
+	policy          bool
+	backupStorage   bool
 }
 
 func newSvc(t *testing.T) (*Service, *fakes, *store.Store) {
@@ -40,6 +42,7 @@ func newSvc(t *testing.T) (*Service, *fakes, *store.Store) {
 		Apps: func() ([]StarterApp, int, error) {
 			return []StarterApp{{Name: "jellyfin", Title: "Jellyfin"}}, f.apps, nil
 		},
+		Backups: func() (bool, bool, error) { return f.policy, f.backupStorage, nil },
 	})
 	return svc, f, st
 }
@@ -126,6 +129,15 @@ func TestDerivationFromRealState(t *testing.T) {
 	}
 	f.apps = 2
 	s, _ = svc.Status()
+	if s.Complete || s.Current != StepBackups || !strings.Contains(s.Steps[5].Detail, "Storage page") {
+		t.Fatalf("backups without storage: %+v", s.Steps[5])
+	}
+	f.backupStorage = true
+	if s, _ = svc.Status(); !strings.Contains(s.Steps[5].Detail, "approve it") {
+		t.Fatalf("backups with storage: %+v", s.Steps[5])
+	}
+	f.policy = true
+	s, _ = svc.Status()
 	if !s.Complete || s.Gated || s.Current != "" {
 		t.Fatalf("all done: %+v", s)
 	}
@@ -153,7 +165,7 @@ func TestSkipUnskipResumeAndGate(t *testing.T) {
 	if _, err := svc.Update(StepAccount, Update{State: str(Done)}); err != nil {
 		t.Fatal(err)
 	}
-	for _, n := range []string{StepStorage, StepSignIn, StepDomain, StepApps} {
+	for _, n := range []string{StepStorage, StepSignIn, StepDomain, StepApps, StepBackups} {
 		if _, err := svc.Update(n, Update{State: str(Skipped)}); err != nil {
 			t.Fatal(err)
 		}
@@ -432,6 +444,9 @@ func TestPreStorageApplianceIsNotRegated(t *testing.T) {
 	if !s.Steps[1].Waived || s.Steps[1].Skipped || !strings.Contains(s.Steps[1].Detail, "Not required") {
 		t.Fatalf("storage should read as waived, not as an owner skip: %+v", s.Steps[1])
 	}
+	if !s.Steps[5].Waived || states(t, s)[StepBackups] != Skipped {
+		t.Fatalf("backups should be waived too: %+v", s.Steps[5])
+	}
 	if v := persistedVersion(t, svc); v != storedVersion {
 		t.Fatalf("persisted version = %d, want %d", v, storedVersion)
 	}
@@ -492,7 +507,7 @@ func persistedVersion(t *testing.T, svc *Service) int {
 	return int(v)
 }
 
-// A legacy appliance stays ungated, is stamped version 2, and the migration
+// A legacy appliance stays ungated, is stamped the current version, and the migration
 // is applied exactly once: a later change to the facts does not redo it.
 func TestLegacyOriginStaysUngatedAndIsStamped(t *testing.T) {
 	svc, f, st := newSvc(t)
@@ -506,8 +521,8 @@ func TestLegacyOriginStaysUngatedAndIsStamped(t *testing.T) {
 	if states(t, s)[StepStorage] != Pending || s.Steps[1].Waived {
 		t.Fatalf("legacy appliances get no waiver: %+v", s.Steps[1])
 	}
-	if v := persistedVersion(t, svc); v != 2 {
-		t.Fatalf("persisted version = %d, want 2", v)
+	if v := persistedVersion(t, svc); v != storedVersion {
+		t.Fatalf("persisted version = %d, want %d", v, storedVersion)
 	}
 	f.acked = true
 	f.exported = true
@@ -608,5 +623,40 @@ func TestDomainChoice(t *testing.T) {
 	}
 	if s, err := svc.Update(StepDomain, Update{Domain: str("")}); err != nil || s.Choices.Domain != "" {
 		t.Fatalf("clear = %q, %v", s.Choices.Domain, err)
+	}
+}
+
+// An appliance that finished setup before the backups step existed (a
+// version 2 payload) has it waived; one still mid-setup gets it. Approving
+// a policy is the only way to complete it.
+func TestPreBackupsApplianceIsNotRegated(t *testing.T) {
+	old := func(t *testing.T, payload map[string]any) (*Service, *fakes) {
+		svc, f, st := newSvc(t)
+		if _, err := wizard.New(st).Put(WizardID, "complete", payload); err != nil {
+			t.Fatal(err)
+		}
+		return svc, f
+	}
+	svc, f := old(t, map[string]any{"origin": "fresh", "version": 2, "acknowledged": []any{"account", "apps"}, "skipped": []any{"storage", "sign-in", "domain"}})
+	f.acked = true
+	s, _ := svc.Status()
+	if !s.Complete || s.Gated || !s.Steps[5].Waived || s.Steps[1].Waived || !strings.Contains(s.Steps[5].Detail, "Not required") {
+		t.Fatalf("finished appliance re-gated: %+v", s)
+	}
+	if _, err := svc.Update(StepBackups, Update{State: str(Done)}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("done by hand: %v", err)
+	}
+	f.policy = true
+	if s, _ = svc.Status(); states(t, s)[StepBackups] != Done {
+		t.Fatalf("approved policy should read done: %+v", s.Steps[5])
+	}
+
+	svc2, _ := old(t, map[string]any{"origin": "fresh", "version": 2, "skipped": []any{"sign-in"}})
+	s, _ = svc2.Status()
+	if s.Complete || s.Steps[5].Waived || states(t, s)[StepBackups] != Pending {
+		t.Fatalf("mid-setup appliance should see backups: %+v", s)
+	}
+	if s, _ = svc2.Update(StepBackups, Update{State: str(Skipped)}); states(t, s)[StepBackups] != Skipped || !strings.Contains(s.Steps[5].Detail, "Backups page") {
+		t.Fatalf("skip: %+v", s.Steps[5])
 	}
 }

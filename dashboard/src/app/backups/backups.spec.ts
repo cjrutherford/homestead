@@ -41,6 +41,14 @@ const IDENTITY = {
   acknowledged: false,
 };
 
+const POLICY = {
+  proposed: { time_of_day: '02:00', retain: 7, enabled: true },
+  covered: ['jellyfin'],
+  skipped: [{ package: 'wordcraft', reason: 'Keeps no data on the appliance.' }],
+  time_zone: 'UTC',
+  backup_storage: true,
+};
+
 const JOB = {
   id: 'backup:jellyfin',
   interval_seconds: 86400,
@@ -85,6 +93,7 @@ describe('Backups', () => {
     http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
     http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush(schedules);
+    http.expectOne('/api/v1/backups/policy').flush(POLICY);
     fixture.detectChanges();
   }
 
@@ -108,6 +117,8 @@ describe('Backups', () => {
 
   it('shows destination and schedules', () => {
     load([SCHEDULE]);
+    expect(text()).toContain('Nightly backups');
+    expect(text()).toContain('Covers: jellyfin.');
     expect(text()).toContain('/mnt/backup');
     expect(text()).toContain('Encryption: age, format 2');
     expect(text()).toContain('jellyfin');
@@ -130,6 +141,7 @@ describe('Backups', () => {
     http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
     http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush([]);
+    http.expectOne('/api/v1/backups/policy').flush({ ...POLICY, backup_storage: false });
     fixture.detectChanges();
     expect(text()).toContain('No backup schedules yet');
     expect(text()).toContain('No backup destination yet.');
@@ -145,6 +157,7 @@ describe('Backups', () => {
     http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
     http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush([]);
+    http.expectOne('/api/v1/backups/policy').flush(POLICY);
     fixture.detectChanges();
     expect(text()).toContain('disk unreadable');
   });

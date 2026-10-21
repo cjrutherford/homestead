@@ -27,6 +27,11 @@ func NewScheduler(st *store.Store, catalogDir string, secrets catalog.SecretStor
 func NewSchedulerWith(st *store.Store, catalogDir string, secrets catalog.SecretStore, issuing *cert.Issuing, opts ...scheduler.Option) *scheduler.Scheduler {
 	s := scheduler.New(st, opts...)
 	s.Register("backup", backupSource(st, catalogDir, secrets, s.Now))
+	// The nightly policy (S297) covers the stateful apps without a
+	// schedule; its own source, so a policy fault never stops schedules.
+	s.Register("backup-policy", scheduler.SourceFunc(func() ([]scheduler.Job, error) {
+		return policyJobs(st, catalogDir, secrets, s.Now)
+	}))
 	s.Register("drift", driftSource(st, s.Now))
 	s.Register("cert", certRenewalSource(st, s.Now, issuing))
 	return s

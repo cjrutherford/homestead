@@ -780,6 +780,48 @@ export interface BackupSchedule {
   stateless?: boolean;
 }
 
+/** The nightly backup policy (S297, ADR-039 §2). */
+export interface BackupPolicy {
+  /** HH:MM, appliance local time. */
+  time_of_day: string;
+  retain: number;
+  enabled: boolean;
+  actor?: string;
+  updated_at?: string;
+}
+
+/** An installed app the nightly policy leaves out, and why. */
+export interface BackupPolicySkip {
+  package: string;
+  reason: string;
+}
+
+/** GET /api/v1/backups/policy. `policy` is absent until the first approval. */
+export interface BackupPolicyStatus {
+  policy?: BackupPolicy;
+  proposed: BackupPolicy;
+  covered: string[];
+  skipped: BackupPolicySkip[];
+  time_zone: string;
+  backup_storage: boolean;
+}
+
+/** POST /api/v1/backups/policy/plan: what approving would store. */
+export interface BackupPolicyPlan {
+  policy: BackupPolicy;
+  covered: string[];
+  skipped: BackupPolicySkip[];
+  time_zone: string;
+  changes: string[];
+  digest: string;
+}
+
+export interface BackupPolicyRequest {
+  time_of_day: string;
+  retain: number;
+  enabled: boolean;
+}
+
 /** GET /api/v1/scheduler/jobs — one declared job with its run state. */
 export interface SchedulerJob {
   id: string;
@@ -1446,6 +1488,18 @@ export class ApiService {
     actor: string;
   }): Observable<BackupSchedule> {
     return this.http.post<BackupSchedule>('/api/v1/backups/schedules', body);
+  }
+
+  backupPolicy(): Observable<BackupPolicyStatus> {
+    return this.http.get<BackupPolicyStatus>('/api/v1/backups/policy');
+  }
+
+  backupPolicyPlan(request: BackupPolicyRequest): Observable<BackupPolicyPlan> {
+    return this.http.post<BackupPolicyPlan>('/api/v1/backups/policy/plan', request);
+  }
+
+  backupPolicyApply(request: BackupPolicyRequest, digest: string): Observable<BackupPolicyStatus> {
+    return this.http.post<BackupPolicyStatus>('/api/v1/backups/policy/apply', { ...request, digest });
   }
 
   backupScheduleGet(name: string): Observable<BackupSchedule> {

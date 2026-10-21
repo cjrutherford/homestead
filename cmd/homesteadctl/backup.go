@@ -13,12 +13,14 @@ import (
 
 func runBackup(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl backup <destination|schedules|schedule|unschedule|recipients|identity> [flags]")
+		fmt.Fprintln(stderr, "usage: homesteadctl backup <destination|policy|schedules|schedule|unschedule|recipients|identity> [flags]")
 		return exitUsage
 	}
 	switch args[0] {
 	case "destination":
 		return runBackupDestination(ctx, client, stdout, stderr)
+	case "policy":
+		return runBackupPolicy(ctx, client, args[1:], stdout, stderr)
 	case "schedules":
 		return runBackupSchedules(ctx, client, stdout, stderr)
 	case "schedule":

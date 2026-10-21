@@ -132,6 +132,10 @@ func setupSources(c SetupConfig) setup.Sources {
 		Exposures: func() (int, error) {
 			return count(`SELECT COUNT(*) FROM exposure_approvals`)
 		},
+		Backups: func() (bool, bool, error) {
+			_, ok, err := backup.NewPolicies(c.Store).Get()
+			return ok, backupStorageAssigned(c.Store), err
+		},
 		Apps: func() ([]setup.StarterApp, int, error) {
 			stacks, err := catalog.InstalledStacks(c.Store)
 			if err != nil {

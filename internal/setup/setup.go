@@ -34,10 +34,11 @@ const (
 	StepSignIn  = "sign-in"
 	StepDomain  = "domain"
 	StepApps    = "apps"
+	StepBackups = "backups"
 )
 
 // StepNames lists the steps in order.
-var StepNames = []string{StepAccount, StepStorage, StepSignIn, StepDomain, StepApps}
+var StepNames = []string{StepAccount, StepStorage, StepSignIn, StepDomain, StepApps, StepBackups}
 
 var titles = map[string]string{
 	StepAccount: "Secure the owner account",
@@ -45,6 +46,7 @@ var titles = map[string]string{
 	StepSignIn:  "Sign-in",
 	StepDomain:  "Domain and access",
 	StepApps:    "First apps",
+	StepBackups: "Nightly backups",
 }
 
 // Step states.
@@ -126,6 +128,10 @@ type Facts struct {
 	// A saved but never-onboarded domain wizard payload does not count.
 	ReviewExisting bool `json:"review_existing"`
 	AppsInstalled  int  `json:"apps_installed"`
+	// BackupPolicy: the owner approved a nightly backup policy (S297), on
+	// or off. BackupStorage: the backup storage class is assigned.
+	BackupPolicy  bool `json:"backup_policy"`
+	BackupStorage bool `json:"backup_storage"`
 }
 
 // Sources reads the facts. Each is a seam: production wires the real
@@ -145,13 +151,17 @@ type Sources struct {
 	// Apps lists the starter apps and how many catalog apps (other than
 	// Authentik) are installed.
 	Apps func() (starter []StarterApp, installed int, err error)
+	// Backups reports whether a nightly policy is approved and whether the
+	// backup storage class is assigned.
+	Backups func() (policy, storage bool, err error)
 }
 
 // stored is the whole persisted payload. Keep it to choices and progress:
 // a field added here is a field the wizard store holds in clear text.
 type stored struct {
-	// Version 2 (S291) added the storage step. A payload without it was
-	// written before the step existed; see migrate.
+	// Version 2 (S291) added the storage step and version 3 (S297) the
+	// backups step. A payload older than a step was written before the
+	// step existed; see migrate.
 	Version int      `json:"version,omitempty"`
 	Origin  string   `json:"origin,omitempty"`
 	Skipped []string `json:"skipped,omitempty"`
@@ -166,7 +176,11 @@ type stored struct {
 }
 
 // storedVersion is the current payload version.
-const storedVersion = 2
+const storedVersion = 3
+
+// stepSince is the payload version that introduced a step; steps not
+// listed have been there from the start.
+var stepSince = map[string]int{StepStorage: 2, StepBackups: 3}
 
 // Choices are the owner's non-sensitive selections.
 type Choices struct {
@@ -258,19 +272,20 @@ func (s *Service) load() (stored, error) {
 	return st, nil
 }
 
-// migrate runs once on a payload written before the storage step existed.
-// An appliance whose other steps were all done or skipped at that point had
-// finished setup, so the new step must not send it back into the wizard: the
-// storage step is recorded as waived, which is not an owner skip and cannot
-// be undone (real assignment still reads done). An appliance still mid-setup
-// gets the new step like a fresh one. The result is persisted so the rule is
-// applied exactly once. A GET must not fail because of it, so on the read
+// migrate runs once on a payload written before one or more steps existed.
+// An appliance whose older steps were all done or skipped at that point had
+// finished setup, so a new step must not send it back into the wizard: the
+// new steps are recorded as waived, which is not an owner skip and cannot
+// be undone (real state still reads done). An appliance still mid-setup
+// gets the new steps like a fresh one. The result is persisted so the rule
+// is applied exactly once. A GET must not fail because of it, so on the read
 // path a failed save is logged and the migrated state is used in memory; the
 // next write persists it.
 func (s *Service) migrate(st stored) (stored, error) {
 	if st.Version >= storedVersion {
 		return st, nil
 	}
+	version := max(st.Version, 1)
 	if st.Origin == OriginFresh {
 		f, _, err := s.facts(st)
 		if err != nil {
@@ -278,7 +293,7 @@ func (s *Service) migrate(st stored) (stored, error) {
 		}
 		finished := true
 		for _, name := range StepNames {
-			if name == StepStorage {
+			if stepSince[name] > version {
 				continue
 			}
 			if state, _ := derive(name, st, f); state == Pending {
@@ -286,12 +301,16 @@ func (s *Service) migrate(st stored) (stored, error) {
 			}
 		}
 		if finished {
-			st.Waived = add(st.Waived, StepStorage)
+			for _, name := range StepNames {
+				if stepSince[name] > version {
+					st.Waived = add(st.Waived, name)
+				}
+			}
 		}
 	}
 	st.Version = storedVersion
 	if err := s.save(st); err != nil {
-		log.Printf("setup: could not persist the storage step migration (will retry on the next write): %v", err)
+		log.Printf("setup: could not persist the setup step migration (will retry on the next write): %v", err)
 	}
 	return st, nil
 }
@@ -336,6 +355,11 @@ func (s *Service) facts(st stored) (Facts, []StarterApp, error) {
 			return f, nil, fmt.Errorf("setup: apps: %w", err)
 		}
 	}
+	if src.Backups != nil {
+		if f.BackupPolicy, f.BackupStorage, err = src.Backups(); err != nil {
+			return f, nil, fmt.Errorf("setup: backups: %w", err)
+		}
+	}
 	if starter == nil {
 		starter = []StarterApp{}
 	}
@@ -365,6 +389,8 @@ func derive(name string, st stored, f Facts) (state, detail string) {
 			(f.Domain.Onboarded && (st.Access == "" || st.Access == AccessHome))
 	case StepApps:
 		done = acked || f.AppsInstalled > 0
+	case StepBackups:
+		done = f.BackupPolicy
 	}
 	switch {
 	case done:
@@ -456,6 +482,18 @@ func detailFor(name, state string, st stored, f Facts) string {
 			return "Skipped. Add apps any time from the catalog."
 		}
 		return "Pick a few apps to start with. Installs run in the background and do not hold you here."
+	case StepBackups:
+		switch {
+		case state == Done:
+			return "A nightly backup policy is approved. Change it on the Backups page."
+		case state == Skipped && slices.Contains(st.Waived, name) && !slices.Contains(st.Skipped, name):
+			return "Not required: setup was finished before this step existed. Set a nightly policy on the Backups page when you want one."
+		case state == Skipped:
+			return "Skipped. No app is backed up on a schedule until you approve a policy on the Backups page."
+		case !f.BackupStorage:
+			return "Nightly backups need a disk for the backup storage class. Assign it on the Storage page, then come back."
+		}
+		return "Review the proposed nightly policy and the apps it covers, then approve it."
 	}
 	return ""
 }
@@ -539,7 +577,7 @@ func (s *Service) status() (Status, error) {
 // Update records an owner choice for a step and returns the new status.
 func (s *Service) Update(step string, u Update) (Status, error) {
 	if !slices.Contains(StepNames, step) {
-		return Status{}, fmt.Errorf("%w: %q (steps: account, storage, sign-in, domain, apps)", ErrUnknownStep, step)
+		return Status{}, fmt.Errorf("%w: %q (steps: account, storage, sign-in, domain, apps, backups)", ErrUnknownStep, step)
 	}
 	if u.State == nil && u.Provider == nil && u.Access == nil && u.Domain == nil {
 		return Status{}, fmt.Errorf(`%w: want {"state"} and/or {"provider"}, {"access"}, {"domain"}`, ErrInvalid)
@@ -603,7 +641,7 @@ func (s *Service) Update(step string, u Update) (Status, error) {
 			st.Skipped = remove(st.Skipped, step)
 			st.Acknowledged = remove(st.Acknowledged, step)
 		case Done:
-			if step == StepSignIn || step == StepStorage {
+			if step == StepSignIn || step == StepStorage || step == StepBackups {
 				return Status{}, fmt.Errorf("%w: the %s step completes from real state, not by confirming it", ErrInvalid, step)
 			}
 			if step == StepDomain {

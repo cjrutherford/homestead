@@ -58,7 +58,7 @@ func TestSetupStatusAndSteps(t *testing.T) {
 		t.Fatalf("code %d %s", rec.Code, rec.Body)
 	}
 	s := decodeSetup(t, rec.Body.Bytes())
-	if !s.Gated || s.Current != "account" || len(s.Steps) != 5 || len(s.Providers) != 4 {
+	if !s.Gated || s.Current != "account" || len(s.Steps) != 6 || len(s.Providers) != 4 {
 		t.Fatalf("status = %+v", s)
 	}
 	if len(s.StarterApps) == 0 {

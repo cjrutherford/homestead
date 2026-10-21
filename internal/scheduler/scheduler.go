@@ -41,8 +41,38 @@ type Job struct {
 	// Since anchors a job that has never run: its first window ends
 	// Interval after Since (for backups, when the schedule was saved).
 	Since time.Time
+	// At makes the job wall-clock (S297, ADR-039): it is due at the first
+	// At time after its last run (or Since), not Interval after it.
+	// Interval still caps retry backoff and should be 24h.
+	At *Daily
 	// Build produces the operation to enqueue. Called only when due.
 	Build func() (operation.Definition, error)
+}
+
+// Daily is a time of day in a location (the appliance's local time).
+type Daily struct {
+	Hour, Minute int
+	Location     *time.Location
+}
+
+// String is the time of day as HH:MM.
+func (d Daily) String() string { return fmt.Sprintf("%02d:%02d", d.Hour, d.Minute) }
+
+// After is the first occurrence of the time of day strictly after t.
+// Days are stepped in the calendar, so a daylight-saving change keeps the
+// wall-clock time; a time skipped by the change runs when Go normalizes it.
+func (d Daily) After(t time.Time) time.Time {
+	loc := d.Location
+	if loc == nil {
+		loc = time.Local
+	}
+	local := t.In(loc)
+	next := time.Date(local.Year(), local.Month(), local.Day(), d.Hour, d.Minute, 0, 0, loc)
+	for !next.After(t) {
+		local = local.AddDate(0, 0, 1)
+		next = time.Date(local.Year(), local.Month(), local.Day(), d.Hour, d.Minute, 0, 0, loc)
+	}
+	return next
 }
 
 // ErrUnavailable marks a Build failure caused by something not there
@@ -100,7 +130,9 @@ type Status struct {
 	LastSkipDue      time.Time `json:"last_skip_due"`
 	LastSkipBlocking int64     `json:"last_skip_blocking"`
 	NextDue          time.Time `json:"next_due"`
-	Running          bool      `json:"running"`
+	// At is the time of day of a wall-clock job (HH:MM, local time).
+	At      string `json:"at,omitempty"`
+	Running bool   `json:"running"`
 	// UnavailableAttempts and UnavailableSince describe an ongoing
 	// outage (builds failing with ErrUnavailable, window not spent);
 	// zero when the job is not waiting. In-memory, reset on restart.
@@ -212,7 +244,8 @@ func (s *Scheduler) load(id string) (state, error) {
 }
 
 // nextDue is one interval after the latest of the anchor, the last run,
-// and the last skip: a skipped window is spent, not queued. Recorded
+// and the last skip (for a wall-clock job, the first At time after it):
+// a skipped window is spent, not queued. Recorded
 // times in the future (the clock stepped backwards) count as now, so a
 // bad clock step cannot silence a job until the clock catches up.
 func nextDue(job Job, st state, now time.Time) time.Time {
@@ -223,6 +256,9 @@ func nextDue(job Job, st state, now time.Time) time.Time {
 	}
 	if st.lastSkip.After(base) {
 		base = st.lastSkip
+	}
+	if job.At != nil {
+		return job.At.After(base)
 	}
 	return base.Add(job.Interval)
 }
@@ -572,6 +608,9 @@ func (s *Scheduler) Status() ([]Status, error) {
 		}
 		if job.Enabled {
 			status.NextDue = nextDue(job, st, now)
+		}
+		if job.At != nil {
+			status.At = job.At.String()
 		}
 		s.retryMu.Lock()
 		if r, ok := s.retries[id]; ok {

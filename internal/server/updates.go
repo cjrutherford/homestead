@@ -298,11 +298,7 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 		// next tick; the scheduler retries instead of spending the window.
 		return backup.Job{}, classifyDestinationError(err)
 	}
-	retain := defaultBackupRetain
-	schedules := backup.NewSchedules(st)
-	if schedule, err := schedules.Get(manifest.Name); err == nil {
-		retain = schedule.Retain
-	}
+	retain := backupRetain(st, manifest.Name)
 	keys, err := backupKeyStore(secrets)
 	if err != nil {
 		return backup.Job{}, err
@@ -603,4 +599,16 @@ func orphanedDataHint(st *store.Store, packageName string) string {
 		return ""
 	}
 	return fmt.Sprintf(": its data exists on %s, which no storage class is assigned to any more (was a class re-assigned?); assign a class back to that mount or migrate the data", strings.Join(orphaned, ", "))
+}
+
+// backupRetain is how many runs of an app to keep: its own schedule's
+// count, else the nightly policy's (S297) while it is on, else the default.
+func backupRetain(st *store.Store, name string) int {
+	if schedule, err := backup.NewSchedules(st).Get(name); err == nil {
+		return schedule.Retain
+	}
+	if policy, ok, err := backup.NewPolicies(st).Get(); err == nil && ok && policy.Enabled {
+		return policy.Retain
+	}
+	return defaultBackupRetain
 }

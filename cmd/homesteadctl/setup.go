@@ -113,7 +113,7 @@ func runSetupStep(ctx context.Context, client *apiclient.Client, args []string, 
 			return exitOK
 		}
 	}
-	fmt.Fprintf(stderr, "unknown setup step %q (account, storage, sign-in, domain, apps)\n", name)
+	fmt.Fprintf(stderr, "unknown setup step %q (account, storage, sign-in, domain, apps, backups)\n", name)
 	return exitUsage
 }
 
