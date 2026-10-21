@@ -4988,3 +4988,40 @@ committed). Results:
   (`app-app-sign-in`) to review, approve, re-plan or turn it off.
 - Live check (owner, KVM VM): all three apps, including Jellyfin's plugin
   on the catalog's Jellyfin image.
+
+## S290: Public app names and tunnel adoption (ADR-041)
+
+- The slice text predates ADR-037: the tunnel DNS route actuation it names
+  was closed by S294. S290 adds per-app public names, a connector that
+  follows the recorded routes, and adoption of an existing tunnel.
+- API: `GET /api/v1/catalog/{name}/public`, `POST .../public/plan`
+  (read-only, `enabled`, `hostname`, `route`) and `POST .../public/apply`
+  (digest, 409 when stale; returns an `app.public.add` or
+  `app.public.remove` operation). All session class. A plan refuses a local
+  name, a name outside the tunnel's zone, a name already on an edge route or
+  the tunnel, an app that is not installed, a missing tunnel and Authentik
+  (its name belongs to the tunnel plan). DNS outcome is create, keep (a
+  CNAME already pointing at the tunnel) or replace (A, AAAA, other CNAME;
+  the old record is stored and restored on removal). The plan warns that
+  no Authentik check sits in front of the app and recommends app sign-in
+  when the app has an adapter.
+- Apply: DNS, recorded route, edge tunnel name, then the connector's
+  `config.yml` rewritten from the recorded routes; the connector restarts
+  only when its files changed. Each step undoes the earlier ones on
+  failure. Removal reverses them and restores replaced records.
+- Adoption: `POST /api/v1/tunnel/plan` and `/setup` take `adopt` (a tunnel
+  ID) instead of `name`. It needs the local connector config to name that
+  tunnel, Cloudflare to report it as locally configured, and no recorded
+  tunnel. The plan lists existing ingress entries as kept or dropped; setup
+  fetches the run token with the stored Domain-step token, keeps the
+  tunnel on failure, restores the previous connector files, and audits
+  `tunnel.adopt`.
+- CLI: `homesteadctl apps public <status|plan|apply> <app>` with
+  `--hostname`, `--route`, `--off`, `--digest`, `--follow`;
+  `homesteadctl tunnel plan|setup --adopt ID`.
+- Dashboard: the catalog Manage panel has a Public address section
+  (`app-app-public`); the Tunnel page has an adopt field and an "Approve
+  and adopt" button.
+- Live check (owner, KVM VM 2): PENDING. Adopt `homestead-vm2`, add and
+  then remove a public name for Jellyfin, and confirm the A record is
+  restored. This replaces the slice's original live steps.

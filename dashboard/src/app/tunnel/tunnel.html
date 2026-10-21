@@ -99,8 +99,31 @@
     <div class="risky" aria-label="Tunnel plan">
       <h3>Review the plan</h3>
       <p class="risky-preview">
-        Tunnel <strong>{{ review.name }}</strong> in zone <strong>{{ review.zone }}</strong>.
+        @if (review.adopt) {
+          Adopt the existing tunnel <strong>{{ review.name }}</strong> ({{ review.adopt.status }},
+          {{ review.adopt.connections }} connections) in zone <strong>{{ review.zone }}</strong>.
+        } @else {
+          Tunnel <strong>{{ review.name }}</strong> in zone <strong>{{ review.zone }}</strong>.
+        }
       </p>
+      @if (review.adopt; as adopt) {
+        <div class="table-scroll">
+          <table aria-label="What the connector serves now">
+            <thead>
+              <tr><th scope="col">Name served now</th><th scope="col">Service</th><th scope="col">After adoption</th></tr>
+            </thead>
+            <tbody>
+              @for (entry of adopt.existing; track entry.hostname) {
+                <tr>
+                  <th scope="row" class="mono">{{ entry.hostname }}</th>
+                  <td class="mono">{{ entry.service }}</td>
+                  <td>{{ entry.outcome }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
       <div class="table-scroll">
         <table aria-label="Public hostnames">
           <thead>
@@ -131,7 +154,7 @@
           <tbody>
             @for (change of review.dns; track change.name) {
               <tr>
-                <td>{{ change.action === 'replace' ? 'Replace' : 'Create' }}</td>
+                <td>{{ change.action === 'replace' ? 'Replace' : change.action === 'keep' ? 'Keep (already points here)' : 'Create' }}</td>
                 <th scope="row" class="mono">{{ change.type }} {{ change.name }}</th>
                 <td class="mono">{{ change.content }}{{ change.proxied ? ' (proxied)' : '' }}</td>
               </tr>
@@ -150,14 +173,14 @@
         <app-state-message kind="warning" [headline]="warning" />
       }
       <div class="risky-actions">
-        <button type="button" class="primary" (click)="approve()" [disabled]="busy()">Approve and set up</button>
+        <button type="button" class="primary" (click)="approve()" [disabled]="busy()">{{ review.adopt ? 'Approve and adopt' : 'Approve and set up' }}</button>
         <button type="button" class="quiet" (click)="discardPlan()" [disabled]="busy()">Change</button>
       </div>
     </div>
   } @else {
     <form
       (submit)="
-        review(nameInput.value, dashboardInput.value, authInput.value);
+        review(nameInput.value, dashboardInput.value, authInput.value, adoptInput.value);
         $event.preventDefault()
       "
     >
@@ -169,6 +192,14 @@
         @if (fieldErrors()['name']; as message) {
           <p class="field-error" id="tunnel-name-error">{{ message }}</p>
         }
+      </div>
+      <div class="field">
+        <label for="tunnel-adopt">Or adopt an existing tunnel (its ID)</label>
+        <input id="tunnel-adopt" #adoptInput name="adopt" autocomplete="off" [disabled]="busy()" aria-describedby="tunnel-adopt-hint" />
+        <p class="hint" id="tunnel-adopt-hint">
+          For a tunnel this appliance's connector already runs from a local config file. The plan lists what it serves now
+          and what is kept or dropped; the tunnel itself is never deleted.
+        </p>
       </div>
       <div class="field">
         <label for="tunnel-dashboard">Dashboard public name</label>

@@ -328,3 +328,19 @@ func TunnelAccount(st *store.Store, tunnelID string) (string, error) {
 	}
 	return account, nil
 }
+
+// TunnelZone returns the stored zone a tunnel's routes live in, empty
+// when the tunnel was set up before S294.
+func TunnelZone(st *store.Store, tunnelID string) (string, error) {
+	var zone string
+	err := st.DB().QueryRow(
+		`SELECT zone_id FROM tunnel_routes WHERE tunnel_id = ? AND zone_id != '' LIMIT 1`, tunnelID,
+	).Scan(&zone)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("router: tunnel zone: %w", err)
+	}
+	return zone, nil
+}

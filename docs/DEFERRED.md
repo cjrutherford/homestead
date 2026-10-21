@@ -14,9 +14,8 @@
 - Connector binary installation: S246 setup refuses with
   instructions when cloudflared is absent; packaging or supervising
   the binary itself belongs to a later slice.
-- Pre-S246 tunnel adoption: tunnels created before the routes table
-  existed serve fine but read as unrecorded; adopting them into
-  management belongs to S247.
+- Closed in S290: pre-S246 tunnels can be adopted with `tunnel setup
+  --adopt ID` (ADR-041 §2).
 - AdGuard Home install-wizard automation (`POST /control/install/configure`):
   needed before friendly names (S086) work end-to-end against a fresh
   instance; kept out of S085 as version-brittle and unverifiable without
@@ -758,8 +757,8 @@
   connector was laid out by hand (Cloudflare API plus the S246 files) so the
   public URL reaches the Claim page. Decide whether to allow a claim-token
   authorised tunnel setup, or document the manual route.
-- An existing tunnel set up outside Homestead (no `tunnel_routes` row) has no
-  adopt command; after claim the owner can only replace it through setup.
+- Closed in S290: a tunnel set up outside Homestead can be adopted with
+  `tunnel setup --adopt ID` (ADR-041 §2).
 - Dashboard names must fall under the internal root's permitted suffixes
   (`.lan`, `.local`, `.home.arpa`, `.internal`, `.localhost`); a name under the
   owner's own domain (split DNS) is refused (S289). Supporting one needs an ACME
@@ -852,8 +851,7 @@
     forwards to `/setup` (S292) rather than the daemon carrying a return
     path.
   - Public dashboard (S296, ADR-037 §4), what remains:
-    - the tunnel publishes only the dashboard and Authentik; app routes
-      through the tunnel are S290;
+    - app routes through the tunnel: closed in S290 (`apps public`);
     - all public names must sit in one Cloudflare zone;
     - a plan cannot leave the dashboard out once sign-in is linked: the
       owner tears the tunnel down instead;
@@ -879,10 +877,23 @@
     - the Jellyfin SSO plugin is pinned (release and checksum) against the
       catalog's Jellyfin image; a Jellyfin image bump must re-check the
       plugin's target ABI;
-    - apps have no public names until S290; the redirect URIs already
-      follow every name a route answers on, so S290's names show as a
-      re-plan on the app page;
+    - S290's public names show as a sign-in re-plan on the app page; it is
+      not re-applied automatically;
     - the Authentik API token is asked for on each apply unless the owner
       kept it sealed when setting up dashboard sign-in;
     - SAML, LDAP and apps beyond Immich, Nextcloud and Jellyfin are out of
       scope.
+- Public app names and tunnel adoption (S290, ADR-041), what remains:
+  - no Authentik forward-auth in front of a public app: the plan warns and
+    recommends app sign-in; an edge forward-auth policy is a later ADR;
+  - uninstalling an app leaves its public names (CNAME, recorded route,
+    connector entry) behind; remove them with `apps public apply --off`
+    first;
+  - only tunnels configured from a local `config.yml` can be adopted; a
+    tunnel configured remotely in the Cloudflare dashboard is refused;
+  - adoption drops ingress entries Homestead does not manage (they are
+    listed in the plan); the DNS records behind them are left untouched;
+  - Authentik's public name is managed only by the tunnel plan, not by
+    `apps public`;
+  - one public name is added or removed per plan; renaming is remove then
+    add.

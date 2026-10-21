@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // TunnelSecretName is the sealed-store name for the tunnel provider
@@ -443,4 +445,95 @@ func RenderConnectorIngress(tunnelID string, ingress []Ingress) string {
 	}
 	rendered.WriteString("  - service: http_status:404\n")
 	return rendered.String()
+}
+
+// TunnelDetails is what adoption checks about a tunnel (S290, ADR-041):
+// whether Cloudflare still has it, and whether its ingress comes from the
+// connector's local file or from the Cloudflare dashboard.
+type TunnelDetails struct {
+	TunnelStatus
+	RemoteConfig bool
+	Deleted      bool
+}
+
+// GetTunnelDetails reads one tunnel through the cfd_tunnel API, which
+// reports where its configuration lives.
+func (c *TunnelClient) GetTunnelDetails(ctx context.Context, token, accountID, id string) (TunnelDetails, error) {
+	if err := validateAccountID(accountID); err != nil {
+		return TunnelDetails{}, err
+	}
+	if id == "" {
+		return TunnelDetails{}, fmt.Errorf("router: tunnel id must not be empty")
+	}
+	var details struct {
+		ID           string `json:"id"`
+		Name         string `json:"name"`
+		Status       string `json:"status"`
+		RemoteConfig bool   `json:"remote_config"`
+		ConfigSrc    string `json:"config_src"`
+		DeletedAt    string `json:"deleted_at"`
+		Connections  []struct {
+			ColoName string `json:"colo_name"`
+			OpenedAt string `json:"opened_at"`
+		} `json:"connections"`
+	}
+	if err := c.call(ctx, token, http.MethodGet, "/accounts/"+accountID+"/cfd_tunnel/"+url.PathEscape(id), nil, &details); err != nil {
+		return TunnelDetails{}, err
+	}
+	out := TunnelDetails{
+		TunnelStatus: TunnelStatus{ID: details.ID, Name: details.Name, Status: details.Status},
+		RemoteConfig: details.RemoteConfig || details.ConfigSrc == "cloudflare",
+		Deleted:      details.DeletedAt != "",
+	}
+	for _, connection := range details.Connections {
+		out.Connections = append(out.Connections, TunnelConnection{Colo: connection.ColoName, Opened: connection.OpenedAt})
+	}
+	return out, nil
+}
+
+// TunnelRunToken fetches a tunnel's connector run token, which adoption
+// writes to the connector's token file. It is never logged or returned.
+func (c *TunnelClient) TunnelRunToken(ctx context.Context, token, accountID, id string) (string, error) {
+	if err := validateAccountID(accountID); err != nil {
+		return "", err
+	}
+	if id == "" {
+		return "", fmt.Errorf("router: tunnel id must not be empty")
+	}
+	var runToken string
+	if err := c.call(ctx, token, http.MethodGet, "/accounts/"+accountID+"/cfd_tunnel/"+url.PathEscape(id)+"/token", nil, &runToken); err != nil {
+		return "", err
+	}
+	if runToken == "" {
+		return "", fmt.Errorf("router: Cloudflare returned no run token")
+	}
+	return runToken, nil
+}
+
+// ConnectorConfig is a connector config file as read back: the tunnel it
+// names and its ingress, the catch-all included as an entry without a
+// hostname.
+type ConnectorConfig struct {
+	Tunnel  string
+	Ingress []Ingress
+}
+
+// ParseConnectorConfig reads a connector config file, the one Homestead
+// writes or a hand-made one being adopted.
+func ParseConnectorConfig(data []byte) (ConnectorConfig, error) {
+	var raw struct {
+		Tunnel  string `yaml:"tunnel"`
+		Ingress []struct {
+			Hostname string `yaml:"hostname"`
+			Service  string `yaml:"service"`
+		} `yaml:"ingress"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return ConnectorConfig{}, fmt.Errorf("router: connector config: %w", err)
+	}
+	out := ConnectorConfig{Tunnel: strings.TrimSpace(raw.Tunnel)}
+	for _, in := range raw.Ingress {
+		out.Ingress = append(out.Ingress, Ingress{Hostname: strings.ToLower(strings.TrimSpace(in.Hostname)), Service: strings.TrimSpace(in.Service)})
+	}
+	return out, nil
 }

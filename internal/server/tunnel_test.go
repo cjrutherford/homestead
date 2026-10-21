@@ -114,10 +114,12 @@ func TestTunnelStatusCachesDiscovery(t *testing.T) {
 // fakeCloudflare is a Cloudflare API double: zones, DNS records, accounts
 // and tunnels, enough for plan, setup and teardown.
 type fakeCloudflare struct {
-	mu       sync.Mutex
-	zones    map[string][2]string // name -> {id, account}
-	records  map[string]map[string]any
-	tunnels  map[string]string
+	mu      sync.Mutex
+	zones   map[string][2]string // name -> {id, account}
+	records map[string]map[string]any
+	tunnels map[string]string
+	// remote marks tunnels configured from the Cloudflare dashboard.
+	remote   map[string]bool
 	nextID   int
 	requests []string
 }
@@ -128,6 +130,7 @@ func newFakeCloudflare(t *testing.T) *fakeCloudflare {
 		zones:   map[string][2]string{"example.com": {"zone1", "abcd0000000000000000000000000001"}},
 		records: map[string]map[string]any{},
 		tunnels: map[string]string{},
+		remote:  map[string]bool{},
 	}
 	server := httptest.NewServer(http.HandlerFunc(cf.serve))
 	t.Cleanup(server.Close)
@@ -202,6 +205,18 @@ func (cf *fakeCloudflare) serve(w http.ResponseWriter, r *http.Request) {
 		id := fmt.Sprintf("tunnel%d", cf.nextID)
 		cf.tunnels[id] = fmt.Sprint(body["name"])
 		ok(map[string]any{"id": id, "name": body["name"], "token": "run-token"})
+	case len(parts) >= 4 && parts[0] == "accounts" && parts[2] == "cfd_tunnel" && r.Method == http.MethodGet:
+		name, found := cf.tunnels[parts[3]]
+		if !found {
+			missing()
+			return
+		}
+		if len(parts) == 5 && parts[4] == "token" {
+			ok("adopted-run-token")
+			return
+		}
+		ok(map[string]any{"id": parts[3], "name": name, "status": "healthy", "remote_config": cf.remote[parts[3]],
+			"connections": []any{map[string]any{"colo_name": "ord01"}}})
 	case len(parts) == 4 && parts[0] == "accounts" && parts[2] == "tunnels":
 		name, found := cf.tunnels[parts[3]]
 		if !found {
@@ -661,4 +676,104 @@ func TestTunnelSetupFailureRestoresRecords(t *testing.T) {
 			t.Fatalf("%s keeps tunnel names %v", r.Host, r.Tunnel)
 		}
 	}
+}
+
+// Adoption takes over a tunnel this appliance's connector already serves
+// (S290, ADR-041 §3): it is checked first, an existing CNAME is kept and
+// owned, unmanaged entries are dropped, and the tunnel itself survives.
+func TestTunnelAdopt(t *testing.T) {
+	srv, st, secrets := tunnelTestServer(t)
+	cf := newFakeCloudflare(t)
+	fakeConnector(t)
+	fakeEdge(t)
+	if err := secrets.Set("dns_cloudflare_api_token", "sealed-token"); err != nil {
+		t.Fatal(err)
+	}
+	seedTunnelEdge(t, srv, st, true, true)
+	const id = "0a1b2c3d-0000-4000-8000-00000000abcd"
+	cf.tunnels[id] = "homestead-vm2"
+	request := map[string]any{"adopt": id}
+	refused := func(want string) {
+		t.Helper()
+		recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/tunnel/plan", request)
+		if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), want) {
+			t.Fatalf("plan = %d %s, want 422 %q", recorder.Code, recorder.Body.String(), want)
+		}
+	}
+	refused("no connector config")
+	if err := os.MkdirAll(tunnelConnectorDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig := func(tunnel string) {
+		t.Helper()
+		config := "tunnel: " + tunnel + "\ningress:\n  - hostname: auth.example.com\n    service: http://localhost:9000\n" +
+			"  - hostname: old.example.com\n    service: http://localhost:8096\n  - service: http_status:404\n"
+		if err := os.WriteFile(connectorConfigPath(), []byte(config), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeConfig("ffff0000-0000-4000-8000-000000000000")
+	refused("different tunnel")
+	writeConfig(id)
+	cf.remote[id] = true
+	refused("Cloudflare dashboard")
+	cf.remote[id] = false
+	if recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/tunnel/plan", map[string]any{"adopt": "not a uuid"}); recorder.Code != http.StatusBadRequest {
+		t.Fatalf("bad id: code = %d", recorder.Code)
+	}
+	keptID := cf.addRecord("CNAME", "auth.example.com", id+".cfargotunnel.com")
+
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/tunnel/plan", request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("plan: %d %s", recorder.Code, recorder.Body.String())
+	}
+	var plan struct {
+		Name  string `json:"name"`
+		DNS   []struct{ Name, Action string }
+		Adopt struct {
+			ID       string
+			Existing []struct{ Hostname, Outcome string }
+		}
+		Digest string
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if plan.Name != "homestead-vm2" || plan.Adopt.ID != id || len(plan.Adopt.Existing) != 2 ||
+		!strings.HasPrefix(plan.Adopt.Existing[0].Outcome, "Kept") || !strings.HasPrefix(plan.Adopt.Existing[1].Outcome, "Dropped") {
+		t.Fatalf("plan = %+v", plan)
+	}
+	actions := map[string]string{}
+	for _, d := range plan.DNS {
+		actions[d.Name] = d.Action
+	}
+	if actions["auth.example.com"] != "keep" || actions["homestead.example.com"] != "create" {
+		t.Fatalf("dns = %+v", plan.DNS)
+	}
+	recorder = serveRequest(t, srv, http.MethodPost, "/api/v1/tunnel/setup", map[string]any{"adopt": id, "digest": plan.Digest})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("setup: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if op := waitOperation(t, st, recorder.Body.Bytes()); op.Status != operation.StatusSucceeded {
+		t.Fatalf("adopt op = %s: %s", op.Status, op.Error)
+	}
+	if cf.tunnels[id] == "" || len(cf.records) != 2 || cf.records[keptID] == nil {
+		t.Fatalf("tunnels = %v records = %v", cf.tunnels, cf.records)
+	}
+	owned, _ := router.OwnedRecords(st, id)
+	if len(owned) != 2 {
+		t.Fatalf("owned = %+v", owned)
+	}
+	config, _ := os.ReadFile(connectorConfigPath())
+	token, _ := os.ReadFile(connectorTokenPath())
+	if strings.Contains(string(config), "old.example.com") || !strings.Contains(string(config), "homestead.example.com") ||
+		string(token) != "TUNNEL_TOKEN=adopted-run-token\n" {
+		t.Fatalf("config = %s token = %s", config, token)
+	}
+	var audited int
+	if err := st.DB().QueryRow(`SELECT COUNT(*) FROM audit_entries WHERE action = 'tunnel.adopt'`).Scan(&audited); err != nil || audited != 1 {
+		t.Fatalf("adopt audit = %d, %v", audited, err)
+	}
+	// One tunnel at a time: a second adoption is refused.
+	refused("already manages a tunnel")
 }

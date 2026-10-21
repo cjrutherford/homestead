@@ -72,6 +72,9 @@ type TunnelRequest struct {
 	Name              string `json:"name"`
 	DashboardHostname string `json:"dashboard_hostname,omitempty"`
 	AuthHostname      string `json:"auth_hostname,omitempty"`
+	// Adopt names an existing tunnel to take over instead of creating one
+	// (S290); Name is then unused.
+	Adopt string `json:"adopt,omitempty"`
 }
 
 // TunnelPlan is the reviewed tunnel change (ADR-037 §4): the public names,
@@ -87,8 +90,22 @@ type TunnelPlan struct {
 	DNS               []TunnelPlanChange `json:"dns"`
 	Omitted           []TunnelOmission   `json:"omitted"`
 	SignIn            string             `json:"sign_in,omitempty"`
+	Adopt             *TunnelAdoption    `json:"adopt,omitempty"`
 	Warnings          []string           `json:"warnings"`
 	Digest            string             `json:"digest"`
+}
+
+// TunnelAdoption is what adopting an existing tunnel does (S290): the
+// tunnel's state and what happens to each entry its connector serves now.
+type TunnelAdoption struct {
+	ID          string `json:"id"`
+	Status      string `json:"status"`
+	Connections int    `json:"connections"`
+	Existing    []struct {
+		Hostname string `json:"hostname"`
+		Service  string `json:"service"`
+		Outcome  string `json:"outcome"`
+	} `json:"existing"`
 }
 
 // TunnelPlanRoute is one public name, its role, and the local edge route

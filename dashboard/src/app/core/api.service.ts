@@ -1045,8 +1045,8 @@ export interface TunnelPlanChange {
   type: string;
   content: string;
   proxied: boolean;
-  /** create, or replace the listed records. */
-  action: 'create' | 'replace';
+  /** create, or replace the listed records; keep (adoption), delete and restore (S290). */
+  action: 'create' | 'replace' | 'keep' | 'delete' | 'restore';
   replaces: { type: string; name: string; content: string; proxied: boolean }[];
 }
 
@@ -1063,15 +1063,62 @@ export interface TunnelPlan {
   omitted: { hostname: string; role: string; reason: string }[];
   /** What approving means for Sign-in, when the dashboard is published. */
   sign_in?: string;
+  /** Present when the plan adopts an existing tunnel (S290). */
+  adopt?: TunnelAdoption;
   warnings: string[];
   digest: string;
 }
 
-/** The names a tunnel plan is asked for; empty names take the proposal. */
+/** Adopting a tunnel this appliance's connector already serves (S290, ADR-041 §3). */
+export interface TunnelAdoption {
+  id: string;
+  status: string;
+  connections: number;
+  /** Each entry the connector serves now, and whether it is kept or dropped. */
+  existing: { hostname: string; service: string; outcome: string }[];
+}
+
+/** The names a tunnel plan is asked for; empty names take the proposal. `adopt` replaces `name`. */
 export interface TunnelRequest {
-  name: string;
+  name?: string;
+  adopt?: string;
   dashboard_hostname?: string;
   auth_hostname?: string;
+}
+
+/** GET /api/v1/catalog/{name}/public (S290, ADR-041 §1). */
+export interface AppPublicStatus {
+  app: string;
+  available: boolean;
+  reason?: string;
+  tunnel_id?: string;
+  tunnel?: string;
+  routes: { route: string; public: string[] }[];
+  proposed?: string;
+  sign_in: boolean;
+}
+
+/** One public name added to or removed from an app. */
+export interface AppPublicPlan {
+  app: string;
+  action: 'add' | 'remove';
+  hostname: string;
+  route: string;
+  tunnel: string;
+  tunnel_id: string;
+  zone: string;
+  dns: TunnelPlanChange[];
+  connector_before: string[];
+  connector_after: string[];
+  sign_in?: string;
+  warnings: string[];
+  digest: string;
+}
+
+export interface AppPublicRequest {
+  enabled: boolean;
+  hostname?: string;
+  route?: string;
 }
 
 /** One app route's local names (S295): `<app>.lan` and its `<app>.local`. */
@@ -1554,6 +1601,18 @@ export class ApiService {
     actor: string;
   }): Observable<BackupSchedule> {
     return this.http.post<BackupSchedule>('/api/v1/backups/schedules', body);
+  }
+
+  appPublic(name: string): Observable<AppPublicStatus> {
+    return this.http.get<AppPublicStatus>(`/api/v1/catalog/${encodeURIComponent(name)}/public`);
+  }
+
+  appPublicPlan(name: string, request: AppPublicRequest): Observable<AppPublicPlan> {
+    return this.http.post<AppPublicPlan>(`/api/v1/catalog/${encodeURIComponent(name)}/public/plan`, request);
+  }
+
+  appPublicApply(name: string, request: AppPublicRequest, digest: string): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(`/api/v1/catalog/${encodeURIComponent(name)}/public/apply`, { ...request, digest });
   }
 
   appSignIn(name: string): Observable<AppSignInStatus> {

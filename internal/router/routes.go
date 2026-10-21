@@ -1,6 +1,8 @@
 package router
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -70,4 +72,20 @@ func ListRoutes(st *store.Store) ([]TunnelRoute, error) {
 		return nil, fmt.Errorf("router: list routes: %w", err)
 	}
 	return routes, nil
+}
+
+// RecordedTunnel returns the one tunnel Homestead manages, from its
+// recorded routes; empty when none is recorded.
+func RecordedTunnel(st *store.Store) (id, name string, err error) {
+	if st == nil {
+		return "", "", fmt.Errorf("router: recorded tunnel needs a store")
+	}
+	err = st.DB().QueryRow(`SELECT tunnel_id, tunnel_name FROM tunnel_routes ORDER BY hostname LIMIT 1`).Scan(&id, &name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", nil
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("router: recorded tunnel: %w", err)
+	}
+	return id, name, nil
 }

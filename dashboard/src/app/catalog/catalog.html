@@ -73,6 +73,11 @@
       </p>
     }
 
+    @if (manifest.Name !== 'authentik') {
+      <h3>Public address</h3>
+      <app-app-public [name]="manifest.Name" [title]="manifest.Title" />
+    }
+
     @if (manifest.SSO?.oidc) {
       <h3>Sign-in with Authentik</h3>
       <app-app-sign-in [name]="manifest.Name" [title]="manifest.Title" />

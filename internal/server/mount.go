@@ -149,6 +149,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 		CatalogDir: c.CatalogDir, YAMLPath: ssoYAMLPath(c.ConfigPath), Port: c.Port,
 	})
 	srv.MountTunnel(st, secrets, c.Port)
+	srv.MountAppPublic(st, secrets, c.CatalogDir)
 	srv.MountSetup(SetupConfig{
 		Store: st, Secrets: secrets, Wizards: wizard.New(st), SSO: ssoManager, CatalogDir: c.CatalogDir,
 	})

@@ -253,4 +253,40 @@ describe('Tunnel', () => {
     expect(el.querySelectorAll('.field-error').length).toBe(1);
     http.expectNone('/api/v1/tunnel/plan');
   });
+  it('adopts an existing tunnel: lists what it serves now and approves by digest (S290)', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+    fixture.detectChanges();
+    fixture.componentInstance['review']('', '', '', '0A1B2C3D');
+    const req = http.expectOne('/api/v1/tunnel/plan');
+    expect(req.request.body).toEqual({ adopt: '0a1b2c3d' });
+    req.flush({
+      name: 'homestead-vm2', dashboard_hostname: 'homestead.example.com', auth_hostname: 'auth.example.com', zone: 'example.com',
+      ingress: [{ hostname: 'auth.example.com', role: 'authentik', route: 'authentik.lan', service: 'http://127.0.0.1:8480' }],
+      dns: [{ name: 'auth.example.com', type: 'CNAME', content: '0a1b2c3d.cfargotunnel.com', proxied: true, action: 'keep', replaces: [] }],
+      omitted: [], warnings: [], digest: 'a1g',
+      adopt: { id: '0a1b2c3d', status: 'healthy', connections: 2,
+        existing: [{ hostname: 'old.example.com', service: 'http://localhost:8096', outcome: 'Dropped from the connector.' }] },
+    });
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(text()).toContain('Adopt the existing tunnel homestead-vm2');
+    expect(el.querySelector('table[aria-label="What the connector serves now"]')?.textContent).toContain('Dropped from the connector.');
+    expect(el.querySelector('table[aria-label="DNS changes"]')?.textContent).toContain('Keep (already points here)');
+    const approve = Array.from(el.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Approve and adopt') as HTMLButtonElement;
+    approve.click();
+    const setup = http.expectOne('/api/v1/tunnel/setup');
+    expect(setup.request.body).toEqual({ adopt: '0a1b2c3d', digest: 'a1g' });
+    setup.flush({ id: 31 });
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+  });
+
+  it('refuses a new name and an adoption together', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+    fixture.componentInstance['review']('homestead', '', '', '0a1b2c3d');
+    fixture.detectChanges();
+    http.expectNone('/api/v1/tunnel/plan');
+    expect(text()).toContain('not both');
+  });
 });

@@ -94,9 +94,10 @@ export class Tunnel implements OnInit {
   }
 
   /** Asks the daemon what setup would change. Nothing changes yet. */
-  review(name: string, dashboardHostname = '', authHostname = ''): void {
+  review(name: string, dashboardHostname = '', authHostname = '', adopt = ''): void {
     const missing: Record<string, string> = {};
-    if (!name.trim()) missing['name'] = 'Enter a name for the tunnel.';
+    if (!name.trim() && !adopt.trim()) missing['name'] = 'Enter a name for the tunnel, or the ID of one to adopt.';
+    if (name.trim() && adopt.trim()) missing['name'] = 'Either name a new tunnel or adopt one, not both.';
     this.fieldErrors.set(missing);
     if (Object.keys(missing).length > 0) {
       return;
@@ -105,7 +106,8 @@ export class Tunnel implements OnInit {
     this.error.set(null);
     this.notice.set(null);
     this.plan.set(null);
-    const request: TunnelRequest = { name: name.trim() };
+    // Adopting (S290) takes over a tunnel this appliance's connector already serves.
+    const request: TunnelRequest = adopt.trim() ? { adopt: adopt.trim().toLowerCase() } : { name: name.trim() };
     if (dashboardHostname.trim()) request.dashboard_hostname = dashboardHostname.trim();
     if (authHostname.trim()) request.auth_hostname = authHostname.trim();
     this.reviewed = request;

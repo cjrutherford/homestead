@@ -97,3 +97,4 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-038 | Tunnel Teardown Restores the Records Its Setup Replaced | Accepted |
 | ADR-039 | App Names, App Sign-in, and Nightly Backups | Accepted |
 | ADR-040 | App Sign-in: Back Channel, Trust, and Adapters | Accepted |
+| ADR-041 | Public App Names on the Tunnel, and Tunnel Adoption | Accepted |

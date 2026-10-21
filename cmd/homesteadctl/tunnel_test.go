@@ -26,6 +26,12 @@ func tunnelStub(t *testing.T) string {
 			if dash == "" {
 				dash = "homestead.example.com"
 			}
+			if body["adopt"] == "0a1b2c3d" {
+				_, _ = w.Write([]byte(`{"name":"homestead-vm2","zone":"example.com","ingress":[],"dns":[],"omitted":[],"warnings":[],
+					"adopt":{"id":"0a1b2c3d","status":"healthy","connections":2,"existing":[{"hostname":"old.example.com","service":"http://localhost:8096","outcome":"Dropped from the connector."}]},
+					"digest":"a1g"}`))
+				return
+			}
 			_, _ = w.Write([]byte(`{"name":"homestead","dashboard_hostname":"` + dash + `","auth_hostname":"auth.example.com",
 				"zone":"example.com","ingress":[{"hostname":"auth.example.com","role":"authentik","route":"authentik.lan","service":"http://127.0.0.1:8480"}],
 				"dns":[{"name":"auth.example.com","type":"CNAME","content":"<new tunnel id>.cfargotunnel.com","proxied":true,
@@ -147,5 +153,29 @@ func TestTunnelTeardown(t *testing.T) {
 	}
 	if code, _, _ := invoke(t, []string{"--server", url, "tunnel", "bogus"}); code != exitUsage {
 		t.Fatalf("exit = %d, want usage", code)
+	}
+}
+
+// --adopt plans and approves taking over an existing tunnel (S290).
+func TestTunnelAdopt(t *testing.T) {
+	url := tunnelStub(t)
+	code, stdout, stderr := invoke(t, []string{"--server", url, "tunnel", "plan", "--adopt", "0a1b2c3d"})
+	if code != exitOK {
+		t.Fatalf("exit = %d stderr = %q", code, stderr)
+	}
+	for _, want := range []string{"adopt: 0a1b2c3d (healthy, 2 connections)",
+		"existing old.example.com -> http://localhost:8096: Dropped from the connector.",
+		"tunnel setup --adopt 0a1b2c3d --digest a1g"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+	for _, args := range [][]string{
+		{"tunnel", "plan", "--adopt", "0a1b2c3d", "--name", "homestead"},
+		{"tunnel", "teardown", "tunnel-id", "--adopt", "0a1b2c3d"},
+	} {
+		if code, _, _ := invoke(t, append([]string{"--server", url}, args...)); code != exitUsage {
+			t.Fatalf("%v: exit = %d, want usage", args, code)
+		}
 	}
 }
