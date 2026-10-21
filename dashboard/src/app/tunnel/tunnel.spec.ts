@@ -27,6 +27,7 @@ const STATUS = {
   ],
   connector: { installed: true, active: true },
   accounts: 1,
+  proposed: { dashboard_hostname: 'homestead.example.com', auth_hostname: 'auth.example.com', sign_in_linked: true },
 };
 
 describe('Tunnel', () => {
@@ -67,36 +68,38 @@ describe('Tunnel', () => {
 
   const PLAN = {
     name: 'homestead',
-    hostname: 'photos.example.com',
-    service: 'http://127.0.0.1:2283',
+    dashboard_hostname: 'homestead.example.com',
+    auth_hostname: 'auth.example.com',
     zone: 'example.com',
-    ingress: [{ hostname: 'photos.example.com', service: 'http://127.0.0.1:2283' }],
+    ingress: [
+      { hostname: 'homestead.example.com', role: 'dashboard', route: 'homestead.lan', service: 'http://127.0.0.1:8480' },
+      { hostname: 'auth.example.com', role: 'authentik', route: 'authentik.lan', service: 'http://127.0.0.1:8480' },
+    ],
     dns: [
       {
-        name: 'photos.example.com',
+        name: 'homestead.example.com',
         type: 'CNAME',
         content: '<new tunnel id>.cfargotunnel.com',
         proxied: true,
         action: 'replace',
-        replaces: [{ type: 'A', name: 'photos.example.com', content: '203.0.113.7', proxied: false }],
+        replaces: [{ type: 'A', name: 'homestead.example.com', content: '203.0.113.7', proxied: false }],
       },
+      { name: 'auth.example.com', type: 'CNAME', content: '<new tunnel id>.cfargotunnel.com', proxied: true, action: 'create', replaces: [] },
     ],
-    warnings: ['Existing records for photos.example.com are deleted and are not restored.'],
+    omitted: [],
+    sign_in: 'After setup, re-plan Sign-in and approve it: it adds https://homestead.example.com.',
+    warnings: ['Existing records for homestead.example.com are deleted and are not restored.'],
     digest: 'd1g',
   };
 
-  function reviewPlan(): void {
+  function reviewPlan(plan: object = PLAN): void {
     fixture.detectChanges();
     http.expectOne('/api/v1/tunnel/status').flush(STATUS);
     fixture.detectChanges();
-    fixture.componentInstance['review']('homestead', 'photos.example.com', 'http://127.0.0.1:2283');
-    const plan = http.expectOne('/api/v1/tunnel/plan');
-    expect(plan.request.body).toEqual({
-      name: 'homestead',
-      hostname: 'photos.example.com',
-      service: 'http://127.0.0.1:2283',
-    });
-    plan.flush(PLAN);
+    fixture.componentInstance['review']('homestead', '', 'login.example.com');
+    const req = http.expectOne('/api/v1/tunnel/plan');
+    expect(req.request.body).toEqual({ name: 'homestead', auth_hostname: 'login.example.com' });
+    req.flush(plan);
     fixture.detectChanges();
   }
 
@@ -107,18 +110,46 @@ describe('Tunnel', () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('input[type="password"]')).toBeNull();
     expect(el.querySelector('input[name="account-id"]')).toBeNull();
-    expect(el.querySelector('#tunnel-service')?.getAttribute('placeholder')).toBeNull();
+    expect(el.querySelector('#tunnel-service')).toBeNull();
+    expect(el.querySelector('#tunnel-hostname')).toBeNull();
     expect(text()).toContain('Domain step');
   });
 
-  it('suggests the hostname under the setup domain', () => {
+  it('proposes the daemon\'s names, and names under the setup domain before it answers', () => {
     fixture.componentRef.setInput('domain', 'example.net');
     fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('#tunnel-dashboard')?.getAttribute('placeholder')).toBe('homestead.example.net');
+    expect(el.querySelector('#tunnel-auth')?.getAttribute('placeholder')).toBe('auth.example.net');
     http.expectOne('/api/v1/tunnel/status').flush(STATUS);
     fixture.detectChanges();
-    expect((fixture.nativeElement as HTMLElement).querySelector('#tunnel-hostname')?.getAttribute('placeholder')).toBe(
-      'photos.example.net',
-    );
+    expect(el.querySelector('#tunnel-dashboard')?.getAttribute('placeholder')).toBe('homestead.example.com');
+    expect(el.querySelector('#tunnel-auth')?.getAttribute('placeholder')).toBe('auth.example.com');
+  });
+
+  it('shows each public name with its edge route and the sign-in step', () => {
+    reviewPlan();
+    const el = fixture.nativeElement as HTMLElement;
+    const names = el.querySelector('table[aria-label="Public hostnames"]')?.textContent ?? '';
+    expect(names).toContain('homestead.example.com');
+    expect(names).toContain('dashboard');
+    expect(names).toContain('homestead.lan');
+    expect(names).toContain('authentik.lan');
+    expect(text()).toContain('re-plan Sign-in');
+    expect(el.querySelector('a[href="/sign-in"]')).not.toBeNull();
+  });
+
+  it('says why the dashboard is left out until sign-in is linked', () => {
+    reviewPlan({
+      ...PLAN,
+      ingress: [PLAN.ingress[1]],
+      dns: [PLAN.dns[1]],
+      omitted: [{ hostname: 'homestead.example.com', role: 'dashboard', reason: 'Sign-in with Authentik is not linked yet.' }],
+      sign_in: undefined,
+    });
+    expect(text()).toContain('Left out: homestead.example.com (dashboard)');
+    expect(text()).toContain('Sign-in with Authentik is not linked yet.');
+    expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/sign-in"]')).toBeNull();
   });
 
   it('shows the plan and changes nothing until approved', () => {
@@ -127,7 +158,8 @@ describe('Tunnel', () => {
     const el = fixture.nativeElement as HTMLElement;
     const dns = el.querySelector('table[aria-label="DNS changes"]')?.textContent ?? '';
     expect(dns).toContain('Replace');
-    expect(dns).toContain('CNAME photos.example.com');
+    expect(dns).toContain('CNAME homestead.example.com');
+    expect(dns).toContain('CNAME auth.example.com');
     expect(dns).toContain('(proxied)');
     expect(dns).toContain('Delete');
     expect(dns).toContain('203.0.113.7');
@@ -143,12 +175,7 @@ describe('Tunnel', () => {
     ) as HTMLButtonElement;
     approve.click();
     const setup = http.expectOne('/api/v1/tunnel/setup');
-    expect(setup.request.body).toEqual({
-      name: 'homestead',
-      hostname: 'photos.example.com',
-      service: 'http://127.0.0.1:2283',
-      digest: 'd1g',
-    });
+    expect(setup.request.body).toEqual({ name: 'homestead', auth_hostname: 'login.example.com', digest: 'd1g' });
     setup.flush({ id: 23 });
     http.expectOne('/api/v1/tunnel/status').flush(STATUS);
     fixture.detectChanges();
@@ -223,7 +250,7 @@ describe('Tunnel', () => {
     const name = el.querySelector('#tunnel-name') as HTMLInputElement;
     expect(name.getAttribute('aria-invalid')).toBe('true');
     expect(el.querySelector('#tunnel-name-error')?.textContent).toContain('Enter a name');
-    expect(el.querySelectorAll('.field-error').length).toBe(3);
+    expect(el.querySelectorAll('.field-error').length).toBe(1);
     http.expectNone('/api/v1/tunnel/plan');
   });
 });

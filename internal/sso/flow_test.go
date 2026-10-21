@@ -679,3 +679,57 @@ func TestRateLimitIsPerAddressAndBounded(t *testing.T) {
 		t.Fatalf("expired entries were not pruned: %d", len(h.m.wins))
 	}
 }
+
+// A sign-in on the tunnel's dashboard origin sends the browser to
+// Authentik's tunnel address; discovery and the token exchange stay on the
+// local address, so the issuer still matches (ADR-037).
+func TestPublicOriginSignsInAtPublicAuthentik(t *testing.T) {
+	h := newHarness(t)
+	h.m.Defaults = func() Defaults {
+		return Defaults{PublicOrigins: []string{"https://homestead.example.test"}, PublicAuthentikURL: "https://auth.example.test"}
+	}
+	h.configure()
+	if strings.Join(h.spec.PublicOrigins, ",") != "https://homestead.example.test" || h.spec.PublicAuthentikURL != "https://auth.example.test" {
+		t.Fatalf("spec %+v", h.spec)
+	}
+	if !strings.Contains(strings.Join(planWarnings(h.spec), "\n"), "browser signs in at https://auth.example.test") {
+		t.Fatalf("warnings %v", planWarnings(h.spec))
+	}
+	h.link()
+	start, err := h.m.StartLogin(ctxb(), "homestead.example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(start.URL, "https://auth.example.test/") {
+		t.Fatalf("public sign-in sent to %s", start.URL)
+	}
+	// The fake IdP reads the query only; the code exchange goes to the
+	// local token endpoint.
+	code, state := h.idp.authorize(start.URL)
+	if _, err := h.m.Callback(ctxb(), state, code, "", state); err != nil {
+		t.Fatalf("public callback: %v", err)
+	}
+	local, err := h.m.StartLogin(ctxb(), "127.0.0.1:8080")
+	if err != nil || !strings.HasPrefix(local.URL, h.idp.srv.URL+"/") {
+		t.Fatalf("local sign-in %v %s", err, local.URL)
+	}
+}
+
+// Without a public origin the spec carries no public fields, so a spec
+// planned before S296 keeps its digest.
+func TestSpecWithoutPublicOriginsIsUnchanged(t *testing.T) {
+	h := newHarness(t)
+	h.m.Defaults = func() Defaults { return Defaults{PublicAuthentikURL: "https://auth.example.test"} }
+	spec, err := h.m.BuildSpec(PlanRequest{AuthentikURL: "https://authentik.lan", Origins: []string{"https://homestead.lan"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := fmt.Sprintf("%v", digestOf(spec))
+	spec.PublicOrigins, spec.PublicAuthentikURL = nil, ""
+	if digestOf(spec) != raw {
+		t.Fatal("digest changed")
+	}
+	if strings.Contains(fmt.Sprint(spec), "auth.example.test") {
+		t.Fatalf("public address without a public origin: %+v", spec)
+	}
+}

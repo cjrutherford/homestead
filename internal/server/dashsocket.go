@@ -65,6 +65,60 @@ func viaEdge(r *http.Request, detail string) string {
 // (the Host and Origin rules). Without it the socket answers 421.
 func (s *Server) SetDashboardNames(f func() []string) { s.dashNames = f }
 
+// SetDashboardPublicNames supplies the dashboard's public names, delivered
+// by the tunnel (ADR-037). On those names the front wrapper refuses every
+// way to sign in except Authentik.
+func (s *Server) SetDashboardPublicNames(f func() []string) { s.dashPublicNames = f }
+
+type publicHostKey struct{}
+
+// onPublicHost reports whether the request arrived on a public dashboard
+// name (set by the dashboard front wrapper only).
+func onPublicHost(r *http.Request) bool {
+	v, _ := r.Context().Value(publicHostKey{}).(bool)
+	return v
+}
+
+// publicHostRefused lists the routes the public dashboard names refuse
+// (ADR-037 §4): every session-creating or password-taking route except
+// sign-in with Authentik. Claim, setup and claim-window wizards, password
+// login and change, recovery, and linking an Authentik account stay on the
+// local or overlay addresses. Any request carrying the step-up password is
+// refused too, so the local password never crosses the tunnel.
+var publicHostRefused = []string{
+	"POST /api/v1/claim",
+	"POST /api/v1/admins/setup",
+	"POST /api/v1/admins/password",
+	"POST /api/v1/admins/recover",
+	"POST /api/v1/sessions",
+	"GET /api/v1/wizards/{id}",
+	"PUT /api/v1/wizards/{id}",
+	"DELETE /api/v1/wizards/{id}",
+	"POST /api/v1/sso/link",
+	"DELETE /api/v1/sso/link",
+}
+
+// publicRefusals matches publicHostRefused with the same pattern rules as
+// the mux, so a path variant cannot slip past.
+var publicRefusals = func() *http.ServeMux {
+	m := http.NewServeMux()
+	for _, p := range publicHostRefused {
+		m.HandleFunc(p, func(http.ResponseWriter, *http.Request) {})
+	}
+	return m
+}()
+
+// refusedOnPublicHost names why a public-name request is refused, or "".
+func refusedOnPublicHost(r *http.Request) string {
+	if r.Header.Get(ReauthHeader) != "" {
+		return "The local password is never accepted on the public address. Use the local or overlay address for this action."
+	}
+	if _, pattern := publicRefusals.Handler(r); pattern != "" && pattern != "/" {
+		return "This address signs in with Authentik only. Claim, password sign-in, recovery and linking work on the local or overlay address."
+	}
+	return ""
+}
+
 // forwardedClient parses the single X-Forwarded-For value Caddy sets.
 // Exactly one valid, non-loopback IP is accepted.
 func forwardedClient(r *http.Request) (string, bool) {
@@ -121,6 +175,14 @@ func (s *Server) dashboardFront(next http.Handler) http.Handler {
 			http.Error(w, "unknown host", http.StatusMisdirectedRequest)
 			return
 		}
+		public := s.dashPublicNames != nil && hostMatches(r.Host, s.dashPublicNames())
+		if public {
+			if reason := refusedOnPublicHost(r); reason != "" {
+				w.Header().Set("X-Homestead-Error", ErrorCodePublicHost)
+				http.Error(w, reason, http.StatusForbidden)
+				return
+			}
+		}
 		_, hasBearer := bearerToken(r.Header.Get("Authorization"))
 		_, cookieErr := r.Cookie(SessionCookieName)
 		hasCookie := cookieErr == nil
@@ -137,7 +199,11 @@ func (s *Server) dashboardFront(next http.Handler) http.Handler {
 			http.Error(w, "Origin header required", http.StatusForbidden)
 			return
 		}
-		r = r.Clone(context.WithValue(r.Context(), edgeClientKey{}, client))
+		ctx := context.WithValue(r.Context(), edgeClientKey{}, client)
+		if public {
+			ctx = context.WithValue(ctx, publicHostKey{}, true)
+		}
+		r = r.Clone(ctx)
 		r.RemoteAddr = net.JoinHostPort(client, "0")
 		r.Header.Set("X-Forwarded-For", client)
 		// The route is HTTPS only; the cookie must be Secure.

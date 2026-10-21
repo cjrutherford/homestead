@@ -126,6 +126,10 @@
         </form>
       } @else {
         <h2>Status</h2>
+        @if (s.replan) {
+          <app-state-message kind="warning" headline="Re-plan sign-in for the public dashboard address." [detail]="s.replan_reason ?? ''" />
+          <button type="button" class="primary" (click)="openForm()" [disabled]="busy()">Re-plan sign-in</button>
+        }
         @if (s.offered) {
           <app-state-message kind="status" headline="The login page offers Sign in with Authentik." />
         } @else if (s.dormant) {

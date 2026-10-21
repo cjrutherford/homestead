@@ -926,6 +926,8 @@ export interface TunnelStatus {
   routes: { Hostname: string; TunnelID: string; Service: string }[];
   connector: { installed: boolean; active: boolean };
   accounts: number;
+  /** The names a tunnel plan would propose (S296); the owner may rename them. */
+  proposed: { dashboard_hostname: string; auth_hostname: string; sign_in_linked: boolean };
   discovery_error?: string;
 }
 
@@ -943,13 +945,25 @@ export interface TunnelPlanChange {
 /** POST /api/v1/tunnel/plan — what setup would change; never the account or zone IDs. */
 export interface TunnelPlan {
   name: string;
-  hostname: string;
-  service: string;
+  dashboard_hostname: string;
+  auth_hostname: string;
   zone: string;
-  ingress: { hostname: string; service: string }[];
+  /** Every public name reaches the edge, which routes it (S296). */
+  ingress: { hostname: string; role: string; route: string; service: string }[];
   dns: TunnelPlanChange[];
+  /** Names left out of this plan, each with the reason. */
+  omitted: { hostname: string; role: string; reason: string }[];
+  /** What approving means for Sign-in, when the dashboard is published. */
+  sign_in?: string;
   warnings: string[];
   digest: string;
+}
+
+/** The names a tunnel plan is asked for; empty names take the proposal. */
+export interface TunnelRequest {
+  name: string;
+  dashboard_hostname?: string;
+  auth_hostname?: string;
 }
 
 /** One app route's local names (S295): `<app>.lan` and its `<app>.local`. */
@@ -1582,13 +1596,13 @@ export class ApiService {
   }
 
   /** Reads Cloudflare and changes nothing (ADR-037). */
-  tunnelPlan(name: string, hostname: string, service: string): Observable<TunnelPlan> {
-    return this.http.post<TunnelPlan>('/api/v1/tunnel/plan', { name, hostname, service });
+  tunnelPlan(request: TunnelRequest): Observable<TunnelPlan> {
+    return this.http.post<TunnelPlan>('/api/v1/tunnel/plan', request);
   }
 
   /** Approves a reviewed plan by its digest; 409 when the plan changed since. */
-  tunnelSetup(name: string, hostname: string, service: string, digest: string): Observable<OperationStarted> {
-    return this.http.post<OperationStarted>('/api/v1/tunnel/setup', { name, hostname, service, digest });
+  tunnelSetup(request: TunnelRequest, digest: string): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>('/api/v1/tunnel/setup', { ...request, digest });
   }
 
   /** The account is the one stored at setup: teardown never asks for it. */
@@ -1717,10 +1731,11 @@ export class ApiService {
   /**
    * Whether the login page offers Authentik (S286, ADR-033). Public; answers
    * 404 until sign-in is set up and linked, and `enabled: false` at an
-   * address the plan does not cover.
+   * address the plan does not cover. `password: false` on the public
+   * dashboard name (S296), where only Authentik sign-in is offered.
    */
-  ssoOptions(): Observable<{ enabled: boolean }> {
-    return this.http.get<{ enabled: boolean }>('/api/v1/sso/options');
+  ssoOptions(): Observable<{ enabled: boolean; password?: boolean }> {
+    return this.http.get<{ enabled: boolean; password?: boolean }>('/api/v1/sso/options');
   }
 
   /** Own lockout status (S274). */

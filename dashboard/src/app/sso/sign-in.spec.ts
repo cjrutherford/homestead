@@ -225,6 +225,22 @@ describe('SignIn', () => {
     expect(text()).toContain('Sign-in with Authentik is off. Your local password is unchanged.');
   });
 
+  it('asks for a re-plan once the tunnel publishes the dashboard, and adds the public address', async () => {
+    await open();
+    const defaults = { ...NONE.defaults, public_origins: ['https://homestead.example.com'], public_authentik_url: 'https://auth.example.com' };
+    status({
+      ...NONE, state: 'configured', configured: true, linked: true, offered: true, spec: SPEC, subject: 'sub-1', defaults,
+      replan: true, replan_reason: 'Sign-in does not yet cover the public dashboard address https://homestead.example.com.',
+    });
+    http.expectOne('/api/v1/sso').flush({ ...NONE, configured: true, linked: true, spec: SPEC });
+    expect(text()).toContain('Re-plan sign-in for the public dashboard address');
+    expect(text()).toContain('https://homestead.example.com');
+    button('Re-plan sign-in').click();
+    fixture.detectChanges();
+    const origins = (el().querySelector('#sso-origins') as HTMLTextAreaElement).value.split('\n');
+    expect(origins).toEqual([...SPEC.origins, 'https://homestead.example.com']);
+  });
+
   it('shows the dormant state without a button promise', async () => {
     await open();
     status({ ...NONE, state: 'configured', configured: true, linked: true, dormant: true, spec: SPEC, subject: 's' });

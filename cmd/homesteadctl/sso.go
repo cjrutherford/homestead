@@ -93,6 +93,12 @@ func printSSO(w io.Writer, st apiclient.SSOState) {
 	}
 	fmt.Fprintf(w, "  issuer:    %s\n", st.Spec.Issuer)
 	fmt.Fprintf(w, "  addresses: %s\n", strings.Join(st.Spec.Origins, ", "))
+	if len(st.Spec.PublicOrigins) > 0 {
+		fmt.Fprintf(w, "  public:    %s (signs in at %s)\n", strings.Join(st.Spec.PublicOrigins, ", "), st.Spec.PublicAuthentikURL)
+	}
+	if st.Replan {
+		fmt.Fprintf(w, "  re-plan:   %s Run `homesteadctl sso plan`, then approve.\n", st.ReplanReason)
+	}
 	if st.Linked {
 		fmt.Fprintf(w, "  linked to: %s\n", st.Subject)
 	}

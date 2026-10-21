@@ -27,6 +27,8 @@ export class Login implements OnInit {
   /** The daemon's browser-protocol address that starts the Authentik flow. */
   protected readonly ssoLogin = '/api/v1/sso/login';
   protected readonly ssoEnabled = signal(false);
+  /** False on the public dashboard name (S296): only Authentik signs in there. */
+  protected readonly passwordOffered = signal(true);
 
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -45,7 +47,10 @@ export class Login implements OnInit {
     if (!this.sessions.isLoggedIn()) {
       // 404 (not set up, or not linked) simply leaves the button out.
       this.api.ssoOptions().subscribe({
-        next: (options) => this.ssoEnabled.set(options.enabled),
+        next: (options) => {
+          this.ssoEnabled.set(options.enabled);
+          this.passwordOffered.set(options.password !== false);
+        },
         error: () => this.ssoEnabled.set(false),
       });
     }

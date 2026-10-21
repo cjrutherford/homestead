@@ -10,6 +10,7 @@
     @if (error()) {
       <app-state-message kind="error" [headline]="error()" />
     }
+    @if (passwordOffered()) {
     <form
       (submit)="submit(nameInput.value, passwordInput.value); $event.preventDefault()"
       aria-label="Login"
@@ -30,8 +31,16 @@
       </label>
       <button type="submit" [disabled]="busy()">Log in</button>
     </form>
+    } @else {
+      <p>
+        This is the dashboard's public address, so only Authentik signs you in here. Your local
+        password works on your home network.
+      </p>
+    }
     @if (ssoEnabled()) {
-      <p>Or use the Authentik that runs on this appliance. Your local password keeps working either way.</p>
+      @if (passwordOffered()) {
+        <p>Or use the Authentik that runs on this appliance. Your local password keeps working either way.</p>
+      }
       <p><a class="button" [href]="ssoLogin">Sign in with Authentik</a></p>
     }
   }

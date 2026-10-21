@@ -281,6 +281,9 @@ const (
 	ErrorCodeReauthRequired = "reauth-required"
 	ErrorCodeReauthInvalid  = "reauth-invalid"
 	ErrorCodeReauthLocked   = "reauth-locked"
+	// ErrorCodePublicHost refuses a local-only action on a public
+	// dashboard name (ADR-037).
+	ErrorCodePublicHost = "public-host"
 )
 
 // Classify returns the class declared for a registered pattern.

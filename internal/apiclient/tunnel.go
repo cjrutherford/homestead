@@ -19,7 +19,17 @@ type TunnelStatus struct {
 	Routes    []router.TunnelRoute `json:"routes"`
 	Connector TunnelConnector      `json:"connector"`
 	Accounts  int                  `json:"accounts"`
+	Proposed  TunnelProposal       `json:"proposed"`
 	Discovery string               `json:"discovery_error,omitempty"`
+}
+
+// TunnelProposal is the default plan: public names from the setup domain
+// and whether sign-in with Authentik is linked, which the dashboard name
+// needs (ADR-037 §4).
+type TunnelProposal struct {
+	DashboardHostname string `json:"dashboard_hostname"`
+	AuthHostname      string `json:"auth_hostname"`
+	SignInLinked      bool   `json:"sign_in_linked"`
 }
 
 // TunnelEntry is one recorded tunnel with provider health.
@@ -55,24 +65,46 @@ func (c *Client) TunnelStatus(ctx context.Context) (TunnelStatus, error) {
 	return out, nil
 }
 
-// TunnelPlan is the reviewed tunnel change (ADR-037): the routes, the DNS
-// records it creates or replaces, warnings, and the digest that approves
-// exactly this plan. It never carries the account or zone IDs.
-type TunnelPlan struct {
-	Name     string             `json:"name"`
-	Hostname string             `json:"hostname"`
-	Service  string             `json:"service"`
-	Zone     string             `json:"zone"`
-	Ingress  []TunnelPlanRoute  `json:"ingress"`
-	DNS      []TunnelPlanChange `json:"dns"`
-	Warnings []string           `json:"warnings"`
-	Digest   string             `json:"digest"`
+// TunnelRequest names the tunnel and, optionally, the public names of the
+// dashboard and Authentik; empty names default to homestead.<domain> and
+// auth.<domain>.
+type TunnelRequest struct {
+	Name              string `json:"name"`
+	DashboardHostname string `json:"dashboard_hostname,omitempty"`
+	AuthHostname      string `json:"auth_hostname,omitempty"`
 }
 
-// TunnelPlanRoute is one public hostname and the service it reaches.
+// TunnelPlan is the reviewed tunnel change (ADR-037 §4): the public names,
+// the DNS records it creates or replaces, the names it leaves out and why,
+// warnings, and the digest that approves exactly this plan. It never
+// carries the account or zone IDs.
+type TunnelPlan struct {
+	Name              string             `json:"name"`
+	DashboardHostname string             `json:"dashboard_hostname"`
+	AuthHostname      string             `json:"auth_hostname"`
+	Zone              string             `json:"zone"`
+	Ingress           []TunnelPlanRoute  `json:"ingress"`
+	DNS               []TunnelPlanChange `json:"dns"`
+	Omitted           []TunnelOmission   `json:"omitted"`
+	SignIn            string             `json:"sign_in,omitempty"`
+	Warnings          []string           `json:"warnings"`
+	Digest            string             `json:"digest"`
+}
+
+// TunnelPlanRoute is one public name, its role, and the local edge route
+// that serves it through the edge's tunnel entry.
 type TunnelPlanRoute struct {
 	Hostname string `json:"hostname"`
+	Role     string `json:"role"`
+	Route    string `json:"route"`
 	Service  string `json:"service"`
+}
+
+// TunnelOmission is a proposed public name the plan leaves out.
+type TunnelOmission struct {
+	Hostname string `json:"hostname"`
+	Role     string `json:"role"`
+	Reason   string `json:"reason"`
 }
 
 // TunnelPlanChange is one DNS change: create, or replace the listed
@@ -87,10 +119,9 @@ type TunnelPlanChange struct {
 }
 
 // TunnelPlan reads Cloudflare and returns the plan; it changes nothing.
-func (c *Client) TunnelPlan(ctx context.Context, name, hostname, service string) (TunnelPlan, error) {
+func (c *Client) TunnelPlan(ctx context.Context, req TunnelRequest) (TunnelPlan, error) {
 	var out TunnelPlan
-	body := map[string]any{"name": name, "hostname": hostname, "service": service}
-	if err := c.postJSON(ctx, "/api/v1/tunnel/plan", body, &out); err != nil {
+	if err := c.postJSON(ctx, "/api/v1/tunnel/plan", req, &out); err != nil {
 		return TunnelPlan{}, err
 	}
 	return out, nil
@@ -98,10 +129,14 @@ func (c *Client) TunnelPlan(ctx context.Context, name, hostname, service string)
 
 // TunnelSetup approves a reviewed plan by its digest: the daemon plans
 // again, refuses if anything changed, then creates the tunnel, its DNS
-// record and connector, returning the operation id.
-func (c *Client) TunnelSetup(ctx context.Context, name, hostname, service, digest string) (int64, error) {
+// records, the edge's public names and the connector, returning the
+// operation id.
+func (c *Client) TunnelSetup(ctx context.Context, req TunnelRequest, digest string) (int64, error) {
 	var out OperationStarted
-	body := map[string]any{"name": name, "hostname": hostname, "service": service, "digest": digest}
+	body := struct {
+		TunnelRequest
+		Digest string `json:"digest"`
+	}{req, digest}
 	if err := c.postJSON(ctx, "/api/v1/tunnel/setup", body, &out); err != nil {
 		return 0, err
 	}

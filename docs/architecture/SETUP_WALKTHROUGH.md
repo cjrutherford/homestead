@@ -129,9 +129,13 @@ suffixes (`lan`, `local`, `home.arpa`, `internal`, `localhost`) and dotless
 names are refused with 422. With Cloudflare as the provider and its token
 stored, a domain no zone the token can see contains is also 422; without a
 token yet, or when Cloudflare cannot be reached, it is saved and the tunnel
-plan reports the zone. The tunnel form suggests its hostname under it.
-The tunnel itself is planned (`tunnel plan`), reviewed and approved by
-digest; see ADR-037.
+plan reports the zone. The tunnel form proposes `homestead.<domain>` for
+the dashboard and `auth.<domain>` for Authentik; the owner may rename
+either. The tunnel itself is planned (`tunnel plan`), reviewed and approved
+by digest; see ADR-037. Every public name goes to the edge. The dashboard
+name is left out, with the reason, until sign-in with Authentik is linked
+(S296); once it is published, the plan says to re-plan Sign-in, and on the
+public name only Authentik signs in.
 
 Access: home network only (default), Cloudflare Tunnel, router port forward.
 The tunnel option is available only with Cloudflare (ADR-017); for other

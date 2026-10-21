@@ -150,6 +150,10 @@ type Route struct {
 	// Aliases are extra names the dashboard route answers on the same
 	// leaf (the appliance's mDNS .local name, ADR-035 amendment).
 	Aliases []Hostname `json:",omitempty"`
+	// Tunnel are public names the Cloudflare tunnel delivers to this route
+	// (ADR-037): served only on the loopback tunnel entry, never on the LAN
+	// listeners, and owned by the tunnel setup and teardown.
+	Tunnel []Hostname `json:",omitempty"`
 }
 
 // ErrDashboardPublic explains the refusal of a public dashboard route.
@@ -158,6 +162,12 @@ const ErrDashboardPublic = "the dashboard route is local or overlay only with in
 // Names lists every name the route answers on: the host, then aliases.
 func (r Route) Names() []Hostname {
 	return append([]Hostname{r.Host}, r.ServedAliases()...)
+}
+
+// AllNames is Names plus the tunnel's public names: every Host the route
+// accepts, on any listener.
+func (r Route) AllNames() []Hostname {
+	return append(r.Names(), r.Tunnel...)
 }
 
 // localSuffix and mdnsSuffix are the local name an app is installed under
@@ -237,6 +247,9 @@ func (r Route) Validate() error {
 	if r.CraftApp != "" && !validCraftApp.MatchString(r.CraftApp) {
 		return fmt.Errorf("route.craftapp: must be a lowercase craft app name")
 	}
+	if err := r.validateTunnel(); err != nil {
+		return err
+	}
 	if r.Policy != nil {
 		if err := r.Policy.Validate(); err != nil {
 			return err
@@ -244,6 +257,38 @@ func (r Route) Validate() error {
 	}
 	if err := r.Health.Validate(); err != nil {
 		return err
+	}
+	return nil
+}
+
+// validateTunnel: tunnel names are public DNS names, distinct from each
+// other and from the route's local names, on a route that is not itself
+// public (a public route already has its own listener and certificate).
+func (r Route) validateTunnel() error {
+	if len(r.Tunnel) == 0 {
+		return nil
+	}
+	if r.Exposure == ExposurePublic {
+		return fmt.Errorf("route.tunnel: a public route is not also delivered by the tunnel")
+	}
+	if r.CraftApp != "" {
+		return fmt.Errorf("route.tunnel: craft app routes are not delivered by the tunnel yet")
+	}
+	seen := map[Hostname]bool{}
+	for _, n := range r.Names() {
+		seen[n] = true
+	}
+	for _, n := range r.Tunnel {
+		if err := n.Validate(); err != nil {
+			return err
+		}
+		if IsPrivateName(n) {
+			return fmt.Errorf("route.tunnel: %q is a local name; the tunnel carries public names", n)
+		}
+		if seen[n] {
+			return fmt.Errorf("route.tunnel: duplicate name %q", n)
+		}
+		seen[n] = true
 	}
 	return nil
 }
@@ -287,7 +332,7 @@ func (s RouteSet) Validate() error {
 		if s.Routes[i].Dashboard {
 			dashboards++
 		}
-		for _, n := range s.Routes[i].Names() {
+		for _, n := range s.Routes[i].AllNames() {
 			if seen[n] {
 				return fmt.Errorf("duplicate route host %q", n)
 			}

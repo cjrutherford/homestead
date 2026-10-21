@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -107,6 +108,11 @@ type SecretStore interface {
 type Defaults struct {
 	AuthentikURL string   `json:"authentik_url"`
 	Origins      []string `json:"origins"`
+	// PublicOrigins are the dashboard origins the tunnel delivers
+	// (ADR-037); PublicAuthentikURL is Authentik's tunnel address, where a
+	// browser signing in at a public origin is sent.
+	PublicOrigins      []string `json:"public_origins,omitempty"`
+	PublicAuthentikURL string   `json:"public_authentik_url,omitempty"`
 }
 
 // Manager owns the SSO state.
@@ -277,7 +283,26 @@ func (m *Manager) BuildSpec(req PlanRequest) (Spec, error) {
 	if err != nil {
 		return Spec{}, err
 	}
+	public := map[string]bool{}
+	for _, o := range def.PublicOrigins {
+		if c, err := ValidateOrigin(o); err == nil {
+			public[c] = true
+		}
+	}
+	var publicOrigins []string
+	for _, o := range origins {
+		if public[o] {
+			publicOrigins = append(publicOrigins, o)
+		}
+	}
+	publicAuthentik := ""
+	if len(publicOrigins) > 0 && def.PublicAuthentikURL != "" {
+		if publicAuthentik, err = ValidateOrigin(def.PublicAuthentikURL); err != nil {
+			return Spec{}, err
+		}
+	}
 	spec := Spec{
+		PublicOrigins: publicOrigins, PublicAuthentikURL: publicAuthentik,
 		AuthentikURL: cb, Issuer: IssuerFor(cb, AppSlug), ClientID: ClientID,
 		Origins: origins, AuthorizationFlow: orDefault(req.AuthorizationFlow, DefaultAuthorizationFlow),
 		InvalidationFlow: DefaultInvalidationFlow, SigningKey: orDefault(req.SigningKey, DefaultSigningKey),
@@ -361,6 +386,13 @@ func planWarnings(spec Spec) []string {
 		if strings.HasPrefix(o, "http://") {
 			w = append(w, o+" is not encrypted: sign-in there only works from the machine that runs Homestead.")
 		}
+	}
+	for _, o := range spec.PublicOrigins {
+		if spec.PublicAuthentikURL == "" {
+			w = append(w, o+" is reached through the tunnel, but Authentik has no tunnel address: sign-in there fails until the tunnel carries Authentik too.")
+			continue
+		}
+		w = append(w, o+" is reached through the tunnel: only Authentik sign-in works there, and the browser signs in at "+spec.PublicAuthentikURL+". Homestead itself still talks to Authentik at "+spec.AuthentikURL+".")
 	}
 	return w
 }
@@ -749,6 +781,18 @@ func (m *Manager) Unlink(actor string) error {
 
 // ---- flows ----
 
+// rebase moves an endpoint URL onto another origin, keeping its path and
+// query.
+func rebase(endpoint, origin string) string {
+	u, err := url.Parse(endpoint)
+	o, err2 := url.Parse(origin)
+	if err != nil || err2 != nil {
+		return endpoint
+	}
+	u.Scheme, u.Host = o.Scheme, o.Host
+	return u.String()
+}
+
 // OriginFor selects the redirect origin for a request by exact match of
 // its Host against the planned origins. The scheme comes from the planned
 // origin, never from the request or X-Forwarded-*; an unplanned Host is
@@ -831,6 +875,12 @@ func (m *Manager) begin(ctx context.Context, kind, origin string, identityID int
 		`INSERT INTO sso_state (state_hash, kind, nonce, verifier, redirect_uri, identity_id, actor, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		hashState(state), kind, nonce, verifier, redirect, identityID, actor, stamp(exp)); err != nil {
 		return FlowStart{}, fmt.Errorf("sso: store state: %w", err)
+	}
+	if spec.PublicAuthentikURL != "" && slices.Contains(spec.PublicOrigins, origin) {
+		// A browser on the tunnel cannot reach Authentik's local address:
+		// send it to Authentik's tunnel address. Discovery, the token
+		// exchange and the issuer stay local (ADR-037).
+		d.AuthorizationEndpoint = rebase(d.AuthorizationEndpoint, spec.PublicAuthentikURL)
 	}
 	return FlowStart{
 		URL: AuthURL(d, AuthURLParams{ClientID: spec.ClientID, RedirectURI: redirect, State: state, Nonce: nonce,

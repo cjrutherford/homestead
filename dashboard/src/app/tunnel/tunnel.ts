@@ -1,7 +1,8 @@
 import { plural } from '../core/plural';
 import { Component, computed, effect, inject, OnInit, signal, input, untracked } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ApiService, TunnelPlan, TunnelStatus } from '../core/api.service';
+import { RouterLink } from '@angular/router';
+import { ApiService, TunnelPlan, TunnelRequest, TunnelStatus } from '../core/api.service';
 import { isTerminal } from '../core/operation-view';
 import { WorkOrders } from '../core/work-orders.service';
 import { StateMessage } from '../state/state-message';
@@ -16,18 +17,28 @@ import { OperationProgress } from '../ui/operation-progress';
  * uses the Cloudflare token from the Domain step and finds the account
  * from the hostname's zone, so this page never asks for either. It never
  * changes anything except through an approved plan and teardown.
+ *
+ * The plan publishes the dashboard and Authentik through the edge (S296):
+ * the owner names them or takes the proposal, and never types a local
+ * service address.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage, Dialog],
+  imports: [OperationProgress, Loading, StateMessage, Dialog, RouterLink],
   selector: 'app-tunnel',
   templateUrl: './tunnel.html',
 })
 export class Tunnel implements OnInit {
   /** Shown inside the setup wizard (S291): the page's own heading is left to the step. */
   readonly embedded = input(false);
-  /** The setup domain (S294): the hostname is suggested under it. */
+  /** The setup domain (S294): the names are suggested under it. */
   readonly domain = input('');
-  protected readonly hostnameHint = computed(() => (this.domain() ? `photos.${this.domain()}` : 'photos.example.com'));
+  /** The daemon's proposal first, then names under the setup domain. */
+  protected readonly dashboardHint = computed(
+    () => this.status()?.proposed?.dashboard_hostname || `homestead.${this.domain() || 'example.com'}`,
+  );
+  protected readonly authHint = computed(
+    () => this.status()?.proposed?.auth_hostname || `auth.${this.domain() || 'example.com'}`,
+  );
   protected readonly plural = plural;
   private readonly api = inject(ApiService);
   private readonly orders = inject(WorkOrders);
@@ -42,6 +53,8 @@ export class Tunnel implements OnInit {
   protected readonly fieldErrors = signal<Record<string, string>>({});
   /** The plan under review; approving sends its digest. */
   protected readonly plan = signal<TunnelPlan | null>(null);
+  /** The request the plan answered; approving sends it again. */
+  private reviewed: TunnelRequest | null = null;
   /** The teardown waiting for confirmation. */
   protected readonly confirming = signal<{ id: string; name: string } | null>(null);
 
@@ -81,11 +94,9 @@ export class Tunnel implements OnInit {
   }
 
   /** Asks the daemon what setup would change. Nothing changes yet. */
-  review(name: string, hostname: string, service: string): void {
+  review(name: string, dashboardHostname = '', authHostname = ''): void {
     const missing: Record<string, string> = {};
-    if (!name) missing['name'] = 'Enter a name for the tunnel.';
-    if (!hostname) missing['hostname'] = 'Enter the public hostname the tunnel will serve, such as photos.example.com.';
-    if (!service) missing['service'] = 'Enter the local address of the app the tunnel forwards to, such as http://127.0.0.1:2283.';
+    if (!name.trim()) missing['name'] = 'Enter a name for the tunnel.';
     this.fieldErrors.set(missing);
     if (Object.keys(missing).length > 0) {
       return;
@@ -94,7 +105,11 @@ export class Tunnel implements OnInit {
     this.error.set(null);
     this.notice.set(null);
     this.plan.set(null);
-    this.api.tunnelPlan(name, hostname, service).subscribe({
+    const request: TunnelRequest = { name: name.trim() };
+    if (dashboardHostname.trim()) request.dashboard_hostname = dashboardHostname.trim();
+    if (authHostname.trim()) request.auth_hostname = authHostname.trim();
+    this.reviewed = request;
+    this.api.tunnelPlan(request).subscribe({
       next: (plan) => {
         this.busy.set(false);
         this.plan.set(plan);
@@ -114,17 +129,18 @@ export class Tunnel implements OnInit {
   /** Approves exactly the reviewed plan. */
   approve(): void {
     const plan = this.plan();
-    if (!plan) return;
+    const request = this.reviewed;
+    if (!plan || !request) return;
     this.busy.set(true);
     this.error.set(null);
     this.notice.set(null);
     this.operationId.set(null);
-    this.api.tunnelSetup(plan.name, plan.hostname, plan.service, plan.digest).subscribe({
+    this.api.tunnelSetup(request, plan.digest).subscribe({
       next: ({ id }) => {
         this.busy.set(false);
         this.plan.set(null);
         this.operationId.set(id ?? null);
-        this.notice.set('Setup started: the tunnel, its DNS record and the connector are being created.');
+        this.notice.set('Setup started: the tunnel, its DNS records, the edge names and the connector are being created.');
         this.refresh();
       },
       error: (failure: HttpErrorResponse) => {

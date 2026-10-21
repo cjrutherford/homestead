@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -102,6 +103,7 @@ func (s *Server) MountSSO(c SSOConfig) *sso.Manager {
 			return c.Auth.RevokeMethodSessions(id, auth.MethodOIDC)
 		},
 	}
+	s.signInOffered = m.Offered
 	h := &ssoHandlers{s: s, m: m, cfg: c, runner: operation.NewRunner(c.Store), audit: record}
 	s.mux.HandleFunc("GET /api/v1/sso/options", h.options)
 	s.mux.HandleFunc("GET /api/v1/sso/login", h.login)
@@ -144,12 +146,21 @@ func ssoDefaults(st *store.Store, port int) sso.Defaults {
 					scheme = "http"
 				}
 				d.AuthentikURL = scheme + "://" + host
+				// Through the tunnel the browser reaches Authentik at its
+				// public name (ADR-037); the daemon keeps the local one.
+				if len(r.Tunnel) > 0 {
+					d.PublicAuthentikURL = "https://" + strings.ToLower(string(r.Tunnel[0]))
+				}
 			}
 			if r.Dashboard {
 				// The dashboard route answers on every name it carries
-				// (ADR-035), always over HTTPS.
-				for _, n := range r.Names() {
+				// (ADR-035), always over HTTPS, and on its tunnel names,
+				// which sign in through Authentik's public name (ADR-037).
+				for _, n := range r.AllNames() {
 					d.Origins = append(d.Origins, "https://"+strings.ToLower(string(n)))
+				}
+				for _, n := range r.Tunnel {
+					d.PublicOrigins = append(d.PublicOrigins, "https://"+strings.ToLower(string(n)))
 				}
 				continue
 			}
@@ -242,7 +253,8 @@ func (h *ssoHandlers) options(w http.ResponseWriter, r *http.Request) {
 	}
 	// The button is offered only at an address the plan covers.
 	_, ok := sso.OriginFor(*st.Spec, r.Host)
-	writeJSON(w, map[string]any{"enabled": ok})
+	// On a public dashboard name only Authentik signs in (ADR-037).
+	writeJSON(w, map[string]any{"enabled": ok, "password": !onPublicHost(r)})
 }
 
 func (h *ssoHandlers) failRedirect(w http.ResponseWriter, r *http.Request, path, code string) {
@@ -365,6 +377,28 @@ type ssoView struct {
 	Defaults  sso.Defaults `json:"defaults"`
 	Installed bool         `json:"authentik_installed"`
 	Method    string       `json:"session_method"`
+	// Replan says the configured sign-in no longer covers a public
+	// dashboard name or Authentik's public address (ADR-037): the owner
+	// re-plans and approves before sign-in works on the tunnel.
+	Replan       bool   `json:"replan,omitempty"`
+	ReplanReason string `json:"replan_reason,omitempty"`
+}
+
+// replanReason compares the configured spec with today's defaults and
+// names what a fresh plan would add for the tunnel, or "".
+func replanReason(spec *sso.Spec, d sso.Defaults) string {
+	if spec == nil {
+		return ""
+	}
+	for _, o := range d.PublicOrigins {
+		if !slices.Contains(spec.Origins, o) || !slices.Contains(spec.PublicOrigins, o) {
+			return "Sign-in does not yet cover the public dashboard address " + o + ". Re-plan Sign-in and approve it."
+		}
+	}
+	if len(d.PublicOrigins) > 0 && d.PublicAuthentikURL != "" && spec.PublicAuthentikURL != d.PublicAuthentikURL {
+		return "Sign-in does not yet send browsers to Authentik's public address " + d.PublicAuthentikURL + ". Re-plan Sign-in and approve it."
+	}
+	return ""
 }
 
 func (h *ssoHandlers) statusView(r *http.Request) (ssoView, error) {
@@ -374,6 +408,10 @@ func (h *ssoHandlers) statusView(r *http.Request) (ssoView, error) {
 	}
 	installed := authentikInstalled(h.cfg.Store)
 	v := ssoView{Status: st, Defaults: ssoDefaults(h.cfg.Store, h.cfg.Port), Installed: installed}
+	if st.Configured {
+		v.ReplanReason = replanReason(st.Spec, v.Defaults)
+		v.Replan = v.ReplanReason != ""
+	}
 	if op, ok := operatorFromContext(r.Context()); ok {
 		v.Method = op.Session.Method
 	}

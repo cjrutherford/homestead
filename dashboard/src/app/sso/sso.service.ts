@@ -14,6 +14,9 @@ export interface SsoSpec {
   signing_key: string;
   scopes: string[];
   authentik_version: string;
+  /** Dashboard origins the tunnel delivers (S296); they sign in at public_authentik_url. */
+  public_origins?: string[];
+  public_authentik_url?: string;
 }
 
 export interface SsoObject {
@@ -52,9 +55,17 @@ export interface SsoState {
   client_secret_sealed: boolean;
   api_token_kept: boolean;
   plan?: { digest: string; approved: boolean; expires_at: string };
-  defaults: { authentik_url: string; origins: string[] | null };
+  defaults: {
+    authentik_url: string;
+    origins: string[] | null;
+    public_origins?: string[];
+    public_authentik_url?: string;
+  };
   authentik_installed: boolean;
   session_method: string;
+  /** The tunnel added a public dashboard name the setup does not cover yet (S296). */
+  replan?: boolean;
+  replan_reason?: string;
 }
 
 /**

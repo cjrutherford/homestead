@@ -61,7 +61,7 @@ func (w *Wizard) request(payload map[string]any) (Request, error) {
 		return Request{}, fmt.Errorf("exposure: read edge routes: %w", err)
 	}
 	if dash, ok := set.DashboardRoute(); ok {
-		for _, n := range dash.Names() {
+		for _, n := range dash.AllNames() {
 			if strings.EqualFold(string(n), string(req.Route.Host)) {
 				req.Route.Dashboard = true
 			}

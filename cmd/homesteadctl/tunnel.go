@@ -51,6 +51,13 @@ func runTunnelStatus(ctx context.Context, client *apiclient.Client, stdout, stde
 	for _, route := range status.Routes {
 		fmt.Fprintf(stdout, "%s -> %s via %s\n", route.Hostname, route.Service, route.TunnelID)
 	}
+	if len(status.Routes) == 0 && status.Proposed.AuthHostname != "" {
+		fmt.Fprintf(stdout, "proposed: dashboard %s, Authentik %s", status.Proposed.DashboardHostname, status.Proposed.AuthHostname)
+		if !status.Proposed.SignInLinked {
+			fmt.Fprint(stdout, " (the dashboard waits until sign-in with Authentik is linked)")
+		}
+		fmt.Fprintln(stdout)
+	}
 	return exitOK
 }
 
@@ -64,10 +71,21 @@ var retiredTunnelFlags = map[string]bool{
 const retiredTunnelFlagHelp = "the tunnel no longer takes a token or account ID: store the Cloudflare token in the setup Domain step " +
 	"(homesteadctl tls issuance credentials cloudflare api_token=-), and the account is found from the hostname's zone"
 
+// retiredRouteFlags named one route before S296 (ADR-037 §4): the tunnel
+// now publishes the dashboard and Authentik through the edge.
+var retiredRouteFlags = map[string]bool{"--hostname": true, "--service": true}
+
+const retiredRouteFlagHelp = "the tunnel no longer takes a hostname and service: it publishes the dashboard and Authentik " +
+	"through the edge, named by --dashboard-hostname and --auth-hostname (default homestead.<domain> and auth.<domain>)"
+
 type tunnelFlags struct {
-	name, hostname, service, digest string
-	follow                          bool
-	positional                      []string
+	name, dashboard, auth, digest string
+	follow                        bool
+	positional                    []string
+}
+
+func (f tunnelFlags) request() apiclient.TunnelRequest {
+	return apiclient.TunnelRequest{Name: f.name, DashboardHostname: f.dashboard, AuthHostname: f.auth}
 }
 
 func parseTunnelFlags(args []string, allowDigest, allowFollow bool, stderr io.Writer) (tunnelFlags, bool) {
@@ -80,11 +98,14 @@ func parseTunnelFlags(args []string, allowDigest, allowFollow bool, stderr io.Wr
 		case args[i] == "--name" && i+1 < len(args):
 			f.name = args[i+1]
 			i++
-		case args[i] == "--hostname" && i+1 < len(args):
-			f.hostname = args[i+1]
+		case retiredRouteFlags[args[i]]:
+			fmt.Fprintf(stderr, "%s: %s\n", args[i], retiredRouteFlagHelp)
+			return f, false
+		case args[i] == "--dashboard-hostname" && i+1 < len(args):
+			f.dashboard = args[i+1]
 			i++
-		case args[i] == "--service" && i+1 < len(args):
-			f.service = args[i+1]
+		case args[i] == "--auth-hostname" && i+1 < len(args):
+			f.auth = args[i+1]
 			i++
 		case allowDigest && args[i] == "--digest" && i+1 < len(args):
 			f.digest = args[i+1]
@@ -103,24 +124,35 @@ func parseTunnelFlags(args []string, allowDigest, allowFollow bool, stderr io.Wr
 
 func runTunnelPlan(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	f, ok := parseTunnelFlags(args, false, false, stderr)
-	if !ok || f.name == "" || f.hostname == "" || f.service == "" || len(f.positional) != 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl tunnel plan --name NAME --hostname HOST --service URL")
+	if !ok || f.name == "" || len(f.positional) != 0 {
+		fmt.Fprintln(stderr, tunnelPlanUsage)
 		return exitUsage
 	}
-	plan, err := client.TunnelPlan(ctx, f.name, f.hostname, f.service)
+	plan, err := client.TunnelPlan(ctx, f.request())
 	if err != nil {
 		return fail(stderr, err)
 	}
 	printTunnelPlan(stdout, plan)
-	fmt.Fprintf(stdout, "approve with: homesteadctl tunnel setup --name %s --hostname %s --service %s --digest %s\n",
-		plan.Name, plan.Hostname, plan.Service, plan.Digest)
+	approve := "homesteadctl tunnel setup --name " + plan.Name
+	if f.dashboard != "" {
+		approve += " --dashboard-hostname " + plan.DashboardHostname
+	}
+	if f.auth != "" {
+		approve += " --auth-hostname " + plan.AuthHostname
+	}
+	fmt.Fprintf(stdout, "approve with: %s --digest %s\n", approve, plan.Digest)
 	return exitOK
 }
+
+const tunnelPlanUsage = "usage: homesteadctl tunnel plan --name NAME [--dashboard-hostname HOST] [--auth-hostname HOST]"
 
 func printTunnelPlan(w io.Writer, plan apiclient.TunnelPlan) {
 	fmt.Fprintf(w, "tunnel: %s (zone %s)\n", plan.Name, plan.Zone)
 	for _, route := range plan.Ingress {
-		fmt.Fprintf(w, "route: %s -> %s\n", route.Hostname, route.Service)
+		fmt.Fprintf(w, "publish %s: %s -> %s (edge tunnel entry %s)\n", route.Role, route.Hostname, route.Route, route.Service)
+	}
+	for _, left := range plan.Omitted {
+		fmt.Fprintf(w, "left out %s: %s: %s\n", left.Role, left.Hostname, left.Reason)
 	}
 	for _, change := range plan.DNS {
 		proxied := ""
@@ -135,20 +167,23 @@ func printTunnelPlan(w io.Writer, plan apiclient.TunnelPlan) {
 	for _, warning := range plan.Warnings {
 		fmt.Fprintf(w, "warning: %s\n", warning)
 	}
+	if plan.SignIn != "" {
+		fmt.Fprintf(w, "sign-in: %s\n", plan.SignIn)
+	}
 	fmt.Fprintf(w, "digest: %s\n", plan.Digest)
 }
 
 func runTunnelSetup(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	f, ok := parseTunnelFlags(args, true, true, stderr)
-	if !ok || f.name == "" || f.hostname == "" || f.service == "" || len(f.positional) != 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl tunnel setup --name NAME --hostname HOST --service URL --digest DIGEST [--follow]")
+	if !ok || f.name == "" || len(f.positional) != 0 {
+		fmt.Fprintln(stderr, "usage: homesteadctl tunnel setup --name NAME [--dashboard-hostname HOST] [--auth-hostname HOST] --digest DIGEST [--follow]")
 		return exitUsage
 	}
 	if f.digest == "" {
 		fmt.Fprintln(stderr, "setup approves a reviewed plan: run homesteadctl tunnel plan with the same flags, then pass its --digest")
 		return exitUsage
 	}
-	id, err := client.TunnelSetup(ctx, f.name, f.hostname, f.service, f.digest)
+	id, err := client.TunnelSetup(ctx, f.request(), f.digest)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -161,7 +196,7 @@ func runTunnelSetup(ctx context.Context, client *apiclient.Client, args []string
 
 func runTunnelTeardown(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	f, ok := parseTunnelFlags(args, false, true, stderr)
-	if !ok || len(f.positional) != 1 || f.name != "" || f.hostname != "" || f.service != "" {
+	if !ok || len(f.positional) != 1 || f.name != "" || f.dashboard != "" || f.auth != "" {
 		fmt.Fprintln(stderr, "usage: homesteadctl tunnel teardown <tunnel-id> [--follow]")
 		return exitUsage
 	}

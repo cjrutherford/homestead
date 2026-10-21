@@ -72,9 +72,9 @@ unchanged.
 | GET | /api/v1/exposure/approvals | `"exposure"` | `exposureApprovals` | Approval records on CLI and dashboard |
 | POST | /api/v1/exposure/approvals | `"exposure"` | `exposureApprove` | Ownership approval on CLI and dashboard |
 | POST | /api/v1/exposure/apply | `"exposure"` | `exposureApply` | Firewall and edge application on CLI and dashboard |
-| GET | /api/v1/tunnel/status | `"tunnel"` | `tunnelStatus` | Discovery and health on CLI and dashboard |
-| POST | /api/v1/tunnel/plan | `"tunnel"` | `tunnelPlan` | Read-only tunnel plan (S294, ADR-037): zone, ingress, the proxied CNAME to create or the records it replaces, warnings and a digest; CLI `tunnel plan`, the Tunnel form's review panel. Session class |
-| POST | /api/v1/tunnel/setup | `"tunnel"` | `tunnelSetup` | Approve the reviewed plan by digest (409 when it changed); creates the tunnel, its DNS record and the connector; `tunnel setup --digest` and the review panel's "Approve and set up". Never carries a token or account ID (S294) |
+| GET | /api/v1/tunnel/status | `"tunnel"` | `tunnelStatus` | Discovery and health on CLI and dashboard; `proposed` carries the dashboard and Authentik names a plan would use (S296), shown by `tunnel status` and as the Tunnel form's placeholders |
+| POST | /api/v1/tunnel/plan | `"tunnel"` | `tunnelPlan` | Read-only tunnel plan (S294, ADR-037): zone, ingress, the proxied CNAME to create or the records it replaces, warnings and a digest; CLI `tunnel plan`, the Tunnel form's review panel. Session class. S296: takes `dashboard_hostname` and `auth_hostname` (default `homestead.<domain>` and `auth.<domain>`; `--dashboard-hostname`, `--auth-hostname`, the form's two name fields); every name routes to the edge, the dashboard is omitted with its reason until sign-in is linked, and `hostname`/`service` are refused |
+| POST | /api/v1/tunnel/setup | `"tunnel"` | `tunnelSetup` | Approve the reviewed plan by digest (409 when it changed); creates the tunnel, its DNS records, the edge's public names (S296) and the connector; `tunnel setup --digest` and the review panel's "Approve and set up". Never carries a token or account ID (S294) |
 | DELETE | /api/v1/tunnel/tunnels/{id} | `"tunnel"` | `tunnelTeardown` | Tunnel teardown on CLI and dashboard; deletes only the DNS records Homestead created that still point at the tunnel, then puts back the records setup replaced when their name is free (ADR-038); takes no account ID (S294) |
 | GET | /api/v1/names | `"names"`, `"apps"` | `names` | Each app's local names (`<app>.lan` and its derived `<app>.local`, ADR-039) and the `.lan` resolver's state with the router conditional-forward hint; CLI `names` and `apps names`, the Names page (`/names`) and the catalog Manage panel's "Local names" (S295). Session class |
 | POST | /api/v1/names/resolver/plan | `"names"` | `resolverPlan` | Read-only plan to turn the `.lan` resolver on or off: listen addresses, names answered, the port 53 firewall rules, a port-53-taken warning and a digest; CLI `names resolver plan --on` or `--off`, the Names page review panel (S295). Session class |
@@ -149,10 +149,10 @@ unchanged.
 | HEAD | / | n/a | `app-root` | Same catch-all as GET / |
 | GET | /api/v1/setup | `"setup"` | `setupStatus` | Post-claim setup walkthrough status (S287, ADR-034; S291, ADR-036): five steps (account, storage, sign-in, domain, apps) derived from real state, choices, and the legacy/gated flags; `setup status` and the Setup page (`/setup`). Session class. The gate is the dashboard router guard only; this route and the CLI are never gated |
 | PUT | /api/v1/setup/steps/{name} | `"setup"` | `setupStep` | Record a skip, unskip, acknowledgement (account: confirm password; domain: once the tunnel or exposure plan exists; apps) or the non-sensitive provider/access/domain choice (`--domain`, the Domain step's "Your domain" form; S294; a local-only name, or a domain outside every zone the stored Cloudflare token sees, is 422); `setup step`, `setup skip`, `setup unskip` and the Setup wizard (storage: skip and unskip only). Orchestration only, never carries a credential. Session class |
-| GET | /api/v1/sso/options | n/a | `ssoOptions` | PUBLIC browser-protocol route (S286, ADR-033): `{"enabled":bool}` for the login page, 404 before claim and unless sign-in is configured and linked, and `enabled:false` at an address the plan does not cover; read from local state, never probes Authentik. CLI equivalent: `sso status` (session class) |
+| GET | /api/v1/sso/options | n/a | `ssoOptions` | PUBLIC browser-protocol route (S286, ADR-033): `{"enabled":bool,"password":bool}` for the login page (`password:false` on the public dashboard name, S296), 404 before claim and unless sign-in is configured and linked, and `enabled:false` at an address the plan does not cover; read from local state, never probes Authentik. CLI equivalent: `sso status` (session class) |
 | GET | /api/v1/sso/login | n/a | `ssoLogin` | PUBLIC browser-protocol route (S286): starts the authorization code flow with PKCE, state and nonce; a browser redirect, so the CLI has no equivalent (CLI login stays local, ADR-033). The login page's "Sign in with Authentik" link |
 | GET | /api/v1/sso/callback | n/a | n/a | PUBLIC browser-protocol route (S286): Authentik's return address, 302 to the login page with a session or a fixed error code; no UI surface of its own. `sso link` prints the URL that ends here |
-| GET | /api/v1/sso | `"sso"` | `ssoStatus` | Sign-in state, never a secret or token; `sso status` and the Sign-in page (`/sign-in`, S286). Session class |
+| GET | /api/v1/sso | `"sso"` | `ssoStatus` | Sign-in state, never a secret or token; `sso status` and the Sign-in page (`/sign-in`, S286). `replan` and `replan_reason` once the tunnel publishes a dashboard name the setup does not cover (S296): `sso status` prints a re-plan line, the page a Re-plan button. Session class |
 | POST | /api/v1/sso/plan | `"sso"` | `ssoPlan` | Plan the Authentik provider and application with exact redirect URIs; `sso plan` and the Sign-in page. Step-up for oidc sessions (S286) |
 | POST | /api/v1/sso/approve | `"sso"` | `ssoApprove` | Approve the plan by digest; the API token is request-only, sealed, forgotten after apply unless `--keep-token` / the checkbox; `sso approve` and the Sign-in page. Step-up for oidc sessions |
 | POST | /api/v1/sso/apply | `"sso"` | `ssoApply` | Apply as an operation (`sso apply [--follow]`; the page follows it in the rail). Step-up for oidc sessions |
@@ -176,6 +176,9 @@ dashboard has no equivalent:
   zone, so neither surface has a token or account field. The retired
   `--api-token`, `--api-token-file`, `--account-id` and `--account-id-file`
   flags are a usage error that points at the Domain step credential.
+  The retired `--hostname` and `--service` flags (S296) are a usage error
+  that points at `--dashboard-hostname`: the tunnel publishes only the
+  dashboard and Authentik, through the edge.
 
 Craft file proxy (S254, ADR-029, ADR-032). The proxy itself is not on the
 TCP mux: `POST|GET|DELETE /_homestead/files/session` and the WebDAV subset

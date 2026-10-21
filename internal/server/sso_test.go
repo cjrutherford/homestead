@@ -373,8 +373,12 @@ func TestSSOEndToEndLinkLoginSessionAndUnlink(t *testing.T) {
 	a.linkOwner(t)
 
 	opt := a.req("GET", "/api/v1/sso/options", "", "")
-	if opt.Code != 200 || strings.TrimSpace(opt.Body.String()) != `{"enabled":true}` {
+	if opt.Code != 200 || strings.TrimSpace(opt.Body.String()) != `{"enabled":true,"password":true}` {
 		t.Fatalf("options = %d %s", opt.Code, opt.Body)
+	}
+	// On a public dashboard name only Authentik signs in (ADR-037 §4).
+	if pub := a.publicDo(dashPublic, "GET", "/api/v1/sso/options", nil); !strings.Contains(pub.Body.String(), `"password":false`) {
+		t.Fatalf("public options = %d %s", pub.Code, pub.Body)
 	}
 
 	token, csrf := a.ssoSession(t)

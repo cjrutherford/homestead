@@ -803,8 +803,8 @@
     NAT-PMP/PCP in parallel; a Cloudflare domain is checked against the
     stored token's zones when saved; teardown puts back the records setup
     replaced (ADR-038).
-  - Left open after S294: Authentik's name (chosen at install, default
-    `.lan`) is not tied to the domain (S296).
+  - Closed by S296: Authentik's public name is `auth.<domain>` through the
+    tunnel; its local name stays the one chosen at install.
   - Closed after the S294 fixes: storing the Cloudflare token checks a
     domain saved before it and warns (the token is kept); the daemon probes
     the router at start, so the first status read is served from the
@@ -816,9 +816,8 @@
     - a tunnel set up before S294 deleted no records, so nothing needs
       restoring; its teardown finds the account from the route's zone or the
       token's single account, and deletes no DNS record (none was recorded);
-    - the tunnel keeps one owner-entered hostname and service; the default
-      dashboard and `auth.<domain>` names, edge routing and the
-      Authentik-only public sign-in are S296;
+    - closed by S296: the tunnel publishes `homestead.<domain>` and
+      `auth.<domain>` through the edge, with Authentik-only public sign-in;
     - a restored record gets a new Cloudflare ID; a tunnel set up between
       S294 and its fix (72c6702 only) has no replaced records on file, so
       nothing is restored for it.
@@ -843,3 +842,16 @@
   - The Authentik link callback still redirects to `/sign-in`; the dashboard
     forwards to `/setup` (S292) rather than the daemon carrying a return
     path.
+  - Public dashboard (S296, ADR-037 §4), what remains:
+    - the tunnel publishes only the dashboard and Authentik; app routes
+      through the tunnel are S290;
+    - all public names must sit in one Cloudflare zone;
+    - a plan cannot leave the dashboard out once sign-in is linked: the
+      owner tears the tunnel down instead;
+    - renaming Authentik's route drops its tunnel names; re-plan the tunnel;
+    - Sign-in is not re-planned automatically after setup: the status flag
+      and the Sign-in page ask the owner to re-plan and approve;
+    - after teardown, the configured sign-in keeps the public origin until
+      the owner re-plans it (harmless: the edge no longer serves the name);
+    - the connector token is still passed in the connector's argv
+      (pre-existing).

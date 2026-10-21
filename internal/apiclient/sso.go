@@ -18,6 +18,10 @@ type SSOState struct {
 	Defaults  sso.Defaults `json:"defaults"`
 	Installed bool         `json:"authentik_installed"`
 	Method    string       `json:"session_method"`
+	// Replan says the tunnel published a dashboard name the setup does
+	// not cover yet (S296); ReplanReason says what a re-plan adds.
+	Replan       bool   `json:"replan,omitempty"`
+	ReplanReason string `json:"replan_reason,omitempty"`
 }
 
 // ReauthHeader carries the local password for fresh re-authentication.

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"homestead/internal/operation"
 )
@@ -62,6 +63,11 @@ func WriteStack(dir string) error {
 	return nil
 }
 
+// TunnelEntryPort is the edge's plain-HTTP listener for names the
+// Cloudflare tunnel delivers (ADR-037). Compose publishes it on the
+// host's loopback only; the connector runs on the host.
+const TunnelEntryPort = 8480
+
 func composeFile() string {
 	return `name: caddy
 services:
@@ -72,6 +78,8 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      # Tunnel entry (ADR-037): loopback only, for the connector.
+      - "127.0.0.1:` + strconv.Itoa(TunnelEntryPort) + `:` + strconv.Itoa(TunnelEntryPort) + `"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./routes:/etc/caddy/routes:ro

@@ -417,16 +417,30 @@ func defaultGateway(interfaceName string) (string, error) {
 	return "", fmt.Errorf("router: no default route on %s", interfaceName)
 }
 
+// Ingress is one connector ingress rule: a public hostname and the local
+// service the connector delivers it to.
+type Ingress struct {
+	Hostname string
+	Service  string
+}
+
 // RenderConnectorConfig renders the connector configuration for one
-// hostname route: the tunnel id plus ingress to the local origin,
-// closing with a 404 catch-all so unlisted names never leak a
-// default backend.
+// hostname route.
 func RenderConnectorConfig(tunnelID, hostname, service string) string {
+	return RenderConnectorIngress(tunnelID, []Ingress{{Hostname: hostname, Service: service}})
+}
+
+// RenderConnectorIngress renders the connector configuration: the tunnel
+// id plus one ingress rule per hostname, closing with a 404 catch-all so
+// unlisted names never leak a default backend.
+func RenderConnectorIngress(tunnelID string, ingress []Ingress) string {
 	var rendered strings.Builder
 	rendered.WriteString("tunnel: " + tunnelID + "\n")
 	rendered.WriteString("ingress:\n")
-	rendered.WriteString("  - hostname: " + hostname + "\n")
-	rendered.WriteString("    service: " + service + "\n")
+	for _, in := range ingress {
+		rendered.WriteString("  - hostname: " + in.Hostname + "\n")
+		rendered.WriteString("    service: " + in.Service + "\n")
+	}
 	rendered.WriteString("  - service: http_status:404\n")
 	return rendered.String()
 }

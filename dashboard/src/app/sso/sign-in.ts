@@ -113,10 +113,16 @@ export class SignIn implements OnInit {
   }
 
   protected openForm(): void {
-    const spec = this.state()?.spec;
+    const state = this.state();
+    const spec = state?.spec;
     if (spec) {
       this.authentikUrl = spec.authentik_url;
-      this.originsText = spec.origins.join('\n');
+      // A re-plan (S296) adds the tunnel's public dashboard names.
+      const origins = [...spec.origins];
+      for (const origin of state?.replan ? (state.defaults.public_origins ?? []) : []) {
+        if (!origins.includes(origin)) origins.push(origin);
+      }
+      this.originsText = origins.join('\n');
       this.signingKey = spec.signing_key;
     }
     this.editing.set(true);

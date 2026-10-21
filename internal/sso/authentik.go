@@ -37,19 +37,25 @@ var Scopes = []string{"openid", "profile", "email"}
 // Spec is the desired Authentik-side configuration and, once applied, the
 // configuration Homestead signs in against. It holds no secret.
 type Spec struct {
-	AuthentikURL      string   `json:"authentik_url"`
-	Issuer            string   `json:"issuer"`
-	ClientID          string   `json:"client_id"`
-	Origins           []string `json:"origins"`
-	RedirectURIs      []string `json:"redirect_uris"`
-	AuthorizationFlow string   `json:"authorization_flow"`
-	InvalidationFlow  string   `json:"invalidation_flow"`
-	SigningKey        string   `json:"signing_key"`
-	Scopes            []string `json:"scopes"`
-	SubMode           string   `json:"sub_mode"`
-	ProviderName      string   `json:"provider_name"`
-	AppName           string   `json:"application_name"`
-	AppSlug           string   `json:"application_slug"`
+	AuthentikURL string   `json:"authentik_url"`
+	Issuer       string   `json:"issuer"`
+	ClientID     string   `json:"client_id"`
+	Origins      []string `json:"origins"`
+	// PublicOrigins (a subset of Origins) are reached through the tunnel;
+	// a sign-in there is sent to PublicAuthentikURL (ADR-037). Both are
+	// empty on an appliance without a public dashboard, which keeps older
+	// specs' digests unchanged.
+	PublicOrigins      []string `json:"public_origins,omitempty"`
+	PublicAuthentikURL string   `json:"public_authentik_url,omitempty"`
+	RedirectURIs       []string `json:"redirect_uris"`
+	AuthorizationFlow  string   `json:"authorization_flow"`
+	InvalidationFlow   string   `json:"invalidation_flow"`
+	SigningKey         string   `json:"signing_key"`
+	Scopes             []string `json:"scopes"`
+	SubMode            string   `json:"sub_mode"`
+	ProviderName       string   `json:"provider_name"`
+	AppName            string   `json:"application_name"`
+	AppSlug            string   `json:"application_slug"`
 	// AuthentikVersion is the version the catalog pins (the API this
 	// plan was written against).
 	AuthentikVersion string `json:"authentik_version"`

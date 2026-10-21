@@ -4882,3 +4882,39 @@ committed). Results:
 - Dashboard: the Names page (`/names`, Network) and "Local names" in the
   catalog Manage panel.
 
+## S296: Public dashboard behind Authentik (ADR-037 §4)
+
+- Edge: `Route.Tunnel` holds a route's public names. `Route.AllNames` (its
+  names plus the tunnel names) feeds conflicts, the exposure refusal, the
+  dashboard Host check and the SSO origins. The edge serves the tunnel names
+  as `http://<name>:8480` sites (`docker.TunnelEntryPort`), published only on
+  `127.0.0.1:8480`, with `X-Forwarded-For` from `Cf-Connecting-Ip`,
+  `X-Forwarded-Proto https` and `X-Forwarded-Host`. A route edit keeps the
+  route's tunnel names.
+- Tunnel plan: the request is `{name, dashboard_hostname, auth_hostname}`
+  (defaults `homestead.<domain>` and `auth.<domain>`); `hostname` and
+  `service` are refused with 400. Every ingress points at
+  `http://127.0.0.1:8480` and the connector config ends with a 404
+  fallback. Authentik is left out when it is not installed. The dashboard
+  is left out, with the reason, when it has no edge address, when sign-in
+  is not linked, or when Authentik is not published. A plan with nothing
+  left is 422. Setup gains an `edge` step (sets the tunnel names, deploys
+  and reconciles the edge); teardown clears them.
+- Public host: requests whose Host is a dashboard tunnel name refuse claim,
+  `POST sessions`, `admins/setup|password|recover`, the wizard state
+  routes, `sso/link` and every step-up (`X-Homestead-Reauth`) request with
+  403 and `X-Homestead-Error: public-host`. `GET /api/v1/sso/options`
+  answers `password:false` there, and the login page shows only Authentik.
+- Sign-in: `sso.Defaults` gains `public_origins` and `public_authentik_url`
+  (from the Authentik route's first tunnel name). A plan that includes a
+  public origin records both. A login started at a public origin sends the
+  browser to the public Authentik address; the token exchange and the
+  userinfo call stay on the local Authentik address. `GET /api/v1/sso`
+  reports `replan` and `replan_reason` while the configured setup misses a
+  public name: `sso status` prints it, and the Sign-in page has a Re-plan
+  button that adds the public origin to the form.
+
+- Live check (VM 2, 2026-10-20): deployed; the local login still offers the
+  password (`{"enabled":true,"password":true}`). The tunnel setup and the
+  public sign-in round trip wait for the owner's session and approval of
+  the Cloudflare changes.

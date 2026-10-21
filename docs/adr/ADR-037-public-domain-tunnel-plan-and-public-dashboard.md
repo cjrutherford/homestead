@@ -70,8 +70,8 @@ The owner chose this over "edge, apps only". It replaces "management remains loc
   - The ADR-035 refusal of *public exposure* for the dashboard route stays for router port forwards. The tunnel is the only public path.
 - This builds part of S290 (several hostnames to the edge). S290's own app routes still follow it.
 
-### Until S296 ships
-S294 keeps the owner-entered tunnel service. A plan whose service is the daemon's own listener carries a warning that it publishes the dashboard with password login. The placeholder that suggested it is removed.
+### Implementation note (S296)
+The tunnel no longer takes a service: every public name goes to the edge's loopback tunnel entry (`127.0.0.1:8480`), which routes it by Host. On the public dashboard name the daemon refuses every session-creating route except SSO login and callback, and every step-up request, with 403 `public-host`. Sign-in records the public origins and Authentik's public address; a browser at a public origin is sent to that address, while the token exchange stays local.
 
 ## Amended by ADR-038
 Teardown puts back the records setup replaced, unless the name holds a

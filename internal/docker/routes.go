@@ -104,7 +104,37 @@ func renderRoute(r Route, cert *PlacedCert) (string, error) {
 # Exposure: %s. Upstream: %s.
 %s {
 %s}
-`, r.Exposure, upstream, site, serving), nil
+`, r.Exposure, upstream, site, serving) + renderTunnelEntry(r, upstream), nil
+}
+
+// renderTunnelEntry is the site block for the route's tunnel names
+// (ADR-037): plain HTTP on TunnelEntryPort, which the edge publishes on
+// the host's loopback only, so the connector on this machine is the only
+// client. Cloudflare terminated TLS; the client address is the one
+// Cloudflare saw (Cf-Connecting-Ip), and an absent one leaves
+// X-Forwarded-For empty, which the dashboard socket refuses.
+func renderTunnelEntry(r Route, upstream string) string {
+	if len(r.Tunnel) == 0 {
+		return ""
+	}
+	sites := make([]string, 0, len(r.Tunnel))
+	for _, n := range r.Tunnel {
+		sites = append(sites, fmt.Sprintf("http://%s:%d", n, TunnelEntryPort))
+	}
+	flush := ""
+	if r.Dashboard {
+		flush = "\t\tflush_interval -1\n"
+	}
+	return fmt.Sprintf(`
+# Tunnel entry (ADR-037): public names the connector delivers on loopback.
+%s {
+	reverse_proxy %s {
+%s		header_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {http.request.host}
+	}
+}
+`, strings.Join(sites, ", "), upstream, flush)
 }
 
 // ValidateRenderable checks a desired table end to end, including that

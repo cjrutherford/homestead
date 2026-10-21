@@ -89,9 +89,11 @@
 
   <h2>Set up a tunnel</h2>
   <p>
-    The tunnel uses the Cloudflare token you stored in the setup Domain step, and finds your
-    account from the hostname's zone. First you see a plan of every change in Cloudflare; nothing
-    changes until you approve it.
+    The tunnel publishes this dashboard and Authentik under your domain. Every public name reaches
+    the appliance's edge, which sends it on; the dashboard is published only once you sign in with
+    Authentik, and on its public name only Authentik signs you in. The tunnel uses the Cloudflare
+    token you stored in the setup Domain step, and finds your account from the names' zone. First
+    you see a plan of every change; nothing changes until you approve it.
   </p>
   @if (plan(); as review) {
     <div class="risky" aria-label="Tunnel plan">
@@ -102,15 +104,25 @@
       <div class="table-scroll">
         <table aria-label="Public hostnames">
           <thead>
-            <tr><th scope="col">Public hostname</th><th scope="col">Forwards to</th></tr>
+            <tr><th scope="col">Public name</th><th scope="col">For</th><th scope="col">Edge route</th></tr>
           </thead>
           <tbody>
             @for (route of review.ingress; track route.hostname) {
-              <tr><th scope="row" class="mono">{{ route.hostname }}</th><td class="mono">{{ route.service }}</td></tr>
+              <tr>
+                <th scope="row" class="mono">{{ route.hostname }}</th>
+                <td>{{ route.role }}</td>
+                <td class="mono">{{ route.route }}</td>
+              </tr>
             }
           </tbody>
         </table>
       </div>
+      @for (left of review.omitted; track left.hostname) {
+        <app-state-message kind="notice" [headline]="'Left out: ' + left.hostname + ' (' + left.role + ')'" [detail]="left.reason" />
+      }
+      @if (review.sign_in) {
+        <p>{{ review.sign_in }} <a routerLink="/sign-in">Open Sign-in</a></p>
+      }
       <div class="table-scroll">
         <table aria-label="DNS changes">
           <thead>
@@ -145,7 +157,7 @@
   } @else {
     <form
       (submit)="
-        review(nameInput.value, hostnameInput.value, serviceInput.value);
+        review(nameInput.value, dashboardInput.value, authInput.value);
         $event.preventDefault()
       "
     >
@@ -159,28 +171,15 @@
         }
       </div>
       <div class="field">
-        <label for="tunnel-hostname">Public hostname</label>
-        <input id="tunnel-hostname" #hostnameInput name="hostname" autocomplete="off" [disabled]="busy()"
-          [placeholder]="hostnameHint()"
-          [attr.aria-invalid]="fieldErrors()['hostname'] ? 'true' : null"
-          [attr.aria-describedby]="fieldErrors()['hostname'] ? 'tunnel-hostname-error' : null" />
-        @if (fieldErrors()['hostname']; as message) {
-          <p class="field-error" id="tunnel-hostname-error">{{ message }}</p>
-        }
+        <label for="tunnel-dashboard">Dashboard public name</label>
+        <input id="tunnel-dashboard" #dashboardInput name="dashboard-hostname" autocomplete="off" [disabled]="busy()"
+          [placeholder]="dashboardHint()" aria-describedby="tunnel-names-hint" />
       </div>
       <div class="field">
-        <label for="tunnel-service">App address on this appliance</label>
-        <input id="tunnel-service" #serviceInput name="service" autocomplete="off" [disabled]="busy()"
-          [attr.aria-invalid]="fieldErrors()['service'] ? 'true' : null"
-          [attr.aria-describedby]="fieldErrors()['service'] ? 'tunnel-service-error' : 'tunnel-service-hint'" />
-        @if (fieldErrors()['service']; as message) {
-          <p class="field-error" id="tunnel-service-error">{{ message }}</p>
-        } @else {
-          <p class="hint" id="tunnel-service-hint">
-            An app, such as http://127.0.0.1:2283. Do not point it at this dashboard: the plan warns
-            if you do, because it would be on the internet with password sign-in.
-          </p>
-        }
+        <label for="tunnel-auth">Authentik public name</label>
+        <input id="tunnel-auth" #authInput name="auth-hostname" autocomplete="off" [disabled]="busy()"
+          [placeholder]="authHint()" aria-describedby="tunnel-names-hint" />
+        <p class="hint" id="tunnel-names-hint">Leave a name empty to use the one shown.</p>
       </div>
       <button type="submit" class="primary" [disabled]="busy()">Review plan</button>
     </form>

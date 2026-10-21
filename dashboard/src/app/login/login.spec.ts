@@ -126,6 +126,15 @@ describe('Login with Authentik', () => {
     expect(text(fixture)).toContain('local password keeps working');
   });
 
+  it('offers only Authentik on the public dashboard name', async () => {
+    const fixture = await open();
+    http.expectOne('/api/v1/sso/options').flush({ enabled: true, password: false });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('a[href="/api/v1/sso/login"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('form[aria-label="Login"]')).toBeNull();
+    expect(text(fixture)).toContain('only Authentik signs you in here');
+  });
+
   it('leaves the button out when the daemon says no', async () => {
     const fixture = await open();
     http.expectOne('/api/v1/sso/options').flush({ enabled: false });

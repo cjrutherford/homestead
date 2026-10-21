@@ -68,9 +68,14 @@ type Server struct {
 	craftHTTP *http.Server
 	// dashNames lists the names the dashboard route answers on (S289).
 	dashNames func() []string
+	// dashPublicNames lists the dashboard's tunnel names (S296, ADR-037).
+	dashPublicNames func() []string
 	// domainZoneWarning checks the setup domain against the zones a newly
 	// stored Cloudflare token can see (S294), set by MountSetup.
 	domainZoneWarning func(ctx context.Context) string
+	// setupDomain and signInOffered feed the tunnel plan (S296).
+	setupDomain   func() string
+	signInOffered func() bool
 }
 
 // New returns a Server serving addr. Pass DefaultAddr for local-only binding.

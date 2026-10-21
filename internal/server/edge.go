@@ -173,6 +173,25 @@ func requireLocalDashboardNames(routes []docker.Route) error {
 	return nil
 }
 
+// preserveTunnelNames gives each posted route the tunnel names recorded
+// for its host and drops any the client sent: only tunnel setup and
+// teardown change them (ADR-037), so replacing the table neither adds a
+// public name nor loses one.
+func preserveTunnelNames(st *store.Store, routes []docker.Route) []docker.Route {
+	stored := map[docker.Hostname][]docker.Hostname{}
+	if set, err := loadEdgeRoutes(st); err == nil {
+		for _, r := range set.Routes {
+			stored[r.Host] = r.Tunnel
+		}
+	}
+	out := make([]docker.Route, len(routes))
+	for i, r := range routes {
+		r.Tunnel = stored[r.Host]
+		out[i] = r
+	}
+	return out
+}
+
 // preserveDashboardRoute keeps the recorded dashboard route when a posted
 // table omits it: the route is owned by PUT /api/v1/dashboard/address
 // (ADR-035), so an older client replacing the table cannot drop it.
@@ -204,6 +223,7 @@ func handleEdgeRoutes(runner *operation.Runner, st *store.Store, local *cert.Loc
 		}
 		inferCraftApps(body.Routes)
 		body.Routes = preserveDashboardRoute(st, body.Routes)
+		body.Routes = preserveTunnelNames(st, body.Routes)
 		if err := requireLocalDashboardNames(body.Routes); err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return

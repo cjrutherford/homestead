@@ -6,12 +6,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"homestead/internal/docker"
 	"homestead/internal/doctor"
 	"homestead/internal/mdns"
+	"homestead/internal/sso"
 	"homestead/internal/store"
 )
 
@@ -401,3 +403,131 @@ func TestMDNSDoctorCheck(t *testing.T) {
 }
 
 func writeFile(p string) error { return os.WriteFile(p, nil, 0o600) }
+
+// Tunnel names on the dashboard and Authentik routes become public sign-in
+// origins and Authentik's browser address (ADR-037); a configured spec
+// without them asks for a re-plan.
+func TestSSODefaultsCarryTunnelNames(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), store.DBFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	dash, _ := BuildDashboardRoute(dashLAN, "")
+	dash.Tunnel = []docker.Hostname{"homestead.example.com"}
+	ak := docker.Route{Host: "authentik.lan", Target: docker.Target{Host: "server", Port: 9000}, Exposure: docker.ExposureLocal, TLS: docker.TLSInternal,
+		Tunnel: []docker.Hostname{"auth.example.com"}}
+	if err := saveEdgeRoutes(st, docker.RouteSet{Routes: []docker.Route{dash, ak}}); err != nil {
+		t.Fatal(err)
+	}
+	d := ssoDefaults(st, 8080)
+	if !slices.Contains(d.Origins, "https://homestead.example.com") ||
+		strings.Join(d.PublicOrigins, " ") != "https://homestead.example.com" ||
+		d.AuthentikURL != "https://authentik.lan" || d.PublicAuthentikURL != "https://auth.example.com" {
+		t.Fatalf("defaults %+v", d)
+	}
+	old := &sso.Spec{Origins: []string{"https://" + dashLAN}}
+	if !strings.Contains(replanReason(old, d), "https://homestead.example.com") {
+		t.Fatalf("no re-plan for a missing public origin: %q", replanReason(old, d))
+	}
+	cur := &sso.Spec{Origins: d.Origins, PublicOrigins: d.PublicOrigins, PublicAuthentikURL: "https://auth.example.com"}
+	if r := replanReason(cur, d); r != "" {
+		t.Fatalf("re-plan for a current spec: %q", r)
+	}
+	cur.PublicAuthentikURL = ""
+	if !strings.Contains(replanReason(cur, d), "auth.example.com") {
+		t.Fatal("no re-plan for a missing public Authentik address")
+	}
+}
+
+// publicHostAllowed lists the session-free routes a public dashboard name
+// still serves (ADR-037 §4): the app shell, health, identity, the local
+// root certificate and the three Authentik sign-in routes.
+var publicHostAllowed = map[string]bool{
+	"GET /healthz":                      true,
+	"GET /version":                      true,
+	"GET /api/v1/identity":              true,
+	"/":                                 true,
+	"GET /api/v1/tls/local-ca/root.pem": true,
+	"GET /api/v1/tls/local-ca/root.der": true,
+	"GET /api/v1/sso/options":           true,
+	"GET /api/v1/sso/login":             true,
+	"GET /api/v1/sso/callback":          true,
+}
+
+const dashPublic = "homestead.example.com"
+
+func (a *enforcedApp) publicDo(host, method, path string, mutate func(*http.Request)) *httptest.ResponseRecorder {
+	a.srv.SetDashboardNames(func() []string { return []string{dashLAN, dashLocal, dashPublic} })
+	a.srv.SetDashboardPublicNames(func() []string { return []string{dashPublic} })
+	h := a.srv.dashboardFront(a.srv.Handler())
+	req := httptest.NewRequest(method, path, strings.NewReader("{}"))
+	req.Host = host
+	req.Header.Set("X-Forwarded-For", "198.51.100.7")
+	req.Header.Set("Origin", "https://"+host)
+	if mutate != nil {
+		mutate(req)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+func patternRequest(pattern string) (string, string) {
+	method, path, ok := strings.Cut(pattern, " ")
+	if !ok {
+		method, path = "GET", pattern
+	}
+	path = strings.NewReplacer("{id}", "x", "{path...}", "x").Replace(path)
+	return method, path
+}
+
+// Route by route: every session-free route is either served on the public
+// name or refused there, and every session-creating or password-taking
+// route except Authentik sign-in is refused (ADR-037 §4).
+func TestPublicDashboardNameRefusesLocalSignIn(t *testing.T) {
+	a := newEnforcedApp(t)
+	refused := map[string]bool{}
+	for _, p := range publicHostRefused {
+		refused[p] = true
+	}
+	for pattern, class := range routeClasses {
+		if class != ClassPublic && class != ClassClaimWindow {
+			continue
+		}
+		if publicHostAllowed[pattern] == refused[pattern] {
+			t.Errorf("%s: session-free route must be allowed or refused on the public name, exactly one", pattern)
+		}
+	}
+	for _, pattern := range append(publicHostRefused, "POST /api/v1/admins/password", "POST /api/v1/admins/recover", "POST /api/v1/sso/link", "DELETE /api/v1/sso/link") {
+		method, path := patternRequest(pattern)
+		rec := a.publicDo(dashPublic, method, path, nil)
+		if rec.Code != http.StatusForbidden || rec.Header().Get("X-Homestead-Error") != ErrorCodePublicHost {
+			t.Errorf("%s on the public name: %d %q", pattern, rec.Code, rec.Body.String())
+		}
+		// The same route on the local name is not refused by the guard.
+		if rec := a.publicDo(dashLAN, method, path, nil); rec.Header().Get("X-Homestead-Error") == ErrorCodePublicHost {
+			t.Errorf("%s refused on the local name", pattern)
+		}
+	}
+	for pattern := range stepUpRoutes {
+		method, path := patternRequest(pattern)
+		rec := a.publicDo(dashPublic, method, path, func(r *http.Request) { r.Header.Set(ReauthHeader, "pw") })
+		if rec.Code != http.StatusForbidden || rec.Header().Get("X-Homestead-Error") != ErrorCodePublicHost {
+			t.Errorf("%s with the step-up password on the public name: %d", pattern, rec.Code)
+		}
+	}
+	for pattern := range publicHostAllowed {
+		method, path := patternRequest(pattern)
+		if rec := a.publicDo(dashPublic, method, path, nil); rec.Header().Get("X-Homestead-Error") == ErrorCodePublicHost {
+			t.Errorf("%s refused on the public name", pattern)
+		}
+	}
+	// Case and an explicit :443 do not slip past the guard.
+	if rec := a.publicDo("HomeStead.Example.com:443", "POST", "/api/v1/sessions", nil); rec.Code != http.StatusForbidden {
+		t.Errorf("mixed-case public host: %d", rec.Code)
+	}
+	if rec := a.publicDo(dashPublic, "POST", "/api/v1//sessions", nil); rec.Header().Get("X-Homestead-Error") != ErrorCodePublicHost && rec.Code < 300 {
+		t.Errorf("path variant served: %d", rec.Code)
+	}
+}

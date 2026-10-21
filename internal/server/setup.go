@@ -232,6 +232,13 @@ func (s *Server) MountSetup(c SetupConfig) *setup.Service {
 		}
 		writeJSON(w, st)
 	})
+	s.setupDomain = func() string {
+		status, err := svc.Status()
+		if err != nil {
+			return ""
+		}
+		return status.Choices.Domain
+	}
 	s.domainZoneWarning = func(ctx context.Context) string {
 		status, err := svc.Status()
 		if err != nil || status.Choices.Domain == "" {

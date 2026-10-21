@@ -37,6 +37,18 @@ func ssoStub(t *testing.T) (string, *[]ssoSeen) {
 	return ts.URL, &seen
 }
 
+func TestSSOStatusShowsReplan(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"state":"configured","configured":true,"linked":true,"offered":true,"spec":{"issuer":"i","origins":["http://homestead.lan"]},"replan":true,"replan_reason":"Sign-in does not yet cover the public dashboard address https://homestead.example.com. Re-plan Sign-in and approve it."}`))
+	}))
+	t.Cleanup(ts.Close)
+	code, out, _ := invoke(t, []string{"--server", ts.URL, "sso", "status"})
+	if code != exitOK || !strings.Contains(out, "re-plan:   Sign-in does not yet cover the public dashboard address https://homestead.example.com") || !strings.Contains(out, "homesteadctl sso plan") {
+		t.Fatalf("status: %d %s", code, out)
+	}
+}
+
 func TestSSOCLI(t *testing.T) {
 	url, seen := ssoStub(t)
 	dir := t.TempDir()

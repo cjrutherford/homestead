@@ -54,6 +54,7 @@ type DashboardAddressService struct {
 func (s *Server) MountDashboardAddress(st *store.Store, local *cert.LocalTLS) *DashboardAddressService {
 	svc := &DashboardAddressService{st: st, runner: operation.NewRunner(st), local: local, audit: audit.New(st), log: s.log}
 	s.SetDashboardNames(svc.Names)
+	s.SetDashboardPublicNames(svc.PublicNames)
 	s.mux.HandleFunc("GET /api/v1/dashboard/address", svc.handleGet)
 	s.mux.HandleFunc("PUT /api/v1/dashboard/address", svc.handlePut)
 	return svc
@@ -74,7 +75,25 @@ func (d *DashboardAddressService) Names() []string {
 		return nil
 	}
 	var out []string
-	for _, n := range r.Names() {
+	for _, n := range r.AllNames() {
+		out = append(out, strings.ToLower(string(n)))
+	}
+	return out
+}
+
+// PublicNames lists the dashboard's tunnel names (ADR-037): the hosts on
+// which only Authentik sign-in may create a session.
+func (d *DashboardAddressService) PublicNames() []string {
+	set, err := loadEdgeRoutes(d.st)
+	if err != nil {
+		return nil
+	}
+	r, ok := set.DashboardRoute()
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, n := range r.Tunnel {
 		out = append(out, strings.ToLower(string(n)))
 	}
 	return out
@@ -152,10 +171,17 @@ func withDashboardRoute(set docker.RouteSet, route docker.Route) (docker.RouteSe
 	out := docker.RouteSet{Routes: []docker.Route{}}
 	for _, r := range set.Routes {
 		if r.Dashboard {
+			// The tunnel names belong to the tunnel (ADR-037), not to the
+			// address form: renaming the dashboard keeps them.
+			route.Tunnel = r.Tunnel
+		}
+	}
+	for _, r := range set.Routes {
+		if r.Dashboard {
 			continue
 		}
-		for _, n := range route.Names() {
-			for _, rn := range r.Names() {
+		for _, n := range route.AllNames() {
+			for _, rn := range r.AllNames() {
 				if rn == n {
 					return docker.RouteSet{}, fmt.Errorf("%w: %q is already an edge route", errNameConflict, n)
 				}
