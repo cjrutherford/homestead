@@ -1,9 +1,15 @@
 # App Sign-in: Back Channel, Trust, and Adapters
 
 ## Status
-Proposed
+Accepted
 
-Needs owner review.
+Accepted by the owner on 2026-10-21, with these choices recorded:
+- Nextcloud keeps `allow_local_remote_servers` on after sign-in is turned
+  off (§3).
+- Apply stays session class, not step-up (§5).
+- If the pinned Jellyfin plugin does not load on the catalog's Jellyfin
+  image, Jellyfin sign-in is deferred rather than the image downgraded
+  (Consequences).
 
 Implements ADR-039 §3 (S298). Builds on ADR-030 (appliance CA), ADR-033
 (dashboard sign-in with Authentik), ADR-021 (secret store) and ADR-035 (local
@@ -74,7 +80,8 @@ dashboard sign-in.
   - Client secret: sealed as `sys_sso_app_<pkg>_secret`, reused on
     re-apply.
 - **Redirect URIs:** one for each of the app's edge names (`AllNames`, so
-  `.lan`, `.local` and tunnel names). A change of names shows on the app
+  `.lan`, `.local` and tunnel names). Apps have no tunnel names until
+  S290; when it adds them, the app page asks for a re-plan. A change of names shows on the app
   page as a re-plan for approval.
 - **State:** the applied state is the SQLite table `app_sign_in`
   (migration 50): adapter, client ID, issuer, redirect URIs, plugin version
@@ -108,7 +115,9 @@ reviews the plan on the app page.
   DEFERRED).
 - Jellyfin's plugin release targets a Jellyfin ABI. A Jellyfin update
   without a matching plugin pin can break sign-in until the catalog
-  updates the pin.
+  updates the pin. If the pinned release does not load on the catalog's
+  image at the live check, Jellyfin sign-in is deferred (its adapter
+  withdrawn from the manifest) rather than the image downgraded.
 
 ## Alternatives Considered
 - **Joining app containers to the Authentik network** and using the

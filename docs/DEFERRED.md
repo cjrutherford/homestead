@@ -879,8 +879,9 @@
     - the Jellyfin SSO plugin is pinned (release and checksum) against the
       catalog's Jellyfin image; a Jellyfin image bump must re-check the
       plugin's target ABI;
-    - apps reached through public names (S290) are not in the redirect URIs
-      yet; only local and overlay names are;
+    - apps have no public names until S290; the redirect URIs already
+      follow every name a route answers on, so S290's names show as a
+      re-plan on the app page;
     - the Authentik API token is asked for on each apply unless the owner
       kept it sealed when setting up dashboard sign-in;
     - SAML, LDAP and apps beyond Immich, Nextcloud and Jellyfin are out of
