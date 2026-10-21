@@ -864,3 +864,24 @@
       the owner re-plans it (harmless: the edge no longer serves the name);
     - the connector token is still passed in the connector's argv
       (pre-existing).
+  - App sign-in with Authentik (S298, ADR-039 §3, ADR-040), what remains:
+    - uninstalling an app does not turn its sign-in off: the Authentik
+      provider and application, the sealed client secret and the
+      `app_sign_in` row stay until the owner turns sign-in off first;
+    - turning sign-in off needs Authentik reachable and an API token; a
+      failed removal leaves the objects for the owner to delete in
+      Authentik;
+    - Jellyfin's own login page gets no "Sign in with Authentik" button; the
+      sign-in address is shown on the app page (a branding/login disclaimer
+      edit is a later item);
+    - Nextcloud keeps `allow_local_remote_servers` on so user_oidc can reach
+      Authentik on the LAN; it is not turned back off with sign-in;
+    - the Jellyfin SSO plugin is pinned (release and checksum) against the
+      catalog's Jellyfin image; a Jellyfin image bump must re-check the
+      plugin's target ABI;
+    - apps reached through public names (S290) are not in the redirect URIs
+      yet; only local and overlay names are;
+    - the Authentik API token is asked for on each apply unless the owner
+      kept it sealed when setting up dashboard sign-in;
+    - SAML, LDAP and apps beyond Immich, Nextcloud and Jellyfin are out of
+      scope.

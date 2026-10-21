@@ -47,3 +47,14 @@ backuppaths:
 sso:
   class: optional
   protocols: [oidc, saml]
+  # App sign-in through Authentik (S298, ADR-039 §3): the third-party
+  # jellyfin-plugin-sso, pinned to this release and checksum. Any other
+  # build is refused; the pin moves only with a catalog update.
+  oidc:
+    adapter: jellyfin-sso-plugin
+    service: jellyfin
+    plugin:
+      name: SSO Authentication
+      version: 4.0.0.4
+      url: https://github.com/9p4/jellyfin-plugin-sso/releases/download/v4.0.0.4/sso-authentication_4.0.0.4.zip
+      sha256: c09f16ba31059a434ddd7f811e4f9608d4b4c4514cc80a5bf1ca33bee61e1107

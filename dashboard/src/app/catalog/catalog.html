@@ -73,6 +73,11 @@
       </p>
     }
 
+    @if (manifest.SSO?.oidc) {
+      <h3>Sign-in with Authentik</h3>
+      <app-app-sign-in [name]="manifest.Name" [title]="manifest.Title" />
+    }
+
     <h3>Settings</h3>
     <ul>
       @for (row of configRows(); track $index) {

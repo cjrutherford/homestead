@@ -124,6 +124,12 @@ func (f *fakeAuthentik) serve(w http.ResponseWriter, r *http.Request) {
 			f.app[k] = v
 		}
 		_ = enc.Encode(f.app)
+	case strings.HasPrefix(r.URL.Path, "/api/v3/core/applications/") && r.Method == http.MethodDelete:
+		f.app = nil
+		w.WriteHeader(http.StatusNoContent)
+	case strings.HasPrefix(r.URL.Path, "/api/v3/providers/oauth2/") && r.Method == http.MethodDelete:
+		f.provider = nil
+		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.NotFound(w, r)
 	}
@@ -494,5 +500,33 @@ func TestApplyFailsWhenTheIssuerDoesNotAnswer(t *testing.T) {
 	}
 	if st, _ := h.m.Status(); st.Configured {
 		t.Fatal("a failed verification must not mark SSO configured")
+	}
+}
+
+func TestRemoveDeletesOnlyWhatReconcileCreated(t *testing.T) {
+	ak := newFakeAuthentik(t)
+	api := &API{Base: ak.srv.URL, Token: apiToken, Client: func() *http.Client { return ak.srv.Client() }}
+	spec := Spec{ProviderName: "Homestead: Immich", ClientID: "homestead-immich", AppName: "Immich", AppSlug: "homestead-immich",
+		RedirectURIs: []string{"https://immich.lan/auth/login"}, AuthorizationFlow: DefaultAuthorizationFlow,
+		InvalidationFlow: DefaultInvalidationFlow, SigningKey: DefaultSigningKey, Scopes: Scopes, SubMode: "hashed_user_id"}
+	noop := func(string) {}
+	if err := api.Reconcile(t.Context(), spec, testSecret, noop); err != nil {
+		t.Fatal(err)
+	}
+	var steps []string
+	if err := api.Remove(t.Context(), spec, func(s string) { steps = append(steps, s) }); err != nil {
+		t.Fatal(err)
+	}
+	if ak.app != nil || ak.provider != nil || strings.Join(steps, ",") != "deleted the application,deleted the provider" {
+		t.Fatalf("after remove: app=%v provider=%v steps=%v", ak.app, ak.provider, steps)
+	}
+	steps = nil
+	if err := api.Remove(t.Context(), spec, func(s string) { steps = append(steps, s) }); err != nil || len(steps) != 2 {
+		t.Fatalf("second remove: %v %v", steps, err)
+	}
+	// A provider with the same name but another client is not ours.
+	ak.provider = map[string]any{"pk": 7, "name": spec.ProviderName, "client_id": "someone-else"}
+	if err := api.Remove(t.Context(), spec, noop); err == nil || ak.provider == nil {
+		t.Fatalf("foreign provider removed: %v", err)
 	}
 }

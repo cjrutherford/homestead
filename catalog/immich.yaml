@@ -91,6 +91,10 @@ backuppaths:
 sso:
   class: optional
   protocols: [oidc]
+  # App sign-in through Authentik (S298): Immich's built-in OAuth.
+  oidc:
+    adapter: immich
+    service: server
 database:
   service: database
   kind: postgres

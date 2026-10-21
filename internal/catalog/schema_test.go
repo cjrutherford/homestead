@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"homestead/internal/exposure"
+	"homestead/internal/identity"
 	"homestead/internal/storage"
 )
 
@@ -80,6 +81,45 @@ func TestManifestInvalid(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error %q, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func oidcManifest() Manifest {
+	m := validManifest()
+	m.SSO = SSODeclaration{Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC},
+		OIDC: &OIDCAdapter{Adapter: AdapterJellyfinSSO, Service: "jellyfin", Plugin: &PinnedPlugin{
+			Name: "SSO Authentication", Version: "4.0.0.4", SHA256: strings.Repeat("a", 64),
+			URL: "https://github.com/9p4/jellyfin-plugin-sso/releases/download/v4.0.0.4/sso-authentication_4.0.0.4.zip"}}}
+	return m
+}
+
+func TestOIDCAdapterValidation(t *testing.T) {
+	if err := oidcManifest().Validate(); err != nil {
+		t.Fatalf("valid: %v", err)
+	}
+	cases := []struct {
+		name   string
+		mutate func(*OIDCAdapter, *Manifest)
+		want   string
+	}{
+		{"unknown adapter", func(a *OIDCAdapter, _ *Manifest) { a.Adapter = "saml-thing" }, "unknown"},
+		{"no oidc protocol", func(_ *OIDCAdapter, m *Manifest) { m.SSO.Protocols = []identity.Capability{identity.CapabilitySAML} }, "oidc protocol"},
+		{"ghost service", func(a *OIDCAdapter, _ *Manifest) { a.Service = "ghost" }, "serves an endpoint"},
+		{"no pin", func(a *OIDCAdapter, _ *Manifest) { a.Plugin = nil }, "must pin"},
+		{"pin elsewhere", func(a *OIDCAdapter, _ *Manifest) { a.Adapter = AdapterImmich }, "only the"},
+		{"http url", func(a *OIDCAdapter, _ *Manifest) { a.Plugin.URL = strings.Replace(a.Plugin.URL, "https", "http", 1) }, "https .zip"},
+		{"other release", func(a *OIDCAdapter, _ *Manifest) { a.Plugin.Version = "4.0.0.5" }, "https .zip"},
+		{"bad sum", func(a *OIDCAdapter, _ *Manifest) { a.Plugin.SHA256 = strings.Repeat("A", 64) }, "lowercase hex"},
+		{"bad version", func(a *OIDCAdapter, _ *Manifest) { a.Plugin.Version = "latest" }, "release number"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := oidcManifest()
+			tc.mutate(m.SSO.OIDC, &m)
+			if err := m.Validate(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error %v, want %q", err, tc.want)
 			}
 		})
 	}

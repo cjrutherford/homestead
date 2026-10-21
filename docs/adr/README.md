@@ -96,3 +96,4 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-037 | Public Domain, Planned Tunnel, and the Public Dashboard behind Authentik | Accepted |
 | ADR-038 | Tunnel Teardown Restores the Records Its Setup Replaced | Accepted |
 | ADR-039 | App Names, App Sign-in, and Nightly Backups | Accepted |
+| ADR-040 | App Sign-in: Back Channel, Trust, and Adapters | Proposed |

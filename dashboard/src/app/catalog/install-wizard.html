@@ -470,6 +470,39 @@
                       }
                     </ul>
                   }
+                  @if (signInPreview(); as si) {
+                    @if (si.offered && si.plan) {
+                      <h3>Signing in</h3>
+                      <label>
+                        <input type="checkbox" name="sign-in-wanted" [checked]="signInWanted()" (change)="signInWanted.set($any($event.target).checked)" />
+                        Sign in with Authentik
+                      </label>
+                      @if (signInWanted() && si.plan; as sp) {
+                        <ul aria-label="What sign-in with Authentik creates">
+                          <li>An Authentik provider, {{ sp.provider }}, and application, {{ sp.application }}</li>
+                          @for (uri of sp.redirect_uris; track uri) {
+                            <li>Redirect address <code>{{ uri }}</code></li>
+                          }
+                          @for (line of sp.app_settings; track line) {
+                            <li>{{ line }}</li>
+                          }
+                        </ul>
+                        @for (warning of sp.warnings; track warning) {
+                          <p class="hint">{{ warning }}</p>
+                        }
+                        @if (!si.token_kept) {
+                          <label>
+                            Authentik API token (used once after the install, not kept)
+                            <input type="password" name="sign-in-token" autocomplete="off" [value]="signInToken()" (input)="signInToken.set($any($event.target).value)" />
+                          </label>
+                          <p class="hint">Without a token, set sign-in up later under Manage on the catalog page.</p>
+                        }
+                      }
+                    } @else if (si.reason) {
+                      <h3>Signing in</h3>
+                      <p>Sign in with Authentik is not offered yet: {{ si.reason }}</p>
+                    }
+                  }
                   <h3>Homestead will leave alone</h3>
                   <ul>
                     @for (line of s.leftAlone; track line) {
@@ -657,6 +690,23 @@
               }
             }
 
+            @switch (signInState()) {
+              @case ('applying') {
+                <h3>Setting up sign-in with Authentik</h3>
+                @if (signInOperation(); as id) {
+                  <app-operation-progress [id]="id" [operation]="signInOpState()" />
+                }
+              }
+              @case ('on') {
+                <app-state-message kind="status" [headline]="'People can sign in to ' + m.Title + ' with their Authentik account.'" detail="Its own admin account keeps working." />
+              }
+              @case ('failed') {
+                <app-state-message kind="error" headline="Sign-in with Authentik was not set up." [detail]="signInProblem() ?? ''" actionLabel="Open the catalog" actionLink="/catalog" />
+              }
+              @case ('skipped') {
+                <app-state-message kind="notice" headline="Sign-in with Authentik is not set up yet." detail="No Authentik API token was given. Set it up under Manage on the catalog page." />
+              }
+            }
             <h3>First time you open it</h3>
             <ol>
               @for (line of curated().firstLogin; track line) {

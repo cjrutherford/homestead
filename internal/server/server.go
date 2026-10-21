@@ -76,6 +76,9 @@ type Server struct {
 	// setupDomain and signInOffered feed the tunnel plan (S296).
 	setupDomain   func() string
 	signInOffered func() bool
+	// appSignIn serves app sign-in through Authentik (S298), set by
+	// MountSSO; the install plan reads it for its sign-in preview.
+	appSignIn *appSignIn
 }
 
 // New returns a Server serving addr. Pass DefaultAddr for local-only binding.

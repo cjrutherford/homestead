@@ -224,3 +224,9 @@ func refuseExistingCluster(plan InstallPlan, secrets SecretStore) error {
 	}
 	return nil
 }
+
+// UpStack brings an installed stack up so its containers adopt a changed
+// override file (app sign-in, S298). Same lock and craft checks as install.
+func UpStack(ctx context.Context, dir, project string) error {
+	return composeUp(ctx, dir, project)
+}

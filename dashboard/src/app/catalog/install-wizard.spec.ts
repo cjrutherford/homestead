@@ -645,6 +645,74 @@ describe('InstallWizard', () => {
       expect(c().reach()).toBe('checking');
     });
 
+    it('offers sign-in with Authentik in the review and applies the reviewed plan once the address lands (S298)', () => {
+      start(CRAFT, { craft: { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] } });
+      to('review');
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(
+        plan('gridcraft', {
+          sign_in: {
+            offered: true,
+            token_kept: false,
+            plan: {
+              package: 'gridcraft', title: 'GridCraft', enabled: true, adapter: 'immich', provider: 'Homestead: GridCraft',
+              application: 'GridCraft (homestead-gridcraft)', client_id: 'homestead-gridcraft', issuer: 'https://authentik.lan/application/o/homestead-gridcraft/',
+              redirect_uris: ['https://gridcraft.lan/auth/login'], app_settings: ['Turn on OAuth sign-in'], changes: [], warnings: [], digest: 'sd1',
+            },
+          },
+        }),
+      );
+      fixture.detectChanges();
+      const el = fixture.nativeElement as HTMLElement;
+      expect(text()).toContain('Sign in with Authentik');
+      expect((el.querySelector('input[name="sign-in-wanted"]') as HTMLInputElement).checked).toBe(true);
+      expect(text()).toContain('Homestead: GridCraft');
+      expect(text()).toContain('https://gridcraft.lan/auth/login');
+      expect(text()).toContain('Turn on OAuth sign-in');
+      const token = el.querySelector('input[name="sign-in-token"]') as HTMLInputElement;
+      token.value = 'ak-token';
+      token.dispatchEvent(new Event('input'));
+      button('Install GridCraft')!.click();
+      http.expectOne('/api/v1/catalog/gridcraft/install').flush({ id: 7 });
+      streams.get(7)!.next(opState(7, 'succeeded'));
+      doneReads([]);
+      http.expectOne('/api/v1/edge/routes').flush({ id: 31 });
+      streams.get(31)!.next(opState(31, 'succeeded'));
+      const apply = http.expectOne('/api/v1/catalog/gridcraft/sign-in/apply');
+      expect(apply.request.body).toEqual({ enabled: true, digest: 'sd1', token: 'ak-token' });
+      apply.flush({ id: 50 });
+      fixture.detectChanges();
+      expect(text()).toContain('Setting up sign-in with Authentik');
+      streams.get(50)!.next(opState(50, 'succeeded'));
+      fixture.detectChanges();
+      expect(text()).toContain('People can sign in to GridCraft with their Authentik account.');
+      expect(c().signInToken()).toBe('');
+    });
+
+    it('applies with the kept token and sends a changed plan back to Manage (S298)', () => {
+      start(CRAFT, { craft: { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] } });
+      to('review');
+      const preview = {
+        offered: true,
+        token_kept: true,
+        plan: {
+          package: 'gridcraft', title: 'GridCraft', enabled: true, adapter: 'immich', provider: 'Homestead: GridCraft', application: 'GridCraft',
+          client_id: 'homestead-gridcraft', issuer: 'x', redirect_uris: [], app_settings: [], changes: [], warnings: [], digest: 'sd2',
+        },
+      };
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft', { sign_in: preview }));
+      fixture.detectChanges();
+      expect((fixture.nativeElement as HTMLElement).querySelector('input[name="sign-in-token"]')).toBeNull();
+      button('Install GridCraft')!.click();
+      http.expectOne('/api/v1/catalog/gridcraft/install').flush({ id: 7 });
+      streams.get(7)!.next(opState(7, 'succeeded'));
+      doneReads([]);
+      http.expectOne('/api/v1/edge/routes').flush({ id: 31 });
+      streams.get(31)!.next(opState(31, 'succeeded'));
+      http.expectOne('/api/v1/catalog/gridcraft/sign-in/apply').flush('the plan changed', { status: 409, statusText: 'Conflict' });
+      fixture.detectChanges();
+      expect(text()).toContain('Review it again under Manage');
+    });
+
     it('says the app is not reachable and links to Trust when this device cannot open the address', async () => {
       vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('cert'))));
       start(CRAFT, { installed: ['gridcraft'] });

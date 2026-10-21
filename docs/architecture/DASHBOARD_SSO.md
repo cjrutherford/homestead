@@ -175,6 +175,34 @@ every one). No entry holds a token, a code, a client secret or a cookie.
 ## Security notes
 The link URL is a bearer credential: whoever completes it at Authentik within its 10 minutes becomes the linked subject, because the intent is bound to the admin and the state, not to the owner's browser (binding it is a hardening item in DEFERRED.md). Sign-in rate limiting is per client address (the peer address the daemon sees, never `X-Forwarded-For`).
 
+## Apps (S298, ADR-039 §3, ADR-040)
+Immich, Nextcloud and Jellyfin can sign people in through the same
+Authentik. Each app gets its own OAuth2 provider (`Homestead: <title>`) and
+application (slug and client ID `homestead-<app>`), confidential, with the
+app's redirect URIs on every local and overlay name it has:
+
+| App | Adapter | Redirect URIs | Sign-in address |
+| --- | --- | --- | --- |
+| Immich | `immich` | `/auth/login`, `/user-settings` | `/auth/login` |
+| Nextcloud | `nextcloud-user-oidc` | `/apps/user_oidc/code`, `/index.php/apps/user_oidc/code` | `/login` |
+| Jellyfin | `jellyfin-sso-plugin` | `/sso/OID/redirect/authentik` | `/sso/OID/start/authentik` |
+
+The app reaches Authentik by its local name: the service gets an
+`extra_hosts` entry to the host gateway and the appliance root CA mounted
+read-only at `/etc/homestead/ca` (Immich trusts it through
+`NODE_EXTRA_CA_CERTS`, Jellyfin through `SSL_CERT_DIR`, Nextcloud through
+`occ security:certificates:import`). The client secret is sealed as
+`sys_sso_app_<app>_secret` and reaches the container only on stdin.
+Jellyfin needs the third-party SSO plugin, installed at the pinned release
+after its checksum matches. The app's own accounts keep working.
+
+Turning sign-in on or off is a plan, approved by digest, run as an
+`app.sign-in` operation. When the app's names change, the status says so and
+the next plan updates the redirect URIs. Routes (session class):
+`GET /api/v1/catalog/{name}/sign-in`, `POST .../sign-in/plan`,
+`POST .../sign-in/apply`. Audit: `app.sign-in.operation`,
+`app.sign-in.authentik`, `app.sign-in.on`, `app.sign-in.off`.
+
 ## Not in this slice
 CLI sign-in with Authentik, RP-initiated logout, more than one link, SSO for
 non-owner administrators and disabling local password login: see DEFERRED.md.

@@ -153,6 +153,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  apps names             each app's local names (S295)")
 	fmt.Fprintln(w, "  apps secrets <pkg>     list secret-backed variables (S266)")
 	fmt.Fprintln(w, "  apps secrets register <pkg> <secret> --value-file PATH|- [--skip-verify] [--force]  register an existing secret (S266)")
+	fmt.Fprintln(w, "  apps sign-in <status|plan|apply> <pkg> [--off] [--digest D] [--token-file F] [--follow]  app sign-in with Authentik (S298)")
 	fmt.Fprintln(w, "  apps uninstall <pkg> [--remove-data --data-dir M:P]... [--abandon-volumes] [--follow]  uninstall package (S236)")
 	fmt.Fprintln(w, "  operations <get|list|follow>  inspect and follow operations (S062/S064)")
 	fmt.Fprintln(w, "  firewall <status|plan|apply>  host firewall setup (S056)")

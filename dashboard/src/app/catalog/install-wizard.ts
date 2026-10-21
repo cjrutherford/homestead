@@ -35,6 +35,7 @@ import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
 import { appRoutes, mergeRoutes, routeFromManifest } from './app-routes';
+import { signInError } from './app-sign-in';
 import { BrowserAdvisories } from './browser-advisories';
 import { curatedFor } from './curated-copy';
 import { FolderRow, InstallDraft, InstallDrafts } from './install-drafts';
@@ -175,6 +176,16 @@ export class InstallWizard implements OnInit {
   /** Where the address stands on the Done step. */
   protected readonly routeState = signal<'checking' | 'adding' | 'added' | 'failed' | 'no-edge' | 'none'>('checking');
   protected readonly routeProblem = signal<string | null>(null);
+
+  /** S298: "Sign in with Authentik", checked by default when the install plan offers it. */
+  protected readonly signInWanted = signal(true);
+  /** The Authentik API token for the chained apply, when the appliance kept none; never stored. */
+  protected readonly signInToken = signal('');
+  protected readonly signInState = signal<'idle' | 'applying' | 'on' | 'failed' | 'skipped'>('idle');
+  protected readonly signInOperation = signal<number | null>(null);
+  protected readonly signInOpState = signal<OperationState | null>(null);
+  protected readonly signInProblem = signal<string | null>(null);
+  protected readonly signInPreview = computed(() => this.plan()?.sign_in ?? null);
   protected readonly routeOperation = signal<number | null>(null);
   protected readonly routeOpState = signal<OperationState | null>(null);
   /** Whether this device could open the address securely; null until tried. */
@@ -979,6 +990,7 @@ export class InstallWizard implements OnInit {
         if (found) {
           this.routeState.set('added');
           this.probe(found);
+          this.applySignIn();
         } else if (this.caddyMissing() || (health === null && this.healthUnknown())) {
           this.routeState.set('no-edge');
         } else if (this.installed() && this.routesToAdd().length > 0) {
@@ -990,6 +1002,61 @@ export class InstallWizard implements OnInit {
       error: () => {
         this.edgeRoute.set(null);
         this.routeState.set('none');
+      },
+    });
+  }
+
+  /**
+   * Applies the sign-in plan the owner reviewed with the install (S298),
+   * once the app is installed and has its address. A changed plan (409)
+   * sends the owner to Manage to review it again.
+   */
+  private applySignIn(): void {
+    const preview = this.signInPreview();
+    const manifest = this.manifest();
+    if (!preview?.offered || !preview.plan || !manifest || !this.installed() || !this.signInWanted() || this.signInState() !== 'idle') {
+      return;
+    }
+    const token = this.signInToken().trim();
+    if (!preview.token_kept && !token) {
+      this.signInState.set('skipped');
+      return;
+    }
+    this.signInState.set('applying');
+    this.api.appSignInApply(manifest.Name, true, preview.plan.digest, token).subscribe({
+      next: ({ id }) => {
+        this.signInToken.set('');
+        this.signInOperation.set(id);
+        this.api
+          .operationEvents(id)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: (state) => {
+              this.signInOpState.set(state);
+              if (!isTerminal(state.status)) {
+                return;
+              }
+              if (state.status === 'succeeded') {
+                this.signInState.set('on');
+              } else {
+                this.signInState.set('failed');
+                this.signInProblem.set(state.error || 'Setting up sign-in did not finish.');
+              }
+            },
+            error: () => {
+              this.signInState.set('failed');
+              this.signInProblem.set('Lost the live connection to the operation. Open it to see how it ended.');
+            },
+          });
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.signInToken.set('');
+        this.signInState.set('failed');
+        this.signInProblem.set(
+          failure.status === 409
+            ? 'The sign-in plan changed after you reviewed it. Review it again under Manage on the catalog page.'
+            : signInError(failure),
+        );
       },
     });
   }
@@ -1017,6 +1084,7 @@ export class InstallWizard implements OnInit {
                 if (route) {
                   this.probe(route);
                 }
+                this.applySignIn();
               } else {
                 this.routeState.set('failed');
                 this.routeProblem.set(state.error || 'The edge refused the route.');

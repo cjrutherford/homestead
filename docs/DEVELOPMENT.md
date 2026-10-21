@@ -4949,3 +4949,42 @@ committed). Results:
   The stored record is version 3; an appliance whose older steps were all
   done or skipped has every newer step waived (the storage rule,
   generalized).
+
+## S298: App sign-in through Authentik (ADR-039 §3, ADR-040)
+
+- Manifest: `sso.oidc` declares the adapter (`immich`,
+  `nextcloud-user-oidc`, `jellyfin-sso-plugin`), the service that talks to
+  Authentik and, for Jellyfin, the pinned plugin (name, version, URL,
+  sha256). Validation refuses unknown adapters, a plugin on the wrong
+  adapter and a plugin without a 64-hex checksum.
+- Package `internal/appsso`: `BuildPlan` (on or off, digest over the
+  provider, application, client ID `homestead-<app>`, issuer, redirect URIs
+  and app settings), `BuildStatus` (on, offered or why not, and `replan`
+  when the app's names no longer match the applied redirect URIs), the
+  three adapters and `Definition`, the `app.sign-in` operation.
+- Apply: create or update the Authentik OAuth2 provider and application,
+  seal the client secret as `sys_sso_app_<app>_secret` (ADR-021), write the
+  service's `extra_hosts` and the read-only CA mount into the generated
+  compose (`catalog.ApplySignInWiring`, own entries only), bring the stack
+  up, then configure the app: Immich's system config, Nextcloud's
+  `user_oidc` provider through `occ`, Jellyfin's plugin (downloaded,
+  checksum-verified, unpacked with zip-slip refusal) and its
+  configuration. Secrets reach containers only on stdin. Off reverses
+  each step and deletes the Authentik objects. Migration 50 adds
+  `app_sign_in` (package, adapter, client ID, issuer, redirect URIs, plugin
+  version, actor, `updated_at`).
+- API: `GET /api/v1/catalog/{name}/sign-in`, `POST .../sign-in/plan`
+  (read-only), `POST .../sign-in/apply` (digest, 409 when stale; token in
+  the body unless the dashboard sign-in kept one; returns an operation).
+  All session class. The install plan carries `sign_in` (offered, reason,
+  the plan, `token_kept`). Audit: `app.sign-in.operation`,
+  `app.sign-in.authentik`, `app.sign-in.on`, `app.sign-in.off`, never a
+  secret.
+- CLI: `homesteadctl apps sign-in <status|plan|apply> <app>` with `--off`,
+  `--digest`, `--token-file`, `--follow`.
+- Dashboard: the install wizard offers "Sign in with Authentik" (checked)
+  in the review and applies the previewed plan once the route lands; the
+  catalog Manage panel has a Sign-in with Authentik section
+  (`app-app-sign-in`) to review, approve, re-plan or turn it off.
+- Live check (owner, KVM VM): all three apps, including Jellyfin's plugin
+  on the catalog's Jellyfin image.

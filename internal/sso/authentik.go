@@ -498,3 +498,37 @@ func (a *API) Reconcile(ctx context.Context, spec Spec, secret string, step func
 	}
 	return nil
 }
+
+// Remove deletes the application with slug and the provider named name,
+// the objects a Reconcile with the same spec created (S298). Objects that
+// are already gone are fine; nothing else in Authentik is touched.
+func (a *API) Remove(ctx context.Context, spec Spec, step func(string)) error {
+	app, err := a.FindApplication(ctx, spec.AppSlug)
+	if err != nil {
+		return err
+	}
+	if app == nil {
+		step("application already gone")
+	} else {
+		if err := a.do(ctx, http.MethodDelete, "/api/v3/core/applications/"+url.PathEscape(spec.AppSlug)+"/", nil, nil); err != nil {
+			return err
+		}
+		step("deleted the application")
+	}
+	prov, err := a.FindProvider(ctx, spec.ProviderName)
+	if err != nil {
+		return err
+	}
+	if prov == nil {
+		step("provider already gone")
+		return nil
+	}
+	if prov.ClientID != spec.ClientID {
+		return fmt.Errorf("the Authentik provider %q has client id %q, not %q: it is not the one Homestead created, so it is left alone", spec.ProviderName, prov.ClientID, spec.ClientID)
+	}
+	if err := a.do(ctx, http.MethodDelete, fmt.Sprintf("/api/v3/providers/oauth2/%d/", prov.PK), nil, nil); err != nil {
+		return err
+	}
+	step("deleted the provider")
+	return nil
+}

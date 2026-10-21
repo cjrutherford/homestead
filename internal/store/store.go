@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 49
+const CurrentVersion = 50
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -965,6 +965,23 @@ CREATE TABLE IF NOT EXISTS tunnel_replaced_records (
 	time_of_day TEXT NOT NULL,
 	retain INTEGER NOT NULL,
 	enabled INTEGER NOT NULL,
+	actor TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		version: 50,
+		name:    "app sign-in",
+		// One row per app signed in through Authentik (S298): what was
+		// applied, so a changed app name shows as a re-plan. The client
+		// secret lives in the secret store, never here.
+		sql: `CREATE TABLE app_sign_in (
+	package TEXT PRIMARY KEY,
+	adapter TEXT NOT NULL,
+	client_id TEXT NOT NULL,
+	issuer TEXT NOT NULL,
+	redirect_uris TEXT NOT NULL,
+	plugin_version TEXT NOT NULL DEFAULT '',
 	actor TEXT NOT NULL DEFAULT '',
 	updated_at TEXT NOT NULL
 );`,

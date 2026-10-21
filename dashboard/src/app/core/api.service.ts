@@ -134,6 +134,8 @@ export interface CatalogDataPath {
 export interface CatalogSSO {
   Class: '' | 'unsupported' | 'optional' | 'recommended' | 'required';
   Protocols?: string[] | null;
+  /** S298: the adapter Homestead signs the app in to Authentik through, absent when it has none. */
+  oidc?: { adapter: string; service: string; plugin?: PinnedPlugin } | null;
 }
 
 export interface CatalogManifest {
@@ -213,6 +215,70 @@ export interface InstallPlan {
   Actions: string[];
   /** True when routed services join the shared edge network (install creates it). */
   EdgeNetwork?: boolean;
+  /** S298: sign-in with Authentik offered for this install, absent when the app has no adapter. */
+  sign_in?: SignInPreview;
+}
+
+/** The install plan's sign-in offer (S298). */
+export interface SignInPreview {
+  offered: boolean;
+  reason?: string;
+  plan?: AppSignInPlan;
+  /** Apply needs no API token in the request: dashboard sign-in kept one. */
+  token_kept: boolean;
+}
+
+/** The pinned third-party plugin an adapter installs (S298, Jellyfin only). */
+export interface PinnedPlugin {
+  name: string;
+  version: string;
+  url: string;
+  sha256: string;
+}
+
+/** One app's recorded sign-in with Authentik (S298); never a secret. */
+export interface AppSignInRecord {
+  package: string;
+  adapter: string;
+  client_id: string;
+  issuer: string;
+  redirect_uris: string[];
+  plugin_version?: string;
+  actor?: string;
+  updated_at: string;
+}
+
+/** GET /api/v1/catalog/:name/sign-in (S298). */
+export interface AppSignInStatus {
+  package: string;
+  offered: boolean;
+  reason?: string;
+  enabled: boolean;
+  applied?: AppSignInRecord;
+  replan: boolean;
+  adapter?: string;
+  plugin?: PinnedPlugin;
+  sign_in_url?: string;
+  token_kept: boolean;
+}
+
+/** POST /api/v1/catalog/:name/sign-in/plan (S298): what approving does, with its digest. */
+export interface AppSignInPlan {
+  package: string;
+  title: string;
+  enabled: boolean;
+  adapter: string;
+  provider: string;
+  application: string;
+  client_id: string;
+  issuer: string;
+  redirect_uris: string[];
+  app_settings: string[];
+  plugin?: PinnedPlugin;
+  sign_in_url?: string;
+  changes: string[];
+  warnings: string[];
+  digest: string;
 }
 
 /** One resolved container mount in an install plan (S276). */
@@ -1488,6 +1554,23 @@ export class ApiService {
     actor: string;
   }): Observable<BackupSchedule> {
     return this.http.post<BackupSchedule>('/api/v1/backups/schedules', body);
+  }
+
+  appSignIn(name: string): Observable<AppSignInStatus> {
+    return this.http.get<AppSignInStatus>(`/api/v1/catalog/${encodeURIComponent(name)}/sign-in`);
+  }
+
+  appSignInPlan(name: string, enabled: boolean): Observable<AppSignInPlan> {
+    return this.http.post<AppSignInPlan>(`/api/v1/catalog/${encodeURIComponent(name)}/sign-in/plan`, { enabled });
+  }
+
+  /** Starts the reviewed change. The token is for this apply only; leave it empty when one is kept. */
+  appSignInApply(name: string, enabled: boolean, digest: string, token = ''): Observable<OperationStarted> {
+    const body: { enabled: boolean; digest: string; token?: string } = { enabled, digest };
+    if (token) {
+      body.token = token;
+    }
+    return this.http.post<OperationStarted>(`/api/v1/catalog/${encodeURIComponent(name)}/sign-in/apply`, body);
   }
 
   backupPolicy(): Observable<BackupPolicyStatus> {

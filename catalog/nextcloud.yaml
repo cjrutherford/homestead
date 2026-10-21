@@ -65,3 +65,7 @@ backuppaths:
 sso:
   class: optional
   protocols: [oidc, saml, ldap]
+  # App sign-in through Authentik (S298): the user_oidc app, set up with occ.
+  oidc:
+    adapter: nextcloud-user-oidc
+    service: nextcloud

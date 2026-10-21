@@ -28,7 +28,7 @@ func (s *Server) MountCatalog(st *store.Store, catalogDir string, secrets catalo
 	runner := operation.NewRunner(st)
 	s.mux.HandleFunc("GET /api/v1/catalog", handleCatalogList(st, catalogDir))
 	s.mux.HandleFunc("GET /api/v1/catalog/{name}", handleCatalogGet(catalogDir))
-	s.mux.HandleFunc("POST /api/v1/catalog/{name}/plan", handleCatalogPlan(st, catalogDir))
+	s.mux.HandleFunc("POST /api/v1/catalog/{name}/plan", handleCatalogPlan(s, st, catalogDir))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/install", handleCatalogInstall(st, catalogDir, runner, secrets))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/configure", handleCatalogConfigure(s, st, catalogDir, runner, secrets))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/uninstall", handleCatalogUninstall(s, st, catalogDir, runner))
@@ -310,7 +310,13 @@ func decodeBody(r *http.Request, body any) error {
 	return nil
 }
 
-func handleCatalogPlan(st *store.Store, catalogDir string) http.HandlerFunc {
+// installPlanView is the install plan with its sign-in preview (S298).
+type installPlanView struct {
+	catalog.InstallPlan
+	SignIn *signInPreview `json:"sign_in,omitempty"`
+}
+
+func handleCatalogPlan(s *Server, st *store.Store, catalogDir string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body installBody
 		if err := decodeBody(r, &body); err != nil {
@@ -327,7 +333,11 @@ func handleCatalogPlan(st *store.Store, catalogDir string) http.HandlerFunc {
 			http.Error(w, err.Error(), status)
 			return
 		}
-		writeJSON(w, plan)
+		view := installPlanView{InstallPlan: plan}
+		if s.appSignIn != nil {
+			view.SignIn = s.appSignIn.preview(req.Manifest, plan)
+		}
+		writeJSON(w, view)
 	}
 }
 

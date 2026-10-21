@@ -640,6 +640,11 @@ func (m *Manager) readLink() (linkRow, bool, error) {
 	return r, true, nil
 }
 
+// Config returns the applied dashboard sign-in configuration; ok is false
+// until sign-in is set up. App sign-in (S298) reuses its Authentik
+// address, flows and signing key.
+func (m *Manager) Config() (spec Spec, ok bool, err error) { return m.readConfig() }
+
 func (m *Manager) readConfig() (Spec, bool, error) {
 	var raw string
 	err := m.DB.QueryRow(`SELECT spec FROM sso_config WHERE id = 1`).Scan(&raw)

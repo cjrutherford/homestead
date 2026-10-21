@@ -140,3 +140,34 @@ func TestConfigureDefinition(t *testing.T) {
 		t.Fatal("planned without dir")
 	}
 }
+
+func TestApplySignInWiringAddsAndRemovesOnlyItsEntries(t *testing.T) {
+	dir := t.TempDir()
+	if err := ApplyConfig(dir, configPlan()); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(filepath.Join(dir, OverrideFileName))
+	w := SignInWiring{Service: "jellyfin", ExtraHosts: []string{"authentik.lan:host-gateway"},
+		Volumes: []string{"./homestead-ca:/etc/homestead/ca:ro"}, Env: map[string]string{"SSL_CERT_DIR": "/etc/ssl/certs:/etc/homestead/ca"}}
+	for i := 0; i < 2; i++ {
+		if err := ApplySignInWiring(dir, w, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	on, _ := os.ReadFile(filepath.Join(dir, OverrideFileName))
+	for _, want := range []string{"TZ: UTC", "authentik.lan:host-gateway", "homestead-ca:/etc/homestead/ca:ro", "SSL_CERT_DIR"} {
+		if strings.Count(string(on), want) != 1 {
+			t.Fatalf("on: %q not once in\n%s", want, on)
+		}
+	}
+	if err := ApplySignInWiring(dir, w, false); err != nil {
+		t.Fatal(err)
+	}
+	off, _ := os.ReadFile(filepath.Join(dir, OverrideFileName))
+	if string(off) != string(before) {
+		t.Fatalf("off:\n%s\nwant:\n%s", off, before)
+	}
+	if err := ApplySignInWiring(dir, SignInWiring{Service: "Bad!"}, true); err == nil {
+		t.Fatal("bad service accepted")
+	}
+}

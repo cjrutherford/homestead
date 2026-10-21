@@ -3,6 +3,7 @@ package catalog
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -190,6 +191,84 @@ func (c SSOClass) Effective() SSOClass {
 type SSODeclaration struct {
 	Class     SSOClass
 	Protocols []identity.Capability
+	// OIDC names the first-party adapter Homestead configures the app's
+	// OpenID Connect sign-in through (S298, ADR-039 §3); nil when the app
+	// cannot be signed in to through Authentik.
+	OIDC *OIDCAdapter `yaml:"oidc,omitempty" json:"oidc,omitempty"`
+}
+
+// OIDC adapters (S298): each is first-party Go code in internal/appsso.
+const (
+	AdapterImmich      = "immich"
+	AdapterNextcloud   = "nextcloud-user-oidc"
+	AdapterJellyfinSSO = "jellyfin-sso-plugin"
+)
+
+// OIDCAdapter declares how an app takes OpenID Connect sign-in: the
+// adapter, the service that talks to Authentik, and for Jellyfin the
+// third-party plugin pinned by release and checksum (ADR-039 §3).
+type OIDCAdapter struct {
+	Adapter string        `yaml:"adapter" json:"adapter"`
+	Service string        `yaml:"service" json:"service"`
+	Plugin  *PinnedPlugin `yaml:"plugin,omitempty" json:"plugin,omitempty"`
+}
+
+// PinnedPlugin is one third-party plugin release: Homestead downloads
+// exactly URL and refuses it unless its SHA-256 matches.
+type PinnedPlugin struct {
+	Name    string `yaml:"name" json:"name"`
+	Version string `yaml:"version" json:"version"`
+	URL     string `yaml:"url" json:"url"`
+	SHA256  string `yaml:"sha256" json:"sha256"`
+}
+
+var (
+	pluginVersion = regexp.MustCompile(`^[0-9]+(\.[0-9]+){1,3}$`)
+	pluginSHA256  = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
+
+// validate checks the adapter against the manifest's services: a known
+// adapter, an existing service that serves an endpoint, OIDC among the
+// protocols, and a plugin pin exactly for the Jellyfin adapter.
+func (a OIDCAdapter) validate(protocols []identity.Capability, services map[string]Service) error {
+	switch a.Adapter {
+	case AdapterImmich, AdapterNextcloud, AdapterJellyfinSSO:
+	default:
+		return fmt.Errorf("catalog: OIDC adapter %q unknown", a.Adapter)
+	}
+	oidc := false
+	for _, p := range protocols {
+		oidc = oidc || p == identity.CapabilityOIDC
+	}
+	if !oidc {
+		return fmt.Errorf("catalog: an OIDC adapter needs the oidc protocol")
+	}
+	service, ok := services[a.Service]
+	if !ok || service.Exposes == "" {
+		return fmt.Errorf("catalog: OIDC adapter service %q must be a service that serves an endpoint", a.Service)
+	}
+	if a.Adapter != AdapterJellyfinSSO {
+		if a.Plugin != nil {
+			return fmt.Errorf("catalog: only the %s adapter pins a plugin", AdapterJellyfinSSO)
+		}
+		return nil
+	}
+	p := a.Plugin
+	if p == nil {
+		return fmt.Errorf("catalog: the %s adapter must pin the plugin release and its checksum", AdapterJellyfinSSO)
+	}
+	u, err := url.Parse(p.URL)
+	switch {
+	case strings.TrimSpace(p.Name) == "":
+		return fmt.Errorf("catalog: the pinned plugin needs a name")
+	case !pluginVersion.MatchString(p.Version):
+		return fmt.Errorf("catalog: plugin version %q is not a release number", p.Version)
+	case err != nil || u.Scheme != "https" || u.Host == "" || !strings.HasSuffix(u.Path, ".zip") || !strings.Contains(u.Path, p.Version):
+		return fmt.Errorf("catalog: plugin url must be the https .zip of release %s", p.Version)
+	case !pluginSHA256.MatchString(p.SHA256):
+		return fmt.Errorf("catalog: plugin sha256 must be 64 lowercase hex digits")
+	}
+	return nil
 }
 
 // Validate checks the declaration: a known class, known unique
@@ -407,6 +486,15 @@ func (m Manifest) Validate() error {
 	}
 	if err := m.SSO.Validate(); err != nil {
 		return err
+	}
+	if m.SSO.OIDC != nil {
+		byName := map[string]Service{}
+		for _, service := range m.Services {
+			byName[service.Name] = service
+		}
+		if err := m.SSO.OIDC.validate(m.SSO.Protocols, byName); err != nil {
+			return err
+		}
 	}
 	if err := validateBrowser(m.Browser); err != nil {
 		return err
