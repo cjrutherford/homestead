@@ -385,6 +385,50 @@ protocols upstream supports, Authentik itself unsupported.
   carries the boundary in the record — Homestead administrator
   login and socket recovery stay local, only app logins change.
 
+## Secret delivery to plaintext-variable images (S342)
+
+- ADR-021 delivers every secret as a 0600 file under the stack
+  directory. Images with no `*_FILE` input cannot read one, so a
+  manifest may mark a consumer `Export: true` (ADR-052): the `*_FILE`
+  variable keeps carrying the path, and a generated
+  `secret-entrypoint.<service>.sh` exports the value into the same name
+  without the suffix at start, unsets the path variable, and `exec`s
+  the image's declared `Entrypoint` plus `Command`.
+- Exporting requires a declared `Entrypoint`. Validation refuses a
+  missing entrypoint, a variable without the `_FILE` suffix, an export
+  target the manifest also sets plainly, a `URI` consumer, and two
+  secrets exporting the same variable on one service.
+- The script holds paths, never values, is written 0755 beside
+  `compose.yaml`, and is bind-mounted read-only at
+  `/homestead/secret-entrypoint.sh`. An unreadable file fails the start
+  with a named error instead of running the app unconfigured.
+- The value then exists in the container's own environment, which is the
+  ADR-052 trade. Every other guarantee holds: no value in Compose YAML,
+  generated scripts, secret listings, audit records, drift reports, or
+  exports. Prefer `_FILE` delivery wherever an image offers it.
+
+## OIDC client actuation (S342)
+
+- `internal/identity` gains `ClientSpec`, `Client`, and `ClientManager`
+  beside `Provider`: read-only metadata stays separate from live
+  writes. `Authentik` implements both over its own API — flow lookup by
+  slug, existing-application reuse with a redirect refresh, provider and
+  application creation, orphan cleanup, and repeatable deletion. Errors
+  carry method, path, and status only, never a response body. The API
+  token lives in the secret store under `identity_<provider>_token`.
+- `internal/catalog` declares what a package needs:
+  `sso.oidc` names redirect paths, optional scopes, an optional slug,
+  and the two secrets that receive the issued credentials. Validation
+  requires an SSO class that admits SSO, the `oidc` protocol, declared
+  credential secrets, and a web endpoint; redirect URIs resolve against
+  the package's route host and refuse an empty one.
+- `ActivateOIDC` creates or refreshes the client and stores the issued
+  id and secret as `app_<package>_<name>` rows, delivered through the
+  supervisor above. It is idempotent: reuse keeps the stored secret and
+  refuses when the provider holds a client whose secret was never
+  stored, rather than issuing a credential the app cannot read.
+  `DeactivateOIDC` removes both, repeatably.
+
 ## Bootstrap (S220)
 
 ```bash

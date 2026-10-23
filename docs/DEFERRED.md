@@ -1405,8 +1405,18 @@ slice is scheduled yet.
 - qBittorrent: deferred until a supported VPN/network-mode design exists;
   the current schema cannot express `network_mode: service:vpn`.
 - Foundation items the planned apps need are **scheduled work, not
-  deferrals**: OIDC client actuation with the supervised secret-entrypoint
-  wrapper, GHCR update discovery, MariaDB/MySQL backup export, a written
-  community-image policy, and catalog bundles with capacity checks. Their
-  order is in `docs/CATALOG_EXPANSION.md` section 9. This ledger keeps only
-  the work that is genuinely unscheduled.
+  deferrals**: GHCR update discovery, MariaDB/MySQL backup export, a
+  written community-image policy, and catalog bundles with capacity
+  checks. Their order is in `docs/CATALOG_EXPANSION.md` section 9. OIDC
+  client actuation with the supervised secret-entrypoint wrapper landed
+  in S342. This ledger keeps only the work that is genuinely
+  unscheduled.
+- SSO actuation surfaces: S342 lands the mechanism (catalog OIDC
+  declaration, Authentik client actuation, catalog-secret storage,
+  supervised secret export) but no owner-facing entry point. Provider
+  endpoint and API-token configuration, the API route and CLI command
+  that activate or deactivate one package's client, and the dashboard
+  control come with the first slice that installs an SSO package.
+- SAML and LDAP client actuation, provider-side secret rotation, and
+  authorisation-group mapping stay out of scope until a package needs
+  them; the S342 mechanism is OIDC-only.

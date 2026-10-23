@@ -107,3 +107,5 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-048 | Approved App Setup Runs on the Appliance; Tunnel Setup Issues the Public Certificate | Accepted |
 | ADR-049 | People Administration on the Public Dashboard; Authentik Recovery Links | Accepted |
 | ADR-050 | An Apps Page for Everyone Who Signs In; Administration Moves to /admin | Accepted |
+| ADR-051 | Catalog Integration Metadata Is Advisory | Accepted |
+| ADR-052 | Secret Entrypoint Export and OIDC Client Actuation | Accepted |

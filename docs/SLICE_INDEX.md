@@ -107,9 +107,14 @@ Then S340 app icons (`docs/slices/S340-app-icons.md`): the manifest `mdi:` icons
 Planning (not scheduled): `docs/CATALOG_EXPANSION.md` evaluates additional
 catalog applications, foundation work, and wave ordering.
 
-Next scheduled: S341 Catalog integration contract
-(`docs/slices/S341-catalog-integration-contract.md`) — the first foundation
-item from that plan; F1 (OIDC client actuation) follows.
+Completed foundation: S341 Catalog integration contract
+(`docs/slices/S341-catalog-integration-contract.md`) and S342 OIDC client
+actuation with supervised secret delivery
+(`docs/slices/S342-oidc-client-actuation.md`).
+
+Next scheduled: S343 GHCR update discovery
+(`docs/CATALOG_EXPANSION.md` section 9) — the next foundation item from
+that plan, followed by S344 bundles and the Wave 1 packages.
 
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
 catalog track and an Everything-app track, with dependencies, the critical

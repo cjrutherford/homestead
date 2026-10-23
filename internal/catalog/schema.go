@@ -35,6 +35,12 @@ type Service struct {
 	// images like Authentik require `server`/`worker` verbs):
 	// empty inherits the image default.
 	Command []string
+	// Entrypoint names the image's own entrypoint when Homestead has to
+	// supervise startup (S342). The generated stack replaces ENTRYPOINT
+	// with the secret-entrypoint supervisor and passes this list, plus
+	// Command, as the command it execs. Required for any service that
+	// exports a secret value into the environment.
+	Entrypoint []string
 	// Data declares every container path the image writes (S276):
 	// persistent paths placed on mounted storage, ephemeral ones
 	// explicitly marked.
@@ -54,6 +60,11 @@ func (s Service) Validate(endpoints map[string]bool) error {
 	for _, arg := range s.Command {
 		if arg == "" {
 			return fmt.Errorf("catalog: service %q has an empty command argument", s.Name)
+		}
+	}
+	for _, arg := range s.Entrypoint {
+		if arg == "" {
+			return fmt.Errorf("catalog: service %q has an empty entrypoint argument", s.Name)
 		}
 	}
 	image, tag, found := strings.Cut(s.Image, ":")
@@ -198,6 +209,11 @@ type SSODeclaration struct {
 	// OpenID Connect sign-in through (S298, ADR-039 §3); nil when the app
 	// cannot be signed in to through Authentik.
 	OIDC *OIDCAdapter `yaml:"oidc,omitempty" json:"oidc,omitempty"`
+	// Client declares the client an OIDC provider must host for this
+	// package (S342). Present only when the class admits SSO and the
+	// protocols include oidc. It is separate from OIDC, which names the
+	// adapter that configures an existing app's side of the sign-in.
+	Client *OIDCClient `yaml:"client,omitempty" json:"client,omitempty"`
 }
 
 // OIDC adapters (S298): each is first-party Go code in internal/appsso.
@@ -297,6 +313,20 @@ func (d SSODeclaration) Validate() error {
 	}
 	if d.Class.Effective() != SSOUnsupported && len(d.Protocols) == 0 {
 		return fmt.Errorf("catalog: %s SSO must name at least one protocol", d.Class)
+	}
+	if d.Client != nil {
+		if d.Class.Effective() == SSOUnsupported {
+			return fmt.Errorf("catalog: unsupported SSO takes no OIDC client")
+		}
+		ok := false
+		for _, protocol := range d.Protocols {
+			if protocol == identity.CapabilityOIDC {
+				ok = true
+			}
+		}
+		if !ok {
+			return fmt.Errorf("catalog: an OIDC client needs the oidc protocol")
+		}
 	}
 	return nil
 }
@@ -709,6 +739,9 @@ func (m Manifest) Validate() error {
 		}
 	}
 	if err := validateBrowser(m.Browser); err != nil {
+		return err
+	}
+	if err := validateOIDC(m); err != nil {
 		return err
 	}
 	if err := validateSecrets(m, services); err != nil {

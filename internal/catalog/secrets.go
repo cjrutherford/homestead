@@ -37,10 +37,19 @@ var validSecretName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // environment variable that receives the in-container PATH of the file
 // (the images' own `*_FILE` convention), or, with URI set, a
 // `file://` URI of it (Authentik's convention). Never the value.
+//
+// Export covers the images that have no `*_FILE` input at all (S342,
+// ADR-052): Env keeps carrying the path, and the generated
+// secret-entrypoint supervisor exports the value into Env without its
+// `_FILE` suffix at container start. The value therefore exists in the
+// container's environment at runtime — the trade the owner accepted to
+// make those apps configurable at all — but never in Compose YAML, in
+// `docker inspect` before start, or in any file Homestead writes.
 type SecretConsumer struct {
 	Service string
 	Env     string
 	URI     bool
+	Export  bool
 }
 
 // SecretDecl declares one secret-backed variable. Name is the logical
@@ -87,8 +96,11 @@ func validateSecrets(m Manifest, services map[string]bool) error {
 	seen := map[string]bool{}
 	envs := map[string]bool{}
 	envSvc := map[string]map[string]string{}
+	entrypoints := map[string]bool{}
+	exported := map[string]string{}
 	for _, svc := range m.Services {
 		envSvc[svc.Name] = svc.Environment
+		entrypoints[svc.Name] = len(svc.Entrypoint) > 0
 	}
 	for _, decl := range m.Secrets {
 		if !validSecretName.MatchString(decl.Name) {
@@ -122,6 +134,29 @@ func validateSecrets(m Manifest, services map[string]bool) error {
 			if _, plain := envSvc[c.Service][c.Env]; plain {
 				return fmt.Errorf("catalog: service %q variable %q is both plain and secret-backed", c.Service, c.Env)
 			}
+			if !c.Export {
+				continue
+			}
+			if c.URI {
+				return fmt.Errorf("catalog: secret %q consumer %q cannot export a URI", decl.Name, c.Env)
+			}
+			if !strings.HasSuffix(c.Env, "_FILE") {
+				return fmt.Errorf("catalog: secret %q export needs a *_FILE variable, got %q", decl.Name, c.Env)
+			}
+			target := strings.TrimSuffix(c.Env, "_FILE")
+			if !validEnvKey.MatchString(target) {
+				return fmt.Errorf("catalog: secret %q export target %q invalid", decl.Name, target)
+			}
+			if prev, dup := exported[c.Service+"\x00"+target]; dup {
+				return fmt.Errorf("catalog: service %q exports %q for both %q and %q", c.Service, target, prev, decl.Name)
+			}
+			exported[c.Service+"\x00"+target] = decl.Name
+			if _, plain := envSvc[c.Service][target]; plain {
+				return fmt.Errorf("catalog: service %q exports %q but also sets it plainly", c.Service, target)
+			}
+			if !entrypoints[c.Service] {
+				return fmt.Errorf("catalog: service %q exports secret %q but declares no entrypoint", c.Service, decl.Name)
+			}
 		}
 	}
 	if m.Database != nil && m.Database.PasswordSecret != "" {
@@ -130,6 +165,20 @@ func validateSecrets(m Manifest, services map[string]bool) error {
 		}
 		if m.Database.Kind != DatabasePostgres {
 			return fmt.Errorf("catalog: only postgres takes a password secret")
+		}
+	}
+	for _, svc := range m.Services {
+		if len(svc.Entrypoint) == 0 {
+			continue
+		}
+		exports := false
+		for key := range exported {
+			if strings.HasPrefix(key, svc.Name+"\x00") {
+				exports = true
+			}
+		}
+		if !exports {
+			return fmt.Errorf("catalog: service %q declares an entrypoint but exports no secret", svc.Name)
 		}
 	}
 	return nil
@@ -175,6 +224,86 @@ func SecretFilesFor(m Manifest) []SecretFile {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out
+}
+
+// EntrypointName is the in-container path of the supervising entrypoint
+// the generated Compose document sets as ENTRYPOINT (S342, ADR-052).
+const EntrypointName = "/homestead/secret-entrypoint.sh"
+
+// EntrypointScript is one generated supervisor for a service that
+// exports secret values into the environment. Body holds paths, never
+// values, so the script is safe to inspect and back up.
+type EntrypointScript struct {
+	Service string
+	// File is the stack-relative file name the Compose document mounts.
+	File string
+	Body string
+}
+
+// EntrypointFile names a service's supervisor script inside the stack
+// directory. One file per service keeps each generated document
+// readable on its own.
+func EntrypointFile(service string) string {
+	return "secret-entrypoint." + strings.NewReplacer("-", "_", ".", "_").Replace(service) + ".sh"
+}
+
+// secretPair ties a secret declaration name to the consumer that
+// exports it.
+type secretPair struct {
+	decl     string
+	consumer SecretConsumer
+}
+
+// EntrypointScriptsFor renders the supervisors a manifest needs, sorted
+// by service. A service appears only when it exports a secret.
+func EntrypointScriptsFor(m Manifest) []EntrypointScript {
+	byService := map[string][]secretPair{}
+	for _, decl := range m.Secrets {
+		for _, c := range decl.Consumers {
+			if c.Export {
+				byService[c.Service] = append(byService[c.Service], secretPair{decl.Name, c})
+			}
+		}
+	}
+	names := make([]string, 0, len(byService))
+	for name := range byService {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]EntrypointScript, 0, len(names))
+	for _, name := range names {
+		out = append(out, EntrypointScript{
+			Service: name,
+			File:    EntrypointFile(name),
+			Body:    entrypointBody(name, byService[name]),
+		})
+	}
+	return out
+}
+
+// entrypointBody renders one supervisor: for each exported secret, fail
+// closed when the file is unreadable, read it into the target variable,
+// export it, and drop the path variable so the container sees exactly
+// what the image expects.
+func entrypointBody(service string, pairs []secretPair) string {
+	var b strings.Builder
+	b.WriteString("#!/bin/sh\n")
+	b.WriteString("# Generated by Homestead (S342, ADR-052). Exports secret files into the\n")
+	b.WriteString("# environment for images that read only plaintext variables. This file\n")
+	b.WriteString("# holds paths, never values. Regeneration overwrites edits.\n")
+	b.WriteString("set -eu\n")
+	for _, p := range pairs {
+		path := secretContainerPath(secretKey(service, p.decl))
+		target := strings.TrimSuffix(p.consumer.Env, "_FILE")
+		fmt.Fprintf(&b, "if [ ! -r %s ]; then\n", path)
+		fmt.Fprintf(&b, "  echo \"homestead: missing secret file for %s\" >&2\n", target)
+		b.WriteString("  exit 1\nfi\n")
+		fmt.Fprintf(&b, "%s=\"$(cat %s)\"\n", target, path)
+		fmt.Fprintf(&b, "export %s\n", target)
+		fmt.Fprintf(&b, "unset %s\n", p.consumer.Env)
+	}
+	b.WriteString("exec \"$@\"\n")
+	return b.String()
 }
 
 // SecretStore is the slice of the secret store this package needs.

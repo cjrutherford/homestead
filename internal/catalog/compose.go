@@ -183,10 +183,11 @@ type composeTmpfs struct {
 // deterministic container names, restart unless stopped, and only the
 // sections generation was told about.
 type composeService struct {
-	Image     string   `yaml:"image"`
-	Container string   `yaml:"container_name"`
-	Restart   string   `yaml:"restart"`
-	Command   []string `yaml:"command,omitempty"`
+	Image      string   `yaml:"image"`
+	Container  string   `yaml:"container_name"`
+	Restart    string   `yaml:"restart"`
+	Entrypoint []string `yaml:"entrypoint,omitempty"`
+	Command    []string `yaml:"command,omitempty"`
 	// Environment carries plain manifest variables and the in-container
 	// PATHS of secret files; never a secret value (ADR-021).
 	Environment map[string]string `yaml:"environment,omitempty"`
@@ -225,6 +226,9 @@ type StackFiles struct {
 	// SecretFiles names the secret files the document references
 	// (metadata only); WriteStack materializes them from the store.
 	SecretFiles []SecretFile
+	// EntrypointScripts names the supervisor scripts a document mounts
+	// (S342); WriteStack writes them beside compose.yaml.
+	EntrypointScripts []EntrypointScript
 	// Images lists the service images the stack runs, in service order
 	// (S279 uses it to find locally built craft images).
 	Images []string
@@ -288,6 +292,16 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 			}
 		}
 		rendered.Environment, rendered.Secrets = serviceSecretWiring(manifest, name)
+		if serviceEntrypoint(manifest, name) != nil {
+			rendered.Entrypoint = []string{EntrypointName}
+			args := append([]string{}, serviceEntrypoint(manifest, name)...)
+			args = append(args, commands[name]...)
+			rendered.Command = args
+			rendered.Volumes = append(rendered.Volumes, composeVolume{
+				Type: "bind", Source: "./" + EntrypointFile(name), Target: EntrypointName, ReadOnly: true,
+				Bind: &composeBind{CreateHostPath: false},
+			})
+		}
 		for key, value := range rendered.Environment {
 			if strings.Contains(value, RouteHostToken) || strings.Contains(value, RouteNamesToken) ||
 				strings.Contains(value, RoutePathToken) || strings.Contains(value, RouteURLToken) {
@@ -349,9 +363,28 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 			Name: manifest.Name, Dir: docker.DirFor(manifest.Name),
 			Services: names, Enabled: true,
 		},
-		SecretFiles: secretFiles,
-		Images:      stackImages(manifest),
+		SecretFiles:       secretFiles,
+		EntrypointScripts: EntrypointScriptsFor(manifest),
+		Images:            stackImages(manifest),
 	}, nil
+}
+
+// serviceEntrypoint returns the image entrypoint a service must declare
+// to be supervised (S342): non-nil only when the service exports a
+// secret value into its environment.
+func serviceEntrypoint(manifest Manifest, service string) []string {
+	for _, decl := range manifest.Secrets {
+		for _, c := range decl.Consumers {
+			if c.Service == service && c.Export {
+				for _, svc := range manifest.Services {
+					if svc.Name == service {
+						return svc.Entrypoint
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // serviceSecretWiring renders one service's environment (plain manifest
@@ -403,8 +436,22 @@ func WriteStack(dir string, files StackFiles, secrets SecretStore) error {
 	if err := WriteSecretFiles(dir, files.SecretFiles, secrets); err != nil {
 		return err
 	}
+	if err := writeEntrypointScripts(dir, files.EntrypointScripts); err != nil {
+		return err
+	}
 	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(files.ComposeYAML), 0o644); err != nil {
 		return fmt.Errorf("catalog: write compose.yaml: %w", err)
+	}
+	return nil
+}
+
+// writeEntrypointScripts writes one supervisor per exporting service.
+// Scripts are 0755 and hold paths, never values (S342).
+func writeEntrypointScripts(dir string, scripts []EntrypointScript) error {
+	for _, script := range scripts {
+		if err := os.WriteFile(filepath.Join(dir, script.File), []byte(script.Body), 0o755); err != nil {
+			return fmt.Errorf("catalog: write %s: %w", script.File, err)
+		}
 	}
 	return nil
 }
