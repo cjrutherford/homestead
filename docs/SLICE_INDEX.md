@@ -117,7 +117,11 @@ integration metadata (`docs/slices/S341-catalog-integration-contract.md`),
 which had been scheduled in a docs-only commit and was implemented before
 Wave 1 so new manifests can declare their relationships.
 
-Next scheduled: S345 `vaultwarden` — the first Wave 1 package.
+S345 `vaultwarden` (`docs/slices/S345-vaultwarden.md`) is the first Wave 1
+package: owner signup, no admin surface by default, local exposure.
+
+Next scheduled: S346 `paperless-ngx` — documents with Postgres, Redis, and
+a scans library shared with Nextcloud.
 
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
 catalog track and an Everything-app track, with dependencies, the critical

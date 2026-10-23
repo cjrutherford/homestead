@@ -3,6 +3,7 @@ package catalog
 import (
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"homestead/internal/storage"
@@ -27,7 +28,7 @@ func repoCatalog(t *testing.T) Catalog {
 // curatedPackages is the one place the expected shipped catalog is listed
 // (sorted, as Names returns it). Adding a package to catalog/ edits this
 // list and nothing else here: each craft slice appends its app.
-var curatedPackages = []string{"authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "gridcraft", "immich", "jellyfin", "lightcraft", "nextcloud", "pdfcraft", "photocraft", "soundcraft", "vectorcraft", "wordcraft"}
+var curatedPackages = []string{"authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "gridcraft", "immich", "jellyfin", "lightcraft", "nextcloud", "pdfcraft", "photocraft", "soundcraft", "vaultwarden", "vectorcraft", "wordcraft"}
 
 // assertCuratedNames fails when the shipped catalog and curatedPackages
 // differ, in either direction.
@@ -210,6 +211,68 @@ func TestCuratedAuthentik(t *testing.T) {
 		FreeSpace: map[storage.Class]uint64{
 			storage.ClassApplication: 10 << 30,
 		},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !report.Passed {
+		t.Fatalf("report = %+v", report)
+	}
+}
+
+// TestCuratedVaultwarden pins the first Wave 1 package (S345): a single
+// container with owner signup, no administrative surface by default, and
+// local exposure.
+func TestCuratedVaultwarden(t *testing.T) {
+	catalog := repoCatalog(t)
+	manifest, err := catalog.Get("vaultwarden")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if manifest.Version != "1.34.3" {
+		t.Fatalf("version = %q", manifest.Version)
+	}
+	if len(manifest.Services) != 1 || manifest.Services[0].Image != "vaultwarden/server:1.34.3" {
+		t.Fatalf("services = %+v", manifest.Services)
+	}
+	service := manifest.Services[0]
+	if service.Environment["SIGNUPS_ALLOWED"] != "true" {
+		t.Fatalf("signups = %q, want owner signup open", service.Environment["SIGNUPS_ALLOWED"])
+	}
+	if _, enabled := service.Environment["ADMIN_TOKEN"]; enabled {
+		t.Fatal("the admin page must stay off by default")
+	}
+	if !strings.HasPrefix(service.Environment["DOMAIN"], "https://") ||
+		!strings.Contains(service.Environment["DOMAIN"], RouteHostToken) {
+		t.Fatalf("domain = %q, want the routed HTTPS host", service.Environment["DOMAIN"])
+	}
+	if len(service.Data) != 1 || service.Data[0].Target != "/data" ||
+		service.Data[0].Class != storage.ClassApplication || service.Data[0].Subpath != "data" {
+		t.Fatalf("data = %+v", service.Data)
+	}
+	if len(manifest.BackupPaths) != 1 || manifest.BackupPaths[0] != "data" {
+		t.Fatalf("backuppaths = %v", manifest.BackupPaths)
+	}
+	endpoint, ok := manifest.Exposure.Find("web")
+	if !ok {
+		t.Fatal("no web endpoint")
+	}
+	if string(endpoint.Recommended) != "local" || !endpoint.AllowWider || len(endpoint.Warnings) == 0 {
+		t.Fatalf("endpoint = %+v", endpoint)
+	}
+	if len(manifest.Integrations) != 1 || manifest.Integrations[0].Kind != IntegrationIdentity ||
+		manifest.Integrations[0].Target != "authentik" {
+		t.Fatalf("integrations = %+v", manifest.Integrations)
+	}
+	if manifest.Database != nil {
+		t.Fatalf("database = %+v, want SQLite in the volume", manifest.Database)
+	}
+	report, err := Evaluate(manifest, HostFacts{
+		Arch: "amd64", MemoryMB: 2048, CPUCount: 2,
+		FreeSpace: map[storage.Class]uint64{storage.ClassApplication: 2 << 30},
 	})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)

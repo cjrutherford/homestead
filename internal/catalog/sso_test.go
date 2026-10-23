@@ -55,6 +55,7 @@ func TestCuratedSSO(t *testing.T) {
 		"immich":      {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"jellyfin":    {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC, identity.CapabilitySAML}},
 		"nextcloud":   {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC, identity.CapabilitySAML, identity.CapabilityLDAP}},
+		"vaultwarden": {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"wordcraft":   {Class: SSOUnsupported},
 		"gridcraft":   {Class: SSOUnsupported},
 		"pdfcraft":    {Class: SSOUnsupported},

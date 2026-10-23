@@ -1,0 +1,70 @@
+# Vaultwarden password manager (S345): the first Wave 1 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+#
+# Local login is the supported path at install: signups stay open so the
+# owner can create the first account, and the admin page is deliberately
+# off (no ADMIN_TOKEN) because a generated token would turn an
+# administrative surface on by default. Enabling the admin page is a
+# separate owner decision (see docs/DEFERRED.md). OIDC is declared
+# optional for the SSO wizard; wiring SSO_* values from a client
+# created by Authentik is not surfaced yet.
+name: vaultwarden
+version: 1.34.3
+title: Vaultwarden
+blurb: Passwords and passkeys you control.
+description: Vaultwarden is a lightweight, Bitwarden-compatible password
+  manager. The official browser extensions and mobile apps sync against it,
+  so the vault works the same way a hosted one would, while the data stays
+  on your appliance. Signups stay open for the owner's first account; the
+  administrative page is off until the owner turns it on deliberately.
+category: passwords
+icon: mdi:shield-key
+services:
+- name: vaultwarden
+  image: vaultwarden/server:1.34.3
+  exposes: web
+  environment:
+    # The edge hostname is filled at render time. Passkeys and invitation
+    # links need the exact URL the browser uses, so the domain must follow
+    # the route rather than a hard-coded address.
+    DOMAIN: "https://{{route_host}}"
+    # Owner signup: the first account creates the vault. Family members
+    # join by invitation; closing signups later is configuration, not a
+    # manifest edit.
+    SIGNUPS_ALLOWED: "true"
+  # Image VOLUME: /data (SQLite database, attachments, sends, RSA keys).
+  # Recent image releases run as uid/gid 1000; the vault lives on
+  # application storage and is small.
+  data:
+  - target: /data
+    class: application
+    subpath: data
+    uid: 1000
+    gid: 1000
+requirements:
+  memorymb: 256
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 536870912
+  # The container listens on 80 (ROCKET_PORT); routes proxy to it and no
+  # host port is published by default.
+  ports: [80]
+exposure:
+  package: vaultwarden
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Passwords leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- data
+sso:
+  class: optional
+  protocols: [oidc]
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in through Authentik once its OIDC client is configured; local login stays available.

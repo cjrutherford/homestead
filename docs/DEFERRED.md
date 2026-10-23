@@ -1417,7 +1417,14 @@ slice is scheduled yet.
   supervised secret export) but no owner-facing entry point. Provider
   endpoint and API-token configuration, the API route and CLI command
   that activate or deactivate one package's client, and the dashboard
-  control come with the first slice that installs an SSO package.
+  control come with the slice that turns SSO on for an installed app.
+  Vaultwarden (S345) ships local-login-first with optional OIDC declared,
+  so the missing surface blocks nothing today.
+- Vaultwarden's admin page: S345 installs with it off and no
+  `ADMIN_TOKEN`, because a generated token would enable an administrative
+  surface by default. Enabling it later — generating the token through
+  the secret store and exposing the page through configure — is not
+  surfaced yet; the owner can still manage users in the app itself.
 - SAML and LDAP client actuation, provider-side secret rotation, and
   authorisation-group mapping stay out of scope until a package needs
   them; the S342 mechanism is OIDC-only.

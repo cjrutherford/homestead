@@ -37,6 +37,10 @@ var knownImageVolumes = map[string]imageVolumes{
 	"valkey/valkey:9":                                                {},
 	"ghcr.io/goauthentik/server:2026.8.3":                            {},
 	"docker.io/library/postgres:16-alpine":                           {Volumes: []string{"/var/lib/postgresql/data"}},
+	// S345: Vaultwarden declares /data in its Dockerfile. Not yet inspected
+	// on the KVM appliance: re-verify with `docker image inspect` when the
+	// tag is next pulled there, and correct this row if the image differs.
+	"vaultwarden/server:1.34.3": {Volumes: []string{"/data"}},
 	// Craft images are built locally (S279), so this row is the locally
 	// built tag, not a pulled one. The shared craft Dockerfile declares no
 	// VOLUME (verified on the dev workstation 2026-10-17 with `docker image

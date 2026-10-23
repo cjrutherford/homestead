@@ -2178,7 +2178,14 @@ catalog page lists them above the package list. The Authentik package (S201) in
 compose pins (server, worker, postgres) with internal services
 carrying no endpoint: the first manifest declaring a Postgres
 database export for backup, with credentials wiring post-install
-through configuration. The backup contract (S180),
+through configuration. The Vaultwarden package (S345) in `catalog/` is the
+first Wave 1 application: one container on application storage with owner
+signup open, the administrative page deliberately off (no generated
+`ADMIN_TOKEN`), and `DOMAIN` following the routed host through
+`{{route_host}}` so passkeys and invitation links match the browser URL.
+Exposure recommends local with an explicit widened-access warning, and the
+manifest declares optional OIDC with an Authentik identity integration for
+the SSO wizard. The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine
 fields refused, staged commands bounded and service-linked, and
