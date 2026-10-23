@@ -2150,7 +2150,18 @@ the first with SQLite as the default database. The Immich package (S171) in
 `catalog/` is the third curated application with official release
 pins across four services (internal ones carrying no endpoint),
 declared requirements, exposure, and backup paths. Services without
-endpoints serve nothing routable by construction. The base suite (S172), also in
+endpoints serve nothing routable by construction. Catalog integration metadata (S341) lives in
+`internal/catalog/integrations.go`: manifests declare `identity`,
+`library`, `handoff` and `companion` relationships, levels are derived
+from the kind (never authored), and the loader enforces cross-package
+gates — shipped targets, providers this build drives
+(`identity.Builtins`), bulk paths on both sides of a library pair, and no
+identity declaration on an SSO-unsupported package. The detail response
+resolves levels and target titles under `Works`, `homesteadctl apps show`
+prints them, and the dashboard package page renders "Works with". Plan
+notes flag declared handoff targets that are not installed. The contract
+is documented in `docs/CATALOG_INTEGRATION.md`; ADR-051 records that the
+metadata is advisory, never actuation. The base suite (S172), also in
 `internal/catalog`, resolves the curated bundle in install order with joint
 grading: per-package verdicts plus combined memory footprints and cross-member
 port collisions naming both owners. Catalog bundles (S344) generalize that

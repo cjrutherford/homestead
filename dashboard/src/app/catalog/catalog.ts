@@ -9,6 +9,7 @@ import {
   CatalogManifest,
   PackageSummary,
   RevealedSecret,
+  WorksWith,
 } from '../core/api.service';
 import { registerPackageTitles } from '../core/operation-labels';
 import { StateMessage } from '../state/state-message';
@@ -88,6 +89,21 @@ export class Catalog implements OnInit {
   protected readonly revealed = signal<RevealedSecret | null>(null);
   /** The managed app's local names (S295); empty until read or when it has none. */
   protected readonly localNames = signal<string[]>([]);
+
+  /**
+   * Groups resolved integrations by level in ADR-051 order (S341): the
+   * panel reads from co-installation inward, never in manifest order.
+   */
+  protected worksByLevel(works: WorksWith[] | undefined): { level: string; works: WorksWith[] }[] {
+    const groups: { level: string; works: WorksWith[] }[] = [];
+    for (const level of ['L1', 'L2', 'L3', 'L4']) {
+      const members = (works ?? []).filter((work) => work.Level === level);
+      if (members.length > 0) {
+        groups.push({ level, works: members });
+      }
+    }
+    return groups;
+  }
 
   ngOnInit(): void {
     this.reload();

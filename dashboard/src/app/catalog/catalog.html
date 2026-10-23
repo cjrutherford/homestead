@@ -117,6 +117,24 @@
                       </p>
                     }
 
+                    @if (manifest.Works?.length) {
+                      <h3>Works with</h3>
+                      @for (group of worksByLevel(manifest.Works); track group.level) {
+                        <h4>{{ group.level }}</h4>
+                        <ul>
+                          @for (work of group.works; track work.Kind + work.Target) {
+                            <li>
+                              {{ work.Kind }}:
+                              <button type="button" class="quiet" (click)="select(work.Target)">
+                                {{ work.Title || work.Target }}
+                              </button>
+                              — {{ work.Note }}
+                            </li>
+                          }
+                        </ul>
+                      }
+                    }
+
                     <app-app-move [name]="manifest.Name" [title]="manifest.Title" (moved)="onMoved(manifest.Name)" />
 
                     @if (manifest.Name !== 'authentik') {

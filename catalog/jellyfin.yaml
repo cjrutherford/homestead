@@ -113,3 +113,10 @@ firstrun:
   - name: Music
     kind: music
     path: /media/music
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in through Authentik; local accounts stay available for recovery.
+- kind: library
+  target: nextcloud
+  note: Mount the same bulk media directory into Jellyfin and Nextcloud external storage.

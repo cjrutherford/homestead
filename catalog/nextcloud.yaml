@@ -118,3 +118,10 @@ sso:
   oidc:
     adapter: nextcloud-user-oidc
     service: nextcloud
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in through Authentik; local accounts stay available for recovery.
+- kind: library
+  target: jellyfin
+  note: Mount the same bulk media directory into Nextcloud external storage and Jellyfin.

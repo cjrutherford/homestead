@@ -27,7 +27,7 @@ class TestSSOWizard(unittest.TestCase):
     def test_wizard_shapes(self):
         src = read("internal/catalog/ssowizard.go")
         for symbol in ("SSOWizardID", "SSOSteps",
-                       "type Integration", "type Wizard",
+                       "type SSOIntent", "type Wizard",
                        "func (w *Wizard) Save(",
                        "func (w *Wizard) Plan(",
                        "func (w *Wizard) Apply(",

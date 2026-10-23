@@ -19,6 +19,16 @@ type CatalogPackage struct {
 	Icon     string `json:"icon"`
 }
 
+// CatalogIntegration is one resolved package relationship (S341): the
+// declaration plus its derived level and the target's title.
+type CatalogIntegration struct {
+	Kind   string `json:"Kind"`
+	Level  string `json:"Level"`
+	Target string `json:"Target"`
+	Title  string `json:"Title"`
+	Note   string `json:"Note"`
+}
+
 // CatalogService is one manifest service as served.
 type CatalogService struct {
 	Name    string `json:"Name"`
@@ -42,6 +52,8 @@ type CatalogManifest struct {
 	BackupPaths []string `json:"BackupPaths"`
 	// Browser lists advisory client capabilities (S252).
 	Browser []BrowserAdvisory `json:"Browser"`
+	// Works lists declared integrations resolved by the daemon (S341).
+	Works []CatalogIntegration `json:"Works"`
 }
 
 // BrowserAdvisory is one non-blocking browser capability warning with its

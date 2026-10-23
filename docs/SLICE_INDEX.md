@@ -111,8 +111,11 @@ Completed foundation: S341 Catalog integration contract
 (`docs/slices/S341-catalog-integration-contract.md`), S342 OIDC client
 actuation with supervised secret delivery
 (`docs/slices/S342-oidc-client-actuation.md`), S343 GHCR update discovery
-(`docs/slices/S343-ghcr-update-discovery.md`), and S344 catalog bundles and
-capacity (`docs/slices/S344-catalog-bundles.md`).
+(`docs/slices/S343-ghcr-update-discovery.md`), S344 catalog bundles and
+capacity (`docs/slices/S344-catalog-bundles.md`), and S341 catalog
+integration metadata (`docs/slices/S341-catalog-integration-contract.md`),
+which had been scheduled in a docs-only commit and was implemented before
+Wave 1 so new manifests can declare their relationships.
 
 Next scheduled: S345 `vaultwarden` — the first Wave 1 package.
 

@@ -86,9 +86,10 @@ worse than no field.
 
 ### Surfaces
 
-- `GET /api/v1/catalog/{name}` returns the declarations with the derived
-  level and the target's title, so no surface has to re-resolve names.
-- CLI `catalog show <package>` prints `integrates:` lines, one per
+- `GET /api/v1/catalog/{name}` returns the manifest plus `Works`: each
+  declaration with its derived level and the target's title, so no surface
+  has to re-resolve names. A package with no declarations returns `[]`.
+- CLI `apps show <package>` prints `integrates:` lines, one per
   declaration: level, kind, target title, note.
 - The dashboard package page gains a "Works with" panel grouped by level,
   each entry linking to the target package page. Absent integrations

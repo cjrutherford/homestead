@@ -190,6 +190,28 @@ describe('Catalog', () => {
     expect(text()).toContain('Cannot reach the appliance. Check that homestead-server is running');
   });
 
+  it('shows declared integrations as works with links (S341)', () => {
+    load();
+    fixture.componentInstance['select']('jellyfin');
+    http.expectOne('/api/v1/catalog/jellyfin').flush({
+      ...MANIFEST,
+      Works: [
+        {
+          Kind: 'identity',
+          Level: 'L2',
+          Target: 'authentik',
+          Title: 'Authentik',
+          Note: 'Sign in through Authentik.',
+        },
+      ],
+    });
+    http.match('/api/v1/edge/routes');
+    http.match('/api/v1/names');
+    fixture.detectChanges();
+    expect(text()).toContain('Works with');
+    expect(text()).toContain('Sign in through Authentik.');
+  });
+
   it('applies configuration variables to an installed package', () => {
     load();
     fixture.componentInstance['select']('jellyfin');

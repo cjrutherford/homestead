@@ -129,3 +129,7 @@ firstrun:
   service: server
   account: admin@homestead.lan
   secret: admin_password
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in through Authentik; local accounts stay available for recovery.

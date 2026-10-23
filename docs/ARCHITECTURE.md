@@ -107,6 +107,24 @@ absolute host paths, so the stack stays usable without Homestead.
 Backups scan `<mount>/<package>` per assigned mount. Existing installs
 that predate this layout are migrated by S277.
 
+## Catalog integration metadata
+Manifests may declare how a package relates to another (`integrations:`,
+S341): `identity` (the provider that speaks for its SSO), `library`
+(shared bulk storage), `handoff` (one app calls another at runtime) and
+`companion` (useful together only). The level is derived from the kind —
+L2, L3, L4, L1 — never authored, so two packages cannot disagree about
+the same relationship. Declarations are advisory (ADR-051): nothing in
+install, update, start or backup reads them, and no code path configures
+another application's internals. The catalog refuses to load a
+declaration that names a package it does not ship, an identity target
+that is not a provider this build drives, a library pair that does not
+both place data on bulk storage, an identity declaration on a package
+whose SSO class is unsupported, or an SSO-capable package with no stated
+identity provider. `GET /api/v1/catalog/{name}` resolves
+levels and target titles under `Works`; `homesteadctl apps show` prints
+them; the dashboard package page shows them as "Works with". See
+`docs/CATALOG_INTEGRATION.md`.
+
 ## Secret-backed container variables
 Values the secret store holds that containers need (database passwords,
 the Authentik secret key) are delivered as mode 0600 files under the

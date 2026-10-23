@@ -95,6 +95,13 @@ func planChecked(st *store.Store, req catalog.InstallRequest) (catalog.InstallPl
 	if err != nil {
 		return catalog.InstallPlan{}, http.StatusUnprocessableEntity, err
 	}
+	// Declared handoff targets the appliance has not installed are an
+	// advisory note, never a verdict (S341, ADR-051).
+	noteInstalled := func(target string) bool {
+		installed, checkErr := catalog.Installed(st, target, stackDirFor(target))
+		return checkErr == nil && installed
+	}
+	plan.Notes = append(plan.Notes, catalog.HandoffNotes(req.Manifest, noteInstalled)...)
 	if err := verifyMounts(plan); err != nil {
 		return catalog.InstallPlan{}, http.StatusUnprocessableEntity, err
 	}
@@ -161,13 +168,28 @@ func handleCatalogList(s *Server, st *store.Store, catalogDir string) http.Handl
 	}
 }
 
+// packageDetail is the catalog detail response (S341): the manifest plus
+// its integrations resolved against the catalog, so no client re-resolves
+// target names or derives levels. A package without declarations carries
+// an empty list, never null.
+type packageDetail struct {
+	catalog.Manifest
+	Works []catalog.ResolvedIntegration
+}
+
 func handleCatalogGet(catalogDir string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		manifest, ok := loadPackage(catalogDir, r.PathValue("name"), w)
-		if !ok {
+		entries, err := catalog.Load(catalogDir)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("catalog unavailable: %v", err), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, manifest)
+		manifest, err := entries.Get(r.PathValue("name"))
+		if err != nil {
+			http.Error(w, "unknown package", http.StatusNotFound)
+			return
+		}
+		writeJSON(w, packageDetail{Manifest: manifest, Works: entries.IntegrationsFor(manifest)})
 	}
 }
 

@@ -88,6 +88,7 @@ func TestManifestInvalid(t *testing.T) {
 
 func oidcManifest() Manifest {
 	m := validManifest()
+	m.Integrations = []Integration{{Kind: IntegrationIdentity, Target: "authentik", Note: "Sign in through Authentik."}}
 	m.SSO = SSODeclaration{Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC},
 		OIDC: &OIDCAdapter{Adapter: AdapterJellyfinSSO, Service: "jellyfin", Plugin: &PinnedPlugin{
 			Name: "SSO Authentication", Version: "4.0.0.4", SHA256: strings.Repeat("a", 64),

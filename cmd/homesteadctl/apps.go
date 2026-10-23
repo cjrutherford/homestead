@@ -18,7 +18,7 @@ import (
 // endpoints.
 func runApps(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|bundles|mine|names|plan|install|reach|configure|secrets|sign-in|public|move|setup|uninstall>")
+		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|show|bundles|mine|names|plan|install|reach|configure|secrets|sign-in|public|move|setup|uninstall>")
 		return exitUsage
 	}
 	switch args[0] {
@@ -28,6 +28,8 @@ func runApps(ctx context.Context, client *apiclient.Client, args []string, stdou
 		return runAppsMine(ctx, client, args[1:], stdout, stderr)
 	case "names":
 		return runAppsNames(ctx, client, stdout, stderr)
+	case "show":
+		return runAppsShow(ctx, client, args[1:], stdout, stderr)
 	case "plan":
 		return runAppsPlan(ctx, client, args[1:], stdout, stderr)
 	case "install":
@@ -557,6 +559,26 @@ func runAppsConfigure(ctx context.Context, client *apiclient.Client, args []stri
 		return fail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "operation: %d\n", id)
+	return exitOK
+}
+
+// runAppsShow prints one package's summary and its declared integrations
+// (S341). The lines are advisory: they say what the app can work with,
+// never that Homestead has configured it.
+func runAppsShow(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "usage: homesteadctl apps show <package>")
+		return exitUsage
+	}
+	manifest, err := client.CatalogPackage(ctx, args[0])
+	if err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "%s %s — %s\n", manifest.Name, manifest.Version, manifest.Blurb)
+	for _, integration := range manifest.Works {
+		fmt.Fprintf(stdout, "  integrates: %s %s %s (%s) — %s\n",
+			integration.Level, integration.Kind, integration.Target, integration.Title, integration.Note)
+	}
 	return exitOK
 }
 

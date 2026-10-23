@@ -463,6 +463,11 @@ type Manifest struct {
 	// first-run setup once it answers (S318), for apps that cannot set
 	// themselves up from their environment, as Nextcloud does.
 	FirstRun *FirstRun `yaml:"firstrun,omitempty" json:"firstrun,omitempty"`
+	// Integrations declares how this package relates to the rest of the
+	// appliance (S341, ADR-051). Advisory metadata: nothing in the
+	// install, update or start path reads it, and it never causes
+	// Homestead to configure another app.
+	Integrations []Integration `yaml:"integrations,omitempty"`
 }
 
 // First-run routines (S318): each is first-party Go code in
@@ -751,6 +756,9 @@ func (m Manifest) Validate() error {
 		if err := m.FirstRun.validate(m, services); err != nil {
 			return err
 		}
+	}
+	if err := m.validateIntegrations(); err != nil {
+		return err
 	}
 	for i := range m.Hooks {
 		if err := m.Hooks[i].Validate(services); err != nil {

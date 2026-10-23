@@ -271,11 +271,26 @@ export interface CatalogManifest {
   StripPrefix?: boolean;
   /** S326: the package's path redirects, kept on its route. */
   Redirects?: { From: string; To: string }[] | null;
+  /** Declared integrations resolved by the daemon (S341). */
+  Works?: WorksWith[];
+}
+
+/** One resolved package relationship: kind, derived level, target title. */
+export interface WorksWith {
+  Kind: string;
+  Level: string;
+  Target: string;
+  Title: string;
+  Note: string;
 }
 
 /** The catalog detail exactly as the API sends it: empty lists may be null. */
-export type RawCatalogManifest = Omit<CatalogManifest, 'Services' | 'Requirements'> & {
+export type RawCatalogManifest = Omit<
+  CatalogManifest,
+  'Services' | 'Requirements' | 'Works'
+> & {
   Services: CatalogService[] | null;
+  Works: WorksWith[] | null;
   Requirements: Omit<CatalogManifest['Requirements'], 'Storage' | 'Ports'> & {
     Storage: CatalogManifest['Requirements']['Storage'] | null;
     Ports: number[] | null;
@@ -1555,6 +1570,7 @@ export class ApiService {
       map((raw) => ({
         ...raw,
         Services: raw.Services ?? [],
+        Works: raw.Works ?? [],
         Requirements: {
           ...raw.Requirements,
           Storage: raw.Requirements.Storage ?? [],

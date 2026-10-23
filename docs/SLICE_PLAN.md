@@ -32,7 +32,7 @@ committed to.
 
 | ID | Slice | Depends on | Scope |
 |----|-------|-----------|-------|
-| S341 | Catalog integration contract | S150,S152,S153,S154,S161,S202-S204,S276 | `integrations:` manifest metadata, derived L1-L4 levels, cross-package load gates, `catalog show` and dashboard "Works with". ADR-051. **Done.** |
+| S341 | Catalog integration contract | S150,S152,S153,S154,S161,S202-S204,S276 | `integrations:` manifest metadata, derived L1-L4 levels, cross-package load gates, `apps show` and dashboard "Works with". ADR-051. **Done.** |
 | S342 | OIDC client actuation and secret delivery (F1) | S341,S202,S204,S266 | Create Authentik OIDC clients from the catalog declaration; write the client secret through the secret store; supervised entrypoint that exports 0600 files into the app environment at start. ADR-052 amends ADR-021. Gates all of Wave 1. **Done.** |
 | S343 | GHCR update discovery (F3) | S190,S263 | Token-based GHCR tag discovery beside the existing Docker Hub path; provenance recorded per package. **Done.** |
 | S344 | Catalog bundles and capacity (F5) | S152,S154,S172,S341 | Starter/Family/Media/Full bundles with combined RAM and storage checks, shown in the plan and the dashboard. **Done.** |

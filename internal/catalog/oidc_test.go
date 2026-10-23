@@ -21,6 +21,9 @@ func clientManifest() Manifest {
 			ClientSecretSecret: "oidc_client_secret",
 		},
 	}
+	m.Integrations = []Integration{
+		{Kind: IntegrationIdentity, Target: "authentik", Note: "Sign in through Authentik."},
+	}
 	m.Secrets = append(m.Secrets,
 		SecretDecl{Name: "oidc_client_id", Consumers: []SecretConsumer{
 			{Service: "webserver", Env: "PAPERLESS_OIDC_CLIENT_ID_FILE", Export: true},

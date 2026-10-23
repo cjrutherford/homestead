@@ -53,6 +53,10 @@ exposure:
 sso:
   class: optional
   protocols: [oidc, saml]
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in through Authentik.
 `
 
 const ssoPlainManifest = `name: plain
@@ -95,13 +99,40 @@ func openSSOWizard(t *testing.T) *Wizard {
 	if err := os.MkdirAll(catalogDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	for name, body := range map[string]string{"photos.yaml": ssoPhotosManifest, "plain.yaml": ssoPlainManifest} {
+	// The provider must also be a shipped package with a declaration
+	// target, so the S341 load gates accept the fixture catalog.
+	authentik := `name: authentik
+version: 1.0.0
+title: Authentik
+blurb: Identity provider.
+description: Identity provider fixture.
+category: identity
+icon: mdi:key
+services:
+- name: web
+  image: example/authentik:1.0.0
+  exposes: web
+requirements:
+  memorymb: 64
+  ports: [9090]
+exposure:
+  package: authentik
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+sso:
+  class: unsupported
+`
+	for name, body := range map[string]string{
+		"photos.yaml": ssoPhotosManifest, "plain.yaml": ssoPlainManifest, "authentik.yaml": authentik,
+	} {
 		if err := os.WriteFile(filepath.Join(catalogDir, name), []byte(body), 0o644); err != nil {
 			t.Fatalf("write: %v", err)
 		}
 	}
 	registry := identity.NewRegistry()
-	if err := registry.Register(stubIdentityProvider{name: "idp", caps: []identity.Capability{identity.CapabilityOIDC, identity.CapabilitySAML}}); err != nil {
+	if err := registry.Register(stubIdentityProvider{name: "authentik", caps: []identity.Capability{identity.CapabilityOIDC, identity.CapabilitySAML}}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	if err := registry.Register(stubIdentityProvider{name: "narrow", caps: []identity.Capability{identity.CapabilitySAML}}); err != nil {
@@ -139,43 +170,43 @@ func TestSSOWizardPackageStep(t *testing.T) {
 
 func TestSSOWizardProviderStep(t *testing.T) {
 	w := openSSOWizard(t)
-	full := ssoPayload("photos", "idp", "oidc")
+	full := ssoPayload("photos", "authentik", "oidc")
 	if err := w.Save("provider", full); err != nil {
 		t.Fatalf("Save provider: %v", err)
 	}
 	if err := w.Save("provider", ssoPayload("photos", "ghost", "oidc")); err == nil {
 		t.Fatal("unknown provider saved")
 	}
-	if err := w.Save("provider", ssoPayload("photos", "idp", "ldap")); err == nil {
+	if err := w.Save("provider", ssoPayload("photos", "authentik", "ldap")); err == nil {
 		t.Fatal("app-unsupported protocol saved")
 	}
 	if err := w.Save("provider", ssoPayload("photos", "narrow", "oidc")); err == nil {
 		t.Fatal("provider-unsupported protocol saved")
 	}
-	if err := w.Save("provider", ssoPayload("photos", "idp", "telepathy")); err == nil {
+	if err := w.Save("provider", ssoPayload("photos", "authentik", "telepathy")); err == nil {
 		t.Fatal("unknown protocol saved")
 	}
-	if err := w.Save("provider", ssoPayload("plain", "idp", "oidc")); err == nil {
+	if err := w.Save("provider", ssoPayload("plain", "authentik", "oidc")); err == nil {
 		t.Fatal("unsupported package saved")
 	}
 }
 
 func TestSSOWizardPlanStatesRecovery(t *testing.T) {
 	w := openSSOWizard(t)
-	if err := w.Save("provider", ssoPayload("photos", "idp", "oidc")); err != nil {
+	if err := w.Save("provider", ssoPayload("photos", "authentik", "oidc")); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	plan, err := w.Plan()
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	if plan.Package != "photos" || plan.Provider != "idp" || plan.Protocol != identity.CapabilityOIDC {
+	if plan.Package != "photos" || plan.Provider != "authentik" || plan.Protocol != identity.CapabilityOIDC {
 		t.Fatalf("plan = %+v", plan)
 	}
 	if !plan.LocalFallback {
 		t.Fatalf("plan = %+v, want local fallback retained", plan)
 	}
-	for _, want := range []string{"photos", "idp", "stay local"} {
+	for _, want := range []string{"photos", "authentik", "stay local"} {
 		if !strings.Contains(plan.RecoveryNote, want) {
 			t.Fatalf("recovery note %q missing %q", plan.RecoveryNote, want)
 		}
@@ -187,7 +218,7 @@ func TestSSOWizardApplyRecords(t *testing.T) {
 	if _, err := w.Apply("owner"); err == nil {
 		t.Fatal("apply without selection succeeded")
 	}
-	if err := w.Save("review", ssoPayload("photos", "idp", "oidc")); err != nil {
+	if err := w.Save("review", ssoPayload("photos", "authentik", "oidc")); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	if _, err := w.Apply(""); err == nil {
@@ -208,7 +239,7 @@ func TestSSOWizardApplyRecords(t *testing.T) {
 		t.Fatalf("records = %+v", records)
 	}
 	// Re-applying replaces the pairing instead of fossilizing it.
-	if err := w.Save("review", ssoPayload("photos", "idp", "saml")); err != nil {
+	if err := w.Save("review", ssoPayload("photos", "authentik", "saml")); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	if _, err := w.Apply("owner"); err != nil {
