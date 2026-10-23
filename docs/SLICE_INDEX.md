@@ -110,3 +110,7 @@ catalog applications, foundation work, and wave ordering.
 Next scheduled: S341 Catalog integration contract
 (`docs/slices/S341-catalog-integration-contract.md`) — the first foundation
 item from that plan; F1 (OIDC client actuation) follows.
+
+The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
+catalog track and an Everything-app track, with dependencies, the critical
+path and the recommended interleave.

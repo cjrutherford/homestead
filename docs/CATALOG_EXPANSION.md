@@ -203,6 +203,24 @@ Recommendation: **no Puter package in Waves 1-3**. A time-boxed spike is
 reasonable only for Whiteboard or Notes, and only after the static-app
 question is answered.
 
+### 4.3 Everything repackaging assessment (2026-10-23)
+
+Owner reopened the Puter track for in-repo repackaging. The evaluated
+model is **pin + patch + bridge**, not a fork: Homestead pins an upstream
+commit, patches the one CDN script tag per app, and serves its own
+`window.puter` implementation instead of `https://js.puter.com/v2/`. The
+SDK surface actually used by the 51 apps is small — `auth`, `env`, `fs`,
+`kv`, `ui`, `perms`, `exit` sit inside a bridge; `workers`, `peer`,
+`email`, `hosting`, `ai` do not.
+
+Per-app verdicts, measured from the source tree rather than the README,
+are in `docs/reports/catalog-expansion.html` (§The Everything apps):
+11 apps ship clean (`tasks`, `projects`, `records`, `notes`, `contacts`,
+`inventory`, `time-tracking`, `circuits`, `parametric`, `3d`, `solitaire`),
+18 are blocked on a capability the appliance should not provide, and 10
+overlap the craft suite. This track is separate from the Docker catalog
+waves above and does not change them.
+
 ## 5. Foundation work
 
 These are not application packages. They are the pieces that make the
