@@ -30,7 +30,7 @@ func repoCatalog(t *testing.T) Catalog {
 // curatedPackages is the one place the expected shipped catalog is listed
 // (sorted, as Names returns it). Adding a package to catalog/ edits this
 // list and nothing else here: each craft slice appends its app.
-var curatedPackages = []string{"authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "freshrss", "gitea", "gridcraft", "immich", "jellyfin", "lightcraft", "linkding", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "vaultwarden", "vectorcraft", "wordcraft"}
+var curatedPackages = []string{"authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "freshrss", "gitea", "gridcraft", "immich", "jellyfin", "lightcraft", "linkding", "mealie", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "vaultwarden", "vectorcraft", "wordcraft"}
 
 // assertCuratedNames fails when the shipped catalog and curatedPackages
 // differ, in either direction.
@@ -669,6 +669,69 @@ func TestCuratedLinkding(t *testing.T) {
 	report, err := Evaluate(manifest, HostFacts{
 		Arch: "amd64", MemoryMB: 1024, CPUCount: 2,
 		FreeSpace: map[storage.Class]uint64{storage.ClassApplication: 2 << 30},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !report.Passed {
+		t.Fatalf("report = %+v", report)
+	}
+}
+
+// TestCuratedMealie pins the GHCR recipe manager (S350): one container
+// with SQLite, a routed base URL, signups closed behind the seeded
+// administrator, and no secret or database declaration.
+func TestCuratedMealie(t *testing.T) {
+	catalog := repoCatalog(t)
+	manifest, err := catalog.Get("mealie")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if manifest.Version != "3.29.0" {
+		t.Fatalf("version = %q", manifest.Version)
+	}
+	if len(manifest.Services) != 1 ||
+		manifest.Services[0].Image != "ghcr.io/mealie-recipes/mealie:v3.29.0" {
+		t.Fatalf("services = %+v", manifest.Services)
+	}
+	service := manifest.Services[0]
+	if base := service.Environment["BASE_URL"]; !strings.HasPrefix(base, "https://") ||
+		!strings.Contains(base, RouteHostToken) {
+		t.Fatalf("BASE_URL = %q, want the routed HTTPS host", base)
+	}
+	if service.Environment["DB_ENGINE"] != "sqlite" {
+		t.Fatalf("DB_ENGINE = %q", service.Environment["DB_ENGINE"])
+	}
+	if service.Environment["ALLOW_SIGNUP"] != "false" {
+		t.Fatal("signups stay closed; the seeded administrator creates accounts")
+	}
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 0 {
+		t.Fatalf("mealie needs no supervisor; secrets = %+v", manifest.Secrets)
+	}
+	if len(service.Data) != 1 || service.Data[0].Target != "/app/data" ||
+		service.Data[0].Class != storage.ClassApplication || service.Data[0].Subpath != "data" {
+		t.Fatalf("data = %+v", service.Data)
+	}
+	if len(manifest.BackupPaths) != 1 || manifest.BackupPaths[0] != "data" {
+		t.Fatalf("backuppaths = %v", manifest.BackupPaths)
+	}
+	if manifest.Database != nil {
+		t.Fatalf("database = %+v, want SQLite in the data volume", manifest.Database)
+	}
+	endpoint, ok := manifest.Exposure.Find("web")
+	if !ok || string(endpoint.Recommended) != "local" || !endpoint.AllowWider || len(endpoint.Warnings) == 0 {
+		t.Fatalf("endpoint = %+v", endpoint)
+	}
+	if len(manifest.Integrations) != 1 || manifest.Integrations[0].Kind != IntegrationIdentity ||
+		manifest.Integrations[0].Target != "authentik" {
+		t.Fatalf("integrations = %+v", manifest.Integrations)
+	}
+	report, err := Evaluate(manifest, HostFacts{
+		Arch: "amd64", MemoryMB: 1024, CPUCount: 2,
+		FreeSpace: map[storage.Class]uint64{storage.ClassApplication: 4 << 30},
 	})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)

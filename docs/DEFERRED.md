@@ -1432,6 +1432,11 @@ slice is scheduled yet.
   app or with the image's `manage.py changepassword`. A general "this secret
   must be supplied by the owner" declaration, or an install-time prompt
   that requires one, is not in the secret schema.
+- Mealie's seeded administrator: S350 ships the upstream default
+  credentials (`changeme@example.com` / `MyPassword`) because the image
+  creates that account itself, and the owner changes them at first
+  sign-in. Driving Mealie's user store from Homestead (seeding a chosen
+  password or disabling the default account) is not surfaced.
 - Gitea's SSH surface: S347 installs HTTPS-only (`DISABLE_SSH`), publishes
   no SSH port and deploys no keys. Enabling `ssh://` clones — an SSH port
   through the host or an overlay tunnel, authorized keys, and clone URLs

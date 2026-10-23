@@ -135,9 +135,12 @@ S349 `linkding` (`docs/slices/S349-linkding.md`) adds the bookmark manager:
 one container, SQLite on application storage, the image's
 `./bootstrap.sh` named as the startup the supervisor execs, an exported
 first-superuser password, and a CSRF origin that follows the routed host.
+S350 `mealie` (`docs/slices/S350-mealie.md`) adds the recipe manager: the
+pinned GHCR image, SQLite on the backed-up data volume, a routed base URL,
+and closed signups behind the upstream-seeded administrator.
 
-Next scheduled: S350 `mealie` — the GHCR recipe manager with its own
-database and owner account.
+Next scheduled: S351 `uptime-kuma` — the documented local-auth exception
+closing Wave 1, local/overlay only and never a public status page.
 
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
 catalog track and an Everything-app track, with dependencies, the critical

@@ -49,7 +49,7 @@ and `mealie` also wait on S343.
 | S347 | `gitea` | S342 | `ROOT_URL` from the route host; HTTPS-only, no SSH in v1. **Done.** |
 | S348 | `freshrss` | S342,S343 | Debian image so OIDC exists. **Done.** |
 | S349 | `linkding` | S342 | Simplest package in the wave. **Done.** |
-| S350 | `mealie` | S342,S343 | GHCR image. |
+| S350 | `mealie` | S342,S343 | GHCR image. **Done.** |
 | S351 | `uptime-kuma` | S342 | Documented local-auth exception; never a public status page. |
 
 ### 2.3 Second foundation

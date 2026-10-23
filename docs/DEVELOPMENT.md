@@ -2222,6 +2222,12 @@ superuser (`admin`) is created once, `LD_CSRF_TRUSTED_ORIGINS` follows the
 routed HTTPS host, `/etc/linkding/data` holds the SQLite database and
 archives on application storage as `www-data`, and `data` is the backup
 path.
+The Mealie package (S350) in `catalog/` is the GHCR recipe manager: one
+container with SQLite on `/app/data`, `BASE_URL` following the routed
+HTTPS host, and signups closed. Mealie seeds the upstream-documented
+administrator (`changeme@example.com`), so the owner signs in once,
+changes the credentials, and creates household accounts; no secret is
+declared and the image entrypoint runs unchanged.
 The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine
