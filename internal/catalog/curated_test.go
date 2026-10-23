@@ -30,7 +30,7 @@ func repoCatalog(t *testing.T) Catalog {
 // curatedPackages is the one place the expected shipped catalog is listed
 // (sorted, as Names returns it). Adding a package to catalog/ edits this
 // list and nothing else here: each craft slice appends its app.
-var curatedPackages = []string{"authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "freshrss", "gitea", "gridcraft", "immich", "jellyfin", "lightcraft", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "vaultwarden", "vectorcraft", "wordcraft"}
+var curatedPackages = []string{"authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "freshrss", "gitea", "gridcraft", "immich", "jellyfin", "lightcraft", "linkding", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "vaultwarden", "vectorcraft", "wordcraft"}
 
 // assertCuratedNames fails when the shipped catalog and curatedPackages
 // differ, in either direction.
@@ -559,6 +559,112 @@ func TestCuratedFreshRSS(t *testing.T) {
 	if len(manifest.Integrations) != 1 || manifest.Integrations[0].Kind != IntegrationIdentity ||
 		manifest.Integrations[0].Target != "authentik" {
 		t.Fatalf("integrations = %+v", manifest.Integrations)
+	}
+	report, err := Evaluate(manifest, HostFacts{
+		Arch: "amd64", MemoryMB: 1024, CPUCount: 2,
+		FreeSpace: map[storage.Class]uint64{storage.ClassApplication: 2 << 30},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !report.Passed {
+		t.Fatalf("report = %+v", report)
+	}
+}
+
+// TestCuratedLinkding pins the smallest Wave 1 package (S349): one
+// container, SQLite on application storage, and the superuser password
+// exported through the supervisor because Linkding has no *_FILE input.
+func TestCuratedLinkding(t *testing.T) {
+	catalog := repoCatalog(t)
+	manifest, err := catalog.Get("linkding")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if manifest.Version != "1.47.0" {
+		t.Fatalf("version = %q", manifest.Version)
+	}
+	if len(manifest.Services) != 1 ||
+		manifest.Services[0].Image != "docker.io/sissbruecker/linkding:1.47.0" {
+		t.Fatalf("services = %+v", manifest.Services)
+	}
+	service := manifest.Services[0]
+	if len(service.Entrypoint) != 1 || service.Entrypoint[0] != "./bootstrap.sh" {
+		t.Fatalf("entrypoint = %v, want the image CMD the supervisor execs", service.Entrypoint)
+	}
+	if origins := service.Environment["LD_CSRF_TRUSTED_ORIGINS"]; !strings.HasPrefix(origins, "https://") ||
+		!strings.Contains(origins, RouteHostToken) {
+		t.Fatalf("LD_CSRF_TRUSTED_ORIGINS = %q, want the routed HTTPS origin", origins)
+	}
+	if service.Environment["LD_SUPERUSER_NAME"] != "admin" {
+		t.Fatalf("superuser name = %q", service.Environment["LD_SUPERUSER_NAME"])
+	}
+	if _, plain := service.Environment["LD_SUPERUSER_PASSWORD"]; plain {
+		t.Fatal("the superuser password must not be plain environment")
+	}
+	var exported bool
+	for _, decl := range manifest.Secrets {
+		if decl.Name != "superuser_password" || !decl.Immutable {
+			t.Fatalf("secret = %+v", decl)
+		}
+		for _, consumer := range decl.Consumers {
+			if consumer.Service == "linkding" && consumer.Env == "LD_SUPERUSER_PASSWORD_FILE" &&
+				consumer.Export {
+				exported = true
+			}
+		}
+	}
+	if !exported {
+		t.Fatalf("secrets = %+v, want the exported superuser password", manifest.Secrets)
+	}
+	if scripts := EntrypointScriptsFor(manifest); len(scripts) != 1 || scripts[0].Service != "linkding" {
+		t.Fatalf("scripts = %+v, want one linkding supervisor", scripts)
+	}
+	if len(service.Data) != 1 || service.Data[0].Target != "/etc/linkding/data" ||
+		service.Data[0].Class != storage.ClassApplication || service.Data[0].Subpath != "data" ||
+		service.Data[0].UID == nil || *service.Data[0].UID != 33 {
+		t.Fatalf("data = %+v", service.Data)
+	}
+	if len(manifest.BackupPaths) != 1 || manifest.BackupPaths[0] != "data" {
+		t.Fatalf("backuppaths = %v", manifest.BackupPaths)
+	}
+	if manifest.Database != nil {
+		t.Fatalf("database = %+v, want SQLite in the data volume", manifest.Database)
+	}
+	endpoint, ok := manifest.Exposure.Find("web")
+	if !ok || string(endpoint.Recommended) != "local" || !endpoint.AllowWider || len(endpoint.Warnings) == 0 {
+		t.Fatalf("endpoint = %+v", endpoint)
+	}
+	if len(manifest.Integrations) != 1 || manifest.Integrations[0].Kind != IntegrationIdentity ||
+		manifest.Integrations[0].Target != "authentik" {
+		t.Fatalf("integrations = %+v", manifest.Integrations)
+	}
+	plan, err := PlanInstall(InstallRequest{
+		Manifest: manifest, Host: installHost(), Domain: "lan",
+		ContainerPorts: map[string]int{"linkding": 9090},
+		Storage:        curatedStorage(),
+	})
+	if err != nil {
+		t.Fatalf("PlanInstall: %v", err)
+	}
+	var composed struct {
+		Services map[string]struct {
+			Entrypoint []string `yaml:"entrypoint"`
+			Command    []string `yaml:"command"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal([]byte(plan.Compose.ComposeYAML), &composed); err != nil {
+		t.Fatalf("compose: %v", err)
+	}
+	rendered := composed.Services["linkding"]
+	if len(rendered.Entrypoint) != 1 || rendered.Entrypoint[0] != EntrypointName {
+		t.Fatalf("entrypoint = %v, want the supervisor", rendered.Entrypoint)
+	}
+	if len(rendered.Command) != 1 || rendered.Command[0] != "./bootstrap.sh" {
+		t.Fatalf("command = %v, want the image startup", rendered.Command)
 	}
 	report, err := Evaluate(manifest, HostFacts{
 		Arch: "amd64", MemoryMB: 1024, CPUCount: 2,

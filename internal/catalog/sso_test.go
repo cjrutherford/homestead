@@ -64,6 +64,7 @@ func TestCuratedSSO(t *testing.T) {
 		"vectorcraft":   {Class: SSOUnsupported},
 		"photocraft":    {Class: SSOUnsupported},
 		"lightcraft":    {Class: SSOUnsupported},
+		"linkding":      {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"figcraft":      {Class: SSOUnsupported},
 		"filmcraft":     {Class: SSOUnsupported},
 		"freshrss":      {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},

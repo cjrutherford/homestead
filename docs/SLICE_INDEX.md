@@ -131,9 +131,13 @@ S348 `freshrss` (`docs/slices/S348-freshrss.md`) adds the feed reader: the
 Debian image so OIDC is available, scheduled background refresh, both
 writable directories on application storage as `www-data`, and an
 owner-completed web installer.
+S349 `linkding` (`docs/slices/S349-linkding.md`) adds the bookmark manager:
+one container, SQLite on application storage, the image's
+`./bootstrap.sh` named as the startup the supervisor execs, an exported
+first-superuser password, and a CSRF origin that follows the routed host.
 
-Next scheduled: S349 `linkding` — one container with SQLite and an
-owner-created account.
+Next scheduled: S350 `mealie` — the GHCR recipe manager with its own
+database and owner account.
 
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
 catalog track and an Everything-app track, with dependencies, the critical

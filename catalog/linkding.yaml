@@ -1,0 +1,79 @@
+# Linkding bookmark manager (S349): the fifth Wave 1 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# One container with SQLite. Linkding has no ENTRYPOINT, only the CMD
+# ./bootstrap.sh, so that script is what the secret supervisor execs: the
+# image's startup is unchanged, and the superuser password arrives as a
+# 0600 file that the supervisor exports (ADR-052). The initial superuser
+# is created once; changing the secret later does not reset the account.
+name: linkding
+version: 1.47.0
+title: Linkding
+blurb: Your bookmarks, searchable and yours.
+description: Linkding saves bookmarks with tags, notes, and a full-text
+  search, and archives pages so a link keeps working after the site
+  changes. A browser extension posts to it, the interface stays quick,
+  and everything lives in one SQLite database on application storage.
+category: bookmarks
+icon: mdi:bookmark-multiple
+services:
+- name: linkding
+  image: docker.io/sissbruecker/linkding:1.47.0
+  exposes: web
+  # The image has no ENTRYPOINT; ./bootstrap.sh is its CMD (runs
+  # migrations, creates the initial superuser, starts uwsgi). Naming it
+  # as the entrypoint lets the supervisor export the password first and
+  # then exec exactly that script.
+  entrypoint: ["./bootstrap.sh"]
+  environment:
+    # Behind the proxy the browser origin is HTTPS even though uwsgi is
+    # plain HTTP; without this, logins and saves fail CSRF verification.
+    LD_CSRF_TRUSTED_ORIGINS: "https://{{route_host}}"
+    # Creates the first superuser once. The password comes from the
+    # secret store through the supervisor, never from this block.
+    LD_SUPERUSER_NAME: admin
+  # No image VOLUME. The data directory holds the SQLite database, the
+  # generated secret key, favicons, previews, and page archives; the
+  # image's bootstrap script hands it to www-data (uid/gid 33).
+  data:
+  - target: /etc/linkding/data
+    class: application
+    subpath: data
+    uid: 33
+    gid: 33
+requirements:
+  memorymb: 256
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 1073741824
+  # Linkding listens on 9090; routes proxy to it and no host port is
+  # published by default.
+  ports: [9090]
+exposure:
+  package: linkding
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Bookmarks, notes, and archived pages leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- data
+sso:
+  class: optional
+  protocols: [oidc]
+secrets:
+- name: superuser_password
+  # The initial superuser is created once from this value; rotating it
+  # later does not reset an existing account (use the app or
+  # `manage.py changepassword` inside the container).
+  immutable: true
+  consumers:
+  - service: linkding
+    env: LD_SUPERUSER_PASSWORD_FILE
+    export: true
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in with Authentik once its OIDC client is configured; OIDC matches by email, so give the admin account one first.

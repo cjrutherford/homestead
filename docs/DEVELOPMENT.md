@@ -2214,6 +2214,14 @@ visit, which creates the administrator account and the SQLite database.
 Both writable directories (`data`, `extensions`) are declared on
 application storage as `www-data` (uid/gid 33), and only `data` is a
 backup path.
+The Linkding package (S349) in `catalog/` is the bookmark manager: the
+image declares no `ENTRYPOINT`, only `CMD ["./bootstrap.sh"]`, so the
+manifest names that script as the entrypoint and the supervisor execs it
+after exporting `LD_SUPERUSER_PASSWORD` from a 0600 file. The initial
+superuser (`admin`) is created once, `LD_CSRF_TRUSTED_ORIGINS` follows the
+routed HTTPS host, `/etc/linkding/data` holds the SQLite database and
+archives on application storage as `www-data`, and `data` is the backup
+path.
 The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine

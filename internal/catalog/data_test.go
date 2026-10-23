@@ -46,9 +46,12 @@ var knownImageVolumes = map[string]imageVolumes{
 	"docker.io/gitea/gitea:28.2.0":     {Volumes: []string{"/data"}},
 	// S348: the Debian FreshRSS image declares no VOLUME; both writable
 	// directories are Homestead declarations.
-	"docker.io/freshrss/freshrss:1.30.4":   {},
-	"ghcr.io/goauthentik/server:2026.8.3":  {},
-	"docker.io/library/postgres:16-alpine": {Volumes: []string{"/var/lib/postgresql/data"}},
+	"docker.io/freshrss/freshrss:1.30.4": {},
+	// S349: linkding declares no VOLUME; /etc/linkding/data is a
+	// Homestead declaration.
+	"docker.io/sissbruecker/linkding:1.47.0": {},
+	"ghcr.io/goauthentik/server:2026.8.3":    {},
+	"docker.io/library/postgres:16-alpine":   {Volumes: []string{"/var/lib/postgresql/data"}},
 	// S345: Vaultwarden declares /data in its Dockerfile. Not yet inspected
 	// on the KVM appliance: re-verify with `docker image inspect` when the
 	// tag is next pulled there, and correct this row if the image differs.
