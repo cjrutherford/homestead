@@ -56,7 +56,7 @@ and `mealie` also wait on S343.
 
 | ID | Slice | Depends on | Scope |
 |----|-------|-----------|-------|
-| S352 | MariaDB/MySQL backup export (F2) | S180,S266 | Add `mariadb`/`mysql` to `DatabaseKind` with a crash-consistent dump, restore path and tests. Required before BookStack. |
+| S352 | MariaDB/MySQL backup export (F2) | S180,S266 | `mariadb`/`mysql` server kinds, consistent dumps with each engine's client, documented restore, password secrets. Required before BookStack. **Done.** |
 
 ### 2.4 Wave 2 — family library
 

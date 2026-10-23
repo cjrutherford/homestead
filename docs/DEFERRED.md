@@ -1406,12 +1406,21 @@ slice is scheduled yet.
 - qBittorrent: deferred until a supported VPN/network-mode design exists;
   the current schema cannot express `network_mode: service:vpn`.
 - Foundation items the planned apps still need are **scheduled work, not
-  deferrals**: MariaDB/MySQL backup export (S352) and the written
-  community-image policy (S360). OIDC actuation with the supervised
-  secret-entrypoint wrapper (S342), GHCR update discovery (S343) and
-  catalog bundles (S344) have landed. The remaining order is in
+  deferrals**: the written community-image policy (S360). OIDC actuation
+  with the supervised secret-entrypoint wrapper (S342), GHCR update
+  discovery (S343), catalog bundles (S344) and MariaDB/MySQL backup export
+  (S352) have landed. The remaining order is in
   `docs/CATALOG_EXPANSION.md` section 9; this ledger keeps only the work
   that is genuinely unscheduled.
+- MariaDB/MySQL database password verification and rotation: S352 adds
+  both engines as dump kinds and lets their manifests declare a
+  `PasswordSecret` so scheduled backups resolve it, but `ALTER USER` and
+  the authenticate-with-a-wrong-password check remain Postgres-only.
+  Registration for these engines refuses with a `--skip-verify`
+  instruction, and rotation refuses before journaling, so a secret and a
+  database never disagree. Implement in the slice that first needs to
+  rotate a MariaDB/MySQL password (BookStack ships a generated one that
+  is not rotated), including the host part of the user grant.
 - SSO actuation surfaces: S342 lands the mechanism (catalog OIDC
   declaration, Authentik client actuation, catalog-secret storage,
   supervised secret export) but no owner-facing entry point. Provider

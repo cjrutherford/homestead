@@ -327,8 +327,8 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 			job.SrcRoot = filepath.Join(source.Mountpoint, source.Path)
 			break
 		}
-		if password == "" && manifest.Database.Kind == catalog.DatabasePostgres {
-			return backup.Job{}, fmt.Errorf("postgres backup needs a database password")
+		if password == "" && manifest.Database.Kind.Server() {
+			return backup.Job{}, fmt.Errorf("%s backup needs a database password", manifest.Database.Kind)
 		}
 	}
 	// S266 secret files live in the stack directory, outside the data
@@ -380,14 +380,14 @@ func stackSecretsSource(packageName string) (backup.Source, bool) {
 func databasePassword(secrets catalog.SecretStore, manifest catalog.Manifest) (string, error) {
 	name := catalog.SecretStoreName(manifest.Name, manifest.Database.PasswordSecret)
 	if secrets == nil {
-		return "", fmt.Errorf("postgres backup needs secret %q but no secret store is available", name)
+		return "", fmt.Errorf("database backup needs secret %q but no secret store is available", name)
 	}
 	value, err := secrets.Get(name)
 	if errors.Is(err, secret.ErrNotFound) || (err == nil && value == "") {
-		return "", fmt.Errorf("postgres backup needs secret %q, which is not in the secret store: register the existing database password (homesteadctl apps secrets register %s %s) or reinstall", name, manifest.Name, manifest.Database.PasswordSecret)
+		return "", fmt.Errorf("database backup needs secret %q, which is not in the secret store: register the existing database password (homesteadctl apps secrets register %s %s) or reinstall", name, manifest.Name, manifest.Database.PasswordSecret)
 	}
 	if err != nil {
-		return "", fmt.Errorf("postgres backup cannot read secret %q: %w", name, err)
+		return "", fmt.Errorf("database backup cannot read secret %q: %w", name, err)
 	}
 	return value, nil
 }

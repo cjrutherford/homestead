@@ -295,6 +295,13 @@ func adoptSteps(m Manifest, dir, project string, st *store.Store, src SecretStor
 			if m.Database == nil || m.Database.PasswordSecret == "" {
 				return nil
 			}
+			// Password verification is Postgres-only for now. An
+			// adopted MariaDB/MySQL stack still proves itself by
+			// starting; refusing verification here would block every
+			// adoption of those engines.
+			if m.Database.Kind != DatabasePostgres {
+				return nil
+			}
 			pw, err := src.Get(SecretStoreName(m.Name, m.Database.PasswordSecret))
 			if err == nil {
 				err = waitVerifyDatabasePassword(ctx, m, pw)

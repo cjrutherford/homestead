@@ -2234,6 +2234,19 @@ administrator created in the app, `unsupported` SSO, and an exposure
 declaration that recommends local and sets `allowwider: false` so the
 monitor can never become a public status page. Its 1 GB memory floor is
 tested from both sides.
+The backup contract (S180) grew server engines (S352): `mariadb` and
+`mysql` join `postgres` as dump kinds, so BookStack and other PHP apps
+never copy a live database directory. Each engine's own client writes
+plain SQL to `<database>.sql` (or `.sql.age`): `mariadb-dump` for
+MariaDB, `mysqldump` with `--set-gtid-purged=OFF` for MySQL. Both take
+one InnoDB-consistent snapshot with `--single-transaction --quick`, skip
+table locks and tablespace lookups (`--skip-lock-tables`,
+`--no-tablespaces`), connect over 127.0.0.1 so the password is really
+checked, and read the password from stdin into `MYSQL_PWD` inside the
+container shell, never argv. `PasswordSecret` now resolves for every
+server engine, so scheduled backups work; verification and rotation stay
+Postgres-only and both refuse clearly for the new engines rather than
+writing a secret the database has not accepted.
 The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine

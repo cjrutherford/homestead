@@ -163,8 +163,8 @@ func validateSecrets(m Manifest, services map[string]bool) error {
 		if !seen[m.Database.PasswordSecret] {
 			return fmt.Errorf("catalog: database password secret %q is not declared", m.Database.PasswordSecret)
 		}
-		if m.Database.Kind != DatabasePostgres {
-			return fmt.Errorf("catalog: only postgres takes a password secret")
+		if !m.Database.Kind.Server() {
+			return fmt.Errorf("catalog: only server databases take a password secret")
 		}
 	}
 	for _, svc := range m.Services {

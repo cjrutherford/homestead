@@ -425,6 +425,24 @@ func TestRunbookRestoresEncryptedRunWithRealAgeAndTar(t *testing.T) {
 	}
 	leftovers("postgres-restore")
 
+	// MariaDB/MySQL: same start, then load with that engine's client.
+	// The password comes from the restored secret file and travels in
+	// the container environment for the one client call.
+	runbookShell(t, blocks, used, "mariadb-up", with(nil))
+	if got := dockerLog(); !strings.Contains(got, "project-name photos up -d db") {
+		t.Fatalf("mariadb-up ran %q", got)
+	}
+	runbookShell(t, blocks, used, "mariadb-restore", with(map[string]string{
+		"ARTIFACT": artifact, "DBPASS": "s3cret-value-9912", "DBCLIENT": "mariadb",
+	}))
+	if got := readFile(t, dockerStdin); got != dump {
+		t.Fatalf("mariadb-restore sent %q, want the decrypted dump", got)
+	}
+	if got := dockerLog(); !strings.Contains(got, "exec -i -e MYSQL_PWD=s3cret-value-9912 photos-db mariadb --user=photos --database=photos") {
+		t.Fatalf("mariadb-restore ran %q", got)
+	}
+	leftovers("mariadb-restore")
+
 	// SQLite: an export is one encrypted file named <file>.age.
 	sqliteBytes := "SQLite format 3\x00 pretend database"
 	sqliteArtifact := filepath.Join(work, "app.db.age")
@@ -448,8 +466,8 @@ func TestRunbookRestoresEncryptedRunWithRealAgeAndTar(t *testing.T) {
 	}
 
 	// docker's failure status propagates out of every block that runs it.
-	failing := with(map[string]string{"DOCKER_STATUS": "3", "ARTIFACT": artifact})
-	for _, name := range []string{"stop-stack", "postgres-up", "postgres-recreate", "postgres-restore", "start-stack", "stack-status"} {
+	failing := with(map[string]string{"DOCKER_STATUS": "3", "ARTIFACT": artifact, "DBCLIENT": "mariadb", "DBPASS": "pw"})
+	for _, name := range []string{"stop-stack", "postgres-up", "postgres-recreate", "postgres-restore", "mariadb-up", "mariadb-restore", "start-stack", "stack-status"} {
 		runbookFails(t, blocks, used, name, failing)
 	}
 
@@ -471,6 +489,10 @@ func TestRunbookRestoresEncryptedRunWithRealAgeAndTar(t *testing.T) {
 	runbookFails(t, blocks, used, "postgres-restore", with(map[string]string{"ARTIFACT": truncated(t, artifact)}))
 	if dockerLog() != before {
 		t.Fatalf("psql was started for a truncated dump: %q", dockerLog())
+	}
+	runbookFails(t, blocks, used, "mariadb-restore", with(map[string]string{"ARTIFACT": truncated(t, artifact), "DBCLIENT": "mariadb", "DBPASS": "pw"}))
+	if dockerLog() != before {
+		t.Fatalf("the MariaDB client was started for a truncated dump: %q", dockerLog())
 	}
 	badDB := filepath.Join(restoreRoot, "truncated.db")
 	runbookFails(t, blocks, used, "sqlite-restore", with(map[string]string{"ARTIFACT": truncated(t, sqliteArtifact), "DBFILE": badDB}))

@@ -48,10 +48,16 @@ func dbContainer(m Manifest) string { return m.Name + "-" + m.Database.Service }
 
 // AlterDatabasePassword sets the declared Postgres role's password in
 // the running database (over the container's local socket), so a
-// rotated secret and the database agree.
+// rotated secret and the database agree. MariaDB and MySQL are declared
+// server engines (their dumps use that engine's client), but changing
+// their users' passwords is not implemented yet: refuse rather than
+// leaving the secret and the database disagreeing.
 func AlterDatabasePassword(ctx context.Context, m Manifest, password string) error {
-	if m.Database == nil || m.Database.Kind != DatabasePostgres {
-		return fmt.Errorf("catalog: %q declares no postgres database", m.Name)
+	if m.Database == nil || !m.Database.Kind.Server() {
+		return fmt.Errorf("catalog: %q declares no server database", m.Name)
+	}
+	if m.Database.Kind != DatabasePostgres {
+		return fmt.Errorf("catalog: setting a %s database password is not supported yet; change it with the engine's own client", m.Database.Kind)
 	}
 	db := m.Database
 	script := fmt.Sprintf("ALTER ROLE %q WITH PASSWORD %s;\n", db.Username, sqlQuote(password))
@@ -81,9 +87,14 @@ func dbAuthCheck(ctx context.Context, m Manifest, password string) error {
 // VerifyDatabasePassword proves a password. It first confirms the
 // server rejects a random wrong password over the same path; a server
 // that accepts it cannot verify anything and is reported as such.
+// Verification is Postgres-only for now; MariaDB and MySQL registration
+// refuses clearly instead of storing an unproven value.
 func VerifyDatabasePassword(ctx context.Context, m Manifest, password string) error {
-	if m.Database == nil || m.Database.Kind != DatabasePostgres {
-		return fmt.Errorf("catalog: %q declares no postgres database", m.Name)
+	if m.Database == nil || !m.Database.Kind.Server() {
+		return fmt.Errorf("catalog: %q declares no server database", m.Name)
+	}
+	if m.Database.Kind != DatabasePostgres {
+		return fmt.Errorf("catalog: verifying a %s database password is not supported yet; register it with --skip-verify", m.Database.Kind)
 	}
 	wrong, err := generateSecretValue()
 	if err != nil {
@@ -250,6 +261,9 @@ func rotateSecret(ctx context.Context, m Manifest, dir, project, name string, sr
 	old, err := src.Get(store)
 	if err != nil || old == "" {
 		return fmt.Errorf("catalog: secret %q has no known current value; register it before rotating", name)
+	}
+	if m.Database != nil && m.Database.PasswordSecret == name && m.Database.Kind != DatabasePostgres {
+		return fmt.Errorf("catalog: rotating a %s database password is not supported yet: Homestead would write the new secret and restart the app while the database kept the old password; change it with the engine's own client and register the new value with --skip-verify", m.Database.Kind)
 	}
 	if _, err := src.Get(pending); err == nil {
 		return fmt.Errorf("catalog: a rotation of %q is pending; it settles automatically when the database is reachable (restart the daemon to retry now)", name)

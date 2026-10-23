@@ -142,9 +142,15 @@ S351 `uptime-kuma` (`docs/slices/S351-uptime-kuma.md`) closes Wave 1 with
 the monitoring exception: the administrator account is created in the app,
 SSO is unsupported, and exposure recommends local and refuses widening.
 
-Next scheduled: S352 MariaDB/MySQL backup export (F2) — add
-`mariadb`/`mysql` to `DatabaseKind` with a crash-consistent dump, restore
-path and tests, required before BookStack.
+S352 MariaDB/MySQL backup export (F2)
+(`docs/slices/S352-mariadb-mysql-backup.md`) landed the server engines
+BookStack needs: `mariadb` and `mysql` database kinds, dumps through
+`mariadb-dump`/`mysqldump` with one consistent snapshot, password
+secrets resolved for scheduled backups, and documented restore steps.
+
+Next scheduled: S353 `audiobookshelf` (`docs/SLICE_PLAN.md`) opens Wave 2
+with the shared audiobook library on bulk storage, updating the image
+from the GHCR source S343 added.
 
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
 catalog track and an Everything-app track, with dependencies, the critical
