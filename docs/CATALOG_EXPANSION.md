@@ -61,12 +61,16 @@ Consequences:
 
 ## 2. Current baseline
 
-The catalog currently contains 17 packages:
+The catalog baseline at planning time contained 17 packages:
 
 | Area | Packages |
 |------|----------|
 | Core apps | `jellyfin`, `nextcloud`, `immich`, `authentik` |
 | Craft/static apps | `wordcraft`, `gridcraft`, `pdfcraft`, `deckcraft`, `vectorcraft`, `photocraft`, `lightcraft`, `figcraft`, `designcraft`, `cadcraft`, `filmcraft`, `effectcraft`, `soundcraft` |
+
+Wave 1 has since shipped seven more (`vaultwarden`, `paperless-ngx`,
+`gitea`, `freshrss`, `linkding`, `mealie`, and `uptime-kuma` in S351),
+bringing the catalog to 24; the slice ledger is `docs/SLICE_INDEX.md`.
 
 The platform already provides AdGuard Home, Caddy, Headscale/Tailscale,
 Dockge and the Homestead dashboard. Those are **not** catalog candidates:

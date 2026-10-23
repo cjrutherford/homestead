@@ -30,7 +30,7 @@ func repoCatalog(t *testing.T) Catalog {
 // curatedPackages is the one place the expected shipped catalog is listed
 // (sorted, as Names returns it). Adding a package to catalog/ edits this
 // list and nothing else here: each craft slice appends its app.
-var curatedPackages = []string{"authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "freshrss", "gitea", "gridcraft", "immich", "jellyfin", "lightcraft", "linkding", "mealie", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "vaultwarden", "vectorcraft", "wordcraft"}
+var curatedPackages = []string{"authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "freshrss", "gitea", "gridcraft", "immich", "jellyfin", "lightcraft", "linkding", "mealie", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "uptime-kuma", "vaultwarden", "vectorcraft", "wordcraft"}
 
 // assertCuratedNames fails when the shipped catalog and curatedPackages
 // differ, in either direction.
@@ -738,5 +738,73 @@ func TestCuratedMealie(t *testing.T) {
 	}
 	if !report.Passed {
 		t.Fatalf("report = %+v", report)
+	}
+}
+
+// TestCuratedUptimeKuma pins the monitoring exception (S351): local-only
+// exposure that refuses widening, no SSO, no secret, and the SQLite data
+// directory on application storage with a memory floor that matters.
+func TestCuratedUptimeKuma(t *testing.T) {
+	catalog := repoCatalog(t)
+	manifest, err := catalog.Get("uptime-kuma")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if manifest.Version != "2.5.7" {
+		t.Fatalf("version = %q", manifest.Version)
+	}
+	if len(manifest.Services) != 1 ||
+		manifest.Services[0].Image != "docker.io/louislam/uptime-kuma:2.5.7" {
+		t.Fatalf("services = %+v", manifest.Services)
+	}
+	service := manifest.Services[0]
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 0 {
+		t.Fatalf("uptime-kuma needs no supervisor; secrets = %+v", manifest.Secrets)
+	}
+	if len(service.Data) != 1 || service.Data[0].Target != "/app/data" ||
+		service.Data[0].Class != storage.ClassApplication || service.Data[0].Subpath != "data" {
+		t.Fatalf("data = %+v", service.Data)
+	}
+	if len(manifest.BackupPaths) != 1 || manifest.BackupPaths[0] != "data" {
+		t.Fatalf("backuppaths = %v", manifest.BackupPaths)
+	}
+	if manifest.Database != nil {
+		t.Fatalf("database = %+v, want SQLite in the data volume", manifest.Database)
+	}
+	endpoint, ok := manifest.Exposure.Find("web")
+	if !ok {
+		t.Fatal("no web endpoint")
+	}
+	if string(endpoint.Recommended) != "local" || endpoint.AllowWider || len(endpoint.Warnings) == 0 {
+		t.Fatalf("endpoint = %+v, want local-only exposure that refuses widening", endpoint)
+	}
+	if manifest.SSO.Class != SSOUnsupported {
+		t.Fatalf("sso = %+v, want the documented local-auth exception", manifest.SSO)
+	}
+	if len(manifest.Integrations) != 0 {
+		t.Fatalf("integrations = %+v, want none", manifest.Integrations)
+	}
+	report, err := Evaluate(manifest, HostFacts{
+		Arch: "amd64", MemoryMB: 2048, CPUCount: 2,
+		FreeSpace: map[storage.Class]uint64{storage.ClassApplication: 4 << 30},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !report.Passed {
+		t.Fatalf("report = %+v", report)
+	}
+	small, err := Evaluate(manifest, HostFacts{
+		Arch: "amd64", MemoryMB: 512, CPUCount: 1,
+		FreeSpace: map[storage.Class]uint64{storage.ClassApplication: 4 << 30},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if small.Passed {
+		t.Fatal("a 512 MB host must not pass the 1 GB memory floor")
 	}
 }

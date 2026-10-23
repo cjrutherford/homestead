@@ -2228,6 +2228,12 @@ HTTPS host, and signups closed. Mealie seeds the upstream-documented
 administrator (`changeme@example.com`), so the owner signs in once,
 changes the credentials, and creates household accounts; no secret is
 declared and the image entrypoint runs unchanged.
+The Uptime Kuma package (S351) in `catalog/` closes Wave 1 with the
+documented monitoring exception: one container on `/app/data`, the
+administrator created in the app, `unsupported` SSO, and an exposure
+declaration that recommends local and sets `allowwider: false` so the
+monitor can never become a public status page. Its 1 GB memory floor is
+tested from both sides.
 The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine

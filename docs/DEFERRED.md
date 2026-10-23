@@ -1437,6 +1437,10 @@ slice is scheduled yet.
   creates that account itself, and the owner changes them at first
   sign-in. Driving Mealie's user store from Homestead (seeding a chosen
   password or disabling the default account) is not surfaced.
+- Uptime Kuma's monitor bootstrap: S351 installs the board with no
+  monitors; the owner adds checks in the app. Pre-seeding one monitor per
+  installed app and route (the "all local apps" intent) needs Homestead to
+  create monitors through the app's API, which is not scheduled.
 - Gitea's SSH surface: S347 installs HTTPS-only (`DISABLE_SSH`), publishes
   no SSH port and deploys no keys. Enabling `ssh://` clones — an SSH port
   through the host or an overlay tunnel, authorized keys, and clone URLs

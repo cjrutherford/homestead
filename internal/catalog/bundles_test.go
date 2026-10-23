@@ -75,11 +75,9 @@ func TestCheckBundleGradesAvailableMembers(t *testing.T) {
 	if !report.Passed {
 		t.Fatalf("report = %+v", report)
 	}
-	if report.Complete {
-		t.Fatal("starter reports complete before its Wave 1 packages ship")
-	}
-	if len(report.Missing) == 0 {
-		t.Fatal("missing members must be named")
+	// Every starter member ships as of S351, so the profile is complete.
+	if !report.Complete || len(report.Missing) != 0 {
+		t.Fatalf("starter must be complete, missing = %v", report.Missing)
 	}
 	if report.TotalMemory == 0 {
 		t.Fatal("memory total must include available members")
@@ -95,6 +93,29 @@ func TestCheckBundleGradesAvailableMembers(t *testing.T) {
 	}
 	if !strings.Contains(report.Detail, "bundle fits") {
 		t.Fatalf("detail = %q", report.Detail)
+	}
+}
+
+// TestCheckBundleNamesMissingMembers keeps the incomplete path covered now
+// that the starter profile is complete: the family bundle still names
+// curated members the catalog does not carry.
+func TestCheckBundleNamesMissingMembers(t *testing.T) {
+	cat := repoCatalog(t)
+	var family Bundle
+	for _, bundle := range Bundles {
+		if bundle.Name == "family" {
+			family = bundle
+		}
+	}
+	report, err := CheckBundle(cat, family, bundleHost())
+	if err != nil {
+		t.Fatalf("CheckBundle: %v", err)
+	}
+	if report.Complete || len(report.Missing) == 0 {
+		t.Fatalf("family must name missing members, report = %+v", report)
+	}
+	if len(report.Members) == 0 || report.TotalMemory == 0 {
+		t.Fatalf("available members must still be graded, report = %+v", report)
 	}
 }
 

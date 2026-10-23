@@ -138,9 +138,13 @@ first-superuser password, and a CSRF origin that follows the routed host.
 S350 `mealie` (`docs/slices/S350-mealie.md`) adds the recipe manager: the
 pinned GHCR image, SQLite on the backed-up data volume, a routed base URL,
 and closed signups behind the upstream-seeded administrator.
+S351 `uptime-kuma` (`docs/slices/S351-uptime-kuma.md`) closes Wave 1 with
+the monitoring exception: the administrator account is created in the app,
+SSO is unsupported, and exposure recommends local and refuses widening.
 
-Next scheduled: S351 `uptime-kuma` — the documented local-auth exception
-closing Wave 1, local/overlay only and never a public status page.
+Next scheduled: S352 MariaDB/MySQL backup export (F2) — add
+`mariadb`/`mysql` to `DatabaseKind` with a crash-consistent dump, restore
+path and tests, required before BookStack.
 
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
 catalog track and an Everything-app track, with dependencies, the critical

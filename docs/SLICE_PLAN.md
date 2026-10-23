@@ -50,7 +50,7 @@ and `mealie` also wait on S343.
 | S348 | `freshrss` | S342,S343 | Debian image so OIDC exists. **Done.** |
 | S349 | `linkding` | S342 | Simplest package in the wave. **Done.** |
 | S350 | `mealie` | S342,S343 | GHCR image. **Done.** |
-| S351 | `uptime-kuma` | S342 | Documented local-auth exception; never a public status page. |
+| S351 | `uptime-kuma` | S342 | Documented local-auth exception; never a public status page. **Done.** |
 
 ### 2.3 Second foundation
 

@@ -52,8 +52,11 @@ var knownImageVolumes = map[string]imageVolumes{
 	"docker.io/sissbruecker/linkding:1.47.0": {},
 	// S350: the image's VOLUME is $MEALIE_HOME/data, i.e. /app/data.
 	"ghcr.io/mealie-recipes/mealie:v3.29.0": {Volumes: []string{"/app/data"}},
-	"ghcr.io/goauthentik/server:2026.8.3":   {},
-	"docker.io/library/postgres:16-alpine":  {Volumes: []string{"/var/lib/postgresql/data"}},
+	// S351: the release stage declares no VOLUME; /app/data is a
+	// Homestead declaration.
+	"docker.io/louislam/uptime-kuma:2.5.7": {},
+	"ghcr.io/goauthentik/server:2026.8.3":  {},
+	"docker.io/library/postgres:16-alpine": {Volumes: []string{"/var/lib/postgresql/data"}},
 	// S345: Vaultwarden declares /data in its Dockerfile. Not yet inspected
 	// on the KVM appliance: re-verify with `docker image inspect` when the
 	// tag is next pulled there, and correct this row if the image differs.

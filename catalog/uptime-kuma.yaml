@@ -1,0 +1,53 @@
+# Uptime Kuma monitor (S351): the last Wave 1 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# This is the documented SSO exception and the one package that is not
+# allowed to widen: it holds monitor credentials and probes LAN addresses,
+# so it recommends local and refuses public exposure outright. The owner
+# creates the administrator account in the app on first visit; no secret
+# is declared and the image entrypoint sits before the Node process.
+name: uptime-kuma
+version: 2.5.7
+title: Uptime Kuma
+blurb: A quiet board that says whether everything is up.
+description: Uptime Kuma checks web apps, containers, and addresses on a
+  schedule and shows their history on one dashboard, with notifications
+  when something stops answering. It is the appliance's own health board,
+  so it stays on the local network and is never published as a public
+  status page.
+category: monitoring
+icon: mdi:monitor-eye
+services:
+- name: uptime-kuma
+  image: docker.io/louislam/uptime-kuma:2.5.7
+  exposes: web
+  # No environment overrides: the image sets UPTIME_KUMA_IS_CONTAINER and
+  # listens on 3001. The administrator account is created on first visit
+  # (the application's own setup screen), so nothing is generated here.
+  # No image VOLUME. /app/data holds the SQLite database, uploaded
+  # status-page assets, and monitor history; the image runs as root.
+  data:
+  - target: /app/data
+    class: application
+    subpath: data
+requirements:
+  memorymb: 1024
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 2147483648
+  # Uptime Kuma listens on 3001; routes proxy to it and no host port is
+  # published by default.
+  ports: [3001]
+exposure:
+  package: uptime-kuma
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: false
+    warnings:
+    - "Uptime Kuma is the documented SSO exception and must not become a public status page: it holds monitor credentials and probes LAN addresses. Keep it on the LAN or the overlay; public exposure is refused by design."
+backuppaths:
+- data
+sso:
+  class: unsupported

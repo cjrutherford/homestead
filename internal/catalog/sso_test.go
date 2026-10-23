@@ -72,6 +72,7 @@ func TestCuratedSSO(t *testing.T) {
 		"gitea":         {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"effectcraft":   {Class: SSOUnsupported},
 		"soundcraft":    {Class: SSOUnsupported},
+		"uptime-kuma":   {Class: SSOUnsupported},
 		"designcraft":   {Class: SSOUnsupported},
 		"cadcraft":      {Class: SSOUnsupported},
 	}
