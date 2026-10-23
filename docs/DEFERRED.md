@@ -83,9 +83,10 @@
   backups find no sources. Planned as S276 (declared placement for new
   installs) and S277 (migration of existing installs plus a backup
   source guard).
-- ghcr registry checks: S190 discovers Docker Hub tags only; ghcr
-  listings need a token flow before Immich updates discover
-  upstream.
+- Private registry discovery: S343 adds GHCR through its anonymous pull
+  token, and Docker Hub stays anonymous. Images on private registries or
+  private GHCR repositories report a refusal (the image may be private)
+  instead of holding credentials Homestead does not have.
 - Platform release acquisition: S194 models desired versions only;
   fetching releases belongs with distribution work (S264 verifies
   owner-supplied local files but fetches nothing; S265 applies them).
@@ -1405,9 +1406,8 @@ slice is scheduled yet.
 - qBittorrent: deferred until a supported VPN/network-mode design exists;
   the current schema cannot express `network_mode: service:vpn`.
 - Foundation items the planned apps need are **scheduled work, not
-  deferrals**: GHCR update discovery, MariaDB/MySQL backup export, a
-  written community-image policy, and catalog bundles with capacity
-  checks. Their order is in `docs/CATALOG_EXPANSION.md` section 9. OIDC
+  deferrals**: MariaDB/MySQL backup export, a written community-image
+  policy, and catalog bundles with capacity checks. Their order is in `docs/CATALOG_EXPANSION.md` section 9. OIDC
   client actuation with the supervised secret-entrypoint wrapper landed
   in S342. This ledger keeps only the work that is genuinely
   unscheduled.

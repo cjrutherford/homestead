@@ -108,13 +108,14 @@ Planning (not scheduled): `docs/CATALOG_EXPANSION.md` evaluates additional
 catalog applications, foundation work, and wave ordering.
 
 Completed foundation: S341 Catalog integration contract
-(`docs/slices/S341-catalog-integration-contract.md`) and S342 OIDC client
+(`docs/slices/S341-catalog-integration-contract.md`), S342 OIDC client
 actuation with supervised secret delivery
-(`docs/slices/S342-oidc-client-actuation.md`).
+(`docs/slices/S342-oidc-client-actuation.md`), and S343 GHCR update
+discovery (`docs/slices/S343-ghcr-update-discovery.md`).
 
-Next scheduled: S343 GHCR update discovery
-(`docs/CATALOG_EXPANSION.md` section 9) — the next foundation item from
-that plan, followed by S344 bundles and the Wave 1 packages.
+Next scheduled: S344 Catalog bundles and capacity
+(`docs/CATALOG_EXPANSION.md` section 9) — the last foundation item before
+the Wave 1 packages.
 
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
 catalog track and an Everything-app track, with dependencies, the critical

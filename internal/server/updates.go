@@ -108,23 +108,24 @@ func runningImages(client *docker.Client, r *http.Request, packageName string) (
 	return out, nil
 }
 
-// registryMaxima fetches newer tags per service image with a bounded
-// client, skipping failures service by service: registries sulk,
-// and pins cover silence (S190).
-func registryMaxima(images map[string]string) map[string][]string {
-	client := &http.Client{Timeout: 8 * time.Second}
-	out := map[string][]string{}
+// registryDiscoveries lists tags per service image with a bounded
+// client, skipping failures service by service: registries sulk, and
+// pins cover silence (S190). Docker Hub and GHCR both answer (S343);
+// every other registry records why it could not be asked instead of
+// querying the wrong endpoint.
+func registryDiscoveries(images map[string]string) map[string]update.Discovery {
+	registries := update.RegistryClient{HTTP: &http.Client{Timeout: 8 * time.Second}}
+	out := map[string]update.Discovery{}
 	for service, image := range images {
 		if _, _, local := craft.ParseRef(image); local {
-			continue // locally built (S279): there is no registry to ask
+			// Locally built (S279): there is no registry to ask.
+			out[service] = update.Discovery{
+				Service: service, Registry: update.RegistryLocal,
+				Repository: image, Local: true,
+			}
+			continue
 		}
-		tag := image
-		if index := strings.LastIndex(image, ":"); index >= 0 {
-			tag = image[index+1:]
-		}
-		if tags, err := update.RegistryUpdates(client, update.DockerHubAPI, image, tag); err == nil {
-			out[service] = tags
-		}
+		out[service] = registries.Discover(service, image)
 	}
 	return out
 }
@@ -148,7 +149,7 @@ func planPackage(catalogDir string, client *docker.Client, r *http.Request, name
 	for _, service := range manifest.Services {
 		images[service.Name] = service.Image
 	}
-	plan, err := update.PlanUpdate(manifest, running, registryMaxima(images))
+	plan, err := update.PlanUpdateFromDiscoveries(manifest, running, registryDiscoveries(images))
 	if err != nil {
 		return catalog.Manifest{}, update.UpdatePlan{}, false, err
 	}

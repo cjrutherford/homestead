@@ -12,10 +12,9 @@ import (
 	"time"
 )
 
-// DockerHubAPI lists tags without authentication, which bounds this
-// unit to Docker Hub images (jellyfin, nextcloud). ghcr images
-// (immich) need a token flow no slice owns yet — see DEFERRED — so
-// registry discovery skips them loudly rather than pretending.
+// DockerHubAPI lists tags without authentication: the Docker Hub half of
+// discovery. GHCR needs the token flow in registry.go (S343), and the
+// two paths are chosen by image reference, never by guessing.
 const DockerHubAPI = "https://hub.docker.com/v2/repositories"
 
 // httpTimeout bounds registry calls; discovery degrades to manifest
@@ -23,9 +22,11 @@ const DockerHubAPI = "https://hub.docker.com/v2/repositories"
 const httpTimeout = 15 * time.Second
 
 // versionPrefix splits numeric dotted prefixes ("35.0.1" in
-// "35.0.1-apache") from variant suffixes. Variants never compare
-// across suffixes: fpm builds are not updates for apache pins.
-var versionPrefix = regexp.MustCompile(`^(\d+(?:\.\d+)*)(.*)$`)
+// "35.0.1-apache") from variant suffixes, tolerating the `v` prefix GHCR
+// projects use ("v1.119.0"): the prefix is decoration, not a version
+// component. Variants never compare across suffixes: fpm builds are not
+// updates for apache pins.
+var versionPrefix = regexp.MustCompile(`^v?(\d+(?:\.\d+)*)(.*)$`)
 
 // Available is one detected update: the service, its running image,
 // the target image, and where the target came from (manifest pins or

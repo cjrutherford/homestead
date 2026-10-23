@@ -595,6 +595,19 @@ export interface ServiceUpdate {
   Source: string;
 }
 
+/**
+ * Where one service's update discovery came from: the registry asked,
+ * whether it answered, and why not when it did not.
+ */
+export interface ServiceProvenance {
+  Service: string;
+  Registry: string;
+  Repository: string;
+  Discovered: boolean;
+  Local: boolean;
+  Reason: string;
+}
+
 /** GET /api/v1/updates — reviewable change set for one package. */
 export interface UpdatePlan {
   Package: string;
@@ -603,6 +616,7 @@ export interface UpdatePlan {
   BackupWhy: string;
   Affected: string[];
   Warnings: string[];
+  Provenance?: ServiceProvenance[];
 }
 
 /** GET /api/v1/updates — one row of the review list. */

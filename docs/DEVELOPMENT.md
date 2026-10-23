@@ -2274,8 +2274,15 @@ manifest runs last with re-walked counts, and runner-backed
 execution fails fast. Image discovery (S190) in `internal/update`
 compares manifest pins against running images and filters Docker
 Hub listings to newer same-variant versions with numeric ordering;
-outages error instead of reading as current, and non-Hub images
-refuse loudly. Update planning (S191), also in `internal/update`,
+outages error instead of reading as current. GHCR discovery (S343)
+adds the token flow GitHub Container Registry requires: one anonymous
+pull token, then the tag listing with a bearer header, at most two
+pages. Registries Homestead does not support refuse by name, the plan
+records per-service provenance (registry, repository, whether it
+answered, and why not), and locally built craft images are marked as
+such, so a service with no registry update says why instead of reading
+as current. Version comparison tolerates the `v` prefix GHCR projects
+use. Update planning (S191), also in `internal/update`,
 reviews registry maxima against manifest pins with current
 services planning empty, flags backups with database-first reasons,
 lists affected services, and warns major version jumps with
