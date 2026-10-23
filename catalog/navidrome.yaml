@@ -1,0 +1,73 @@
+# Navidrome music server (S354): the second Wave 2 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# One Docker Hub container. Navidrome has no OIDC/SAML/LDAP; local accounts
+# are the documented exception, and the first visit creates the admin user.
+# Reverse-proxy header auth exists upstream but needs an edge that injects a
+# trusted user header, which Homestead does not do for apps, so it stays off.
+# The JWT secrets are generated into the SQLite database on first start and
+# backed up with it, so no secret is declared and the entrypoint is
+# unchanged.
+name: navidrome
+version: 0.64.2
+title: Navidrome
+blurb: Your music library, streamed anywhere.
+description: Navidrome streams your music collection with Subsonic-compatible
+  apps and a browser player, keeping playlists and play counts in one SQLite
+  database. It reads the music folder you already keep — the same directory
+  Jellyfin can mount — and writes artwork and transcode caches to bulk
+  storage.
+category: music
+icon: mdi:music
+services:
+- name: navidrome
+  image: docker.io/navidrome/navidrome:0.64.2
+  exposes: web
+  environment:
+    # Artwork and transcode caches are regenerable and can grow with the
+    # library, so they live on bulk storage instead of the backed-up data
+    # volume. The music and data folders keep the image defaults.
+    ND_CACHEFOLDER: /cache
+  # Image VOLUMEs: /data and /music. /data (SQLite database, playlists,
+  # play counts) is application storage; /cache is the artwork and
+  # transcode cache on bulk. /music is an owner volume: the read-only bulk
+  # directory shared with Jellyfin, added at install, never declared, so
+  # the library never rides in a backup.
+  data:
+  - target: /data
+    class: application
+    subpath: data
+  - target: /cache
+    class: bulk
+    subpath: cache
+requirements:
+  memorymb: 256
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 2147483648
+  - class: bulk
+    minbytes: 10737418240
+  # Navidrome listens on 4533; routes proxy to it and no host port is
+  # published by default.
+  ports: [4533]
+exposure:
+  package: navidrome
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Music libraries, playlists, and listening history leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- data
+database:
+  service: navidrome
+  kind: sqlite
+  path: data/navidrome.db
+sso:
+  class: unsupported
+integrations:
+- kind: library
+  target: jellyfin
+  note: Mount the same bulk music directory into Navidrome and Jellyfin; Navidrome reads it.

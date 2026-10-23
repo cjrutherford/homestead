@@ -30,7 +30,7 @@ func repoCatalog(t *testing.T) Catalog {
 // curatedPackages is the one place the expected shipped catalog is listed
 // (sorted, as Names returns it). Adding a package to catalog/ edits this
 // list and nothing else here: each craft slice appends its app.
-var curatedPackages = []string{"audiobookshelf", "authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "freshrss", "gitea", "gridcraft", "immich", "jellyfin", "lightcraft", "linkding", "mealie", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "uptime-kuma", "vaultwarden", "vectorcraft", "wordcraft"}
+var curatedPackages = []string{"audiobookshelf", "authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "freshrss", "gitea", "gridcraft", "immich", "jellyfin", "lightcraft", "linkding", "mealie", "navidrome", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "uptime-kuma", "vaultwarden", "vectorcraft", "wordcraft"}
 
 // assertCuratedNames fails when the shipped catalog and curatedPackages
 // differ, in either direction.
@@ -887,6 +887,94 @@ func TestCuratedAudiobookshelf(t *testing.T) {
 	}
 	report, err := Evaluate(manifest, HostFacts{
 		Arch: "amd64", MemoryMB: 1024, CPUCount: 2,
+		FreeSpace: map[storage.Class]uint64{
+			storage.ClassApplication: 4 << 30,
+			storage.ClassBulk:        20 << 30,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !report.Passed {
+		t.Fatalf("report = %+v", report)
+	}
+}
+
+// TestCuratedNavidrome pins the second Wave 2 package (S354): the pinned
+// official image, SQLite on application storage with a consistent export,
+// the regenerable cache on bulk, the owner music volume left to the
+// install, the documented local-auth exception, and the shared-library
+// declaration.
+func TestCuratedNavidrome(t *testing.T) {
+	catalog := repoCatalog(t)
+	manifest, err := catalog.Get("navidrome")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if manifest.Version != "0.64.2" {
+		t.Fatalf("version = %q", manifest.Version)
+	}
+	if len(manifest.Services) != 1 ||
+		manifest.Services[0].Image != "docker.io/navidrome/navidrome:0.64.2" {
+		t.Fatalf("services = %+v", manifest.Services)
+	}
+	service := manifest.Services[0]
+	if len(service.Environment) != 1 || service.Environment["ND_CACHEFOLDER"] != "/cache" {
+		t.Fatalf("environment = %v, want only the bulk cache folder", service.Environment)
+	}
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 0 {
+		t.Fatalf("navidrome generates its JWT secrets into the database; secrets = %+v", manifest.Secrets)
+	}
+	wantData := []struct {
+		target  string
+		class   storage.Class
+		subpath string
+	}{
+		{"/data", storage.ClassApplication, "data"},
+		{"/cache", storage.ClassBulk, "cache"},
+	}
+	if len(service.Data) != len(wantData) {
+		t.Fatalf("data = %+v", service.Data)
+	}
+	for _, data := range service.Data {
+		if data.Target == "/music" {
+			t.Fatal("/music is an owner volume; declaring it would pull the library into every backup")
+		}
+	}
+	for i, want := range wantData {
+		data := service.Data[i]
+		if data.Target != want.target || data.Class != want.class || data.Subpath != want.subpath {
+			t.Fatalf("data[%d] = %+v, want %+v", i, data, want)
+		}
+	}
+	if len(manifest.BackupPaths) != 1 || manifest.BackupPaths[0] != "data" {
+		t.Fatalf("backuppaths = %v", manifest.BackupPaths)
+	}
+	if manifest.Database == nil || manifest.Database.Kind != DatabaseSQLite ||
+		manifest.Database.Service != "navidrome" ||
+		manifest.Database.Path != "data/navidrome.db" {
+		t.Fatalf("database = %+v, want the SQLite export", manifest.Database)
+	}
+	if len(manifest.Requirements.Ports) != 1 || manifest.Requirements.Ports[0] != 4533 {
+		t.Fatalf("ports = %v", manifest.Requirements.Ports)
+	}
+	endpoint, ok := manifest.Exposure.Find("web")
+	if !ok || string(endpoint.Recommended) != "local" || !endpoint.AllowWider || len(endpoint.Warnings) == 0 {
+		t.Fatalf("endpoint = %+v", endpoint)
+	}
+	if manifest.SSO.Class != SSOUnsupported || len(manifest.SSO.Protocols) != 0 {
+		t.Fatalf("sso = %+v, want the documented local-auth exception", manifest.SSO)
+	}
+	if len(manifest.Integrations) != 1 ||
+		manifest.Integrations[0].Kind != IntegrationLibrary ||
+		manifest.Integrations[0].Target != "jellyfin" {
+		t.Fatalf("integrations = %+v", manifest.Integrations)
+	}
+	report, err := Evaluate(manifest, HostFacts{
+		Arch: "amd64", MemoryMB: 512, CPUCount: 2,
 		FreeSpace: map[storage.Class]uint64{
 			storage.ClassApplication: 4 << 30,
 			storage.ClassBulk:        20 << 30,

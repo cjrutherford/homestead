@@ -2259,6 +2259,17 @@ mount, never declarations, so a large library is shared with Nextcloud
 external storage without entering every backup. OIDC stays an in-app
 setting (no `oidc:` client), and the JWT signing secret is generated into
 the backed-up database.
+The Navidrome package (S354) in `catalog/` adds the local-auth music
+server. It reads the same bulk music directory Jellyfin can mount as an
+owner volume, never a declaration; `/data` holds the SQLite database
+(users, playlists, play counts, generated JWT secrets) on application
+storage with a `sqlite` export, and `ND_CACHEFOLDER=/cache` moves the
+regenerable artwork and transcode cache to bulk. The first visit creates
+the administrator in the app, so no secret is declared; SSO is
+`unsupported` as the documented local-auth exception, and the reverse-
+proxy header path stays off until the edge injects a trusted identity
+header. The image declares `/music` as a volume, so `knownImageVolumes`
+marks it as an owner mount while still checking every other volume.
 The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine

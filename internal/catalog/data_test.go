@@ -14,9 +14,15 @@ import (
 	"homestead/internal/store"
 )
 
-// imageVolumes is one table row: the VOLUMEs an image declares.
+// imageVolumes is one table row: the VOLUMEs an image declares and the
+// ones the catalog intentionally leaves to owner volumes (media libraries).
 type imageVolumes struct {
 	Volumes []string
+	// OwnerMounts are image VOLUMEs the manifest does not declare: the
+	// install supplies an owner volume at that target (a shared media
+	// library), so a declaration would collide and pull the library into
+	// every backup.
+	OwnerMounts []string
 }
 
 // knownImageVolumes records each curated image's VOLUMEs (S276).
@@ -59,8 +65,15 @@ var knownImageVolumes = map[string]imageVolumes{
 	// no Volumes, root user, 80/tcp; /config and /metadata are Homestead
 	// declarations and the media libraries are owner volumes.
 	"ghcr.io/advplyr/audiobookshelf:2.37.1": {},
-	"ghcr.io/goauthentik/server:2026.8.3":   {},
-	"docker.io/library/postgres:16-alpine":  {Volumes: []string{"/var/lib/postgresql/data"}},
+	// S354: verified from the Docker Hub image config for 0.64.2 on
+	// 2026-10-23: /data and /music, root user, 4533/tcp. /music is the
+	// owner's shared music library, supplied at install, not declared.
+	"docker.io/navidrome/navidrome:0.64.2": {
+		Volumes:     []string{"/data", "/music"},
+		OwnerMounts: []string{"/music"},
+	},
+	"ghcr.io/goauthentik/server:2026.8.3":  {},
+	"docker.io/library/postgres:16-alpine": {Volumes: []string{"/var/lib/postgresql/data"}},
 	// S345: Vaultwarden declares /data in its Dockerfile. Not yet inspected
 	// on the KVM appliance: re-verify with `docker image inspect` when the
 	// tag is next pulled there, and correct this row if the image differs.
@@ -145,9 +158,31 @@ func TestCuratedImageVolumesCovered(t *testing.T) {
 			for _, data := range service.Data {
 				declared[data.Target] = true
 			}
+			owner := map[string]bool{}
+			for _, volume := range row.OwnerMounts {
+				owner[volume] = true
+			}
 			for _, volume := range volumes {
+				if owner[volume] {
+					if declared[volume] {
+						t.Errorf("%s/%s: image VOLUME %s is both owner-supplied and declared", name, service.Name, volume)
+					}
+					continue
+				}
 				if !declared[volume] {
 					t.Errorf("%s/%s: image VOLUME %s has no data declaration or ephemeral marker", name, service.Name, volume)
+				}
+			}
+			for _, volume := range row.OwnerMounts {
+				listed := false
+				for _, imageVolume := range volumes {
+					if imageVolume == volume {
+						listed = true
+						break
+					}
+				}
+				if !listed {
+					t.Errorf("%s/%s: owner mount %s is not an image VOLUME", name, service.Name, volume)
 				}
 			}
 		}

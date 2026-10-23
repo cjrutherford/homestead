@@ -153,8 +153,13 @@ with the pinned GHCR image, SQLite on application storage with a
 consistent export, owner media volumes for the shared library, and
 optional in-app OIDC.
 
-Next scheduled: S354 `navidrome` (`docs/SLICE_PLAN.md`) adds the
-local-auth music server on the same bulk mount as Jellyfin.
+S354 `navidrome` (`docs/slices/S354-navidrome.md`) adds the local-auth
+music server: SQLite on application storage with a consistent export, the
+artwork and transcode cache on bulk, and the owner music volume shared
+with Jellyfin.
+
+Next scheduled: S355 `komga` (`docs/SLICE_PLAN.md`) adds the comic and
+manga library with a JVM heap cap in the manifest.
 
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
 catalog track and an Everything-app track, with dependencies, the critical

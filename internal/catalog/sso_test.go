@@ -74,6 +74,7 @@ func TestCuratedSSO(t *testing.T) {
 		"effectcraft":    {Class: SSOUnsupported},
 		"soundcraft":     {Class: SSOUnsupported},
 		"uptime-kuma":    {Class: SSOUnsupported},
+		"navidrome":      {Class: SSOUnsupported},
 		"designcraft":    {Class: SSOUnsupported},
 		"cadcraft":       {Class: SSOUnsupported},
 	}

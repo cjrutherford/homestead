@@ -1462,6 +1462,14 @@ slice is scheduled yet.
   are not modeled, so an owner who enables large in-app backups should
   move the app's backup path or accept the extra size. The owner media
   volumes (`/audiobooks`, `/podcasts`) are never backup sources.
+- Navidrome reverse-proxy header authentication: S354 ships local accounts
+  as the documented exception. Upstream accepts a trusted user header
+  (`ND_REVERSEPROXYUSERHEADER`), but Homestead's edge does not inject an
+  identity header into app requests; wiring the edge to a trusted identity
+  source is deferred. The external metadata services (Last.fm, Deezer,
+  ListenBrainz) stay at upstream defaults; disabling them with
+  `ND_ENABLEEXTERNALSERVICES=false` is an owner setting, not a catalog
+  default.
 - Gitea's SSH surface: S347 installs HTTPS-only (`DISABLE_SSH`), publishes
   no SSH port and deploys no keys. Enabling `ssh://` clones — an SSH port
   through the host or an overlay tunnel, authorized keys, and clone URLs
