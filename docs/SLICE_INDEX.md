@@ -119,9 +119,13 @@ Wave 1 so new manifests can declare their relationships.
 
 S345 `vaultwarden` (`docs/slices/S345-vaultwarden.md`) is the first Wave 1
 package: owner signup, no admin surface by default, local exposure.
+S346 `paperless-ngx` (`docs/slices/S346-paperless-ngx.md`) adds the
+document archive: Postgres metadata, a Valkey queue, all four image volumes
+declared, supervised secret export, routed OCR configuration, and the
+first real `library` integration (Nextcloud mounting the consume folder).
 
-Next scheduled: S346 `paperless-ngx` — documents with Postgres, Redis, and
-a scans library shared with Nextcloud.
+Next scheduled: S347 `gitea` — `ROOT_URL` from the route host, HTTPS-only,
+no SSH in v1.
 
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
 catalog track and an Everything-app track, with dependencies, the critical

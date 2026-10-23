@@ -45,7 +45,7 @@ and `mealie` also wait on S343.
 | ID | Package | Depends on | Notes |
 |----|---------|-----------|-------|
 | S345 | `vaultwarden` | S342 | Owner signup, admin page off by default; local/overlay exposure. **Done.** |
-| S346 | `paperless-ngx` | S342,S343,S276 | Postgres + Redis; shared scans volume with Nextcloud; OCR languages. |
+| S346 | `paperless-ngx` | S342,S343,S276 | Postgres + Redis; shared scans volume with Nextcloud; OCR languages. **Done.** |
 | S347 | `gitea` | S342 | `ROOT_URL` from the route host; HTTPS-only, no SSH in v1. |
 | S348 | `freshrss` | S342,S343 | Debian image so OIDC exists. |
 | S349 | `linkding` | S342 | Simplest package in the wave. |

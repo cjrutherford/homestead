@@ -2185,7 +2185,17 @@ signup open, the administrative page deliberately off (no generated
 `{{route_host}}` so passkeys and invitation links match the browser URL.
 Exposure recommends local with an explicit widened-access warning, and the
 manifest declares optional OIDC with an Authentik identity integration for
-the SSO wizard. The backup contract (S180),
+the SSO wizard. The Paperless-ngx package (S346) in `catalog/` is the first
+three-service Wave 1 application: `webserver` on the pinned GHCR image,
+Postgres 18 for metadata, and Valkey 9 for the task queue. Its image reads
+only plaintext credentials, so the Django key, database password, and
+first-run admin password travel as 0600 files and the generated supervisor
+exports them before exec'ing the image's own `/init` (s6-overlay); the
+manifest therefore names `/init` as the entrypoint and adds no command.
+All four image volumes (data, media, consume, export) are declared, `data`
+and `media` are backup paths, the consumer inbox sits on bulk storage for
+Nextcloud external storage, OCR defaults to `eng` as a configure value, and
+`PAPERLESS_URL` follows the routed HTTPS host. The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine
 fields refused, staged commands bounded and service-linked, and

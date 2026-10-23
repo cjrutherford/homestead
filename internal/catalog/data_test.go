@@ -35,8 +35,16 @@ var knownImageVolumes = map[string]imageVolumes{
 	"ghcr.io/immich-app/immich-machine-learning:v3.3.0":              {},
 	"ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0": {Volumes: []string{"/var/lib/postgresql/data"}},
 	"valkey/valkey:9":                                                {},
-	"ghcr.io/goauthentik/server:2026.8.3":                            {},
-	"docker.io/library/postgres:16-alpine":                           {Volumes: []string{"/var/lib/postgresql/data"}},
+	// S346: paperless-ngx v3.3.4 declares all four library paths; the
+	// alpine Valkey build has no VOLUME like the plain tag.
+	"ghcr.io/paperless-ngx/paperless-ngx:3.3.4": {Volumes: []string{
+		"/usr/src/paperless/data", "/usr/src/paperless/media",
+		"/usr/src/paperless/consume", "/usr/src/paperless/export",
+	}},
+	"docker.io/library/postgres:18":        {Volumes: []string{"/var/lib/postgresql"}},
+	"docker.io/valkey/valkey:9-alpine":     {},
+	"ghcr.io/goauthentik/server:2026.8.3":  {},
+	"docker.io/library/postgres:16-alpine": {Volumes: []string{"/var/lib/postgresql/data"}},
 	// S345: Vaultwarden declares /data in its Dockerfile. Not yet inspected
 	// on the KVM appliance: re-verify with `docker image inspect` when the
 	// tag is next pulled there, and correct this row if the image differs.
@@ -202,8 +210,16 @@ func TestCuratedPlansPlaceDataOnMountedStorage(t *testing.T) {
 			for _, volume := range doc.Services[service.Name].Volumes {
 				rendered[volume["target"].(string)] = volume
 			}
-			if len(rendered) != len(service.Data) {
-				t.Errorf("%s/%s: %d volumes rendered for %d declarations", name, service.Name, len(rendered), len(service.Data))
+			// A service that exports a secret also mounts its supervisor
+			// beside the declared paths (S342).
+			want := len(service.Data)
+			for _, script := range EntrypointScriptsFor(manifest) {
+				if script.Service == service.Name {
+					want++
+				}
+			}
+			if len(rendered) != want {
+				t.Errorf("%s/%s: %d volumes rendered for %d declarations", name, service.Name, len(rendered), want)
 			}
 			for _, data := range service.Data {
 				volume, ok := rendered[data.Target]

@@ -1,0 +1,164 @@
+# paperless-ngx document archive (S346): the second Wave 1 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# Pins follow the official v3.3.4 compose (postgres 18, valkey 9 alpine).
+# The image's entrypoint is s6-overlay's /init and it has no CMD: the s6
+# service definitions start the web server, task workers and consumer.
+#
+# Secrets (S266/S342): Paperless reads only plaintext variables, so the
+# Django key, database password and first-run admin password are
+# delivered as 0600 files and exported by the supervised entrypoint
+# (ADR-052). The admin password is only used when the superuser is first
+# created; register one before install if you want to choose it, or
+# reset it later with `manage.py changepassword`.
+name: paperless-ngx
+version: 3.3.4
+title: Paperless-ngx
+blurb: Scan, search, and keep the household paper trail.
+description: Paperless-ngx turns scanned paper into a searchable archive.
+  It reads text with OCR, tags and indexes documents, and keeps the
+  originals alongside their searchable copies. Postgres holds metadata,
+  Valkey queues work, and the document library lives on bulk storage.
+  Scans dropped into the consume folder are picked up automatically.
+category: documents
+icon: mdi:file-document-multiple
+services:
+- name: webserver
+  image: ghcr.io/paperless-ngx/paperless-ngx:3.3.4
+  exposes: web
+  # The image declares ENTRYPOINT ["/init"] and no command; the s6
+  # services inside it start the application. Exporting secrets replaces
+  # the entrypoint, so the supervisor execs /init exactly as the image
+  # would.
+  entrypoint: ["/init"]
+  environment:
+    PAPERLESS_URL: "https://{{route_host}}"
+    PAPERLESS_DBENGINE: postgresql
+    PAPERLESS_DBHOST: db
+    PAPERLESS_DBNAME: paperless
+    PAPERLESS_DBUSER: paperless
+    PAPERLESS_REDIS: redis://broker:6379
+    # Default OCR language; the image already ships eng, deu, fra, ita
+    # and spa. Additional language packs are a config value
+    # (PAPERLESS_OCR_LANGUAGES), installed at start.
+    PAPERLESS_OCR_LANGUAGE: eng
+    # The image runs as uid/gid 1000 with USERMAP defaults; the first-run
+    # superuser is created once, with the password from the secret store.
+    PAPERLESS_ADMIN_USER: admin
+    PAPERLESS_ADMIN_MAIL: admin@homestead.local
+  # Image VOLUMEs: data, media, consume, export. Everything runs as the
+  # paperless user (uid/gid 1000).
+  data:
+  - target: /usr/src/paperless/data
+    class: application
+    subpath: data
+    uid: 1000
+    gid: 1000
+  - target: /usr/src/paperless/media
+    class: bulk
+    subpath: media
+    uid: 1000
+    gid: 1000
+  # The consume inbox lives on bulk storage where the owner can drop
+  # scans, or mount it into Nextcloud as external storage (see the
+  # library integration below).
+  - target: /usr/src/paperless/consume
+    class: bulk
+    subpath: consume
+    uid: 1000
+    gid: 1000
+  # Manual exports; kept beside the library rather than in a tmpfs so a
+  # long export never fills memory.
+  - target: /usr/src/paperless/export
+    class: bulk
+    subpath: export
+    uid: 1000
+    gid: 1000
+- name: db
+  image: docker.io/library/postgres:18
+  exposes: ""
+  environment:
+    POSTGRES_USER: paperless
+    POSTGRES_DB: paperless
+  # Image VOLUME: /var/lib/postgresql (postgres 18 keeps PGDATA beneath
+  # it; Debian postgres uid 999, 0700).
+  data:
+  - target: /var/lib/postgresql
+    class: application
+    subpath: postgres
+    database: true
+    mode: "0700"
+    uid: 999
+    gid: 999
+- name: broker
+  image: docker.io/valkey/valkey:9-alpine
+  exposes: ""
+  # No image VOLUME; /data is the queue directory. The consumer re-reads
+  # the consume folder on start, so a lost queue loses no documents.
+  data:
+  - target: /data
+    ephemeral: true
+    sizemb: 128
+    reason: Task queue and cache Paperless rebuilds on start; documents and metadata live elsewhere.
+requirements:
+  memorymb: 2048
+  cpucount: 2
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 2147483648
+  - class: bulk
+    minbytes: 10737418240
+  # Granian (inside s6) listens on 8000; routes proxy to it and no host
+  # port is published by default.
+  ports: [8000]
+exposure:
+  package: paperless-ngx
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Scanned documents leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- data
+- media
+sso:
+  class: optional
+  protocols: [oidc]
+database:
+  service: db
+  kind: postgres
+  database: paperless
+  username: paperless
+  passwordsecret: db_password
+secrets:
+- name: db_password
+  consumers:
+  - service: db
+    env: POSTGRES_PASSWORD_FILE
+  - service: webserver
+    env: PAPERLESS_DBPASS_FILE
+    export: true
+- name: django_secret
+  # Rotating the key invalidates sessions and signed tokens.
+  immutable: true
+  consumers:
+  - service: webserver
+    env: PAPERLESS_SECRET_KEY_FILE
+    export: true
+- name: admin_password
+  # Only read when the first superuser is created; changing it later does
+  # not reset an existing account (reset inside the app or with
+  # manage.py changepassword).
+  immutable: true
+  consumers:
+  - service: webserver
+    env: PAPERLESS_ADMIN_PASSWORD_FILE
+    export: true
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in through Authentik once its OIDC client is configured; local login stays available.
+- kind: library
+  target: nextcloud
+  note: Nextcloud can mount Paperless's consume folder as external storage, so scans land where Paperless picks them up.

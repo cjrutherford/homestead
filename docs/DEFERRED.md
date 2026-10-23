@@ -1425,6 +1425,13 @@ slice is scheduled yet.
   surface by default. Enabling it later — generating the token through
   the secret store and exposing the page through configure — is not
   surfaced yet; the owner can still manage users in the app itself.
+- Owner-chosen first-run admin credentials: Paperless-ngx (S346) declares
+  its first superuser password as a secret, but secrets are generated at
+  install and never read back, so an owner who does not register a value
+  beforehand must reset the account inside the app or with the image's
+  `manage.py changepassword`. A general "this secret must be supplied by
+  the owner" declaration, or an install-time prompt that requires one,
+  is not in the secret schema.
 - SAML and LDAP client actuation, provider-side secret rotation, and
   authorisation-group mapping stay out of scope until a package needs
   them; the S342 mechanism is OIDC-only.
