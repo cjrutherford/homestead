@@ -41,9 +41,12 @@ var knownImageVolumes = map[string]imageVolumes{
 		"/usr/src/paperless/data", "/usr/src/paperless/media",
 		"/usr/src/paperless/consume", "/usr/src/paperless/export",
 	}},
-	"docker.io/library/postgres:18":        {Volumes: []string{"/var/lib/postgresql"}},
-	"docker.io/valkey/valkey:9-alpine":     {},
-	"docker.io/gitea/gitea:28.2.0":         {Volumes: []string{"/data"}},
+	"docker.io/library/postgres:18":    {Volumes: []string{"/var/lib/postgresql"}},
+	"docker.io/valkey/valkey:9-alpine": {},
+	"docker.io/gitea/gitea:28.2.0":     {Volumes: []string{"/data"}},
+	// S348: the Debian FreshRSS image declares no VOLUME; both writable
+	// directories are Homestead declarations.
+	"docker.io/freshrss/freshrss:1.30.4":   {},
 	"ghcr.io/goauthentik/server:2026.8.3":  {},
 	"docker.io/library/postgres:16-alpine": {Volumes: []string{"/var/lib/postgresql/data"}},
 	// S345: Vaultwarden declares /data in its Dockerfile. Not yet inspected

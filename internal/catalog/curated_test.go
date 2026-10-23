@@ -30,7 +30,7 @@ func repoCatalog(t *testing.T) Catalog {
 // curatedPackages is the one place the expected shipped catalog is listed
 // (sorted, as Names returns it). Adding a package to catalog/ edits this
 // list and nothing else here: each craft slice appends its app.
-var curatedPackages = []string{"authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "gitea", "gridcraft", "immich", "jellyfin", "lightcraft", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "vaultwarden", "vectorcraft", "wordcraft"}
+var curatedPackages = []string{"authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "freshrss", "gitea", "gridcraft", "immich", "jellyfin", "lightcraft", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "vaultwarden", "vectorcraft", "wordcraft"}
 
 // assertCuratedNames fails when the shipped catalog and curatedPackages
 // differ, in either direction.
@@ -493,6 +493,76 @@ func TestCuratedGitea(t *testing.T) {
 	report, err := Evaluate(manifest, HostFacts{
 		Arch: "amd64", MemoryMB: 2048, CPUCount: 2,
 		FreeSpace: map[storage.Class]uint64{storage.ClassApplication: 8 << 30},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !report.Passed {
+		t.Fatalf("report = %+v", report)
+	}
+}
+
+// TestCuratedFreshRSS pins the Debian feed reader (S348): OIDC-capable
+// image, background refresh, both writable directories on application
+// storage as www-data, and the owner-completed web installer.
+func TestCuratedFreshRSS(t *testing.T) {
+	catalog := repoCatalog(t)
+	manifest, err := catalog.Get("freshrss")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if manifest.Version != "1.30.4" {
+		t.Fatalf("version = %q", manifest.Version)
+	}
+	if len(manifest.Services) != 1 ||
+		manifest.Services[0].Image != "docker.io/freshrss/freshrss:1.30.4" {
+		t.Fatalf("services = %+v", manifest.Services)
+	}
+	service := manifest.Services[0]
+	if strings.Contains(service.Image, "alpine") {
+		t.Fatalf("image = %q, want the Debian variant that ships OIDC", service.Image)
+	}
+	if service.Environment["CRON_MIN"] == "" {
+		t.Fatal("CRON_MIN must be set so feeds refresh without a browser")
+	}
+	if service.Environment["LISTEN"] != "0.0.0.0:80" {
+		t.Fatalf("LISTEN = %q", service.Environment["LISTEN"])
+	}
+	paths := map[string]DataPath{}
+	for _, data := range service.Data {
+		paths[data.Target] = data
+	}
+	for _, target := range []string{"/var/www/FreshRSS/data", "/var/www/FreshRSS/extensions"} {
+		path, ok := paths[target]
+		if !ok {
+			t.Fatalf("writable path %s is not declared", target)
+		}
+		if path.Class != storage.ClassApplication || path.UID == nil || *path.UID != 33 ||
+			path.GID == nil || *path.GID != 33 {
+			t.Fatalf("%s = %+v, want application storage as www-data", target, path)
+		}
+	}
+	if len(manifest.BackupPaths) != 1 || manifest.BackupPaths[0] != "data" {
+		t.Fatalf("backuppaths = %v, want the database and user configuration", manifest.BackupPaths)
+	}
+	if manifest.Database != nil || len(manifest.Secrets) != 0 || len(service.Entrypoint) != 0 {
+		t.Fatalf("freshrss installs through the web form; secrets = %+v, database = %+v",
+			manifest.Secrets, manifest.Database)
+	}
+	endpoint, ok := manifest.Exposure.Find("web")
+	if !ok || string(endpoint.Recommended) != "local" || !endpoint.AllowWider || len(endpoint.Warnings) == 0 {
+		t.Fatalf("endpoint = %+v", endpoint)
+	}
+	if len(manifest.Integrations) != 1 || manifest.Integrations[0].Kind != IntegrationIdentity ||
+		manifest.Integrations[0].Target != "authentik" {
+		t.Fatalf("integrations = %+v", manifest.Integrations)
+	}
+	report, err := Evaluate(manifest, HostFacts{
+		Arch: "amd64", MemoryMB: 1024, CPUCount: 2,
+		FreeSpace: map[storage.Class]uint64{storage.ClassApplication: 2 << 30},
 	})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)

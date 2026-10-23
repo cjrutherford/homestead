@@ -1,0 +1,66 @@
+# FreshRSS feed reader (S348): the fourth Wave 1 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# The plain tag is the Debian image, which is the variant that ships
+# mod_auth_openidc; the -alpine variant has no OIDC, so it is not used.
+# The owner completes the web installer on first visit, which creates the
+# administrator account and the SQLite database inside the data volume;
+# no credential is generated or declared.
+name: freshrss
+version: 1.30.4
+title: FreshRSS
+blurb: The feeds you chose, on your own schedule.
+description: FreshRSS collects RSS and Atom feeds into one readable river
+  with folders, favourites, and a search that works on the articles it has
+  already fetched. It keeps its SQLite database on application storage,
+  refreshes in the background, and needs no account with a feed service.
+category: feeds
+icon: mdi:rss
+services:
+- name: freshrss
+  image: docker.io/freshrss/freshrss:1.30.4
+  exposes: web
+  environment:
+    # Refresh feeds every twenty minutes; without CRON_MIN the image
+    # installs no cron job and only manual refreshes fetch articles.
+    CRON_MIN: "*/20"
+    # The Debian image serves Apache on 80 by default; routes proxy to it.
+    LISTEN: 0.0.0.0:80
+  # No image VOLUME. The data directory (SQLite database, user
+  # configuration, cached articles) and the extensions directory are
+  # written by Apache as www-data (uid/gid 33).
+  data:
+  - target: /var/www/FreshRSS/data
+    class: application
+    subpath: data
+    uid: 33
+    gid: 33
+  - target: /var/www/FreshRSS/extensions
+    class: application
+    subpath: extensions
+    uid: 33
+    gid: 33
+requirements:
+  memorymb: 512
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 1073741824
+  ports: [80]
+exposure:
+  package: freshrss
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Feed subscriptions and reading history leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- data
+sso:
+  class: optional
+  protocols: [oidc]
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in with Authentik once its OIDC client is configured; local accounts keep working.

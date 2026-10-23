@@ -2205,6 +2205,15 @@ HTTPS-only, registration stays open until the owner creates the first
 `sqlite` database export backs up `data/gitea/gitea.db` with `VACUUM INTO`
 instead of copying a live file. Gitea generates its signing keys into the
 data volume, so the manifest declares no secret and no supervisor.
+The FreshRSS package (S348) in `catalog/` is the feed reader: the plain
+Debian `freshrss/freshrss` tag because the alpine variant has no
+`mod_auth_openidc`, so the optional OIDC declaration holds. `CRON_MIN`
+installs the image's refresh job and `LISTEN` pins Apache to
+`0.0.0.0:80`; the owner completes the recommended web installer on first
+visit, which creates the administrator account and the SQLite database.
+Both writable directories (`data`, `extensions`) are declared on
+application storage as `www-data` (uid/gid 33), and only `data` is a
+backup path.
 The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine

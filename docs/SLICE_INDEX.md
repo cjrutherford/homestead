@@ -127,9 +127,13 @@ S347 `gitea` (`docs/slices/S347-gitea.md`) adds the private forge:
 environment-only configuration with the installer locked, `ROOT_URL` from
 the routed host, HTTPS-only clones, SQLite on the data volume with a
 consistent export, and private-by-default views.
+S348 `freshrss` (`docs/slices/S348-freshrss.md`) adds the feed reader: the
+Debian image so OIDC is available, scheduled background refresh, both
+writable directories on application storage as `www-data`, and an
+owner-completed web installer.
 
-Next scheduled: S348 `freshrss` — the Debian-based image so OIDC is
-available, with feeds and articles in SQLite.
+Next scheduled: S349 `linkding` — one container with SQLite and an
+owner-created account.
 
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
 catalog track and an Everything-app track, with dependencies, the critical
