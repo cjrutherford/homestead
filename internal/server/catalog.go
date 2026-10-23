@@ -32,6 +32,7 @@ import (
 func (s *Server) MountCatalog(st *store.Store, catalogDir string, secrets catalog.SecretStore) {
 	runner := operation.NewRunner(st)
 	s.mux.HandleFunc("GET /api/v1/catalog", handleCatalogList(s, st, catalogDir))
+	s.mux.HandleFunc("GET /api/v1/catalog/bundles", handleCatalogBundles(st, catalogDir))
 	s.mux.HandleFunc("GET /api/v1/catalog/{name}", handleCatalogGet(catalogDir))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/plan", handleCatalogPlan(s, st, catalogDir))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/install", handleCatalogInstall(s, st, catalogDir, runner, secrets))
@@ -266,6 +267,39 @@ func applianceNames(st *store.Store) []string {
 		out = append(out, string(n))
 	}
 	return out
+
+}
+
+// hostFactsFor is the bundle grading seam: tests stub the facts, the
+// daemon grades against live host state.
+var hostFactsFor = hostFacts
+
+// handleCatalogBundles grades the curated profiles against the current
+// host (S344): combined memory and per-class storage, plus the curated
+// members the catalog does not carry yet.
+func handleCatalogBundles(st *store.Store, catalogDir string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		entries, err := catalog.Load(catalogDir)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("catalog unavailable: %v", err), http.StatusInternalServerError)
+			return
+		}
+		facts, err := hostFactsFor(st)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		out := []catalog.BundleReport{}
+		for _, bundle := range catalog.Bundles {
+			report, err := catalog.CheckBundle(entries, bundle, facts)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			out = append(out, report)
+		}
+		writeJSON(w, out)
+	}
 }
 
 // hostFacts assembles evaluation facts from live host state: platform

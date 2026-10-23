@@ -110,12 +110,11 @@ catalog applications, foundation work, and wave ordering.
 Completed foundation: S341 Catalog integration contract
 (`docs/slices/S341-catalog-integration-contract.md`), S342 OIDC client
 actuation with supervised secret delivery
-(`docs/slices/S342-oidc-client-actuation.md`), and S343 GHCR update
-discovery (`docs/slices/S343-ghcr-update-discovery.md`).
+(`docs/slices/S342-oidc-client-actuation.md`), S343 GHCR update discovery
+(`docs/slices/S343-ghcr-update-discovery.md`), and S344 catalog bundles and
+capacity (`docs/slices/S344-catalog-bundles.md`).
 
-Next scheduled: S344 Catalog bundles and capacity
-(`docs/CATALOG_EXPANSION.md` section 9) — the last foundation item before
-the Wave 1 packages.
+Next scheduled: S345 `vaultwarden` — the first Wave 1 package.
 
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
 catalog track and an Everything-app track, with dependencies, the critical

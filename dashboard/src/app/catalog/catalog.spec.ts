@@ -63,6 +63,8 @@ describe('Catalog', () => {
     // The app page's Public address panel (S290) reads its own status; app-public.spec covers it.
     http.match('/api/v1/catalog/jellyfin/public');
     http.match('/api/v1/catalog/jellyfin/move');
+    // Bundle grading (S344) is advisory; bundles.spec-style tests flush it explicitly.
+    http.match('/api/v1/catalog/bundles');
     http.verify();
   });
 
@@ -75,6 +77,30 @@ describe('Catalog', () => {
     http.expectOne('/api/v1/catalog').flush(PACKAGES);
     fixture.detectChanges();
   }
+
+  it('grades the curated bundles against the appliance (S344)', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/catalog/bundles').flush([
+      {
+        Bundle: 'starter',
+        Title: 'Starter',
+        Blurb: 'Files, media and passwords on a modest appliance.',
+        Members: [{ Name: 'jellyfin', Available: true, MemoryMB: 2048 }],
+        Missing: ['vaultwarden'],
+        Complete: false,
+        TotalMemory: 2048,
+        HostMemory: 16384,
+        Storage: [{ Class: 'application', Needed: 1000, Free: 500, Known: true, OK: false }],
+        Passed: false,
+        Detail: 'bundle blocked: application storage needs 1000 bytes, host has 500',
+      },
+    ]);
+    fixture.detectChanges();
+    expect(text()).toContain('Starter');
+    expect(text()).toContain('bundle blocked');
+    expect(text()).toContain('Not in the catalog yet: vaultwarden');
+  });
 
   it('lists curated packages', () => {
     load();

@@ -123,6 +123,46 @@ type OperationStarted struct {
 	ID int64 `json:"id"`
 }
 
+// BundleMember is one curated bundle member's availability (S344).
+type BundleMember struct {
+	Name      string `json:"Name"`
+	Available bool   `json:"Available"`
+	MemoryMB  uint64 `json:"MemoryMB"`
+}
+
+// BundleStorage is one storage class's combined demand (S344).
+type BundleStorage struct {
+	Class  string `json:"Class"`
+	Needed uint64 `json:"Needed"`
+	Free   uint64 `json:"Free"`
+	Known  bool   `json:"Known"`
+	OK     bool   `json:"OK"`
+}
+
+// BundleReport grades one curated bundle against the appliance (S344).
+type BundleReport struct {
+	Bundle      string          `json:"Bundle"`
+	Title       string          `json:"Title"`
+	Blurb       string          `json:"Blurb"`
+	Members     []BundleMember  `json:"Members"`
+	Missing     []string        `json:"Missing"`
+	Complete    bool            `json:"Complete"`
+	TotalMemory uint64          `json:"TotalMemory"`
+	HostMemory  uint64          `json:"HostMemory"`
+	Storage     []BundleStorage `json:"Storage"`
+	Passed      bool            `json:"Passed"`
+	Detail      string          `json:"Detail"`
+}
+
+// CatalogBundles grades the curated profiles against the appliance.
+func (c *Client) CatalogBundles(ctx context.Context) ([]BundleReport, error) {
+	var out []BundleReport
+	if err := c.get(ctx, "/api/v1/catalog/bundles", &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CatalogPackages lists curated packages.
 func (c *Client) CatalogPackages(ctx context.Context) ([]CatalogPackage, error) {
 	var out []CatalogPackage

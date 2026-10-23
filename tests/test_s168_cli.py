@@ -22,7 +22,7 @@ def read(rel: str) -> str:
 class TestCLIInstallContract(unittest.TestCase):
     def test_cli_shapes(self):
         src = read("cmd/homesteadctl/apps.go")
-        for symbol in ("homesteadctl apps <list|mine|names|plan|install|reach|configure|secrets|sign-in|public|move|setup|uninstall>",
+        for symbol in ("homesteadctl apps <list|bundles|mine|names|plan|install|reach|configure|secrets|sign-in|public|move|setup|uninstall>",
                        "apps plan <package>", "apps install",
                        "apps configure", "apps uninstall",
                        "--follow", "--set",
@@ -36,7 +36,8 @@ class TestCLIInstallContract(unittest.TestCase):
                        "func (c *Client) CatalogPackage(",
                        "func (c *Client) PlanInstall(",
                        "func (c *Client) InstallPackage(",
-                       "func (c *Client) ConfigurePackage("):
+                       "func (c *Client) ConfigurePackage(",
+                       "func (c *Client) CatalogBundles("):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, src)
 

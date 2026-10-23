@@ -2153,7 +2153,16 @@ declared requirements, exposure, and backup paths. Services without
 endpoints serve nothing routable by construction. The base suite (S172), also in
 `internal/catalog`, resolves the curated bundle in install order with joint
 grading: per-package verdicts plus combined memory footprints and cross-member
-port collisions naming both owners. The Authentik package (S201) in
+port collisions naming both owners. Catalog bundles (S344) generalize that
+into four curated profiles — starter, family, media, full — where membership
+is curated intent, not a promise that every package ships today: a member the
+catalog does not yet carry is reported as missing instead of silently dropped.
+`CheckBundle` grades combined memory and summed per-class storage against one
+host and fails on missing host data rather than passing on it; per-package
+verdicts, ports and exposure stay install-time concerns, since container
+ports live on separate networks and routes never publish them. `GET /api/v1/catalog/bundles` serves the
+graded profiles, `homesteadctl apps bundles` prints them, and the dashboard
+catalog page lists them above the package list. The Authentik package (S201) in
 `catalog/` is the fourth curated application following the official
 compose pins (server, worker, postgres) with internal services
 carrying no endpoint: the first manifest declaring a Postgres

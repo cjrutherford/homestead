@@ -18,7 +18,7 @@ import (
 // endpoints.
 func runApps(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|mine|names|plan|install|reach|configure|secrets|sign-in|public|move|setup|uninstall>")
+		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|bundles|mine|names|plan|install|reach|configure|secrets|sign-in|public|move|setup|uninstall>")
 		return exitUsage
 	}
 	switch args[0] {
@@ -36,6 +36,8 @@ func runApps(ctx context.Context, client *apiclient.Client, args []string, stdou
 		return runAppsReach(ctx, client, args[1:], stdout, stderr)
 	case "configure":
 		return runAppsConfigure(ctx, client, args[1:], stdout, stderr)
+	case "bundles":
+		return runAppsBundles(ctx, client, stdout, stderr)
 	case "secrets":
 		return runAppsSecrets(ctx, client, args[1:], stdout, stderr)
 	case "sign-in":
@@ -556,6 +558,46 @@ func runAppsConfigure(ctx context.Context, client *apiclient.Client, args []stri
 	}
 	fmt.Fprintf(stdout, "operation: %d\n", id)
 	return exitOK
+}
+
+// runAppsBundles prints the curated profiles with their combined memory
+// and storage verdicts (S344). Members the catalog does not carry yet are
+// named, so an incomplete profile never reads as installable today.
+func runAppsBundles(ctx context.Context, client *apiclient.Client, stdout, stderr io.Writer) int {
+	bundles, err := client.CatalogBundles(ctx)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	for _, bundle := range bundles {
+		fmt.Fprintf(stdout, "%s: %s\n", bundle.Title, bundle.Blurb)
+		fmt.Fprintf(stdout, "  %s\n", bundle.Detail)
+		for _, storageRow := range bundle.Storage {
+			state := fmt.Sprintf("%s of %s free", humanBytes(storageRow.Needed), humanBytes(storageRow.Free))
+			if !storageRow.Known {
+				state = fmt.Sprintf("%s needed; no assignment for this class", humanBytes(storageRow.Needed))
+			}
+			fmt.Fprintf(stdout, "  storage %s: %s\n", storageRow.Class, state)
+		}
+		if len(bundle.Missing) > 0 {
+			fmt.Fprintf(stdout, "  not in the catalog yet: %s\n", strings.Join(bundle.Missing, ", "))
+		}
+	}
+	return exitOK
+}
+
+// humanBytes renders a byte count in decimal units: owners read
+// capacities, not integers.
+func humanBytes(bytes uint64) string {
+	const unit = 1000
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := uint64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "kMGTPE"[exp])
 }
 
 // runAppsSecrets lists a package's secret-backed variables, or registers

@@ -1405,12 +1405,13 @@ slice is scheduled yet.
   add-ons (blocked on Nextcloud app management, not on another package).
 - qBittorrent: deferred until a supported VPN/network-mode design exists;
   the current schema cannot express `network_mode: service:vpn`.
-- Foundation items the planned apps need are **scheduled work, not
-  deferrals**: MariaDB/MySQL backup export, a written community-image
-  policy, and catalog bundles with capacity checks. Their order is in `docs/CATALOG_EXPANSION.md` section 9. OIDC
-  client actuation with the supervised secret-entrypoint wrapper landed
-  in S342. This ledger keeps only the work that is genuinely
-  unscheduled.
+- Foundation items the planned apps still need are **scheduled work, not
+  deferrals**: MariaDB/MySQL backup export (S352) and the written
+  community-image policy (S360). OIDC actuation with the supervised
+  secret-entrypoint wrapper (S342), GHCR update discovery (S343) and
+  catalog bundles (S344) have landed. The remaining order is in
+  `docs/CATALOG_EXPANSION.md` section 9; this ledger keeps only the work
+  that is genuinely unscheduled.
 - SSO actuation surfaces: S342 lands the mechanism (catalog OIDC
   declaration, Authentik client actuation, catalog-secret storage,
   supervised secret export) but no owner-facing entry point. Provider

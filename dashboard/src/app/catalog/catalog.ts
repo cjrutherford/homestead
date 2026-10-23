@@ -5,6 +5,7 @@ import { forkJoin } from 'rxjs';
 import {
   ApiService,
   AppSecret,
+  BundleReport,
   CatalogManifest,
   PackageSummary,
   RevealedSecret,
@@ -50,6 +51,7 @@ export class Catalog implements OnInit {
   }
 
   protected readonly packages = signal<PackageSummary[]>([]);
+  protected readonly bundles = signal<BundleReport[]>([]);
   protected readonly selected = signal<CatalogManifest | null>(null);
   /** Counts finished moves, so the Public address section reads the new route. */
   protected readonly moves = signal(0);
@@ -107,6 +109,12 @@ export class Catalog implements OnInit {
             : failure.message,
         );
       },
+    });
+    // Bundle capacity is advisory: a grading failure must not block the
+    // catalog list, so it stays silent here and the section stays empty.
+    this.api.catalogBundles().subscribe({
+      next: (bundles) => this.bundles.set(bundles),
+      error: () => this.bundles.set([]),
     });
   }
 

@@ -118,6 +118,37 @@ export interface PlanResult {
   errors?: FieldError[];
 }
 
+/** One catalog bundle member and whether the catalog carries it yet. */
+export interface BundleMember {
+  Name: string;
+  Available: boolean;
+  MemoryMB: number;
+}
+
+/** One storage class's combined demand across a bundle's members. */
+export interface BundleStorage {
+  Class: string;
+  Needed: number;
+  Free: number;
+  Known: boolean;
+  OK: boolean;
+}
+
+/** GET /api/v1/catalog/bundles — one profile graded against this host. */
+export interface BundleReport {
+  Bundle: string;
+  Title: string;
+  Blurb: string;
+  Members: BundleMember[];
+  Missing: string[];
+  Complete: boolean;
+  TotalMemory: number;
+  HostMemory: number;
+  Storage: BundleStorage[];
+  Passed: boolean;
+  Detail: string;
+}
+
 /** GET /api/v1/catalog — browsable package summaries. */
 export interface PackageSummary {
   name: string;
@@ -1507,6 +1538,14 @@ export class ApiService {
 
   catalogPackages(): Observable<PackageSummary[]> {
     return this.http.get<PackageSummary[]>('/api/v1/catalog');
+  }
+
+  /**
+   * Curated catalog profiles with combined memory and storage verdicts
+   * (S344). Graded by the daemon against live host facts.
+   */
+  catalogBundles(): Observable<BundleReport[]> {
+    return this.http.get<BundleReport[]>('/api/v1/catalog/bundles');
   }
 
   catalogPackage(name: string): Observable<CatalogManifest> {
