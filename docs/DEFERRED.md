@@ -1386,3 +1386,27 @@ Craft apps under one host, by path (ADR-045).
   `/people`; they are records and were not rewritten.
 - The sidebar still shows on the root-level owner pages (setup, claim, login,
   sign-in, account); only `/` is chrome-free.
+## Catalog expansion (2026-10-23)
+
+The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md`; no app
+slice is scheduled yet.
+
+- Puter/Everything apps: deferred. The monorepo's apps are Vite SPAs that
+  load the Puter cloud SDK (`https://js.puter.com/v2/`) for identity and
+  storage, have no per-app Docker packaging, and overlap the existing craft
+  suite. Revisit only with an ADR for a second static-app source, a fork or
+  adapter that removes the Puter cloud dependency, or a self-hosted Puter
+  platform decision.
+- Not planned for v1: mail servers (deliverability and port-25/abuse
+  burden), Matrix/chat servers (federation and identity duplication),
+  Home Assistant (needs host networking or device passthrough), object
+  storage, CMS/blog platforms, a second photo gallery, and Nextcloud office
+  add-ons (blocked on Nextcloud app management, not on another package).
+- qBittorrent: deferred until a supported VPN/network-mode design exists;
+  the current schema cannot express `network_mode: service:vpn`.
+- Foundation items the planned apps need are **scheduled work, not
+  deferrals**: OIDC client actuation with the supervised secret-entrypoint
+  wrapper, GHCR update discovery, MariaDB/MySQL backup export, a written
+  community-image policy, and catalog bundles with capacity checks. Their
+  order is in `docs/CATALOG_EXPANSION.md` section 9. This ledger keeps only
+  the work that is genuinely unscheduled.

@@ -104,3 +104,5 @@ Then S338 person sessions (`docs/slices/S338-person-sessions.md`): a person sign
 Then S339 the apps page (`docs/slices/S339-apps-page.md`): `/` is the apps page for the owner and every person, administration moves under `/admin` with redirects from the old paths, and a person never reaches or calls the owner screens (ADR-050 §4).
 
 Then S340 app icons (`docs/slices/S340-app-icons.md`): the manifest `mdi:` icons render on the apps page and the catalog from a bundled, offline map; Jellyfin's icon is no longer a competitor's logo.
+Planning (not scheduled): `docs/CATALOG_EXPANSION.md` evaluates additional
+catalog applications, foundation work, and wave ordering.
