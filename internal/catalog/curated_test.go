@@ -30,7 +30,7 @@ func repoCatalog(t *testing.T) Catalog {
 // curatedPackages is the one place the expected shipped catalog is listed
 // (sorted, as Names returns it). Adding a package to catalog/ edits this
 // list and nothing else here: each craft slice appends its app.
-var curatedPackages = []string{"authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "freshrss", "gitea", "gridcraft", "immich", "jellyfin", "lightcraft", "linkding", "mealie", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "uptime-kuma", "vaultwarden", "vectorcraft", "wordcraft"}
+var curatedPackages = []string{"audiobookshelf", "authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "freshrss", "gitea", "gridcraft", "immich", "jellyfin", "lightcraft", "linkding", "mealie", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "uptime-kuma", "vaultwarden", "vectorcraft", "wordcraft"}
 
 // assertCuratedNames fails when the shipped catalog and curatedPackages
 // differ, in either direction.
@@ -806,5 +806,96 @@ func TestCuratedUptimeKuma(t *testing.T) {
 	}
 	if small.Passed {
 		t.Fatal("a 512 MB host must not pass the 1 GB memory floor")
+	}
+}
+
+// TestCuratedAudiobookshelf pins the first Wave 2 package (S353): the
+// pinned GHCR image, SQLite on /config with a consistent export, item
+// metadata on application storage, transcode streams on bulk, owner media
+// libraries left to the install, optional OIDC configured in the app, and
+// the shared-library declaration.
+func TestCuratedAudiobookshelf(t *testing.T) {
+	catalog := repoCatalog(t)
+	manifest, err := catalog.Get("audiobookshelf")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if manifest.Version != "2.37.1" {
+		t.Fatalf("version = %q", manifest.Version)
+	}
+	if len(manifest.Services) != 1 ||
+		manifest.Services[0].Image != "ghcr.io/advplyr/audiobookshelf:2.37.1" {
+		t.Fatalf("services = %+v", manifest.Services)
+	}
+	service := manifest.Services[0]
+	if len(service.Environment) != 0 {
+		t.Fatalf("environment = %v, want the image's own CONFIG_PATH/METADATA_PATH/PORT defaults", service.Environment)
+	}
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 0 {
+		t.Fatalf("audiobookshelf generates its JWT secret into the database; secrets = %+v", manifest.Secrets)
+	}
+	wantData := []struct {
+		target  string
+		class   storage.Class
+		subpath string
+	}{
+		{"/config", storage.ClassApplication, "config"},
+		{"/metadata", storage.ClassApplication, "metadata"},
+		{"/metadata/streams", storage.ClassBulk, "streams"},
+	}
+	if len(service.Data) != len(wantData) {
+		t.Fatalf("data = %+v", service.Data)
+	}
+	for i, want := range wantData {
+		data := service.Data[i]
+		if data.Target != want.target || data.Class != want.class || data.Subpath != want.subpath {
+			t.Fatalf("data[%d] = %+v, want %+v", i, data, want)
+		}
+		if data.Ephemeral || data.Database {
+			t.Fatalf("data[%d] = %+v, want persistent file copies", i, data)
+		}
+	}
+	if len(manifest.BackupPaths) != 2 ||
+		manifest.BackupPaths[0] != "config" || manifest.BackupPaths[1] != "metadata" {
+		t.Fatalf("backuppaths = %v, want the database and item metadata", manifest.BackupPaths)
+	}
+	if manifest.Database == nil || manifest.Database.Kind != DatabaseSQLite ||
+		manifest.Database.Service != "audiobookshelf" ||
+		manifest.Database.Path != "config/absdatabase.sqlite" {
+		t.Fatalf("database = %+v, want the SQLite export", manifest.Database)
+	}
+	if len(manifest.Requirements.Ports) != 1 || manifest.Requirements.Ports[0] != 80 {
+		t.Fatalf("ports = %v", manifest.Requirements.Ports)
+	}
+	endpoint, ok := manifest.Exposure.Find("web")
+	if !ok || string(endpoint.Recommended) != "local" || !endpoint.AllowWider || len(endpoint.Warnings) == 0 {
+		t.Fatalf("endpoint = %+v", endpoint)
+	}
+	if manifest.SSO.Class != SSOOptional || len(manifest.SSO.Protocols) != 1 ||
+		string(manifest.SSO.Protocols[0]) != "oidc" || manifest.SSO.OIDC != nil {
+		t.Fatalf("sso = %+v, want optional in-app OIDC with no actuated client", manifest.SSO)
+	}
+	if len(manifest.Integrations) != 2 ||
+		manifest.Integrations[0].Kind != IntegrationIdentity ||
+		manifest.Integrations[0].Target != "authentik" ||
+		manifest.Integrations[1].Kind != IntegrationLibrary ||
+		manifest.Integrations[1].Target != "nextcloud" {
+		t.Fatalf("integrations = %+v", manifest.Integrations)
+	}
+	report, err := Evaluate(manifest, HostFacts{
+		Arch: "amd64", MemoryMB: 1024, CPUCount: 2,
+		FreeSpace: map[storage.Class]uint64{
+			storage.ClassApplication: 4 << 30,
+			storage.ClassBulk:        20 << 30,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !report.Passed {
+		t.Fatalf("report = %+v", report)
 	}
 }

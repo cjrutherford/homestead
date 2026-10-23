@@ -55,8 +55,12 @@ var knownImageVolumes = map[string]imageVolumes{
 	// S351: the release stage declares no VOLUME; /app/data is a
 	// Homestead declaration.
 	"docker.io/louislam/uptime-kuma:2.5.7": {},
-	"ghcr.io/goauthentik/server:2026.8.3":  {},
-	"docker.io/library/postgres:16-alpine": {Volumes: []string{"/var/lib/postgresql/data"}},
+	// S353: verified from the GHCR image config for 2.37.1 on 2026-10-23:
+	// no Volumes, root user, 80/tcp; /config and /metadata are Homestead
+	// declarations and the media libraries are owner volumes.
+	"ghcr.io/advplyr/audiobookshelf:2.37.1": {},
+	"ghcr.io/goauthentik/server:2026.8.3":   {},
+	"docker.io/library/postgres:16-alpine":  {Volumes: []string{"/var/lib/postgresql/data"}},
 	// S345: Vaultwarden declares /data in its Dockerfile. Not yet inspected
 	// on the KVM appliance: re-verify with `docker image inspect` when the
 	// tag is next pulled there, and correct this row if the image differs.

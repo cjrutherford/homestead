@@ -1,0 +1,77 @@
+# Audiobookshelf audiobook and podcast server (S353): the first Wave 2
+# package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# One GHCR container. OpenID Connect is configured in the app's server
+# settings (callback /auth/openid/callback) because the image reads no OIDC
+# environment variables; the SSO posture is declared and the credentials
+# stay an owner step. The JWT signing secret is generated into the SQLite
+# database on first start, which the database export backs up, so no secret
+# is declared and the image entrypoint runs unchanged.
+name: audiobookshelf
+version: 2.37.1
+title: Audiobookshelf
+blurb: Your audiobooks and podcasts, on every device.
+description: Audiobookshelf streams your audiobook and podcast libraries to
+  phones and browsers, keeping every listener's place in sync. It scans the
+  folders you already keep, fetches covers and descriptions, and stores its
+  catalog in SQLite on application storage. Media folders stay owner
+  volumes, so a large library never rides in a backup.
+category: audio
+icon: mdi:headphones
+services:
+- name: audiobookshelf
+  image: ghcr.io/advplyr/audiobookshelf:2.37.1
+  exposes: web
+  # The release image declares no VOLUME (verified from the GHCR image
+  # config for 2.37.1); /config and /metadata are Homestead declarations.
+  # /metadata/streams is the playback transcode scratch directory, so it
+  # goes on bulk storage instead of the backed-up application volume.
+  # Media libraries (/audiobooks, /podcasts) are owner volumes: a shared
+  # bulk directory added at install, never a declaration.
+  data:
+  - target: /config
+    class: application
+    subpath: config
+  - target: /metadata
+    class: application
+    subpath: metadata
+  - target: /metadata/streams
+    class: bulk
+    subpath: streams
+requirements:
+  memorymb: 512
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 2147483648
+  - class: bulk
+    minbytes: 10737418240
+  # Audiobookshelf listens on 80; routes proxy to it and no host port is
+  # published by default.
+  ports: [80]
+exposure:
+  package: audiobookshelf
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Audiobooks, podcasts, and listening progress leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- config
+- metadata
+database:
+  service: audiobookshelf
+  kind: sqlite
+  path: config/absdatabase.sqlite
+sso:
+  class: optional
+  protocols: [oidc]
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in with Authentik once its OIDC client is configured in the app; local accounts keep working.
+- kind: library
+  target: nextcloud
+  note: Mount the same bulk audiobook directory into Audiobookshelf and Nextcloud external storage.

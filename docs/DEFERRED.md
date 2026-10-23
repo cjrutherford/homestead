@@ -1450,6 +1450,18 @@ slice is scheduled yet.
   monitors; the owner adds checks in the app. Pre-seeding one monitor per
   installed app and route (the "all local apps" intent) needs Homestead to
   create monitors through the app's API, which is not scheduled.
+- Audiobookshelf's OIDC setup: S353 declares optional OIDC, but the
+  issuer, client ID, and secret live in the app's SQLite server settings
+  and the image reads no OIDC environment variables. Until the SSO
+  actuation surface above lands, the owner configures OpenID Connect in
+  the app with the callback at `/auth/openid/callback`; local accounts
+  keep working.
+- Audiobookshelf metadata backup scope: `/metadata` is backed up whole,
+  including covers, scan logs, and any app-created backups under
+  `/metadata/backups`. Per-path exclusions inside a catalog backup source
+  are not modeled, so an owner who enables large in-app backups should
+  move the app's backup path or accept the extra size. The owner media
+  volumes (`/audiobooks`, `/podcasts`) are never backup sources.
 - Gitea's SSH surface: S347 installs HTTPS-only (`DISABLE_SSH`), publishes
   no SSH port and deploys no keys. Enabling `ssh://` clones — an SSH port
   through the host or an overlay tunnel, authorized keys, and clone URLs

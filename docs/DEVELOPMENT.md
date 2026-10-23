@@ -2247,6 +2247,18 @@ container shell, never argv. `PasswordSecret` now resolves for every
 server engine, so scheduled backups work; verification and rotation stay
 Postgres-only and both refuse clearly for the new engines rather than
 writing a secret the database has not accepted.
+The Audiobookshelf package (S353) in `catalog/` opens Wave 2 with the
+pinned GHCR audiobook and podcast server. The image's own defaults
+(`CONFIG_PATH=/config`, `METADATA_PATH=/metadata`, port 80) need no
+environment override; `/config` (SQLite) and `/metadata` (covers, item
+metadata, logs) are application paths, and `/metadata/streams` is the
+transcode scratch directory on bulk storage. A `sqlite` export names
+`config/absdatabase.sqlite` for consistent snapshots. The audiobook and
+podcast libraries are owner volumes with a host path under the bulk
+mount, never declarations, so a large library is shared with Nextcloud
+external storage without entering every backup. OIDC stays an in-app
+setting (no `oidc:` client), and the JWT signing secret is generated into
+the backed-up database.
 The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine

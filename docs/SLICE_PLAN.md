@@ -65,7 +65,7 @@ needs the S341 library declaration to name its shared ingest path.
 
 | ID | Package | Depends on | Notes |
 |----|---------|-----------|-------|
-| S353 | `audiobookshelf` | S343 | Bulk audiobook library shared by volume. |
+| S353 | `audiobookshelf` | S343 | Bulk audiobook library shared by volume. **Done.** |
 | S354 | `navidrome` | S276 | Local-auth exception; same music mount as Jellyfin. |
 | S355 | `komga` | S341 | JVM heap cap in the manifest so it cannot crowd the appliance. |
 | S356 | `calibre-web-automated` | S341 | Community image; OIDC re-verified at slice time or documented as local-only. |

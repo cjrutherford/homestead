@@ -148,9 +148,13 @@ BookStack needs: `mariadb` and `mysql` database kinds, dumps through
 `mariadb-dump`/`mysqldump` with one consistent snapshot, password
 secrets resolved for scheduled backups, and documented restore steps.
 
-Next scheduled: S353 `audiobookshelf` (`docs/SLICE_PLAN.md`) opens Wave 2
-with the shared audiobook library on bulk storage, updating the image
-from the GHCR source S343 added.
+S353 `audiobookshelf` (`docs/slices/S353-audiobookshelf.md`) opens Wave 2
+with the pinned GHCR image, SQLite on application storage with a
+consistent export, owner media volumes for the shared library, and
+optional in-app OIDC.
+
+Next scheduled: S354 `navidrome` (`docs/SLICE_PLAN.md`) adds the
+local-auth music server on the same bulk mount as Jellyfin.
 
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
 catalog track and an Everything-app track, with dependencies, the critical
