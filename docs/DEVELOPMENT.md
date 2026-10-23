@@ -2195,7 +2195,17 @@ manifest therefore names `/init` as the entrypoint and adds no command.
 All four image volumes (data, media, consume, export) are declared, `data`
 and `media` are backup paths, the consumer inbox sits on bulk storage for
 Nextcloud external storage, OCR defaults to `eng` as a configure value, and
-`PAPERLESS_URL` follows the routed HTTPS host. The backup contract (S180),
+`PAPERLESS_URL` follows the routed HTTPS host. The Gitea package (S347) in
+`catalog/` is the private forge: one container whose `GITEA__section__KEY`
+variables render `app.ini` at every start with the installer locked, so no
+file inside the container is edited. `ROOT_URL` follows the routed HTTPS
+host with a trailing slash, `DISABLE_SSH` and `START_SSH_SERVER` keep v1
+HTTPS-only, registration stays open until the owner creates the first
+(administrator) account, sign-in is required to view repositories, and a
+`sqlite` database export backs up `data/gitea/gitea.db` with `VACUUM INTO`
+instead of copying a live file. Gitea generates its signing keys into the
+data volume, so the manifest declares no secret and no supervisor.
+The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine
 fields refused, staged commands bounded and service-linked, and

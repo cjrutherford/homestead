@@ -123,9 +123,13 @@ S346 `paperless-ngx` (`docs/slices/S346-paperless-ngx.md`) adds the
 document archive: Postgres metadata, a Valkey queue, all four image volumes
 declared, supervised secret export, routed OCR configuration, and the
 first real `library` integration (Nextcloud mounting the consume folder).
+S347 `gitea` (`docs/slices/S347-gitea.md`) adds the private forge:
+environment-only configuration with the installer locked, `ROOT_URL` from
+the routed host, HTTPS-only clones, SQLite on the data volume with a
+consistent export, and private-by-default views.
 
-Next scheduled: S347 `gitea` — `ROOT_URL` from the route host, HTTPS-only,
-no SSH in v1.
+Next scheduled: S348 `freshrss` — the Debian-based image so OIDC is
+available, with feeds and articles in SQLite.
 
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
 catalog track and an Everything-app track, with dependencies, the critical

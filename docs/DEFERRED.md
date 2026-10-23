@@ -1432,6 +1432,14 @@ slice is scheduled yet.
   `manage.py changepassword`. A general "this secret must be supplied by
   the owner" declaration, or an install-time prompt that requires one,
   is not in the secret schema.
+- Gitea's SSH surface: S347 installs HTTPS-only (`DISABLE_SSH`), publishes
+  no SSH port and deploys no keys. Enabling `ssh://` clones — an SSH port
+  through the host or an overlay tunnel, authorized keys, and clone URLs
+  that match — is an explicit owner decision not scheduled yet.
+- Closing Gitea registration after the first account: S347 leaves
+  self-registration open so the first user becomes the administrator, and
+  the owner turns it off in the app's admin settings. Homestead cannot
+  observe "the first account exists" and flip the setting today.
 - SAML and LDAP client actuation, provider-side secret rotation, and
   authorisation-group mapping stay out of scope until a package needs
   them; the S342 mechanism is OIDC-only.

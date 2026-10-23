@@ -1,0 +1,84 @@
+# Gitea private Git forge (S347): the third Wave 1 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# One container on application storage, configured entirely through
+# environment-to-ini variables so the installer page never runs and no
+# file inside the container is edited. Gitea generates its signing keys
+# and internal token into /data/gitea/conf/app.ini on first start; they
+# live on the backed-up data volume, so no secret is declared.
+name: gitea
+version: 28.2.0
+title: Gitea
+blurb: A private Git forge for your own projects.
+description: Gitea hosts Git repositories with issues, pull requests,
+  packages, and a small web UI. It runs as one container with SQLite on
+  application storage, so a household forge starts with no database
+  server to maintain. Sign in, create the first account, and push over
+  HTTPS through the routed host.
+category: development
+icon: mdi:git
+services:
+- name: gitea
+  image: docker.io/gitea/gitea:28.2.0
+  exposes: web
+  environment:
+    # The route host, never a hard-coded name; omitted when no route is
+    # assigned, which leaves Gitea's local default in place.
+    GITEA__server__ROOT_URL: "https://{{route_host}}/"
+    # TLS terminates at the proxy, so Gitea speaks plain HTTP inside the
+    # stack and builds absolute URLs from the HTTPS root above.
+    GITEA__server__PROTOCOL: http
+    GITEA__server__HTTP_PORT: "3000"
+    # HTTPS-only in v1: the built-in SSH server and ssh:// clone URLs are
+    # off. Enabling SSH later is an explicit owner decision.
+    GITEA__server__DISABLE_SSH: "true"
+    GITEA__server__START_SSH_SERVER: "false"
+    # Configuration comes from these variables, not from the web
+    # installer; the first account registered becomes the administrator.
+    GITEA__security__INSTALL_LOCK: "true"
+    GITEA__database__DB_TYPE: sqlite3
+    GITEA__database__PATH: /data/gitea/gitea.db
+    GITEA__service__DISABLE_REGISTRATION: "false"
+    # Private forge: repositories and users are not readable anonymously.
+    GITEA__service__REQUIRE_SIGNIN_VIEW: "true"
+    GITEA__repository__ROOT: /data/git/repositories
+    GITEA__server__LFS_START_SERVER: "true"
+  # Image VOLUME: /data (SQLite database, repositories, LFS objects,
+  # attachments, generated app.ini). The image starts as root and drops
+  # to the git user (uid/gid 1000) for its s6 services.
+  data:
+  - target: /data
+    class: application
+    subpath: data
+    uid: 1000
+    gid: 1000
+requirements:
+  memorymb: 512
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 5368709120
+  # Gitea listens on 3000; routes proxy to it and no host port is
+  # published by default.
+  ports: [3000]
+exposure:
+  package: gitea
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Repositories and issues leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- data
+database:
+  service: gitea
+  kind: sqlite
+  path: data/gitea/gitea.db
+sso:
+  class: optional
+  protocols: [oidc]
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in with Authentik once its OIDC source is configured; local accounts keep working.

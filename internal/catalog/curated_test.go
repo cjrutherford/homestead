@@ -30,7 +30,7 @@ func repoCatalog(t *testing.T) Catalog {
 // curatedPackages is the one place the expected shipped catalog is listed
 // (sorted, as Names returns it). Adding a package to catalog/ edits this
 // list and nothing else here: each craft slice appends its app.
-var curatedPackages = []string{"authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "gridcraft", "immich", "jellyfin", "lightcraft", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "vaultwarden", "vectorcraft", "wordcraft"}
+var curatedPackages = []string{"authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "gitea", "gridcraft", "immich", "jellyfin", "lightcraft", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "vaultwarden", "vectorcraft", "wordcraft"}
 
 // assertCuratedNames fails when the shipped catalog and curatedPackages
 // differ, in either direction.
@@ -419,6 +419,80 @@ func TestCuratedPaperless(t *testing.T) {
 			storage.ClassApplication: 4 << 30,
 			storage.ClassBulk:        20 << 30,
 		},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !report.Passed {
+		t.Fatalf("report = %+v", report)
+	}
+}
+
+// TestCuratedGitea pins the single-container forge (S347): SQLite on the
+// data volume, environment-only configuration with the installer locked,
+// the routed HTTPS root, and HTTPS-only clones with no SSH surface.
+func TestCuratedGitea(t *testing.T) {
+	catalog := repoCatalog(t)
+	manifest, err := catalog.Get("gitea")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if manifest.Version != "28.2.0" {
+		t.Fatalf("version = %q", manifest.Version)
+	}
+	if len(manifest.Services) != 1 || manifest.Services[0].Image != "docker.io/gitea/gitea:28.2.0" {
+		t.Fatalf("services = %+v", manifest.Services)
+	}
+	service := manifest.Services[0]
+	for key, want := range map[string]string{
+		"GITEA__server__PROTOCOL":             "http",
+		"GITEA__server__DISABLE_SSH":          "true",
+		"GITEA__server__START_SSH_SERVER":     "false",
+		"GITEA__security__INSTALL_LOCK":       "true",
+		"GITEA__service__REQUIRE_SIGNIN_VIEW": "true",
+		"GITEA__database__DB_TYPE":            "sqlite3",
+		"GITEA__database__PATH":               "/data/gitea/gitea.db",
+	} {
+		if got := service.Environment[key]; got != want {
+			t.Fatalf("%s = %q, want %q", key, got, want)
+		}
+	}
+	if root := service.Environment["GITEA__server__ROOT_URL"]; !strings.HasPrefix(root, "https://") ||
+		!strings.Contains(root, RouteHostToken) || !strings.HasSuffix(root, "/") {
+		t.Fatalf("ROOT_URL = %q, want the routed HTTPS host with a trailing slash", root)
+	}
+	if service.Environment["GITEA__service__DISABLE_REGISTRATION"] != "false" {
+		t.Fatal("registration must stay open until the owner creates the first account")
+	}
+	if len(service.Data) != 1 || service.Data[0].Target != "/data" ||
+		service.Data[0].Class != storage.ClassApplication || service.Data[0].Subpath != "data" ||
+		service.Data[0].UID == nil || *service.Data[0].UID != 1000 {
+		t.Fatalf("data = %+v", service.Data)
+	}
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 0 {
+		t.Fatalf("gitea generates its keys into the data volume; secrets = %+v", manifest.Secrets)
+	}
+	if manifest.Database == nil || manifest.Database.Kind != DatabaseSQLite ||
+		manifest.Database.Path != "data/gitea/gitea.db" || manifest.Database.Service != "gitea" {
+		t.Fatalf("database = %+v, want the SQLite export", manifest.Database)
+	}
+	if len(manifest.BackupPaths) != 1 || manifest.BackupPaths[0] != "data" {
+		t.Fatalf("backuppaths = %v", manifest.BackupPaths)
+	}
+	endpoint, ok := manifest.Exposure.Find("web")
+	if !ok || string(endpoint.Recommended) != "local" || !endpoint.AllowWider || len(endpoint.Warnings) == 0 {
+		t.Fatalf("endpoint = %+v", endpoint)
+	}
+	if len(manifest.Integrations) != 1 || manifest.Integrations[0].Kind != IntegrationIdentity ||
+		manifest.Integrations[0].Target != "authentik" {
+		t.Fatalf("integrations = %+v", manifest.Integrations)
+	}
+	report, err := Evaluate(manifest, HostFacts{
+		Arch: "amd64", MemoryMB: 2048, CPUCount: 2,
+		FreeSpace: map[storage.Class]uint64{storage.ClassApplication: 8 << 30},
 	})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
