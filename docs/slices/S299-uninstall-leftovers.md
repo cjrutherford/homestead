@@ -41,3 +41,12 @@ in a single uninstall operation.
 ## Required Documentation
 - `docs/DEFERRED.md` (close the S290 and S298 uninstall items),
   `docs/DEVELOPMENT.md`, `docs/PARITY.md` (no route change).
+
+## Live Check (VM 2, 2026-10-24)
+- `POST /api/v1/catalog/nextcloud/uninstall` with sign-in on: 409,
+  `X-Homestead-Refusal: sign-in`, the message names
+  `apps sign-in plan nextcloud --off`; Nextcloud kept running.
+- `POST /api/v1/catalog/authentik/uninstall` while immich, jellyfin and
+  nextcloud sign in through it: 409, `X-Homestead-Refusal: sign-in-dependents`.
+- Not exercised live: the public-names refusal and `leave_sign_in` (both
+  would change the appliance; covered by `internal/server/uninstallguard_test.go`).
