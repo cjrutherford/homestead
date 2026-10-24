@@ -5113,3 +5113,11 @@ committed). Results:
   homestead-tunnel.service` after `daemon-reload`, so an upgrade applies the
   unit to a running connector and leaves a stopped one alone.
 - Tests: `tests/test_s300_connector_token.py`.
+
+## S301: Claim first, then the tunnel
+
+- Documentation only (owner decision 2026-10-24): a tunnel is not set up
+  before claim. `docs/architecture/LOCAL_DASHBOARD.md` now says to claim on the
+  local network, or for a remote box through `ssh -L 8080:127.0.0.1:8080`
+  (the loopback listener serves the Claim page; checked on VM 2), and gives a
+  hand-laid tunnel, adopted after claim, as the last resort.

@@ -39,6 +39,8 @@ The owner reads a short-lived cryptographic claim token with `sudo homesteadctl 
 
 The owner opens the local setup endpoint and supplies the token.
 
+Claim is always local: on the network, or through an SSH forward of the daemon's loopback port. The tunnel (Stage 6) needs a signed-in owner, so it comes after claim; see `docs/architecture/LOCAL_DASHBOARD.md`, "Claim first, then the tunnel" (S301).
+
 Successful claim:
 1. validates token and origin constraints;
 2. creates the first administrator;

@@ -71,6 +71,38 @@ on loopback. The edge sets the client address; the daemon only believes it on
 the dashboard socket, so rate limits and audit entries record the real device.
 The recovery and craft routes are never served this way.
 
+## Claim first, then the tunnel
+
+Claim happens on the local network or on the appliance itself; the tunnel
+comes after. Tunnel setup needs a signed-in owner, so an unclaimed appliance
+cannot create one, and nothing unclaimed is put on the internet by Homestead
+(S301). Order of work: claim, sign in, then the setup wizard's Domain and
+Tunnel steps.
+
+If no browser can reach `homestead.local` or `homestead.lan` (a remote or
+headless box), forward the daemon's loopback port over SSH and claim there:
+
+```
+ssh -L 8080:127.0.0.1:8080 you@appliance
+# then open http://localhost:8080 on your machine and redeem
+# the token from `sudo homesteadctl claim token` on the appliance
+```
+
+The forward reaches the daemon's own loopback listener, so it needs no edge,
+certificate or DNS, and it exposes nothing.
+
+Last resort, when not even SSH reaches the box: lay out a tunnel by hand.
+Create a tunnel in Cloudflare, put its run token in
+`/etc/homestead/tunnel/token.env` as `TUNNEL_TOKEN=...` (mode 0600, root),
+write `/etc/homestead/tunnel/config.yml` with the tunnel ID and one ingress
+rule sending your public name to `http://127.0.0.1:8080`, add the proxied
+CNAME to `<tunnel-id>.cfargotunnel.com`, and
+`systemctl enable --now homestead-tunnel`. The unclaimed Claim page is then
+public, guarded only by the claim token, so claim at once. Afterwards bring
+the tunnel under Homestead with `homesteadctl tunnel setup --adopt <tunnel-id>`
+(S290, ADR-041 §2): adoption rewrites the connector config through the edge
+and replaces the hand-made rule.
+
 ## The CLI from another machine
 
 ```

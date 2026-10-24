@@ -752,11 +752,10 @@
 - Existing deployments keep old tokens in their journal until it rotates.
 - Closed (S294, recorded in S300): `tunnel setup` no longer accepts
   `--api-token` or `--account-id`; the retired flags refuse with usage help.
-- A tunnel cannot be set up before claim: `tunnel setup` needs a session and an
-  unclaimed appliance has none. On the S288 fresh install of VM 2 the
-  connector was laid out by hand (Cloudflare API plus the S246 files) so the
-  public URL reaches the Claim page. Decide whether to allow a claim-token
-  authorised tunnel setup, or document the manual route.
+- Closed by S301 (owner decision 2026-10-24): a tunnel is not set up before
+  claim. Claim on the local network or through an SSH forward of the
+  loopback port; a hand-laid tunnel, adopted after claim, is the documented
+  last resort (`docs/architecture/LOCAL_DASHBOARD.md`).
 - Closed in S290: a tunnel set up outside Homestead can be adopted with
   `tunnel setup --adopt ID` (ADR-041 §2).
 - Dashboard names must fall under the internal root's permitted suffixes
