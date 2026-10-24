@@ -5102,3 +5102,14 @@ committed). Results:
   acknowledgement, record and audit), `cmd/homesteadctl/apps_test.go`,
   `dashboard/src/app/catalog/uninstall-app.spec.ts`.
 
+
+## S300: Tunnel connector token off the command line
+
+- `homestead-tunnel.service` no longer passes `--token ${TUNNEL_TOKEN}`:
+  cloudflared reads `TUNNEL_TOKEN` from the environment, loaded from the
+  root-only `/etc/homestead/tunnel/token.env`. The command line is
+  world-readable in `/proc`; the environment is root-only.
+- `scripts/install-systemd.sh` runs `systemctl try-restart
+  homestead-tunnel.service` after `daemon-reload`, so an upgrade applies the
+  unit to a running connector and leaves a stopped one alone.
+- Tests: `tests/test_s300_connector_token.py`.

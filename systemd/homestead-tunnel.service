@@ -8,6 +8,10 @@
 #
 # Config: /etc/homestead/tunnel/config.yml (written by tunnel setup)
 # Token:  /etc/homestead/tunnel/token.env, root-only (written by tunnel setup)
+#
+# cloudflared reads the run token from TUNNEL_TOKEN in its environment, so
+# the token never appears in the command line, which every local user can
+# read in /proc (S300). Do not add --token to ExecStart.
 
 [Unit]
 Description=Homestead tunnel connector
@@ -18,7 +22,7 @@ Wants=network-online.target
 Type=simple
 User=root
 EnvironmentFile=/etc/homestead/tunnel/token.env
-ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --config /etc/homestead/tunnel/config.yml run --token ${TUNNEL_TOKEN}
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --config /etc/homestead/tunnel/config.yml run
 Restart=on-failure
 RestartSec=5
 

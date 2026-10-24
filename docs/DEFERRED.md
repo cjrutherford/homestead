@@ -750,8 +750,8 @@
   cannot be uninstalled through the API: the route answers 404 "not installed".
   Cleanup of the leftover records and folders is manual.
 - Existing deployments keep old tokens in their journal until it rotates.
-- `tunnel setup` still accepts `--api-token` and `--account-id` arguments (they
-  warn); remove the argv forms in a later slice.
+- Closed (S294, recorded in S300): `tunnel setup` no longer accepts
+  `--api-token` or `--account-id`; the retired flags refuse with usage help.
 - A tunnel cannot be set up before claim: `tunnel setup` needs a session and an
   unclaimed appliance has none. On the S288 fresh install of VM 2 the
   connector was laid out by hand (Cloudflare API plus the S246 files) so the
@@ -860,8 +860,8 @@
       and the Sign-in page ask the owner to re-plan and approve;
     - after teardown, the configured sign-in keeps the public origin until
       the owner re-plans it (harmless: the edge no longer serves the name);
-    - the connector token is still passed in the connector's argv
-      (pre-existing).
+    - closed by S300: the connector reads `TUNNEL_TOKEN` from its
+      root-only environment file, not `--token` in argv.
   - App sign-in with Authentik (S298, ADR-039 §3, ADR-040), what remains:
     - closed by S299: uninstall refuses while sign-in is on; with
       `leave_sign_in` it forgets the sealed secret and the record, and the

@@ -57,6 +57,9 @@ install -m 0644 "$REPO/systemd/homestead-apply.service" /etc/systemd/system/home
 # stays an explicit setup-time act, never a side effect of install.
 install -m 0644 "$REPO/systemd/homestead-tunnel.service" /etc/systemd/system/homestead-tunnel.service
 systemctl daemon-reload
+# A running connector picks up a changed unit only when restarted (S300);
+# try-restart leaves a stopped or never-enabled connector alone.
+systemctl try-restart homestead-tunnel.service
 systemctl enable homestead-server.service
 systemctl restart homestead-server.service
 systemctl --no-pager --lines=5 status homestead-server.service
