@@ -5121,3 +5121,13 @@ committed). Results:
   local network, or for a remote box through `ssh -L 8080:127.0.0.1:8080`
   (the loopback listener serves the Claim page; checked on VM 2), and gives a
   hand-laid tunnel, adopted after claim, as the last resort.
+
+## S302: Adopted tunnel zone
+
+- Migration 51 adds `tunnel_routes.zone_name`; `router.SetTunnelAccount`
+  takes it (empty keeps the stored name) and `router.TunnelZoneName` reads it.
+- App public status and the add plan propose `<app>.<domain>` from the setup
+  domain, else the tunnel's zone name; the remove plan names the zone from the
+  store, else from Cloudflare (`appPublic.removeZone`).
+- Tests: `TestAppPublicAdoptedTunnelZone`, the tunnel setup test, and the store
+  upgrade tests (which now drop `zone_name` too).

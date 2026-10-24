@@ -302,11 +302,13 @@ func ForgetReplaced(st *store.Store, tunnelID, recordID string) error {
 }
 
 // SetTunnelAccount stores the account and zone a tunnel's routes were
-// created under, for status and teardown. They never leave the store.
-func SetTunnelAccount(st *store.Store, tunnelID, accountID, zoneID string) error {
+// created under, for status and teardown. They never leave the store. An
+// empty zoneName keeps the stored one.
+func SetTunnelAccount(st *store.Store, tunnelID, accountID, zoneID, zoneName string) error {
 	if _, err := st.DB().Exec(
-		`UPDATE tunnel_routes SET account_id = ?, zone_id = ? WHERE tunnel_id = ?`,
-		accountID, zoneID, tunnelID,
+		`UPDATE tunnel_routes SET account_id = ?, zone_id = ?,
+			zone_name = CASE WHEN ? = '' THEN zone_name ELSE ? END WHERE tunnel_id = ?`,
+		accountID, zoneID, zoneName, zoneName, tunnelID,
 	); err != nil {
 		return fmt.Errorf("router: set tunnel account: %w", err)
 	}
@@ -343,4 +345,20 @@ func TunnelZone(st *store.Store, tunnelID string) (string, error) {
 		return "", fmt.Errorf("router: tunnel zone: %w", err)
 	}
 	return zone, nil
+}
+
+// TunnelZoneName returns the stored name of the zone a tunnel's routes
+// live in, empty until a plan is applied after S302.
+func TunnelZoneName(st *store.Store, tunnelID string) (string, error) {
+	var name string
+	err := st.DB().QueryRow(
+		`SELECT zone_name FROM tunnel_routes WHERE tunnel_id = ? AND zone_name != '' LIMIT 1`, tunnelID,
+	).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("router: tunnel zone name: %w", err)
+	}
+	return name, nil
 }

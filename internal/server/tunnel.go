@@ -983,7 +983,7 @@ func tunnelSetupDefinition(st *store.Store, apiToken string, plan tunnelPlan) op
 					return err
 				}
 			}
-			return router.SetTunnelAccount(st, tunnelID, plan.accountID, plan.zoneID)
+			return router.SetTunnelAccount(st, tunnelID, plan.accountID, plan.zoneID, plan.Zone)
 		},
 	})
 	return def

@@ -68,3 +68,5 @@ Then S299 uninstall leftovers (`docs/slices/S299-uninstall-leftovers.md`): unins
 Then S300 tunnel connector token off the command line (`docs/slices/S300-connector-token-off-argv.md`): the connector reads `TUNNEL_TOKEN` from its root-only environment file instead of `--token` in argv, and install restarts a running connector.
 
 Then S301 claim first, then the tunnel (`docs/slices/S301-claim-before-tunnel.md`): documentation only; claim locally or over an SSH forward, and a hand-laid tunnel adopted after claim as the last resort.
+
+Then S302 adopted tunnel zone (`docs/slices/S302-adopted-tunnel-zone.md`): the tunnel's zone name is stored, so an adopted tunnel without a setup domain proposes app public names and remove plans name the zone.

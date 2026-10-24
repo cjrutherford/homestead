@@ -586,6 +586,9 @@ func TestTunnelPlanSetupTeardown(t *testing.T) {
 	if account, err := router.TunnelAccount(st, tunnelID); err != nil || account != "abcd0000000000000000000000000001" {
 		t.Fatalf("stored account = %q, %v", account, err)
 	}
+	if zone, err := router.TunnelZoneName(st, tunnelID); err != nil || zone != "example.com" {
+		t.Fatalf("stored zone name = %q, %v", zone, err)
+	}
 	// The approval is audited without the account.
 	var audited int
 	if err := st.DB().QueryRow(`SELECT COUNT(*) FROM audit_entries WHERE action = 'tunnel.setup.start' AND detail NOT LIKE '%abcd0000%' AND detail LIKE '%dash.example.com -> homestead.lan%'`).Scan(&audited); err != nil || audited != 1 {

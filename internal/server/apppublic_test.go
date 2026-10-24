@@ -20,6 +20,7 @@ type appPublicView struct {
 	Action   string             `json:"action"`
 	Hostname string             `json:"hostname"`
 	Route    string             `json:"route"`
+	Zone     string             `json:"zone"`
 	DNS      []tunnelPlanChange `json:"dns"`
 	Before   []string           `json:"connector_before"`
 	After    []string           `json:"connector_after"`
@@ -67,7 +68,7 @@ func appPublicRig(t *testing.T) (*Server, *store.Store, *fakeCloudflare, func() 
 	if err := router.RecordRoute(st, router.TunnelRoute{Hostname: "auth.example.com", TunnelID: "tid", Service: tunnelEntryService}, "homestead"); err != nil {
 		t.Fatal(err)
 	}
-	if err := router.SetTunnelAccount(st, "tid", "abcd0000000000000000000000000001", "zone1"); err != nil {
+	if err := router.SetTunnelAccount(st, "tid", "abcd0000000000000000000000000001", "zone1", ""); err != nil {
 		t.Fatal(err)
 	}
 	cf.tunnels["tid"] = "homestead"
@@ -206,5 +207,64 @@ func TestAppPublicAddRemove(t *testing.T) {
 		if err := st.DB().QueryRow(`SELECT COUNT(*) FROM audit_entries WHERE action = ?`, action).Scan(&n); err != nil || n != 1 {
 			t.Fatalf("%s audit = %d, %v", action, n, err)
 		}
+	}
+}
+
+// An adopted tunnel without a setup domain (S302): the stored zone name
+// proposes the app's public name, and the remove plan names the zone,
+// from the store or else from Cloudflare.
+func TestAppPublicAdoptedTunnelZone(t *testing.T) {
+	srv, st, _, _ := appPublicRig(t)
+	srv.setupDomain = func() string { return "" }
+	status := func() string {
+		recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/immich/public", nil)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status: %d %s", recorder.Code, recorder.Body.String())
+		}
+		return recorder.Body.String()
+	}
+	if body := status(); strings.Contains(body, `"proposed"`) {
+		t.Fatalf("no zone name yet, status = %s", body)
+	}
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/plan", map[string]any{"enabled": true})
+	if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), "no domain") {
+		t.Fatalf("plan without a name: %d %s", recorder.Code, recorder.Body.String())
+	}
+	plan := planAppPublic(t, srv, map[string]any{"enabled": true, "hostname": "immich.example.com"})
+	if plan.Zone != "example.com" {
+		t.Fatalf("add plan zone = %q", plan.Zone)
+	}
+	recorder = serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/apply",
+		map[string]any{"enabled": true, "hostname": "immich.example.com", "digest": plan.Digest})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("apply: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if op := waitOperation(t, st, recorder.Body.Bytes()); op.Status != operation.StatusSucceeded {
+		t.Fatalf("apply op = %s: %s", op.Status, op.Error)
+	}
+	if name, err := router.TunnelZoneName(st, "tid"); err != nil || name != "example.com" {
+		t.Fatalf("stored zone name = %q, %v", name, err)
+	}
+	if body := status(); !strings.Contains(body, `"proposed":"immich.example.com"`) {
+		t.Fatalf("status = %s", body)
+	}
+	if plan := planAppPublic(t, srv, map[string]any{"enabled": false}); plan.Zone != "example.com" {
+		t.Fatalf("remove plan zone (stored) = %q", plan.Zone)
+	}
+	if _, err := st.DB().Exec(`UPDATE tunnel_routes SET zone_name = ''`); err != nil {
+		t.Fatal(err)
+	}
+	if plan := planAppPublic(t, srv, map[string]any{"enabled": false}); plan.Zone != "example.com" {
+		t.Fatalf("remove plan zone (Cloudflare) = %q", plan.Zone)
+	}
+	// An empty zone name keeps the stored one.
+	if err := router.SetTunnelAccount(st, "tid", "abcd0000000000000000000000000001", "zone1", "example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := router.SetTunnelAccount(st, "tid", "abcd0000000000000000000000000001", "zone1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if name, _ := router.TunnelZoneName(st, "tid"); name != "example.com" {
+		t.Fatalf("zone name after empty update = %q", name)
 	}
 }

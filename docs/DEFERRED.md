@@ -906,9 +906,9 @@
     `apps public`;
   - one public name is added or removed per plan; renaming is remove then
     add.
-  - after adoption without a recorded domain, the app public status has no
-    proposed name and the remove plan shows an empty zone; derive both from
-    the tunnel's zone (found in the S290 live check).
+  - closed by S302: after adoption without a setup domain, the stored zone
+    name proposes app public names and the remove plan names the zone. A
+    tunnel adopted before S302 stores the name at its next applied plan.
 - Uninstall leftovers (S299), what remains:
   - leftovers are removed by their own plans first; uninstall does not
     remove public names or turn sign-in off in the same operation;

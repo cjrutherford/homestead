@@ -133,10 +133,26 @@ func (p *appPublic) status(w http.ResponseWriter, r *http.Request) {
 		}
 		out.Routes = append(out.Routes, entry)
 	}
-	if domain := p.s.tunnelFacts().Domain; domain != "" && out.Available {
-		out.Proposed = f.manifest.Name + "." + domain
+	if out.Available {
+		domain, err := p.proposedDomain(f.tunnelID)
+		if err != nil {
+			p.writeError(w, err)
+			return
+		}
+		if domain != "" {
+			out.Proposed = f.manifest.Name + "." + domain
+		}
 	}
 	writeJSON(w, out)
+}
+
+// proposedDomain is the setup domain, else the tunnel's stored zone name
+// (an adopted tunnel without a setup domain, S302).
+func (p *appPublic) proposedDomain(tunnelID string) (string, error) {
+	if domain := p.s.tunnelFacts().Domain; domain != "" {
+		return domain, nil
+	}
+	return router.TunnelZoneName(p.st, tunnelID)
 }
 
 type appPublicRequest struct {
@@ -234,6 +250,9 @@ func (p *appPublic) buildPlan(ctx context.Context, name string, req appPublicReq
 		err = p.planAdd(ctx, client, token, f, hostname, req.Route, &plan)
 	} else {
 		err = p.planRemove(f, hostname, &plan)
+		if err == nil {
+			err = p.removeZone(ctx, client, token, &plan)
+		}
 	}
 	if err != nil {
 		return appPublicPlan{}, err
@@ -269,7 +288,10 @@ func (p *appPublic) buildPlan(ctx context.Context, name string, req appPublicReq
 func (p *appPublic) planAdd(ctx context.Context, client *router.TunnelClient, token string, f appPublicFacts, hostname, route string, plan *appPublicPlan) error {
 	plan.Action = "add"
 	if hostname == "" {
-		domain := p.s.tunnelFacts().Domain
+		domain, err := p.proposedDomain(f.tunnelID)
+		if err != nil {
+			return err
+		}
 		if domain == "" {
 			return refusePlan(http.StatusUnprocessableEntity, "no domain is chosen in setup: choose one on the Domain step, or name the hostname")
 		}
@@ -355,6 +377,25 @@ func (p *appPublic) planAdd(ctx context.Context, client *router.TunnelClient, to
 	if !f.signIn && f.manifest.SSO.OIDC != nil {
 		plan.Warnings = append(plan.Warnings, "App sign-in through Authentik is off. Turning it on first is recommended.")
 	}
+	return nil
+}
+
+// removeZone names the zone a removed name lives in: the stored one,
+// else the zone Cloudflare finds for the name (adopted tunnels, S302).
+func (p *appPublic) removeZone(ctx context.Context, client *router.TunnelClient, token string, plan *appPublicPlan) error {
+	name, err := router.TunnelZoneName(p.st, plan.TunnelID)
+	if err != nil || name != "" {
+		plan.Zone = name
+		return err
+	}
+	zone, err := client.ZoneFor(ctx, token, plan.Hostname)
+	if errors.Is(err, router.ErrNoZone) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	plan.Zone = zone.Name
 	return nil
 }
 
@@ -565,7 +606,7 @@ func appPublicAddDefinition(st *store.Store, apiToken string, plan appPublicPlan
 					Service: tunnelEntryService}, plan.Tunnel)
 			}
 			if err == nil && account != "" {
-				err = router.SetTunnelAccount(st, plan.TunnelID, account, plan.zoneID)
+				err = router.SetTunnelAccount(st, plan.TunnelID, account, plan.zoneID, plan.Zone)
 			}
 			if err != nil {
 				undoRoute(ctx)
