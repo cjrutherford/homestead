@@ -152,6 +152,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountAppPublic(st, secrets, c.CatalogDir)
 	srv.MountSetup(SetupConfig{
 		Store: st, Secrets: secrets, Wizards: wizard.New(st), SSO: ssoManager, CatalogDir: c.CatalogDir,
+		Port: c.Port,
 	})
 	if c.Dashboard != nil {
 		srv.MountDashboard(c.Dashboard)

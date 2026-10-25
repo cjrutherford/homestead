@@ -117,6 +117,12 @@ func TestDerivationFromRealState(t *testing.T) {
 		t.Fatalf("dormant link must not re-gate but must warn: %+v", s.Steps[2])
 	}
 	f.sso.Dormant = false
+	f.sso.Replan = true
+	s, _ = svc.Status()
+	if states(t, s)[StepSignIn] != Done || !strings.Contains(s.Steps[2].Detail, "Re-plan sign-in") {
+		t.Fatalf("a needed re-plan must not re-gate but must warn (S304): %+v", s.Steps[2])
+	}
+	f.sso.Replan = false
 	f.domain = DomainFacts{Configured: true, Provider: "cloudflare"}
 	s, _ = svc.Status()
 	if states(t, s)[StepDomain] != Pending || s.Facts.ReviewExisting {
@@ -200,6 +206,12 @@ func TestReviewPathForExistingTunnel(t *testing.T) {
 	// A tunnel already exists, so the step reads done; nothing was redone.
 	if states(t, s)[StepDomain] != Done {
 		t.Fatalf("domain = %+v", s.Steps[3])
+	}
+	// After the tunnel, a needed sign-in re-plan is named here too (S304).
+	f.sso = SSOFacts{Installed: true, Configured: true, Linked: true, Replan: true}
+	s, _ = svc.Status()
+	if states(t, s)[StepDomain] != Done || !strings.Contains(s.Steps[3].Detail, "Re-plan sign-in") {
+		t.Fatalf("domain detail after tunnel = %+v", s.Steps[3])
 	}
 	// Acknowledging records only the acknowledgement.
 	s, err := svc.Update(StepDomain, Update{State: str(Done)})

@@ -72,3 +72,5 @@ Then S301 claim first, then the tunnel (`docs/slices/S301-claim-before-tunnel.md
 Then S302 adopted tunnel zone (`docs/slices/S302-adopted-tunnel-zone.md`): the tunnel's zone name is stored, so an adopted tunnel without a setup domain proposes app public names and remove plans name the zone.
 
 Then S303 tunnel plan refusal in view (`docs/slices/S303-tunnel-plan-error-in-view.md`): a refused tunnel plan shows under Review plan, and the adopt hint says a reset appliance names a new tunnel.
+
+Then S304 setup names a needed sign-in re-plan (`docs/slices/S304-setup-sign-in-replan.md`): after a tunnel, the setup Sign-in and Domain step details say to re-plan Sign-in.

@@ -66,7 +66,7 @@ export interface SetupStatus {
     recovery_acknowledged: boolean;
     storage_app_assigned: boolean;
     password_confirmed: boolean;
-    sign_in: { authentik_installed: boolean; configured: boolean; linked: boolean; dormant: boolean };
+    sign_in: { authentik_installed: boolean; configured: boolean; linked: boolean; dormant: boolean; replan: boolean };
     domain: { configured: boolean; provider?: string; zone?: string; onboarded: boolean; credentials_sealed: boolean };
     tunnels: number;
     exposures: number;

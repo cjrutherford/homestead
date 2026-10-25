@@ -41,6 +41,8 @@ type SetupConfig struct {
 	Wizards    *wizard.Service
 	SSO        *sso.Manager // optional
 	CatalogDir string
+	// Port is the daemon's loopback port, for sign-in's default origins.
+	Port int
 }
 
 // setupSources reads the real facts from the stores. It only counts and
@@ -77,6 +79,9 @@ func setupSources(c SetupConfig) setup.Sources {
 					return f, err
 				}
 				f.Configured, f.Linked, f.Dormant = st.Configured, st.Linked, st.Dormant
+				if st.Configured {
+					f.Replan = replanReason(st.Spec, ssoDefaults(c.Store, c.Port)) != ""
+				}
 			}
 			return f, nil
 		},

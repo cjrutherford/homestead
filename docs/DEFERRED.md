@@ -855,8 +855,9 @@
     - a plan cannot leave the dashboard out once sign-in is linked: the
       owner tears the tunnel down instead;
     - renaming Authentik's route drops its tunnel names; re-plan the tunnel;
-    - Sign-in is not re-planned automatically after setup: the status flag
-      and the Sign-in page ask the owner to re-plan and approve;
+    - Sign-in is not re-planned automatically after setup: the status flag,
+      the Sign-in page and the setup Sign-in and Domain step details (S304)
+      ask the owner to re-plan and approve;
     - after teardown, the configured sign-in keeps the public origin until
       the owner re-plans it (harmless: the edge no longer serves the name);
     - closed by S300: the connector reads `TUNNEL_TOKEN` from its

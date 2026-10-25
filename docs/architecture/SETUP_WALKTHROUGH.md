@@ -54,7 +54,7 @@ finished from the CLI or another page reads `done`.
 | --- | --- | --- |
 | `account` | the latest recovery identity export is acknowledged (`backups/identity`) and the owner confirmed their password | pending; skippable |
 | `storage` | the application storage class is assigned (`storage_app_assigned`); real state wins, so assigning it from the CLI or the Storage page reads `done`. Skippable; `PUT .../steps/storage {"state":"done"}` answers 400 | pending |
-| `sign-in` | Authentik sign-in is configured and linked (`sso` status); a dormant link (Authentik removed) stays done and the detail warns that Authentik sign-in is off and the local password still works | pending; skippable |
+| `sign-in` | Authentik sign-in is configured and linked (`sso` status); a dormant link (Authentik removed) stays done and the detail warns that Authentik sign-in is off and the local password still works; a sign-in that does not yet cover the tunnel's public dashboard address stays done and the detail (here and on the Domain step) says to re-plan it (S304) | pending; skippable |
 | `domain` | see "Domain completion" below | pending; skippable |
 | `apps` | the owner acknowledged it, or any catalog app other than Authentik is installed | pending; skippable |
 | `backups` | a nightly backup policy is approved, on or off (S297, ADR-039 §2). The step shows the proposed policy (02:00 local, keep 7) and the apps it covers and leaves out; without backup storage it explains and links to the Storage page. `PUT .../steps/backups {"state":"done"}` answers 400 | pending; skippable |

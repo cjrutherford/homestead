@@ -82,6 +82,9 @@ type SSOFacts struct {
 	Configured bool `json:"configured"`
 	Linked     bool `json:"linked"`
 	Dormant    bool `json:"dormant"`
+	// Replan: sign-in is set up but does not cover the tunnel's public
+	// dashboard address yet (S296). It warns; it never re-gates (S304).
+	Replan bool `json:"replan"`
 }
 
 // DomainFacts says what is recorded about the domain.
@@ -405,6 +408,8 @@ func derive(name string, st stored, f Facts) (state, detail string) {
 
 const dormantNote = "Warning: Authentik is not installed, so sign-in with Authentik is off. Your local password still works."
 
+const replanNote = "Warning: the tunnel's public dashboard address is not in sign-in yet. Open step 3, Sign-in, choose Re-plan sign-in and approve it."
+
 func detailFor(name, state string, st stored, f Facts) string {
 	switch name {
 	case StepAccount:
@@ -437,6 +442,8 @@ func detailFor(name, state string, st stored, f Facts) string {
 		switch {
 		case state == Done && f.SignIn.Dormant:
 			return "Sign in with Authentik was linked to your account. " + dormantNote
+		case state == Done && f.SignIn.Replan:
+			return "Sign in with Authentik is set up and linked to your account. " + replanNote
 		case state == Done:
 			return "Sign in with Authentik is set up and linked to your account."
 		case state == Skipped:
@@ -453,6 +460,8 @@ func detailFor(name, state string, st stored, f Facts) string {
 		switch {
 		case state == Skipped:
 			return "Skipped. The appliance is reachable on your home network only."
+		case state == Done && f.Tunnels > 0 && f.SignIn.Replan:
+			return "A Cloudflare Tunnel is set up. Nothing was changed by this step. " + replanNote
 		case state == Done && f.Tunnels > 0:
 			return "A Cloudflare Tunnel is set up. Nothing was changed by this step."
 		case state == Done && f.Exposures > 0:

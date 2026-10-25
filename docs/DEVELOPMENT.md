@@ -5139,3 +5139,11 @@ committed). Results:
 - The adopt hint says a new or reset appliance has no connector config.
 - Test: `tunnel.spec.ts` "shows a refused plan under Review plan".
 
+## S304: Setup names a needed sign-in re-plan
+
+- `setup.SSOFacts.Replan` is `replanReason(spec, ssoDefaults(...)) != ""`
+  for a configured sign-in; `SetupConfig.Port` feeds the default origins.
+- The Sign-in step stays done and its detail warns; the Domain step's detail
+  after a tunnel says the same. Neither re-gates setup.
+- Tests: `internal/setup` sign-in states and the existing-tunnel review path.
+
