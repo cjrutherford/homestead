@@ -21,6 +21,7 @@ lint-scripts:
 	bash -n scripts/install-systemd.sh
 	bash -n scripts/recover-control-plane.sh
 	bash -n scripts/uninstall-systemd.sh
+	bash -n scripts/factory-reset.sh
 	bash -n scripts/provision-layout.sh
 	bash -n scripts/craft-manifest.sh
 	bash -n scripts/sign-craft-manifest.sh

@@ -5155,3 +5155,23 @@ committed). Results:
   the plan's first line ("every app below") refers to.
 - The time label drops "24-hour"; the native time picker follows the locale.
 
+## S306: Factory reset (preparing a new appliance)
+
+```bash
+# from a checkout of the release to ship, on the appliance:
+sudo ./scripts/factory-reset.sh --yes \
+  --wipe-mount /mnt/app --wipe-mount /mnt/bulk --wipe-mount /mnt/backup \
+  --reinstall
+sudo homesteadctl claim token          # the new owner's claim token
+```
+
+- Removes only Homestead's units, binaries, stacks (with volumes), edge
+  container and network, layout dirs and groups; other Compose projects,
+  volumes and images stay.
+- `--wipe-mount` is the only way storage is touched: each path must be an
+  absolute mount point outside system paths; contents go, `lost+found`
+  stays. Leave it off to keep the owner's media.
+- A previous owner's Cloudflare tunnel and DNS records are in their own
+  account; the reset does not remove them.
+- Tests: `tests/test_s306_factory_reset.py`.
+

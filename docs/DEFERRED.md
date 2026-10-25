@@ -700,7 +700,7 @@
   the catalog" link is gated and lands on /setup, and the Edge, Trust and
   catalog pages have no "Back to setup" link; the apps step reads done as
   soon as an install starts, before it finishes; wizard_state has no
-  in-repo factory-reset command.
+  in-repo factory-reset command (closed in S306: `scripts/factory-reset.sh`).
 - The KVM acceptance run for S287 is recorded in `docs/DEVELOPMENT.md`.
 
 ## S284 dashboard page passes
