@@ -546,6 +546,9 @@ describe('InstallWizard', () => {
       to('sign-in');
       expect(text()).toContain('can also sign people in through a sign-in service');
       expect(text()).toContain('OIDC, SAML');
+      // S305: the review can connect sign-in during the install (S298).
+      expect(text()).toContain('the review offers Sign in with Authentik as part of the install');
+      expect(text()).not.toContain('Installing does not change that');
       expect(text()).not.toContain('Passwords Homestead creates');
     });
 

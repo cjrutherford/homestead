@@ -74,3 +74,5 @@ Then S302 adopted tunnel zone (`docs/slices/S302-adopted-tunnel-zone.md`): the t
 Then S303 tunnel plan refusal in view (`docs/slices/S303-tunnel-plan-error-in-view.md`): a refused tunnel plan shows under Review plan, and the adopt hint says a reset appliance names a new tunnel.
 
 Then S304 setup names a needed sign-in re-plan (`docs/slices/S304-setup-sign-in-replan.md`): after a tunnel, the setup Sign-in and Domain step details say to re-plan Sign-in.
+
+Then S305 walkthrough wording (`docs/slices/S305-walkthrough-copy.md`): the install wizard says the review can connect sign-in, and the nightly policy review lists the apps it covers.

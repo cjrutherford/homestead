@@ -78,7 +78,7 @@ function policyError(failure: HttpErrorResponse): string {
             Back up every night
           </label>
           <label>
-            Time of day (24-hour, {{ s.time_zone }})
+            Time of day ({{ s.time_zone }})
             <input type="time" name="policy-time" [value]="timeOfDay()" (input)="edit('time_of_day', $any($event.target).value)" [disabled]="busy() || !enabled()" />
           </label>
           <label>
@@ -99,6 +99,21 @@ function policyError(failure: HttpErrorResponse): string {
                 <li>{{ change }}</li>
               }
             </ul>
+            <!-- The plan's own coverage, which its first line refers to (S305). -->
+            <ul aria-label="Apps the plan backs up">
+              @for (app of p.covered; track app) {
+                <li>{{ app }}</li>
+              } @empty {
+                <li>No app that keeps data is installed yet.</li>
+              }
+            </ul>
+            @if (p.skipped.length > 0) {
+              <ul aria-label="Apps the plan leaves out">
+                @for (skip of p.skipped; track skip.package) {
+                  <li><strong>{{ skip.package }}</strong>: {{ skip.reason }}</li>
+                }
+              </ul>
+            }
             <p class="hint">Nothing changes until you approve. Each run is listed under Operations and in the audit log.</p>
             <button type="button" class="primary" (click)="approve()" [disabled]="busy()">Approve the policy</button>
             <button type="button" class="quiet" (click)="plan.set(null)" [disabled]="busy()">Cancel</button>

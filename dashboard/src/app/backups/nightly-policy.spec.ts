@@ -89,6 +89,9 @@ describe('NightlyPolicy (S297)', () => {
     plan.flush(PLAN);
     fixture.detectChanges();
     expect(text()).toContain('keeping the newest 10 runs');
+    // "Every app below" names the plan's own coverage (S305).
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('ul[aria-label="Apps the plan backs up"]')?.textContent).toContain('jellyfin');
     button('Approve the policy')!.click();
     const apply = http.expectOne('/api/v1/backups/policy/apply');
     expect(apply.request.body).toEqual({ time_of_day: '03:30', retain: 10, enabled: true, digest: 'd1' });

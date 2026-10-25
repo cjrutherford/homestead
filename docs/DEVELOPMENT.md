@@ -5147,3 +5147,11 @@ committed). Results:
   after a tunnel says the same. Neither re-gates setup.
 - Tests: `internal/setup` sign-in states and the existing-tunnel review path.
 
+## S305: Walkthrough wording (install sign-in, policy review)
+
+- `install-wizard.html` sign-in step: the review offers Sign in with
+  Authentik where it can be connected (S298).
+- `NightlyPolicy` review renders the plan's `covered` and `skipped`, which
+  the plan's first line ("every app below") refers to.
+- The time label drops "24-hour"; the native time picker follows the locale.
+
