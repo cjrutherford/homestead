@@ -1,5 +1,8 @@
 <section aria-label="Craft files">
-  <h1>Craft files</h1>
+  <header class="masthead">
+    <h1>Craft files</h1>
+    <p class="masthead-fact">Craft apps open and save documents in your own Nextcloud.</p>
+  </header>
   <p>
     Craft apps can open and save documents in your own Nextcloud. Homestead does the transfer, so no
     Nextcloud password is ever sent to a craft app or a browser. Without a link, or with an app set
@@ -28,6 +31,12 @@
       </p>
     } @else {
       <app-state-message kind="empty" headline="Not linked to Nextcloud." detail="Link it below so craft apps can open and save documents there." />
+    }
+
+    @if (approved(); as a) {
+      <app-permit [heading]="a.heading" [approval]="a.approval">
+        <p>{{ a.summary }}</p>
+      </app-permit>
     }
 
     @if (!plan()) {
@@ -99,9 +108,8 @@
       }
     } @else {
       @if (plan(); as p) {
-        <div class="risky">
-        <h3>Review: {{ p.action }}</h3>
-        <p class="risky-preview">What changes:</p>
+        <app-permit [heading]="planHeading(p.action)" [refusal]="refused()" label="Nextcloud plan">
+        <h4>Will change</h4>
         <ul>
           @for (line of p.summary; track line) {
             <li>{{ line }}</li>
@@ -114,7 +122,7 @@
           <button type="button" [class]="p.action === 'unlink' ? 'danger' : 'primary'" [disabled]="busy()" (click)="approve()">Approve {{ p.action }}</button>
           <button type="button" class="quiet" [disabled]="busy()" (click)="cancel()">Cancel</button>
         </div>
-        </div>
+        </app-permit>
       }
     }
 

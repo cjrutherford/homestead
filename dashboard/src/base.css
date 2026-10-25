@@ -30,7 +30,8 @@ body {
   overflow-wrap: break-word;
 }
 
-/* One h1 per page; the brand is the site name, not a heading. */
+/* One h1 per page; the brand is the site name, not a heading. h1 and h2
+   are in the display face (S309): signage voice, sentence case. */
 h1,
 h2,
 h3,
@@ -41,13 +42,22 @@ h4 {
   text-wrap: balance;
 }
 
+h1,
+h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: var(--tracking-display);
+}
+
 h1 {
   margin-top: 0;
-  font-size: var(--font-size-xxl);
+  font-size: clamp(var(--font-size-xxl), 5vw + 1rem, var(--font-size-display));
+  line-height: var(--line-height-display);
 }
 
 h2 {
   font-size: var(--font-size-xl);
+  line-height: 1.15;
   margin-top: var(--spacing-xl);
   padding-top: var(--spacing-lg);
   border-top: 1px solid var(--border);
@@ -68,7 +78,7 @@ h4 {
 
 p {
   margin: 0 0 var(--spacing-md);
-  max-width: 70ch;
+  max-width: var(--measure);
 }
 
 ul,
@@ -148,25 +158,28 @@ pre code {
   outline: none;
 }
 
-/* Definition lists: label and value pairs read as rows. */
+/* Definition lists are ledgers (S309): small type, muted labels set
+   right against a hairline, ink values. They stack on narrow screens. */
 dl {
   margin: 0 0 var(--spacing-md);
+  font-size: var(--font-size-sm);
 }
 
 dl > div {
   display: grid;
   grid-template-columns: minmax(7rem, 14rem) minmax(0, 1fr);
   gap: var(--spacing-xs) var(--spacing-md);
-  padding: var(--spacing-sm) 0;
-  border-bottom: 1px solid var(--border);
-}
-
-dl > div:last-child {
-  border-bottom: 0;
+  padding: var(--spacing-xs) 0;
 }
 
 dt {
   color: var(--muted);
+}
+
+dl > div > dt {
+  padding-inline-end: var(--spacing-md);
+  text-align: end;
+  border-inline-end: 1px solid var(--border);
 }
 
 dd {
@@ -288,5 +301,18 @@ ul:has(> .audit-entry) {
 @media (max-width: 39.9375rem) {
   dl > div {
     grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: var(--spacing-xs) 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  dl > div:last-child {
+    border-bottom: 0;
+  }
+
+  dl > div > dt {
+    padding: 0;
+    text-align: start;
+    border: 0;
   }
 }

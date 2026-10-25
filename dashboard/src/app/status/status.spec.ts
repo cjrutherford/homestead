@@ -99,13 +99,18 @@ describe('Status', () => {
     }
     fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('h2')?.textContent).toContain('Needs attention (2)');
-    const items = el.querySelectorAll('.triage > li');
+    // Needs you comes first, with the worst item's furrow, and the masthead says so.
+    expect(el.querySelector('h2')?.textContent).toContain('Needs you (2)');
+    expect(el.querySelector('.needs-you')?.getAttribute('data-state')).toBe('fail');
+    expect(el.querySelector('.masthead-fact')?.textContent).toContain('Homestead is running. 2 checks need you.');
+    const items = el.querySelectorAll('.needs-you-list > li');
     expect(items.length).toBe(2);
     expect(items[0].getAttribute('data-status')).toBe('fail');
     expect(items[0].textContent).toContain('Homestead folders');
     expect(items[0].querySelector('code')?.textContent).toBe('sudo make install');
     expect(items[1].textContent).toContain('1.5 GiB');
+    // A fix without a command still offers an action.
+    expect(items[1].querySelector('.needs-you-action button')?.textContent).toContain('Check again');
     const good = el.querySelector('details');
     expect(good?.hasAttribute('open')).toBe(false);
     expect(good?.querySelector('summary')?.textContent).toContain('All good (1)');
@@ -125,5 +130,7 @@ describe('Status', () => {
     }
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Nothing needs attention');
+    expect(fixture.nativeElement.querySelector('.needs-you')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.masthead-fact')?.textContent).toContain('Homestead is running. Nothing needs you.');
   });
 });

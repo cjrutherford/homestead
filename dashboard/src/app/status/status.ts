@@ -1,6 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TitleCasePipe } from '@angular/common';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { ApiService, DoctorReport, Health, Identity } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 import { Loading } from '../ui/loading';
@@ -10,6 +11,8 @@ import { CopyCode } from '../ui/copy-code';
 export interface Fix {
   text: string;
   command?: string;
+  /** A page in the dashboard where the fix is made. */
+  link?: { path: string; label: string };
 }
 
 const LABELS: Record<string, string> = {
@@ -38,7 +41,10 @@ const FIXES: Record<string, Fix> = {
   'default-gateway': { text: 'Connect the appliance to your router. Until then it works on your network only, with no updates or remote access.' },
   'dns-resolvers': { text: 'Set a name server on the appliance, or in your router. Updates and the catalog need it.' },
   'root-disk': { text: 'Free space on the system disk. Remove old images and backups you no longer need.', command: 'docker system df' },
-  'stale-mounts': { text: 'Reconnect the drive, or remove the mount on the Storage page.' },
+  'stale-mounts': {
+    text: 'Reconnect the drive, or remove the mount on the Storage page.',
+    link: { path: '/storage', label: 'Open Storage' },
+  },
   'state-dirs': { text: 'Re-run the installer to recreate the Homestead folders.', command: 'sudo make install' },
 };
 
@@ -47,7 +53,7 @@ const DEFAULT_FIX: Fix = { text: 'Run the check from a terminal for more detail.
 /** Appliance status page: daemon health, claim state, diagnostics (S044). */
 @Component({
   selector: 'app-status',
-  imports: [StateMessage, Loading, CopyCode, TitleCasePipe],
+  imports: [StateMessage, Loading, CopyCode, TitleCasePipe, RouterLink],
   templateUrl: './status.html',
 })
 export class Status implements OnInit {
@@ -70,6 +76,29 @@ export class Status implements OnInit {
       .sort((a, b) => Number(b.status === 'fail') - Number(a.status === 'fail')),
   );
   protected readonly good = computed(() => (this.report()?.checks ?? []).filter((check) => check.status === 'ok'));
+
+  /** The furrow of the Needs you field: its worst item. */
+  protected readonly worst = computed(() => (this.problems().some((c) => c.status === 'fail') ? 'fail' : 'warn'));
+
+  /** The masthead sentence: the appliance's most important fact, from what the page has read. */
+  protected readonly fact = computed(() => {
+    if (this.error()) {
+      return 'Homestead cannot be reached from this browser.';
+    }
+    const health = this.health();
+    if (!health && !this.identity()) {
+      return 'Checking the appliance.';
+    }
+    const running = health ? 'Homestead is running.' : 'Homestead answers.';
+    if (this.unclaimed()) {
+      return `${running} It is not claimed yet.`;
+    }
+    const problems = this.problems().length;
+    if (problems) {
+      return `${running} ${problems === 1 ? '1 check needs you.' : `${problems} checks need you.`}`;
+    }
+    return this.report() ? `${running} Nothing needs you.` : running;
+  });
 
   ngOnInit(): void {
     this.load();

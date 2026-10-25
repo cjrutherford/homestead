@@ -8,6 +8,7 @@ import { isTerminal } from '../core/operation-view';
 import { StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
 import { OperationProgress } from '../ui/operation-progress';
+import { Permit } from '../ui/permit';
 import { removeAppRoutes } from './app-routes';
 import { storageClasses } from './wizard-model';
 
@@ -27,7 +28,7 @@ export interface DataRoot {
  */
 @Component({
   selector: 'app-uninstall-app',
-  imports: [Dialog, OperationProgress, StateMessage, RouterLink],
+  imports: [Dialog, OperationProgress, Permit, StateMessage, RouterLink],
   template: `
     @if (operationId() === null) {
       <button type="button" class="danger quiet" [attr.aria-busy]="loading() ? 'true' : null" [disabled]="loading()" (click)="open()">
@@ -39,6 +40,7 @@ export interface DataRoot {
     }
     @if (confirming()) {
       <app-dialog [heading]="'Uninstall ' + title() + '?'" variant="danger" (dismissed)="cancel()">
+        <app-permit [heading]="'Remove ' + title()" [refusal]="refusal()" label="Uninstall plan">
         <p>
           This stops {{ title() }} and removes its containers, its network and the files Homestead
           generated for it.
@@ -76,8 +78,9 @@ export interface DataRoot {
             where this left off.
           </p>
         }
-        @if (refusal(); as refused) {
-          <app-state-message kind="error" [headline]="refused" detail="Nothing was removed." />
+        </app-permit>
+        @if (refusal()) {
+          <p role="alert">Nothing was removed.</p>
           @if (canAbandon()) {
             <p>
               <a routerLink="/data">Plan a data move</a> to bring that data onto mounted storage first.

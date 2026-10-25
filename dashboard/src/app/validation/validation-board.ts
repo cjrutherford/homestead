@@ -1,6 +1,7 @@
 import { Component, signal } from '@angular/core';
 import { StateKind, StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
+import { Approval, Permit } from '../ui/permit';
 
 /**
  * Validation board (S248, S282): every design-system primitive rendered
@@ -9,7 +10,7 @@ import { Dialog } from '../ui/dialog';
  * place. Static and API-free: it needs no session.
  */
 @Component({
-  imports: [StateMessage, Dialog],
+  imports: [StateMessage, Dialog, Permit],
   selector: 'app-validation-board',
   templateUrl: './validation-board.html',
   styles: ['nav a { margin-right: var(--spacing-md); }'],
@@ -19,4 +20,7 @@ export class ValidationBoard {
   readonly kinds: StateKind[] = ['empty', 'error', 'status', 'warning', 'notice'];
   /** The theme whose sample dialog is open, if any. */
   protected readonly dialogTheme = signal<string | null>(null);
+  /** Sample permit data (S309): the permit in each state, without a live plan. */
+  protected readonly sampleDigest = 'sha256:9f2c4e1ab37d05c8e6f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7';
+  protected readonly sampleApproval: Approval = { by: 'owner', at: '2026-10-25T14:02:00Z' };
 }

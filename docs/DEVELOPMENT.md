@@ -5196,3 +5196,22 @@ sudo homesteadctl claim token          # the new owner's claim token
   `systemctl`, `go` and `install-systemd.sh` stubbed on PATH.
 - Tests: `tests/test_s308_bootstrap_vendor_packages.py`.
 
+## S309: Dashboard design language (the permit and the field)
+
+- Display face: Barlow Semi Condensed SemiBold in `dashboard/public/fonts/`
+  (OFL, `docs/THIRD_PARTY.md`), for `h1`, `h2`, the wordmark, the permit
+  title and the stamp only.
+- Every page opens with `<header class="masthead">`: the `h1` and one true
+  sentence (`masthead-fact`), computed from data the page already loads or a
+  one-line purpose.
+- `.field-panel` with `data-state="warn|fail|ok"` draws a state furrow; the
+  `.needs-you` field leads Status and Setup when anything needs the owner.
+- Plan reviews use `<app-permit>` (`dashboard/src/app/ui/permit.ts`,
+  `src/permit.css`). Pass `digest` for the seal, `approval` once approved
+  (`approvedPlan(...)` keeps a stamped record) and `refusal` when the
+  appliance would not approve the plan on screen.
+- New colour tokens are in all three themes in `tokens.css`, and every new
+  text or border pair is in `theme/tokens-contrast.spec.ts`; the high
+  contrast permit tokens are scoped under `[data-theme='high-contrast'] .permit`.
+- The validation board (`/validation`) shows fields, a ledger and the three
+  permit states. See `docs/architecture/DASHBOARD_DESIGN.md`.

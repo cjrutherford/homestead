@@ -9,6 +9,8 @@ import { StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
+import { SessionService } from '../auth/session.service';
+import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
 
 /**
  * Tunnel remote access page (S247, planned in S294 per ADR-037):
@@ -23,7 +25,7 @@ import { OperationProgress } from '../ui/operation-progress';
  * service address.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage, Dialog, RouterLink],
+  imports: [OperationProgress, Loading, StateMessage, Dialog, RouterLink, Permit],
   selector: 'app-tunnel',
   templateUrl: './tunnel.html',
 })
@@ -55,6 +57,25 @@ export class Tunnel implements OnInit {
   protected readonly fieldErrors = signal<Record<string, string>>({});
   /** The plan under review; approving sends its digest. */
   protected readonly plan = signal<TunnelPlan | null>(null);
+  /** The plan approved here, kept as its stamped permit (S309). */
+  protected readonly approved = signal<ApprovedPlan | null>(null);
+  /** Why the appliance would not approve the plan on screen. */
+  protected readonly refused = signal<string | null>(null);
+  private readonly sessions = inject(SessionService);
+  /** The masthead sentence: the recorded tunnel and what it serves, from the status the page reads. */
+  protected readonly fact = computed(() => {
+    const state = this.status();
+    if (!state) {
+      return 'Reach your apps from outside without changing your router.';
+    }
+    if (!state.tunnels.length) {
+      return 'No tunnel is set up yet. Nothing on this appliance is public through one.';
+    }
+    const names = state.routes.length === 1 ? '1 public name' : `${state.routes.length} public names`;
+    const first = state.tunnels[0];
+    const more = state.tunnels.length > 1 ? ` and ${state.tunnels.length - 1} more` : '';
+    return `The tunnel ${first.name}${more} serves ${names}. The connector is ${state.connector.active ? 'active' : 'not active'}.`;
+  });
   /** The request the plan answered; approving sends it again. */
   private reviewed: TunnelRequest | null = null;
   /** The teardown waiting for confirmation. */
@@ -90,7 +111,7 @@ export class Tunnel implements OnInit {
       },
       error: (failure: HttpErrorResponse) => {
         this.busy.set(false);
-        this.error.set(failure.error ?? failure.message);
+        this.refused.set(failure.error ?? failure.message);
       },
     });
   }
@@ -109,6 +130,8 @@ export class Tunnel implements OnInit {
     this.reviewError.set(null);
     this.notice.set(null);
     this.plan.set(null);
+    this.approved.set(null);
+    this.refused.set(null);
     // Adopting (S290) takes over a tunnel this appliance's connector already serves.
     const request: TunnelRequest = adopt.trim() ? { adopt: adopt.trim().toLowerCase() } : { name: name.trim() };
     if (dashboardHostname.trim()) request.dashboard_hostname = dashboardHostname.trim();
@@ -130,6 +153,7 @@ export class Tunnel implements OnInit {
   /** Back to the form without changing anything. */
   discardPlan(): void {
     this.plan.set(null);
+    this.refused.set(null);
   }
 
   /** Approves exactly the reviewed plan. */
@@ -141,10 +165,19 @@ export class Tunnel implements OnInit {
     this.error.set(null);
     this.notice.set(null);
     this.operationId.set(null);
+    this.refused.set(null);
     this.api.tunnelSetup(request, plan.digest).subscribe({
       next: ({ id }) => {
         this.busy.set(false);
         this.plan.set(null);
+        this.approved.set(
+          approvedPlan(
+            (plan.adopt ? 'Adopt the tunnel ' : 'Set up the tunnel ') + plan.name,
+            plan.digest,
+            `Tunnel ${plan.name} in zone ${plan.zone}, ${plural(plan.ingress.length, 'public name')}.`,
+            this.sessions.username(),
+          ),
+        );
         this.operationId.set(id ?? null);
         this.notice.set('Setup started: the tunnel, its DNS records, the edge names and the connector are being created.');
         this.refresh();

@@ -1,6 +1,9 @@
 <app-wizard-shell [steps]="steps" [current]="stepIndex()" (back)="back()">
   <section aria-label="Host firewall setup">
-    <h1>Host firewall</h1>
+    <header class="masthead">
+      <h1>Host firewall</h1>
+      <p class="masthead-fact">The rules that decide what reaches this appliance.</p>
+    </header>
 
     @if (error()) {
       <app-state-message kind="error" [headline]="error()" />
@@ -21,9 +24,8 @@
       <button type="button" (click)="next()">Continue</button>
     } @else if (stepIndex() === 2) {
       <h2>Review changes</h2>
-      <div class="risky">
-        <h3>Apply firewall</h3>
-        <p class="risky-preview">What changes:</p>
+      <app-permit heading="Apply firewall" [refusal]="refused()" label="Firewall plan">
+        <h4>Will change</h4>
         <ul>
           @for (change of plan()?.changes ?? []; track change.rule + change.action) {
             <li>{{ change.action }} {{ change.rule }}: {{ change.detail }}</li>
@@ -32,8 +34,13 @@
         <div class="risky-actions">
           <button type="button" class="danger" (click)="confirm()" [disabled]="busy()">Confirm apply</button>
         </div>
-      </div>
+      </app-permit>
     } @else {
+      @if (approved(); as a) {
+        <app-permit [heading]="a.heading" [approval]="a.approval">
+          <p>{{ a.summary }}</p>
+        </app-permit>
+      }
       <p>
         @if (alreadyApplied()) {
           The firewall already matches the recommended rules.

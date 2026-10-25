@@ -1,6 +1,9 @@
 <section aria-label="Tunnel remote access">
   @if (!embedded()) {
-    <h1>Tunnel</h1>
+    <header class="masthead">
+      <h1>Tunnel</h1>
+      <p class="masthead-fact">{{ fact() }}</p>
+    </header>
   }
   <p>
     When your router cannot open ports (shared internet addresses, no admin access, no UPnP), a
@@ -96,8 +99,12 @@
     you see a plan of every change; nothing changes until you approve it.
   </p>
   @if (plan(); as review) {
-    <div class="risky" aria-label="Tunnel plan">
-      <h3>Review the plan</h3>
+    <app-permit
+      [heading]="(review.adopt ? 'Adopt the tunnel ' : 'Set up the tunnel ') + review.name"
+      [digest]="review.digest"
+      [refusal]="refused()"
+      label="Tunnel plan"
+    >
       <p class="risky-preview">
         @if (review.adopt) {
           Adopt the existing tunnel <strong>{{ review.name }}</strong> ({{ review.adopt.status }},
@@ -176,8 +183,13 @@
         <button type="button" class="primary" (click)="approve()" [disabled]="busy()">{{ review.adopt ? 'Approve and adopt' : 'Approve and set up' }}</button>
         <button type="button" class="quiet" (click)="discardPlan()" [disabled]="busy()">Change</button>
       </div>
-    </div>
+    </app-permit>
   } @else {
+    @if (approved(); as done) {
+      <app-permit [heading]="done.heading" [digest]="done.digest" [approval]="done.approval">
+        <p>{{ done.summary }}</p>
+      </app-permit>
+    }
     <form
       (submit)="
         review(nameInput.value, dashboardInput.value, authInput.value, adoptInput.value);

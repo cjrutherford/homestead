@@ -8,6 +8,8 @@ import { isTerminal } from '../core/operation-view';
 import { StateMessage } from '../state/state-message';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
+import { SessionService } from '../auth/session.service';
+import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
 
 /** A refusal (422) or a stale plan (409) reads as the appliance's own words. */
 export function signInError(failure: HttpErrorResponse): string {
@@ -25,7 +27,7 @@ export function signInError(failure: HttpErrorResponse): string {
  */
 @Component({
   selector: 'app-app-sign-in',
-  imports: [Loading, StateMessage, OperationProgress, RouterLink],
+  imports: [Loading, Permit, StateMessage, OperationProgress, RouterLink],
   template: `
     <app-loading [loading]="!status() && !error()" shape="lines">
       @if (error() && !status()) {
@@ -77,8 +79,13 @@ export function signInError(failure: HttpErrorResponse): string {
         }
 
         @if (plan(); as p) {
-          <section [attr.aria-label]="'Sign-in plan for ' + title()">
-            <h4>Review</h4>
+          <app-permit
+            [heading]="(p.enabled ? 'Turn on sign-in for ' : 'Turn off sign-in for ') + title()"
+            [digest]="p.digest"
+            [refusal]="refused()"
+            [label]="'Sign-in plan for ' + title()"
+          >
+            <h4>Will change</h4>
             <ul aria-label="What approving changes">
               @for (change of p.changes; track change) {
                 <li>{{ change }}</li>
@@ -123,11 +130,18 @@ export function signInError(failure: HttpErrorResponse): string {
                 />
               </label>
             }
-            <button type="button" class="primary" (click)="approve()" [disabled]="busy() || (!s.token_kept && !token().trim())">
-              Approve
-            </button>
-            <button type="button" class="quiet" (click)="plan.set(null)" [disabled]="busy()">Cancel</button>
-          </section>
+            <p class="permit-actions">
+              <button type="button" class="primary" (click)="approve()" [disabled]="busy() || (!s.token_kept && !token().trim())">
+                Approve
+              </button>
+              <button type="button" class="quiet" (click)="plan.set(null); refused.set(null)" [disabled]="busy()">Cancel</button>
+            </p>
+          </app-permit>
+        }
+        @if (approved(); as a) {
+          <app-permit [heading]="a.heading" [digest]="a.digest" [approval]="a.approval">
+            <p>{{ a.summary }}</p>
+          </app-permit>
         }
         @if (operationId(); as id) {
           <app-operation-progress [id]="id" [operation]="operationState()" />
@@ -154,6 +168,11 @@ export class AppSignIn implements OnInit {
   protected readonly token = signal('');
   protected readonly operationId = signal<number | null>(null);
   protected readonly operationState = signal<OperationState | null>(null);
+  /** The plan approved here, kept as its stamped permit (S309). */
+  protected readonly approved = signal<ApprovedPlan | null>(null);
+  /** Why the appliance would not approve the plan on screen. */
+  protected readonly refused = signal<string | null>(null);
+  private readonly sessions = inject(SessionService);
 
   ngOnInit(): void {
     this.load();
@@ -171,6 +190,8 @@ export class AppSignIn implements OnInit {
     this.busy.set(true);
     this.error.set(null);
     this.note.set(null);
+    this.approved.set(null);
+    this.refused.set(null);
     this.api.appSignInPlan(this.name(), enabled).subscribe({
       next: (plan) => {
         this.busy.set(false);
@@ -193,6 +214,14 @@ export class AppSignIn implements OnInit {
     this.error.set(null);
     this.api.appSignInApply(this.name(), plan.enabled, plan.digest, this.token().trim()).subscribe({
       next: ({ id }) => {
+        this.approved.set(
+          approvedPlan(
+            (plan.enabled ? 'Turn on sign-in for ' : 'Turn off sign-in for ') + this.title(),
+            plan.digest,
+            plan.changes.join(' '),
+            this.sessions.username(),
+          ),
+        );
         this.token.set('');
         this.plan.set(null);
         this.operationId.set(id);
@@ -224,8 +253,11 @@ export class AppSignIn implements OnInit {
         this.busy.set(false);
         if (failure.status === 409) {
           this.plan.set(null);
+          this.error.set(signInError(failure));
+          return;
         }
-        this.error.set(signInError(failure));
+        // The plan stays on screen: the refusal goes on its permit (S309).
+        this.refused.set(signInError(failure));
       },
     });
   }

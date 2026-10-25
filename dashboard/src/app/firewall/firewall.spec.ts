@@ -152,6 +152,9 @@ describe('Firewall', () => {
     fixture.detectChanges();
     expect(text()).toContain('managed firewall disabled');
     expect(text()).toContain('Review changes');
+    const permit = fixture.nativeElement.querySelector('.permit') as HTMLElement;
+    expect(permit.dataset['state']).toBe('refused');
+    expect(permit.querySelector('.permit-reason')?.textContent).toContain('managed firewall disabled');
   });
 
   it('lands on done when already in sync', () => {

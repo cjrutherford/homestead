@@ -1,79 +1,103 @@
 <section aria-label="Appliance status">
-  <h1>Status</h1>
+  <header class="masthead">
+    <h1>Status</h1>
+    <p class="masthead-fact">{{ fact() }}</p>
+  </header>
 
   @if (error()) {
     <app-state-message kind="error" [headline]="error()" detail="Check that the appliance is on, then check the service with: systemctl status homestead-server" actionLabel="Try again" (action)="load()" />
   } @else {
-    <app-loading [loading]="!health() && !identity()" shape="lines">
-      <dl class="facts" aria-label="Appliance">
-        <div>
-          <dt>Service</dt>
-          <dd>{{ health()?.status }}</dd>
-        </div>
-        <div>
-          <dt>Claim</dt>
-          <dd>{{ identity()?.state | titlecase }}</dd>
-        </div>
-        <div>
-          <dt>Version</dt>
-          <dd class="mono">{{ health()?.version ?? identity()?.version }}</dd>
-        </div>
-      </dl>
-    </app-loading>
-
-    @if (unclaimed()) {
-      <app-state-message
-        kind="notice"
-        headline="This appliance is not claimed yet."
-        detail="Claim it with the token from sudo homesteadctl claim token on the appliance. Diagnostics show here once it is claimed."
-        actionLabel="Claim this appliance"
-        actionLink="/claim"
-      />
-    }
-
-    @if (report(); as diagnostics) {
-      @if (problems().length) {
-        <h2>Needs attention ({{ problems().length }})</h2>
-        <ul class="triage">
+    @if (unclaimed() || problems().length) {
+      <section class="field-panel needs-you" [attr.data-state]="worst()" aria-labelledby="status-needs-you">
+        <h2 id="status-needs-you">Needs you ({{ problems().length + (unclaimed() ? 1 : 0) }})</h2>
+        <ul class="needs-you-list">
+          @if (unclaimed()) {
+            <li data-status="warn">
+              <div class="needs-you-text">
+                <h3>This appliance is not claimed yet.</h3>
+                <p>Claim it with the token from <code>sudo homesteadctl claim token</code> on the appliance. Diagnostics show here once it is claimed.</p>
+              </div>
+              <div class="needs-you-action">
+                <a class="button primary" routerLink="/claim">Claim this appliance</a>
+              </div>
+            </li>
+          }
           @for (check of problems(); track check.name) {
             <li [attr.data-status]="check.status">
-              <h3>
-                {{ labelFor(check.name) }}
-                <span class="badge" [class]="badgeFor(check.status)">{{ check.status }}</span>
-              </h3>
-              <p>{{ check.detail }}</p>
-              <p class="fix">
-                <span class="fix-label">What to do:</span> {{ fixFor(check.name).text }}
-              </p>
-              @if (fixFor(check.name).command; as command) {
-                <app-copy-code [text]="command" />
-              }
+              <div class="needs-you-text">
+                <h3>
+                  {{ labelFor(check.name) }}
+                  <span class="badge" [class]="badgeFor(check.status)">{{ check.status }}</span>
+                </h3>
+                <p>{{ check.detail }}</p>
+                <p class="fix">
+                  <span class="fix-label">What to do:</span> {{ fixFor(check.name).text }}
+                </p>
+              </div>
+              <div class="needs-you-action">
+                @if (fixFor(check.name).command; as command) {
+                  <app-copy-code [text]="command" />
+                } @else if (fixFor(check.name).link; as link) {
+                  <a class="button" [routerLink]="link.path">{{ link.label }}</a>
+                } @else {
+                  <button type="button" (click)="load()">Check again</button>
+                }
+              </div>
             </li>
           }
         </ul>
-      } @else {
+      </section>
+    }
+
+    <section class="field-panel" aria-labelledby="status-appliance">
+      <h2 id="status-appliance">Appliance</h2>
+      <app-loading [loading]="!health() && !identity()" shape="lines">
+        <dl class="facts" aria-label="Appliance">
+          <div>
+            <dt>Service</dt>
+            <dd>{{ health()?.status }}</dd>
+          </div>
+          <div>
+            <dt>Claim</dt>
+            <dd>{{ identity()?.state | titlecase }}</dd>
+          </div>
+          <div>
+            <dt>Version</dt>
+            <dd class="mono">{{ health()?.version ?? identity()?.version }}</dd>
+          </div>
+        </dl>
+      </app-loading>
+    </section>
+
+    @if (report(); as diagnostics) {
+      @if (!problems().length) {
         <app-state-message kind="status" headline="Nothing needs attention" detail="Every check passed." />
       }
 
       @if (good().length) {
-        <details>
-          <summary>All good ({{ good().length }})</summary>
-          <ul class="good-list">
-            @for (check of good(); track check.name) {
-              <li>
-                <span class="badge badge-ok">ok</span>
-                <strong>{{ labelFor(check.name) }}</strong>
-                <span>{{ check.detail }}</span>
-              </li>
-            }
-          </ul>
-        </details>
+        <section class="field-panel" data-state="ok" aria-labelledby="status-good">
+          <h2 id="status-good">Checks that passed</h2>
+          <details>
+            <summary>All good ({{ good().length }})</summary>
+            <ul class="good-list">
+              @for (check of good(); track check.name) {
+                <li>
+                  <span class="badge badge-ok">ok</span>
+                  <strong>{{ labelFor(check.name) }}</strong>
+                  <span>{{ check.detail }}</span>
+                </li>
+              }
+            </ul>
+          </details>
+        </section>
       }
 
-      <h2>Diagnostics: run the checks yourself</h2>
-      <p>The same checks are available from a terminal on the appliance.</p>
-      <p><app-copy-code text="homesteadctl doctor" /></p>
-      <p><app-copy-code text="homesteadctl status" /></p>
+      <section class="field-panel" aria-labelledby="status-diagnostics">
+        <h2 id="status-diagnostics">Diagnostics: run the checks yourself</h2>
+        <p>The same checks are available from a terminal on the appliance.</p>
+        <p><app-copy-code text="homesteadctl doctor" /></p>
+        <p><app-copy-code text="homesteadctl status" /></p>
+      </section>
     }
   }
 </section>

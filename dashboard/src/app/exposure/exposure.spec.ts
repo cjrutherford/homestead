@@ -65,9 +65,9 @@ describe('Exposure', () => {
     http.expectOne('/api/v1/exposure/approvals').flush([]);
     http.expectOne('/api/v1/tls/renewal').flush(NO_RENEWALS);
     fixture.detectChanges();
-    expect(text()).toContain('app.example.com: local → public');
+    expect(text()).toContain('app.example.com: from local to public');
     expect(text()).toContain('Wide source needs CIDRs.');
-    expect(text()).toContain('A app → 203.0.113.7');
+    expect(text()).toContain('A app: 203.0.113.7');
     expect(text()).toContain('tcp/443');
   });
 
@@ -147,6 +147,9 @@ describe('Exposure', () => {
       .flush([{ host: 'app.example.com', actor: 'owner' }]);
     fixture.detectChanges();
     expect(text()).toContain('Approved app.example.com by owner.');
+    const permit = fixture.nativeElement.querySelector('.permit') as HTMLElement;
+    expect(permit.dataset['state']).toBe('approved');
+    expect(permit.querySelector('.permit-stamp-meta')?.textContent).toContain('by owner');
     fixture.componentInstance['apply']('app.example.com');
     const apply = http.expectOne('/api/v1/exposure/apply');
     expect(apply.request.body).toMatchObject({ host: 'app.example.com' });

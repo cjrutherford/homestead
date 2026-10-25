@@ -1,6 +1,9 @@
 <section aria-label="Public exposure">
   @if (!embedded()) {
-    <h1>Exposure</h1>
+    <header class="masthead">
+      <h1>Exposure</h1>
+      <p class="masthead-fact">What the internet may reach, planned and approved by you.</p>
+    </header>
   }
   <p>
     Review the planned public change, approve it under your name, then apply it through the firewall
@@ -104,8 +107,9 @@
 
   <h2>Reviewed plan</h2>
   @if (plan(); as reviewed) {
+    <app-permit [heading]="'Expose ' + reviewed.Host" [approval]="approved()" [refusal]="refused()" label="Exposure plan">
     <p>
-      {{ reviewed.Host }}: {{ reviewed.From }} → {{ reviewed.To }}
+      {{ reviewed.Host }}: from {{ reviewed.From }} to {{ reviewed.To }}
       (aligned: {{ reviewed.Assessment.Aligned }},
       recommended: {{ reviewed.Assessment.Recommended }})
     </p>
@@ -116,15 +120,15 @@
         }
       </ul>
     }
-    <h3>DNS records ({{ reviewed.DNS.length }})</h3>
+    <h4>DNS records ({{ reviewed.DNS.length }})</h4>
     <ul>
       @for (record of reviewed.DNS; track record.Name + record.Type) {
-        <li>{{ record.Type }} {{ record.Name }} → {{ record.Value }}</li>
+        <li>{{ record.Type }} {{ record.Name }}: {{ record.Value }}</li>
       }
     </ul>
-    <h3>TLS: {{ reviewed.TLS.Action }} {{ reviewed.TLS.Name }}</h3>
+    <h4>TLS: {{ reviewed.TLS.Action }} {{ reviewed.TLS.Name }}</h4>
     <p>{{ reviewed.TLS.Detail }}</p>
-    <h3>Firewall policies ({{ reviewed.Firewall.length }})</h3>
+    <h4>Firewall policies ({{ reviewed.Firewall.length }})</h4>
     <ul>
       @for (policy of reviewed.Firewall; track policy.Service.Name) {
         <li>
@@ -134,8 +138,9 @@
       }
     </ul>
 
-    <h2>Approve</h2>
+    <h4>Approve</h4>
     <form
+      class="permit-actions"
       (submit)="
         approve(actorInput.value, networksInput.value);
         $event.preventDefault()
@@ -156,6 +161,7 @@
       </div>
       <button type="submit" class="primary" [disabled]="busy()">Approve plan</button>
     </form>
+    </app-permit>
 
     <h2>Approvals ({{ approvals().length }})</h2>
     <ul>

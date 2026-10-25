@@ -165,6 +165,8 @@ describe('Tunnel', () => {
     expect(dns).toContain('203.0.113.7');
     expect(text()).toContain('not restored');
     expect(text()).toContain('zone example.com');
+    // The plan is a permit sealed with its digest (S309).
+    expect(el.querySelector('[aria-label="Tunnel plan"] .permit-seal')?.getAttribute('aria-label')).toBe('Plan digest d1g');
   });
 
   it('approves the reviewed plan by its digest', () => {
@@ -181,6 +183,8 @@ describe('Tunnel', () => {
     fixture.detectChanges();
     expect(el.querySelector('app-operation-progress a[href="/operations/23"]')).not.toBeNull();
     expect(el.querySelector('table[aria-label="DNS changes"]')).toBeNull();
+    // The approved plan stays as its permit with the Approved stamp (S309).
+    expect(el.querySelector('.permit[data-state="approved"] .permit-stamp')?.textContent).toContain('Approved');
   });
 
   it('re-reads the tunnels when setup ends and keeps saying Done after the rail drops it', () => {

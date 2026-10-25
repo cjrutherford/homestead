@@ -7,6 +7,8 @@
  *
  * Palette (light): Limewash page, Board panels, Pine brand and primary
  * actions, Ink text, Signal amber for needs-review, Brick for danger.
+ * S309 adds Hedgerow (the sidebar band), Manila (the permit's paper),
+ * the stamp colours and the Needs you tint (--warn-surface).
  */
 
 :root {
@@ -30,6 +32,21 @@
   --font-body: 'Atkinson Hyperlegible Next', system-ui, -apple-system, 'Segoe UI', sans-serif;
   /* Code-like values only: hostnames, fingerprints, commands, IDs. */
   --font-mono: 'Atkinson Hyperlegible Mono', ui-monospace, 'Cascadia Mono', Menlo, monospace;
+  /* Display face (S309): h1, h2, the wordmark, the permit title and the
+     stamp only. Signage voice: sentence case, slightly tight, never caps. */
+  --font-display: 'Barlow Semi Condensed', 'Atkinson Hyperlegible Next', system-ui, sans-serif;
+  --font-size-display: 2.75rem;
+  --line-height-display: 1.08;
+  --tracking-display: -0.01em;
+  /* Prose blocks stay readable. */
+  --measure: 72ch;
+
+  /* Hierarchy marks (S309): the furrow is a field's state edge, the heavy
+     rule closes the masthead, the stamp presses at an angle. */
+  --furrow: 0.25rem;
+  --rule-heavy: 2px;
+  --stamp-angle: -4deg;
+  --seal-size: 6rem;
 
   /* Shape follows hierarchy: controls are tight, panels softer, dialogs
      softest, badges are pills. */
@@ -117,22 +134,33 @@
   --running: #1f4d3a;
   --running-bg: #dce9e1;
   --pending-bg: #e7ebe4;
-  --sidebar-bg: #1f4d3a;
-  --sidebar-foreground: #f2f4f0;
-  --sidebar-muted: #c3d6ca;
-  --sidebar-hover-bg: #29604a;
-  --sidebar-active-bg: #e4eee7;
+  --sidebar-bg: #12291f;
+  --sidebar-foreground: #eef3ee;
+  --sidebar-muted: #b5c9bc;
+  --sidebar-hover-bg: #1e3a2d;
+  --sidebar-active-bg: #f2f4f0;
   --sidebar-active-foreground: #1f4d3a;
-  --sidebar-border: #3d6a56;
+  --sidebar-border: #2b4a3c;
   --sidebar-focus: #ffffff;
-  --rail-bg: #cfe985;
-  --rail-foreground: #14201a;
-  --rail-track: #f3fadb;
-  --rail-fill: #1f4d3a;
+  --rail-bg: #1b3629;
+  --rail-foreground: #eef3ee;
+  --rail-track: #0c1d15;
+  --rail-fill: #cfe985;
   --shadow-sm: 0 1px 2px rgb(28 38 33 / 0.1);
   --shadow-md: 0 2px 8px rgb(28 38 33 / 0.14);
   --shadow-lg: 0 12px 32px rgb(28 38 33 / 0.22);
   --backdrop: rgb(28 38 33 / 0.55);
+  --rail-border: #6f9a83;
+  --hedgerow: #12291f;
+  --on-hedgerow: #eef3ee;
+  --manila: #f5eedb;
+  --manila-rule: #8f7a4a;
+  --on-manila: #1c2621;
+  --on-manila-muted: #5b5136;
+  --stamp: #1f4d3a;
+  --stamp-refused: #9e2f1e;
+  --warn-surface: #fbf1de;
+  --masthead-rule: #1f4d3a;
   color-scheme: light;
 }
 
@@ -166,22 +194,33 @@
     --running: #8fd3ae;
     --running-bg: #1f3a2d;
     --pending-bg: #26312b;
-    --sidebar-bg: #16211b;
+    --sidebar-bg: #0c120f;
     --sidebar-foreground: #e4ebe6;
     --sidebar-muted: #a3b1a8;
-    --sidebar-hover-bg: #223329;
-    --sidebar-active-bg: #2d4b3b;
+    --sidebar-hover-bg: #1a2620;
+    --sidebar-active-bg: #131a16;
     --sidebar-active-foreground: #ffffff;
-    --sidebar-border: #2f4338;
+    --sidebar-border: #223029;
     --sidebar-focus: #f2c14e;
-  --rail-bg: #c6e57a;
-  --rail-foreground: #14201a;
-  --rail-track: #f3fadb;
-  --rail-fill: #1f4d3a;
+    --rail-bg: #16211b;
+    --rail-foreground: #e4ebe6;
+    --rail-track: #0c120f;
+    --rail-fill: #c6e57a;
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
     --shadow-md: 0 2px 8px rgb(0 0 0 / 0.5);
     --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.6);
     --backdrop: rgb(5 9 7 / 0.7);
+    --rail-border: #5f7c6b;
+    --hedgerow: #0c120f;
+    --on-hedgerow: #e4ebe6;
+    --manila: #2a2619;
+    --manila-rule: #9a8a5e;
+    --on-manila: #efe8d4;
+    --on-manila-muted: #c9bd9c;
+    --stamp: #7fcba3;
+    --stamp-refused: #ff9c8a;
+    --warn-surface: #2e2414;
+    --masthead-rule: #7fcba3;
     color-scheme: dark;
   }
 }
@@ -215,22 +254,33 @@
   --running: #8fd3ae;
   --running-bg: #1f3a2d;
   --pending-bg: #26312b;
-  --sidebar-bg: #16211b;
+  --sidebar-bg: #0c120f;
   --sidebar-foreground: #e4ebe6;
   --sidebar-muted: #a3b1a8;
-  --sidebar-hover-bg: #223329;
-  --sidebar-active-bg: #2d4b3b;
+  --sidebar-hover-bg: #1a2620;
+  --sidebar-active-bg: #131a16;
   --sidebar-active-foreground: #ffffff;
-  --sidebar-border: #2f4338;
+  --sidebar-border: #223029;
   --sidebar-focus: #f2c14e;
-  --rail-bg: #c6e57a;
-  --rail-foreground: #14201a;
-  --rail-track: #f3fadb;
-  --rail-fill: #1f4d3a;
+  --rail-bg: #16211b;
+  --rail-foreground: #e4ebe6;
+  --rail-track: #0c120f;
+  --rail-fill: #c6e57a;
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-md: 0 2px 8px rgb(0 0 0 / 0.5);
   --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.6);
   --backdrop: rgb(5 9 7 / 0.7);
+  --rail-border: #5f7c6b;
+  --hedgerow: #0c120f;
+  --on-hedgerow: #e4ebe6;
+  --manila: #2a2619;
+  --manila-rule: #9a8a5e;
+  --on-manila: #efe8d4;
+  --on-manila-muted: #c9bd9c;
+  --stamp: #7fcba3;
+  --stamp-refused: #ff9c8a;
+  --warn-surface: #2e2414;
+  --masthead-rule: #7fcba3;
   color-scheme: dark;
 }
 
@@ -271,15 +321,64 @@
   --sidebar-active-foreground: #000000;
   --sidebar-border: #ffffff;
   --sidebar-focus: #00e5ff;
-  --rail-bg: #ffff00;
-  --rail-foreground: #000000;
-  --rail-track: #ffffff;
-  --rail-fill: #000000;
+  --rail-bg: #000000;
+  --rail-foreground: #ffffff;
+  --rail-track: #000000;
+  --rail-fill: #ffff00;
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: none;
   --backdrop: rgb(0 0 0 / 0.85);
+  --rail-border: #ffffff;
+  --hedgerow: #000000;
+  --on-hedgerow: #ffffff;
+  --manila: #ffffff;
+  --manila-rule: #000000;
+  --on-manila: #000000;
+  --on-manila-muted: #000000;
+  --stamp: #000000;
+  --stamp-refused: #000000;
+  --warn-surface: #000000;
+  --masthead-rule: #ffffff;
   color-scheme: dark;
+}
+
+/*
+ * High contrast keeps its black, white and yellow, and the permit (S309)
+ * becomes a white document with a black border and a black stamp. Its
+ * contents (tables, links, buttons, messages) read on white, so the
+ * palette below is scoped to the permit. Checked by tokens-contrast.spec.ts.
+ */
+[data-theme='high-contrast'] .permit {
+  --background: #ffffff;
+  --surface: #ffffff;
+  --surface-sunken: #ededed;
+  --surface-raised: #ffffff;
+  --foreground: #000000;
+  --muted: #1f1f1f;
+  --border: #000000;
+  --border-strong: #000000;
+  --primary: #000000;
+  --primary-hover: #333333;
+  --primary-active: #000000;
+  --primary-foreground: #ffffff;
+  --link: #0a3fa8;
+  --link-hover: #062a72;
+  --focus-ring: #0a3fa8;
+  --danger: #a1170c;
+  --danger-hover: #7d1209;
+  --danger-active: #5c0d06;
+  --danger-foreground: #ffffff;
+  --danger-bg: #ffffff;
+  --warn: #8a5300;
+  --warn-text: #8a5300;
+  --warn-bg: #ffffff;
+  --success: #0b6b2a;
+  --success-bg: #ffffff;
+  --running: #0a3fa8;
+  --running-bg: #ffffff;
+  --pending-bg: #ffffff;
+  color-scheme: light;
 }
 
 [data-theme] {

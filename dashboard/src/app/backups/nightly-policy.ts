@@ -9,6 +9,8 @@ import {
 } from '../core/api.service';
 import { httpErrorMessage } from '../core/http-error';
 import { StateMessage } from '../state/state-message';
+import { SessionService } from '../auth/session.service';
+import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
 import { Loading } from '../ui/loading';
 
 /** A refusal (422) or a stale plan (409) reads as the appliance's own words. */
@@ -25,7 +27,7 @@ function policyError(failure: HttpErrorResponse): string {
  * approves the reviewed plan; the same request with its digest applies it.
  */
 @Component({
-  imports: [Loading, StateMessage, RouterLink],
+  imports: [Loading, Permit, StateMessage, RouterLink],
   selector: 'app-nightly-policy',
   template: `
     <app-loading [loading]="!status() && !error()" shape="lines">
@@ -92,8 +94,8 @@ function policyError(failure: HttpErrorResponse): string {
         }
 
         @if (plan(); as p) {
-          <section aria-label="Policy plan">
-            <h3>Review</h3>
+          <app-permit heading="Nightly backup policy" [digest]="p.digest" [refusal]="refused()" label="Policy plan">
+            <h4>Will change</h4>
             <ul aria-label="What approving changes">
               @for (change of p.changes; track change) {
                 <li>{{ change }}</li>
@@ -115,9 +117,16 @@ function policyError(failure: HttpErrorResponse): string {
               </ul>
             }
             <p class="hint">Nothing changes until you approve. Each run is listed under Operations and in the audit log.</p>
-            <button type="button" class="primary" (click)="approve()" [disabled]="busy()">Approve the policy</button>
-            <button type="button" class="quiet" (click)="plan.set(null)" [disabled]="busy()">Cancel</button>
-          </section>
+            <p class="permit-actions">
+              <button type="button" class="primary" (click)="approve()" [disabled]="busy()">Approve the policy</button>
+              <button type="button" class="quiet" (click)="plan.set(null); refused.set(null)" [disabled]="busy()">Cancel</button>
+            </p>
+          </app-permit>
+        }
+        @if (permit(); as a) {
+          <app-permit [heading]="a.heading" [digest]="a.digest" [approval]="a.approval">
+            <p>{{ a.summary }}</p>
+          </app-permit>
         }
         @if (approvedNote()) {
           <app-state-message kind="status" [headline]="approvedNote()" />
@@ -145,6 +154,11 @@ export class NightlyPolicy implements OnInit {
   protected readonly enabled = signal(true);
   /** The request the shown plan was made for; approval sends exactly this. */
   private reviewed: BackupPolicyRequest | null = null;
+  /** The policy approved here, kept as its stamped permit (S309). */
+  protected readonly permit = signal<ApprovedPlan | null>(null);
+  /** Why the appliance would not approve the plan on screen. */
+  protected readonly refused = signal<string | null>(null);
+  private readonly sessions = inject(SessionService);
 
   ngOnInit(): void {
     this.load();
@@ -178,6 +192,8 @@ export class NightlyPolicy implements OnInit {
     this.busy.set(true);
     this.error.set(null);
     this.approvedNote.set(null);
+    this.permit.set(null);
+    this.refused.set(null);
     this.api.backupPolicyPlan(request).subscribe({
       next: (plan) => {
         this.busy.set(false);
@@ -202,6 +218,7 @@ export class NightlyPolicy implements OnInit {
     this.api.backupPolicyApply(this.reviewed, plan.digest).subscribe({
       next: (status) => {
         this.busy.set(false);
+        this.permit.set(approvedPlan('Nightly backup policy', plan.digest, plan.changes.join(' '), this.sessions.username()));
         this.plan.set(null);
         this.reviewed = null;
         this.approvedNote.set(
@@ -214,8 +231,11 @@ export class NightlyPolicy implements OnInit {
         this.busy.set(false);
         if (failure.status === 409) {
           this.plan.set(null);
+          this.error.set(policyError(failure));
+          return;
         }
-        this.error.set(policyError(failure));
+        // The plan stays on screen: the refusal goes on its permit (S309).
+        this.refused.set(policyError(failure));
       },
     });
   }

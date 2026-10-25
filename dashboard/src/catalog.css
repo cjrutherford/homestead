@@ -154,10 +154,6 @@
   padding-inline-start: var(--spacing-lg);
 }
 
-.wizard-summary h3:first-child {
-  margin-top: 0;
-}
-
 .wizard-folder {
   margin-bottom: var(--spacing-md);
 }

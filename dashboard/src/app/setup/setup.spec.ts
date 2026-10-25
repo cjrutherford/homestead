@@ -51,7 +51,8 @@ describe('Setup wizard (S291)', () => {
 
   const el = () => fixture.nativeElement as HTMLElement;
   const text = () => el().textContent ?? '';
-  const heading = () => el().querySelector('h2')?.textContent?.replace(/\s+/g, ' ').trim();
+  // The step heading takes focus (tabindex -1); a Needs you field may sit above it.
+  const heading = () => el().querySelector('h2[tabindex="-1"]')?.textContent?.replace(/\s+/g, ' ').trim();
   const button = (label: string) =>
     Array.from(el().querySelectorAll('button, a.button')).find((b) => (b.textContent ?? '').trim() === label) as
       | HTMLButtonElement
@@ -211,11 +212,11 @@ describe('Setup wizard (S291)', () => {
       button('Next')!.click();
       await settle();
       expect(heading()).toBe('Step 3 of 6: Sign-in');
-      expect(document.activeElement).toBe(el().querySelector('h2'));
+      expect(document.activeElement).toBe(el().querySelector('h2[tabindex="-1"]'));
       button('Back')!.click();
       await settle();
       expect(heading()).toBe('Step 2 of 6: Storage');
-      expect(document.activeElement).toBe(el().querySelector('h2'));
+      expect(document.activeElement).toBe(el().querySelector('h2[tabindex="-1"]'));
       // Back works even though the step it returns to is still to do.
       expect(button('Next')!.disabled).toBe(false);
     });
@@ -244,6 +245,21 @@ describe('Setup wizard (S291)', () => {
       button('Finish this step')!.click();
       await settle();
       expect(heading()).toBe('Step 3 of 6: Sign-in');
+    });
+
+    it('states progress in the masthead and lists earlier steps still to do under Needs you (S309)', async () => {
+      await open(doneThrough(1));
+      expect(el().querySelector('.masthead-fact')?.textContent).toContain('1 of 6 steps are done. Storage is next.');
+      expect(el().querySelector('.needs-you')).toBeNull();
+      // Looking ahead while Storage is still to do: it is listed, with a way back.
+      (fixture.componentInstance as unknown as { index: { set(i: number): void } }).index.set(3);
+      await settle();
+      const field = el().querySelector('.needs-you') as HTMLElement;
+      expect(field).not.toBeNull();
+      expect(field.textContent).toContain('Storage');
+      button('Go to Storage')!.click();
+      await settle();
+      expect(heading()).toBe('Step 2 of 6: Storage');
     });
 
     it('offers the nightly policy in the backups step and links to Storage without backup storage', async () => {

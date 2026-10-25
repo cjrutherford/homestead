@@ -1,5 +1,8 @@
 <section aria-label="Certificates">
-  <h1>Certificates</h1>
+  <header class="masthead">
+    <h1>Certificates</h1>
+    <p class="masthead-fact">Public certificates, planned and approved before they are requested.</p>
+  </header>
   <p>
     First issuance of public certificates through DNS-01. Review the plan,
     approve it under your name, then apply. The plan is only a preview:
@@ -98,7 +101,7 @@
   <ul aria-label="Issuance plans">
     @for (plan of plans(); track plan.certificate) {
       <li class="tls-plan">
-        <h2>{{ plan.certificate }}{{ plan.approved ? ' (approved)' : '' }}</h2>
+        <app-permit [level]="2" [heading]="plan.certificate" [digest]="plan.digest" [approval]="approvalOf(plan)">
         <dl>
           <dt>Names</dt>
           <dd>{{ plan.names.join(', ') }}</dd>
@@ -167,12 +170,15 @@
             (change)="setManualRenewal(plan.certificate, $any($event.target).checked)" />
           I will renew this certificate myself (leave unticked to let Homestead re-issue it unattended before it expires)
         </label>
-        <button type="button" (click)="approve(plan)" [disabled]="!canApprove(plan)">
-          Approve plan
-        </button>
-        <button type="button" (click)="apply(plan)" [disabled]="!plan.approved || locked()">
-          Issue certificate
-        </button>
+        <p class="permit-actions">
+          <button type="button" (click)="approve(plan)" [disabled]="!canApprove(plan)">
+            Approve plan
+          </button>
+          <button type="button" (click)="apply(plan)" [disabled]="!plan.approved || locked()">
+            Issue certificate
+          </button>
+        </p>
+        </app-permit>
       </li>
     }
   </ul>

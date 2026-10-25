@@ -34,6 +34,7 @@ import { StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
+import { Permit } from '../ui/permit';
 import { appRoutes, mergeRoutes, routeFromManifest } from './app-routes';
 import { signInError } from './app-sign-in';
 import { BrowserAdvisories } from './browser-advisories';
@@ -112,6 +113,7 @@ function helpFor(id: StepId, title: string): string {
  */
 @Component({
   imports: [
+    Permit,
     RouterLink,
     Loading,
     StateMessage,
@@ -217,6 +219,15 @@ export class InstallWizard implements OnInit {
     return manifest ? stepsFor(manifest) : [];
   });
   protected readonly current = computed<StepId>(() => this.steps()[this.stepIndex()]?.id ?? 'about');
+  /** The masthead sentence: where the owner is in the install. */
+  protected readonly fact = computed(() => {
+    const steps = this.steps();
+    if (this.current() === 'done') {
+      return `${this.title()} is installed.`;
+    }
+    const step = steps[this.stepIndex()];
+    return step ? `Step ${this.stepIndex() + 1} of ${steps.length}: ${step.label}.` : '';
+  });
   protected readonly title = computed(() => this.manifest()?.Title ?? this.name());
   protected readonly craft = computed(() => {
     const manifest = this.manifest();

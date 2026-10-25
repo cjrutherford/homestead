@@ -1060,3 +1060,16 @@ Authors and The Atkinson Hyperlegible Mono Project Authors); the OFL texts
 ship beside the fonts as `OFL-Atkinson-Hyperlegible-Next.txt` and
 `OFL-Atkinson-Hyperlegible-Mono.txt`. The files are unmodified.
 
+
+## Barlow Semi Condensed SemiBold (S309)
+Bundled dashboard display face: `BarlowSemiCondensed-SemiBold.woff2` in
+`dashboard/public/fonts/` (weight 600, normal, Latin subset), used only for
+headings, the wordmark, the permit title and the approval stamp. Served by
+the daemon with the dashboard (no runtime fetch from any external host).
+Source: the Barlow Project (`https://github.com/jpt/barlow`), taken from the
+npm package `@fontsource/barlow-semi-condensed` 5.3.0
+(`files/barlow-semi-condensed-latin-600-normal.woff2`, retrieved 2026-10-25,
+SHA-256 `f158417e9207b5362f9b71a2fe779ce5bb836ad972f38445c3163af39d2c998d`);
+no package scripts were run. Licence: SIL Open Font License 1.1 (Copyright
+2017 The Barlow Project Authors); the OFL text ships beside the font as
+`OFL-Barlow.txt`. The file is unmodified.

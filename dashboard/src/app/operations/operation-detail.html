@@ -1,6 +1,9 @@
 <section aria-label="Operation detail">
   @if (missing()) {
-    <h1>Operation not found</h1>
+    <header class="masthead">
+      <h1>Operation not found</h1>
+      <p class="masthead-fact">No operation on this appliance has this number.</p>
+    </header>
     <app-state-message
       kind="empty"
       headline="No operation has this number."
@@ -8,7 +11,10 @@
       actionLink="/operations"
     />
   } @else {
-    <h1>{{ title() }}</h1>
+    <header class="masthead">
+      <h1>{{ title() }}</h1>
+      <p class="masthead-fact">{{ fact() }}</p>
+    </header>
     <app-loading [loading]="operation() === null" shape="list">
       @if (operation(); as op) {
         <p>

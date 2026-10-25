@@ -16,6 +16,8 @@ import { Dialog } from '../ui/dialog';
 import { ariaSort, nextSort, SortState, sortRows } from '../core/sort';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
+import { SessionService } from '../auth/session.service';
+import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
 
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
 
@@ -119,7 +121,7 @@ export const TRUST_GUIDES: TrustGuide[] = [
  * arrives over your signed-in session. The private key is never shown.
  */
 @Component({
-  imports: [FormsModule, OperationProgress, Loading, StateMessage, CopyCode, WhenPipe, Dialog],
+  imports: [FormsModule, OperationProgress, Loading, Permit, StateMessage, CopyCode, WhenPipe, Dialog],
   selector: 'app-trust',
   templateUrl: './trust.html',
   styles: [
@@ -138,6 +140,11 @@ export class Trust implements OnInit, OnDestroy {
   protected readonly error = signal<string | null>(null);
   protected readonly notice = signal<string | null>(null);
   protected readonly plan = signal<LocalCaRotationPlan | null>(null);
+  /** The plan approved here, kept as its stamped permit (S309). */
+  protected readonly approved = signal<ApprovedPlan | null>(null);
+  /** Why the appliance would not approve the plan on screen. */
+  protected readonly refused = signal<string | null>(null);
+  private readonly sessions = inject(SessionService);
   protected readonly confirmed = signal(false);
   protected readonly operationId = signal<number | null>(null);
   protected readonly operation = signal<OperationState | null>(null);
@@ -293,9 +300,13 @@ export class Trust implements OnInit, OnDestroy {
     });
   }
 
-  previewRotation(): void {
+  previewRotation(keepRefusal = false): void {
     this.error.set(null);
     this.confirmed.set(false);
+    this.approved.set(null);
+    if (!keepRefusal) {
+      this.refused.set(null);
+    }
     this.api.localCaRotationPlan().subscribe({
       next: (plan) => this.plan.set(plan),
       error: (failure: HttpErrorResponse) => this.error.set(this.describe(failure)),
@@ -316,14 +327,19 @@ export class Trust implements OnInit, OnDestroy {
     this.api.localCaRotate(plan.digest).subscribe({
       next: (started) => {
         this.busy.set(false);
+        this.refused.set(null);
+        this.approved.set(
+          approvedPlan('Rotate the root', plan.digest, plan.devices_must_retrust, this.sessions.username()),
+        );
         this.plan.set(null);
         this.notice.set('Root rotation started. Every device must trust the new root.');
         this.follow(started.id);
       },
       error: (failure: HttpErrorResponse) => {
         this.busy.set(false);
-        this.error.set(this.describe(failure));
-        this.previewRotation();
+        // A fresh preview replaces the plan; the refusal goes on its permit (S309).
+        this.refused.set(this.describe(failure));
+        this.previewRotation(true);
       },
     });
   }

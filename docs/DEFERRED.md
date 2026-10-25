@@ -929,3 +929,21 @@
   - a `leave_sign_in` uninstall cannot reach Authentik, so the owner deletes
     the provider and application there by hand (the audit names the client
     id).
+
+## Dashboard design language (S309)
+
+- Field panels (state furrows around a group of facts) are used on Status and
+  Setup only; other pages keep plain panels until each is reviewed.
+- Approval stamps live in component memory: a reload drops the Approved stamp
+  and its "by" and "when", because most plan APIs do not return who approved a
+  plan or when. Persisting approvals needs an API field per plan.
+- Plans without a digest render a permit with no seal: firewall, exposure,
+  install, uninstall, Nextcloud link, and platform updates. Adding digests to
+  those plan APIs would give every permit a seal.
+- The platform updates permit is a preview with no stamp; the update runs as an
+  operation, not an approval.
+- Danger risky blocks (Caddy deploy, reconcile, re-key, teardown, volume
+  removal) stay as risky panels rather than permits.
+- The craft image verify report is a report, not a permit.
+- Arrows remain in non-button change text on Config and Updates (diff lists);
+  replace with words when those pages are reworked.

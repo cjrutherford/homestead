@@ -1,12 +1,102 @@
-# Dashboard design (S248, S282, S283, S285)
+# Dashboard design (S248, S282, S283, S285, S309)
 
 Clean-room (ADR-019): plain Angular and CSS custom properties, no UI
 framework, no vendored third-party UI code.
 
+## Hierarchy (S309)
+The owner sees first what needs them, then what the appliance is doing,
+then the detail. The vernacular is the homestead's own: land in fields
+worked in rows, signage on a feed store, and the paper permit that says a
+change was reviewed and approved. Three tiers, each treated differently, and
+one bold element.
+
+- **Tier 0, the shell recedes.** The sidebar is a deep pine band,
+  **Hedgerow** (`--hedgerow`, `--on-hedgerow`). The wordmark is in the
+  display face. The current page is a Limewash **notch**: the link takes the
+  page colour, loses its inline-end radius and margin, and two small
+  radial-gradient curves join it to the canvas, so the page reads as cut
+  from the band. A 4px inset furrow in the primary colour marks it too, so
+  the state never rests on colour alone. High contrast keeps its yellow
+  current page and drops the furrow.
+- **Tier 1, the masthead.** Every page opens with
+  `<header class="masthead"><h1>…</h1><p class="masthead-fact">…</p></header>`:
+  the `h1` in the display face (up to `--font-size-display`, 2.75rem) and one
+  plain sentence. Where the page already has live data the sentence states
+  its most important fact, computed from data the page already loads
+  (Status: "Homestead is running. Nothing needs you."; Setup: "2 of 6 steps
+  are done. Storage is next."; Catalog: the installed count; Tunnel: the
+  tunnel, its routes and its connector). Other pages keep a one-line
+  purpose. A sentence, never a stat card. The masthead closes with the only
+  heavy rule on the page (`--rule-heavy`, `--masthead-rule`).
+- **Tier 2, fields.** A section with a state is a **field**:
+  `.field-panel` is a Board panel; `data-state="warn|fail|ok"` adds a
+  `--furrow` (4px) on its inline-start edge in that state's colour. A neutral
+  field has no furrow. The furrow encodes state only, never decoration, and
+  the heading or a badge always says the state in words. Status and Setup
+  use fields; other pages keep hairline `h2` sections (see DEFERRED.md).
+- **Needs you.** On Status and Setup, when anything needs the owner, a
+  `.needs-you` field comes first: "Needs you (N)", the only place amber
+  fills a background (`--warn-surface`). Each row is one sentence and one
+  action (a button, a link or a command to copy). Status builds it from the
+  unclaimed state and the failing or warning checks; Setup from the steps
+  still to do before the one shown. When nothing needs the owner it is not
+  rendered and the masthead says so.
+- **Tier 3, detail.** Tables, definition lists and logs drop to
+  `--font-size-sm` with muted headers. A `dl` is a **ledger**: on wide
+  screens `dl > div > dt` labels are muted, right-aligned against a hairline,
+  values beside them; below 40rem they stack. Mono stays for hostnames,
+  fingerprints, commands and IDs.
+
+### The permit: the one bold element
+Every plan the owner reviews and approves renders as a **permit**
+(`ui/permit.ts`, `<app-permit>`, styles in `src/permit.css`): a document on
+**Manila** paper (`--manila`, `--on-manila`, `--manila-rule`) with a
+perforated top edge (a CSS mask of radial-gradient holes), the plan title in
+the display face, a "Plan for your approval" overline, and the page's own
+review content projected into the body. "Will change", "Leaves alone" and
+"Refused" are ruled `h4` sections (`.permit-section`). The page's buttons
+stay its own; `.permit-actions` (or `.risky-actions`) puts them on a dashed
+signature line. Inputs: `heading`, `digest`, `level` (2 or 3), `label` (an
+accessible name when the page already named its review region), `approval`
+and `refusal`.
+
+- **Seal.** When the plan has a digest it sits in the corner as a circular
+  mono seal with the first eight characters (`sealCode`, without an
+  algorithm prefix); its accessible name is "Plan digest" and the full
+  digest. Below 30rem the seal becomes a pill under the title.
+- **Approved stamp.** After approval a `--stamp` "Approved" stamp (display
+  face, double rule border, rotated `--stamp-angle`, -4deg) presses on: it
+  scales from 1.25 to 1 and fades in over `--duration-slow`. This is the
+  only motion not started by the owner's hand in the moment, it runs once,
+  and with `prefers-reduced-motion` it simply appears. The stamp says who
+  approved and when. A page keeps the approved permit as a compact record
+  (`approvedPlan(heading, digest, summary, by)`) beside the operation it
+  started, so the stamp is seen; a plan the appliance reports approved
+  without saying by whom still gets the stamp, without the meta line.
+- **Not approved.** When the appliance refuses an approval and the plan
+  stays on screen, the permit gets a `--stamp-refused` "Not approved" stamp,
+  never rotated, with the appliance's reason beside it. A stale plan (409)
+  is cleared as before and the page error says why.
+- **Where.** Tunnel, sign-in with Authentik, exposure, firewall, catalog
+  install review, app public name, app sign-in, nightly backup policy, names
+  resolver, uninstall (inside its danger dialog), platform updates, TLS
+  issuance plans, root rotation, Nextcloud link and data migration. Plans
+  without a digest (firewall, exposure, install, uninstall, Nextcloud,
+  platform updates) have no seal.
+- **High contrast.** The permit becomes a white document with a black
+  border; tokens are re-scoped under `[data-theme='high-contrast'] .permit`
+  so its contents are legible on white, and the stamp is black. Forced
+  colours keep the borders and drop the mask.
+
+The validation board shows a pending, an approved and a refused permit.
+
 ## Tokens
 `dashboard/src/tokens.css` is the only place values live; components use
 `var(--...)`. Groups: spacing, type scale, radius, elevation, motion, layers,
-touch target (`--touch-target`, 44px; sidebar rows drop to 40px on fine pointers) and colour. Breakpoints are literals
+touch target (`--touch-target`, 44px; sidebar rows drop to 40px on fine pointers),
+the S309 scalars (`--font-display`, `--font-size-display`,
+`--line-height-display`, `--tracking-display`, `--measure` 72ch,
+`--furrow`, `--rule-heavy`, `--stamp-angle`, `--seal-size`) and colour. Breakpoints are literals
 documented in that file (md, 48rem, is where the sidebar becomes a column).
 
 Radius and elevation follow hierarchy: controls `--radius-control`, panels
@@ -24,6 +114,13 @@ because `#B4690E` is 4.2:1 on white), Brick `#9E2F1E` danger, Meadow
 `#1B2420` board) with a lighter pine primary `#7FCBA3`. High contrast is
 black, white and yellow.
 
+S309 adds, in every theme: `--hedgerow` and `--on-hedgerow` (the sidebar
+band; `--sidebar-*` follow it), `--manila`, `--manila-rule`, `--on-manila`
+and `--on-manila-muted` (the permit), `--stamp` and `--stamp-refused`,
+`--warn-surface` (Needs you), `--masthead-rule`, and quieter `--rail-*`
+values. Light Hedgerow is `#12291F`, Manila `#F5EEDB`; dark Hedgerow is a
+step darker than the page (`#0C120F`) and Manila a warm deep `#2A2619`.
+
 Selection: no `data-theme` follows `prefers-color-scheme`; the Account page
 stores system, light, dark or high contrast in `localStorage`
 (`homestead.theme`) and `ThemeService` sets `data-theme` on `<html>`.
@@ -34,9 +131,13 @@ borders, focus rings and glyph colours) for every token pair in every theme.
 Add a token pair there when you add a token.
 
 ## Type
-Atkinson Hyperlegible Next for all text; Atkinson Hyperlegible Mono
+Display: Barlow Semi Condensed SemiBold (600, `--font-display`, SIL OFL,
+self-hosted woff2) for `h1`, `h2`, the wordmark, the permit title and the
+stamp only: sentence case, `--tracking-display` (-0.01em), never all caps.
+Barlow comes from highway and rail signage, which suits the signage voice.
+Text: Atkinson Hyperlegible Next for all other text; Atkinson Hyperlegible Mono
 (`--font-mono`, `.mono`, `code`, `pre`) only for hostnames, fingerprints,
-commands and IDs. Regular and Bold only. Files live in `public/fonts/`
+commands and IDs. Regular and Bold only for text. Prose blocks stay within `--measure`. Files live in `public/fonts/`
 (licence in `docs/THIRD_PARTY.md`); `font-display: swap`, no external
 requests. Sentence case everywhere; no all-caps labels.
 
@@ -67,14 +168,14 @@ requests. Sentence case everywhere; no all-caps labels.
   `scroll-padding-top`.
 
 ## Shell
-Skip link, grouped sidebar (`core/nav.ts`: Overview, Apps, Network, Storage
+Hedgerow sidebar with the current-page notch (see Hierarchy), skip link, grouped sidebar (`core/nav.ts`: Overview, Apps, Network, Storage
 and backups, System), collapsible groups: only the group holding the current
 page is open by default, and the owner's explicit open or close choices are
 persisted in `localStorage` (`homestead.nav.groups`); current page with `aria-current="page"`, a
 drawer below md with a menu button, focus management and Escape. Logged-out
 visitors see Status, Log in and, while unclaimed, Claim. Log in, Log out and
 the user name live in the sidebar foot. The slot `data-slot="work-orders"`
-holds the work-orders rail (S283); below md the rail is a bottom sheet. Each page has one `<h1>`; the brand is not a heading.
+holds the work-orders rail (S283), now quieter (a hairline border, a smaller heading, the band's own tones); below md the rail is a bottom sheet. Each page has one `<h1>`; the brand is not a heading.
 
 ## Voice and copy
 - Plain verbs, sentence case, the owner's vocabulary (not internal names).
@@ -94,7 +195,9 @@ blocks, is render-blocking; inlined critical CSS omitted those blocks and
 caused a light flash on reload.
 
 ## States, motion and feedback (S283)
-The one bold element is the work-orders rail. Everything else stays quiet.
+Since S309 the one bold element is the permit (see Hierarchy). The
+work-orders rail is Tier 2: present, legible and quiet. Everything else stays
+quiet.
 
 ### Loading
 - Wrap content that waits for data in `<app-loading [loading]="..."
@@ -122,7 +225,8 @@ The one bold element is the work-orders rail. Everything else stays quiet.
   API to answer 200 (see DEFERRED.md).
 
 ### Motion
-- Motion answers a user action, except the rail's progress. No fade-and-slide
+- Motion answers a user action, except the rail's progress and the permit's
+  single stamp press. No fade-and-slide
   on sections, no hover animation on cards.
 - Route changes use View Transitions (`withViewTransitions`): only
   `<main>` crossfades (120 ms out, 200 ms in); the sidebar stays still. The
@@ -244,9 +348,9 @@ gate; the exempt routes are listed in `setup/setup.guard.ts` and
 Four patterns cover most pages. Each uses only the S282 tokens and primitives.
 
 - **Triage list** (Status). Things that need action come first, worst first,
-  as `.triage` items: a badge, what happened, a "What to do:" line and, when a
-  command helps, an `app-copy-code` block. Healthy items collapse into a
-  `<details>` with a count. Identity facts (service, claim, version) sit in a
+  in the Needs you field: a badge, what happened and one action (a link, a
+  command in `app-copy-code`, or Check again). Healthy checks sit in their own
+  ok field, collapsed into a `<details>` with a count. Identity facts (service, claim, version) sit in a
   compact `.facts` list, not a card grid.
 - **App list** (Catalog, Craft apps). One row per app: `.app-icon`, name, a
   one-line purpose, a state badge and the install or open action. Rows, not a
@@ -256,8 +360,10 @@ Four patterns cover most pages. Each uses only the S282 tokens and primitives.
   `<caption>` or heading, status in `.badge`, numbers in `.num`, and sortable
   headers where order matters. Use `core/sort.ts` (`nextSort`, `ariaSort`,
   `sortRows`) and the `th button.sort` style; set `aria-sort` on the header.
-- **Risky action** (Deploy Caddy, Reconcile routes, Apply firewall, rotation,
-  re-key, volume removal, tunnel teardown). A `.risky` block with a "What
+- **Plan review** (every plan the owner approves). An `app-permit`, as
+  described under Hierarchy.
+- **Risky action** (Deploy Caddy, Reconcile routes, re-key, volume removal,
+  tunnel teardown). A `.risky` block with a "What
   changes" preview next to the button, a `danger` or `danger quiet` button, and
   an `app-dialog` (danger variant) that states the consequence before the
   action runs. The dialog only gates the existing call; it adds no API.

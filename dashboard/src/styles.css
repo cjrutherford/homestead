@@ -8,6 +8,7 @@
 @import './feedback.css';
 @import './catalog.css';
 @import './pages.css';
+@import './permit.css';
 
 /* Wizard progress (S036): the steps read as a row, the current one marked. */
 .wizard-steps {

@@ -278,6 +278,7 @@ table {
 th,
 td {
   padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-sm);
   text-align: start;
   vertical-align: top;
   border-bottom: 1px solid var(--border);
@@ -287,6 +288,7 @@ thead th {
   position: sticky;
   top: 0;
   z-index: 1;
+  color: var(--muted);
   background: var(--surface-sunken);
   border-bottom: 1px solid var(--border-strong);
 }
@@ -386,7 +388,7 @@ td time,
   align-items: flex-start;
   margin: var(--spacing-sm) 0;
   padding: var(--spacing-sm) var(--spacing-md);
-  max-width: 70ch;
+  max-width: var(--measure);
   color: var(--muted);
   background: var(--surface);
   border: 1px solid var(--border);

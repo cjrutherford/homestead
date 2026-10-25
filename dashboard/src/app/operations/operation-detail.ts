@@ -43,6 +43,27 @@ export class OperationDetail implements OnInit {
         return 'Waiting';
     }
   });
+  /** The masthead sentence: where the operation stands, from the record the page reads. */
+  protected readonly fact = computed(() => {
+    const op = this.operation();
+    if (!op) {
+      return 'Reading the operation record.';
+    }
+    const p = this.progress();
+    const steps = p.total === 1 ? '1 step' : `${p.total} steps`;
+    switch (op.status) {
+      case 'succeeded':
+        return `This operation finished all ${steps}.`;
+      case 'failed':
+        return `This operation stopped after ${p.done} of ${steps}.`;
+      case 'running':
+        return `This operation is running: ${p.done} of ${steps} done.`;
+      case 'cancelled':
+        return 'This operation was cancelled.';
+      default:
+        return 'This operation is waiting to start.';
+    }
+  });
   protected readonly badge = computed(() => {
     switch (this.operation()?.status) {
       case 'succeeded':

@@ -254,11 +254,13 @@ app-work-orders-rail {
   display: none;
 }
 
+/* Tier 2 (S309): a quiet panel on the Hedgerow; the permit is the bold element. */
 .rail {
   margin: 0 var(--spacing-xs);
-  padding: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
   color: var(--rail-foreground);
   background: var(--rail-bg);
+  border: 1px solid var(--rail-border);
   border-radius: var(--radius-panel);
 }
 
@@ -273,6 +275,7 @@ app-work-orders-rail {
 
 .rail-heading {
   margin: 0 0 var(--spacing-sm);
+  font-size: var(--font-size-sm);
   font-weight: 700;
 }
 

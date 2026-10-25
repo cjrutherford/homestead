@@ -1,4 +1,7 @@
-<h1>Validation board</h1>
+<header class="masthead">
+  <h1>Validation board</h1>
+  <p class="masthead-fact">Every primitive under each theme, on one page.</p>
+</header>
 <p>Every primitive under each theme. Resize to 375px to check overflow.</p>
 
 @for (theme of themes; track theme) {
@@ -81,6 +84,58 @@
 
     <h3>Panel</h3>
     <div class="card">A nested panel on a themed surface.</div>
+
+    <h3>Fields</h3>
+    <section class="field-panel needs-you" data-state="warn" [attr.aria-label]="'Sample needs you ' + theme">
+      <ul class="needs-you-list">
+        <li>
+          <div class="needs-you-text">
+            <p><strong>System disk space</strong> <span class="badge badge-warn">warn</span></p>
+            <p>12% free. Free space on the system disk.</p>
+          </div>
+          <div class="needs-you-action"><button type="button">Check again</button></div>
+        </li>
+      </ul>
+    </section>
+    <div class="field-panel" data-state="ok">A field whose content is running.</div>
+    <div class="field-panel" data-state="fail">A field whose content failed.</div>
+    <div class="field-panel">A neutral field: no furrow.</div>
+
+    <h3>Ledger</h3>
+    <dl>
+      <div><dt>Hostname</dt><dd class="mono">nas.home.arpa</dd></div>
+      <div><dt>Tunnel</dt><dd>homestead-home, active</dd></div>
+    </dl>
+
+    <h3>Permits</h3>
+    <app-permit heading="Set up the tunnel homestead-home" [digest]="sampleDigest" [label]="'Sample pending permit ' + theme">
+      <p class="risky-preview">Tunnel <strong>homestead-home</strong> in zone <strong>example.org</strong>.</p>
+      <section class="permit-section">
+        <h4>Will change</h4>
+        <ul>
+          <li>Create CNAME <span class="mono">home.example.org</span> to the tunnel.</li>
+          <li>Create CNAME <span class="mono">auth.example.org</span> to the tunnel.</li>
+        </ul>
+      </section>
+      <section class="permit-section">
+        <h4>Leaves alone</h4>
+        <ul><li>Every other record in example.org.</li></ul>
+      </section>
+      <section class="permit-section">
+        <h4>Refused</h4>
+        <ul><li>Nothing.</li></ul>
+      </section>
+      <div class="permit-actions">
+        <button type="button" class="primary">Approve and set up</button>
+        <button type="button" class="quiet">Change</button>
+      </div>
+    </app-permit>
+    <app-permit heading="Set up the tunnel homestead-home" [digest]="sampleDigest" [approval]="sampleApproval" [label]="'Sample approved permit ' + theme">
+      <p>Tunnel <strong>homestead-home</strong> in zone <strong>example.org</strong>, 2 public names.</p>
+    </app-permit>
+    <app-permit heading="Publish photos.example.org" [digest]="sampleDigest" refusal="The plan changed since you reviewed it. Review it again." [label]="'Sample refused permit ' + theme">
+      <p>Publish <span class="mono">photos.example.org</span> to Immich through the tunnel homestead-home.</p>
+    </app-permit>
 
     <h3>Links and navigation</h3>
     <p>Body text with an <a href="#inline">inline link</a> in it.</p>

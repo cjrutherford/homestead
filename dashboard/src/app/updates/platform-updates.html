@@ -1,5 +1,8 @@
 <section aria-label="Platform release verification">
-  <h1>Platform releases</h1>
+  <header class="masthead">
+    <h1>Platform releases</h1>
+    <p class="masthead-fact">Homestead releases for this appliance, installed when you approve.</p>
+  </header>
 
   @if (error()) {
     <app-state-message kind="error" [headline]="error()" />
@@ -46,19 +49,30 @@
       }
     </ul>
   }
-  @for (move of view()?.plan?.Components ?? []; track move.Component) {
-    <p>
-      Plan: {{ move.Component }} {{ move.Current }} → {{ move.Target }}
-      ({{ move.Verification }})
-    </p>
-  }
-  @for (warning of view()?.plan?.Warnings ?? []; track warning) {
-    <p class="warning">{{ warning }}</p>
+  @if (view()?.plan; as plan) {
+    @if (plan.Components.length > 0) {
+      <app-permit heading="Update the platform" [level]="2" label="Platform update plan">
+        <h4>Will change</h4>
+        <ul>
+          @for (move of plan.Components; track move.Component) {
+            <li>{{ move.Component }} from {{ move.Current }} to {{ move.Target }} ({{ move.Verification }})</li>
+          }
+        </ul>
+        @for (warning of plan.Warnings; track warning) {
+          <p class="warning">{{ warning }}</p>
+        }
+        <p class="hint">Apply each release below. Nothing changes until you confirm and apply it.</p>
+      </app-permit>
+    } @else {
+      @for (warning of plan.Warnings; track warning) {
+        <p class="warning">{{ warning }}</p>
+      }
+    }
   }
 
   @if (view()?.pending; as pending) {
     <p class="warning">
-      Platform update {{ pending.component }} {{ pending.from_version }} →
+      Platform update {{ pending.component }} {{ pending.from_version }} to
       {{ pending.to_version }} is being applied by the privileged apply unit (operation {{ pending.op_id }}). If the apply unit died, clear
       it.
       <button type="button" (click)="clearApply()" [disabled]="busy()">Clear stale apply</button>

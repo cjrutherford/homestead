@@ -69,11 +69,82 @@ const pairs: [string, string, number][] = [
   ['--sidebar-focus', '--sidebar-bg', NON_TEXT],
   ['--rail-foreground', '--rail-bg', TEXT],
   ['--rail-fill', '--rail-track', NON_TEXT],
-  ['--rail-bg', '--sidebar-bg', NON_TEXT],
+  ['--rail-border', '--sidebar-bg', NON_TEXT],
+  ['--rail-foreground', '--sidebar-bg', TEXT],
+  // S309: the Hedgerow band, its notch, the masthead rule and the Needs you tint.
+  ['--on-hedgerow', '--hedgerow', TEXT],
+  ['--masthead-rule', '--background', NON_TEXT],
+  ['--foreground', '--warn-surface', TEXT],
+  ['--muted', '--warn-surface', TEXT],
+  ['--warn-text', '--warn-surface', TEXT],
+  ['--link', '--warn-surface', TEXT],
+  ['--warn', '--warn-surface', NON_TEXT],
+  ['--focus-ring', '--warn-surface', NON_TEXT],
+  // Field furrows: the state edge on a Board panel.
+  ['--success', '--surface', NON_TEXT],
+  ['--danger', '--surface', NON_TEXT],
   ['--warn', '--background', NON_TEXT],
   ['--warn', '--surface', NON_TEXT],
   ['--warn', '--warn-bg', NON_TEXT],
 ];
+
+/**
+ * The permit (S309) is read with the tokens in force inside it: the theme's,
+ * plus, in high contrast, the palette scoped to `.permit` (a white document).
+ */
+const permitScope = block("[data-theme='high-contrast'] .permit");
+const permitThemes: Record<string, Record<string, string>> = {
+  light: themes.light,
+  dark: themes.dark,
+  'high-contrast': { ...themes['high-contrast'], ...permitScope },
+};
+const permitPairs: [string, string, number][] = [
+  ['--on-manila', '--manila', TEXT],
+  ['--on-manila-muted', '--manila', TEXT],
+  ['--stamp', '--manila', TEXT],
+  ['--stamp-refused', '--manila', TEXT],
+  ['--link', '--manila', TEXT],
+  ['--danger', '--manila', TEXT],
+  ['--warn-text', '--manila', TEXT],
+  ['--success', '--manila', TEXT],
+  ['--primary-foreground', '--primary', TEXT],
+  ['--danger-foreground', '--danger', TEXT],
+  ['--foreground', '--surface', TEXT],
+  ['--muted', '--surface', TEXT],
+  ['--foreground', '--surface-sunken', TEXT],
+  ['--warn-text', '--warn-bg', TEXT],
+  ['--danger', '--danger-bg', TEXT],
+  ['--success', '--success-bg', TEXT],
+  ['--link', '--surface', TEXT],
+  ['--manila-rule', '--manila', NON_TEXT],
+  ['--focus-ring', '--manila', NON_TEXT],
+  ['--border-strong', '--manila', NON_TEXT],
+  ['--primary', '--manila', NON_TEXT],
+  ['--warn', '--manila', NON_TEXT],
+];
+
+describe('permit tokens', () => {
+  for (const [name, tokens] of Object.entries(permitThemes)) {
+    describe(name, () => {
+      for (const [fg, bg, min] of permitPairs) {
+        it(`${fg} on ${bg} is at least ${min}:1`, () => {
+          const ratio = contrast(tokens[fg], tokens[bg]);
+          expect(ratio, `${fg} ${tokens[fg]} on ${bg} ${tokens[bg]}`).toBeGreaterThanOrEqual(min);
+        });
+      }
+    });
+  }
+
+  it('keeps the approved permit palette', () => {
+    expect(themes.light['--manila']).toBe('#f5eedb');
+    expect(themes.dark['--manila']).toBe('#2a2619');
+    expect(themes.light['--hedgerow']).toBe('#12291f');
+    expect(themes.light['--stamp']).toBe(themes.light['--primary']);
+    expect(themes.light['--stamp-refused']).toBe(themes.light['--danger']);
+    expect(themes['high-contrast']['--manila']).toBe('#ffffff');
+    expect(themes['high-contrast']['--stamp']).toBe('#000000');
+  });
+});
 
 describe('theme tokens', () => {
   for (const [name, tokens] of Object.entries(themes)) {

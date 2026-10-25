@@ -12,6 +12,8 @@ import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
 import { SsoLink } from './sso-link';
 import { SsoPlan, SsoService, SsoState } from './sso.service';
+import { SessionService } from '../auth/session.service';
+import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
 
 /**
  * Sign-in settings (S286, ADR-033, under System): status, the plan, review,
@@ -22,7 +24,7 @@ import { SsoPlan, SsoService, SsoState } from './sso.service';
  * soon as each request leaves. It is never stored by the browser.
  */
 @Component({
-  imports: [Dialog, Loading, OperationProgress, SsoLink, StateMessage],
+  imports: [Dialog, Loading, OperationProgress, Permit, SsoLink, StateMessage],
   selector: 'app-sign-in',
   templateUrl: './sign-in.html',
 })
@@ -45,6 +47,11 @@ export class SignIn implements OnInit {
   protected readonly confirmingOff = signal(false);
   /** True while the form for a new or changed plan is open on a configured appliance. */
   protected readonly editing = signal(false);
+  /** The plan approved here, kept as its stamped permit (S309). */
+  protected readonly approved = signal<ApprovedPlan | null>(null);
+  /** Why the appliance would not approve the plan on screen. */
+  protected readonly refused = signal<string | null>(null);
+  private readonly sessions = inject(SessionService);
 
   protected authentikUrl = '';
   protected originsText = '';
@@ -141,6 +148,8 @@ export class SignIn implements OnInit {
       .subscribe({
         next: (plan) => {
           this.busy.set(false);
+          this.approved.set(null);
+          this.refused.set(null);
           this.plan.set(plan);
         },
         error: (err: HttpErrorResponse) => this.fail(err, 'Reviewing the plan'),
@@ -159,10 +168,20 @@ export class SignIn implements OnInit {
       next: (state) => {
         this.busy.set(false);
         this.state.set(state);
+        this.approved.set(
+          approvedPlan('Set up sign-in with Authentik', plan.digest, `Configure Authentik at ${plan.spec.authentik_url}.`, this.sessions.username()),
+        );
         this.plan.set(null);
         this.apply();
       },
-      error: (err: HttpErrorResponse) => this.fail(err, 'Approving the plan'),
+      error: (err: HttpErrorResponse) => {
+        this.fail(err, 'Approving the plan');
+        // The plan stays on screen: the refusal goes on its permit (S309).
+        if (err.status !== 409 && this.error()) {
+          this.refused.set(this.error());
+          this.error.set(null);
+        }
+      },
     });
   }
 
@@ -179,6 +198,7 @@ export class SignIn implements OnInit {
 
   protected cancelReview(): void {
     this.plan.set(null);
+    this.refused.set(null);
     this.apiToken = '';
   }
 

@@ -1,5 +1,8 @@
 <section aria-label="App names">
-  <h1>Names</h1>
+  <header class="masthead">
+    <h1>Names</h1>
+    <p class="masthead-fact">How phones and computers on your network find your apps.</p>
+  </header>
   <p>
     Every app installed under a <code>.lan</code> name is also announced on your network as
     <code>&lt;app&gt;.local</code>, which phones and computers find without any DNS setup. The
@@ -58,8 +61,13 @@
       <p class="hint">{{ state.resolver.router_hint }}</p>
 
       @if (plan(); as review) {
-        <div class="risky" aria-label="Resolver plan">
-          <h3>Review the plan</h3>
+        <app-permit
+          [heading]="review.enabled ? 'Turn on the resolver' : 'Turn off the resolver'"
+          [digest]="review.digest"
+          [refusal]="refused()"
+          label="Resolver plan"
+        >
+          <h4>Will change</h4>
           <ul>
             @for (change of review.changes; track $index) {
               <li>{{ change }}</li>
@@ -90,8 +98,13 @@
             </button>
             <button type="button" class="quiet" (click)="discardPlan()" [disabled]="busy()">Cancel</button>
           </div>
-        </div>
+        </app-permit>
       } @else {
+        @if (approved(); as done) {
+          <app-permit [heading]="done.heading" [digest]="done.digest" [approval]="done.approval">
+            <p>{{ done.summary }}</p>
+          </app-permit>
+        }
         <button type="button" [disabled]="busy()" (click)="review(!state.resolver.enabled)">
           {{ state.resolver.enabled ? 'Review turning it off' : 'Review turning it on' }}
         </button>

@@ -48,6 +48,16 @@ describe('ValidationBoard', () => {
         expect(board.querySelector(selector), selector).not.toBeNull();
       }
       expect(board.querySelectorAll('app-state-message').length).toBe(5);
+      // The permit in each state: pending, approved (stamp), refused (stamp and reason).
+      const permits = board.querySelectorAll('.permit');
+      expect(permits.length).toBe(3);
+      expect(Array.from(permits).map((p) => p.getAttribute('data-state'))).toEqual(['pending', 'approved', 'refused']);
+      expect(permits[0].querySelector('.permit-seal')?.getAttribute('aria-label')).toContain('sha256:9f2c4e1a');
+      expect(permits[0].querySelector('.permit-seal-code')?.textContent?.trim()).toBe('9f2c4e1a');
+      expect(permits[1].querySelector('.permit-stamp')?.textContent).toContain('Approved');
+      expect(permits[1].querySelector('.permit-stamp')?.textContent).toContain('by owner, 25 Oct 2026, 14:02 UTC');
+      expect(permits[2].querySelector('.permit-stamp')?.textContent).toContain('Not approved');
+      expect(permits[2].textContent).toContain('Review it again.');
       expect(board.querySelector('[role="alert"]')).not.toBeNull();
       expect(board.querySelector('[role="status"]')).not.toBeNull();
     });

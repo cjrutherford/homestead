@@ -14,6 +14,11 @@ import { isNotSetUp } from '../core/http-error';
 import { StateMessage } from '../state/state-message';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
+import { SessionService } from '../auth/session.service';
+import { Approval, approvedNow, Permit } from '../ui/permit';
+
+/** A plan the appliance reports as approved, without who or when. */
+const UNKNOWN_APPROVER: Approval = {};
 
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
 
@@ -27,7 +32,7 @@ const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
  * shown: the plan names where they are placed, nothing more.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage, RouterLink],
+  imports: [OperationProgress, Loading, Permit, StateMessage, RouterLink],
   selector: 'app-tls',
   templateUrl: './tls.html',
   styles: [
@@ -192,6 +197,15 @@ export class Tls implements OnInit, OnDestroy {
     return plan.directory_class !== 'production' || !!this.production()[plan.certificate];
   }
 
+  /** Approvals given on this page, by certificate, for their stamps (S309). */
+  protected readonly approvals = signal<Record<string, Approval>>({});
+  private readonly sessions = inject(SessionService);
+
+  /** The stamp for an approved plan: who and when if it was approved here. */
+  protected approvalOf(plan: TlsIssuancePlan): Approval | null {
+    return plan.approved ? (this.approvals()[plan.certificate] ?? UNKNOWN_APPROVER) : null;
+  }
+
   approve(plan: TlsIssuancePlan): void {
     if (!this.canApprove(plan)) {
       return;
@@ -210,6 +224,7 @@ export class Tls implements OnInit, OnDestroy {
       .subscribe({
         next: () => {
           this.busy.set(false);
+          this.approvals.update((all) => ({ ...all, [plan.certificate]: approvedNow(this.sessions.username()) }));
           this.notice.set(`Approved the plan for ${plan.certificate}. Nothing has been issued yet.`);
           this.load();
         },

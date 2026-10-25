@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
@@ -46,6 +46,22 @@ export class Catalog implements OnInit {
 
   protected readonly packages = signal<PackageSummary[]>([]);
   protected readonly selected = signal<CatalogManifest | null>(null);
+  /** The masthead sentence: how many apps are installed, from the list the page reads. */
+  protected readonly fact = computed(() => {
+    const all = this.packages();
+    if (!all.length) {
+      return 'Apps you can install on this appliance.';
+    }
+    const installed = all.filter((p) => p.installed);
+    const lead =
+      installed.length === 0
+        ? 'No apps are installed yet.'
+        : installed.length === 1
+          ? `${installed[0].title} is installed.`
+          : `${installed.length} apps are installed.`;
+    const left = all.length - installed.length;
+    return left ? `${lead} ${left === 1 ? '1 more is' : `${left} more are`} ready to install.` : lead;
+  });
   protected readonly operationId = signal<number | null>(null);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);

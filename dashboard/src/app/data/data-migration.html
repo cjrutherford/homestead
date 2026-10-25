@@ -1,5 +1,8 @@
 <section aria-label="App data placement">
-  <h1>App data</h1>
+  <header class="masthead">
+    <h1>App data</h1>
+    <p class="masthead-fact">Move app data out of Docker volumes onto mounted storage.</p>
+  </header>
   <p>
     Apps installed before data placement keep their data in Docker volumes, outside mounted storage
     and outside backups. Migrating copies it onto mounted storage while the app is stopped. The old
@@ -11,6 +14,11 @@
   }
 
   @if (operationId(); as id) {
+    @if (approved(); as a) {
+      <app-permit [heading]="a.heading" [digest]="a.digest" [approval]="a.approval">
+        <p>{{ a.summary }}</p>
+      </app-permit>
+    }
     <app-operation-progress [id]="id" />
   }
 
@@ -72,12 +80,12 @@
           }
           @if (plan(); as p) {
             @if (planFor() === app.package) {
-              <div aria-label="Migration plan">
-                <h3>Migration plan</h3>
+              <app-permit [heading]="'Move the data of ' + app.package" [digest]="p.digest" [refusal]="refused()" label="Migration plan">
+                <h4>Will change</h4>
                 <ul>
                   @for (item of p.items; track item.dest) {
                     <li>
-                      {{ item.service }} {{ item.target }}: {{ item.source }} →
+                      {{ item.service }} {{ item.target }}: from {{ item.source }} to
                       {{ item.dest }} ({{ item.size_bytes }} bytes)
                     </li>
                   }
@@ -116,7 +124,7 @@
                   Approve migration
                 </button>
                 <button type="button" (click)="cancelPlan()">Cancel</button>
-              </div>
+              </app-permit>
             }
           }
         </li>

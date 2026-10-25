@@ -1,7 +1,10 @@
 <section aria-label="Install wizard">
   @if (loadError()) {
     @if (!embedded()) {
-      <h1>Install</h1>
+      <header class="masthead">
+        <h1>Install</h1>
+        <p class="masthead-fact">This package could not be opened.</p>
+      </header>
     }
     <app-state-message
       kind="error"
@@ -16,7 +19,10 @@
       @if (embedded()) {
         <h3>{{ current() === 'done' ? title() + ' installed' : 'Install ' + title() }}</h3>
       } @else {
-        <h1>{{ current() === 'done' ? title() + ' installed' : 'Install ' + title() }}</h1>
+        <header class="masthead">
+          <h1>{{ current() === 'done' ? title() + ' installed' : 'Install ' + title() }}</h1>
+          <p class="masthead-fact">{{ fact() }}</p>
+        </header>
       }
       @if (fromSetup && !embedded()) {
         <p><a routerLink="/setup">Back to setup</a></p>
@@ -452,8 +458,8 @@
                   (action)="checkAgain()"
                 />
               } @else if (summary(); as s) {
-                <div class="panel wizard-summary">
-                  <h3>Homestead will create</h3>
+                <app-permit [heading]="'Install ' + m.Title" label="Install plan">
+                  <h4>Homestead will create</h4>
                   <ul>
                     @for (line of s.created; track line) {
                       <li>{{ line }}</li>
@@ -464,7 +470,7 @@
                     <li>{{ m.Services.length === 1 ? '1 container' : m.Services.length + ' containers' }} in a Compose stack named {{ m.Name }}</li>
                   </ul>
                   @if (s.changed.length > 0) {
-                    <h3>Homestead will change</h3>
+                    <h4>Homestead will change</h4>
                     <ul>
                       @for (line of s.changed; track line) {
                         <li>{{ line }}</li>
@@ -473,7 +479,7 @@
                   }
                   @if (signInPreview(); as si) {
                     @if (si.offered && si.plan) {
-                      <h3>Signing in</h3>
+                      <h4>Signing in</h4>
                       <label>
                         <input type="checkbox" name="sign-in-wanted" [checked]="signInWanted()" (change)="signInWanted.set($any($event.target).checked)" />
                         Sign in with Authentik
@@ -500,17 +506,17 @@
                         }
                       }
                     } @else if (si.reason) {
-                      <h3>Signing in</h3>
+                      <h4>Signing in</h4>
                       <p>Sign in with Authentik is not offered yet: {{ si.reason }}</p>
                     }
                   }
-                  <h3>Homestead will leave alone</h3>
+                  <h4>Homestead will leave alone</h4>
                   <ul>
                     @for (line of s.leftAlone; track line) {
                       <li>{{ line }}</li>
                     }
                   </ul>
-                </div>
+                </app-permit>
 
                 @if (plan()?.Mounts?.length) {
                   <h3>Where its data goes</h3>

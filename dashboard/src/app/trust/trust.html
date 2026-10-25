@@ -1,5 +1,8 @@
 <section aria-label="Trust this appliance">
-  <h1>Trust this appliance</h1>
+  <header class="masthead">
+    <h1>Trust this appliance</h1>
+    <p class="masthead-fact">Let this device trust the appliance's own certificates.</p>
+  </header>
   <p>
     Apps on your own network are served over HTTPS from this appliance's own certificate authority,
     so browser features that need a secure connection (WebGPU, the clipboard) work without a public
@@ -178,8 +181,8 @@
       </p>
       <p><button type="button" [disabled]="busy()" (click)="previewRotation()">Preview rotation</button></p>
       @if (plan(); as p) {
-        <section class="risky" aria-label="Rotation plan">
-          <h3>What rotation changes</h3>
+        <app-permit heading="Rotate the root" [digest]="p.digest" [refusal]="refused()" label="Rotation plan">
+          <h4>What rotation changes</h4>
           <p>Current root <code>{{ p.current_fingerprint_sha256 }}</code> (generation {{ p.generation }}).</p>
           <p>Certificates re-issued: {{ p.leaves_to_reissue.join(', ') || 'none' }}.</p>
           <p>{{ p.devices_must_retrust }}</p>
@@ -196,10 +199,17 @@
             />
             I understand every device must trust the new root.
           </label>
-          <button type="button" class="danger" [disabled]="busy() || !confirmed()" (click)="approveRotation()">
-            Approve rotation
-          </button>
-        </section>
+          <p class="permit-actions">
+            <button type="button" class="danger" [disabled]="busy() || !confirmed()" (click)="approveRotation()">
+              Approve rotation
+            </button>
+          </p>
+        </app-permit>
+      }
+      @if (approved(); as a) {
+        <app-permit [heading]="a.heading" [digest]="a.digest" [approval]="a.approval">
+          <p>{{ a.summary }}</p>
+        </app-permit>
       }
     }
   }

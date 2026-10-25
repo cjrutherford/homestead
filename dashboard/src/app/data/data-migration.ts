@@ -6,6 +6,8 @@ import {
   DataMigrations,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { SessionService } from '../auth/session.service';
+import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
 import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
@@ -18,7 +20,7 @@ import { OperationProgress } from '../ui/operation-progress';
  * this page without an approve click quoting the plan's digest.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage, Dialog],
+  imports: [OperationProgress, Loading, Permit, StateMessage, Dialog],
   selector: 'app-data-migration',
   templateUrl: './data-migration.html',
 })
@@ -53,6 +55,11 @@ export class DataMigration implements OnInit {
   protected readonly data = signal<DataMigrations>({ apps: [], old_volumes: [] });
   protected readonly plan = signal<DataMigrationPlan | null>(null);
   protected readonly planFor = signal<string | null>(null);
+  /** The plan approved here, kept as its stamped permit (S309). */
+  protected readonly approved = signal<ApprovedPlan | null>(null);
+  /** Why the appliance would not approve the plan on screen. */
+  protected readonly refused = signal<string | null>(null);
+  private readonly sessions = inject(SessionService);
   protected readonly acknowledged = signal(false);
   protected readonly operationId = signal<number | null>(null);
   protected readonly busy = signal(false);
@@ -85,6 +92,8 @@ export class DataMigration implements OnInit {
     this.error.set(null);
     this.operationId.set(null);
     this.acknowledged.set(false);
+    this.approved.set(null);
+    this.refused.set(null);
     this.api.planDataMigration(name).subscribe({
       next: (plan) => {
         this.busy.set(false);
@@ -119,16 +128,29 @@ export class DataMigration implements OnInit {
       .subscribe({
         next: ({ id }) => {
           this.busy.set(false);
+          this.approved.set(
+            approvedPlan(
+              `Move the data of ${name}`,
+              plan.digest,
+              `Expected downtime: about ${plan.estimated_downtime_seconds} seconds.`,
+              this.sessions.username(),
+            ),
+          );
           this.operationId.set(id);
           this.plan.set(null);
           this.planFor.set(null);
         },
-        error: (failure: HttpErrorResponse) => this.fail(failure),
+        error: (failure: HttpErrorResponse) => {
+          this.busy.set(false);
+          // The plan stays on screen: the refusal goes on its permit (S309).
+          this.refused.set(failure.error ?? failure.message);
+        },
       });
   }
 
   cancelPlan(): void {
     this.plan.set(null);
+    this.refused.set(null);
     this.planFor.set(null);
   }
 

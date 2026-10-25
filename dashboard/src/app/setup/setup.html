@@ -1,8 +1,11 @@
 <section aria-label="Setup">
-  <h1>{{ status()?.legacy ? 'Finish setup' : 'Set up your appliance' }}</h1>
+  <header class="masthead">
+    <h1>{{ status()?.legacy ? 'Finish setup' : 'Set up your appliance' }}</h1>
+    <p class="masthead-fact">{{ fact() }}</p>
+  </header>
   <p>
-    Six short steps, one at a time. Each step explains what it does and what you do outside
-    Homestead, and does its work right here. You can skip any step and come back later.
+    Each step explains what it does and what you do outside Homestead, and does its work right
+    here. You can skip any step and come back later.
   </p>
 
   @if (error() && !failed()) {
@@ -30,6 +33,25 @@
         />
       }
 
+      @if (needsYou().length) {
+        <section class="field-panel needs-you" data-state="warn" aria-labelledby="setup-needs-you">
+          <h2 id="setup-needs-you">Needs you ({{ needsYou().length }})</h2>
+          <ul class="needs-you-list">
+            @for (st of needsYou(); track st.name) {
+              <li>
+                <div class="needs-you-text">
+                  <h3>{{ st.title }}</h3>
+                  <p>{{ st.detail }}</p>
+                </div>
+                <div class="needs-you-action">
+                  <button type="button" (click)="goTo(st.name)">Go to {{ st.title }}</button>
+                </div>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+
       <ol class="step-list" aria-label="Setup progress">
         @for (st of s.steps; track st.name; let i = $index) {
           <li class="step" [attr.data-status]="glyph(st)" [attr.aria-current]="i === index() ? 'step' : null">
@@ -42,7 +64,7 @@
       </ol>
 
       @if (onSummary()) {
-        <section aria-labelledby="setup-summary">
+        <section class="field-panel" [attr.data-state]="s.complete ? 'ok' : null" aria-labelledby="setup-summary">
           <h2 id="setup-summary" #stepHeading tabindex="-1">Summary</h2>
           @if (s.complete) {
             <app-state-message
@@ -75,7 +97,7 @@
           </p>
         </section>
       } @else if (step(); as st) {
-        <section [attr.aria-labelledby]="'step-' + st.name">
+        <section class="field-panel" [attr.aria-labelledby]="'step-' + st.name">
           <h2 [id]="'step-' + st.name" #stepHeading tabindex="-1">
             Step {{ (index() ?? 0) + 1 }} of {{ s.steps.length }}: {{ st.title }}
           </h2>

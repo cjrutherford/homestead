@@ -86,6 +86,29 @@ export class Setup implements OnInit {
     return !!step && step.state !== 'pending';
   });
   protected readonly pendingSteps = computed(() => this.steps().filter((s) => s.state === 'pending'));
+  /**
+   * Needs you (S309): steps still to do that the owner has moved past (or, on
+   * the summary, every step still to do). The step on screen is not listed.
+   */
+  protected readonly needsYou = computed(() => {
+    const index = this.index();
+    const summary = this.onSummary();
+    return this.steps().filter((s, i) => s.state === 'pending' && (summary || (index !== null && i < index)));
+  });
+  /** The masthead sentence, from the setup status the page already reads. */
+  protected readonly fact = computed(() => {
+    const steps = this.steps();
+    if (!steps.length) {
+      return 'A few short steps, one at a time.';
+    }
+    const done = steps.filter((s) => s.state === 'done').length;
+    const count = `${done} of ${steps.length} steps are done.`;
+    if (this.status()?.complete) {
+      return `${count} Setup is complete.`;
+    }
+    const next = steps.find((s) => s.state === 'pending');
+    return next ? `${count} ${next.title} is next.` : count;
+  });
 
   private lastKey: string | null = null;
   /** Operations already open when the wizard opened: not started from it. */

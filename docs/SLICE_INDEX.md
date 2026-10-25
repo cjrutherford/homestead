@@ -82,3 +82,5 @@ Then S306 factory reset (`docs/slices/S306-factory-reset.md`): `scripts/factory-
 Then S307 install guide (`docs/slices/S307-install-guide.md`): `docs/INSTALL.md` takes an appliance from bare metal to public apps behind Authentik, and names the prerequisites Homestead does not install.
 
 Then S308 bootstrap installs Docker and cloudflared (`docs/slices/S308-bootstrap-docker-cloudflared.md`, ADR-042): vendor apt repositories behind pinned key fingerprints, existing installs kept, opt-outs.
+
+Then S309 dashboard design language (`docs/slices/S309-dashboard-design-language.md`): a Hedgerow sidebar with a current-page notch, a masthead sentence on every page, fields with state furrows, a Needs you field on Status and Setup, ledger definition lists, and every plan review as a permit with a digest seal and an Approved or Not approved stamp.

@@ -1,6 +1,9 @@
 <section aria-label="Sign-in with Authentik">
   @if (!embedded()) {
-    <h1>Sign in with Authentik</h1>
+    <header class="masthead">
+      <h1>Sign in with Authentik</h1>
+      <p class="masthead-fact">Sign in to this dashboard with the Authentik on this appliance.</p>
+    </header>
   }
   <p>
     Sign in to this dashboard with the Authentik that runs on this appliance. Your local owner
@@ -18,9 +21,15 @@
     @if (state(); as s) {
       @if (operationId(); as id) {
         <h2>Set up sign-in</h2>
+        @if (approved(); as a) {
+          <app-permit [heading]="a.heading" [digest]="a.digest" [approval]="a.approval">
+            <p>{{ a.summary }}</p>
+          </app-permit>
+        }
         <app-operation-progress [id]="id" />
       } @else if (plan(); as p) {
         <h2>Review the plan</h2>
+        <app-permit heading="Set up sign-in with Authentik" [digest]="p.digest" [refusal]="refused()" label="Sign-in plan">
         <p>
           Homestead will configure Authentik at <strong>{{ p.spec.authentik_url }}</strong>
           @if (p.spec.authentik_version) {
@@ -87,10 +96,11 @@
           <input type="checkbox" name="keep-token" (change)="keepToken = $any($event.target).checked" />
           Keep the token, sealed on this appliance, for later changes (otherwise it is forgotten after apply)
         </label>
-        <p>
+        <p class="permit-actions">
           <button type="button" [disabled]="busy()" [attr.aria-busy]="busy() ? 'true' : null" (click)="approve()">Approve and set up sign-in</button>
           <button type="button" class="quiet" [disabled]="busy()" (click)="cancelReview()">Cancel</button>
         </p>
+        </app-permit>
       } @else if (!s.configured || editing()) {
         @if (!s.authentik_installed && !s.configured) {
           <app-state-message

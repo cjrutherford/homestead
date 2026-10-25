@@ -8,6 +8,8 @@ import { WizardShell } from '../wizard/wizard-shell';
 import { httpErrorMessage } from '../core/http-error';
 import { StateMessage } from '../state/state-message';
 import { Loading } from '../ui/loading';
+import { SessionService } from '../auth/session.service';
+import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
 
 const WIZARD_ID = 'firewall';
 
@@ -23,7 +25,7 @@ const STEP_IDS = ['subnets', 'rules', 'review', 'done'];
  * apply protect the management path.
  */
 @Component({
-  imports: [Loading, StateMessage, RouterLink, WizardShell],
+  imports: [Loading, Permit, StateMessage, RouterLink, WizardShell],
   selector: 'app-firewall',
   templateUrl: './firewall.html',
 })
@@ -38,6 +40,11 @@ export class Firewall implements OnInit {
   protected readonly alreadyApplied = signal(false);
   protected readonly status = signal<FirewallStatus | null>(null);
   protected readonly plan = signal<FirewallPlan | null>(null);
+  /** The plan approved here, kept as its stamped permit (S309). */
+  protected readonly approved = signal<ApprovedPlan | null>(null);
+  /** Why the appliance would not approve the plan on screen. */
+  protected readonly refused = signal<string | null>(null);
+  private readonly sessions = inject(SessionService);
 
   ngOnInit(): void {
     this.busy.set(true);
@@ -85,16 +92,22 @@ export class Firewall implements OnInit {
   protected confirm(): void {
     this.busy.set(true);
     this.error.set(null);
+    this.refused.set(null);
     this.api.firewallApply().subscribe({
       next: () => {
         this.busy.set(false);
+        const changes = this.plan()?.changes ?? [];
+        this.approved.set(
+          approvedPlan('Apply the firewall', '', `${changes.length} ${changes.length === 1 ? 'rule change' : 'rule changes'} applied and verified.`, this.sessions.username()),
+        );
         this.persist('done', () => this.stepIndex.set(3));
       },
       error: (err: HttpErrorResponse) => {
         this.busy.set(false);
         const serverMessage =
           typeof err.error === 'string' && err.error ? err.error : null;
-        this.error.set(
+        // The plan stays on screen: the refusal goes on its permit (S309).
+        this.refused.set(
           serverMessage ??
             (err.status === 409
               ? 'Apply refused: the plan would cut the management path.'
