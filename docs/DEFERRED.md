@@ -14,6 +14,14 @@
 - Connector binary installation: S246 setup refuses with
   instructions when cloudflared is absent; packaging or supervising
   the binary itself belongs to a later slice.
+- Docker engine installation (S307 install guide): `bootstrap.sh` does not
+  install Docker, and the S071 `docker.install` operation
+  (`internal/docker/install.go`) is not wired to any route, CLI or script.
+  `docs/INSTALL.md` A3 has the owner install it by hand.
+- Dashboard build on the appliance (S307): `bootstrap.sh` and
+  `install-systemd.sh` embed the dashboard only if `internal/dashboard/dist`
+  was already built (Node.js 24 and pnpm); otherwise the daemon is API-only.
+  A release artifact with the dashboard built in would remove the step.
 - Closed in S290: pre-S246 tunnels can be adopted with `tunnel setup
   --adopt ID` (ADR-041 §2).
 - AdGuard Home install-wizard automation (`POST /control/install/configure`):

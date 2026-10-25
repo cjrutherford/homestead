@@ -5175,3 +5175,11 @@ sudo homesteadctl claim token          # the new owner's claim token
   account; the reset does not remove them.
 - Tests: `tests/test_s306_factory_reset.py`.
 
+## S307: Install guide (bare metal to public apps)
+
+- `docs/INSTALL.md` is the owner and fulfilment guide; `README.md` links it.
+- It names the prerequisites Homestead does not install: Docker (A3),
+  cloudflared (A4) and the dashboard build (B2); see `docs/DEFERRED.md`.
+- Tests: `tests/test_s307_install_guide.py` checks that the scripts, doc paths
+  and `homesteadctl` commands it names exist.
+

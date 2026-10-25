@@ -78,3 +78,5 @@ Then S304 setup names a needed sign-in re-plan (`docs/slices/S304-setup-sign-in-
 Then S305 walkthrough wording (`docs/slices/S305-walkthrough-copy.md`): the install wizard says the review can connect sign-in, and the nightly policy review lists the apps it covers.
 
 Then S306 factory reset (`docs/slices/S306-factory-reset.md`): `scripts/factory-reset.sh` returns an appliance to the unclaimed state for a new owner, removing only what Homestead owns.
+
+Then S307 install guide (`docs/slices/S307-install-guide.md`): `docs/INSTALL.md` takes an appliance from bare metal to public apps behind Authentik, and names the prerequisites Homestead does not install.

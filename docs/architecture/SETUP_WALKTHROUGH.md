@@ -1,8 +1,8 @@
 # Post-claim setup wizard (S287, S291, S297, ADR-034, ADR-036, ADR-039)
 
 After claim and first-administrator creation the dashboard walks a new owner
-through five steps, one on screen at a time: secure the owner account, storage,
-sign-in, domain and access, first apps, then a summary. ADR-036 (S291) turned
+through six steps, one on screen at a time: secure the owner account, storage,
+sign-in, domain and access, first apps, nightly backups, then a summary. ADR-036 (S291) turned
 the ADR-034 walkthrough into this wizard. Each step does its work inline by
 embedding the same pages and calling the same API routes as the standalone
 pages, which stay. The wizard is still orchestration only: it reads what is
@@ -208,15 +208,16 @@ unfinished; the entry is called "Setup" otherwise, and stays after completion.
 
 ## Factory reset
 
-There is no in-repo factory-reset command or script. Resetting an appliance
-means removing its database, `homestead.db` (with its `-wal` and `-shm`
-files). The `setup` wizard row and the legacy stamp live only in that
-database's `wizard_state` table, so they cannot survive a reset. Migration 44
-stamps `legacy` only when the appliance is already `CLAIMED` at the moment the
-migration runs; a new database migrates while unclaimed, gets no `setup` row,
-and a freshly claimed appliance reads `origin: fresh`
-(`TestFreshStoreHasNoSetupRow`). A reset that keeps the database and only
-clears claim state must also delete `wizard_state` where `wizard = 'setup'`.
+`scripts/factory-reset.sh --yes [--wipe-mount PATH]... [--reinstall]` (S306)
+removes the database, `homestead.db` with its `-wal` and `-shm` files, along
+with the rest of Homestead's state; see `docs/INSTALL.md` Part F. The `setup`
+wizard row and the legacy stamp live only in that database's `wizard_state`
+table, so they cannot survive a reset. Migration 44 stamps `legacy` only when
+the appliance is already `CLAIMED` at the moment the migration runs; a new
+database migrates while unclaimed, gets no `setup` row, and a freshly claimed
+appliance reads `origin: fresh` (`TestFreshStoreHasNoSetupRow`). A reset that
+keeps the database and only clears claim state must also delete
+`wizard_state` where `wizard = 'setup'`.
 
 ## Operating it from the CLI
 
