@@ -281,6 +281,19 @@ describe('Tunnel', () => {
     http.expectOne('/api/v1/tunnel/status').flush(STATUS);
   });
 
+  it('shows a refused plan under Review plan, not at the top (S303)', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+    fixture.componentInstance['review']('', '', '', '0a1b2c3d');
+    http.expectOne('/api/v1/tunnel/plan').flush('this appliance has no connector config', { status: 422, statusText: 'Unprocessable' });
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const forms = el.querySelectorAll('form');
+    const form = forms[forms.length - 1];
+    expect(form.querySelector('[role="alert"]')?.textContent).toContain('no connector config');
+    expect(el.querySelectorAll('[role="alert"]').length).toBe(1);
+  });
+
   it('refuses a new name and an adoption together', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/tunnel/status').flush(STATUS);

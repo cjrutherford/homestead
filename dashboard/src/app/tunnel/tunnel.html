@@ -198,7 +198,8 @@
         <input id="tunnel-adopt" #adoptInput name="adopt" autocomplete="off" [disabled]="busy()" aria-describedby="tunnel-adopt-hint" />
         <p class="hint" id="tunnel-adopt-hint">
           For a tunnel this appliance's connector already runs from a local config file. The plan lists what it serves now
-          and what is kept or dropped; the tunnel itself is never deleted.
+          and what is kept or dropped; the tunnel itself is never deleted. A new or reset appliance has no such file, so
+          name a new tunnel instead.
         </p>
       </div>
       <div class="field">
@@ -213,6 +214,9 @@
         <p class="hint" id="tunnel-names-hint">Leave a name empty to use the one shown.</p>
       </div>
       <button type="submit" class="primary" [disabled]="busy()">Review plan</button>
+      @if (reviewError(); as message) {
+        <app-state-message kind="error" headline="Homestead could not make the plan" [detail]="message" />
+      }
     </form>
   }
 

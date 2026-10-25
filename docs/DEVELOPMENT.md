@@ -5131,3 +5131,11 @@ committed). Results:
   store, else from Cloudflare (`appPublic.removeZone`).
 - Tests: `TestAppPublicAdoptedTunnelZone`, the tunnel setup test, and the store
   upgrade tests (which now drop `zone_name` too).
+
+## S303: Tunnel plan refusal in view
+
+- `Tunnel.review` sets `reviewError`, shown under Review plan in the setup
+  form; the page-level `error` stays for status, approve and teardown.
+- The adopt hint says a new or reset appliance has no connector config.
+- Test: `tunnel.spec.ts` "shows a refused plan under Review plan".
+

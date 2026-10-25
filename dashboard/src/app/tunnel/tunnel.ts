@@ -48,6 +48,8 @@ export class Tunnel implements OnInit {
   protected readonly notice = signal<string | null>(null);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
+  /** Why the last Review plan failed; it sits beside the button, not at the top. */
+  protected readonly reviewError = signal<string | null>(null);
 
   /** Inline messages for the setup form, keyed by field name. */
   protected readonly fieldErrors = signal<Record<string, string>>({});
@@ -104,6 +106,7 @@ export class Tunnel implements OnInit {
     }
     this.busy.set(true);
     this.error.set(null);
+    this.reviewError.set(null);
     this.notice.set(null);
     this.plan.set(null);
     // Adopting (S290) takes over a tunnel this appliance's connector already serves.
@@ -118,7 +121,8 @@ export class Tunnel implements OnInit {
       },
       error: (failure: HttpErrorResponse) => {
         this.busy.set(false);
-        this.error.set(failure.error ?? failure.message);
+        // Shown under Review plan, where the owner is looking (S303).
+        this.reviewError.set(failure.error ?? failure.message);
       },
     });
   }
