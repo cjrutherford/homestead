@@ -80,3 +80,5 @@ Then S305 walkthrough wording (`docs/slices/S305-walkthrough-copy.md`): the inst
 Then S306 factory reset (`docs/slices/S306-factory-reset.md`): `scripts/factory-reset.sh` returns an appliance to the unclaimed state for a new owner, removing only what Homestead owns.
 
 Then S307 install guide (`docs/slices/S307-install-guide.md`): `docs/INSTALL.md` takes an appliance from bare metal to public apps behind Authentik, and names the prerequisites Homestead does not install.
+
+Then S308 bootstrap installs Docker and cloudflared (`docs/slices/S308-bootstrap-docker-cloudflared.md`, ADR-042): vendor apt repositories behind pinned key fingerprints, existing installs kept, opt-outs.

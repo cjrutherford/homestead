@@ -7,7 +7,7 @@ check, so you know it worked before you move on.
 
 | Part | You end with | Where |
 | --- | --- | --- |
-| [A. Prepare the machine](#part-a--prepare-the-machine) | Debian, disks mounted, Docker, cloudflared | the machine's console or SSH |
+| [A. Prepare the machine](#part-a--prepare-the-machine) | Debian, disks mounted | the machine's console or SSH |
 | [B. Install Homestead](#part-b--install-homestead) | the daemon running, unclaimed | the machine |
 | [C. Claim](#part-c--claim-on-your-network) | an owner account | a browser on the same network |
 | [D. Setup wizard](#part-d--the-setup-wizard) | storage, sign-in, tunnel, apps, backups | the dashboard |
@@ -73,50 +73,22 @@ sudo systemctl daemon-reload && sudo mount -a
 
 Check: `findmnt /mnt/app` (and the others) shows each disk mounted.
 
-### A3. Install Docker Engine and Compose
+### A3. Docker and cloudflared: nothing to do
 
-Homestead runs every app as an ordinary Docker Compose project. Install
-Docker from Docker's own repository:
+`bootstrap.sh` (B3) installs both from their vendors' apt repositories:
 
-```bash
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl
-sudo install -m 0755 -d /etc/apt/keyrings
-. /etc/os-release
-sudo curl -fsSL "https://download.docker.com/linux/$ID/gpg" -o /etc/apt/keyrings/docker.asc
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$ID $VERSION_CODENAME stable" \
-  | sudo tee /etc/apt/sources.list.d/docker.list
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-```
+- **Docker Engine** with the Compose plugin, from `download.docker.com`;
+- **`cloudflared`**, the Cloudflare tunnel connector, from
+  `pkg.cloudflare.com`.
 
-Debian's own packages also work. On Debian 13, `sudo apt-get install -y
-docker.io docker-compose docker-buildx` is what the test VM runs.
+Each repository key is checked against a pinned fingerprint before apt
+trusts it (ADR-042). A Docker you installed yourself is kept if it has
+Compose v2; Debian's `docker.io` with `docker-compose` counts. An existing
+`cloudflared` is kept too.
 
-Check: `sudo docker run --rm hello-world` prints "Hello from Docker!" and
-`docker compose version` prints a v2 version.
-
-### A4. Install cloudflared (for public access)
-
-The tunnel runs Cloudflare's connector, `cloudflared`, as the
-`homestead-tunnel` service. Homestead does not install it. Skip this step if
-the appliance will stay on your home network only. You can come back to it
-later.
-
-```bash
-sudo mkdir -p --mode=0755 /usr/share/keyrings
-curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
-echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' \
-  | sudo tee /etc/apt/sources.list.d/cloudflared.list
-sudo apt-get update && sudo apt-get install -y cloudflared
-```
-
-If Cloudflare has rotated the key, take the current lines from
-<https://pkg.cloudflare.com/>.
-
-Check: `cloudflared --version` prints a version. Do **not** run
-`cloudflared service install` or `cloudflared tunnel login`, because
-Homestead writes the connector's configuration itself.
+Never run `cloudflared service install` or `cloudflared tunnel login`.
+Homestead writes the connector's configuration itself, and runs it as
+`homestead-tunnel` only after you approve a tunnel plan.
 
 ---
 
@@ -169,9 +141,19 @@ sudo ./scripts/bootstrap.sh
 ```
 
 `bootstrap.sh` checks that this is Debian or Ubuntu with systemd. It then
-installs `ca-certificates`, `curl`, `nftables` and `age`, plus the Go
-toolchain that `go.mod` names (official build, checksum-verified), and runs
-`scripts/install-systemd.sh`. That script:
+installs:
+
+- `ca-certificates`, `curl`, `nftables`, `age` and `gpg`;
+- the Go toolchain that `go.mod` names (official build, checksum-verified);
+- Docker Engine and Compose, enabled and started, plus `cloudflared` (A3).
+
+Then it runs `scripts/install-systemd.sh`. Options:
+
+- `--no-cloudflared` for an appliance that will stay on the home network
+  (re-run without it later to add it);
+- `--no-docker` if you manage Docker yourself.
+
+`install-systemd.sh`:
 
 - creates the folders `/etc/homestead`, `/var/lib/homestead`,
   `/var/log/homestead`, `/run/homestead` and `/opt/homestead/stacks`;
@@ -189,7 +171,8 @@ dashboard, and run `sudo make install`.
 Check:
 
 ```bash
-systemctl is-active homestead-server       # active
+systemctl is-active homestead-server docker   # active, active
+cloudflared --version                         # a version
 curl -s localhost:8080/healthz             # {"status":"ok",...}
 sudo docker ps --format '{{.Names}}'       # homestead-caddy
 ```
@@ -442,8 +425,10 @@ with them. Whoever redeems the token first becomes the owner.
 | `https://homestead.local` answers "not found" instead of the dashboard | The dashboard was not embedded. Do B2, then `sudo make install`. |
 | `homestead.local` does not resolve | The device lacks mDNS, or another service holds UDP 5353 on the appliance (`homesteadctl doctor` names it). Use `homestead.lan` with a DNS or hosts entry, or `ssh -L` (Part C). |
 | Certificate warning on every visit | The device does not trust the root yet (C3). After a factory reset the root is new, so trust it again. |
-| Install wizard says Docker is unreachable | Docker is not installed or not running: `sudo systemctl enable --now docker` (A3). |
-| Tunnel step says "install cloudflared, then re-run setup" | Do A4, then review the tunnel plan again. |
+| Install wizard says Docker is unreachable | Docker is not running: `sudo systemctl enable --now docker`. If it is missing, re-run `sudo ./scripts/bootstrap.sh`. |
+| Tunnel step says "install cloudflared, then re-run setup" | The bootstrap ran with `--no-cloudflared`. Re-run `sudo ./scripts/bootstrap.sh` without it, then review the tunnel plan again. |
+| Bootstrap: "docker is installed without Compose v2" | Install your Docker's compose package (Debian: `docker-compose`), or remove `docker.io` and re-run for Docker's own packages. |
+| Bootstrap: "refusing to trust it" (fingerprint) | A vendor rotated its repository key. Check the vendor's published fingerprint, then re-run once with `HOMESTEAD_DOCKER_KEY_FPR` or `HOMESTEAD_CLOUDFLARE_KEY_FPR` set to it, and report it so the pin is updated. |
 | Tunnel plan refused: no zone contains the domain | The token cannot see the domain's zone, or the domain is not active on Cloudflare yet (D4 steps 1 and 2). |
 | Adopt refused: no connector config | Expected on a new or reset appliance; name a new tunnel. |
 | `https://homestead.<domain>` gives a Cloudflare error | The connector is down: `systemctl status homestead-tunnel`, `journalctl -u homestead-tunnel`. |

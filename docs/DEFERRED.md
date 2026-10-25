@@ -11,13 +11,14 @@
 - Hosted HAI coordination/control service
 - Multi-appliance dashboard
 - Live storage migration between devices
-- Connector binary installation: S246 setup refuses with
-  instructions when cloudflared is absent; packaging or supervising
-  the binary itself belongs to a later slice.
-- Docker engine installation (S307 install guide): `bootstrap.sh` does not
-  install Docker, and the S071 `docker.install` operation
-  (`internal/docker/install.go`) is not wired to any route, CLI or script.
-  `docs/INSTALL.md` A3 has the owner install it by hand.
+- Connector binary installation: closed in S308 (ADR-042); `bootstrap.sh`
+  installs cloudflared from Cloudflare's pinned-key apt repository. S246
+  setup still refuses with instructions when it is absent
+  (`--no-cloudflared`).
+- Docker engine installation: closed in S308 (ADR-042); `bootstrap.sh`
+  installs Docker from Docker's pinned-key apt repository. The S071
+  `docker.install` operation (`internal/docker/install.go`) stays unwired;
+  removing it or reusing it from the dashboard is open.
 - Dashboard build on the appliance (S307): `bootstrap.sh` and
   `install-systemd.sh` embed the dashboard only if `internal/dashboard/dist`
   was already built (Node.js 24 and pnpm); otherwise the daemon is API-only.

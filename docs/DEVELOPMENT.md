@@ -5183,3 +5183,16 @@ sudo homesteadctl claim token          # the new owner's claim token
 - Tests: `tests/test_s307_install_guide.py` checks that the scripts, doc paths
   and `homesteadctl` commands it names exist.
 
+## S308: Bootstrap installs Docker and cloudflared (ADR-042)
+
+- `bootstrap.sh` installs Docker (with the Compose plugin) and cloudflared from
+  the vendors' apt repositories after `fetch_key` matches the pinned
+  fingerprint; `HOMESTEAD_DOCKER_KEY_FPR` / `HOMESTEAD_CLOUDFLARE_KEY_FPR`
+  override for one run after a vendor key rotation.
+- Existing Docker with Compose v2 and an existing cloudflared are kept;
+  `--no-docker` and `--no-cloudflared` skip them. No cloudflared service is
+  enabled; `homestead-tunnel` runs it after an approved plan.
+- To try it without a VM, run the script in a `debian:trixie` container with
+  `systemctl`, `go` and `install-systemd.sh` stubbed on PATH.
+- Tests: `tests/test_s308_bootstrap_vendor_packages.py`.
+

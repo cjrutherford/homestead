@@ -65,7 +65,7 @@ class TestInstallGuide(unittest.TestCase):
         text = guide()
         for needle in (
             "## Part A", "## Part B", "## Part C", "## Part D", "## Part E", "## Part F",
-            "docker-compose-plugin", "cloudflared", "dashboard-embed", "bootstrap.sh",
+            "pinned fingerprint", "cloudflared", "dashboard-embed", "bootstrap.sh",
             "claim token", "Account → Cloudflare Tunnel → Edit", "re-planned",
             "Review public address", "factory-reset.sh",
         ):
