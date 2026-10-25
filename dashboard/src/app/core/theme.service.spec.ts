@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import { THEME_STORAGE_KEY, ThemeService } from './theme.service';
+import { THEME_PREFERENCES, THEME_STORAGE_KEY, ThemeService } from './theme.service';
 
 describe('ThemeService', () => {
   const root = document.documentElement;
@@ -16,25 +16,29 @@ describe('ThemeService', () => {
     root.removeAttribute('data-theme');
   });
 
-  it('follows the system by default: no data-theme attribute', () => {
+  it('is dark by default, whatever the system says: no data-theme attribute', () => {
     const service = TestBed.inject(ThemeService);
-    expect(service.preference()).toBe('system');
+    expect(service.preference()).toBe('dark');
     expect(root.hasAttribute('data-theme')).toBe(false);
+  });
+
+  it('offers Dark, Light, Match my system, High contrast in that order', () => {
+    expect(THEME_PREFERENCES.map((p) => p.label)).toEqual(['Dark', 'Light', 'Match my system', 'High contrast']);
   });
 
   it('applies and persists a manual choice', () => {
     const service = TestBed.inject(ThemeService);
-    for (const choice of ['light', 'dark', 'high-contrast'] as const) {
+    for (const choice of ['light', 'system', 'high-contrast'] as const) {
       service.set(choice);
       expect(root.getAttribute('data-theme')).toBe(choice);
       expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe(choice);
     }
   });
 
-  it('returns to the system theme and forgets the choice', () => {
+  it('returns to dark and forgets the choice', () => {
     const service = TestBed.inject(ThemeService);
+    service.set('light');
     service.set('dark');
-    service.set('system');
     expect(root.hasAttribute('data-theme')).toBe(false);
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
   });
@@ -47,7 +51,13 @@ describe('ThemeService', () => {
     TestBed.resetTestingModule();
     root.removeAttribute('data-theme');
     localStorage.setItem(THEME_STORAGE_KEY, 'neon');
-    expect(TestBed.inject(ThemeService).preference()).toBe('system');
+    expect(TestBed.inject(ThemeService).preference()).toBe('dark');
+    expect(root.hasAttribute('data-theme')).toBe(false);
+  });
+
+  it('treats a stored dark choice as the default', () => {
+    localStorage.setItem(THEME_STORAGE_KEY, 'dark');
+    expect(TestBed.inject(ThemeService).preference()).toBe('dark');
     expect(root.hasAttribute('data-theme')).toBe(false);
   });
 });

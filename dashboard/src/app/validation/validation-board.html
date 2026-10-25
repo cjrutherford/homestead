@@ -85,6 +85,26 @@
     <h3>Panel</h3>
     <div class="card">A nested panel on a themed surface.</div>
 
+    <h3>Depths</h3>
+    <div class="depths" data-depths>
+      <div class="depth depth-hedgerow">Hedgerow: the sidebar, the deepest plane</div>
+      <div class="depth depth-ground">
+        Ground: the canvas
+        <div class="depth depth-plate">
+          Plate: a field
+          <div class="depth depth-well">Well: a ledger, an input, a table</div>
+        </div>
+        <div class="depth depth-lifted">Lifted: the permit, a dialog, Needs you</div>
+      </div>
+    </div>
+
+    <h3>Lamps</h3>
+    <p class="lamps" data-lamps>
+      <span class="badge badge-ok">ok, steady</span>
+      <span class="badge badge-warn">warn, haloed</span>
+      <span class="badge badge-fail">failed, haloed</span>
+    </p>
+
     <h3>Fields</h3>
     <section class="field-panel needs-you" data-state="warn" [attr.aria-label]="'Sample needs you ' + theme">
       <ul class="needs-you-list">

@@ -1,14 +1,15 @@
 /*
- * Homestead design tokens (S248, S282). Clean-room scales: values are
- * reimplemented here, no vendored sources (ADR-019). One custom-property
+ * Homestead design tokens (S248, S282, S309, S310). Clean-room scales: values
+ * are reimplemented here, no vendored sources (ADR-019). One custom-property
  * contract every component consumes; pages never hardcode colour,
  * spacing, type, radius, shadow, motion or breakpoints. Every text and
  * control pair below is checked for WCAG AA by theme/tokens-contrast.spec.ts.
  *
- * Palette (light): Limewash page, Board panels, Pine brand and primary
- * actions, Ink text, Signal amber for needs-review, Brick for danger.
- * S309 adds Hedgerow (the sidebar band), Manila (the permit's paper),
- * the stamp colours and the Needs you tint (--warn-surface).
+ * S310, lamplight: a homestead at night, seen by lamplight. One light source
+ * at the top of the page; four named depths (hedgerow, ground, plate,
+ * lifted) and the sunken well; light means attention; the land (contours
+ * and the horizon) under the masthead; the permit as paper under the lamp.
+ * Dark is the default. Rules in docs/architecture/DASHBOARD_DESIGN.md.
  */
 
 :root {
@@ -35,7 +36,9 @@
   /* Display face (S309): h1, h2, the wordmark, the permit title and the
      stamp only. Signage voice: sentence case, slightly tight, never caps. */
   --font-display: 'Barlow Semi Condensed', 'Atkinson Hyperlegible Next', system-ui, sans-serif;
-  --font-size-display: 2.75rem;
+  --font-size-display: 3.25rem;
+  /* The masthead lead (S310): the sentence under the h1. */
+  --font-size-lead: 1.25rem;
   --line-height-display: 1.08;
   --tracking-display: -0.01em;
   /* Prose blocks stay readable. */
@@ -47,6 +50,18 @@
   --rule-heavy: 2px;
   --stamp-angle: -4deg;
   --seal-size: 6rem;
+  /* A button presses down this far on :active (S310). */
+  --press-offset: 1px;
+
+  /*
+   * The land (S310): faint topographic contours under the masthead, the
+   * only texture in the product. --contour is an alpha mask (stroke shape
+   * only); each theme colours it with --contour-ink. --lamp-falloff masks
+   * it so the lines are lit top-left and fade across and down.
+   */
+  --contour: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 420' fill='none' stroke='black' stroke-width='1.2'%3E%3Cpath d='M233 40C234 44 230 51 224 55C219 60 207 62 198 64C189 67 179 68 170 69C160 69 149 67 140 65C130 63 117 60 112 56C108 52 111 45 113 40C114 34 116 30 121 25C125 21 130 15 138 12C146 10 159 8 170 9C180 9 192 10 200 13C208 16 211 22 216 26C222 30 231 35 233 40ZM299 40C301 49 286 62 274 70C262 79 243 85 226 89C209 94 189 96 170 97C150 97 128 96 109 92C91 88 65 81 57 73C49 64 61 50 63 40C65 29 62 19 70 10C77 1 91 -8 108 -14C125 -19 150 -23 169 -22C189 -22 212 -16 227 -11C243 -5 250 4 261 13C273 21 297 30 299 40ZM367 40C368 54 339 72 320 84C302 97 279 108 254 115C229 121 199 124 170 125C140 126 103 128 76 122C49 116 17 101 6 88C-3 74 13 55 15 40C16 24 5 7 15 -5C26 -18 53 -32 78 -40C104 -49 141 -55 169 -54C198 -53 228 -41 252 -33C276 -24 292 -14 311 -1C330 10 365 25 367 40ZM432 40C431 59 389 80 364 97C339 114 315 130 282 140C250 149 210 151 170 153C129 156 74 163 40 154C6 146 -23 120 -36 101C-49 81 -35 60 -35 40C-36 19 -54 -4 -40 -22C-26 -40 13 -56 48 -67C83 -78 132 -88 169 -86C207 -83 241 -64 274 -52C307 -41 342 -34 368 -18C395 -3 432 20 432 40ZM490 40C485 64 439 90 409 110C379 131 349 152 310 164C270 176 221 180 170 184C118 188 44 200 3 187C-36 175 -55 136 -71 111C-87 86 -89 65 -93 40C-98 14 -115 -16 -96 -39C-77 -61 -26 -82 18 -95C62 -107 123 -119 169 -115C216 -111 251 -84 295 -71C339 -59 402 -57 434 -38C466 -19 494 15 490 40ZM538 40C530 70 490 100 456 125C422 149 383 171 335 187C287 203 230 215 170 220C109 225 14 234 -30 218C-75 201 -79 150 -100 120C-122 90 -152 69 -161 40C-169 10 -174 -27 -149 -54C-125 -82 -67 -110 -14 -124C39 -138 114 -144 169 -139C225 -134 263 -106 319 -93C375 -80 468 -81 505 -59C541 -37 547 9 538 40ZM580 40C568 76 542 111 505 139C469 168 416 189 360 209C304 229 239 256 170 261C100 267 -7 265 -57 243C-107 220 -101 163 -130 129C-160 95 -223 73 -235 40C-247 6 -232 -37 -200 -70C-169 -102 -109 -139 -47 -154C14 -168 103 -163 169 -158C236 -152 282 -133 350 -120C417 -107 537 -107 575 -80C614 -53 592 3 580 40ZM619 40C606 82 594 122 555 154C516 186 450 207 385 232C321 258 247 303 170 307C92 312 -20 287 -76 259C-132 232 -129 177 -168 140C-208 104 -298 77 -312 40C-325 2 -290 -48 -251 -85C-213 -122 -150 -168 -80 -183C-9 -197 91 -176 169 -172C248 -167 311 -167 389 -155C467 -143 599 -131 638 -99C676 -66 633 -2 619 40ZM662 40C648 87 642 131 601 168C560 205 488 228 416 259C344 290 253 352 170 354C86 356 -21 301 -86 268C-151 235 -170 194 -220 156C-270 117 -371 82 -385 40C-399 -2 -352 -60 -305 -101C-259 -142 -187 -193 -107 -207C-28 -221 79 -187 169 -185C260 -183 351 -210 437 -198C523 -186 649 -153 687 -113C724 -74 676 -7 662 40ZM804 330C804 333 797 337 793 340C789 343 784 346 779 348C773 350 766 350 760 350C753 351 744 352 738 350C732 349 726 344 723 341C721 338 724 333 724 330C724 326 721 321 724 318C726 315 733 312 739 310C745 308 753 306 760 306C766 307 772 310 778 312C783 314 788 316 793 319C797 322 804 326 804 330ZM857 330C856 337 843 346 834 352C825 359 815 366 803 370C791 374 775 375 760 376C744 377 722 380 709 376C697 372 690 360 685 353C679 345 678 338 677 330C676 321 672 312 678 304C684 297 699 291 713 286C727 282 745 279 760 280C774 281 786 289 799 293C813 297 831 298 840 305C850 311 858 322 857 330ZM903 330C900 342 889 355 876 365C863 375 846 384 826 391C807 397 784 403 760 405C735 407 700 407 682 400C664 393 660 375 650 363C641 351 626 341 623 330C620 318 623 302 633 291C644 280 665 268 686 262C707 257 737 255 760 257C782 259 800 267 822 272C844 278 879 279 893 289C906 298 906 317 903 330ZM945 330C941 347 935 364 919 378C903 392 876 402 849 412C823 421 791 436 760 437C728 439 684 431 660 420C636 410 630 389 614 374C598 359 570 345 565 330C561 314 574 293 590 278C605 263 631 245 659 238C688 232 728 236 760 237C791 239 819 241 850 247C880 253 927 260 943 274C959 287 950 312 945 330Z'/%3E%3C/svg%3E");
+  --lamp-falloff: radial-gradient(75% 100% at 0 0, black, transparent 100%);
+  --band-height: 22rem;
 
   /* Shape follows hierarchy: controls are tight, panels softer, dialogs
      softest, badges are pills. */
@@ -77,7 +92,7 @@
   --content-width: 64rem;
   --sidebar-width: 17rem;
 
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 /*
@@ -98,20 +113,107 @@
  */
 
 /*
- * Themes: selected with data-theme on any element (the validation
- * board nests all of them; the shell sets it on <html>). Light is the
- * default. With no data-theme, the system preference picks light or
- * dark. The dark block below must stay identical to the
- * [data-theme='dark'] block; a spec enforces it.
+ * Themes (S310): selected with data-theme on any element (the validation
+ * board nests all of them; the shell sets it on <html>). Dark is the
+ * default: :root with no data-theme is dark, so the first paint is dark.
+ * [data-theme='light'] selects daylight, [data-theme='system'] follows
+ * prefers-color-scheme (dark unless the system asks for light), and
+ * [data-theme='high-contrast'] is black, white and yellow. The light block
+ * appears twice (light and system-light); a spec keeps them identical.
  */
 :root,
+[data-theme='dark'],
+[data-theme='system'] {
+  --background: #111915; /* Ground */
+  --surface: #18221d; /* Plate */
+  --surface-sunken: #0d1310; /* Well */
+  --surface-raised: #1f2a24; /* Lifted */
+  --surface-hover: #26332c;
+  --foreground: #e6ece7; /* Ink */
+  --muted: #9daaa2;
+  --muted-strong: #bdc8c1;
+  --border: #2a3830;
+  --border-strong: #6c8075;
+  --primary: #7fd1a8; /* Pine accent */
+  --primary-hover: #9adcbb;
+  --primary-active: #b3e5cc;
+  --primary-foreground: #0e1a13;
+  --link: #8fd8b3;
+  --link-hover: #b3e5cc;
+  --focus-ring: #f2b544;
+  --danger: #f07a62; /* Brick lamp */
+  --danger-hover: #f4937f;
+  --danger-active: #f7ac9c;
+  --danger-foreground: #200703;
+  --danger-bg: #3a1e19;
+  --warn: #f2b544; /* Lantern */
+  --warn-text: #f2b544;
+  --warn-bg: #36290f;
+  --success: #6fcf7f; /* Meadow lamp */
+  --success-bg: #1b3622;
+  --running: #8fd8b3;
+  --running-bg: #1d3a2c;
+  --pending-bg: #26312b;
+  --sidebar-bg: #0a100d;
+  --sidebar-foreground: #e6ece7;
+  --sidebar-muted: #9daaa2;
+  --sidebar-hover-bg: #141d18;
+  --sidebar-active-bg: #1f2a24;
+  --sidebar-active-foreground: #ffffff;
+  --sidebar-lamp: #7fd1a8;
+  --sidebar-border: #1d2923;
+  --sidebar-focus: #f2b544;
+  --rail-bg: #121a16;
+  --rail-foreground: #e6ece7;
+  --rail-track: #0a100d;
+  --rail-fill: #c6e57a;
+  --rail-border: #5f7c6b;
+  --backdrop: rgb(4 7 5 / 0.72);
+  --hedgerow: #0a100d; /* Hedgerow: the deepest plane */
+  --on-hedgerow: #e6ece7;
+  --manila: #2a2619; /* Manila-night */
+  --manila-lit: #332d1e;
+  --manila-rule: #9a8a5e;
+  --on-manila: #f0e9d6;
+  --on-manila-muted: #cbbf9f;
+  --stamp: #7fd1a8;
+  --stamp-refused: #f07a62;
+  --warn-surface: #2c2213;
+  --masthead-rule: #7fd1a8;
+  /* Depth (S310): one light from the top. Shadows fall down, near-black at
+     real alpha; the top highlight and the value steps carry most of it. */
+  --highlight-top: inset 0 1px 0 rgb(230 236 231 / 0.07);
+  --edge-shadow: inset -1rem 0 1.25rem -1rem rgb(0 0 0 / 0.8);
+  --elevation-well: inset 0 2px 4px rgb(0 0 0 / 0.55), inset 0 0 0 1px rgb(0 0 0 / 0.3);
+  --elevation-plate: inset 0 1px 0 rgb(230 236 231 / 0.07), 0 1px 0 rgb(0 0 0 / 0.55), 0 8px 20px -6px rgb(0 0 0 / 0.55);
+  --elevation-lifted: inset 0 1px 0 rgb(230 236 231 / 0.1), 0 2px 4px rgb(0 0 0 / 0.5), 0 26px 52px -14px rgb(0 0 0 / 0.6);
+  --elevation-control: inset 0 1px 0 rgb(230 236 231 / 0.12), 0 1px 2px rgb(0 0 0 / 0.55);
+  --elevation-pressed: inset 0 1px 3px rgb(0 0 0 / 0.5);
+  --elevation-paper: drop-shadow(0 2px 2px rgb(0 0 0 / 0.5)) drop-shadow(0 28px 30px rgb(0 0 0 / 0.55));
+  --emboss: inset 0 1px 0 rgb(255 240 205 / 0.14), inset 0 -2px 4px rgb(0 0 0 / 0.35), 0 1px 2px rgb(0 0 0 / 0.45);
+  /* Light means attention: only what needs the owner glows. */
+  --glow-attention: 0 0 0 1px rgb(242 181 68 / 0.3), 0 0 40px -6px rgb(242 181 68 / 0.3);
+  --glow-furrow: inset 1.25rem 0 1.5rem -1.25rem rgb(242 181 68 / 0.22);
+  --glow-focus: 0 0 0 0.35rem rgb(242 181 68 / 0.22);
+  --halo-warn: radial-gradient(closest-side, rgb(242 181 68 / 0.5), transparent);
+  --halo-fail: radial-gradient(closest-side, rgb(240 122 98 / 0.5), transparent);
+  /* The land and the lamp: the band under the masthead and the paper. */
+  --contour-ink: rgb(242 214 160 / 0.1);
+  --lamp-wash: radial-gradient(60% 90% at 0 0, rgb(242 181 68 / 0.09), transparent 100%);
+  --horizon: linear-gradient(90deg, #f2b544 0, #7fd1a8 22%, rgb(127 209 168 / 0) 100%);
+  --paper-falloff: radial-gradient(140% 110% at 0 0, #332d1e 0, #2a2619 70%);
+  color-scheme: dark;
+}
+
 [data-theme='light'] {
-  --background: #f2f4f0; /* Limewash */
-  --surface: #ffffff; /* Board */
-  --surface-sunken: #e7ebe4;
-  --surface-raised: #ffffff;
+  --background: #f2f4f0; /* Limewash: the ground */
+  --surface: #ffffff; /* Board: the plate */
+  --surface-sunken: #e7ebe4; /* Well */
+  --surface-raised: #ffffff; /* Lifted */
+  --surface-hover: #f2f4f0;
   --foreground: #1c2621; /* Ink */
   --muted: #4a5750;
+  --muted-strong: #36423c;
   --border: #cbd3c7;
   --border-strong: #75857b;
   --primary: #1f4d3a; /* Pine */
@@ -137,23 +239,22 @@
   --sidebar-bg: #12291f;
   --sidebar-foreground: #eef3ee;
   --sidebar-muted: #b5c9bc;
-  --sidebar-hover-bg: #1e3a2d;
-  --sidebar-active-bg: #f2f4f0;
-  --sidebar-active-foreground: #1f4d3a;
+  --sidebar-hover-bg: #1c3529;
+  --sidebar-active-bg: #234333;
+  --sidebar-active-foreground: #ffffff;
+  --sidebar-lamp: #cfe985;
   --sidebar-border: #2b4a3c;
   --sidebar-focus: #ffffff;
   --rail-bg: #1b3629;
   --rail-foreground: #eef3ee;
   --rail-track: #0c1d15;
   --rail-fill: #cfe985;
-  --shadow-sm: 0 1px 2px rgb(28 38 33 / 0.1);
-  --shadow-md: 0 2px 8px rgb(28 38 33 / 0.14);
-  --shadow-lg: 0 12px 32px rgb(28 38 33 / 0.22);
-  --backdrop: rgb(28 38 33 / 0.55);
   --rail-border: #6f9a83;
+  --backdrop: rgb(28 38 33 / 0.55);
   --hedgerow: #12291f;
   --on-hedgerow: #eef3ee;
   --manila: #f5eedb;
+  --manila-lit: #fbf7ea;
   --manila-rule: #8f7a4a;
   --on-manila: #1c2621;
   --on-manila-muted: #5b5136;
@@ -161,127 +262,107 @@
   --stamp-refused: #9e2f1e;
   --warn-surface: #fbf1de;
   --masthead-rule: #1f4d3a;
+  /* Daylight: the same rules, gentler. Shadows are soft and cool. */
+  --highlight-top: inset 0 1px 0 rgb(255 255 255 / 0.9);
+  --edge-shadow: inset -0.75rem 0 1rem -0.75rem rgb(0 0 0 / 0.45);
+  --elevation-well: inset 0 1px 3px rgb(22 44 56 / 0.16);
+  --elevation-plate: 0 1px 2px rgb(22 44 56 / 0.08), 0 6px 16px -6px rgb(22 44 56 / 0.14);
+  --elevation-lifted: 0 2px 4px rgb(22 44 56 / 0.08), 0 22px 44px -14px rgb(22 44 56 / 0.28);
+  --elevation-control: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 1px 2px rgb(22 44 56 / 0.14);
+  --elevation-pressed: inset 0 1px 2px rgb(22 44 56 / 0.22);
+  --elevation-paper: drop-shadow(0 1px 2px rgb(22 44 56 / 0.12)) drop-shadow(0 20px 24px rgb(22 44 56 / 0.2));
+  --emboss: inset 0 1px 0 rgb(255 255 255 / 0.8), inset 0 -2px 3px rgb(91 81 54 / 0.18), 0 1px 2px rgb(91 81 54 / 0.2);
+  --glow-attention: 0 0 0 1px rgb(180 105 14 / 0.2), 0 0 32px -6px rgb(217 150 43 / 0.4);
+  --glow-furrow: inset 1.25rem 0 1.5rem -1.25rem rgb(217 150 43 / 0.16);
+  --glow-focus: 0 0 0 0.35rem rgb(11 110 153 / 0.18);
+  --halo-warn: radial-gradient(closest-side, rgb(217 150 43 / 0.35), transparent);
+  --halo-fail: radial-gradient(closest-side, rgb(158 47 30 / 0.25), transparent);
+  --contour-ink: rgb(31 77 58 / 0.13);
+  --lamp-wash: radial-gradient(60% 90% at 0 0, rgb(242 181 68 / 0.12), transparent 100%);
+  --horizon: linear-gradient(90deg, #d9962b 0, #1f4d3a 22%, rgb(31 77 58 / 0) 100%);
+  --paper-falloff: radial-gradient(140% 110% at 0 0, #fbf7ea 0, #f5eedb 70%);
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    --background: #131a16;
-    --surface: #1b2420;
-    --surface-sunken: #0f1512;
-    --surface-raised: #243029;
-    --foreground: #e4ebe6;
-    --muted: #a3b1a8;
-    --border: #2f3d35;
-    --border-strong: #6a7e72;
-    --primary: #7fcba3;
-    --primary-hover: #9ad7b8;
-    --primary-active: #b3e2ca;
-    --primary-foreground: #0e1a13;
-    --link: #8fd3ae;
-    --link-hover: #b3e2ca;
-    --focus-ring: #f2c14e;
-    --danger: #ff9c8a;
-    --danger-hover: #ffb3a5;
-    --danger-active: #ffc8bd;
-    --danger-foreground: #2a0a05;
-    --danger-bg: #3a1e19;
-    --warn: #ebaa55;
-    --warn-text: #ebaa55;
-    --warn-bg: #3a2c15;
-    --success: #7fdb6a;
-    --success-bg: #1e3a22;
-    --running: #8fd3ae;
-    --running-bg: #1f3a2d;
-    --pending-bg: #26312b;
-    --sidebar-bg: #0c120f;
-    --sidebar-foreground: #e4ebe6;
-    --sidebar-muted: #a3b1a8;
-    --sidebar-hover-bg: #1a2620;
-    --sidebar-active-bg: #131a16;
+@media (prefers-color-scheme: light) {
+  [data-theme='system'] {
+    --background: #f2f4f0; /* Limewash: the ground */
+    --surface: #ffffff; /* Board: the plate */
+    --surface-sunken: #e7ebe4; /* Well */
+    --surface-raised: #ffffff; /* Lifted */
+    --surface-hover: #f2f4f0;
+    --foreground: #1c2621; /* Ink */
+    --muted: #4a5750;
+    --muted-strong: #36423c;
+    --border: #cbd3c7;
+    --border-strong: #75857b;
+    --primary: #1f4d3a; /* Pine */
+    --primary-hover: #173b2c;
+    --primary-active: #102c20;
+    --primary-foreground: #ffffff;
+    --link: #1f4d3a;
+    --link-hover: #102c20;
+    --focus-ring: #0b6e99;
+    --danger: #9e2f1e; /* Brick */
+    --danger-hover: #7f2416;
+    --danger-active: #651c11;
+    --danger-foreground: #ffffff;
+    --danger-bg: #f8e3de;
+    --warn: #b4690e; /* Signal amber: fills, glyphs, borders */
+    --warn-text: #8a4f06; /* Signal amber, darkened for text */
+    --warn-bg: #fbefd9;
+    --success: #2d7a1f; /* Meadow */
+    --success-bg: #e3f3da;
+    --running: #1f4d3a;
+    --running-bg: #dce9e1;
+    --pending-bg: #e7ebe4;
+    --sidebar-bg: #12291f;
+    --sidebar-foreground: #eef3ee;
+    --sidebar-muted: #b5c9bc;
+    --sidebar-hover-bg: #1c3529;
+    --sidebar-active-bg: #234333;
     --sidebar-active-foreground: #ffffff;
-    --sidebar-border: #223029;
-    --sidebar-focus: #f2c14e;
-    --rail-bg: #16211b;
-    --rail-foreground: #e4ebe6;
-    --rail-track: #0c120f;
-    --rail-fill: #c6e57a;
-    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
-    --shadow-md: 0 2px 8px rgb(0 0 0 / 0.5);
-    --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.6);
-    --backdrop: rgb(5 9 7 / 0.7);
-    --rail-border: #5f7c6b;
-    --hedgerow: #0c120f;
-    --on-hedgerow: #e4ebe6;
-    --manila: #2a2619;
-    --manila-rule: #9a8a5e;
-    --on-manila: #efe8d4;
-    --on-manila-muted: #c9bd9c;
-    --stamp: #7fcba3;
-    --stamp-refused: #ff9c8a;
-    --warn-surface: #2e2414;
-    --masthead-rule: #7fcba3;
-    color-scheme: dark;
+    --sidebar-lamp: #cfe985;
+    --sidebar-border: #2b4a3c;
+    --sidebar-focus: #ffffff;
+    --rail-bg: #1b3629;
+    --rail-foreground: #eef3ee;
+    --rail-track: #0c1d15;
+    --rail-fill: #cfe985;
+    --rail-border: #6f9a83;
+    --backdrop: rgb(28 38 33 / 0.55);
+    --hedgerow: #12291f;
+    --on-hedgerow: #eef3ee;
+    --manila: #f5eedb;
+    --manila-lit: #fbf7ea;
+    --manila-rule: #8f7a4a;
+    --on-manila: #1c2621;
+    --on-manila-muted: #5b5136;
+    --stamp: #1f4d3a;
+    --stamp-refused: #9e2f1e;
+    --warn-surface: #fbf1de;
+    --masthead-rule: #1f4d3a;
+    /* Daylight: the same rules, gentler. Shadows are soft and cool. */
+    --highlight-top: inset 0 1px 0 rgb(255 255 255 / 0.9);
+    --edge-shadow: inset -0.75rem 0 1rem -0.75rem rgb(0 0 0 / 0.45);
+    --elevation-well: inset 0 1px 3px rgb(22 44 56 / 0.16);
+    --elevation-plate: 0 1px 2px rgb(22 44 56 / 0.08), 0 6px 16px -6px rgb(22 44 56 / 0.14);
+    --elevation-lifted: 0 2px 4px rgb(22 44 56 / 0.08), 0 22px 44px -14px rgb(22 44 56 / 0.28);
+    --elevation-control: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 1px 2px rgb(22 44 56 / 0.14);
+    --elevation-pressed: inset 0 1px 2px rgb(22 44 56 / 0.22);
+    --elevation-paper: drop-shadow(0 1px 2px rgb(22 44 56 / 0.12)) drop-shadow(0 20px 24px rgb(22 44 56 / 0.2));
+    --emboss: inset 0 1px 0 rgb(255 255 255 / 0.8), inset 0 -2px 3px rgb(91 81 54 / 0.18), 0 1px 2px rgb(91 81 54 / 0.2);
+    --glow-attention: 0 0 0 1px rgb(180 105 14 / 0.2), 0 0 32px -6px rgb(217 150 43 / 0.4);
+    --glow-furrow: inset 1.25rem 0 1.5rem -1.25rem rgb(217 150 43 / 0.16);
+    --glow-focus: 0 0 0 0.35rem rgb(11 110 153 / 0.18);
+    --halo-warn: radial-gradient(closest-side, rgb(217 150 43 / 0.35), transparent);
+    --halo-fail: radial-gradient(closest-side, rgb(158 47 30 / 0.25), transparent);
+    --contour-ink: rgb(31 77 58 / 0.13);
+    --lamp-wash: radial-gradient(60% 90% at 0 0, rgb(242 181 68 / 0.12), transparent 100%);
+    --horizon: linear-gradient(90deg, #d9962b 0, #1f4d3a 22%, rgb(31 77 58 / 0) 100%);
+    --paper-falloff: radial-gradient(140% 110% at 0 0, #fbf7ea 0, #f5eedb 70%);
+    color-scheme: light;
   }
-}
-
-[data-theme='dark'] {
-  --background: #131a16;
-  --surface: #1b2420;
-  --surface-sunken: #0f1512;
-  --surface-raised: #243029;
-  --foreground: #e4ebe6;
-  --muted: #a3b1a8;
-  --border: #2f3d35;
-  --border-strong: #6a7e72;
-  --primary: #7fcba3;
-  --primary-hover: #9ad7b8;
-  --primary-active: #b3e2ca;
-  --primary-foreground: #0e1a13;
-  --link: #8fd3ae;
-  --link-hover: #b3e2ca;
-  --focus-ring: #f2c14e;
-  --danger: #ff9c8a;
-  --danger-hover: #ffb3a5;
-  --danger-active: #ffc8bd;
-  --danger-foreground: #2a0a05;
-  --danger-bg: #3a1e19;
-  --warn: #ebaa55;
-  --warn-text: #ebaa55;
-  --warn-bg: #3a2c15;
-  --success: #7fdb6a;
-  --success-bg: #1e3a22;
-  --running: #8fd3ae;
-  --running-bg: #1f3a2d;
-  --pending-bg: #26312b;
-  --sidebar-bg: #0c120f;
-  --sidebar-foreground: #e4ebe6;
-  --sidebar-muted: #a3b1a8;
-  --sidebar-hover-bg: #1a2620;
-  --sidebar-active-bg: #131a16;
-  --sidebar-active-foreground: #ffffff;
-  --sidebar-border: #223029;
-  --sidebar-focus: #f2c14e;
-  --rail-bg: #16211b;
-  --rail-foreground: #e4ebe6;
-  --rail-track: #0c120f;
-  --rail-fill: #c6e57a;
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
-  --shadow-md: 0 2px 8px rgb(0 0 0 / 0.5);
-  --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.6);
-  --backdrop: rgb(5 9 7 / 0.7);
-  --rail-border: #5f7c6b;
-  --hedgerow: #0c120f;
-  --on-hedgerow: #e4ebe6;
-  --manila: #2a2619;
-  --manila-rule: #9a8a5e;
-  --on-manila: #efe8d4;
-  --on-manila-muted: #c9bd9c;
-  --stamp: #7fcba3;
-  --stamp-refused: #ff9c8a;
-  --warn-surface: #2e2414;
-  --masthead-rule: #7fcba3;
-  color-scheme: dark;
 }
 
 [data-theme='high-contrast'] {
@@ -289,8 +370,10 @@
   --surface: #000000;
   --surface-sunken: #0d0d0d;
   --surface-raised: #000000;
+  --surface-hover: #262626;
   --foreground: #ffffff;
   --muted: #e6e6e6;
+  --muted-strong: #ffffff;
   --border: #ffffff;
   --border-strong: #ffffff;
   --primary: #ffff00;
@@ -319,20 +402,19 @@
   --sidebar-hover-bg: #262626;
   --sidebar-active-bg: #ffff00;
   --sidebar-active-foreground: #000000;
+  --sidebar-lamp: #000000;
   --sidebar-border: #ffffff;
   --sidebar-focus: #00e5ff;
   --rail-bg: #000000;
   --rail-foreground: #ffffff;
   --rail-track: #000000;
   --rail-fill: #ffff00;
-  --shadow-sm: none;
-  --shadow-md: none;
-  --shadow-lg: none;
-  --backdrop: rgb(0 0 0 / 0.85);
   --rail-border: #ffffff;
+  --backdrop: rgb(0 0 0 / 0.85);
   --hedgerow: #000000;
   --on-hedgerow: #ffffff;
   --manila: #ffffff;
+  --manila-lit: #ffffff;
   --manila-rule: #000000;
   --on-manila: #000000;
   --on-manila-muted: #000000;
@@ -340,6 +422,26 @@
   --stamp-refused: #000000;
   --warn-surface: #000000;
   --masthead-rule: #ffffff;
+  /* High contrast: depth from borders only. No shadows, glows, contours or
+     gradients; a well is a 1px inner border. */
+  --highlight-top: none;
+  --edge-shadow: none;
+  --elevation-well: inset 0 0 0 1px #ffffff;
+  --elevation-plate: none;
+  --elevation-lifted: none;
+  --elevation-control: none;
+  --elevation-pressed: none;
+  --elevation-paper: none;
+  --emboss: none;
+  --glow-attention: none;
+  --glow-furrow: none;
+  --glow-focus: none;
+  --halo-warn: none;
+  --halo-fail: none;
+  --contour-ink: transparent;
+  --lamp-wash: none;
+  --horizon: linear-gradient(#ffffff, #ffffff);
+  --paper-falloff: none;
   color-scheme: dark;
 }
 
@@ -354,8 +456,10 @@
   --surface: #ffffff;
   --surface-sunken: #ededed;
   --surface-raised: #ffffff;
+  --surface-hover: #ededed;
   --foreground: #000000;
   --muted: #1f1f1f;
+  --muted-strong: #000000;
   --border: #000000;
   --border-strong: #000000;
   --primary: #000000;
@@ -378,6 +482,7 @@
   --running: #0a3fa8;
   --running-bg: #ffffff;
   --pending-bg: #ffffff;
+  --elevation-well: inset 0 0 0 1px #000000;
   color-scheme: light;
 }
 

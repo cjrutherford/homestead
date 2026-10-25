@@ -17,7 +17,7 @@ describe('ValidationBoard', () => {
     const themes = Array.from(el.querySelectorAll('[data-board]')).map((n) =>
       n.getAttribute('data-theme'),
     );
-    expect(themes).toEqual(['light', 'dark', 'high-contrast']);
+    expect(themes).toEqual(['dark', 'light', 'high-contrast']);
   });
 
   it('renders every primitive under each theme', () => {
@@ -44,6 +44,14 @@ describe('ValidationBoard', () => {
         'nav a',
         'pre',
         '.mono',
+        '[data-depths] .depth-hedgerow',
+        '[data-depths] .depth-ground',
+        '[data-depths] .depth-plate',
+        '[data-depths] .depth-well',
+        '[data-depths] .depth-lifted',
+        '[data-lamps] .badge-ok',
+        '[data-lamps] .badge-warn',
+        '[data-lamps] .badge-fail',
       ]) {
         expect(board.querySelector(selector), selector).not.toBeNull();
       }

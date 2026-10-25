@@ -78,14 +78,14 @@ describe('Account', () => {
     const radios = Array.from(
       fixture.nativeElement.querySelectorAll('input[name="theme"]'),
     ) as HTMLInputElement[];
-    expect(radios.map((r) => r.value)).toEqual(['system', 'light', 'dark', 'high-contrast']);
-    expect(radios.find((r) => r.checked)?.value).toBe('system');
-    const dark = radios.find((r) => r.value === 'dark') as HTMLInputElement;
-    dark.checked = true;
-    dark.dispatchEvent(new Event('change'));
+    expect(radios.map((r) => r.value)).toEqual(['dark', 'light', 'system', 'high-contrast']);
+    expect(radios.find((r) => r.checked)?.value).toBe('dark');
+    const light = radios.find((r) => r.value === 'light') as HTMLInputElement;
+    light.checked = true;
+    light.dispatchEvent(new Event('change'));
     fixture.detectChanges();
-    expect(localStorage.getItem('homestead.theme')).toBe('dark');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(localStorage.getItem('homestead.theme')).toBe('light');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
     radios[0].checked = true;
     radios[0].dispatchEvent(new Event('change'));
     expect(localStorage.getItem('homestead.theme')).toBeNull();

@@ -3,14 +3,26 @@
  * perforated top edge, the title in the display face, the digest as a seal
  * in the corner, ruled sections, and the stamp that presses on approval.
  * This is the dashboard's one bold element. Tokens only.
+ *
+ * S310: paper under the lamp. The permit is the highest surface with the
+ * deepest shadow. The perforation is a mask, which would cut a box-shadow
+ * off, so the host carries the shadow as a filter that follows the paper's
+ * edge, holes included. The fill falls off from the lamp: lighter top-left,
+ * warmer down. In dark it is lit but never bright.
  */
+app-permit {
+  display: block;
+  filter: var(--elevation-paper);
+}
+
 .permit {
   position: relative;
   max-width: 52rem;
   margin: var(--spacing-lg) 0;
   padding: calc(var(--spacing-lg) + var(--spacing-sm)) var(--spacing-lg) var(--spacing-lg);
   color: var(--on-manila);
-  background: var(--manila);
+  background-color: var(--manila);
+  background-image: var(--paper-falloff);
   border: 1px solid var(--manila-rule);
   border-radius: 0 0 var(--radius-control) var(--radius-control);
   /*
@@ -74,6 +86,8 @@
   border-radius: 50%;
   outline: 1px solid var(--manila-rule);
   outline-offset: calc(-1 * var(--spacing-sm));
+  /* Embossed: raised from the paper, lit along its top (S310). */
+  box-shadow: var(--emboss);
   text-align: center;
 }
 
@@ -127,15 +141,32 @@
   border-inline-end-color: var(--manila-rule);
 }
 
-.permit .table-scroll {
+/* Printed on the paper: no wells, no plates inside the permit. */
+.permit .table-scroll,
+.permit dl {
   background: transparent;
   border-color: var(--manila-rule);
+  box-shadow: none;
+}
+
+.permit dl {
+  padding-inline: 0;
+}
+
+.permit dl > div + div {
+  border-top-color: var(--manila-rule);
 }
 
 .permit thead th {
   color: var(--on-manila-muted);
   background: var(--manila);
   border-bottom-color: var(--manila-rule);
+}
+
+/* A warning on the permit spans its full content width. */
+.permit .state-message,
+.permit .warning {
+  max-width: none;
 }
 
 .permit th,
@@ -154,6 +185,7 @@
 .permit code {
   background: transparent;
   border-color: var(--manila-rule);
+  box-shadow: none;
 }
 
 /* The signature line: the actions sit under a dashed rule. */
@@ -248,6 +280,14 @@
   .permit-stamp,
   .permit-seal {
     border-color: CanvasText;
+  }
+
+  app-permit {
+    filter: none;
+  }
+
+  .permit {
+    background-image: none;
   }
 }
 

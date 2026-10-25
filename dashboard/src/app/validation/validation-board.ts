@@ -13,10 +13,62 @@ import { Approval, Permit } from '../ui/permit';
   imports: [StateMessage, Dialog, Permit],
   selector: 'app-validation-board',
   templateUrl: './validation-board.html',
-  styles: ['nav a { margin-right: var(--spacing-md); }'],
+  styles: [
+    `
+      nav a {
+        margin-right: var(--spacing-md);
+      }
+      /* The four depths and the well (S310), each with its own token. */
+      .depths {
+        display: grid;
+        grid-template-columns: minmax(7rem, 12rem) minmax(0, 1fr);
+        margin: 0 0 var(--spacing-md);
+        border-radius: var(--radius-panel);
+        overflow: hidden;
+      }
+      .depth {
+        padding: var(--spacing-md);
+        font-size: var(--font-size-sm);
+      }
+      .depth-hedgerow {
+        color: var(--on-hedgerow);
+        background: var(--hedgerow);
+        box-shadow: var(--edge-shadow);
+      }
+      .depth-ground {
+        display: grid;
+        gap: var(--spacing-md);
+        background: var(--background);
+      }
+      .depth-plate {
+        display: grid;
+        gap: var(--spacing-sm);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-panel);
+        box-shadow: var(--elevation-plate);
+      }
+      .depth-well {
+        background: var(--surface-sunken);
+        border-radius: var(--radius-control);
+        box-shadow: var(--elevation-well);
+      }
+      .depth-lifted {
+        background: var(--surface-raised);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-panel);
+        box-shadow: var(--elevation-lifted);
+      }
+      @media (max-width: 39.9375rem) {
+        .depths {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+    `,
+  ],
 })
 export class ValidationBoard {
-  readonly themes = ['light', 'dark', 'high-contrast'] as const;
+  readonly themes = ['dark', 'light', 'high-contrast'] as const;
   readonly kinds: StateKind[] = ['empty', 'error', 'status', 'warning', 'notice'];
   /** The theme whose sample dialog is open, if any. */
   protected readonly dialogTheme = signal<string | null>(null);

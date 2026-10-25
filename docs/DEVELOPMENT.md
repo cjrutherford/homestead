@@ -5215,3 +5215,25 @@ sudo homesteadctl claim token          # the new owner's claim token
   contrast permit tokens are scoped under `[data-theme='high-contrast'] .permit`.
 - The validation board (`/validation`) shows fields, a ledger and the three
   permit states. See `docs/architecture/DASHBOARD_DESIGN.md`.
+
+## S310: Lamplight, depth and dark by default
+
+- Dark is the default: no stored theme means `:root` dark with no
+  `data-theme`. `ThemeService` (`DEFAULT_THEME`) clears the key when the
+  owner picks Dark; `public/theme-init.js` applies only light, system and
+  high contrast before first paint.
+- Depth is tokens only: `--elevation-well|plate|lifted|control|pressed`,
+  `--highlight-top`, `--edge-shadow`, and `--elevation-paper` (a `filter`,
+  because the permit's perforation mask clips `box-shadow`). Never write a
+  raw shadow in a component.
+- Attention light: `--glow-attention`, `--glow-furrow`, `--glow-focus`,
+  `--halo-warn`, `--halo-fail`. Halos are background images behind the
+  glyph, since filters on masked glyphs are clipped.
+- The land: `--contour` (an SVG data URI), `--contour-ink`, `--lamp-falloff`,
+  `--lamp-wash`, `--horizon`, `--band-height`, drawn by `.shell::before` and
+  `::after` and the masthead `::after`.
+- High contrast sets every elevation, glow, halo, wash and falloff to
+  `none`; `tokens-contrast.spec.ts` checks it, the depth luminance order,
+  and that the system-light block matches light. Token names in that file
+  must not contain digits, and values must not contain `;` or `}`.
+- The validation board shows the four depths and the lamps.

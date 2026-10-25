@@ -259,8 +259,14 @@ describe('App logged in', () => {
   });
 
   it('applies a stored manual theme at startup', async () => {
-    localStorage.setItem('homestead.theme', 'dark');
+    localStorage.setItem('homestead.theme', 'light');
     await setup('CLAIMED');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+  });
+
+  it('starts dark with no stored theme: no data-theme attribute', async () => {
+    localStorage.removeItem('homestead.theme');
+    await setup('CLAIMED');
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
   });
 });

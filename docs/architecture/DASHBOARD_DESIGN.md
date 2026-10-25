@@ -1,7 +1,55 @@
-# Dashboard design (S248, S282, S283, S285, S309)
+# Dashboard design (S248, S282, S283, S285, S309, S310)
 
 Clean-room (ADR-019): plain Angular and CSS custom properties, no UI
 framework, no vendored third-party UI code.
+
+## The language: lamplight (S310)
+Five rules. Every component follows them; components use tokens only and
+never write a raw shadow or colour.
+
+1. **One light source.** Light falls from the top of the page, at the
+   masthead. A nearer surface is lit more: a lighter fill, a 1px top
+   highlight (`--highlight-top`) and a longer, softer shadow below it. Every
+   shadow falls downward.
+2. **Four depths, plus the well.**
+   - **Hedgerow**: the sidebar, the deepest plane, darker than the ground.
+     The canvas casts `--edge-shadow` onto it. The current page is a lit
+     tab: `--sidebar-active-bg` fill, control elevation and a
+     `--sidebar-lamp` bar on its inline-start edge.
+   - **Ground**: the canvas (`--background`).
+   - **Plate**: fields, panels, cards, forms and catalog rows
+     (`--elevation-plate`).
+   - **Lifted**: the permit, menus, dialogs, the drawer, toasts and the
+     Needs you field (`--elevation-lifted`).
+   - **Well**: inputs, code, ledgers (`dl`), table bodies and logs, cut into
+     their plate (`--surface-sunken`, `--elevation-well`).
+   Detail reads as recessed and actions as raised: buttons are small plates
+   (`--elevation-control`) that press down on `:active`
+   (`--elevation-pressed` and a `--press-offset` translate). Quiet and
+   disabled buttons stay flat.
+3. **Light means attention.** Only what needs the owner glows. Needs you is
+   a lit window (`--glow-attention`, `--glow-furrow`). Warn and fail badges
+   are lamps with a halo of their colour (`--halo-warn`, `--halo-fail`); ok
+   has no halo, and whole fields never glow for ok. Focus is a lit ring: the
+   outline plus `--glow-focus`. Light never animates.
+4. **The land.** The masthead sits on a band (`--band-height`) of faint
+   contour lines: the `--contour` SVG data URI coloured with `--contour-ink`
+   and masked by `--lamp-falloff`, brightest top-left, behind a soft
+   `--lamp-wash`. This is the only texture. The masthead rule is the
+   **horizon** (`--horizon`), lit at its inline-start end and fading out.
+   The h1 is `--font-size-display` (3.25rem) and the sentence under it a lead
+   at `--font-size-lead` in `--muted-strong`.
+5. **The permit is paper under the lamp.** It is the highest surface: its
+   perforation is a mask, so its shadow is `filter: var(--elevation-paper)`
+   on the `app-permit` host. The Manila fill carries `--paper-falloff`
+   (lighter top-left, `--manila-lit`). The seal is embossed (`--emboss`).
+   In dark the permit is warm and lit, never white. Its warning spans its
+   full width.
+
+High contrast keeps depth in borders only: every elevation, glow, halo,
+wash and falloff token is `none`, contours are transparent, wells get a 1px
+inner border and the horizon is solid. `forced-colors: active` drops them
+too. The validation board shows the four depths and the lamps.
 
 ## Hierarchy (S309)
 The owner sees first what needs them, then what the appliance is doing,
@@ -12,11 +60,9 @@ one bold element.
 
 - **Tier 0, the shell recedes.** The sidebar is a deep pine band,
   **Hedgerow** (`--hedgerow`, `--on-hedgerow`). The wordmark is in the
-  display face. The current page is a Limewash **notch**: the link takes the
-  page colour, loses its inline-end radius and margin, and two small
-  radial-gradient curves join it to the canvas, so the page reads as cut
-  from the band. A 4px inset furrow in the primary colour marks it too, so
-  the state never rests on colour alone. High contrast keeps its yellow
+  display face. The current page is a lit tab (S310, replacing the S309 notch):
+  a raised fill with a 4px lamp bar on its inline-start edge, so the state
+  never rests on colour alone. High contrast keeps its yellow
   current page and drops the furrow.
 - **Tier 1, the masthead.** Every page opens with
   `<header class="masthead"><h1>…</h1><p class="masthead-fact">…</p></header>`:
@@ -100,19 +146,22 @@ the S309 scalars (`--font-display`, `--font-size-display`,
 documented in that file (md, 48rem, is where the sidebar becomes a column).
 
 Radius and elevation follow hierarchy: controls `--radius-control`, panels
-`--radius-panel` with `--shadow-sm`, dialogs `--radius-dialog` with
-`--shadow-lg`, badges are pills. Motion tokens (`--duration-*`, `--ease-*`)
+`--radius-panel` with `--elevation-plate`, dialogs `--radius-dialog` with
+`--elevation-lifted` (S310 replaced `--shadow-*`), badges are pills. Motion tokens (`--duration-*`, `--ease-*`)
 are used by S283 (see States, motion and feedback); `prefers-reduced-motion`
 removes every animation and transition.
 
 ## Themes
-Light (default): Limewash `#F2F4F0` page, Board `#FFFFFF` panels, Pine
-`#1F4D3A` brand and primary, Ink `#1C2621` text, Signal amber `#B4690E`
-(fills, glyphs, borders; text uses the darker `--warn-text` `#8A4F06`
-because `#B4690E` is 4.2:1 on white), Brick `#9E2F1E` danger, Meadow
-`#2D7A1F` for ok. Dark uses deep pine-charcoal surfaces (`#131A16` page,
-`#1B2420` board) with a lighter pine primary `#7FCBA3`. High contrast is
-black, white and yellow.
+Dark is the default (S310). Dark: Hedgerow `#0A100D`, ground `#111915`,
+plate `#18221D`, lifted `#1F2A24`, well `#0D1310`, ink `#E6ECE7`, muted
+`#9DAAA2`, Pine accent `#7FD1A8`, Lantern `#F2B544` (warn and focus), Meadow
+`#6FCF7F`, Brick `#F07A62`, Manila-night `#2A2619` to `#332D1E`. Dark
+shadows are near-black at real alpha; depth comes from highlights and value
+steps. Light ("daylight"): Limewash `#F2F4F0` page, Board `#FFFFFF` panels,
+Pine `#1F4D3A` primary, Ink `#1C2621` text, Signal amber `#B4690E` (text
+uses `--warn-text` `#8A4F06`), Brick `#9E2F1E`, Meadow `#2D7A1F`, with
+softer cool shadows and fainter contours. High contrast is black, white and
+yellow.
 
 S309 adds, in every theme: `--hedgerow` and `--on-hedgerow` (the sidebar
 band; `--sidebar-*` follow it), `--manila`, `--manila-rule`, `--on-manila`
@@ -121,12 +170,17 @@ and `--on-manila-muted` (the permit), `--stamp` and `--stamp-refused`,
 values. Light Hedgerow is `#12291F`, Manila `#F5EEDB`; dark Hedgerow is a
 step darker than the page (`#0C120F`) and Manila a warm deep `#2A2619`.
 
-Selection: no `data-theme` follows `prefers-color-scheme`; the Account page
-stores system, light, dark or high contrast in `localStorage`
-(`homestead.theme`) and `ThemeService` sets `data-theme` on `<html>`.
+Selection: no stored choice means dark, with no `data-theme`. The Account
+picker offers Dark, Light, Match my system and High contrast. Light, system
+and high contrast are stored in `localStorage` (`homestead.theme`) and set as
+`data-theme` on `<html>`; choosing Dark clears the key. Only
+`[data-theme='system']` follows `prefers-color-scheme`.
 `data-theme` also works on any element (the validation board nests all
-three). The dark block appears twice (system and manual); a spec keeps them
-identical. `theme/tokens-contrast.spec.ts` asserts WCAG AA (4.5:1 text, 3:1
+three). Dark is the `:root` block (shared with `dark` and `system`); the
+light block appears twice (manual, and system under
+`prefers-color-scheme: light`), and a spec keeps them identical. The spec
+also checks the depth luminance order and that high contrast has no
+shadows or glows. `theme/tokens-contrast.spec.ts` asserts WCAG AA (4.5:1 text, 3:1
 borders, focus rings and glyph colours) for every token pair in every theme.
 Add a token pair there when you add a token.
 
@@ -168,7 +222,7 @@ requests. Sentence case everywhere; no all-caps labels.
   `scroll-padding-top`.
 
 ## Shell
-Hedgerow sidebar with the current-page notch (see Hierarchy), skip link, grouped sidebar (`core/nav.ts`: Overview, Apps, Network, Storage
+Hedgerow sidebar with the current-page lit tab (see the language), skip link, grouped sidebar (`core/nav.ts`: Overview, Apps, Network, Storage
 and backups, System), collapsible groups: only the group holding the current
 page is open by default, and the owner's explicit open or close choices are
 persisted in `localStorage` (`homestead.nav.groups`); current page with `aria-current="page"`, a
@@ -351,7 +405,7 @@ Four patterns cover most pages. Each uses only the S282 tokens and primitives.
   in the Needs you field: a badge, what happened and one action (a link, a
   command in `app-copy-code`, or Check again). Healthy checks sit in their own
   ok field, collapsed into a `<details>` with a count. Identity facts (service, claim, version) sit in a
-  compact `.facts` list, not a card grid.
+  ledger (a definition list in a well), not a card grid.
 - **App list** (Catalog, Craft apps). One row per app: `.app-icon`, name, a
   one-line purpose, a state badge and the install or open action. Rows, not a
   uniform card grid. Craft advisories use the S252 component in `.advisory-list`.

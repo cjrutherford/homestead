@@ -139,6 +139,11 @@ app-loading[data-shape='fields'].loading-busy {
   -webkit-mask-image: var(--glyph-running);
 }
 
+/* A failed step's glyph is a lamp with a halo (S310); a done one is steady. */
+.step[data-status='failed'] {
+  background: var(--halo-fail) calc(0.55rem - 0.95rem) 50% / 1.9rem 1.9rem no-repeat;
+}
+
 .step[data-status='failed'] .step-glyph {
   background: var(--danger);
   mask-image: var(--glyph-fail);
@@ -169,6 +174,7 @@ app-loading[data-shape='fields'].loading-busy {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
+  box-shadow: var(--elevation-plate);
 }
 
 .operation-progress-line {
@@ -220,7 +226,7 @@ app-work-orders-rail {
   border: 1px solid var(--border-strong);
   border-inline-start-width: 4px;
   border-radius: var(--radius-control);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--elevation-lifted);
   pointer-events: auto;
   animation: toast-in var(--duration-base) var(--ease-enter) both;
 }
@@ -383,7 +389,7 @@ app-work-orders-rail {
   margin: 0;
   padding: 0 var(--spacing-md) var(--spacing-sm);
   border-radius: var(--radius-panel) var(--radius-panel) 0 0;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--elevation-lifted);
   max-height: 70dvh;
   overflow-y: auto;
 }
@@ -399,6 +405,7 @@ app-work-orders-rail {
   color: var(--rail-foreground);
   background: transparent;
   border: 0;
+  box-shadow: none;
   font-weight: 700;
   text-align: start;
 }

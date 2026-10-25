@@ -122,6 +122,7 @@ pre,
   font-size: 0.94em;
 }
 
+/* Code and logs are detail: cut into their plate as wells (S310). */
 code {
   padding: 0.08em 0.35em;
   background: var(--surface-sunken);
@@ -137,6 +138,7 @@ pre {
   background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
+  box-shadow: var(--elevation-well);
 }
 
 pre code {
@@ -148,10 +150,12 @@ pre code {
   overflow-wrap: anywhere;
 }
 
-/* Focus: one visible ring in every theme. */
+/* Focus: one visible ring in every theme, lit (S310): the outline plus a
+   soft halo of the ring's own colour. High contrast keeps the outline only. */
 :focus-visible {
   outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
+  box-shadow: var(--glow-focus);
 }
 
 :focus:not(:focus-visible) {
@@ -159,10 +163,15 @@ pre code {
 }
 
 /* Definition lists are ledgers (S309): small type, muted labels set
-   right against a hairline, ink values. They stack on narrow screens. */
+   right against a hairline, ink values. They stack on narrow screens.
+   S310: a ledger is detail, so it sits in a well cut into its plate. */
 dl {
   margin: 0 0 var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
   font-size: var(--font-size-sm);
+  background: var(--surface-sunken);
+  border-radius: var(--radius-control);
+  box-shadow: var(--elevation-well);
 }
 
 dl > div {
@@ -180,6 +189,10 @@ dl > div > dt {
   padding-inline-end: var(--spacing-md);
   text-align: end;
   border-inline-end: 1px solid var(--border);
+}
+
+dl > div + div {
+  border-top: 1px solid var(--border);
 }
 
 dd {
@@ -303,11 +316,6 @@ ul:has(> .audit-entry) {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
     padding: var(--spacing-xs) 0;
-    border-bottom: 1px solid var(--border);
-  }
-
-  dl > div:last-child {
-    border-bottom: 0;
   }
 
   dl > div > dt {

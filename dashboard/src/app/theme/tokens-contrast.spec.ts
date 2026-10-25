@@ -18,8 +18,8 @@ function block(selector: string): Record<string, string> {
 }
 
 const themes = {
-  light: block(":root,\n[data-theme='light']"),
-  dark: block("[data-theme='dark']"),
+  dark: block(":root,\n[data-theme='dark'],\n[data-theme='system']"),
+  light: block("[data-theme='light']"),
   'high-contrast': block("[data-theme='high-contrast']"),
 };
 
@@ -86,6 +86,21 @@ const pairs: [string, string, number][] = [
   ['--warn', '--background', NON_TEXT],
   ['--warn', '--surface', NON_TEXT],
   ['--warn', '--warn-bg', NON_TEXT],
+  // S310, lamplight: the four depths and the well carry text and borders.
+  ['--muted-strong', '--background', TEXT],
+  ['--muted', '--surface-raised', TEXT],
+  ['--link', '--surface-raised', TEXT],
+  ['--link', '--surface-sunken', TEXT],
+  ['--foreground', '--surface-hover', TEXT],
+  ['--border-strong', '--surface-raised', NON_TEXT],
+  ['--border-strong', '--surface-sunken', NON_TEXT],
+  ['--focus-ring', '--surface-sunken', NON_TEXT],
+  ['--sidebar-lamp', '--sidebar-active-bg', NON_TEXT],
+  ['--sidebar-muted', '--sidebar-hover-bg', TEXT],
+  // Lamps: state glyphs on the ground, the plate and the well.
+  ['--success', '--surface-sunken', NON_TEXT],
+  ['--warn', '--surface-sunken', NON_TEXT],
+  ['--danger', '--surface-sunken', NON_TEXT],
 ];
 
 /**
@@ -121,6 +136,12 @@ const permitPairs: [string, string, number][] = [
   ['--border-strong', '--manila', NON_TEXT],
   ['--primary', '--manila', NON_TEXT],
   ['--warn', '--manila', NON_TEXT],
+  // S310: the paper's lit corner (the falloff's light end).
+  ['--on-manila', '--manila-lit', TEXT],
+  ['--on-manila-muted', '--manila-lit', TEXT],
+  ['--stamp', '--manila-lit', TEXT],
+  ['--stamp-refused', '--manila-lit', TEXT],
+  ['--manila-rule', '--manila-lit', NON_TEXT],
 ];
 
 describe('permit tokens', () => {
@@ -166,11 +187,46 @@ describe('theme tokens', () => {
     expect(names.length).toBeGreaterThan(30);
   });
 
-  it('keeps the system-dark block identical to the dark theme', () => {
-    const media = css.indexOf('@media (prefers-color-scheme: dark)');
-    const system = block(':root:not([data-theme])');
-    expect(css.indexOf(':root:not([data-theme])')).toBeGreaterThan(media);
-    expect(system).toEqual(themes.dark);
+  it('keeps the system-light block identical to the light theme', () => {
+    const media = css.indexOf('@media (prefers-color-scheme: light)');
+    expect(media).toBeGreaterThan(0);
+    const inMedia = css.indexOf("  [data-theme='system'] {", media);
+    expect(inMedia).toBeGreaterThan(media);
+    const open = css.indexOf('{', inMedia);
+    const system: Record<string, string> = {};
+    for (const match of css.slice(open + 1, css.indexOf('}', open)).matchAll(/(--[a-z-]+):\s*([^;]+?);/g)) {
+      system[match[1]] = match[2].replace(/\s*\/\*.*$/, '').trim();
+    }
+    expect(system).toEqual(themes.light);
+  });
+
+  it('is dark by default: :root carries the dark theme, light only on request', () => {
+    expect(css).toContain(":root,\n[data-theme='dark'],\n[data-theme='system'] {");
+    expect(css).not.toContain(':root:not([data-theme])');
+    expect(css).not.toContain('@media (prefers-color-scheme: dark)');
+    expect(themes.dark['--background']).toBe('#111915');
+    expect(themes.dark['--hedgerow']).toBe('#0a100d');
+    expect(themes.dark['--surface']).toBe('#18221d');
+    expect(themes.dark['--surface-raised']).toBe('#1f2a24');
+    expect(themes.dark['--surface-sunken']).toBe('#0d1310');
+  });
+
+  it('separates the four depths in dark: hedgerow < well < ground < plate < lifted', () => {
+    const d = themes.dark;
+    const order = ['--hedgerow', '--surface-sunken', '--background', '--surface', '--surface-raised'];
+    const lum = order.map((t) => contrast(d[t], '#000000'));
+    for (let i = 1; i < lum.length; i++) {
+      expect(lum[i], `${order[i]} above ${order[i - 1]}`).toBeGreaterThan(lum[i - 1]);
+    }
+  });
+
+  it('drops shadows, glows, contours and gradients in high contrast', () => {
+    const hc = themes['high-contrast'];
+    for (const token of ['--elevation-plate', '--elevation-lifted', '--elevation-control', '--elevation-paper', '--glow-attention', '--glow-focus', '--halo-warn', '--halo-fail', '--lamp-wash', '--paper-falloff', '--edge-shadow', '--highlight-top']) {
+      expect(hc[token], token).toBe('none');
+    }
+    expect(hc['--contour-ink']).toBe('transparent');
+    expect(hc['--elevation-well']).toBe('inset 0 0 0 1px #ffffff');
   });
 
   it('keeps the approved light palette', () => {

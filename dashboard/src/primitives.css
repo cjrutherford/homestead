@@ -20,27 +20,37 @@ button,
   font-weight: 700;
   line-height: 1.2;
   color: var(--foreground);
-  background: var(--surface);
+  background: var(--surface-raised);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
+  /* An action is a small plate (S310): lit along its top, it presses down. */
+  box-shadow: var(--elevation-control);
   cursor: pointer;
   text-align: center;
   text-decoration: none;
   transition:
     background-color var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
+    color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-instant) var(--ease-standard),
+    transform var(--duration-instant) var(--ease-standard);
 }
 
 button:hover,
 .button:hover {
   color: var(--foreground);
-  background: var(--surface-sunken);
+  background: var(--surface-hover);
 }
 
 button:active,
 .button:active {
-  background: var(--border);
+  box-shadow: var(--elevation-pressed);
+  transform: translateY(var(--press-offset));
+}
+
+button:focus-visible,
+.button:focus-visible {
+  box-shadow: var(--elevation-control), var(--glow-focus);
 }
 
 button[type='submit'],
@@ -85,6 +95,7 @@ button[type='submit']:active,
   color: var(--danger);
   background: transparent;
   border-color: var(--danger);
+  box-shadow: none;
 }
 
 .danger.quiet:hover {
@@ -97,22 +108,26 @@ button[type='submit']:active,
   color: var(--link);
   background: transparent;
   border-color: transparent;
+  box-shadow: none;
 }
 
 .quiet:hover {
   color: var(--link-hover);
-  background: var(--surface-sunken);
+  background: var(--surface-hover);
 }
 
 .quiet:active {
-  background: var(--border);
+  background: var(--surface-sunken);
 }
 
+/* A disabled action is flat: it sits in the plate, it does not stand on it. */
 button:disabled,
 .button[aria-disabled='true'] {
   color: var(--muted);
   background: var(--surface-sunken);
   border-color: var(--border);
+  box-shadow: none;
+  transform: none;
   cursor: not-allowed;
 }
 
@@ -156,10 +171,18 @@ textarea {
   padding: var(--spacing-sm) var(--spacing-md);
   font: inherit;
   color: var(--foreground);
-  background: var(--surface);
+  /* Inputs are wells (S310): cut into their plate, lit from above. */
+  background: var(--surface-sunken);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
+  box-shadow: var(--elevation-well);
   transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  box-shadow: var(--elevation-well), var(--glow-focus);
 }
 
 textarea {
@@ -182,6 +205,7 @@ input[type='radio'] {
   min-height: 0;
   margin: 0.1rem 0 0;
   padding: 0;
+  box-shadow: none;
   accent-color: var(--primary);
 }
 
@@ -229,6 +253,14 @@ fieldset {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
+  box-shadow: var(--elevation-plate);
+}
+
+/* A fieldset inside a plate is a group on that plate, not another plate. */
+.shell-main form fieldset,
+.field-panel fieldset,
+.permit fieldset {
+  box-shadow: none;
 }
 
 legend {
@@ -236,7 +268,7 @@ legend {
   font-weight: 700;
 }
 
-/* A form is a board: the place where the owner enters something. */
+/* A form is a plate: the place where the owner enters something. */
 .shell-main form {
   max-width: 40rem;
   margin: 0 0 var(--spacing-lg);
@@ -244,7 +276,7 @@ legend {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--elevation-plate);
 }
 
 .shell-main form form,
@@ -254,15 +286,17 @@ legend {
   box-shadow: none;
 }
 
-/* Tables: a scrolling wrapper with a sticky header. */
+/* Tables: a scrolling wrapper with a sticky header. The body is detail,
+   so the table sits in a well (S310). */
 .table-scroll {
   max-width: 100%;
   max-height: min(70dvh, 40rem);
   margin: 0 0 var(--spacing-md);
   overflow: auto;
-  background: var(--surface);
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
+  border-radius: var(--radius-control);
+  box-shadow: var(--elevation-well);
 }
 
 table {
@@ -309,7 +343,9 @@ td time,
   white-space: nowrap;
 }
 
-/* Badges: colour always pairs with a glyph and a word. */
+/* Badges: colour always pairs with a glyph and a word. The glyph is a
+   small lamp (S310): an ok lamp is steady with no halo; a warn or failure
+   lamp has a soft halo of its colour behind the glyph. */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -345,9 +381,17 @@ td time,
   -webkit-mask-image: var(--glyph-ok);
 }
 
+.badge-warn,
+.badge-fail {
+  background-repeat: no-repeat;
+  background-size: 1.9em 1.9em;
+  background-position: calc(0.4rem - 0.45em) 50%;
+}
+
 .badge-warn {
   color: var(--warn-text);
-  background: var(--warn-bg);
+  background-color: var(--warn-bg);
+  background-image: var(--halo-warn);
 }
 
 .badge-warn::before {
@@ -358,7 +402,8 @@ td time,
 
 .badge-fail {
   color: var(--danger);
-  background: var(--danger-bg);
+  background-color: var(--danger-bg);
+  background-image: var(--halo-fail);
 }
 
 .badge-fail::before {
@@ -464,14 +509,14 @@ li:has(> app-state-message:only-child) {
   list-style: none;
 }
 
-/* Panels: a board surface. Dialogs sit above it. */
+/* Panels: a plate. Dialogs are lifted above it. */
 .card,
 .panel {
   padding: var(--spacing-md);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--elevation-plate);
 }
 
 /* Dialog (app-dialog): modal on a native <dialog>. */
@@ -485,7 +530,7 @@ li:has(> app-state-message:only-child) {
   background: var(--surface-raised);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-dialog);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--elevation-lifted);
 }
 
 .dialog-danger {
@@ -534,6 +579,10 @@ li:has(> app-state-message:only-child) {
   .badge,
   .dialog {
     border: 2px solid CanvasText;
+  }
+
+  .badge {
+    background-image: none;
   }
 }
 

@@ -947,3 +947,17 @@
 - The craft image verify report is a report, not a permit.
 - Arrows remain in non-button change text on Config and Updates (diff lists);
   replace with words when those pages are reworked.
+
+## Lamplight (S310)
+
+- Owners who stored "Match my system" keep it; owners with no stored choice
+  who relied on the old system-follow default now get dark until they pick
+  Match my system on Account.
+- Operations rail step glyphs get halos only for failed steps; the rail's
+  own state dots and table state glyphs outside badges have no lamp halo yet.
+- Fields (plates with state furrows) are still used on Status and Setup only,
+  so other pages' plain h2 sections sit flat on the ground until reviewed.
+- Inputs inside a permit render as plain wells of the page theme, not paper;
+  no current permit holds an input, so the paper-input treatment waits for one.
+- The stamp has no ink-press shadow (removed as the accessory in review);
+  revisit only if the stamp reads flat on real hardware.

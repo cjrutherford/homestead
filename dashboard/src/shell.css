@@ -1,9 +1,41 @@
 /* App shell (S282): grouped sidebar, mobile drawer, main column. */
 
 .shell {
+  position: relative;
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   min-height: 100dvh;
+}
+
+/*
+ * The land (S310): the masthead sits on a band at the top of the ground.
+ * The lamp's warm wash, and the contour lines lit top-left and fading across
+ * and down into the ground. The only texture in the product.
+ */
+.shell::before,
+.shell::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  inset-inline: var(--sidebar-width) 0;
+  height: var(--band-height);
+  pointer-events: none;
+}
+
+.shell::before {
+  background: var(--lamp-wash);
+}
+
+.shell::after {
+  background: var(--contour-ink);
+  -webkit-mask: var(--contour) 0 0 / 60rem auto no-repeat, var(--lamp-falloff);
+  -webkit-mask-composite: source-in;
+  mask: var(--contour) 0 0 / 60rem auto no-repeat intersect, var(--lamp-falloff);
+}
+
+/* The page stands on the band. */
+.shell-main {
+  position: relative;
 }
 
 .skip-link {
@@ -38,11 +70,12 @@
   flex-direction: column;
   gap: var(--spacing-md);
   height: 100dvh;
-  /* No end padding: the current page's notch runs to the band's edge. */
   padding: var(--spacing-md) 0 var(--spacing-md) var(--spacing-sm);
   overflow: hidden;
   color: var(--on-hedgerow);
   background: var(--hedgerow);
+  /* The hedgerow is the deepest plane: the ground casts a shadow onto it. */
+  box-shadow: var(--edge-shadow);
 }
 
 /* The wordmark, in the display face (S309). */
@@ -89,6 +122,7 @@
   color: var(--sidebar-muted);
   background: transparent;
   border-color: transparent;
+  box-shadow: none;
   font-size: var(--font-size-sm);
 }
 
@@ -147,46 +181,18 @@
 }
 
 /*
- * The current page is a notch (S309): a tab of the canvas colour that runs to
- * the band's edge with outward curves above and below, so the page reads as
- * cut from the Hedgerow. A primary stake at its start marks it without
- * relying on the notch alone.
+ * The current page is a lit tab (S310): a raised fill on the band, lit along
+ * its top, with a lamp bar on its inline-start edge. Bold text and
+ * aria-current mark it too, so the state never rests on light alone. High
+ * contrast keeps its yellow fill and drops the bar.
  */
 .nav-link[aria-current='page'] {
-  margin-inline-end: 0;
   color: var(--sidebar-active-foreground);
   background: var(--sidebar-active-bg);
-  border-radius: var(--radius-control) 0 0 var(--radius-control);
-  box-shadow: inset var(--furrow) 0 0 var(--primary);
+  box-shadow:
+    inset var(--furrow) 0 0 var(--sidebar-lamp),
+    var(--elevation-control);
   font-weight: 700;
-}
-
-.nav-link[aria-current='page']::before,
-.nav-link[aria-current='page']::after {
-  content: '';
-  position: absolute;
-  inset-inline-end: 0;
-  width: var(--radius-control);
-  height: var(--radius-control);
-  pointer-events: none;
-}
-
-.nav-link[aria-current='page']::before {
-  top: calc(-1 * var(--radius-control));
-  background: radial-gradient(
-    circle at 0 0,
-    transparent var(--radius-control),
-    var(--sidebar-active-bg) calc(var(--radius-control) + 0.5px)
-  );
-}
-
-.nav-link[aria-current='page']::after {
-  bottom: calc(-1 * var(--radius-control));
-  background: radial-gradient(
-    circle at 0 100%,
-    transparent var(--radius-control),
-    var(--sidebar-active-bg) calc(var(--radius-control) + 0.5px)
-  );
 }
 
 [data-theme='high-contrast'] .nav-link[aria-current='page'] {
@@ -221,6 +227,7 @@
   color: var(--sidebar-foreground);
   background: transparent;
   border-color: var(--sidebar-border);
+  box-shadow: none;
 }
 
 .sidebar-foot .button:hover,
@@ -277,6 +284,7 @@
     color: var(--sidebar-foreground);
     background: transparent;
     border-color: var(--sidebar-border);
+    box-shadow: none;
   }
 
   .shell-topbar button:hover,
@@ -291,7 +299,8 @@
     width: min(var(--sidebar-width), 86vw);
     visibility: hidden;
     transform: translateX(-100%);
-    box-shadow: var(--shadow-lg);
+    /* The drawer is lifted over the page. */
+    box-shadow: var(--elevation-lifted);
   }
 
   .drawer-open .sidebar {
@@ -314,5 +323,17 @@
 
   .shell-main {
     padding: var(--spacing-lg) var(--spacing-md) var(--spacing-xl);
+  }
+
+  .shell::before,
+  .shell::after {
+    inset-inline: 0;
+  }
+}
+
+@media (forced-colors: active) {
+  .shell::before,
+  .shell::after {
+    display: none;
   }
 }
