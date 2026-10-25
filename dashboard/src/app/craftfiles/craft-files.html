@@ -18,166 +18,170 @@
 
   <app-loading [loading]="loading()" shape="panel">
   @if (status(); as st) {
-    <h2>Nextcloud link</h2>
-    @if (st.linked) {
-      <p>
-        Linked to {{ st.base_url }} as {{ st.account }}; documents live in the
-        folder {{ st.root }}.
-        @if (st.credential_stored) {
-          The app password is sealed on this appliance.
-        } @else {
-          <strong>The app password is missing: rotate it.</strong>
-        }
-      </p>
-    } @else {
-      <app-state-message kind="empty" headline="Not linked to Nextcloud." detail="Link it below so craft apps can open and save documents there." />
-    }
-
-    @if (approved(); as a) {
-      <app-permit [heading]="a.heading" [approval]="a.approval">
-        <p>{{ a.summary }}</p>
-      </app-permit>
-    }
-
-    @if (!plan()) {
-      @if (!st.linked) {
-        <form (submit)="$event.preventDefault(); review('link')">
-          <label>
-            Nextcloud address
-            <input name="base-url" placeholder="https://nextcloud.lan" (input)="baseUrl = $any($event.target).value" />
-          </label>
-          <label>
-            Nextcloud account
-            <input name="account" autocomplete="off" (input)="account = $any($event.target).value" />
-          </label>
-          <label>
-            Folder for documents
-            <input name="root" [value]="root" (input)="root = $any($event.target).value" />
-          </label>
-          @if (!createPassword) {
-            <label>
-              App password (create one in Nextcloud under Security)
-              <input name="app-password" type="password" autocomplete="off" (input)="appPassword = $any($event.target).value" />
-            </label>
+    <section class="field-panel" aria-labelledby="craft-files-link">
+      <h2 id="craft-files-link">Nextcloud link</h2>
+      @if (st.linked) {
+        <p>
+          Linked to {{ st.base_url }} as {{ st.account }}; documents live in the
+          folder {{ st.root }}.
+          @if (st.credential_stored) {
+            The app password is sealed on this appliance.
           } @else {
-            <label>
-              Account password (used once to create an app password; not kept)
-              <input name="account-password" type="password" autocomplete="off" (input)="accountPassword = $any($event.target).value" />
-            </label>
+            <strong>The app password is missing: rotate it.</strong>
           }
-          <label>
-            <input type="checkbox" name="create" [checked]="createPassword" (change)="createPassword = $any($event.target).checked" />
-            Let Homestead create the app password
-          </label>
-          <label>
-            <input type="checkbox" name="insecure" [checked]="allowInsecure" (change)="allowInsecure = $any($event.target).checked" />
-            I accept plain http (only for a Nextcloud address not on this appliance; the app password then crosses the network unencrypted)
-          </label>
-          @if (error() && !plan()) {
-            <p class="field-error" role="alert">{{ error() }}</p>
-          }
-          <button type="submit" class="primary" [disabled]="busy()">Review link</button>
-        </form>
+        </p>
       } @else {
-        <form (submit)="$event.preventDefault(); review('rotate')">
-          @if (!createPassword) {
-            <label>
-              New app password
-              <input name="rotate-password" type="password" autocomplete="off" (input)="appPassword = $any($event.target).value" />
-            </label>
-          } @else {
-            <label>
-              Account password (used once; not kept)
-              <input name="rotate-account-password" type="password" autocomplete="off" (input)="accountPassword = $any($event.target).value" />
-            </label>
-          }
-          <label>
-            <input type="checkbox" name="rotate-create" [checked]="createPassword" (change)="createPassword = $any($event.target).checked" />
-            Let Homestead create the app password
-          </label>
-          <label>
-            <input type="checkbox" name="rotate-insecure" [checked]="allowInsecure" (change)="allowInsecure = $any($event.target).checked" />
-            I accept plain http (only for a Nextcloud address not on this appliance; the app password then crosses the network unencrypted)
-          </label>
-          @if (error() && !plan()) {
-            <p class="field-error" role="alert">{{ error() }}</p>
-          }
-          <button type="submit" class="primary" [disabled]="busy()">Review rotation</button>
-          <button type="button" class="danger quiet" [disabled]="busy()" (click)="review('unlink')">Review unlink</button>
-        </form>
+        <app-state-message kind="empty" headline="Not linked to Nextcloud." detail="Link it below so craft apps can open and save documents there." />
       }
-    } @else {
-      @if (plan(); as p) {
-        <app-permit [heading]="planHeading(p.action)" [refusal]="refused()" label="Nextcloud plan">
-        <h4>Will change</h4>
-        <ul>
-          @for (line of p.summary; track line) {
-            <li>{{ line }}</li>
-          }
-        </ul>
-        @for (line of p.warnings; track line) {
-          <app-state-message kind="warning" [headline]="line" />
-        }
-        <div class="risky-actions">
-          <button type="button" [class]="p.action === 'unlink' ? 'danger' : 'primary'" [disabled]="busy()" (click)="approve()">Approve {{ p.action }}</button>
-          <button type="button" class="quiet" [disabled]="busy()" (click)="cancel()">Cancel</button>
-        </div>
+
+      @if (approved(); as a) {
+        <app-permit [heading]="a.heading" [approval]="a.approval">
+          <p>{{ a.summary }}</p>
         </app-permit>
       }
-    }
 
-    <h2>Craft apps</h2>
-    <div class="table-scroll">
-    <table>
-      <thead>
-        <tr>
-          <th scope="col">App</th>
-          <th scope="col">File hook</th>
-          <th scope="col">Documents</th>
-          <th scope="col">Keep browser-local</th>
-          <th scope="col">Open</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (app of st.apps; track app.name) {
-          <tr>
-            <th scope="row">{{ app.title }}</th>
-            <td>{{ app.mode === 'open-save' ? 'open and save' : 'open only (saves stay in the browser)' }}</td>
-            <td>
-              @if (app.local_only) {
-                <span class="badge">browser-local (opted out)</span>
-              } @else if (!st.linked) {
-                <span class="badge">browser-local (not linked)</span>
-              } @else if (!app.host) {
-                <span class="badge badge-warn">browser-local (no edge route recorded for this app)</span>
-              } @else {
-                <span class="badge badge-ok">Nextcloud</span>
-              }
-            </td>
-            <td>
-              <input
-                type="checkbox"
-                [attr.aria-label]="'Keep ' + app.title + ' browser-local'"
-                [checked]="app.local_only"
-                [disabled]="busy()"
-                (change)="toggleLocalOnly(app.name, $any($event.target).checked)"
-              />
-            </td>
-            <td>
-              <button type="button" [disabled]="busy() || !app.ready" (click)="launch(app.name)">
-                Open with Nextcloud files
-              </button>
-            </td>
-          </tr>
+      @if (!plan()) {
+        @if (!st.linked) {
+          <form (submit)="$event.preventDefault(); review('link')">
+            <label>
+              Nextcloud address
+              <input name="base-url" placeholder="https://nextcloud.lan" (input)="baseUrl = $any($event.target).value" />
+            </label>
+            <label>
+              Nextcloud account
+              <input name="account" autocomplete="off" (input)="account = $any($event.target).value" />
+            </label>
+            <label>
+              Folder for documents
+              <input name="root" [value]="root" (input)="root = $any($event.target).value" />
+            </label>
+            @if (!createPassword) {
+              <label>
+                App password (create one in Nextcloud under Security)
+                <input name="app-password" type="password" autocomplete="off" (input)="appPassword = $any($event.target).value" />
+              </label>
+            } @else {
+              <label>
+                Account password (used once to create an app password; not kept)
+                <input name="account-password" type="password" autocomplete="off" (input)="accountPassword = $any($event.target).value" />
+              </label>
+            }
+            <label>
+              <input type="checkbox" name="create" [checked]="createPassword" (change)="createPassword = $any($event.target).checked" />
+              Let Homestead create the app password
+            </label>
+            <label>
+              <input type="checkbox" name="insecure" [checked]="allowInsecure" (change)="allowInsecure = $any($event.target).checked" />
+              I accept plain http (only for a Nextcloud address not on this appliance; the app password then crosses the network unencrypted)
+            </label>
+            @if (error() && !plan()) {
+              <p class="field-error" role="alert">{{ error() }}</p>
+            }
+            <button type="submit" class="primary" [disabled]="busy()">Review link</button>
+          </form>
+        } @else {
+          <form (submit)="$event.preventDefault(); review('rotate')">
+            @if (!createPassword) {
+              <label>
+                New app password
+                <input name="rotate-password" type="password" autocomplete="off" (input)="appPassword = $any($event.target).value" />
+              </label>
+            } @else {
+              <label>
+                Account password (used once; not kept)
+                <input name="rotate-account-password" type="password" autocomplete="off" (input)="accountPassword = $any($event.target).value" />
+              </label>
+            }
+            <label>
+              <input type="checkbox" name="rotate-create" [checked]="createPassword" (change)="createPassword = $any($event.target).checked" />
+              Let Homestead create the app password
+            </label>
+            <label>
+              <input type="checkbox" name="rotate-insecure" [checked]="allowInsecure" (change)="allowInsecure = $any($event.target).checked" />
+              I accept plain http (only for a Nextcloud address not on this appliance; the app password then crosses the network unencrypted)
+            </label>
+            @if (error() && !plan()) {
+              <p class="field-error" role="alert">{{ error() }}</p>
+            }
+            <button type="submit" class="primary" [disabled]="busy()">Review rotation</button>
+            <button type="button" class="danger quiet" [disabled]="busy()" (click)="review('unlink')">Review unlink</button>
+          </form>
         }
-      </tbody>
-    </table>
-    </div>
-    <p>
-      Other craft apps have no file hook and stay browser-local. The upload limit, request timeout and
-      number of transfers at once are settings on the
-      <a routerLink="/config">Configuration</a> page (Craft file storage).
-    </p>
+      } @else {
+        @if (plan(); as p) {
+          <app-permit [heading]="planHeading(p.action)" [refusal]="refused()" label="Nextcloud plan">
+          <h4>Will change</h4>
+          <ul>
+            @for (line of p.summary; track line) {
+              <li>{{ line }}</li>
+            }
+          </ul>
+          @for (line of p.warnings; track line) {
+            <app-state-message kind="warning" [headline]="line" />
+          }
+          <div class="risky-actions">
+            <button type="button" [class]="p.action === 'unlink' ? 'danger' : 'primary'" [disabled]="busy()" (click)="approve()">Approve {{ p.action }}</button>
+            <button type="button" class="quiet" [disabled]="busy()" (click)="cancel()">Cancel</button>
+          </div>
+          </app-permit>
+        }
+      }
+    </section>
+
+    <section class="field-panel" aria-labelledby="craft-files-apps">
+      <h2 id="craft-files-apps">Craft apps</h2>
+      <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">App</th>
+            <th scope="col">File hook</th>
+            <th scope="col">Documents</th>
+            <th scope="col">Keep browser-local</th>
+            <th scope="col">Open</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (app of st.apps; track app.name) {
+            <tr>
+              <th scope="row">{{ app.title }}</th>
+              <td>{{ app.mode === 'open-save' ? 'open and save' : 'open only (saves stay in the browser)' }}</td>
+              <td>
+                @if (app.local_only) {
+                  <span class="badge">browser-local (opted out)</span>
+                } @else if (!st.linked) {
+                  <span class="badge">browser-local (not linked)</span>
+                } @else if (!app.host) {
+                  <span class="badge badge-warn">browser-local (no edge route recorded for this app)</span>
+                } @else {
+                  <span class="badge badge-ok">Nextcloud</span>
+                }
+              </td>
+              <td>
+                <input
+                  type="checkbox"
+                  [attr.aria-label]="'Keep ' + app.title + ' browser-local'"
+                  [checked]="app.local_only"
+                  [disabled]="busy()"
+                  (change)="toggleLocalOnly(app.name, $any($event.target).checked)"
+                />
+              </td>
+              <td>
+                <button type="button" [disabled]="busy() || !app.ready" (click)="launch(app.name)">
+                  Open with Nextcloud files
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+      </div>
+      <p>
+        Other craft apps have no file hook and stay browser-local. The upload limit, request timeout and
+        number of transfers at once are settings on the
+        <a routerLink="/config">Configuration</a> page (Craft file storage).
+      </p>
+    </section>
   }
   </app-loading>
 </section>

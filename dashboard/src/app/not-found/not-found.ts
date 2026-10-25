@@ -11,7 +11,9 @@ import { RouterLink } from '@angular/router';
         <h1>Not found</h1>
         <p class="masthead-fact">This page does not exist.</p>
       </header>
-      <a routerLink="/status">Back to status</a>
+      <section class="field-panel" aria-label="Where next">
+        <p><a routerLink="/status">Back to status</a></p>
+      </section>
     </section>
   `,
 })

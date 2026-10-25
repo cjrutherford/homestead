@@ -22,161 +22,172 @@
     <app-operation-progress [id]="id" />
   }
 
-  <h2>Certificate renewal</h2>
-  <p>
-    Homestead checks issued certificates every day. It reports only and never issues one. First
-    issuance is planned, previewed and approved on the
-    <a routerLink="/tls">Certificates</a> page. A plan-required status means the desired names, DNS
-    provider, or challenge changed since the approved issuance.
-  </p>
-  @if (renewals(); as report) {
-    @if (report.recorded_issuances === 0) {
-      <p>{{ report.summary | sentence }}</p>
-    }
-    <ul>
-      @for (renewal of report.certificates; track renewal.certificate) {
-        <li>
-          {{ renewal.certificate }}: {{ renewal.status }}
-          @if (renewal.status !== 'no-recorded-issuance') {
-            ({{ renewal.days_remaining }} days remaining)
-          }
-          — {{ renewal.detail }}
-        </li>
-      }
-    </ul>
-  }
-
-  <h2>Choose a route</h2>
-  <form
-    (submit)="
-      save(
-        hostInput.value,
-        targetInput.value,
-        portInput.value,
-        toInput.value,
-        zoneInput.value,
-        ipInput.value
-      );
-      $event.preventDefault()
-    "
-  >
-    <div class="field">
-      <label for="exposure-host">Route host</label>
-      <input id="exposure-host" #hostInput name="host" autocomplete="off" [disabled]="busy()"
-        [attr.aria-invalid]="fieldErrors()['host'] ? 'true' : null"
-        [attr.aria-describedby]="fieldErrors()['host'] ? 'exposure-host-error' : null" />
-      @if (fieldErrors()['host']; as message) {
-        <p class="field-error" id="exposure-host-error">{{ message }}</p>
-      }
-    </div>
-    <div class="field">
-      <label for="exposure-target">Target host</label>
-      <input id="exposure-target" #targetInput name="target" autocomplete="off" [disabled]="busy()"
-        [attr.aria-invalid]="fieldErrors()['target'] ? 'true' : null"
-        [attr.aria-describedby]="fieldErrors()['target'] ? 'exposure-target-error' : null" />
-      @if (fieldErrors()['target']; as message) {
-        <p class="field-error" id="exposure-target-error">{{ message }}</p>
-      }
-    </div>
-    <div class="field">
-      <label for="exposure-port">Target port</label>
-      <input id="exposure-port" #portInput name="port" inputmode="numeric" autocomplete="off" [disabled]="busy()"
-        [attr.aria-invalid]="fieldErrors()['port'] ? 'true' : null"
-        [attr.aria-describedby]="fieldErrors()['port'] ? 'exposure-port-error' : null" />
-      @if (fieldErrors()['port']; as message) {
-        <p class="field-error" id="exposure-port-error">{{ message }}</p>
-      }
-    </div>
-    <div class="field">
-      <label for="exposure-to">Who can reach it</label>
-      <select id="exposure-to" #toInput name="to" [disabled]="busy()">
-        <option value="overlay">overlay</option>
-        <option value="public">public</option>
-      </select>
-    </div>
-    <div class="field">
-      <label for="exposure-zone">Zone</label>
-      <input id="exposure-zone" #zoneInput name="zone" autocomplete="off" [disabled]="busy()" />
-    </div>
-    <div class="field">
-      <label for="exposure-ip">Public IP</label>
-      <input id="exposure-ip" #ipInput name="public-ip" autocomplete="off" [disabled]="busy()" />
-    </div>
-    <button type="submit" class="primary" [disabled]="busy()">Save and review</button>
-  </form>
-
-  <h2>Reviewed plan</h2>
-  @if (plan(); as reviewed) {
-    <app-permit [heading]="'Expose ' + reviewed.Host" [approval]="approved()" [refusal]="refused()" label="Exposure plan">
+  <section class="field-panel" aria-labelledby="exposure-renewal">
+    <h2 id="exposure-renewal">Certificate renewal</h2>
     <p>
-      {{ reviewed.Host }}: from {{ reviewed.From }} to {{ reviewed.To }}
-      (aligned: {{ reviewed.Assessment.Aligned }},
-      recommended: {{ reviewed.Assessment.Recommended }})
+      Homestead checks issued certificates every day. It reports only and never issues one. First
+      issuance is planned, previewed and approved on the
+      <a routerLink="/tls">Certificates</a> page. A plan-required status means the desired names, DNS
+      provider, or challenge changed since the approved issuance.
     </p>
-    @if (reviewed.Assessment.Findings.length > 0) {
+    @if (renewals(); as report) {
+      @if (report.recorded_issuances === 0) {
+        <p>{{ report.summary | sentence }}</p>
+      }
       <ul>
-        @for (finding of reviewed.Assessment.Findings; track finding.Message) {
-          <li>{{ finding.Severity }}: {{ finding.Message }}</li>
+        @for (renewal of report.certificates; track renewal.certificate) {
+          <li>
+            {{ renewal.certificate }}: {{ renewal.status }}
+            @if (renewal.status !== 'no-recorded-issuance') {
+              ({{ renewal.days_remaining }} days remaining)
+            }
+            — {{ renewal.detail }}
+          </li>
         }
       </ul>
     }
-    <h4>DNS records ({{ reviewed.DNS.length }})</h4>
-    <ul>
-      @for (record of reviewed.DNS; track record.Name + record.Type) {
-        <li>{{ record.Type }} {{ record.Name }}: {{ record.Value }}</li>
-      }
-    </ul>
-    <h4>TLS: {{ reviewed.TLS.Action }} {{ reviewed.TLS.Name }}</h4>
-    <p>{{ reviewed.TLS.Detail }}</p>
-    <h4>Firewall policies ({{ reviewed.Firewall.length }})</h4>
-    <ul>
-      @for (policy of reviewed.Firewall; track policy.Service.Name) {
-        <li>
-          {{ policy.Service.Protocol }}/{{ policy.Service.Port }}
-          ({{ policy.Service.Name }})
-        </li>
-      }
-    </ul>
+  </section>
 
-    <h4>Approve</h4>
+  <section class="field-panel" aria-labelledby="exposure-route">
+    <h2 id="exposure-route">Choose a route</h2>
     <form
-      class="permit-actions"
       (submit)="
-        approve(actorInput.value, networksInput.value);
+        save(
+          hostInput.value,
+          targetInput.value,
+          portInput.value,
+          toInput.value,
+          zoneInput.value,
+          ipInput.value
+        );
         $event.preventDefault()
       "
     >
       <div class="field">
-        <label for="exposure-actor">Your name</label>
-        <input id="exposure-actor" #actorInput name="actor" autocomplete="off" [disabled]="busy()"
-          [attr.aria-invalid]="fieldErrors()['actor'] ? 'true' : null"
-          [attr.aria-describedby]="fieldErrors()['actor'] ? 'exposure-actor-error' : null" />
-        @if (fieldErrors()['actor']; as message) {
-          <p class="field-error" id="exposure-actor-error">{{ message }}</p>
+        <label for="exposure-host">Route host</label>
+        <input id="exposure-host" #hostInput name="host" autocomplete="off" [disabled]="busy()"
+          [attr.aria-invalid]="fieldErrors()['host'] ? 'true' : null"
+          [attr.aria-describedby]="fieldErrors()['host'] ? 'exposure-host-error' : null" />
+        @if (fieldErrors()['host']; as message) {
+          <p class="field-error" id="exposure-host-error">{{ message }}</p>
         }
       </div>
       <div class="field">
-        <label for="exposure-networks">Networks (comma-separated CIDRs, for wide sources)</label>
-        <input id="exposure-networks" #networksInput name="networks" autocomplete="off" [disabled]="busy()" />
+        <label for="exposure-target">Target host</label>
+        <input id="exposure-target" #targetInput name="target" autocomplete="off" [disabled]="busy()"
+          [attr.aria-invalid]="fieldErrors()['target'] ? 'true' : null"
+          [attr.aria-describedby]="fieldErrors()['target'] ? 'exposure-target-error' : null" />
+        @if (fieldErrors()['target']; as message) {
+          <p class="field-error" id="exposure-target-error">{{ message }}</p>
+        }
       </div>
-      <button type="submit" class="primary" [disabled]="busy()">Approve plan</button>
+      <div class="field">
+        <label for="exposure-port">Target port</label>
+        <input id="exposure-port" #portInput name="port" inputmode="numeric" autocomplete="off" [disabled]="busy()"
+          [attr.aria-invalid]="fieldErrors()['port'] ? 'true' : null"
+          [attr.aria-describedby]="fieldErrors()['port'] ? 'exposure-port-error' : null" />
+        @if (fieldErrors()['port']; as message) {
+          <p class="field-error" id="exposure-port-error">{{ message }}</p>
+        }
+      </div>
+      <div class="field">
+        <label for="exposure-to">Who can reach it</label>
+        <select id="exposure-to" #toInput name="to" [disabled]="busy()">
+          <option value="overlay">overlay</option>
+          <option value="public">public</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="exposure-zone">Zone</label>
+        <input id="exposure-zone" #zoneInput name="zone" autocomplete="off" [disabled]="busy()" />
+      </div>
+      <div class="field">
+        <label for="exposure-ip">Public IP</label>
+        <input id="exposure-ip" #ipInput name="public-ip" autocomplete="off" [disabled]="busy()" />
+      </div>
+      <button type="submit" class="primary" [disabled]="busy()">Save and review</button>
     </form>
-    </app-permit>
+  </section>
 
-    <h2>Approvals ({{ approvals().length }})</h2>
-    <ul>
-      @for (approval of approvals(); track approval.host) {
-        <li>
-          {{ approval.host }} by {{ approval.actor }}
-          <button type="button" class="danger quiet" (click)="apply(approval.host)" [disabled]="busy()">
-            Apply
-          </button>
-        </li>
-      } @empty {
-        <li>No approvals recorded yet.</li>
+  @if (plan(); as reviewed) {
+    <section class="field-panel" aria-labelledby="exposure-plan">
+      <h2 id="exposure-plan">Reviewed plan</h2>
+      <app-permit [heading]="'Expose ' + reviewed.Host" [approval]="approved()" [refusal]="refused()" label="Exposure plan">
+      <p>
+        {{ reviewed.Host }}: from {{ reviewed.From }} to {{ reviewed.To }}
+        (aligned: {{ reviewed.Assessment.Aligned }},
+        recommended: {{ reviewed.Assessment.Recommended }})
+      </p>
+      @if (reviewed.Assessment.Findings.length > 0) {
+        <ul>
+          @for (finding of reviewed.Assessment.Findings; track finding.Message) {
+            <li>{{ finding.Severity }}: {{ finding.Message }}</li>
+          }
+        </ul>
       }
-    </ul>
+      <h4>DNS records ({{ reviewed.DNS.length }})</h4>
+      <ul>
+        @for (record of reviewed.DNS; track record.Name + record.Type) {
+          <li>{{ record.Type }} {{ record.Name }}: {{ record.Value }}</li>
+        }
+      </ul>
+      <h4>TLS: {{ reviewed.TLS.Action }} {{ reviewed.TLS.Name }}</h4>
+      <p>{{ reviewed.TLS.Detail }}</p>
+      <h4>Firewall policies ({{ reviewed.Firewall.length }})</h4>
+      <ul>
+        @for (policy of reviewed.Firewall; track policy.Service.Name) {
+          <li>
+            {{ policy.Service.Protocol }}/{{ policy.Service.Port }}
+            ({{ policy.Service.Name }})
+          </li>
+        }
+      </ul>
+
+      <h4>Approve</h4>
+      <form
+        class="permit-actions"
+        (submit)="
+          approve(actorInput.value, networksInput.value);
+          $event.preventDefault()
+        "
+      >
+        <div class="field">
+          <label for="exposure-actor">Your name</label>
+          <input id="exposure-actor" #actorInput name="actor" autocomplete="off" [disabled]="busy()"
+            [attr.aria-invalid]="fieldErrors()['actor'] ? 'true' : null"
+            [attr.aria-describedby]="fieldErrors()['actor'] ? 'exposure-actor-error' : null" />
+          @if (fieldErrors()['actor']; as message) {
+            <p class="field-error" id="exposure-actor-error">{{ message }}</p>
+          }
+        </div>
+        <div class="field">
+          <label for="exposure-networks">Networks (comma-separated CIDRs, for wide sources)</label>
+          <input id="exposure-networks" #networksInput name="networks" autocomplete="off" [disabled]="busy()" />
+        </div>
+        <button type="submit" class="primary" [disabled]="busy()">Approve plan</button>
+      </form>
+      </app-permit>
+    </section>
+
+    <section class="field-panel" aria-labelledby="exposure-approvals">
+      <h2 id="exposure-approvals">Approvals ({{ approvals().length }})</h2>
+      <ul>
+        @for (approval of approvals(); track approval.host) {
+          <li>
+            {{ approval.host }} by {{ approval.actor }}
+            <button type="button" class="danger quiet" (click)="apply(approval.host)" [disabled]="busy()">
+              Apply
+            </button>
+          </li>
+        } @empty {
+          <li>No approvals recorded yet.</li>
+        }
+      </ul>
+    </section>
   } @else {
-    <app-state-message kind="empty" headline="No reviewed plan yet." detail="Save a route and target above to see what would change." />
+    <section class="field-panel" aria-labelledby="exposure-plan">
+      <h2 id="exposure-plan">Reviewed plan</h2>
+      <app-state-message kind="empty" headline="No reviewed plan yet." detail="Save a route and target above to see what would change." />
+    </section>
   }
 </section>

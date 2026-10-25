@@ -347,6 +347,11 @@ app-work-orders-rail {
   -webkit-mask-image: var(--glyph-ok);
 }
 
+/* A failed order's glyph is a lamp with a halo (S311), as a failed step's is. */
+.rail-order[data-outcome='failed'] .rail-step {
+  background: var(--halo-fail) calc(0.45rem - 0.8rem) 50% / 1.6rem 1.6rem no-repeat;
+}
+
 .rail-order[data-outcome='failed'] .rail-glyph {
   mask-image: var(--glyph-fail);
   -webkit-mask-image: var(--glyph-fail);
@@ -544,5 +549,13 @@ app-work-orders-rail {
   ::view-transition-old(*),
   ::view-transition-new(*) {
     animation: none !important;
+  }
+}
+
+/* Forced colours: a lamp's halo is decoration; the glyph and word stay. */
+@media (forced-colors: active) {
+  .step[data-status='failed'],
+  .rail-order[data-outcome='failed'] .rail-step {
+    background: none;
   }
 }

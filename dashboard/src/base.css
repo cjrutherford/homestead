@@ -59,13 +59,6 @@ h2 {
   font-size: var(--font-size-xl);
   line-height: 1.15;
   margin-top: var(--spacing-xl);
-  padding-top: var(--spacing-lg);
-  border-top: 1px solid var(--border);
-}
-
-/* The first h2 after the lede reads as the section it opens. */
-h1 + h2 {
-  margin-top: var(--spacing-lg);
 }
 
 h3 {

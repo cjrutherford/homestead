@@ -5237,3 +5237,18 @@ sudo homesteadctl claim token          # the new owner's claim token
   and that the system-light block matches light. Token names in that file
   must not contain digits, and values must not contain `;` or `}`.
 - The validation board shows the four depths and the lamps.
+
+## S311: Lamplight on every page
+
+- Every page section is `<section class="field-panel" aria-labelledby="…">`
+  with its `h2` as the first child; a page without h2s puts its content in
+  one field. Add `data-state="warn|fail|ok"` for a furrow and `needs-you`
+  only for a section that needs the owner now.
+- On the ground, below the masthead, only fields, `app-permit`, dialogs,
+  `app-operation-progress`, page-level `app-state-message`s and a line of
+  prose. `kind="empty"` messages are wells and belong inside a field.
+- Claim and login use `<section class="gate">`, a centred lifted plate.
+- `src/app/theme/lamplight.spec.ts` enforces this for every route in
+  `app.routes.ts` (its `PAGES` map must list each route and template), and
+  rejects colour literals and raw shadows in every stylesheet except
+  `tokens.css` and `fonts.css`, including component `styles`.

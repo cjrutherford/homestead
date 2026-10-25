@@ -953,10 +953,25 @@
 - Owners who stored "Match my system" keep it; owners with no stored choice
   who relied on the old system-follow default now get dark until they pick
   Match my system on Account.
-- Operations rail step glyphs get halos only for failed steps; the rail's
-  own state dots and table state glyphs outside badges have no lamp halo yet.
-- Fields (plates with state furrows) are still used on Status and Setup only,
-  so other pages' plain h2 sections sit flat on the ground until reviewed.
+- ~~Operations rail step glyphs get halos only for failed steps; the rail's
+  own state dots and table state glyphs outside badges have no lamp halo yet.~~
+  Closed by S311: a failed work order's rail glyph has a halo too; table and
+  list states are badges, which are lamps.
+- ~~Fields (plates with state furrows) are still used on Status and Setup only,
+  so other pages' plain h2 sections sit flat on the ground until reviewed.~~
+  Closed by S311: every routed page's sections are fields, enforced by
+  `theme/lamplight.spec.ts`.
+
+## Lamplight on every page (S311)
+
+- `/sign-in` is the Authentik sign-in settings page, not a sign-in screen, so
+  it takes fields like every other settings page rather than the centred
+  gate that claim and login use.
+- Section states are furrowed only where the page already computes a state
+  for the whole section (Drift's Needs attention, Setup, Status). Sections
+  whose rows mix states (Certificates renewal, Backups scheduled jobs) carry
+  their state on each row's lamp; a section-level state needs a computed
+  worst-state per page.
 - Inputs inside a permit render as plain wells of the page theme, not paper;
   no current permit holds an input, so the paper-input treatment waits for one.
 - The stamp has no ink-press shadow (removed as the accessory in review);

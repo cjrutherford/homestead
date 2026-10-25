@@ -11,30 +11,36 @@
 
     <app-loading [loading]="busy() && !status()" shape="lines">
     @if (stepIndex() === 0) {
-      <p>These are the networks Homestead found on your LAN. You can still manage the appliance from them.</p>
-      <ul>
-        @for (subnet of status()?.local_subnets ?? []; track subnet) {
-          <li><code>{{ subnet }}</code></li>
-        }
-      </ul>
-      <button type="button" (click)="next()">Continue</button>
-    } @else if (stepIndex() === 1) {
-      <p>These are the recommended rules, kept in their own table so they stay apart from any others:</p>
-      <pre>{{ plan()?.script }}</pre>
-      <button type="button" (click)="next()">Continue</button>
-    } @else if (stepIndex() === 2) {
-      <h2>Review changes</h2>
-      <app-permit heading="Apply firewall" [refusal]="refused()" label="Firewall plan">
-        <h4>Will change</h4>
+      <section class="field-panel" aria-label="Local networks">
+        <p>These are the networks Homestead found on your LAN. You can still manage the appliance from them.</p>
         <ul>
-          @for (change of plan()?.changes ?? []; track change.rule + change.action) {
-            <li>{{ change.action }} {{ change.rule }}: {{ change.detail }}</li>
+          @for (subnet of status()?.local_subnets ?? []; track subnet) {
+            <li><code>{{ subnet }}</code></li>
           }
         </ul>
-        <div class="risky-actions">
-          <button type="button" class="danger" (click)="confirm()" [disabled]="busy()">Confirm apply</button>
-        </div>
-      </app-permit>
+        <button type="button" (click)="next()">Continue</button>
+      </section>
+    } @else if (stepIndex() === 1) {
+      <section class="field-panel" aria-label="Recommended rules">
+        <p>These are the recommended rules, kept in their own table so they stay apart from any others:</p>
+        <pre>{{ plan()?.script }}</pre>
+        <button type="button" (click)="next()">Continue</button>
+      </section>
+    } @else if (stepIndex() === 2) {
+      <section class="field-panel" aria-labelledby="firewall-review">
+        <h2 id="firewall-review">Review changes</h2>
+        <app-permit heading="Apply firewall" [refusal]="refused()" label="Firewall plan">
+          <h4>Will change</h4>
+          <ul>
+            @for (change of plan()?.changes ?? []; track change.rule + change.action) {
+              <li>{{ change.action }} {{ change.rule }}: {{ change.detail }}</li>
+            }
+          </ul>
+          <div class="risky-actions">
+            <button type="button" class="danger" (click)="confirm()" [disabled]="busy()">Confirm apply</button>
+          </div>
+        </app-permit>
+      </section>
     } @else {
       @if (approved(); as a) {
         <app-permit [heading]="a.heading" [approval]="a.approval">

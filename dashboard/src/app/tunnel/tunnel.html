@@ -25,212 +25,220 @@
 
   <app-loading [loading]="!status() && !error()" shape="list">
     @if (status(); as state) {
-    <h2>Discovery</h2>
-    <p>
-      Preferred path: <strong>{{ state.preferred }}</strong>
-      @if (state.gateway) {
-        (gateway {{ state.gateway }} on {{ state.interface }})
-      }
-    </p>
-    @if (state.preferred === 'tunnel') {
+    <section class="field-panel" aria-labelledby="tunnel-discovery">
+      <h2 id="tunnel-discovery">Discovery</h2>
       <p>
-        No router automation answered, so the tunnel leads. Nothing
-        on the router needs changing.
-      </p>
-    } @else if (state.preferred !== 'manual') {
-      <p>
-        The router answers {{ state.preferred }}; router mapping and
-        tunnel both work, and the tunnel still needs no router changes.
-      </p>
-    }
-    @if (state.discovery_error) {
-      <p>Discovery note: {{ state.discovery_error }}</p>
-    }
-    <p>
-      Connector:
-      <span class="badge" [class]="state.connector.installed ? 'badge-ok' : ''">{{ state.connector.installed ? 'installed' : 'not installed' }}</span>
-      <span class="badge" [class]="state.connector.active ? 'badge-ok' : ''">{{ state.connector.active ? 'active' : 'not active' }}</span>
-    </p>
-
-    <h2>Recorded tunnels ({{ state.tunnels.length }})</h2>
-    @if (state.tunnels.length === 0) {
-      <app-state-message kind="empty" headline="No tunnels yet." detail="Set one up below to reach an app from outside your network." />
-    }
-    @for (tunnel of state.tunnels; track tunnel.id) {
-      <div class="risky">
-        <h3>{{ tunnel.name }}: {{ tunnel.status }}</h3>
-        <p class="risky-preview">
-          What changes if you tear it down: the tunnel and its {{ plural(tunnel.connections.length, 'connection') }}
-          are removed, and every hostname it serves stops working from outside your
-          network.
-        </p>
-        <div class="risky-actions">
-          <button type="button" class="danger quiet" [disabled]="busy()" (click)="askTeardown(tunnel.id, tunnel.name)">Tear down</button>
-        </div>
-      </div>
-    }
-
-    <h2>Routes ({{ state.routes.length }})</h2>
-    @if (state.routes.length === 0) {
-      <app-state-message kind="empty" headline="No hostnames served yet." detail="A hostname appears here once a tunnel serves it." />
-    } @else {
-      <div class="table-scroll">
-        <table aria-label="Tunnel routes">
-          <thead>
-            <tr><th scope="col">Hostname</th><th scope="col">Forwards to</th></tr>
-          </thead>
-          <tbody>
-            @for (route of state.routes; track route.Hostname) {
-              <tr><th scope="row" class="mono">{{ route.Hostname }}</th><td class="mono">{{ route.Service }}</td></tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    }
-  }
-  </app-loading>
-
-  <h2>Set up a tunnel</h2>
-  <p>
-    The tunnel publishes this dashboard and Authentik under your domain. Every public name reaches
-    the appliance's edge, which sends it on; the dashboard is published only once you sign in with
-    Authentik, and on its public name only Authentik signs you in. The tunnel uses the Cloudflare
-    token you stored in the setup Domain step, and finds your account from the names' zone. First
-    you see a plan of every change; nothing changes until you approve it.
-  </p>
-  @if (plan(); as review) {
-    <app-permit
-      [heading]="(review.adopt ? 'Adopt the tunnel ' : 'Set up the tunnel ') + review.name"
-      [digest]="review.digest"
-      [refusal]="refused()"
-      label="Tunnel plan"
-    >
-      <p class="risky-preview">
-        @if (review.adopt) {
-          Adopt the existing tunnel <strong>{{ review.name }}</strong> ({{ review.adopt.status }},
-          {{ review.adopt.connections }} connections) in zone <strong>{{ review.zone }}</strong>.
-        } @else {
-          Tunnel <strong>{{ review.name }}</strong> in zone <strong>{{ review.zone }}</strong>.
+        Preferred path: <strong>{{ state.preferred }}</strong>
+        @if (state.gateway) {
+          (gateway {{ state.gateway }} on {{ state.interface }})
         }
       </p>
-      @if (review.adopt; as adopt) {
+      @if (state.preferred === 'tunnel') {
+        <p>
+          No router automation answered, so the tunnel leads. Nothing
+          on the router needs changing.
+        </p>
+      } @else if (state.preferred !== 'manual') {
+        <p>
+          The router answers {{ state.preferred }}; router mapping and
+          tunnel both work, and the tunnel still needs no router changes.
+        </p>
+      }
+      @if (state.discovery_error) {
+        <p>Discovery note: {{ state.discovery_error }}</p>
+      }
+      <p>
+        Connector:
+        <span class="badge" [class]="state.connector.installed ? 'badge-ok' : ''">{{ state.connector.installed ? 'installed' : 'not installed' }}</span>
+        <span class="badge" [class]="state.connector.active ? 'badge-ok' : ''">{{ state.connector.active ? 'active' : 'not active' }}</span>
+      </p>
+    </section>
+
+    <section class="field-panel" aria-labelledby="tunnel-recorded">
+      <h2 id="tunnel-recorded">Recorded tunnels ({{ state.tunnels.length }})</h2>
+      @if (state.tunnels.length === 0) {
+        <app-state-message kind="empty" headline="No tunnels yet." detail="Set one up below to reach an app from outside your network." />
+      }
+      @for (tunnel of state.tunnels; track tunnel.id) {
+        <div class="risky">
+          <h3>{{ tunnel.name }}: {{ tunnel.status }}</h3>
+          <p class="risky-preview">
+            What changes if you tear it down: the tunnel and its {{ plural(tunnel.connections.length, 'connection') }}
+            are removed, and every hostname it serves stops working from outside your
+            network.
+          </p>
+          <div class="risky-actions">
+            <button type="button" class="danger quiet" [disabled]="busy()" (click)="askTeardown(tunnel.id, tunnel.name)">Tear down</button>
+          </div>
+        </div>
+      }
+    </section>
+
+    <section class="field-panel" aria-labelledby="tunnel-routes">
+      <h2 id="tunnel-routes">Routes ({{ state.routes.length }})</h2>
+      @if (state.routes.length === 0) {
+        <app-state-message kind="empty" headline="No hostnames served yet." detail="A hostname appears here once a tunnel serves it." />
+      } @else {
         <div class="table-scroll">
-          <table aria-label="What the connector serves now">
+          <table aria-label="Tunnel routes">
             <thead>
-              <tr><th scope="col">Name served now</th><th scope="col">Service</th><th scope="col">After adoption</th></tr>
+              <tr><th scope="col">Hostname</th><th scope="col">Forwards to</th></tr>
             </thead>
             <tbody>
-              @for (entry of adopt.existing; track entry.hostname) {
-                <tr>
-                  <th scope="row" class="mono">{{ entry.hostname }}</th>
-                  <td class="mono">{{ entry.service }}</td>
-                  <td>{{ entry.outcome }}</td>
-                </tr>
+              @for (route of state.routes; track route.Hostname) {
+                <tr><th scope="row" class="mono">{{ route.Hostname }}</th><td class="mono">{{ route.Service }}</td></tr>
               }
             </tbody>
           </table>
         </div>
       }
-      <div class="table-scroll">
-        <table aria-label="Public hostnames">
-          <thead>
-            <tr><th scope="col">Public name</th><th scope="col">For</th><th scope="col">Edge route</th></tr>
-          </thead>
-          <tbody>
-            @for (route of review.ingress; track route.hostname) {
-              <tr>
-                <th scope="row" class="mono">{{ route.hostname }}</th>
-                <td>{{ route.role }}</td>
-                <td class="mono">{{ route.route }}</td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-      @for (left of review.omitted; track left.hostname) {
-        <app-state-message kind="notice" [headline]="'Left out: ' + left.hostname + ' (' + left.role + ')'" [detail]="left.reason" />
-      }
-      @if (review.sign_in) {
-        <p>{{ review.sign_in }} <a routerLink="/sign-in">Open Sign-in</a></p>
-      }
-      <div class="table-scroll">
-        <table aria-label="DNS changes">
-          <thead>
-            <tr><th scope="col">Change</th><th scope="col">Record</th><th scope="col">Points to</th></tr>
-          </thead>
-          <tbody>
-            @for (change of review.dns; track change.name) {
-              <tr>
-                <td>{{ change.action === 'replace' ? 'Replace' : change.action === 'keep' ? 'Keep (already points here)' : 'Create' }}</td>
-                <th scope="row" class="mono">{{ change.type }} {{ change.name }}</th>
-                <td class="mono">{{ change.content }}{{ change.proxied ? ' (proxied)' : '' }}</td>
-              </tr>
-              @for (old of change.replaces; track $index) {
+    </section>
+  }
+  </app-loading>
+
+  <section class="field-panel" aria-labelledby="tunnel-setup">
+    <h2 id="tunnel-setup">Set up a tunnel</h2>
+    <p>
+      The tunnel publishes this dashboard and Authentik under your domain. Every public name reaches
+      the appliance's edge, which sends it on; the dashboard is published only once you sign in with
+      Authentik, and on its public name only Authentik signs you in. The tunnel uses the Cloudflare
+      token you stored in the setup Domain step, and finds your account from the names' zone. First
+      you see a plan of every change; nothing changes until you approve it.
+    </p>
+    @if (plan(); as review) {
+      <app-permit
+        [heading]="(review.adopt ? 'Adopt the tunnel ' : 'Set up the tunnel ') + review.name"
+        [digest]="review.digest"
+        [refusal]="refused()"
+        label="Tunnel plan"
+      >
+        <p class="risky-preview">
+          @if (review.adopt) {
+            Adopt the existing tunnel <strong>{{ review.name }}</strong> ({{ review.adopt.status }},
+            {{ review.adopt.connections }} connections) in zone <strong>{{ review.zone }}</strong>.
+          } @else {
+            Tunnel <strong>{{ review.name }}</strong> in zone <strong>{{ review.zone }}</strong>.
+          }
+        </p>
+        @if (review.adopt; as adopt) {
+          <div class="table-scroll">
+            <table aria-label="What the connector serves now">
+              <thead>
+                <tr><th scope="col">Name served now</th><th scope="col">Service</th><th scope="col">After adoption</th></tr>
+              </thead>
+              <tbody>
+                @for (entry of adopt.existing; track entry.hostname) {
+                  <tr>
+                    <th scope="row" class="mono">{{ entry.hostname }}</th>
+                    <td class="mono">{{ entry.service }}</td>
+                    <td>{{ entry.outcome }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+        <div class="table-scroll">
+          <table aria-label="Public hostnames">
+            <thead>
+              <tr><th scope="col">Public name</th><th scope="col">For</th><th scope="col">Edge route</th></tr>
+            </thead>
+            <tbody>
+              @for (route of review.ingress; track route.hostname) {
                 <tr>
-                  <td>Delete (put back at teardown)</td>
-                  <th scope="row" class="mono">{{ old.type }} {{ old.name }}</th>
-                  <td class="mono">{{ old.content }}</td>
+                  <th scope="row" class="mono">{{ route.hostname }}</th>
+                  <td>{{ route.role }}</td>
+                  <td class="mono">{{ route.route }}</td>
                 </tr>
               }
-            }
-          </tbody>
-        </table>
-      </div>
-      @for (warning of review.warnings; track $index) {
-        <app-state-message kind="warning" [headline]="warning" />
-      }
-      <div class="risky-actions">
-        <button type="button" class="primary" (click)="approve()" [disabled]="busy()">{{ review.adopt ? 'Approve and adopt' : 'Approve and set up' }}</button>
-        <button type="button" class="quiet" (click)="discardPlan()" [disabled]="busy()">Change</button>
-      </div>
-    </app-permit>
-  } @else {
-    @if (approved(); as done) {
-      <app-permit [heading]="done.heading" [digest]="done.digest" [approval]="done.approval">
-        <p>{{ done.summary }}</p>
-      </app-permit>
-    }
-    <form
-      (submit)="
-        review(nameInput.value, dashboardInput.value, authInput.value, adoptInput.value);
-        $event.preventDefault()
-      "
-    >
-      <div class="field">
-        <label for="tunnel-name">Tunnel name</label>
-        <input id="tunnel-name" #nameInput name="name" autocomplete="off" [disabled]="busy()"
-          [attr.aria-invalid]="fieldErrors()['name'] ? 'true' : null"
-          [attr.aria-describedby]="fieldErrors()['name'] ? 'tunnel-name-error' : null" />
-        @if (fieldErrors()['name']; as message) {
-          <p class="field-error" id="tunnel-name-error">{{ message }}</p>
+            </tbody>
+          </table>
+        </div>
+        @for (left of review.omitted; track left.hostname) {
+          <app-state-message kind="notice" [headline]="'Left out: ' + left.hostname + ' (' + left.role + ')'" [detail]="left.reason" />
         }
-      </div>
-      <div class="field">
-        <label for="tunnel-adopt">Or adopt an existing tunnel (its ID)</label>
-        <input id="tunnel-adopt" #adoptInput name="adopt" autocomplete="off" [disabled]="busy()" aria-describedby="tunnel-adopt-hint" />
-        <p class="hint" id="tunnel-adopt-hint">
-          For a tunnel this appliance's connector already runs from a local config file. The plan lists what it serves now
-          and what is kept or dropped; the tunnel itself is never deleted. A new or reset appliance has no such file, so
-          name a new tunnel instead.
-        </p>
-      </div>
-      <div class="field">
-        <label for="tunnel-dashboard">Dashboard public name</label>
-        <input id="tunnel-dashboard" #dashboardInput name="dashboard-hostname" autocomplete="off" [disabled]="busy()"
-          [placeholder]="dashboardHint()" aria-describedby="tunnel-names-hint" />
-      </div>
-      <div class="field">
-        <label for="tunnel-auth">Authentik public name</label>
-        <input id="tunnel-auth" #authInput name="auth-hostname" autocomplete="off" [disabled]="busy()"
-          [placeholder]="authHint()" aria-describedby="tunnel-names-hint" />
-        <p class="hint" id="tunnel-names-hint">Leave a name empty to use the one shown.</p>
-      </div>
-      <button type="submit" class="primary" [disabled]="busy()">Review plan</button>
-      @if (reviewError(); as message) {
-        <app-state-message kind="error" headline="Homestead could not make the plan" [detail]="message" />
+        @if (review.sign_in) {
+          <p>{{ review.sign_in }} <a routerLink="/sign-in">Open Sign-in</a></p>
+        }
+        <div class="table-scroll">
+          <table aria-label="DNS changes">
+            <thead>
+              <tr><th scope="col">Change</th><th scope="col">Record</th><th scope="col">Points to</th></tr>
+            </thead>
+            <tbody>
+              @for (change of review.dns; track change.name) {
+                <tr>
+                  <td>{{ change.action === 'replace' ? 'Replace' : change.action === 'keep' ? 'Keep (already points here)' : 'Create' }}</td>
+                  <th scope="row" class="mono">{{ change.type }} {{ change.name }}</th>
+                  <td class="mono">{{ change.content }}{{ change.proxied ? ' (proxied)' : '' }}</td>
+                </tr>
+                @for (old of change.replaces; track $index) {
+                  <tr>
+                    <td>Delete (put back at teardown)</td>
+                    <th scope="row" class="mono">{{ old.type }} {{ old.name }}</th>
+                    <td class="mono">{{ old.content }}</td>
+                  </tr>
+                }
+              }
+            </tbody>
+          </table>
+        </div>
+        @for (warning of review.warnings; track $index) {
+          <app-state-message kind="warning" [headline]="warning" />
+        }
+        <div class="risky-actions">
+          <button type="button" class="primary" (click)="approve()" [disabled]="busy()">{{ review.adopt ? 'Approve and adopt' : 'Approve and set up' }}</button>
+          <button type="button" class="quiet" (click)="discardPlan()" [disabled]="busy()">Change</button>
+        </div>
+      </app-permit>
+    } @else {
+      @if (approved(); as done) {
+        <app-permit [heading]="done.heading" [digest]="done.digest" [approval]="done.approval">
+          <p>{{ done.summary }}</p>
+        </app-permit>
       }
-    </form>
-  }
+      <form
+        (submit)="
+          review(nameInput.value, dashboardInput.value, authInput.value, adoptInput.value);
+          $event.preventDefault()
+        "
+      >
+        <div class="field">
+          <label for="tunnel-name">Tunnel name</label>
+          <input id="tunnel-name" #nameInput name="name" autocomplete="off" [disabled]="busy()"
+            [attr.aria-invalid]="fieldErrors()['name'] ? 'true' : null"
+            [attr.aria-describedby]="fieldErrors()['name'] ? 'tunnel-name-error' : null" />
+          @if (fieldErrors()['name']; as message) {
+            <p class="field-error" id="tunnel-name-error">{{ message }}</p>
+          }
+        </div>
+        <div class="field">
+          <label for="tunnel-adopt">Or adopt an existing tunnel (its ID)</label>
+          <input id="tunnel-adopt" #adoptInput name="adopt" autocomplete="off" [disabled]="busy()" aria-describedby="tunnel-adopt-hint" />
+          <p class="hint" id="tunnel-adopt-hint">
+            For a tunnel this appliance's connector already runs from a local config file. The plan lists what it serves now
+            and what is kept or dropped; the tunnel itself is never deleted. A new or reset appliance has no such file, so
+            name a new tunnel instead.
+          </p>
+        </div>
+        <div class="field">
+          <label for="tunnel-dashboard">Dashboard public name</label>
+          <input id="tunnel-dashboard" #dashboardInput name="dashboard-hostname" autocomplete="off" [disabled]="busy()"
+            [placeholder]="dashboardHint()" aria-describedby="tunnel-names-hint" />
+        </div>
+        <div class="field">
+          <label for="tunnel-auth">Authentik public name</label>
+          <input id="tunnel-auth" #authInput name="auth-hostname" autocomplete="off" [disabled]="busy()"
+            [placeholder]="authHint()" aria-describedby="tunnel-names-hint" />
+          <p class="hint" id="tunnel-names-hint">Leave a name empty to use the one shown.</p>
+        </div>
+        <button type="submit" class="primary" [disabled]="busy()">Review plan</button>
+        @if (reviewError(); as message) {
+          <app-state-message kind="error" headline="Homestead could not make the plan" [detail]="message" />
+        }
+      </form>
+    }
+  </section>
 
   @if (confirming(); as pending) {
     <app-dialog heading="Tear down this tunnel?" variant="danger" (dismissed)="cancelTeardown()">

@@ -86,3 +86,5 @@ Then S308 bootstrap installs Docker and cloudflared (`docs/slices/S308-bootstrap
 Then S309 dashboard design language (`docs/slices/S309-dashboard-design-language.md`): a Hedgerow sidebar with a current-page notch, a masthead sentence on every page, fields with state furrows, a Needs you field on Status and Setup, ledger definition lists, and every plan review as a permit with a digest seal and an Approved or Not approved stamp.
 
 Then S310 lamplight (`docs/slices/S310-lamplight-depth-and-dark-default.md`): dark by default (Dark, Light, Match my system, High contrast), one light source and four tokenised depths (hedgerow, ground, plate, lifted, plus the well), lamps only for attention, a contour band and horizon under the masthead, the permit as lit paper, and the Status Appliance facts as a ledger.
+
+Then S311 lamplight on every page (`docs/slices/S311-lamplight-on-every-page.md`): every routed page's sections are fields (plates) under the masthead, empty states are wells, claim and login are a centred lifted gate, failed rail orders are lamps, and `theme/lamplight.spec.ts` enforces it for every route.

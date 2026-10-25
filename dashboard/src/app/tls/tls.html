@@ -26,8 +26,8 @@
   }
 
   @if (renewals().length) {
-    <section aria-label="Renewal status">
-      <h2>Renewal</h2>
+    <section class="field-panel" aria-labelledby="tls-renewal">
+      <h2 id="tls-renewal">Renewal</h2>
       <p>
         Homestead re-issues an unchanged, approved certificate on its own
         when it is within 30 days of expiry. Anything changed needs a new
@@ -78,109 +78,114 @@
   }
 
   @if (loadError()) {
-    <app-state-message kind="error" [headline]="loadError()" />
-    <button type="button" (click)="load()">Retry</button>
+    <section class="field-panel" data-state="fail" aria-label="Certificates could not load">
+      <app-state-message kind="error" [headline]="loadError()" />
+      <button type="button" (click)="load()">Retry</button>
+    </section>
   }
+
   <app-loading [loading]="loading()" shape="list">
-  @if (notSetUp()) {
-    <app-state-message
-      kind="empty"
-      headline="No TLS strategy is saved yet."
-      detail="Save one in the configuration, then come back to review issuance."
-      actionLabel="Open configuration"
-      actionLink="/config"
-    />
-  } @else if (!loading() && !loadError() && plans().length === 0) {
-    <app-state-message
-      kind="empty"
-      headline="Nothing to issue here."
-      detail="No certificate in the saved TLS strategy uses ACME with DNS-01."
-    />
-  }
-
-  <ul aria-label="Issuance plans">
-    @for (plan of plans(); track plan.certificate) {
-      <li class="tls-plan">
-        <app-permit [level]="2" [heading]="plan.certificate" [digest]="plan.digest" [approval]="approvalOf(plan)">
-        <dl>
-          <dt>Names</dt>
-          <dd>{{ plan.names.join(', ') }}</dd>
-          <dt>Challenge</dt>
-          <dd>{{ plan.challenge }} through {{ plan.provider }}, zone {{ plan.zone || 'not set' }}</dd>
-          <dt>Certificate authority</dt>
-          <dd>{{ plan.directory }} ({{ plan.directory_class }})</dd>
-          <dt>ACME account</dt>
-          <dd>{{ plan.account.state }}: {{ plan.account.detail }}</dd>
-          <dt>Placement</dt>
-          <dd>
-            Chain {{ plan.placement.chain_file }}; private key
-            {{ plan.placement.key_file }} (mode {{ plan.placement.key_mode }}).
-          </dd>
-          <dt>Served by</dt>
-          <dd>
-            @if (plan.served_routes.length) {
-              {{ plan.served_routes.join(', ') }}
-            } @else {
-              No edge route uses it yet. Automatic-TLS routes covered by these names will.
-            }
-          </dd>
-        </dl>
-        @if (plan.directory_class === 'production') {
-          <app-state-message kind="warning" headline="This is a production certificate authority. Test against staging first; production has strict rate limits." />
-        }
-        @if (!plan.ready) {
-          <app-state-message kind="error" [headline]="'Not ready: ' + plan.blockers.join('; ')" />
-        }
-        @if (plan.credentials.length) {
-          <form
-            [attr.aria-label]="'DNS credentials for ' + plan.certificate"
-            (submit)="saveCredentials(plan, $any($event.target)); $event.preventDefault()"
-          >
-            <p>
-              {{ plan.provider }} credentials:
-              @for (field of plan.credentials; track field.name) {
-                {{ field.label }} {{ field.present ? 'stored' : 'missing' }};
-              }
-              They are write-only and cannot be read back.
-            </p>
-            @for (field of plan.credentials; track field.name) {
-              <label>
-                {{ field.label }}
-                <input type="password" [name]="field.name" autocomplete="off" [disabled]="locked()" />
-              </label>
-            }
-            <button type="submit" [disabled]="locked()">Store credentials</button>
-          </form>
-        }
-        <p>{{ plan.terms }}</p>
-        <label>
-          <input type="checkbox" [checked]="agreed()[plan.certificate] ?? false" [disabled]="locked()"
-            (change)="setAgreed(plan.certificate, $any($event.target).checked)" />
-          I agree to the certificate authority's terms of service
-        </label>
-        @if (plan.directory_class === 'production') {
-          <label>
-            <input type="checkbox" [checked]="production()[plan.certificate] ?? false" [disabled]="locked()"
-              (change)="setProduction(plan.certificate, $any($event.target).checked)" />
-            I confirm issuing from a production certificate authority
-          </label>
-        }
-        <label>
-          <input type="checkbox" [checked]="manualRenewal()[plan.certificate] ?? false" [disabled]="locked()"
-            (change)="setManualRenewal(plan.certificate, $any($event.target).checked)" />
-          I will renew this certificate myself (leave unticked to let Homestead re-issue it unattended before it expires)
-        </label>
-        <p class="permit-actions">
-          <button type="button" (click)="approve(plan)" [disabled]="!canApprove(plan)">
-            Approve plan
-          </button>
-          <button type="button" (click)="apply(plan)" [disabled]="!plan.approved || locked()">
-            Issue certificate
-          </button>
-        </p>
-        </app-permit>
-      </li>
+  <section class="field-panel" aria-label="Issuance plans">
+    @if (notSetUp()) {
+      <app-state-message
+        kind="empty"
+        headline="No TLS strategy is saved yet."
+        detail="Save one in the configuration, then come back to review issuance."
+        actionLabel="Open configuration"
+        actionLink="/config"
+      />
+    } @else if (!loading() && !loadError() && plans().length === 0) {
+      <app-state-message
+        kind="empty"
+        headline="Nothing to issue here."
+        detail="No certificate in the saved TLS strategy uses ACME with DNS-01."
+      />
     }
-  </ul>
 
-  </app-loading></section>
+    <ul aria-label="Issuance plans">
+      @for (plan of plans(); track plan.certificate) {
+        <li class="tls-plan">
+          <app-permit [level]="2" [heading]="plan.certificate" [digest]="plan.digest" [approval]="approvalOf(plan)">
+          <dl>
+            <dt>Names</dt>
+            <dd>{{ plan.names.join(', ') }}</dd>
+            <dt>Challenge</dt>
+            <dd>{{ plan.challenge }} through {{ plan.provider }}, zone {{ plan.zone || 'not set' }}</dd>
+            <dt>Certificate authority</dt>
+            <dd>{{ plan.directory }} ({{ plan.directory_class }})</dd>
+            <dt>ACME account</dt>
+            <dd>{{ plan.account.state }}: {{ plan.account.detail }}</dd>
+            <dt>Placement</dt>
+            <dd>
+              Chain {{ plan.placement.chain_file }}; private key
+              {{ plan.placement.key_file }} (mode {{ plan.placement.key_mode }}).
+            </dd>
+            <dt>Served by</dt>
+            <dd>
+              @if (plan.served_routes.length) {
+                {{ plan.served_routes.join(', ') }}
+              } @else {
+                No edge route uses it yet. Automatic-TLS routes covered by these names will.
+              }
+            </dd>
+          </dl>
+          @if (plan.directory_class === 'production') {
+            <app-state-message kind="warning" headline="This is a production certificate authority. Test against staging first; production has strict rate limits." />
+          }
+          @if (!plan.ready) {
+            <app-state-message kind="error" [headline]="'Not ready: ' + plan.blockers.join('; ')" />
+          }
+          @if (plan.credentials.length) {
+            <form
+              [attr.aria-label]="'DNS credentials for ' + plan.certificate"
+              (submit)="saveCredentials(plan, $any($event.target)); $event.preventDefault()"
+            >
+              <p>
+                {{ plan.provider }} credentials:
+                @for (field of plan.credentials; track field.name) {
+                  {{ field.label }} {{ field.present ? 'stored' : 'missing' }};
+                }
+                They are write-only and cannot be read back.
+              </p>
+              @for (field of plan.credentials; track field.name) {
+                <label>
+                  {{ field.label }}
+                  <input type="password" [name]="field.name" autocomplete="off" [disabled]="locked()" />
+                </label>
+              }
+              <button type="submit" [disabled]="locked()">Store credentials</button>
+            </form>
+          }
+          <p>{{ plan.terms }}</p>
+          <label>
+            <input type="checkbox" [checked]="agreed()[plan.certificate] ?? false" [disabled]="locked()"
+              (change)="setAgreed(plan.certificate, $any($event.target).checked)" />
+            I agree to the certificate authority's terms of service
+          </label>
+          @if (plan.directory_class === 'production') {
+            <label>
+              <input type="checkbox" [checked]="production()[plan.certificate] ?? false" [disabled]="locked()"
+                (change)="setProduction(plan.certificate, $any($event.target).checked)" />
+              I confirm issuing from a production certificate authority
+            </label>
+          }
+          <label>
+            <input type="checkbox" [checked]="manualRenewal()[plan.certificate] ?? false" [disabled]="locked()"
+              (change)="setManualRenewal(plan.certificate, $any($event.target).checked)" />
+            I will renew this certificate myself (leave unticked to let Homestead re-issue it unattended before it expires)
+          </label>
+          <p class="permit-actions">
+            <button type="button" (click)="approve(plan)" [disabled]="!canApprove(plan)">
+              Approve plan
+            </button>
+            <button type="button" (click)="apply(plan)" [disabled]="!plan.approved || locked()">
+              Issue certificate
+            </button>
+          </p>
+          </app-permit>
+        </li>
+      }
+    </ul>
+  </section>
+  </app-loading>
+</section>

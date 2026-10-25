@@ -4,32 +4,38 @@
       <h1>Operation not found</h1>
       <p class="masthead-fact">No operation on this appliance has this number.</p>
     </header>
-    <app-state-message
-      kind="empty"
-      headline="No operation has this number."
-      actionLabel="Back to operations"
-      actionLink="/operations"
-    />
+    <section class="field-panel" aria-label="Operation not found">
+      <app-state-message
+        kind="empty"
+        headline="No operation has this number."
+        actionLabel="Back to operations"
+        actionLink="/operations"
+      />
+    </section>
   } @else {
     <header class="masthead">
       <h1>{{ title() }}</h1>
       <p class="masthead-fact">{{ fact() }}</p>
     </header>
-    <app-loading [loading]="operation() === null" shape="list">
-      @if (operation(); as op) {
-        <p>
-          <span class="badge" [class]="badge()">{{ word() }}</span>
-          <span class="operation-summary" role="status" aria-live="polite">{{ progress().text }}</span>
-        </p>
-        <p class="hint">Type <code>{{ op.type }}</code></p>
-        @if (op.error) {
-          <app-state-message kind="error" [headline]="op.error" detail="The steps below show where it stopped." />
+    <section class="field-panel" aria-label="Operation steps">
+      <app-loading [loading]="operation() === null" shape="list">
+        @if (operation(); as op) {
+          <p>
+            <span class="badge" [class]="badge()">{{ word() }}</span>
+            <span class="operation-summary" role="status" aria-live="polite">{{
+              progress().text === word() ? '' : ' ' + progress().text
+            }}</span>
+          </p>
+          <p class="hint">Type <code>{{ op.type }}</code></p>
+          @if (op.error) {
+            <app-state-message kind="error" [headline]="op.error" detail="The steps below show where it stopped." />
+          }
+          <app-step-list [steps]="op.steps" />
+          <p>
+            <a routerLink="/operations">Back to operations</a>
+          </p>
         }
-        <app-step-list [steps]="op.steps" />
-        <p>
-          <a routerLink="/operations">Back to operations</a>
-        </p>
-      }
-    </app-loading>
+      </app-loading>
+    </section>
   }
 </section>

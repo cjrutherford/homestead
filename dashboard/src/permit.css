@@ -312,3 +312,9 @@ app-permit {
     outline: 0;
   }
 }
+
+/* A list of permits (S311) is a stack of papers, not bullet points. */
+ul:has(> li > app-permit) {
+  padding: 0;
+  list-style: none;
+}

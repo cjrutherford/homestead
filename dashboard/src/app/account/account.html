@@ -4,55 +4,63 @@
     <p class="masthead-fact">Your owner account and how the dashboard looks.</p>
   </header>
 
-  <h2>Appearance</h2>
-  <fieldset>
-    <legend>Theme</legend>
-    @for (option of themeOptions; track option.value) {
-      <label>
-        <input
-          type="radio"
-          name="theme"
-          [value]="option.value"
-          [checked]="theme.preference() === option.value"
-          (change)="chooseTheme(option.value)"
-        />
-        {{ option.label }}
-      </label>
+  <section class="field-panel" aria-labelledby="account-appearance">
+    <h2 id="account-appearance">Appearance</h2>
+    <fieldset>
+      <legend>Theme</legend>
+      @for (option of themeOptions; track option.value) {
+        <label>
+          <input
+            type="radio"
+            name="theme"
+            [value]="option.value"
+            [checked]="theme.preference() === option.value"
+            (change)="chooseTheme(option.value)"
+          />
+          {{ option.label }}
+        </label>
+      }
+    </fieldset>
+  </section>
+
+  <section class="field-panel" aria-labelledby="account-lockout">
+    <h2 id="account-lockout">Sign-in lockout</h2>
+    @if (loadError()) {
+      <app-state-message kind="error" [headline]="loadError()" actionLabel="Try again" (action)="loadLockout()" />
     }
-  </fieldset>
-
-  <h2>Sign-in lockout</h2>
-  @if (loadError()) {
-    <app-state-message kind="error" [headline]="loadError()" actionLabel="Try again" (action)="loadLockout()" />
-  }
-  <app-loading [loading]="loading()" shape="lines">
-  @if (lockout(); as l) {
-    <p>
-      Signed in as <strong>{{ l.username }}</strong>.
-      @if (l.locked) {
-        This account is temporarily locked after repeated failed sign-ins.
-        @if (l.locked_until) {
-          It unlocks {{ relativeUntil(l.locked_until) }}.
+    <app-loading [loading]="loading()" shape="lines">
+    @if (lockout(); as l) {
+      <p>
+        Signed in as <strong>{{ l.username }}</strong>.
+        @if (l.locked) {
+          This account is temporarily locked after repeated failed sign-ins.
+          @if (l.locked_until) {
+            It unlocks {{ relativeUntil(l.locked_until) }}.
+          } @else {
+            Lockouts clear on their own after a short wait.
+          }
         } @else {
-          Lockouts clear on their own after a short wait.
+          This account is not locked.
         }
-      } @else {
-        This account is not locked.
-      }
-      @if (l.failures) {
-        Recent failed attempts: {{ l.failures }}.
-      }
-    </p>
-  } @else if (!loading() && !loadError()) {
-    <app-state-message kind="empty" headline="No lockout information available." />
-  }
-  </app-loading>
+        @if (l.failures) {
+          Recent failed attempts: {{ l.failures }}.
+        }
+      </p>
+    } @else if (!loading() && !loadError()) {
+      <app-state-message kind="empty" headline="No lockout information available." />
+    }
+    </app-loading>
+  </section>
 
-  <h2>Sign in with Authentik</h2>
-  @if (ssoCard(); as card) {
-    <ng-container *ngComponentOutlet="card" />
-  }
+  <section class="field-panel" aria-labelledby="account-sso">
+    <h2 id="account-sso">Sign in with Authentik</h2>
+    @if (ssoCard(); as card) {
+      <ng-container *ngComponentOutlet="card" />
+    }
+  </section>
 
-  <h2>Change password</h2>
-  <app-password-form (attempted)="loadLockout()" />
+  <section class="field-panel" aria-labelledby="account-password">
+    <h2 id="account-password">Change password</h2>
+    <app-password-form (attempted)="loadLockout()" />
+  </section>
 </section>

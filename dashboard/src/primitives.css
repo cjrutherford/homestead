@@ -136,7 +136,7 @@ button[aria-busy='true'] {
   background-image: repeating-linear-gradient(
     135deg,
     transparent 0 0.5rem,
-    rgb(128 128 128 / 0.22) 0.5rem 1rem
+    var(--busy-stripe) 0.5rem 1rem
   );
 }
 
@@ -502,6 +502,23 @@ td time,
   content: '';
   mask-image: var(--glyph-running);
   -webkit-mask-image: var(--glyph-running);
+}
+
+/* An empty state is a well cut into its plate (S311), with its action
+   beside it rather than a flat bordered box. */
+.state-empty {
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  max-width: none;
+  padding: var(--spacing-md);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  box-shadow: var(--elevation-well);
+}
+
+.state-empty .state-body {
+  flex: 1 1 16rem;
 }
 
 /* A message standing in for a list item is not a bullet point. */

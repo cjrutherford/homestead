@@ -9,40 +9,42 @@
   </p>
 
   @if (schedule(); as sched) {
-    <section aria-label="Scheduled drift scan">
+    <section class="field-panel" aria-label="Scheduled drift scan">
       @if (sched.last_scan; as scan) {
         @if (scan.drifted.length === 0 && scan.errors.length === 0) {
           <app-state-message kind="status" headline="Nothing needs attention" detail="Clean: generated files match managed state." />
         } @else {
-          <h2>Needs attention ({{ scan.drifted.length + scan.errors.length }})</h2>
-          <ul class="triage">
-            @for (stack of scan.drifted; track stack.package) {
-              <li data-status="warn">
-                <h3>
-                  {{ stack.package }}
-                  <span class="badge badge-warn">drifted</span>
-                </h3>
-                <p>
-                  @for (file of stack.files; track file.path) {
-                    {{ file.path }} ({{ file.kind }})
-                  }
-                  @for (finding of stack.live ?? []; track $index) {
-                    live {{ finding.kind }} {{ finding.service }}
-                  }
-                  @if (stack.live_error) {
-                    live comparison unreadable: {{ stack.live_error }}
-                  }
-                </p>
-                <button type="button" (click)="select(stack.package)">Review {{ stack.package }}</button>
-              </li>
-            }
-            @for (message of scan.errors; track message) {
-              <li data-status="fail">
-                <h3><span class="badge badge-fail">unreadable</span></h3>
-                <p>Unreadable: {{ message }}</p>
-              </li>
-            }
-          </ul>
+          <section class="field-panel needs-you" [attr.data-state]="scan.errors.length ? 'fail' : 'warn'" aria-labelledby="drift-attention">
+            <h2 id="drift-attention">Needs attention ({{ scan.drifted.length + scan.errors.length }})</h2>
+            <ul class="triage">
+              @for (stack of scan.drifted; track stack.package) {
+                <li data-status="warn">
+                  <h3>
+                    {{ stack.package }}
+                    <span class="badge badge-warn">drifted</span>
+                  </h3>
+                  <p>
+                    @for (file of stack.files; track file.path) {
+                      {{ file.path }} ({{ file.kind }})
+                    }
+                    @for (finding of stack.live ?? []; track $index) {
+                      live {{ finding.kind }} {{ finding.service }}
+                    }
+                    @if (stack.live_error) {
+                      live comparison unreadable: {{ stack.live_error }}
+                    }
+                  </p>
+                  <button type="button" (click)="select(stack.package)">Review {{ stack.package }}</button>
+                </li>
+              }
+              @for (message of scan.errors; track message) {
+                <li data-status="fail">
+                  <h3><span class="badge badge-fail">unreadable</span></h3>
+                  <p>Unreadable: {{ message }}</p>
+                </li>
+              }
+            </ul>
+          </section>
         }
         @for (name of scan.stopped ?? []; track name) {
           <p>{{ name }} is stopped (a run state, not drift).</p>
@@ -107,96 +109,100 @@
 
   <app-loading [loading]="busy() && packages().length === 0" shape="list">
     @if (!(busy() && packages().length === 0)) {
-    <h2>Compare an app</h2>
-    <p>Pick an app to see its generated files next to what Homestead manages.</p>
-    <ul class="chip-list">
-      @for (pkg of packages(); track pkg.name) {
-        <li>
-          <button type="button" (click)="select(pkg.name)">
-            {{ pkg.title }} ({{ pkg.version }})
-          </button>
-        </li>
-      } @empty {
-        <li>No apps in the catalog yet.</li>
-      }
-    </ul>
+    <section class="field-panel" aria-labelledby="drift-compare">
+      <h2 id="drift-compare">Compare an app</h2>
+      <p>Pick an app to see its generated files next to what Homestead manages.</p>
+      <ul class="chip-list">
+        @for (pkg of packages(); track pkg.name) {
+          <li>
+            <button type="button" (click)="select(pkg.name)">
+              {{ pkg.title }} ({{ pkg.version }})
+            </button>
+          </li>
+        } @empty {
+          <li>No apps in the catalog yet.</li>
+        }
+      </ul>
+    </section>
   }
   </app-loading>
 
   @if (selected(); as name) {
-    <h2>{{ name }}</h2>
-    <button type="button" (click)="refresh()" [disabled]="busy()">
-      Refresh review
-    </button>
-    @if (live(); as liveState) {
-      <section aria-label="Running containers">
-        <h3>Running containers</h3>
-        @if (!liveState.checked) {
-          <app-state-message kind="empty" headline="Docker engine unreachable: running containers were not compared." />
-        } @else {
-          @if (liveState.stack_state === 'stopped') {
-            <p>
-              Stopped: no service in this app is running. That is a run
-              state, not drift; start it from the app page when you want
-              it up.
-            </p>
-          }
-          @for (note of liveState.unsupported ?? []; track note) {
-            <p>Not compared: {{ note }}</p>
-          }
-          @if (liveState.findings.length === 0) {
-            @if (liveState.stack_state !== 'stopped' && (liveState.unsupported ?? []).length === 0) {
-              <app-state-message kind="empty" headline="Running containers match the generated compose files." />
-            }
+    <section class="field-panel" aria-labelledby="drift-review">
+      <h2 id="drift-review">{{ name }}</h2>
+      <button type="button" (click)="refresh()" [disabled]="busy()">
+        Refresh review
+      </button>
+      @if (live(); as liveState) {
+        <section aria-label="Running containers">
+          <h3>Running containers</h3>
+          @if (!liveState.checked) {
+            <app-state-message kind="empty" headline="Docker engine unreachable: running containers were not compared." />
           } @else {
-            <p>
-              Read-only comparison; nothing is changed automatically.
-              Restore starts missing or stopped containers and recreates
-              ones whose image changed. Accepting files does not change
-              containers.
-            </p>
-            <ul>
-              @for (finding of liveState.findings; track $index) {
-                <li>
-                  <strong>{{ finding.kind }}</strong>
-                  {{ finding.container || finding.service }}: {{ finding.detail }}
-                  @switch (finding.resolution) {
-                    @case ('restore') { (resolve with Restore managed state) }
-                    @case ('recreate') { (remove the container, then Restore: <code>{{ finding.hint }}</code>) }
-                    @default { (resolve manually: <code>{{ finding.hint }}</code>) }
-                  }
-                </li>
+            @if (liveState.stack_state === 'stopped') {
+              <p>
+                Stopped: no service in this app is running. That is a run
+                state, not drift; start it from the app page when you want
+                it up.
+              </p>
+            }
+            @for (note of liveState.unsupported ?? []; track note) {
+              <p>Not compared: {{ note }}</p>
+            }
+            @if (liveState.findings.length === 0) {
+              @if (liveState.stack_state !== 'stopped' && (liveState.unsupported ?? []).length === 0) {
+                <app-state-message kind="empty" headline="Running containers match the generated compose files." />
               }
-            </ul>
+            } @else {
+              <p>
+                Read-only comparison; nothing is changed automatically.
+                Restore starts missing or stopped containers and recreates
+                ones whose image changed. Accepting files does not change
+                containers.
+              </p>
+              <ul>
+                @for (finding of liveState.findings; track $index) {
+                  <li>
+                    <strong>{{ finding.kind }}</strong>
+                    {{ finding.container || finding.service }}: {{ finding.detail }}
+                    @switch (finding.resolution) {
+                      @case ('restore') { (resolve with Restore managed state) }
+                      @case ('recreate') { (remove the container, then Restore: <code>{{ finding.hint }}</code>) }
+                      @default { (resolve manually: <code>{{ finding.hint }}</code>) }
+                    }
+                  </li>
+                }
+              </ul>
+            }
           }
+        </section>
+      }
+      @if (review().length === 0) {
+        <app-state-message kind="empty" headline="No drift: generated files match managed state." />
+        @if (convergable()) {
+          <button type="button" (click)="restore()" [disabled]="busy()">
+            Restore managed state
+          </button>
         }
-      </section>
-    }
-    @if (review().length === 0) {
-      <app-state-message kind="empty" headline="No drift: generated files match managed state." />
-      @if (convergable()) {
+      } @else {
+        <ul>
+          @for (file of review(); track file.path) {
+            <li>
+              <h3>{{ file.path }} ({{ file.kind }})</h3>
+              <h4>Managed</h4>
+              <pre>{{ file.recorded }}</pre>
+              <h4>Current</h4>
+              <pre>{{ file.current }}</pre>
+            </li>
+          }
+        </ul>
+        <button type="button" (click)="accept()" [disabled]="busy()">
+          Accept current files
+        </button>
         <button type="button" (click)="restore()" [disabled]="busy()">
           Restore managed state
         </button>
       }
-    } @else {
-      <ul>
-        @for (file of review(); track file.path) {
-          <li>
-            <h3>{{ file.path }} ({{ file.kind }})</h3>
-            <h4>Managed</h4>
-            <pre>{{ file.recorded }}</pre>
-            <h4>Current</h4>
-            <pre>{{ file.current }}</pre>
-          </li>
-        }
-      </ul>
-      <button type="button" (click)="accept()" [disabled]="busy()">
-        Accept current files
-      </button>
-      <button type="button" (click)="restore()" [disabled]="busy()">
-        Restore managed state
-      </button>
-    }
+    </section>
   }
 </section>

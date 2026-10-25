@@ -46,6 +46,24 @@ never write a raw shadow or colour.
    In dark the permit is warm and lit, never white. Its warning spans its
    full width.
 
+**Every page (S311).** The language is not per page. Every routed page
+opens with the masthead, and every section below it is a field
+(`section.field-panel`, one h2 first): a plate, with a furrow when the
+section has a state and the lit Needs you treatment when it needs the
+owner. Only the masthead, fields, permits, dialogs, operation progress,
+page-level messages and a line of prose may sit on the ground. A field
+inside a field (one package on Updates, a page embedded in a Setup step) is
+a sub-plate: a raised step lit along its top edge, with no second shadow,
+and a sub-field that needs the owner keeps the lit Needs you window (Drift).
+Forms, risky blocks and cards inside a field are groups on it, not second
+plates; a list of permits is a stack of papers with no bullets. Empty states are wells with their action beside them. Claim
+and login are the **gate**: one centred, lifted plate (`.gate`,
+`--gate-width`) on the contour ground. `theme/lamplight.spec.ts` walks every
+routed template and fails on a missing masthead, a section on the ground, an
+h2 that does not open its own field, an empty state outside a field, or a
+raw colour or shadow in any page stylesheet or component style; a new route
+must be added to its page list.
+
 High contrast keeps depth in borders only: every elevation, glow, halo,
 wash and falloff token is `none`, contours are transparent, wells get a 1px
 inner border and the horizon is solid. `forced-colors: active` drops them

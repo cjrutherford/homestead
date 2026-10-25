@@ -18,13 +18,13 @@
 
   <app-loading [loading]="busy() && rows().length === 0" shape="list">
     @if (!(busy() && rows().length === 0)) {
-    <button type="button" (click)="refresh()" [disabled]="busy()">
-      Refresh plans
-    </button>
-    <ul>
+    <section class="field-panel" aria-label="Update plans">
+      <button type="button" (click)="refresh()" [disabled]="busy()">
+        Refresh plans
+      </button>
       @for (row of installedRows(); track row.package) {
-        <li>
-          <h2>{{ row.package }}</h2>
+        <section class="field-panel" [attr.aria-labelledby]="'updates-' + row.package">
+          <h2 [id]="'updates-' + row.package">{{ row.package }}</h2>
           @if ((row.plan.Services ?? []).length === 0) {
             <p>Already current.</p>
           } @else {
@@ -103,22 +103,22 @@
               Apply update
             </button>
           }
-        </li>
+        </section>
       } @empty {
-        <li>{{ rows().length === 0 ? 'No apps in the catalog yet.' : 'No installed apps to update. Install one from the Catalog.' }}</li>
+        <p>{{ rows().length === 0 ? 'No apps in the catalog yet.' : 'No installed apps to update. Install one from the Catalog.' }}</p>
       }
-    </ul>
-    @if (notInstalledRows().length) {
-      <details>
-        <summary>Not installed ({{ notInstalledRows().length }})</summary>
-        <p>These catalog apps have nothing to update until you install them.</p>
-        <ul>
-          @for (row of notInstalledRows(); track row.package) {
-            <li>{{ row.package }}</li>
-          }
-        </ul>
-      </details>
-    }
+      @if (notInstalledRows().length) {
+        <details>
+          <summary>Not installed ({{ notInstalledRows().length }})</summary>
+          <p>These catalog apps have nothing to update until you install them.</p>
+          <ul>
+            @for (row of notInstalledRows(); track row.package) {
+              <li>{{ row.package }}</li>
+            }
+          </ul>
+        </details>
+      }
+    </section>
   }
   </app-loading>
 </section>

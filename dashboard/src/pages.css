@@ -291,20 +291,98 @@ caption {
   box-shadow: var(--elevation-plate);
 }
 
-.field-panel[data-state] {
-  border-inline-start-width: var(--furrow);
-}
-
 .field-panel[data-state='warn'] {
-  border-inline-start-color: var(--warn);
+  --furrow-ink: var(--warn);
 }
 
 .field-panel[data-state='fail'] {
-  border-inline-start-color: var(--danger);
+  --furrow-ink: var(--danger);
 }
 
 .field-panel[data-state='ok'] {
-  border-inline-start-color: var(--success);
+  --furrow-ink: var(--success);
+}
+
+.field-panel[data-state] {
+  border-inline-start-width: var(--furrow);
+  border-inline-start-color: var(--furrow-ink, var(--border));
+}
+
+/*
+ * S311: every page's sections are fields. A field inside a field (one
+ * package on Updates, a page embedded in a Setup step) is a sub-plate: a
+ * step up from its parent, lit along its top edge, with no second shadow.
+ */
+.field-panel .field-panel {
+  margin: var(--spacing-md) 0 0;
+  padding: var(--spacing-md);
+  background: var(--surface-raised);
+  box-shadow: var(--highlight-top);
+}
+
+/* A sub-field that needs the owner stays a lit window inside its plate. */
+.field-panel .needs-you {
+  background: var(--warn-surface);
+  box-shadow: var(--glow-furrow), var(--glow-attention);
+}
+
+/* A form, fieldset, card or risky block inside a field is a group on that
+   plate: it keeps its border, but not a second shadow. */
+.shell-main .field-panel form {
+  max-width: none;
+  margin: 0 0 var(--spacing-md);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.field-panel .risky,
+.field-panel .card,
+.field-panel .panel {
+  background: var(--surface-raised);
+  box-shadow: none;
+}
+
+/*
+ * The gate (S311): claim and login are one centred, lifted plate on the
+ * contour ground; the first thing a new owner sees carries the language.
+ */
+.gate {
+  max-width: var(--gate-width);
+  margin: var(--spacing-xl) auto;
+  padding: var(--spacing-xl);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-dialog);
+  box-shadow: var(--elevation-lifted);
+}
+
+/* A gate inside a wizard (claim): the steps and Back align with the plate. */
+app-wizard-shell > section:has(> .gate) {
+  max-width: var(--gate-width);
+  margin-inline: auto;
+}
+
+app-wizard-shell > section:has(> .gate) > .gate {
+  margin-block: var(--spacing-md);
+}
+
+.gate .masthead {
+  margin-bottom: var(--spacing-lg);
+}
+
+.shell-main .gate form {
+  max-width: none;
+  margin: 0 0 var(--spacing-md);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.gate > :last-child {
+  margin-bottom: 0;
 }
 
 .field-panel > h2:first-child,
@@ -395,5 +473,10 @@ caption {
 @media (max-width: 39.9375rem) {
   .field-panel {
     padding: var(--spacing-md);
+  }
+
+  .gate {
+    margin-block: var(--spacing-md);
+    padding: var(--spacing-lg) var(--spacing-md);
   }
 }

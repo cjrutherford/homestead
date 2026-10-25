@@ -16,9 +16,7 @@
 
   <app-loading [loading]="loading()" shape="panel">
     @if (!loading() && manifest(); as m) {
-      @if (embedded()) {
-        <h3>{{ current() === 'done' ? title() + ' installed' : 'Install ' + title() }}</h3>
-      } @else {
+      @if (!embedded()) {
         <header class="masthead">
           <h1>{{ current() === 'done' ? title() + ' installed' : 'Install ' + title() }}</h1>
           <p class="masthead-fact">{{ fact() }}</p>
@@ -28,22 +26,27 @@
         <p><a routerLink="/setup">Back to setup</a></p>
       }
 
-      <ol class="wizard-steps" aria-label="Install steps">
-        @for (step of steps(); track step.id; let index = $index) {
-          <li
-            class="wizard-step"
-            [attr.data-state]="stepState(index)"
-            [attr.aria-current]="index === stepIndex() ? 'step' : null"
-          >
-            <span class="visually-hidden">Step {{ index + 1 }} of {{ steps().length }}: </span>
-            <span class="wizard-step-mark" aria-hidden="true">{{ index + 1 }}</span>
-            <span class="wizard-step-label">{{ step.label }}</span>
-          </li>
+      <section class="field-panel" aria-label="Install progress">
+        @if (embedded()) {
+          <h3>{{ current() === 'done' ? title() + ' installed' : 'Install ' + title() }}</h3>
         }
-      </ol>
+        <ol class="wizard-steps" aria-label="Install steps">
+          @for (step of steps(); track step.id; let index = $index) {
+            <li
+              class="wizard-step"
+              [attr.data-state]="stepState(index)"
+              [attr.aria-current]="index === stepIndex() ? 'step' : null"
+            >
+              <span class="visually-hidden">Step {{ index + 1 }} of {{ steps().length }}: </span>
+              <span class="wizard-step-mark" aria-hidden="true">{{ index + 1 }}</span>
+              <span class="wizard-step-label">{{ step.label }}</span>
+            </li>
+          }
+        </ol>
+      </section>
 
-      <div class="wizard-body">
-        <h2 #stepHeading tabindex="-1">{{ headingText() }}</h2>
+      <section class="field-panel wizard-body" aria-labelledby="wizard-heading">
+        <h2 id="wizard-heading" #stepHeading tabindex="-1">{{ headingText() }}</h2>
         <p class="wizard-help">{{ help() }}</p>
 
         @switch (current()) {
@@ -785,7 +788,7 @@
             }
           </div>
         }
-      </div>
+      </section>
     }
   </app-loading>
 </section>

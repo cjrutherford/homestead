@@ -52,16 +52,18 @@
         </section>
       }
 
-      <ol class="step-list" aria-label="Setup progress">
-        @for (st of s.steps; track st.name; let i = $index) {
-          <li class="step" [attr.data-status]="glyph(st)" [attr.aria-current]="i === index() ? 'step' : null">
-            <span class="step-glyph" aria-hidden="true"></span>
-            <span class="visually-hidden">Step {{ i + 1 }} of {{ s.steps.length }}: </span>
-            <span class="step-name">{{ st.title }}</span>
-            <span class="step-status">{{ word(st) }}</span>
-          </li>
-        }
-      </ol>
+      <section class="field-panel" aria-label="Steps">
+        <ol class="step-list" aria-label="Setup progress">
+          @for (st of s.steps; track st.name; let i = $index) {
+            <li class="step" [attr.data-status]="glyph(st)" [attr.aria-current]="i === index() ? 'step' : null">
+              <span class="step-glyph" aria-hidden="true"></span>
+              <span class="visually-hidden">Step {{ i + 1 }} of {{ s.steps.length }}: </span>
+              <span class="step-name">{{ st.title }}</span>
+              <span class="step-status">{{ word(st) }}</span>
+            </li>
+          }
+        </ol>
+      </section>
 
       @if (onSummary()) {
         <section class="field-panel" [attr.data-state]="s.complete ? 'ok' : null" aria-labelledby="setup-summary">

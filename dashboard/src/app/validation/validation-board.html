@@ -5,7 +5,7 @@
 <p>Every primitive under each theme. Resize to 375px to check overflow.</p>
 
 @for (theme of themes; track theme) {
-  <section class="panel board-theme" [attr.data-theme]="theme" [attr.data-board]="theme">
+  <section class="field-panel board-theme" [attr.data-theme]="theme" [attr.data-board]="theme">
     <h2>{{ theme }}</h2>
 
     <h3>Buttons</h3>
