@@ -892,11 +892,12 @@
       kept it sealed when setting up dashboard sign-in;
     - SAML, LDAP and apps beyond Immich, Nextcloud and Jellyfin are out of
       scope.
-    - the sign-in plan does not know whether Nextcloud has finished its
+    - ~~the sign-in plan does not know whether Nextcloud has finished its
       first-run setup. The apply refuses in `configure-app`, after the
-      Authentik provider exists, and the next apply reconciles it. A
-      plan-time check would need the container (found in the S298 live
-      check);
+      Authentik provider exists, and the next apply reconciles it.~~
+      Closed by S312: the apply waits, bounded, for Nextcloud's own install
+      in an `app-set-up` step before any change, and a not-set-up failure is
+      guided. The plan itself still does not check the container;
     - Nextcloud gets `overwriteprotocol https` only with sign-in. Without
       it, Nextcloud's own redirects say http and rely on the edge's
       redirect. The catalog could set `OVERWRITEPROTOCOL` for every
@@ -976,3 +977,25 @@
   no current permit holds an input, so the paper-input treatment waits for one.
 - The stamp has no ink-press shadow (removed as the accessory in review);
   revisit only if the stamp reads flat on real hardware.
+
+## Edge certificate coverage and apps that set themselves up (S312)
+
+- The brief's first draft refused names more than one level below the zone;
+  the owner replaced that with a coverage warning (2026-10-26). The depth
+  acceptance criteria are met by coverage tests instead: the domain and
+  defaults are never rewritten, and an uncovered name warns.
+- Coverage lamps on status pages read Cloudflare on every status request,
+  once per zone. A cache, or a lamp that refreshes after ordering a
+  certificate without reloading, is not built.
+- A certificate pack still being issued (status other than `active`) counts
+  as no certificate; the lamp does not say "pending".
+- Only the certificate packs read decides "unreadable"; a refused Total TLS
+  read is taken as Total TLS off.
+- Nextcloud installs made before S312 keep their own admin account: the
+  `admin_password` secret shows as missing and is not created for them. The
+  owner keeps the password they chose in the setup page.
+- Only Nextcloud's adapter detects "not set up yet". Immich and Jellyfin
+  have no equivalent wait.
+- Only Nextcloud's `admin_password` is declared readable; other packages'
+  generated credentials stay presence-only.
+

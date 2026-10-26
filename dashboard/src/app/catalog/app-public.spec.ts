@@ -79,6 +79,24 @@ describe('AppPublic (S290)', () => {
     expect(el().querySelector('a[href="https://watch.example.com"]')).not.toBeNull();
   });
 
+  it('shows a certificate lamp per public name and says the one-level rule (S312)', () => {
+    load(
+      status({
+        routes: [{ route: 'jellyfin.lan', public: ['watch.example.com', 'watch.homestead.example.com'] }],
+        coverage: [
+          { hostname: 'watch.example.com', covered: true, by: 'universal', checked: true },
+          { hostname: 'watch.homestead.example.com', covered: false, checked: true },
+        ],
+      }),
+    );
+    const lamps = Array.from(el().querySelectorAll('ul[aria-label="Public addresses"] .badge')).map((b) => [b.textContent?.trim(), b.className]);
+    expect(lamps[0][0]).toBe('certificate covers it');
+    expect(lamps[0][1]).toContain('badge-ok');
+    expect(lamps[1][0]).toBe('no certificate yet');
+    expect(lamps[1][1]).toContain('badge-warn');
+    expect(text()).toContain('need Advanced Certificate Manager');
+  });
+
   it('removes a public address and reads a stale plan', () => {
     load(status({ routes: [{ route: 'jellyfin.lan', public: ['watch.example.com'] }] }));
     button('Remove')!.click();

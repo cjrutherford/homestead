@@ -457,6 +457,7 @@ func TestSSOStepUpForOIDCSessions(t *testing.T) {
 		{"POST", "/api/v1/sso/link", "", false},
 		{"POST", "/api/v1/secrets/rekey", `{}`, false},
 		{"POST", "/api/v1/backups/identity/export", `{}`, false},
+		{"POST", "/api/v1/catalog/nextcloud/secrets/admin_password/reveal", `{"confirm":true}`, false},
 		{"DELETE", "/api/v1/sso/link", "", true},
 		{"DELETE", "/api/v1/sso", "", true},
 	}
@@ -504,6 +505,7 @@ func TestSSOStepUpListIsExactAndClassified(t *testing.T) {
 		"POST /api/v1/sso/plan": stepUpBoundary, "POST /api/v1/sso/approve": stepUpBoundary,
 		"POST /api/v1/sso/apply": stepUpBoundary, "DELETE /api/v1/sso": stepUpBoundary,
 		"POST /api/v1/secrets/rekey": stepUpBoundary, "POST /api/v1/backups/identity/export": stepUpBoundary,
+		"POST /api/v1/catalog/{name}/secrets/{secret}/reveal": stepUpBoundary,
 	}
 	if len(stepUpRoutes) != len(want) {
 		t.Fatalf("step-up list has %d routes, want %d", len(stepUpRoutes), len(want))

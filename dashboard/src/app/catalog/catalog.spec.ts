@@ -187,4 +187,48 @@ describe('Catalog', () => {
     expect(rotate.request.body).toEqual({ changes: [], rotate_secrets: ['db_password'] });
     rotate.flush({ id: 12 });
   });
+
+  it('reveals a credential meant for the owner after a confirmation (S312)', () => {
+    load();
+    fixture.componentInstance['select']('jellyfin');
+    http
+      .expectOne('/api/v1/catalog/jellyfin')
+      .flush({ ...MANIFEST, Secrets: [{ Name: 'admin_password', Immutable: true }] });
+    http.expectOne('/api/v1/edge/routes').flush({ routes: [] });
+    http.expectOne('/api/v1/names').flush({ resolver: { enabled: false, running: false, listening: [], names: [], router_hint: '' }, apps: [] });
+    http.expectOne('/api/v1/catalog/jellyfin/secrets').flush([
+      {
+        name: 'admin_password',
+        store_name: 'app_jellyfin_admin_password',
+        present: true,
+        immutable: true,
+        services: ['jellyfin'],
+        database_password: false,
+        wired: true,
+        installed: true,
+        reveal: true,
+        note: 'Password for the administrator account "admin".',
+      },
+    ]);
+    fixture.detectChanges();
+    expect(text()).toContain('Password for the administrator account');
+    const reveal = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>).find(
+      (b) => b.textContent?.trim() === 'Reveal',
+    );
+    expect(reveal).toBeDefined();
+    reveal!.click();
+    fixture.detectChanges();
+    expect(text()).toContain('Show this password?');
+    http.expectNone('/api/v1/catalog/jellyfin/secrets/admin_password/reveal');
+    fixture.componentInstance['confirmReveal']();
+    const req = http.expectOne('/api/v1/catalog/jellyfin/secrets/admin_password/reveal');
+    expect(req.request.body).toEqual({ confirm: true });
+    req.flush({ name: 'admin_password', value: 'shown-once-pw', note: '' });
+    fixture.detectChanges();
+    expect(text()).toContain('shown-once-pw');
+    expect(text()).not.toContain('Show this password?');
+    fixture.componentInstance['hideRevealed']();
+    fixture.detectChanges();
+    expect(text()).not.toContain('shown-once-pw');
+  });
 });

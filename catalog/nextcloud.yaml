@@ -21,8 +21,17 @@ services:
   # Nextcloud through it, and Nextcloud refuses an unlisted Host. The
   # image applies this once, when it first installs; an existing install
   # adds the name with occ (docs/architecture/CRAFT_FILE_PROXY.md).
+  #
+  # Nextcloud installs itself on first start (S312): with an admin user,
+  # its password file and a database name, the image runs
+  # `occ maintenance:install` instead of the web installer. The image
+  # does this only on an empty install, so an existing Nextcloud is
+  # untouched. The admin password is the generated package secret
+  # admin_password (Compose secret, never an environment value).
   environment:
     NEXTCLOUD_TRUSTED_DOMAINS: "{{route_host}}"
+    NEXTCLOUD_ADMIN_USER: admin
+    SQLITE_DATABASE: nextcloud
   # Image VOLUME: /var/www/html (code, config, apps). User files and
   # the default SQLite database live in its data/ directory, mounted
   # nested on bulk storage (not flagged `database`: it is mostly user
@@ -62,6 +71,17 @@ exposure:
     - Files leave the LAN when widened; share deliberately.
 backuppaths:
 - config
+secrets:
+- name: admin_password
+  # The first-run admin account's password. Nextcloud reads it only when
+  # it installs itself, so rotating it would leave the shown value wrong:
+  # change the password in Nextcloud instead.
+  immutable: true
+  reveal: true
+  note: Password for the Nextcloud administrator account "admin", set when Nextcloud installed itself.
+  consumers:
+  - service: nextcloud
+    env: NEXTCLOUD_ADMIN_PASSWORD_FILE
 sso:
   class: optional
   protocols: [oidc, saml, ldap]

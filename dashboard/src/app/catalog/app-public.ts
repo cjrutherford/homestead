@@ -10,6 +10,7 @@ import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
 import { SessionService } from '../auth/session.service';
 import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
+import { coverageLamp, coverageRule } from '../core/coverage';
 
 /** A refusal (400, 422) or a stale plan (409) reads as the appliance's own words. */
 export function publicError(failure: HttpErrorResponse): string {
@@ -44,6 +45,9 @@ export function publicError(failure: HttpErrorResponse): string {
                 <li>
                   <a class="mono" [href]="'https://' + n.name" target="_blank" rel="noopener">{{ n.name }}</a>
                   through the tunnel {{ s.tunnel }}
+                  @if (lamp(s, n.name); as l) {
+                    <span class="badge" [class]="l.ok ? 'badge-ok' : 'badge-warn'" [title]="l.title">{{ l.label }}</span>
+                  }
                   <button type="button" class="quiet" (click)="review({ enabled: false, hostname: n.name })" [disabled]="busy()">
                     Remove
                   </button>
@@ -69,6 +73,7 @@ export function publicError(failure: HttpErrorResponse): string {
               Review public address
             </button>
           </p>
+          <p class="hint">{{ coverageRule }}</p>
         }
         @if (error()) {
           <app-state-message kind="error" [headline]="error()" />
@@ -160,6 +165,12 @@ export class AppPublic implements OnInit {
       next: (status) => this.status.set(status),
       error: (failure: HttpErrorResponse) => this.error.set(publicError(failure)),
     });
+  }
+
+  protected readonly coverageRule = coverageRule;
+
+  protected lamp(s: AppPublicStatus, name: string) {
+    return coverageLamp(s.coverage, name);
   }
 
   protected publicNames(s: AppPublicStatus): { name: string; route: string }[] {

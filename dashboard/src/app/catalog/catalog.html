@@ -143,6 +143,20 @@
             <li>
               <strong>{{ secret.name }}</strong>
               {{ secret.present ? 'present' : 'missing' }} ({{ secret.services.join(', ') }})
+              @if (secret.note) {
+                <span class="hint">{{ secret.note }}</span>
+              }
+              @if (secret.reveal && secret.present) {
+                <button type="button" (click)="askReveal(secret.name)" [disabled]="busy()">Reveal</button>
+              }
+              @if (revealed(); as shown) {
+                @if (shown.name === secret.name) {
+                  <span class="revealed-secret">
+                    <code class="mono" [attr.aria-label]="'Value of ' + secret.name">{{ shown.value }}</code>
+                    <button type="button" class="quiet" (click)="hideRevealed()">Hide</button>
+                  </span>
+                }
+              }
               <input
                 type="password"
                 autocomplete="off"
@@ -187,6 +201,19 @@
         }
         @if (secretNotice() !== null) {
           <p>{{ secretNotice() }}</p>
+        }
+        @if (confirmingReveal(); as pending) {
+          <app-dialog heading="Show this password?" (dismissed)="cancelReveal()">
+            <p>
+              Homestead shows <strong>{{ pending }}</strong> on this screen once. The reveal is
+              recorded in the audit log (without the value). Make sure no one is reading over your
+              shoulder.
+            </p>
+            <div class="dialog-actions">
+              <button type="button" class="primary" (click)="confirmReveal()" [disabled]="busy()">Show it</button>
+              <button type="button" class="quiet" (click)="cancelReveal()" [disabled]="busy()">Cancel</button>
+            </div>
+          </app-dialog>
         }
       }
     </section>

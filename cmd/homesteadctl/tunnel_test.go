@@ -18,6 +18,7 @@ func tunnelStub(t *testing.T) string {
 				"tunnels":[{"id":"tunnel-id","name":"homestead","status":"healthy","connections":[]}],
 				"routes":[{"Hostname":"app.example.com","TunnelID":"tunnel-id","Service":"http://127.0.0.1:8080"}],
 				"connector":{"installed":true,"active":true},"accounts":1,
+				"coverage":[{"hostname":"app.example.com","covered":false,"checked":true}],
 				"proposed":{"dashboard_hostname":"homestead.example.com","auth_hostname":"auth.example.com","sign_in_linked":false}}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tunnel/plan":
 			var body map[string]any
@@ -63,7 +64,7 @@ func TestTunnelStatus(t *testing.T) {
 		t.Fatalf("exit = %d, want 0", code)
 	}
 	for _, want := range []string{"preferred: tunnel", "connector: installed=true active=true",
-		"tunnel-id homestead: healthy", "app.example.com -> http://127.0.0.1:8080 via tunnel-id"} {
+		"tunnel-id homestead: healthy", "app.example.com -> http://127.0.0.1:8080 via tunnel-id (no certificate yet)"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout)
 		}

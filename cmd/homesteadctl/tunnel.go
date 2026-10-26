@@ -49,7 +49,13 @@ func runTunnelStatus(ctx context.Context, client *apiclient.Client, stdout, stde
 			tunnel.ID, tunnel.Name, tunnel.Status, len(tunnel.Connections))
 	}
 	for _, route := range status.Routes {
-		fmt.Fprintf(stdout, "%s -> %s via %s\n", route.Hostname, route.Service, route.TunnelID)
+		fmt.Fprintf(stdout, "%s -> %s via %s", route.Hostname, route.Service, route.TunnelID)
+		for _, c := range status.Coverage {
+			if c.Hostname == route.Hostname {
+				fmt.Fprintf(stdout, " (%s)", apiclient.CoverageLamp(c))
+			}
+		}
+		fmt.Fprintln(stdout)
 	}
 	if len(status.Routes) == 0 && status.Proposed.AuthHostname != "" {
 		fmt.Fprintf(stdout, "proposed: dashboard %s, Authentik %s", status.Proposed.DashboardHostname, status.Proposed.AuthHostname)

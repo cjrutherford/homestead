@@ -77,6 +77,9 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 	dir := rt.StackDir(m.Name)
 	spec := plan.Spec(dashboard)
 	target := Target{Manifest: m, Container: container(m, m.SSO.OIDC.Service)}
+	if origins := originsOf(plan.RedirectURIs); len(origins) > 0 {
+		target.Address = origins[0]
+	}
 	wire := wiring(m, adapter, dashboard)
 	failed := func(what string, err error) error {
 		rt.audit(actor, "app.sign-in", "error", fmt.Sprintf("%s: %s failed", m.Name, what))
@@ -150,8 +153,19 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 		return def, nil
 	}
 	var secret string
-	def.Steps = []operation.StepDef{
-		reach,
+	def.Steps = []operation.StepDef{reach}
+	if waiter, ok := adapter.(SetUpWaiter); ok {
+		// Before anything changes: an app still installing itself is
+		// waited for, and one its owner must set up is refused with
+		// guidance (S312).
+		def.Steps = append(def.Steps, operation.StepDef{Name: "app-set-up", Run: func(ctx context.Context) error {
+			if err := waiter.WaitSetUp(ctx, target); err != nil {
+				return failed("wait for the app to be set up", err)
+			}
+			return nil
+		}})
+	}
+	def.Steps = append(def.Steps, []operation.StepDef{
 		{Name: "client-secret", Run: func(context.Context) error {
 			s, err := rt.Secrets.Get(SecretName(m.Name))
 			if err != nil || s == "" {
@@ -195,6 +209,6 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 				m.Name, plan.Adapter, plan.ClientID, len(plan.RedirectURIs)))
 			return nil
 		}},
-	}
+	}...)
 	return def, nil
 }

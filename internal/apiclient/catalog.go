@@ -192,6 +192,27 @@ type AppSecret struct {
 	Database  bool     `json:"database_password"`
 	Wired     bool     `json:"wired"`
 	Installed bool     `json:"installed"`
+	// Reveal marks a credential meant for the owner (S312), readable
+	// with RevealAppSecret; Note says what it is for.
+	Reveal bool   `json:"reveal"`
+	Note   string `json:"note,omitempty"`
+}
+
+// RevealedSecret is a credential the owner asked to read (S312).
+type RevealedSecret struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+	Note  string `json:"note,omitempty"`
+}
+
+// RevealAppSecret reads a secret the package marks reveal, such as
+// Nextcloud's generated admin password. The appliance audits it.
+func (c *Client) RevealAppSecret(ctx context.Context, name, secret string) (RevealedSecret, error) {
+	var out RevealedSecret
+	if err := c.postJSON(ctx, "/api/v1/catalog/"+name+"/secrets/"+secret+"/reveal", map[string]any{"confirm": true}, &out); err != nil {
+		return RevealedSecret{}, err
+	}
+	return out, nil
 }
 
 // AppSecrets lists a package's declared secret-backed variables.

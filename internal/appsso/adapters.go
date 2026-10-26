@@ -34,6 +34,46 @@ type Target struct {
 	Manifest catalog.Manifest
 	// Container is the service that talks to Authentik.
 	Container string
+	// Address is the app's first browser origin, named in guidance when
+	// the app is not set up yet (S312).
+	Address string
+}
+
+// NotSetUpError is an app that cannot take sign-in because its own
+// first-run setup is unfinished (S312). The text says what to do and
+// where; the dashboard recognises it by NotSetUpPhrase and offers Apply
+// sign-in again. Err is the adapter's own sentinel.
+type NotSetUpError struct {
+	Title   string
+	Address string
+	// Waited is set when Homestead waited for the app to set itself up
+	// and it did not finish in time.
+	Waited bool
+	Err    error
+}
+
+// NotSetUpPhrase is in every NotSetUpError's text.
+const NotSetUpPhrase = "is not set up yet"
+
+func (e *NotSetUpError) Error() string {
+	where := "open it in a browser"
+	if e.Address != "" {
+		where = "open " + e.Address
+	}
+	if e.Waited {
+		return fmt.Sprintf("%s %s: it is still finishing its own installation. Wait a few minutes, %s to check it is ready, then choose Apply sign-in again.",
+			e.Title, NotSetUpPhrase, where)
+	}
+	return fmt.Sprintf("%s %s: %s, finish its setup there (create its admin account), then choose Apply sign-in again.", e.Title, NotSetUpPhrase, where)
+}
+
+func (e *NotSetUpError) Unwrap() error { return e.Err }
+
+// SetUpWaiter is an adapter that checks the app is set up before sign-in
+// changes anything (S312): an app that installs itself is waited for,
+// bounded; one that needs the owner is refused with a NotSetUpError.
+type SetUpWaiter interface {
+	WaitSetUp(ctx context.Context, t Target) error
 }
 
 // container returns <package>-<service>, the generated container name.
@@ -265,15 +305,83 @@ func (nextcloud) occ(ctx context.Context, t Target, stdin string, args ...string
 	return execIn(ctx, t.Container, "www-data", stdin, append([]string{"php", "occ", "--no-interaction"}, args...)...)
 }
 
-// readyTries and readyPause bound the wait for a recreated container.
+// readyTries and readyPause bound the wait for a recreated container;
+// installTries bounds the wait for a Nextcloud installing itself on its
+// first start (S312), about five minutes.
 var (
-	readyTries = 30
-	readyPause = 4 * time.Second
+	readyTries   = 30
+	readyPause   = 4 * time.Second
+	installTries = 75
 )
 
 // ErrNextcloudNotSetUp refuses sign-in on a Nextcloud whose first-run
-// setup is unfinished: occ offers no app commands until it is done.
+// setup is unfinished: occ offers no app commands until it is done. It
+// stays for installs whose admin account the owner creates by hand; the
+// error returned is a NotSetUpError wrapping it.
 var ErrNextcloudNotSetUp = errors.New("appsso: Nextcloud has not finished its first-run setup; open it in a browser, create its admin account, then apply sign-in again")
+
+func (nextcloud) notSetUp(t Target, waited bool) error {
+	return &NotSetUpError{Title: t.Manifest.Title, Address: t.Address, Waited: waited, Err: ErrNextcloudNotSetUp}
+}
+
+// autoInstalls reports whether this container installs itself: the
+// package (S312) passes NEXTCLOUD_ADMIN_USER, so the image's entrypoint
+// runs the install on an empty data directory. Installs from before
+// S312 lack it, and their owner finishes setup by hand.
+func (a nextcloud) autoInstalls(ctx context.Context, t Target) bool {
+	out, err := execIn(ctx, t.Container, "www-data", "", "printenv", "NEXTCLOUD_ADMIN_USER")
+	return err == nil && strings.TrimSpace(out) != ""
+}
+
+// installed asks occ whether Nextcloud is installed. An error means occ
+// did not answer (the container is starting or copying its files).
+func (a nextcloud) installed(ctx context.Context, t Target) (bool, error) {
+	out, err := a.occ(ctx, t, "", "status", "--output=json")
+	if err != nil {
+		return false, err
+	}
+	return !strings.Contains(strings.ReplaceAll(out, " ", ""), `"installed":false`), nil
+}
+
+func pause(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(readyPause):
+		return nil
+	}
+}
+
+// WaitSetUp runs before sign-in changes anything, so a Nextcloud
+// installing itself is not recreated in the middle of its install. One
+// that installs itself is waited for, at most installTries pauses; one
+// that needs its owner is refused at once.
+func (a nextcloud) WaitSetUp(ctx context.Context, t Target) error {
+	auto := a.autoInstalls(ctx, t)
+	tries := readyTries
+	if auto {
+		tries = installTries
+	}
+	var err error
+	for i := 0; i < tries; i++ {
+		var done bool
+		if done, err = a.installed(ctx, t); err == nil {
+			if done {
+				return nil
+			}
+			if !auto {
+				return a.notSetUp(t, false)
+			}
+		}
+		if err := pause(ctx); err != nil {
+			return err
+		}
+	}
+	if auto {
+		return a.notSetUp(t, true)
+	}
+	return fmt.Errorf("appsso: Nextcloud did not answer: %w", err)
+}
 
 // ready waits until occ answers: the container was just recreated to
 // pick up the sign-in wiring. A Nextcloud that answers but is not set up
@@ -281,17 +389,15 @@ var ErrNextcloudNotSetUp = errors.New("appsso: Nextcloud has not finished its fi
 func (a nextcloud) ready(ctx context.Context, t Target) error {
 	var err error
 	for i := 0; i < readyTries; i++ {
-		var out string
-		if out, err = a.occ(ctx, t, "", "status", "--output=json"); err == nil {
-			if strings.Contains(strings.ReplaceAll(out, " ", ""), `"installed":false`) {
-				return ErrNextcloudNotSetUp
+		var done bool
+		if done, err = a.installed(ctx, t); err == nil {
+			if !done {
+				return a.notSetUp(t, false)
 			}
 			return nil
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(readyPause):
+		if err := pause(ctx); err != nil {
+			return err
 		}
 	}
 	return fmt.Errorf("appsso: Nextcloud did not answer after it restarted: %w", err)

@@ -139,6 +139,38 @@ describe('Tunnel', () => {
     expect(el.querySelector('a[href="/sign-in"]')).not.toBeNull();
   });
 
+  it('lamps each route and each planned name by its edge certificate (S312)', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush({
+      ...STATUS,
+      routes: [
+        ...STATUS.routes,
+        { Hostname: 'auth.homestead.example.com', TunnelID: 'tunnel-id', Service: 'http://127.0.0.1:8480' },
+      ],
+      coverage: [
+        { hostname: 'app.example.com', covered: true, by: 'universal', checked: true },
+        { hostname: 'auth.homestead.example.com', covered: false, checked: false },
+      ],
+    });
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const rows = Array.from(el.querySelectorAll('tbody tr')).map((r) => r.textContent ?? '');
+    expect(rows.find((r) => r.includes('app.example.com'))).toContain('certificate covers it');
+    expect(rows.find((r) => r.includes('auth.homestead.example.com'))).toContain('no certificate yet');
+    expect(text()).toContain('need Advanced Certificate Manager');
+    fixture.componentInstance['review']('homestead', '', 'login.example.com');
+    http.expectOne('/api/v1/tunnel/plan').flush({
+      ...PLAN,
+      coverage: [
+        { hostname: 'homestead.example.com', covered: true, by: 'universal', checked: true },
+        { hostname: 'auth.example.com', covered: true, by: 'universal', checked: true },
+      ],
+    });
+    fixture.detectChanges();
+    const names = el.querySelector('table[aria-label="Public hostnames"]')?.textContent ?? '';
+    expect(names).toContain('certificate covers it');
+  });
+
   it('says why the dashboard is left out until sign-in is linked', () => {
     reviewPlan({
       ...PLAN,

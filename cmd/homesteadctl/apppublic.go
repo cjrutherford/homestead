@@ -88,7 +88,13 @@ func printAppPublicStatus(w io.Writer, s apiclient.AppPublicStatus) {
 	none := true
 	for _, r := range s.Routes {
 		for _, n := range r.Public {
-			fmt.Fprintf(w, "public: https://%s -> %s\n", n, r.Route)
+			fmt.Fprintf(w, "public: https://%s -> %s", n, r.Route)
+			for _, c := range s.Coverage {
+				if c.Hostname == n {
+					fmt.Fprintf(w, " (%s)", apiclient.CoverageLamp(c))
+				}
+			}
+			fmt.Fprintln(w)
 			none = false
 		}
 	}

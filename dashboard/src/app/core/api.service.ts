@@ -196,6 +196,26 @@ export interface AppSecret {
   database_password: boolean;
   wired: boolean;
   installed: boolean;
+  /** A credential meant for the owner, readable with revealAppSecret (S312). */
+  reveal?: boolean;
+  note?: string;
+}
+
+/** POST /api/v1/catalog/:name/secrets/:secret/reveal — the value, audited (S312). */
+export interface RevealedSecret {
+  name: string;
+  value: string;
+  note?: string;
+}
+
+/** Whether Cloudflare's edge has a certificate for a public name (S312). */
+export interface NameCoverage {
+  hostname: string;
+  covered: boolean;
+  /** universal, certificate pack or total tls. */
+  by?: string;
+  /** False when the token could not read the zone's certificates. */
+  checked: boolean;
 }
 
 /** POST /api/v1/catalog/:name/plan — reviewed install change set. */
@@ -1037,6 +1057,8 @@ export interface TunnelStatus {
   /** The names a tunnel plan would propose (S296); the owner may rename them. */
   proposed: { dashboard_hostname: string; auth_hostname: string; sign_in_linked: boolean };
   discovery_error?: string;
+  /** The certificate lamp for each served name (S312). */
+  coverage?: NameCoverage[];
 }
 
 /** One DNS change in a tunnel plan (ADR-037). */
@@ -1065,6 +1087,8 @@ export interface TunnelPlan {
   sign_in?: string;
   /** Present when the plan adopts an existing tunnel (S290). */
   adopt?: TunnelAdoption;
+  /** Whether Cloudflare has a certificate for each public name (S312). */
+  coverage?: NameCoverage[];
   warnings: string[];
   digest: string;
 }
@@ -1096,6 +1120,8 @@ export interface AppPublicStatus {
   routes: { route: string; public: string[] }[];
   proposed?: string;
   sign_in: boolean;
+  /** The certificate lamp for each public name (S312). */
+  coverage?: NameCoverage[];
 }
 
 /** One public name added to or removed from an app. */
@@ -1111,6 +1137,7 @@ export interface AppPublicPlan {
   connector_before: string[];
   connector_after: string[];
   sign_in?: string;
+  coverage?: NameCoverage[];
   warnings: string[];
   digest: string;
 }
@@ -1320,6 +1347,13 @@ export class ApiService {
       `/api/v1/catalog/${name}/secrets/${secret}`,
       { value, skip_verify: skipVerify, force },
     );
+  }
+
+  /** Reads a credential the package marks readable (S312); audited. */
+  revealAppSecret(name: string, secret: string): Observable<RevealedSecret> {
+    return this.http.post<RevealedSecret>(`/api/v1/catalog/${name}/secrets/${secret}/reveal`, {
+      confirm: true,
+    });
   }
 
   dataMigrations(): Observable<DataMigrations> {

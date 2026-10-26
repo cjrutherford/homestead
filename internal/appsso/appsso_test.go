@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"homestead/internal/catalog"
 	"homestead/internal/docker"
@@ -459,5 +460,110 @@ func TestApplyOnThenOff(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(audits, "\n"), "app.sign-in.on ok") || !strings.Contains(strings.Join(audits, "\n"), "app.sign-in.off ok") {
 		t.Fatalf("audits: %v", audits)
+	}
+}
+
+// S312: a Nextcloud installing itself is waited for, bounded, before
+// sign-in changes anything; one its owner must set up is refused at once
+// with guidance that names its address.
+func TestNextcloudWaitsForItsOwnInstall(t *testing.T) {
+	f := stubDocker(t)
+	oldPause, oldInstall := readyPause, installTries
+	readyPause, installTries = time.Millisecond, 5
+	t.Cleanup(func() { readyPause, installTries = oldPause, oldInstall })
+	m := manifest(t, "nextcloud")
+	a, _ := AdapterFor(*m.SSO.OIDC)
+	waiter, ok := a.(SetUpWaiter)
+	if !ok {
+		t.Fatal("the Nextcloud adapter does not wait for set-up")
+	}
+	target := Target{Manifest: m, Container: "nextcloud-nextcloud", Address: "https://nextcloud.lan"}
+	statuses := 0
+	installedAfter := 3
+	auto := true
+	f.fail = func(c call) (string, error) {
+		switch {
+		case c.args[0] == "printenv":
+			if auto {
+				return "admin\n", nil
+			}
+			return "", errors.New("exit 1")
+		case len(c.args) > 3 && c.args[3] == "status":
+			statuses++
+			if statuses >= installedAfter {
+				return `{"installed":true}`, nil
+			}
+			return `{"installed":false}`, nil
+		}
+		return "", nil
+	}
+	// Installing itself: waited for until it reports installed.
+	if err := waiter.WaitSetUp(context.Background(), target); err != nil || statuses != 3 {
+		t.Fatalf("wait: %v after %d status calls", err, statuses)
+	}
+	// Still installing at the bound: guided failure, not a bare error.
+	statuses, installedAfter = 0, 100
+	err := waiter.WaitSetUp(context.Background(), target)
+	var notSetUp *NotSetUpError
+	if !errors.As(err, &notSetUp) || !notSetUp.Waited || !errors.Is(err, ErrNextcloudNotSetUp) || statuses != 5 {
+		t.Fatalf("bound: %v after %d", err, statuses)
+	}
+	for _, want := range []string{"Nextcloud " + NotSetUpPhrase, "https://nextcloud.lan", "Apply sign-in again"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("bound text lacks %q: %v", want, err)
+		}
+	}
+	// A manual install (no NEXTCLOUD_ADMIN_USER) is refused at once.
+	statuses, auto = 0, false
+	err = waiter.WaitSetUp(context.Background(), target)
+	if !errors.As(err, &notSetUp) || notSetUp.Waited || statuses != 1 ||
+		!strings.Contains(err.Error(), "create its admin account") || !strings.Contains(err.Error(), "https://nextcloud.lan") {
+		t.Fatalf("manual: %v after %d", err, statuses)
+	}
+}
+
+// S312: the sign-in operation checks set-up before it changes anything,
+// and fails with the guided text.
+func TestApplyStopsBeforeChangesWhenNotSetUp(t *testing.T) {
+	f := stubDocker(t)
+	f.fail = func(c call) (string, error) {
+		if c.args[0] == "printenv" {
+			return "", errors.New("exit 1")
+		}
+		if len(c.args) > 3 && c.args[3] == "status" {
+			return `{"installed":false}`, nil
+		}
+		return "", nil
+	}
+	st, err := store.Open(filepath.Join(t.TempDir(), "homestead.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	secrets := &memSecrets{m: map[string]string{}}
+	rt := Runtime{Records: Records{DB: st.DB()}, Secrets: secrets, StackDir: func(string) string { return t.TempDir() },
+		RootPEM: func() ([]byte, error) { return []byte("root"), nil }}
+	in := inputs(t, "nextcloud")
+	plan, err := BuildPlan(in, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ak := &fakeAuthentik{}
+	def, err := Definition(rt, plan, in.Manifest, dashboard, ak, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(def.Steps) < 2 || def.Steps[1].Name != "app-set-up" {
+		t.Fatalf("steps: %+v", def.Steps)
+	}
+	var runErr error
+	for _, step := range def.Steps {
+		if runErr = step.Run(context.Background()); runErr != nil {
+			break
+		}
+	}
+	if runErr == nil || !strings.Contains(runErr.Error(), NotSetUpPhrase) || !strings.Contains(runErr.Error(), "https://") ||
+		len(ak.specs) != 0 || len(secrets.m) != 0 {
+		t.Fatalf("run: %v; authentik %+v; secrets %v", runErr, ak.specs, secrets.m)
 	}
 }

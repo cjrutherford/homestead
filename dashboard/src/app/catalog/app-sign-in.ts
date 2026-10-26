@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DestroyRef, inject, input, OnInit, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, input, OnInit, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { ApiService, AppSignInPlan, AppSignInStatus, OperationState } from '../core/api.service';
@@ -74,7 +74,12 @@ export function signInError(failure: HttpErrorResponse): string {
             }
           </p>
         }
-        @if (error()) {
+        @if (notSetUp(); as n) {
+          <app-state-message kind="error" [headline]="n.message" actionLabel="Apply sign-in again" (action)="review(true)" />
+          @if (n.address) {
+            <p><a [href]="n.address" target="_blank" rel="noopener">Open {{ title() }}</a> to check it has finished setting itself up.</p>
+          }
+        } @else if (error()) {
           <app-state-message kind="error" [headline]="error()" />
         }
 
@@ -173,6 +178,19 @@ export class AppSignIn implements OnInit {
   /** Why the appliance would not approve the plan on screen. */
   protected readonly refused = signal<string | null>(null);
   private readonly sessions = inject(SessionService);
+  /** Where the app lives, from the last plan's sign-in return addresses. */
+  private readonly address = signal<string | null>(null);
+  /**
+   * The app had not finished its own setup when sign-in was applied (S312):
+   * say what to do, link the app, and offer to apply again.
+   */
+  protected readonly notSetUp = computed(() => {
+    const message = this.error();
+    if (!message || !message.includes('is not set up yet')) {
+      return null;
+    }
+    return { message, address: this.address() };
+  });
 
   ngOnInit(): void {
     this.load();
@@ -212,6 +230,7 @@ export class AppSignIn implements OnInit {
     }
     this.busy.set(true);
     this.error.set(null);
+    this.address.set(originOf(plan.redirect_uris?.[0]));
     this.api.appSignInApply(this.name(), plan.enabled, plan.digest, this.token().trim()).subscribe({
       next: ({ id }) => {
         this.approved.set(
@@ -236,12 +255,13 @@ export class AppSignIn implements OnInit {
                 return;
               }
               this.busy.set(false);
+              // Re-read first: load() clears the error this ends with.
+              this.load();
               if (state.status === 'succeeded') {
                 this.note.set(plan.enabled ? `Sign-in with Authentik is on for ${this.title()}.` : `Sign-in with Authentik is off for ${this.title()}.`);
               } else {
                 this.error.set(state.error || 'The change did not finish. Open the operation to see why.');
               }
-              this.load();
             },
             error: () => {
               this.busy.set(false);
@@ -260,5 +280,16 @@ export class AppSignIn implements OnInit {
         this.refused.set(signInError(failure));
       },
     });
+  }
+}
+
+function originOf(uri: string | undefined): string | null {
+  if (!uri) {
+    return null;
+  }
+  try {
+    return new URL(uri).origin;
+  } catch {
+    return null;
   }
 }

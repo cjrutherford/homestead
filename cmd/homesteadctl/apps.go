@@ -310,8 +310,11 @@ func runAppsSecrets(ctx context.Context, client *apiclient.Client, args []string
 	if len(args) >= 1 && args[0] == "register" {
 		return runAppsSecretRegister(ctx, client, args[1:], stdout, stderr)
 	}
+	if len(args) >= 1 && args[0] == "reveal" {
+		return runAppsSecretReveal(ctx, client, args[1:], stdout, stderr)
+	}
 	if len(args) != 1 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps secrets <package> | register <package> <secret> --value-file PATH|- [--skip-verify] [--force]")
+		fmt.Fprintln(stderr, appsSecretsUsage)
 		return exitUsage
 	}
 	secrets, err := client.AppSecrets(ctx, args[0])
@@ -337,8 +340,36 @@ func runAppsSecrets(ctx context.Context, client *apiclient.Client, args []string
 		if s.Installed && !s.Wired {
 			flags += " not-wired (pre-S266: register, then apps configure --adopt-secrets)"
 		}
+		if s.Reveal && s.Present {
+			flags += " readable (apps secrets reveal " + args[0] + " " + s.Name + ")"
+		}
 		fmt.Fprintf(stdout, "%s: %s (%s; services: %s)%s\n", s.Name, state, s.StoreName, strings.Join(s.Services, ", "), flags)
+		if s.Note != "" {
+			fmt.Fprintf(stdout, "  %s\n", s.Note)
+		}
 	}
+	return exitOK
+}
+
+const appsSecretsUsage = "usage: homesteadctl apps secrets <package> | register <package> <secret> --value-file PATH|- [--skip-verify] [--force] | reveal <package> <secret>"
+
+// runAppsSecretReveal prints a credential the package marks readable
+// (S312), such as Nextcloud's admin password. The value goes to stdout
+// alone, so it can be piped; the appliance audits the reveal.
+func runAppsSecretReveal(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 2 || strings.HasPrefix(args[0], "-") || strings.HasPrefix(args[1], "-") {
+		fmt.Fprintln(stderr, "usage: homesteadctl apps secrets reveal <package> <secret>")
+		return exitUsage
+	}
+	out, err := client.RevealAppSecret(ctx, args[0], args[1])
+	if err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintln(stdout, out.Value)
+	if out.Note != "" {
+		fmt.Fprintln(stderr, out.Note)
+	}
+	fmt.Fprintln(stderr, "This reveal is audited.")
 	return exitOK
 }
 

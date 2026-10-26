@@ -47,10 +47,17 @@ type SecretConsumer struct {
 // name (also how configure addresses it); the store name derives from
 // package and name (SecretStoreName). Immutable secrets are generated
 // once and refuse rotation (rotating them would break existing data).
+//
+// Reveal marks an owner-facing credential (S312), such as an app's
+// generated admin password: the owner may read it, by an explicit,
+// audited reveal behind step-up. Every other secret stays presence-only.
+// Note says what the credential is for (for example the account name).
 type SecretDecl struct {
 	Name      string
 	Consumers []SecretConsumer
 	Immutable bool
+	Reveal    bool
+	Note      string
 }
 
 // SecretStoreName is the secret-store row holding a package secret.

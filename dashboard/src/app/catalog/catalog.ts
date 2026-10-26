@@ -7,9 +7,11 @@ import {
   AppSecret,
   CatalogManifest,
   PackageSummary,
+  RevealedSecret,
 } from '../core/api.service';
 import { registerPackageTitles } from '../core/operation-labels';
 import { StateMessage } from '../state/state-message';
+import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
 import { appRoutes } from './app-routes';
@@ -31,7 +33,7 @@ interface ConfigRow {
  * lives in the wizard (`install-wizard.ts`), not on this page.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage, RouterLink, UninstallApp, AppSignIn, AppPublic],
+  imports: [OperationProgress, Loading, StateMessage, RouterLink, UninstallApp, AppSignIn, AppPublic, Dialog],
   selector: 'app-catalog',
   templateUrl: './catalog.html',
 })
@@ -73,6 +75,10 @@ export class Catalog implements OnInit {
   protected readonly skipVerify = signal(false);
   protected readonly force = signal(false);
   protected readonly secretNotice = signal<string | null>(null);
+  /** The secret whose reveal waits for the owner's confirmation (S312). */
+  protected readonly confirmingReveal = signal<string | null>(null);
+  /** A credential the owner chose to read; cleared when hidden or leaving the app. */
+  protected readonly revealed = signal<RevealedSecret | null>(null);
   /** The managed app's local names (S295); empty until read or when it has none. */
   protected readonly localNames = signal<string[]>([]);
 
@@ -112,6 +118,8 @@ export class Catalog implements OnInit {
         this.unsetRows.set([]);
         this.appSecrets.set([]);
         this.secretValues.set({});
+        this.revealed.set(null);
+        this.confirmingReveal.set(null);
         this.secretNotice.set(null);
         this.localNames.set([]);
         // Names are a convenience here: a failed read leaves them out.
@@ -241,6 +249,43 @@ export class Catalog implements OnInit {
         this.error.set(failure.error ?? failure.message);
       },
     });
+  }
+
+  /** Asks before showing a credential meant for the owner (S312). */
+  askReveal(secret: string): void {
+    this.revealed.set(null);
+    this.confirmingReveal.set(secret);
+  }
+
+  cancelReveal(): void {
+    this.confirmingReveal.set(null);
+  }
+
+  /** Reads the credential; the appliance audits it and may ask for the password again. */
+  confirmReveal(): void {
+    const manifest = this.selected();
+    const secret = this.confirmingReveal();
+    if (manifest === null || secret === null) {
+      return;
+    }
+    this.busy.set(true);
+    this.error.set(null);
+    this.api.revealAppSecret(manifest.Name, secret).subscribe({
+      next: (shown) => {
+        this.busy.set(false);
+        this.confirmingReveal.set(null);
+        this.revealed.set(shown);
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.busy.set(false);
+        this.confirmingReveal.set(null);
+        this.error.set(failure.error ?? failure.message);
+      },
+    });
+  }
+
+  hideRevealed(): void {
+    this.revealed.set(null);
   }
 
   /** Rotates a generated secret through the configure operation. */

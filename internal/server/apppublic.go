@@ -49,6 +49,8 @@ type appPublicStatus struct {
 	Routes    []appPublicRoute `json:"routes"`
 	Proposed  string           `json:"proposed,omitempty"`
 	SignIn    bool             `json:"sign_in"`
+	// Coverage is the edge certificate lamp for each public name (S312).
+	Coverage []publicNameCoverage `json:"coverage"`
 }
 
 // appPublicRoute is one of the app's local edge routes and the public
@@ -133,6 +135,11 @@ func (p *appPublic) status(w http.ResponseWriter, r *http.Request) {
 		}
 		out.Routes = append(out.Routes, entry)
 	}
+	names := []string{}
+	for _, route := range out.Routes {
+		names = append(names, route.Public...)
+	}
+	out.Coverage = statusCoverage(r.Context(), p.secrets, names)
 	if out.Available {
 		domain, err := p.proposedDomain(f.tunnelID)
 		if err != nil {
@@ -173,11 +180,14 @@ type appPublicPlan struct {
 	Zone     string             `json:"zone"`
 	DNS      []tunnelPlanChange `json:"dns"`
 	// Before and After are the connector's public names around the change.
-	Before   []string `json:"connector_before"`
-	After    []string `json:"connector_after"`
-	SignIn   string   `json:"sign_in,omitempty"`
-	Warnings []string `json:"warnings"`
-	Digest   string   `json:"digest"`
+	Before []string `json:"connector_before"`
+	After  []string `json:"connector_after"`
+	SignIn string   `json:"sign_in,omitempty"`
+	// Coverage says whether Cloudflare has a certificate for the added
+	// name (S312); an uncovered name is also a warning.
+	Coverage []publicNameCoverage `json:"coverage"`
+	Warnings []string             `json:"warnings"`
+	Digest   string               `json:"digest"`
 
 	zoneID   string
 	replaces []router.DNSRecord
@@ -230,7 +240,7 @@ func (p *appPublic) buildPlan(ctx context.Context, name string, req appPublicReq
 	}
 	hostname := strings.ToLower(strings.TrimSpace(req.Hostname))
 	plan := appPublicPlan{App: f.manifest.Name, Tunnel: f.tunnelName, TunnelID: f.tunnelID,
-		DNS: []tunnelPlanChange{}, Warnings: []string{}}
+		DNS: []tunnelPlanChange{}, Warnings: []string{}, Coverage: []publicNameCoverage{}}
 	recorded, err := recordedIngress(p.st, f.tunnelID)
 	if err != nil {
 		return appPublicPlan{}, err
@@ -372,6 +382,12 @@ func (p *appPublic) planAdd(ctx context.Context, client *router.TunnelClient, to
 	}
 	plan.replaces = change.Replaces
 	plan.DNS = append(plan.DNS, change)
+	coverage, warnings, err := certificateCoverage(ctx, client, token, zone, []string{hostname})
+	if err != nil {
+		return err
+	}
+	plan.Coverage = coverage
+	plan.Warnings = append(plan.Warnings, warnings...)
 	plan.Warnings = append(plan.Warnings,
 		"Anyone on the internet can reach "+f.manifest.Title+" at https://"+hostname+". Homestead puts no Authentik check in front of it: the app's own sign-in is what protects it.")
 	if !f.signIn && f.manifest.SSO.OIDC != nil {

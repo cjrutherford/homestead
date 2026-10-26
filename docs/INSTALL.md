@@ -294,10 +294,14 @@ Outside Homestead, in Cloudflare:
    - Zone → Zone → Read
    - Zone → DNS → Edit
    - Account → Cloudflare Tunnel → Edit
+   - Zone → SSL and Certificates → Read (recommended)
 
    Under Account Resources, include your account; under Zone Resources,
    include your domain's zone. This one token covers
-   DNS and the tunnel. Homestead never asks for an account ID.
+   DNS and the tunnel. Homestead never asks for an account ID. The SSL and
+   Certificates read lets Homestead check that Cloudflare has a certificate
+   for each public name; without it, plans still go through, but warn that
+   only the free certificate's rule was checked.
 
 In the wizard's Domain step:
 
@@ -312,6 +316,16 @@ In the wizard's Domain step:
    record, and any existing record it would replace. Approve it, then follow
    the operation to the end. If the plan is refused, the reason shows under
    Review plan.
+
+   **Which names Cloudflare can serve.** Cloudflare's free certificate covers
+   your domain and names **one level** below it (`homestead.example.com`,
+   `auth.example.com`). A deeper name, such as `auth.homestead.example.com`
+   or `jellyfin.homestead.example.com`, needs **Advanced Certificate
+   Manager** on the zone (Cloudflare: SSL/TLS → Edge Certificates → order a
+   certificate for `*.homestead.example.com`, or turn on Total TLS). Deeper
+   names are allowed: the plan warns about each name no certificate covers,
+   and you may still approve. The Tunnel page and each app's public address
+   show a lamp: **certificate covers it** or **no certificate yet**.
 6. The Sign-in step now warns that sign-in must be **re-planned** for the
    public name. Go back to the **Sign-in** page and run Plan and Approve
    again with a new Authentik token, as in D3 step 4. This adds the public
@@ -342,6 +356,17 @@ does not have it, so name a new tunnel.
 
    CLI: `homesteadctl apps public plan jellyfin`, then
    `homesteadctl apps public apply jellyfin --digest <digest> --follow`.
+
+   The same certificate rule applies (D4 step 5): the review warns when no
+   certificate covers the name.
+3. **Nextcloud sets itself up.** Install creates its admin account (`admin`)
+   with a generated password; there is no setup page to finish. The password
+   is in the app's **Manage** panel under Secrets: choose **Reveal** and
+   confirm (it asks you to sign in again, and the reveal is audited). CLI:
+   `homesteadctl apps secrets reveal nextcloud admin_password`. Nextcloud
+   takes a few minutes to finish installing; turning on sign-in waits for
+   it. If it is still not ready, the page says so, links the app, and offers
+   **Apply sign-in again**.
 
 ### D6. Backups
 
@@ -432,6 +457,9 @@ with them. Whoever redeems the token first becomes the owner.
 | Tunnel plan refused: no zone contains the domain | The token cannot see the domain's zone, or the domain is not active on Cloudflare yet (D4 steps 1 and 2). |
 | Adopt refused: no connector config | Expected on a new or reset appliance; name a new tunnel. |
 | `https://homestead.<domain>` gives a Cloudflare error | The connector is down: `systemctl status homestead-tunnel`, `journalctl -u homestead-tunnel`. |
+| A public name fails with a TLS handshake error (`ERR_SSL_VERSION_OR_CIPHER_MISMATCH`, "SSL handshake failed", `curl: (35)`) | Cloudflare has no certificate for it: the name is more than one level below the domain. Its lamp says **no certificate yet**. Order an Advanced Certificate Manager certificate for the parent (`*.homestead.example.com`) or turn on Total TLS, or re-plan with a one-level name (`auth.example.com`). |
+| Plans warn the token cannot read certificates | Add Zone → SSL and Certificates → Read to the token (D4 step 2) and save it again. Until then only the one-level rule is checked. |
+| Nextcloud sign-in: "is not set up yet" | Nextcloud is still installing itself, or (for an install made before S312) its setup page was never finished. Open the app, finish or wait, then **Apply sign-in again**. |
 | Public dashboard: Authentik refuses the redirect | Sign-in was not re-planned after the tunnel (D4 step 6). |
 | Locked out of Authentik | Sign in with the local password on your network. `homesteadctl sso disable` turns Authentik sign-in off (`docs/architecture/DASHBOARD_SSO.md`). |
 | Lost the owner password | On the appliance: `sudo homesteadctl admin recover`. |

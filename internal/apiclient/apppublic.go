@@ -24,8 +24,9 @@ type AppPublicStatus struct {
 		Route  string   `json:"route"`
 		Public []string `json:"public"`
 	} `json:"routes"`
-	Proposed string `json:"proposed,omitempty"`
-	SignIn   bool   `json:"sign_in"`
+	Proposed string         `json:"proposed,omitempty"`
+	SignIn   bool           `json:"sign_in"`
+	Coverage []NameCoverage `json:"coverage"`
 }
 
 // AppPublicPlan is one public name added to or removed from an app.
@@ -41,6 +42,7 @@ type AppPublicPlan struct {
 	Before   []string           `json:"connector_before"`
 	After    []string           `json:"connector_after"`
 	SignIn   string             `json:"sign_in,omitempty"`
+	Coverage []NameCoverage     `json:"coverage"`
 	Warnings []string           `json:"warnings"`
 	Digest   string             `json:"digest"`
 }

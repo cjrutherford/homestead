@@ -82,11 +82,20 @@
         <div class="table-scroll">
           <table aria-label="Tunnel routes">
             <thead>
-              <tr><th scope="col">Hostname</th><th scope="col">Forwards to</th></tr>
+              <tr><th scope="col">Hostname</th><th scope="col">Forwards to</th><th scope="col">Certificate</th></tr>
             </thead>
             <tbody>
               @for (route of state.routes; track route.Hostname) {
-                <tr><th scope="row" class="mono">{{ route.Hostname }}</th><td class="mono">{{ route.Service }}</td></tr>
+                <tr>
+                  <th scope="row" class="mono">{{ route.Hostname }}</th><td class="mono">{{ route.Service }}</td>
+                  <td>
+                    @if (lamp(state.coverage, route.Hostname); as l) {
+                      <span class="badge" [class]="l.ok ? 'badge-ok' : 'badge-warn'" [title]="l.title">{{ l.label }}</span>
+                    } @else {
+                      <span class="hint">not checked</span>
+                    }
+                  </td>
+                </tr>
               }
             </tbody>
           </table>
@@ -141,7 +150,7 @@
         <div class="table-scroll">
           <table aria-label="Public hostnames">
             <thead>
-              <tr><th scope="col">Public name</th><th scope="col">For</th><th scope="col">Edge route</th></tr>
+              <tr><th scope="col">Public name</th><th scope="col">For</th><th scope="col">Edge route</th><th scope="col">Certificate</th></tr>
             </thead>
             <tbody>
               @for (route of review.ingress; track route.hostname) {
@@ -149,6 +158,11 @@
                   <th scope="row" class="mono">{{ route.hostname }}</th>
                   <td>{{ route.role }}</td>
                   <td class="mono">{{ route.route }}</td>
+                  <td>
+                    @if (lamp(review.coverage, route.hostname); as l) {
+                      <span class="badge" [class]="l.ok ? 'badge-ok' : 'badge-warn'" [title]="l.title">{{ l.label }}</span>
+                    }
+                  </td>
                 </tr>
               }
             </tbody>
@@ -230,7 +244,7 @@
           <label for="tunnel-auth">Authentik public name</label>
           <input id="tunnel-auth" #authInput name="auth-hostname" autocomplete="off" [disabled]="busy()"
             [placeholder]="authHint()" aria-describedby="tunnel-names-hint" />
-          <p class="hint" id="tunnel-names-hint">Leave a name empty to use the one shown.</p>
+          <p class="hint" id="tunnel-names-hint">Leave a name empty to use the one shown. {{ coverageRule }}</p>
         </div>
         <button type="submit" class="primary" [disabled]="busy()">Review plan</button>
         @if (reviewError(); as message) {

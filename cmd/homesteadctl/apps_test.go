@@ -16,12 +16,24 @@ func appsStub(t *testing.T) string {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/catalog/nextcloud/secrets":
+			_, _ = w.Write([]byte(`[{"name":"admin_password","store_name":"app_nextcloud_admin_password","present":true,"immutable":true,"services":["nextcloud"],"reveal":true,"note":"Password for the Nextcloud administrator account \"admin\"."}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/catalog":
 			_, _ = w.Write([]byte(`[{"name":"jellyfin","version":"12.2","title":"Jellyfin","blurb":"Media.","category":"media","icon":"mdi:plex"}]`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/plan"):
 			_, _ = w.Write([]byte(`{"Package":"jellyfin","Requirements":{"Passed":true},"Routes":[{"Host":"jellyfin.lan","Exposure":"local"}],"DNS":[],"TLS":[],"Firewall":[],"Directories":[],"Mounts":[{"Service":"jellyfin","Target":"/config","Source":"/mnt/app/jellyfin/config","Class":"application","Declared":true},{"Service":"cache","Target":"/data","Ephemeral":true,"Declared":true}],"BrowserAdvisories":[{"Capability":"webcodecs","Label":"Video codecs (WebCodecs)","Reason":"Hardware video decoding."}],"Notes":["owner volume ignored"],"Actions":["provision","up"]}`))
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/secrets"):
 			_, _ = w.Write([]byte(`[{"name":"db_password","store_name":"app_authentik_db_password","present":false,"immutable":false,"services":["postgresql","server"],"database_password":true}]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/catalog/nextcloud/secrets/admin_password/reveal":
+			var body struct {
+				Confirm bool `json:"confirm"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if !body.Confirm {
+				http.Error(w, "confirm", http.StatusBadRequest)
+				return
+			}
+			_, _ = w.Write([]byte(`{"name":"admin_password","value":"revealed-pw","note":"Password for the Nextcloud administrator account \"admin\"."}`))
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/secrets/"):
 			var body struct {
 				Value      string `json:"value"`
@@ -234,5 +246,21 @@ func TestAppsSecretRegisterBoundsAndForce(t *testing.T) {
 	code, _, _ = invoke(t, []string{"--server", ts.URL, "apps", "secrets", "register", "authentik", "db_password", "--value-file", ok, "--force", "--skip-verify"})
 	if code != exitOK || !strings.Contains(body, `"force":true`) {
 		t.Fatalf("exit=%d body=%q", code, body)
+	}
+}
+
+func TestAppsSecretsReveal(t *testing.T) {
+	url := appsStub(t)
+	code, stdout, _ := invoke(t, []string{"--server", url, "apps", "secrets", "nextcloud"})
+	if code != exitOK || !strings.Contains(stdout, "readable (apps secrets reveal nextcloud admin_password)") ||
+		!strings.Contains(stdout, "administrator account") || strings.Contains(stdout, "revealed-pw") {
+		t.Fatalf("list exit = %d stdout = %q", code, stdout)
+	}
+	code, stdout, stderr := invoke(t, []string{"--server", url, "apps", "secrets", "reveal", "nextcloud", "admin_password"})
+	if code != exitOK || stdout != "revealed-pw\n" || !strings.Contains(stderr, "audited") {
+		t.Fatalf("reveal exit = %d stdout = %q stderr = %q", code, stdout, stderr)
+	}
+	if code, _, _ := invoke(t, []string{"--server", url, "apps", "secrets", "reveal", "nextcloud"}); code != exitUsage {
+		t.Fatalf("usage exit = %d", code)
 	}
 }

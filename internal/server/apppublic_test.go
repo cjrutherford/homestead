@@ -17,15 +17,16 @@ import (
 )
 
 type appPublicView struct {
-	Action   string             `json:"action"`
-	Hostname string             `json:"hostname"`
-	Route    string             `json:"route"`
-	Zone     string             `json:"zone"`
-	DNS      []tunnelPlanChange `json:"dns"`
-	Before   []string           `json:"connector_before"`
-	After    []string           `json:"connector_after"`
-	Warnings []string           `json:"warnings"`
-	Digest   string             `json:"digest"`
+	Action   string               `json:"action"`
+	Hostname string               `json:"hostname"`
+	Route    string               `json:"route"`
+	Zone     string               `json:"zone"`
+	DNS      []tunnelPlanChange   `json:"dns"`
+	Before   []string             `json:"connector_before"`
+	After    []string             `json:"connector_after"`
+	Coverage []publicNameCoverage `json:"coverage"`
+	Warnings []string             `json:"warnings"`
+	Digest   string               `json:"digest"`
 }
 
 // appPublicRig is a recorded tunnel carrying Authentik, with Immich
@@ -266,5 +267,49 @@ func TestAppPublicAdoptedTunnelZone(t *testing.T) {
 	}
 	if name, _ := router.TunnelZoneName(st, "tid"); name != "example.com" {
 		t.Fatalf("zone name after empty update = %q", name)
+	}
+}
+
+// S312: a public app name two levels deep plans with a certificate
+// warning, never a refusal, and the status shows the lamp.
+func TestAppPublicCertificateCoverage(t *testing.T) {
+	srv, st, cf, _ := appPublicRig(t)
+	plan := planAppPublic(t, srv, map[string]any{"enabled": true})
+	if len(plan.Coverage) != 1 || !plan.Coverage[0].Covered || strings.Contains(strings.Join(plan.Warnings, " "), "no certificate") {
+		t.Fatalf("one level: %+v", plan)
+	}
+	plan = planAppPublic(t, srv, map[string]any{"enabled": true, "hostname": "photos.homestead.example.com"})
+	if plan.Hostname != "photos.homestead.example.com" || len(plan.DNS) != 1 || plan.Coverage[0].Covered ||
+		!strings.Contains(strings.Join(plan.Warnings, " "), router.UncoveredText("photos.homestead.example.com", "example.com")) {
+		t.Fatalf("two levels: %+v", plan)
+	}
+	cf.denyCerts = true
+	plan = planAppPublic(t, srv, map[string]any{"enabled": true, "hostname": "photos.homestead.example.com"})
+	if plan.Coverage[0].Checked || !strings.Contains(strings.Join(plan.Warnings, " "), router.CertificatePermission) {
+		t.Fatalf("unreadable: %+v", plan)
+	}
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/apply",
+		map[string]any{"enabled": true, "hostname": "photos.homestead.example.com", "digest": plan.Digest})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("apply: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if op := waitOperation(t, st, recorder.Body.Bytes()); op.Status != operation.StatusSucceeded {
+		t.Fatalf("apply op = %s: %s", op.Status, op.Error)
+	}
+	cf.denyCerts = false
+	recorder = serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/immich/public", nil)
+	var status struct {
+		Coverage []publicNameCoverage `json:"coverage"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if len(status.Coverage) != 1 || status.Coverage[0].Hostname != "photos.homestead.example.com" || status.Coverage[0].Covered || !status.Coverage[0].Checked {
+		t.Fatalf("status coverage = %+v", status.Coverage)
+	}
+	cf.certHosts = append(cf.certHosts, "*.homestead.example.com")
+	recorder = serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/immich/public", nil)
+	if !strings.Contains(recorder.Body.String(), `"covered":true,"by":"certificate pack"`) {
+		t.Fatalf("status = %s", recorder.Body.String())
 	}
 }

@@ -11,6 +11,7 @@ import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
 import { SessionService } from '../auth/session.service';
 import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
+import { coverageLamp, coverageRule } from '../core/coverage';
 
 /**
  * Tunnel remote access page (S247, planned in S294 per ADR-037):
@@ -42,6 +43,8 @@ export class Tunnel implements OnInit {
     () => this.status()?.proposed?.auth_hostname || `auth.${this.domain() || 'example.com'}`,
   );
   protected readonly plural = plural;
+  protected readonly coverageRule = coverageRule;
+  protected readonly lamp = coverageLamp;
   private readonly api = inject(ApiService);
   private readonly orders = inject(WorkOrders);
 

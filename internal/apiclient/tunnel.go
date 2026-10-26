@@ -21,6 +21,29 @@ type TunnelStatus struct {
 	Accounts  int                  `json:"accounts"`
 	Proposed  TunnelProposal       `json:"proposed"`
 	Discovery string               `json:"discovery_error,omitempty"`
+	Coverage  []NameCoverage       `json:"coverage"`
+}
+
+// NameCoverage is whether Cloudflare's edge has a certificate for a
+// public name (S312). Checked is false when the token could not read
+// the zone's certificates.
+type NameCoverage struct {
+	Hostname string `json:"hostname"`
+	Covered  bool   `json:"covered"`
+	By       string `json:"by,omitempty"`
+	Checked  bool   `json:"checked"`
+}
+
+// CoverageLamp is the plain lamp text for a name's coverage.
+func CoverageLamp(c NameCoverage) string {
+	lamp := "no certificate yet"
+	if c.Covered {
+		lamp = "certificate covers it"
+	}
+	if !c.Checked {
+		lamp += " (free certificate's rule only; the token cannot read certificates)"
+	}
+	return lamp
 }
 
 // TunnelProposal is the default plan: public names from the setup domain
@@ -91,6 +114,7 @@ type TunnelPlan struct {
 	Omitted           []TunnelOmission   `json:"omitted"`
 	SignIn            string             `json:"sign_in,omitempty"`
 	Adopt             *TunnelAdoption    `json:"adopt,omitempty"`
+	Coverage          []NameCoverage     `json:"coverage"`
 	Warnings          []string           `json:"warnings"`
 	Digest            string             `json:"digest"`
 }

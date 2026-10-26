@@ -384,3 +384,40 @@ func TestSecretStoreNamesNeverEnterSystemNamespace(t *testing.T) {
 		}
 	}
 }
+
+// Nextcloud installs itself on first start (S312): an admin user, the
+// generated admin password as a Compose secret file, and a database name.
+func TestNextcloudGeneratesAdminSecretAndEnvironment(t *testing.T) {
+	m, err := repoCatalog(t).Get("nextcloud")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := Generate(m, Generation{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"NEXTCLOUD_ADMIN_USER: admin", "SQLITE_DATABASE: nextcloud",
+		"NEXTCLOUD_ADMIN_PASSWORD_FILE: /run/secrets/nextcloud_admin_password",
+		"file: ./secrets/nextcloud_admin_password"} {
+		if !strings.Contains(files.ComposeYAML, want) {
+			t.Fatalf("nextcloud compose missing %q:\n%s", want, files.ComposeYAML)
+		}
+	}
+	if strings.Contains(files.ComposeYAML, "NEXTCLOUD_ADMIN_PASSWORD:") {
+		t.Fatal("the admin password is an environment value")
+	}
+	if len(m.Secrets) != 1 || m.Secrets[0].Name != "admin_password" || !m.Secrets[0].Reveal || !m.Secrets[0].Immutable || m.Secrets[0].Note == "" {
+		t.Fatalf("secrets = %+v", m.Secrets)
+	}
+	sec := newMemSecrets(t)
+	if err := EnsureSecrets(sec, m); err != nil {
+		t.Fatal(err)
+	}
+	if v := sec.values[SecretStoreName("nextcloud", "admin_password")]; len(v) < 32 {
+		t.Fatalf("generated admin password is %d characters", len(v))
+	}
+	secretFiles := SecretFilesFor(m)
+	if len(secretFiles) != 1 || secretFiles[0].UID == nil || *secretFiles[0].UID != 33 {
+		t.Fatalf("secret files = %+v", secretFiles)
+	}
+}

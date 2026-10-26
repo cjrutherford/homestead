@@ -45,7 +45,7 @@ class TestParityAcceptanceContract(unittest.TestCase):
         rows = [line for line in parity.splitlines()
                 if "/api/v1/catalog" in line
                 and "/drift" not in line and "/uninstall" not in line]
-        self.assertEqual(len(rows), 13)  # S266 added two secrets rows, S298 three sign-in rows, S290 three public rows
+        self.assertEqual(len(rows), 14)  # S266 added two secrets rows, S298 three sign-in rows, S290 three public rows, S312 the reveal row
         for row in rows:
             with self.subTest(row=row):
                 cells = [cell.strip() for cell in row.strip("|").split("|")]

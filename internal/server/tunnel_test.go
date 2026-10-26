@@ -122,15 +122,22 @@ type fakeCloudflare struct {
 	remote   map[string]bool
 	nextID   int
 	requests []string
+	// certHosts are the zone's active certificate pack hosts (the
+	// Universal SSL pack by default); totalTLS and denyCerts shape the
+	// coverage reads (S312).
+	certHosts []string
+	totalTLS  bool
+	denyCerts bool
 }
 
 func newFakeCloudflare(t *testing.T) *fakeCloudflare {
 	t.Helper()
 	cf := &fakeCloudflare{
-		zones:   map[string][2]string{"example.com": {"zone1", "abcd0000000000000000000000000001"}},
-		records: map[string]map[string]any{},
-		tunnels: map[string]string{},
-		remote:  map[string]bool{},
+		zones:     map[string][2]string{"example.com": {"zone1", "abcd0000000000000000000000000001"}},
+		records:   map[string]map[string]any{},
+		tunnels:   map[string]string{},
+		remote:    map[string]bool{},
+		certHosts: []string{"example.com", "*.example.com"},
 	}
 	server := httptest.NewServer(http.HandlerFunc(cf.serve))
 	t.Cleanup(server.Close)
@@ -161,7 +168,16 @@ func (cf *fakeCloudflare) serve(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "errors": []any{map[string]any{"code": 1003, "message": "not found"}}})
 	}
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) >= 3 && parts[0] == "zones" && (parts[2] == "ssl" || parts[2] == "acm") && cf.denyCerts {
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "errors": []any{map[string]any{"code": 10000, "message": "Authentication error"}}})
+		return
+	}
 	switch {
+	case len(parts) == 4 && parts[0] == "zones" && parts[2] == "ssl" && parts[3] == "certificate_packs":
+		ok([]any{map[string]any{"status": "active", "hosts": cf.certHosts}})
+	case len(parts) == 4 && parts[0] == "zones" && parts[2] == "acm" && parts[3] == "total_tls":
+		ok(map[string]any{"enabled": cf.totalTLS})
 	case r.Method == http.MethodGet && r.URL.Path == "/zones":
 		out := []any{}
 		if zone, found := cf.zones[r.URL.Query().Get("name")]; found {
@@ -396,9 +412,10 @@ type tunnelPlanView struct {
 		Replaces                    []struct{ Type, Content string }
 	} `json:"dns"`
 	Omitted  []struct{ Hostname, Role, Reason string }
-	SignIn   string   `json:"sign_in"`
-	Warnings []string `json:"warnings"`
-	Digest   string   `json:"digest"`
+	SignIn   string               `json:"sign_in"`
+	Coverage []publicNameCoverage `json:"coverage"`
+	Warnings []string             `json:"warnings"`
+	Digest   string               `json:"digest"`
 }
 
 func planTunnel(t *testing.T, srv *Server, body map[string]any) tunnelPlanView {
@@ -779,4 +796,88 @@ func TestTunnelAdopt(t *testing.T) {
 	}
 	// One tunnel at a time: a second adoption is refused.
 	refused("already manages a tunnel")
+}
+
+// S312: a name two levels below the zone is a supported choice. The plan
+// never refuses it or rewrites the owner's domain; it says whether
+// Cloudflare has a certificate for it, and warns when not.
+func TestTunnelPlanCertificateCoverage(t *testing.T) {
+	srv, st, secrets := tunnelTestServer(t)
+	cf := newFakeCloudflare(t)
+	fakeConnector(t)
+	fakeEdge(t)
+	if err := secrets.Set("dns_cloudflare_api_token", "sealed-token"); err != nil {
+		t.Fatal(err)
+	}
+	seedTunnelEdge(t, srv, st, true, true)
+	// The owner's domain sits below its zone: the defaults hang from it,
+	// two levels deep, exactly as chosen.
+	srv.setupDomain = func() string { return "homestead.example.com" }
+	plan := planTunnel(t, srv, map[string]any{"name": "homestead"})
+	if plan.DashboardHostname != "homestead.homestead.example.com" || plan.AuthHostname != "auth.homestead.example.com" || len(plan.DNS) != 2 {
+		t.Fatalf("defaults rewritten: %+v", plan)
+	}
+	warnings := strings.Join(plan.Warnings, " ")
+	if !strings.Contains(warnings, router.UncoveredText("auth.homestead.example.com", "example.com")) ||
+		!strings.Contains(warnings, "a certificate for *.homestead.example.com, or Total TLS") {
+		t.Fatalf("warnings = %v", plan.Warnings)
+	}
+	if len(plan.Coverage) != 2 || plan.Coverage[1].Hostname != "auth.homestead.example.com" || plan.Coverage[1].Covered || !plan.Coverage[1].Checked {
+		t.Fatalf("coverage = %+v", plan.Coverage)
+	}
+
+	// A one-level name is covered by the free certificate: no warning.
+	plan = planTunnel(t, srv, map[string]any{"name": "homestead", "dashboard_hostname": "dash.example.com", "auth_hostname": "Auth.Example.com"})
+	if strings.Contains(strings.Join(plan.Warnings, " "), "no certificate") || !plan.Coverage[0].Covered || plan.Coverage[0].By != "universal" {
+		t.Fatalf("one level: %+v", plan)
+	}
+
+	// Advanced Certificate Manager covers the deeper names.
+	cf.certHosts = append(cf.certHosts, "*.homestead.example.com")
+	plan = planTunnel(t, srv, map[string]any{"name": "homestead"})
+	if strings.Contains(strings.Join(plan.Warnings, " "), "no certificate") || !plan.Coverage[1].Covered || plan.Coverage[1].By != "certificate pack" {
+		t.Fatalf("pack: %+v", plan)
+	}
+	cf.certHosts = cf.certHosts[:2]
+	cf.totalTLS = true
+	plan = planTunnel(t, srv, map[string]any{"name": "homestead"})
+	if !plan.Coverage[1].Covered || plan.Coverage[1].By != "total tls" {
+		t.Fatalf("total tls: %+v", plan.Coverage)
+	}
+	cf.totalTLS = false
+
+	// A token that cannot read certificates still plans, says which
+	// permission is missing, and applies the free certificate's rule.
+	cf.denyCerts = true
+	plan = planTunnel(t, srv, map[string]any{"name": "homestead"})
+	warnings = strings.Join(plan.Warnings, " ")
+	if !strings.Contains(warnings, router.CertificatePermission) || !strings.Contains(warnings, "no certificate for auth.homestead.example.com") ||
+		plan.Coverage[1].Checked || plan.Coverage[1].Covered {
+		t.Fatalf("unreadable: %+v", plan)
+	}
+
+	// The owner may approve past the warning.
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/tunnel/setup", map[string]any{"name": "homestead", "digest": plan.Digest})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("setup: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if op := waitOperation(t, st, recorder.Body.Bytes()); op.Status != operation.StatusSucceeded {
+		t.Fatalf("setup op = %s: %s", op.Status, op.Error)
+	}
+
+	// The status shows the lamp for each served name.
+	cf.denyCerts = false
+	var status struct {
+		Coverage []publicNameCoverage `json:"coverage"`
+	}
+	if err := json.Unmarshal(serveRequest(t, srv, http.MethodGet, "/api/v1/tunnel/status", nil).Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	lamps := map[string]bool{}
+	for _, c := range status.Coverage {
+		lamps[c.Hostname] = c.Covered
+	}
+	if len(lamps) != 2 || lamps["auth.homestead.example.com"] || lamps["homestead.homestead.example.com"] {
+		t.Fatalf("status coverage = %+v", status.Coverage)
+	}
 }

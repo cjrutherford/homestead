@@ -95,6 +95,8 @@ type tunnelStatusResponse struct {
 	// domain and whether the dashboard would be published (ADR-037 §4).
 	Proposed  tunnelProposal `json:"proposed"`
 	Discovery string         `json:"discovery_error,omitempty"`
+	// Coverage is the edge certificate lamp for each served name (S312).
+	Coverage []publicNameCoverage `json:"coverage"`
 }
 
 type tunnelProposal struct {
@@ -233,6 +235,11 @@ func (s *Server) handleTunnelStatus(st *store.Store, secrets *secret.Store) http
 				response.Connector.Active = true
 			}
 		}
+		names := []string{}
+		for _, route := range routes {
+			names = append(names, route.Hostname)
+		}
+		response.Coverage = statusCoverage(r.Context(), secrets, names)
 		found := <-discovered
 		response.Preferred, response.Gateway, response.Interface = found.Preferred, found.Gateway, found.Interface
 		response.Protocols, response.Discovery = found.Protocols, found.Note
@@ -255,9 +262,12 @@ type tunnelPlan struct {
 	SignIn            string             `json:"sign_in,omitempty"`
 	// Adopt is set when the plan takes over an existing tunnel instead of
 	// creating one (S290, ADR-041 §3).
-	Adopt    *tunnelAdoption `json:"adopt,omitempty"`
-	Warnings []string        `json:"warnings"`
-	Digest   string          `json:"digest"`
+	Adopt *tunnelAdoption `json:"adopt,omitempty"`
+	// Coverage says whether Cloudflare has a certificate for each public
+	// name (S312); an uncovered name is also a warning.
+	Coverage []publicNameCoverage `json:"coverage"`
+	Warnings []string             `json:"warnings"`
+	Digest   string               `json:"digest"`
 
 	// Hidden: never serialized, but bound into the digest.
 	zoneID    string
@@ -494,6 +504,7 @@ func buildTunnelPlan(ctx context.Context, st *store.Store, secrets *secret.Store
 	plan := tunnelPlan{
 		Name: req.Name, DashboardHostname: dashName, AuthHostname: authName,
 		Ingress: []tunnelPlanRoute{}, DNS: []tunnelPlanChange{}, Omitted: []tunnelOmission{}, Warnings: []string{},
+		Coverage: []publicNameCoverage{},
 	}
 	switch {
 	case ak < 0:
@@ -585,6 +596,19 @@ func buildTunnelPlan(ctx context.Context, st *store.Store, secrets *secret.Store
 		}
 		plan.replaces = append(plan.replaces, change.Replaces...)
 		plan.DNS = append(plan.DNS, change)
+	}
+	names := make([]string, 0, len(plan.Ingress))
+	for _, in := range plan.Ingress {
+		names = append(names, in.Hostname)
+	}
+	if len(names) > 0 {
+		coverage, warnings, err := certificateCoverage(ctx, client, token,
+			router.Zone{ID: plan.zoneID, Name: plan.Zone, AccountID: plan.accountID}, names)
+		if err != nil {
+			return tunnelPlan{}, err
+		}
+		plan.Coverage = coverage
+		plan.Warnings = append(plan.Warnings, warnings...)
 	}
 	if req.Adopt != "" {
 		if err := planAdoption(ctx, client, token, &plan, req.Adopt, adopted); err != nil {

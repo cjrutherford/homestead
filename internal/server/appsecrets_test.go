@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"homestead/internal/audit"
+	"homestead/internal/auth"
 	"homestead/internal/catalog"
 	"homestead/internal/desired"
 	"homestead/internal/secret"
@@ -194,5 +196,74 @@ func TestSecretsListReportsWiringState(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	if len(out) == 0 || out[0].Wired || out[0].Installed {
 		t.Fatalf("out = %+v", out)
+	}
+}
+
+// S312: a secret the package marks reveal (Nextcloud's admin password)
+// can be read by the owner with a confirm, audited without the value;
+// every other secret stays presence-only.
+func TestAppSecretReveal(t *testing.T) {
+	srv, secrets, st := appSecretsServer(t)
+	reveal := func(path string, body any, session bool) *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(raw)))
+		if session {
+			req = req.WithContext(context.WithValue(req.Context(), operatorKey{},
+				operatorSession{Session: auth.VerifiedSession{Username: "owner"}}))
+		}
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+	path := "/api/v1/catalog/nextcloud/secrets/admin_password/reveal"
+	confirm := map[string]any{"confirm": true}
+	if rec := reveal(path, confirm, false); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("no session = %d", rec.Code)
+	}
+	if rec := reveal(path, map[string]any{}, true); rec.Code != http.StatusBadRequest {
+		t.Fatalf("no confirm = %d", rec.Code)
+	}
+	if rec := reveal(path, confirm, true); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "created when Nextcloud is installed") {
+		t.Fatalf("missing = %d %s", rec.Code, rec.Body.String())
+	}
+	if err := secrets.SetApp(catalog.SecretStoreName("nextcloud", "admin_password"), "generated-admin-pw"); err != nil {
+		t.Fatal(err)
+	}
+	if err := secrets.SetApp("app_authentik_db_password", "db-pw-not-shown"); err != nil {
+		t.Fatal(err)
+	}
+	if rec := reveal("/api/v1/catalog/authentik/secrets/db_password/reveal", confirm, true); rec.Code != http.StatusForbidden ||
+		strings.Contains(rec.Body.String(), "db-pw-not-shown") {
+		t.Fatalf("non-reveal secret = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := reveal("/api/v1/catalog/nextcloud/secrets/ghost/reveal", confirm, true); rec.Code != http.StatusNotFound {
+		t.Fatalf("undeclared = %d", rec.Code)
+	}
+	rec := reveal(path, confirm, true)
+	if rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("reveal = %d %v", rec.Code, rec.Header())
+	}
+	var out struct{ Name, Value, Note string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || out.Value != "generated-admin-pw" || !strings.Contains(out.Note, `"admin"`) {
+		t.Fatalf("out = %+v, %v", out, err)
+	}
+	// The list marks it revealable, still without the value.
+	list := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/nextcloud/secrets", nil)
+	if strings.Contains(list.Body.String(), "generated-admin-pw") || !strings.Contains(list.Body.String(), `"reveal":true`) {
+		t.Fatalf("list = %s", list.Body.String())
+	}
+	entries, err := audit.New(st).List(100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range entries {
+		if strings.Contains(e.Detail, "generated-admin-pw") {
+			t.Fatalf("audit leaks the value: %+v", e)
+		}
+		found = found || (e.Action == "app.secret.reveal" && e.Actor == "owner")
+	}
+	if !found {
+		t.Fatal("reveal not audited")
 	}
 }

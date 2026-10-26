@@ -87,6 +87,26 @@ describe('AppSignIn (S298)', () => {
     expect(el().querySelector('a[href="https://jellyfin.lan/sso/OID/start/authentik"]')).not.toBeNull();
   });
 
+  it('guides the owner when the app has not finished setting itself up, and offers to apply again (S312)', () => {
+    load(status({ token_kept: true }));
+    button('Set up sign-in with Authentik')!.click();
+    http.expectOne('/api/v1/catalog/jellyfin/sign-in/plan').flush(PLAN);
+    fixture.detectChanges();
+    button('Approve')!.click();
+    http.expectOne('/api/v1/catalog/jellyfin/sign-in/apply').flush({ id: 4 });
+    stream.next({
+      id: 4,
+      status: 'failed',
+      error: 'Jellyfin is not set up yet: it is still finishing its own installation. Wait a few minutes, open https://jellyfin.lan to check it is ready, then choose Apply sign-in again.',
+    } as OperationState);
+    http.expectOne('/api/v1/catalog/jellyfin/sign-in').flush(status({ token_kept: true }));
+    fixture.detectChanges();
+    expect(text()).toContain('still finishing its own installation');
+    expect(el().querySelector('a[href="https://jellyfin.lan"]')).not.toBeNull();
+    button('Apply sign-in again')!.click();
+    expect(http.expectOne('/api/v1/catalog/jellyfin/sign-in/plan').request.body).toEqual({ enabled: true });
+  });
+
   it('flags a re-plan, turns sign-in off without a token when one is kept, and reads a stale plan', () => {
     load(status({ enabled: true, replan: true, token_kept: true }));
     expect(text()).toContain('names changed since sign-in was set up');
