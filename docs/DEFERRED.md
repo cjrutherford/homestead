@@ -1481,8 +1481,24 @@ slice is scheduled yet.
   database export per package. Komga's main `database.sqlite` is exported
   consistently, but `tasks.sqlite` and `sessions.sqlite` are copied as
   live WAL files; both are Flyway-migrated and recreated if missing, so a
-  restore loses task history and sessions rather than library data. A
-  multi-export declaration is deferred.
+  restore loses task history and sessions rather than library data.
+  Calibre-Web Automated's `config/app.db` is exported, while `cwa.db` and
+  the Calibre library's `metadata.db` are copied live from their trees; a
+  restore may need Calibre's database restore to rebuild the library
+  catalog, and CWA's ingest settings fall back to defaults. A multi-export
+  declaration is deferred.
+- Calibre-Web Automated OIDC client actuation: S356 declares optional
+  OIDC, but the app takes the issuer discovery URL, client id, and secret
+  in its admin panel and stores them in `app.db`; the catalog has no
+  issuer input to build them from. The owner configures the client in
+  Authentik and in the app (redirect `/login/generic/authorized`), and
+  local accounts stay available. Actuating it like the `sso.oidc`
+  packages is deferred.
+- Calibre-Web Automated original-backup growth: `processed_books` under
+  `/config` keeps the original of each file CWA processes, so the
+  application backup grows with the library. Per-path exclusions inside a
+  catalog backup source are not modeled; owners who do not want the
+  originals can turn the setting off in the app or accept the extra size.
 - Gitea's SSH surface: S347 installs HTTPS-only (`DISABLE_SSH`), publishes
   no SSH port and deploys no keys. Enabling `ssh://` clones — an SSH port
   through the host or an overlay tunnel, authorized keys, and clone URLs

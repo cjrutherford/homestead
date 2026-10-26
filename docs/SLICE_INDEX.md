@@ -163,8 +163,13 @@ library: SQLite on application storage with a consistent export, the
 comics library as a bulk owner volume, and a JVM heap cap so the server
 stays inside its declared memory.
 
-Next scheduled: S356 `calibre-web-automated` (`docs/SLICE_PLAN.md`) adds
-the e-book library with automatic ingest and conversion.
+S356 `calibre-web-automated` (`docs/slices/S356-calibre-web-automated.md`)
+adds the self-filing e-book library: the library and the Nextcloud-shared
+ingest folder on bulk storage, the application databases on application
+storage with a consistent export, and optional in-app OIDC.
+
+Next scheduled: S357 `vikunja` (`docs/SLICE_PLAN.md`) adds the task
+manager whose CalDAV support points at Nextcloud.
 
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
 catalog track and an Everything-app track, with dependencies, the critical

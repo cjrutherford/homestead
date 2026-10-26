@@ -1,0 +1,100 @@
+# Calibre-Web Automated e-book library (S356): the fourth Wave 2 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# One community Docker Hub container on the LinuxServer base image. It
+# serves Calibre-Web and watches an ingest folder, converting and filing
+# new books into a Calibre library. Both the library and the ingest
+# folder are bulk declarations: the books are the data, and the ingest
+# folder is the path Nextcloud can share so books dropped there are
+# imported. /config holds the application databases and settings with a
+# consistent export; the image's own volumes are all declared, so no
+# owner mount is needed.
+name: calibre-web-automated
+version: 4.0.8
+title: Calibre-Web Automated
+blurb: E-books that file themselves.
+description: Calibre-Web Automated is a Calibre-Web front end with an
+  ingest and conversion service, so dropping a book into the ingest folder
+  converts it, gives it metadata and a cover, and files it into a Calibre
+  library that syncs to e-readers. The library and ingest folder live on
+  bulk storage, where Nextcloud can share the same directory. The
+  application databases, users, and settings live on application storage
+  with a consistent SQLite export.
+category: books
+icon: mdi:bookshelf
+services:
+- name: calibre-web-automated
+  image: docker.io/crocodilestick/calibre-web-automated:v4.0.8
+  exposes: web
+  # The image runs s6 as root, creates the `abc` service user from
+  # PUID/PGID, and drops to it for the web app and the ingest service.
+  # The declared directories get the same owner so files are writable
+  # from the first start; the image's init re-chowns them anyway.
+  environment:
+    PUID: "1000"
+    PGID: "1000"
+  # Image VOLUMEs: /config, /calibre-library, /cwa-book-ingest (verified
+  # from the Docker Hub image config for v4.0.8: root user, 8083/tcp,
+  # entrypoint /init, CALIBRE_CONFIG_DIR=/config/.config/calibre). The
+  # service sets CALIBRE_DBPATH=/config, so app.db and cwa.db live under
+  # /config. The library holds the Calibre database and the books; the
+  # ingest folder is transient (the service removes files after filing
+  # them) and exists on bulk so Nextcloud can share it.
+  data:
+  - target: /config
+    class: application
+    subpath: config
+    uid: 1000
+    gid: 1000
+  - target: /calibre-library
+    class: bulk
+    subpath: library
+    uid: 1000
+    gid: 1000
+  - target: /cwa-book-ingest
+    class: bulk
+    subpath: ingest
+    uid: 1000
+    gid: 1000
+requirements:
+  # Calibre's ebook-convert is the memory and CPU cost; the web app and
+  # ingest watcher are light.
+  memorymb: 2048
+  cpucount: 2
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 8589934592
+  - class: bulk
+    minbytes: 10737418240
+  # The app listens on 8083; routes proxy to it and no host port is
+  # published by default.
+  ports: [8083]
+exposure:
+  package: calibre-web-automated
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - The library, reading progress, and account settings leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- config
+- library
+# app.db holds the users, settings, and OIDC configuration; it is
+# exported consistently. cwa.db (ingest and conversion settings) and the
+# Calibre library's metadata.db are copied live from their trees, so a
+# restore may need Calibre's database restore for the library catalog.
+database:
+  service: calibre-web-automated
+  kind: sqlite
+  path: config/app.db
+sso:
+  class: optional
+  protocols: [oidc]
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in with Authentik once its OIDC client is configured in the app's admin panel (redirect /login/generic/authorized); accounts match by email, and local sign-in stays available.
+- kind: library
+  target: nextcloud
+  note: Mount the same bulk ingest directory into Calibre-Web Automated and Nextcloud external storage, so books dropped there are converted and filed.

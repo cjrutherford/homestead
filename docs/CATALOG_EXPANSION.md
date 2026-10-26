@@ -70,9 +70,9 @@ The catalog baseline at planning time contained 17 packages:
 
 Wave 1 has since shipped seven more (`vaultwarden`, `paperless-ngx`,
 `gitea`, `freshrss`, `linkding`, `mealie`, and `uptime-kuma` in S351),
-and Wave 2 opened with `audiobookshelf` (S353), `navidrome` (S354), and
-`komga` (S355), bringing the catalog to 27; the slice ledger is
-`docs/SLICE_INDEX.md`.
+and Wave 2 opened with `audiobookshelf` (S353), `navidrome` (S354),
+`komga` (S355), and `calibre-web-automated` (S356), bringing the catalog
+to 28; the slice ledger is `docs/SLICE_INDEX.md`.
 
 The platform already provides AdGuard Home, Caddy, Headscale/Tailscale,
 Dockge and the Homestead dashboard. Those are **not** catalog candidates:
@@ -289,7 +289,7 @@ not a requirement to install every app in it.
 | `audiobookshelf` | audio | Audiobooks and podcasts with mobile apps and progress sync. | OIDC | SQLite; bulk audiobook/podcast library | Jellyfin library conventions, Authentik, backups | One container. Shared bulk library is an owner volume. GHCR image; F3 matters. |
 | `navidrome` | music | Subsonic-compatible music streaming with a large client ecosystem. | None (reverse-proxy header only) | SQLite; bulk music library | Jellyfin (same library), backups | SSO exception: local/overlay. Avoid duplicate music libraries; document the shared mount. |
 | `komga` | books/comics | Comics, manga and PDF library with OPDS and a web reader. | OIDC | SQLite; bulk comics library | Jellyfin-adjacent library; Authentik, backups | One container. JVM memory is the main cost. |
-| `calibre-web-automated` | books | E-book library with automatic ingest, conversion and a web reader. | None (verify; reverse proxy only) | SQLite + Calibre metadata; bulk ebook library | Nextcloud/Calibre ingest folder, backups | Community image. No native OIDC found; local-only exception. |
+| `calibre-web-automated` | books | E-book library with automatic ingest, conversion and a web reader. | OIDC (in-app) | SQLite + Calibre metadata; bulk ebook library | Nextcloud/Calibre ingest folder, Authentik, backups | Community image. Enhanced in-app OIDC re-verified at slice time. |
 | `vikunja` | tasks | Shared to-do lists and projects, with CalDAV support. | OIDC | SQLite or Postgres | Nextcloud calendar (CalDAV), Authentik, backups | One container. |
 | `actual-budget` | finance | Local-first household budgeting with bank import and multi-device sync. | OIDC (verify at slice) | SQLite | Backup, edge | One container. If OIDC is not usable, local-only exception. |
 | `memos` | notes | Fast private notes with tags, search and a simple API. | OIDC | SQLite or Postgres | Authentik, backups | Complements Nextcloud rather than replacing it. If the owner wants Nextcloud Notes, that is a Nextcloud app decision, not a catalog package. |

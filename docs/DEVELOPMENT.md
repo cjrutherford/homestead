@@ -2282,6 +2282,19 @@ first visit creates the administrator, and optional OIDC is a Spring
 client registration the owner puts in `application.yml`. Komga declares
 no `library` integration: that gate requires a bulk declaration, and its
 library is deliberately an owner volume.
+The Calibre-Web Automated package (S356) in `catalog/` adds the e-book
+library with an ingest and conversion service. All three image volumes are
+declarations: `/config` holds `app.db` (users, settings, OIDC) and
+`cwa.db` (ingest settings) plus `processed_books` on application storage,
+with a `sqlite` export of `config/app.db`; `/calibre-library` holds the
+Calibre database and the books on bulk storage and is a backup path;
+`/cwa-book-ingest` is the transient drop folder on bulk, declared so
+Nextcloud can mount the same directory through the `library` integration.
+The image is built on the LinuxServer base and drops from root to `abc`,
+so `PUID`/`PGID` are 1000 and every declared directory carries the same
+owner. The first visit uses the app's documented default administrator,
+optional OIDC is configured in the admin panel with discovery metadata,
+and `cwa.db`/`metadata.db` are copied live under the one-export limit.
 The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine

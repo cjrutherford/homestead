@@ -75,7 +75,13 @@ var knownImageVolumes = map[string]imageVolumes{
 	// S355: verified from the Docker Hub image config for 1.29.1 on
 	// 2026-10-26: /config only, root user, 25600/tcp. The comics library
 	// is an owner volume and is not an image VOLUME.
-	"docker.io/gotson/komga:1.29.1":        {Volumes: []string{"/config"}},
+	"docker.io/gotson/komga:1.29.1": {Volumes: []string{"/config"}},
+	// S356: verified from the Docker Hub image config for v4.0.8 on
+	// 2026-10-26: /config, /calibre-library, /cwa-book-ingest, root user,
+	// 8083/tcp. All three are Homestead declarations.
+	"docker.io/crocodilestick/calibre-web-automated:v4.0.8": {
+		Volumes: []string{"/config", "/calibre-library", "/cwa-book-ingest"},
+	},
 	"ghcr.io/goauthentik/server:2026.8.3":  {},
 	"docker.io/library/postgres:16-alpine": {Volumes: []string{"/var/lib/postgresql/data"}},
 	// S345: Vaultwarden declares /data in its Dockerfile. Not yet inspected

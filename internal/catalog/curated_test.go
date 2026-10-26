@@ -31,7 +31,7 @@ func repoCatalog(t *testing.T) Catalog {
 // curatedPackages is the one place the expected shipped catalog is listed
 // (sorted, as Names returns it). Adding a package to catalog/ edits this
 // list and nothing else here: each craft slice appends its app.
-var curatedPackages = []string{"audiobookshelf", "authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "freshrss", "gitea", "gridcraft", "immich", "jellyfin", "komga", "lightcraft", "linkding", "mealie", "navidrome", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "uptime-kuma", "vaultwarden", "vectorcraft", "wordcraft"}
+var curatedPackages = []string{"audiobookshelf", "authentik", "cadcraft", "calibre-web-automated", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "freshrss", "gitea", "gridcraft", "immich", "jellyfin", "komga", "lightcraft", "linkding", "mealie", "navidrome", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "uptime-kuma", "vaultwarden", "vectorcraft", "wordcraft"}
 
 // assertCuratedNames fails when the shipped catalog and curatedPackages
 // differ, in either direction.
@@ -1069,6 +1069,104 @@ func TestCuratedKomga(t *testing.T) {
 		Arch: "amd64", MemoryMB: 2048, CPUCount: 2,
 		FreeSpace: map[storage.Class]uint64{
 			storage.ClassApplication: 8 << 30,
+			storage.ClassBulk:        20 << 30,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !report.Passed {
+		t.Fatalf("report = %+v", report)
+	}
+}
+
+// TestCuratedCalibreWebAutomated pins the fourth Wave 2 package (S356):
+// the pinned community image, the LinuxServer user the declared
+// directories match, the library and shared ingest folder on bulk, the
+// application databases with a consistent export, optional in-app OIDC,
+// and the identity and shared-library declarations.
+func TestCuratedCalibreWebAutomated(t *testing.T) {
+	catalog := repoCatalog(t)
+	manifest, err := catalog.Get("calibre-web-automated")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if manifest.Version != "4.0.8" {
+		t.Fatalf("version = %q", manifest.Version)
+	}
+	if len(manifest.Services) != 1 ||
+		manifest.Services[0].Image != "docker.io/crocodilestick/calibre-web-automated:v4.0.8" {
+		t.Fatalf("services = %+v", manifest.Services)
+	}
+	service := manifest.Services[0]
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 0 {
+		t.Fatalf("calibre-web-automated keeps the image entrypoint and has no secret; secrets = %+v", manifest.Secrets)
+	}
+	if len(service.Environment) != 2 ||
+		service.Environment["PUID"] != "1000" || service.Environment["PGID"] != "1000" {
+		t.Fatalf("environment = %v, want only PUID/PGID for the abc user", service.Environment)
+	}
+	wantData := []struct {
+		target  string
+		class   storage.Class
+		subpath string
+	}{
+		{"/config", storage.ClassApplication, "config"},
+		{"/calibre-library", storage.ClassBulk, "library"},
+		{"/cwa-book-ingest", storage.ClassBulk, "ingest"},
+	}
+	if len(service.Data) != len(wantData) {
+		t.Fatalf("data = %+v", service.Data)
+	}
+	for i, want := range wantData {
+		data := service.Data[i]
+		if data.Target != want.target || data.Class != want.class || data.Subpath != want.subpath {
+			t.Fatalf("data[%d] = %+v, want %+v", i, data, want)
+		}
+		if data.Ephemeral || data.Database {
+			t.Fatalf("data[%d] = %+v, want persistent file copies", i, data)
+		}
+		if uid, gid := data.Owner(); uid != 1000 || gid != 1000 {
+			t.Fatalf("data[%d] owner = %d:%d, want the PUID/PGID user", i, uid, gid)
+		}
+	}
+	if len(manifest.BackupPaths) != 2 ||
+		manifest.BackupPaths[0] != "config" || manifest.BackupPaths[1] != "library" {
+		t.Fatalf("backuppaths = %v, want the settings and the library", manifest.BackupPaths)
+	}
+	if manifest.Database == nil || manifest.Database.Kind != DatabaseSQLite ||
+		manifest.Database.Service != "calibre-web-automated" ||
+		manifest.Database.Path != "config/app.db" {
+		t.Fatalf("database = %+v, want the SQLite export", manifest.Database)
+	}
+	if len(manifest.Requirements.Ports) != 1 || manifest.Requirements.Ports[0] != 8083 {
+		t.Fatalf("ports = %v", manifest.Requirements.Ports)
+	}
+	if manifest.Requirements.MemoryMB != 2048 {
+		t.Fatalf("memory = %d MB, want room for Calibre conversions", manifest.Requirements.MemoryMB)
+	}
+	endpoint, ok := manifest.Exposure.Find("web")
+	if !ok || string(endpoint.Recommended) != "local" || !endpoint.AllowWider || len(endpoint.Warnings) == 0 {
+		t.Fatalf("endpoint = %+v", endpoint)
+	}
+	if manifest.SSO.Class != SSOOptional || len(manifest.SSO.Protocols) != 1 ||
+		manifest.SSO.Protocols[0] != identity.CapabilityOIDC || manifest.SSO.OIDC != nil {
+		t.Fatalf("sso = %+v, want optional in-app OIDC with no actuated client", manifest.SSO)
+	}
+	if len(manifest.Integrations) != 2 ||
+		manifest.Integrations[0].Kind != IntegrationIdentity ||
+		manifest.Integrations[0].Target != "authentik" ||
+		manifest.Integrations[1].Kind != IntegrationLibrary ||
+		manifest.Integrations[1].Target != "nextcloud" {
+		t.Fatalf("integrations = %+v", manifest.Integrations)
+	}
+	report, err := Evaluate(manifest, HostFacts{
+		Arch: "amd64", MemoryMB: 4096, CPUCount: 2,
+		FreeSpace: map[storage.Class]uint64{
+			storage.ClassApplication: 16 << 30,
 			storage.ClassBulk:        20 << 30,
 		},
 	})
