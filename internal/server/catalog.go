@@ -2,11 +2,15 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/netip"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"homestead/internal/audit"
 	"homestead/internal/catalog"
@@ -172,6 +176,14 @@ type installBody struct {
 	Networks       []catalog.NetworkAttachment `json:"networks"`
 	Zone           string                      `json:"zone"`
 	PublicIP       string                      `json:"public_ip"`
+	// PublicName is the public address the owner reviews with the
+	// install (S313). The install itself ignores it; the plan's sign-in
+	// preview counts it, because the wizard publishes before sign-in.
+	PublicName string `json:"public_name,omitempty"`
+	// Digest, on install, is the reviewed install plan's digest (S313):
+	// a plan that changed since answers 409. Empty installs as planned
+	// now, as before.
+	Digest string `json:"digest,omitempty"`
 }
 
 // installRequest assembles the planner input: manifest from the
@@ -314,6 +326,48 @@ func decodeBody(r *http.Request, body any) error {
 type installPlanView struct {
 	catalog.InstallPlan
 	SignIn *signInPreview `json:"sign_in,omitempty"`
+	Digest string         `json:"digest"`
+}
+
+// installDigest binds an install approval to what it changes (S313):
+// routes, generated files, DNS, certificates, firewall, folders, mounts
+// and actions. The requirement report and notes describe the host as it
+// is now (free space moves) and are left out. Each list is hashed in a
+// sorted order, so map order in the planner never changes it.
+func installDigest(plan catalog.InstallPlan) string {
+	h := sha256.New()
+	part := func(name string, v any) {
+		data, _ := json.Marshal(v)
+		fmt.Fprintf(h, "%s=%s\n", name, data)
+	}
+	sorted := func(name string, items []any) {
+		lines := make([]string, 0, len(items))
+		for _, item := range items {
+			data, _ := json.Marshal(item)
+			lines = append(lines, string(data))
+		}
+		sort.Strings(lines)
+		part(name, lines)
+	}
+	part("package", plan.Package)
+	part("compose", plan.Compose)
+	part("edge-network", plan.EdgeNetwork)
+	sorted("routes", anySlice(plan.Routes))
+	sorted("dns", anySlice(plan.DNS))
+	sorted("tls", anySlice(plan.TLS))
+	sorted("firewall", anySlice(plan.Firewall))
+	sorted("directories", anySlice(plan.Directories))
+	sorted("mounts", anySlice(plan.Mounts))
+	sorted("actions", anySlice(plan.Actions))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func anySlice[T any](in []T) []any {
+	out := make([]any, len(in))
+	for i := range in {
+		out[i] = in[i]
+	}
+	return out
 }
 
 func handleCatalogPlan(s *Server, st *store.Store, catalogDir string) http.HandlerFunc {
@@ -333,9 +387,9 @@ func handleCatalogPlan(s *Server, st *store.Store, catalogDir string) http.Handl
 			http.Error(w, err.Error(), status)
 			return
 		}
-		view := installPlanView{InstallPlan: plan}
+		view := installPlanView{InstallPlan: plan, Digest: installDigest(plan)}
 		if s.appSignIn != nil {
-			view.SignIn = s.appSignIn.preview(req.Manifest, plan)
+			view.SignIn = s.appSignIn.preview(req.Manifest, plan, strings.ToLower(strings.TrimSpace(body.PublicName)))
 		}
 		writeJSON(w, view)
 	}
@@ -356,6 +410,10 @@ func handleCatalogInstall(st *store.Store, catalogDir string, runner *operation.
 		plan, status, err := planChecked(st, req)
 		if err != nil {
 			http.Error(w, err.Error(), status)
+			return
+		}
+		if body.Digest != "" && body.Digest != installDigest(plan) {
+			http.Error(w, "the install plan changed since it was reviewed; review it again", http.StatusConflict)
 			return
 		}
 		def, err := catalog.InstallDefinition(plan, storage.NewRegistry(st), "", st, secrets)

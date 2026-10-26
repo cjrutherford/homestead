@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { EdgeRoute } from '../core/api.service';
+import { AppPublicRequest, EdgeRoute } from '../core/api.service';
 import { StepId } from './wizard-model';
 
 /** An extra folder the owner adds to an app in the Storage step. */
@@ -30,6 +30,11 @@ export interface InstallDraft {
   installOperation: number | null;
   /** The addresses the reviewed plan will give the app, added to the edge after install. */
   routes?: EdgeRoute[];
+  /** S313: the owner's choice on "Also publish at" (null keeps the default) and the name. */
+  publish?: boolean | null;
+  publicName?: string;
+  /** The public address plan approved with the install, applied by its digest once installed. */
+  publicApproved?: { request: AppPublicRequest; digest: string; hostname: string } | null;
 }
 
 /**

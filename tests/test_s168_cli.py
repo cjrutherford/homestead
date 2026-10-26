@@ -22,7 +22,7 @@ def read(rel: str) -> str:
 class TestCLIInstallContract(unittest.TestCase):
     def test_cli_shapes(self):
         src = read("cmd/homesteadctl/apps.go")
-        for symbol in ("homesteadctl apps <list|names|plan|install|configure|secrets|sign-in|public|uninstall>",
+        for symbol in ("homesteadctl apps <list|names|plan|install|reach|configure|secrets|sign-in|public|uninstall>",
                        "apps plan <package>", "apps install",
                        "apps configure", "apps uninstall",
                        "--follow", "--set",

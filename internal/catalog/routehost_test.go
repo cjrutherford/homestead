@@ -21,8 +21,15 @@ func TestNextcloudTrustsItsRouteHostname(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlanInstall: %v", err)
 	}
-	if !strings.Contains(plan.Compose.ComposeYAML, "NEXTCLOUD_TRUSTED_DOMAINS: nextcloud.lan") {
-		t.Fatalf("default host not trusted:\n%s", plan.Compose.ComposeYAML)
+	// S313: both local names are trusted, and links are https at the local address.
+	for _, want := range []string{"NEXTCLOUD_TRUSTED_DOMAINS: nextcloud.lan nextcloud.local", "OVERWRITEPROTOCOL: https",
+		"OVERWRITECLIURL: https://nextcloud.lan"} {
+		if !strings.Contains(plan.Compose.ComposeYAML, want) {
+			t.Fatalf("missing %q:\n%s", want, plan.Compose.ComposeYAML)
+		}
+	}
+	if strings.Contains(plan.Compose.ComposeYAML, "OVERWRITEHOST") {
+		t.Fatalf("overwritehost pins every link to one name:\n%s", plan.Compose.ComposeYAML)
 	}
 	req.Hostnames = map[string]string{"web": "files.example.home"}
 	plan, err = PlanInstall(req)
@@ -44,7 +51,8 @@ func TestRouteHostTokenWithoutRouteIsLeftOut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(files.ComposeYAML, "NEXTCLOUD_TRUSTED_DOMAINS") || strings.Contains(files.ComposeYAML, "{{") {
+	if strings.Contains(files.ComposeYAML, "NEXTCLOUD_TRUSTED_DOMAINS") || strings.Contains(files.ComposeYAML, "OVERWRITECLIURL") ||
+		strings.Contains(files.ComposeYAML, "{{") {
 		t.Fatalf("unrouted render carries the variable:\n%s", files.ComposeYAML)
 	}
 }

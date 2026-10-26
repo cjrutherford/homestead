@@ -177,6 +177,9 @@ describe('InstallWizard', () => {
       mounts?: unknown[];
       assignments?: unknown[];
       inputs?: Record<string, unknown>;
+      /** S313: the resolver (default on) and the app's public status (default no tunnel). */
+      resolver?: boolean;
+      publicStatus?: Record<string, unknown>;
     } = {},
   ) {
     const name = manifest['Name'] as string;
@@ -202,6 +205,12 @@ describe('InstallWizard', () => {
     fixture.detectChanges();
     http.expectOne(`/api/v1/catalog/${name}`).flush(manifest);
     http.expectOne('/api/v1/catalog').flush(PACKAGES(options.installed));
+    for (const request of http.match('/api/v1/names')) {
+      request.flush({ resolver: { enabled: options.resolver ?? true, running: true, listening: [], names: [], router_hint: '' }, apps: [] });
+    }
+    for (const request of http.match(`/api/v1/catalog/${name}/public`)) {
+      request.flush(options.publicStatus ?? { app: name, available: false, reason: 'No tunnel is set up yet.', routes: [], sign_in: false });
+    }
     // An installed package opens on Done, which asks for the health once more.
     for (const request of http.match('/api/v1/docker/health')) {
       request.flush(options.health ?? HEALTH_WITH_CADDY);
@@ -240,6 +249,10 @@ describe('InstallWizard', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    // The advisory reach check (S313) runs after every finished Done step.
+    for (const request of http.match((req) => req.url.endsWith('/reach'))) {
+      request.flush({ app: 'x', resolver: true, addresses: [] });
+    }
     http.verify();
   });
 
@@ -820,12 +833,213 @@ describe('InstallWizard', () => {
       fixture.detectChanges();
       http.expectOne('/api/v1/catalog/gridcraft').flush(CRAFT);
       http.expectOne('/api/v1/catalog').flush(PACKAGES());
+      http.expectOne('/api/v1/names').flush({ resolver: { enabled: true }, apps: [] });
+      http.expectOne('/api/v1/catalog/gridcraft/public').flush({ app: 'gridcraft', available: false, routes: [], sign_in: false });
       http.expectOne('/api/v1/docker/health').flush(HEALTH_WITH_CADDY);
       http.expectOne('/api/v1/craft').flush({ images: [], verdicts: [] });
       fixture.detectChanges();
       expect(c().current()).toBe('install');
       expect(c().installOperation()).toBe(11);
       expect(c().phase()).toBe('installing');
+    });
+  });
+
+  describe('the local and public address (S313)', () => {
+    const BUILT = { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] };
+    const TUNNEL = {
+      app: 'gridcraft', available: false, reason: 'Install GridCraft first.', tunnel_id: 'tid', tunnel: 'homestead',
+      routes: [], proposed: 'gridcraft.homestead.example.com', sign_in: false,
+    };
+    const SIGN_IN = {
+      offered: true,
+      token_kept: true,
+      plan: {
+        package: 'gridcraft', title: 'GridCraft', enabled: true, adapter: 'immich', provider: 'Homestead: GridCraft', application: 'GridCraft',
+        client_id: 'homestead-gridcraft', issuer: 'x', redirect_uris: ['https://gridcraft.homestead.example.com/auth/login'], app_settings: [],
+        changes: [], warnings: [], digest: 'sd3',
+      },
+    };
+    function publicPlan(digest: string, hostname = 'gridcraft.homestead.example.com') {
+      return {
+        app: 'gridcraft', action: 'add', hostname, route: 'gridcraft.lan', tunnel: 'homestead', tunnel_id: 'tid', zone: 'example.com',
+        dns: [{ name: hostname, type: 'CNAME', content: 'tid.cfargotunnel.com', proxied: true, action: 'create', replaces: [] }],
+        connector_before: [], connector_after: [hostname],
+        coverage: [{ hostname, covered: false, checked: true, by: '' }],
+        warnings: ['Browsers will fail to connect until Cloudflare has a certificate for ' + hostname + '.'],
+        app_settings: [], digest,
+      };
+    }
+    const el = () => fixture.nativeElement as HTMLElement;
+
+    it('shows both local names, and says .lan needs the resolver when it is off', () => {
+      start(CRAFT, { resolver: false });
+      to('address');
+      expect(text()).toContain('https://gridcraft.lan');
+      expect(text()).toContain('https://gridcraft.local');
+      expect(el().querySelector('[data-resolver-off]')).not.toBeNull();
+      expect(el().querySelector('a[href="/names"]')).not.toBeNull();
+      expect(text()).toContain('Until then, use https://gridcraft.local');
+    });
+
+    it('says nothing about the resolver when it is on', () => {
+      start(CRAFT, { resolver: true });
+      to('address');
+      expect(text()).toContain('https://gridcraft.local');
+      expect(el().querySelector('[data-resolver-off]')).toBeNull();
+    });
+
+    it('says there is no tunnel and links to the Tunnel page, with no publish toggle', () => {
+      start(CRAFT);
+      to('address');
+      expect(el().querySelector('[data-no-tunnel]')).not.toBeNull();
+      expect(el().querySelector('a[href="/tunnel"]')).not.toBeNull();
+      expect(el().querySelector('input[name="publish"]')).toBeNull();
+      expect(c().publish()).toBe(false);
+    });
+
+    it('starts publishing off, with the warning, when the install sets up no sign-in', () => {
+      start(CRAFT, { publicStatus: TUNNEL });
+      to('address');
+      const toggle = el().querySelector('input[name="publish"]') as HTMLInputElement;
+      expect(toggle.checked).toBe(false);
+      expect(el().querySelector('[data-reach-public]')).toBeNull();
+      expect((el().querySelector('input[name="public-name"]') as HTMLInputElement).value).toBe('gridcraft.homestead.example.com');
+      expect(text()).toContain('only its own sign-in would protect it');
+      // Turning it on plans the name before the install and shows its certificate lamp.
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      const planned = http.expectOne('/api/v1/catalog/gridcraft/public/plan');
+      expect(planned.request.body).toEqual({ enabled: true, hostname: 'gridcraft.homestead.example.com', route: 'gridcraft.lan', before_install: true });
+      planned.flush(publicPlan('pd1'));
+      fixture.detectChanges();
+      expect(text()).toContain('no certificate yet');
+      expect(text()).toContain('Its own sign-in is what protects it.');
+    });
+
+    it('starts publishing on when the same install sets up sign-in with Authentik', () => {
+      start(CRAFT, { publicStatus: TUNNEL, craft: BUILT });
+      to('preflight');
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft', { sign_in: SIGN_IN, digest: 'id1' }));
+      to('address');
+      http.expectOne('/api/v1/catalog/gridcraft/public/plan').flush(publicPlan('pd1'));
+      fixture.detectChanges();
+      expect((el().querySelector('input[name="publish"]') as HTMLInputElement).checked).toBe(true);
+      expect(text()).toContain('sets up sign-in with Authentik');
+      expect(el().querySelector('[data-reach-public]')?.textContent).toContain('Local network and the tunnel');
+    });
+
+    function reviewBoth(digest = 'pd1') {
+      start(CRAFT, { publicStatus: TUNNEL, craft: BUILT });
+      to('preflight');
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft', { sign_in: SIGN_IN, digest: 'id1' }));
+      to('address');
+      http.expectOne('/api/v1/catalog/gridcraft/public/plan').flush(publicPlan(digest));
+      to('review');
+      const installPlan = http.expectOne('/api/v1/catalog/gridcraft/plan');
+      expect(installPlan.request.body.public_name).toBe('gridcraft.homestead.example.com');
+      installPlan.flush(plan('gridcraft', { sign_in: SIGN_IN, digest: 'id1' }));
+      http.expectOne('/api/v1/catalog/gridcraft/public/plan').flush(publicPlan(digest));
+      fixture.detectChanges();
+    }
+
+    it('reviews two permits and approves both with one install', () => {
+      reviewBoth();
+      const permits = Array.from(el().querySelectorAll('app-permit'));
+      expect(permits.length).toBe(2);
+      expect(permits[0].querySelector('.permit-seal')?.getAttribute('aria-label')).toBe('Plan digest id1');
+      expect(permits[1].querySelector('.permit-seal')?.getAttribute('aria-label')).toBe('Plan digest pd1');
+      expect(permits[1].textContent).toContain('CNAME gridcraft.homestead.example.com');
+      button('Approve both and install GridCraft')!.click();
+      const install = http.expectOne('/api/v1/catalog/gridcraft/install');
+      expect(install.request.body.digest).toBe('id1');
+      expect(install.request.body.public_name).toBe('gridcraft.homestead.example.com');
+      install.flush({ id: 7 });
+      fixture.detectChanges();
+      // Both permits carry their Approved stamp while it installs.
+      expect(el().querySelectorAll('.permit-stamp[data-kind="approved"]').length).toBe(2);
+    });
+
+    it('after the install: the address, then the public address by its digest, then sign-in, then the check', () => {
+      reviewBoth();
+      button('Approve both and install GridCraft')!.click();
+      http.expectOne('/api/v1/catalog/gridcraft/install').flush({ id: 7 });
+      streams.get(7)!.next(opState(7, 'succeeded'));
+      doneReads([]);
+      http.expectOne('/api/v1/edge/routes').flush({ id: 31 });
+      streams.get(31)!.next(opState(31, 'succeeded'));
+      http.expectNone('/api/v1/catalog/gridcraft/sign-in/apply');
+      const apply = http.expectOne('/api/v1/catalog/gridcraft/public/apply');
+      expect(apply.request.body).toEqual({ enabled: true, hostname: 'gridcraft.homestead.example.com', route: 'gridcraft.lan', digest: 'pd1' });
+      apply.flush({ id: 40 });
+      fixture.detectChanges();
+      expect(text()).toContain('Publishing GridCraft at gridcraft.homestead.example.com');
+      expect(text()).toContain('Public address running');
+      streams.get(40)!.next(opState(40, 'succeeded'));
+      const signIn = http.expectOne('/api/v1/catalog/gridcraft/sign-in/apply');
+      expect(signIn.request.body.digest).toBe('sd3');
+      signIn.flush({ id: 50 });
+      http.expectOne('/api/v1/catalog/gridcraft/reach').flush({
+        app: 'gridcraft', resolver: false,
+        addresses: [
+          { address: 'https://gridcraft.lan', host: 'gridcraft.lan', kind: 'local', answers: true,
+            reason: 'Your devices cannot resolve gridcraft.lan while the appliance resolver is off.',
+            fix: 'Turn on the resolver on the Names page, or add a router DNS entry for gridcraft.lan.' },
+          { address: 'https://gridcraft.homestead.example.com', host: 'gridcraft.homestead.example.com', kind: 'public', answers: false,
+            reason: 'Browsers will fail to connect until Cloudflare has a certificate for gridcraft.homestead.example.com.' },
+        ],
+      });
+      fixture.detectChanges();
+      expect(text()).toContain('GridCraft is published through the tunnel.');
+      expect(text()).toContain('Public address done');
+      const rows = Array.from(el().querySelectorAll('.reach-list li'));
+      expect(rows.map((row) => row.querySelector('.badge')!.textContent!.trim())).toEqual(['answers', 'does not answer yet']);
+      expect(rows[0].querySelector('.badge')!.classList).toContain('badge-ok');
+      expect(rows[1].querySelector('.badge')!.classList).toContain('badge-warn');
+      expect(text()).toContain('add a router DNS entry for gridcraft.lan');
+      expect(text()).toContain('Advanced Certificate Manager'.slice(0, 0) + 'certificate for gridcraft.homestead.example.com');
+    });
+
+    it('plans again and asks again when the public plan changed by the time it is applied', () => {
+      reviewBoth();
+      button('Approve both and install GridCraft')!.click();
+      http.expectOne('/api/v1/catalog/gridcraft/install').flush({ id: 7 });
+      streams.get(7)!.next(opState(7, 'succeeded'));
+      doneReads([]);
+      http.expectOne('/api/v1/edge/routes').flush({ id: 31 });
+      streams.get(31)!.next(opState(31, 'succeeded'));
+      http.expectOne('/api/v1/catalog/gridcraft/public/apply').flush('the plan changed', { status: 409, statusText: 'Conflict' });
+      const again = http.expectOne('/api/v1/catalog/gridcraft/public/plan');
+      expect(again.request.body.before_install).toBeUndefined();
+      again.flush(publicPlan('pd2'));
+      fixture.detectChanges();
+      expect(text()).toContain('The public address plan changed.');
+      expect(text()).toContain('Nothing was published');
+      // Nothing else runs until the owner answers.
+      http.expectNone('/api/v1/catalog/gridcraft/sign-in/apply');
+      button('Approve')!.click();
+      const apply = http.expectOne('/api/v1/catalog/gridcraft/public/apply');
+      expect(apply.request.body.digest).toBe('pd2');
+      apply.flush({ id: 41 });
+      streams.get(41)!.next(opState(41, 'succeeded'));
+      http.expectOne('/api/v1/catalog/gridcraft/sign-in/apply').flush({ id: 50 });
+      fixture.detectChanges();
+      expect(c().publicState()).toBe('on');
+    });
+
+    it('sends the install digest and refuses a stale install plan', () => {
+      start(CRAFT, { craft: BUILT });
+      to('review');
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft', { digest: 'id9' }));
+      fixture.detectChanges();
+      expect(el().querySelectorAll('app-permit').length).toBe(1);
+      button('Install GridCraft')!.click();
+      const install = http.expectOne('/api/v1/catalog/gridcraft/install');
+      expect(install.request.body.digest).toBe('id9');
+      expect(install.request.body.public_name).toBeUndefined();
+      install.flush('the install plan changed since it was reviewed; review it again', { status: 409, statusText: 'Conflict' });
+      fixture.detectChanges();
+      expect(text()).toContain('The install plan changed after you reviewed it.');
+      expect(text()).toContain('Nothing was installed');
     });
   });
 

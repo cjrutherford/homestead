@@ -217,8 +217,10 @@ type signInPreview struct {
 
 // preview builds the install plan's sign-in offer from the routes the
 // wizard adds (the plan's non-public routes, merged by host over the
-// current table, as the wizard merges them).
-func (a *appSignIn) preview(manifest catalog.Manifest, install catalog.InstallPlan) *signInPreview {
+// current table, as the wizard merges them). A public name reviewed with
+// the install (S313) is on the first of them, as the wizard publishes it
+// before sign-in.
+func (a *appSignIn) preview(manifest catalog.Manifest, install catalog.InstallPlan, public string) *signInPreview {
 	if manifest.SSO.OIDC == nil {
 		return nil
 	}
@@ -241,6 +243,10 @@ func (a *appSignIn) preview(manifest catalog.Manifest, install catalog.InstallPl
 	}
 	for _, r := range install.Routes {
 		if _, ok := planned[r.Host]; ok {
+			if public != "" {
+				r.Tunnel = append(append([]docker.Hostname(nil), r.Tunnel...), docker.Hostname(public))
+				public = ""
+			}
 			table = append(table, r)
 		}
 	}

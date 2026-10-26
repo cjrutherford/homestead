@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -68,5 +69,153 @@ func TestAppsPublicStatusPlanApply(t *testing.T) {
 		if code, _, _ := invoke(t, append([]string{"--server", url}, args...)); code != exitUsage {
 			t.Fatalf("%v: exit = %d, want usage", args, code)
 		}
+	}
+}
+
+// installPublicStub is an appliance for `apps install --public` (S313):
+// it records each call so the test can check the order and the bodies.
+func installPublicStub(t *testing.T, calls *[]string, bodies map[string]map[string]any, publicDigest string, publicStatus int) string {
+	t.Helper()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		*calls = append(*calls, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodPost {
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			bodies[r.URL.Path] = body
+		}
+		switch r.URL.Path {
+		case "/api/v1/catalog/nextcloud/plan":
+			_, _ = w.Write([]byte(`{"Package":"nextcloud","Requirements":{"Passed":true},"Routes":[{"Host":"nextcloud.lan","Target":{"Host":"nextcloud","Port":80},"Exposure":"local","TLS":"internal"}],"digest":"i1d"}`))
+		case "/api/v1/catalog/nextcloud/public/plan":
+			_, _ = w.Write([]byte(`{"app":"nextcloud","action":"add","hostname":"nextcloud.homestead.example.com","route":"nextcloud.lan","tunnel":"homestead","zone":"example.com",
+				"dns":[{"name":"nextcloud.homestead.example.com","type":"CNAME","content":"tid.cfargotunnel.com","proxied":true,"action":"create","replaces":[]}],
+				"connector_after":["nextcloud.homestead.example.com"],"app_settings":["Nextcloud trusts nextcloud.homestead.example.com"],
+				"warnings":["No certificate covers nextcloud.homestead.example.com"],"digest":"` + publicDigest + `"}`))
+		case "/api/v1/catalog/nextcloud/install":
+			_, _ = w.Write([]byte(`{"id":7}`))
+		case "/api/v1/edge/routes":
+			if r.Method == http.MethodPost {
+				_, _ = w.Write([]byte(`{"id":7}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"routes":[]}`))
+		case "/api/v1/catalog/nextcloud/public/apply":
+			if publicStatus != http.StatusOK {
+				http.Error(w, "the plan changed", publicStatus)
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":7}`))
+		case "/api/v1/catalog/nextcloud/reach":
+			_, _ = w.Write([]byte(`{"app":"nextcloud","resolver":false,"addresses":[
+				{"address":"https://nextcloud.lan","host":"nextcloud.lan","kind":"local","answers":true,"reason":"Your devices cannot resolve nextcloud.lan while the appliance resolver is off.","fix":"Turn on the resolver on the Names page, or add a router DNS entry for nextcloud.lan."},
+				{"address":"https://nextcloud.homestead.example.com","host":"nextcloud.homestead.example.com","kind":"public","answers":false,"reason":"No certificate covers it."}]}`))
+		case "/api/v1/operations/7/events":
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "event: state\ndata: {\"id\":7,\"type\":\"test.op\",\"status\":\"succeeded\",\"steps\":[]}\n\n")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(ts.Close)
+	return ts.URL
+}
+
+func TestAppsInstallPublicPlansBoth(t *testing.T) {
+	var calls []string
+	bodies := map[string]map[string]any{}
+	url := installPublicStub(t, &calls, bodies, "p2d", http.StatusOK)
+	file := writeInput(t, `{"domain":"lan"}`)
+	code, stdout, stderr := invoke(t, []string{"--server", url, "apps", "install", "nextcloud", "-f", file, "--public"})
+	for _, want := range []string{"install digest: i1d", "public: https://nextcloud.homestead.example.com -> nextcloud.lan",
+		"app setting: Nextcloud trusts", "warning: No certificate covers", "public digest: p2d",
+		"--public nextcloud.homestead.example.com --approve-public p2d"} {
+		if code != exitOK || !strings.Contains(stdout, want) {
+			t.Fatalf("missing %q: %d %s %s", want, code, stdout, stderr)
+		}
+	}
+	for _, call := range calls {
+		if strings.HasSuffix(call, "/install") || strings.HasSuffix(call, "/apply") || strings.HasPrefix(call, "POST /api/v1/edge") {
+			t.Fatalf("planning changed something: %v", calls)
+		}
+	}
+	plan := bodies["/api/v1/catalog/nextcloud/public/plan"]
+	if plan["before_install"] != true || plan["route"] != "nextcloud.lan" {
+		t.Fatalf("public plan body = %v", plan)
+	}
+	if bodies["/api/v1/catalog/nextcloud/plan"]["public_name"] != "nextcloud.homestead.example.com" {
+		t.Fatalf("install plan body = %v", bodies["/api/v1/catalog/nextcloud/plan"])
+	}
+}
+
+func TestAppsInstallPublicApproved(t *testing.T) {
+	var calls []string
+	bodies := map[string]map[string]any{}
+	url := installPublicStub(t, &calls, bodies, "p2d", http.StatusOK)
+	file := writeInput(t, `{"domain":"lan"}`)
+	code, stdout, stderr := invoke(t, []string{"--server", url, "apps", "install", "nextcloud", "-f", file,
+		"--public", "Nextcloud.homestead.example.com", "--approve-public", "p2d"})
+	if code != exitOK {
+		t.Fatalf("exit %d: %s %s", code, stdout, stderr)
+	}
+	var changes []string
+	for _, call := range calls {
+		if strings.HasPrefix(call, "POST") && !strings.HasSuffix(call, "/plan") {
+			changes = append(changes, call)
+		}
+	}
+	if strings.Join(changes, "|") != "POST /api/v1/catalog/nextcloud/install|POST /api/v1/edge/routes|POST /api/v1/catalog/nextcloud/public/apply" {
+		t.Fatalf("changes = %v", changes)
+	}
+	if bodies["/api/v1/catalog/nextcloud/install"]["digest"] != "i1d" {
+		t.Fatalf("install body = %v", bodies["/api/v1/catalog/nextcloud/install"])
+	}
+	apply := bodies["/api/v1/catalog/nextcloud/public/apply"]
+	if apply["digest"] != "p2d" || apply["before_install"] != nil || apply["hostname"] != "nextcloud.homestead.example.com" {
+		t.Fatalf("apply body = %v", apply)
+	}
+	for _, want := range []string{"https://nextcloud.lan: answers", "fix: Turn on the resolver",
+		"https://nextcloud.homestead.example.com: does not answer yet"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("missing %q: %s", want, stdout)
+		}
+	}
+}
+
+func TestAppsInstallPublicDigestBinding(t *testing.T) {
+	var calls []string
+	bodies := map[string]map[string]any{}
+	url := installPublicStub(t, &calls, bodies, "p3d", http.StatusOK)
+	file := writeInput(t, `{"domain":"lan"}`)
+	code, _, stderr := invoke(t, []string{"--server", url, "apps", "install", "nextcloud", "-f", file, "--public", "--approve-public", "p2d"})
+	if code != exitError || !strings.Contains(stderr, "review it again") {
+		t.Fatalf("stale approve: %d %s", code, stderr)
+	}
+	for _, call := range calls {
+		if strings.HasPrefix(call, "POST") && !strings.HasSuffix(call, "/plan") {
+			t.Fatalf("a stale approval changed something: %v", calls)
+		}
+	}
+	// The plan changing between install and apply: installed, not published.
+	calls = nil
+	url = installPublicStub(t, &calls, bodies, "p2d", http.StatusConflict)
+	code, _, stderr = invoke(t, []string{"--server", url, "apps", "install", "nextcloud", "-f", file, "--public", "--approve-public", "p2d"})
+	if code == exitOK || !strings.Contains(stderr, "nothing was published") {
+		t.Fatalf("conflict: %d %s", code, stderr)
+	}
+	if code, _, _ := invoke(t, []string{"--server", url, "apps", "install", "nextcloud", "-f", file, "--approve-public", "p2d"}); code != exitUsage {
+		t.Fatalf("--approve-public without --public: %d", code)
+	}
+}
+
+func TestAppsReach(t *testing.T) {
+	var calls []string
+	url := installPublicStub(t, &calls, map[string]map[string]any{}, "p2d", http.StatusOK)
+	code, stdout, _ := invoke(t, []string{"--server", url, "apps", "reach", "nextcloud"})
+	if code != exitOK || !strings.Contains(stdout, "https://nextcloud.lan: answers") || !strings.Contains(stdout, "does not answer yet") {
+		t.Fatalf("reach: %d %s", code, stdout)
+	}
+	if code, _, _ := invoke(t, []string{"--server", url, "apps", "reach"}); code != exitUsage {
+		t.Fatalf("usage: %d", code)
 	}
 }

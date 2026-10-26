@@ -237,6 +237,8 @@ export interface InstallPlan {
   EdgeNetwork?: boolean;
   /** S298: sign-in with Authentik offered for this install, absent when the app has no adapter. */
   sign_in?: SignInPreview;
+  /** S313: binds the install to this plan; install with it answers 409 when the plan changed. */
+  digest?: string;
 }
 
 /** The install plan's sign-in offer (S298). */
@@ -1139,6 +1141,8 @@ export interface AppPublicPlan {
   sign_in?: string;
   coverage?: NameCoverage[];
   warnings: string[];
+  /** The app's own host settings the plan changes (S313), such as Nextcloud's trusted domains. */
+  app_settings?: string[];
   digest: string;
 }
 
@@ -1146,6 +1150,25 @@ export interface AppPublicRequest {
   enabled: boolean;
   hostname?: string;
   route?: string;
+  /** S313: plan a name for the route the install creates; applied without it once installed. */
+  before_install?: boolean;
+}
+
+/** One address of an app and whether it answers from the appliance (S313). */
+export interface ReachAddress {
+  address: string;
+  host: string;
+  kind: 'local' | 'public';
+  answers: boolean;
+  reason?: string;
+  fix?: string;
+}
+
+/** GET /api/v1/catalog/{name}/reach: advisory, nothing changes. */
+export interface AppReach {
+  app: string;
+  resolver: boolean;
+  addresses: ReachAddress[];
 }
 
 /** One app route's local names (S295): `<app>.lan` and its `<app>.local`. */
@@ -1648,6 +1671,11 @@ export class ApiService {
 
   appPublicApply(name: string, request: AppPublicRequest, digest: string): Observable<OperationStarted> {
     return this.http.post<OperationStarted>(`/api/v1/catalog/${encodeURIComponent(name)}/public/apply`, { ...request, digest });
+  }
+
+  /** Checks from the appliance whether each address of the app answers (S313). */
+  appReach(name: string): Observable<AppReach> {
+    return this.http.get<AppReach>(`/api/v1/catalog/${encodeURIComponent(name)}/reach`);
   }
 
   appSignIn(name: string): Observable<AppSignInStatus> {

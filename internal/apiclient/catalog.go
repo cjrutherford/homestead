@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"homestead/internal/docker"
 )
 
 // CatalogPackage is one browsable package summary.
@@ -58,11 +60,10 @@ type InstallPlanReport struct {
 	Requirements struct {
 		Passed bool `json:"Passed"`
 	} `json:"Requirements"`
-	Routes []struct {
-		Host     string `json:"Host"`
-		Exposure string `json:"Exposure"`
-	} `json:"Routes"`
-	DNS []struct {
+	// Routes are the planned edge routes, whole, so the CLI can add them
+	// to the edge table after the install (S313).
+	Routes []docker.Route `json:"Routes"`
+	DNS    []struct {
 		Name  string `json:"Name"`
 		Type  string `json:"Type"`
 		Value string `json:"Value"`
@@ -92,6 +93,9 @@ type InstallPlanReport struct {
 	BrowserAdvisories []BrowserAdvisory `json:"BrowserAdvisories"`
 	Notes             []string          `json:"Notes"`
 	Actions           []string          `json:"Actions"`
+	// Digest binds the install to this plan (S313); install with it in
+	// the body answers 409 when the plan changed.
+	Digest string `json:"digest"`
 }
 
 // OperationStarted carries the started operation id.

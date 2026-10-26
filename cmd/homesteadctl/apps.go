@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
 	"homestead/internal/apiclient"
+	"homestead/internal/docker"
 	"homestead/internal/operation"
 )
 
@@ -17,7 +19,7 @@ import (
 // endpoints.
 func runApps(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|names|plan|install|configure|secrets|sign-in|public|uninstall>")
+		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|names|plan|install|reach|configure|secrets|sign-in|public|uninstall>")
 		return exitUsage
 	}
 	switch args[0] {
@@ -29,6 +31,8 @@ func runApps(ctx context.Context, client *apiclient.Client, args []string, stdou
 		return runAppsPlan(ctx, client, args[1:], stdout, stderr)
 	case "install":
 		return runAppsInstall(ctx, client, args[1:], stdout, stderr)
+	case "reach":
+		return runAppsReach(ctx, client, args[1:], stdout, stderr)
 	case "configure":
 		return runAppsConfigure(ctx, client, args[1:], stdout, stderr)
 	case "secrets":
@@ -154,10 +158,19 @@ func formatMount(service, target, source, class string, database, ephemeral, rea
 	return fmt.Sprintf("%s %s <- %s (%s)", service, target, source, strings.Join(flags, ", "))
 }
 
+const appsInstallUsage = `usage: homesteadctl apps install <package> -f FILE [--follow]
+       homesteadctl apps install <package> -f FILE --public [NAME] [--approve-public DIGEST]
+  --public [NAME]          also publish the app at NAME through the tunnel
+                           (default <package>.<domain>); without
+                           --approve-public this plans the install and the
+                           public address, prints both digests and changes nothing
+  --approve-public DIGEST  install, add the app's address, then publish it by
+                           the reviewed digest (follows each operation)`
+
 func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
-	var file string
+	var file, publicName, approvePublic string
 	var positional []string
-	follow := false
+	follow, public := false, false
 	for i := 0; i < len(args); i++ {
 		switch {
 		case args[i] == "-f" && i+1 < len(args):
@@ -165,6 +178,16 @@ func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string
 			i++
 		case args[i] == "--follow":
 			follow = true
+		case args[i] == "--public":
+			public = true
+			// The name is optional; a following word with a dot is it.
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") && strings.Contains(args[i+1], ".") {
+				publicName = strings.ToLower(args[i+1])
+				i++
+			}
+		case args[i] == "--approve-public" && i+1 < len(args):
+			approvePublic = args[i+1]
+			i++
 		case strings.HasPrefix(args[i], "-"):
 			fmt.Fprintf(stderr, "unknown flag %q\n", args[i])
 			return exitUsage
@@ -172,38 +195,190 @@ func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string
 			positional = append(positional, args[i])
 		}
 	}
-	if file == "" || len(positional) != 1 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps install <package> -f FILE [--follow]")
+	if file == "" || len(positional) != 1 || (approvePublic != "" && !public) {
+		fmt.Fprintln(stderr, appsInstallUsage)
 		return exitUsage
 	}
 	body, err := loadSettingsFile(file)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	id, err := client.InstallPackage(ctx, positional[0], body)
+	pkg := positional[0]
+	if public {
+		return installWithPublic(ctx, client, pkg, file, body, publicName, approvePublic, stdout, stderr)
+	}
+	id, err := client.InstallPackage(ctx, pkg, body)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	fmt.Fprintf(stdout, "operation: %d\n", id)
 	if !follow {
+		fmt.Fprintf(stdout, "operation: %d\n", id)
 		return exitOK
 	}
-	var last operation.Operation
-	if err := client.StreamOperation(ctx, id, func(op operation.Operation) {
-		last = op
-		fmt.Fprintf(stdout, "%s: %s\n", op.Status, stepSummary(op))
-	}); err != nil {
-		if ctx.Err() != nil {
-			return exitOK
-		}
+	return followOperation(ctx, client, id, stdout, stderr)
+}
+
+// installWithPublic is `apps install --public` (S313). Without approval
+// it plans the install and the public address and prints both digests;
+// nothing changes. With --approve-public it re-plans, refuses a changed
+// public plan, installs by the install digest, adds the app's address to
+// the edge, publishes by the approved digest, and checks each address.
+func installWithPublic(ctx context.Context, client *apiclient.Client, pkg, file string, body map[string]any,
+	name, approve string, stdout, stderr io.Writer) int {
+	body["public_name"] = name
+	install, err := client.PlanInstall(ctx, pkg, body)
+	if err != nil {
 		return fail(stderr, err)
 	}
-	switch last.Status {
-	case operation.StatusSucceeded:
+	route := firstLocalRoute(install.Routes)
+	if route == nil {
+		return fail(stderr, fmt.Errorf("%s has no address to publish", pkg))
+	}
+	enabled := true
+	req := apiclient.AppPublicRequest{Enabled: &enabled, Hostname: name, Route: string(route.Host), BeforeInstall: true}
+	plan, err := client.AppPublicPlan(ctx, pkg, req)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if name == "" && plan.Hostname != "" {
+		// The sign-in preview and the install digest follow the proposed name.
+		body["public_name"] = plan.Hostname
+		if install, err = client.PlanInstall(ctx, pkg, body); err != nil {
+			return fail(stderr, err)
+		}
+	}
+	if approve == "" {
+		fmt.Fprintf(stdout, "install: %s at %s\n", install.Package, strings.Join(routeHosts(install.Routes), ", "))
+		fmt.Fprintf(stdout, "install digest: %s\n", install.Digest)
+		printPublicBeforeInstall(stdout, plan)
+		fmt.Fprintf(stdout, "approve: homesteadctl apps install %s -f %s --public %s --approve-public %s\n", pkg, file, plan.Hostname, plan.Digest)
 		return exitOK
-	default:
+	}
+	if approve != plan.Digest {
+		fmt.Fprintln(stderr, "the public address plan changed since it was reviewed; run without --approve-public and review it again")
 		return exitError
 	}
+	delete(body, "public_name")
+	body["public_name"] = plan.Hostname
+	body["digest"] = install.Digest
+	id, err := client.InstallPackage(ctx, pkg, body)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintln(stdout, "install:")
+	if code := followOperation(ctx, client, id, stdout, stderr); code != exitOK {
+		return code
+	}
+	table, err := client.EdgeRoutes(ctx)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if !hasRoute(table, route.Host) {
+		id, err := client.EdgeReconcile(ctx, append(table, *route))
+		if err != nil {
+			return fail(stderr, fmt.Errorf("the app is installed but its address was not added: %w", err))
+		}
+		fmt.Fprintf(stdout, "address %s:\n", route.Host)
+		if code := followOperation(ctx, client, id, stdout, stderr); code != exitOK {
+			return code
+		}
+	}
+	req.BeforeInstall = false
+	req.Digest = approve
+	id, err = client.AppPublicApply(ctx, pkg, req)
+	if err != nil {
+		var status *apiclient.StatusError
+		if errors.As(err, &status) && status.Status == 409 {
+			return fail(stderr, fmt.Errorf("the app is installed; the public address plan changed, so nothing was published: review it with homesteadctl apps public plan %s --hostname %s: %w", pkg, plan.Hostname, err))
+		}
+		return fail(stderr, fmt.Errorf("the app is installed but not published: %w", err))
+	}
+	fmt.Fprintf(stdout, "public %s:\n", plan.Hostname)
+	code := followOperation(ctx, client, id, stdout, stderr)
+	printReach(ctx, client, pkg, stdout)
+	return code
+}
+
+// firstLocalRoute is the planned route the public name serves: the first
+// that is not itself public.
+func firstLocalRoute(routes []docker.Route) *docker.Route {
+	for i := range routes {
+		if routes[i].Exposure != docker.ExposurePublic {
+			return &routes[i]
+		}
+	}
+	return nil
+}
+
+func routeHosts(routes []docker.Route) []string {
+	var out []string
+	for _, r := range routes {
+		out = append(out, string(r.Host))
+	}
+	return out
+}
+
+func hasRoute(table []docker.Route, host docker.Hostname) bool {
+	for _, r := range table {
+		if r.Host == host {
+			return true
+		}
+	}
+	return false
+}
+
+func printPublicBeforeInstall(w io.Writer, p apiclient.AppPublicPlan) {
+	fmt.Fprintf(w, "public: https://%s -> %s (tunnel %s)\n", p.Hostname, p.Route, p.Tunnel)
+	for _, c := range p.DNS {
+		fmt.Fprintf(w, "dns %s: %s %s -> %s\n", c.Action, c.Type, c.Name, c.Content)
+		for _, old := range c.Replaces {
+			fmt.Fprintf(w, "  deletes %s %s -> %s\n", old.Type, old.Name, old.Content)
+		}
+	}
+	fmt.Fprintf(w, "connector after: %s\n", strings.Join(p.After, ", "))
+	for _, s := range p.AppSettings {
+		fmt.Fprintf(w, "app setting: %s\n", s)
+	}
+	for _, s := range p.Warnings {
+		fmt.Fprintf(w, "warning: %s\n", s)
+	}
+	if p.SignIn != "" {
+		fmt.Fprintf(w, "sign-in: %s\n", p.SignIn)
+	}
+	fmt.Fprintf(w, "public digest: %s\n", p.Digest)
+}
+
+// printReach prints whether each address answers. It is advisory: an
+// address that does not answer yet never fails the command.
+func printReach(ctx context.Context, client *apiclient.Client, pkg string, w io.Writer) {
+	reach, err := client.AppReach(ctx, pkg)
+	if err != nil {
+		fmt.Fprintf(w, "reach: could not check (%v)\n", err)
+		return
+	}
+	for _, a := range reach.Addresses {
+		if a.Answers {
+			fmt.Fprintf(w, "%s: answers\n", a.Address)
+		} else {
+			fmt.Fprintf(w, "%s: does not answer yet\n", a.Address)
+		}
+		if a.Reason != "" {
+			fmt.Fprintf(w, "  %s\n", a.Reason)
+		}
+		if a.Fix != "" {
+			fmt.Fprintf(w, "  fix: %s\n", a.Fix)
+		}
+	}
+}
+
+// runAppsReach is `apps reach <package>` (S313).
+func runAppsReach(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 || strings.HasPrefix(args[0], "-") {
+		fmt.Fprintln(stderr, "usage: homesteadctl apps reach <package>")
+		return exitUsage
+	}
+	printReach(ctx, client, args[0], stdout)
+	return exitOK
 }
 
 // Flag parsing scans manually throughout this group: the standard

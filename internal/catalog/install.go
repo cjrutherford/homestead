@@ -314,10 +314,15 @@ func planCompose(plan *InstallPlan, req InstallRequest) error {
 		}
 	}
 	routeHosts := map[string]string{}
+	routeNames := map[string][]string{}
 	for _, route := range plan.Routes {
 		routeHosts[route.Target.Host] = string(route.Host)
+		for _, n := range route.Names() {
+			routeNames[route.Target.Host] = append(routeNames[route.Target.Host], string(n))
+		}
 	}
-	files, err := Generate(req.Manifest, Generation{Networks: networks, EdgeServices: edgeServices, Services: specs, RouteHosts: routeHosts})
+	files, err := Generate(req.Manifest, Generation{Networks: networks, EdgeServices: edgeServices, Services: specs,
+		RouteHosts: routeHosts, RouteNames: routeNames})
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"homestead/internal/catalog"
 	"homestead/internal/docker"
 	"homestead/internal/operation"
 	"homestead/internal/router"
@@ -312,4 +314,140 @@ func TestAppPublicCertificateCoverage(t *testing.T) {
 	if !strings.Contains(recorder.Body.String(), `"covered":true,"by":"certificate pack"`) {
 		t.Fatalf("status = %s", recorder.Body.String())
 	}
+}
+
+// installJellyfin marks Jellyfin installed and gives it its edge route,
+// as the install and the wizard's route step do.
+func installJellyfin(t *testing.T, st *store.Store) {
+	t.Helper()
+	if _, err := st.DB().Exec(`INSERT INTO generated_fingerprints (stack, path, sha256, updated_at) VALUES ('jellyfin', 'compose.yaml', 'x', ?)`,
+		time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	set, _ := loadEdgeRoutes(st)
+	set.Routes = append(set.Routes, docker.Route{Host: "jellyfin.lan", Target: docker.Target{Host: "jellyfin", Port: 8096},
+		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal})
+	if err := saveEdgeRoutes(st, set); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// S313: the install wizard and `apps install --public` plan the public
+// name before the install, on the route the install creates. The plan is
+// never applied as such: once the app is installed the same request,
+// without before_install, must produce the same digest.
+func TestAppPublicPlannedBeforeInstall(t *testing.T) {
+	srv, st, _, _ := appPublicRig(t)
+	var trusted [][]string
+	old := trustAppHosts
+	trustAppHosts = func(_ context.Context, m catalog.Manifest, address string, add, remove []string) error {
+		trusted = append(trusted, append([]string{m.Name, address}, add...))
+		return nil
+	}
+	t.Cleanup(func() { trustAppHosts = old })
+	for _, c := range []struct {
+		body map[string]any
+		code int
+		want string
+	}{
+		{map[string]any{"enabled": true, "before_install": true}, http.StatusBadRequest, "names the route"},
+		{map[string]any{"enabled": false, "before_install": true}, http.StatusBadRequest, "only adding"},
+		{map[string]any{"enabled": true, "before_install": true, "route": "authentik.lan"}, http.StatusUnprocessableEntity, "already a name"},
+	} {
+		recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/jellyfin/public/plan", c.body)
+		if recorder.Code != c.code || !strings.Contains(recorder.Body.String(), c.want) {
+			t.Errorf("%v: %d %s", c.body, recorder.Code, recorder.Body.String())
+		}
+	}
+	// The install wizard is offered the proposed name before the install.
+	if recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/jellyfin/public", nil); !strings.Contains(recorder.Body.String(), `"proposed":"jellyfin.`) ||
+		!strings.Contains(recorder.Body.String(), `"available":false`) {
+		t.Fatalf("status before install: %s", recorder.Body.String())
+	}
+	body := map[string]any{"enabled": true, "before_install": true, "route": "jellyfin.lan", "hostname": "jellyfin.homestead.example.com"}
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/jellyfin/public/plan", body)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("plan: %d %s", recorder.Code, recorder.Body.String())
+	}
+	var before appPublicView
+	if err := json.Unmarshal(recorder.Body.Bytes(), &before); err != nil {
+		t.Fatal(err)
+	}
+	if before.Route != "jellyfin.lan" || before.Hostname != "jellyfin.homestead.example.com" || before.Digest == "" {
+		t.Fatalf("plan = %+v", before)
+	}
+	// The name is two levels below the zone: a warning, never a refusal.
+	if !strings.Contains(strings.Join(before.Warnings, " "), "no certificate for jellyfin.homestead.example.com") {
+		t.Fatalf("warnings = %v", before.Warnings)
+	}
+	// Not installed yet: the plan cannot be applied, with or without the flag.
+	applyBody := map[string]any{"enabled": true, "route": "jellyfin.lan", "hostname": "jellyfin.homestead.example.com", "digest": before.Digest}
+	if rec := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/jellyfin/public/apply", applyBody); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("apply before install: %d %s", rec.Code, rec.Body.String())
+	}
+	early := map[string]any{"enabled": true, "before_install": true, "route": "jellyfin.lan", "digest": before.Digest}
+	if rec := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/jellyfin/public/apply", early); rec.Code != http.StatusBadRequest {
+		t.Fatalf("apply with before_install: %d %s", rec.Code, rec.Body.String())
+	}
+
+	installJellyfin(t, st)
+	after := planAppPublicFor(t, srv, "jellyfin", map[string]any{"enabled": true, "route": "jellyfin.lan", "hostname": "jellyfin.homestead.example.com"})
+	if after.Digest != before.Digest {
+		t.Fatalf("digest moved across the install:\nbefore %+v\nafter  %+v", before, after)
+	}
+	// Installed: before_install changes nothing.
+	again := planAppPublicFor(t, srv, "jellyfin", body)
+	if again.Digest != before.Digest {
+		t.Fatalf("before_install on an installed app: %+v", again)
+	}
+	rec := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/jellyfin/public/apply", applyBody)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply: %d %s", rec.Code, rec.Body.String())
+	}
+	if op := waitOperation(t, st, rec.Body.Bytes()); op.Status != operation.StatusSucceeded {
+		t.Fatalf("op = %s: %s", op.Status, op.Error)
+	}
+	if fmt.Sprint(trusted) != "[[jellyfin https://jellyfin.lan jellyfin.lan jellyfin.local jellyfin.homestead.example.com]]" {
+		t.Fatalf("trusted = %v", trusted)
+	}
+	// A plan approved before something else changed is asked again.
+	stale := map[string]any{"enabled": true, "route": "jellyfin.lan", "hostname": "jellyfin2.example.com", "digest": before.Digest}
+	if rec := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/jellyfin/public/apply", stale); rec.Code != http.StatusConflict {
+		t.Fatalf("stale: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// S313: Nextcloud's plan says what its trusted domains get; a failure in
+// the app-hosts step stops the add before anything is published.
+func TestAppPublicAppHostsStepFirst(t *testing.T) {
+	srv, st, cf, _ := appPublicRig(t)
+	old := trustAppHosts
+	trustAppHosts = func(context.Context, catalog.Manifest, string, []string, []string) error {
+		return fmt.Errorf("nextcloud is not set up")
+	}
+	t.Cleanup(func() { trustAppHosts = old })
+	plan := planAppPublic(t, srv, map[string]any{"enabled": true})
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/apply", map[string]any{"enabled": true, "digest": plan.Digest})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("apply: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if op := waitOperation(t, st, recorder.Body.Bytes()); op.Status == operation.StatusSucceeded || !strings.Contains(op.Error, "not set up") {
+		t.Fatalf("op = %s: %s", op.Status, op.Error)
+	}
+	if len(cf.records) != 0 {
+		t.Fatalf("published anyway: %v", cf.records)
+	}
+}
+
+func planAppPublicFor(t *testing.T, srv *Server, app string, body map[string]any) appPublicView {
+	t.Helper()
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/"+app+"/public/plan", body)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("plan: %d %s", recorder.Code, recorder.Body.String())
+	}
+	var plan appPublicView
+	if err := json.Unmarshal(recorder.Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	return plan
 }

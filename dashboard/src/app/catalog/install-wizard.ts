@@ -18,8 +18,13 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { forkJoin, Observable, of } from 'rxjs';
 import { catchError, map, switchMap } from 'rxjs/operators';
+import { SessionService } from '../auth/session.service';
 import {
   ApiService,
+  AppPublicPlan,
+  AppPublicRequest,
+  AppPublicStatus,
+  AppReach,
   CatalogManifest,
   DockerHealth,
   EdgeRoute,
@@ -34,7 +39,9 @@ import { StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
-import { Permit } from '../ui/permit';
+import { coverageLamp, coverageRule } from '../core/coverage';
+import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
+import { publicError } from './app-public';
 import { appRoutes, mergeRoutes, routeFromManifest } from './app-routes';
 import { signInError } from './app-sign-in';
 import { BrowserAdvisories } from './browser-advisories';
@@ -52,8 +59,10 @@ import {
   endpointsOf,
   explainPlanError,
   isCraft,
+  localAlias,
   memory,
   planSummary,
+  publishByDefault,
   size,
   ssoClass,
   stepsFor,
@@ -144,6 +153,7 @@ export class InstallWizard implements OnInit {
   private readonly toast = inject(ToastService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
+  private readonly sessions = inject(SessionService);
 
   private readonly heading = viewChild<ElementRef<HTMLElement>>('stepHeading');
 
@@ -188,6 +198,45 @@ export class InstallWizard implements OnInit {
   protected readonly signInOpState = signal<OperationState | null>(null);
   protected readonly signInProblem = signal<string | null>(null);
   protected readonly signInPreview = computed(() => this.plan()?.sign_in ?? null);
+
+  // S313: the public address, planned and approved with the install and
+  // applied by its digest once the app is installed.
+  protected readonly resolverOn = signal<boolean | null>(null);
+  protected readonly publicStatus = signal<AppPublicStatus | null>(null);
+  /** The owner's choice on "Also publish at"; null keeps the default. */
+  protected readonly publishChoice = signal<boolean | null>(null);
+  protected readonly publicName = signal('');
+  protected readonly publicPlan = signal<AppPublicPlan | null>(null);
+  protected readonly publicPlanning = signal(false);
+  protected readonly publicPlanProblem = signal<string | null>(null);
+  protected readonly publicApproved = signal<{ request: AppPublicRequest; digest: string; hostname: string } | null>(null);
+  protected readonly installStamp = signal<ApprovedPlan | null>(null);
+  protected readonly publicStamp = signal<ApprovedPlan | null>(null);
+  protected readonly publicState = signal<'idle' | 'applying' | 'on' | 'failed' | 'replan' | 'skipped'>('idle');
+  protected readonly publicOperation = signal<number | null>(null);
+  protected readonly publicOpState = signal<OperationState | null>(null);
+  protected readonly publicProblem = signal<string | null>(null);
+  protected readonly reachStatus = signal<AppReach | null>(null);
+  protected readonly reachChecking = signal(false);
+  protected readonly reachFailed = signal(false);
+  protected readonly tunnelReady = computed(() => !!this.publicStatus()?.tunnel_id);
+  /** A tunnel exists and this app may be published with its install (not Authentik, whose name is the tunnel's). */
+  protected readonly publishable = computed(
+    () => this.tunnelReady() && this.name() !== 'authentik' && this.endpoints().length > 0 && !this.installed(),
+  );
+  protected readonly publish = computed(
+    () => this.publishable() && (this.publishChoice() ?? publishByDefault(this.signInPreview()?.offered === true)),
+  );
+  protected readonly publicHost = computed(
+    () => this.publicName().trim().toLowerCase() || this.publicStatus()?.proposed || '',
+  );
+  /** The S312 certificate lamp for the name, once a plan for that exact name came back. */
+  protected readonly publicLamp = computed(() => {
+    const plan = this.publicPlan();
+    return plan && plan.hostname === this.publicHost() ? coverageLamp(plan.coverage, plan.hostname) : undefined;
+  });
+  protected readonly coverageRule = coverageRule;
+  protected readonly localAlias = localAlias;
   protected readonly routeOperation = signal<number | null>(null);
   protected readonly routeOpState = signal<OperationState | null>(null);
   /** Whether this device could open the address securely; null until tried. */
@@ -355,6 +404,9 @@ export class InstallWizard implements OnInit {
         buildOperation: this.buildOperation(),
         installOperation: this.installOperation(),
         routes: this.routesToAdd(),
+        publish: this.publishChoice(),
+        publicName: this.publicName(),
+        publicApproved: this.publicApproved(),
       };
       this.drafts.save(name, draft);
     });
@@ -440,6 +492,15 @@ export class InstallWizard implements OnInit {
     this.edgeSetup.set('idle');
     this.routeState.set('checking');
     this.reach.set(null);
+    this.publishChoice.set(null);
+    this.publicName.set('');
+    this.publicPlan.set(null);
+    this.publicPlanProblem.set(null);
+    this.publicApproved.set(null);
+    this.installStamp.set(null);
+    this.publicStamp.set(null);
+    this.publicState.set('idle');
+    this.reachStatus.set(null);
   }
 
   private restore(draft: InstallDraft): void {
@@ -455,6 +516,9 @@ export class InstallWizard implements OnInit {
     this.buildOperation.set(draft.buildOperation);
     this.installOperation.set(draft.installOperation);
     this.routesToAdd.set(draft.routes ?? []);
+    this.publishChoice.set(draft.publish ?? null);
+    this.publicName.set(draft.publicName ?? '');
+    this.publicApproved.set(draft.publicApproved ?? null);
     const index = this.steps().findIndex((step) => step.id === draft.step);
     this.stepIndex.set(index >= 0 ? index : 0);
   }
@@ -479,6 +543,21 @@ export class InstallWizard implements OnInit {
   }
 
   private loadSupport(manifest: CatalogManifest): void {
+    // S313: whether `.lan` resolves without a router entry, and whether a
+    // tunnel can publish the app with its install. Neither stops the wizard.
+    this.api
+      .names()
+      .pipe(catchError(() => of(null)))
+      .subscribe((names) => this.resolverOn.set(names ? names.resolver.enabled : null));
+    this.api
+      .appPublic(manifest.Name)
+      .pipe(catchError(() => of(null)))
+      .subscribe((status) => {
+        this.publicStatus.set(status);
+        if (this.current() === 'address' && this.publish()) {
+          this.checkPublicName();
+        }
+      });
     this.api.dockerHealth().subscribe({
       next: (health) => this.health.set(health),
       error: () => this.healthUnknown.set(true),
@@ -565,6 +644,10 @@ export class InstallWizard implements OnInit {
       this.replan().subscribe();
     } else if (id === 'review') {
       this.replan().subscribe();
+    } else if (id === 'address') {
+      if (this.publish() && !this.publicPlan()) {
+        this.checkPublicName();
+      }
     } else if (id === 'done') {
       this.prepareDone();
     }
@@ -660,6 +743,9 @@ export class InstallWizard implements OnInit {
             return `Enter the port ${service.Name} listens on, a number from 1 to 65535.`;
           }
         }
+        if (this.publish() && this.publicHost() === '') {
+          return 'Enter the public name, or turn off Also publish at.';
+        }
         return null;
       }
       default:
@@ -731,6 +817,8 @@ export class InstallWizard implements OnInit {
       networks,
       zone: this.zone().trim(),
       public_ip: this.publicIp().trim(),
+      // S313: the sign-in preview's redirect addresses include the public name.
+      ...(this.publish() && this.publicHost() ? { public_name: this.publicHost() } : {}),
     };
   }
 
@@ -754,10 +842,15 @@ export class InstallWizard implements OnInit {
     this.planning.set(true);
     this.planProblem.set(null);
     return this.api.planInstall(manifest.Name, this.body()).pipe(
-      map((plan) => {
+      switchMap((plan) => {
         this.planning.set(false);
         this.plan.set(plan);
-        return true;
+        // The review shows the public address permit beside the install's.
+        if (this.current() !== 'review') {
+          return of(true);
+        }
+        const route = (plan.Routes ?? []).find((entry) => entry.Exposure !== 'public')?.Host ?? '';
+        return this.planPublic(route).pipe(map(() => true));
       }),
       catchError((failure: HttpErrorResponse) => {
         this.planning.set(false);
@@ -766,6 +859,58 @@ export class InstallWizard implements OnInit {
         return of(false);
       }),
     );
+  }
+
+  /**
+   * Plans the public address for the route the install creates (S313),
+   * through the app public plan route with before_install. Nothing changes;
+   * a refusal is shown, and the owner may turn publishing off.
+   */
+  private planPublic(route: string): Observable<AppPublicPlan | null> {
+    const manifest = this.manifest();
+    if (!manifest || !this.publish() || !route || !this.publicHost()) {
+      this.publicPlan.set(null);
+      this.publicPlanProblem.set(null);
+      return of(null);
+    }
+    this.publicPlanning.set(true);
+    this.publicPlanProblem.set(null);
+    const request: AppPublicRequest = { enabled: true, hostname: this.publicHost(), route, before_install: true };
+    return this.api.appPublicPlan(manifest.Name, request).pipe(
+      map((plan) => {
+        this.publicPlanning.set(false);
+        this.publicPlan.set(plan);
+        return plan;
+      }),
+      catchError((failure: HttpErrorResponse) => {
+        this.publicPlanning.set(false);
+        this.publicPlan.set(null);
+        this.publicPlanProblem.set(publicError(failure));
+        return of(null);
+      }),
+    );
+  }
+
+  /** The address step's check of the public name: its certificate lamp and any refusal. */
+  protected checkPublicName(): void {
+    const first = this.endpoints()[0];
+    if (first) {
+      this.planPublic(this.hostnameFor(first.endpoint, 0)).subscribe();
+    }
+  }
+
+  protected setPublish(on: boolean): void {
+    this.publishChoice.set(on);
+    this.publicPlan.set(null);
+    this.publicPlanProblem.set(null);
+    if (on) {
+      this.checkPublicName();
+    }
+  }
+
+  protected setPublicName(value: string): void {
+    this.publicName.set(value);
+    this.publicPlan.set(null);
   }
 
   protected checkAgain(): void {
@@ -860,7 +1005,28 @@ export class InstallWizard implements OnInit {
     if (planned) {
       this.routesToAdd.set(planned.filter((route) => route.Exposure !== 'public'));
     }
-    const body = this.body();
+    // One approval covers both plans the owner reviewed (S313): the install
+    // by its digest now, the public address by its digest once installed.
+    const reviewed = this.plan();
+    const by = this.sessions.username();
+    const body: Record<string, unknown> = { ...this.body(), ...(reviewed?.digest ? { digest: reviewed.digest } : {}) };
+    this.installStamp.set(
+      reviewed?.digest
+        ? approvedPlan(`Install ${manifest.Title}`, reviewed.digest, `Install ${manifest.Title} at ${this.routesToAdd().map((route) => route.Host).join(', ') || 'no address'}.`, by)
+        : null,
+    );
+    const published = this.publish() ? this.publicPlan() : null;
+    this.publicState.set('idle');
+    this.publicApproved.set(
+      published
+        ? { request: { enabled: true, hostname: published.hostname, route: published.route }, digest: published.digest, hostname: published.hostname }
+        : null,
+    );
+    this.publicStamp.set(
+      published
+        ? approvedPlan(`Publish ${published.hostname}`, published.digest, `Publish ${published.hostname} to ${published.route} through the tunnel ${published.tunnel}, once ${manifest.Title} is installed.`, by)
+        : null,
+    );
     this.assignChosenStorage()
       .pipe(switchMap(() => this.api.installPackage(manifest.Name, body)))
       .subscribe({
@@ -1000,8 +1166,7 @@ export class InstallWizard implements OnInit {
         this.edgeRoute.set(found);
         if (found) {
           this.routeState.set('added');
-          this.probe(found);
-          this.applySignIn();
+          this.afterRoute(found);
         } else if (this.caddyMissing() || (health === null && this.healthUnknown())) {
           this.routeState.set('no-edge');
         } else if (this.installed() && this.routesToAdd().length > 0) {
@@ -1016,6 +1181,174 @@ export class InstallWizard implements OnInit {
       },
     });
   }
+
+  /**
+   * The phases after the address (S313): publish by the approved digest,
+   * then sign-in, then check each address from the appliance.
+   */
+  private afterRoute(route: EdgeRoute | null): void {
+    if (route) {
+      this.probe(route);
+    }
+    this.applyPublic();
+  }
+
+  /** The public address chain is finished, applied or not: sign-in, then the check. */
+  private afterPublic(): void {
+    this.applySignIn();
+    this.checkReach();
+  }
+
+  /**
+   * Applies the public address plan approved with the install, by its
+   * digest. A changed plan (409) is planned again and shown for a new
+   * approval; nothing is published without one.
+   */
+  private applyPublic(): void {
+    const approved = this.publicApproved();
+    const manifest = this.manifest();
+    if (this.publicState() !== 'idle') {
+      if (this.publicState() !== 'applying' && this.publicState() !== 'replan') {
+        this.afterPublic();
+      }
+      return;
+    }
+    if (!approved || !manifest || !this.installed()) {
+      this.afterPublic();
+      return;
+    }
+    this.publicState.set('applying');
+    this.publicProblem.set(null);
+    this.api.appPublicApply(manifest.Name, approved.request, approved.digest).subscribe({
+      next: ({ id }) => this.followPublic(id),
+      error: (failure: HttpErrorResponse) => {
+        if (failure.status === 409) {
+          this.replanPublic(manifest.Name, approved.request);
+          return;
+        }
+        this.publicState.set('failed');
+        this.publicProblem.set(publicError(failure));
+        this.afterPublic();
+      },
+    });
+  }
+
+  private followPublic(id: number): void {
+    this.publicOperation.set(id);
+    this.publicOpState.set(null);
+    this.api
+      .operationEvents(id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (state) => {
+          this.publicOpState.set(state);
+          if (!isTerminal(state.status)) {
+            return;
+          }
+          if (state.status === 'succeeded') {
+            this.publicState.set('on');
+            this.publicApproved.set(null);
+          } else {
+            this.publicState.set('failed');
+            this.publicProblem.set(state.error || 'Publishing did not finish.');
+          }
+          this.afterPublic();
+        },
+        error: () => {
+          this.publicState.set('failed');
+          this.publicProblem.set('Lost the live connection to the operation. Open it to see how it ended.');
+          this.afterPublic();
+        },
+      });
+  }
+
+  /** The approved plan no longer matches: plan it again, now installed, and ask again. */
+  private replanPublic(name: string, request: AppPublicRequest): void {
+    this.publicState.set('replan');
+    this.publicStamp.set(null);
+    this.publicProblem.set('The public address plan changed after you approved it. Nothing was published. Review it again.');
+    this.api.appPublicPlan(name, request).subscribe({
+      next: (plan) => this.publicPlan.set(plan),
+      error: (failure: HttpErrorResponse) => {
+        this.publicPlan.set(null);
+        this.publicState.set('failed');
+        this.publicProblem.set(publicError(failure));
+        this.afterPublic();
+      },
+    });
+  }
+
+  /** The owner approves the plan made again after the install. */
+  protected approveReplannedPublic(): void {
+    const plan = this.publicPlan();
+    const manifest = this.manifest();
+    if (!plan || !manifest || this.publicState() !== 'replan') {
+      return;
+    }
+    this.publicApproved.set({
+      request: { enabled: true, hostname: plan.hostname, route: plan.route },
+      digest: plan.digest,
+      hostname: plan.hostname,
+    });
+    this.publicStamp.set(
+      approvedPlan(`Publish ${plan.hostname}`, plan.digest, `Publish ${plan.hostname} to ${plan.route} through the tunnel ${plan.tunnel}.`, this.sessions.username()),
+    );
+    this.publicState.set('idle');
+    this.applyPublic();
+  }
+
+  /** The owner declines the changed plan: the app stays on the network. */
+  protected skipPublic(): void {
+    this.publicApproved.set(null);
+    this.publicPlan.set(null);
+    this.publicState.set('skipped');
+    this.publicProblem.set(null);
+    this.afterPublic();
+  }
+
+  /** Asks the appliance whether each address answers (S313). Advisory: it never changes the install. */
+  protected checkReach(): void {
+    const manifest = this.manifest();
+    if (!manifest || !this.installed()) {
+      return;
+    }
+    this.reachChecking.set(true);
+    this.reachFailed.set(false);
+    this.api.appReach(manifest.Name).subscribe({
+      next: (status) => {
+        this.reachChecking.set(false);
+        this.reachStatus.set(status);
+      },
+      error: () => {
+        this.reachChecking.set(false);
+        this.reachFailed.set(true);
+      },
+    });
+  }
+
+  /** The phases after the install, in order, for the done step's list. */
+  protected readonly phases = computed(() => {
+    const out: { name: string; word: string; kind: 'ok' | 'warn' | 'fail' | '' }[] = [];
+    const route = this.routeState();
+    out.push({
+      name: 'Address on your network',
+      word: route === 'added' ? 'done' : route === 'failed' || route === 'none' || route === 'no-edge' ? 'not added' : 'running',
+      kind: route === 'added' ? 'ok' : route === 'failed' ? 'fail' : route === 'none' || route === 'no-edge' ? 'warn' : '',
+    });
+    const pub = this.publicState();
+    if (this.publicApproved() || pub !== 'idle') {
+      const words = { idle: 'waiting', applying: 'running', on: 'done', failed: 'failed', replan: 'needs approval', skipped: 'skipped' };
+      const kinds = { idle: '', applying: '', on: 'ok', failed: 'fail', replan: 'warn', skipped: 'warn' } as const;
+      out.push({ name: 'Public address', word: words[pub], kind: kinds[pub] });
+    }
+    const signIn = this.signInState();
+    if (this.signInPreview()?.offered && this.signInWanted()) {
+      const words = { idle: 'waiting', applying: 'running', on: 'done', failed: 'failed', skipped: 'skipped' };
+      const kinds = { idle: '', applying: '', on: 'ok', failed: 'fail', skipped: 'warn' } as const;
+      out.push({ name: 'Sign in with Authentik', word: words[signIn], kind: kinds[signIn] });
+    }
+    return out;
+  });
 
   /**
    * Applies the sign-in plan the owner reviewed with the install (S298),
@@ -1092,10 +1425,7 @@ export class InstallWizard implements OnInit {
                 const route = this.routesToAdd()[0] ?? null;
                 this.edgeRoute.set(route);
                 this.routeState.set('added');
-                if (route) {
-                  this.probe(route);
-                }
-                this.applySignIn();
+                this.afterRoute(route);
               } else {
                 this.routeState.set('failed');
                 this.routeProblem.set(state.error || 'The edge refused the route.');

@@ -68,6 +68,7 @@ type appPublicFacts struct {
 	tunnelID   string
 	tunnelName string
 	signIn     bool
+	installed  bool
 	reason     string
 }
 
@@ -85,6 +86,7 @@ func (p *appPublic) facts(name string) (appPublicFacts, error) {
 	if err != nil {
 		return f, err
 	}
+	f.installed = installed
 	set, err := loadEdgeRoutes(p.st)
 	if err != nil {
 		return f, err
@@ -140,7 +142,10 @@ func (p *appPublic) status(w http.ResponseWriter, r *http.Request) {
 		names = append(names, route.Public...)
 	}
 	out.Coverage = statusCoverage(r.Context(), p.secrets, names)
-	if out.Available {
+	// Before the install the name is proposed too, so the install wizard
+	// can offer it (S313); planning it needs before_install.
+	beforeInstall := !f.installed && f.tunnelID != "" && f.manifest.Name != authentikPackage
+	if out.Available || beforeInstall {
 		domain, err := p.proposedDomain(f.tunnelID)
 		if err != nil {
 			p.writeError(w, err)
@@ -167,6 +172,12 @@ type appPublicRequest struct {
 	Hostname string `json:"hostname,omitempty"`
 	Route    string `json:"route,omitempty"`
 	Digest   string `json:"digest,omitempty"`
+	// BeforeInstall plans a name for an app that is not installed yet,
+	// on the route its install creates (S313): the install wizard and
+	// `apps install --public` review it with the install plan. It is a
+	// plan only. Apply takes the same request without it once the app is
+	// installed, and the digest must still match then.
+	BeforeInstall bool `json:"before_install,omitempty"`
 }
 
 // appPublicPlan is one public name added to or removed from an app.
@@ -183,6 +194,9 @@ type appPublicPlan struct {
 	Before []string `json:"connector_before"`
 	After  []string `json:"connector_after"`
 	SignIn string   `json:"sign_in,omitempty"`
+	// AppSettings is what the app's own settings get (S313): Nextcloud's
+	// trusted domains follow its public names.
+	AppSettings []string `json:"app_settings"`
 	// Coverage says whether Cloudflare has a certificate for the added
 	// name (S312); an uncovered name is also a warning.
 	Coverage []publicNameCoverage `json:"coverage"`
@@ -194,6 +208,7 @@ type appPublicPlan struct {
 	keep     *router.DNSRecord
 	owned    []router.OwnedRecord
 	restores []router.ReplacedRecord
+	manifest catalog.Manifest
 }
 
 func (p appPublicPlan) digest() string {
@@ -235,12 +250,18 @@ func (p *appPublic) buildPlan(ctx context.Context, name string, req appPublicReq
 	if err != nil {
 		return appPublicPlan{}, err
 	}
+	if req.BeforeInstall && !f.installed && f.manifest.Name != authentikPackage {
+		if err := beforeInstall(&f, req); err != nil {
+			return appPublicPlan{}, err
+		}
+	}
 	if f.reason != "" {
 		return appPublicPlan{}, refusePlan(http.StatusUnprocessableEntity, "%s", f.reason)
 	}
 	hostname := strings.ToLower(strings.TrimSpace(req.Hostname))
 	plan := appPublicPlan{App: f.manifest.Name, Tunnel: f.tunnelName, TunnelID: f.tunnelID,
-		DNS: []tunnelPlanChange{}, Warnings: []string{}, Coverage: []publicNameCoverage{}}
+		DNS: []tunnelPlanChange{}, Warnings: []string{}, Coverage: []publicNameCoverage{}, AppSettings: []string{},
+		manifest: f.manifest}
 	recorded, err := recordedIngress(p.st, f.tunnelID)
 	if err != nil {
 		return appPublicPlan{}, err
@@ -291,8 +312,38 @@ func (p *appPublic) buildPlan(ctx context.Context, name string, req appPublicReq
 		plan.SignIn = "App sign-in is on: afterwards, re-plan it on this page and approve it, so sign-in " +
 			verb + " https://" + plan.Hostname + "."
 	}
+	if plan.Action == "add" {
+		plan.AppSettings = append(plan.AppSettings, appsso.HostSettings(f.manifest, []string{plan.Hostname}, nil)...)
+	} else {
+		plan.AppSettings = append(plan.AppSettings, appsso.HostSettings(f.manifest, nil, []string{plan.Hostname})...)
+	}
 	plan.Digest = plan.digest()
 	return plan, nil
+}
+
+// beforeInstall stands the route the install creates in for the app's
+// routes (S313), so the plan reads as it will once the app is installed.
+func beforeInstall(f *appPublicFacts, req appPublicRequest) error {
+	if !*req.Enabled {
+		return refusePlan(http.StatusBadRequest, "only adding a public name is planned before the install")
+	}
+	route := strings.ToLower(strings.TrimSpace(req.Route))
+	if route == "" {
+		return refusePlan(http.StatusBadRequest, "a plan before the install names the route the install creates")
+	}
+	for _, r := range f.all {
+		for _, n := range r.AllNames() {
+			if strings.EqualFold(string(n), route) {
+				return refusePlan(http.StatusUnprocessableEntity, "%s is already a name of the edge route %s", route, r.Host)
+			}
+		}
+	}
+	f.routes = []docker.Route{{Host: docker.Hostname(route)}}
+	f.reason = ""
+	if f.tunnelID == "" {
+		f.reason = "No tunnel is set up yet. Set one up, or adopt yours, on the Tunnel page."
+	}
+	return nil
 }
 
 func (p *appPublic) planAdd(ctx context.Context, client *router.TunnelClient, token string, f appPublicFacts, hostname, route string, plan *appPublicPlan) error {
@@ -475,6 +526,10 @@ func (p *appPublic) decode(w http.ResponseWriter, r *http.Request, apply bool) (
 		http.Error(w, "a plan takes no digest", http.StatusBadRequest)
 		return req, false
 	}
+	if apply && req.BeforeInstall {
+		http.Error(w, "a public name is applied once the app is installed: apply the same plan without before_install", http.StatusBadRequest)
+		return req, false
+	}
 	if apply && req.Digest == "" {
 		http.Error(w, "digest is required: review the plan, then approve it with its digest", http.StatusBadRequest)
 		return req, false
@@ -534,6 +589,10 @@ func (p *appPublic) apply(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"id": op.ID})
 }
 
+// trustAppHosts keeps the app's own host allow-list in step (S313);
+// tests replace it.
+var trustAppHosts = appsso.TrustHosts
+
 // withTunnelName is the current edge name map with hostname added to, or
 // taken from, route.
 func withTunnelName(st *store.Store, route, hostname string, add bool) (map[docker.Hostname][]docker.Hostname, error) {
@@ -581,6 +640,24 @@ func appPublicAddDefinition(st *store.Store, apiToken string, plan appPublicPlan
 		undoDNS(ctx)
 	}
 	return operation.Definition{Type: "app.public.add", Steps: []operation.StepDef{
+		// The app's own host allow-list first (S313): adding a name there
+		// is harmless, and a Nextcloud still installing itself is waited
+		// for before anything is published.
+		{Name: "app-hosts", Run: func(ctx context.Context) error {
+			names := []string{}
+			set, err := loadEdgeRoutes(st)
+			if err != nil {
+				return err
+			}
+			for _, r := range set.Routes {
+				if strings.EqualFold(string(r.Host), plan.Route) {
+					for _, n := range r.Names() {
+						names = append(names, string(n))
+					}
+				}
+			}
+			return trustAppHosts(ctx, plan.manifest, "https://"+plan.Route, append(names, plan.Hostname), nil)
+		}},
 		{Name: "dns", Run: func(ctx context.Context) error {
 			client, err := tunnelClient()
 			if err != nil {
@@ -673,6 +750,12 @@ func appPublicRemoveDefinition(st *store.Store, apiToken string, plan appPublicP
 		}},
 		{Name: "restore-dns", Run: func(ctx context.Context) error {
 			return restoreReplacedRecordsAt(ctx, st, apiToken, plan.TunnelID, plan.Hostname)
+		}},
+		{Name: "app-hosts", Run: func(ctx context.Context) error {
+			if err := trustAppHosts(ctx, plan.manifest, "https://"+plan.Route, nil, []string{plan.Hostname}); err != nil {
+				return fmt.Errorf("%s is off the tunnel, but the app still lists it: %w", plan.Hostname, err)
+			}
+			return nil
 		}},
 	}}
 }

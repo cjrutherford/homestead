@@ -161,6 +161,14 @@ export interface PlanProblem {
 /** Turns a refused plan into what happened and how to fix it. */
 export function explainPlanError(status: number, raw: unknown): PlanProblem {
   const text = (typeof raw === 'string' ? raw : '').replace(/^catalog:\s*/, '').trim();
+  if (status === 409 && /plan changed since it was reviewed/.test(text)) {
+    // S313: the install is bound to the reviewed plan's digest.
+    return {
+      headline: 'The install plan changed after you reviewed it.',
+      fix: 'Nothing was installed. Review the plan again, then approve it.',
+      installed: false,
+    };
+  }
   if (status === 409) {
     return {
       headline: text || 'This app is already installed.',
@@ -235,4 +243,26 @@ export function planSummary(plan: InstallPlan): { created: string[]; changed: st
       'Folders you point the app at; they are mounted, never changed',
     ],
   };
+}
+
+/**
+ * The `.local` name an app route also answers on (ADR-039, S295): a
+ * one-label `<app>.lan` host gets `<app>.local`. Mirrors docker.LocalAlias.
+ */
+export function localAlias(host: string): string | null {
+  const name = host.trim().toLowerCase();
+  if (!name.endsWith('.lan')) {
+    return null;
+  }
+  const label = name.slice(0, -'.lan'.length);
+  return label === '' || label.includes('.') || label === 'homestead' ? null : `${label}.local`;
+}
+
+/**
+ * Whether "Also publish at" starts on (S313): on when the same install sets
+ * up sign-in with Authentik, off otherwise, where the app's own sign-in is
+ * all that protects it. The owner may change it either way.
+ */
+export function publishByDefault(signInOffered: boolean): boolean {
+  return signInOffered;
 }

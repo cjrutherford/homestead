@@ -999,3 +999,30 @@
 - Only Nextcloud's `admin_password` is declared readable; other packages'
   generated credentials stay presence-only.
 
+## App install sets up the local and public address (S313)
+
+- Immich, Jellyfin and Authentik have no Host allow-list to update, so a new
+  name needs no app change. Not configured: Immich's external domain (share
+  links still use the address the visitor came from) and trusted proxies;
+  Jellyfin's known proxies (its logs show the edge's address, not the
+  visitor's). Authentik's public name belongs to the tunnel plan (ADR-037),
+  not to an app install.
+- Nextcloud's `TRUSTED_PROXIES` is not set, so it logs the edge's address.
+  Nextcloud installs made before S313 get `OVERWRITEPROTOCOL` and
+  `OVERWRITECLIURL` only when their Compose file is rendered again (an
+  update or a reinstall), and trust `nextcloud.local` only once a public
+  name is added (the occ step adds every local name too) or the app is
+  reinstalled. No migration rewrites them.
+- The install route accepts an install without a digest (older clients and
+  `apps install` without `--public`); only the wizard and
+  `apps install --public --approve-public` bind it.
+- The CLI chains plan and apply as two commands (`--public`, then
+  `--approve-public D`); there is no interactive prompt. Sign-in at install
+  stays a wizard-only chain; the CLI turns it on with `apps sign-in apply`.
+- The reach check runs from the appliance, so a public name that answers
+  there may still not resolve on a device behind another DNS; the wizard's
+  own browser probe covers this device only. Repeated checks are manual
+  (**Check again**); there is no background re-check.
+- A public plan refused before the install (for example a duplicate name)
+  shows on the Address and Review steps; the owner turns publishing off to
+  install without it. There is no automatic name suggestion.

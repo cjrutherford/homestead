@@ -11,6 +11,9 @@ type AppPublicRequest struct {
 	Hostname string `json:"hostname,omitempty"`
 	Route    string `json:"route,omitempty"`
 	Digest   string `json:"digest,omitempty"`
+	// BeforeInstall plans a name for an app the same install creates
+	// (S313); the plan is applied without it once the app is installed.
+	BeforeInstall bool `json:"before_install,omitempty"`
 }
 
 // AppPublicStatus is an app's public names on the tunnel.
@@ -44,7 +47,9 @@ type AppPublicPlan struct {
 	SignIn   string             `json:"sign_in,omitempty"`
 	Coverage []NameCoverage     `json:"coverage"`
 	Warnings []string           `json:"warnings"`
-	Digest   string             `json:"digest"`
+	// AppSettings are the app's own host settings the plan changes (S313).
+	AppSettings []string `json:"app_settings"`
+	Digest      string   `json:"digest"`
 }
 
 func publicPath(pkg, suffix string) string {
@@ -70,4 +75,29 @@ func (c *Client) AppPublicApply(ctx context.Context, pkg string, req AppPublicRe
 	var out OperationStarted
 	err := c.postJSON(ctx, publicPath(pkg, "/apply"), req, &out)
 	return out.ID, err
+}
+
+// ReachAddress is one address of an app and whether it answers (S313).
+type ReachAddress struct {
+	Address string `json:"address"`
+	Host    string `json:"host"`
+	Kind    string `json:"kind"`
+	Answers bool   `json:"answers"`
+	Reason  string `json:"reason,omitempty"`
+	Fix     string `json:"fix,omitempty"`
+}
+
+// AppReachStatus is the appliance's check of each address of an app.
+type AppReachStatus struct {
+	App       string         `json:"app"`
+	Resolver  bool           `json:"resolver"`
+	Addresses []ReachAddress `json:"addresses"`
+}
+
+// AppReach checks from the appliance whether each address answers. It
+// is advisory: nothing changes.
+func (c *Client) AppReach(ctx context.Context, pkg string) (AppReachStatus, error) {
+	var out AppReachStatus
+	err := c.get(ctx, "/api/v1/catalog/"+url.PathEscape(pkg)+"/reach", &out)
+	return out, err
 }

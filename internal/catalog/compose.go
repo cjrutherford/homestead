@@ -72,6 +72,10 @@ type Generation struct {
 	// package can trust the name the edge serves it under (Nextcloud's
 	// trusted domains).
 	RouteHosts map[string]string
+	// RouteNames maps a routed service to every local name its edge route
+	// answers on: the host and its derived mDNS name (S313). It fills
+	// RouteNamesToken, space-separated.
+	RouteNames map[string][]string
 }
 
 // RouteHostToken in a service environment value is replaced with the
@@ -79,6 +83,11 @@ type Generation struct {
 // when no route does). Only services that
 // expose an endpoint may use it.
 const RouteHostToken = "{{route_host}}"
+
+// RouteNamesToken is replaced with every local name of the route that
+// serves the service, space-separated: <app>.lan and <app>.local (S313).
+// Like RouteHostToken, the variable is left out when no route serves it.
+const RouteNamesToken = "{{route_names}}"
 
 // validate checks generation against the manifest: known services
 // only, sane ports and volumes, known networks, no duplicates.
@@ -267,14 +276,19 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 		}
 		rendered.Environment, rendered.Secrets = serviceSecretWiring(manifest, name)
 		for key, value := range rendered.Environment {
-			if strings.Contains(value, RouteHostToken) {
+			if strings.Contains(value, RouteHostToken) || strings.Contains(value, RouteNamesToken) {
 				host := generation.RouteHosts[name]
 				if host == "" {
 					// No route serves this service: there is no name to trust.
 					delete(rendered.Environment, key)
 					continue
 				}
-				rendered.Environment[key] = strings.ReplaceAll(value, RouteHostToken, host)
+				names := generation.RouteNames[name]
+				if len(names) == 0 {
+					names = []string{host}
+				}
+				value = strings.ReplaceAll(value, RouteHostToken, host)
+				rendered.Environment[key] = strings.ReplaceAll(value, RouteNamesToken, strings.Join(names, " "))
 			}
 		}
 		for _, network := range serviceNetworks {

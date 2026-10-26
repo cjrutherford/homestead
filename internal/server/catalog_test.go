@@ -377,3 +377,51 @@ func TestApplyStorageOverridesReadsTheChosenMountsFreeSpace(t *testing.T) {
 		t.Fatal("an unknown mount must not carry free space")
 	}
 }
+
+// S313: the install plan carries a digest over what the install changes;
+// install with a digest that no longer matches answers 409, and the
+// owner reviews again. Free space is not in it, so it holds still.
+func TestCatalogInstallDigest(t *testing.T) {
+	srv, _ := catalogTestServer(t)
+	digestOf := func(body map[string]any) string {
+		recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/demo/plan", body)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("plan: %d %s", recorder.Code, recorder.Body.String())
+		}
+		var plan struct {
+			Digest string `json:"digest"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &plan); err != nil {
+			t.Fatal(err)
+		}
+		return plan.Digest
+	}
+	first := digestOf(installTestBody())
+	for i := 0; i < 5; i++ {
+		if got := digestOf(installTestBody()); got != first || len(first) != 64 {
+			t.Fatalf("digest %d = %q, want %q", i, got, first)
+		}
+	}
+	other := installTestBody()
+	other["hostnames"] = map[string]string{"web": "elsewhere.lan"}
+	if digestOf(other) == first {
+		t.Fatal("a different address kept the digest")
+	}
+	// The public name reviewed with the install only shapes the sign-in preview.
+	withPublic := installTestBody()
+	withPublic["public_name"] = "demo.example.com"
+	if digestOf(withPublic) != first {
+		t.Fatal("the public name changed the install digest")
+	}
+	stale := installTestBody()
+	stale["digest"] = "stale"
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/demo/install", stale)
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "review it again") {
+		t.Fatalf("stale install: %d %s", recorder.Code, recorder.Body.String())
+	}
+	approved := installTestBody()
+	approved["digest"] = first
+	if recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/demo/install", approved); recorder.Code != http.StatusOK {
+		t.Fatalf("approved install: %d %s", recorder.Code, recorder.Body.String())
+	}
+}

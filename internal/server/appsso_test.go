@@ -93,17 +93,25 @@ func TestInstallPlanPreviewsSignIn(t *testing.T) {
 	install := catalog.InstallPlan{Package: "jellyfin", Routes: []docker.Route{
 		{Host: "jellyfin.lan", Target: docker.Target{Host: "jellyfin", Port: 8096}, Exposure: docker.ExposureLocal, TLS: docker.TLSInternal},
 	}}
-	p := a.srv.appSignIn.preview(jellyfin, install)
+	p := a.srv.appSignIn.preview(jellyfin, install, "")
 	if p == nil || !p.Offered || p.Plan == nil || p.Plan.Plugin == nil ||
 		strings.Join(p.Plan.RedirectURIs, ",") != "https://jellyfin.lan/sso/OID/redirect/authentik,https://jellyfin.local/sso/OID/redirect/authentik" {
 		t.Fatalf("preview: %+v", p)
 	}
+	// S313: a public name reviewed with the install is one of the sign-in
+	// plan's origins, as it will be once the wizard has published it.
+	withPublic := a.srv.appSignIn.preview(jellyfin, install, "jellyfin.homestead.example.com")
+	if withPublic == nil || !withPublic.Offered ||
+		!strings.Contains(strings.Join(withPublic.Plan.RedirectURIs, ","), "https://jellyfin.homestead.example.com/sso/OID/redirect/authentik") ||
+		withPublic.Plan.Digest == p.Plan.Digest {
+		t.Fatalf("preview with public: %+v", withPublic)
+	}
 	wordcraft, _ := entries.Get("wordcraft")
-	if p := a.srv.appSignIn.preview(wordcraft, catalog.InstallPlan{}); p != nil {
+	if p := a.srv.appSignIn.preview(wordcraft, catalog.InstallPlan{}, ""); p != nil {
 		t.Fatalf("no adapter preview: %+v", p)
 	}
 	// No route planned: not offered, with the reason.
-	if p := a.srv.appSignIn.preview(jellyfin, catalog.InstallPlan{}); p == nil || p.Offered || !strings.Contains(p.Reason, "no address") {
+	if p := a.srv.appSignIn.preview(jellyfin, catalog.InstallPlan{}, ""); p == nil || p.Offered || !strings.Contains(p.Reason, "no address") {
 		t.Fatalf("no route: %+v", p)
 	}
 }

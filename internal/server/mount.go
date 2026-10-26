@@ -150,6 +150,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	})
 	srv.MountTunnel(st, secrets, c.Port)
 	srv.MountAppPublic(st, secrets, c.CatalogDir)
+	srv.MountAppReach(st, names, local, c.CatalogDir)
 	srv.MountSetup(SetupConfig{
 		Store: st, Secrets: secrets, Wizards: wizard.New(st), SSO: ssoManager, CatalogDir: c.CatalogDir,
 		Port: c.Port,

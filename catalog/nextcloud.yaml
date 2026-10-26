@@ -16,11 +16,19 @@ services:
 - name: nextcloud
   image: nextcloud:35.0.1-apache
   exposes: web
-  # The edge route hostname is a trusted domain from the first install
-  # (S254): the daemon's craft file link and every browser reach
-  # Nextcloud through it, and Nextcloud refuses an unlisted Host. The
-  # image applies this once, when it first installs; an existing install
-  # adds the name with occ (docs/architecture/CRAFT_FILE_PROXY.md).
+  # The edge route's local names are trusted domains from the first
+  # install (S254, S313): <app>.lan and its mDNS name <app>.local. The
+  # daemon's craft file link and every browser reach Nextcloud through
+  # them, and Nextcloud refuses an unlisted Host. The image applies this
+  # once, when it first installs; a public name added or removed later
+  # (S290) is added to or taken from trusted_domains with occ by the
+  # app.public operation (docs/architecture/CRAFT_FILE_PROXY.md).
+  #
+  # The edge ends TLS for every name, local and tunnel, and reaches
+  # Nextcloud over plain http, so Nextcloud is told to build https links
+  # (OVERWRITEPROTOCOL) and its command-line URL is the local address
+  # (OVERWRITECLIURL). The image reads both at every request. No
+  # OVERWRITEHOST: it would pin every link to one of the names.
   #
   # Nextcloud installs itself on first start (S312): with an admin user,
   # its password file and a database name, the image runs
@@ -29,7 +37,9 @@ services:
   # untouched. The admin password is the generated package secret
   # admin_password (Compose secret, never an environment value).
   environment:
-    NEXTCLOUD_TRUSTED_DOMAINS: "{{route_host}}"
+    NEXTCLOUD_TRUSTED_DOMAINS: "{{route_names}}"
+    OVERWRITEPROTOCOL: https
+    OVERWRITECLIURL: "https://{{route_host}}"
     NEXTCLOUD_ADMIN_USER: admin
     SQLITE_DATABASE: nextcloud
   # Image VOLUME: /var/www/html (code, config, apps). User files and

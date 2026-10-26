@@ -344,21 +344,40 @@ does not have it, so name a new tunnel.
 ### D5. Apps
 
 1. Open the **Catalog** and choose an app, for example Jellyfin. The install
-   wizard asks for its storage, shows its local addresses
-   (`jellyfin.lan` and `jellyfin.local`), and, where the app supports it,
-   offers **Sign in with Authentik**. Review and approve, then follow the
-   install.
-2. To reach the app from the internet: in the Catalog, open the app's
-   **Manage** panel. Under the public address, keep the proposed name
-   (`jellyfin.<domain>`) or type another. Choose **Review public address**,
-   then **Approve**. The page warns that the app's own sign-in is what
-   protects it. With Authentik sign-in on, that is Authentik.
+   wizard asks for its storage, then shows both of its addresses:
+   - **On your network:** `jellyfin.lan` and `jellyfin.local`. When the
+     appliance resolver is off, the step says `.lan` needs the resolver (on
+     the **Names** page) or a DNS entry on your router; `jellyfin.local`
+     works without setup.
+   - **On the internet:** with a tunnel set up (D4), **Also publish at**
+     proposes `jellyfin.<domain>`; keep it or type another. It is on when
+     the same install sets up **Sign in with Authentik**, and off otherwise,
+     because then only the app's own sign-in protects it. The step shows the
+     certificate lamp for the name (the D4 step 5 rule). Without a tunnel the
+     step says so and links to the **Tunnel** page.
+2. On the review, the install plan and, when publishing, the public address
+   plan are two permits, each with its digest. **Approve both and install**
+   approves both. After the install, the Done step adds the local address,
+   publishes the public name by its approved digest, then turns on sign-in,
+   showing each phase. If the public plan changed in between, nothing is
+   published: the step shows the new plan and asks again.
 
-   CLI: `homesteadctl apps public plan jellyfin`, then
+   The Done step then checks each address from the appliance and shows a
+   lamp, **answers** or **does not answer yet**, with the reason and the fix
+   (for example, turn on the resolver, or the certificate message). The
+   check is advisory; it never fails the install. Run it again with
+   **Check again**, or `homesteadctl apps reach jellyfin`.
+
+   CLI: `homesteadctl apps install jellyfin -f jellyfin.json --public`
+   prints the install digest and the public address plan with its digest,
+   and changes nothing. Then
+   `homesteadctl apps install jellyfin -f jellyfin.json --public jellyfin.<domain> --approve-public <digest>`
+   installs, adds the address, publishes and prints the reach check.
+
+   To change or remove the public name later, use the app's **Manage**
+   panel in the Catalog (**Review public address**, then **Approve**), or
+   `homesteadctl apps public plan jellyfin`, then
    `homesteadctl apps public apply jellyfin --digest <digest> --follow`.
-
-   The same certificate rule applies (D4 step 5): the review warns when no
-   certificate covers the name.
 3. **Nextcloud sets itself up.** Install creates its admin account (`admin`)
    with a generated password; there is no setup page to finish. The password
    is in the app's **Manage** panel under Secrets: choose **Reveal** and
@@ -366,7 +385,10 @@ does not have it, so name a new tunnel.
    `homesteadctl apps secrets reveal nextcloud admin_password`. Nextcloud
    takes a few minutes to finish installing; turning on sign-in waits for
    it. If it is still not ready, the page says so, links the app, and offers
-   **Apply sign-in again**.
+   **Apply sign-in again**. Nextcloud trusts `nextcloud.lan`,
+   `nextcloud.local` and its public name, and builds https links behind the
+   tunnel; adding or removing a public name later updates its trusted
+   domains.
 
 ### D6. Backups
 

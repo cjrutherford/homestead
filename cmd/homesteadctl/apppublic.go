@@ -113,6 +113,9 @@ func printAppPublicPlan(w io.Writer, p apiclient.AppPublicPlan, off bool) {
 	}
 	fmt.Fprintf(w, "connector before: %s\n", strings.Join(p.Before, ", "))
 	fmt.Fprintf(w, "connector after: %s\n", strings.Join(p.After, ", "))
+	for _, s := range p.AppSettings {
+		fmt.Fprintf(w, "app setting: %s\n", s)
+	}
 	for _, s := range p.Warnings {
 		fmt.Fprintf(w, "warning: %s\n", s)
 	}
