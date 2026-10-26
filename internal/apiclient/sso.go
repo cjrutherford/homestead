@@ -22,6 +22,21 @@ type SSOState struct {
 	// not cover yet (S296); ReplanReason says what a re-plan adds.
 	Replan       bool   `json:"replan,omitempty"`
 	ReplanReason string `json:"replan_reason,omitempty"`
+	// OpenApps are apps whose Authentik sign-in binds no group: every
+	// Authentik user can sign in to them (S314, ADR-043).
+	OpenApps []string `json:"open_apps,omitempty"`
+}
+
+// AccessRequest asks for a read-back; Token is used for this call only.
+type AccessRequest struct {
+	Token string `json:"token,omitempty"`
+}
+
+// SSOAccess reads back the groups and bindings of the dashboard sign-in.
+func (c *Client) SSOAccess(ctx context.Context, token string) (sso.AccessReport, error) {
+	var out sso.AccessReport
+	err := c.postJSON(ctx, "/api/v1/sso/access", AccessRequest{Token: token}, &out)
+	return out, err
 }
 
 // ReauthHeader carries the local password for fresh re-authentication.

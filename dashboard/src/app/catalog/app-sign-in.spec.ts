@@ -123,6 +123,30 @@ describe('AppSignIn (S298)', () => {
     expect(button('Approve')).toBeUndefined();
   });
 
+  it('warns that a sign-in without groups is open to every Authentik user, offers a re-plan, and reads who can sign in (S314)', () => {
+    load(status({ enabled: true, open_to_all: true, token_kept: true }));
+    expect(text()).toContain('Jellyfin is open to every Authentik user.');
+    expect(button('Review sign-in changes')).toBeDefined();
+    button('Check who can sign in')!.click();
+    const read = http.expectOne('/api/v1/catalog/jellyfin/sign-in/access');
+    expect(read.request.body).toEqual({});
+    read.flush({
+      groups: [{ name: 'homestead-jellyfin-users', exists: true, members: 1, owner_member: true }],
+      bindings: [{ group: 'homestead-jellyfin-users', bound: false }],
+      claim_mapping: 'ok',
+      open: true,
+      drift: ['homestead-jellyfin-users is not bound'],
+    });
+    fixture.detectChanges();
+    expect(text()).toContain('homestead-jellyfin-users: 1 member, you are in it');
+    expect(text()).toContain('Differs from what Homestead made: homestead-jellyfin-users is not bound. Nothing was changed.');
+  });
+
+  it('shows no warning once groups close the app', () => {
+    load(status({ enabled: true, open_to_all: false }));
+    expect(text()).not.toContain('open to every Authentik user');
+  });
+
   it('says why sign-in is not available', () => {
     load(status({ offered: false, reason: 'Set up dashboard sign-in with Authentik first (Settings, Sign-in).' }));
     expect(text()).toContain('not available: Set up dashboard sign-in');

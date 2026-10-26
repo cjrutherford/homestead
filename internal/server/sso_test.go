@@ -39,6 +39,10 @@ type ssoWorld struct {
 	pending  map[string]ssoFlow
 	sub      string
 	down     bool
+	// access state (S314)
+	groups   map[string]map[string]any
+	bindings []map[string]any
+	mappings map[string]map[string]any
 }
 
 type ssoFlow struct{ nonce, challenge, redirect string }
@@ -48,7 +52,8 @@ func newSSOWorld(t *testing.T) *ssoWorld {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := &ssoWorld{t: t, key: k, pending: map[string]ssoFlow{}, sub: "owner-sub"}
+	w := &ssoWorld{t: t, key: k, pending: map[string]ssoFlow{}, sub: "owner-sub",
+		groups: map[string]map[string]any{}, mappings: map[string]map[string]any{}}
 	w.srv = httptest.NewServer(http.HandlerFunc(w.serve))
 	t.Cleanup(w.srv.Close)
 	return w
@@ -115,6 +120,49 @@ func (w *ssoWorld) admin(rw http.ResponseWriter, r *http.Request, enc *json.Enco
 		res(map[string]any{"pk": "f", "slug": r.URL.Query().Get("slug")})
 	case p == "/api/v3/crypto/certificatekeypairs/":
 		res(map[string]any{"pk": "kp", "name": r.URL.Query().Get("name")})
+	case p == "/api/v3/propertymappings/provider/scope/" && r.Method == http.MethodPost:
+		body["pk"] = "m-" + body["name"].(string)
+		w.mappings[body["name"].(string)] = body
+		rw.WriteHeader(http.StatusCreated)
+		_ = enc.Encode(body)
+	case p == "/api/v3/propertymappings/provider/scope/" && r.URL.Query().Get("name") != "":
+		if m, ok := w.mappings[r.URL.Query().Get("name")]; ok {
+			res(m)
+		} else {
+			res()
+		}
+	case p == "/api/v3/core/groups/" && r.Method == http.MethodGet:
+		var out []any
+		for _, g := range w.groups {
+			if g["name"] == r.URL.Query().Get("name") {
+				out = append(out, g)
+			}
+		}
+		res(out...)
+	case p == "/api/v3/core/groups/" && r.Method == http.MethodPost:
+		g := map[string]any{"pk": "g-" + body["name"].(string), "name": body["name"], "users": []any{}}
+		w.groups[body["name"].(string)] = g
+		rw.WriteHeader(http.StatusCreated)
+		_ = enc.Encode(g)
+	case strings.HasSuffix(p, "/add_user/"):
+		for _, g := range w.groups {
+			if "/api/v3/core/groups/"+g["pk"].(string)+"/add_user/" == p {
+				g["users"] = append(g["users"].([]any), body["pk"])
+			}
+		}
+		rw.WriteHeader(http.StatusNoContent)
+	case p == "/api/v3/core/users/":
+		res(map[string]any{"pk": 7, "uid": w.sub, "type": "internal"})
+	case p == "/api/v3/policies/bindings/" && r.Method == http.MethodGet:
+		var out []any
+		for _, b := range w.bindings {
+			out = append(out, b)
+		}
+		res(out...)
+	case p == "/api/v3/policies/bindings/" && r.Method == http.MethodPost:
+		w.bindings = append(w.bindings, body)
+		rw.WriteHeader(http.StatusCreated)
+		_ = enc.Encode(body)
 	case p == "/api/v3/propertymappings/provider/scope/":
 		res(map[string]any{"pk": "1", "scope_name": "openid"}, map[string]any{"pk": "2", "scope_name": "profile"}, map[string]any{"pk": "3", "scope_name": "email"})
 	case p == "/api/v3/providers/oauth2/" && r.Method == http.MethodGet:
@@ -142,6 +190,7 @@ func (w *ssoWorld) admin(rw http.ResponseWriter, r *http.Request, enc *json.Enco
 		_ = enc.Encode(w.app)
 	case strings.HasPrefix(p, "/api/v3/core/applications/"):
 		if r.Method == http.MethodPost {
+			body["pk"] = "app-pk"
 			w.app = body
 		} else {
 			for k, v := range body {

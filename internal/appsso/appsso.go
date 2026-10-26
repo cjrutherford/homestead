@@ -58,6 +58,10 @@ type Record struct {
 	PluginVersion string    `json:"plugin_version,omitempty"`
 	Actor         string    `json:"actor,omitempty"`
 	UpdatedAt     time.Time `json:"updated_at"`
+	// Access is the groups and bindings the last apply set up (S314). Nil
+	// on a sign-in from before: it binds nothing and is open to every
+	// Authentik user until the owner approves a re-plan.
+	Access *sso.Access `json:"access,omitempty"`
 }
 
 // Records keeps the app_sign_in rows.
@@ -65,10 +69,10 @@ type Records struct{ DB *sql.DB }
 
 // Get returns the package's record; ok is false when sign-in is off.
 func (r Records) Get(pkg string) (rec Record, ok bool, err error) {
-	var uris, updated string
-	err = r.DB.QueryRow(`SELECT package, adapter, client_id, issuer, redirect_uris, plugin_version, actor, updated_at
+	var uris, updated, access string
+	err = r.DB.QueryRow(`SELECT package, adapter, client_id, issuer, redirect_uris, plugin_version, actor, updated_at, access
 		FROM app_sign_in WHERE package = ?`, pkg).
-		Scan(&rec.Package, &rec.Adapter, &rec.ClientID, &rec.Issuer, &uris, &rec.PluginVersion, &rec.Actor, &updated)
+		Scan(&rec.Package, &rec.Adapter, &rec.ClientID, &rec.Issuer, &uris, &rec.PluginVersion, &rec.Actor, &updated, &access)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Record{}, false, nil
 	}
@@ -76,6 +80,12 @@ func (r Records) Get(pkg string) (rec Record, ok bool, err error) {
 		return Record{}, false, fmt.Errorf("appsso: read %s: %w", pkg, err)
 	}
 	_ = json.Unmarshal([]byte(uris), &rec.RedirectURIs)
+	if access != "" {
+		var x sso.Access
+		if json.Unmarshal([]byte(access), &x) == nil {
+			rec.Access = &x
+		}
+	}
 	rec.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
 	return rec, true, nil
 }
@@ -83,13 +93,18 @@ func (r Records) Get(pkg string) (rec Record, ok bool, err error) {
 // Save stores rec.
 func (r Records) Save(rec Record) error {
 	uris, _ := json.Marshal(rec.RedirectURIs)
-	_, err := r.DB.Exec(`INSERT INTO app_sign_in (package, adapter, client_id, issuer, redirect_uris, plugin_version, actor, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	access := ""
+	if rec.Access != nil {
+		raw, _ := json.Marshal(rec.Access)
+		access = string(raw)
+	}
+	_, err := r.DB.Exec(`INSERT INTO app_sign_in (package, adapter, client_id, issuer, redirect_uris, plugin_version, actor, updated_at, access)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(package) DO UPDATE SET adapter = excluded.adapter, client_id = excluded.client_id,
 		issuer = excluded.issuer, redirect_uris = excluded.redirect_uris, plugin_version = excluded.plugin_version,
-		actor = excluded.actor, updated_at = excluded.updated_at`,
+		actor = excluded.actor, updated_at = excluded.updated_at, access = excluded.access`,
 		rec.Package, rec.Adapter, rec.ClientID, rec.Issuer, string(uris), rec.PluginVersion, rec.Actor,
-		time.Now().UTC().Format(time.RFC3339Nano))
+		time.Now().UTC().Format(time.RFC3339Nano), access)
 	if err != nil {
 		return fmt.Errorf("appsso: save %s: %w", rec.Package, err)
 	}
@@ -177,6 +192,9 @@ type Inputs struct {
 	// install plan's routes for the wizard's preview).
 	Routes  []docker.Route
 	Applied *Record
+	// OwnerSub is the linked owner's subject at the dashboard's issuer;
+	// empty when no owner is linked (S314).
+	OwnerSub string
 }
 
 // Offered reports whether the app can be signed in to through Authentik
@@ -211,9 +229,14 @@ type Plan struct {
 	AppSettings  []string              `json:"app_settings"`
 	Plugin       *catalog.PinnedPlugin `json:"plugin,omitempty"`
 	SignInURL    string                `json:"sign_in_url,omitempty"`
-	Changes      []string              `json:"changes"`
-	Warnings     []string              `json:"warnings"`
-	Digest       string                `json:"digest"`
+	// Access is the groups, owner membership, bindings and groups claim
+	// mapping (ADR-043), and AdminRoles says how the app's admin role is
+	// set from the admin group.
+	Access     *sso.Access `json:"access,omitempty"`
+	AdminRoles string      `json:"admin_roles,omitempty"`
+	Changes    []string    `json:"changes"`
+	Warnings   []string    `json:"warnings"`
+	Digest     string      `json:"digest"`
 }
 
 func (p Plan) digest() string {
@@ -232,6 +255,7 @@ func (p Plan) Spec(dashboard sso.Spec) sso.Spec {
 		Origins: originsOf(p.RedirectURIs), RedirectURIs: p.RedirectURIs,
 		AuthorizationFlow: dashboard.AuthorizationFlow, InvalidationFlow: dashboard.InvalidationFlow,
 		SigningKey: dashboard.SigningKey, Scopes: append([]string(nil), sso.Scopes...), SubMode: "hashed_user_id",
+		Access:       p.Access,
 		ProviderName: p.Provider, AppName: p.Title, AppSlug: p.ClientID,
 	}
 }
@@ -279,10 +303,13 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 		} else {
 			p.Issuer, p.RedirectURIs = in.Applied.Issuer, in.Applied.RedirectURIs
 			p.AppSettings = adapter.OffSettings()
+			x := removeAccess(m.Name, m.Title)
+			p.Access = &x
 			p.Changes = append(p.Changes,
 				fmt.Sprintf("Turn off sign-in with Authentik in %s.", m.Title),
 				fmt.Sprintf("Delete the application %s and the provider %q from Authentik.", p.Application, p.Provider),
 				"Forget the sealed client secret and take the Authentik host entry and appliance root out of the app's override file.",
+				fmt.Sprintf("Delete the Authentik groups %s and %s and the groups claim mapping %q. The shared group %s stays.", x.Groups[0], x.Groups[1], x.ClaimMapping, sso.OwnerGroup),
 				fmt.Sprintf("People who signed in through Authentik keep their %s accounts; the local admin keeps working.", m.Title))
 		}
 		p.Digest = p.digest()
@@ -297,6 +324,10 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 	p.RedirectURIs = adapter.RedirectURIs(origins)
 	p.SignInURL = adapter.SignInURL(origins[0])
 	p.AppSettings = adapter.OnSettings(p.Issuer, p.ClientID)
+	roles := adapter.Roles(groupNames(m.Name))
+	access := buildAccess(m.Name, m.Title, in.OwnerSub, roles)
+	p.Access, p.AdminRoles = &access, roles.Note
+	noteRoles(&p, roles)
 	authHost := hostOf(base)
 	p.AppSettings = append(p.AppSettings,
 		fmt.Sprintf("Service %s resolves %s to the appliance edge and trusts the appliance root (%s, read-only).", m.SSO.OIDC.Service, authHost, CAFile))
@@ -306,7 +337,7 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 			fmt.Sprintf("Create the OAuth2/OpenID provider %q (client id %s, confidential) and the application %s in Authentik.", p.Provider, p.ClientID, p.Application),
 			"Generate a client secret and seal it in the secret store; it is never shown or logged.",
 			fmt.Sprintf("Set up %s to sign people in through Authentik. Accounts are created at first sign-in; the local admin keeps working.", m.Title))
-	case sameList(in.Applied.RedirectURIs, p.RedirectURIs) && in.Applied.Issuer == p.Issuer && pluginVersion(p.Plugin) == in.Applied.PluginVersion:
+	case sameList(in.Applied.RedirectURIs, p.RedirectURIs) && in.Applied.Issuer == p.Issuer && pluginVersion(p.Plugin) == in.Applied.PluginVersion && sameAccess(in.Applied.Access, p.Access):
 		p.Changes = append(p.Changes, "Nothing changes: sign-in with Authentik is on and matches the app's names. Applying checks Authentik and the app again.")
 	default:
 		p.Changes = append(p.Changes, "Update the provider and the app to match the app's current names:")
@@ -316,7 +347,12 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 		if pluginVersion(p.Plugin) != in.Applied.PluginVersion {
 			p.Changes = append(p.Changes, fmt.Sprintf("Plugin %s %s replaces %s.", p.Plugin.Name, p.Plugin.Version, in.Applied.PluginVersion))
 		}
+		if in.Applied.Access == nil {
+			p.Changes = append(p.Changes, "This sign-in is open to every Authentik user today. Applying closes it to the owner and the people granted below.")
+		}
 	}
+	p.Changes = append(p.Changes, "Who can sign in: the owner, and members of the app's two groups (admins are also users). Grant people by adding them to the group in Authentik; the People page (coming next) will do it here.")
+	p.Changes = append(p.Changes, access.Lines()...)
 	if p.Plugin != nil {
 		p.Warnings = append(p.Warnings, fmt.Sprintf("%s uses the third-party plugin %s %s, downloaded from %s and refused unless its SHA-256 is %s.",
 			m.Title, p.Plugin.Name, p.Plugin.Version, p.Plugin.URL, p.Plugin.SHA256))
@@ -324,6 +360,16 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 	p.Warnings = append(p.Warnings, "Applying needs an Authentik API token, which can do anything an Authentik administrator can. It is used for this apply only, unless you kept the dashboard sign-in token.")
 	p.Digest = p.digest()
 	return p, nil
+}
+
+// noteRoles puts the adapter's admin mapping in the plan, or says the app
+// cannot map it and its admins stay local (ADR-043 §3).
+func noteRoles(p *Plan, roles RoleMapping) {
+	if !roles.Mapped {
+		p.Warnings = append(p.Warnings, fmt.Sprintf("%s cannot take its admin role from a group: %s Its admins stay local accounts.", p.Title, roles.Note))
+		return
+	}
+	p.AppSettings = append(p.AppSettings, roles.Note)
 }
 
 func pluginVersion(p *catalog.PinnedPlugin) string {
@@ -388,6 +434,10 @@ type Status struct {
 	// TokenKept says the dashboard sign-in token is sealed, so applying
 	// needs no token.
 	TokenKept bool `json:"token_kept"`
+	// OpenToAll is true for a sign-in made before groups: Authentik has no
+	// binding for it, so every Authentik user can sign in. Nothing changes
+	// until the owner approves a re-plan (ADR-043 §2).
+	OpenToAll bool `json:"open_to_all"`
 }
 
 // BuildStatus reports sign-in for one app.
@@ -400,11 +450,12 @@ func BuildStatus(in Inputs, tokenKept bool) Status {
 	if !in.Installed {
 		st.Offered, st.Reason = false, fmt.Sprintf("%s is not installed.", in.Manifest.Title)
 	}
+	st.OpenToAll = st.Enabled && in.Applied.Access == nil
 	if st.Enabled && st.Offered {
 		if p, err := BuildPlan(in, true); err == nil {
 			st.SignInURL = p.SignInURL
 			st.Replan = !sameList(in.Applied.RedirectURIs, p.RedirectURIs) || in.Applied.Issuer != p.Issuer ||
-				in.Applied.PluginVersion != pluginVersion(p.Plugin)
+				in.Applied.PluginVersion != pluginVersion(p.Plugin) || !sameAccess(in.Applied.Access, p.Access)
 		}
 	}
 	return st

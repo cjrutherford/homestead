@@ -59,6 +59,9 @@ type Spec struct {
 	// AuthentikVersion is the version the catalog pins (the API this
 	// plan was written against).
 	AuthentikVersion string `json:"authentik_version"`
+	// Access is the groups, bindings and claim mapping (ADR-043). Nil in
+	// specs from before S314, which keep their digests.
+	Access *Access `json:"access,omitempty"`
 }
 
 // IssuerFor is the per-provider issuer Authentik publishes for the
@@ -377,6 +380,17 @@ func (a *API) Inspect(ctx context.Context, spec Spec, secret string) ([]Object, 
 	if err != nil {
 		return nil, err
 	}
+	if spec.Access != nil && spec.Access.ClaimMapping != "" {
+		m, err := a.findClaimMapping(ctx, spec.Access.ClaimMapping)
+		if err != nil {
+			return nil, err
+		}
+		if m != nil {
+			mappings = append(mappings, m.PK)
+		} else {
+			mappings = append(mappings, "(new groups claim mapping)")
+		}
+	}
 	prov, err := a.FindProvider(ctx, spec.ProviderName)
 	if err != nil {
 		return nil, err
@@ -410,6 +424,13 @@ func (a *API) Inspect(ctx context.Context, spec Spec, secret string) ([]Object, 
 		}
 	}
 	objects = append(objects, ao)
+	if spec.Access != nil {
+		objs, err := a.inspectAccess(ctx, *spec.Access, app)
+		if err != nil {
+			return nil, err
+		}
+		objects = append(objects, objs...)
+	}
 	return objects, nil
 }
 
@@ -431,6 +452,19 @@ func (a *API) Reconcile(ctx context.Context, spec Spec, secret string, step func
 	mappings, err := a.scopePKs(ctx, spec.Scopes)
 	if err != nil {
 		return err
+	}
+	if spec.Access != nil {
+		if err := spec.Access.Validate(); err != nil {
+			return err
+		}
+		if spec.Access.ClaimMapping != "" {
+			// Last, so its groups claim is the one that stands.
+			pk, err := a.ensureClaimMapping(ctx, *spec.Access, step)
+			if err != nil {
+				return err
+			}
+			mappings = append(mappings, pk)
+		}
 	}
 	prov, err := a.FindProvider(ctx, spec.ProviderName)
 	if err != nil {
@@ -496,6 +530,17 @@ func (a *API) Reconcile(ctx context.Context, spec Spec, secret string, step func
 		}
 		step("rebound the application")
 	}
+	if spec.Access != nil {
+		if app == nil || app.PK == "" {
+			if app, err = a.FindApplication(ctx, spec.AppSlug); err != nil {
+				return err
+			}
+		}
+		if app == nil {
+			return fmt.Errorf("Authentik has no application %q after creating it", spec.AppSlug)
+		}
+		return a.reconcileAccess(ctx, *spec.Access, app.PK, step)
+	}
 	return nil
 }
 
@@ -521,6 +566,9 @@ func (a *API) Remove(ctx context.Context, spec Spec, step func(string)) error {
 	}
 	if prov == nil {
 		step("provider already gone")
+		if spec.Access != nil {
+			return a.removeAccess(ctx, *spec.Access, step)
+		}
 		return nil
 	}
 	if prov.ClientID != spec.ClientID {
@@ -530,5 +578,8 @@ func (a *API) Remove(ctx context.Context, spec Spec, step func(string)) error {
 		return err
 	}
 	step("deleted the provider")
+	if spec.Access != nil {
+		return a.removeAccess(ctx, *spec.Access, step)
+	}
 	return nil
 }

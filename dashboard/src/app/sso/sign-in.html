@@ -149,6 +149,14 @@
             <app-state-message kind="warning" headline="Re-plan sign-in for the public dashboard address." [detail]="s.replan_reason ?? ''" />
             <button type="button" class="primary" (click)="openForm()" [disabled]="busy()">Re-plan sign-in</button>
           }
+          @if (s.open_apps?.length) {
+            <app-state-message
+              kind="warning"
+              [headline]="'Open to every Authentik user: ' + s.open_apps!.join(', ') + '.'"
+              detail="These apps were set up before access groups. Open each app and review its sign-in to close it; nothing changes until you approve."
+            />
+          }
+          <app-access-check [check]="checkAccess" />
           @if (s.offered) {
             <app-state-message kind="status" headline="The login page offers Sign in with Authentik." />
           } @else if (s.dormant) {

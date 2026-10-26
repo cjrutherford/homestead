@@ -6,6 +6,7 @@ import { ApiService, AppSignInPlan, AppSignInStatus, OperationState } from '../c
 import { httpErrorMessage } from '../core/http-error';
 import { isTerminal } from '../core/operation-view';
 import { StateMessage } from '../state/state-message';
+import { AccessCheck } from '../ui/access-check';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
 import { SessionService } from '../auth/session.service';
@@ -27,7 +28,7 @@ export function signInError(failure: HttpErrorResponse): string {
  */
 @Component({
   selector: 'app-app-sign-in',
-  imports: [Loading, Permit, StateMessage, OperationProgress, RouterLink],
+  imports: [AccessCheck, Loading, Permit, StateMessage, OperationProgress, RouterLink],
   template: `
     <app-loading [loading]="!status() && !error()" shape="lines">
       @if (error() && !status()) {
@@ -41,6 +42,14 @@ export function signInError(failure: HttpErrorResponse): string {
             }
             The app's own admin account keeps working.
           </p>
+          @if (s.open_to_all) {
+            <app-state-message
+              kind="warning"
+              [headline]="title() + ' is open to every Authentik user.'"
+              detail="This sign-in was set up before access groups. Review the plan to close it to you and the people you grant; nothing changes until you approve."
+            />
+          }
+          <app-access-check [check]="checkAccess" />
           @if (s.replan) {
             <app-state-message
               kind="notice"
@@ -67,7 +76,7 @@ export function signInError(failure: HttpErrorResponse): string {
         @if (s.offered || s.enabled) {
           <p>
             @if (s.enabled) {
-              <button type="button" (click)="review(true)" [disabled]="busy()">Review sign-in{{ s.replan ? ' changes' : '' }}</button>
+              <button type="button" (click)="review(true)" [disabled]="busy()">Review sign-in{{ s.replan || s.open_to_all ? ' changes' : '' }}</button>
               <button type="button" class="quiet" (click)="review(false)" [disabled]="busy()">Turn sign-in off</button>
             } @else {
               <button type="button" (click)="review(true)" [disabled]="busy()">Set up sign-in with Authentik</button>
@@ -191,6 +200,8 @@ export class AppSignIn implements OnInit {
     }
     return { message, address: this.address() };
   });
+
+  protected readonly checkAccess = (token: string) => this.api.appSignInAccess(this.name(), token);
 
   ngOnInit(): void {
     this.load();

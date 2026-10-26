@@ -1,10 +1,12 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"homestead/internal/appsso"
 	"homestead/internal/catalog"
@@ -71,6 +73,11 @@ func appSignInInputs(st *store.Store, m *sso.Manager, manifest catalog.Manifest)
 	}
 	if ok {
 		in.Applied = &rec
+	}
+	// The linked owner (matched at the dashboard's issuer) joins the app's
+	// groups (ADR-043 §1).
+	if status.Offered {
+		in.OwnerSub = status.Subject
 	}
 	return in, nil
 }
@@ -195,12 +202,63 @@ func (a *appSignIn) apply(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"id": op.ID})
 }
 
+// access reads back the app's groups, the owner's membership, the
+// bindings and the claim mapping from Authentik (ADR-043 §6) and changes
+// nothing. A difference is drift and is not reverted.
+func (a *appSignIn) access(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	var req accessRequest
+	if !decodeResolverRequest(w, r, &req) {
+		return
+	}
+	in, err := a.inputs(r.PathValue("name"))
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	if in.Applied == nil {
+		http.Error(w, "sign-in with Authentik is off for this app", http.StatusConflict)
+		return
+	}
+	token := resolveToken(req.Token, a.cfg.Secrets)
+	if token == "" {
+		a.writeError(w, errNoToken)
+		return
+	}
+	// A sign-in from before groups is read against what a re-plan would set
+	// up: its application shows as open.
+	expected := in.Applied.Access
+	if expected == nil {
+		plan, err := appsso.BuildPlan(in, true)
+		if err != nil {
+			a.writeError(w, err)
+			return
+		}
+		expected = plan.Access
+	}
+	dashboard := in.Dashboard
+	if !in.DashboardOK {
+		dashboard.AuthentikURL = strings.SplitN(in.Applied.Issuer, "/application/", 2)[0]
+	}
+	api := &sso.API{Base: dashboard.AuthentikURL, Token: token, Client: a.client}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	rep, err := api.ReadAccess(ctx, *expected, in.Applied.ClientID)
+	if err != nil {
+		a.s.log.Warn("app access read-back failed", "error", err)
+		http.Error(w, "Authentik could not be read: "+readBackReason(err), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, rep)
+}
+
 // mountAppSignIn registers the app sign-in routes beside dashboard SSO.
 func (s *Server) mountAppSignIn(a *appSignIn) {
 	s.appSignIn = a
 	s.mux.HandleFunc("GET /api/v1/catalog/{name}/sign-in", a.status)
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/sign-in/plan", a.plan)
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/sign-in/apply", a.apply)
+	s.mux.HandleFunc("POST /api/v1/catalog/{name}/sign-in/access", a.access)
 }
 
 // signInPreview is the install plan's sign-in offer: the plan applying

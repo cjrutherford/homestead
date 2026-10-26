@@ -54,8 +54,8 @@ func uninstallLeftovers(st *store.Store, manifest catalog.Manifest, leaveSignIn 
 	if _, on, err := records.Get(manifest.Name); err != nil {
 		return 0, "", "", err
 	} else if on && !leaveSignIn {
-		return http.StatusConflict, refuseSignIn, fmt.Sprintf("%s signs in through Authentik, and that can only be turned off while it is installed. Turn it off first: `homesteadctl apps sign-in plan %s --off`, then apply it (or Sign-in with Authentik on the app page). If Authentik cannot be reached, pass leave_sign_in to uninstall anyway and delete its provider and application in Authentik yourself",
-			manifest.Title, manifest.Name), nil
+		return http.StatusConflict, refuseSignIn, fmt.Sprintf("%s signs in through Authentik, and that can only be turned off while it is installed. Turn it off first: `homesteadctl apps sign-in plan %s --off`, then apply it (or Sign-in with Authentik on the app page). If Authentik cannot be reached, pass leave_sign_in to uninstall anyway and delete its provider, application and groups (homestead-%s-users and homestead-%s-admins) in Authentik yourself",
+			manifest.Title, manifest.Name, manifest.Name, manifest.Name), nil
 	}
 	return 0, "", "", nil
 }

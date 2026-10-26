@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"homestead/internal/appsso"
 	"homestead/internal/audit"
 	"homestead/internal/auth"
 	"homestead/internal/catalog"
@@ -109,6 +110,7 @@ func (s *Server) MountSSO(c SSOConfig) *sso.Manager {
 	s.mux.HandleFunc("GET /api/v1/sso/login", h.login)
 	s.mux.HandleFunc("GET /api/v1/sso/callback", h.callback)
 	s.mux.HandleFunc("GET /api/v1/sso", h.status)
+	s.mux.HandleFunc("POST /api/v1/sso/access", h.access)
 	s.mux.HandleFunc("POST /api/v1/sso/plan", h.plan)
 	s.mux.HandleFunc("POST /api/v1/sso/approve", h.approve)
 	s.mux.HandleFunc("POST /api/v1/sso/apply", h.apply)
@@ -383,6 +385,10 @@ type ssoView struct {
 	// re-plans and approves before sign-in works on the tunnel.
 	Replan       bool   `json:"replan,omitempty"`
 	ReplanReason string `json:"replan_reason,omitempty"`
+	// OpenApps are the apps whose Authentik sign-in binds no group, so
+	// every Authentik user can sign in to them (ADR-043 §2). Nothing is
+	// changed until the owner approves a re-plan.
+	OpenApps []string `json:"open_apps"`
 }
 
 // replanReason compares the configured spec with today's defaults and
@@ -402,6 +408,104 @@ func replanReason(spec *sso.Spec, d sso.Defaults) string {
 	return ""
 }
 
+// accessReplanReason says the dashboard application is not yet bound to
+// the owner group, or the owner was linked after it was planned.
+func accessReplanReason(st sso.Status) string {
+	switch {
+	case st.Spec == nil:
+		return ""
+	case st.Spec.Access == nil:
+		return "Sign-in was set up before access groups: the dashboard application is not bound to " + sso.OwnerGroup + ". Re-plan Sign-in and approve it."
+	case st.Linked && st.Spec.Access.OwnerSub != st.Subject:
+		return "The owner is linked now: plan Sign-in again to add them to " + sso.OwnerGroup + " and bind the application to it."
+	}
+	return ""
+}
+
+// openApps lists the apps with Authentik sign-in recorded without groups.
+func openApps(st *store.Store) []string {
+	out := []string{}
+	records := appsso.Records{DB: st.DB()}
+	pkgs, err := records.Packages()
+	if err != nil {
+		return out
+	}
+	for _, pkg := range pkgs {
+		if rec, ok, err := records.Get(pkg); err == nil && ok && rec.Access == nil {
+			out = append(out, pkg)
+		}
+	}
+	return out
+}
+
+// accessRequest is the read-back body: the Authentik token for this read
+// only, or empty to use the kept one. It is never stored or logged.
+type accessRequest struct {
+	Token string `json:"token,omitempty"`
+}
+
+// access reads back the dashboard application's group, membership and
+// binding (ADR-043 §6) without changing anything.
+func (h *ssoHandlers) access(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	var req accessRequest
+	if !decodeResolverRequest(w, r, &req) {
+		return
+	}
+	spec, ok, err := h.m.Config()
+	if err != nil {
+		http.Error(w, "failed to read sign-in state", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.Error(w, sso.ErrNotConfigured.Error(), http.StatusConflict)
+		return
+	}
+	if spec.Access == nil {
+		http.Error(w, "dashboard sign-in was set up before access groups: plan it again", http.StatusUnprocessableEntity)
+		return
+	}
+	token := resolveToken(req.Token, h.cfg.Secrets)
+	if token == "" {
+		http.Error(w, errNoToken.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	api := &sso.API{Base: spec.AuthentikURL, Token: token, Client: h.m.Client}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	rep, err := api.ReadAccess(ctx, *spec.Access, spec.AppSlug)
+	if err != nil {
+		h.s.log.Warn("sso access read-back failed", "error", err)
+		http.Error(w, "Authentik could not be read: "+readBackReason(err), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, rep)
+}
+
+// resolveToken is the request's token, else the kept one, else "".
+func resolveToken(given string, secrets *secret.Store) string {
+	if t := strings.TrimSpace(given); t != "" {
+		return t
+	}
+	if secrets != nil {
+		t, _ := secrets.Get(sso.APITokenName)
+		return t
+	}
+	return ""
+}
+
+// readBackReason is a short, secret-free reason for a failed read.
+func readBackReason(err error) string {
+	var ae *sso.APIError
+	switch {
+	case errors.As(err, &ae) && (ae.Status == http.StatusUnauthorized || ae.Status == http.StatusForbidden):
+		return "the token was refused"
+	case errors.Is(err, sso.ErrUnreachable):
+		return "Authentik did not answer"
+	}
+	return "unexpected answer"
+}
+
 func (h *ssoHandlers) statusView(r *http.Request) (ssoView, error) {
 	st, err := h.m.Status()
 	if err != nil {
@@ -411,8 +515,12 @@ func (h *ssoHandlers) statusView(r *http.Request) (ssoView, error) {
 	v := ssoView{Status: st, Defaults: ssoDefaults(h.cfg.Store, h.cfg.Port), Installed: installed}
 	if st.Configured {
 		v.ReplanReason = replanReason(st.Spec, v.Defaults)
+		if v.ReplanReason == "" {
+			v.ReplanReason = accessReplanReason(st)
+		}
 		v.Replan = v.ReplanReason != ""
 	}
+	v.OpenApps = openApps(h.cfg.Store)
 	if op, ok := operatorFromContext(r.Context()); ok {
 		v.Method = op.Session.Method
 	}

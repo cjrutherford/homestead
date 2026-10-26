@@ -176,6 +176,7 @@ var routeClasses = map[string]RouteClass{
 	"GET /api/v1/catalog/{name}/sign-in":                  ClassSession,
 	"POST /api/v1/catalog/{name}/sign-in/plan":            ClassSession,
 	"POST /api/v1/catalog/{name}/sign-in/apply":           ClassSession,
+	"POST /api/v1/catalog/{name}/sign-in/access":          ClassSession,
 	// S290 (ADR-041 §1): public app names on the tunnel.
 	"GET /api/v1/catalog/{name}/public":                  ClassSession,
 	"GET /api/v1/catalog/{name}/reach":                   ClassSession,
@@ -248,6 +249,7 @@ var routeClasses = map[string]RouteClass{
 	"PUT /api/v1/setup/steps/{name}":                     ClassSession,
 	"GET /api/v1/sso":                                    ClassSession,
 	"POST /api/v1/sso/plan":                              ClassSession,
+	"POST /api/v1/sso/access":                            ClassSession,
 	"POST /api/v1/sso/approve":                           ClassSession,
 	"POST /api/v1/sso/apply":                             ClassSession,
 	"POST /api/v1/sso/link":                              ClassSession,

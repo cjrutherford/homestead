@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"homestead/internal/catalog"
+	"homestead/internal/sso"
 )
 
 // ProviderKey is the name the app knows Authentik by (Nextcloud's
@@ -85,6 +86,8 @@ type Settings struct {
 	Issuer       string
 	ClientID     string
 	ClientSecret string
+	// Groups are the app's Authentik groups, for the adapter's role mapping.
+	Groups GroupNames
 }
 
 // Adapter configures one app's OpenID Connect sign-in (S298). Each is
@@ -96,6 +99,8 @@ type Adapter interface {
 	SignInURL(origin string) string
 	OnSettings(issuer, clientID string) []string
 	OffSettings() []string
+	// Roles maps the admin group to the app's admin role (ADR-043 §3).
+	Roles(g GroupNames) RoleMapping
 	// TrustEnv makes the service trust the appliance root mounted at CAFile.
 	TrustEnv() map[string]string
 	Enable(ctx context.Context, t Target, s Settings) error
@@ -217,7 +222,7 @@ func (immich) SignInURL(origin string) string { return origin + "/auth/login" }
 
 func (immich) OnSettings(issuer, clientID string) []string {
 	return []string{
-		fmt.Sprintf("Immich OAuth: on, issuer %s, client id %s, scopes openid email profile, button %q.", issuer, clientID, ButtonText),
+		fmt.Sprintf("Immich OAuth: on, issuer %s, client id %s, scopes openid email profile groups, button %q.", issuer, clientID, ButtonText),
 		"Immich creates an account at a person's first sign-in (auto register). Password login stays on.",
 		"The mobile app signs in through app.immich:///oauth-callback.",
 	}
@@ -225,6 +230,15 @@ func (immich) OnSettings(issuer, clientID string) []string {
 
 func (immich) OffSettings() []string {
 	return []string{"Immich OAuth: off, and its stored client secret is cleared. Password login is unchanged."}
+}
+
+// immichRoleClaim is the claim Immich reads for admin or user.
+const immichRoleClaim = "immich_role"
+
+func (immich) Roles(g GroupNames) RoleMapping {
+	return RoleMapping{Mapped: true,
+		Note:   fmt.Sprintf("Immich role claim %q: members of %s become Immich administrators, everyone else a user.", immichRoleClaim, g.Admins),
+		Claims: map[string]string{immichRoleClaim: `"admin" if admin else "user"`}}
 }
 
 func (immich) TrustEnv() map[string]string { return map[string]string{"NODE_EXTRA_CA_CERTS": CAFile} }
@@ -242,7 +256,7 @@ func (immich) psql(ctx context.Context, m catalog.Manifest, script string) error
 func (a immich) Enable(ctx context.Context, t Target, s Settings) error {
 	oauth, _ := json.Marshal(map[string]any{
 		"enabled": true, "issuerUrl": s.Issuer, "clientId": s.ClientID, "clientSecret": s.ClientSecret,
-		"scope": "openid email profile", "buttonText": ButtonText, "autoRegister": true, "autoLaunch": false,
+		"scope": "openid email profile " + sso.GroupsScope, "roleClaim": immichRoleClaim, "buttonText": ButtonText, "autoRegister": true, "autoLaunch": false,
 		"tokenEndpointAuthMethod": "client_secret_post",
 	})
 	lit := sqlQuote(string(oauth)) + "::jsonb"
@@ -286,7 +300,7 @@ func (nextcloud) SignInURL(origin string) string { return origin + "/login" }
 func (nextcloud) OnSettings(issuer, clientID string) []string {
 	return []string{
 		"Nextcloud app user_oidc: installed from the Nextcloud app store and enabled.",
-		fmt.Sprintf("user_oidc provider %q: client id %s, discovery %s.well-known/openid-configuration, scopes openid email profile.", ProviderKey, clientID, issuer),
+		fmt.Sprintf("user_oidc provider %q: client id %s, discovery %s.well-known/openid-configuration, scopes openid email profile groups.", ProviderKey, clientID, issuer),
 		"user_oidc keeps the password login form (allow_multiple_user_backends 1). Accounts are created at first sign-in.",
 		"Nextcloud trusts the appliance root (security:certificates:import) and may reach addresses on the appliance (allow_local_remote_servers true).",
 		"Nextcloud builds its links with https (overwriteprotocol https): the edge ends TLS for every route, and user_oidc refuses plain http.",
@@ -297,6 +311,11 @@ func (nextcloud) OffSettings() []string {
 	return []string{
 		fmt.Sprintf("user_oidc provider %q: deleted; the user_oidc app: disabled. allow_local_remote_servers and overwriteprotocol are left as they are.", ProviderKey),
 	}
+}
+
+func (nextcloud) Roles(g GroupNames) RoleMapping {
+	return RoleMapping{Mapped: true, AdminAlias: "admin",
+		Note: fmt.Sprintf("Nextcloud user_oidc group provisioning (claim groups): Nextcloud groups follow the homestead- groups, and members of %s are also put in Nextcloud's admin group, so they are administrators.", g.Admins)}
 }
 
 func (nextcloud) TrustEnv() map[string]string { return nil }
@@ -423,7 +442,7 @@ func (a nextcloud) Enable(ctx context.Context, t Target, s Settings) error {
 			return fmt.Errorf("appsso: occ %s: %w", args[0], err)
 		}
 	}
-	script := `IFS= read -r secret; exec php occ --no-interaction user_oidc:provider "$1" --clientid="$2" --clientsecret="$secret" --discoveryuri="$3" --scope="openid email profile"`
+	script := `IFS= read -r secret; exec php occ --no-interaction user_oidc:provider "$1" --clientid="$2" --clientsecret="$secret" --discoveryuri="$3" --scope="openid email profile groups" --group-provisioning=1 --mapping-groups=groups`
 	if _, err := execIn(ctx, t.Container, "www-data", s.ClientSecret+"\n", "sh", "-c", script, "sh",
 		ProviderKey, s.ClientID, s.Issuer+".well-known/openid-configuration"); err != nil {
 		return fmt.Errorf("appsso: register the user_oidc provider: %w", err)
@@ -481,6 +500,11 @@ func (a jellyfin) OffSettings() []string {
 // TrustEnv adds the appliance root's directory to .NET's trust list.
 func (jellyfin) TrustEnv() map[string]string {
 	return map[string]string{"SSL_CERT_DIR": "/etc/ssl/certs:" + CAMount}
+}
+
+func (jellyfin) Roles(g GroupNames) RoleMapping {
+	return RoleMapping{Mapped: true,
+		Note: fmt.Sprintf("Jellyfin SSO plugin roles (claim groups): AdminRoles %s, Roles %s, %s and %s; people outside them cannot sign in.", g.Admins, g.Users, g.Admins, g.Owner)}
 }
 
 func (a jellyfin) pluginDir() string {
@@ -598,6 +622,7 @@ type oidConfig struct {
 	EnabledFolders         xmlStrings `xml:"EnabledFolders"`
 	AdminRoles             xmlStrings `xml:"AdminRoles"`
 	Roles                  xmlStrings `xml:"Roles"`
+	RoleClaim              string     `xml:"RoleClaim"`
 	EnableFolderRoles      bool       `xml:"EnableFolderRoles"`
 	OidScopes              xmlStrings `xml:"OidScopes"`
 	SchemeOverride         string     `xml:"SchemeOverride"`
@@ -630,7 +655,10 @@ func jellyfinConfig(s *Settings) (string, error) {
 		item.Key.String = ProviderKey
 		item.Value.Config = oidConfig{
 			OidEndpoint: s.Issuer, OidClientID: s.ClientID, OidSecret: s.ClientSecret, Enabled: true,
-			EnableAllFolders: true, OidScopes: xmlStrings{Items: []string{"openid", "email", "profile"}},
+			EnableAllFolders: true, OidScopes: xmlStrings{Items: []string{"openid", "email", "profile", sso.GroupsScope}},
+			EnableAuthorization: true, RoleClaim: sso.GroupsScope,
+			Roles:          xmlStrings{Items: []string{s.Groups.Users, s.Groups.Admins, s.Groups.Owner}},
+			AdminRoles:     xmlStrings{Items: []string{s.Groups.Admins}},
 			SchemeOverride: "https", NewPath: true, DefaultUsernameClaim: "preferred_username",
 			// Plain authorization requests, as for every other app.
 			DisablePushedAuthorize: true,

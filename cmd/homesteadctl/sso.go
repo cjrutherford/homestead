@@ -23,6 +23,7 @@ const ssoUsage = `usage: homesteadctl sso <status|plan|approve|apply|link|unlink
   apply [--follow]
   link [--origin URL] [--password-file FILE]
   unlink [--password-file FILE]
+  access [--token-file FILE]
   disable
 
 Sign-in with Authentik is for the dashboard. The CLI always signs in with
@@ -55,6 +56,27 @@ func runSSO(ctx context.Context, client *apiclient.Client, args []string, stdout
 		return runSSOLink(ctx, client, args[1:], stdout, stderr)
 	case "unlink":
 		return runSSOUnlink(ctx, client, args[1:], stdout, stderr)
+	case "access":
+		set := flag.NewFlagSet("sso access", flag.ContinueOnError)
+		set.SetOutput(stderr)
+		tokenFile := set.String("token-file", "", "file holding an Authentik API token, used for this read only")
+		if set.Parse(args[1:]) != nil || set.NArg() > 0 {
+			return exitUsage
+		}
+		token := ""
+		if *tokenFile != "" {
+			t, err := readSecretFile(*tokenFile)
+			if err != nil {
+				return fail(stderr, err)
+			}
+			token = t
+		}
+		rep, err := client.SSOAccess(ctx, token)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		printAccessReport(stdout, rep)
+		return exitOK
 	case "disable":
 		st, err := client.SSODisable(ctx)
 		if err != nil {
@@ -98,6 +120,9 @@ func printSSO(w io.Writer, st apiclient.SSOState) {
 	}
 	if st.Replan {
 		fmt.Fprintf(w, "  re-plan:   %s Run `homesteadctl sso plan`, then approve.\n", st.ReplanReason)
+	}
+	if len(st.OpenApps) > 0 {
+		fmt.Fprintf(w, "  warning:   open to every Authentik user: %s. Plan each app's sign-in again to close it.\n", strings.Join(st.OpenApps, ", "))
 	}
 	if st.Linked {
 		fmt.Fprintf(w, "  linked to: %s\n", st.Subject)

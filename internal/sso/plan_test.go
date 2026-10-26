@@ -29,10 +29,21 @@ type fakeAuthentik struct {
 	nextPK      int
 	secretSet   string
 	noDiscovery bool
+	// access state (S314)
+	groups   map[string]map[string]any // name -> group
+	bindings []map[string]any
+	mappings map[string]map[string]any // name -> custom scope mapping
+	users    []map[string]any
+	deleted  []string
 }
 
 func newFakeAuthentik(t *testing.T) *fakeAuthentik {
-	f := &fakeAuthentik{version: "2026.8.3", nextPK: 41}
+	f := &fakeAuthentik{version: "2026.8.3", nextPK: 41, groups: map[string]map[string]any{}, mappings: map[string]map[string]any{},
+		users: []map[string]any{
+			{"pk": 7, "uid": "user-1", "username": "owner", "type": "internal"},
+			{"pk": 8, "uid": "user-2", "username": "guest", "type": "internal"},
+		}}
+	f.groups["outsider"] = map[string]any{"pk": "g-outsider", "name": "outsider", "users": []any{}}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
 	return f
@@ -79,13 +90,96 @@ func (f *fakeAuthentik) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = enc.Encode(list(map[string]any{"pk": "key-1", "name": r.URL.Query().Get("name")}))
-	case r.URL.Path == "/api/v3/propertymappings/provider/scope/":
+	case r.URL.Path == "/api/v3/propertymappings/provider/scope/" && r.Method == http.MethodGet:
+		if name := r.URL.Query().Get("name"); name != "" {
+			if m, ok := f.mappings[name]; ok {
+				_ = enc.Encode(list(m))
+				return
+			}
+			_ = enc.Encode(list())
+			return
+		}
 		_ = enc.Encode(list(
 			map[string]any{"pk": "m-openid", "scope_name": "openid"},
 			map[string]any{"pk": "m-email", "scope_name": "email"},
 			map[string]any{"pk": "m-profile", "scope_name": "profile"},
 			map[string]any{"pk": "m-other", "scope_name": "offline_access"},
 		))
+	case r.URL.Path == "/api/v3/propertymappings/provider/scope/" && r.Method == http.MethodPost:
+		f.posts++
+		body["pk"] = "m-" + body["name"].(string)
+		f.mappings[body["name"].(string)] = body
+		w.WriteHeader(http.StatusCreated)
+		_ = enc.Encode(body)
+	case strings.HasPrefix(r.URL.Path, "/api/v3/propertymappings/provider/scope/") && r.Method == http.MethodPatch:
+		f.patches++
+		for _, m := range f.mappings {
+			if "/api/v3/propertymappings/provider/scope/"+m["pk"].(string)+"/" == r.URL.Path {
+				for k, v := range body {
+					m[k] = v
+				}
+			}
+		}
+		_ = enc.Encode(body)
+	case strings.HasPrefix(r.URL.Path, "/api/v3/propertymappings/provider/scope/") && r.Method == http.MethodDelete:
+		for n, m := range f.mappings {
+			if "/api/v3/propertymappings/provider/scope/"+m["pk"].(string)+"/" == r.URL.Path {
+				delete(f.mappings, n)
+				f.deleted = append(f.deleted, "mapping "+n)
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	case r.URL.Path == "/api/v3/core/groups/" && r.Method == http.MethodGet:
+		var out []any
+		for _, g := range f.groups {
+			if n := r.URL.Query().Get("name"); n == "" || n == g["name"] {
+				out = append(out, g)
+			}
+		}
+		_ = enc.Encode(map[string]any{"results": out, "pagination": map[string]any{"next": 0}})
+	case r.URL.Path == "/api/v3/core/groups/" && r.Method == http.MethodPost:
+		f.posts++
+		n := body["name"].(string)
+		g := map[string]any{"pk": "g-" + n, "name": n, "users": []any{}}
+		f.groups[n] = g
+		w.WriteHeader(http.StatusCreated)
+		_ = enc.Encode(g)
+	case strings.HasSuffix(r.URL.Path, "/add_user/") && r.Method == http.MethodPost:
+		f.patches++
+		for _, g := range f.groups {
+			if "/api/v3/core/groups/"+g["pk"].(string)+"/add_user/" == r.URL.Path {
+				g["users"] = append(g["users"].([]any), body["pk"])
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	case strings.HasPrefix(r.URL.Path, "/api/v3/core/groups/") && r.Method == http.MethodDelete:
+		for n, g := range f.groups {
+			if "/api/v3/core/groups/"+g["pk"].(string)+"/" == r.URL.Path {
+				delete(f.groups, n)
+				f.deleted = append(f.deleted, "group "+n)
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	case r.URL.Path == "/api/v3/core/users/":
+		var out []any
+		for _, u := range f.users {
+			out = append(out, u)
+		}
+		_ = enc.Encode(map[string]any{"results": out, "pagination": map[string]any{"next": 0}})
+	case r.URL.Path == "/api/v3/policies/bindings/" && r.Method == http.MethodGet:
+		var out []any
+		for _, b := range f.bindings {
+			if b["target"] == r.URL.Query().Get("target") {
+				out = append(out, b)
+			}
+		}
+		_ = enc.Encode(map[string]any{"results": out, "pagination": map[string]any{"next": 0}})
+	case r.URL.Path == "/api/v3/policies/bindings/" && r.Method == http.MethodPost:
+		f.posts++
+		body["pk"] = fmt.Sprintf("b-%d", len(f.bindings))
+		f.bindings = append(f.bindings, body)
+		w.WriteHeader(http.StatusCreated)
+		_ = enc.Encode(body)
 	case r.URL.Path == "/api/v3/providers/oauth2/" && r.Method == http.MethodGet:
 		if f.provider != nil && f.provider["name"] == r.URL.Query().Get("name") {
 			_ = enc.Encode(list(f.provider))
@@ -115,6 +209,7 @@ func (f *fakeAuthentik) serve(w http.ResponseWriter, r *http.Request) {
 		_ = enc.Encode(f.app)
 	case r.URL.Path == "/api/v3/core/applications/" && r.Method == http.MethodPost:
 		f.posts++
+		body["pk"] = "app-" + fmt.Sprint(body["slug"])
 		f.app = body
 		w.WriteHeader(http.StatusCreated)
 		_ = enc.Encode(body)
@@ -205,8 +300,8 @@ func TestPlanWithATokenInspectsAndIsIdempotent(t *testing.T) {
 	if err := runDef(t, h); err != nil {
 		t.Fatal(err)
 	}
-	if ak.posts != 2 || ak.patches != 0 {
-		t.Fatalf("first apply: posts=%d patches=%d, want 2 creates", ak.posts, ak.patches)
+	if ak.posts != 3 || ak.patches != 0 {
+		t.Fatalf("first apply: posts=%d patches=%d, want group, provider, application", ak.posts, ak.patches)
 	}
 	body, _ := json.Marshal(ak.provider)
 	for _, must := range []string{`"client_type":"confidential"`, `"grant_types":["authorization_code"]`, `"matching_mode":"strict"`, `"signing_key":"key-1"`, `"sub_mode":"hashed_user_id"`,

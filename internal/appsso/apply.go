@@ -194,14 +194,14 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 			return nil
 		}},
 		{Name: "configure-app", Run: func(ctx context.Context) error {
-			if err := adapter.Enable(ctx, target, Settings{Issuer: plan.Issuer, ClientID: plan.ClientID, ClientSecret: secret}); err != nil {
+			if err := adapter.Enable(ctx, target, Settings{Issuer: plan.Issuer, ClientID: plan.ClientID, ClientSecret: secret, Groups: groupNames(m.Name)}); err != nil {
 				return failed("configure the app", err)
 			}
 			return nil
 		}},
 		{Name: "record", Run: func(context.Context) error {
 			rec := Record{Package: m.Name, Adapter: plan.Adapter, ClientID: plan.ClientID, Issuer: plan.Issuer,
-				RedirectURIs: plan.RedirectURIs, PluginVersion: pluginVersion(plan.Plugin), Actor: actor}
+				RedirectURIs: plan.RedirectURIs, PluginVersion: pluginVersion(plan.Plugin), Actor: actor, Access: plan.Access}
 			if err := rt.Records.Save(rec); err != nil {
 				return err
 			}

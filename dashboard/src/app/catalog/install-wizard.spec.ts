@@ -561,6 +561,7 @@ describe('InstallWizard', () => {
       expect(text()).toContain('OIDC, SAML');
       // S305: the review can connect sign-in during the install (S298).
       expect(text()).toContain('the review offers Sign in with Authentik as part of the install');
+      expect(text()).toContain('you, and people you grant on the People page (coming next)');
       expect(text()).not.toContain('Installing does not change that');
       expect(text()).not.toContain('Passwords Homestead creates');
     });
@@ -680,6 +681,7 @@ describe('InstallWizard', () => {
       fixture.detectChanges();
       const el = fixture.nativeElement as HTMLElement;
       expect(text()).toContain('Sign in with Authentik');
+      expect(text()).toContain('Who can sign in: you, and people you grant on the People page (coming next)');
       expect((el.querySelector('input[name="sign-in-wanted"]') as HTMLInputElement).checked).toBe(true);
       expect(text()).toContain('Homestead: GridCraft');
       expect(text()).toContain('https://gridcraft.lan/auth/login');
@@ -701,6 +703,8 @@ describe('InstallWizard', () => {
       streams.get(50)!.next(opState(50, 'succeeded'));
       fixture.detectChanges();
       expect(text()).toContain('People can sign in to GridCraft with their Authentik account.');
+      expect(text()).toContain('People you grant on the People page (coming next) can too');
+      expect(text()).toContain("add them to the app's group in Authentik");
       expect(c().signInToken()).toBe('');
     });
 

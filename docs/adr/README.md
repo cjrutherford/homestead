@@ -99,3 +99,4 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-040 | App Sign-in: Back Channel, Trust, and Adapters | Accepted |
 | ADR-041 | Public App Names on the Tunnel, and Tunnel Adoption | Accepted |
 | ADR-042 | Bootstrap Installs Docker and cloudflared | Accepted |
+| ADR-043 | People and App Access Through Authentik Groups | Accepted |

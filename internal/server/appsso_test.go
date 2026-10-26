@@ -115,3 +115,41 @@ func TestInstallPlanPreviewsSignIn(t *testing.T) {
 		t.Fatalf("no route: %+v", p)
 	}
 }
+
+func TestAppSignInPlanCarriesGroupsAndAccessReadBack(t *testing.T) {
+	a := appSignInRig(t)
+	a.linkOwner(t)
+	rec := a.req("POST", "/api/v1/catalog/immich/sign-in/plan", `{"enabled":true}`, a.owner.token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("plan: %d %s", rec.Code, rec.Body)
+	}
+	plan := decodeAs[appsso.Plan](t, rec.Body.Bytes())
+	if plan.Access == nil || plan.Access.OwnerSub != "owner-sub" ||
+		strings.Join(plan.Access.Groups, ",") != "homestead-immich-users,homestead-immich-admins,homestead-owner" {
+		t.Fatalf("access: %+v", plan.Access)
+	}
+	// An old sign-in (no access record) is open to every Authentik user.
+	if err := (appsso.Records{DB: a.st.DB()}).Save(appsso.Record{Package: "immich", Adapter: catalog.AdapterImmich, ClientID: "homestead-immich", Issuer: plan.Issuer, RedirectURIs: plan.RedirectURIs}); err != nil {
+		t.Fatal(err)
+	}
+	st := decodeAs[appsso.Status](t, a.req("GET", "/api/v1/catalog/immich/sign-in", "", a.owner.token).Body.Bytes())
+	if !st.Enabled || !st.OpenToAll {
+		t.Fatalf("status: %+v", st)
+	}
+	view := decodeAs[ssoView](t, a.req("GET", "/api/v1/sso", "", a.owner.token).Body.Bytes())
+	if len(view.OpenApps) != 1 || view.OpenApps[0] != "immich" {
+		t.Fatalf("open apps: %v", view.OpenApps)
+	}
+	// Read-back needs a token when none is kept; with one it reports, unchanged.
+	if rec := a.req("POST", "/api/v1/catalog/immich/sign-in/access", `{}`, a.owner.token); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("no token: %d %s", rec.Code, rec.Body)
+	}
+	groups, bindings := len(a.w.groups), len(a.w.bindings)
+	rec = a.req("POST", "/api/v1/catalog/immich/sign-in/access", `{"token":"`+ssoToken+`"}`, a.owner.token)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"open":true`) {
+		t.Fatalf("access: %d %s", rec.Code, rec.Body)
+	}
+	if len(a.w.groups) != groups || len(a.w.bindings) != bindings {
+		t.Fatal("a read-back changed Authentik")
+	}
+}

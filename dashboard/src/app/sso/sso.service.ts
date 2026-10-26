@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
+import { AccessReport } from '../core/api.service';
 
 /** What a plan will make in Authentik (S286, ADR-033). Holds no secret. */
 export interface SsoSpec {
@@ -66,6 +67,8 @@ export interface SsoState {
   /** The tunnel added a public dashboard name the setup does not cover yet (S296). */
   replan?: boolean;
   replan_reason?: string;
+  /** Apps whose Authentik sign-in binds no group: open to every Authentik user (S314). */
+  open_apps?: string[];
 }
 
 /**
@@ -81,6 +84,11 @@ export class SsoService {
 
   ssoStatus(): Observable<SsoState> {
     return this.http.get<SsoState>('/api/v1/sso');
+  }
+
+  /** Reads back who can sign in to the dashboard; nothing changes (S314). */
+  ssoAccess(token = ''): Observable<AccessReport> {
+    return this.http.post<AccessReport>('/api/v1/sso/access', token ? { token } : {});
   }
 
   ssoPlan(body: SsoPlanRequest): Observable<SsoPlan> {

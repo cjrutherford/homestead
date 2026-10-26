@@ -9,10 +9,12 @@ import (
 
 	"homestead/internal/apiclient"
 	"homestead/internal/appsso"
+	"homestead/internal/sso"
 )
 
 const appSignInUsage = `usage: homesteadctl apps sign-in <status|plan|apply> <package> [flags]
   status <package>
+  access <package> [--token-file FILE]
   plan <package> [--off]
   apply <package> --digest D [--off] [--token-file FILE] [--follow]`
 
@@ -57,9 +59,28 @@ func runAppsSignIn(ctx context.Context, client *apiclient.Client, args []string,
 		}
 		printAppSignInPlan(stdout, plan, *off)
 		return exitOK
+	case "access":
+		if *off || *digest != "" || *follow {
+			fmt.Fprintln(stderr, appSignInUsage)
+			return exitUsage
+		}
+		token := ""
+		if *tokenFile != "" {
+			t, err := readSecretFile(*tokenFile)
+			if err != nil {
+				return fail(stderr, err)
+			}
+			token = t
+		}
+		rep, err := client.AppSignInAccess(ctx, pkg, token)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		printAccessReport(stdout, rep)
+		return exitOK
 	case "apply":
 	default:
-		fmt.Fprintf(stderr, "unknown apps sign-in subcommand %q (status, plan, apply)\n", sub)
+		fmt.Fprintf(stderr, "unknown apps sign-in subcommand %q (status, plan, access, apply)\n", sub)
 		return exitUsage
 	}
 	if *digest == "" {
@@ -92,6 +113,9 @@ func printAppSignInStatus(w io.Writer, s appsso.Status) {
 		fmt.Fprintf(w, "sign-in with Authentik: on (%s)\n", s.Adapter)
 		if s.SignInURL != "" {
 			fmt.Fprintf(w, "sign in at: %s\n", s.SignInURL)
+		}
+		if s.OpenToAll {
+			fmt.Fprintf(w, "warning: open to every Authentik user; plan again to close it: homesteadctl apps sign-in plan %s\n", s.Package)
 		}
 		if s.Replan {
 			fmt.Fprintf(w, "re-plan: the app's names changed; review with homesteadctl apps sign-in plan %s\n", s.Package)
@@ -140,4 +164,30 @@ func printAppSignInPlan(w io.Writer, p appsso.Plan, off bool) {
 		flags = " --off"
 	}
 	fmt.Fprintf(w, "approve: homesteadctl apps sign-in apply %s%s --digest %s [--token-file FILE]\n", p.Package, flags, p.Digest)
+}
+
+// printAccessReport prints a read-back (S314). Drift is reported, never reverted.
+func printAccessReport(w io.Writer, r sso.AccessReport) {
+	for _, g := range r.Groups {
+		state := "missing"
+		if g.Exists {
+			state = fmt.Sprintf("%d member(s), owner in it: %t", g.Members, g.OwnerMember)
+		}
+		fmt.Fprintf(w, "group %s: %s\n", g.Name, state)
+	}
+	for _, b := range r.Bindings {
+		fmt.Fprintf(w, "binding %s: bound=%t\n", b.Group, b.Bound)
+	}
+	if r.ClaimMapping != "" {
+		fmt.Fprintf(w, "groups claim mapping: %s\n", r.ClaimMapping)
+	}
+	if r.Open {
+		fmt.Fprintln(w, "warning: open to every Authentik user (no group binding)")
+	}
+	if len(r.Drift) == 0 {
+		fmt.Fprintln(w, "no drift from what Homestead created")
+	}
+	for _, d := range r.Drift {
+		fmt.Fprintf(w, "drift: %s\n", d)
+	}
 }

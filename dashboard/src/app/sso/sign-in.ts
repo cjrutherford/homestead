@@ -7,6 +7,7 @@ import { ssoErrorMessage } from '../core/sso-errors';
 import { WorkOrders } from '../core/work-orders.service';
 import { SetupService } from '../setup/setup.service';
 import { StateMessage } from '../state/state-message';
+import { AccessCheck } from '../ui/access-check';
 import { Dialog } from '../ui/dialog';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
@@ -24,7 +25,7 @@ import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
  * soon as each request leaves. It is never stored by the browser.
  */
 @Component({
-  imports: [Dialog, Loading, OperationProgress, Permit, SsoLink, StateMessage],
+  imports: [AccessCheck, Dialog, Loading, OperationProgress, Permit, SsoLink, StateMessage],
   selector: 'app-sign-in',
   templateUrl: './sign-in.html',
 })
@@ -37,6 +38,7 @@ export class SignIn implements OnInit {
   private readonly router = inject(Router);
   private readonly setup = inject(SetupService);
 
+  protected readonly checkAccess = (token: string) => this.sso.ssoAccess(token);
   protected readonly state = signal<SsoState | null>(null);
   protected readonly plan = signal<SsoPlan | null>(null);
   protected readonly operationId = signal<number | null>(null);

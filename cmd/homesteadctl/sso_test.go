@@ -113,3 +113,34 @@ func TestSSOCLI(t *testing.T) {
 		t.Fatal("unknown subcommand must be a usage error")
 	}
 }
+
+func TestAccessReadBackAndOpenWarning(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/v1/catalog/jellyfin/sign-in/access", "POST /api/v1/sso/access":
+			_, _ = w.Write([]byte(`{"groups":[{"name":"homestead-owner","exists":true,"members":1,"owner_member":true}],"bindings":[{"group":"homestead-owner","bound":false}],"claim_mapping":"ok","open":true,"drift":["homestead-owner is not bound"]}`))
+		case "GET /api/v1/catalog/jellyfin/sign-in":
+			_, _ = w.Write([]byte(`{"package":"jellyfin","enabled":true,"adapter":"jellyfin","open_to_all":true}`))
+		case "GET /api/v1/sso":
+			_, _ = w.Write([]byte(`{"state":"configured","configured":true,"linked":true,"offered":true,"spec":{"issuer":"i"},"open_apps":["jellyfin"]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(ts.Close)
+	for _, args := range [][]string{{"apps", "sign-in", "access", "jellyfin"}, {"sso", "access"}} {
+		code, out, _ := invoke(t, append([]string{"--server", ts.URL}, args...))
+		if code != exitOK || !strings.Contains(out, "drift: homestead-owner is not bound") || !strings.Contains(out, "open to every Authentik user") {
+			t.Fatalf("%v: %d %s", args, code, out)
+		}
+	}
+	_, out, _ := invoke(t, []string{"--server", ts.URL, "apps", "sign-in", "status", "jellyfin"})
+	if !strings.Contains(out, "open to every Authentik user") {
+		t.Fatalf("app status: %s", out)
+	}
+	_, out, _ = invoke(t, []string{"--server", ts.URL, "sso", "status"})
+	if !strings.Contains(out, "open to every Authentik user: jellyfin") {
+		t.Fatalf("sso status: %s", out)
+	}
+}

@@ -118,7 +118,7 @@ func TestPlanRefusesWithoutThePreconditions(t *testing.T) {
 func TestANewNameReplansTheRedirects(t *testing.T) {
 	in := inputs(t, "jellyfin")
 	p, _ := BuildPlan(in, true)
-	in.Applied = &Record{Package: "jellyfin", Issuer: p.Issuer, RedirectURIs: p.RedirectURIs, PluginVersion: "4.0.0.4"}
+	in.Applied = &Record{Package: "jellyfin", Issuer: p.Issuer, RedirectURIs: p.RedirectURIs, PluginVersion: "4.0.0.4", Access: p.Access}
 	if st := BuildStatus(in, false); st.Replan || !st.Enabled || st.SignInURL != "https://jellyfin.lan/sso/OID/start/authentik" {
 		t.Fatalf("status: %+v", st)
 	}
@@ -357,9 +357,10 @@ func (s *memSecrets) Get(n string) (string, error) {
 func (s *memSecrets) Delete(n string) error { delete(s.m, n); return nil }
 
 type fakeAuthentik struct {
-	specs   []sso.Spec
-	secret  string
-	removed []string
+	specs       []sso.Spec
+	removedSpec sso.Spec
+	secret      string
+	removed     []string
 }
 
 func (f *fakeAuthentik) Version(context.Context) (string, error) { return "2026.8.3", nil }
@@ -369,7 +370,7 @@ func (f *fakeAuthentik) Reconcile(_ context.Context, spec sso.Spec, secret strin
 	return nil
 }
 func (f *fakeAuthentik) Remove(_ context.Context, spec sso.Spec, step func(string)) error {
-	f.removed = append(f.removed, spec.ProviderName)
+	f.removed, f.removedSpec = append(f.removed, spec.ProviderName), spec
 	step("deleted the provider")
 	return nil
 }

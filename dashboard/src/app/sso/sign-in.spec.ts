@@ -241,6 +241,23 @@ describe('SignIn', () => {
     expect(origins).toEqual([...SPEC.origins, 'https://homestead.example.com']);
   });
 
+  it('warns which apps are open to every Authentik user and reads back the dashboard groups (S314)', async () => {
+    await open();
+    status({ ...NONE, state: 'configured', configured: true, linked: true, offered: true, spec: SPEC, subject: 'sub-1', open_apps: ['jellyfin', 'immich'] });
+    http.expectOne('/api/v1/sso').flush({ ...NONE, configured: true, linked: true, spec: SPEC });
+    expect(text()).toContain('Open to every Authentik user: jellyfin, immich.');
+    button('Check who can sign in').click();
+    http.expectOne('/api/v1/sso/access').flush({
+      groups: [{ name: 'homestead-owner', exists: true, members: 1, owner_member: true }],
+      bindings: [{ group: 'homestead-owner', bound: true }],
+      open: false,
+      drift: [],
+    });
+    fixture.detectChanges();
+    expect(text()).toContain('homestead-owner: 1 member, you are in it');
+    expect(text()).toContain('Matches what Homestead made.');
+  });
+
   it('shows the dormant state without a button promise', async () => {
     await open();
     status({ ...NONE, state: 'configured', configured: true, linked: true, dormant: true, spec: SPEC, subject: 's' });

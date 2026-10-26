@@ -282,6 +282,17 @@ export interface AppSignInStatus {
   plugin?: PinnedPlugin;
   sign_in_url?: string;
   token_kept: boolean;
+  /** A sign-in made before groups: every Authentik user can sign in (S314, ADR-043). */
+  open_to_all?: boolean;
+}
+
+/** A read-back of the groups and bindings Homestead made in Authentik (S314). */
+export interface AccessReport {
+  groups: { name: string; exists: boolean; members: number; owner_member: boolean }[];
+  bindings: { group: string; bound: boolean }[];
+  claim_mapping?: 'ok' | 'missing' | 'differs';
+  open: boolean;
+  drift: string[];
 }
 
 /** POST /api/v1/catalog/:name/sign-in/plan (S298): what approving does, with its digest. */
@@ -1693,6 +1704,14 @@ export class ApiService {
       body.token = token;
     }
     return this.http.post<OperationStarted>(`/api/v1/catalog/${encodeURIComponent(name)}/sign-in/apply`, body);
+  }
+
+  /** Reads back, without changing anything, who can sign in to the app (S314). */
+  appSignInAccess(name: string, token = ''): Observable<AccessReport> {
+    return this.http.post<AccessReport>(
+      `/api/v1/catalog/${encodeURIComponent(name)}/sign-in/access`,
+      token ? { token } : {},
+    );
   }
 
   backupPolicy(): Observable<BackupPolicyStatus> {

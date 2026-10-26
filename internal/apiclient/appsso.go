@@ -5,6 +5,7 @@ import (
 	"net/url"
 
 	"homestead/internal/appsso"
+	"homestead/internal/sso"
 )
 
 // AppSignInRequest is a plan or apply body (S298). Token is the Authentik
@@ -38,4 +39,12 @@ func (c *Client) AppSignInApply(ctx context.Context, pkg string, req AppSignInRe
 	var out OperationStarted
 	err := c.postJSON(ctx, signInPath(pkg, "/apply"), req, &out)
 	return out.ID, err
+}
+
+// AppSignInAccess reads back the groups and bindings Homestead made for the
+// app's sign-in (S314). Nothing changes.
+func (c *Client) AppSignInAccess(ctx context.Context, pkg, token string) (sso.AccessReport, error) {
+	var out sso.AccessReport
+	err := c.postJSON(ctx, signInPath(pkg, "/access"), AccessRequest{Token: token}, &out)
+	return out, err
 }

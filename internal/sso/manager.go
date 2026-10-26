@@ -312,6 +312,13 @@ func (m *Manager) BuildSpec(req PlanRequest) (Spec, error) {
 	for _, o := range origins {
 		spec.RedirectURIs = append(spec.RedirectURIs, o+CallbackPath)
 	}
+	// ADR-043 §1-2: the dashboard application is bound to the owner group,
+	// on top of the (issuer, sub) check, which stays.
+	access := Access{Groups: []string{OwnerGroup}, OwnerOf: []string{OwnerGroup}, Bindings: []string{OwnerGroup}}
+	if link, ok, _ := m.readLink(); ok && link.Issuer == spec.Issuer {
+		access.OwnerSub = link.Sub
+	}
+	spec.Access = &access
 	if m.Version != nil {
 		spec.AuthentikVersion = m.Version()
 	}
@@ -335,8 +342,8 @@ func (m *Manager) Plan(ctx context.Context, req PlanRequest, actor string) (Plan
 	plan := Plan{
 		Spec: spec, Digest: digestOf(spec), ExpiresAt: m.now().Add(PlanTTL),
 		Untouched: []string{
-			"users and groups", "flows and stages (the two stock flows named here are only referenced)",
-			"policies and bindings", "every other application and provider", "Authentik's own settings",
+			"users (other than finding the linked owner) and groups without the " + GroupPrefix + " prefix", "flows and stages (the two stock flows named here are only referenced)",
+			"policies and bindings other than the application's own", "every other application and provider", "Authentik's own settings",
 		},
 	}
 	plan.Warnings = planWarnings(spec)
@@ -381,6 +388,13 @@ func planWarnings(spec Spec) []string {
 		"The API token you give Homestead can do anything an Authentik administrator can; Authentik tokens are not narrowly scoped. Homestead uses it once to create the provider and the application, then forgets it unless you choose to keep it.",
 		"Anyone who controls Authentik (an administrator there, a stolen token, a bad upgrade) can sign in to this dashboard as the linked owner. The local owner password always works, and you can unlink or turn sign-in off from it at any time.",
 		"Homestead generates the client secret and keeps it sealed; it never appears in this plan, in the audit trail or in an export.",
+	}
+	if spec.Access != nil {
+		if spec.Access.OwnerSub == "" {
+			w = append(w, "No owner is linked yet, so the dashboard application is not bound to "+OwnerGroup+" and the owner group stays empty. Link the owner, then plan sign-in again to close the application to everyone else.")
+		} else {
+			w = append(w, "The dashboard application is bound to the group "+OwnerGroup+", which holds only the linked owner. The (issuer, subject) check is unchanged.")
+		}
 	}
 	for _, o := range spec.Origins {
 		if strings.HasPrefix(o, "http://") {

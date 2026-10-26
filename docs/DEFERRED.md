@@ -1026,3 +1026,31 @@
 - A public plan refused before the install (for example a duplicate name)
   shows on the Address and Review steps; the owner turns publishing off to
   install without it. There is no automatic name suggestion.
+
+## S314
+
+- Drift is reported by the read-back (`apps sign-in access`, `sso access`) and
+  never put back; there is no "Put back" action. ADR-043 §6 leaves a repair to
+  a later slice.
+- Granting people and their groups is S315 (People page and CLI). Until then
+  the owner adds someone to `homestead-<app>-users` in Authentik by hand.
+- Other members of `homestead-owner` (added in Authentik) are left alone and
+  only counted; Homestead adds the linked owner and never removes anyone.
+- There is no scheduled read-back; it runs when the owner asks. An
+  Authentik token is needed for it unless the dashboard sign-in kept one.
+- The groups scope mapping is appended after the provider's stock mappings,
+  and Authentik merges claims in order; a stock mapping that also emits
+  `groups` would be overridden by ours. Not exercised against a live
+  Authentik.
+- Adapter admin mapping is unverified live: Nextcloud (`user_oidc`
+  `--group-provisioning` / `--mapping-groups` and the `admin` alias group),
+  Jellyfin (SSO plugin `AdminRoles`/`Roles`/`RoleClaim`) and Immich
+  (`roleClaim` `immich_role`). The owner's VM 2 check covers them.
+- Turning sign-in off removes the app's two groups, but an uninstall with
+  `leave_sign_in` leaves them (the refusal text says so); Homestead cannot
+  delete them then.
+- A sign-in made before S314 stays open to every Authentik user until the
+  owner approves a re-plan; no automatic migration, by design.
+- Only one linked owner is matched, by the Authentik `uid` (the hashed user
+  id) that equals the OIDC `sub`; an Authentik sub mode other than hashed
+  would not match and the plan then warns that no owner is linked.
