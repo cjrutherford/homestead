@@ -72,6 +72,10 @@ var knownImageVolumes = map[string]imageVolumes{
 		Volumes:     []string{"/data", "/music"},
 		OwnerMounts: []string{"/music"},
 	},
+	// S355: verified from the Docker Hub image config for 1.29.1 on
+	// 2026-10-26: /config only, root user, 25600/tcp. The comics library
+	// is an owner volume and is not an image VOLUME.
+	"docker.io/gotson/komga:1.29.1":        {Volumes: []string{"/config"}},
 	"ghcr.io/goauthentik/server:2026.8.3":  {},
 	"docker.io/library/postgres:16-alpine": {Volumes: []string{"/var/lib/postgresql/data"}},
 	// S345: Vaultwarden declares /data in its Dockerfile. Not yet inspected

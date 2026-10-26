@@ -158,8 +158,13 @@ music server: SQLite on application storage with a consistent export, the
 artwork and transcode cache on bulk, and the owner music volume shared
 with Jellyfin.
 
-Next scheduled: S355 `komga` (`docs/SLICE_PLAN.md`) adds the comic and
-manga library with a JVM heap cap in the manifest.
+S355 `komga` (`docs/slices/S355-komga.md`) adds the comic and manga
+library: SQLite on application storage with a consistent export, the
+comics library as a bulk owner volume, and a JVM heap cap so the server
+stays inside its declared memory.
+
+Next scheduled: S356 `calibre-web-automated` (`docs/SLICE_PLAN.md`) adds
+the e-book library with automatic ingest and conversion.
 
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
 catalog track and an Everything-app track, with dependencies, the critical

@@ -2270,6 +2270,18 @@ the administrator in the app, so no secret is declared; SSO is
 proxy header path stays off until the edge injects a trusted identity
 header. The image declares `/music` as a volume, so `knownImageVolumes`
 marks it as an owner mount while still checking every other volume.
+The Komga package (S355) in `catalog/` adds the comic and manga server.
+`/config` holds three WAL SQLite databases (main, tasks, sessions), the
+Lucene index, fonts, logs, and any owner `application.yml`; it is
+application storage and the backup path, with a `sqlite` export of
+`config/database.sqlite` authoritative for the main database. The comics
+library is a bulk owner volume, never a declaration, so a large collection
+is referenced rather than copied. The image sets no maximum heap, so
+`JAVA_TOOL_OPTIONS=-Xmx768m` caps the JVM inside the declared 1 GiB; the
+first visit creates the administrator, and optional OIDC is a Spring
+client registration the owner puts in `application.yml`. Komga declares
+no `library` integration: that gate requires a bulk declaration, and its
+library is deliberately an owner volume.
 The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine

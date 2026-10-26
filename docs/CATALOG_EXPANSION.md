@@ -70,8 +70,9 @@ The catalog baseline at planning time contained 17 packages:
 
 Wave 1 has since shipped seven more (`vaultwarden`, `paperless-ngx`,
 `gitea`, `freshrss`, `linkding`, `mealie`, and `uptime-kuma` in S351),
-and Wave 2 opened with `audiobookshelf` (S353) and `navidrome` (S354),
-bringing the catalog to 26; the slice ledger is `docs/SLICE_INDEX.md`.
+and Wave 2 opened with `audiobookshelf` (S353), `navidrome` (S354), and
+`komga` (S355), bringing the catalog to 27; the slice ledger is
+`docs/SLICE_INDEX.md`.
 
 The platform already provides AdGuard Home, Caddy, Headscale/Tailscale,
 Dockge and the Homestead dashboard. Those are **not** catalog candidates:

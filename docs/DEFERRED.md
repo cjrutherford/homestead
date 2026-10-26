@@ -1470,6 +1470,19 @@ slice is scheduled yet.
   ListenBrainz) stay at upstream defaults; disabling them with
   `ND_ENABLEEXTERNALSERVICES=false` is an owner setting, not a catalog
   default.
+- Komga OIDC client actuation: S355 declares optional OIDC, but Komga
+  reads a Spring client registration (`spring.security.oauth2.client`) in
+  `application.yml` under `/config`: the issuer URI, redirect template, and
+  client credentials are owner-supplied, and the catalog has no issuer
+  input to build them from. The owner configures the client in Authentik
+  and in that file (backed up with the config tree); local accounts stay
+  available. Actuating it like the `sso.oidc` packages is deferred.
+- Several SQLite databases in one package: the catalog supports one
+  database export per package. Komga's main `database.sqlite` is exported
+  consistently, but `tasks.sqlite` and `sessions.sqlite` are copied as
+  live WAL files; both are Flyway-migrated and recreated if missing, so a
+  restore loses task history and sessions rather than library data. A
+  multi-export declaration is deferred.
 - Gitea's SSH surface: S347 installs HTTPS-only (`DISABLE_SSH`), publishes
   no SSH port and deploys no keys. Enabling `ssh://` clones — an SSH port
   through the host or an overlay tunnel, authorized keys, and clone URLs

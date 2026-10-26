@@ -1,0 +1,79 @@
+# Komga comic and manga server (S355): the third Wave 2 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# One Docker Hub container. The image runs as root, declares /config as its
+# only VOLUME, and listens on 25600. /config holds three WAL SQLite
+# databases, the Lucene index, fonts, and logs; the main database gets a
+# consistent export. The comics library is an owner volume on bulk storage
+# (never declared), so a large collection never rides in a backup. The JVM
+# heap is capped because the default maximum is a quarter of host RAM, which
+# would let the server crowd the appliance.
+name: komga
+version: 1.29.1
+title: Komga
+blurb: Your comics and manga, on every screen.
+description: Komga is a comic, manga, and PDF library with a browser reader,
+  OPDS feeds, and phone and tablet apps. It indexes the folders you already
+  keep, storing metadata, read progress, and thumbnails in SQLite on
+  application storage. The comics library stays an owner volume on bulk
+  storage, so a large collection is referenced rather than copied into every
+  backup, and the JVM heap is capped so the server cannot crowd the
+  appliance.
+category: books
+icon: mdi:book-open-page-variant
+services:
+- name: komga
+  image: docker.io/gotson/komga:1.29.1
+  exposes: web
+  environment:
+    # The image sets no heap cap, so the JVM defaults to a quarter of the
+    # host's RAM (several gigabytes on a typical appliance). A fixed cap
+    # keeps Komga within its declared 1 GiB while leaving room for
+    # metaspace, the native image libraries, and the Lucene index.
+    JAVA_TOOL_OPTIONS: -Xmx768m
+  # Image VOLUME: /config (verified from the Docker Hub image config for
+  # 1.29.1: root user, 25600/tcp, KOMGA_CONFIGDIR=/config). /config holds
+  # database.sqlite, tasks.sqlite, sessions.sqlite (all WAL), the Lucene
+  # search index, fonts, and logs. The comics library is an owner volume
+  # (a bulk directory added at install, read-only for reading or writable
+  # for Komga's import and delete features); a declaration would place the
+  # library under <bulk>/komga/ and copy it into every backup.
+  data:
+  - target: /config
+    class: application
+    subpath: config
+requirements:
+  memorymb: 1024
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 4294967296
+  - class: bulk
+    minbytes: 10737418240
+  # Komga listens on 25600; routes proxy to it and no host port is
+  # published by default.
+  ports: [25600]
+exposure:
+  package: komga
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Comics, manga, and reading progress leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- config
+# The main database is exported consistently; the config tree is still
+# copied for the owner's application.yml, the Lucene index, and the
+# tasks/sessions databases (the latter two are regenerated if missing).
+database:
+  service: komga
+  kind: sqlite
+  path: config/database.sqlite
+sso:
+  class: optional
+  protocols: [oidc]
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in with Authentik once its OIDC client is configured in Komga's application.yml under /config; Komga matches users by email, and local accounts stay available.

@@ -8,6 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"homestead/internal/identity"
 	"homestead/internal/storage"
 )
 
@@ -30,7 +31,7 @@ func repoCatalog(t *testing.T) Catalog {
 // curatedPackages is the one place the expected shipped catalog is listed
 // (sorted, as Names returns it). Adding a package to catalog/ edits this
 // list and nothing else here: each craft slice appends its app.
-var curatedPackages = []string{"audiobookshelf", "authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "freshrss", "gitea", "gridcraft", "immich", "jellyfin", "lightcraft", "linkding", "mealie", "navidrome", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "uptime-kuma", "vaultwarden", "vectorcraft", "wordcraft"}
+var curatedPackages = []string{"audiobookshelf", "authentik", "cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft", "freshrss", "gitea", "gridcraft", "immich", "jellyfin", "komga", "lightcraft", "linkding", "mealie", "navidrome", "nextcloud", "paperless-ngx", "pdfcraft", "photocraft", "soundcraft", "uptime-kuma", "vaultwarden", "vectorcraft", "wordcraft"}
 
 // assertCuratedNames fails when the shipped catalog and curatedPackages
 // differ, in either direction.
@@ -977,6 +978,97 @@ func TestCuratedNavidrome(t *testing.T) {
 		Arch: "amd64", MemoryMB: 512, CPUCount: 2,
 		FreeSpace: map[storage.Class]uint64{
 			storage.ClassApplication: 4 << 30,
+			storage.ClassBulk:        20 << 30,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !report.Passed {
+		t.Fatalf("report = %+v", report)
+	}
+}
+
+// TestCuratedKomga pins the third Wave 2 package (S355): the pinned
+// official image, the JVM heap cap that keeps it inside its declared
+// memory, SQLite on application storage with a consistent export, the
+// comics library left to the install, optional OIDC, and the identity
+// integration.
+func TestCuratedKomga(t *testing.T) {
+	catalog := repoCatalog(t)
+	manifest, err := catalog.Get("komga")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if manifest.Version != "1.29.1" {
+		t.Fatalf("version = %q", manifest.Version)
+	}
+	if len(manifest.Services) != 1 ||
+		manifest.Services[0].Image != "docker.io/gotson/komga:1.29.1" {
+		t.Fatalf("services = %+v", manifest.Services)
+	}
+	service := manifest.Services[0]
+	if len(service.Environment) != 1 || service.Environment["JAVA_TOOL_OPTIONS"] != "-Xmx768m" {
+		t.Fatalf("environment = %v, want only the JVM heap cap", service.Environment)
+	}
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 0 {
+		t.Fatalf("komga needs no entrypoint override or secret; secrets = %+v", manifest.Secrets)
+	}
+	wantData := []struct {
+		target  string
+		class   storage.Class
+		subpath string
+	}{
+		{"/config", storage.ClassApplication, "config"},
+	}
+	if len(service.Data) != len(wantData) {
+		t.Fatalf("data = %+v", service.Data)
+	}
+	for _, data := range service.Data {
+		if data.Target == "/data" {
+			t.Fatal("/data is an owner volume; declaring it would pull the comics library into every backup")
+		}
+	}
+	for i, want := range wantData {
+		data := service.Data[i]
+		if data.Target != want.target || data.Class != want.class || data.Subpath != want.subpath {
+			t.Fatalf("data[%d] = %+v, want %+v", i, data, want)
+		}
+	}
+	if len(manifest.BackupPaths) != 1 || manifest.BackupPaths[0] != "config" {
+		t.Fatalf("backuppaths = %v", manifest.BackupPaths)
+	}
+	if manifest.Database == nil || manifest.Database.Kind != DatabaseSQLite ||
+		manifest.Database.Service != "komga" ||
+		manifest.Database.Path != "config/database.sqlite" {
+		t.Fatalf("database = %+v, want the SQLite export", manifest.Database)
+	}
+	if len(manifest.Requirements.Ports) != 1 || manifest.Requirements.Ports[0] != 25600 {
+		t.Fatalf("ports = %v", manifest.Requirements.Ports)
+	}
+	if manifest.Requirements.MemoryMB != 1024 {
+		t.Fatalf("memory = %d MB, want the JVM cap to fit inside it", manifest.Requirements.MemoryMB)
+	}
+	endpoint, ok := manifest.Exposure.Find("web")
+	if !ok || string(endpoint.Recommended) != "local" || !endpoint.AllowWider || len(endpoint.Warnings) == 0 {
+		t.Fatalf("endpoint = %+v", endpoint)
+	}
+	if manifest.SSO.Class != SSOOptional || len(manifest.SSO.Protocols) != 1 ||
+		manifest.SSO.Protocols[0] != identity.CapabilityOIDC {
+		t.Fatalf("sso = %+v, want optional OIDC", manifest.SSO)
+	}
+	if len(manifest.Integrations) != 1 ||
+		manifest.Integrations[0].Kind != IntegrationIdentity ||
+		manifest.Integrations[0].Target != "authentik" {
+		t.Fatalf("integrations = %+v", manifest.Integrations)
+	}
+	report, err := Evaluate(manifest, HostFacts{
+		Arch: "amd64", MemoryMB: 2048, CPUCount: 2,
+		FreeSpace: map[storage.Class]uint64{
+			storage.ClassApplication: 8 << 30,
 			storage.ClassBulk:        20 << 30,
 		},
 	})
