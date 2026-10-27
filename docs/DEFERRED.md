@@ -28,7 +28,9 @@
 - AdGuard Home install-wizard automation (`POST /control/install/configure`):
   needed before friendly names (S086) work end-to-end against a fresh
   instance; kept out of S085 as version-brittle and unverifiable without
-  a live server.
+  a live server. S382 owns the deterministic bootstrap (a version-checked
+  install API or a pre-seeded minimal configuration) and the first
+  end-to-end local-name proof.
 - Route 53 STS session-token flow: the S094 adapter takes static IAM keys
   only; short-lived credentials need a refresh flow no slice owns yet.
 - Overlay-view DNS application: S098 computes overlay effective tables,
@@ -1510,3 +1512,33 @@ slice is scheduled yet.
 - SAML and LDAP client actuation, provider-side secret rotation, and
   authorisation-group mapping stay out of scope until a package needs
   them; the S342 mechanism is OIDC-only.
+
+## Craft serve and DNS advertisement validation (S382)
+
+- Local DNS advertisement gap: route reconciliation writes the Caddy snippet
+  and records `edge_routes`, but writes no local DNS answer.
+  `docker.EnsureNameDefinition`, `jellyfin.LocalRewrite`,
+  `docker.AdguardDeployDefinition` and `dns.EstablishSplitDNS` have no
+  production caller, and the daemon has no local DNS configuration. The
+  Craft apps start page renders `https://<route host>/`, so a link only
+  works on a device with a hosts entry. S382 wires the accepted S84-S86
+  capability into reconcile, adds the managed/external/off owner choice and
+  proves resolution from a second LAN client.
+- mDNS app names: S221 advertises `homestead.local` and `_homestead._tcp`
+  only. App hostnames are not mDNS names; advertising them would need a
+  `.local` naming decision (and probably a wildcard answer), so it stays out
+  of S382 and is recorded here.
+- Local DNS beyond IPv4: S382 advertises A answers for the appliance's
+  selected LAN address. AAAA answers, multi-homed appliances (which address
+  is advertised), and telling LAN clients to use the appliance as their
+  resolver through DHCP are later work; S382 documents the client-side DNS
+  requirement instead.
+- Stale craft signature notes: the committed craft manifest is signed at
+  counter 8 (commit `3af901f`) and the shipped-key test verifies it. The
+  per-batch "unsigned manifest" notes under the S250-S253 sections above are
+  stale; S382 re-runs the full matrix against the signed manifest and
+  corrects them.
+- Craft KVM leftovers: the "KVM acceptance pending" notes for the S250-S253
+  batches are stale (the runs are recorded in `docs/DEVELOPMENT.md`), but
+  none of those runs proved DNS resolution. S382's fresh-appliance matrix is
+  the single run that closes both the stale notes and the DNS proof.

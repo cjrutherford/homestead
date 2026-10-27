@@ -28,10 +28,13 @@ Phases:
 22. Recovery
 23. Distribution
 
-Craft app slices after the phase list (S249 to S254, S279 to S281):
+Craft app slices after the phase list (S249 to S254, S279 to S281, S382):
 S254 Nextcloud craft integration (hooked apps: GridCraft, CADCraft, PdfCraft
 full; FilmCraft, EffectCraft open-only), then S281 Craft apps start page
 (`docs/slices/S281-craft-start-page.md`, governed by ADR-031, Accepted 2026-10-17).
+S382 is the later validation gate: it re-runs all 13 craft packages and
+closes the local DNS advertisement gap that the S249-S253 KVM runs bypassed
+with `--resolve` or host-resolver rules.
 
 Dashboard design slices (owner direction 2026-10-18, extending S248 under
 ADR-019), one at a time: S282 visual foundation
@@ -168,9 +171,20 @@ adds the self-filing e-book library: the library and the Nextcloud-shared
 ingest folder on bulk storage, the application databases on application
 storage with a consistent export, and optional in-app OIDC.
 
-Next scheduled: S357 `vikunja` (`docs/SLICE_PLAN.md`) adds the task
-manager whose CalDAV support points at Nextcloud.
+S382 `craft serve and DNS advertisement validation`
+(`docs/slices/S382-craft-serve-and-dns-advertisement-validation.md`) is a
+validation slice with fixes, not a catalog package: it runs all 13 craft
+packages through build, serve and lifecycle on a fresh appliance, then wires
+the accepted S84-S86 local DNS capability into route reconciliation so
+`<app>.lan` resolves from another LAN client instead of only through
+`--resolve` or a host-resolver override. It closes the gap that leaves the
+Craft apps start page links unresolvable, verifies removal and foreign
+rewrites, and records the remaining mDNS/IPv6/DHCP limits.
 
-The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S381 across a
-catalog track and an Everything-app track, with dependencies, the critical
-path and the recommended interleave.
+Next scheduled: S382 `craft serve and DNS advertisement validation`
+(`docs/SLICE_PLAN.md`). After it, S357 `vikunja` (`docs/SLICE_PLAN.md`) adds
+the task manager whose CalDAV support points at Nextcloud.
+
+The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S382 across a
+catalog track, an Everything-app track and the craft validation gate, with
+dependencies, the critical path and the recommended interleave.

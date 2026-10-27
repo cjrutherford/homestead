@@ -1,13 +1,14 @@
 # Remaining Slice Plan
 
-Status: proposed schedule (2026-10-23). Scope is every remaining slice from
-`docs/CATALOG_EXPANSION.md` and the Everything repackaging assessment in
-`docs/reports/catalog-expansion.html`. Slice IDs are assigned here so the
-two tracks cannot collide; each slice's contract file is written when it is
+Status: proposed schedule (2026-10-26). Scope is every remaining slice from
+`docs/CATALOG_EXPANSION.md`, the Everything repackaging assessment in
+`docs/reports/catalog-expansion.html`, and the craft build/serve validation
+gate in section 2.6. Slice IDs are assigned here so the
+tracks cannot collide; each slice's contract file is written when it is
 scheduled, not now.
 
 Numbering continues from S341 (catalog integration contract). The plan ends
-at **S381** — 41 slices. Work with no ID is listed in section 7 and is not
+at **S382** — 42 slices. Work with no ID is listed in section 7 and is not
 committed to.
 
 ## 1. Rules that apply to every slice below
@@ -88,6 +89,18 @@ needs the S341 library declaration to name its shared ingest path.
 | S365 | `seerr` | S341 | Jellyfin login; LAN only. |
 | S366 | `bookstack` | S352,S360 | MariaDB export, OIDC, LinuxServer image. Last slice of the catalog track. |
 
+### 2.6 Validation gate — craft build, serve and local names
+
+This is a validation slice with fixes, not a catalog package. It is off the
+catalog critical path but runs next: the craft packages are already built,
+and their KVM acceptance never proved that a LAN client can resolve the
+route names. It also de-risks S367, which reuses the craft static-image
+shape.
+
+| ID | Slice | Depends on | Scope |
+|----|-------|-----------|-------|
+| S382 | Craft build, serve and DNS advertisement validation | S249-S253,S279,S280,S281,S237,S84-S86,S96,S98 | Run all 13 craft packages end to end on a fresh appliance; wire the accepted S84-S86 local DNS capability into route reconciliation so every local route host resolves from another LAN client; verify the start page links, removal, foreign rewrites and doctor state; fix defects found. May add local DNS API/CLI/dashboard surfaces, so `docs/PARITY.md` applies. No new DNS architecture expected (ADR-007/ADR-009). |
+
 ## 3. Track B — Everything apps
 
 Track B is independent of Track A until an app slice declares catalog
@@ -140,27 +153,35 @@ The longest chain is:
 That is 25 slices and cannot be shortened much: Wave 1 is gated on S342 by
 owner decision, and Wave 3 is gated on S360 and S352.
 
+S382 is off the catalog critical path but runs next: the craft packages are
+already built, and their KVM acceptance never proved a LAN client can resolve
+the route names. Leaving that open keeps the Craft apps start page promising
+links that do not work and keeps S367 building on an unverified serve path.
+
 Track B is the only place to win time. Recommended interleave, so the
 first owner-visible win lands early and the riskiest slice is tested before
 the catalog is half-built:
 
 1. S341 — catalog integration contract (done)
 2. S342 — OIDC actuation and secret delivery
-3. S367 — bridge and build pipeline (**spike exit check**)
-4. S368 — `tasks`
-5. S343 — GHCR discovery
-6. S344 — bundles and capacity
-7. S345 → S351 — Wave 1, one per slice
-8. S369 → S372 — four Everything apps
-9. S352 — MariaDB export
-10. S353 → S359 — Wave 2
-11. S373 → S378 — remaining clean Everything apps
-12. S360 → S366 — Wave 3
-13. S379 → S381 — extras
+3. S382 — craft build/serve and DNS advertisement validation (**runs next**)
+4. S367 — bridge and build pipeline (**spike exit check**)
+5. S368 — `tasks`
+6. S343 — GHCR discovery
+7. S344 — bundles and capacity
+8. S345 → S351 — Wave 1, one per slice
+9. S369 → S372 — four Everything apps
+10. S352 — MariaDB export
+11. S353 → S359 — Wave 2
+12. S373 → S378 — remaining clean Everything apps
+13. S360 → S366 — Wave 3
+14. S379 → S381 — extras
 
-Rationale: S367 sits third because it is the only slice that can invalidate
-a whole track. Finding that out after twenty catalog packages would be an
-expensive discovery.
+Rationale: S382 sits third because the craft suite is already built and its
+unresolvable names block the start page; proving the serve and name path now
+also de-risks S367. S367 then sits fourth because it is the only slice that
+can invalidate a whole track. Finding that out after twenty catalog packages
+would be an expensive discovery.
 
 ## 5. Definition of done — app slices
 
@@ -175,6 +196,10 @@ Every package slice (S345-S351, S353-S366, S368-S381) closes only when:
 - backup covers the database export and file paths, with the restore
   story written down;
 - exposure defaults to local/overlay, with any widening documented;
+- every routed app's hostname resolves from the audience its exposure names
+  — local DNS for local, overlay DNS for overlay, public DNS for public;
+  S382 makes the local case real, and a route without a resolvable name is
+  not done;
 - CLI plan and dashboard agree (parity);
 - tests cover manifest validation, plan rendering and install;
 - `docs/DEFERRED.md` records anything found but not done;
@@ -196,7 +221,7 @@ slice.
 
 **Owner-operator apps** (bridge-clean, wrong default suite): `accounting`,
 `cap-table`, `crm`, `pos`, `AssetDesk`. Schedule on request, one slice
-each, after S381.
+each, after S382.
 
 **Blocked on a capability we are not building:** `calendar`, `email`,
 `meetings`, `teamchat`, `wiki`, `signatures`, `help-desk`, `field-service`,
@@ -215,6 +240,11 @@ design), `collabora`/`onlyoffice` (Nextcloud app management), `immich-kiosk`
 ## 8. What could renumber this plan
 
 - **S367 fails its exit check.** Track B stops; S368-S381 are released.
+- **S382 cannot advertise local names safely.** If wiring S84-S86 needs a
+  DNS design different from ADR-007/ADR-009 (for example port 53 is owned
+  by the OS and cannot be resolved), the DNS half splits into its own slice
+  behind a superseding ADR; the build/serve half still lands. The ID stays
+  with the validation.
 - **A package fails its hard gates at slice time.** The ID is not reused;
   the slice is withdrawn and the next package moves up.
 - **The Compose generator gains a field** (healthcheck, `depends_on`).
