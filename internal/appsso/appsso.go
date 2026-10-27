@@ -197,6 +197,23 @@ type Inputs struct {
 	// OwnerSub is the linked owner's subject at the dashboard's issuer;
 	// empty when no owner is linked (S314).
 	OwnerSub string
+	// PublicAuthentikURL is Authentik's public address while the edge
+	// answers it on this box (ADR-047): an app with a public name signs
+	// in there. PublicWaiting, when set, says why a published app still
+	// signs in at the local address.
+	PublicAuthentikURL string
+	PublicWaiting      string
+}
+
+// published reports an app with a public name: its own tunnel names, or
+// a path published on the dashboard's public name (ADR-044).
+func published(routes []docker.Route) bool {
+	for _, r := range routes {
+		if len(r.Tunnel) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // Offered reports whether the app can be signed in to through Authentik
@@ -221,16 +238,19 @@ type Plan struct {
 	Package string `json:"package"`
 	Title   string `json:"title"`
 	// Enabled is the state the plan leads to.
-	Enabled      bool                  `json:"enabled"`
-	Adapter      string                `json:"adapter"`
-	Provider     string                `json:"provider"`
-	Application  string                `json:"application"`
-	ClientID     string                `json:"client_id"`
-	Issuer       string                `json:"issuer"`
-	RedirectURIs []string              `json:"redirect_uris"`
-	AppSettings  []string              `json:"app_settings"`
-	Plugin       *catalog.PinnedPlugin `json:"plugin,omitempty"`
-	SignInURL    string                `json:"sign_in_url,omitempty"`
+	Enabled     bool   `json:"enabled"`
+	Adapter     string `json:"adapter"`
+	Provider    string `json:"provider"`
+	Application string `json:"application"`
+	ClientID    string `json:"client_id"`
+	Issuer      string `json:"issuer"`
+	// ReplacedIssuer is the applied issuer this plan moves away from
+	// (ADR-047: publishing moves an app to Authentik's public address).
+	ReplacedIssuer string                `json:"replaced_issuer,omitempty"`
+	RedirectURIs   []string              `json:"redirect_uris"`
+	AppSettings    []string              `json:"app_settings"`
+	Plugin         *catalog.PinnedPlugin `json:"plugin,omitempty"`
+	SignInURL      string                `json:"sign_in_url,omitempty"`
 	// Access is the groups, owner membership, bindings and groups claim
 	// mapping (ADR-043), and AdminRoles says how the app's admin role is
 	// set from the admin group.
@@ -321,7 +341,20 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 		return Plan{}, unavailable("%s", why)
 	}
 	base := strings.TrimSuffix(in.Dashboard.AuthentikURL, "/")
+	if published(in.Routes) {
+		// Browsers through the tunnel cannot reach the local name, so a
+		// published app signs in at Authentik's public address; the edge
+		// answers it on this box for the app's own calls (ADR-047).
+		if in.PublicAuthentikURL != "" {
+			base = strings.TrimSuffix(in.PublicAuthentikURL, "/")
+		} else if in.PublicWaiting != "" {
+			p.Warnings = append(p.Warnings, fmt.Sprintf("Visitors through the tunnel cannot sign in to %s with Authentik yet: %s", m.Title, in.PublicWaiting))
+		}
+	}
 	p.Issuer = sso.IssuerFor(base, p.ClientID)
+	if in.Applied != nil && in.Applied.Issuer != p.Issuer {
+		p.ReplacedIssuer = in.Applied.Issuer
+	}
 	origins := Origins(in.Routes)
 	p.RedirectURIs = adapter.RedirectURIs(origins)
 	p.SignInURL = adapter.SignInURL(origins[0])
@@ -343,6 +376,9 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 		p.Changes = append(p.Changes, "Nothing changes: sign-in with Authentik is on and matches the app's names. Applying checks Authentik and the app again.")
 	default:
 		p.Changes = append(p.Changes, "Update the provider and the app to match the app's current names:")
+		if p.ReplacedIssuer != "" {
+			p.Changes = append(p.Changes, fmt.Sprintf("Sign in at %s: the issuer %s replaces %s.", base, p.Issuer, p.ReplacedIssuer))
+		}
 		for _, line := range listDiff(in.Applied.RedirectURIs, p.RedirectURIs) {
 			p.Changes = append(p.Changes, line)
 		}

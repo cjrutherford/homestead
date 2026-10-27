@@ -29,11 +29,12 @@ func RouteFilename(host Hostname) string {
 // probing is emitted only when a path is set. Automatic mode on a
 // private name is refused: no public CA can issue for it, so rendering
 // would deploy a route Caddy can never bring up (S101) — use internal.
-func RenderRoute(r Route) (string, error) { return renderRoute(r, nil) }
+func RenderRoute(r Route) (string, error) { return renderRoute(r, nil, nil) }
 
 // renderRoute is RenderRoute with an optional placed certificate for
-// automatic-TLS routes (S278).
-func renderRoute(r Route, cert *PlacedCert) (string, error) {
+// automatic-TLS routes (S278), and the dashboard's sign-in site
+// certificate (ADR-047).
+func renderRoute(r Route, cert, signIn *PlacedCert) (string, error) {
 	if err := r.Validate(); err != nil {
 		return "", err
 	}
@@ -112,7 +113,7 @@ func renderRoute(r Route, cert *PlacedCert) (string, error) {
 # Exposure: %s. Upstream: %s.
 %s {
 %s}
-`, r.Exposure, upstream, site, serving) + renderTunnelEntry(r, upstream), nil
+`, r.Exposure, upstream, site, serving) + renderTunnelEntry(r, upstream) + renderSignInSite(r, signIn), nil
 }
 
 // renderTunnelEntry is the site block for the route's tunnel names

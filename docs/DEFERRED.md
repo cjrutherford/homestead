@@ -1217,3 +1217,19 @@ Craft apps under one host, by path (ADR-045).
   configured sign-in it starts from.
 - Without a kept token, the owner still re-plans Sign-in separately; the
   tunnel flow does not ask for the token.
+
+## S323 published apps sign in at Authentik's public address (2026-10-27)
+
+- The certificate for the public dashboard name is a separate approval in
+  TLS. Nothing adds it to the TLS strategy or plans it from the tunnel
+  flow; the app sign-in plan only says it is missing.
+- An Authentik on its own name (the layout before ADR-044) with a tunnel
+  name keeps the local issuer for apps; ADR-047 covers the path layout
+  only.
+- Publishing, unpublishing, or placing the certificate does not re-plan
+  app sign-in. The app's status shows a waiting re-plan for the owner to
+  approve.
+- An issuance plan lists the dashboard's local name as the served route
+  for a certificate covering its public name, not the public name itself.
+- LAN browsers sign in to published apps through the public name, so app
+  sign-in needs the internet (ADR-047 §4); there is no split DNS.

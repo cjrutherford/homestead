@@ -56,10 +56,12 @@ func newSecret() (string, error) {
 }
 
 // wiring is the override entries for the service that talks to Authentik.
-func wiring(m catalog.Manifest, adapter Adapter, dashboard sso.Spec) catalog.SignInWiring {
+// The host entry follows the issuer's host (ADR-047): the local name, or
+// Authentik's public name, which the edge also answers on this box.
+func wiring(m catalog.Manifest, adapter Adapter, issuer string) catalog.SignInWiring {
 	return catalog.SignInWiring{
 		Service:    m.SSO.OIDC.Service,
-		ExtraHosts: []string{hostOf(dashboard.AuthentikURL) + ":host-gateway"},
+		ExtraHosts: []string{hostOf(issuer) + ":host-gateway"},
 		Volumes:    []string{"./" + CADir + ":" + CAMount + ":ro"},
 		Env:        adapter.TrustEnv(),
 	}
@@ -83,7 +85,7 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 	if origins := originsOf(plan.RedirectURIs); len(origins) > 0 {
 		target.Address = origins[0]
 	}
-	wire := wiring(m, adapter, dashboard)
+	wire := wiring(m, adapter, plan.Issuer)
 	failed := func(what string, err error) error {
 		rt.audit(actor, "app.sign-in", "error", fmt.Sprintf("%s: %s failed", m.Name, what))
 		return err
@@ -99,6 +101,12 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 				return err
 			}
 			if err := os.WriteFile(filepath.Join(caDir, caHostFn), pem, 0o644); err != nil {
+				return err
+			}
+		}
+		if on && plan.ReplacedIssuer != "" && hostOf(plan.ReplacedIssuer) != hostOf(plan.Issuer) {
+			// The host entry of the issuer this plan replaces goes.
+			if err := catalog.ApplySignInWiring(dir, wiring(m, adapter, plan.ReplacedIssuer), false); err != nil {
 				return err
 			}
 		}

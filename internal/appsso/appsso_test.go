@@ -436,6 +436,29 @@ func TestApplyOnThenOff(t *testing.T) {
 		t.Fatalf("wiring duplicated:\n%s", override2)
 	}
 
+	// Publishing moves the app to Authentik's public address (ADR-047):
+	// the host entry follows the issuer, the old one goes.
+	in.Applied = &rec
+	pub := in
+	pub.Routes = append([]docker.Route(nil), in.Routes...)
+	pub.Routes[0].Tunnel = []docker.Hostname{"immich.example.com"}
+	pub.PublicAuthentikURL = "https://homestead.example.com/apps/auth"
+	moved, _ := BuildPlan(pub, true)
+	def, _ = Definition(rt, moved, in.Manifest, dashboard, ak, "owner")
+	for _, step := range def.Steps {
+		if err := step.Run(context.Background()); err != nil {
+			t.Fatalf("publish %s: %v", step.Name, err)
+		}
+	}
+	overridePub, _ := os.ReadFile(filepath.Join(dir, catalog.OverrideFileName))
+	if !strings.Contains(string(overridePub), "homestead.example.com:host-gateway") || strings.Contains(string(overridePub), "authentik.lan:host-gateway") ||
+		strings.Count(string(overridePub), "NODE_EXTRA_CA_CERTS") != 1 {
+		t.Fatalf("published override:\n%s", overridePub)
+	}
+	rec, _, _ = Records{DB: st.DB()}.Get("immich")
+	if rec.Issuer != "https://homestead.example.com/apps/auth/application/o/homestead-immich/" {
+		t.Fatalf("published record issuer = %s", rec.Issuer)
+	}
 	in.Applied = &rec
 	off, _ := BuildPlan(in, false)
 	def, _ = Definition(rt, off, in.Manifest, dashboard, ak, "owner")

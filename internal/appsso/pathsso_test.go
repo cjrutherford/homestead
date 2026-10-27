@@ -63,8 +63,64 @@ func TestPathAppsSignInUnderTheirPaths(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if w := wiring(m, adapter, spec); fmt.Sprint(w.ExtraHosts) != "[homestead.lan:host-gateway]" {
+		if w := wiring(m, adapter, p.Issuer); fmt.Sprint(w.ExtraHosts) != "[homestead.lan:host-gateway]" {
 			t.Fatalf("%s: back channel = %v", c.name, w.ExtraHosts)
 		}
+	}
+}
+
+// ADR-047 §1-2: a published app signs in at Authentik's public address
+// once the edge answers it on this box, and its host entry follows; an
+// unpublished app keeps the local one; until then the plan says why.
+func TestPublishedAppsSignInAtPublicAddress(t *testing.T) {
+	dash := docker.Route{Host: "homestead.lan", Dashboard: true, Exposure: docker.ExposureLocal, TLS: docker.TLSInternal,
+		Tunnel: []docker.Hostname{"homestead.example.com"}}
+	spec := dashboard
+	spec.AuthentikURL = "https://homestead.lan/apps/auth"
+	m := manifest(t, "nextcloud")
+	adapter, err := AdapterFor(*m.SSO.OIDC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := func(publishedApp bool, public, waiting string, applied *Record) Inputs {
+		app := route("nextcloud.lan", "nextcloud")
+		app.Path, app.Published = "/apps/nextcloud/", publishedApp
+		table := []docker.Route{dash, app}
+		return Inputs{Manifest: m, Installed: true, AuthentikInstalled: true, Dashboard: spec, DashboardOK: true,
+			Routes: docker.ServedRoutes(table, AppRoutes(m, table)), Applied: applied,
+			PublicAuthentikURL: public, PublicWaiting: waiting}
+	}
+	local := "https://homestead.lan/apps/auth/application/o/homestead-nextcloud/"
+	public := "https://homestead.example.com/apps/auth/application/o/homestead-nextcloud/"
+
+	p, err := BuildPlan(inputs(true, "https://homestead.example.com/apps/auth/", "", nil), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Issuer != public || p.ReplacedIssuer != "" {
+		t.Fatalf("published issuer = %s (replaces %q)", p.Issuer, p.ReplacedIssuer)
+	}
+	if w := wiring(m, adapter, p.Issuer); fmt.Sprint(w.ExtraHosts) != "[homestead.example.com:host-gateway]" ||
+		!strings.Contains(strings.Join(p.AppSettings, " "), "resolves homestead.example.com to the appliance edge") {
+		t.Fatalf("back channel = %v, settings %v", w.ExtraHosts, p.AppSettings)
+	}
+
+	if p, _ = BuildPlan(inputs(false, "https://homestead.example.com/apps/auth", "", nil), true); p.Issuer != local {
+		t.Fatalf("unpublished issuer = %s", p.Issuer)
+	}
+
+	waiting := "add a certificate for homestead.example.com."
+	if p, _ = BuildPlan(inputs(true, "", waiting, nil), true); p.Issuer != local ||
+		!strings.Contains(strings.Join(p.Warnings, " "), "cannot sign in to Nextcloud with Authentik yet: "+waiting) {
+		t.Fatalf("waiting plan = %s %v", p.Issuer, p.Warnings)
+	}
+
+	applied := &Record{Package: "nextcloud", Issuer: local, RedirectURIs: p.RedirectURIs}
+	p, _ = BuildPlan(inputs(true, "https://homestead.example.com/apps/auth", "", applied), true)
+	if p.ReplacedIssuer != local || !strings.Contains(strings.Join(p.Changes, " "), "the issuer "+public+" replaces "+local) {
+		t.Fatalf("re-plan = %+v", p)
+	}
+	if st := BuildStatus(inputs(true, "https://homestead.example.com/apps/auth", "", applied), true); !st.Replan {
+		t.Fatal("status does not ask for a re-plan after publishing")
 	}
 }

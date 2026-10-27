@@ -68,6 +68,7 @@ func appSignInInputs(st *store.Store, m *sso.Manager, manifest catalog.Manifest)
 		return in, err
 	}
 	in.Routes = docker.ServedRoutes(set.Routes, appsso.AppRoutes(manifest, set.Routes))
+	in.PublicAuthentikURL, in.PublicWaiting = publicAuthentik(set)
 	rec, ok, err := (appsso.Records{DB: st.DB()}).Get(manifest.Name)
 	if err != nil {
 		return in, err
@@ -81,6 +82,35 @@ func appSignInInputs(st *store.Store, m *sso.Manager, manifest catalog.Manifest)
 		in.OwnerSub = status.Subject
 	}
 	return in, nil
+}
+
+// signInSiteServed reports the public name the edge answers on 443 for
+// Authentik (ADR-047), stubbed in tests.
+var signInSiteServed = func(set docker.RouteSet) (docker.Hostname, bool) {
+	return docker.SignInSiteServed(docker.CaddyStack().Dir, set)
+}
+
+// publicAuthentik is Authentik's public address for published apps
+// (ADR-047): set while Authentik's path is published and the edge
+// answers the public name on this box; otherwise, with the path
+// published, what the owner still has to do.
+func publicAuthentik(set docker.RouteSet) (url, waiting string) {
+	for _, r := range set.Routes {
+		if !isAuthentikRoute(r) || !r.IsPath() {
+			continue
+		}
+		_, public := authentikPathURLs(set, r)
+		if public == "" {
+			return "", ""
+		}
+		name := docker.PublicServerName(set.Routes)
+		if served, ok := signInSiteServed(set); ok && served == name {
+			return public, ""
+		}
+		return "", fmt.Sprintf("Authentik's public address %s is not answered on this box yet. "+
+			"Add a certificate for %s in TLS (DNS-01 with the Cloudflare token), approve and issue it, then re-plan sign-in here.", public, name)
+	}
+	return "", ""
 }
 
 // tokenKept says the dashboard sign-in kept its Authentik API token

@@ -103,3 +103,4 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-044 | Apps Under One Host, by Path | Accepted |
 | ADR-045 | Craft Apps Under One Host, by Path | Accepted |
 | ADR-046 | Tunnel Setup Updates the Dashboard's Sign-in | Accepted |
+| ADR-047 | Published Apps Sign In at Authentik's Public Address | Accepted |
