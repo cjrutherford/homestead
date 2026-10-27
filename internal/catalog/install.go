@@ -47,6 +47,30 @@ type InstallRequest struct {
 	Networks       []NetworkAttachment
 	Zone           string
 	PublicIP       netip.Addr
+	// ApplianceNames are the appliance's own local names, the dashboard
+	// route's (homestead.lan, homestead.local): a package served by path
+	// answers under them (ADR-044). Empty means the defaults.
+	ApplianceNames []string
+}
+
+// DefaultApplianceNames are the dashboard's names before the owner sets
+// one (ADR-035): homestead.lan and its mDNS name.
+var DefaultApplianceNames = []string{string(docker.DefaultDashboardName), "homestead.local"}
+
+func (r InstallRequest) applianceNames() []string {
+	if len(r.ApplianceNames) == 0 {
+		return DefaultApplianceNames
+	}
+	return r.ApplianceNames
+}
+
+// PlannedSeed is one resolved first-start file: its absolute host path
+// and the content written there when nothing is.
+type PlannedSeed struct {
+	Service string
+	Target  string
+	Source  string
+	Content string
 }
 
 // TLSNeed names the certificate strategy per host: internal or public
@@ -83,6 +107,9 @@ type InstallPlan struct {
 	// BrowserAdvisories repeats the manifest's browser requirements
 	// (S252). They never block: the appliance cannot see the browser.
 	BrowserAdvisories []BrowserRequirement
+	// Seeds are first-start files written before the app starts, only
+	// where absent (ADR-044: Jellyfin's Base URL).
+	Seeds []PlannedSeed
 	// EdgeNetwork is true when routed services join the external edge
 	// network; install creates that network if it is missing.
 	EdgeNetwork bool
@@ -162,6 +189,9 @@ func (p *InstallPlan) emptyNotNil() {
 	if p.BrowserAdvisories == nil {
 		p.BrowserAdvisories = []BrowserRequirement{}
 	}
+	if p.Seeds == nil {
+		p.Seeds = []PlannedSeed{}
+	}
 	if p.Notes == nil {
 		p.Notes = []string{}
 	}
@@ -195,6 +225,16 @@ func planRoutes(plan *InstallPlan, req InstallRequest, recommendations []RouteRe
 		route, err := BuildRoute(recommendation, docker.Hostname(host), recommendation.Service, port)
 		if err != nil {
 			return fmt.Errorf("catalog: route %q: %w", recommendation.Endpoint, err)
+		}
+		if req.Manifest.ServedByPath() {
+			// The record keeps the app's install name as its key; the
+			// edge serves it only at its path (ADR-044).
+			route.Path = req.Manifest.AppPath()
+			route.StripPrefix = req.Manifest.StripPrefix
+			route.Redirects = append([]docker.PathRedirect(nil), req.Manifest.Redirects...)
+			if err := route.Validate(); err != nil {
+				return fmt.Errorf("catalog: route %q: %w", recommendation.Endpoint, err)
+			}
 		}
 		plan.Routes = append(plan.Routes, route)
 	}
@@ -315,18 +355,41 @@ func planCompose(plan *InstallPlan, req InstallRequest) error {
 	}
 	routeHosts := map[string]string{}
 	routeNames := map[string][]string{}
+	routePaths := map[string]string{}
 	for _, route := range plan.Routes {
+		if route.IsPath() {
+			// Served under the appliance's names (ADR-044).
+			names := req.applianceNames()
+			routeHosts[route.Target.Host] = names[0]
+			routeNames[route.Target.Host] = append(routeNames[route.Target.Host], names...)
+			routePaths[route.Target.Host] = strings.TrimSuffix(route.Path, "/")
+			continue
+		}
 		routeHosts[route.Target.Host] = string(route.Host)
 		for _, n := range route.Names() {
 			routeNames[route.Target.Host] = append(routeNames[route.Target.Host], string(n))
 		}
 	}
 	files, err := Generate(req.Manifest, Generation{Networks: networks, EdgeServices: edgeServices, Services: specs,
-		RouteHosts: routeHosts, RouteNames: routeNames})
+		RouteHosts: routeHosts, RouteNames: routeNames, RoutePaths: routePaths})
 	if err != nil {
 		return err
 	}
 	plan.Compose = files
+	for _, seed := range req.Manifest.Seeds {
+		data, _ := seedMount(req.Manifest, seed)
+		var source string
+		for _, mount := range plan.Mounts {
+			if mount.Service == seed.Service && mount.Target == data.Target {
+				source = mount.Source + strings.TrimPrefix(seed.Target, strings.TrimSuffix(data.Target, "/"))
+			}
+		}
+		if source == "" {
+			return fmt.Errorf("catalog: seed %q has no mounted data path", seed.Target)
+		}
+		content := strings.ReplaceAll(seed.Content, RoutePathToken, routePaths[seed.Service])
+		plan.Seeds = append(plan.Seeds, PlannedSeed{Service: seed.Service, Target: seed.Target, Source: source, Content: content})
+	}
 	for _, image := range craftImages(files.Images) {
 		plan.Notes = append(plan.Notes, fmt.Sprintf("%s is built locally from a signed craft manifest (never pulled): run homesteadctl craft build first; install refuses until the recorded local image matches", image))
 	}
@@ -438,6 +501,10 @@ func planDNS(plan *InstallPlan, req InstallRequest) error {
 // records direction only.
 func planTLS(plan *InstallPlan) {
 	for _, route := range plan.Routes {
+		if route.IsPath() {
+			// Served on the appliance's names, under their certificate.
+			continue
+		}
 		issuer := cert.IssuerInternal
 		if docker.RecommendedTLS(route.Host, route.Exposure) == docker.TLSAuto {
 			issuer = cert.IssuerACME

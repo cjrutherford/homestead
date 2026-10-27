@@ -31,7 +31,7 @@
               <tbody>
                 @for (app of state.apps; track app.host) {
                   <tr>
-                    <th scope="row" class="mono">{{ app.host }}</th>
+                    <th scope="row" class="mono">{{ app.path ? (app.names[0] ?? app.host) : app.host }}</th>
                     <td class="mono">{{ app.names.slice(1).join(', ') || '—' }}</td>
                   </tr>
                 }

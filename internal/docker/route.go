@@ -154,6 +154,65 @@ type Route struct {
 	// (ADR-037): served only on the loopback tunnel entry, never on the LAN
 	// listeners, and owned by the tunnel setup and teardown.
 	Tunnel []Hostname `json:",omitempty"`
+	// Path, when set, makes this an app route served under the
+	// appliance's own names (ADR-044): the dashboard route's site block
+	// carries a handle at Path for it, and the edge never serves it on
+	// Host. Host then only names the record (the app's install name), so
+	// the route keeps one key in the table. Paths live under AppsPrefix.
+	Path string `json:",omitempty"`
+	// StripPrefix removes Path before the request reaches the upstream,
+	// for apps whose base-path setting only rewrites the links they
+	// generate (Nextcloud's overwritewebroot). Apps that serve under the
+	// prefix themselves (Authentik, Jellyfin) keep it.
+	StripPrefix bool `json:",omitempty"`
+	// Redirects send fixed root paths on the appliance's names into the
+	// app's path (Nextcloud's /.well-known/caldav and carddav).
+	Redirects []PathRedirect `json:",omitempty"`
+	// Published makes the path also answer on the dashboard route's
+	// tunnel names (ADR-044 §3). Until then the public names answer 404
+	// for it. Set and cleared only by the approved public-address plan.
+	Published bool `json:",omitempty"`
+	// paths are the path routes the dashboard route carries when it is
+	// rendered (render time only, never stored).
+	paths []Route
+}
+
+// AppsPrefix is the reserved path prefix app paths live under
+// (ADR-044). The dashboard serves nothing below it, so an app path
+// never shadows /api/ or the dashboard's assets.
+const AppsPrefix = "/apps/"
+
+var (
+	validAppPath      = regexp.MustCompile(`^/apps/[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?/$`)
+	validRedirectFrom = regexp.MustCompile(`^/\.well-known/[a-z0-9-]+$`)
+	validRedirectTo   = regexp.MustCompile(`^[A-Za-z0-9._~/-]*$`)
+)
+
+// PathRedirect redirects From (a /.well-known/ path on the appliance's
+// names) to To, relative to the app's Path.
+type PathRedirect struct {
+	From string
+	To   string
+}
+
+// AppPathFor is the default path of an app (ADR-044): /apps/<name>/.
+func AppPathFor(name string) string { return AppsPrefix + name + "/" }
+
+// ValidateAppPath checks an app path: /apps/<label>/ exactly.
+func ValidateAppPath(path string) error {
+	if !validAppPath.MatchString(path) {
+		return fmt.Errorf("route.path: must be %s<name>/ with a lowercase name (the reserved prefix keeps apps off /api/ and the dashboard's assets)", AppsPrefix)
+	}
+	return nil
+}
+
+// IsPath reports a path route (ADR-044).
+func (r Route) IsPath() bool { return r.Path != "" }
+
+// PathURL is the app's address on one appliance name, with a trailing
+// slash: https://homestead.lan/apps/nextcloud/.
+func PathURL(host Hostname, path string) string {
+	return "https://" + string(host) + path
 }
 
 // ErrDashboardPublic explains the refusal of a public dashboard route.
@@ -185,7 +244,7 @@ const mdnsReserved = "homestead"
 // <label>.local for a local or overlay app route whose host is
 // <label>.lan. It is derived, never stored, so it follows the route.
 func (r Route) LocalAlias() (Hostname, bool) {
-	if r.Dashboard || r.Exposure == ExposurePublic || r.TLS == TLSAuto {
+	if r.Dashboard || r.IsPath() || r.Exposure == ExposurePublic || r.TLS == TLSAuto {
 		return "", false
 	}
 	host := strings.ToLower(string(r.Host))
@@ -250,6 +309,9 @@ func (r Route) Validate() error {
 	if err := r.validateTunnel(); err != nil {
 		return err
 	}
+	if err := r.validatePath(); err != nil {
+		return err
+	}
 	if r.Policy != nil {
 		if err := r.Policy.Validate(); err != nil {
 			return err
@@ -289,6 +351,38 @@ func (r Route) validateTunnel() error {
 			return fmt.Errorf("route.tunnel: duplicate name %q", n)
 		}
 		seen[n] = true
+	}
+	return nil
+}
+
+// validatePath: a path route is an app route under /apps/, local or
+// overlay (the public names come through the tunnel when published),
+// without names of its own on the edge.
+func (r Route) validatePath() error {
+	if !r.IsPath() {
+		if r.StripPrefix || len(r.Redirects) > 0 || r.Published {
+			return fmt.Errorf("route.path: strip, redirects and published apply to path routes only")
+		}
+		return nil
+	}
+	if err := ValidateAppPath(r.Path); err != nil {
+		return err
+	}
+	switch {
+	case r.Dashboard:
+		return fmt.Errorf("route.path: the dashboard route has no path")
+	case r.CraftApp != "":
+		return fmt.Errorf("route.path: craft app routes keep a name of their own")
+	case len(r.Tunnel) > 0:
+		return fmt.Errorf("route.path: a path route is published on the appliance's public name, not by tunnel names")
+	case r.Exposure == ExposurePublic:
+		return fmt.Errorf("route.path: a path route is local or overlay; publish it through the tunnel")
+	}
+	for _, rd := range r.Redirects {
+		if !validRedirectFrom.MatchString(rd.From) || !validRedirectTo.MatchString(rd.To) ||
+			strings.HasPrefix(rd.To, "/") || strings.Contains(rd.To, "..") {
+			return fmt.Errorf("route.redirects: %q must be a /.well-known/ path into the app's path", rd.From)
+		}
 	}
 	return nil
 }
@@ -342,7 +436,52 @@ func (s RouteSet) Validate() error {
 	if dashboards > 1 {
 		return fmt.Errorf("only one dashboard route is allowed")
 	}
+	paths := map[string]bool{}
+	redirects := map[string]bool{}
+	for _, r := range s.Routes {
+		if !r.IsPath() {
+			continue
+		}
+		if dashboards == 0 {
+			return fmt.Errorf("route %q: a path route is served under the dashboard's names, and there is no dashboard route; set the dashboard address first", r.Host)
+		}
+		if paths[r.Path] {
+			return fmt.Errorf("duplicate route path %q", r.Path)
+		}
+		paths[r.Path] = true
+		for _, rd := range r.Redirects {
+			if redirects[rd.From] {
+				return fmt.Errorf("duplicate route redirect %q", rd.From)
+			}
+			redirects[rd.From] = true
+		}
+	}
 	return nil
+}
+
+// withPaths returns the routes with the path routes handed to the
+// dashboard route for rendering (ADR-044).
+func withPaths(routes []Route) []Route {
+	paths := RouteSet{Routes: routes}.PathRoutes()
+	out := append([]Route(nil), routes...)
+	for i := range out {
+		if out[i].Dashboard {
+			out[i].paths = paths
+		}
+	}
+	return out
+}
+
+// PathRoutes lists the set's path routes, sorted by path.
+func (s RouteSet) PathRoutes() []Route {
+	var out []Route
+	for _, r := range s.Routes {
+		if r.IsPath() {
+			out = append(out, r)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
 }
 
 // Sorted returns routes ordered by hostname for deterministic rendering.
@@ -370,7 +509,7 @@ func (s RouteSet) LANNames() []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, r := range s.Routes {
-		if r.Exposure == ExposurePublic {
+		if r.Exposure == ExposurePublic || r.IsPath() {
 			continue
 		}
 		for _, n := range r.Names() {
@@ -383,4 +522,42 @@ func (s RouteSet) LANNames() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// ServedRoutes gives each path route the names it is actually served on
+// (ADR-044): the dashboard route's host and aliases, and its tunnel
+// names once the path is published. Host routes come back unchanged, as
+// does a path route when all holds no dashboard route. The path stays,
+// so a browser origin for the app is a name plus its path.
+func ServedRoutes(all, routes []Route) []Route {
+	dash := -1
+	for i, r := range all {
+		if r.Dashboard {
+			dash = i
+			break
+		}
+	}
+	out := make([]Route, 0, len(routes))
+	for _, r := range routes {
+		if r.IsPath() && dash >= 0 {
+			d := all[dash]
+			r.Host, r.Aliases, r.Tunnel = d.Host, append([]Hostname(nil), d.Aliases...), nil
+			if r.Published {
+				r.Tunnel = append([]Hostname(nil), d.Tunnel...)
+			}
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// PublicServerName is the dashboard route's first tunnel name, which
+// published path apps answer on (ADR-044), or "" when it has none.
+func PublicServerName(all []Route) Hostname {
+	for _, r := range all {
+		if r.Dashboard && len(r.Tunnel) > 0 {
+			return r.Tunnel[0]
+		}
+	}
+	return ""
 }

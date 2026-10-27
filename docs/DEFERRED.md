@@ -1032,7 +1032,7 @@
 - Drift is reported by the read-back (`apps sign-in access`, `sso access`) and
   never put back; there is no "Put back" action. ADR-043 §6 leaves a repair to
   a later slice.
-- Granting people and their groups is S315 (People page and CLI). Until then
+- Granting people and their groups is S316 (People page and CLI). Until then
   the owner adds someone to `homestead-<app>-users` in Authentik by hand.
 - Other members of `homestead-owner` (added in Authentik) are left alone and
   only counted; Homestead adds the linked owner and never removes anyone.
@@ -1054,3 +1054,39 @@
 - Only one linked owner is matched, by the Authentik `uid` (the hashed user
   id) that equals the OIDC `sub`; an Authentik sub mode other than hashed
   would not match and the plan then warns that no owner is linked.
+
+## S315
+
+- Craft apps stay on host serving (`<app>.lan`): they are built to answer at
+  `/`, and a path for them would need each craft image changed and
+  re-signed. A later slice may move them.
+- Immich stays `serve: host` with its own CNAME (its web app does not
+  support a sub-path); the coverage check still runs for its name.
+- The move is refused while the app has a public name; the owner takes the
+  name off first and publishes again at the path after the move. For
+  Authentik the move is refused while the tunnel publishes it: tear the
+  tunnel down, move Authentik, then set the tunnel up again. No combined
+  plan does this in one step.
+- After a move the old `<app>.lan` / `<app>.local` address stops answering;
+  there is no redirect from the old name (it would need the old route kept
+  as a redirect-only route). The plan warns.
+- After a move, app sign-in is re-planned by the owner (the redirect URIs
+  change); after moving Authentik, the dashboard's sign-in is planned and
+  linked again at the new issuer URL. Password sign-in to the dashboard
+  keeps working throughout. Nothing re-plans on its own.
+- A path app is published only on the dashboard's public name; it cannot
+  have a public name of its own. With path Authentik, the tunnel publishes
+  Authentik only together with the dashboard.
+- Shared origin (ADR-044): apps under the dashboard's name share its web
+  origin. Stated once on the Tunnel page and in INSTALL.md; no per-app
+  isolation (separate cookie paths, CSP) beyond the dashboard's own
+  cookie settings.
+- Unverified live, for the VM 2 check: Caddy's handling of the path routes
+  (`handle_path` versus `handle`, the `.well-known` redirects, 404 for an
+  unpublished path on the public name); Nextcloud honouring
+  OVERWRITEWEBROOT through the image's reverse-proxy config; Jellyfin
+  reading the seeded `network.xml` with only BaseUrl; Authentik under
+  AUTHENTIK_WEB__PATH (issuer, endpoints, static files, outposts); and the
+  move's override environment taking effect on restart.
+- The move rewrites Jellyfin's `network.xml` BaseUrl with the stack
+  stopped; an owner-edited `network.xml` is replaced only in that element.

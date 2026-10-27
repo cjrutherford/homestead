@@ -37,6 +37,9 @@ func renderRoute(r Route, cert *PlacedCert) (string, error) {
 	if err := r.Validate(); err != nil {
 		return "", err
 	}
+	if r.IsPath() {
+		return "", fmt.Errorf("routes: %q is served at %s under the dashboard's names and has no site of its own", r.Host, r.Path)
+	}
 	if r.TLS == TLSAuto && IsPrivateName(r.Host) {
 		return "", fmt.Errorf("routes: automatic TLS needs a public name, %q is private", r.Host)
 	}
@@ -70,6 +73,11 @@ func renderRoute(r Route, cert *PlacedCert) (string, error) {
 		// client sent (ADR-035): header_up replaces the headers, and
 		// trusted_proxies stays unset. flush_interval -1 streams events.
 		fmt.Fprintf(&proxy, "\treverse_proxy %s {\n\t\tflush_interval -1\n\t\theader_up X-Forwarded-For {http.request.remote.host}\n\t\theader_up X-Forwarded-Proto https\n\t\theader_up X-Forwarded-Host {http.request.host}\n\t}\n", upstream)
+		if len(r.paths) > 0 {
+			dash := proxy.String()
+			proxy.Reset()
+			proxy.WriteString(renderPathHandles(r.paths, false) + wrapHandle(dash))
+		}
 	} else if r.Health.Path == "" {
 		fmt.Fprintf(&proxy, "\treverse_proxy %s\n", upstream)
 	} else {
@@ -125,16 +133,72 @@ func renderTunnelEntry(r Route, upstream string) string {
 	if r.Dashboard {
 		flush = "\t\tflush_interval -1\n"
 	}
+	body := fmt.Sprintf("\treverse_proxy %s {\n%s\t\theader_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}\n\t\theader_up X-Forwarded-Proto https\n\t\theader_up X-Forwarded-Host {http.request.host}\n\t}\n", upstream, flush)
+	if len(r.paths) > 0 {
+		// Only published app paths answer on the public names; every
+		// other /apps/ path answers 404 there (ADR-044 §3).
+		body = renderPathHandles(r.paths, true) + wrapHandle(body)
+	}
 	return fmt.Sprintf(`
 # Tunnel entry (ADR-037): public names the connector delivers on loopback.
 %s {
-	reverse_proxy %s {
-%s		header_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}
-		header_up X-Forwarded-Proto https
-		header_up X-Forwarded-Host {http.request.host}
-	}
+%s}
+`, strings.Join(sites, ", "), body)
 }
-`, strings.Join(sites, ", "), upstream, flush)
+
+// wrapHandle puts a block body in a catch-all handle, so it runs only
+// when no app path handle matched.
+func wrapHandle(body string) string {
+	var b strings.Builder
+	b.WriteString("\thandle {\n")
+	for _, line := range strings.Split(strings.TrimSuffix(body, "\n"), "\n") {
+		b.WriteString("\t" + line + "\n")
+	}
+	b.WriteString("\t}\n")
+	return b.String()
+}
+
+// renderPathHandles renders the app paths served under the appliance's
+// names (ADR-044): a redirect from the bare path to the path with its
+// slash, each app's fixed redirects (Nextcloud's .well-known links), and
+// one handle per path, stripping the prefix (uri strip_prefix) or
+// keeping it as the package says. Any other /apps/ path answers 404, so
+// the dashboard never answers for an app that is not there. On the
+// tunnel entry only published paths are rendered; the client address
+// is the one Cloudflare saw and the scheme is https.
+func renderPathHandles(paths []Route, tunnel bool) string {
+	var b strings.Builder
+	b.WriteString("\t# Apps under the appliance's names (ADR-044).\n")
+	for _, p := range paths {
+		if tunnel && !p.Published {
+			continue
+		}
+		bare := strings.TrimSuffix(p.Path, "/")
+		fmt.Fprintf(&b, "\tredir %s %s 308\n", bare, p.Path)
+		for _, rd := range p.Redirects {
+			fmt.Fprintf(&b, "\tredir %s %s%s 301\n", rd.From, p.Path, rd.To)
+		}
+		// One directive (handle) for every block, so Caddy sorts them by
+		// path length and runs exactly one; handle_path would sort apart
+		// from the /apps/ catch-all.
+		fmt.Fprintf(&b, "\thandle %s* {\n", p.Path)
+		if p.StripPrefix {
+			fmt.Fprintf(&b, "\t\turi strip_prefix %s\n", bare)
+		}
+		fmt.Fprintf(&b, "\t\treverse_proxy %s:%d {\n", p.Target.Host, p.Target.Port)
+		if p.Health.Path != "" {
+			fmt.Fprintf(&b, "\t\t\thealth_uri %s\n", p.Health.Path)
+			if p.Health.IntervalSeconds != 0 {
+				fmt.Fprintf(&b, "\t\t\thealth_interval %ds\n", p.Health.IntervalSeconds)
+			}
+		}
+		if tunnel {
+			b.WriteString("\t\t\theader_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}\n\t\t\theader_up X-Forwarded-Proto https\n")
+		}
+		b.WriteString("\t\t\theader_up X-Forwarded-Host {http.request.host}\n\t\t}\n\t}\n")
+	}
+	fmt.Fprintf(&b, "\thandle %s* {\n\t\trespond 404\n\t}\n", AppsPrefix)
+	return b.String()
 }
 
 // ValidateRenderable checks a desired table end to end, including that
@@ -144,7 +208,10 @@ func ValidateRenderable(set RouteSet) error {
 	if err := set.Validate(); err != nil {
 		return err
 	}
-	for _, r := range set.Routes {
+	for _, r := range withPaths(set.Routes) {
+		if r.IsPath() {
+			continue
+		}
 		if _, err := RenderRoute(r); err != nil {
 			return err
 		}
@@ -226,7 +293,11 @@ func ReconcileRoutes(dir string, set, prior RouteSet) (undo func() error, err er
 		return nil, cause
 	}
 	wanted := map[string]bool{}
-	for _, r := range set.Sorted() {
+	for _, r := range withPaths(set.Sorted()) {
+		if r.IsPath() {
+			// Served inside the dashboard's site block (ADR-044).
+			continue
+		}
 		content, err := RenderRouteIn(dir, r)
 		if err != nil {
 			return fail(err)

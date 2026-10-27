@@ -178,10 +178,14 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/catalog/{name}/sign-in/apply":           ClassSession,
 	"POST /api/v1/catalog/{name}/sign-in/access":          ClassSession,
 	// S290 (ADR-041 §1): public app names on the tunnel.
-	"GET /api/v1/catalog/{name}/public":                  ClassSession,
-	"GET /api/v1/catalog/{name}/reach":                   ClassSession,
-	"POST /api/v1/catalog/{name}/public/plan":            ClassSession,
-	"POST /api/v1/catalog/{name}/public/apply":           ClassSession,
+	"GET /api/v1/catalog/{name}/public":        ClassSession,
+	"GET /api/v1/catalog/{name}/reach":         ClassSession,
+	"POST /api/v1/catalog/{name}/public/plan":  ClassSession,
+	"POST /api/v1/catalog/{name}/public/apply": ClassSession,
+	// S315 (ADR-044 §5): moving an installed app to its path.
+	"GET /api/v1/catalog/{name}/move":                    ClassSession,
+	"POST /api/v1/catalog/{name}/move/plan":              ClassSession,
+	"POST /api/v1/catalog/{name}/move/apply":             ClassSession,
 	"GET /api/v1/catalog/{name}/drift":                   ClassSession,
 	"GET /api/v1/catalog/{name}/drift/live":              ClassSession,
 	"POST /api/v1/catalog/{name}/drift":                  ClassSession,

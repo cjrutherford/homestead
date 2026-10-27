@@ -120,4 +120,34 @@ describe('AppPublic (S290)', () => {
     expect(el().querySelector('a[href="/tunnel"]')).not.toBeNull();
     expect(button('Review public address')).toBeUndefined();
   });
+
+  it('publishes a path app at its path under the dashboard\'s name, with no name to type (S315)', () => {
+    load(status({
+      routes: [{ route: 'jellyfin.lan', public: [], path: '/apps/jellyfin/' }],
+      proposed: 'homestead.example.com', proposed_url: 'https://homestead.example.com/apps/jellyfin/',
+    }));
+    expect(el().querySelector('input[name="public-hostname"]')).toBeNull();
+    expect(text()).toContain('answers at /apps/jellyfin/ under the dashboard\'s public name');
+    button('Review publishing at https://homestead.example.com/apps/jellyfin/')!.click();
+    const plan = http.expectOne('/api/v1/catalog/jellyfin/public/plan');
+    expect(plan.request.body).toEqual({ enabled: true });
+    plan.flush({
+      ...PLAN, hostname: 'homestead.example.com', path: '/apps/jellyfin/', url: 'https://homestead.example.com/apps/jellyfin/',
+      dns: [], connector_before: ['homestead.example.com'], connector_after: ['homestead.example.com'], digest: 'pp1',
+    });
+    fixture.detectChanges();
+    expect(text()).toContain('Publish https://homestead.example.com/apps/jellyfin/ through the tunnel homestead');
+    expect(text()).toContain('no DNS record changes');
+    button('Approve')!.click();
+    const apply = http.expectOne('/api/v1/catalog/jellyfin/public/apply');
+    expect(apply.request.body).toEqual({ enabled: true, hostname: 'homestead.example.com', route: 'jellyfin.lan', digest: 'pp1' });
+    apply.flush({ id: 13 });
+    stream.next({ id: 13, status: 'succeeded' } as OperationState);
+    http.expectOne('/api/v1/catalog/jellyfin/public').flush(status({
+      routes: [{ route: 'jellyfin.lan', public: ['homestead.example.com'], path: '/apps/jellyfin/', url: 'https://homestead.example.com/apps/jellyfin/' }],
+    }));
+    fixture.detectChanges();
+    expect(text()).toContain('Jellyfin is public at https://homestead.example.com/apps/jellyfin/.');
+    expect(el().querySelector('a[href="https://homestead.example.com/apps/jellyfin/"]')).not.toBeNull();
+  });
 });

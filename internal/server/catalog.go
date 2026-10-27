@@ -236,8 +236,27 @@ func installRequest(st *store.Store, catalogDir, name string, body installBody) 
 		Manifest: manifest, Host: facts, Domain: body.Domain,
 		Hostnames: body.Hostnames, ContainerPorts: body.ContainerPorts,
 		Storage: mountpoints, Volumes: body.Volumes, Networks: body.Networks,
-		Zone: body.Zone, PublicIP: publicIP,
+		Zone: body.Zone, PublicIP: publicIP, ApplianceNames: applianceNames(st),
 	}, nil
+}
+
+// applianceNames are the dashboard route's local names (ADR-044): the
+// names a package served by path answers under. Nil before the
+// dashboard route exists, which means the defaults.
+func applianceNames(st *store.Store) []string {
+	set, err := loadEdgeRoutes(st)
+	if err != nil {
+		return nil
+	}
+	dash, ok := set.DashboardRoute()
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, n := range dash.Names() {
+		out = append(out, string(n))
+	}
+	return out
 }
 
 // hostFacts assembles evaluation facts from live host state: platform
@@ -326,7 +345,36 @@ func decodeBody(r *http.Request, body any) error {
 type installPlanView struct {
 	catalog.InstallPlan
 	SignIn *signInPreview `json:"sign_in,omitempty"`
-	Digest string         `json:"digest"`
+	// Path is where a package served by path answers (ADR-044), and
+	// Addresses are the local addresses the install gives the app: the
+	// path under each of the appliance's names, or the app's own names.
+	Path      string   `json:"path,omitempty"`
+	Addresses []string `json:"addresses"`
+	Digest    string   `json:"digest"`
+}
+
+// installAddresses are the local addresses an install plan gives the app.
+func installAddresses(req catalog.InstallRequest, plan catalog.InstallPlan) []string {
+	out := []string{}
+	if req.Manifest.ServedByPath() {
+		names := req.ApplianceNames
+		if len(names) == 0 {
+			names = catalog.DefaultApplianceNames
+		}
+		for _, n := range names {
+			out = append(out, docker.PathURL(docker.Hostname(n), req.Manifest.AppPath()))
+		}
+		return out
+	}
+	for _, r := range plan.Routes {
+		if r.Exposure == docker.ExposurePublic {
+			continue
+		}
+		for _, n := range r.Names() {
+			out = append(out, "https://"+string(n)+"/")
+		}
+	}
+	return out
 }
 
 // installDigest binds an install approval to what it changes (S313):
@@ -387,7 +435,8 @@ func handleCatalogPlan(s *Server, st *store.Store, catalogDir string) http.Handl
 			http.Error(w, err.Error(), status)
 			return
 		}
-		view := installPlanView{InstallPlan: plan, Digest: installDigest(plan)}
+		view := installPlanView{InstallPlan: plan, Digest: installDigest(plan),
+			Path: req.Manifest.AppPath(), Addresses: installAddresses(req, plan)}
 		if s.appSignIn != nil {
 			view.SignIn = s.appSignIn.preview(req.Manifest, plan, strings.ToLower(strings.TrimSpace(body.PublicName)))
 		}

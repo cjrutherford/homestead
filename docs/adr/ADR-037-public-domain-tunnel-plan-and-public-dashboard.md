@@ -3,6 +3,8 @@
 ## Status
 Accepted
 
+In part superseded by ADR-044: apps and Authentik are served under one host by path.
+
 The owner decided this on 2026-10-20, from the setup walkthrough findings F8 and F14 to F17.
 
 This record **amends** two earlier records:

@@ -6,6 +6,8 @@ import "context"
 type AppNames struct {
 	Host  string   `json:"host"`
 	Names []string `json:"names"`
+	// Path is set for an app served by path (ADR-044).
+	Path string `json:"path,omitempty"`
 }
 
 // ResolverStatus is the optional `.lan` resolver's state.

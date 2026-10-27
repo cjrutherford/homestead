@@ -24,6 +24,22 @@ services:
   - target: /cache
     class: bulk
     subpath: cache
+# Served at <server>/apps/jellyfin/ (ADR-044). Jellyfin's Base URL
+# (network.xml BaseUrl) makes it serve under the prefix itself, so the
+# edge keeps it. Jellyfin has no environment for it: the package seeds
+# network.xml with only BaseUrl before the first start (Jellyfin fills
+# every other setting with its default and rewrites the file). An
+# existing network.xml is never touched.
+serve: path
+path: /apps/jellyfin/
+seeds:
+- service: jellyfin
+  target: /config/config/network.xml
+  content: |
+    <?xml version="1.0" encoding="utf-8"?>
+    <NetworkConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+      <BaseUrl>{{route_path}}</BaseUrl>
+    </NetworkConfiguration>
 requirements:
   memorymb: 2048
   cpucount: 2

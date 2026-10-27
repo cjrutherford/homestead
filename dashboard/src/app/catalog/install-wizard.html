@@ -312,6 +312,12 @@
           }
 
           @case ('address') {
+            @if (appPath(); as path) {
+              <p data-path-app>
+                {{ m.Title }} answers under the appliance's own name, at <code>{{ path }}</code>. It needs no
+                name or certificate of its own.
+              </p>
+            } @else {
             <label class="wizard-field">
               Domain
               <input
@@ -338,8 +344,36 @@
                 />
               </label>
             }
+            }
 
-            @if (endpoints().length > 0) {
+            @if (endpoints().length > 0 && appPath()) {
+              @let lanAddress = pathAddresses()[0] ?? '';
+              <h3>On your network</h3>
+              <ul class="address-list" aria-label="Local addresses">
+                @for (address of pathAddresses(); track address; let first = $first) {
+                  <li>
+                    <code>{{ address }}</code>
+                    @if (!first && address.includes('.local/')) {
+                      <span class="hint">works without setup on most computers and phones</span>
+                    }
+                  </li>
+                }
+              </ul>
+              @if (resolverOn() === false && lanAddress.includes('.lan/')) {
+                <p class="plan-note" data-resolver-off>
+                  Your devices find <code>{{ applianceNames()[0] }}</code> only through the appliance resolver or a DNS entry
+                  on your router, and the resolver is off. Turn it on on the <a routerLink="/names">Names page</a>,
+                  or add the entry on your router.
+                  @if (pathAddresses()[1]; as other) {
+                    Until then, use <code>{{ other }}</code>.
+                  }
+                </p>
+              }
+              <p>
+                The install adds this path to the edge for you, under the dashboard's certificate from your
+                Homestead internal CA. Your devices need to trust the <a routerLink="/trust">Homestead root</a>.
+              </p>
+            } @else if (endpoints().length > 0) {
               @let host = hostnameFor(endpoints()[0].endpoint, 0);
               @let alias = localAlias(host);
               <h3>On your network</h3>
@@ -363,7 +397,9 @@
                 The install adds this address to the edge for you, with a certificate from your Homestead
                 internal CA. Your devices need to trust the <a routerLink="/trust">Homestead root</a>.
               </p>
+            }
 
+            @if (endpoints().length > 0) {
               <h3>On the internet</h3>
               @if (publicStatus() === null) {
                 <p class="hint">Could not tell whether a tunnel is set up. You can publish {{ m.Title }} later under Manage.</p>
@@ -372,6 +408,12 @@
                   No tunnel is set up, so {{ m.Title }} stays on your network. To publish it, set up a tunnel
                   on the <a routerLink="/tunnel">Tunnel page</a>, then publish it under Manage on the catalog page.
                 </p>
+              } @else if (pathNeedsServer()) {
+                <p data-path-needs-server>
+                  {{ m.Title }} would answer under the dashboard's public name, and the dashboard has none yet.
+                  Publish the dashboard on the <a routerLink="/tunnel">Tunnel page</a> first, then publish
+                  {{ m.Title }} under Manage on the catalog page.
+                </p>
               } @else if (!publishable()) {
                 <p>{{ publicStatus()?.reason }}</p>
               } @else {
@@ -379,6 +421,10 @@
                   <input type="checkbox" name="publish" [checked]="publish()" (change)="setPublish($any($event.target).checked)" />
                   Also publish at
                 </label>
+                @if (appPath()) {
+                  <p><code data-public-url>{{ publicStatus()?.proposed_url }}</code></p>
+                  <p class="hint">Under the dashboard's public name: no DNS record or name of its own.</p>
+                } @else {
                 <label class="wizard-field">
                   Public name
                   <input
@@ -391,6 +437,7 @@
                     (change)="checkPublicName()"
                   />
                 </label>
+                }
                 @if (publish()) {
                   @if (publicLamp(); as l) {
                     <p>
@@ -613,11 +660,18 @@
 
                 @if (publish()) {
                   @if (publicPlan(); as p) {
-                    <app-permit [heading]="'Publish ' + p.hostname" [digest]="p.digest" [label]="'Public address plan for ' + m.Title">
+                    <app-permit [heading]="'Publish ' + (p.path && p.url ? p.url : p.hostname)" [digest]="p.digest" [label]="'Public address plan for ' + m.Title">
+                      @if (p.path) {
+                        <p>
+                          Once {{ m.Title }} is installed, publish <span class="mono">{{ p.url }}</span> through the
+                          tunnel {{ p.tunnel }}, under the dashboard's public name. No DNS record changes.
+                        </p>
+                      } @else {
                       <p>
                         Once {{ m.Title }} is installed, publish <span class="mono">{{ p.hostname }}</span> to
                         {{ p.route }} through the tunnel {{ p.tunnel }}.
                       </p>
+                      }
                       <ul aria-label="DNS changes">
                         @for (change of p.dns; track change.name + change.action + change.content) {
                           <li>
@@ -855,7 +909,7 @@
 
             @switch (publicState()) {
               @case ('applying') {
-                <h3>Publishing {{ m.Title }} at {{ publicApproved()?.hostname }}</h3>
+                <h3>Publishing {{ m.Title }} at {{ publicShown() }}</h3>
                 @if (publicOperation(); as id) {
                   <app-operation-progress [id]="id" [operation]="publicOpState()" />
                 }
@@ -875,8 +929,12 @@
               @case ('replan') {
                 <app-state-message kind="notice" headline="The public address plan changed." [detail]="publicProblem() ?? ''" />
                 @if (publicPlan(); as p) {
-                  <app-permit [heading]="'Publish ' + p.hostname" [digest]="p.digest" [label]="'Public address plan for ' + m.Title">
-                    <p>Publish <span class="mono">{{ p.hostname }}</span> to {{ p.route }} through the tunnel {{ p.tunnel }}.</p>
+                  <app-permit [heading]="'Publish ' + (p.path && p.url ? p.url : p.hostname)" [digest]="p.digest" [label]="'Public address plan for ' + m.Title">
+                    @if (p.path) {
+                      <p>Publish <span class="mono">{{ p.url }}</span> through the tunnel {{ p.tunnel }}, under the dashboard's public name.</p>
+                    } @else {
+                      <p>Publish <span class="mono">{{ p.hostname }}</span> to {{ p.route }} through the tunnel {{ p.tunnel }}.</p>
+                    }
                     <ul aria-label="DNS changes">
                       @for (change of p.dns; track change.name + change.action + change.content) {
                         <li>{{ change.action }}: {{ change.type }} <span class="mono">{{ change.name }}</span> to <span class="mono">{{ change.content }}</span></li>

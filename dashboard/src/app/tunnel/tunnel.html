@@ -114,6 +114,12 @@
       token you stored in the setup Domain step, and finds your account from the names' zone. First
       you see a plan of every change; nothing changes until you approve it.
     </p>
+    <p data-shared-origin>
+      Apps you publish under the dashboard's public name, such as Authentik at /apps/auth/, share one web
+      address with the dashboard. A browser treats them as one site, so a flaw in one of those apps could reach
+      your dashboard sign-in in that browser. Homestead accepts this so one name and one certificate cover
+      everything; an app that needs to stand apart, such as Immich, keeps a public name of its own.
+    </p>
     @if (plan(); as review) {
       <app-permit
         [heading]="(review.adopt ? 'Adopt the tunnel ' : 'Set up the tunnel ') + review.name"
@@ -168,6 +174,25 @@
             </tbody>
           </table>
         </div>
+        @if (review.paths?.length) {
+          <div class="table-scroll">
+            <table aria-label="Apps under the dashboard's public name">
+              <thead>
+                <tr><th scope="col">Address</th><th scope="col">For</th><th scope="col">Edge route</th></tr>
+              </thead>
+              <tbody>
+                @for (path of review.paths; track path.url) {
+                  <tr>
+                    <th scope="row" class="mono">{{ path.url }}</th>
+                    <td>{{ path.role }}</td>
+                    <td class="mono">{{ path.route }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="hint">These answer under the dashboard's public name: no DNS record of their own.</p>
+        }
         @for (left of review.omitted; track left.hostname) {
           <app-state-message kind="notice" [headline]="'Left out: ' + left.hostname + ' (' + left.role + ')'" [detail]="left.reason" />
         }
@@ -213,7 +238,7 @@
       }
       <form
         (submit)="
-          review(nameInput.value, dashboardInput.value, authInput.value, adoptInput.value);
+          review(nameInput.value, dashboardInput.value, authValue(), adoptInput.value);
           $event.preventDefault()
         "
       >
@@ -240,12 +265,20 @@
           <input id="tunnel-dashboard" #dashboardInput name="dashboard-hostname" autocomplete="off" [disabled]="busy()"
             [placeholder]="dashboardHint()" aria-describedby="tunnel-names-hint" />
         </div>
-        <div class="field">
-          <label for="tunnel-auth">Authentik public name</label>
-          <input id="tunnel-auth" #authInput name="auth-hostname" autocomplete="off" [disabled]="busy()"
-            [placeholder]="authHint()" aria-describedby="tunnel-names-hint" />
-          <p class="hint" id="tunnel-names-hint">Leave a name empty to use the one shown. {{ coverageRule }}</p>
-        </div>
+        @if (authHostnameAsked()) {
+          <div class="field">
+            <label for="tunnel-auth">Authentik public name</label>
+            <input id="tunnel-auth" #authInput name="auth-hostname" autocomplete="off" [disabled]="busy()"
+              [placeholder]="authHint()" aria-describedby="tunnel-names-hint" />
+            <p class="hint" id="tunnel-names-hint">Leave a name empty to use the one shown. {{ coverageRule }}</p>
+          </div>
+        } @else {
+          <p class="hint" id="tunnel-names-hint" data-auth-path>
+            Authentik answers at <span class="mono">https://{{ dashboardHint() }}/apps/auth/</span>, under the
+            dashboard's public name, so it needs no name of its own. Leave the name empty to use the one shown.
+            {{ coverageRule }}
+          </p>
+        }
         <button type="submit" class="primary" [disabled]="busy()">Review plan</button>
         @if (reviewError(); as message) {
           <app-state-message kind="error" headline="Homestead could not make the plan" [detail]="message" />

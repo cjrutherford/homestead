@@ -62,6 +62,7 @@ describe('Catalog', () => {
   afterEach(() => {
     // The app page's Public address panel (S290) reads its own status; app-public.spec covers it.
     http.match('/api/v1/catalog/jellyfin/public');
+    http.match('/api/v1/catalog/jellyfin/move');
     http.verify();
   });
 

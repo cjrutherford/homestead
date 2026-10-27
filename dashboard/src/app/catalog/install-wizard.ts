@@ -91,7 +91,7 @@ const SECRET_WORDS: Record<string, string> = {
 };
 
 /** One sentence per step, drawn from what the manifest says. */
-function helpFor(id: StepId, title: string): string {
+function helpFor(id: StepId, title: string, byPath = false): string {
   switch (id) {
     case 'about':
       return `Here is what ${title} is and what it does on your appliance.`;
@@ -100,7 +100,9 @@ function helpFor(id: StepId, title: string): string {
     case 'storage':
       return `Choose where ${title} keeps its files; only storage you have already mounted and registered is listed. A kind of storage with no default yet gets your choice as its default.`;
     case 'address':
-      return `Choose the name you type to reach ${title} on your network.`;
+      return byPath
+        ? `Where ${title} answers on your network and, if you publish it, on the internet.`
+        : `Choose the name you type to reach ${title} on your network.`;
     case 'sign-in':
       return `These are the passwords Homestead creates for ${title} and how people sign in to it.`;
     case 'review':
@@ -220,10 +222,43 @@ export class InstallWizard implements OnInit {
   protected readonly reachChecking = signal(false);
   protected readonly reachFailed = signal(false);
   protected readonly tunnelReady = computed(() => !!this.publicStatus()?.tunnel_id);
+  /** The appliance's local names, the dashboard route's (S315): a path app answers under them. */
+  protected readonly applianceNames = signal<string[]>(['homestead.lan', 'homestead.local']);
+  /** The path an app served by path answers at (ADR-044), or null for an app with a name of its own. */
+  protected readonly appPath = computed(() => {
+    const m = this.manifest();
+    return m && m.Serve === 'path' ? m.Path || `/apps/${m.Name}/` : null;
+  });
+  /** The local addresses of a path app: its path under each appliance name. */
+  protected readonly pathAddresses = computed(() => {
+    const path = this.appPath();
+    return path ? this.applianceNames().map((name) => `https://${name}${path}`) : [];
+  });
+  /** A path app is published on the dashboard's public name; without one there is nothing to publish it on. */
+  protected readonly pathNeedsServer = computed(
+    () => this.appPath() !== null && this.tunnelReady() && !this.publicStatus()?.proposed_url,
+  );
   /** A tunnel exists and this app may be published with its install (not Authentik, whose name is the tunnel's). */
   protected readonly publishable = computed(
-    () => this.tunnelReady() && this.name() !== 'authentik' && this.endpoints().length > 0 && !this.installed(),
+    () =>
+      this.tunnelReady() &&
+      this.name() !== 'authentik' &&
+      this.endpoints().length > 0 &&
+      !this.installed() &&
+      !this.pathNeedsServer(),
   );
+  /** What the public address reads as: a path app's URL, or the public name. */
+  protected readonly publicShown = computed(() => {
+    const approved = this.publicApproved();
+    const plan = this.publicPlan();
+    if (plan?.path && plan.url && (!approved || approved.digest === plan.digest)) {
+      return plan.url;
+    }
+    if (this.appPath() && this.publicStatus()?.proposed_url) {
+      return this.publicStatus()!.proposed_url!;
+    }
+    return approved?.hostname ?? this.publicHost();
+  });
   protected readonly publish = computed(
     () => this.publishable() && (this.publishChoice() ?? publishByDefault(this.signInPreview()?.offered === true)),
   );
@@ -350,7 +385,7 @@ export class InstallWizard implements OnInit {
           return helpFor('install', title);
       }
     }
-    return helpFor(this.current(), this.title());
+    return helpFor(this.current(), this.title(), this.appPath() !== null);
   });
   protected readonly headingText = computed(() => {
     const id = this.current();
@@ -549,6 +584,18 @@ export class InstallWizard implements OnInit {
       .names()
       .pipe(catchError(() => of(null)))
       .subscribe((names) => this.resolverOn.set(names ? names.resolver.enabled : null));
+    // S315: the names a path app answers under are the dashboard route's.
+    if (manifest.Serve === 'path') {
+      this.api
+        .edgeRoutes()
+        .pipe(catchError(() => of(null)))
+        .subscribe((table) => {
+          const dash = (table?.routes ?? []).find((route) => route.Dashboard);
+          if (dash) {
+            this.applianceNames.set([dash.Host, ...(dash.Aliases ?? [])]);
+          }
+        });
+    }
     this.api
       .appPublic(manifest.Name)
       .pipe(catchError(() => of(null)))
@@ -1012,7 +1059,7 @@ export class InstallWizard implements OnInit {
     const body: Record<string, unknown> = { ...this.body(), ...(reviewed?.digest ? { digest: reviewed.digest } : {}) };
     this.installStamp.set(
       reviewed?.digest
-        ? approvedPlan(`Install ${manifest.Title}`, reviewed.digest, `Install ${manifest.Title} at ${this.routesToAdd().map((route) => route.Host).join(', ') || 'no address'}.`, by)
+        ? approvedPlan(`Install ${manifest.Title}`, reviewed.digest, `Install ${manifest.Title} at ${(this.appPath() ? this.pathAddresses() : this.routesToAdd().map((route) => route.Host)).join(', ') || 'no address'}.`, by)
         : null,
     );
     const published = this.publish() ? this.publicPlan() : null;
@@ -1024,7 +1071,9 @@ export class InstallWizard implements OnInit {
     );
     this.publicStamp.set(
       published
-        ? approvedPlan(`Publish ${published.hostname}`, published.digest, `Publish ${published.hostname} to ${published.route} through the tunnel ${published.tunnel}, once ${manifest.Title} is installed.`, by)
+        ? published.path
+          ? approvedPlan(`Publish ${published.url}`, published.digest, `Publish ${published.url} through the tunnel ${published.tunnel}, under the dashboard's public name, once ${manifest.Title} is installed.`, by)
+          : approvedPlan(`Publish ${published.hostname}`, published.digest, `Publish ${published.hostname} to ${published.route} through the tunnel ${published.tunnel}, once ${manifest.Title} is installed.`, by)
         : null,
     );
     this.assignChosenStorage()
@@ -1291,7 +1340,9 @@ export class InstallWizard implements OnInit {
       hostname: plan.hostname,
     });
     this.publicStamp.set(
-      approvedPlan(`Publish ${plan.hostname}`, plan.digest, `Publish ${plan.hostname} to ${plan.route} through the tunnel ${plan.tunnel}.`, this.sessions.username()),
+      plan.path
+        ? approvedPlan(`Publish ${plan.url}`, plan.digest, `Publish ${plan.url} through the tunnel ${plan.tunnel}, under the dashboard's public name.`, this.sessions.username())
+        : approvedPlan(`Publish ${plan.hostname}`, plan.digest, `Publish ${plan.hostname} to ${plan.route} through the tunnel ${plan.tunnel}.`, this.sessions.username()),
     );
     this.publicState.set('idle');
     this.applyPublic();
@@ -1554,6 +1605,10 @@ export class InstallWizard implements OnInit {
   }
 
   protected routeUrl(route: EdgeRoute): string {
+    if (route.Path) {
+      // S315: a path app answers under the appliance's name.
+      return `https://${this.applianceNames()[0]}${route.Path}`;
+    }
     return `${route.TLS === 'off' ? 'http' : 'https'}://${route.Host}`;
   }
 

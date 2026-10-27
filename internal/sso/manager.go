@@ -223,6 +223,26 @@ func ValidateOrigin(origin string) (string, error) {
 	return scheme + "://" + host, nil
 }
 
+// ValidateAuthentikURL checks Authentik's address: an origin, with an
+// optional path for an Authentik served under one (ADR-044:
+// https://homestead.lan/apps/auth). It returns the origin plus the path
+// without its trailing slash, so IssuerFor and the API join paths to it.
+func ValidateAuthentikURL(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" || u.RawQuery != "" || u.Fragment != "" || !validAuthentikPath.MatchString(u.Path) {
+		return "", fmt.Errorf("%w: the Authentik address must be scheme://host[:port], with an optional path such as /apps/auth/", ErrInput)
+	}
+	path := strings.TrimSuffix(u.Path, "/")
+	u.Path = ""
+	origin, err := ValidateOrigin(u.String())
+	if err != nil {
+		return "", err
+	}
+	return origin + path, nil
+}
+
+var validAuthentikPath = regexp.MustCompile(`^(/[a-z0-9][a-z0-9-]*)*/?$`)
+
 var validHost = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$|^[0-9a-fA-F:.]+$`)
 
 func loopbackHost(h string) bool {
@@ -268,10 +288,7 @@ func (m *Manager) BuildSpec(req PlanRequest) (Spec, error) {
 	if base == "" {
 		return Spec{}, fmt.Errorf("%w: Authentik has no address yet: give it one in the install wizard, or enter its address here", ErrInput)
 	}
-	if u, err := url.Parse(base); err != nil || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
-		return Spec{}, fmt.Errorf("%w: the Authentik address must be scheme://host[:port]", ErrInput)
-	}
-	cb, err := ValidateOrigin(base)
+	cb, err := ValidateAuthentikURL(base)
 	if err != nil {
 		return Spec{}, err
 	}
@@ -297,7 +314,7 @@ func (m *Manager) BuildSpec(req PlanRequest) (Spec, error) {
 	}
 	publicAuthentik := ""
 	if len(publicOrigins) > 0 && def.PublicAuthentikURL != "" {
-		if publicAuthentik, err = ValidateOrigin(def.PublicAuthentikURL); err != nil {
+		if publicAuthentik, err = ValidateAuthentikURL(def.PublicAuthentikURL); err != nil {
 			return Spec{}, err
 		}
 	}

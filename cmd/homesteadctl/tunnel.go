@@ -57,8 +57,13 @@ func runTunnelStatus(ctx context.Context, client *apiclient.Client, stdout, stde
 		}
 		fmt.Fprintln(stdout)
 	}
-	if len(status.Routes) == 0 && status.Proposed.AuthHostname != "" {
-		fmt.Fprintf(stdout, "proposed: dashboard %s, Authentik %s", status.Proposed.DashboardHostname, status.Proposed.AuthHostname)
+	if len(status.Routes) == 0 && status.Proposed.DashboardHostname != "" {
+		if status.Proposed.AuthHostname != "" {
+			fmt.Fprintf(stdout, "proposed: dashboard %s, Authentik %s", status.Proposed.DashboardHostname, status.Proposed.AuthHostname)
+		} else {
+			// ADR-044: Authentik signs in under the dashboard's name.
+			fmt.Fprintf(stdout, "proposed: dashboard %s, Authentik https://%s/apps/auth/", status.Proposed.DashboardHostname, status.Proposed.DashboardHostname)
+		}
 		if !status.Proposed.SignInLinked {
 			fmt.Fprint(stdout, " (the dashboard waits until sign-in with Authentik is linked)")
 		}
@@ -82,7 +87,8 @@ const retiredTunnelFlagHelp = "the tunnel no longer takes a token or account ID:
 var retiredRouteFlags = map[string]bool{"--hostname": true, "--service": true}
 
 const retiredRouteFlagHelp = "the tunnel no longer takes a hostname and service: it publishes the dashboard and Authentik " +
-	"through the edge, named by --dashboard-hostname and --auth-hostname (default homestead.<domain> and auth.<domain>)"
+	"through the edge, named by --dashboard-hostname (default homestead.<domain>); Authentik signs in at /apps/auth/ under it " +
+	"(ADR-044), and --auth-hostname names only an Authentik installed under a name of its own"
 
 type tunnelFlags struct {
 	name, adopt, dashboard, auth, digest string
@@ -173,6 +179,12 @@ func printTunnelPlan(w io.Writer, plan apiclient.TunnelPlan) {
 	}
 	for _, route := range plan.Ingress {
 		fmt.Fprintf(w, "publish %s: %s -> %s (edge tunnel entry %s)\n", route.Role, route.Hostname, route.Route, route.Service)
+	}
+	for _, p := range plan.Paths {
+		fmt.Fprintf(w, "publish %s: %s -> %s (under the dashboard's name, no DNS record)\n", p.Role, p.URL, p.Route)
+	}
+	if len(plan.Paths) > 0 {
+		fmt.Fprintln(w, "note: apps under the dashboard's name share one web origin with it (ADR-044)")
 	}
 	for _, left := range plan.Omitted {
 		fmt.Fprintf(w, "left out %s: %s: %s\n", left.Role, left.Hostname, left.Reason)

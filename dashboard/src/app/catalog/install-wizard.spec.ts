@@ -180,6 +180,8 @@ describe('InstallWizard', () => {
       /** S313: the resolver (default on) and the app's public status (default no tunnel). */
       resolver?: boolean;
       publicStatus?: Record<string, unknown>;
+      /** S315: the edge route table a path app reads its appliance names from. */
+      edgeRoutes?: unknown[];
     } = {},
   ) {
     const name = manifest['Name'] as string;
@@ -207,6 +209,9 @@ describe('InstallWizard', () => {
     http.expectOne('/api/v1/catalog').flush(PACKAGES(options.installed));
     for (const request of http.match('/api/v1/names')) {
       request.flush({ resolver: { enabled: options.resolver ?? true, running: true, listening: [], names: [], router_hint: '' }, apps: [] });
+    }
+    if (manifest['Serve'] === 'path') {
+      http.expectOne('/api/v1/edge/routes').flush({ routes: options.edgeRoutes ?? [] });
     }
     for (const request of http.match(`/api/v1/catalog/${name}/public`)) {
       request.flush(options.publicStatus ?? { app: name, available: false, reason: 'No tunnel is set up yet.', routes: [], sign_in: false });
@@ -883,6 +888,56 @@ describe('InstallWizard', () => {
       expect(el().querySelector('[data-resolver-off]')).not.toBeNull();
       expect(el().querySelector('a[href="/names"]')).not.toBeNull();
       expect(text()).toContain('Until then, use https://gridcraft.local');
+    });
+
+    it('shows a host app its own name, not a path under the appliance (S315)', () => {
+      start(CRAFT);
+      to('address');
+      expect(el().querySelector('[data-path-app]')).toBeNull();
+      expect(text()).not.toContain('/apps/gridcraft/');
+    });
+
+    describe('an app served by path (S315, ADR-044)', () => {
+      const PATH_APP = { ...NEXTCLOUD, Serve: 'path', Path: '/apps/nextcloud/' };
+      const DASH = [{ Host: 'homestead.lan', Aliases: ['homestead.local'], Dashboard: true, Upstream: 'http://127.0.0.1:8080' }];
+      const PATH_TUNNEL = {
+        app: 'nextcloud', available: false, reason: 'Install Nextcloud first.', tunnel_id: 'tid', tunnel: 'homestead',
+        routes: [], proposed: 'homestead.example.com', proposed_url: 'https://homestead.example.com/apps/nextcloud/', sign_in: false,
+      };
+
+      it('shows its path under each appliance name and asks for no name', () => {
+        start(PATH_APP, { edgeRoutes: DASH });
+        to('address');
+        expect(el().querySelector('[data-path-app]')).not.toBeNull();
+        const local = el().querySelector('ul[aria-label="Local addresses"]')?.textContent ?? '';
+        expect(local).toContain('https://homestead.lan/apps/nextcloud/');
+        expect(local).toContain('https://homestead.local/apps/nextcloud/');
+        expect(text()).not.toContain('https://nextcloud.lan');
+        expect(el().querySelector('[data-resolver-off]')).toBeNull();
+      });
+
+      it('says homestead.lan needs the resolver when it is off', () => {
+        start(PATH_APP, { edgeRoutes: DASH, resolver: false });
+        to('address');
+        const note = el().querySelector('[data-resolver-off]')?.textContent ?? '';
+        expect(note).toContain('homestead.lan');
+        expect(note).toContain('Until then, use https://homestead.local/apps/nextcloud/');
+      });
+
+      it('offers publishing at its path under the dashboard\'s public name, with no name to type', () => {
+        start(PATH_APP, { edgeRoutes: DASH, publicStatus: PATH_TUNNEL });
+        to('address');
+        expect(el().querySelector('[data-public-url]')?.textContent).toBe('https://homestead.example.com/apps/nextcloud/');
+        expect(el().querySelector('input[name="public-name"]')).toBeNull();
+        expect(el().querySelector('input[name="publish"]')).not.toBeNull();
+      });
+
+      it('says to publish the dashboard first when it has no public name', () => {
+        start(PATH_APP, { edgeRoutes: DASH, publicStatus: { ...PATH_TUNNEL, proposed: '', proposed_url: '' } });
+        to('address');
+        expect(el().querySelector('[data-path-needs-server]')?.textContent).toContain('Publish the dashboard');
+        expect(el().querySelector('input[name="publish"]')).toBeNull();
+      });
     });
 
     it('says nothing about the resolver when it is on', () => {

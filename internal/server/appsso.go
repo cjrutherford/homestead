@@ -66,7 +66,7 @@ func appSignInInputs(st *store.Store, m *sso.Manager, manifest catalog.Manifest)
 	if err != nil {
 		return in, err
 	}
-	in.Routes = appsso.AppRoutes(manifest, set.Routes)
+	in.Routes = docker.ServedRoutes(set.Routes, appsso.AppRoutes(manifest, set.Routes))
 	rec, ok, err := (appsso.Records{DB: st.DB()}).Get(manifest.Name)
 	if err != nil {
 		return in, err
@@ -302,13 +302,19 @@ func (a *appSignIn) preview(manifest catalog.Manifest, install catalog.InstallPl
 	for _, r := range install.Routes {
 		if _, ok := planned[r.Host]; ok {
 			if public != "" {
-				r.Tunnel = append(append([]docker.Hostname(nil), r.Tunnel...), docker.Hostname(public))
+				if r.IsPath() {
+					// A path app is published on the dashboard's
+					// public name (ADR-044).
+					r.Published = true
+				} else {
+					r.Tunnel = append(append([]docker.Hostname(nil), r.Tunnel...), docker.Hostname(public))
+				}
 				public = ""
 			}
 			table = append(table, r)
 		}
 	}
-	in.Installed, in.Routes = true, appsso.AppRoutes(manifest, table)
+	in.Installed, in.Routes = true, docker.ServedRoutes(table, appsso.AppRoutes(manifest, table))
 	if ok, reason := in.Offered(); !ok {
 		return &signInPreview{Reason: reason}
 	}

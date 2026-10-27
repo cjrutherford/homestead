@@ -1,4 +1,4 @@
-# S315: People: add people and grant apps from Homestead
+# S316: People: add people and grant apps from Homestead
 
 ## Goal
 Implements ADR-043 §4–6. Homestead is the primary way to maintain users.

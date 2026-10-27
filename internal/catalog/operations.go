@@ -141,6 +141,15 @@ func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string,
 			},
 		})
 	}
+	if len(plan.Seeds) > 0 {
+		seeds := plan.Seeds
+		def.Steps = append(def.Steps, operation.StepDef{
+			Name: "seed-first-start",
+			Run: func(ctx context.Context) error {
+				return writeSeeds(seeds)
+			},
+		})
+	}
 	files := plan.Compose
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "write-stack",
@@ -229,4 +238,31 @@ func refuseExistingCluster(plan InstallPlan, secrets SecretStore) error {
 // override file (app sign-in, S298). Same lock and craft checks as install.
 func UpStack(ctx context.Context, dir, project string) error {
 	return composeUp(ctx, dir, project)
+}
+
+// writeSeeds writes each first-start file where nothing is (ADR-044):
+// an app that already has its configuration keeps it untouched.
+func writeSeeds(seeds []PlannedSeed) error {
+	for _, seed := range seeds {
+		if _, err := os.Lstat(seed.Source); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("seed %s: %w", seed.Target, err)
+		}
+		if err := os.MkdirAll(filepath.Dir(seed.Source), 0o755); err != nil {
+			return fmt.Errorf("seed %s: %w", seed.Target, err)
+		}
+		f, err := os.OpenFile(seed.Source, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err != nil {
+			return fmt.Errorf("seed %s: %w", seed.Target, err)
+		}
+		_, werr := f.WriteString(seed.Content)
+		if cerr := f.Close(); werr == nil {
+			werr = cerr
+		}
+		if werr != nil {
+			return fmt.Errorf("seed %s: %w", seed.Target, werr)
+		}
+	}
+	return nil
 }

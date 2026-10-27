@@ -177,6 +177,9 @@ func (n *LocalNames) Run(ctx context.Context, warn func(error)) {
 type appNames struct {
 	Host  string   `json:"host"`
 	Names []string `json:"names"`
+	// Path is set for an app served by path (ADR-044): Names are then the
+	// appliance's names with the path, such as homestead.lan/apps/nextcloud/.
+	Path string `json:"path,omitempty"`
 }
 
 type namesStatus struct {
@@ -217,8 +220,21 @@ func (n *LocalNames) Status() (namesStatus, error) {
 // appNamesOf lists each non-public route's local names, by host.
 func appNamesOf(set docker.RouteSet) []appNames {
 	out := []appNames{}
+	dash, hasDash := set.DashboardRoute()
 	for _, r := range set.Routes {
 		if r.Exposure == docker.ExposurePublic {
+			continue
+		}
+		if r.IsPath() {
+			// The route's own name is only its record key; it answers at
+			// its path under the dashboard's names.
+			names := []string{}
+			if hasDash {
+				for _, h := range dash.Names() {
+					names = append(names, strings.ToLower(string(h))+r.Path)
+				}
+			}
+			out = append(out, appNames{Host: string(r.Host), Names: names, Path: r.Path})
 			continue
 		}
 		var names []string

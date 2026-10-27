@@ -219,7 +219,14 @@ export function planSummary(plan: InstallPlan): { created: string[]; changed: st
     created.push('The homestead-edge network, if it does not exist yet');
   }
   for (const route of plan.Routes ?? []) {
-    created.push(`Address ${route.Host} (${route.Exposure === 'local' ? 'local network only' : route.Exposure})`);
+    const reach = route.Exposure === 'local' ? 'local network only' : route.Exposure;
+    if (route.Path) {
+      // S315 (ADR-044): served at its path under the appliance's names.
+      const at = (plan.addresses ?? []).join(', ') || route.Path;
+      created.push(`Address ${at} (${reach}, under the appliance's name)`);
+      continue;
+    }
+    created.push(`Address ${route.Host} (${reach})`);
   }
   for (const issue of plan.TLS ?? []) {
     created.push(

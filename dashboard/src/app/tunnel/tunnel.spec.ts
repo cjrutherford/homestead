@@ -338,4 +338,33 @@ describe('Tunnel', () => {
     http.expectNone('/api/v1/tunnel/plan');
     expect(text()).toContain('not both');
   });
+
+  it('serves Authentik by path: no Authentik name asked, paths listed, shared origin stated once (S315)', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush({
+      ...STATUS,
+      proposed: { dashboard_hostname: 'homestead.example.com', auth_hostname: '', sign_in_linked: true },
+    });
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('#tunnel-auth')).toBeNull();
+    expect(el.querySelector('[data-auth-path]')?.textContent).toContain('https://homestead.example.com/apps/auth/');
+    const notes = el.querySelectorAll('[data-shared-origin]');
+    expect(notes.length).toBe(1);
+    expect(notes[0].textContent).toContain('share one web address with the dashboard');
+    fixture.componentInstance['review']('homestead', '', fixture.componentInstance['authValue']());
+    const req = http.expectOne('/api/v1/tunnel/plan');
+    expect(req.request.body).toEqual({ name: 'homestead' });
+    req.flush({
+      ...PLAN,
+      auth_hostname: '',
+      ingress: [{ hostname: 'homestead.example.com', role: 'dashboard', route: 'homestead.lan', service: 'http://127.0.0.1:8480' }],
+      paths: [{ role: 'authentik', route: 'authentik.lan', path: '/apps/auth/', url: 'https://homestead.example.com/apps/auth/' }],
+    });
+    fixture.detectChanges();
+    const paths = el.querySelector('table[aria-label="Apps under the dashboard\'s public name"]')?.textContent ?? '';
+    expect(paths).toContain('https://homestead.example.com/apps/auth/');
+    expect(paths).toContain('authentik.lan');
+    expect(el.querySelectorAll('[data-shared-origin]').length).toBe(1);
+  });
 });

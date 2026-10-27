@@ -19,7 +19,7 @@ import (
 // endpoints.
 func runApps(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|names|plan|install|reach|configure|secrets|sign-in|public|uninstall>")
+		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|names|plan|install|reach|configure|secrets|sign-in|public|move|uninstall>")
 		return exitUsage
 	}
 	switch args[0] {
@@ -41,6 +41,8 @@ func runApps(ctx context.Context, client *apiclient.Client, args []string, stdou
 		return runAppsSignIn(ctx, client, args[1:], stdout, stderr)
 	case "public":
 		return runAppsPublic(ctx, client, args[1:], stdout, stderr)
+	case "move":
+		return runAppsMove(ctx, client, args[1:], stdout, stderr)
 	case "uninstall":
 		return runAppsUninstall(ctx, client, args[1:], stdout, stderr)
 	default:
@@ -111,8 +113,13 @@ func runAppsPlan(ctx context.Context, client *apiclient.Client, args []string, s
 	}
 	fmt.Fprintf(stdout, "package: %s (requirements met: %v)\n", plan.Package, plan.Requirements.Passed)
 	for _, route := range plan.Routes {
+		if route.Path != "" {
+			fmt.Fprintf(stdout, "route: %s at %s (%s)\n", route.Host, route.Path, route.Exposure)
+			continue
+		}
 		fmt.Fprintf(stdout, "route: %s (%s)\n", route.Host, route.Exposure)
 	}
+	printInstallAddresses(stdout, plan.Addresses)
 	for _, record := range plan.DNS {
 		fmt.Fprintf(stdout, "dns: %s %s %s\n", record.Name, record.Type, record.Value)
 	}
@@ -248,10 +255,19 @@ func installWithPublic(ctx context.Context, client *apiclient.Client, pkg, file 
 		}
 	}
 	if approve == "" {
-		fmt.Fprintf(stdout, "install: %s at %s\n", install.Package, strings.Join(routeHosts(install.Routes), ", "))
+		at := routeHosts(install.Routes)
+		if len(install.Addresses) > 0 {
+			at = install.Addresses
+		}
+		fmt.Fprintf(stdout, "install: %s at %s\n", install.Package, strings.Join(at, ", "))
 		fmt.Fprintf(stdout, "install digest: %s\n", install.Digest)
 		printPublicBeforeInstall(stdout, plan)
-		fmt.Fprintf(stdout, "approve: homesteadctl apps install %s -f %s --public %s --approve-public %s\n", pkg, file, plan.Hostname, plan.Digest)
+		named := " " + plan.Hostname
+		if plan.Path != "" {
+			// A path app has no name of its own to pass (ADR-044).
+			named = ""
+		}
+		fmt.Fprintf(stdout, "approve: homesteadctl apps install %s -f %s --public%s --approve-public %s\n", pkg, file, named, plan.Digest)
 		return exitOK
 	}
 	if approve != plan.Digest {
@@ -293,7 +309,11 @@ func installWithPublic(ctx context.Context, client *apiclient.Client, pkg, file 
 		}
 		return fail(stderr, fmt.Errorf("the app is installed but not published: %w", err))
 	}
-	fmt.Fprintf(stdout, "public %s:\n", plan.Hostname)
+	if plan.URL != "" {
+		fmt.Fprintf(stdout, "public %s:\n", plan.URL)
+	} else {
+		fmt.Fprintf(stdout, "public %s:\n", plan.Hostname)
+	}
 	code := followOperation(ctx, client, id, stdout, stderr)
 	printReach(ctx, client, pkg, stdout)
 	return code
@@ -327,8 +347,25 @@ func hasRoute(table []docker.Route, host docker.Hostname) bool {
 	return false
 }
 
+// printInstallAddresses prints where the app will answer locally; the
+// .lan names need the appliance resolver or a router entry (ADR-039).
+func printInstallAddresses(w io.Writer, addresses []string) {
+	lan := false
+	for _, a := range addresses {
+		fmt.Fprintf(w, "address: %s\n", a)
+		lan = lan || strings.Contains(a, ".lan/")
+	}
+	if lan {
+		fmt.Fprintln(w, "note: .lan names answer on devices that use the appliance's name resolver (homesteadctl names) or a router entry; .local works on most devices without one")
+	}
+}
+
 func printPublicBeforeInstall(w io.Writer, p apiclient.AppPublicPlan) {
-	fmt.Fprintf(w, "public: https://%s -> %s (tunnel %s)\n", p.Hostname, p.Route, p.Tunnel)
+	if p.Path != "" {
+		fmt.Fprintf(w, "public: %s (the dashboard's public name, tunnel %s)\n", p.URL, p.Tunnel)
+	} else {
+		fmt.Fprintf(w, "public: https://%s -> %s (tunnel %s)\n", p.Hostname, p.Route, p.Tunnel)
+	}
 	for _, c := range p.DNS {
 		fmt.Fprintf(w, "dns %s: %s %s -> %s\n", c.Action, c.Type, c.Name, c.Content)
 		for _, old := range c.Replaces {

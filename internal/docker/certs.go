@@ -515,7 +515,10 @@ func RefreshCertRoutes(stackDir string, routes []Route, hosts []string) (undo fu
 		approved[Hostname(h)] = true
 	}
 	seen := map[Hostname]bool{}
-	for _, r := range routes {
+	for _, r := range withPaths(routes) {
+		if r.IsPath() {
+			continue
+		}
 		if !approved[r.Host] || seen[r.Host] || !r.usesPlacedCert() || !RouteSnippetExists(stackDir, r.Host) {
 			continue
 		}

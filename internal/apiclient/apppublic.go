@@ -26,18 +26,27 @@ type AppPublicStatus struct {
 	Routes    []struct {
 		Route  string   `json:"route"`
 		Public []string `json:"public"`
+		// Path and URL are set for an app served by path (ADR-044).
+		Path string `json:"path,omitempty"`
+		URL  string `json:"url,omitempty"`
 	} `json:"routes"`
-	Proposed string         `json:"proposed,omitempty"`
-	SignIn   bool           `json:"sign_in"`
-	Coverage []NameCoverage `json:"coverage"`
+	Proposed string `json:"proposed,omitempty"`
+	// ProposedURL is a path app's public address (ADR-044).
+	ProposedURL string         `json:"proposed_url,omitempty"`
+	SignIn      bool           `json:"sign_in"`
+	Coverage    []NameCoverage `json:"coverage"`
 }
 
 // AppPublicPlan is one public name added to or removed from an app.
 type AppPublicPlan struct {
-	App      string             `json:"app"`
-	Action   string             `json:"action"`
-	Hostname string             `json:"hostname"`
-	Route    string             `json:"route"`
+	App      string `json:"app"`
+	Action   string `json:"action"`
+	Hostname string `json:"hostname"`
+	Route    string `json:"route"`
+	// Path and URL are set for an app served by path (ADR-044): it is
+	// published on the dashboard's public name, with no DNS change.
+	Path     string             `json:"path,omitempty"`
+	URL      string             `json:"url"`
 	Tunnel   string             `json:"tunnel"`
 	TunnelID string             `json:"tunnel_id"`
 	Zone     string             `json:"zone"`
@@ -100,4 +109,55 @@ func (c *Client) AppReach(ctx context.Context, pkg string) (AppReachStatus, erro
 	var out AppReachStatus
 	err := c.get(ctx, "/api/v1/catalog/"+url.PathEscape(pkg)+"/reach", &out)
 	return out, err
+}
+
+// AppMoveStatus is whether an installed app can move to its path under
+// the appliance's names (S315, ADR-044 §5).
+type AppMoveStatus struct {
+	App     string   `json:"app"`
+	Offered bool     `json:"offered"`
+	Reason  string   `json:"reason,omitempty"`
+	From    string   `json:"from,omitempty"`
+	Path    string   `json:"path,omitempty"`
+	To      []string `json:"to"`
+}
+
+// AppMovePlan is the reviewed move of an app to its path.
+type AppMovePlan struct {
+	App         string   `json:"app"`
+	Route       string   `json:"route"`
+	From        string   `json:"from"`
+	Path        string   `json:"path"`
+	To          []string `json:"to"`
+	StripPrefix bool     `json:"strip_prefix"`
+	Redirects   []string `json:"redirects"`
+	AppSettings []string `json:"app_settings"`
+	SignIn      []string `json:"sign_in"`
+	Warnings    []string `json:"warnings"`
+	Digest      string   `json:"digest"`
+}
+
+func movePath(pkg, suffix string) string {
+	return "/api/v1/catalog/" + url.PathEscape(pkg) + "/move" + suffix
+}
+
+// AppMove reads whether the move is offered.
+func (c *Client) AppMove(ctx context.Context, pkg string) (AppMoveStatus, error) {
+	var out AppMoveStatus
+	err := c.get(ctx, movePath(pkg, ""), &out)
+	return out, err
+}
+
+// AppMovePlan previews the move; nothing changes.
+func (c *Client) AppMovePlan(ctx context.Context, pkg string) (AppMovePlan, error) {
+	var out AppMovePlan
+	err := c.postJSON(ctx, movePath(pkg, "/plan"), struct{}{}, &out)
+	return out, err
+}
+
+// AppMoveApply starts the move the owner approved by digest.
+func (c *Client) AppMoveApply(ctx context.Context, pkg, digest string) (int64, error) {
+	var out OperationStarted
+	err := c.postJSON(ctx, movePath(pkg, "/apply"), map[string]string{"digest": digest}, &out)
+	return out.ID, err
 }

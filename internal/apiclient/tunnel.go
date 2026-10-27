@@ -112,11 +112,14 @@ type TunnelPlan struct {
 	Ingress           []TunnelPlanRoute  `json:"ingress"`
 	DNS               []TunnelPlanChange `json:"dns"`
 	Omitted           []TunnelOmission   `json:"omitted"`
-	SignIn            string             `json:"sign_in,omitempty"`
-	Adopt             *TunnelAdoption    `json:"adopt,omitempty"`
-	Coverage          []NameCoverage     `json:"coverage"`
-	Warnings          []string           `json:"warnings"`
-	Digest            string             `json:"digest"`
+	// Paths are the apps published under the dashboard's public name
+	// (ADR-044): Authentik's sign-in at /apps/auth/, with no DNS record.
+	Paths    []TunnelPlanPath `json:"paths"`
+	SignIn   string           `json:"sign_in,omitempty"`
+	Adopt    *TunnelAdoption  `json:"adopt,omitempty"`
+	Coverage []NameCoverage   `json:"coverage"`
+	Warnings []string         `json:"warnings"`
+	Digest   string           `json:"digest"`
 }
 
 // TunnelAdoption is what adopting an existing tunnel does (S290): the
@@ -198,4 +201,12 @@ func (c *Client) TunnelTeardown(ctx context.Context, id string) (int64, error) {
 		return 0, err
 	}
 	return out.ID, nil
+}
+
+// TunnelPlanPath is one app the tunnel publishes by path (ADR-044).
+type TunnelPlanPath struct {
+	Role  string `json:"role"`
+	Route string `json:"route"`
+	Path  string `json:"path"`
+	URL   string `json:"url"`
 }

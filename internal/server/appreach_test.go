@@ -23,17 +23,17 @@ func TestReachResults(t *testing.T) {
 		ok   bool
 		want string
 	}{
-		{localResult("Nextcloud", "nextcloud.lan", true, true, 200, nil), true, ""},
-		{localResult("Nextcloud", "nextcloud.lan", true, false, 302, nil), true, "turn on the resolver"},
-		{localResult("Nextcloud", "nextcloud.local", true, false, 200, nil), true, ""},
-		{localResult("Nextcloud", "nextcloud.lan", true, true, 502, nil), false, "may still be starting"},
-		{localResult("Nextcloud", "nextcloud.lan", true, true, 0, refused), false, "Edge page"},
-		{localResult("Nextcloud", "nextcloud.lan", true, true, 0, x509.UnknownAuthorityError{}), false, "internal CA"},
-		{publicResult("Nextcloud", "nextcloud.homestead.example.com", "example.com", 302, nil), true, ""},
-		{publicResult("Nextcloud", "nextcloud.homestead.example.com", "example.com", 0, &net.DNSError{Err: "no such host", Name: "x"}), false, "does not resolve yet"},
-		{publicResult("Nextcloud", "nextcloud.homestead.example.com", "example.com", 0, fmt.Errorf("remote error: tls: handshake failure")), false, "no certificate for nextcloud.homestead.example.com"},
-		{publicResult("Nextcloud", "nextcloud.example.com", "example.com", 530, nil), false, "tunnel"},
-		{publicResult("Nextcloud", "nextcloud.example.com", "example.com", 0, errors.New("network is unreachable")), false, "another device"},
+		{localResult("Nextcloud", "nextcloud.lan", "", true, true, 200, nil), true, ""},
+		{localResult("Nextcloud", "nextcloud.lan", "", true, false, 302, nil), true, "turn on the resolver"},
+		{localResult("Nextcloud", "nextcloud.local", "", true, false, 200, nil), true, ""},
+		{localResult("Nextcloud", "nextcloud.lan", "", true, true, 502, nil), false, "may still be starting"},
+		{localResult("Nextcloud", "nextcloud.lan", "", true, true, 0, refused), false, "Edge page"},
+		{localResult("Nextcloud", "nextcloud.lan", "", true, true, 0, x509.UnknownAuthorityError{}), false, "internal CA"},
+		{publicResult("Nextcloud", "nextcloud.homestead.example.com", "", "example.com", 302, nil), true, ""},
+		{publicResult("Nextcloud", "nextcloud.homestead.example.com", "", "example.com", 0, &net.DNSError{Err: "no such host", Name: "x"}), false, "does not resolve yet"},
+		{publicResult("Nextcloud", "nextcloud.homestead.example.com", "", "example.com", 0, fmt.Errorf("remote error: tls: handshake failure")), false, "no certificate for nextcloud.homestead.example.com"},
+		{publicResult("Nextcloud", "nextcloud.example.com", "", "example.com", 530, nil), false, "tunnel"},
+		{publicResult("Nextcloud", "nextcloud.example.com", "", "example.com", 0, errors.New("network is unreachable")), false, "another device"},
 	} {
 		text := c.got.Reason + " " + c.got.Fix
 		if c.got.Answers != c.ok || (c.want == "" && c.got.Reason != "") || !strings.Contains(strings.ToLower(text), strings.ToLower(c.want)) {
@@ -56,12 +56,12 @@ func TestReachRoute(t *testing.T) {
 	}
 	var asked []string
 	oldLocal, oldPublic := reachLocal, reachPublic
-	reachLocal = func(_ context.Context, host string, https bool, _ *x509.CertPool) (int, error) {
-		asked = append(asked, fmt.Sprintf("local %s %v", host, https))
+	reachLocal = func(_ context.Context, host, path string, https bool, _ *x509.CertPool) (int, error) {
+		asked = append(asked, fmt.Sprintf("local %s%s %v", host, path, https))
 		return 200, nil
 	}
-	reachPublic = func(_ context.Context, host string, _ bool, _ *x509.CertPool) (int, error) {
-		asked = append(asked, "public "+host)
+	reachPublic = func(_ context.Context, host, path string, _ bool, _ *x509.CertPool) (int, error) {
+		asked = append(asked, "public "+host+path)
 		return 0, errors.New("remote error: tls: handshake failure")
 	}
 	t.Cleanup(func() { reachLocal, reachPublic = oldLocal, oldPublic })
@@ -73,7 +73,7 @@ func TestReachRoute(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(asked, "|") != "local immich.lan true|local immich.local true|public immich.homestead.example.com" {
+	if strings.Join(asked, "|") != "local immich.lan/ true|local immich.local/ true|public immich.homestead.example.com/" {
 		t.Fatalf("asked = %v", asked)
 	}
 	if out.Resolver || len(out.Addresses) != 3 || !out.Addresses[0].Answers || !strings.Contains(out.Addresses[0].Fix, "resolver") ||
@@ -82,5 +82,47 @@ func TestReachRoute(t *testing.T) {
 	}
 	if recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/ghost/reach", nil); recorder.Code != http.StatusNotFound {
 		t.Fatalf("ghost: %d", recorder.Code)
+	}
+}
+
+// ADR-044: a path app is checked at its path on the appliance's names,
+// and on the public name once published; a 404 there says the path is
+// not served yet.
+func TestReachPathApp(t *testing.T) {
+	srv, st, _, _ := pathPublicRig(t, true)
+	srv.MountAppReach(st, NewLocalNames(st), nil, "../../catalog")
+	set, _ := loadEdgeRoutes(st)
+	for i := range set.Routes {
+		if set.Routes[i].Host == "nextcloud.lan" {
+			set.Routes[i].Published = true
+		}
+	}
+	if err := saveEdgeRoutes(st, set); err != nil {
+		t.Fatal(err)
+	}
+	var asked []string
+	oldLocal, oldPublic := reachLocal, reachPublic
+	reachLocal = func(_ context.Context, host, path string, https bool, _ *x509.CertPool) (int, error) {
+		asked = append(asked, "local "+host+path)
+		return 302, nil
+	}
+	reachPublic = func(_ context.Context, host, path string, _ bool, _ *x509.CertPool) (int, error) {
+		asked = append(asked, "public "+host+path)
+		return 404, nil
+	}
+	t.Cleanup(func() { reachLocal, reachPublic = oldLocal, oldPublic })
+	recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/nextcloud/reach", nil)
+	var out reachStatus
+	if err := json.Unmarshal(recorder.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	want := "local " + dashLAN + "/apps/nextcloud/|local homestead.local/apps/nextcloud/|public homestead.example.com/apps/nextcloud/"
+	if strings.Join(asked, "|") != want {
+		t.Fatalf("asked = %v", asked)
+	}
+	if len(out.Addresses) != 3 || out.Addresses[0].Address != "https://"+dashLAN+"/apps/nextcloud/" || !out.Addresses[0].Answers ||
+		out.Addresses[2].Address != "https://homestead.example.com/apps/nextcloud/" || out.Addresses[2].Answers ||
+		!strings.Contains(out.Addresses[2].Reason, "not yet at /apps/nextcloud/") {
+		t.Fatalf("reach = %+v", out)
 	}
 }

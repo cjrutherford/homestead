@@ -370,15 +370,20 @@ func fakeEdge(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		for i := range set.Routes {
-			set.Routes[i].Tunnel = names[set.Routes[i].Host]
-		}
+		setTunnelNames(set.Routes, names)
 		if err := set.Validate(); err != nil {
 			return err
 		}
 		return saveEdgeRoutes(st, set)
 	}
-	t.Cleanup(func() { applyTunnelNames = prev })
+	prevSet := reconcileEdgeSet
+	reconcileEdgeSet = func(_ context.Context, st *store.Store, set docker.RouteSet) error {
+		if err := set.Validate(); err != nil {
+			return err
+		}
+		return saveEdgeRoutes(st, set)
+	}
+	t.Cleanup(func() { applyTunnelNames, reconcileEdgeSet = prev, prevSet })
 }
 
 // seedTunnelEdge records the dashboard route and, when authentik is

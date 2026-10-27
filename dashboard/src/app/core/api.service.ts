@@ -167,6 +167,10 @@ export interface CatalogManifest {
   Browser?: BrowserAdvisory[] | null;
   /** Secret-backed container variables the package declares (S266). */
   Secrets?: { Name: string; Immutable: boolean }[];
+  /** S315 (ADR-044): 'path' serves the app under the appliance's names at Path; empty or 'host' on a name of its own. */
+  Serve?: string;
+  /** The app's path when served by path; empty means /apps/<name>/. */
+  Path?: string;
 }
 
 /** The catalog detail exactly as the API sends it: empty lists may be null. */
@@ -222,8 +226,12 @@ export interface NameCoverage {
 export interface InstallPlan {
   Package: string;
   Requirements: { Passed: boolean };
-  Routes: { Host: string; Exposure: string }[];
+  Routes: { Host: string; Exposure: string; Path?: string }[];
   Compose: { ComposeYAML: string };
+  /** S315 (ADR-044): where a package served by path answers, such as /apps/nextcloud/. */
+  path?: string;
+  /** S315: the local addresses the install gives the app (its path under each appliance name, or its own names). */
+  addresses?: string[];
   /** Sections are arrays from the API, but null-safe reads stay cheap. */
   DNS?: { Name: string; Type: string; Value: string }[] | null;
   TLS?: { Host: string; Issuer: string }[] | null;
@@ -349,6 +357,12 @@ export interface EdgeRoute {
   Dashboard?: boolean;
   /** Extra names the dashboard route answers on (the .local name). */
   Aliases?: string[];
+  /** S315 (ADR-044): an app served at this path under the dashboard's names; Host is then only its record key. */
+  Path?: string;
+  StripPrefix?: boolean;
+  Redirects?: { From: string; To: string }[] | null;
+  /** A path route answers on the dashboard's public name too. */
+  Published?: boolean;
 }
 
 /** GET /api/v1/dashboard/address (S289, ADR-035): the dashboard's local network address. */
@@ -1096,6 +1110,8 @@ export interface TunnelPlan {
   dns: TunnelPlanChange[];
   /** Names left out of this plan, each with the reason. */
   omitted: { hostname: string; role: string; reason: string }[];
+  /** S315 (ADR-044): apps published under the dashboard's public name, with no DNS record of their own. */
+  paths?: TunnelPlanPath[];
   /** What approving means for Sign-in, when the dashboard is published. */
   sign_in?: string;
   /** Present when the plan adopts an existing tunnel (S290). */
@@ -1104,6 +1120,14 @@ export interface TunnelPlan {
   coverage?: NameCoverage[];
   warnings: string[];
   digest: string;
+}
+
+/** One app the tunnel publishes by path under the dashboard's name (S315, ADR-044). */
+export interface TunnelPlanPath {
+  role: string;
+  route: string;
+  path: string;
+  url: string;
 }
 
 /** Adopting a tunnel this appliance's connector already serves (S290, ADR-041 §3). */
@@ -1130,8 +1154,11 @@ export interface AppPublicStatus {
   reason?: string;
   tunnel_id?: string;
   tunnel?: string;
-  routes: { route: string; public: string[] }[];
+  /** `path` and `url` are set for an app served by path (S315, ADR-044). */
+  routes: { route: string; public: string[]; path?: string; url?: string }[];
   proposed?: string;
+  /** S315: a path app's public address under the dashboard's name. */
+  proposed_url?: string;
   sign_in: boolean;
   /** The certificate lamp for each public name (S312). */
   coverage?: NameCoverage[];
@@ -1143,6 +1170,10 @@ export interface AppPublicPlan {
   action: 'add' | 'remove';
   hostname: string;
   route: string;
+  /** S315 (ADR-044): set for a path app, published on the dashboard's name with no DNS change. */
+  path?: string;
+  /** The public address the plan adds or removes. */
+  url?: string;
   tunnel: string;
   tunnel_id: string;
   zone: string;
@@ -1163,6 +1194,31 @@ export interface AppPublicRequest {
   route?: string;
   /** S313: plan a name for the route the install creates; applied without it once installed. */
   before_install?: boolean;
+}
+
+/** GET /api/v1/catalog/{name}/move (S315, ADR-044 §5): whether the move to the app's path is offered. */
+export interface AppMoveStatus {
+  app: string;
+  offered: boolean;
+  reason?: string;
+  from?: string;
+  path?: string;
+  to: string[];
+}
+
+/** The reviewed move of an app to its path; nothing moves without its digest. */
+export interface AppMovePlan {
+  app: string;
+  route: string;
+  from: string;
+  path: string;
+  to: string[];
+  strip_prefix: boolean;
+  redirects: string[];
+  app_settings: string[];
+  sign_in: string[];
+  warnings: string[];
+  digest: string;
 }
 
 /** One address of an app and whether it answers from the appliance (S313). */
@@ -1186,6 +1242,8 @@ export interface AppReach {
 export interface AppNames {
   host: string;
   names: string[];
+  /** S315 (ADR-044): set for an app served by path; names are then `homestead.lan/apps/<name>/`. */
+  path?: string;
 }
 
 /** The optional `.lan` resolver (ADR-039). */
@@ -1682,6 +1740,21 @@ export class ApiService {
 
   appPublicApply(name: string, request: AppPublicRequest, digest: string): Observable<OperationStarted> {
     return this.http.post<OperationStarted>(`/api/v1/catalog/${encodeURIComponent(name)}/public/apply`, { ...request, digest });
+  }
+
+  /** S315: whether moving the app to its path is offered. */
+  appMove(name: string): Observable<AppMoveStatus> {
+    return this.http.get<AppMoveStatus>(`/api/v1/catalog/${encodeURIComponent(name)}/move`);
+  }
+
+  /** S315: the move plan; read-only. */
+  appMovePlan(name: string): Observable<AppMovePlan> {
+    return this.http.post<AppMovePlan>(`/api/v1/catalog/${encodeURIComponent(name)}/move/plan`, {});
+  }
+
+  /** S315: starts the move the owner approved by digest. */
+  appMoveApply(name: string, digest: string): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(`/api/v1/catalog/${encodeURIComponent(name)}/move/apply`, { digest });
   }
 
   /** Checks from the appliance whether each address of the app answers (S313). */

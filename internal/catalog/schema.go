@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"homestead/internal/craft"
+	"homestead/internal/docker"
 	"homestead/internal/exposure"
 	"homestead/internal/identity"
 	"homestead/internal/storage"
@@ -66,7 +67,7 @@ func (s Service) Validate(endpoints map[string]bool) error {
 		if len(value) > 4096 {
 			return fmt.Errorf("catalog: service %q variable %q exceeds 4096 characters", s.Name, key)
 		}
-		for _, token := range []string{RouteHostToken, RouteNamesToken} {
+		for _, token := range []string{RouteHostToken, RouteNamesToken, RoutePathToken, RouteURLToken} {
 			if strings.Contains(value, token) && s.Exposes == "" {
 				return fmt.Errorf("catalog: service %q variable %q uses %s but the service exposes no endpoint", s.Name, key, token)
 			}
@@ -410,6 +411,117 @@ type Manifest struct {
 	// Secrets declares secret-backed container variables (S266,
 	// ADR-021): delivered as 0600 files via Compose `secrets:`.
 	Secrets []SecretDecl
+	// Serve says how the edge serves the app (ADR-044): ServePath under
+	// the appliance's own names at Path, or ServeHost on a name of its
+	// own. Empty is ServeHost, the serving every package had before.
+	Serve string
+	// Path is the app's path when served by path (default /apps/<name>/,
+	// under the reserved /apps/ prefix). It is the same on every name,
+	// because the app's base-path setting is global to the app.
+	Path string
+	// StripPrefix removes Path before the request reaches the app: for
+	// apps whose base-path setting only rewrites the links they generate.
+	StripPrefix bool `yaml:"strip_prefix"`
+	// Redirects send fixed /.well-known/ paths on the appliance's names
+	// into the app's path (Nextcloud's CalDAV and CardDAV discovery).
+	Redirects []docker.PathRedirect
+	// Seeds are first-start files a package writes into its own data
+	// before the app first starts (Jellyfin's network.xml carrying its
+	// Base URL). A file that exists is never overwritten.
+	Seeds []Seed
+}
+
+// Seed is one first-start file: Target is a container path inside one
+// of Service's persistent data paths. Content may use RoutePathToken.
+type Seed struct {
+	Service string
+	Target  string
+	Content string
+}
+
+// validateSeeds: each seed lands inside a persistent data path of its
+// service, at most once, with bounded content.
+func (m Manifest) validateSeeds() error {
+	seen := map[string]bool{}
+	for _, seed := range m.Seeds {
+		if len(seed.Content) == 0 || len(seed.Content) > 8192 {
+			return fmt.Errorf("catalog: seed %q content must be 1-8192 bytes", seed.Target)
+		}
+		if seen[seed.Service+"\x00"+seed.Target] {
+			return fmt.Errorf("catalog: duplicate seed %q", seed.Target)
+		}
+		seen[seed.Service+"\x00"+seed.Target] = true
+		if _, ok := seedMount(m, seed); !ok {
+			return fmt.Errorf("catalog: seed %q must sit inside a persistent data path of service %q", seed.Target, seed.Service)
+		}
+	}
+	return nil
+}
+
+// seedMount finds the persistent data path holding a seed.
+func seedMount(m Manifest, seed Seed) (DataPath, bool) {
+	if !strings.HasPrefix(seed.Target, "/") || strings.Contains(seed.Target, "..") || strings.HasSuffix(seed.Target, "/") {
+		return DataPath{}, false
+	}
+	for _, service := range m.Services {
+		if service.Name != seed.Service {
+			continue
+		}
+		for _, data := range service.Data {
+			if !data.Ephemeral && strings.HasPrefix(seed.Target, strings.TrimSuffix(data.Target, "/")+"/") {
+				return data, true
+			}
+		}
+	}
+	return DataPath{}, false
+}
+
+// Serving modes (ADR-044).
+const (
+	ServeHost = "host"
+	ServePath = "path"
+)
+
+// ServedByPath reports a package served under the appliance's names.
+func (m Manifest) ServedByPath() bool { return m.Serve == ServePath }
+
+// AppPath is the package's path when served by path: Path, or
+// /apps/<name>/ by default. Empty for host packages.
+func (m Manifest) AppPath() string {
+	if !m.ServedByPath() {
+		return ""
+	}
+	if m.Path != "" {
+		return m.Path
+	}
+	return docker.AppPathFor(m.Name)
+}
+
+// validateServe checks the serving declaration (ADR-044).
+func (m Manifest) validateServe() error {
+	switch m.Serve {
+	case "", ServeHost:
+		if m.Path != "" || m.StripPrefix || len(m.Redirects) > 0 {
+			return fmt.Errorf("catalog: path, strip_prefix and redirects need serve: path")
+		}
+		return nil
+	case ServePath:
+	default:
+		return fmt.Errorf("catalog: serve must be path or host")
+	}
+	if len(m.Exposure.Endpoints) != 1 {
+		return fmt.Errorf("catalog: serve: path needs exactly one endpoint")
+	}
+	if len(m.CraftImages()) > 0 {
+		return fmt.Errorf("catalog: craft apps keep a name of their own (serve: host)")
+	}
+	probe := docker.Route{Host: "probe.lan", Target: docker.Target{Host: "probe", Port: 80},
+		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal, Path: m.AppPath(),
+		StripPrefix: m.StripPrefix, Redirects: m.Redirects}
+	if err := probe.Validate(); err != nil {
+		return fmt.Errorf("catalog: %w", err)
+	}
+	return nil
 }
 
 // Validate checks the manifest end to end.
@@ -468,6 +580,12 @@ func (m Manifest) Validate() error {
 		seenServices[m.Services[i].Name] = true
 	}
 	if err := validateCraftServices(m); err != nil {
+		return err
+	}
+	if err := m.validateServe(); err != nil {
+		return err
+	}
+	if err := m.validateSeeds(); err != nil {
 		return err
 	}
 	if err := m.Requirements.Validate(); err != nil {

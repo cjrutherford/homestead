@@ -43,7 +43,7 @@ export function publicError(failure: HttpErrorResponse): string {
             <ul aria-label="Public addresses">
               @for (n of publicNames(s); track n.name) {
                 <li>
-                  <a class="mono" [href]="'https://' + n.name" target="_blank" rel="noopener">{{ n.name }}</a>
+                  <a class="mono" [href]="n.url" target="_blank" rel="noopener">{{ n.label }}</a>
                   through the tunnel {{ s.tunnel }}
                   @if (lamp(s, n.name); as l) {
                     <span class="badge" [class]="l.ok ? 'badge-ok' : 'badge-warn'" [title]="l.title">{{ l.label }}</span>
@@ -57,6 +57,18 @@ export function publicError(failure: HttpErrorResponse): string {
           } @else {
             <p>{{ title() }} is reachable only on your network.</p>
           }
+          @if (pathApp(s); as path) {
+            @if (publicNames(s).length === 0) {
+              <p>
+                {{ title() }} answers at {{ path }} under the dashboard's public name, so it takes no name of its own and no DNS record.
+              </p>
+              <p>
+                <button type="button" (click)="review({ enabled: true })" [disabled]="busy()">
+                  Review publishing at {{ s.proposed_url }}
+                </button>
+              </p>
+            }
+          } @else {
           <p>
             <label>
               Public name
@@ -73,6 +85,7 @@ export function publicError(failure: HttpErrorResponse): string {
               Review public address
             </button>
           </p>
+          }
           <p class="hint">{{ coverageRule }}</p>
         }
         @if (error()) {
@@ -81,18 +94,32 @@ export function publicError(failure: HttpErrorResponse): string {
 
         @if (plan(); as p) {
           <app-permit
-            [heading]="(p.action === 'add' ? 'Publish ' : 'Remove ') + p.hostname"
+            [heading]="(p.action === 'add' ? 'Publish ' : 'Remove ') + (p.url && p.path ? p.url : p.hostname)"
             [digest]="p.digest"
             [refusal]="refused()"
             [label]="'Public address plan for ' + title()"
           >
             <p>
-              @if (p.action === 'add') {
+              @if (p.path) {
+                @if (p.action === 'add') {
+                  Publish <span class="mono">{{ p.url }}</span> through the tunnel {{ p.tunnel }}. {{ title() }} answers at
+                  {{ p.path }} under the dashboard's public name; no DNS record changes.
+                } @else {
+                  Take <span class="mono">{{ p.url }}</span> off the tunnel {{ p.tunnel }}. The public name then answers 404 at {{ p.path }}.
+                }
+              } @else if (p.action === 'add') {
                 Publish <span class="mono">{{ p.hostname }}</span> to {{ p.route }} through the tunnel {{ p.tunnel }}.
               } @else {
                 Remove <span class="mono">{{ p.hostname }}</span> from the tunnel {{ p.tunnel }}.
               }
             </p>
+            @if (p.app_settings?.length) {
+              <ul aria-label="App settings">
+                @for (setting of p.app_settings; track setting) {
+                  <li>{{ setting }}</li>
+                }
+              </ul>
+            }
             <ul aria-label="DNS changes">
               @for (change of p.dns; track change.name + change.action + change.content) {
                 <li>
@@ -173,8 +200,19 @@ export class AppPublic implements OnInit {
     return coverageLamp(s.coverage, name);
   }
 
-  protected publicNames(s: AppPublicStatus): { name: string; route: string }[] {
-    return s.routes.flatMap((r) => r.public.map((name) => ({ name, route: r.route })));
+  /** Each public address: a name of the app's own, or its path under the dashboard's name (S315). */
+  protected publicNames(s: AppPublicStatus): { name: string; route: string; url: string; label: string }[] {
+    return s.routes.flatMap((r) =>
+      r.public.map((name) => {
+        const url = r.path && r.url ? r.url : 'https://' + name;
+        return { name, route: r.route, url, label: r.path && r.url ? r.url : name };
+      }),
+    );
+  }
+
+  /** The path an app served by path answers at (S315, ADR-044), or null. */
+  protected pathApp(s: AppPublicStatus): string | null {
+    return s.routes.find((r) => r.path)?.path ?? null;
   }
 
   protected review(request: AppPublicRequest): void {
@@ -206,17 +244,18 @@ export class AppPublic implements OnInit {
       plan.action === 'add'
         ? { enabled: true, hostname: plan.hostname, route: plan.route }
         : { enabled: false, hostname: plan.hostname };
+    const shown = plan.path && plan.url ? plan.url : plan.hostname;
     this.busy.set(true);
     this.error.set(null);
     this.api.appPublicApply(this.name(), request, plan.digest).subscribe({
       next: ({ id }) => {
         this.approved.set(
           approvedPlan(
-            (plan.action === 'add' ? 'Publish ' : 'Remove ') + plan.hostname,
+            (plan.action === 'add' ? 'Publish ' : 'Remove ') + shown,
             plan.digest,
             plan.action === 'add'
-              ? `Publish ${plan.hostname} to ${plan.route} through the tunnel ${plan.tunnel}.`
-              : `Remove ${plan.hostname} from the tunnel ${plan.tunnel}.`,
+              ? `Publish ${shown} to ${plan.route} through the tunnel ${plan.tunnel}.`
+              : `Remove ${shown} from the tunnel ${plan.tunnel}.`,
             this.sessions.username(),
           ),
         );
@@ -237,8 +276,8 @@ export class AppPublic implements OnInit {
               if (state.status === 'succeeded') {
                 this.note.set(
                   plan.action === 'add'
-                    ? `${this.title()} is public at https://${plan.hostname}.`
-                    : `${plan.hostname} no longer reaches ${this.title()}.`,
+                    ? `${this.title()} is public at ${plan.path && plan.url ? plan.url : 'https://' + plan.hostname}.`
+                    : `${shown} no longer reaches ${this.title()}.`,
                 );
               } else {
                 this.error.set(state.error || 'The change did not finish. Open the operation to see why.');

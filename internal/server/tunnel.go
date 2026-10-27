@@ -180,6 +180,11 @@ func (s *Server) handleTunnelStatus(st *store.Store, secrets *secret.Store) http
 		response := tunnelStatusResponse{}
 		facts := s.tunnelFacts()
 		response.Proposed.DashboardHostname, response.Proposed.AuthHostname = tunnelDefaults(facts.Domain)
+		if set, err := loadEdgeRoutes(st); err != nil || !legacyAuthentikHost(set.Routes) {
+			// Authentik is served at the dashboard's name, by path
+			// (ADR-044): it needs no name of its own.
+			response.Proposed.AuthHostname = ""
+		}
 		response.Proposed.SignInLinked = facts.SignInLinked
 		// The router probe runs alongside the Cloudflare reads below. The
 		// channel is buffered, so an early return never strands it.
@@ -260,6 +265,10 @@ type tunnelPlan struct {
 	DNS               []tunnelPlanChange `json:"dns"`
 	Omitted           []tunnelOmission   `json:"omitted"`
 	SignIn            string             `json:"sign_in,omitempty"`
+	// Paths are the path apps the public dashboard name starts answering
+	// for (ADR-044): Authentik's sign-in at /apps/auth/. They add no
+	// DNS record and no ingress of their own.
+	Paths []tunnelPlanPath `json:"paths"`
 	// Adopt is set when the plan takes over an existing tunnel instead of
 	// creating one (S290, ADR-041 §3).
 	Adopt *tunnelAdoption `json:"adopt,omitempty"`
@@ -302,6 +311,14 @@ type tunnelPlanRoute struct {
 	Role     string `json:"role"`
 	Route    string `json:"route"`
 	Service  string `json:"service"`
+}
+
+// tunnelPlanPath is one path app published on the public dashboard name.
+type tunnelPlanPath struct {
+	Role  string `json:"role"`
+	Route string `json:"route"`
+	Path  string `json:"path"`
+	URL   string `json:"url"`
 }
 
 // tunnelOmission is a proposed public name the plan leaves out.
@@ -398,12 +415,21 @@ func (s *Server) tunnelFacts() tunnelFacts {
 	return f
 }
 
-// tunnelDefaults proposes the public names from the setup domain.
+// tunnelDefaults proposes the public names from the setup domain. The
+// Authentik name is only for an Authentik installed under a name of its
+// own before ADR-044; callers drop it otherwise.
 func tunnelDefaults(domain string) (dashboard, auth string) {
 	if domain == "" {
 		return "", ""
 	}
 	return "homestead." + domain, "auth." + domain
+}
+
+// legacyAuthentikHost reports an Authentik installed under a name of its
+// own (ADR-037, before ADR-044), which keeps its own public name.
+func legacyAuthentikHost(routes []docker.Route) bool {
+	i := authentikRoute(routes)
+	return i >= 0 && !routes[i].IsPath()
 }
 
 // authentikRoute finds the Authentik server route among edge routes.
@@ -437,7 +463,22 @@ func buildTunnelPlan(ctx context.Context, st *store.Store, secrets *secret.Store
 	} else if err := router.ValidateTunnelName(req.Name); err != nil {
 		return tunnelPlan{}, refusePlan(http.StatusBadRequest, "%v", err)
 	}
+	set, err := loadEdgeRoutes(st)
+	if err != nil {
+		return tunnelPlan{}, err
+	}
+	// Only an Authentik installed under a name of its own (before
+	// ADR-044) takes a public name of its own; otherwise it answers at
+	// the dashboard's public name under /apps/auth/.
+	legacyAuth := legacyAuthentikHost(set.Routes)
 	dashName, authName := tunnelDefaults(facts.Domain)
+	if !legacyAuth {
+		authName = ""
+		if strings.TrimSpace(req.AuthHostname) != "" {
+			return tunnelPlan{}, refusePlan(http.StatusBadRequest,
+				"Authentik is served at the dashboard's public name under %s; it takes no public name of its own", docker.AppPathFor("auth"))
+		}
+	}
 	if req.DashboardHostname != "" {
 		dashName = req.DashboardHostname
 	}
@@ -445,9 +486,9 @@ func buildTunnelPlan(ctx context.Context, st *store.Store, secrets *secret.Store
 		authName = req.AuthHostname
 	}
 	dashName, authName = strings.ToLower(strings.TrimSpace(dashName)), strings.ToLower(strings.TrimSpace(authName))
-	if dashName == "" || authName == "" {
+	if dashName == "" || (legacyAuth && authName == "") {
 		return tunnelPlan{}, refusePlan(http.StatusUnprocessableEntity,
-			"no domain is chosen in setup: choose one on the Domain step, or name dashboard_hostname and auth_hostname")
+			"no domain is chosen in setup: choose one on the Domain step, or name dashboard_hostname")
 	}
 	if dashName == authName {
 		return tunnelPlan{}, refusePlan(http.StatusBadRequest, "the dashboard and Authentik need different public names")
@@ -456,7 +497,11 @@ func buildTunnelPlan(ctx context.Context, st *store.Store, secrets *secret.Store
 	if req.Adopt != "" {
 		ref = req.Adopt
 	}
-	for _, name := range []string{dashName, authName} {
+	publicNames := []string{dashName}
+	if authName != "" {
+		publicNames = append(publicNames, authName)
+	}
+	for _, name := range publicNames {
 		if err := (router.TunnelRoute{Hostname: name, TunnelID: ref, Service: tunnelEntryService}).Validate(); err != nil {
 			return tunnelPlan{}, refusePlan(http.StatusBadRequest, "%v", err)
 		}
@@ -489,13 +534,9 @@ func buildTunnelPlan(ctx context.Context, st *store.Store, secrets *secret.Store
 				"this appliance's connector serves a different tunnel, not %s", req.Adopt)
 		}
 	}
-	set, err := loadEdgeRoutes(st)
-	if err != nil {
-		return tunnelPlan{}, err
-	}
 	for _, r := range set.Routes {
 		for _, n := range r.AllNames() {
-			if string(n) == dashName || string(n) == authName {
+			if string(n) == dashName || (authName != "" && string(n) == authName) {
 				return tunnelPlan{}, refusePlan(http.StatusUnprocessableEntity, "%s is already a name of the edge route %s", n, r.Host)
 			}
 		}
@@ -504,12 +545,15 @@ func buildTunnelPlan(ctx context.Context, st *store.Store, secrets *secret.Store
 	plan := tunnelPlan{
 		Name: req.Name, DashboardHostname: dashName, AuthHostname: authName,
 		Ingress: []tunnelPlanRoute{}, DNS: []tunnelPlanChange{}, Omitted: []tunnelOmission{}, Warnings: []string{},
-		Coverage: []publicNameCoverage{},
+		Coverage: []publicNameCoverage{}, Paths: []tunnelPlanPath{},
 	}
+	authPath := dashName + docker.AppPathFor("auth")
 	switch {
 	case ak < 0:
-		plan.Omitted = append(plan.Omitted, tunnelOmission{Hostname: authName, Role: tunnelRoleAuth,
+		plan.Omitted = append(plan.Omitted, tunnelOmission{Hostname: authPath, Role: tunnelRoleAuth,
 			Reason: "Authentik is not installed. Install it from the catalog: remote sign-in needs it."})
+	case !legacyAuth:
+		// Published with the dashboard's name below (ADR-044).
 	default:
 		plan.Ingress = append(plan.Ingress, tunnelPlanRoute{Hostname: authName, Role: tunnelRoleAuth,
 			Route: string(set.Routes[ak].Host), Service: tunnelEntryService})
@@ -528,6 +572,15 @@ func buildTunnelPlan(ctx context.Context, st *store.Store, secrets *secret.Store
 	default:
 		plan.Ingress = append([]tunnelPlanRoute{{Hostname: dashName, Role: tunnelRoleDashboard,
 			Route: string(set.Routes[dash].Host), Service: tunnelEntryService}}, plan.Ingress...)
+		if !legacyAuth {
+			r := set.Routes[ak]
+			plan.Paths = append(plan.Paths, tunnelPlanPath{Role: tunnelRoleAuth, Route: string(r.Host), Path: r.Path,
+				URL: docker.PathURL(docker.Hostname(dashName), r.Path)})
+		}
+	}
+	if ak >= 0 && !legacyAuth && len(plan.Paths) == 0 {
+		plan.Omitted = append(plan.Omitted, tunnelOmission{Hostname: authPath, Role: tunnelRoleAuth,
+			Reason: "Authentik answers at the dashboard's public name, so it is published with the dashboard."})
 	}
 	if len(plan.Ingress) == 0 {
 		reasons := make([]string, 0, len(plan.Omitted))
@@ -617,8 +670,12 @@ func buildTunnelPlan(ctx context.Context, st *store.Store, secrets *secret.Store
 	}
 	for _, in := range plan.Ingress {
 		if in.Role == tunnelRoleDashboard {
+			signInAt := "https://" + authName
+			if !legacyAuth {
+				signInAt = docker.PathURL(docker.Hostname(dashName), set.Routes[ak].Path)
+			}
 			plan.SignIn = "After setup, re-plan Sign-in and approve it: it adds https://" + dashName +
-				" and its redirect address, and sends browsers there to https://" + authName + ". Password sign-in, claim, recovery and linking stay on the local and overlay addresses."
+				" and its redirect address, and sends browsers there to " + signInAt + ". Password sign-in, claim, recovery and linking stay on the local and overlay addresses."
 		}
 	}
 	plan.Digest = plan.digest()
@@ -670,7 +727,25 @@ func (p tunnelPlan) edgeNames() map[docker.Hostname][]docker.Hostname {
 	for _, in := range p.Ingress {
 		names[docker.Hostname(in.Route)] = append(names[docker.Hostname(in.Route)], docker.Hostname(in.Hostname))
 	}
+	// A path route is published on the dashboard's name (ADR-044).
+	for _, path := range p.Paths {
+		names[docker.Hostname(path.Route)] = []docker.Hostname{docker.Hostname(p.DashboardHostname)}
+	}
 	return names
+}
+
+// setTunnelNames gives each route exactly its names, keyed by host. A
+// path route answers on the dashboard's public name instead; any name
+// given for it publishes it, and none unpublishes it (ADR-044).
+func setTunnelNames(routes []docker.Route, names map[docker.Hostname][]docker.Hostname) {
+	for i := range routes {
+		if routes[i].IsPath() {
+			routes[i].Tunnel = nil
+			routes[i].Published = len(names[routes[i].Host]) > 0
+			continue
+		}
+		routes[i].Tunnel = names[routes[i].Host]
+	}
 }
 
 // applyTunnelNames gives each edge route exactly the tunnel names in
@@ -682,9 +757,13 @@ var applyTunnelNames = func(ctx context.Context, st *store.Store, names map[dock
 	if err != nil {
 		return err
 	}
-	for i := range set.Routes {
-		set.Routes[i].Tunnel = names[set.Routes[i].Host]
-	}
+	setTunnelNames(set.Routes, names)
+	return reconcileEdgeSet(ctx, st, set)
+}
+
+// reconcileEdgeSet deploys the edge stack and reconciles it to set,
+// saving set as the route table. A var so tests skip Docker.
+var reconcileEdgeSet = func(ctx context.Context, st *store.Store, set docker.RouteSet) error {
 	deploy, err := docker.DeployDefinition(docker.CaddyStack())
 	if err != nil {
 		return err

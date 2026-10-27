@@ -68,6 +68,9 @@ services:
     ephemeral: true
     sizemb: 256
     reason: Queue and cache state Immich rebuilds on start; nothing to back up.
+# Immich cannot run under a path (ADR-044): it keeps a name of its own,
+# immich.lan and immich.local, and immich.<zone> when published.
+serve: host
 requirements:
   memorymb: 4096
   cpucount: 2

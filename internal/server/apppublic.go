@@ -48,7 +48,9 @@ type appPublicStatus struct {
 	Tunnel    string           `json:"tunnel,omitempty"`
 	Routes    []appPublicRoute `json:"routes"`
 	Proposed  string           `json:"proposed,omitempty"`
-	SignIn    bool             `json:"sign_in"`
+	// ProposedURL is the public address of a path app (ADR-044).
+	ProposedURL string `json:"proposed_url,omitempty"`
+	SignIn      bool   `json:"sign_in"`
 	// Coverage is the edge certificate lamp for each public name (S312).
 	Coverage []publicNameCoverage `json:"coverage"`
 }
@@ -58,6 +60,11 @@ type appPublicStatus struct {
 type appPublicRoute struct {
 	Route  string   `json:"route"`
 	Public []string `json:"public"`
+	// Path and URL are set for an app served by path (ADR-044): Public
+	// then holds the dashboard's public name once the path is published,
+	// and URL is the public address it answers at.
+	Path string `json:"path,omitempty"`
+	URL  string `json:"url,omitempty"`
 }
 
 // appPublicFacts is what status and plan read about the app.
@@ -70,6 +77,9 @@ type appPublicFacts struct {
 	signIn     bool
 	installed  bool
 	reason     string
+	// server is the dashboard's public name, which a path app is
+	// published on (ADR-044); "" while the dashboard has none.
+	server docker.Hostname
 }
 
 func (p *appPublic) facts(name string) (appPublicFacts, error) {
@@ -93,6 +103,7 @@ func (p *appPublic) facts(name string) (appPublicFacts, error) {
 	}
 	f.all = set.Routes
 	f.routes = appsso.AppRoutes(manifest, set.Routes)
+	f.server = docker.PublicServerName(set.Routes)
 	if f.tunnelID, f.tunnelName, err = router.RecordedTunnel(p.st); err != nil {
 		return f, err
 	}
@@ -110,8 +121,16 @@ func (p *appPublic) facts(name string) (appPublicFacts, error) {
 		f.reason = "No tunnel is set up yet. Set one up, or adopt yours, on the Tunnel page."
 	case len(f.routes) == 0:
 		f.reason = fmt.Sprintf("%s has no address on the edge yet.", manifest.Title)
+	case f.routes[0].IsPath() && f.server == "":
+		f.reason = pathNeedsServer(manifest)
 	}
 	return f, nil
+}
+
+// pathNeedsServer explains why a path app cannot be published yet.
+func pathNeedsServer(m catalog.Manifest) string {
+	return fmt.Sprintf("%s answers under the dashboard's public name, at %s, and the dashboard has no public name yet. Publish the dashboard on the Tunnel page first.",
+		m.Title, m.AppPath())
 }
 
 func (p *appPublic) writeError(w http.ResponseWriter, err error) {
@@ -135,6 +154,13 @@ func (p *appPublic) status(w http.ResponseWriter, r *http.Request) {
 		for _, n := range route.Tunnel {
 			entry.Public = append(entry.Public, string(n))
 		}
+		if route.IsPath() {
+			entry.Path = route.Path
+			if route.Published && f.server != "" {
+				entry.Public = []string{string(f.server)}
+				entry.URL = docker.PathURL(f.server, route.Path)
+			}
+		}
 		out.Routes = append(out.Routes, entry)
 	}
 	names := []string{}
@@ -151,7 +177,14 @@ func (p *appPublic) status(w http.ResponseWriter, r *http.Request) {
 			p.writeError(w, err)
 			return
 		}
-		if domain != "" {
+		switch {
+		case f.manifest.ServedByPath():
+			// A path app takes the dashboard's public name (ADR-044).
+			if f.server != "" {
+				out.Proposed = string(f.server)
+				out.ProposedURL = docker.PathURL(f.server, f.manifest.AppPath())
+			}
+		case domain != "":
 			out.Proposed = f.manifest.Name + "." + domain
 		}
 	}
@@ -182,10 +215,14 @@ type appPublicRequest struct {
 
 // appPublicPlan is one public name added to or removed from an app.
 type appPublicPlan struct {
-	App      string             `json:"app"`
-	Action   string             `json:"action"`
-	Hostname string             `json:"hostname"`
-	Route    string             `json:"route"`
+	App      string `json:"app"`
+	Action   string `json:"action"`
+	Hostname string `json:"hostname"`
+	Route    string `json:"route"`
+	// Path and URL are set for an app served by path (ADR-044): Hostname
+	// is then the dashboard's public name, and no DNS record changes.
+	Path     string             `json:"path,omitempty"`
+	URL      string             `json:"url"`
 	Tunnel   string             `json:"tunnel"`
 	TunnelID string             `json:"tunnel_id"`
 	Zone     string             `json:"zone"`
@@ -233,10 +270,17 @@ func (p appPublicPlan) digest() string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// tunnelNameMap is every edge route's current tunnel names.
+// tunnelNameMap is every edge route's current tunnel names. A published
+// path route (ADR-044) is listed under the dashboard's public name, which
+// applyTunnelNames reads back as published.
 func tunnelNameMap(routes []docker.Route) map[docker.Hostname][]docker.Hostname {
 	names := map[docker.Hostname][]docker.Hostname{}
+	public := docker.PublicServerName(routes)
 	for _, r := range routes {
+		if r.IsPath() && r.Published && public != "" {
+			names[r.Host] = []docker.Hostname{public}
+			continue
+		}
 		if len(r.Tunnel) > 0 {
 			names[r.Host] = append([]docker.Hostname(nil), r.Tunnel...)
 		}
@@ -277,9 +321,15 @@ func (p *appPublic) buildPlan(ctx context.Context, name string, req appPublicReq
 	if err != nil {
 		return appPublicPlan{}, err
 	}
-	if *req.Enabled {
+	path := len(f.routes) > 0 && f.routes[0].IsPath()
+	switch {
+	case path && *req.Enabled:
+		err = p.planPathAdd(ctx, client, token, f, hostname, req.Route, &plan)
+	case path:
+		err = p.planPathRemove(f, hostname, &plan)
+	case *req.Enabled:
 		err = p.planAdd(ctx, client, token, f, hostname, req.Route, &plan)
-	} else {
+	default:
 		err = p.planRemove(f, hostname, &plan)
 		if err == nil {
 			err = p.removeZone(ctx, client, token, &plan)
@@ -289,12 +339,12 @@ func (p *appPublic) buildPlan(ctx context.Context, name string, req appPublicReq
 		return appPublicPlan{}, err
 	}
 	for _, h := range plan.Before {
-		if plan.Action == "remove" && h == plan.Hostname {
+		if plan.Action == "remove" && h == plan.Hostname && !path {
 			continue
 		}
 		plan.After = append(plan.After, h)
 	}
-	if plan.Action == "add" {
+	if plan.Action == "add" && !path {
 		plan.After = append(plan.After, plan.Hostname)
 		sort.Strings(plan.After)
 	}
@@ -309,8 +359,12 @@ func (p *appPublic) buildPlan(ctx context.Context, name string, req appPublicReq
 		if plan.Action == "remove" {
 			verb = "stops accepting"
 		}
+		address := "https://" + plan.Hostname
+		if path {
+			address = plan.URL
+		}
 		plan.SignIn = "App sign-in is on: afterwards, re-plan it on this page and approve it, so sign-in " +
-			verb + " https://" + plan.Hostname + "."
+			verb + " " + address + "."
 	}
 	if plan.Action == "add" {
 		plan.AppSettings = append(plan.AppSettings, appsso.HostSettings(f.manifest, []string{plan.Hostname}, nil)...)
@@ -339,9 +393,15 @@ func beforeInstall(f *appPublicFacts, req appPublicRequest) error {
 		}
 	}
 	f.routes = []docker.Route{{Host: docker.Hostname(route)}}
+	if f.manifest.ServedByPath() {
+		f.routes[0].Path = f.manifest.AppPath()
+	}
 	f.reason = ""
-	if f.tunnelID == "" {
+	switch {
+	case f.tunnelID == "":
 		f.reason = "No tunnel is set up yet. Set one up, or adopt yours, on the Tunnel page."
+	case f.routes[0].IsPath() && f.server == "":
+		f.reason = pathNeedsServer(f.manifest)
 	}
 	return nil
 }
@@ -444,6 +504,78 @@ func (p *appPublic) planAdd(ctx context.Context, client *router.TunnelClient, to
 	if !f.signIn && f.manifest.SSO.OIDC != nil {
 		plan.Warnings = append(plan.Warnings, "App sign-in through Authentik is off. Turning it on first is recommended.")
 	}
+	return nil
+}
+
+// planPathAdd plans publishing a path app on the dashboard's public name
+// (ADR-044 §3): no DNS record and no new ingress, but the same digest,
+// review and approval as a name of its own. The coverage check runs on
+// the dashboard's name, which the app now shares.
+func (p *appPublic) planPathAdd(ctx context.Context, client *router.TunnelClient, token string, f appPublicFacts, hostname, route string, plan *appPublicPlan) error {
+	plan.Action = "add"
+	r := f.routes[0]
+	if route != "" && !strings.EqualFold(route, string(r.Host)) {
+		return refusePlan(http.StatusBadRequest, "%s is not one of %s's edge routes", route, f.manifest.Title)
+	}
+	if hostname != "" && hostname != string(f.server) {
+		return refusePlan(http.StatusBadRequest, "%s answers under the dashboard's public name %s, at %s; it takes no name of its own",
+			f.manifest.Title, f.server, r.Path)
+	}
+	if r.Published {
+		return refusePlan(http.StatusUnprocessableEntity, "%s is already published at %s", f.manifest.Title, docker.PathURL(f.server, r.Path))
+	}
+	plan.Hostname, plan.Route, plan.Path = string(f.server), string(r.Host), r.Path
+	plan.URL = docker.PathURL(f.server, r.Path)
+	zoneID, err := router.TunnelZone(p.st, f.tunnelID)
+	if err != nil {
+		return err
+	}
+	zone, err := client.ZoneFor(ctx, token, plan.Hostname)
+	if errors.Is(err, router.ErrNoZone) {
+		return refusePlan(http.StatusUnprocessableEntity, "no Cloudflare zone the token can see contains %s", plan.Hostname)
+	}
+	if err != nil {
+		return err
+	}
+	if zoneID != "" && zone.ID != zoneID {
+		return refusePlan(http.StatusUnprocessableEntity, "%s is not in the tunnel's Cloudflare zone", plan.Hostname)
+	}
+	plan.Zone, plan.zoneID = zone.Name, zone.ID
+	coverage, warnings, err := certificateCoverage(ctx, client, token, zone, []string{plan.Hostname})
+	if err != nil {
+		return err
+	}
+	plan.Coverage = coverage
+	plan.Warnings = append(plan.Warnings, warnings...)
+	plan.Warnings = append(plan.Warnings,
+		"No DNS record changes: "+f.manifest.Title+" answers at "+plan.URL+", under the dashboard's public name the tunnel already carries.",
+		"Anyone on the internet can reach "+f.manifest.Title+" at "+plan.URL+". Homestead puts no Authentik check in front of it: the app's own sign-in is what protects it.",
+		"It shares one web origin with the dashboard and the other published apps (ADR-044): a flaw in one of them can reach the others in the same browser.")
+	if !f.signIn && f.manifest.SSO.OIDC != nil {
+		plan.Warnings = append(plan.Warnings, "App sign-in through Authentik is off. Turning it on first is recommended.")
+	}
+	return nil
+}
+
+// planPathRemove plans taking a path app off the dashboard's public name.
+func (p *appPublic) planPathRemove(f appPublicFacts, hostname string, plan *appPublicPlan) error {
+	plan.Action = "remove"
+	r := f.routes[0]
+	if !r.Published {
+		return refusePlan(http.StatusUnprocessableEntity, "%s is not published", f.manifest.Title)
+	}
+	if hostname != "" && hostname != string(f.server) {
+		return refusePlan(http.StatusUnprocessableEntity, "%s is not one of %s's public names", hostname, f.manifest.Title)
+	}
+	plan.Hostname, plan.Route, plan.Path = string(f.server), string(r.Host), r.Path
+	plan.URL = docker.PathURL(f.server, r.Path)
+	if name, err := router.TunnelZoneName(p.st, f.tunnelID); err == nil {
+		plan.Zone = name
+	} else {
+		return err
+	}
+	plan.Warnings = append(plan.Warnings,
+		"No DNS record changes: "+plan.URL+" answers 404 on the public name afterwards; the app stays on its local addresses.")
 	return nil
 }
 
@@ -574,8 +706,15 @@ func (p *appPublic) apply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	def := appPublicAddDefinition(p.st, token, plan)
+	if plan.Path != "" {
+		def = appPublicPathDefinition(p.st, plan)
+	}
 	action, detail := "app.public.add", fmt.Sprintf("%s: %s -> %s on tunnel %s", plan.App, plan.Hostname, plan.Route, plan.Tunnel)
-	if plan.Action == "remove" {
+	if plan.Action == "remove" && plan.Path != "" {
+		action, detail = "app.public.remove", fmt.Sprintf("%s: %s off tunnel %s", plan.App, plan.URL, plan.Tunnel)
+	} else if plan.Path != "" {
+		detail = fmt.Sprintf("%s: %s on tunnel %s", plan.App, plan.URL, plan.Tunnel)
+	} else if plan.Action == "remove" {
 		def = appPublicRemoveDefinition(p.st, token, plan)
 		action, detail = "app.public.remove", fmt.Sprintf("%s: %s off tunnel %s", plan.App, plan.Hostname, plan.Tunnel)
 	}
@@ -758,4 +897,60 @@ func appPublicRemoveDefinition(st *store.Store, apiToken string, plan appPublicP
 			return nil
 		}},
 	}}
+}
+
+// appPublicPathDefinition publishes or unpublishes a path app on the
+// dashboard's public name (ADR-044 §3): the app's own host allow-list,
+// then the edge, which starts or stops answering at the path on the
+// public name. No DNS record or connector change; the dashboard's name
+// is already on the tunnel.
+func appPublicPathDefinition(st *store.Store, plan appPublicPlan) operation.Definition {
+	add := plan.Action == "add"
+	localNames := func() []string {
+		set, err := loadEdgeRoutes(st)
+		if err != nil {
+			return nil
+		}
+		names := []string{}
+		for _, r := range docker.ServedRoutes(set.Routes, set.Routes) {
+			if strings.EqualFold(string(r.Host), plan.Route) || (r.IsPath() && r.Path == plan.Path) {
+				for _, n := range r.Names() {
+					names = append(names, string(n))
+				}
+			}
+		}
+		return names
+	}
+	address := strings.TrimSuffix(plan.URL, "/")
+	hosts := operation.StepDef{Name: "app-hosts", Run: func(ctx context.Context) error {
+		if add {
+			return trustAppHosts(ctx, plan.manifest, address, append(localNames(), plan.Hostname), nil)
+		}
+		if err := trustAppHosts(ctx, plan.manifest, address, nil, []string{plan.Hostname}); err != nil {
+			return fmt.Errorf("%s is off the public name, but the app still lists it: %w", plan.URL, err)
+		}
+		return nil
+	}}
+	edge := operation.StepDef{Name: "edge", Run: func(ctx context.Context) error {
+		// The dashboard's name stays on the dashboard and every other
+		// published path: only this route's entry changes.
+		set, err := loadEdgeRoutes(st)
+		if err != nil {
+			return err
+		}
+		names := tunnelNameMap(set.Routes)
+		if add {
+			names[docker.Hostname(plan.Route)] = []docker.Hostname{docker.Hostname(plan.Hostname)}
+		} else {
+			delete(names, docker.Hostname(plan.Route))
+		}
+		return applyTunnelNames(ctx, st, names)
+	}}
+	typ := "app.public.add"
+	steps := []operation.StepDef{hosts, edge}
+	if !add {
+		// Stop answering first, then drop the name from the app.
+		typ, steps = "app.public.remove", []operation.StepDef{edge, hosts}
+	}
+	return operation.Definition{Type: typ, Steps: steps}
 }

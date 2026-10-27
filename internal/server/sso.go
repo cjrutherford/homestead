@@ -20,6 +20,7 @@ import (
 	"homestead/internal/cert"
 	"homestead/internal/claim"
 	"homestead/internal/craftfiles"
+	"homestead/internal/docker"
 	"homestead/internal/operation"
 	"homestead/internal/router"
 	"homestead/internal/secret"
@@ -129,6 +130,31 @@ type ssoHandlers struct {
 	audit  func(actor, action, outcome, detail string)
 }
 
+// isAuthentikRoute recognises the Authentik package's route: its server
+// service, recorded under authentik.<domain> (or <endpoint>-authentik.).
+func isAuthentikRoute(r docker.Route) bool {
+	host := strings.ToLower(string(r.Host))
+	return !r.Dashboard && r.Target.Host == "server" &&
+		(strings.HasPrefix(host, authentikPackage+".") || strings.Contains(host, "-"+authentikPackage+"."))
+}
+
+// authentikPathURLs is Authentik's address when it is served by path
+// (ADR-044): under the dashboard's own name locally, and under its
+// public name when the path is published. The daemon and the apps' back
+// channel use the local one; the browser through the tunnel the public.
+func authentikPathURLs(set docker.RouteSet, r docker.Route) (local, public string) {
+	dash, ok := set.DashboardRoute()
+	if !ok {
+		return "", ""
+	}
+	path := strings.TrimSuffix(r.Path, "/")
+	local = "https://" + strings.ToLower(string(dash.Host)) + path
+	if r.Published && len(dash.Tunnel) > 0 {
+		public = "https://" + strings.ToLower(string(dash.Tunnel[0])) + path
+	}
+	return local, public
+}
+
 // ssoDefaults derives plan defaults from the appliance's own state: the
 // Authentik route in the edge table, and the origins the owner reaches the
 // dashboard at (the loopback daemon, edge routes and tunnel hostnames that
@@ -142,8 +168,9 @@ func ssoDefaults(st *store.Store, port int) sso.Defaults {
 	if err == nil {
 		for _, r := range set.Routes {
 			host := strings.ToLower(string(r.Host))
-			if d.AuthentikURL == "" && r.Target.Host == "server" &&
-				(strings.HasPrefix(host, authentikPackage+".") || strings.Contains(host, "-"+authentikPackage+".")) {
+			if d.AuthentikURL == "" && isAuthentikRoute(r) && r.IsPath() {
+				d.AuthentikURL, d.PublicAuthentikURL = authentikPathURLs(set, r)
+			} else if d.AuthentikURL == "" && isAuthentikRoute(r) {
 				scheme := "https"
 				if r.TLS == "off" {
 					scheme = "http"

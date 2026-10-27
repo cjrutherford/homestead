@@ -45,9 +45,10 @@ type reachStatus struct {
 	Addresses []reachAddress `json:"addresses"`
 }
 
-// reachProbe asks one address and answers with the HTTP status. Tests
-// replace these.
-type reachProbe func(ctx context.Context, host string, https bool, roots *x509.CertPool) (int, error)
+// reachProbe asks one address, host plus path ("/" for an app with a
+// name of its own, its path for one served by path, ADR-044), and
+// answers with the HTTP status. Tests replace these.
+type reachProbe func(ctx context.Context, host, path string, https bool, roots *x509.CertPool) (int, error)
 
 var (
 	reachLocal  reachProbe = probeEdge
@@ -60,7 +61,7 @@ func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastRe
 
 // probeEdge asks the edge on this appliance for host, by name, trusting
 // only the Homestead internal CA.
-func probeEdge(ctx context.Context, host string, https bool, roots *x509.CertPool) (int, error) {
+func probeEdge(ctx context.Context, host, path string, https bool, roots *x509.CertPool) (int, error) {
 	port, scheme := "80", "http"
 	if https {
 		port, scheme = "443", "https"
@@ -73,15 +74,15 @@ func probeEdge(ctx context.Context, host string, https bool, roots *x509.CertPoo
 		TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: host, MinVersion: tls.VersionTLS12},
 	}
 	defer transport.CloseIdleConnections()
-	return get(ctx, &http.Client{Transport: transport, Timeout: reachTimeout, CheckRedirect: noRedirect}, scheme+"://"+host+"/")
+	return get(ctx, &http.Client{Transport: transport, Timeout: reachTimeout, CheckRedirect: noRedirect}, scheme+"://"+host+path)
 }
 
 // probePublic asks the public name the way a browser would: public DNS,
 // Cloudflare's certificate, the tunnel, the edge, the app.
-func probePublic(ctx context.Context, host string, _ bool, _ *x509.CertPool) (int, error) {
+func probePublic(ctx context.Context, host, path string, _ bool, _ *x509.CertPool) (int, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	defer transport.CloseIdleConnections()
-	return get(ctx, &http.Client{Transport: transport, Timeout: reachTimeout, CheckRedirect: noRedirect}, "https://"+host+"/")
+	return get(ctx, &http.Client{Transport: transport, Timeout: reachTimeout, CheckRedirect: noRedirect}, "https://"+host+path)
 }
 
 func get(ctx context.Context, client *http.Client, url string) (int, error) {
@@ -119,13 +120,16 @@ func isTLSError(err error) bool {
 // edge; whether a device finds the name is the resolver's and the
 // router's business, so a .lan name says what it needs when the resolver
 // is off.
-func localResult(title, host string, https, resolver bool, status int, err error) reachAddress {
+func localResult(title, host, path string, https, resolver bool, status int, err error) reachAddress {
 	scheme := "http"
 	if https {
 		scheme = "https"
 	}
-	out := reachAddress{Address: scheme + "://" + host, Host: host, Kind: "local"}
+	out := reachAddress{Address: scheme + "://" + host + path, Host: host, Kind: "local"}
 	switch {
+	case err == nil && path != "" && status == http.StatusNotFound:
+		out.Reason = "The edge answers on " + host + ", but not yet at " + path + "."
+		out.Fix = "Check the route on the Edge page, then check again."
 	case err != nil && errors.Is(err, syscall.ECONNREFUSED):
 		out.Reason = "The edge is not answering on this appliance."
 		out.Fix = "Set up the edge on the Edge page; it serves every app by name."
@@ -150,9 +154,12 @@ func localResult(title, host string, https, resolver bool, status int, err error
 
 // publicResult explains one public name, from outside in: DNS, then
 // Cloudflare's certificate (the S312 message), then the tunnel.
-func publicResult(title, host, zone string, status int, err error) reachAddress {
-	out := reachAddress{Address: "https://" + host, Host: host, Kind: "public"}
+func publicResult(title, host, path, zone string, status int, err error) reachAddress {
+	out := reachAddress{Address: "https://" + host + path, Host: host, Kind: "public"}
 	switch {
+	case err == nil && path != "" && status == http.StatusNotFound:
+		out.Reason = host + " answers, but not yet at " + path + "."
+		out.Fix = "Check that " + title + " is published on its Manage page, then check again."
 	case err != nil && isDNSError(err):
 		out.Reason = host + " does not resolve yet."
 		out.Fix = "A new DNS record can take a few minutes to appear. Check again shortly; if it stays, check the name on the Tunnel page."
@@ -215,15 +222,21 @@ func (s *Server) MountAppReach(st *store.Store, names *LocalNames, local *cert.L
 			}
 		}
 		ctx := r.Context()
-		for _, route := range appsso.AppRoutes(manifest, set.Routes) {
+		// A path app is asked at its path on the appliance's own names
+		// (ADR-044); an app with a name of its own at its root.
+		for _, route := range docker.ServedRoutes(set.Routes, appsso.AppRoutes(manifest, set.Routes)) {
 			https := route.TLS != docker.TLSOff
+			path, shown := "/", ""
+			if route.IsPath() {
+				path, shown = route.Path, route.Path
+			}
 			for _, n := range route.Names() {
-				status, err := reachLocal(ctx, string(n), https, roots)
-				out.Addresses = append(out.Addresses, localResult(manifest.Title, string(n), https, out.Resolver, status, err))
+				status, err := reachLocal(ctx, string(n), path, https, roots)
+				out.Addresses = append(out.Addresses, localResult(manifest.Title, string(n), shown, https, out.Resolver, status, err))
 			}
 			for _, n := range route.Tunnel {
-				status, err := reachPublic(ctx, string(n), true, nil)
-				out.Addresses = append(out.Addresses, publicResult(manifest.Title, string(n), zoneGuess(st, string(n)), status, err))
+				status, err := reachPublic(ctx, string(n), path, true, nil)
+				out.Addresses = append(out.Addresses, publicResult(manifest.Title, string(n), shown, zoneGuess(st, string(n)), status, err))
 			}
 		}
 		w.Header().Set("Cache-Control", "no-store")

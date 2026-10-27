@@ -26,6 +26,10 @@ services:
     AUTHENTIK_POSTGRESQL__HOST: postgresql
     AUTHENTIK_POSTGRESQL__USER: authentik
     AUTHENTIK_POSTGRESQL__NAME: authentik
+    # Served at <server>/apps/auth/ (ADR-044): Authentik serves every
+    # page, its API and the OIDC endpoints under this path. It needs the
+    # leading and the trailing slash.
+    AUTHENTIK_WEB__PATH: /apps/auth/
   # No image VOLUME; the official compose binds media and templates.
   # Authentik runs as uid 1000.
   data:
@@ -47,6 +51,7 @@ services:
     AUTHENTIK_POSTGRESQL__HOST: postgresql
     AUTHENTIK_POSTGRESQL__USER: authentik
     AUTHENTIK_POSTGRESQL__NAME: authentik
+    AUTHENTIK_WEB__PATH: /apps/auth/
   data:
   - target: /media
     class: application
@@ -78,6 +83,10 @@ services:
     mode: "0700"
     uid: 70
     gid: 70
+# Served at <server>/apps/auth/ (ADR-044). Authentik serves under the
+# prefix itself (AUTHENTIK_WEB__PATH), so the edge keeps it.
+serve: path
+path: /apps/auth/
 requirements:
   memorymb: 2048
   cpucount: 2

@@ -76,6 +76,10 @@ type Generation struct {
 	// answers on: the host and its derived mDNS name (S313). It fills
 	// RouteNamesToken, space-separated.
 	RouteNames map[string][]string
+	// RoutePaths maps a service served by path (ADR-044) to its path,
+	// without the trailing slash. It fills RoutePathToken, and
+	// RouteURLToken becomes https://<route host><path>.
+	RoutePaths map[string]string
 }
 
 // RouteHostToken in a service environment value is replaced with the
@@ -88,6 +92,15 @@ const RouteHostToken = "{{route_host}}"
 // serves the service, space-separated: <app>.lan and <app>.local (S313).
 // Like RouteHostToken, the variable is left out when no route serves it.
 const RouteNamesToken = "{{route_names}}"
+
+// RoutePathToken is replaced with the app's path without its trailing
+// slash (/apps/nextcloud) for a package served by path (ADR-044), and
+// with nothing for a host package.
+const RoutePathToken = "{{route_path}}"
+
+// RouteURLToken is replaced with the app's address: https://<route
+// host><route path>, e.g. https://homestead.lan/apps/nextcloud.
+const RouteURLToken = "{{route_url}}"
 
 // validate checks generation against the manifest: known services
 // only, sane ports and volumes, known networks, no duplicates.
@@ -276,7 +289,8 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 		}
 		rendered.Environment, rendered.Secrets = serviceSecretWiring(manifest, name)
 		for key, value := range rendered.Environment {
-			if strings.Contains(value, RouteHostToken) || strings.Contains(value, RouteNamesToken) {
+			if strings.Contains(value, RouteHostToken) || strings.Contains(value, RouteNamesToken) ||
+				strings.Contains(value, RoutePathToken) || strings.Contains(value, RouteURLToken) {
 				host := generation.RouteHosts[name]
 				if host == "" {
 					// No route serves this service: there is no name to trust.
@@ -287,6 +301,9 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 				if len(names) == 0 {
 					names = []string{host}
 				}
+				path := generation.RoutePaths[name]
+				value = strings.ReplaceAll(value, RouteURLToken, "https://"+host+path)
+				value = strings.ReplaceAll(value, RoutePathToken, path)
 				value = strings.ReplaceAll(value, RouteHostToken, host)
 				rendered.Environment[key] = strings.ReplaceAll(value, RouteNamesToken, strings.Join(names, " "))
 			}

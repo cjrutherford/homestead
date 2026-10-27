@@ -63,7 +63,11 @@ type InstallPlanReport struct {
 	// Routes are the planned edge routes, whole, so the CLI can add them
 	// to the edge table after the install (S313).
 	Routes []docker.Route `json:"Routes"`
-	DNS    []struct {
+	// Path and Addresses are where the app answers locally (ADR-044):
+	// its path under each of the appliance's names, or its own names.
+	Path      string   `json:"path,omitempty"`
+	Addresses []string `json:"addresses"`
+	DNS       []struct {
 		Name  string `json:"Name"`
 		Type  string `json:"Type"`
 		Value string `json:"Value"`

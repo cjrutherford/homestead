@@ -70,6 +70,8 @@ app-permit {
   font-weight: 600;
   letter-spacing: var(--tracking-display);
   line-height: 1.1;
+  /* A path address (ADR-044) is one long word; let it wrap on a phone. */
+  overflow-wrap: anywhere;
 }
 
 /* The seal: the first eight characters of the digest in a double ring. */

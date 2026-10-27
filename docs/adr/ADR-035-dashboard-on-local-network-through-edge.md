@@ -3,6 +3,8 @@
 ## Status
 Accepted
 
+In part superseded by ADR-044: apps and Authentik are served under one host by path.
+
 Owner decision 2026-10-19 for S289. Follows
 ADR-032 (dedicated unix socket for the edge) for the dashboard and API;
 builds on ADR-020 (Operator Session Boundary), ADR-030 (internal CA and

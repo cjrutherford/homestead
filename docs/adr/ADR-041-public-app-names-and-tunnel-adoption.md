@@ -3,6 +3,8 @@
 ## Status
 Accepted
 
+In part superseded by ADR-044: apps and Authentik are served under one host by path.
+
 The owner decided this on 2026-10-21, for S290.
 
 This record **amends** ADR-037 (§3, §4) and ADR-006: an installed app can

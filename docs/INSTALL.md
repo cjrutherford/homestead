@@ -269,8 +269,9 @@ Authentik becomes the one sign-in for the dashboard and for apps.
    requirements (Docker, the edge, storage), shows the plan, and installs
    it. Follow the operation until it finishes; the first start takes a few
    minutes.
-2. Open **https://authentik.local/** (the address itself; Authentik starts
-   its first-run setup only there). Create the `akadmin` account with a
+2. Open **https://homestead.local/apps/auth/** (Authentik answers under the
+   appliance's name at `/apps/auth/`, ADR-044; it starts its first-run setup
+   only there). Create the `akadmin` account with a
    strong password from your password manager.
 3. In Authentik, go to **Admin interface → Directory → Tokens and App
    passwords → Create**. Make a token for user `akadmin`, with intent
@@ -311,7 +312,11 @@ In the wizard's Domain step:
 4. Enter your domain (for example `example.com`) and choose **Save domain**.
 5. Open the **Tunnel** page. Name a **new** tunnel (for example
    `homestead-<customer>`). The form proposes `homestead.<domain>` for the
-   dashboard and `auth.<domain>` for Authentik; you can rename either.
+   dashboard; you can rename it. Authentik needs no name of its own: it
+   answers at `https://homestead.<domain>/apps/auth/`, and the plan lists it
+   under the dashboard's name with no DNS record (ADR-044). An appliance
+   installed before S315 still serves Authentik at a name of its own, so the
+   form also asks for one there, proposing `auth.<domain>`.
    Choose **Review plan**. The plan lists the tunnel to create, each DNS
    record, and any existing record it would replace. Approve it, then follow
    the operation to the end. If the plan is refused, the reason shows under
@@ -326,6 +331,13 @@ In the wizard's Domain step:
    names are allowed: the plan warns about each name no certificate covers,
    and you may still approve. The Tunnel page and each app's public address
    show a lamp: **certificate covers it** or **no certificate yet**.
+
+   **One web address, shared.** Apps under the dashboard's public name
+   (Authentik, Nextcloud, Jellyfin) share one web origin with the dashboard.
+   A browser treats them as one site, so a flaw in one of them could reach
+   the dashboard's sign-in in that browser. Homestead accepts this so one
+   name and one certificate cover everything; the Tunnel page says so once.
+   Immich keeps a public name of its own.
 6. The Sign-in step now warns that sign-in must be **re-planned** for the
    public name. Go back to the **Sign-in** page and run Plan and Approve
    again with a new Authentik token, as in D3 step 4. This adds the public
@@ -344,13 +356,19 @@ does not have it, so name a new tunnel.
 ### D5. Apps
 
 1. Open the **Catalog** and choose an app, for example Jellyfin. The install
-   wizard asks for its storage, then shows both of its addresses:
-   - **On your network:** `jellyfin.lan` and `jellyfin.local`. When the
-     appliance resolver is off, the step says `.lan` needs the resolver (on
-     the **Names** page) or a DNS entry on your router; `jellyfin.local`
-     works without setup.
+   wizard asks for its storage, then shows both of its addresses. Nextcloud,
+   Jellyfin and Authentik answer under the appliance's name, by path
+   (ADR-044); Immich and the craft apps keep a name of their own:
+   - **On your network:** `https://homestead.lan/apps/jellyfin/` and
+     `https://homestead.local/apps/jellyfin/` (for Immich, `immich.lan` and
+     `immich.local`). When the appliance resolver is off, the step says
+     `homestead.lan` needs the resolver (on the **Names** page) or a DNS
+     entry on your router; the `.local` address works without setup.
    - **On the internet:** with a tunnel set up (D4), **Also publish at**
-     proposes `jellyfin.<domain>`; keep it or type another. It is on when
+     shows `https://homestead.<domain>/apps/jellyfin/`, under the
+     dashboard's public name with no DNS record; it needs the dashboard
+     published first. For Immich it proposes `immich.<domain>`; keep it or
+     type another. It is on when
      the same install sets up **Sign in with Authentik**, and off otherwise,
      because then only the app's own sign-in protects it. The step shows the
      certificate lamp for the name (the D4 step 5 rule). Without a tunnel the
@@ -371,13 +389,23 @@ does not have it, so name a new tunnel.
    CLI: `homesteadctl apps install jellyfin -f jellyfin.json --public`
    prints the install digest and the public address plan with its digest,
    and changes nothing. Then
-   `homesteadctl apps install jellyfin -f jellyfin.json --public jellyfin.<domain> --approve-public <digest>`
-   installs, adds the address, publishes and prints the reach check.
+   `homesteadctl apps install jellyfin -f jellyfin.json --public --approve-public <digest>`
+   installs, adds the address, publishes and prints the reach check (for
+   Immich, pass the name after `--public`).
 
    To change or remove the public name later, use the app's **Manage**
    panel in the Catalog (**Review public address**, then **Approve**), or
    `homesteadctl apps public plan jellyfin`, then
    `homesteadctl apps public apply jellyfin --digest <digest> --follow`.
+
+   **Apps installed before S315** keep their own name (`jellyfin.lan`).
+   Their **Manage** panel offers **Move to https://homestead.lan/apps/jellyfin/**:
+   **Review the move** shows the plan (the new addresses, the app settings
+   it changes, a restart, and that the old address stops answering), and
+   nothing moves until you approve it. Take a public name off the app
+   first. Afterwards, re-plan the app's sign-in; for Authentik, tear the
+   tunnel down first, then set the dashboard's sign-in up again at its new
+   address. CLI: `homesteadctl apps move status|plan|apply jellyfin`.
 3. **Nextcloud sets itself up.** Install creates its admin account (`admin`)
    with a generated password; there is no setup page to finish. The password
    is in the app's **Manage** panel under Secrets: choose **Reveal** and
@@ -385,10 +413,10 @@ does not have it, so name a new tunnel.
    `homesteadctl apps secrets reveal nextcloud admin_password`. Nextcloud
    takes a few minutes to finish installing; turning on sign-in waits for
    it. If it is still not ready, the page says so, links the app, and offers
-   **Apply sign-in again**. Nextcloud trusts `nextcloud.lan`,
-   `nextcloud.local` and its public name, and builds https links behind the
-   tunnel; adding or removing a public name later updates its trusted
-   domains.
+   **Apply sign-in again**. Nextcloud trusts `homestead.lan`,
+   `homestead.local` and the dashboard's public name, serves under
+   `/apps/nextcloud/`, and builds https links behind the tunnel; publishing
+   it or taking it off later updates its trusted domains.
 
 ### D6. Backups
 
@@ -408,8 +436,9 @@ From a phone on **mobile data** (not your Wi-Fi):
 | Open | Expect |
 | --- | --- |
 | `https://homestead.<domain>` | the Homestead login with only **Sign in with Authentik**; after signing in, the dashboard |
-| `https://auth.<domain>` | the Authentik login |
-| `https://jellyfin.<domain>` | Jellyfin, signing in through Authentik |
+| `https://homestead.<domain>/apps/auth/` | the Authentik login |
+| `https://homestead.<domain>/apps/jellyfin/` | Jellyfin, signing in through Authentik |
+| `https://homestead.<domain>/apps/nextcloud/` while it is not published | 404 |
 
 On the appliance:
 

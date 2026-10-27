@@ -163,13 +163,15 @@ func AppRoutes(m catalog.Manifest, routes []docker.Route) []docker.Route {
 
 // Origins are the app's browser origins: every local name its routes
 // answer on (the .lan host and its .local name) and their public tunnel
-// names, all https.
+// names, all https. A path app (ADR-044, routes resolved with
+// docker.ServedRoutes) has its path appended without the trailing slash,
+// so an adapter's origin+"/..." lands inside it.
 func Origins(routes []docker.Route) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, r := range routes {
 		for _, n := range r.AllNames() {
-			o := "https://" + strings.ToLower(string(n))
+			o := "https://" + strings.ToLower(string(n)) + strings.TrimSuffix(r.Path, "/")
 			if !seen[o] {
 				seen[o] = true
 				out = append(out, o)

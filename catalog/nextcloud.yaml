@@ -30,6 +30,12 @@ services:
   # (OVERWRITECLIURL). The image reads both at every request. No
   # OVERWRITEHOST: it would pin every link to one of the names.
   #
+  # Nextcloud is served under the appliance's names at /apps/nextcloud/
+  # (ADR-044, S315): the trusted domains are homestead.lan and
+  # homestead.local, the edge strips the prefix (strip_prefix) and
+  # Nextcloud builds its links under it from OVERWRITEWEBROOT, which the
+  # image's reverse-proxy config reads at every request.
+  #
   # Nextcloud installs itself on first start (S312): with an admin user,
   # its password file and a database name, the image runs
   # `occ maintenance:install` instead of the web installer. The image
@@ -39,7 +45,8 @@ services:
   environment:
     NEXTCLOUD_TRUSTED_DOMAINS: "{{route_names}}"
     OVERWRITEPROTOCOL: https
-    OVERWRITECLIURL: "https://{{route_host}}"
+    OVERWRITECLIURL: "{{route_url}}"
+    OVERWRITEWEBROOT: "{{route_path}}"
     NEXTCLOUD_ADMIN_USER: admin
     SQLITE_DATABASE: nextcloud
   # Image VOLUME: /var/www/html (code, config, apps). User files and
@@ -58,6 +65,18 @@ services:
     subpath: data
     uid: 33
     gid: 33
+# Served at <server>/apps/nextcloud/ (ADR-044). The edge strips the
+# prefix: overwritewebroot only rewrites the links Nextcloud generates,
+# and the app itself answers at its document root. CalDAV and CardDAV
+# discovery at the host root redirect into the path.
+serve: path
+path: /apps/nextcloud/
+strip_prefix: true
+redirects:
+- from: /.well-known/caldav
+  to: remote.php/dav/
+- from: /.well-known/carddav
+  to: remote.php/dav/
 requirements:
   memorymb: 1024
   cpucount: 2

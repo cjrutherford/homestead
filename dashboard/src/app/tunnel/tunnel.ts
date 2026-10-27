@@ -1,5 +1,5 @@
 import { plural } from '../core/plural';
-import { Component, computed, effect, inject, OnInit, signal, input, untracked } from '@angular/core';
+import { Component, computed, effect, ElementRef, inject, OnInit, signal, input, untracked, viewChild } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { ApiService, TunnelPlan, TunnelRequest, TunnelStatus } from '../core/api.service';
@@ -23,7 +23,9 @@ import { coverageLamp, coverageRule } from '../core/coverage';
  *
  * The plan publishes the dashboard and Authentik through the edge (S296):
  * the owner names them or takes the proposal, and never types a local
- * service address.
+ * service address. Since S315 (ADR-044) Authentik answers under the
+ * dashboard's name at /apps/auth/, so only an older install is asked for
+ * an Authentik name; the page states the shared-origin trade-off once.
  */
 @Component({
   imports: [OperationProgress, Loading, StateMessage, Dialog, RouterLink, Permit],
@@ -39,6 +41,20 @@ export class Tunnel implements OnInit {
   protected readonly dashboardHint = computed(
     () => this.status()?.proposed?.dashboard_hostname || `homestead.${this.domain() || 'example.com'}`,
   );
+  /**
+   * Whether Authentik still needs a public name of its own: only an
+   * install from before S315 (ADR-044) serves it on a name; otherwise it
+   * answers at the dashboard's name under /apps/auth/.
+   */
+  protected readonly authHostnameAsked = computed(() => {
+    const state = this.status();
+    return state === null || !!state.proposed?.auth_hostname;
+  });
+  private readonly authInput = viewChild<ElementRef<HTMLInputElement>>('authInput');
+  /** The Authentik name typed, when the page asks for one. */
+  protected authValue(): string {
+    return this.authInput()?.nativeElement.value ?? '';
+  }
   protected readonly authHint = computed(
     () => this.status()?.proposed?.auth_hostname || `auth.${this.domain() || 'example.com'}`,
   );
