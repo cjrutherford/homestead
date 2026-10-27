@@ -146,6 +146,15 @@ func renderTunnelEntry(r Route, upstream string) string {
 `, strings.Join(sites, ", "), body)
 }
 
+// indent puts every line of a block body one tab deeper.
+func indent(body string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(strings.TrimSuffix(body, "\n"), "\n") {
+		b.WriteString("\t" + line + "\n")
+	}
+	return b.String()
+}
+
 // wrapHandle puts a block body in a catch-all handle, so it runs only
 // when no app path handle matched.
 func wrapHandle(body string) string {
@@ -185,17 +194,30 @@ func renderPathHandles(paths []Route, tunnel bool) string {
 		if p.StripPrefix {
 			fmt.Fprintf(&b, "\t\turi strip_prefix %s\n", bare)
 		}
-		fmt.Fprintf(&b, "\t\treverse_proxy %s:%d {\n", p.Target.Host, p.Target.Port)
+		var up strings.Builder
+		fmt.Fprintf(&up, "\treverse_proxy %s:%d {\n", p.Target.Host, p.Target.Port)
 		if p.Health.Path != "" {
-			fmt.Fprintf(&b, "\t\t\thealth_uri %s\n", p.Health.Path)
+			fmt.Fprintf(&up, "\t\thealth_uri %s\n", p.Health.Path)
 			if p.Health.IntervalSeconds != 0 {
-				fmt.Fprintf(&b, "\t\t\thealth_interval %ds\n", p.Health.IntervalSeconds)
+				fmt.Fprintf(&up, "\t\thealth_interval %ds\n", p.Health.IntervalSeconds)
 			}
 		}
 		if tunnel {
-			b.WriteString("\t\t\theader_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}\n\t\t\theader_up X-Forwarded-Proto https\n")
+			up.WriteString("\t\theader_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}\n\t\theader_up X-Forwarded-Proto https\n")
 		}
-		b.WriteString("\t\t\theader_up X-Forwarded-Host {http.request.host}\n\t\t}\n\t}\n")
+		up.WriteString("\t\theader_up X-Forwarded-Host {http.request.host}\n\t}\n")
+		if p.CraftApp == "" {
+			b.WriteString(indent(up.String()))
+		} else {
+			// A craft app's wrapper page and file path go to the daemon
+			// (ADR-045). header_up replaces anything the client sent; the
+			// host is the name the request came on, and the scheme is
+			// https on both the dashboard site and the tunnel entry.
+			fmt.Fprintf(&b, "\t\thandle %s* {\n\t\t\treverse_proxy unix/%s {\n\t\t\t\theader_up %s %s\n\t\t\t\theader_up %s {http.request.host}\n\t\t\t\theader_up %s %s\n\t\t\t\theader_up X-Forwarded-Proto https\n\t\t\t}\n\t\t}\n",
+				CraftWrapperPrefix, CraftSocketPath, CraftAppHeader, p.CraftApp, CraftHostHeader, CraftPrefixHeader, bare)
+			b.WriteString(indent(wrapHandle(up.String())))
+		}
+		b.WriteString("\t}\n")
 	}
 	fmt.Fprintf(&b, "\thandle %s* {\n\t\trespond 404\n\t}\n", AppsPrefix)
 	return b.String()

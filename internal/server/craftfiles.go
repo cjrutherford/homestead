@@ -112,10 +112,18 @@ func (s *Server) MountCraftFiles(c CraftFilesConfig) *CraftFiles {
 				return nil, err
 			}
 			var out []craftfiles.CraftRoute
-			for _, r := range set.Routes {
-				if r.CraftApp != "" {
-					out = append(out, craftfiles.CraftRoute{App: r.CraftApp, Host: string(r.Host), TLS: r.TLS != docker.TLSOff})
+			// A path route answers on the dashboard's names (ADR-045).
+			for _, r := range docker.ServedRoutes(set.Routes, set.Routes) {
+				if r.CraftApp == "" {
+					continue
 				}
+				cr := craftfiles.CraftRoute{App: r.CraftApp, Host: string(r.Host), TLS: r.TLS != docker.TLSOff, Path: r.Path}
+				if r.IsPath() {
+					for _, n := range append(append([]docker.Hostname{r.Host}, r.Aliases...), r.Tunnel...) {
+						cr.Names = append(cr.Names, string(n))
+					}
+				}
+				out = append(out, cr)
 			}
 			return out, nil
 		},
@@ -234,7 +242,11 @@ func (s *Server) MountCraftFiles(c CraftFilesConfig) *CraftFiles {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		res, err := mgr.Launch(sessions, op.Token, op.Session.Username, op.Session.ExpiresAt, req.App)
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		res, err := mgr.Launch(sessions, op.Token, op.Session.Username, op.Session.ExpiresAt, req.App, host)
 		if err != nil {
 			writeCraftFilesError(w, err)
 			return

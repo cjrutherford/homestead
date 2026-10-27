@@ -27,6 +27,11 @@ requirements:
   memorymb: 64
   cpucount: 1
   architectures: [amd64, arm64]
+# Served at /apps/effectcraft/ under the appliance's own names (ADR-045). The
+# app loads its assets by relative paths, so the edge strips the path;
+# the wrapper page and file path under it come from the daemon.
+serve: path
+strip_prefix: true
 exposure:
   package: effectcraft
   endpoints:
@@ -34,7 +39,7 @@ exposure:
     recommended: local
     allowwider: false
     warnings:
-    - EffectCraft stores nothing on the appliance, so widening exposure would offer a public compositor whose projects never reach your storage. With Nextcloud file storage linked, this host also forwards its document path (/_homestead/files/) to your appliance, which reads and writes your Nextcloud on the browser's behalf; it needs a Homestead operator session opened from the dashboard, but widening exposure puts the host, that path and your document transfers beyond the LAN. Keep it local.
+    - EffectCraft stores nothing on the appliance, so widening exposure would offer a public compositor whose projects never reach your storage. With Nextcloud file storage linked, its document path (_homestead/files/) is forwarded to your appliance, which reads and writes your Nextcloud on the browser's behalf; it needs a Homestead operator session opened from the dashboard, but widening exposure puts the host, that path and your document transfers beyond the LAN. Keep it local.
 browser:
 - capability: webgpu
   reason: "Effects render on the GPU through WebGPU, in the page and in render workers; without it EffectCraft renders on the CPU instead."

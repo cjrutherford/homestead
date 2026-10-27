@@ -256,3 +256,27 @@ func TestAppNamesOfPathApp(t *testing.T) {
 		t.Fatalf("names = %+v", got)
 	}
 }
+
+// ADR-045 §5: a craft app on a name of its own is offered the move too,
+// and its route keeps its craft app name and strips its path.
+func TestAppMoveCraftApp(t *testing.T) {
+	srv, st, steps, _ := moveRig(t)
+	installApp(t, st, "cadcraft", docker.Route{Host: "cadcraft.lan", Target: docker.Target{Host: "cadcraft", Port: 8080},
+		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal, CraftApp: "cadcraft"})
+	status := moveStatus(t, srv, "cadcraft")
+	if !status.Offered || status.Path != "/apps/cadcraft/" {
+		t.Fatalf("status = %+v", status)
+	}
+	plan := movePlan(t, srv, "cadcraft")
+	rec := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/cadcraft/move/apply", map[string]any{"digest": plan.Digest})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply: %d %s", rec.Code, rec.Body.String())
+	}
+	if op := waitOperation(t, st, rec.Body.Bytes()); op.Status != operation.StatusSucceeded {
+		t.Fatalf("operation = %+v %v", op, *steps)
+	}
+	r := movedRoute(t, st, "cadcraft.lan")
+	if r.Path != "/apps/cadcraft/" || !r.StripPrefix || r.CraftApp != "cadcraft" {
+		t.Fatalf("route = %+v", r)
+	}
+}

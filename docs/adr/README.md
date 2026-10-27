@@ -101,3 +101,4 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-042 | Bootstrap Installs Docker and cloudflared | Accepted |
 | ADR-043 | People and App Access Through Authentik Groups | Accepted |
 | ADR-044 | Apps Under One Host, by Path | Accepted |
+| ADR-045 | Craft Apps Under One Host, by Path | Accepted |

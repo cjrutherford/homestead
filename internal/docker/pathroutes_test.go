@@ -128,15 +128,53 @@ func TestPathRoutesPublicHostOnlyPublished(t *testing.T) {
 	}
 }
 
+// A craft app under its path (ADR-045): the wrapper page and the file
+// path go to the daemon's craft socket with the edge's own headers, on
+// the local names and, once published, on the public name.
+func TestCraftPathRoute(t *testing.T) {
+	set := pathSet()
+	set.Routes = append(set.Routes, Route{Host: "gridcraft.lan", Target: Target{Host: "gridcraft", Port: 8080},
+		Exposure: ExposureLocal, TLS: TLSInternal, Path: "/apps/gridcraft/", StripPrefix: true, CraftApp: "gridcraft"})
+	if !set.HasCraftRoutes() {
+		t.Fatal("craft path route does not mount the craft socket")
+	}
+	craft := "\t\thandle /apps/gridcraft/* {\n\t\t\turi strip_prefix /apps/gridcraft\n" +
+		"\t\t\thandle /_homestead/* {\n\t\t\t\treverse_proxy unix/" + CraftSocketPath + " {\n" +
+		"\t\t\t\t\theader_up X-Homestead-Craft-App gridcraft\n" +
+		"\t\t\t\t\theader_up X-Homestead-Craft-Host {http.request.host}\n" +
+		"\t\t\t\t\theader_up X-Homestead-Craft-Prefix /apps/gridcraft\n" +
+		"\t\t\t\t\theader_up X-Forwarded-Proto https\n\t\t\t\t}\n\t\t\t}\n" +
+		"\t\t\thandle {\n\t\t\t\treverse_proxy gridcraft:8080 {\n"
+	local, tunnel := renderDashboard(t, set)
+	if !strings.Contains(local, craft) {
+		t.Fatalf("local site lacks the craft handle:\n%s", local)
+	}
+	if strings.Contains(tunnel, "gridcraft") {
+		t.Fatalf("unpublished craft app on the public name:\n%s", tunnel)
+	}
+	set.Routes[len(set.Routes)-1].Published = true
+	_, tunnel = renderDashboard(t, set)
+	if !strings.Contains(tunnel, strings.ReplaceAll(craft, "\n\t\t", "\n\t")[1:]) ||
+		!strings.Contains(tunnel, "\t\t\t\theader_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}") {
+		t.Fatalf("tunnel entry lacks the craft handle:\n%s", tunnel)
+	}
+	// A craft route on a name of its own still takes no tunnel names.
+	host := Route{Host: "gridcraft.lan", Target: Target{Host: "gridcraft", Port: 8080}, Exposure: ExposureLocal,
+		TLS: TLSInternal, CraftApp: "gridcraft", Tunnel: []Hostname{"gridcraft.example.com"}}
+	if err := host.Validate(); err == nil || !strings.Contains(err.Error(), "apps move") {
+		t.Fatalf("craft host route with tunnel names: %v", err)
+	}
+}
+
 func TestPathRoutesValidation(t *testing.T) {
 	cases := map[string]func(*RouteSet){
-		"duplicate path":  func(s *RouteSet) { s.Routes[3].Path = "/apps/auth/" },
-		"craft path":      func(s *RouteSet) { s.Routes[3].CraftApp = "gridcraft" },
-		"tunnel names":    func(s *RouteSet) { s.Routes[3].Tunnel = []Hostname{"jellyfin.example.com"} },
-		"public exposure": func(s *RouteSet) { s.Routes[3].Exposure = ExposurePublic },
-		"strip on host":   func(s *RouteSet) { s.Routes[4].StripPrefix = true },
-		"bad redirect":    func(s *RouteSet) { s.Routes[1].Redirects[0].To = "/elsewhere" },
-		"no dashboard":    func(s *RouteSet) { s.Routes = s.Routes[1:] },
+		"duplicate path":   func(s *RouteSet) { s.Routes[3].Path = "/apps/auth/" },
+		"craft unstripped": func(s *RouteSet) { s.Routes[3].CraftApp = "gridcraft" },
+		"tunnel names":     func(s *RouteSet) { s.Routes[3].Tunnel = []Hostname{"jellyfin.example.com"} },
+		"public exposure":  func(s *RouteSet) { s.Routes[3].Exposure = ExposurePublic },
+		"strip on host":    func(s *RouteSet) { s.Routes[4].StripPrefix = true },
+		"bad redirect":     func(s *RouteSet) { s.Routes[1].Redirects[0].To = "/elsewhere" },
+		"no dashboard":     func(s *RouteSet) { s.Routes = s.Routes[1:] },
 		"duplicate redirect": func(s *RouteSet) {
 			s.Routes[3].Redirects = []PathRedirect{{From: "/.well-known/caldav", To: "x/"}}
 		},

@@ -27,6 +27,11 @@ requirements:
   memorymb: 64
   cpucount: 1
   architectures: [amd64, arm64]
+# Served at /apps/cadcraft/ under the appliance's own names (ADR-045). The
+# app loads its assets by relative paths, so the edge strips the path;
+# the wrapper page and file path under it come from the daemon.
+serve: path
+strip_prefix: true
 exposure:
   package: cadcraft
   endpoints:
@@ -34,7 +39,7 @@ exposure:
     recommended: local
     allowwider: false
     warnings:
-    - CADCraft stores nothing on the appliance, so widening exposure would offer a public drafting tool whose drawings never reach your storage. With Nextcloud file storage linked, this host also forwards its document path (/_homestead/files/) to your appliance, which reads and writes your Nextcloud on the browser's behalf; it needs a Homestead operator session opened from the dashboard, but widening exposure puts the host, that path and your document transfers beyond the LAN. Keep it local.
+    - CADCraft stores nothing on the appliance, so widening exposure would offer a public drafting tool whose drawings never reach your storage. With Nextcloud file storage linked, its document path (_homestead/files/) is forwarded to your appliance, which reads and writes your Nextcloud on the browser's behalf; it needs a Homestead operator session opened from the dashboard, but widening exposure puts the host, that path and your document transfers beyond the LAN. Keep it local.
 browser:
 - capability: webgpu
   reason: "CADCraft renders with WebGPU where the browser has it and falls back to WebGL2 on its own; ?webgl forces WebGL2 and ?cpu the slower CPU canvas."

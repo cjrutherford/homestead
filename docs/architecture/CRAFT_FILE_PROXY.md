@@ -97,6 +97,30 @@ connection) is 400. Every route on the listener is classified
 `craft-session` in `internal/server/boundary.go`; the listener refuses a route
 that is not (the classification test covers both muxes).
 
+### Craft apps served by path (ADR-045)
+
+Craft packages are `serve: path` at `/apps/<name>/` on the dashboard's
+names, with the path stripped before the craft image sees a request. On a
+path route the edge forwards everything under `/apps/<name>/_homestead/` to
+the socket, with the prefix stripped. It sets four headers with
+`header_up`:
+- `X-Homestead-Craft-App`: the app;
+- `X-Homestead-Craft-Host`: `{http.request.host}`, the name the request came
+  on;
+- `X-Homestead-Craft-Prefix`: `/apps/<name>`;
+- `X-Forwarded-Proto`: `https`.
+
+The daemon validates the prefix (400 otherwise) and changes three things:
+- The craft cookie's path is `<prefix>/_homestead/files/`.
+- The launch URL is
+  `https://<the name the dashboard was opened on>/apps/<name>/_homestead/open.html#code=…`,
+  with the code bound to that name. A name that is not one of the route's
+  falls back to the dashboard's first name.
+- On the tunnel entry, a published craft app gets the same handle.
+
+A craft route on a name of its own takes no tunnel names. It moves to its
+path first with the move offer (`apps move`).
+
 ### Restart behaviour
 
 The daemon removes a stale socket and recreates it on start. Caddy mounts the
@@ -219,6 +243,16 @@ audited as `craftfiles.*` (names and ids only).
 
 ## The wrapper page
 
+On a path route (ADR-045), the daemon serves the wrapper from
+`internal/craftfiles/wrapper/`, at `GET <prefix>/_homestead/open.html`,
+`open.js` and `open.css`. It sets the same CSP as nginx. This copy differs
+from the image's copy only in its paths, which are resolved against the
+page: `FILES` is `new URL('files', location.href).pathname`, the frame is
+`../`, and the local link is `../`. A test guards against any other drift.
+The wrapper's files may be opened by direct navigation, but a cross-origin
+`Origin` is still refused. Every other craft path is same-origin only, as
+before.
+
 `images/craft/homestead/open.html|open.js|open.css` ship in the craft image
 (inside the signed build context digest) and are served by nginx at
 `/_homestead/open.html` with a strict CSP (`default-src 'none'`, same-origin
@@ -240,7 +274,7 @@ app with an empty workbook or document until the parent opens one.
 
 A per-app **local-only** opt-out is desired configuration (`craft_file_local_only`,
 mirrored in `craft-files.yaml`): launch refuses and the proxy answers 409 for
-that app. Unlinked apps, and visitors who open `https://<app>.lan/` directly,
+that app. Unlinked apps, and visitors who open the app's address directly,
 keep working browser-local exactly as before.
 
 ## Backup and statelessness

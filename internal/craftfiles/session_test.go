@@ -288,7 +288,7 @@ func TestHostAndEdgeIdentity(t *testing.T) {
 		t.Fatalf("host with port = %d, want 207", r.StatusCode)
 	}
 	// Only the craft paths exist on the listener.
-	for _, p := range []string{"/", "/api/v1/status", "/_homestead/open.html", "/_homestead/files", "/_homestead/files/other", "/healthz"} {
+	for _, p := range []string{"/", "/api/v1/status", "/_homestead/other.html", "/_homestead/files", "/_homestead/files/other", "/healthz"} {
 		if r := e.do("GET", p, nil, withCookie(cookie)); r.StatusCode != 404 && r.StatusCode != 301 {
 			t.Errorf("GET %s = %d, want 404", p, r.StatusCode)
 		}

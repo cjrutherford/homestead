@@ -49,11 +49,28 @@ type SecretStore interface {
 	Delete(name string) error
 }
 
-// CraftRoute is a recorded edge route that serves a craft app.
+// CraftRoute is a recorded edge route that serves a craft app. A path
+// route (ADR-045) has the app's Path and answers on the dashboard's names:
+// Host is the first of them and Names lists them all.
 type CraftRoute struct {
-	App  string
-	Host string
-	TLS  bool
+	App   string
+	Host  string
+	TLS   bool
+	Path  string
+	Names []string
+}
+
+// on is the name a launch binds to: on a path route, the name the
+// dashboard was opened on when it is one of the route's names.
+func (cr CraftRoute) on(host string) string {
+	if cr.Path != "" {
+		for _, n := range cr.Names {
+			if strings.EqualFold(n, host) {
+				return strings.ToLower(n)
+			}
+		}
+	}
+	return cr.Host
 }
 
 // Manager owns the link state: non-secret fields in SQLite and an
@@ -532,12 +549,13 @@ type LaunchResult struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-// OpenPagePath is the wrapper page the craft image serves.
+// OpenPagePath is the wrapper page, under the app's path on a path route.
 const OpenPagePath = "/_homestead/open.html"
 
 // Launch mints a one-time launch code for app, bound to the calling
-// operator session.
-func (m *Manager) Launch(sessions *Sessions, opToken, username string, opExpires time.Time, app string) (LaunchResult, error) {
+// operator session. host is the name the dashboard was opened on, which
+// a path app shares (ADR-045).
+func (m *Manager) Launch(sessions *Sessions, opToken, username string, opExpires time.Time, app, host string) (LaunchResult, error) {
 	if _, ok := HookedApp(app); !ok {
 		return LaunchResult{}, ErrNoHook
 	}
@@ -570,7 +588,8 @@ func (m *Manager) Launch(sessions *Sessions, opToken, username string, opExpires
 	if route == nil {
 		return LaunchResult{}, ErrNoRoute
 	}
-	code, exp, err := sessions.Mint(opToken, username, opExpires, app, route.Host)
+	on := route.on(host)
+	code, exp, err := sessions.Mint(opToken, username, opExpires, app, on)
 	if err != nil {
 		return LaunchResult{}, err
 	}
@@ -578,8 +597,9 @@ func (m *Manager) Launch(sessions *Sessions, opToken, username string, opExpires
 	if !route.TLS {
 		scheme = "http"
 	}
-	m.audit(username, "craftfiles.launch", "ok", fmt.Sprintf("app=%s host=%s", app, route.Host))
-	return LaunchResult{URL: scheme + "://" + route.Host + OpenPagePath + "#code=" + code, App: app, ExpiresAt: exp}, nil
+	m.audit(username, "craftfiles.launch", "ok", fmt.Sprintf("app=%s host=%s", app, on))
+	page := strings.TrimSuffix(route.Path, "/") + OpenPagePath
+	return LaunchResult{URL: scheme + "://" + on + page + "#code=" + code, App: app, ExpiresAt: exp}, nil
 }
 
 func (m *Manager) renderYAML() error {

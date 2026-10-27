@@ -125,6 +125,12 @@ func TestCraftAppRouteClassification(t *testing.T) {
 			{Host: "secure.lan", Target: docker.Target{Host: "gridcraft", Port: 8080}, TLS: docker.TLSInternal, CraftApp: "gridcraft"},
 		}, "https://secure.lan/"},
 		{"other app's route ignored", []docker.Route{{Host: "p.lan", Target: docker.Target{Host: "pdfcraft", Port: 8080}, TLS: docker.TLSInternal, CraftApp: "pdfcraft"}}, ""},
+		// ADR-045: a path app answers at its path on the dashboard's name.
+		{"path app on the dashboard's name", []docker.Route{
+			{Host: "homestead.lan", Dashboard: true, TLS: docker.TLSInternal},
+			{Host: "gridcraft.lan", Target: docker.Target{Host: "gridcraft", Port: 8080}, TLS: docker.TLSInternal, CraftApp: "gridcraft",
+				Path: "/apps/gridcraft/", StripPrefix: true},
+		}, "https://homestead.lan/apps/gridcraft/"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

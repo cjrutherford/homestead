@@ -604,8 +604,8 @@ func (m Manifest) validateServe() error {
 	if len(m.Exposure.Endpoints) != 1 {
 		return fmt.Errorf("catalog: serve: path needs exactly one endpoint")
 	}
-	if len(m.CraftImages()) > 0 {
-		return fmt.Errorf("catalog: craft apps keep a name of their own (serve: host)")
+	if len(m.CraftImages()) > 0 && !m.StripPrefix {
+		return fmt.Errorf("catalog: a craft app served by path strips its path (strip_prefix: true, ADR-045)")
 	}
 	probe := docker.Route{Host: "probe.lan", Target: docker.Target{Host: "probe", Port: 80},
 		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal, Path: m.AppPath(),

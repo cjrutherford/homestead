@@ -90,6 +90,9 @@ func classifyCraftApp(m catalog.Manifest, routes []docker.Route) CraftApp {
 	app.TLS = string(route.TLS)
 	app.Exposure = string(route.Exposure)
 	app.URL = fmt.Sprintf("%s://%s/", scheme, route.Host)
+	if route.IsPath() {
+		app.URL = docker.PathURL(route.Host, route.Path)
+	}
 	return app
 }
 
@@ -104,6 +107,8 @@ func (src craftAppsSource) list() ([]CraftApp, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A path app answers on the dashboard's names (ADR-045).
+	routes = docker.ServedRoutes(routes, routes)
 	out := []CraftApp{}
 	for _, name := range entries.Names() {
 		m, err := entries.Get(name)

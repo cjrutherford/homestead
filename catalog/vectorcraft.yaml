@@ -27,6 +27,11 @@ requirements:
   memorymb: 64
   cpucount: 1
   architectures: [amd64, arm64]
+# Served at /apps/vectorcraft/ under the appliance's own names (ADR-045). The
+# app loads its assets by relative paths, so the edge strips the path;
+# the wrapper page and file path under it come from the daemon.
+serve: path
+strip_prefix: true
 exposure:
   package: vectorcraft
   endpoints:

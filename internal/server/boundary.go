@@ -111,6 +111,9 @@ var routeClasses = map[string]RouteClass{
 
 	// Session required.
 	// Craft file proxy, on the dedicated craft socket only (ADR-032).
+	"GET /_homestead/open.html":              ClassCraftSession,
+	"GET /_homestead/open.js":                ClassCraftSession,
+	"GET /_homestead/open.css":               ClassCraftSession,
 	"POST /_homestead/files/session":         ClassCraftSession,
 	"GET /_homestead/files/session":          ClassCraftSession,
 	"DELETE /_homestead/files/session":       ClassCraftSession,

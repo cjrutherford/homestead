@@ -82,8 +82,8 @@ func TestEveryRegisteredRouteIsClassified(t *testing.T) {
 			t.Errorf("craft route %q is class %s, want craft-session", p, c)
 		}
 	}
-	if len(craftRoutes) != 11 {
-		t.Errorf("craft route count = %d, want 11 (update deliberately with routeClasses)", len(craftRoutes))
+	if len(craftRoutes) != 14 {
+		t.Errorf("craft route count = %d, want 14 (update deliberately with routeClasses)", len(craftRoutes))
 	}
 	for p := range routeClasses {
 		if !registered[p] {

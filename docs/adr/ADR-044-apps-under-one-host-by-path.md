@@ -130,7 +130,8 @@ no silent migration.
   `strip_prefix` (Nextcloud strips the prefix and builds links from
   OVERWRITEWEBROOT; Jellyfin's Base URL and Authentik's
   AUTHENTIK_WEB__PATH serve under it, so the edge keeps it; Immich and the
-  craft apps stay `serve: host`); path routes inside the dashboard site
+  craft apps stay `serve: host`, amended by ADR-045: the craft apps are
+  served by path since S320); path routes inside the dashboard site
   and the tunnel entry; the move offer for existing installs
   (`/api/v1/catalog/{name}/move`, `apps move`). See `docs/PARITY.md` and
   the S315 section of `docs/DEFERRED.md`. Supersedes in part ADR-035,

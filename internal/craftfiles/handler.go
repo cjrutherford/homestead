@@ -19,14 +19,21 @@ const (
 	SessionPath = "/_homestead/files/session"
 	// CookieName is the craft-scoped session cookie.
 	CookieName = "homestead_craft"
-	// CookiePath scopes the cookie to the forwarded prefix.
+	// CookiePath scopes the cookie to the forwarded prefix, under the
+	// app's path on a path route (ADR-045).
 	CookiePath = "/_homestead/files/"
 
-	appHeader  = "X-Homestead-Craft-App"
-	hostHeader = "X-Homestead-Craft-Host"
+	appHeader    = "X-Homestead-Craft-App"
+	hostHeader   = "X-Homestead-Craft-Host"
+	prefixHeader = "X-Homestead-Craft-Prefix"
 )
 
-var appName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,40}$`)
+var (
+	appName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,40}$`)
+	// appPrefix is a path route's prefix as the edge sends it, without
+	// its trailing slash (ADR-045).
+	appPrefix = regexp.MustCompile(`^/apps/[a-z][a-z0-9-]{0,40}$`)
+)
 
 // SessionInfo is what the wrapper may learn about the link: no credential.
 type SessionInfo struct {
@@ -62,10 +69,14 @@ type Route struct {
 	Handler http.HandlerFunc
 }
 
-// Routes lists every craft listener route: the session control routes and
-// one route per proxied WebDAV method. Nothing else is ever served.
+// Routes lists every craft listener route: the wrapper page (ADR-045),
+// the session control routes and one route per proxied WebDAV method.
+// Nothing else is ever served.
 func (h *Handler) Routes() []Route {
 	routes := []Route{
+		{"GET " + WrapperPrefix + "open.html", h.wrapper},
+		{"GET " + WrapperPrefix + "open.js", h.wrapper},
+		{"GET " + WrapperPrefix + "open.css", h.wrapper},
 		{"POST " + SessionPath, h.exchange},
 		{"GET " + SessionPath, h.status},
 		{"DELETE " + SessionPath, h.end},
@@ -78,7 +89,12 @@ func (h *Handler) Routes() []Route {
 
 type edgeKey struct{}
 
-type edgeIdentity struct{ app, host, scheme string }
+// edgeIdentity is what the edge says about a request: the craft app, the
+// name it came on, its scheme and, on a path route, the app's path.
+type edgeIdentity struct{ app, host, scheme, prefix string }
+
+// cookiePath is the craft cookie's path for the request's route.
+func (id edgeIdentity) cookiePath() string { return id.prefix + CookiePath }
 
 func edgeFrom(ctx context.Context) edgeIdentity {
 	v, _ := ctx.Value(edgeKey{}).(edgeIdentity)
@@ -110,6 +126,11 @@ func (h *Handler) Guard(next http.Handler) http.Handler {
 			http.Error(w, "not served through a craft route", http.StatusBadRequest)
 			return
 		}
+		prefix := r.Header.Get(prefixHeader)
+		if prefix != "" && !appPrefix.MatchString(prefix) {
+			http.Error(w, "not served through a craft route", http.StatusBadRequest)
+			return
+		}
 		if hostOnly(r.Host) != host {
 			http.Error(w, "host does not match the craft host", http.StatusMisdirectedRequest)
 			return
@@ -131,11 +152,13 @@ func (h *Handler) Guard(next http.Handler) http.Handler {
 			http.Error(w, "path refused", http.StatusBadRequest)
 			return
 		}
-		if !sameOrigin(r, scheme, host) {
+		// The wrapper's own files may be opened directly, as the image
+		// serves them; everything else is same-origin only.
+		if !(isWrapper(r) && r.Header.Get("Origin") == "") && !sameOrigin(r, scheme, host) {
 			http.Error(w, "cross-origin requests are not accepted", http.StatusForbidden)
 			return
 		}
-		r = r.WithContext(context.WithValue(r.Context(), edgeKey{}, edgeIdentity{app, host, scheme}))
+		r = r.WithContext(context.WithValue(r.Context(), edgeKey{}, edgeIdentity{app, host, scheme, prefix}))
 		next.ServeHTTP(w, r)
 	})
 }
@@ -180,7 +203,7 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) (*Session, b
 		http.Error(w, "session check unavailable", http.StatusServiceUnavailable)
 	default:
 		h.denyFile(r, id.app, http.StatusUnauthorized)
-		clearCookie(w, id.scheme)
+		clearCookie(w, id)
 		http.Error(w, "craft session required", http.StatusUnauthorized)
 	}
 	return nil, false
@@ -200,9 +223,9 @@ func (h *Handler) denyFile(r *http.Request, app string, status int) {
 	h.deny(r, app, path, status)
 }
 
-func clearCookie(w http.ResponseWriter, scheme string) {
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: CookiePath, MaxAge: -1,
-		Expires: time.Unix(0, 0), HttpOnly: true, Secure: scheme == "https", SameSite: http.SameSiteStrictMode})
+func clearCookie(w http.ResponseWriter, id edgeIdentity) {
+	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: id.cookiePath(), MaxAge: -1,
+		Expires: time.Unix(0, 0), HttpOnly: true, Secure: id.scheme == "https", SameSite: http.SameSiteStrictMode})
 }
 
 func (h *Handler) exchange(w http.ResponseWriter, r *http.Request) {
@@ -239,7 +262,7 @@ func (h *Handler) exchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: CookieName, Value: token, Path: CookiePath, Expires: sess.Expires(),
+		Name: CookieName, Value: token, Path: id.cookiePath(), Expires: sess.Expires(),
 		MaxAge:   int(time.Until(sess.Expires()).Seconds()) + 1,
 		HttpOnly: true, Secure: id.scheme == "https", SameSite: http.SameSiteStrictMode,
 	})
@@ -275,7 +298,7 @@ func (h *Handler) end(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(CookieName); err == nil {
 		h.Sessions.End(c.Value)
 	}
-	clearCookie(w, id.scheme)
+	clearCookie(w, id)
 	w.WriteHeader(http.StatusNoContent)
 }
 

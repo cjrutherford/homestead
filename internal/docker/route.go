@@ -138,9 +138,11 @@ type Route struct {
 	TLS      TLSMode
 	Health   HealthCheck
 	Policy   *Policy
-	// CraftApp names the craft app (S254, ADR-032) this host serves. A
-	// route that names one also forwards CraftFilesPrefix to the daemon's
-	// craft-file socket, ahead of the upstream. Empty for every other route.
+	// CraftApp names the craft app (S254, ADR-032) this route serves. A
+	// host route that names one also forwards CraftFilesPrefix to the
+	// daemon's craft-file socket, ahead of the upstream; a path route
+	// forwards everything under <path>_homestead/ (ADR-045). Empty for
+	// every other route.
 	CraftApp string `json:",omitempty"`
 	// Dashboard marks the one route that fronts the daemon's own dashboard
 	// and API over the dashboard unix socket (S289, ADR-035). Its Target is
@@ -334,7 +336,9 @@ func (r Route) validateTunnel() error {
 		return fmt.Errorf("route.tunnel: a public route is not also delivered by the tunnel")
 	}
 	if r.CraftApp != "" {
-		return fmt.Errorf("route.tunnel: craft app routes are not delivered by the tunnel yet")
+		// A craft app is published under /apps/ on the dashboard's public
+		// name (ADR-045); one on a name of its own moves there first.
+		return fmt.Errorf("route.tunnel: a craft app is published at its /apps/ path; move it there first (apps move)")
 	}
 	seen := map[Hostname]bool{}
 	for _, n := range r.Names() {
@@ -371,8 +375,8 @@ func (r Route) validatePath() error {
 	switch {
 	case r.Dashboard:
 		return fmt.Errorf("route.path: the dashboard route has no path")
-	case r.CraftApp != "":
-		return fmt.Errorf("route.path: craft app routes keep a name of their own")
+	case r.CraftApp != "" && !r.StripPrefix:
+		return fmt.Errorf("route.path: a craft app route strips its path (ADR-045)")
 	case len(r.Tunnel) > 0:
 		return fmt.Errorf("route.path: a path route is published on the appliance's public name, not by tunnel names")
 	case r.Exposure == ExposurePublic:
