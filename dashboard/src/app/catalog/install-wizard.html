@@ -579,8 +579,8 @@
                 otherwise connect it after the install.
               </p>
               <p class="hint">
-                Signing in is closed by default: you, and people you grant on the People page (coming next).
-                Until then, grant someone by adding them to the app's group in Authentik.
+                Signing in is closed by default: you, and people you grant on the
+                <a routerLink="/people">People page</a>. The review lets you pick people to grant with the install.
               </p>
             }
           }
@@ -624,7 +624,25 @@
                         Sign in with Authentik
                       </label>
                       @if (signInWanted() && si.plan; as sp) {
-                        <p>Who can sign in: you, and people you grant on the People page (coming next). Until then, grant someone in Authentik.</p>
+                        <p>Who can sign in: you, and the people you choose here. Anyone else you can grant later on the People page.</p>
+                        @if (signInPeople(); as choices) {
+                          @if (choices.length) {
+                            <fieldset aria-label="People who can open this app">
+                              <legend>Let these people open {{ m.Title }}</legend>
+                              @for (person of choices; track person.id) {
+                                <label>
+                                  <input type="checkbox" [name]="'grant-' + person.id" [checked]="grantIds().includes(person.id)" (change)="toggleGrant(person.id, $any($event.target).checked)" />
+                                  {{ person.display_name }} ({{ person.username }})
+                                </label>
+                              }
+                            </fieldset>
+                            <p class="hint">Their access is set after sign-in is created. Make someone an app admin afterwards on the People page.</p>
+                          } @else {
+                            <p class="hint">No one else has been added yet. Add people on the People page.</p>
+                          }
+                        } @else {
+                          <p class="hint">Homestead cannot manage people yet (it has no kept Authentik token), so only you can sign in. See the People page.</p>
+                        }
                         <ul aria-label="What sign-in with Authentik creates">
                           <li>An Authentik provider, {{ sp.provider }}, and application, {{ sp.application }}</li>
                           @for (uri of sp.redirect_uris; track uri) {
@@ -973,7 +991,7 @@
                 }
               }
               @case ('on') {
-                <app-state-message kind="status" [headline]="'People can sign in to ' + m.Title + ' with their Authentik account.'" detail="Only you can sign in so far. Its own admin account keeps working. People you grant on the People page (coming next) can too; until then, add them to the app's group in Authentik." />
+                <app-state-message kind="status" [headline]="'People can sign in to ' + m.Title + ' with their Authentik account.'" [detail]="grantState() === 'done' ? 'You and ' + grantNames().join(', ') + ' can sign in. Its own admin account keeps working. Grant more people on the People page.' : grantState() === 'granting' ? 'Giving the people you chose access.' : grantState() === 'failed' ? 'Sign-in is on, but giving the people you chose access did not finish. Grant them on the People page.' : 'Only you can sign in so far. Its own admin account keeps working. Grant people on the People page.'" />
               }
               @case ('failed') {
                 <app-state-message kind="error" headline="Sign-in with Authentik was not set up." [detail]="signInProblem() ?? ''" actionLabel="Open the catalog" actionLink="/catalog" />

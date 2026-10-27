@@ -44,6 +44,8 @@ import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
 import { publicError } from './app-public';
 import { appRoutes, mergeRoutes, routeFromManifest } from './app-routes';
 import { signInError } from './app-sign-in';
+import { PeopleService, Person } from '../people/people.service';
+import { concat, last as lastValue } from 'rxjs';
 import { BrowserAdvisories } from './browser-advisories';
 import { curatedFor } from './curated-copy';
 import { FolderRow, InstallDraft, InstallDrafts } from './install-drafts';
@@ -156,6 +158,7 @@ export class InstallWizard implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
   private readonly sessions = inject(SessionService);
+  private readonly peopleService = inject(PeopleService);
 
   private readonly heading = viewChild<ElementRef<HTMLElement>>('stepHeading');
 
@@ -200,6 +203,14 @@ export class InstallWizard implements OnInit {
   protected readonly signInOpState = signal<OperationState | null>(null);
   protected readonly signInProblem = signal<string | null>(null);
   protected readonly signInPreview = computed(() => this.plan()?.sign_in ?? null);
+  /** People who can be granted the app with the install (S317); null until read, or when Homestead cannot manage people. */
+  protected readonly signInPeople = signal<Person[] | null>(null);
+  protected readonly grantIds = signal<number[]>([]);
+  protected readonly grantState = signal<'idle' | 'granting' | 'done' | 'failed'>('idle');
+  private peopleAsked = false;
+  protected readonly grantNames = computed(() =>
+    (this.signInPeople() ?? []).filter((person) => this.grantIds().includes(person.id)).map((person) => person.display_name),
+  );
 
   // S313: the public address, planned and approved with the install and
   // applied by its digest once the app is installed.
@@ -420,6 +431,16 @@ export class InstallWizard implements OnInit {
   });
 
   constructor() {
+    effect(() => {
+      // S317: offer to grant people the app when sign-in is part of this install.
+      if (this.signInPreview()?.offered && !this.peopleAsked) {
+        this.peopleAsked = true;
+        this.peopleService.people().subscribe({
+          next: (view) => this.signInPeople.set(view.token_kept ? (view.people ?? []) : null),
+          error: () => this.signInPeople.set(null),
+        });
+      }
+    });
     effect(() => {
       const name = this.name();
       if (!name || this.loading() || this.manifest() === null) {
@@ -1433,6 +1454,7 @@ export class InstallWizard implements OnInit {
               }
               if (state.status === 'succeeded') {
                 this.signInState.set('on');
+                this.grantChosenPeople(manifest.Name);
               } else {
                 this.signInState.set('failed');
                 this.signInProblem.set(state.error || 'Setting up sign-in did not finish.');
@@ -1454,6 +1476,25 @@ export class InstallWizard implements OnInit {
         );
       },
     });
+  }
+
+  protected toggleGrant(id: number, on: boolean): void {
+    this.grantIds.update((ids) => (on ? [...ids.filter((x) => x !== id), id] : ids.filter((x) => x !== id)));
+  }
+
+  /** Grants the people the owner chose, once sign-in exists and its groups are in Authentik. */
+  private grantChosenPeople(app: string): void {
+    const ids = this.grantIds();
+    if (ids.length === 0) {
+      return;
+    }
+    this.grantState.set('granting');
+    concat(...ids.map((id) => this.peopleService.grantApp(id, app, false)))
+      .pipe(lastValue(), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => this.grantState.set('done'),
+        error: () => this.grantState.set('failed'),
+      });
   }
 
   /** Merges the planned routes into the table; no existing route is dropped. */

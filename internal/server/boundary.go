@@ -261,6 +261,20 @@ var routeClasses = map[string]RouteClass{
 	"DELETE /api/v1/sso":                                 ClassSession,
 	"GET /api/v1/dashboard/address":                      ClassSession,
 	"PUT /api/v1/dashboard/address":                      ClassSession,
+	// People (S317, ADR-043).
+	"GET /api/v1/people":                         ClassSession,
+	"POST /api/v1/people":                        ClassSession,
+	"POST /api/v1/people/adopt":                  ClassSession,
+	"PATCH /api/v1/people/{id}":                  ClassSession,
+	"POST /api/v1/people/{id}/password-reset":    ClassSession,
+	"POST /api/v1/people/{id}/mfa-reset":         ClassSession,
+	"POST /api/v1/people/{id}/disable":           ClassSession,
+	"POST /api/v1/people/{id}/enable":            ClassSession,
+	"POST /api/v1/people/{id}/remove":            ClassSession,
+	"PUT /api/v1/people/{id}/apps/{app}":         ClassSession,
+	"PUT /api/v1/people/{id}/apps/{app}/admin":   ClassSession,
+	"POST /api/v1/people/{id}/apps/{app}/revoke": ClassSession,
+	"POST /api/v1/people/{id}/resolve":           ClassSession,
 }
 
 // stepUpMode says who checks the fresh local password for a step-up route.
@@ -289,6 +303,13 @@ var stepUpRoutes = map[string]stepUpMode{
 	"POST /api/v1/secrets/rekey":                          stepUpBoundary,
 	"POST /api/v1/backups/identity/export":                stepUpBoundary,
 	"POST /api/v1/catalog/{name}/secrets/{secret}/reveal": stepUpBoundary,
+	// People (S317): admin grants, password and second-factor resets,
+	// removal, and settling drift (which can restore or accept an admin).
+	"PUT /api/v1/people/{id}/apps/{app}/admin": stepUpBoundary,
+	"POST /api/v1/people/{id}/password-reset":  stepUpBoundary,
+	"POST /api/v1/people/{id}/mfa-reset":       stepUpBoundary,
+	"POST /api/v1/people/{id}/remove":          stepUpBoundary,
+	"POST /api/v1/people/{id}/resolve":         stepUpBoundary,
 }
 
 // ReauthHeader carries the local password for fresh re-authentication.

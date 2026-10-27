@@ -66,6 +66,10 @@ describe('routes', () => {
     expect(routes.find((route) => route.path === 'advanced')?.loadComponent).toBeTypeOf('function');
   });
 
+  it('loads the People page on demand (S317)', () => {
+    expect(routes.find((route) => route.path === 'people')?.loadComponent).toBeTypeOf('function');
+  });
+
   it('loads the Doctor page on demand (S316)', () => {
     expect(routes.find((route) => route.path === 'doctor')?.loadComponent).toBeTypeOf('function');
   });

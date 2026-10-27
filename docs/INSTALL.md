@@ -429,6 +429,38 @@ The summary then shows every step's outcome.
 
 ---
 
+## People
+
+Open **People** (System group) to decide who can open which apps. It needs
+Sign-in with Authentik with a kept API token (Sign-in page, "Keep the token");
+without one the page says so, says what the token can do, and links to the
+opt-in. Homestead creates, changes and removes only people it created or you
+adopted, and only the `homestead-` groups; nothing else in Authentik is
+touched, and service accounts are never listed.
+
+- **Add a person**: name, username, optional email, the apps they can open,
+  and how they first sign in (a one-time link, a generated password or a
+  password you choose). A generated password or link is shown once and is not
+  kept.
+- **Apps**: grant or revoke each app, or make someone an app admin. People are
+  never Homestead administrators; the dashboard stays yours alone.
+- **Reset password**, **Reset second factor**, **Disable** and **Remove** each
+  ask first. Removing deletes their Authentik account; app data stays in the
+  apps.
+- **Differs in Authentik**: if someone changed a person in Authentik, People
+  shows the difference and changes nothing until you choose. Put back
+  restores what Homestead recorded (recommended); Keep accepts Authentik's
+  values. If the account was deleted, Recreate it or Remove from Homestead.
+- **In Authentik, not managed here**: Adopt brings an existing account under
+  Homestead.
+
+The CLI does the same: `homesteadctl people list|add|edit|reset-password|
+reset-mfa|disable|enable|remove|adopt|resolve` and
+`people grant|revoke PERSON APP [--admin]`. Passwords are read from a 0600
+file (`--password-file`) or standard input (`--password-stdin`), never from
+the command line. The install wizard's review can grant people the app as part
+of the install.
+
 ## Part E — Final checks
 
 From a phone on **mobile data** (not your Wi-Fi):

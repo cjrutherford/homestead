@@ -258,6 +258,10 @@ describe('InstallWizard', () => {
     for (const request of http.match((req) => req.url.endsWith('/reach'))) {
       request.flush({ app: 'x', resolver: true, addresses: [] });
     }
+    // The review reads the people it can grant (S317); most specs do not care.
+    for (const request of http.match('/api/v1/people')) {
+      request.flush({ token_kept: false, people: [], unmanaged: [], apps: [], owner: 'owner', token_words: '' });
+    }
     http.verify();
   });
 
@@ -566,7 +570,7 @@ describe('InstallWizard', () => {
       expect(text()).toContain('OIDC, SAML');
       // S305: the review can connect sign-in during the install (S298).
       expect(text()).toContain('the review offers Sign in with Authentik as part of the install');
-      expect(text()).toContain('you, and people you grant on the People page (coming next)');
+      expect(text()).toContain('you, and people you grant on the People page');
       expect(text()).not.toContain('Installing does not change that');
       expect(text()).not.toContain('Passwords Homestead creates');
     });
@@ -684,9 +688,18 @@ describe('InstallWizard', () => {
         }),
       );
       fixture.detectChanges();
+      http.expectOne('/api/v1/people').flush({
+        token_kept: true, owner: 'owner', apps: ['gridcraft'], unmanaged: [], token_words: '',
+        people: [{ id: 4, display_name: 'Sam Lee', username: 'sam', email: '', state: 'active', origin: 'created', grants: [], status: 'ok', drift: null }],
+      });
+      fixture.detectChanges();
       const el = fixture.nativeElement as HTMLElement;
       expect(text()).toContain('Sign in with Authentik');
-      expect(text()).toContain('Who can sign in: you, and people you grant on the People page (coming next)');
+      expect(text()).toContain('Who can sign in: you, and the people you choose here');
+      expect(text()).toContain('Sam Lee (sam)');
+      const sam = el.querySelector('input[name="grant-4"]') as HTMLInputElement;
+      sam.checked = true;
+      sam.dispatchEvent(new Event('change'));
       expect((el.querySelector('input[name="sign-in-wanted"]') as HTMLInputElement).checked).toBe(true);
       expect(text()).toContain('Homestead: GridCraft');
       expect(text()).toContain('https://gridcraft.lan/auth/login');
@@ -708,8 +721,13 @@ describe('InstallWizard', () => {
       streams.get(50)!.next(opState(50, 'succeeded'));
       fixture.detectChanges();
       expect(text()).toContain('People can sign in to GridCraft with their Authentik account.');
-      expect(text()).toContain('People you grant on the People page (coming next) can too');
-      expect(text()).toContain("add them to the app's group in Authentik");
+      // The chosen person is granted once sign-in exists, as a plain user.
+      const grant = http.expectOne('/api/v1/people/4/apps/gridcraft');
+      expect(grant.request.method).toBe('PUT');
+      expect(grant.request.body).toEqual({ confirm: true });
+      grant.flush({ person: {} });
+      fixture.detectChanges();
+      expect(text()).toContain('You and Sam Lee can sign in.');
       expect(c().signInToken()).toBe('');
     });
 

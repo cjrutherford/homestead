@@ -29,6 +29,7 @@ const walkthroughRoutes: Routes = [
   { path: 'data', loadComponent: () => import('./data/data-migration').then((m) => m.DataMigration) },
   { path: 'advanced', loadComponent: () => import('./advanced/advanced').then((m) => m.Advanced) },
   { path: 'doctor', loadComponent: () => import('./doctor/doctor').then((m) => m.Doctor) },
+  { path: 'people', loadComponent: () => import('./people/people').then((m) => m.People) },
   { path: 'drift', loadComponent: () => import('./drift/drift').then((m) => m.Drift) },
   { path: 'exposure', loadComponent: () => import('./exposure/exposure').then((m) => m.Exposure) },
   { path: 'tunnel', loadComponent: () => import('./tunnel/tunnel').then((m) => m.Tunnel) },

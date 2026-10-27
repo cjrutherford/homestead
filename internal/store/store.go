@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 52
+const CurrentVersion = 53
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -1001,6 +1001,30 @@ CREATE TABLE IF NOT EXISTS tunnel_replaced_records (
 		// (S314, ADR-043). Empty on a sign-in from before: open to every
 		// Authentik user until a re-plan is approved.
 		sql: `ALTER TABLE app_sign_in ADD COLUMN access TEXT NOT NULL DEFAULT '';`,
+	},
+	{
+		version: 53,
+		name:    "people",
+		// The household's people and the apps each is granted (S317,
+		// ADR-043 section 4). authentik_pk is the Authentik user; origin is
+		// created (Homestead made the user) or adopted. Nothing secret.
+		sql: `CREATE TABLE people (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	display_name TEXT NOT NULL,
+	username TEXT NOT NULL,
+	email TEXT NOT NULL DEFAULT '',
+	authentik_pk INTEGER NOT NULL,
+	state TEXT NOT NULL DEFAULT 'active',
+	origin TEXT NOT NULL DEFAULT 'created',
+	created_by TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+CREATE TABLE people_grants (
+	person_id INTEGER NOT NULL,
+	app TEXT NOT NULL,
+	role TEXT NOT NULL,
+	PRIMARY KEY (person_id, app)
+);`,
 	},
 }
 

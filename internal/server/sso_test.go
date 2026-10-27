@@ -43,6 +43,9 @@ type ssoWorld struct {
 	groups   map[string]map[string]any
 	bindings []map[string]any
 	mappings map[string]map[string]any
+	// people (S317)
+	users map[int]map[string]any
+	calls []string
 }
 
 type ssoFlow struct{ nonce, challenge, redirect string }
@@ -113,6 +116,10 @@ func (w *ssoWorld) admin(rw http.ResponseWriter, r *http.Request, enc *json.Enco
 		_ = json.NewDecoder(r.Body).Decode(&body)
 	}
 	res := func(items ...any) { _ = enc.Encode(map[string]any{"results": items}) }
+	w.calls = append(w.calls, r.Method+" "+r.URL.Path)
+	if w.peopleAPI(rw, r, body, enc) {
+		return
+	}
 	switch p := r.URL.Path; {
 	case p == "/api/v3/admin/version/":
 		_ = enc.Encode(map[string]any{"version_current": "2026.8.3"})
@@ -272,6 +279,11 @@ func newSSOApp(t *testing.T) *ssoApp {
 // configure runs plan, approve and apply through the API.
 func (a *ssoApp) configure(t *testing.T) {
 	t.Helper()
+	a.configureKeeping(t, false)
+}
+
+func (a *ssoApp) configureKeeping(t *testing.T, keep bool) {
+	t.Helper()
 	plan := a.req("POST", "/api/v1/sso/plan", fmt.Sprintf(`{"authentik_url":%q,"origins":["http://127.0.0.1:8080","https://homestead.example.test"],"api_token":%q}`,
 		a.w.srv.URL, ssoToken), a.owner.token)
 	if plan.Code != 200 {
@@ -281,7 +293,7 @@ func (a *ssoApp) configure(t *testing.T) {
 		Digest string `json:"digest"`
 	}
 	_ = json.Unmarshal(plan.Body.Bytes(), &p)
-	ap := a.req("POST", "/api/v1/sso/approve", fmt.Sprintf(`{"digest":%q,"api_token":%q}`, p.Digest, ssoToken), a.owner.token)
+	ap := a.req("POST", "/api/v1/sso/approve", fmt.Sprintf(`{"digest":%q,"api_token":%q,"keep_token":%t}`, p.Digest, ssoToken, keep), a.owner.token)
 	if ap.Code != 200 {
 		t.Fatalf("approve = %d %s", ap.Code, ap.Body)
 	}
@@ -507,6 +519,11 @@ func TestSSOStepUpForOIDCSessions(t *testing.T) {
 		{"POST", "/api/v1/secrets/rekey", `{}`, false},
 		{"POST", "/api/v1/backups/identity/export", `{}`, false},
 		{"POST", "/api/v1/catalog/nextcloud/secrets/admin_password/reveal", `{"confirm":true}`, false},
+		{"PUT", "/api/v1/people/1/apps/immich/admin", `{"confirm":true}`, false},
+		{"POST", "/api/v1/people/1/password-reset", `{"confirm":true}`, false},
+		{"POST", "/api/v1/people/1/mfa-reset", `{"confirm":true}`, false},
+		{"POST", "/api/v1/people/1/remove", `{"confirm":true}`, false},
+		{"POST", "/api/v1/people/1/resolve", `{"confirm":true,"action":"keep"}`, false},
 		{"DELETE", "/api/v1/sso/link", "", true},
 		{"DELETE", "/api/v1/sso", "", true},
 	}
@@ -555,6 +572,11 @@ func TestSSOStepUpListIsExactAndClassified(t *testing.T) {
 		"POST /api/v1/sso/apply": stepUpBoundary, "DELETE /api/v1/sso": stepUpBoundary,
 		"POST /api/v1/secrets/rekey": stepUpBoundary, "POST /api/v1/backups/identity/export": stepUpBoundary,
 		"POST /api/v1/catalog/{name}/secrets/{secret}/reveal": stepUpBoundary,
+		"PUT /api/v1/people/{id}/apps/{app}/admin":            stepUpBoundary,
+		"POST /api/v1/people/{id}/password-reset":             stepUpBoundary,
+		"POST /api/v1/people/{id}/mfa-reset":                  stepUpBoundary,
+		"POST /api/v1/people/{id}/remove":                     stepUpBoundary,
+		"POST /api/v1/people/{id}/resolve":                    stepUpBoundary,
 	}
 	if len(stepUpRoutes) != len(want) {
 		t.Fatalf("step-up list has %d routes, want %d", len(stepUpRoutes), len(want))

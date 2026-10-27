@@ -175,6 +175,19 @@ unchanged.
 | POST | /api/v1/sso/link | `"sso"` | `ssoLink` | Mint the single-use 10 minute link intent after a fresh local password (`X-Homestead-Reauth`); `sso link` prints the URL, the page opens it. Account and Sign-in pages |
 | DELETE | /api/v1/sso/link | `"sso"` | `ssoUnlink` | Remove the link and end oidc sessions, after a fresh local password; `sso unlink` and the Sign-in/Account pages |
 | DELETE | /api/v1/sso | `"sso"` | `ssoDisable` | Turn sign-in with Authentik off (recovery path): removes configuration, link and sealed secrets, leaves the local owner; `sso disable` and the Sign-in page. Step-up for oidc sessions |
+| GET | /api/v1/people | `"people"` | `people` | People page (`/people`, S317, ADR-043 §4–6): the people Homestead manages with a read-back from Authentik, per-app grants and drift, the unmanaged Authentik users (service and system accounts are never listed), the apps that can be granted, `owner`, `reason` (`no-token` or `no-sign-in`) and `token_words`. `people list`. Session class |
+| POST | /api/v1/people | `"people"` | `addPerson` | Add a person: Authentik user tagged as Homestead's, `homestead-` group grants, and a one-time recovery link, a generated password or a given password; a generated password or link comes back once in `revealed`, is never stored and never audited. `people add`. `confirm: true` required. Session class |
+| POST | /api/v1/people/adopt | `"people"` | `adoptPerson` | Explicit Adopt of an Authentik user Homestead did not create (the only way Homestead touches one). `people adopt`. `confirm: true`. Session class |
+| PATCH | /api/v1/people/{id} | `"people"` | `editPerson` | Change name, username, email. `people edit`. `confirm: true`. Session class |
+| POST | /api/v1/people/{id}/password-reset | `"people"` | `resetPassword` | Link, generated or given password; shown once. `people reset-password` (password from `--password-file` mode 0600 or `--password-stdin`, never argv). Step-up for oidc sessions |
+| POST | /api/v1/people/{id}/mfa-reset | `"people"` | `resetSecondFactor` | Remove the person's second-factor devices in Authentik. `people reset-mfa`. Step-up for oidc sessions |
+| POST | /api/v1/people/{id}/disable | `"people"` | `disablePerson` | `people disable`. `confirm: true`. Session class |
+| POST | /api/v1/people/{id}/enable | `"people"` | `enablePerson` | `people enable`. `confirm: true`. Session class |
+| POST | /api/v1/people/{id}/remove | `"people"` | `removePerson` | Delete the Authentik user and the record; app data stays in the apps. `people remove`. Step-up for oidc sessions |
+| PUT | /api/v1/people/{id}/apps/{app} | `"people"` | `grantApp` | Let a person open an app (the app's `-users` group). `people grant`. `confirm: true`. Session class |
+| PUT | /api/v1/people/{id}/apps/{app}/admin | `"people"` | `grantApp` | Make a person an app admin (also the `-admins` group); never a Homestead administrator. `people grant --admin`. Step-up for oidc sessions |
+| POST | /api/v1/people/{id}/apps/{app}/revoke | `"people"` | `revokeApp` | Take an app away. `people revoke`. `confirm: true`. Session class |
+| POST | /api/v1/people/{id}/resolve | `"people"` | `resolveDrift` | Settle drift only when asked: `put-back` (recommended), `keep`, and for a person gone from Authentik `recreate` or `forget`. `people resolve`. Step-up for oidc sessions |
 
 CLI-only local commands and flags (S288). These have no API route, so they
 carry no table row; each is local by design (ADR-015, ADR-033) and the

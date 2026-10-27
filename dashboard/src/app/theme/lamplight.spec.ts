@@ -28,6 +28,7 @@ const PAGES: Record<string, string> = {
   data: 'data/data-migration.html',
   advanced: 'advanced/advanced.html',
   doctor: 'doctor/doctor.html',
+  people: 'people/people.html',
   drift: 'drift/drift.html',
   exposure: 'exposure/exposure.html',
   tunnel: 'tunnel/tunnel.html',

@@ -118,6 +118,7 @@ func (s *Server) MountSSO(c SSOConfig) *sso.Manager {
 	s.mux.HandleFunc("POST /api/v1/sso/link", h.link)
 	s.mux.HandleFunc("DELETE /api/v1/sso/link", h.unlink)
 	s.mux.HandleFunc("DELETE /api/v1/sso", h.disable)
+	s.mountPeople(c, m, up.Client, record)
 	s.mountAppSignIn(&appSignIn{s: s, cfg: c, m: m, client: up.Client, runner: h.runner, audit: record})
 	return m
 }

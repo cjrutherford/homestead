@@ -575,6 +575,11 @@ li:has(> app-state-message:only-child) {
   gap: var(--spacing-sm);
   justify-content: flex-end;
   margin-top: var(--spacing-lg);
+  /* A tall form keeps its buttons in view (S317). */
+  position: sticky;
+  bottom: calc(-1 * var(--spacing-lg));
+  padding-block: var(--spacing-sm);
+  background: var(--surface-raised);
 }
 
 .dialog-actions button {

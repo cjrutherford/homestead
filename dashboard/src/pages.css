@@ -499,3 +499,143 @@ app-wizard-shell > section:has(> .gate) > .gate {
 .needs-you .why {
   margin: 0 0 var(--spacing-xs);
 }
+
+/* People (S317): one row per person, a lamp per app, drift under the row. */
+.people-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.person {
+  display: grid;
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: var(--spacing-md) 0;
+  border-top: 1px solid var(--border);
+}
+
+.person:first-child {
+  border-top: 0;
+  padding-top: var(--spacing-xs);
+}
+
+.person-who h3 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+  margin: 0;
+}
+
+.person-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+}
+
+.person-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin: 0;
+}
+
+.person-actions > * {
+  margin: 0;
+}
+
+.lamps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lamp {
+  display: inline-flex;
+  gap: var(--spacing-xs);
+  align-items: baseline;
+  margin: 0;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: var(--font-size-xs);
+}
+
+.lamp::before {
+  content: '';
+  align-self: center;
+  width: 0.5rem;
+  height: 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+}
+
+.lamp-on {
+  border-color: var(--success);
+  color: var(--foreground);
+}
+
+.lamp-on::before {
+  background: var(--success);
+  border-color: var(--success);
+}
+
+.lamp[data-role='admin']::before {
+  background: var(--warn);
+  border-color: var(--warn);
+}
+
+.lamp-role {
+  color: var(--muted);
+}
+
+.person-drift {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-left: var(--furrow) solid var(--warn);
+  background: var(--warn-bg);
+}
+
+.person[data-status='missing'] .person-drift {
+  border-left-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.person-drift p,
+.person-drift ul {
+  margin: 0 0 var(--spacing-sm);
+}
+
+.person-drift ul {
+  padding-left: var(--spacing-md);
+}
+
+.access-row {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 var(--spacing-sm);
+}
+
+.access-row select {
+  width: auto;
+  min-width: 10rem;
+}
+
+.reveal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.reveal-value {
+  overflow-wrap: anywhere;
+  user-select: all;
+}

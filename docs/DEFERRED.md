@@ -1112,3 +1112,34 @@
   the installed cloudflared version; Authentik's `/-/health/live/` path
   under AUTHENTIK_WEB__PATH (a 404 reads as a warning, not a failure); and
   probe timing against a real tunnel and real containers.
+
+## S317
+
+People (ADR-043 §4–6): the People page and the people commands of the CLI.
+
+- Wizard grants happen after sign-in is applied, as plain users, one call per
+  person. They are not part of the reviewed plan digest and not audited as
+  part of the install; each grant is its own audited people action. No admin
+  grant in the wizard: make someone an app admin afterwards on People.
+- Disabling a person sets them inactive in Authentik. Sessions they already
+  hold are not revoked; they last until they expire.
+- The audit record is written after the change. It is not fail-closed: if the
+  audit write fails after a reveal, the credential was still shown once.
+  Revealed values are never in the audit, logs or argv.
+- Only the kept sealed token is used. A one-off token for the People page is
+  not accepted.
+- The Authentik `akadmin` account and any other account Homestead did not
+  create appear only in the unmanaged list and are touched only by explicit
+  Adopt. Service and system accounts (service types, `ak-outpost-*`) are
+  never listed.
+- Second-factor reset removes devices of kinds Homestead knows (TOTP,
+  WebAuthn, static, SMS, duo); unknown device kinds are reported as skipped,
+  not deleted.
+- Drift covers name, username, email, active state and the `homestead-`
+  groups. It does not compare other Authentik attributes, policies or roles.
+- No bulk actions, no per-app role names beyond user and admin, no invites by
+  email (Homestead sends no mail).
+- Unverified against a real Authentik, for the VM 2 check: the exact response
+  shape of the recovery-link and set-password endpoints, device listing paths
+  under `/authenticators/admin/`, and `include_groups` on the users list.
+  Checked against Authentik's published API docs only.
