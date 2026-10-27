@@ -174,6 +174,11 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, dashboardSocket, 
 		svcs.DashboardAddress.RunEnsure(ctx, 5*time.Minute, func(err error) {
 			fmt.Fprintln(os.Stderr, "homestead-server: dashboard address not ready, will retry:", err)
 		})
+		// Craft apps installed on names of their own move to their
+		// paths once the edge is up (ADR-045 §5).
+		server.RunCraftMigration(ctx, st, catalogDir, 5*time.Minute, func(err error) {
+			fmt.Fprintln(os.Stderr, "homestead-server: craft apps not moved to their paths yet, will retry:", err)
+		})
 	}()
 	// Bring local leaves in line with the routes once now (S295): a new
 	// `.local` name is then served after an upgrade, not hours later at

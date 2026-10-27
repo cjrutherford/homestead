@@ -1184,10 +1184,10 @@ Craft apps under one host, by path (ADR-045).
 - The image still ships its own wrapper (`images/craft/homestead`), which
   is no longer used on path routes. Remove it, or make it relative, at the
   next signed craft build; the drift test then needs updating.
-- Craft apps installed on a name of their own (VM 2's CADCraft and
-  DeckCraft) stay there until the owner moves them with the move offer
-  (`apps move`, the app's Manage panel). Not checked live: no owner session
-  was available on VM 2. The edge handle, the image under the prefix and
+- Craft apps installed on a name of their own now move to their paths
+  when the daemon starts (ADR-045 §5, amended 2026-10-27). The old name
+  stops answering with no redirect to the path; a redirect from the old
+  name was not asked for. The edge handle, the image under the prefix and
   the daemon's wrapper and session path were checked live with a throwaway
   Caddy against the real cadcraft container and craft socket.
 - Opening and saving Nextcloud files through the wrapper on a path route

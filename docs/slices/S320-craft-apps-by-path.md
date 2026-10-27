@@ -93,3 +93,13 @@ label". Now:
   how to publish under the dashboard's name.
 - After a move, the Public address section reads the app again and
   offers publishing at its path.
+
+## Moved under the hood (2026-10-27)
+The owner asked that existing craft installs move without a manual step
+(ADR-045 §5, amended). When the daemon starts, after the dashboard route
+is ensured, `server.RunCraftMigration` moves every craft route still on a
+name of its own to its package path, then reconciles the edge (Caddy
+re-renders) and audits `craft.move`. It retries every five minutes while
+the edge cannot be reconciled, and does nothing when no craft route is
+left to move. The "move it first" text in Public address stays as a
+fallback for the time before the move runs.

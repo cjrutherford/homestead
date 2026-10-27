@@ -71,9 +71,22 @@ can use the app, but the file path still needs a Homestead operator
 session opened from the dashboard.
 
 ### 5. Existing installs
-A craft app installed on a name of its own is moved by the ADR-044 move
-offer (`apps move`), never silently. Its craft route keeps its craft app
-name when it moves.
+Amended by the owner on 2026-10-27, after the VM 2 live check: existing
+craft installs move under the hood instead of waiting for the owner.
+
+When the daemon starts, and once the edge is up, every craft app still on
+a name of its own moves to its path. The move changes only the edge
+route: the path, the prefix strip and the package's redirects. A craft
+app has no settings that name its own address, so there is nothing else
+to change. The route keeps its craft app name. The name of its own then
+stops answering. The edge is reconciled, and the move is audited as
+`craft.move` with the actor `system`. If the edge cannot be reconciled
+yet, the move is retried every five minutes.
+
+The ADR-044 move offer stays for the other apps, whose settings change
+with their address. Moving a craft app is not a public exposure: the
+route stays local or overlay, and publishing it is still a plan the
+owner approves (§4).
 
 ## Alternatives considered
 - **Rewrite the wrapper in the image.** This needs a new signed craft
