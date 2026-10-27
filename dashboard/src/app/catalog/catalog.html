@@ -144,7 +144,7 @@
           @for (secret of appSecrets(); track secret.name) {
             <li>
               <strong>{{ secret.name }}</strong>
-              {{ secret.present ? 'present' : 'missing' }} ({{ secret.services.join(', ') }})
+              {{ secret.present ? 'present' : 'missing' }} ({{ secret.services?.length ? secret.services.join(', ') : 'kept by Homestead' }})
               @if (secret.note) {
                 <span class="hint">{{ secret.note }}</span>
               }

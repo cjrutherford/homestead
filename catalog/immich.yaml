@@ -111,3 +111,21 @@ secrets:
     env: POSTGRES_PASSWORD_FILE
   - service: server
     env: DB_PASSWORD_FILE
+- name: admin_password
+  # The first-run administrator's password (S318). Homestead holds it and
+  # uses it once, to create the administrator; no container reads it.
+  # Immich keeps its own copy, so rotating it would leave the shown value
+  # wrong: change the password in Immich instead.
+  immutable: true
+  reveal: true
+  note: Password for the Immich administrator account "admin@homestead.lan", created by Homestead when Immich first started. People sign in with Authentik; this account is for emergencies.
+# Immich cannot set itself up from its environment, and until it has an
+# administrator its web app shows "create an administrator" to everyone,
+# even with sign-in through Authentik on. Homestead creates the
+# administrator through Immich's API at the end of install, and again
+# before sign-in is applied if that failed (S318).
+firstrun:
+  routine: immich
+  service: server
+  account: admin@homestead.lan
+  secret: admin_password

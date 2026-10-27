@@ -33,6 +33,9 @@ type Runtime struct {
 	RootPEM func() ([]byte, error)
 	// Fingerprint re-baselines drift after the override file changes.
 	Fingerprint func(pkg, dir string) error
+	// FirstRun finishes the app's own first-run setup (S318) before
+	// sign-in changes anything; nil skips it.
+	FirstRun func(ctx context.Context, m catalog.Manifest) error
 }
 
 func (rt Runtime) audit(actor, action, outcome, detail string) {
@@ -154,6 +157,18 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 	}
 	var secret string
 	def.Steps = []operation.StepDef{reach}
+	if m.FirstRun != nil && rt.FirstRun != nil {
+		// An app whose administrator Homestead creates (S318) is set up
+		// first: Immich shows "create an administrator" to everyone,
+		// sign-in button or not, until it has one. Idempotent, so this
+		// is also how a failed install-time first run is tried again.
+		def.Steps = append(def.Steps, operation.StepDef{Name: "app-first-run", Run: func(ctx context.Context) error {
+			if err := rt.FirstRun(ctx, m); err != nil {
+				return failed("finish the app's own setup", err)
+			}
+			return nil
+		}})
+	}
 	if waiter, ok := adapter.(SetUpWaiter); ok {
 		// Before anything changes: an app still installing itself is
 		// waited for, and one its owner must set up is refused with

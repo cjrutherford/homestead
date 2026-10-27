@@ -555,7 +555,11 @@ func runAppsSecrets(ctx context.Context, client *apiclient.Client, args []string
 		if s.Reveal && s.Present {
 			flags += " readable (apps secrets reveal " + args[0] + " " + s.Name + ")"
 		}
-		fmt.Fprintf(stdout, "%s: %s (%s; services: %s)%s\n", s.Name, state, s.StoreName, strings.Join(s.Services, ", "), flags)
+		services := strings.Join(s.Services, ", ")
+		if services == "" {
+			services = "none, kept by Homestead"
+		}
+		fmt.Fprintf(stdout, "%s: %s (%s; services: %s)%s\n", s.Name, state, s.StoreName, services, flags)
 		if s.Note != "" {
 			fmt.Fprintf(stdout, "  %s\n", s.Note)
 		}

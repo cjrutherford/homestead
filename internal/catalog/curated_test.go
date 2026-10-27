@@ -122,6 +122,12 @@ func TestCuratedImmich(t *testing.T) {
 	if manifest.Version != "3.3.0" {
 		t.Fatalf("version = %q", manifest.Version)
 	}
+	// S318: Homestead creates Immich's administrator, with a held,
+	// revealable password no container reads.
+	if f := manifest.FirstRun; f == nil || f.Routine != FirstRunImmich || f.Service != "server" || f.Secret != "admin_password" ||
+		!manifest.HeldSecret("admin_password") || len(SecretFilesFor(manifest)) != 2 {
+		t.Fatalf("first run = %+v, files %+v", manifest.FirstRun, SecretFilesFor(manifest))
+	}
 	if len(manifest.Services) != 4 {
 		t.Fatalf("services = %+v", manifest.Services)
 	}

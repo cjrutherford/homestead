@@ -417,6 +417,13 @@ does not have it, so name a new tunnel.
    `homestead.local` and the dashboard's public name, serves under
    `/apps/nextcloud/`, and builds https links behind the tunnel; publishing
    it or taking it off later updates its trusted domains.
+   **Immich sets itself up too** (S318): at the end of install, Homestead
+   creates its administrator, `admin@homestead.lan`, with a generated
+   password (Manage → Secrets → **Reveal**, or
+   `homesteadctl apps secrets reveal immich admin_password`). Immich opens
+   on its login page, where people choose **Sign in with Authentik**; the
+   administrator account is for emergencies. If Immich was slow to start,
+   turning on sign-in (or **Apply sign-in again**) finishes the setup.
 
 ### D6. Backups
 

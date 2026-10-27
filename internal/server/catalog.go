@@ -470,6 +470,9 @@ func handleCatalogInstall(st *store.Store, catalogDir string, runner *operation.
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
+		if req.Manifest.FirstRun != nil {
+			def.Steps = append(def.Steps, firstRunStep(req.Manifest, secrets))
+		}
 		op, err := runner.Start(r.Context(), def, "")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

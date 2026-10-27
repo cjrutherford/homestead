@@ -66,6 +66,7 @@ func handleAppSecretsList(st *store.Store, catalogDir string, secrets *secret.St
 				Name: decl.Name, StoreName: store, Present: err == nil, Immutable: decl.Immutable,
 				Database: manifest.Database != nil && manifest.Database.PasswordSecret == decl.Name,
 				Wired:    wired, Installed: installed, Reveal: decl.Reveal, Note: decl.Note,
+				Services: []string{},
 			}
 			for _, c := range decl.Consumers {
 				entry.Services = append(entry.Services, c.Service)

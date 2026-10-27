@@ -104,7 +104,7 @@ func validateSecrets(m Manifest, services map[string]bool) error {
 			return fmt.Errorf("catalog: duplicate secret %q", decl.Name)
 		}
 		seen[decl.Name] = true
-		if len(decl.Consumers) == 0 {
+		if len(decl.Consumers) == 0 && !m.HeldSecret(decl.Name) {
 			return fmt.Errorf("catalog: secret %q needs at least one consumer", decl.Name)
 		}
 		for _, c := range decl.Consumers {

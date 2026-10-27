@@ -152,6 +152,41 @@ func TestSecretValidation(t *testing.T) {
 	}
 }
 
+// S318: a secret with no consumer is valid only as the first-run
+// account's password, which must be immutable and revealable.
+func TestFirstRunValidation(t *testing.T) {
+	base := func() Manifest {
+		m := authentikManifest(t)
+		m.Secrets = append(append([]SecretDecl(nil), m.Secrets...),
+			SecretDecl{Name: "admin_password", Immutable: true, Reveal: true})
+		m.FirstRun = &FirstRun{Routine: FirstRunImmich, Service: m.Services[0].Name, Account: "admin@homestead.lan", Secret: "admin_password"}
+		return m
+	}
+	if m := base(); m.Validate() != nil {
+		t.Fatalf("valid first run refused: %v", m.Validate())
+	}
+	cases := map[string]func(*Manifest){
+		"no first run":      func(m *Manifest) { m.FirstRun = nil },
+		"unknown routine":   func(m *Manifest) { m.FirstRun.Routine = "wordpress" },
+		"unknown service":   func(m *Manifest) { m.FirstRun.Service = "nope" },
+		"no account":        func(m *Manifest) { m.FirstRun.Account = " " },
+		"undeclared secret": func(m *Manifest) { m.FirstRun.Secret = "ghost" },
+		"not revealable":    func(m *Manifest) { m.Secrets[len(m.Secrets)-1].Reveal = false },
+		"rotatable":         func(m *Manifest) { m.Secrets[len(m.Secrets)-1].Immutable = false },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := base()
+			fr := *m.FirstRun
+			m.FirstRun = &fr
+			mutate(&m)
+			if err := m.Validate(); err == nil {
+				t.Fatal("want validation error")
+			}
+		})
+	}
+}
+
 func TestConfigRefusesSecretBackedVariables(t *testing.T) {
 	m := authentikManifest(t)
 	for _, key := range []string{"POSTGRES_PASSWORD", "POSTGRES_PASSWORD_FILE"} {

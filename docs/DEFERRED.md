@@ -1143,3 +1143,20 @@ People (ADR-043 §4–6): the People page and the people commands of the CLI.
   shape of the recovery-link and set-password endpoints, device listing paths
   under `/authenticators/admin/`, and `include_groups` on the users list.
   Checked against Authentik's published API docs only.
+
+## S318
+
+Immich sets itself up (first-run routine).
+
+- Only Immich has a first-run routine; Jellyfin's startup wizard is S319.
+- The administrator's email is fixed (`admin@homestead.lan`). It is not the
+  owner's Authentik email, so the owner's own Authentik sign-in creates a
+  separate Immich account (made an administrator by the `immich_role` claim
+  when they are in the app's admin group).
+- Each person's own Immich onboarding (theme, language, backup settings on
+  first sign-in) is left to them; only the administrator onboarding that
+  blocks the web app is finished.
+- Changing the Immich administrator's password in Immich leaves the revealed
+  value stale; Homestead does not detect that.
+- If Immich's login is later turned off or the administrator deleted, the
+  routine leaves Immich as it is and does not recreate anything.

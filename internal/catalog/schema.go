@@ -429,6 +429,56 @@ type Manifest struct {
 	// before the app first starts (Jellyfin's network.xml carrying its
 	// Base URL). A file that exists is never overwritten.
 	Seeds []Seed
+	// FirstRun names the first-party routine that finishes the app's own
+	// first-run setup once it answers (S318), for apps that cannot set
+	// themselves up from their environment, as Nextcloud does.
+	FirstRun *FirstRun `yaml:"firstrun,omitempty" json:"firstrun,omitempty"`
+}
+
+// First-run routines (S318): each is first-party Go code in
+// internal/firstrun; the manifest only names one.
+const (
+	FirstRunImmich = "immich"
+)
+
+// FirstRun declares the app's first-run routine: the service it talks
+// to, the administrator account it creates and the declared secret
+// holding that account's password. The secret is held by Homestead
+// alone (it needs no consumer) and is revealable like Nextcloud's.
+type FirstRun struct {
+	Routine string `yaml:"routine" json:"routine"`
+	Service string `yaml:"service" json:"service"`
+	Account string `yaml:"account" json:"account"`
+	Secret  string `yaml:"secret" json:"secret"`
+}
+
+func (f FirstRun) validate(services map[string]bool, secrets []SecretDecl) error {
+	switch f.Routine {
+	case FirstRunImmich:
+	default:
+		return fmt.Errorf("catalog: unknown first-run routine %q", f.Routine)
+	}
+	if !services[f.Service] {
+		return fmt.Errorf("catalog: first-run service %q unknown", f.Service)
+	}
+	if strings.TrimSpace(f.Account) == "" {
+		return fmt.Errorf("catalog: first-run %q needs an account", f.Routine)
+	}
+	for _, decl := range secrets {
+		if decl.Name == f.Secret {
+			if !decl.Reveal || !decl.Immutable {
+				return fmt.Errorf("catalog: first-run secret %q must be immutable and revealable", f.Secret)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("catalog: first-run secret %q is not declared", f.Secret)
+}
+
+// HeldSecret reports a declared secret Homestead holds for itself (the
+// first-run account's password): it has no consumer service.
+func (m Manifest) HeldSecret(name string) bool {
+	return m.FirstRun != nil && m.FirstRun.Secret == name
 }
 
 // Seed is one first-start file: Target is a container path inside one
@@ -621,6 +671,11 @@ func (m Manifest) Validate() error {
 	}
 	if err := validateSecrets(m, services); err != nil {
 		return err
+	}
+	if m.FirstRun != nil {
+		if err := m.FirstRun.validate(services, m.Secrets); err != nil {
+			return err
+		}
 	}
 	for i := range m.Hooks {
 		if err := m.Hooks[i].Validate(services); err != nil {

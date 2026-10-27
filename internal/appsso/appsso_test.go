@@ -569,6 +569,46 @@ func TestApplyStopsBeforeChangesWhenNotSetUp(t *testing.T) {
 	}
 }
 
+// S318: an app Homestead sets up itself is set up before sign-in
+// changes anything, and a failure stops the operation there.
+func TestFirstRunBeforeSignIn(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "homestead.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	secrets := &memSecrets{m: map[string]string{}}
+	var ran []string
+	rt := Runtime{Records: Records{DB: st.DB()}, Secrets: secrets, StackDir: func(string) string { return t.TempDir() },
+		RootPEM: func() ([]byte, error) { return []byte("root"), nil },
+		FirstRun: func(_ context.Context, m catalog.Manifest) error {
+			ran = append(ran, m.Name)
+			return errors.New("Immich did not answer in time")
+		}}
+	in := inputs(t, "immich")
+	plan, err := BuildPlan(in, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ak := &fakeAuthentik{}
+	def, err := Definition(rt, plan, in.Manifest, dashboard, ak, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(def.Steps) < 2 || def.Steps[1].Name != "app-first-run" {
+		t.Fatalf("steps: %+v", def.Steps)
+	}
+	var runErr error
+	for _, step := range def.Steps {
+		if runErr = step.Run(context.Background()); runErr != nil {
+			break
+		}
+	}
+	if runErr == nil || !strings.Contains(runErr.Error(), "did not answer") || len(ran) != 1 || len(ak.specs) != 0 || len(secrets.m) != 0 {
+		t.Fatalf("run: %v; ran %v; authentik %+v; secrets %v", runErr, ran, ak.specs, secrets.m)
+	}
+}
+
 // S316: the Doctor asks whether an app finished its own first run,
 // read-only, and only Nextcloud's can be detected.
 func TestSetUpState(t *testing.T) {

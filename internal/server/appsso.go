@@ -11,6 +11,7 @@ import (
 	"homestead/internal/appsso"
 	"homestead/internal/catalog"
 	"homestead/internal/docker"
+	"homestead/internal/firstrun"
 	"homestead/internal/operation"
 	"homestead/internal/sso"
 	"homestead/internal/store"
@@ -185,6 +186,10 @@ func (a *appSignIn) apply(w http.ResponseWriter, r *http.Request) {
 			return a.cfg.Local.CA.RootPEM()
 		},
 		Fingerprint: func(pkg, dir string) error { return catalog.RecordFingerprints(a.cfg.Store, pkg, dir) },
+		FirstRun: func(ctx context.Context, m catalog.Manifest) error {
+			_, err := firstrun.Run(ctx, m, a.cfg.Secrets)
+			return err
+		},
 	}
 	api := &sso.API{Base: dashboard.AuthentikURL, Token: token, Client: a.client}
 	actor := operatorActor(r)
