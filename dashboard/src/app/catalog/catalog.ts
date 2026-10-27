@@ -145,6 +145,15 @@ export class Catalog implements OnInit {
     });
   }
 
+  /** Opens a card's management panel, or closes it when it is open. */
+  protected toggle(name: string): void {
+    if (this.selected()?.Name === name) {
+      this.close();
+      return;
+    }
+    this.select(name);
+  }
+
   protected close(): void {
     this.selected.set(null);
     this.operationId.set(null);

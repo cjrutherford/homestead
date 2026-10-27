@@ -112,13 +112,13 @@ function flat(root: Element): string[] {
   return out;
 }
 
-/** h2s that do not open a field of their own. */
+/** h2s that do not open a field of their own (a catalog card's Manage panel counts, S321). */
 function looseHeadings(root: Element): string[] {
   return Array.from(root.querySelectorAll('h2'))
     .filter((h2) => !h2.closest(OWN_HEADINGS))
     .filter((h2) => {
       const parent = h2.parentElement!;
-      const opens = parent.matches('.field-panel') && parent.firstElementChild === h2;
+      const opens = parent.matches('.field-panel, .catalog-manage') && parent.firstElementChild === h2;
       return !opens && !h2.closest('.gate');
     })
     .map((h2) => h2.textContent!.trim().replace(/\s+/g, ' '));

@@ -98,6 +98,28 @@ describe('Catalog', () => {
     expect(text()).toContain('Uninstall GridCraft');
   });
 
+  it('opens the Manage panel inside the app\'s own card and closes it again', () => {
+    load();
+    const root = fixture.nativeElement as HTMLElement;
+    const button = Array.from(root.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Manage GridCraft')!;
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    button.click();
+    http.expectOne('/api/v1/catalog/gridcraft').flush({ ...MANIFEST, Name: 'gridcraft', Title: 'GridCraft' });
+    http.expectOne('/api/v1/edge/routes').flush({ routes: [] });
+    http.expectOne('/api/v1/names').flush({ resolver: { enabled: false, running: false, listening: [], names: [], router_hint: '' }, apps: [] });
+    fixture.detectChanges();
+    http.match('/api/v1/catalog/gridcraft/public');
+    http.match('/api/v1/catalog/gridcraft/move');
+    const panel = root.querySelector('#manage-gridcraft');
+    expect(panel?.closest('li.catalog-item')?.textContent).toContain('Uninstall GridCraft');
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(root.querySelectorAll('.catalog-manage').length).toBe(1);
+    button.click();
+    fixture.detectChanges();
+    expect(root.querySelector('#manage-gridcraft')).toBeNull();
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('points an install that is still being set up back to its wizard', () => {
     TestBed.inject(InstallDrafts).save('gridcraft', { installOperation: 7 } as never);
     load();

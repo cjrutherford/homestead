@@ -5242,7 +5242,8 @@ sudo homesteadctl claim token          # the new owner's claim token
 
 - Every page section is `<section class="field-panel" aria-labelledby="…">`
   with its `h2` as the first child; a page without h2s puts its content in
-  one field. Add `data-state="warn|fail|ok"` for a furrow and `needs-you`
+  one field. The catalog's Manage panel (`.catalog-manage`, S321) opens
+  inside its app's card and its `h2` counts as opening a field. Add `data-state="warn|fail|ok"` for a furrow and `needs-you`
   only for a section that needs the owner now.
 - On the ground, below the masthead, only fields, `app-permit`, dialogs,
   `app-operation-progress`, page-level `app-state-message`s and a line of

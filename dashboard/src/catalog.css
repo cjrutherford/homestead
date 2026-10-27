@@ -47,6 +47,20 @@
   align-items: center;
 }
 
+/* The Manage panel opens inside its card, below the card's own row,
+   so the settings stay next to the app they change. */
+.catalog-manage {
+  flex: 1 1 100%;
+  min-width: 0;
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border);
+}
+
+.catalog-manage h2 {
+  margin-top: 0;
+}
+
 /* Wizard steps: a numbered row. Done steps are filled, the current one is outlined heavier. */
 .wizard-steps {
   display: flex;

@@ -42,182 +42,190 @@
                   <a class="button primary" [routerLink]="['/catalog', pkg.name, 'install']">Continue setting up {{ pkg.title }}</a>
                 }
                 @if (pkg.installed) {
-                  <button type="button" (click)="select(pkg.name)">Manage {{ pkg.title }}</button>
+                  <button
+                    type="button"
+                    [attr.aria-expanded]="selected()?.Name === pkg.name"
+                    [attr.aria-controls]="'manage-' + pkg.name"
+                    (click)="toggle(pkg.name)"
+                  >
+                    Manage {{ pkg.title }}
+                  </button>
                   <app-uninstall-app [name]="pkg.name" [title]="pkg.title" (uninstalled)="onUninstalled(pkg.name)" />
                 } @else {
                   <a class="button primary" [routerLink]="['/catalog', pkg.name, 'install']">Install {{ pkg.title }}</a>
                 }
               </div>
+              @if (selected(); as manifest) {
+                @if (manifest.Name === pkg.name) {
+                  <section class="catalog-manage" [id]="'manage-' + pkg.name" [attr.aria-labelledby]="'manage-heading-' + pkg.name">
+                    <h2 [id]="'manage-heading-' + pkg.name">Manage {{ manifest.Title }}</h2>
+                    <p>
+                      Change the settings {{ manifest.Title }} starts with, or manage the passwords Homestead keeps for
+                      it.
+                      <button type="button" class="quiet" (click)="close()">Close</button>
+                    </p>
+
+                    @if (operationId(); as id) {
+                      <app-operation-progress [id]="id" />
+                    }
+
+                    @if (localNames().length > 0) {
+                      <h3>Local names</h3>
+                      <p>
+                        On your network, {{ manifest.Title }} answers at
+                        @for (name of localNames(); track name; let last = $last) {
+                          <a class="mono" [href]="'https://' + name" target="_blank" rel="noopener">{{ name }}</a>{{ last ? '.' : ', ' }}
+                        }
+                        <a routerLink="/names">About names</a>
+                      </p>
+                    }
+
+                    <app-app-move [name]="manifest.Name" [title]="manifest.Title" (moved)="select(manifest.Name)" />
+
+                    @if (manifest.Name !== 'authentik') {
+                      <h3>Public address</h3>
+                      <app-app-public [name]="manifest.Name" [title]="manifest.Title" />
+                    }
+
+                    @if (manifest.SSO?.oidc) {
+                      <h3>Sign-in with Authentik</h3>
+                      <app-app-sign-in [name]="manifest.Name" [title]="manifest.Title" />
+                    }
+
+                    <h3>Settings</h3>
+                    <ul>
+                      @for (row of configRows(); track $index) {
+                        <li>
+                          <input
+                            aria-label="Service"
+                            [value]="row.service"
+                            (input)="patchConfigRow($index, { service: $any($event.target).value })"
+                          />
+                          <input
+                            aria-label="Key"
+                            [value]="row.key"
+                            (input)="patchConfigRow($index, { key: $any($event.target).value })"
+                          />
+                          <input
+                            aria-label="Value"
+                            [value]="row.value"
+                            (input)="patchConfigRow($index, { value: $any($event.target).value })"
+                          />
+                        </li>
+                      }
+                    </ul>
+                    <button type="button" (click)="addConfigRow(false)">Add a setting</button>
+                    <h4>Settings to remove</h4>
+                    <ul>
+                      @for (row of unsetRows(); track $index) {
+                        <li>
+                          <input
+                            aria-label="Service"
+                            [value]="row.service"
+                            (input)="patchUnsetRow($index, { service: $any($event.target).value })"
+                          />
+                          <input
+                            aria-label="Key"
+                            [value]="row.key"
+                            (input)="patchUnsetRow($index, { key: $any($event.target).value })"
+                          />
+                        </li>
+                      }
+                    </ul>
+                    <button type="button" (click)="addConfigRow(true)">Add a setting to remove</button>
+                    <button type="button" class="primary" (click)="applyConfig()" [disabled]="busy()">Apply configuration</button>
+
+                    @if (appSecrets().length > 0) {
+                      <h3>Secrets</h3>
+                      <p class="plan-note">
+                        Secret-backed variables reach containers as owner-only files, never environment values.
+                        Registering an existing password adopts it without regenerating the stack.
+                      </p>
+                      <ul>
+                        @for (secret of appSecrets(); track secret.name) {
+                          <li>
+                            <strong>{{ secret.name }}</strong>
+                            {{ secret.present ? 'present' : 'missing' }} ({{ secret.services?.length ? secret.services.join(', ') : 'kept by Homestead' }})
+                            @if (secret.note) {
+                              <span class="hint">{{ secret.note }}</span>
+                            }
+                            @if (secret.reveal && secret.present) {
+                              <button type="button" (click)="askReveal(secret.name)" [disabled]="busy()">Reveal</button>
+                            }
+                            @if (revealed(); as shown) {
+                              @if (shown.name === secret.name) {
+                                <span class="revealed-secret">
+                                  <code class="mono" [attr.aria-label]="'Value of ' + secret.name">{{ shown.value }}</code>
+                                  <button type="button" class="quiet" (click)="hideRevealed()">Hide</button>
+                                </span>
+                              }
+                            }
+                            <input
+                              type="password"
+                              autocomplete="off"
+                              [attr.aria-label]="'Existing value for ' + secret.name"
+                              [value]="secretValues()[secret.name] ?? ''"
+                              (input)="patchSecretValue(secret.name, $any($event.target).value)"
+                            />
+                            <button type="button" (click)="registerSecret(secret.name)" [disabled]="busy()">
+                              Register existing value
+                            </button>
+                            @if (!secret.immutable && secret.present && secret.wired) {
+                              <button type="button" (click)="rotateSecret(secret.name)" [disabled]="busy()">
+                                Rotate
+                              </button>
+                            }
+                          </li>
+                        }
+                      </ul>
+                      <label>
+                        <input
+                          type="checkbox"
+                          [checked]="skipVerify()"
+                          (change)="skipVerify.set($any($event.target).checked)"
+                        />
+                        Skip verification against the running database
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          [checked]="force()"
+                          (change)="force.set($any($event.target).checked)"
+                        />
+                        Overwrite an existing value without verification
+                      </label>
+                      @if (canAdopt()) {
+                        <p class="plan-note">
+                          This stack was installed before secret-backed variables. Register each secret's existing
+                          value first, then adopt: only the secret wiring is regenerated, never your data or
+                          passwords.
+                        </p>
+                        <button type="button" (click)="adoptSecrets()" [disabled]="busy()">Adopt secrets</button>
+                      }
+                      @if (secretNotice() !== null) {
+                        <p>{{ secretNotice() }}</p>
+                      }
+                      @if (confirmingReveal(); as pending) {
+                        <app-dialog heading="Show this password?" (dismissed)="cancelReveal()">
+                          <p>
+                            Homestead shows <strong>{{ pending }}</strong> on this screen once. The reveal is
+                            recorded in the audit log (without the value). Make sure no one is reading over your
+                            shoulder.
+                          </p>
+                          <div class="dialog-actions">
+                            <button type="button" class="primary" (click)="confirmReveal()" [disabled]="busy()">Show it</button>
+                            <button type="button" class="quiet" (click)="cancelReveal()" [disabled]="busy()">Cancel</button>
+                          </div>
+                        </app-dialog>
+                      }
+                    }
+                  </section>
+                }
+              }
             </li>
           }
         </ul>
       </section>
     }
   </app-loading>
-
-  @if (selected(); as manifest) {
-    <section class="field-panel" aria-labelledby="catalog-manage">
-      <h2 id="catalog-manage">Manage {{ manifest.Title }}</h2>
-      <p>
-        Change the settings {{ manifest.Title }} starts with, or manage the passwords Homestead keeps for
-        it.
-        <button type="button" class="quiet" (click)="close()">Close</button>
-      </p>
-
-      @if (operationId(); as id) {
-        <app-operation-progress [id]="id" />
-      }
-
-      @if (localNames().length > 0) {
-        <h3>Local names</h3>
-        <p>
-          On your network, {{ manifest.Title }} answers at
-          @for (name of localNames(); track name; let last = $last) {
-            <a class="mono" [href]="'https://' + name" target="_blank" rel="noopener">{{ name }}</a>{{ last ? '.' : ', ' }}
-          }
-          <a routerLink="/names">About names</a>
-        </p>
-      }
-
-      <app-app-move [name]="manifest.Name" [title]="manifest.Title" (moved)="select(manifest.Name)" />
-
-      @if (manifest.Name !== 'authentik') {
-        <h3>Public address</h3>
-        <app-app-public [name]="manifest.Name" [title]="manifest.Title" />
-      }
-
-      @if (manifest.SSO?.oidc) {
-        <h3>Sign-in with Authentik</h3>
-        <app-app-sign-in [name]="manifest.Name" [title]="manifest.Title" />
-      }
-
-      <h3>Settings</h3>
-      <ul>
-        @for (row of configRows(); track $index) {
-          <li>
-            <input
-              aria-label="Service"
-              [value]="row.service"
-              (input)="patchConfigRow($index, { service: $any($event.target).value })"
-            />
-            <input
-              aria-label="Key"
-              [value]="row.key"
-              (input)="patchConfigRow($index, { key: $any($event.target).value })"
-            />
-            <input
-              aria-label="Value"
-              [value]="row.value"
-              (input)="patchConfigRow($index, { value: $any($event.target).value })"
-            />
-          </li>
-        }
-      </ul>
-      <button type="button" (click)="addConfigRow(false)">Add a setting</button>
-      <h4>Settings to remove</h4>
-      <ul>
-        @for (row of unsetRows(); track $index) {
-          <li>
-            <input
-              aria-label="Service"
-              [value]="row.service"
-              (input)="patchUnsetRow($index, { service: $any($event.target).value })"
-            />
-            <input
-              aria-label="Key"
-              [value]="row.key"
-              (input)="patchUnsetRow($index, { key: $any($event.target).value })"
-            />
-          </li>
-        }
-      </ul>
-      <button type="button" (click)="addConfigRow(true)">Add a setting to remove</button>
-      <button type="button" class="primary" (click)="applyConfig()" [disabled]="busy()">Apply configuration</button>
-
-      @if (appSecrets().length > 0) {
-        <h3>Secrets</h3>
-        <p class="plan-note">
-          Secret-backed variables reach containers as owner-only files, never environment values.
-          Registering an existing password adopts it without regenerating the stack.
-        </p>
-        <ul>
-          @for (secret of appSecrets(); track secret.name) {
-            <li>
-              <strong>{{ secret.name }}</strong>
-              {{ secret.present ? 'present' : 'missing' }} ({{ secret.services?.length ? secret.services.join(', ') : 'kept by Homestead' }})
-              @if (secret.note) {
-                <span class="hint">{{ secret.note }}</span>
-              }
-              @if (secret.reveal && secret.present) {
-                <button type="button" (click)="askReveal(secret.name)" [disabled]="busy()">Reveal</button>
-              }
-              @if (revealed(); as shown) {
-                @if (shown.name === secret.name) {
-                  <span class="revealed-secret">
-                    <code class="mono" [attr.aria-label]="'Value of ' + secret.name">{{ shown.value }}</code>
-                    <button type="button" class="quiet" (click)="hideRevealed()">Hide</button>
-                  </span>
-                }
-              }
-              <input
-                type="password"
-                autocomplete="off"
-                [attr.aria-label]="'Existing value for ' + secret.name"
-                [value]="secretValues()[secret.name] ?? ''"
-                (input)="patchSecretValue(secret.name, $any($event.target).value)"
-              />
-              <button type="button" (click)="registerSecret(secret.name)" [disabled]="busy()">
-                Register existing value
-              </button>
-              @if (!secret.immutable && secret.present && secret.wired) {
-                <button type="button" (click)="rotateSecret(secret.name)" [disabled]="busy()">
-                  Rotate
-                </button>
-              }
-            </li>
-          }
-        </ul>
-        <label>
-          <input
-            type="checkbox"
-            [checked]="skipVerify()"
-            (change)="skipVerify.set($any($event.target).checked)"
-          />
-          Skip verification against the running database
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            [checked]="force()"
-            (change)="force.set($any($event.target).checked)"
-          />
-          Overwrite an existing value without verification
-        </label>
-        @if (canAdopt()) {
-          <p class="plan-note">
-            This stack was installed before secret-backed variables. Register each secret's existing
-            value first, then adopt: only the secret wiring is regenerated, never your data or
-            passwords.
-          </p>
-          <button type="button" (click)="adoptSecrets()" [disabled]="busy()">Adopt secrets</button>
-        }
-        @if (secretNotice() !== null) {
-          <p>{{ secretNotice() }}</p>
-        }
-        @if (confirmingReveal(); as pending) {
-          <app-dialog heading="Show this password?" (dismissed)="cancelReveal()">
-            <p>
-              Homestead shows <strong>{{ pending }}</strong> on this screen once. The reveal is
-              recorded in the audit log (without the value). Make sure no one is reading over your
-              shoulder.
-            </p>
-            <div class="dialog-actions">
-              <button type="button" class="primary" (click)="confirmReveal()" [disabled]="busy()">Show it</button>
-              <button type="button" class="quiet" (click)="cancelReveal()" [disabled]="busy()">Cancel</button>
-            </div>
-          </app-dialog>
-        }
-      }
-    </section>
-  }
 </section>
