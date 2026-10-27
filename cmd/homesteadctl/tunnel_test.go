@@ -38,7 +38,9 @@ func tunnelStub(t *testing.T) string {
 				"dns":[{"name":"auth.example.com","type":"CNAME","content":"<new tunnel id>.cfargotunnel.com","proxied":true,
 				"action":"replace","replaces":[{"type":"A","name":"auth.example.com","content":"203.0.113.7","proxied":false}]}],
 				"omitted":[{"hostname":"` + dash + `","role":"dashboard","reason":"Sign-in with Authentik is not linked yet."}],
-				"warnings":["Existing records are put back at teardown."],"digest":"d1g"}`))
+				"warnings":["Existing records are put back at teardown."],
+				"sign_in":"Approving also updates Sign-in with Authentik.","sign_in_update":{"origin":"https://` + dash + `",
+				"redirect_uri":"https://` + dash + `/api/v1/sso/callback","authentik_url":"https://` + dash + `/apps/auth"},"digest":"d1g"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tunnel/setup":
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
@@ -83,6 +85,8 @@ func TestTunnelPlan(t *testing.T) {
 		"left out dashboard: dash.example.com: Sign-in with Authentik is not linked yet.",
 		"dns replace: CNAME auth.example.com -> <new tunnel id>.cfargotunnel.com, proxied",
 		"deletes A auth.example.com -> 203.0.113.7", "warning: Existing records are put back at teardown.",
+		"sign-in: Approving also updates Sign-in with Authentik.", "sign-in adds origin: https://dash.example.com",
+		"sign-in adds redirect: https://dash.example.com/api/v1/sso/callback", "sign-in at: https://dash.example.com/apps/auth",
 		"tunnel setup --name homestead --dashboard-hostname dash.example.com --digest d1g"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout)

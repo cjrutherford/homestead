@@ -18,6 +18,7 @@ import (
 
 	"homestead/internal/craft"
 	"homestead/internal/doctor"
+	"homestead/internal/sso"
 	"homestead/internal/version"
 )
 
@@ -80,6 +81,10 @@ type Server struct {
 	// setupDomain and signInOffered feed the tunnel plan (S296).
 	setupDomain   func() string
 	signInOffered func() bool
+	// signInStatus and updateSignIn let tunnel setup carry the dashboard's
+	// sign-in change (ADR-046), set by MountSSO.
+	signInStatus func() (sso.Status, error)
+	updateSignIn func(ctx context.Context, actor, tunnelDigest string, want tunnelSignIn) error
 	// appSignIn serves app sign-in through Authentik (S298), set by
 	// MountSSO; the install plan reads it for its sign-in preview.
 	appSignIn *appSignIn

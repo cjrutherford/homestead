@@ -139,6 +139,24 @@ describe('Tunnel', () => {
     expect(el.querySelector('a[href="/sign-in"]')).not.toBeNull();
   });
 
+  it('lists the sign-in change the plan applies when the token is kept (ADR-046)', () => {
+    reviewPlan({
+      ...PLAN,
+      sign_in: 'Approving also updates Sign-in with Authentik, using the API token you kept.',
+      sign_in_update: {
+        origin: 'https://homestead.example.com',
+        redirect_uri: 'https://homestead.example.com/api/v1/sso/callback',
+        authentik_url: 'https://homestead.example.com/apps/auth',
+      },
+    });
+    const el = fixture.nativeElement as HTMLElement;
+    const list = el.querySelector('ul[aria-label="Sign-in changes"]')?.textContent ?? '';
+    expect(text()).toContain('Approving also updates Sign-in');
+    expect(list).toContain('https://homestead.example.com/api/v1/sso/callback');
+    expect(list).toContain('https://homestead.example.com/apps/auth');
+    expect(el.querySelector('a[href="/sign-in"]')).toBeNull();
+  });
+
   it('lamps each route and each planned name by its edge certificate (S312)', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/tunnel/status').flush({

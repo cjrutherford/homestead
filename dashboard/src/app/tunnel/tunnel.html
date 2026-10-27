@@ -196,7 +196,14 @@
         @for (left of review.omitted; track left.hostname) {
           <app-state-message kind="notice" [headline]="'Left out: ' + left.hostname + ' (' + left.role + ')'" [detail]="left.reason" />
         }
-        @if (review.sign_in) {
+        @if (review.sign_in_update; as update) {
+          <p>{{ review.sign_in }}</p>
+          <ul class="sign-in-update" aria-label="Sign-in changes">
+            <li>Public dashboard address: <span class="mono">{{ update.origin }}</span></li>
+            <li>Redirect address: <span class="mono">{{ update.redirect_uri }}</span></li>
+            <li>Sign in with Authentik at: <span class="mono">{{ update.authentik_url }}</span></li>
+          </ul>
+        } @else if (review.sign_in) {
           <p>{{ review.sign_in }} <a routerLink="/sign-in">Open Sign-in</a></p>
         }
         <div class="table-scroll">

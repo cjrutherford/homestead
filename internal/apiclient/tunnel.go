@@ -114,12 +114,15 @@ type TunnelPlan struct {
 	Omitted           []TunnelOmission   `json:"omitted"`
 	// Paths are the apps published under the dashboard's public name
 	// (ADR-044): Authentik's sign-in at /apps/auth/, with no DNS record.
-	Paths    []TunnelPlanPath `json:"paths"`
-	SignIn   string           `json:"sign_in,omitempty"`
-	Adopt    *TunnelAdoption  `json:"adopt,omitempty"`
-	Coverage []NameCoverage   `json:"coverage"`
-	Warnings []string         `json:"warnings"`
-	Digest   string           `json:"digest"`
+	Paths  []TunnelPlanPath `json:"paths"`
+	SignIn string           `json:"sign_in,omitempty"`
+	// SignInUpdate is the sign-in change approving the plan also applies
+	// (ADR-046).
+	SignInUpdate *TunnelSignIn   `json:"sign_in_update,omitempty"`
+	Adopt        *TunnelAdoption `json:"adopt,omitempty"`
+	Coverage     []NameCoverage  `json:"coverage"`
+	Warnings     []string        `json:"warnings"`
+	Digest       string          `json:"digest"`
 }
 
 // TunnelAdoption is what adopting an existing tunnel does (S290): the
@@ -209,4 +212,12 @@ type TunnelPlanPath struct {
 	Route string `json:"route"`
 	Path  string `json:"path"`
 	URL   string `json:"url"`
+}
+
+// TunnelSignIn is the public dashboard origin, its redirect URI and
+// Authentik's public address a tunnel plan adds to sign-in (ADR-046).
+type TunnelSignIn struct {
+	Origin       string `json:"origin"`
+	RedirectURI  string `json:"redirect_uri"`
+	AuthentikURL string `json:"authentik_url"`
 }

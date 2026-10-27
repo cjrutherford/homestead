@@ -1205,3 +1205,15 @@ Craft apps under one host, by path (ADR-045).
   the re-plan; folding the sign-in update into the tunnel approval would
   change the owner's 2026-10-20 decision (a separate approval) and needs
   the owner's answer first.
+  The owner answered on 2026-10-27; S322 (ADR-046) folds it in.
+
+## S322 tunnel setup updates sign-in (2026-10-27)
+
+- Teardown leaves the public origin in sign-in. It is inert once the name
+  no longer reaches the appliance; removing it would need the kept token
+  and another Authentik change at teardown.
+- A tunnel plan held across a sign-in change elsewhere is caught only by
+  the step's own check. The digest covers the planned change, not the
+  configured sign-in it starts from.
+- Without a kept token, the owner still re-plans Sign-in separately; the
+  tunnel flow does not ask for the token.

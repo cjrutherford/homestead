@@ -75,6 +75,12 @@ The owner chose this over "edge, apps only". It replaces "management remains loc
 ### Implementation note (S296)
 The tunnel no longer takes a service: every public name goes to the edge's loopback tunnel entry (`127.0.0.1:8480`), which routes it by Host. On the public dashboard name the daemon refuses every session-creating route except SSO login and callback, and every step-up request, with 403 `public-host`. Sign-in records the public origins and Authentik's public address; a browser at a public origin is sent to that address, while the token exchange stays local.
 
+## Amended by ADR-046
+When sign-in is configured and the Authentik API token is kept, the
+tunnel plan carries the sign-in change and its approval applies it: the
+separate "SSO re-plan" above is needed only without a kept token.
+ADR-046 holds the substance.
+
 ## Amended by ADR-038
 Teardown puts back the records setup replaced, unless the name holds a
 record again; ADR-038 holds the substance.

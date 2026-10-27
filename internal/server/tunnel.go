@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	"homestead/internal/operation"
 	"homestead/internal/router"
 	"homestead/internal/secret"
+	"homestead/internal/sso"
 	"homestead/internal/store"
 )
 
@@ -265,6 +267,10 @@ type tunnelPlan struct {
 	DNS               []tunnelPlanChange `json:"dns"`
 	Omitted           []tunnelOmission   `json:"omitted"`
 	SignIn            string             `json:"sign_in,omitempty"`
+	// SignInUpdate is the sign-in change approving this plan also applies
+	// (ADR-046): set when sign-in is configured, the Authentik API token
+	// is kept, and sign-in does not yet cover the public dashboard name.
+	SignInUpdate *tunnelSignIn `json:"sign_in_update,omitempty"`
 	// Paths are the path apps the public dashboard name starts answering
 	// for (ADR-044): Authentik's sign-in at /apps/auth/. They add no
 	// DNS record and no ingress of their own.
@@ -398,10 +404,20 @@ func validTunnelID(id string) bool {
 }
 
 // tunnelFacts is what the plan reads outside Cloudflare and the store:
-// the setup domain and whether sign-in with Authentik is linked.
+// the setup domain, whether sign-in with Authentik is linked, the
+// configured sign-in and whether its API token is kept (ADR-046).
 type tunnelFacts struct {
 	Domain       string
 	SignInLinked bool
+	SignIn       *sso.Spec
+	TokenKept    bool
+}
+
+// tunnelSignIn is the sign-in change a tunnel plan carries (ADR-046).
+type tunnelSignIn struct {
+	Origin       string `json:"origin"`
+	RedirectURI  string `json:"redirect_uri"`
+	AuthentikURL string `json:"authentik_url"`
 }
 
 func (s *Server) tunnelFacts() tunnelFacts {
@@ -411,6 +427,11 @@ func (s *Server) tunnelFacts() tunnelFacts {
 	}
 	if s.signInOffered != nil {
 		f.SignInLinked = s.signInOffered()
+	}
+	if s.signInStatus != nil {
+		if st, err := s.signInStatus(); err == nil && st.Configured {
+			f.SignIn, f.TokenKept = st.Spec, st.TokenKept
+		}
 	}
 	return f
 }
@@ -674,12 +695,37 @@ func buildTunnelPlan(ctx context.Context, st *store.Store, secrets *secret.Store
 			if !legacyAuth {
 				signInAt = docker.PathURL(docker.Hostname(dashName), set.Routes[ak].Path)
 			}
-			plan.SignIn = "After setup, re-plan Sign-in and approve it: it adds https://" + dashName +
-				" and its redirect address, and sends browsers there to " + signInAt + ". Password sign-in, claim, recovery and linking stay on the local and overlay addresses."
+			plan.SignIn, plan.SignInUpdate = tunnelSignInChange(facts, dashName, signInAt)
 		}
 	}
 	plan.Digest = plan.digest()
 	return plan, nil
+}
+
+// tunnelSignInChange says what publishing the dashboard at dashName
+// does to sign-in (ADR-046): nothing when sign-in already covers it, a
+// change this plan applies when the Authentik API token is kept, and
+// otherwise a note leading to the Sign-in re-plan.
+func tunnelSignInChange(facts tunnelFacts, dashName, signInAt string) (string, *tunnelSignIn) {
+	const local = " Password sign-in, claim, recovery and linking stay on the local and overlay addresses."
+	origin, err := sso.ValidateOrigin("https://" + dashName)
+	if err != nil {
+		origin = "https://" + strings.ToLower(dashName)
+	}
+	authentikURL := signInAt
+	if at, err := sso.ValidateAuthentikURL(signInAt); err == nil {
+		authentikURL = at
+	}
+	if spec := facts.SignIn; spec != nil && slices.Contains(spec.Origins, origin) &&
+		slices.Contains(spec.PublicOrigins, origin) && spec.PublicAuthentikURL == authentikURL {
+		return "Sign-in already covers " + origin + " and sends browsers there to " + signInAt + "." + local, nil
+	}
+	adds := " it adds " + origin + " and its redirect address, and sends browsers there to " + signInAt + "." + local
+	if facts.SignIn != nil && facts.TokenKept {
+		update := &tunnelSignIn{Origin: origin, RedirectURI: origin + sso.CallbackPath, AuthentikURL: authentikURL}
+		return "Approving also updates Sign-in with Authentik, using the API token you kept:" + adds, update
+	}
+	return "Homestead did not keep the Authentik API token, so it cannot update Sign-in itself. After setup, re-plan Sign-in and approve it:" + adds, nil
 }
 
 // planAdoption checks the tunnel being adopted with Cloudflare and lists
@@ -875,7 +921,14 @@ func (s *Server) handleTunnelSetup(st *store.Store, secrets *secret.Store) http.
 			return
 		}
 		runner := operation.NewRunner(st)
-		op, err := runner.Start(r.Context(), tunnelSetupDefinition(st, token, plan), "")
+		actor := operatorActor(r)
+		signIn := func(ctx context.Context, want tunnelSignIn) error {
+			if s.updateSignIn == nil {
+				return errors.New("sign-in with Authentik is not available")
+			}
+			return s.updateSignIn(ctx, actor, plan.Digest, want)
+		}
+		op, err := runner.Start(r.Context(), tunnelSetupDefinition(st, token, plan, signIn), "")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -897,10 +950,12 @@ func (s *Server) handleTunnelSetup(st *store.Store, secrets *secret.Store) http.
 // tunnelSetupDefinition builds the approved setup: create the tunnel,
 // point each public name at it (deleting the records the plan replaces,
 // which are remembered for teardown), give the edge routes their public
-// names, write and start the connector, and record the routes. A failure
+// names, write and start the connector, record the routes, and, when the
+// plan carries it, update sign-in (ADR-046). A failure up to the routes
 // undoes what this run created and puts the replaced records back, so a
-// retry plans from scratch.
-func tunnelSetupDefinition(st *store.Store, apiToken string, plan tunnelPlan) operation.Definition {
+// retry plans from scratch. A failed sign-in update leaves the working
+// tunnel up.
+func tunnelSetupDefinition(st *store.Store, apiToken string, plan tunnelPlan, signIn func(context.Context, tunnelSignIn) error) operation.Definition {
 	var tunnelID, runToken string
 	var recordIDs []string
 	adopting := plan.Adopt != nil
@@ -1089,6 +1144,17 @@ func tunnelSetupDefinition(st *store.Store, apiToken string, plan tunnelPlan) op
 			return router.SetTunnelAccount(st, tunnelID, plan.accountID, plan.zoneID, plan.Zone)
 		},
 	})
+	if want := plan.SignInUpdate; want != nil {
+		def.Steps = append(def.Steps, operation.StepDef{
+			Name: "sign-in",
+			Run: func(ctx context.Context) error {
+				if err := signIn(ctx, *want); err != nil {
+					return fmt.Errorf("the tunnel is up, but sign-in was not updated for %s: %w. Re-plan Sign-in and approve it", want.Origin, err)
+				}
+				return nil
+			},
+		})
+	}
 	return def
 }
 

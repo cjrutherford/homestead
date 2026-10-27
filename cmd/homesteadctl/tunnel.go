@@ -205,6 +205,11 @@ func printTunnelPlan(w io.Writer, plan apiclient.TunnelPlan) {
 	if plan.SignIn != "" {
 		fmt.Fprintf(w, "sign-in: %s\n", plan.SignIn)
 	}
+	if u := plan.SignInUpdate; u != nil {
+		fmt.Fprintf(w, "sign-in adds origin: %s\n", u.Origin)
+		fmt.Fprintf(w, "sign-in adds redirect: %s\n", u.RedirectURI)
+		fmt.Fprintf(w, "sign-in at: %s\n", u.AuthentikURL)
+	}
 	fmt.Fprintf(w, "digest: %s\n", plan.Digest)
 }
 

@@ -1132,6 +1132,8 @@ export interface TunnelPlan {
   paths?: TunnelPlanPath[];
   /** What approving means for Sign-in, when the dashboard is published. */
   sign_in?: string;
+  /** S322 (ADR-046): the sign-in change approving this plan also applies. */
+  sign_in_update?: { origin: string; redirect_uri: string; authentik_url: string };
   /** Present when the plan adopts an existing tunnel (S290). */
   adopt?: TunnelAdoption;
   /** Whether Cloudflare has a certificate for each public name (S312). */

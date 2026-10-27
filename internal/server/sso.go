@@ -106,6 +106,10 @@ func (s *Server) MountSSO(c SSOConfig) *sso.Manager {
 		},
 	}
 	s.signInOffered = m.Offered
+	s.signInStatus = m.Status
+	s.updateSignIn = func(ctx context.Context, actor, tunnelDigest string, want tunnelSignIn) error {
+		return updateSignInForTunnel(ctx, m, record, actor, tunnelDigest, want)
+	}
 	h := &ssoHandlers{s: s, m: m, cfg: c, runner: operation.NewRunner(c.Store), audit: record}
 	s.mux.HandleFunc("GET /api/v1/sso/options", h.options)
 	s.mux.HandleFunc("GET /api/v1/sso/login", h.login)
@@ -213,6 +217,65 @@ func ssoDefaults(st *store.Store, port int) sso.Defaults {
 	}
 	d.Origins = append([]string{"http://127.0.0.1:" + strconv.Itoa(port)}, d.Origins...)
 	return d
+}
+
+// updateSignInForTunnel applies the sign-in change the owner approved
+// with a tunnel plan (ADR-046): it plans sign-in again from the
+// configured one plus the public origin, checks the plan is the change
+// that was approved, records the approval, and applies it with the kept
+// Authentik API token. The edge already carries the public name, so the
+// defaults name Authentik's public address.
+func updateSignInForTunnel(ctx context.Context, m *sso.Manager, record func(actor, action, outcome, detail string), actor, tunnelDigest string, want tunnelSignIn) (err error) {
+	short := tunnelDigest
+	if len(short) > 12 {
+		short = short[:12]
+	}
+	defer func() {
+		if err != nil {
+			record(actor, "tunnel.sign-in", audit.OutcomeError, "sign-in for "+want.Origin+" (tunnel plan "+short+"): "+err.Error())
+			return
+		}
+		record(actor, "tunnel.sign-in", audit.OutcomeOK, "sign-in updated for "+want.Origin+", approved with tunnel plan "+short)
+	}()
+	st, err := m.Status()
+	if err != nil {
+		return err
+	}
+	if !st.Configured || st.Spec == nil {
+		return errors.New("sign-in with Authentik is no longer set up")
+	}
+	if !st.TokenKept {
+		return errors.New("the Authentik API token is no longer kept")
+	}
+	spec := st.Spec
+	origins := slices.Clone(spec.Origins)
+	if !slices.Contains(origins, want.Origin) {
+		origins = append(origins, want.Origin)
+	}
+	plan, err := m.Plan(ctx, sso.PlanRequest{
+		AuthentikURL: spec.AuthentikURL, Origins: origins,
+		SigningKey: spec.SigningKey, AuthorizationFlow: spec.AuthorizationFlow,
+	}, actor)
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(plan.Spec.PublicOrigins, want.Origin) || !slices.Contains(plan.Spec.RedirectURIs, want.RedirectURI) ||
+		plan.Spec.PublicAuthentikURL != want.AuthentikURL {
+		return fmt.Errorf("the new sign-in plan does not match the one in the tunnel plan (it sends browsers to %q)", plan.Spec.PublicAuthentikURL)
+	}
+	if err := m.Approve(sso.ApproveRequest{Digest: plan.Digest, KeepToken: true}, actor); err != nil {
+		return err
+	}
+	def, err := m.ApplyDefinition(actor)
+	if err != nil {
+		return err
+	}
+	for _, step := range def.Steps {
+		if err := step.Run(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // clientHost is the peer address as the daemon sees it. Forwarded headers
