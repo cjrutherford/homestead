@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DestroyRef, inject, input, OnInit, signal } from '@angular/core';
+import { Component, DestroyRef, effect, inject, input, OnInit, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { ApiService, AppPublicPlan, AppPublicRequest, AppPublicStatus, OperationState } from '../core/api.service';
@@ -167,6 +167,8 @@ export class AppPublic implements OnInit {
 
   readonly name = input.required<string>();
   readonly title = input.required<string>();
+  /** Bumped when the app moves to its path, so the section reads it afresh. */
+  readonly refresh = input(0);
 
   protected readonly status = signal<AppPublicStatus | null>(null);
   protected readonly plan = signal<AppPublicPlan | null>(null);
@@ -181,6 +183,14 @@ export class AppPublic implements OnInit {
   /** Why the appliance would not approve the plan on screen. */
   protected readonly refused = signal<string | null>(null);
   private readonly sessions = inject(SessionService);
+
+  constructor() {
+    effect(() => {
+      if (this.refresh() > 0) {
+        untracked(() => this.load());
+      }
+    });
+  }
 
   ngOnInit(): void {
     this.load();

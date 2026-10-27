@@ -482,3 +482,51 @@ func planAppPublicFor(t *testing.T, srv *Server, app string, body map[string]any
 	}
 	return plan
 }
+
+// ADR-045: a craft app still on a name of its own goes on the tunnel only
+// after it moves to its path, and the panel says so instead of asking for
+// a name. A name with a path, or the dashboard's own public name, is
+// refused with the way to publish under the dashboard's name.
+func TestAppPublicPointsToTheMove(t *testing.T) {
+	srv, st, _, _ := appPublicRig(t)
+	installApp(t, st, "cadcraft", docker.Route{Host: "cadcraft.lan", Target: docker.Target{Host: "cadcraft", Port: 8080},
+		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal, CraftApp: "cadcraft"})
+	installHostApp(t, st, "nextcloud", "nextcloud", 80)
+	set, _ := loadEdgeRoutes(st)
+	for i := range set.Routes {
+		if set.Routes[i].Dashboard {
+			set.Routes[i].Tunnel = []docker.Hostname{"homestead.example.com"}
+		}
+	}
+	if err := saveEdgeRoutes(st, set); err != nil {
+		t.Fatal(err)
+	}
+	rec := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/cadcraft/public", nil)
+	var status appPublicStatus
+	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Available || !strings.Contains(status.Reason, "Move it to /apps/cadcraft/ first") || status.Proposed != "" {
+		t.Fatalf("status = %+v", status)
+	}
+	for _, c := range []struct {
+		path string
+		body map[string]any
+		code int
+		want string
+	}{
+		{"cadcraft", map[string]any{"enabled": true, "hostname": "homestead.example.com"}, http.StatusUnprocessableEntity, "Move it to /apps/cadcraft/ first"},
+		{"nextcloud", map[string]any{"enabled": true, "hostname": "homestead.example.com/apps/nextcloud"}, http.StatusBadRequest,
+			"is not a public name: a public name is a host name only"},
+		{"nextcloud", map[string]any{"enabled": true, "hostname": "homestead.example.com/apps/nextcloud"}, http.StatusBadRequest,
+			"move it there first (Review the move, or homesteadctl apps move nextcloud)"},
+		{"nextcloud", map[string]any{"enabled": true, "hostname": "Homestead.example.com"}, http.StatusUnprocessableEntity,
+			"is the dashboard's public name"},
+		{"immich", map[string]any{"enabled": true, "hostname": "https://photos.example.com"}, http.StatusBadRequest, "with no path."},
+	} {
+		recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/"+c.path+"/public/plan", c.body)
+		if recorder.Code != c.code || !strings.Contains(recorder.Body.String(), c.want) {
+			t.Errorf("%s %v: %d %s, want %d %q", c.path, c.body, recorder.Code, recorder.Body.String(), c.code, c.want)
+		}
+	}
+}

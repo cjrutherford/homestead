@@ -123,8 +123,28 @@ func (p *appPublic) facts(name string) (appPublicFacts, error) {
 		f.reason = fmt.Sprintf("%s has no address on the edge yet.", manifest.Title)
 	case f.routes[0].IsPath() && f.server == "":
 		f.reason = pathNeedsServer(manifest)
+	case f.routes[0].CraftApp != "" && !f.routes[0].IsPath():
+		f.reason = craftNeedsMove(manifest)
 	}
 	return f, nil
+}
+
+// craftNeedsMove explains why a craft app still on a name of its own
+// cannot be published: the tunnel carries craft apps only at their
+// path under the dashboard's public name (ADR-045).
+func craftNeedsMove(m catalog.Manifest) string {
+	return fmt.Sprintf("%s goes on the tunnel at %s under the dashboard's public name, and it still answers at a name of its own. Move it to %s first (Review the move, or homesteadctl apps move %s), then publish it here.",
+		m.Title, m.AppPath(), m.AppPath(), m.Name)
+}
+
+// moveHint tells the owner of a path package still on a name of its own
+// how to publish it under the dashboard's public name instead.
+func moveHint(m catalog.Manifest) string {
+	if !m.ServedByPath() {
+		return ""
+	}
+	return fmt.Sprintf(" To publish %s at %s under the dashboard's public name, move it there first (Review the move, or homesteadctl apps move %s).",
+		m.Title, m.AppPath(), m.Name)
 }
 
 // pathNeedsServer explains why a path app cannot be published yet.
@@ -419,6 +439,14 @@ func (p *appPublic) planAdd(ctx context.Context, client *router.TunnelClient, to
 		hostname = f.manifest.Name + "." + domain
 	}
 	plan.Hostname = hostname
+	if strings.ContainsAny(hostname, "/:") {
+		return refusePlan(http.StatusBadRequest, "%s is not a public name: a public name is a host name only, such as %s.example.com, with no path.%s",
+			hostname, f.manifest.Name, moveHint(f.manifest))
+	}
+	if f.server != "" && strings.EqualFold(hostname, string(f.server)) {
+		return refusePlan(http.StatusUnprocessableEntity, "%s is the dashboard's public name; %s cannot also answer there at a name of its own.%s",
+			hostname, f.manifest.Title, moveHint(f.manifest))
+	}
 	if err := (router.TunnelRoute{Hostname: hostname, TunnelID: f.tunnelID, Service: tunnelEntryService}).Validate(); err != nil {
 		return refusePlan(http.StatusBadRequest, "%v", err)
 	}

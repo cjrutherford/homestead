@@ -80,11 +80,11 @@
                       </p>
                     }
 
-                    <app-app-move [name]="manifest.Name" [title]="manifest.Title" (moved)="select(manifest.Name)" />
+                    <app-app-move [name]="manifest.Name" [title]="manifest.Title" (moved)="onMoved(manifest.Name)" />
 
                     @if (manifest.Name !== 'authentik') {
                       <h3>Public address</h3>
-                      <app-app-public [name]="manifest.Name" [title]="manifest.Title" />
+                      <app-app-public [name]="manifest.Name" [title]="manifest.Title" [refresh]="moves()" />
                     }
 
                     @if (manifest.SSO?.oidc) {

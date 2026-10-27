@@ -53,6 +53,23 @@ describe('AppPublic (S290)', () => {
     fixture.detectChanges();
   }
 
+  it('reads the app afresh after it moves to its path, then offers publishing there (S320)', () => {
+    load(status({ available: false, reason: 'Jellyfin goes on the tunnel at /apps/jellyfin/ under the dashboard\'s public name. Move it to /apps/jellyfin/ first.' }));
+    expect(text()).toContain('Move it to /apps/jellyfin/ first.');
+    expect(el().querySelector('input[name="public-hostname"]')).toBeNull();
+    fixture.componentRef.setInput('refresh', 1);
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog/jellyfin/public').flush(
+      status({
+        routes: [{ route: 'jellyfin.lan', public: [], path: '/apps/jellyfin/' }],
+        proposed: 'homestead.example.com',
+        proposed_url: 'https://homestead.example.com/apps/jellyfin/',
+      }),
+    );
+    fixture.detectChanges();
+    expect(button('Review publishing at https://homestead.example.com/apps/jellyfin/')).toBeDefined();
+  });
+
   it('reviews a named public address, warns, and approves exactly the plan', () => {
     load(status());
     expect(text()).toContain('reachable only on your network');

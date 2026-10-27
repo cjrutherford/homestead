@@ -49,6 +49,8 @@ export class Catalog implements OnInit {
 
   protected readonly packages = signal<PackageSummary[]>([]);
   protected readonly selected = signal<CatalogManifest | null>(null);
+  /** Counts finished moves, so the Public address section reads the new route. */
+  protected readonly moves = signal(0);
   /** The masthead sentence: how many apps are installed, from the list the page reads. */
   protected readonly fact = computed(() => {
     const all = this.packages();
@@ -143,6 +145,11 @@ export class Catalog implements OnInit {
         this.error.set(failure.message);
       },
     });
+  }
+
+  protected onMoved(name: string): void {
+    this.moves.update((n) => n + 1);
+    this.select(name);
   }
 
   /** Opens a card's management panel, or closes it when it is open. */

@@ -78,3 +78,18 @@ ADR-045 (amends ADR-044 and ADR-032).
   - unknown app 404.
 - Moving the installed CADCraft and DeckCraft is left to the owner (see
   `docs/DEFERRED.md`).
+
+## Live check follow-up (2026-10-27)
+On VM 2, cadcraft and deckcraft were installed before S320, so they still
+answered at names of their own. Their Public address section asked for a
+name: the dashboard's public name was refused as "already a name of the
+edge route homestead.lan", and `<name>/apps/cadcraft` as "invalid hostname
+label". Now:
+- A craft app still on a name of its own has no name field. Its Public
+  address section says to move it to `/apps/<name>/` first (Review the
+  move, or `homesteadctl apps move <name>`), then publish it.
+- A public name with a path or scheme, and the dashboard's own public
+  name, are refused in plain words. For a path package, the refusal adds
+  how to publish under the dashboard's name.
+- After a move, the Public address section reads the app again and
+  offers publishing at its path.
