@@ -39,6 +39,13 @@
         This is the dashboard's public address, so only Authentik signs you in here. Your local
         password works on your home network.
       </p>
+      @if (!ssoEnabled()) {
+        <app-state-message
+          kind="notice"
+          headline="Sign-in with Authentik does not cover this address yet."
+          detail="On your home network, open the dashboard (homestead.lan), go to Sign-in, re-plan it and approve it. It then adds this address, and the Sign in with Authentik button appears here."
+        />
+      }
     }
     @if (ssoEnabled()) {
       @if (passwordOffered()) {

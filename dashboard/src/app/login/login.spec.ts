@@ -133,6 +133,17 @@ describe('Login with Authentik', () => {
     expect(fixture.nativeElement.querySelector('a[href="/api/v1/sso/login"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('form[aria-label="Login"]')).toBeNull();
     expect(text(fixture)).toContain('only Authentik signs you in here');
+    expect(text(fixture)).not.toContain('does not cover this address yet');
+  });
+
+  it('says how to fix a public dashboard name sign-in does not cover yet', async () => {
+    const fixture = await open();
+    http.expectOne('/api/v1/sso/options').flush({ enabled: false, password: false });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('a[href="/api/v1/sso/login"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('form[aria-label="Login"]')).toBeNull();
+    expect(text(fixture)).toContain('Sign-in with Authentik does not cover this address yet.');
+    expect(text(fixture)).toContain('go to Sign-in, re-plan it and approve it');
   });
 
   it('leaves the button out when the daemon says no', async () => {

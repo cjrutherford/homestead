@@ -1195,3 +1195,13 @@ Craft apps under one host, by path (ADR-045).
 - Publishing a craft app shows the generic path-app warnings; there is no
   craft-specific note that the file path still needs an operator session.
 - Craft apps share the dashboard's origin (ADR-045, Consequences).
+
+## S296 live check (2026-10-27)
+
+- VM 2's dashboard sign-in was planned at 13:52, before the tunnel (14:09),
+  so it covers only homestead.lan and homestead.local. On the public name
+  the login page offered neither the password nor Authentik. It now says
+  to re-plan Sign-in on the home network. The tunnel plan still only notes
+  the re-plan; folding the sign-in update into the tunnel approval would
+  change the owner's 2026-10-20 decision (a separate approval) and needs
+  the owner's answer first.
