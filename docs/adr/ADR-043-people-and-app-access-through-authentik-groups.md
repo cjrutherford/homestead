@@ -136,5 +136,5 @@ or **Remove from Homestead**.
 - New tables: people, app grants. New routes and CLI commands, which go in
   PARITY.
 - Slices: S314 (groups, bindings, closed by default, role claims, existing
-  sign-ins warned); S316 (People page and CLI covering the whole life of a
+  sign-ins warned); S317 (People page and CLI covering the whole life of a
   person, adoption, drift with Homestead's record winning).

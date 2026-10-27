@@ -125,7 +125,7 @@ no silent migration.
 - The S312 depth check stays. With defaults, every name is covered by
   Universal SSL.
 - Slice: S315 (paths, edge, packages, Authentik, public plans, the address
-  step and docs). People moves to S316.
+  step and docs). People moves to S317, after the Doctor screen (S316).
 - Implemented in S315: the package fields `serve`, `path` and
   `strip_prefix` (Nextcloud strips the prefix and builds links from
   OVERWRITEWEBROOT; Jellyfin's Base URL and Authentik's

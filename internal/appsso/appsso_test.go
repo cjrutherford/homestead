@@ -568,3 +568,30 @@ func TestApplyStopsBeforeChangesWhenNotSetUp(t *testing.T) {
 		t.Fatalf("run: %v; authentik %+v; secrets %v", runErr, ak.specs, secrets.m)
 	}
 }
+
+// S316: the Doctor asks whether an app finished its own first run,
+// read-only, and only Nextcloud's can be detected.
+func TestSetUpState(t *testing.T) {
+	f := stubDocker(t)
+	nc := manifest(t, "nextcloud")
+	f.fail = func(c call) (string, error) { return `{"installed":true,"version":"30"}`, nil }
+	if setUp, known, err := SetUpState(context.Background(), nc); err != nil || !known || !setUp {
+		t.Fatalf("installed: %v %v %v", setUp, known, err)
+	}
+	f.fail = func(c call) (string, error) { return `{"installed":false}`, nil }
+	if setUp, known, err := SetUpState(context.Background(), nc); err != nil || !known || setUp {
+		t.Fatalf("not installed: %v %v %v", setUp, known, err)
+	}
+	f.fail = func(c call) (string, error) { return "", errors.New("container is starting") }
+	if _, known, err := SetUpState(context.Background(), nc); err == nil || known {
+		t.Fatalf("starting: known=%v err=%v", known, err)
+	}
+	if _, known, err := SetUpState(context.Background(), manifest(t, "immich")); known || err != nil {
+		t.Fatalf("immich cannot be detected: known=%v err=%v", known, err)
+	}
+	for _, c := range f.calls {
+		if strings.Join(c.args, " ") != "php occ --no-interaction status --output=json" {
+			t.Fatalf("not read-only: %v", c.args)
+		}
+	}
+}

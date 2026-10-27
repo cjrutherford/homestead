@@ -90,21 +90,6 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	if err != nil {
 		return nil, err
 	}
-	srv.MountDoctor(
-		func() []doctor.Check { return []doctor.Check{driftDoctorCheck(st, time.Now)()} },
-		certDoctorChecks(st, issuing, time.Now),
-		certOverrideDoctorCheck(os.Getenv),
-		platformDoctorCheck(st),
-		platformApplyDoctorCheck(st, time.Now),
-		migrationDoctorChecks(st, c.CatalogDir),
-		backupEncryptionDoctorCheck(st),
-		localTLSDoctorChecks(local, time.Now),
-		craftFilesDoctorCheck(st, docker.CraftMountPresent, docker.CraftSocketPath),
-		edgeUpstreamDoctorCheck(st, docker.NewClient("").Containers),
-		dashboardSocketDoctorCheck(st, docker.DashboardMountPresent, docker.DashboardSocketPath),
-		mdnsDoctorCheck(mdns.CurrentState),
-		resolverDoctorCheck(names),
-	)
 	srv.MountLocalTLS(st, local)
 	srv.MountTLSRenewal(st, issuing, time.Now)
 	srv.MountTLSIssuance(st, issuing)
@@ -152,6 +137,26 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountAppPublic(st, secrets, c.CatalogDir)
 	srv.MountAppMove(st, secrets, c.CatalogDir)
 	srv.MountAppReach(st, names, local, c.CatalogDir)
+	srv.MountDoctor(
+		func() []doctor.Check { return []doctor.Check{driftDoctorCheck(st, time.Now)()} },
+		certDoctorChecks(st, issuing, time.Now),
+		certOverrideDoctorCheck(os.Getenv),
+		platformDoctorCheck(st),
+		platformApplyDoctorCheck(st, time.Now),
+		migrationDoctorChecks(st, c.CatalogDir),
+		backupEncryptionDoctorCheck(st),
+		localTLSDoctorChecks(local, time.Now),
+		craftFilesDoctorCheck(st, docker.CraftMountPresent, docker.CraftSocketPath),
+		edgeUpstreamDoctorCheck(st, docker.NewClient("").Containers),
+		dashboardSocketDoctorCheck(st, docker.DashboardMountPresent, docker.DashboardSocketPath),
+		mdnsDoctorCheck(mdns.CurrentState),
+		resolverDoctorCheck(names),
+		signInDoctorChecks(ssoManager),
+		appAccessDoctorChecks(st, c.CatalogDir),
+	)
+	srv.MountDoctorLive(doctorLiveProbes(DoctorLiveConfig{
+		Store: st, Secrets: secrets, SSO: ssoManager, Names: names, Local: local, CatalogDir: c.CatalogDir,
+	}), doctor.DefaultBudget)
 	srv.MountSetup(SetupConfig{
 		Store: st, Secrets: secrets, Wizards: wizard.New(st), SSO: ssoManager, CatalogDir: c.CatalogDir,
 		Port: c.Port,

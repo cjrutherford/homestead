@@ -671,3 +671,18 @@ func jellyfinConfig(s *Settings) (string, error) {
 	}
 	return xml.Header + string(out) + "\n", nil
 }
+
+// SetUpState reports whether an installed app finished its own first run
+// (S316), read-only. known is false for an app whose first run cannot be
+// detected (only Nextcloud's can, by occ status) or when the app did not
+// answer; err says why in the second case.
+func SetUpState(ctx context.Context, m catalog.Manifest) (setUp, known bool, err error) {
+	if m.SSO.OIDC == nil || m.SSO.OIDC.Adapter != catalog.AdapterNextcloud {
+		return false, false, nil
+	}
+	done, err := nextcloud{}.installed(ctx, Target{Manifest: m, Container: container(m, m.SSO.OIDC.Service)})
+	if err != nil {
+		return false, false, err
+	}
+	return done, true, nil
+}

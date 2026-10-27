@@ -19,6 +19,10 @@ const (
 	StatusOK   = "ok"
 	StatusWarn = "warn"
 	StatusFail = "fail"
+	// StatusUnknown is a live probe that did not answer in time or could
+	// not be made (S316). It never changes the overall verdict: not
+	// knowing is not a failure.
+	StatusUnknown = "unknown"
 )
 
 // Baselines: fail below FailMemory/RootFree, warn below WarnMemory/RootFree
@@ -36,12 +40,33 @@ type Check struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
 	Detail string `json:"detail"`
+	// Group, Title, Why and Fix explain the check in the owner's words
+	// (S316). They are filled from meta.go, so a check only has to name
+	// itself. Fix is set on every check that can be anything but ok.
+	Group string `json:"group,omitempty"`
+	Title string `json:"title,omitempty"`
+	Why   string `json:"why,omitempty"`
+	Fix   *Fix   `json:"fix,omitempty"`
+	// Live marks a check made by a live probe (?live=1).
+	Live bool `json:"live,omitempty"`
+}
+
+// Fix says what the owner does about a check. Doctor never acts: Link is
+// a dashboard route and Command a homesteadctl (or system) command the
+// owner runs.
+type Fix struct {
+	Text    string `json:"text"`
+	Link    string `json:"link,omitempty"`
+	Command string `json:"command,omitempty"`
 }
 
 // Report is a full diagnostic run.
 type Report struct {
 	Overall string  `json:"overall"`
 	Checks  []Check `json:"checks"`
+	// Live is true when the live probes ran; CheckedAt is when (RFC 3339).
+	Live      bool   `json:"live"`
+	CheckedAt string `json:"checked_at,omitempty"`
 }
 
 // Run executes every diagnostic against the live host. Discovery failures
@@ -83,11 +108,13 @@ func Run() Report {
 		checks = append(checks, checkStaleMounts(storage))
 	}
 	checks = append(checks, checkStateDirs())
+	Annotate(checks)
 	return Report{Overall: overall(checks), Checks: checks}
 }
 
 // Add appends checks and recomputes the overall verdict.
 func (r *Report) Add(checks ...Check) {
+	Annotate(checks)
 	r.Checks = append(r.Checks, checks...)
 	r.Overall = overall(r.Checks)
 }

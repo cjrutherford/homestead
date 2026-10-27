@@ -27,6 +27,7 @@ const PAGES: Record<string, string> = {
   updates: 'updates/updates.html',
   data: 'data/data-migration.html',
   advanced: 'advanced/advanced.html',
+  doctor: 'doctor/doctor.html',
   drift: 'drift/drift.html',
   exposure: 'exposure/exposure.html',
   tunnel: 'tunnel/tunnel.html',

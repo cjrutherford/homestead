@@ -48,7 +48,7 @@ const FIXES: Record<string, Fix> = {
   'state-dirs': { text: 'Re-run the installer to recreate the Homestead folders.', command: 'sudo make install' },
 };
 
-const DEFAULT_FIX: Fix = { text: 'Run the check from a terminal for more detail.', command: 'homesteadctl doctor' };
+const DEFAULT_FIX: Fix = { text: 'Open Doctor for what this means and how to fix it.', link: { path: '/doctor', label: 'Open Doctor' } };
 
 /** Appliance status page: daemon health, claim state, diagnostics (S044). */
 @Component({
@@ -72,7 +72,7 @@ export class Status implements OnInit {
   /** Checks that are not ok, worst first. */
   protected readonly problems = computed(() =>
     (this.report()?.checks ?? [])
-      .filter((check) => check.status !== 'ok')
+      .filter((check) => check.status === 'warn' || check.status === 'fail')
       .sort((a, b) => Number(b.status === 'fail') - Number(a.status === 'fail')),
   );
   protected readonly good = computed(() => (this.report()?.checks ?? []).filter((check) => check.status === 'ok'));

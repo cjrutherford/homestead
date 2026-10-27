@@ -205,41 +205,50 @@ func (s *Server) MountAppReach(st *store.Store, names *LocalNames, local *cert.L
 			http.Error(w, "unknown app", http.StatusNotFound)
 			return
 		}
-		set, err := loadEdgeRoutes(st)
+		out, err := appReach(r.Context(), st, names, local, manifest)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		out := reachStatus{App: manifest.Name, Addresses: []reachAddress{}}
-		if names != nil {
-			out.Resolver, _ = names.Enabled()
-		}
-		var roots *x509.CertPool
-		if local != nil {
-			if pem, err := local.CA.RootPEM(); err == nil {
-				roots = x509.NewCertPool()
-				roots.AppendCertsFromPEM(pem)
-			}
-		}
-		ctx := r.Context()
-		// A path app is asked at its path on the appliance's own names
-		// (ADR-044); an app with a name of its own at its root.
-		for _, route := range docker.ServedRoutes(set.Routes, appsso.AppRoutes(manifest, set.Routes)) {
-			https := route.TLS != docker.TLSOff
-			path, shown := "/", ""
-			if route.IsPath() {
-				path, shown = route.Path, route.Path
-			}
-			for _, n := range route.Names() {
-				status, err := reachLocal(ctx, string(n), path, https, roots)
-				out.Addresses = append(out.Addresses, localResult(manifest.Title, string(n), shown, https, out.Resolver, status, err))
-			}
-			for _, n := range route.Tunnel {
-				status, err := reachPublic(ctx, string(n), path, true, nil)
-				out.Addresses = append(out.Addresses, publicResult(manifest.Title, string(n), shown, zoneGuess(st, string(n)), status, err))
-			}
-		}
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, out)
 	})
+}
+
+// appReach asks every address of an installed or installable app whether
+// it answers (S313). The Doctor (S316) runs the same check.
+func appReach(ctx context.Context, st *store.Store, names *LocalNames, local *cert.LocalTLS, manifest catalog.Manifest) (reachStatus, error) {
+	set, err := loadEdgeRoutes(st)
+	if err != nil {
+		return reachStatus{}, err
+	}
+	out := reachStatus{App: manifest.Name, Addresses: []reachAddress{}}
+	if names != nil {
+		out.Resolver, _ = names.Enabled()
+	}
+	var roots *x509.CertPool
+	if local != nil {
+		if pem, err := local.CA.RootPEM(); err == nil {
+			roots = x509.NewCertPool()
+			roots.AppendCertsFromPEM(pem)
+		}
+	}
+	// A path app is asked at its path on the appliance's own names
+	// (ADR-044); an app with a name of its own at its root.
+	for _, route := range docker.ServedRoutes(set.Routes, appsso.AppRoutes(manifest, set.Routes)) {
+		https := route.TLS != docker.TLSOff
+		path, shown := "/", ""
+		if route.IsPath() {
+			path, shown = route.Path, route.Path
+		}
+		for _, n := range route.Names() {
+			status, err := reachLocal(ctx, string(n), path, https, roots)
+			out.Addresses = append(out.Addresses, localResult(manifest.Title, string(n), shown, https, out.Resolver, status, err))
+		}
+		for _, n := range route.Tunnel {
+			status, err := reachPublic(ctx, string(n), path, true, nil)
+			out.Addresses = append(out.Addresses, publicResult(manifest.Title, string(n), shown, zoneGuess(st, string(n)), status, err))
+		}
+	}
+	return out, nil
 }

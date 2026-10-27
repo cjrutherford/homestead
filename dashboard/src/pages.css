@@ -480,3 +480,22 @@ app-wizard-shell > section:has(> .gate) > .gate {
     padding: var(--spacing-lg) var(--spacing-md);
   }
 }
+
+/* Doctor (S316): the live-check button sits under the masthead sentence. */
+.masthead-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs) var(--spacing-md);
+  margin: var(--spacing-sm) 0 0;
+}
+
+.checked-at,
+.doctor-unknown,
+.needs-you .why {
+  color: var(--muted);
+}
+
+.needs-you .why {
+  margin: 0 0 var(--spacing-xs);
+}

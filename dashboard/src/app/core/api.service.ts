@@ -20,12 +20,30 @@ export interface DoctorCheck {
   name: string;
   status: string;
   detail: string;
+  /** S316: System, Storage, Network, Certificates, Tunnel, Sign-in or Apps. */
+  group?: string;
+  title?: string;
+  /** Why the check matters, in plain words. */
+  why?: string;
+  fix?: DoctorFix;
+  /** True for a check that comes from a live probe. */
+  live?: boolean;
+}
+
+/** What to do about a check: words, and optionally a page and a command. */
+export interface DoctorFix {
+  text: string;
+  link?: string;
+  command?: string;
 }
 
 /** GET /api/v1/doctor — diagnostic report. */
 export interface DoctorReport {
   overall: string;
   checks: DoctorCheck[];
+  /** True when the live probes ran for this report. */
+  live?: boolean;
+  checked_at?: string;
 }
 
 /** One operation step (GET /api/v1/operations/:id). */
@@ -1331,8 +1349,9 @@ export class ApiService {
     return this.http.get<Identity>('/api/v1/identity');
   }
 
-  doctor(): Observable<DoctorReport> {
-    return this.http.get<DoctorReport>('/api/v1/doctor');
+  /** The checks; live=true also runs the live probes (tunnel, Authentik, apps). */
+  doctor(live = false): Observable<DoctorReport> {
+    return this.http.get<DoctorReport>(live ? '/api/v1/doctor?live=1' : '/api/v1/doctor');
   }
 
   firewallStatus(): Observable<FirewallStatus> {

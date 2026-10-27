@@ -133,4 +133,28 @@ describe('Status', () => {
     expect(fixture.nativeElement.querySelector('.needs-you')).toBeNull();
     expect(fixture.nativeElement.querySelector('.masthead-fact')?.textContent).toContain('Homestead is running. Nothing needs you.');
   });
+
+  it('links Needs you and unexplained checks to Doctor (S316)', () => {
+    fixture.detectChanges();
+    for (const req of http.match(() => true)) {
+      if (req.request.url === '/api/v1/doctor') {
+        req.flush({
+          overall: 'warn',
+          checks: [
+            { name: 'app-reach:immich', status: 'warn', detail: 'slow' },
+            { name: 'authentik', status: 'unknown', detail: 'timed out' },
+          ],
+        });
+      } else if (req.request.url === '/healthz') {
+        req.flush({ status: 'ok', version: '1.0.0' });
+      } else {
+        req.flush({ state: 'CLAIMED', version: '1.0.0' });
+      }
+    }
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('h2')?.textContent).toContain('Needs you (1)');
+    expect(el.querySelectorAll('.needs-you a[href="/doctor"]').length).toBe(2);
+    expect(el.querySelector('.needs-you-list code')).toBeNull();
+  });
 });

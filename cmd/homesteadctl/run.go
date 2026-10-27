@@ -67,7 +67,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	case "status":
 		return runStatus(ctx, client, stdout, stderr)
 	case "doctor":
-		return runDoctor(ctx, client, stdout, stderr)
+		return runDoctor(ctx, client, rest[1:], stdout, stderr)
 	case "docker":
 		return runDocker(ctx, client, rest[1:], stdout, stderr)
 	case "audit":
@@ -143,7 +143,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "commands:")
 	fmt.Fprintln(w, "  status                 daemon health and version")
-	fmt.Fprintln(w, "  doctor                 system diagnostics (S044)")
+	fmt.Fprintln(w, "  doctor [--live]        grouped diagnostics with fixes; --live adds tunnel, Authentik and app probes (S044, S316)")
 	fmt.Fprintln(w, "  docker health          Docker engine and inventory, read-only (S073)")
 	fmt.Fprintln(w, "  audit list             audit trail, newest first (S063)")
 	fmt.Fprintln(w, "  apps list              curated packages (S167)")

@@ -1,0 +1,112 @@
+<section aria-label="Doctor">
+  <header class="masthead">
+    <h1>Doctor</h1>
+    <p class="masthead-fact">{{ lead() }}</p>
+    <p class="masthead-actions">
+      <button type="button" class="primary" (click)="checkAgain()" [disabled]="running() || !!error()" [attr.aria-busy]="running()">
+        {{ running() ? 'Checking' : 'Check again' }}
+      </button>
+      <span class="checked-at">
+        @if (running()) {
+          Asking the tunnel, sign-in and apps. This can take a few seconds.
+        } @else if (report()?.live && checkedAt()) {
+          Live checks ran at {{ checkedAt() }}.
+        } @else if (report()) {
+          Live checks have not run. Check again runs them.
+        }
+      </span>
+    </p>
+  </header>
+
+  @if (error()) {
+    <app-state-message kind="error" [headline]="error()" detail="Check that the appliance is on, then check the service with: systemctl status homestead-server" />
+  } @else {
+    @if (probeError()) {
+      <app-state-message kind="error" headline="Live checks failed" [detail]="probeError()" actionLabel="Try again" (action)="checkAgain()" />
+    }
+
+    <app-loading [loading]="loading() || running()" shape="fields">
+      @if (report(); as diagnostics) {
+        @if (problems().length) {
+          <section class="field-panel needs-you" [attr.data-state]="failing() ? 'fail' : 'warn'" aria-labelledby="doctor-problems">
+            <h2 id="doctor-problems">Needs you ({{ problems().length }})</h2>
+            <ul class="needs-you-list">
+              @for (check of problems(); track check.name) {
+                <li [attr.data-status]="check.status">
+                  <div class="needs-you-text">
+                    <h3>
+                      {{ titleFor(check) }}
+                      <span class="badge" [class]="badgeFor(check.status)">{{ check.status }}</span>
+                    </h3>
+                    <p>{{ check.detail }}</p>
+                    @if (check.why) {
+                      <p class="why">{{ check.why }}</p>
+                    }
+                    @if (check.fix; as fix) {
+                      <p class="fix"><span class="fix-label">What to do:</span> {{ fix.text }}</p>
+                    }
+                  </div>
+                  <div class="needs-you-action">
+                    @if (check.fix?.link; as link) {
+                      <a class="button" [routerLink]="link">Open the page</a>
+                    }
+                    @if (check.fix?.command; as command) {
+                      <app-copy-code [text]="command" />
+                    }
+                  </div>
+                </li>
+              }
+            </ul>
+          </section>
+        } @else {
+          <app-state-message kind="status" headline="Everything checked is fine" detail="No check found a problem." />
+        }
+
+        @if (unknowns()) {
+          <p class="doctor-unknown">
+            {{ unknowns() === 1 ? '1 check' : unknowns() + ' checks' }} could not be answered in time. Unknown is not a problem; check again to retry.
+          </p>
+        }
+
+        @for (group of groups(); track group.name) {
+          <section class="field-panel" [attr.data-state]="group.state" [attr.aria-labelledby]="'doctor-group-' + group.name">
+            <h2 [id]="'doctor-group-' + group.name">{{ group.name }}</h2>
+            @if (group.checks.length > group.good.length) {
+              <ul class="good-list">
+                @for (check of group.checks; track check.name) {
+                  @if (check.status !== 'ok') {
+                    <li [attr.data-status]="check.status">
+                      <span class="badge" [class]="badgeFor(check.status)">{{ check.status }}</span>
+                      <strong>{{ titleFor(check) }}</strong>
+                      <span>{{ check.detail }}</span>
+                    </li>
+                  }
+                }
+              </ul>
+            }
+            @if (group.good.length) {
+              <details>
+                <summary>{{ group.good.length }} fine</summary>
+                <ul class="good-list">
+                  @for (check of group.good; track check.name) {
+                    <li>
+                      <span class="badge badge-ok">ok</span>
+                      <strong>{{ titleFor(check) }}</strong>
+                      <span>{{ check.detail }}</span>
+                    </li>
+                  }
+                </ul>
+              </details>
+            }
+          </section>
+        }
+
+        <section class="field-panel" aria-labelledby="doctor-terminal">
+          <h2 id="doctor-terminal">From a terminal</h2>
+          <p>The same checks, with the live ones, are available on the appliance. Doctor only reads and explains; it changes nothing.</p>
+          <p><app-copy-code text="homesteadctl doctor --live" /></p>
+        </section>
+      }
+    </app-loading>
+  }
+</section>

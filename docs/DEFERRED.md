@@ -1032,7 +1032,7 @@
 - Drift is reported by the read-back (`apps sign-in access`, `sso access`) and
   never put back; there is no "Put back" action. ADR-043 §6 leaves a repair to
   a later slice.
-- Granting people and their groups is S316 (People page and CLI). Until then
+- Granting people and their groups is S317 (People page and CLI). Until then
   the owner adds someone to `homestead-<app>-users` in Authentik by hand.
 - Other members of `homestead-owner` (added in Authentik) are left alone and
   only counted; Homestead adds the linked owner and never removes anyone.
@@ -1090,3 +1090,25 @@
   move's override environment taking effect on restart.
 - The move rewrites Jellyfin's `network.xml` BaseUrl with the stack
   stopped; an owner-edited `network.xml` is replaced only in that element.
+
+## S316
+
+- Doctor never acts: no "fix it" buttons. Each problem names the page or the
+  command; running it stays the owner's step.
+- No support bundle (checks, versions and log tails in one file) and no
+  scheduled background probing. Live probes run only when asked
+  (`?live=1`, `--live`, Check again); the cheap checks never touch the
+  network.
+- The cloudflared connection count reads `/ready` (`readyConnections`) on
+  127.0.0.1:20241-20245, falling back to the `cloudflared_tunnel_ha_connections`
+  gauge on `/metrics`. The metrics address is not configurable here; a
+  connector started with a different `--metrics` address reads as unknown.
+- Container checks treat a service that exited with code 0 as a finished
+  one-shot job. A long-running service that exits 0 on its own is not
+  flagged.
+- First-run ("set up") detection is Nextcloud only (`occ status`); other
+  apps have no such probe.
+- Unverified live, for the VM 2 check: the `/ready` route and its JSON on
+  the installed cloudflared version; Authentik's `/-/health/live/` path
+  under AUTHENTIK_WEB__PATH (a 404 reads as a warning, not a failure); and
+  probe timing against a real tunnel and real containers.

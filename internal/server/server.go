@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"homestead/internal/craft"
+	"homestead/internal/doctor"
 	"homestead/internal/version"
 )
 
@@ -46,6 +47,9 @@ type versionResponse struct {
 // API plus a Unix-socket mux for root-only endpoints (S021).
 type Server struct {
 	addr string
+	// doctorProbes and doctorBudget are the live Doctor probes (S316).
+	doctorProbes func() []doctor.Probe
+	doctorBudget time.Duration
 	// SocketPath is the recovery socket the apply unit health-checks
 	// (ADR-027); main sets it from --socket.
 	SocketPath string

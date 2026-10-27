@@ -64,6 +64,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: 'System',
     items: [
       { label: 'Configuration', path: '/config' },
+      { label: 'Doctor', path: '/doctor' },
       { label: 'Drift', path: '/drift' },
       { label: 'Secrets', path: '/secrets' },
       { label: 'Sign-in', path: '/sign-in' },

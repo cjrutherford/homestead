@@ -66,6 +66,10 @@ describe('routes', () => {
     expect(routes.find((route) => route.path === 'advanced')?.loadComponent).toBeTypeOf('function');
   });
 
+  it('loads the Doctor page on demand (S316)', () => {
+    expect(routes.find((route) => route.path === 'doctor')?.loadComponent).toBeTypeOf('function');
+  });
+
   it('serves the drift page', () => {
     expect(routes.find((route) => route.path === 'drift')?.loadComponent).toBeTypeOf('function');
   });

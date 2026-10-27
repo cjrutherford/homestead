@@ -10,6 +10,7 @@
     @if (unclaimed() || problems().length) {
       <section class="field-panel needs-you" [attr.data-state]="worst()" aria-labelledby="status-needs-you">
         <h2 id="status-needs-you">Needs you ({{ problems().length + (unclaimed() ? 1 : 0) }})</h2>
+        <p><a routerLink="/doctor">Open Doctor</a> for what each one means and how to fix it.</p>
         <ul class="needs-you-list">
           @if (unclaimed()) {
             <li data-status="warn">

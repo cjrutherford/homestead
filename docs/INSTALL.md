@@ -496,6 +496,13 @@ with them. Whoever redeems the token first becomes the owner.
 
 ## When something goes wrong
 
+Start with Doctor: open **Doctor** in the System menu of the dashboard (or run
+`homesteadctl doctor --live` on the appliance). It groups every check
+(System, Storage, Network, Certificates, Tunnel, Sign-in, Apps), puts the
+problems first, and says for each what it means and what to do. **Check
+again** also asks the tunnel, Authentik and your apps. Doctor only reads and
+explains; it changes nothing. The table below covers what Doctor cannot see.
+
 | Symptom | Cause and fix |
 | --- | --- |
 | `https://homestead.local` answers "not found" instead of the dashboard | The dashboard was not embedded. Do B2, then `sudo make install`. |
