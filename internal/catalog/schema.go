@@ -438,8 +438,12 @@ type Manifest struct {
 // First-run routines (S318): each is first-party Go code in
 // internal/firstrun; the manifest only names one.
 const (
-	FirstRunImmich = "immich"
+	FirstRunImmich   = "immich"
+	FirstRunJellyfin = "jellyfin"
 )
+
+// Library kinds a first run may create (Jellyfin's collection types).
+var libraryKinds = map[string]bool{"movies": true, "tvshows": true, "music": true}
 
 // FirstRun declares the app's first-run routine: the service it talks
 // to, the administrator account it creates and the declared secret
@@ -450,17 +454,55 @@ type FirstRun struct {
 	Service string `yaml:"service" json:"service"`
 	Account string `yaml:"account" json:"account"`
 	Secret  string `yaml:"secret" json:"secret"`
+	// Libraries are the media libraries the first run creates (S319,
+	// Jellyfin only), each on one of the service's declared data paths.
+	Libraries []Library `yaml:"libraries,omitempty" json:"libraries,omitempty"`
 }
 
-func (f FirstRun) validate(services map[string]bool, secrets []SecretDecl) error {
+// Library is one media library: its name in the app, its kind and the
+// container path it reads.
+type Library struct {
+	Name string `yaml:"name" json:"name"`
+	Kind string `yaml:"kind" json:"kind"`
+	Path string `yaml:"path" json:"path"`
+}
+
+func (f FirstRun) validate(m Manifest, services map[string]bool) error {
 	switch f.Routine {
-	case FirstRunImmich:
+	case FirstRunImmich, FirstRunJellyfin:
 	default:
 		return fmt.Errorf("catalog: unknown first-run routine %q", f.Routine)
 	}
 	if !services[f.Service] {
 		return fmt.Errorf("catalog: first-run service %q unknown", f.Service)
 	}
+	if len(f.Libraries) > 0 && f.Routine != FirstRunJellyfin {
+		return fmt.Errorf("catalog: first-run %q creates no libraries", f.Routine)
+	}
+	targets := map[string]bool{}
+	for _, svc := range m.Services {
+		if svc.Name == f.Service {
+			for _, d := range svc.Data {
+				if !d.Ephemeral {
+					targets[d.Target] = true
+				}
+			}
+		}
+	}
+	names := map[string]bool{}
+	for _, lib := range f.Libraries {
+		if strings.TrimSpace(lib.Name) == "" || names[lib.Name] {
+			return fmt.Errorf("catalog: first-run library name %q missing or repeated", lib.Name)
+		}
+		names[lib.Name] = true
+		if !libraryKinds[lib.Kind] {
+			return fmt.Errorf("catalog: first-run library %q kind %q unknown", lib.Name, lib.Kind)
+		}
+		if !targets[lib.Path] {
+			return fmt.Errorf("catalog: first-run library %q path %q is not a persistent data path of %s", lib.Name, lib.Path, f.Service)
+		}
+	}
+	secrets := m.Secrets
 	if strings.TrimSpace(f.Account) == "" {
 		return fmt.Errorf("catalog: first-run %q needs an account", f.Routine)
 	}
@@ -673,7 +715,7 @@ func (m Manifest) Validate() error {
 		return err
 	}
 	if m.FirstRun != nil {
-		if err := m.FirstRun.validate(services, m.Secrets); err != nil {
+		if err := m.FirstRun.validate(m, services); err != nil {
 			return err
 		}
 	}

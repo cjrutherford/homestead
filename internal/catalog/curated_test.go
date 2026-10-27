@@ -53,6 +53,12 @@ func TestCuratedJellyfin(t *testing.T) {
 	if err := manifest.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
+	// S319: Homestead finishes the startup wizard, with three libraries
+	// on provisioned bulk folders.
+	if f := manifest.FirstRun; f == nil || f.Routine != FirstRunJellyfin || f.Account != "admin" || len(f.Libraries) != 3 ||
+		!manifest.HeldSecret("admin_password") {
+		t.Fatalf("first run = %+v", manifest.FirstRun)
+	}
 	if manifest.Version != "12.2" {
 		t.Fatalf("version = %q", manifest.Version)
 	}

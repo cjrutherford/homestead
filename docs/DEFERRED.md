@@ -1160,3 +1160,19 @@ Immich sets itself up (first-run routine).
   value stale; Homestead does not detect that.
 - If Immich's login is later turned off or the administrator deleted, the
   routine leaves Immich as it is and does not recreate anything.
+
+## S319
+
+Jellyfin sets itself up (startup wizard).
+
+- A Jellyfin installed before S319 keeps its own setup: its wizard is
+  complete, so the routine never runs, and the media folders are not added
+  (only a fresh install provisions data folders). Reinstall, or add the
+  folders and libraries in Jellyfin.
+- Language and metadata country are fixed to en-US / US; there is no
+  setting for them yet.
+- The server name is "Homestead"; the appliance has no stored name of its
+  own to use instead.
+- Libraries are not scanned at creation (they start empty); real-time
+  monitoring picks up files copied in later.
+- Library folders are not shared with Nextcloud or the craft apps.

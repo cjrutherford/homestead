@@ -173,6 +173,17 @@ func TestFirstRunValidation(t *testing.T) {
 		"undeclared secret": func(m *Manifest) { m.FirstRun.Secret = "ghost" },
 		"not revealable":    func(m *Manifest) { m.Secrets[len(m.Secrets)-1].Reveal = false },
 		"rotatable":         func(m *Manifest) { m.Secrets[len(m.Secrets)-1].Immutable = false },
+		"immich libraries": func(m *Manifest) {
+			m.FirstRun.Libraries = []Library{{Name: "Movies", Kind: "movies", Path: m.Services[0].Data[0].Target}}
+		},
+		"library kind": func(m *Manifest) {
+			m.FirstRun.Routine = FirstRunJellyfin
+			m.FirstRun.Libraries = []Library{{Name: "Films", Kind: "films", Path: m.Services[0].Data[0].Target}}
+		},
+		"library path": func(m *Manifest) {
+			m.FirstRun.Routine = FirstRunJellyfin
+			m.FirstRun.Libraries = []Library{{Name: "Movies", Kind: "movies", Path: "/nowhere"}}
+		},
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {

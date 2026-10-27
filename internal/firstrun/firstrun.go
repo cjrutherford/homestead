@@ -1,8 +1,8 @@
-// Package firstrun finishes an app's own first-run setup (S318): the
-// steps its web installer would otherwise ask the owner for, done by
+// Package firstrun finishes an app's own first-run setup (S318, S319):
+// the steps its web installer would otherwise ask the owner for, done by
 // first-party code the manifest names. Nextcloud sets itself up from its
-// environment (S312); Immich has no such setting, so Homestead creates
-// its administrator through Immich's own API once it answers.
+// environment (S312); Immich and Jellyfin have no such setting, so
+// Homestead drives their own setup APIs once they answer.
 //
 // Every routine is idempotent: an app already set up, by Homestead or by
 // its owner, is left as it is. Passwords travel to the container on
@@ -79,6 +79,15 @@ func Run(ctx context.Context, m catalog.Manifest, secrets Secrets) (Result, erro
 		return waitFor(ctx, m.Title, func() (Result, bool, error) {
 			return immich(ctx, container, f.Account, password)
 		})
+	case catalog.FirstRunJellyfin:
+		j := jellyfinRun{container: container, account: f.Account, password: password, libraries: f.Libraries}
+		// The Base URL the package seeds (ADR-044), then the root for an
+		// install made before apps moved under a path.
+		if p := strings.TrimSuffix(m.AppPath(), "/"); p != "" {
+			j.bases = append(j.bases, p)
+		}
+		j.bases = append(j.bases, "")
+		return waitFor(ctx, m.Title, func() (Result, bool, error) { return j.run(ctx) })
 	}
 	return "", fmt.Errorf("firstrun: unknown routine %q", f.Routine)
 }

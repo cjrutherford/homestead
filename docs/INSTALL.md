@@ -424,6 +424,13 @@ does not have it, so name a new tunnel.
    on its login page, where people choose **Sign in with Authentik**; the
    administrator account is for emergencies. If Immich was slow to start,
    turning on sign-in (or **Apply sign-in again**) finishes the setup.
+   **Jellyfin sets itself up too** (S319): install finishes its startup
+   wizard. The server is named **Homestead**, the administrator is `admin`
+   (password under Manage → Secrets → **Reveal**, or
+   `homesteadctl apps secrets reveal jellyfin admin_password`), and three
+   libraries are ready: Movies, TV Shows and Music. Their folders are on
+   bulk storage at `<bulk mount>/jellyfin/media/movies`, `.../tv` and
+   `.../music`; copy files there and they appear in Jellyfin.
 
 ### D6. Backups
 
