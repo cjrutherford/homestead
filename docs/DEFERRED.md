@@ -1233,3 +1233,23 @@ Craft apps under one host, by path (ADR-045).
   for a certificate covering its public name, not the public name itself.
 - LAN browsers sign in to published apps through the public name, so app
   sign-in needs the internet (ADR-047 §4); there is no split DNS.
+
+## S324 the appliance runs the setup approved with an install (2026-10-27)
+
+- Craft apps still install with their own route names. ADR-048 §4 puts
+  them through the same setup at `/apps/<name>/` and links them to
+  Nextcloud automatically (S326).
+- Issuing the public certificate from the tunnel plan, and moving
+  applied apps to the public issuer (ADR-048 §5–§6), are S325.
+- The CLI cannot approve sign-in or people with an install. Only
+  `apps install --public --approve-public D` sends an approval
+  (`setup.public`). Sign-in is set up afterwards with
+  `apps sign-in apply`.
+- An install without a kept Authentik token cannot carry sign-in. The
+  install request takes no token, so the setup records the step as
+  skipped and says how to set sign-in up later.
+- A setup that is running when the daemon restarts reads as stopped at
+  its running step, and is resumed from the card. The daemon does not
+  restart it on its own.
+- Skipping ends the whole remaining setup. There is no way to skip one
+  step and keep the rest.

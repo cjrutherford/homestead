@@ -247,6 +247,14 @@ describe('InstallWizard', () => {
     fixture.detectChanges();
   }
 
+  /** S324: the app's setup, as the appliance reports it to the setup panel. */
+  function setupRead(view: Record<string, unknown>) {
+    http.expectOne('/api/v1/catalog/gridcraft/setup').flush({ app: 'gridcraft', steps: [], ...view });
+    fixture.detectChanges();
+  }
+
+  const GRIDCRAFT_ROUTE = { Host: 'gridcraft.lan', Target: { Host: 'gridcraft', Port: 8080 }, Exposure: 'local', TLS: 'internal', CraftApp: 'gridcraft' };
+
   beforeEach(() => {
     // The Done step asks this device to open the address; no network in specs.
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(''))));
@@ -254,6 +262,10 @@ describe('InstallWizard', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    // The Done step's setup panel (S324) reads the app's setup; most specs have none.
+    for (const request of http.match((req) => req.url.endsWith('/setup'))) {
+      request.flush({ app: 'x', status: 'none', steps: [] });
+    }
     // The advisory reach check (S313) runs after every finished Done step.
     for (const request of http.match((req) => req.url.endsWith('/reach'))) {
       request.flush({ app: 'x', resolver: true, addresses: [] });
@@ -639,6 +651,7 @@ describe('InstallWizard', () => {
       button('Install GridCraft')!.click();
       const install = http.expectOne('/api/v1/catalog/gridcraft/install');
       expect(install.request.body.domain).toBe('lan');
+      expect(install.request.body.setup).toEqual({});
       install.flush({ id: 7 });
       fixture.detectChanges();
       expect(c().current()).toBe('install');
@@ -653,16 +666,16 @@ describe('InstallWizard', () => {
       streams.get(7)!.next(opState(7, 'succeeded'));
       const other = { Host: 'notes.lan', Target: { Host: 'notes', Port: 3000 }, Exposure: 'local', TLS: 'internal', Health: { Path: '', IntervalSeconds: 0 } };
       doneReads([other]);
-      // The planned route is merged into the table; the existing route stays.
-      const reconcile = http.expectOne('/api/v1/edge/routes');
-      expect(reconcile.request.method).toBe('POST');
-      expect(reconcile.request.body.routes.map((r: { Host: string }) => r.Host)).toEqual(['notes.lan', 'gridcraft.lan']);
-      reconcile.flush({ id: 31 });
-      fixture.detectChanges();
       expect(c().current()).toBe('done');
-      expect(text()).toContain('Giving GridCraft an address');
-      streams.get(31)!.next(opState(31, 'succeeded'));
-      fixture.detectChanges();
+      // The appliance adds the address as the first step of the setup (S324); the page only follows it.
+      expect(text()).toContain('The appliance gives GridCraft its address as the first step of its setup');
+      setupRead({ status: 'running', install_operation: 7, operation: 60, steps: [{ name: 'address', state: 'running', digest: 'ad1' }] });
+      expect(text()).toContain('Setting up GridCraft');
+      expect(text()).toContain('Address on your network Running');
+      streams.get(60)!.next(opState(60, 'succeeded'));
+      setupRead({ status: 'done', install_operation: 7, operation: 60, steps: [{ name: 'address', state: 'done', digest: 'ad1' }] });
+      expect(text()).toContain('GridCraft is set up');
+      doneReads([other, GRIDCRAFT_ROUTE]);
       expect(text()).toContain('GridCraft installed');
       expect((fixture.nativeElement as HTMLElement).querySelector('a[href="https://gridcraft.lan"]')?.textContent).toContain('Open GridCraft');
       expect(text()).toContain('https://gridcraft.lan');
@@ -704,34 +717,19 @@ describe('InstallWizard', () => {
       expect(text()).toContain('Homestead: GridCraft');
       expect(text()).toContain('https://gridcraft.lan/auth/login');
       expect(text()).toContain('Turn on OAuth sign-in');
-      const token = el.querySelector('input[name="sign-in-token"]') as HTMLInputElement;
-      token.value = 'ak-token';
-      token.dispatchEvent(new Event('input'));
+      // S324: the appliance runs sign-in with the install, so the page asks for no token.
+      expect(el.querySelector('input[name="sign-in-token"]')).toBeNull();
+      expect(text()).toContain('Homestead keeps no Authentik API token');
       button('Install GridCraft')!.click();
-      http.expectOne('/api/v1/catalog/gridcraft/install').flush({ id: 7 });
-      streams.get(7)!.next(opState(7, 'succeeded'));
-      doneReads([]);
-      http.expectOne('/api/v1/edge/routes').flush({ id: 31 });
-      streams.get(31)!.next(opState(31, 'succeeded'));
-      const apply = http.expectOne('/api/v1/catalog/gridcraft/sign-in/apply');
-      expect(apply.request.body).toEqual({ enabled: true, digest: 'sd1', token: 'ak-token' });
-      apply.flush({ id: 50 });
+      const install = http.expectOne('/api/v1/catalog/gridcraft/install');
+      expect(install.request.body.setup).toEqual({ sign_in: { digest: 'sd1' }, people: [4] });
+      install.flush({ id: 7 });
       fixture.detectChanges();
-      expect(text()).toContain('Setting up sign-in with Authentik');
-      streams.get(50)!.next(opState(50, 'succeeded'));
-      fixture.detectChanges();
-      expect(text()).toContain('People can sign in to GridCraft with their Authentik account.');
-      // The chosen person is granted once sign-in exists, as a plain user.
-      const grant = http.expectOne('/api/v1/people/4/apps/gridcraft');
-      expect(grant.request.method).toBe('PUT');
-      expect(grant.request.body).toEqual({ confirm: true });
-      grant.flush({ person: {} });
-      fixture.detectChanges();
-      expect(text()).toContain('You and Sam Lee can sign in.');
-      expect(c().signInToken()).toBe('');
+      http.expectNone('/api/v1/catalog/gridcraft/sign-in/apply');
+      http.expectNone('/api/v1/people/4/apps/gridcraft');
     });
 
-    it('applies with the kept token and sends a changed plan back to Manage (S298)', () => {
+    it('approves sign-in with the install and shows where its setup stopped (S298, S324)', () => {
       start(CRAFT, { craft: { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] } });
       to('review');
       const preview = {
@@ -746,14 +744,26 @@ describe('InstallWizard', () => {
       fixture.detectChanges();
       expect((fixture.nativeElement as HTMLElement).querySelector('input[name="sign-in-token"]')).toBeNull();
       button('Install GridCraft')!.click();
-      http.expectOne('/api/v1/catalog/gridcraft/install').flush({ id: 7 });
+      const install = http.expectOne('/api/v1/catalog/gridcraft/install');
+      expect(install.request.body.setup).toEqual({ sign_in: { digest: 'sd2' } });
+      install.flush({ id: 7 });
       streams.get(7)!.next(opState(7, 'succeeded'));
       doneReads([]);
-      http.expectOne('/api/v1/edge/routes').flush({ id: 31 });
-      streams.get(31)!.next(opState(31, 'succeeded'));
-      http.expectOne('/api/v1/catalog/gridcraft/sign-in/apply').flush('the plan changed', { status: 409, statusText: 'Conflict' });
-      fixture.detectChanges();
-      expect(text()).toContain('Review it again under Manage');
+      setupRead({
+        status: 'stopped', install_operation: 7, operation: 61,
+        reason: 'Stopped at the sign-in with Authentik: the plan changed after it was approved',
+        steps: [
+          { name: 'address', state: 'done', digest: 'ad1' },
+          { name: 'sign-in', state: 'changed', digest: 'sd2', reason: 'the plan changed after it was approved' },
+        ],
+      });
+      doneReads([GRIDCRAFT_ROUTE]);
+      expect(text()).toContain("GridCraft's setup stopped");
+      expect(text()).toContain('Sign-in with Authentik Plan changed');
+      expect(text()).toContain('Stopped at the sign-in with Authentik');
+      expect(button('Review')).toBeDefined();
+      expect(button('Skip the rest')).toBeDefined();
+      http.expectNone('/api/v1/catalog/gridcraft/sign-in/apply');
     });
 
     it('says the app is not reachable and links to Trust when this device cannot open the address', async () => {
@@ -790,20 +800,24 @@ describe('InstallWizard', () => {
       expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/edge"]')).not.toBeNull();
     });
 
-    it('says plainly when the edge refuses the new route and lets the owner retry', () => {
+    it('says plainly when the setup stopped before the address and offers to review it', () => {
       start(CRAFT, { craft: { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] } });
       review();
       button('Install GridCraft')!.click();
       http.expectOne('/api/v1/catalog/gridcraft/install').flush({ id: 7 });
       streams.get(7)!.next(opState(7, 'succeeded'));
       doneReads([]);
-      http.expectOne('/api/v1/edge/routes').flush('route refused', { status: 422, statusText: 'Unprocessable' });
-      fixture.detectChanges();
-      expect(text()).toContain('GridCraft is installed but has no address yet.');
-      expect(text()).toContain('route refused');
-      button('Try again')!.click();
+      setupRead({
+        status: 'stopped', install_operation: 7, operation: 60,
+        reason: 'Stopped at the address on your network: route refused',
+        steps: [{ name: 'address', state: 'failed', digest: 'ad1', reason: 'route refused' }],
+      });
       doneReads([]);
-      http.expectOne('/api/v1/edge/routes').flush({ id: 32 });
+      expect(text()).toContain('GridCraft has no address yet because its setup stopped first.');
+      expect(text()).toContain('route refused');
+      expect(button('Review')).toBeDefined();
+      // The page adds no route itself: the setup owns that step.
+      http.expectNone((req) => req.method === 'POST' && req.url === '/api/v1/edge/routes');
     });
 
     it('offers the app when its edge route exists', () => {
@@ -1036,25 +1050,40 @@ describe('InstallWizard', () => {
       expect(el().querySelectorAll('.permit-stamp[data-kind="approved"]').length).toBe(2);
     });
 
-    it('after the install: the address, then the public address by its digest, then sign-in, then the check', () => {
+    it('after the install: the appliance runs the address, the public address by its digest and sign-in, then the check', () => {
       reviewBoth();
       button('Approve both and install GridCraft')!.click();
-      http.expectOne('/api/v1/catalog/gridcraft/install').flush({ id: 7 });
+      const install = http.expectOne('/api/v1/catalog/gridcraft/install');
+      expect(install.request.body.setup).toEqual({
+        public: { hostname: 'gridcraft.homestead.example.com', route: 'gridcraft.lan', digest: 'pd1' },
+        sign_in: { digest: 'sd3' },
+      });
+      install.flush({ id: 7 });
       streams.get(7)!.next(opState(7, 'succeeded'));
       doneReads([]);
-      http.expectOne('/api/v1/edge/routes').flush({ id: 31 });
-      streams.get(31)!.next(opState(31, 'succeeded'));
+      setupRead({
+        status: 'running', install_operation: 7, operation: 60,
+        steps: [
+          { name: 'address', state: 'done', digest: 'ad1' },
+          { name: 'publish', state: 'running', digest: 'pd1' },
+          { name: 'sign-in', state: 'waiting', digest: 'sd3' },
+        ],
+      });
+      expect(text()).toContain('Public address Running');
+      expect(text()).toContain('Sign-in with Authentik Waiting');
+      // Nothing is applied from this page.
+      http.expectNone('/api/v1/catalog/gridcraft/public/apply');
       http.expectNone('/api/v1/catalog/gridcraft/sign-in/apply');
-      const apply = http.expectOne('/api/v1/catalog/gridcraft/public/apply');
-      expect(apply.request.body).toEqual({ enabled: true, hostname: 'gridcraft.homestead.example.com', route: 'gridcraft.lan', digest: 'pd1' });
-      apply.flush({ id: 40 });
-      fixture.detectChanges();
-      expect(text()).toContain('Publishing GridCraft at gridcraft.homestead.example.com');
-      expect(text()).toContain('Public address running');
-      streams.get(40)!.next(opState(40, 'succeeded'));
-      const signIn = http.expectOne('/api/v1/catalog/gridcraft/sign-in/apply');
-      expect(signIn.request.body.digest).toBe('sd3');
-      signIn.flush({ id: 50 });
+      streams.get(60)!.next(opState(60, 'succeeded'));
+      setupRead({
+        status: 'done', install_operation: 7, operation: 60,
+        steps: [
+          { name: 'address', state: 'done', digest: 'ad1' },
+          { name: 'publish', state: 'done', digest: 'pd1' },
+          { name: 'sign-in', state: 'done', digest: 'sd3' },
+        ],
+      });
+      doneReads([GRIDCRAFT_ROUTE]);
       http.expectOne('/api/v1/catalog/gridcraft/reach').flush({
         app: 'gridcraft', resolver: false,
         addresses: [
@@ -1066,41 +1095,56 @@ describe('InstallWizard', () => {
         ],
       });
       fixture.detectChanges();
-      expect(text()).toContain('GridCraft is published through the tunnel.');
-      expect(text()).toContain('Public address done');
+      expect(text()).toContain('GridCraft is set up');
+      expect(text()).toContain('Public address Done');
+      // The approved public plan keeps its stamp once the setup published it.
+      expect(Array.from(el().querySelectorAll('.permit-seal')).some((seal) => seal.getAttribute('aria-label') === 'Plan digest pd1')).toBe(true);
       const rows = Array.from(el().querySelectorAll('.reach-list li'));
       expect(rows.map((row) => row.querySelector('.badge')!.textContent!.trim())).toEqual(['answers', 'does not answer yet']);
       expect(rows[0].querySelector('.badge')!.classList).toContain('badge-ok');
       expect(rows[1].querySelector('.badge')!.classList).toContain('badge-warn');
       expect(text()).toContain('add a router DNS entry for gridcraft.lan');
-      expect(text()).toContain('Advanced Certificate Manager'.slice(0, 0) + 'certificate for gridcraft.homestead.example.com');
+      expect(text()).toContain('certificate for gridcraft.homestead.example.com');
     });
 
-    it('plans again and asks again when the public plan changed by the time it is applied', () => {
+    it('shows a changed public plan to approve again, and resumes the setup with its new digest', () => {
       reviewBoth();
       button('Approve both and install GridCraft')!.click();
       http.expectOne('/api/v1/catalog/gridcraft/install').flush({ id: 7 });
       streams.get(7)!.next(opState(7, 'succeeded'));
       doneReads([]);
-      http.expectOne('/api/v1/edge/routes').flush({ id: 31 });
-      streams.get(31)!.next(opState(31, 'succeeded'));
-      http.expectOne('/api/v1/catalog/gridcraft/public/apply').flush('the plan changed', { status: 409, statusText: 'Conflict' });
-      const again = http.expectOne('/api/v1/catalog/gridcraft/public/plan');
-      expect(again.request.body.before_install).toBeUndefined();
-      again.flush(publicPlan('pd2'));
-      fixture.detectChanges();
-      expect(text()).toContain('The public address plan changed.');
-      expect(text()).toContain('Nothing was published');
+      const stopped = {
+        status: 'stopped', install_operation: 7, operation: 60,
+        reason: 'Stopped at the public address: the plan changed after it was approved',
+        steps: [
+          { name: 'address', state: 'done', digest: 'ad1' },
+          { name: 'publish', state: 'changed', digest: 'pd1', reason: 'the plan changed after it was approved' },
+          { name: 'sign-in', state: 'waiting', digest: 'sd3' },
+        ],
+      };
+      setupRead(stopped);
+      doneReads([GRIDCRAFT_ROUTE]);
+      expect(text()).toContain('Public address Plan changed');
+      button('Review')!.click();
+      setupRead({ ...stopped, review: { step: 'publish', digest: 'pd2', public: publicPlan('pd2') } });
+      expect(el().querySelector('app-app-setup .permit-seal')?.getAttribute('aria-label')).toBe('Plan digest pd2');
+      expect(text()).toContain('Publishes GridCraft at gridcraft.homestead.example.com');
       // Nothing else runs until the owner answers.
-      http.expectNone('/api/v1/catalog/gridcraft/sign-in/apply');
-      button('Approve')!.click();
-      const apply = http.expectOne('/api/v1/catalog/gridcraft/public/apply');
-      expect(apply.request.body.digest).toBe('pd2');
-      apply.flush({ id: 41 });
-      streams.get(41)!.next(opState(41, 'succeeded'));
-      http.expectOne('/api/v1/catalog/gridcraft/sign-in/apply').flush({ id: 50 });
-      fixture.detectChanges();
-      expect(c().publicState()).toBe('on');
+      http.expectNone('/api/v1/catalog/gridcraft/setup/resume');
+      button('Approve and resume')!.click();
+      const resume = http.expectOne('/api/v1/catalog/gridcraft/setup/resume');
+      expect(resume.request.body).toEqual({ digest: 'pd2' });
+      resume.flush({ id: 62 });
+      streams.get(62)!.next(opState(62, 'succeeded'));
+      setupRead({
+        status: 'done', install_operation: 7, operation: 62,
+        steps: [
+          { name: 'address', state: 'done', digest: 'ad1' },
+          { name: 'publish', state: 'done', digest: 'pd2' },
+          { name: 'sign-in', state: 'done', digest: 'sd3' },
+        ],
+      });
+      expect(text()).toContain('GridCraft is set up');
     });
 
     it('sends the install digest and refuses a stale install plan', () => {

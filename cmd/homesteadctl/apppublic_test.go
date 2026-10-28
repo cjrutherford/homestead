@@ -100,6 +100,12 @@ func installPublicStub(t *testing.T, calls *[]string, bodies map[string]map[stri
 				return
 			}
 			_, _ = w.Write([]byte(`{"routes":[]}`))
+		case "/api/v1/catalog/nextcloud/setup":
+			if publicStatus != http.StatusOK {
+				_, _ = w.Write([]byte(`{"app":"nextcloud","status":"stopped","operation":7,"steps":[{"name":"address","state":"done","digest":"a"},{"name":"publish","state":"changed","digest":"p2d","reason":"The plan changed since it was approved."}],"review":{"step":"publish","digest":"p9d"}}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"app":"nextcloud","status":"done","operation":7,"steps":[{"name":"address","state":"done","digest":"a"},{"name":"publish","state":"done","digest":"p2d"}]}`))
 		case "/api/v1/catalog/nextcloud/public/apply":
 			if publicStatus != http.StatusOK {
 				http.Error(w, "the plan changed", publicStatus)
@@ -164,15 +170,18 @@ func TestAppsInstallPublicApproved(t *testing.T) {
 			changes = append(changes, call)
 		}
 	}
-	if strings.Join(changes, "|") != "POST /api/v1/catalog/nextcloud/install|POST /api/v1/edge/routes|POST /api/v1/catalog/nextcloud/public/apply" {
+	// The install carries the approval; the appliance does the rest (S324).
+	if strings.Join(changes, "|") != "POST /api/v1/catalog/nextcloud/install" {
 		t.Fatalf("changes = %v", changes)
 	}
-	if bodies["/api/v1/catalog/nextcloud/install"]["digest"] != "i1d" {
-		t.Fatalf("install body = %v", bodies["/api/v1/catalog/nextcloud/install"])
+	installBody := bodies["/api/v1/catalog/nextcloud/install"]
+	if installBody["digest"] != "i1d" {
+		t.Fatalf("install body = %v", installBody)
 	}
-	apply := bodies["/api/v1/catalog/nextcloud/public/apply"]
-	if apply["digest"] != "p2d" || apply["before_install"] != nil || apply["hostname"] != "nextcloud.homestead.example.com" {
-		t.Fatalf("apply body = %v", apply)
+	setup, _ := installBody["setup"].(map[string]any)
+	public, _ := setup["public"].(map[string]any)
+	if public["digest"] != "p2d" || public["route"] != "nextcloud.lan" || public["hostname"] != "nextcloud.homestead.example.com" {
+		t.Fatalf("install setup = %v", installBody["setup"])
 	}
 	for _, want := range []string{"https://nextcloud.lan: answers", "fix: Turn on the resolver",
 		"https://nextcloud.homestead.example.com: does not answer yet"} {
@@ -196,11 +205,11 @@ func TestAppsInstallPublicDigestBinding(t *testing.T) {
 			t.Fatalf("a stale approval changed something: %v", calls)
 		}
 	}
-	// The plan changing between install and apply: installed, not published.
+	// The plan changing after the install: installed, the setup stopped.
 	calls = nil
 	url = installPublicStub(t, &calls, bodies, "p2d", http.StatusConflict)
 	code, _, stderr = invoke(t, []string{"--server", url, "apps", "install", "nextcloud", "-f", file, "--public", "--approve-public", "p2d"})
-	if code == exitOK || !strings.Contains(stderr, "nothing was published") {
+	if code == exitOK || !strings.Contains(stderr, "its setup stopped, so nothing more was published") {
 		t.Fatalf("conflict: %d %s", code, stderr)
 	}
 	if code, _, _ := invoke(t, []string{"--server", url, "apps", "install", "nextcloud", "-f", file, "--approve-public", "p2d"}); code != exitUsage {

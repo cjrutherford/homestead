@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 53
+const CurrentVersion = 54
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -1024,6 +1024,20 @@ CREATE TABLE people_grants (
 	app TEXT NOT NULL,
 	role TEXT NOT NULL,
 	PRIMARY KEY (person_id, app)
+);`,
+	},
+	{
+		version: 54,
+		name:    "app setup",
+		// The setup the owner approved with an app's install (S324,
+		// ADR-048): one row per app, its status, and a JSON record of the
+		// approved digests, the routes, the public request, the people to
+		// grant and each step's state. Never a token or secret.
+		sql: `CREATE TABLE app_setup (
+	app TEXT PRIMARY KEY,
+	status TEXT NOT NULL,
+	record TEXT NOT NULL,
+	updated_at TEXT NOT NULL
 );`,
 	},
 }

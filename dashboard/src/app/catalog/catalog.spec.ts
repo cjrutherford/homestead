@@ -120,6 +120,27 @@ describe('Catalog', () => {
     expect(button.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('marks an app whose setup stopped and shows the setup in its card (S324)', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush([PACKAGES[0], { ...PACKAGES[1], setup: 'stopped' }]);
+    fixture.detectChanges();
+    expect(text()).toContain('Setup stopped');
+    http.expectOne('/api/v1/catalog/gridcraft/setup').flush({
+      app: 'gridcraft',
+      status: 'stopped',
+      reason: 'Stopped at the public address: the plan changed after it was approved',
+      steps: [
+        { name: 'address', state: 'done', digest: 'a' },
+        { name: 'publish', state: 'changed', digest: 'p' },
+      ],
+    });
+    fixture.detectChanges();
+    expect(text()).toContain("GridCraft's setup stopped");
+    expect(text()).toContain('Public address Plan changed');
+    const review = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('button')).find((b) => b.textContent!.trim() === 'Review');
+    expect(review).toBeDefined();
+  });
+
   it('points an install that is still being set up back to its wizard', () => {
     TestBed.inject(InstallDrafts).save('gridcraft', { installOperation: 7 } as never);
     load();

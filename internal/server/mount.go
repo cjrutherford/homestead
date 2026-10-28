@@ -135,6 +135,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	})
 	srv.MountTunnel(st, secrets, c.Port)
 	srv.MountAppPublic(st, secrets, c.CatalogDir)
+	srv.MountAppSetup(st, c.CatalogDir, local)
 	srv.MountAppMove(st, secrets, c.CatalogDir)
 	srv.MountAppReach(st, names, local, c.CatalogDir)
 	srv.MountDoctor(
@@ -153,6 +154,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 		resolverDoctorCheck(names),
 		signInDoctorChecks(ssoManager),
 		appAccessDoctorChecks(st, c.CatalogDir),
+		srv.appSetup.doctorChecks,
 	)
 	srv.MountDoctorLive(doctorLiveProbes(DoctorLiveConfig{
 		Store: st, Secrets: secrets, SSO: ssoManager, Names: names, Local: local, CatalogDir: c.CatalogDir,

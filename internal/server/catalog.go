@@ -30,10 +30,10 @@ import (
 // operation IDs instead of blocking.
 func (s *Server) MountCatalog(st *store.Store, catalogDir string, secrets catalog.SecretStore) {
 	runner := operation.NewRunner(st)
-	s.mux.HandleFunc("GET /api/v1/catalog", handleCatalogList(st, catalogDir))
+	s.mux.HandleFunc("GET /api/v1/catalog", handleCatalogList(s, st, catalogDir))
 	s.mux.HandleFunc("GET /api/v1/catalog/{name}", handleCatalogGet(catalogDir))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/plan", handleCatalogPlan(s, st, catalogDir))
-	s.mux.HandleFunc("POST /api/v1/catalog/{name}/install", handleCatalogInstall(st, catalogDir, runner, secrets))
+	s.mux.HandleFunc("POST /api/v1/catalog/{name}/install", handleCatalogInstall(s, st, catalogDir, runner, secrets))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/configure", handleCatalogConfigure(s, st, catalogDir, runner, secrets))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/uninstall", handleCatalogUninstall(s, st, catalogDir, runner))
 }
@@ -110,6 +110,9 @@ type packageSummary struct {
 	Icon     string `json:"icon"`
 	// Installed lets clients disable Install for packages with a stack.
 	Installed bool `json:"installed"`
+	// Setup is "running" or "stopped" while the setup approved with the
+	// install is unfinished (S324, ADR-048); empty otherwise.
+	Setup string `json:"setup,omitempty"`
 }
 
 // loadPackage resolves a catalog entry or 404s unknown names: routing
@@ -128,8 +131,9 @@ func loadPackage(catalogDir, name string, w http.ResponseWriter) (catalog.Manife
 	return manifest, true
 }
 
-func handleCatalogList(st *store.Store, catalogDir string) http.HandlerFunc {
+func handleCatalogList(s *Server, st *store.Store, catalogDir string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		setups := s.appSetup.unfinished()
 		entries, err := catalog.Load(catalogDir)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("catalog unavailable: %v", err), http.StatusInternalServerError)
@@ -143,8 +147,8 @@ func handleCatalogList(st *store.Store, catalogDir string) http.HandlerFunc {
 			}
 			installed, _ := catalog.Installed(st, name, stackDirFor(name))
 			out = append(out, packageSummary{
-				Installed: installed,
-				Name:      manifest.Name, Version: manifest.Version, Title: manifest.Title,
+				Installed: installed, Setup: setups[name],
+				Name: manifest.Name, Version: manifest.Version, Title: manifest.Title,
 				Blurb: manifest.Blurb, Category: manifest.Category, Icon: manifest.Icon,
 			})
 		}
@@ -184,6 +188,10 @@ type installBody struct {
 	// a plan that changed since answers 409. Empty installs as planned
 	// now, as before.
 	Digest string `json:"digest,omitempty"`
+	// Setup, on install, carries the steps the owner approved with it
+	// (S324, ADR-048): the daemon runs them after the install succeeds.
+	// Absent installs the app alone, as before.
+	Setup *setupApproval `json:"setup,omitempty"`
 }
 
 // installRequest assembles the planner input: manifest from the
@@ -444,7 +452,7 @@ func handleCatalogPlan(s *Server, st *store.Store, catalogDir string) http.Handl
 	}
 }
 
-func handleCatalogInstall(st *store.Store, catalogDir string, runner *operation.Runner, secrets catalog.SecretStore) http.HandlerFunc {
+func handleCatalogInstall(s *Server, st *store.Store, catalogDir string, runner *operation.Runner, secrets catalog.SecretStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body installBody
 		if err := decodeBody(r, &body); err != nil {
@@ -473,10 +481,32 @@ func handleCatalogInstall(st *store.Store, catalogDir string, runner *operation.
 		if req.Manifest.FirstRun != nil {
 			def.Steps = append(def.Steps, firstRunStep(req.Manifest, secrets))
 		}
+		setup := s.appSetup
+		if setup != nil {
+			setup.forgetFinished(req.Manifest.Name)
+		}
+		withSetup := body.Setup != nil && setup != nil
+		if withSetup {
+			rec, err := setup.prepare(req.Manifest, plan, *body.Setup, operatorActor(r))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if err := setup.attach(rec, &def); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
 		op, err := runner.Start(r.Context(), def, "")
 		if err != nil {
+			if withSetup {
+				setup.forget(req.Manifest.Name)
+			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		if withSetup {
+			setup.installed(req.Manifest.Name, op.ID)
 		}
 		writeJSON(w, map[string]any{"id": op.ID})
 	}
@@ -592,6 +622,12 @@ func handleCatalogUninstall(s *Server, st *store.Store, catalogDir string, runne
 		}
 		if body.LeaveSignIn {
 			def.Steps = append(def.Steps, s.forgetSignInStep(st, name, operatorActor(r)))
+		}
+		if setup := s.appSetup; setup != nil {
+			def.Steps = append(def.Steps, operation.StepDef{Name: "forget the app's setup", Run: func(context.Context) error {
+				setup.forgetFinished(name)
+				return nil
+			}})
 		}
 		op, err := runner.Start(r.Context(), def, "")
 		if err != nil {

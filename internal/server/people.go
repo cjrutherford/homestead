@@ -57,6 +57,7 @@ func (s *Server) mountPeople(c SSOConfig, m *sso.Manager, client func() *http.Cl
 			return ""
 		},
 	}
+	s.people = h.svc
 	s.mux.HandleFunc("GET /api/v1/people", h.list)
 	s.mux.HandleFunc("POST /api/v1/people", h.add)
 	s.mux.HandleFunc("POST /api/v1/people/adopt", h.adopt)

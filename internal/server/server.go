@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"homestead/internal/people"
 	"log/slog"
 	"net"
 	"net/http"
@@ -88,6 +89,11 @@ type Server struct {
 	// appSignIn serves app sign-in through Authentik (S298), set by
 	// MountSSO; the install plan reads it for its sign-in preview.
 	appSignIn *appSignIn
+	// appPublic, people and appSetup back the appliance-run app setup
+	// (ADR-048): set by MountAppPublic, MountSSO and MountAppSetup.
+	appPublic *appPublic
+	people    *people.Service
+	appSetup  *appSetup
 }
 
 // New returns a Server serving addr. Pass DefaultAddr for local-only binding.

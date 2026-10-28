@@ -185,6 +185,10 @@ var routeClasses = map[string]RouteClass{
 	"GET /api/v1/catalog/{name}/reach":         ClassSession,
 	"POST /api/v1/catalog/{name}/public/plan":  ClassSession,
 	"POST /api/v1/catalog/{name}/public/apply": ClassSession,
+	// S324 (ADR-048 §3): the setup approved with an install.
+	"GET /api/v1/catalog/{name}/setup":         ClassSession,
+	"POST /api/v1/catalog/{name}/setup/resume": ClassSession,
+	"POST /api/v1/catalog/{name}/setup/skip":   ClassSession,
 	// S315 (ADR-044 §5): moving an installed app to its path.
 	"GET /api/v1/catalog/{name}/move":                    ClassSession,
 	"POST /api/v1/catalog/{name}/move/plan":              ClassSession,

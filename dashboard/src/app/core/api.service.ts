@@ -128,6 +128,49 @@ export interface PackageSummary {
   icon: string;
   /** True when a stack already exists; Install is refused (S276). */
   installed?: boolean;
+  /** S324: the setup approved with the install is running or stopped. */
+  setup?: 'running' | 'stopped';
+}
+
+/** S324 (ADR-048): the steps the owner approved with an install. */
+export interface InstallSetupApproval {
+  public?: { hostname?: string; route: string; digest: string };
+  sign_in?: { digest: string };
+  people?: number[];
+}
+
+export type AppSetupStepName = 'address' | 'publish' | 'sign-in' | 'people';
+export type AppSetupStepState = 'waiting' | 'running' | 'done' | 'changed' | 'failed' | 'skipped';
+
+export interface AppSetupStep {
+  name: AppSetupStepName;
+  state: AppSetupStepState;
+  digest: string;
+  reason?: string;
+  operation?: number;
+}
+
+/** The stopped step's plan as it stands now; approving its digest resumes. */
+export interface AppSetupReview {
+  step: AppSetupStepName;
+  digest?: string;
+  problem?: string;
+  addresses?: string[];
+  public?: AppPublicPlan;
+  sign_in?: AppSignInPlan;
+  people?: string[];
+  token_kept?: boolean;
+}
+
+/** GET /api/v1/catalog/:name/setup (S324). */
+export interface AppSetup {
+  app: string;
+  status: 'none' | 'waiting' | 'running' | 'stopped' | 'done' | 'skipped';
+  install_operation?: number;
+  operation?: number;
+  steps: AppSetupStep[];
+  reason?: string;
+  review?: AppSetupReview;
 }
 
 /** GET /api/v1/catalog/:name — curated manifest detail. */
@@ -1798,6 +1841,25 @@ export class ApiService {
       body.token = token;
     }
     return this.http.post<OperationStarted>(`/api/v1/catalog/${encodeURIComponent(name)}/sign-in/apply`, body);
+  }
+
+  /** S324: the setup approved with the app's install, and a stopped step's current plan. */
+  appSetup(name: string): Observable<AppSetup> {
+    return this.http.get<AppSetup>(`/api/v1/catalog/${encodeURIComponent(name)}/setup`);
+  }
+
+  /** S324: approves the stopped step's current plan and runs it and the rest. The token is for this run only. */
+  appSetupResume(name: string, digest: string, token = ''): Observable<OperationStarted> {
+    const body: { digest: string; token?: string } = { digest };
+    if (token) {
+      body.token = token;
+    }
+    return this.http.post<OperationStarted>(`/api/v1/catalog/${encodeURIComponent(name)}/setup/resume`, body);
+  }
+
+  /** S324: ends a stopped setup. */
+  appSetupSkip(name: string): Observable<AppSetup> {
+    return this.http.post<AppSetup>(`/api/v1/catalog/${encodeURIComponent(name)}/setup/skip`, {});
   }
 
   /** Reads back, without changing anything, who can sign in to the app (S314). */

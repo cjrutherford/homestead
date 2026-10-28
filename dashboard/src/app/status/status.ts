@@ -2,7 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { TitleCasePipe } from '@angular/common';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { ApiService, DoctorReport, Health, Identity } from '../core/api.service';
+import { ApiService, DoctorCheck, DoctorReport, Health, Identity } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 import { Loading } from '../ui/loading';
 import { CopyCode } from '../ui/copy-code';
@@ -46,6 +46,15 @@ const FIXES: Record<string, Fix> = {
     link: { path: '/storage', label: 'Open Storage' },
   },
   'state-dirs': { text: 'Re-run the installer to recreate the Homestead folders.', command: 'sudo make install' },
+};
+
+/** Button words for the pages a daemon fix links to. */
+const PAGE_LABELS: Record<string, string> = {
+  '/catalog': 'Open the catalog',
+  '/doctor': 'Open Doctor',
+  '/people': 'Open People',
+  '/tunnel': 'Open Tunnel',
+  '/edge': 'Open the Edge page',
 };
 
 const DEFAULT_FIX: Fix = { text: 'Open Doctor for what this means and how to fix it.', link: { path: '/doctor', label: 'Open Doctor' } };
@@ -140,12 +149,29 @@ export class Status implements OnInit {
     }
   }
 
-  protected labelFor(name: string): string {
-    return LABELS[name] ?? name;
+  /** The check's own title from the daemon (S316) wins over the name; known names have a label here. */
+  protected labelFor(check: DoctorCheck): string {
+    return LABELS[check.name] ?? check.title ?? check.name;
   }
 
-  protected fixFor(name: string): Fix {
-    return FIXES[name] ?? DEFAULT_FIX;
+  /**
+   * What to do: the words here for known checks, else the daemon's own fix
+   * (S324: an unfinished app setup names the catalog), else Doctor. A fix
+   * with a page links there; a command only is copied.
+   */
+  protected fixFor(check: DoctorCheck): Fix {
+    const known = FIXES[check.name];
+    if (known) {
+      return known;
+    }
+    const fix = check.fix;
+    if (!fix?.text) {
+      return DEFAULT_FIX;
+    }
+    if (fix.link) {
+      return { text: fix.text, link: { path: fix.link, label: PAGE_LABELS[fix.link] ?? 'Open the page' } };
+    }
+    return { text: fix.text, command: fix.command };
   }
 
   private unreachable(): void {

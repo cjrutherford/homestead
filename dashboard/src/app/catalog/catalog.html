@@ -30,12 +30,19 @@
                 <span class="hint">Version {{ pkg.version }}</span>
                 @if (settingUp(pkg.name)) {
                   <span class="badge badge-pending">Setting up</span>
+                } @else if (pkg.setup === 'stopped') {
+                  <span class="badge badge-warn">Setup stopped</span>
+                } @else if (pkg.setup === 'running') {
+                  <span class="badge badge-pending">Setting up</span>
                 } @else if (pkg.installed) {
                   <span class="badge badge-ok">Installed</span>
                 } @else {
                   <span class="badge">Not installed</span>
                 }
                 <p>{{ pkg.blurb }}</p>
+                @if (pkg.setup && !settingUp(pkg.name)) {
+                  <app-app-setup [name]="pkg.name" [title]="pkg.title" (settled)="onSetupSettled(pkg.name, $event.status)" />
+                }
               </div>
               <div class="catalog-actions">
                 @if (settingUp(pkg.name)) {

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -218,49 +219,57 @@ func handleEdgeRoutes(runner *operation.Runner, st *store.Store, local *cert.Loc
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if body.Routes == nil {
-			body.Routes = []docker.Route{}
-		}
-		inferCraftApps(body.Routes)
-		body.Routes = preserveDashboardRoute(st, body.Routes)
-		body.Routes = preserveTunnelNames(st, body.Routes)
-		if err := requireLocalDashboardNames(body.Routes); err != nil {
-			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
-			return
-		}
-		if err := docker.ValidateRenderable(docker.RouteSet{Routes: body.Routes}); err != nil {
-			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
-			return
-		}
-		if err := requirePublicApproved(st, body.Routes); err != nil {
-			status := http.StatusUnprocessableEntity
-			if !errors.Is(err, errPublicRefused) {
-				status = http.StatusInternalServerError
-			}
+		id, status, err := startEdgeReconcile(r.Context(), runner, st, local, body.Routes, operatorActor(r))
+		if err != nil {
 			http.Error(w, err.Error(), status)
 			return
 		}
-		if local != nil {
-			// A leaf that cannot be issued never blocks the reconcile: the
-			// route falls back to the edge's own internal issuance and the
-			// failure is audited (CA and per-host errors, by EnsureLeaves)
-			// and shown by doctor.
-			_, _, _ = local.EnsureLeaves(body.Routes, false, operatorActor(r))
-		}
-		state := docker.RouteState{
-			Load: func() (docker.RouteSet, error) { return loadEdgeRoutes(st) },
-			Save: func(set docker.RouteSet) error { return saveEdgeRoutes(st, set) },
-		}
-		def, err := docker.ReconcileDefinition(docker.CaddyStack(), docker.RouteSet{Routes: body.Routes}, state)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
-			return
-		}
-		op, err := runner.Start(r.Context(), def, "")
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, map[string]any{"id": op.ID})
+		writeJSON(w, map[string]any{"id": id})
 	}
+}
+
+// startEdgeReconcile checks a desired route table and starts its
+// reconcile as an operation, returning the status for a refusal. The
+// edge routes route and the appliance-run app setup (ADR-048) both go
+// through it.
+func startEdgeReconcile(ctx context.Context, runner *operation.Runner, st *store.Store, local *cert.LocalTLS, routes []docker.Route, actor string) (int64, int, error) {
+	if routes == nil {
+		routes = []docker.Route{}
+	}
+	inferCraftApps(routes)
+	routes = preserveDashboardRoute(st, routes)
+	routes = preserveTunnelNames(st, routes)
+	if err := requireLocalDashboardNames(routes); err != nil {
+		return 0, http.StatusUnprocessableEntity, err
+	}
+	if err := docker.ValidateRenderable(docker.RouteSet{Routes: routes}); err != nil {
+		return 0, http.StatusUnprocessableEntity, err
+	}
+	if err := requirePublicApproved(st, routes); err != nil {
+		status := http.StatusUnprocessableEntity
+		if !errors.Is(err, errPublicRefused) {
+			status = http.StatusInternalServerError
+		}
+		return 0, status, err
+	}
+	if local != nil {
+		// A leaf that cannot be issued never blocks the reconcile: the
+		// route falls back to the edge's own internal issuance and the
+		// failure is audited (CA and per-host errors, by EnsureLeaves)
+		// and shown by doctor.
+		_, _, _ = local.EnsureLeaves(routes, false, actor)
+	}
+	state := docker.RouteState{
+		Load: func() (docker.RouteSet, error) { return loadEdgeRoutes(st) },
+		Save: func(set docker.RouteSet) error { return saveEdgeRoutes(st, set) },
+	}
+	def, err := docker.ReconcileDefinition(docker.CaddyStack(), docker.RouteSet{Routes: routes}, state)
+	if err != nil {
+		return 0, http.StatusUnprocessableEntity, err
+	}
+	op, err := runner.Start(ctx, def, "")
+	if err != nil {
+		return 0, http.StatusInternalServerError, err
+	}
+	return op.ID, 0, nil
 }

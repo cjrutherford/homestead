@@ -178,27 +178,43 @@ func (a *appSignIn) apply(w http.ResponseWriter, r *http.Request) {
 	if !decodeResolverRequest(w, r, &req) || !requireEnabled(w, req.Enabled) {
 		return
 	}
-	in, err := a.inputs(r.PathValue("name"))
-	if err != nil {
+	id, err := a.start(r.Context(), r.PathValue("name"), *req.Enabled, req.Digest, req.Token, operatorActor(r))
+	switch {
+	case errors.Is(err, errPlanChanged):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, errStartFailed):
+		http.Error(w, "failed to start the sign-in operation", http.StatusInternalServerError)
+	case err != nil:
 		a.writeError(w, err)
-		return
+	default:
+		writeJSON(w, map[string]any{"id": id})
 	}
-	plan, err := appsso.BuildPlan(in, *req.Enabled)
+}
+
+var errStartFailed = errors.New("failed to start the operation")
+
+// start plans the app's sign-in again, compares it with digest, and
+// starts the change as an audited operation (S298). The apply route and
+// the appliance-run app setup (ADR-048) both go through it. token is
+// for this change only; empty uses the kept one.
+func (a *appSignIn) start(ctx context.Context, name string, enabled bool, digest, token, actor string) (int64, error) {
+	in, err := a.inputs(name)
 	if err != nil {
-		a.writeError(w, err)
-		return
+		return 0, err
 	}
-	if req.Digest == "" || plan.Digest != req.Digest {
-		http.Error(w, "the plan changed since it was reviewed; review it again", http.StatusConflict)
-		return
+	plan, err := appsso.BuildPlan(in, enabled)
+	if err != nil {
+		return 0, err
 	}
-	token := strings.TrimSpace(req.Token)
+	if digest == "" || plan.Digest != digest {
+		return 0, errPlanChanged
+	}
+	token = strings.TrimSpace(token)
 	if token == "" && a.cfg.Secrets != nil {
 		token, _ = a.cfg.Secrets.Get(sso.APITokenName)
 	}
 	if token == "" {
-		a.writeError(w, errNoToken)
-		return
+		return 0, errNoToken
 	}
 	dashboard := in.Dashboard
 	if !in.DashboardOK && in.Applied != nil {
@@ -222,19 +238,16 @@ func (a *appSignIn) apply(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	api := &sso.API{Base: dashboard.AuthentikURL, Token: token, Client: a.client}
-	actor := operatorActor(r)
 	def, err := appsso.Definition(rt, plan, in.Manifest, dashboard, api, actor)
 	if err != nil {
-		a.writeError(w, err)
-		return
+		return 0, err
 	}
-	op, err := a.runner.Start(r.Context(), def, "")
+	op, err := a.runner.Start(ctx, def, "")
 	if err != nil {
-		http.Error(w, "failed to start the sign-in operation", http.StatusInternalServerError)
-		return
+		return 0, errStartFailed
 	}
 	a.s.auditOperation(a.cfg.Store, a.runner, op.ID, actor, "app.sign-in.operation", fmt.Sprintf("%s: operation %d", in.Manifest.Name, op.ID))
-	writeJSON(w, map[string]any{"id": op.ID})
+	return op.ID, nil
 }
 
 // access reads back the app's groups, the owner's membership, the

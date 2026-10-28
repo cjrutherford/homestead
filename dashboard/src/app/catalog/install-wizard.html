@@ -656,11 +656,10 @@
                           <p class="hint">{{ warning }}</p>
                         }
                         @if (!si.token_kept) {
-                          <label>
-                            Authentik API token (used once after the install, not kept)
-                            <input type="password" name="sign-in-token" autocomplete="off" [value]="signInToken()" (input)="signInToken.set($any($event.target).value)" />
-                          </label>
-                          <p class="hint">Without a token, set sign-in up later under Manage on the catalog page.</p>
+                          <p class="hint">
+                            Homestead keeps no Authentik API token, so the appliance cannot set sign-in up with the install.
+                            Set it up afterwards under Manage on the catalog page.
+                          </p>
                         }
                       }
                     } @else if (si.reason) {
@@ -899,6 +898,13 @@
                 @case ('checking') {
                   <app-loading [loading]="true" shape="lines"><span></span></app-loading>
                 }
+                @case ('setup') {
+                  @if (setupView()?.status === 'stopped') {
+                    <p class="hint">{{ m.Title }} has no address yet because its setup stopped first. Review the setup below.</p>
+                  } @else {
+                    <p class="hint">The appliance gives {{ m.Title }} its address as the first step of its setup, below.</p>
+                  }
+                }
                 @default {
                   <app-state-message
                     kind="notice"
@@ -913,93 +919,17 @@
               }
             }
 
-            @if (phases().length > 1) {
-              <h3>After the install</h3>
-              <ol class="install-phases" aria-label="After the install">
-                @for (phase of phases(); track phase.name) {
-                  <li>
-                    {{ phase.name }}
-                    <span class="badge" [class]="phase.kind ? 'badge-' + phase.kind : ''">{{ phase.word }}</span>
-                  </li>
-                }
-              </ol>
-            }
-
-            @switch (publicState()) {
-              @case ('applying') {
-                <h3>Publishing {{ m.Title }} at {{ publicShown() }}</h3>
-                @if (publicOperation(); as id) {
-                  <app-operation-progress [id]="id" [operation]="publicOpState()" />
-                }
-              }
-              @case ('on') {
-                <app-state-message
-                  kind="status"
-                  [headline]="m.Title + ' is published through the tunnel.'"
-                  detail="Change or remove its public address later under Manage on the catalog page."
-                />
+            @if (installed()) {
+              <app-app-setup [name]="m.Name" [title]="m.Title" (settled)="onSetupSettled($event)" />
+              @if (publicDone()) {
                 @if (publicStamp(); as a) {
                   <app-permit [heading]="a.heading" [digest]="a.digest" [approval]="a.approval">
                     <p>{{ a.summary }}</p>
                   </app-permit>
                 }
               }
-              @case ('replan') {
-                <app-state-message kind="notice" headline="The public address plan changed." [detail]="publicProblem() ?? ''" />
-                @if (publicPlan(); as p) {
-                  <app-permit [heading]="'Publish ' + (p.path && p.url ? p.url : p.hostname)" [digest]="p.digest" [label]="'Public address plan for ' + m.Title">
-                    @if (p.path) {
-                      <p>Publish <span class="mono">{{ p.url }}</span> through the tunnel {{ p.tunnel }}, under the dashboard's public name.</p>
-                    } @else {
-                      <p>Publish <span class="mono">{{ p.hostname }}</span> to {{ p.route }} through the tunnel {{ p.tunnel }}.</p>
-                    }
-                    <ul aria-label="DNS changes">
-                      @for (change of p.dns; track change.name + change.action + change.content) {
-                        <li>{{ change.action }}: {{ change.type }} <span class="mono">{{ change.name }}</span> to <span class="mono">{{ change.content }}</span></li>
-                      }
-                      @for (line of p.app_settings ?? []; track line) {
-                        <li>{{ line }}</li>
-                      }
-                    </ul>
-                    @for (warning of p.warnings; track warning) {
-                      <p class="hint">{{ warning }}</p>
-                    }
-                    <p class="permit-actions">
-                      <button type="button" class="primary" (click)="approveReplannedPublic()">Approve</button>
-                      <button type="button" class="quiet" (click)="skipPublic()">Not now</button>
-                    </p>
-                  </app-permit>
-                }
-              }
-              @case ('failed') {
-                <app-state-message
-                  kind="error"
-                  [headline]="m.Title + ' is installed but not published.'"
-                  [detail]="(publicProblem() ?? '') + ' Publish it under Manage on the catalog page.'"
-                />
-              }
-              @case ('skipped') {
-                <app-state-message kind="notice" [headline]="m.Title + ' is not published.'" detail="It stays on your network. Publish it later under Manage on the catalog page." />
-              }
             }
 
-            @switch (signInState()) {
-              @case ('applying') {
-                <h3>Setting up sign-in with Authentik</h3>
-                @if (signInOperation(); as id) {
-                  <app-operation-progress [id]="id" [operation]="signInOpState()" />
-                }
-              }
-              @case ('on') {
-                <app-state-message kind="status" [headline]="'People can sign in to ' + m.Title + ' with their Authentik account.'" [detail]="grantState() === 'done' ? 'You and ' + grantNames().join(', ') + ' can sign in. Its own admin account keeps working. Grant more people on the People page.' : grantState() === 'granting' ? 'Giving the people you chose access.' : grantState() === 'failed' ? 'Sign-in is on, but giving the people you chose access did not finish. Grant them on the People page.' : 'Only you can sign in so far. Its own admin account keeps working. Grant people on the People page.'" />
-              }
-              @case ('failed') {
-                <app-state-message kind="error" headline="Sign-in with Authentik was not set up." [detail]="signInProblem() ?? ''" actionLabel="Open the catalog" actionLink="/catalog" />
-              }
-              @case ('skipped') {
-                <app-state-message kind="notice" headline="Sign-in with Authentik is not set up yet." detail="No Authentik API token was given. Set it up under Manage on the catalog page." />
-              }
-            }
             @if (installed()) {
               <h3>Does it answer?</h3>
               <app-loading [loading]="reachChecking() && !reachStatus()" shape="lines">

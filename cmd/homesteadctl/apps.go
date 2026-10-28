@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,7 +18,7 @@ import (
 // endpoints.
 func runApps(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|names|plan|install|reach|configure|secrets|sign-in|public|move|uninstall>")
+		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|names|plan|install|reach|configure|secrets|sign-in|public|move|setup|uninstall>")
 		return exitUsage
 	}
 	switch args[0] {
@@ -41,6 +40,8 @@ func runApps(ctx context.Context, client *apiclient.Client, args []string, stdou
 		return runAppsSignIn(ctx, client, args[1:], stdout, stderr)
 	case "public":
 		return runAppsPublic(ctx, client, args[1:], stdout, stderr)
+	case "setup":
+		return runAppsSetup(ctx, client, args[1:], stdout, stderr)
 	case "move":
 		return runAppsMove(ctx, client, args[1:], stdout, stderr)
 	case "uninstall":
@@ -171,8 +172,9 @@ const appsInstallUsage = `usage: homesteadctl apps install <package> -f FILE [--
                            (default <package>.<domain>); without
                            --approve-public this plans the install and the
                            public address, prints both digests and changes nothing
-  --approve-public DIGEST  install, add the app's address, then publish it by
-                           the reviewed digest (follows each operation)`
+  --approve-public DIGEST  install; the appliance then adds the app's address
+                           and publishes it by the reviewed digest (follows
+                           the install and the setup)`
 
 func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	var file, publicName, approvePublic string
@@ -277,6 +279,9 @@ func installWithPublic(ctx context.Context, client *apiclient.Client, pkg, file 
 	delete(body, "public_name")
 	body["public_name"] = plan.Hostname
 	body["digest"] = install.Digest
+	// The appliance adds the app's address and publishes it by the
+	// approved digest once the install succeeds (S324, ADR-048).
+	body["setup"] = map[string]any{"public": map[string]any{"hostname": plan.Hostname, "route": string(route.Host), "digest": approve}}
 	id, err := client.InstallPackage(ctx, pkg, body)
 	if err != nil {
 		return fail(stderr, err)
@@ -285,38 +290,23 @@ func installWithPublic(ctx context.Context, client *apiclient.Client, pkg, file 
 	if code := followOperation(ctx, client, id, stdout, stderr); code != exitOK {
 		return code
 	}
-	table, err := client.EdgeRoutes(ctx)
+	setup, err := client.AppSetupStatus(ctx, pkg)
 	if err != nil {
-		return fail(stderr, err)
+		return fail(stderr, fmt.Errorf("the app is installed; read its setup with homesteadctl apps setup status %s: %w", pkg, err))
 	}
-	if !hasRoute(table, route.Host) {
-		id, err := client.EdgeReconcile(ctx, append(table, *route))
-		if err != nil {
-			return fail(stderr, fmt.Errorf("the app is installed but its address was not added: %w", err))
-		}
-		fmt.Fprintf(stdout, "address %s:\n", route.Host)
-		if code := followOperation(ctx, client, id, stdout, stderr); code != exitOK {
-			return code
+	if setup.Operation != 0 && (setup.Status == "running" || setup.Status == "waiting") {
+		fmt.Fprintln(stdout, "setup (address, then public address):")
+		_ = followOperation(ctx, client, setup.Operation, stdout, stderr)
+		if setup, err = client.AppSetupStatus(ctx, pkg); err != nil {
+			return fail(stderr, err)
 		}
 	}
-	req.BeforeInstall = false
-	req.Digest = approve
-	id, err = client.AppPublicApply(ctx, pkg, req)
-	if err != nil {
-		var status *apiclient.StatusError
-		if errors.As(err, &status) && status.Status == 409 {
-			return fail(stderr, fmt.Errorf("the app is installed; the public address plan changed, so nothing was published: review it with homesteadctl apps public plan %s --hostname %s: %w", pkg, plan.Hostname, err))
-		}
-		return fail(stderr, fmt.Errorf("the app is installed but not published: %w", err))
+	if setup.Status == "stopped" {
+		printAppSetup(stdout, setup)
+		return fail(stderr, fmt.Errorf("the app is installed; its setup stopped, so nothing more was published: review it with homesteadctl apps setup status %s", pkg))
 	}
-	if plan.URL != "" {
-		fmt.Fprintf(stdout, "public %s:\n", plan.URL)
-	} else {
-		fmt.Fprintf(stdout, "public %s:\n", plan.Hostname)
-	}
-	code := followOperation(ctx, client, id, stdout, stderr)
 	printReach(ctx, client, pkg, stdout)
-	return code
+	return exitOK
 }
 
 // firstLocalRoute is the planned route the public name serves: the first
@@ -336,15 +326,6 @@ func routeHosts(routes []docker.Route) []string {
 		out = append(out, string(r.Host))
 	}
 	return out
-}
-
-func hasRoute(table []docker.Route, host docker.Hostname) bool {
-	for _, r := range table {
-		if r.Host == host {
-			return true
-		}
-	}
-	return false
 }
 
 // printInstallAddresses prints where the app will answer locally; the

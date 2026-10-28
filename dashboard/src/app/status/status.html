@@ -27,18 +27,18 @@
             <li [attr.data-status]="check.status">
               <div class="needs-you-text">
                 <h3>
-                  {{ labelFor(check.name) }}
+                  {{ labelFor(check) }}
                   <span class="badge" [class]="badgeFor(check.status)">{{ check.status }}</span>
                 </h3>
                 <p>{{ check.detail }}</p>
                 <p class="fix">
-                  <span class="fix-label">What to do:</span> {{ fixFor(check.name).text }}
+                  <span class="fix-label">What to do:</span> {{ fixFor(check).text }}
                 </p>
               </div>
               <div class="needs-you-action">
-                @if (fixFor(check.name).command; as command) {
+                @if (fixFor(check).command; as command) {
                   <app-copy-code [text]="command" />
-                } @else if (fixFor(check.name).link; as link) {
+                } @else if (fixFor(check).link; as link) {
                   <a class="button" [routerLink]="link.path">{{ link.label }}</a>
                 } @else {
                   <button type="button" (click)="load()">Check again</button>
@@ -84,7 +84,7 @@
               @for (check of good(); track check.name) {
                 <li>
                   <span class="badge badge-ok">ok</span>
-                  <strong>{{ labelFor(check.name) }}</strong>
+                  <strong>{{ labelFor(check) }}</strong>
                   <span>{{ check.detail }}</span>
                 </li>
               }

@@ -18,6 +18,7 @@ import { appRoutes } from './app-routes';
 import { AppPublic } from './app-public';
 import { AppMove } from './app-move';
 import { AppSignIn } from './app-sign-in';
+import { AppSetup } from './app-setup';
 import { InstallDrafts } from './install-drafts';
 import { UninstallApp } from './uninstall-app';
 
@@ -34,7 +35,7 @@ interface ConfigRow {
  * lives in the wizard (`install-wizard.ts`), not on this page.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage, RouterLink, UninstallApp, AppSignIn, AppPublic, AppMove, Dialog],
+  imports: [OperationProgress, Loading, StateMessage, RouterLink, UninstallApp, AppSignIn, AppPublic, AppMove, AppSetup, Dialog],
   selector: 'app-catalog',
   templateUrl: './catalog.html',
 })
@@ -164,6 +165,12 @@ export class Catalog implements OnInit {
   protected close(): void {
     this.selected.set(null);
     this.operationId.set(null);
+  }
+
+  /** S324: the setup the card follows stopped, finished or was skipped; a finished one leaves the card. */
+  protected onSetupSettled(name: string, status: string): void {
+    const setup = status === 'stopped' ? ('stopped' as const) : undefined;
+    this.packages.update((all) => all.map((p) => (p.name === name ? { ...p, setup } : p)));
   }
 
   protected onUninstalled(name: string): void {

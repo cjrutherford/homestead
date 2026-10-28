@@ -28,6 +28,7 @@ import (
 // MountAppPublic registers the public app name routes.
 func (s *Server) MountAppPublic(st *store.Store, secrets *secret.Store, catalogDir string) {
 	p := &appPublic{s: s, st: st, secrets: secrets, catalogDir: catalogDir}
+	s.appPublic = p
 	s.mux.HandleFunc("GET /api/v1/catalog/{name}/public", p.status)
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/public/plan", p.plan)
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/public/apply", p.apply)
@@ -719,19 +720,35 @@ func (p *appPublic) apply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	plan, err := p.buildPlan(r.Context(), r.PathValue("name"), req)
+	id, err := p.start(r.Context(), r.PathValue("name"), req, operatorActor(r))
+	if errors.Is(err, errPlanChanged) {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
 	if err != nil {
 		p.writeError(w, err)
 		return
 	}
+	writeJSON(w, map[string]any{"id": id})
+}
+
+// errPlanChanged is a plan that no longer matches its approved digest.
+var errPlanChanged = errors.New("the plan changed since it was reviewed; review it again")
+
+// start plans the public name again, compares it with req.Digest, and
+// starts the change as an audited operation (S290). The apply route and
+// the appliance-run app setup (ADR-048) both go through it.
+func (p *appPublic) start(ctx context.Context, name string, req appPublicRequest, actor string) (int64, error) {
+	plan, err := p.buildPlan(ctx, name, req)
+	if err != nil {
+		return 0, err
+	}
 	if plan.Digest != req.Digest {
-		http.Error(w, "the plan changed since it was reviewed; review it again", http.StatusConflict)
-		return
+		return 0, errPlanChanged
 	}
 	token, err := tunnelToken(p.secrets)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
-		return
+		return 0, refusePlan(http.StatusUnprocessableEntity, "%s", err.Error())
 	}
 	def := appPublicAddDefinition(p.st, token, plan)
 	if plan.Path != "" {
@@ -747,13 +764,12 @@ func (p *appPublic) apply(w http.ResponseWriter, r *http.Request) {
 		action, detail = "app.public.remove", fmt.Sprintf("%s: %s off tunnel %s", plan.App, plan.Hostname, plan.Tunnel)
 	}
 	runner := operation.NewRunner(p.st)
-	op, err := runner.Start(r.Context(), def, "")
+	op, err := runner.Start(ctx, def, "")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return 0, refusePlan(http.StatusInternalServerError, "%s", err.Error())
 	}
-	p.s.auditOperation(p.st, runner, op.ID, operatorActor(r), action, fmt.Sprintf("operation %d: %s", op.ID, detail))
-	writeJSON(w, map[string]any{"id": op.ID})
+	p.s.auditOperation(p.st, runner, op.ID, actor, action, fmt.Sprintf("operation %d: %s", op.ID, detail))
+	return op.ID, nil
 }
 
 // trustAppHosts keeps the app's own host allow-list in step (S313);

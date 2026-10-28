@@ -81,6 +81,7 @@ const TYPES: Record<string, OrderLabel> = {
   'backup.job': { title: 'Run scheduled backup', done: 'Scheduled backup finished' },
   'backup.restore': { title: 'Restore backup', done: 'Backup restored' },
   'app.update': { title: 'Update app', done: 'App updated' },
+  'app.setup': { title: 'Set up app', done: 'App set up' },
   'caddy.reconcile': { title: 'Reconcile routes', done: 'Routes reconciled' },
   'catalog.install': { title: 'Install app', done: 'App installed' },
   'catalog.remove': { title: 'Uninstall app', done: 'App uninstalled' },
