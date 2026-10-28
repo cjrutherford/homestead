@@ -88,4 +88,16 @@ describe('reauthInterceptor', () => {
     expect(status).toBe(403);
     expect(reauth.request()).toBeNull();
   });
+
+  it('shows the local-only notice, not the password, on local-only, and does not retry', () => {
+    let status = 0;
+    http.post('/api/v1/sso/plan', {}).subscribe({ error: (e) => (status = e.status) });
+    backend.expectOne('/api/v1/sso/plan').flush('no', refuse('local-only'));
+    expect(reauth.request()?.localOnly).toBe(true);
+    expect(reauth.request()?.stepUp).toBe(false);
+    reauth.request()?.answer(null);
+    backend.expectNone('/api/v1/sso/plan');
+    expect(status).toBe(403);
+    expect(reauth.request()).toBeNull();
+  });
 });

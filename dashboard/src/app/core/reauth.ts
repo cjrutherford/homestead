@@ -8,6 +8,8 @@ export const REAUTH_REQUIRED = 'reauth-required';
 export const REAUTH_INVALID = 'reauth-invalid';
 /** A People action on the public address needs a fresh Authentik sign-in (ADR-049). */
 export const STEPUP_REQUIRED = 'stepup-required';
+/** A step-up route on the public address that only works locally (S335). */
+export const LOCAL_ONLY = 'local-only';
 
 /** A pending request for the local password. */
 export interface ReauthRequest {
@@ -19,6 +21,11 @@ export interface ReauthRequest {
    * request is not retried.
    */
   stepUp?: boolean;
+  /**
+   * True when the action only works from the local or overlay address: the
+   * dialog explains that, with no password field and no Authentik button.
+   */
+  localOnly?: boolean;
   /** Answers with the password, or null when the owner cancelled. */
   answer: (password: string | null) => void;
 }
@@ -39,12 +46,13 @@ export class Reauth {
    */
   readonly dialog = signal<Type<unknown> | null>(null);
 
-  ask(invalid: boolean, stepUp = false): Observable<string | null> {
+  ask(invalid: boolean, stepUp = false, localOnly = false): Observable<string | null> {
     return new Observable((subscriber) => {
       void import('../ui/reauth-dialog').then((m) => this.dialog.set(m.ReauthDialog));
       this.request.set({
         invalid,
         stepUp,
+        localOnly,
         answer: (password) => {
           this.request.set(null);
           this.dialog.set(null);
@@ -65,6 +73,9 @@ export const reauthInterceptor: HttpInterceptorFn = (req, next) => {
           err instanceof HttpErrorResponse && err.status === 403 ? err.headers?.get('X-Homestead-Error') : null;
         if (code === STEPUP_REQUIRED) {
           return reauth.ask(false, true).pipe(switchMap(() => throwError(() => err)));
+        }
+        if (code === LOCAL_ONLY) {
+          return reauth.ask(false, false, true).pipe(switchMap(() => throwError(() => err)));
         }
         if (code !== REAUTH_REQUIRED && code !== REAUTH_INVALID) {
           return throwError(() => err);

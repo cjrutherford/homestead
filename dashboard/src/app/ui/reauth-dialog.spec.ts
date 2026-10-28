@@ -109,4 +109,43 @@ describe('ReauthDialog', () => {
       el.remove();
     });
   });
+
+  describe('an action that only works locally', () => {
+    async function openLocalOnly(ssoStatus: () => unknown) {
+      await TestBed.configureTestingModule({
+        imports: [ReauthDialog],
+        providers: [{ provide: SsoService, useValue: { ssoStatus } }],
+      }).compileComponents();
+      const answers: (string | null)[] = [];
+      const request: ReauthRequest = { invalid: false, localOnly: true, answer: (p) => answers.push(p) };
+      const fixture = TestBed.createComponent(ReauthDialog);
+      fixture.componentRef.setInput('request', request);
+      document.body.appendChild(fixture.nativeElement);
+      fixture.detectChanges();
+      return { fixture, answers };
+    }
+
+    it('names the local address and offers no password field or Authentik button', async () => {
+      const { fixture } = await openLocalOnly(() =>
+        of({ defaults: { origins: ['https://homestead.local', window.location.origin] }, spec: undefined }),
+      );
+      fixture.detectChanges();
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.textContent).toContain('only works from your home network or overlay');
+      expect(el.textContent).toContain('https://homestead.local');
+      expect(el.querySelector('input')).toBeNull();
+      expect(el.textContent).not.toContain('Sign in with Authentik again');
+      el.remove();
+    });
+
+    it('falls back to a plain phrase when the address is unknown', async () => {
+      const { fixture, answers } = await openLocalOnly(() => throwError(() => new Error('down')));
+      fixture.detectChanges();
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.textContent).toContain('your local or overlay address');
+      (el.querySelector('.dialog-actions button') as HTMLButtonElement).click();
+      expect(answers).toEqual([null]);
+      el.remove();
+    });
+  });
 });

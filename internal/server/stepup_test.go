@@ -77,14 +77,15 @@ func TestPublicNameStepUpMatrix(t *testing.T) {
 	if got := a.auditCount(t, "session.step-up.authorised", "ok"); got != before+5 {
 		t.Errorf("authorised audit entries grew by %d, want 5", got-before)
 	}
-	// Every other step-up route behaves as before: the password is needed,
-	// and the public name never takes it.
+	// Every other step-up route is local-only on the public name (the link
+	// routes are refused earlier as public-host); the name never takes the
+	// password.
 	for p := range stepUpRoutes {
 		if publicStepUpRoutes[p] {
 			continue
 		}
 		rec := do(p)
-		if c := stepUpCode(rec); rec.Code != 403 || (c != ErrorCodeReauthRequired && c != ErrorCodePublicHost) {
+		if c := stepUpCode(rec); rec.Code != 403 || (c != ErrorCodeLocalOnly && c != ErrorCodePublicHost) {
 			t.Errorf("%s stepped up on the public name: %d %q", p, rec.Code, c)
 		}
 		m, path := patternRequest(p)
@@ -119,6 +120,15 @@ func TestPublicNameStepUpMatrix(t *testing.T) {
 		if rec.Code != 403 || stepUpCode(rec) != ErrorCodeReauthRequired {
 			t.Errorf("%s on the local name stepped up: %d %q", p, rec.Code, stepUpCode(rec))
 		}
+	}
+	// A non-People step-up route still asks for the password locally and
+	// says local-only (not the password prompt) on the public name.
+	mm, pp := patternRequest("POST /api/v1/sso/plan")
+	if rec := a.req(mm, pp, "{}", "", cookie); rec.Code != 403 || stepUpCode(rec) != ErrorCodeReauthRequired {
+		t.Errorf("sso plan on the local name: %d %q", rec.Code, stepUpCode(rec))
+	}
+	if rec := a.publicDo(dashPublic, mm, pp, cookie); rec.Code != 403 || stepUpCode(rec) != ErrorCodeLocalOnly {
+		t.Errorf("sso plan on the public name: %d %q", rec.Code, stepUpCode(rec))
 	}
 }
 

@@ -6,6 +6,7 @@ import {
   provideHttpClientTesting,
   HttpTestingController,
 } from '@angular/common/http/testing';
+import { ToastService } from './core/toast.service';
 import { App, NAV_GROUPS_KEY } from './app';
 import { routes } from './app.routes';
 import { SESSION_STORAGE_KEY } from './auth/session.service';
@@ -268,5 +269,27 @@ describe('App logged in', () => {
     localStorage.removeItem('homestead.theme');
     await setup('CLAIMED');
     expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+  });
+
+  describe('a failed Authentik step-up', () => {
+    const original = window.location.pathname + window.location.search;
+    afterEach(() => window.history.replaceState(null, '', original));
+
+    it('shows the message for the code and drops sso_error from the address', async () => {
+      window.history.replaceState(null, '', '/?sso_error=stale');
+      const fixture = await setup('CLAIMED');
+      const router = TestBed.inject(Router);
+      await visit(fixture, '/advanced?sso_error=stale');
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      fixture.detectChanges();
+      expect(TestBed.inject(ToastService).toasts()[0]?.message).toContain("Authentik didn't ask for your password again");
+      expect(router.url).toBe('/advanced');
+    });
+
+    it('says nothing without a code', async () => {
+      window.history.replaceState(null, '', '/');
+      await setup('CLAIMED');
+      expect(TestBed.inject(ToastService).toasts()).toEqual([]);
+    });
   });
 });

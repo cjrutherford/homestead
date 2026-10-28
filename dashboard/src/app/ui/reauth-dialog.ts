@@ -1,4 +1,4 @@
-import { Component, Injector, inject, input, signal } from '@angular/core';
+import { Component, Injector, OnInit, inject, input, signal } from '@angular/core';
 import { ReauthRequest } from '../core/reauth';
 import { SsoService } from '../sso/sso.service';
 import { Dialog } from './dialog';
@@ -12,7 +12,22 @@ import { Dialog } from './dialog';
   selector: 'app-reauth-dialog',
   imports: [Dialog],
   template: `
-    @if (request().stepUp) {
+    @if (request().localOnly) {
+      <app-dialog heading="Use your home network" (dismissed)="request().answer(null)">
+        <p>
+          This action only works from your home network or overlay; open the dashboard at
+          @if (localName(); as name) {
+            <strong>{{ name }}</strong>
+          } @else {
+            your local or overlay address
+          }
+          to continue.
+        </p>
+        <div class="dialog-actions">
+          <button type="button" class="quiet" (click)="request().answer(null)">Close</button>
+        </div>
+      </app-dialog>
+    } @else if (request().stepUp) {
       <app-dialog heading="Sign in with Authentik again" (dismissed)="request().answer(null)">
         <p>
           This action needs a fresh Authentik sign-in, even though you are signed in. Your local
@@ -53,14 +68,35 @@ import { Dialog } from './dialog';
     }
   `,
 })
-export class ReauthDialog {
+export class ReauthDialog implements OnInit {
   readonly request = input.required<ReauthRequest>();
 
   private readonly injector = inject(Injector);
   protected readonly going = signal(false);
   protected readonly failed = signal(false);
+  /** Where the owner opens the dashboard locally, once known (S335). */
+  protected readonly localName = signal<string | null>(null);
   /** Leaves for Authentik; replaceable in tests. */
   protected assign = (url: string): void => window.location.assign(url);
+
+  ngOnInit(): void {
+    if (this.request().localOnly) {
+      this.findLocalName();
+    }
+  }
+
+  /** Picks a dashboard address from the sign-in setup that is not this one. */
+  private findLocalName(): void {
+    const here = window.location.origin;
+    this.injector.get(SsoService).ssoStatus().subscribe({
+      next: (state) => {
+        const publics = state.defaults.public_origins ?? [];
+        const all = [...(state.spec?.origins ?? []), ...(state.defaults.origins ?? [])];
+        this.localName.set(all.find((o) => o !== here && !publics.includes(o)) ?? null);
+      },
+      error: () => this.localName.set(null),
+    });
+  }
 
   /** Starts the step-up and goes to Authentik, returning to this page. */
   protected signInAgain(): void {

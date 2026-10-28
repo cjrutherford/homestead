@@ -9,6 +9,8 @@ import { ThemeService } from './core/theme.service';
 import { SetupService } from './setup/setup.service';
 import { WorkOrders } from './core/work-orders.service';
 import { Reauth } from './core/reauth';
+import { stepUpErrorMessage } from './core/sso-errors';
+import { ToastService } from './core/toast.service';
 import { ToastRegion } from './ui/toast-region';
 import { WorkOrdersRail } from './ui/work-orders-rail';
 
@@ -64,6 +66,9 @@ export class App {
   private readonly workOrders = inject(WorkOrders);
   private readonly setup = inject(SetupService);
   protected readonly reauth = inject(Reauth);
+  private readonly toasts = inject(ToastService);
+  /** A failed step-up came back as ?sso_error=; the param is dropped once shown (S335). */
+  private ssoErrorShown = false;
   // Injected so a stored theme choice is applied at startup.
   protected readonly theme = inject(ThemeService);
 
@@ -87,6 +92,13 @@ export class App {
 
   constructor() {
     this.loadIdentity();
+    // A failed Authentik step-up lands on the root with ?sso_error=<code>.
+    // The login and sign-in pages read their own codes.
+    const ssoError = new URLSearchParams(window.location.search).get('sso_error');
+    if (ssoError && window.location.pathname === '/') {
+      this.toasts.show(stepUpErrorMessage(ssoError) ?? '', 'error');
+      this.ssoErrorShown = true;
+    }
     // Operations already running (started before a reload, or from the CLI) join the rail.
     effect(() => {
       if (this.sessions.isLoggedIn()) {
@@ -99,6 +111,16 @@ export class App {
       }
     });
     this.router.events.pipe(filter((event) => event instanceof NavigationEnd)).subscribe((event) => {
+      if (this.ssoErrorShown) {
+        this.ssoErrorShown = false;
+        if (this.router.parseUrl(event.urlAfterRedirects).queryParams['sso_error'] !== undefined) {
+          void this.router.navigate([], {
+            queryParams: { sso_error: null },
+            queryParamsHandling: 'merge',
+            replaceUrl: true,
+          });
+        }
+      }
       this.enter(event.urlAfterRedirects);
       if (this.drawerOpen()) {
         this.close(false);

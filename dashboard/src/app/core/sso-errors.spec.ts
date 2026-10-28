@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ssoErrorMessage } from './sso-errors';
+import { ssoErrorMessage, stepUpErrorMessage } from './sso-errors';
 
 describe('ssoErrorMessage', () => {
   it('uses the fixed sentence when Authentik did not answer', () => {
@@ -20,5 +20,24 @@ describe('ssoErrorMessage', () => {
   it('never repeats an unknown code back; it falls back to a plain sentence', () => {
     const message = ssoErrorMessage('<script>alert(1)</script>');
     expect(message).toBe('Sign-in with Authentik did not finish. Use your local password.');
+  });
+});
+
+describe('stepUpErrorMessage', () => {
+  it('says what to do for each step-up failure', () => {
+    expect(stepUpErrorMessage('stale')).toBe(
+      "Authentik didn't ask for your password again, so the step-up wasn't accepted. Try again.",
+    );
+    expect(stepUpErrorMessage('session')).toBe(
+      "The sign-in didn't match this dashboard session. Sign in again and retry.",
+    );
+    for (const code of ['unlinked', 'state', 'unavailable', 'denied', 'rate-limited']) {
+      expect(stepUpErrorMessage(code)).toMatch(/\.$/);
+    }
+  });
+
+  it('is silent without a code and never echoes an unknown one', () => {
+    expect(stepUpErrorMessage(null)).toBeNull();
+    expect(stepUpErrorMessage('<b>x</b>')).toBe("The Authentik step-up didn't finish. Try again.");
   });
 });

@@ -74,6 +74,7 @@ const (
 	reasonVerifyError    = "session-verify-error"
 	reasonReauth         = "reauth-required"
 	reasonStepUp         = "stepup-required"
+	reasonLocalOnly      = "local-only"
 )
 
 // auditActionRejected is the audit action of aggregated rejection entries.
@@ -346,6 +347,10 @@ const (
 	// ErrorCodeStepUpRequired: a People action on the public dashboard
 	// name needs a fresh Authentik sign-in (ADR-049 §1).
 	ErrorCodeStepUpRequired = "stepup-required"
+	// ErrorCodeLocalOnly: a step-up route that is not a People route, on a
+	// public dashboard name; it only works from the local or overlay
+	// address (S335).
+	ErrorCodeLocalOnly = "local-only"
 )
 
 // Classify returns the class declared for a registered pattern.
@@ -552,6 +557,12 @@ func (b *boundary) check(mux *recordingMux, r *http.Request) (*operatorSession, 
 			if v := b.publicStepUp(r, session, pattern); v.status != 0 {
 				return nil, v
 			}
+		} else if onPublicHost(r) {
+			// The other step-up routes need the local password, which a
+			// public name never takes: say where to go instead (S335).
+			v := reject(http.StatusForbidden, "this action only works from your home network or overlay address", pattern, reasonLocalOnly)
+			v.code = ErrorCodeLocalOnly
+			return nil, v
 		} else if v := b.stepUp(r, session.Username, pattern); v.status != 0 {
 			return nil, v
 		}
