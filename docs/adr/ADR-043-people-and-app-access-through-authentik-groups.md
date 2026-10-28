@@ -128,6 +128,9 @@ or **Remove from Homestead**.
 - Edge forward-auth in front of each app: a separate decision; app-level
   OIDC plus bindings covers the need without it.
 
+## Amended by ADR-049
+On a public dashboard name, the People step-up routes accept a fresh Authentik sign-in instead of the local password, and the sign-in plan sets up Authentik's recovery flow; ADR-049 holds the substance.
+
 ## Consequences
 - The Authentik-side plan grows from two objects to groups, bindings and a
   property mapping per app. It stays idempotent and re-plannable.

@@ -167,6 +167,9 @@ exactly when an owner most needs the dashboard.
 ## Amends
 This record amends ADR-020; ADR-020 carries a pointer to it.
 
+## Amended by ADR-049
+On a public dashboard name, the People step-up routes accept a fresh Authentik sign-in instead of the local password, and the sign-in plan sets up Authentik's recovery flow; ADR-049 holds the substance.
+
 ## Consequences
 - The local `owner` account stays permanently; no code path may delete,
   disable or SSO-gate it, and local login is never made conditional on

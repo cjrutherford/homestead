@@ -103,6 +103,9 @@ The owner wants to reach the dashboard from outside the home, but only through A
 - **A domain that also names local apps through split DNS:** the owner kept the local names unchanged.
 - **Asking for the account ID:** the token and the zone already identify it.
 
+## Amended by ADR-049
+On a public dashboard name, the People step-up routes accept a fresh Authentik sign-in instead of the local password, and the sign-in plan sets up Authentik's recovery flow; ADR-049 holds the substance.
+
 ## Consequences
 - The amended principle is recorded in `AGENTS.md`.
 - New routes:
