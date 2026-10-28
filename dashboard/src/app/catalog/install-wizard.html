@@ -667,6 +667,18 @@
                       <p>Sign in with Authentik is not offered yet: {{ si.reason }}</p>
                     }
                   }
+                  @if (filesLink(); as fl) {
+                    <h4>Files in Nextcloud</h4>
+                    <ul aria-label="Nextcloud links for files">
+                      @for (line of fl.lines; track line) {
+                        <li>{{ line }}</li>
+                      }
+                    </ul>
+                    <p class="hint">
+                      Once {{ m.Title }} is set up, documents go to {{ fl.base_url }}, folder {{ fl.root }}@if (fl.new_link) {, as account {{ fl.account }} with an app password Homestead creates}.
+                      Re-link or unlink on the Craft files page.
+                    </p>
+                  }
                   <h4>Homestead will leave alone</h4>
                   <ul>
                     @for (line of s.leftAlone; track line) {

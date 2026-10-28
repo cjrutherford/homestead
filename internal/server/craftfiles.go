@@ -16,6 +16,7 @@ import (
 
 	"homestead/internal/audit"
 	"homestead/internal/auth"
+	"homestead/internal/catalog"
 	"homestead/internal/cert"
 	"homestead/internal/craftfiles"
 	"homestead/internal/docker"
@@ -68,7 +69,9 @@ type CraftFilesConfig struct {
 	Auth     *auth.Service
 	Local    *cert.LocalTLS // optional: trust the internal CA for Nextcloud
 	YAMLPath string
-	Limits   craftfiles.Limits
+	// CatalogDir finds this appliance's own Nextcloud (S326).
+	CatalogDir string
+	Limits     craftfiles.Limits
 	// Settings supplies the desired-configuration limits per request.
 	Settings func() map[string]any
 	Now      func() time.Time
@@ -127,6 +130,17 @@ func (s *Server) MountCraftFiles(c CraftFilesConfig) *CraftFiles {
 			}
 			return out, nil
 		},
+	}
+	if c.CatalogDir != "" {
+		mgr.Appliance = func() (craftfiles.Appliance, bool) {
+			base, account, ok := applianceNextcloud(c.Store, c.CatalogDir, true)
+			if !ok {
+				return craftfiles.Appliance{}, false
+			}
+			return craftfiles.Appliance{BaseURL: base, Account: account, Password: func() (string, error) {
+				return c.Secrets.Get(catalog.SecretStoreName(nextcloudPackage, nextcloudAdminSecret))
+			}}, true
+		}
 	}
 	_ = mgr.SyncYAML()
 	sessions := craftfiles.NewSessions(authOperator{c.Auth})

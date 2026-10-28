@@ -199,6 +199,8 @@ export class InstallWizard implements OnInit {
   /** S298: "Sign in with Authentik", checked by default when the install plan offers it. */
   protected readonly signInWanted = signal(true);
   protected readonly signInPreview = computed(() => this.plan()?.sign_in ?? null);
+  /** S326: the craft apps the install's setup links to Nextcloud for files. */
+  protected readonly filesLink = computed(() => this.plan()?.files_link ?? null);
   /** People who can be granted the app with the install (S317); null until read, or when Homestead cannot manage people. */
   protected readonly signInPeople = signal<Person[] | null>(null);
   protected readonly grantIds = signal<number[]>([]);
@@ -1102,6 +1104,12 @@ export class InstallWizard implements OnInit {
       if (this.grantIds().length > 0) {
         setup.people = [...this.grantIds()];
       }
+    }
+    // S326 (ADR-048 §4): the Nextcloud link the review lists runs with the
+    // rest, after the address; it needs no approval of its own.
+    const filesLink = this.filesLink();
+    if (filesLink) {
+      setup.files_link = { digest: filesLink.digest };
     }
     body['setup'] = setup;
     this.setupView.set(null);

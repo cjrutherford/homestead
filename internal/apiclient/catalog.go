@@ -100,6 +100,22 @@ type InstallPlanReport struct {
 	// Digest binds the install to this plan (S313); install with it in
 	// the body answers 409 when the plan changed.
 	Digest string `json:"digest"`
+	// FilesLink is the Nextcloud link for craft files the install's
+	// setup makes (S326); install with setup.files_link to approve it.
+	FilesLink *InstallFilesLink `json:"files_link,omitempty"`
+}
+
+// InstallFilesLink is the nextcloud-link setup step an install brings:
+// a craft app linked to Nextcloud for its files, or, for Nextcloud, the
+// craft apps already installed (S326, ADR-048 §4).
+type InstallFilesLink struct {
+	Apps    []string `json:"apps"`
+	Lines   []string `json:"lines"`
+	BaseURL string   `json:"base_url"`
+	Account string   `json:"account"`
+	Root    string   `json:"root"`
+	NewLink bool     `json:"new_link"`
+	Digest  string   `json:"digest"`
 }
 
 // OperationStarted carries the started operation id.

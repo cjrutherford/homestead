@@ -144,6 +144,31 @@ describe('AppSetup', () => {
     expect(button('Skip the rest')).toBeDefined();
   });
 
+  it('reviews a stopped Nextcloud link and resumes it (S326)', () => {
+    open({
+      ...STOPPED,
+      reason: 'Stopped at the link to Nextcloud for files',
+      steps: [
+        { name: 'address', state: 'done', digest: 'ad1' },
+        { name: 'nextcloud-link', state: 'failed', digest: 'fl1', reason: 'Nextcloud rejected the credential' },
+      ],
+    } as AppSetupView);
+    expect(text()).toContain('Link to Nextcloud for files Failed');
+    button('Review')!.click();
+    read({
+      ...STOPPED,
+      review: {
+        step: 'nextcloud-link', digest: 'fl1',
+        files_link: { apps: ['gridcraft'], lines: ['Link GridCraft to Nextcloud for files'], base_url: 'https://homestead.lan/apps/nextcloud', account: 'admin', root: 'Homestead', new_link: true, digest: 'fl1' },
+      },
+    } as AppSetupView);
+    expect(text()).toContain('Link GridCraft to Nextcloud for files');
+    button('Approve and resume')!.click();
+    const resume = http.expectOne(`${URL}/resume`);
+    expect(resume.request.body).toEqual({ digest: 'fl1' });
+    resume.flush({ id: 63 });
+  });
+
   it('skips the rest of a stopped setup', () => {
     open(STOPPED);
     button('Skip the rest')!.click();

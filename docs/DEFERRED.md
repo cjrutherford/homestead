@@ -1238,7 +1238,7 @@ Craft apps under one host, by path (ADR-045).
 
 - Craft apps still install with their own route names. ADR-048 §4 puts
   them through the same setup at `/apps/<name>/` and links them to
-  Nextcloud automatically (S326).
+  Nextcloud automatically (S326). Done in S326.
 - Issuing the public certificate from the tunnel plan, and moving
   applied apps to the public issuer (ADR-048 §5–§6), are S325.
 - The CLI cannot approve sign-in or people with an install. Only
@@ -1275,3 +1275,23 @@ Craft apps under one host, by path (ADR-045).
 - The terms URL shown is Let's Encrypt's repository page. The exact
   subscriber agreement is the one the CA's directory names at
   registration.
+
+## S326 craft installs use the same setup, by path, linked to Nextcloud (2026-10-28)
+
+- The automatic link uses Nextcloud's administrator account (`admin`),
+  with an app password Homestead creates. A dedicated Nextcloud account
+  for craft files was not asked for.
+- Only the five craft apps with file hooks (cadcraft, effectcraft,
+  filmcraft, gridcraft, pdfcraft) are linked. Lightcraft and the others
+  keep documents in the browser.
+- The link is global (one Nextcloud for all craft apps). A craft app
+  installed while another Nextcloud is linked reuses that link; the
+  review says where documents go.
+- Installing Nextcloud when a link to another Nextcloud exists links
+  nothing and does not offer to move the link.
+- Waiting for a Nextcloud that is still installing is bounded at 5
+  minutes. After that the step fails and is resumed from the card.
+- A craft route that arrives without a path is moved to its path without
+  saying so to the client that sent it; the reconcile result shows the
+  path route.
+- Not checked live on VM 2 (not touched in this slice).

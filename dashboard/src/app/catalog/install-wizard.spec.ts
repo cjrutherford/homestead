@@ -729,6 +729,24 @@ describe('InstallWizard', () => {
       http.expectNone('/api/v1/people/4/apps/gridcraft');
     });
 
+    it('lists the Nextcloud link in the review and approves it with the install (S326)', () => {
+      start(CRAFT, { craft: { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] } });
+      to('review');
+      const filesLink = {
+        apps: ['gridcraft'], lines: ['Link GridCraft to Nextcloud for files'], base_url: 'https://homestead.lan/apps/nextcloud',
+        account: 'admin', root: 'Homestead', new_link: true, digest: 'fl1',
+      };
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft', { files_link: filesLink }));
+      fixture.detectChanges();
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+      expect(text).toContain('Link GridCraft to Nextcloud for files');
+      expect(text).toContain('as account admin with an app password Homestead creates');
+      button('Install GridCraft')!.click();
+      const install = http.expectOne('/api/v1/catalog/gridcraft/install');
+      expect(install.request.body.setup).toEqual({ files_link: { digest: 'fl1' } });
+      install.flush({ id: 7 });
+    });
+
     it('approves sign-in with the install and shows where its setup stopped (S298, S324)', () => {
       start(CRAFT, { craft: { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] } });
       to('review');

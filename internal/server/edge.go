@@ -157,6 +157,24 @@ func inferCraftApps(routes []docker.Route) {
 	}
 }
 
+// pathCraftRoutes serves every craft app at its path (ADR-045 §1). A
+// craft app is never on a name of its own: a route that would give it
+// one, from any client or an older table, is moved to /apps/<name>/ with
+// the prefix stripped, as every craft package declares, before it is
+// checked or saved (S326).
+func pathCraftRoutes(routes []docker.Route) {
+	for i, r := range routes {
+		if r.CraftApp == "" || r.Dashboard || r.IsPath() {
+			continue
+		}
+		r.Path = docker.AppPathFor(r.CraftApp)
+		r.StripPrefix = true
+		r.Tunnel = nil
+		r.Published = false
+		routes[i] = r
+	}
+}
+
 // requireLocalDashboardNames refuses a dashboard route whose name or alias
 // is outside the suffixes the internal root can vouch for, the same rule
 // PUT /api/v1/dashboard/address applies.
@@ -237,6 +255,7 @@ func startEdgeReconcile(ctx context.Context, runner *operation.Runner, st *store
 		routes = []docker.Route{}
 	}
 	inferCraftApps(routes)
+	pathCraftRoutes(routes)
 	routes = preserveDashboardRoute(st, routes)
 	routes = preserveTunnelNames(st, routes)
 	if err := requireLocalDashboardNames(routes); err != nil {

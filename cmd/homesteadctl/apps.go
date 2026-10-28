@@ -143,8 +143,26 @@ func runAppsPlan(ctx context.Context, client *apiclient.Client, args []string, s
 	for _, note := range plan.Notes {
 		fmt.Fprintf(stdout, "note: %s\n", note)
 	}
+	printFilesLink(stdout, plan.FilesLink)
 	fmt.Fprintf(stdout, "actions: %s\n", strings.Join(plan.Actions, ", "))
 	return exitOK
+}
+
+// printFilesLink lists the craft apps the install's setup links to
+// Nextcloud for files (S326). It is part of the install's review: the
+// install approves it with the rest.
+func printFilesLink(w io.Writer, link *apiclient.InstallFilesLink) {
+	if link == nil {
+		return
+	}
+	for _, line := range link.Lines {
+		fmt.Fprintf(w, "files: %s\n", line)
+	}
+	how := "with its existing link"
+	if link.NewLink {
+		how = "as account " + link.Account + ", with an app password Homestead creates"
+	}
+	fmt.Fprintf(w, "files: into %s/%s %s, after the install\n", link.BaseURL, link.Root, how)
 }
 
 // formatMount renders one planned mount: service target <- host path,
@@ -216,15 +234,56 @@ func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string
 	if public {
 		return installWithPublic(ctx, client, pkg, file, body, publicName, approvePublic, stdout, stderr)
 	}
+	// A craft app, or Nextcloud, brings a Nextcloud link for files; the
+	// plan lists it (apps plan) and the install approves it, so the
+	// appliance adds the address and links once the install succeeds
+	// (S326, ADR-048 §4).
+	install, err := client.PlanInstall(ctx, pkg, body)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	link := install.FilesLink
+	if link != nil {
+		printFilesLink(stdout, link)
+		body["digest"] = install.Digest
+		body["setup"] = map[string]any{"files_link": map[string]any{"digest": link.Digest}}
+	}
 	id, err := client.InstallPackage(ctx, pkg, body)
 	if err != nil {
 		return fail(stderr, err)
 	}
 	if !follow {
 		fmt.Fprintf(stdout, "operation: %d\n", id)
+		if link != nil {
+			fmt.Fprintf(stdout, "setup: the appliance adds the address and links Nextcloud after the install; homesteadctl apps setup status %s\n", pkg)
+		}
 		return exitOK
 	}
-	return followOperation(ctx, client, id, stdout, stderr)
+	if code := followOperation(ctx, client, id, stdout, stderr); code != exitOK || link == nil {
+		return code
+	}
+	return followSetup(ctx, client, pkg, "setup (address, then Nextcloud link):", stdout, stderr)
+}
+
+// followSetup follows the setup the appliance runs after an install and
+// fails when it stopped.
+func followSetup(ctx context.Context, client *apiclient.Client, pkg, title string, stdout, stderr io.Writer) int {
+	setup, err := client.AppSetupStatus(ctx, pkg)
+	if err != nil {
+		return fail(stderr, fmt.Errorf("the app is installed; read its setup with homesteadctl apps setup status %s: %w", pkg, err))
+	}
+	if setup.Operation != 0 && (setup.Status == "running" || setup.Status == "waiting") {
+		fmt.Fprintln(stdout, title)
+		_ = followOperation(ctx, client, setup.Operation, stdout, stderr)
+		if setup, err = client.AppSetupStatus(ctx, pkg); err != nil {
+			return fail(stderr, err)
+		}
+	}
+	if setup.Status == "stopped" {
+		printAppSetup(stdout, setup)
+		return fail(stderr, fmt.Errorf("the app is installed; its setup stopped: review it with homesteadctl apps setup status %s", pkg))
+	}
+	return exitOK
 }
 
 // installWithPublic is `apps install --public` (S313). Without approval
@@ -264,6 +323,7 @@ func installWithPublic(ctx context.Context, client *apiclient.Client, pkg, file 
 		fmt.Fprintf(stdout, "install: %s at %s\n", install.Package, strings.Join(at, ", "))
 		fmt.Fprintf(stdout, "install digest: %s\n", install.Digest)
 		printPublicBeforeInstall(stdout, plan)
+		printFilesLink(stdout, install.FilesLink)
 		named := " " + plan.Hostname
 		if plan.Path != "" {
 			// A path app has no name of its own to pass (ADR-044).
@@ -281,7 +341,12 @@ func installWithPublic(ctx context.Context, client *apiclient.Client, pkg, file 
 	body["digest"] = install.Digest
 	// The appliance adds the app's address and publishes it by the
 	// approved digest once the install succeeds (S324, ADR-048).
-	body["setup"] = map[string]any{"public": map[string]any{"hostname": plan.Hostname, "route": string(route.Host), "digest": approve}}
+	setupBody := map[string]any{"public": map[string]any{"hostname": plan.Hostname, "route": string(route.Host), "digest": approve}}
+	if install.FilesLink != nil {
+		// The Nextcloud link the install review listed (S326).
+		setupBody["files_link"] = map[string]any{"digest": install.FilesLink.Digest}
+	}
+	body["setup"] = setupBody
 	id, err := client.InstallPackage(ctx, pkg, body)
 	if err != nil {
 		return fail(stderr, err)

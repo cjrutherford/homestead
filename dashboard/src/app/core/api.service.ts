@@ -137,9 +137,11 @@ export interface InstallSetupApproval {
   public?: { hostname?: string; route: string; digest: string };
   sign_in?: { digest: string };
   people?: number[];
+  /** S326: the Nextcloud link for craft files the install review listed. */
+  files_link?: { digest: string };
 }
 
-export type AppSetupStepName = 'address' | 'publish' | 'sign-in' | 'people';
+export type AppSetupStepName = 'address' | 'publish' | 'sign-in' | 'people' | 'nextcloud-link';
 export type AppSetupStepState = 'waiting' | 'running' | 'done' | 'changed' | 'failed' | 'skipped';
 
 export interface AppSetupStep {
@@ -160,6 +162,8 @@ export interface AppSetupReview {
   sign_in?: AppSignInPlan;
   people?: string[];
   token_kept?: boolean;
+  /** S326: the nextcloud-link step's plan as it stands now. */
+  files_link?: FilesLinkPlan;
 }
 
 /** GET /api/v1/catalog/:name/setup (S324). */
@@ -232,6 +236,10 @@ export interface CatalogManifest {
   Serve?: string;
   /** The app's path when served by path; empty means /apps/<name>/. */
   Path?: string;
+  /** S326: a path app sees its requests without its path (every craft app). */
+  StripPrefix?: boolean;
+  /** S326: the package's path redirects, kept on its route. */
+  Redirects?: { From: string; To: string }[] | null;
 }
 
 /** The catalog detail exactly as the API sends it: empty lists may be null. */
@@ -308,6 +316,23 @@ export interface InstallPlan {
   sign_in?: SignInPreview;
   /** S313: binds the install to this plan; install with it answers 409 when the plan changed. */
   digest?: string;
+  /** S326: the craft apps the install's setup links to Nextcloud for files. */
+  files_link?: FilesLinkPlan;
+}
+
+/**
+ * S326 (ADR-048 §4): the nextcloud-link setup step. A craft app links itself;
+ * Nextcloud links the craft apps already installed. Approved with the install.
+ */
+export interface FilesLinkPlan {
+  apps: string[];
+  lines: string[];
+  base_url: string;
+  account: string;
+  root: string;
+  /** The step first links this appliance's Nextcloud (an app password Homestead creates). */
+  new_link: boolean;
+  digest: string;
 }
 
 /** The install plan's sign-in offer (S298). */
@@ -457,6 +482,8 @@ export interface CraftFilesStatus {
   credential_stored: boolean;
   daemon_created: boolean;
   apps: CraftFilesApp[];
+  /** S326: this appliance's own Nextcloud, linkable with no password. */
+  appliance_nextcloud?: { base_url: string; account: string };
 }
 
 export interface CraftFilesPlanRequest {
@@ -466,6 +493,8 @@ export interface CraftFilesPlanRequest {
   root?: string;
   create_app_password?: boolean;
   allow_insecure_http?: boolean;
+  /** S326: link this appliance's Nextcloud with the administrator password generated at its install. */
+  appliance?: boolean;
 }
 
 export interface CraftFilesPlan {
@@ -477,6 +506,8 @@ export interface CraftFilesPlan {
   summary: string[];
   warnings: string[];
   expires_at: string;
+  /** S326: a link to this appliance's Nextcloud; approving it needs no password. */
+  appliance?: boolean;
 }
 
 export interface CraftFilesLaunch {

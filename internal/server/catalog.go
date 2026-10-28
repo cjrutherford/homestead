@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/netip"
@@ -359,6 +360,9 @@ type installPlanView struct {
 	Path      string   `json:"path,omitempty"`
 	Addresses []string `json:"addresses"`
 	Digest    string   `json:"digest"`
+	// FilesLink is the Nextcloud link for craft files the install's
+	// setup makes (S326), approved with setup.files_link.
+	FilesLink *filesLinkPlan `json:"files_link,omitempty"`
 }
 
 // installAddresses are the local addresses an install plan gives the app.
@@ -448,6 +452,9 @@ func handleCatalogPlan(s *Server, st *store.Store, catalogDir string) http.Handl
 		if s.appSignIn != nil {
 			view.SignIn = s.appSignIn.preview(req.Manifest, plan, strings.ToLower(strings.TrimSpace(body.PublicName)))
 		}
+		if s.appSetup != nil {
+			view.FilesLink = s.appSetup.filesLinkPreview(req.Manifest)
+		}
 		writeJSON(w, view)
 	}
 }
@@ -489,7 +496,11 @@ func handleCatalogInstall(s *Server, st *store.Store, catalogDir string, runner 
 		if withSetup {
 			rec, err := setup.prepare(req.Manifest, plan, *body.Setup, operatorActor(r))
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				status := http.StatusBadRequest
+				if errors.Is(err, errPlanChanged) {
+					status = http.StatusConflict
+				}
+				http.Error(w, err.Error(), status)
 				return
 			}
 			if err := setup.attach(rec, &def); err != nil {

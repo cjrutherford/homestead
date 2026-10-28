@@ -40,6 +40,8 @@ const (
 	setupPublish = "publish"
 	setupSignIn  = "sign-in"
 	setupPeople  = "people"
+	// setupFilesLink, "nextcloud-link" (S326), runs after the address
+	// for a craft app and last for Nextcloud: see craftlink.go.
 )
 
 // Step states.
@@ -68,6 +70,8 @@ var setupStepLabels = map[string]string{
 	setupPublish: "public address",
 	setupSignIn:  "sign-in with Authentik",
 	setupPeople:  "people who can sign in",
+	// S326: a craft app's files in Nextcloud.
+	setupFilesLink: "link to Nextcloud for files",
 }
 
 // setupApproval is what the install request carries (ADR-048 §1): the
@@ -78,6 +82,9 @@ type setupApproval struct {
 	Public *setupPublicApproval `json:"public,omitempty"`
 	SignIn *setupDigest         `json:"sign_in,omitempty"`
 	People []int64              `json:"people,omitempty"`
+	// FilesLink approves the Nextcloud link for craft files the install
+	// review listed (S326, ADR-048 §4), by its digest.
+	FilesLink *setupDigest `json:"files_link,omitempty"`
 }
 
 type setupPublicApproval struct {
@@ -118,8 +125,10 @@ type setupRecord struct {
 	Routes []docker.Route       `json:"routes"`
 	Public *setupPublicApproval `json:"public,omitempty"`
 	People []int64              `json:"people,omitempty"`
-	Digest string               `json:"install_digest,omitempty"`
-	At     string               `json:"updated_at,omitempty"`
+	// FilesApps are the craft apps the nextcloud-link step links (S326).
+	FilesApps []string `json:"files_apps,omitempty"`
+	Digest    string   `json:"install_digest,omitempty"`
+	At        string   `json:"updated_at,omitempty"`
 }
 
 func (r *setupRecord) step(name string) *setupStep {
@@ -157,6 +166,12 @@ type appSetup struct {
 	// startFn and reviewFn are startStep and review, stubbed in tests.
 	startFn  func(ctx context.Context, rec setupRecord, name, approved, token string) (int64, error)
 	reviewFn func(ctx context.Context, rec setupRecord, name string) stepReview
+	// linkFn links this appliance's Nextcloud (the craft files manager's
+	// LinkAppliance), stubbed in tests; linkWait and linkRetry bound the
+	// wait for a Nextcloud still setting itself up (S326).
+	linkFn    func(ctx context.Context, root, actor string) error
+	linkWait  time.Duration
+	linkRetry time.Duration
 	// mu serializes reads and writes of setup records, so a setup run
 	// never reads its record before the launch that started it saved it.
 	mu sync.Mutex
@@ -166,7 +181,8 @@ type appSetup struct {
 // app's setup, resume a stopped one with a fresh approval of the stopped
 // step's plan, or skip it. Mount it after MountSSO and MountAppPublic.
 func (s *Server) MountAppSetup(st *store.Store, catalogDir string, local *cert.LocalTLS) {
-	a := &appSetup{s: s, st: st, catalogDir: catalogDir, local: local, runner: operation.NewRunner(st), now: time.Now}
+	a := &appSetup{s: s, st: st, catalogDir: catalogDir, local: local, runner: operation.NewRunner(st), now: time.Now,
+		linkWait: 5 * time.Minute, linkRetry: 5 * time.Second}
 	s.appSetup = a
 	s.mux.HandleFunc("GET /api/v1/catalog/{name}/setup", a.status)
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/setup/resume", a.resume)
@@ -362,6 +378,20 @@ func (a *appSetup) prepare(manifest catalog.Manifest, plan catalog.InstallPlan, 
 				ps.State, ps.Reason = stepSkipped, "Sign-in was not set up, so no one was granted the app. Grant people on the People page once sign-in is on."
 			}
 			rec.Steps = append(rec.Steps, ps)
+		}
+	}
+	if fl := approval.FilesLink; fl != nil {
+		step, apps, err := a.approveFilesLink(manifest, fl.Digest)
+		if err != nil {
+			return rec, err
+		}
+		rec.FilesApps = apps
+		if manifest.Name == nextcloudPackage || len(rec.Steps) == 0 || rec.Steps[0].Name != setupAddress {
+			// Nextcloud links the craft apps last, once it is set up.
+			rec.Steps = append(rec.Steps, step)
+		} else {
+			// A craft app is linked once it has its address.
+			rec.Steps = append(rec.Steps[:1], append([]setupStep{step}, rec.Steps[1:]...)...)
 		}
 	}
 	return rec, nil
@@ -612,6 +642,8 @@ func (a *appSetup) startStep(ctx context.Context, rec setupRecord, name, approve
 			}
 		}
 		return 0, nil
+	case setupFilesLink:
+		return 0, a.runFilesLink(ctx, rec, approved)
 	}
 	return 0, fmt.Errorf("unknown setup step %q", name)
 }
@@ -649,6 +681,8 @@ type stepReview struct {
 	SignIn    *appsso.Plan   `json:"sign_in,omitempty"`
 	People    []string       `json:"people,omitempty"`
 	TokenKept *bool          `json:"token_kept,omitempty"`
+	// FilesLink is the nextcloud-link step's plan (S326).
+	FilesLink *filesLinkPlan `json:"files_link,omitempty"`
 	add       []docker.Route
 }
 
@@ -666,16 +700,26 @@ func (a *appSetup) reviewAddress(rec setupRecord) (stepReview, error) {
 		hosts[r.Host] = true
 		out.Addresses = append(out.Addresses, string(r.Host))
 	}
+	have := func(r docker.Route) {
+		out.Addresses = nil
+		if r.CraftApp != "" && !r.IsPath() {
+			// A craft app is never on a name of its own (ADR-045 §1,
+			// S326): reconciling the table as it is moves it to its path.
+			out.add = append([]docker.Route(nil), set.Routes...)
+		}
+	}
 	for _, r := range set.Routes {
 		if hosts[r.Host] {
-			out.Addresses = nil
+			have(r)
 			return out, nil
 		}
 	}
 	if entries, err := catalog.Load(a.catalogDir); err == nil {
-		if m, err := entries.Get(rec.App); err == nil && len(appsso.AppRoutes(m, set.Routes)) > 0 {
-			out.Addresses = nil
-			return out, nil
+		if m, err := entries.Get(rec.App); err == nil {
+			if existing := appsso.AppRoutes(m, set.Routes); len(existing) > 0 {
+				have(existing[0])
+				return out, nil
+			}
 		}
 	}
 	merged := []docker.Route{}
@@ -735,6 +779,16 @@ func (a *appSetup) review(ctx context.Context, rec setupRecord, name string) ste
 		out.Digest = peopleDigest(rec.App, rec.People)
 		for _, id := range rec.People {
 			out.People = append(out.People, personName(a.st, id))
+		}
+	case setupFilesLink:
+		plan, err := a.filesLinkNow(rec)
+		switch {
+		case err != nil:
+			out.Problem = err.Error()
+		case plan == nil:
+			out.Problem = "Nothing is left to link: the apps are gone, set to keep documents in the browser, or have no address, or Nextcloud is not installed. Skip the rest, or link on the Craft files page."
+		default:
+			out.Digest, out.FilesLink = plan.Digest, plan
 		}
 	}
 	return out

@@ -264,3 +264,36 @@ func TestAppsSecretsReveal(t *testing.T) {
 		t.Fatalf("usage exit = %d", code)
 	}
 }
+
+// S326: a craft app's install plan lists its Nextcloud link; apps plan
+// prints it and apps install approves it with the install's setup.
+func TestAppsInstallApprovesTheNextcloudLink(t *testing.T) {
+	var installBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		switch r.URL.Path {
+		case "/api/v1/catalog/cadcraft/plan":
+			_, _ = w.Write([]byte(`{"Package":"cadcraft","Requirements":{"Passed":true},"Routes":[],"Actions":["up"],"digest":"inst-d",
+				"files_link":{"apps":["cadcraft"],"lines":["Link CADCraft to Nextcloud for files"],"base_url":"https://homestead.lan/apps/nextcloud","account":"admin","root":"Homestead","new_link":true,"digest":"link-d"}}`))
+		case "/api/v1/catalog/cadcraft/install":
+			installBody = string(raw)
+			_, _ = w.Write([]byte(`{"id":7}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	file := writeInput(t, `{"domain":"lan"}`)
+	code, stdout, _ := invoke(t, []string{"--server", srv.URL, "apps", "plan", "cadcraft", "-f", file})
+	if code != exitOK || !strings.Contains(stdout, "files: Link CADCraft to Nextcloud for files") ||
+		!strings.Contains(stdout, "files: into https://homestead.lan/apps/nextcloud/Homestead as account admin") {
+		t.Fatalf("plan: %d %s", code, stdout)
+	}
+	code, stdout, _ = invoke(t, []string{"--server", srv.URL, "apps", "install", "cadcraft", "-f", file})
+	if code != exitOK || !strings.Contains(stdout, "operation: 7") || !strings.Contains(stdout, "files: Link CADCraft") {
+		t.Fatalf("install: %d %s", code, stdout)
+	}
+	if !strings.Contains(installBody, `"setup":{"files_link":{"digest":"link-d"}}`) || !strings.Contains(installBody, `"digest":"inst-d"`) {
+		t.Fatalf("install body = %s", installBody)
+	}
+}

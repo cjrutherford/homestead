@@ -114,8 +114,9 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountCraft(st, c.CatalogDir, filepath.Join(filepath.Dir(c.ConfigPath), "craft-trust.yaml"), docker.BuildClient{})
 	srv.MountCraftFiles(CraftFilesConfig{
 		Store: st, Secrets: secrets, Auth: authSvc, Local: local,
-		YAMLPath: filepath.Join(filepath.Dir(c.ConfigPath), "craft-files.yaml"),
-		Limits:   c.CraftLimits,
+		YAMLPath:   filepath.Join(filepath.Dir(c.ConfigPath), "craft-files.yaml"),
+		CatalogDir: c.CatalogDir,
+		Limits:     c.CraftLimits,
 		Settings: func() map[string]any {
 			st, err := configSvc.Get()
 			if err != nil {

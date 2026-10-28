@@ -41,6 +41,17 @@
       }
 
       @if (!plan()) {
+        @if (!st.linked && st.appliance_nextcloud; as nc) {
+          <div class="appliance-link">
+            <p>
+              Nextcloud is installed on this appliance, at {{ nc.base_url }}. Craft apps installed from now on
+              link to it as part of their setup, and installing Nextcloud links the craft apps already here.
+              Link it now with no password: Homestead creates an app password for {{ nc.account }}.
+            </p>
+            <button type="button" class="primary" [disabled]="busy()" (click)="reviewAppliance()">Review link to this appliance's Nextcloud</button>
+            <p class="hint">Or link another Nextcloud below.</p>
+          </div>
+        }
         @if (!st.linked) {
           <form (submit)="$event.preventDefault(); review('link')">
             <label>

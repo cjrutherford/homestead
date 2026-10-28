@@ -14,6 +14,7 @@ import (
 const craftFilesUsage = `usage: homesteadctl craft files <status|link|rotate|unlink|local-only|launch> ...
   status
   link --url URL --account NAME [--root FOLDER] [--allow-insecure-http] (--password-file FILE | --create-app-password --login-password-file FILE) [--yes]
+  link --appliance [--root FOLDER] [--yes]   this appliance's Nextcloud, no password needed
   rotate (--password-file FILE | --create-app-password --login-password-file FILE) [--root FOLDER] [--allow-insecure-http] [--yes]
   unlink [--yes]
   local-only APP on|off
@@ -79,6 +80,9 @@ func printCraftFiles(w io.Writer, st craftfiles.Status) {
 		}
 		fmt.Fprintf(w, "Nextcloud: %s account %s folder %s (%s)\n", st.BaseURL, st.Account, st.Root, cred)
 	}
+	if nc := st.ApplianceNextcloud; nc != nil && !st.Linked {
+		fmt.Fprintf(w, "This appliance's Nextcloud is at %s: link it with homesteadctl craft files link --appliance (new craft installs link it themselves)\n", nc.BaseURL)
+	}
 	for _, a := range st.Apps {
 		state := "Nextcloud"
 		switch {
@@ -103,16 +107,21 @@ func runCraftFilesChange(ctx context.Context, client *apiclient.Client, action s
 	create := set.Bool("create-app-password", false, "have Homestead create the app password (needs --login-password-file)")
 	loginFile := set.String("login-password-file", "", "file holding the account password, used once and not kept")
 	insecure := set.Bool("allow-insecure-http", false, "accept a plain http:// Nextcloud address that is not on this machine (the app password then crosses the network unencrypted)")
+	appliance := set.Bool("appliance", false, "link this appliance's own Nextcloud with the administrator password generated at its install (link only)")
 	yes := set.Bool("yes", false, "approve the plan without asking")
 	if err := set.Parse(args); err != nil {
 		return exitUsage
 	}
-	req := craftfiles.PlanRequest{Action: action, BaseURL: *url, Account: *account, Root: *root, CreateAppPassword: *create, AllowInsecureHTTP: *insecure}
+	if *appliance && (action != craftfiles.ActionLink || *url != "" || *account != "" || *passwordFile != "" || *create || *loginFile != "") {
+		fmt.Fprintln(stderr, "--appliance is for link, with --root and --yes only")
+		return exitUsage
+	}
+	req := craftfiles.PlanRequest{Action: action, BaseURL: *url, Account: *account, Root: *root, CreateAppPassword: *create, AllowInsecureHTTP: *insecure, Appliance: *appliance}
 	if action == craftfiles.ActionLink && req.Root == "" {
-		req.Root = "Homestead"
+		req.Root = craftfiles.DefaultRoot
 	}
 	var ap craftfiles.ApproveRequest
-	if action != craftfiles.ActionUnlink {
+	if action != craftfiles.ActionUnlink && !*appliance {
 		var err error
 		if *create {
 			if *loginFile == "" {

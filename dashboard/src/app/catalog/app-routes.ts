@@ -56,6 +56,11 @@ export function removeAppRoutes(
  * the same shape the install plan produces. Used when the app is installed and
  * the table has no route for it (the wizard was closed mid-install, or the CLI
  * installed it). Public exposure is never chosen here (ADR-006).
+ *
+ * A package served by path (ADR-044, and every craft app, ADR-045 §1) gets
+ * its path, prefix strip and redirects, as the install plan gives them:
+ * before S326 this sent a craft app's route on its own name, which is how
+ * lightcraft answered at lightcraft.lan.
  */
 export function routeFromManifest(manifest: CatalogManifest, host: string, port: number): EdgeRoute | null {
   const service = manifest.Services.find((entry) => entry.Exposes !== '');
@@ -70,5 +75,12 @@ export function routeFromManifest(manifest: CatalogManifest, host: string, port:
     TLS: 'internal',
     Health: { Path: '', IntervalSeconds: 0 },
     ...(manifest.Services.some((entry) => entry.Image.startsWith('homestead/craft-')) ? { CraftApp: manifest.Name } : {}),
+    ...(manifest.Serve === 'path'
+      ? {
+          Path: manifest.Path || `/apps/${manifest.Name}/`,
+          StripPrefix: !!manifest.StripPrefix,
+          Redirects: manifest.Redirects ?? null,
+        }
+      : {}),
   };
 }

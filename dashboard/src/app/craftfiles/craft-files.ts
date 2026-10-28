@@ -79,17 +79,37 @@ export class CraftFiles implements OnInit {
       });
   }
 
+  /**
+   * S326: review linking this appliance's own Nextcloud. Homestead creates the
+   * app password with the administrator password it generated at the install,
+   * so nothing is typed. New craft installs make this link themselves.
+   */
+  reviewAppliance(): void {
+    this.begin();
+    this.api.craftFilesPlan({ action: 'link', appliance: true, root: this.root }).subscribe({
+      next: (plan) => {
+        this.busy.set(false);
+        this.approved.set(null);
+        this.refused.set(null);
+        this.plan.set(plan);
+      },
+      error: (failure: HttpErrorResponse) => this.fail(failure),
+    });
+  }
+
   approve(): void {
     const plan = this.plan();
     if (!plan) {
       return;
     }
     this.begin();
-    const body = {
-      plan_id: plan.id,
-      app_password: this.createPassword ? undefined : this.appPassword || undefined,
-      account_password: this.createPassword ? this.accountPassword || undefined : undefined,
-    };
+    const body = plan.appliance
+      ? { plan_id: plan.id }
+      : {
+          plan_id: plan.id,
+          app_password: this.createPassword ? undefined : this.appPassword || undefined,
+          account_password: this.createPassword ? this.accountPassword || undefined : undefined,
+        };
     // The secrets leave the component before the reply arrives.
     this.appPassword = '';
     this.accountPassword = '';

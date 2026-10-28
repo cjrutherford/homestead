@@ -16,6 +16,7 @@ export const SETUP_STEP_LABELS: Record<AppSetupStepName, string> = {
   publish: 'Public address',
   'sign-in': 'Sign-in with Authentik',
   people: 'People who can sign in',
+  'nextcloud-link': 'Link to Nextcloud for files',
 };
 
 const STATE_LABELS: Record<AppSetupStep['state'], string> = {
@@ -131,6 +132,16 @@ function setupError(failure: HttpErrorResponse, action: string): string {
             }
             @if (r.people?.length) {
               <p>Lets {{ r.people!.join(', ') }} sign in to {{ title() }}.</p>
+            }
+            @if (r.files_link; as f) {
+              <ul class="files-link">
+                @for (line of f.lines; track line) {
+                  <li>{{ line }}</li>
+                }
+              </ul>
+              <p class="hint">
+                Documents go to {{ f.base_url }}, folder {{ f.root }}@if (f.new_link) {, as account {{ f.account }} with an app password Homestead creates}.
+              </p>
             }
             <p class="permit-actions">
               <button type="button" class="primary" (click)="resume()" [disabled]="busy() || (r.step === 'sign-in' && r.token_kept === false && !token)">

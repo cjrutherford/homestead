@@ -85,9 +85,31 @@ type Manager struct {
 	Routes func() ([]CraftRoute, error)
 	// Audit records an event; values are names and ids only.
 	Audit func(actor, action, outcome, detail string)
+	// Appliance is this appliance's own Nextcloud when it is installed
+	// (S326, ADR-048 §4); nil or false when there is none.
+	Appliance func() (Appliance, bool)
 
-	mu    sync.Mutex
-	plans map[string]*Plan
+	mu     sync.Mutex
+	plans  map[string]*Plan
+	linkMu sync.Mutex
+}
+
+// Appliance is the Nextcloud Homestead installed on this appliance
+// (S326): its address under the appliance's names, the administrator
+// account it created at install, and that account's generated password.
+// The password is read when a link is made, used once to create an app
+// password, and never kept, returned, logged or audited.
+type Appliance struct {
+	BaseURL  string
+	Account  string
+	Password func() (string, error)
+}
+
+func (m *Manager) appliance() (Appliance, bool) {
+	if m.Appliance == nil {
+		return Appliance{}, false
+	}
+	return m.Appliance()
 }
 
 func (m *Manager) now() time.Time {
@@ -116,6 +138,11 @@ type PlanRequest struct {
 	// Nextcloud address that is not on this machine: the app password
 	// then crosses the network unencrypted. Loopback needs no opt-in.
 	AllowInsecureHTTP bool `json:"allow_insecure_http"`
+	// Appliance links this appliance's own Nextcloud (S326): its address
+	// and administrator account fill BaseURL and Account, and Homestead
+	// creates the app password with the administrator password it
+	// generated at install. No password travels with the approval.
+	Appliance bool `json:"appliance,omitempty"`
 }
 
 // Plan is a reviewable, approvable link change.
@@ -127,6 +154,7 @@ type Plan struct {
 	Root      string    `json:"root"`
 	Create    bool      `json:"create_app_password"`
 	Insecure  bool      `json:"allow_insecure_http,omitempty"`
+	Appliance bool      `json:"appliance,omitempty"`
 	Summary   []string  `json:"summary"`
 	Warnings  []string  `json:"warnings"`
 	ExpiresAt time.Time `json:"expires_at"`
@@ -223,6 +251,15 @@ type Status struct {
 	DaemonCreated    bool        `json:"daemon_created"`
 	UpdatedAt        *time.Time  `json:"updated_at,omitempty"`
 	Apps             []AppStatus `json:"apps"`
+	// ApplianceNextcloud is this appliance's own Nextcloud, when it is
+	// installed (S326): link it with PlanRequest.Appliance.
+	ApplianceNextcloud *ApplianceStatus `json:"appliance_nextcloud,omitempty"`
+}
+
+// ApplianceStatus names this appliance's Nextcloud, never its password.
+type ApplianceStatus struct {
+	BaseURL string `json:"base_url"`
+	Account string `json:"account"`
 }
 
 // Status reports the link and per-app state.
@@ -246,6 +283,9 @@ func (m *Manager) Status() (Status, error) {
 		}
 	}
 	st := Status{Linked: linked, Apps: []AppStatus{}}
+	if a, ok := m.appliance(); ok {
+		st.ApplianceNextcloud = &ApplianceStatus{BaseURL: a.BaseURL, Account: a.Account}
+	}
 	if linked {
 		st.BaseURL, st.Account, st.Root, st.DaemonCreated = r.BaseURL, r.Account, r.Root, r.DaemonCreated
 		t := r.UpdatedAt
@@ -325,6 +365,17 @@ func (m *Manager) Plan(req PlanRequest, actor string) (Plan, error) {
 		if linked {
 			return Plan{}, ErrAlreadyLinked
 		}
+		if req.Appliance {
+			a, ok := m.appliance()
+			if !ok {
+				return Plan{}, fmt.Errorf("%w: Nextcloud is not installed on this appliance", ErrInput)
+			}
+			req.BaseURL, req.Account, req.CreateAppPassword = a.BaseURL, a.Account, true
+			if strings.TrimSpace(req.Root) == "" {
+				req.Root = DefaultRoot
+			}
+			p.Appliance = true
+		}
 		base, insecure, err := validateBaseURL(req.BaseURL, req.AllowInsecureHTTP)
 		if err != nil {
 			return Plan{}, err
@@ -341,7 +392,10 @@ func (m *Manager) Plan(req PlanRequest, actor string) (Plan, error) {
 			fmt.Sprintf("Link %s as account %q; documents live in the folder %q.", base, req.Account, root),
 			"The app password is sealed in the Homestead secret store and never shown again.",
 		}
-		if req.CreateAppPassword {
+		switch {
+		case p.Appliance:
+			p.Summary = append(p.Summary, "This is the Nextcloud on this appliance. Homestead creates the app password with the administrator password it generated when Nextcloud was installed.")
+		case req.CreateAppPassword:
 			p.Summary = append(p.Summary, "Homestead will create the app password with your account password, used once and not kept.")
 		}
 		p.Warnings = []string{"Homestead enters the file path: it reads and writes your documents on your behalf, within that folder only."}
@@ -438,7 +492,23 @@ func (m *Manager) apply(ctx context.Context, p *Plan, req ApproveRequest) error 
 	nc := &nextcloud{client: m.Client(), link: link}
 	password := req.AppPassword
 	created := false
-	if p.Create {
+	if p.Create && p.Appliance {
+		a, ok := m.appliance()
+		if !ok || a.Password == nil {
+			return fmt.Errorf("%w: Nextcloud is not installed on this appliance", ErrInput)
+		}
+		if a.BaseURL != p.BaseURL || a.Account != p.Account {
+			return fmt.Errorf("%w: this appliance's Nextcloud moved since the plan; plan the link again", ErrInput)
+		}
+		admin, err := a.Password()
+		if err != nil || admin == "" {
+			return fmt.Errorf("%w: the Nextcloud administrator password is not in the secret store", ErrInput)
+		}
+		if password, err = nc.createAppPassword(ctx, admin); err != nil {
+			return err
+		}
+		created = true
+	} else if p.Create {
 		if req.AccountPassword == "" {
 			return fmt.Errorf("%w: the account password is required to create an app password", ErrInput)
 		}
@@ -489,6 +559,38 @@ func (m *Manager) apply(ctx context.Context, p *Plan, req ApproveRequest) error 
 		_ = (&nextcloud{client: m.Client(), link: old.Link, password: oldPassword}).revoke(ctx)
 	}
 	return m.renderYAML()
+}
+
+// DefaultRoot is the folder a link keeps documents in unless the owner
+// names another.
+const DefaultRoot = "Homestead"
+
+// LinkAppliance links this appliance's own Nextcloud without a separate
+// plan (S326, ADR-048 §4): the owner approved it with an install's
+// review, and the app setup runs it. It refuses when a link exists
+// (ErrAlreadyLinked). A success is audited as craftfiles.link; a failure
+// is returned for the caller, which may retry while Nextcloud starts.
+func (m *Manager) LinkAppliance(ctx context.Context, root, actor string) error {
+	m.linkMu.Lock()
+	defer m.linkMu.Unlock()
+	if _, linked, err := m.readLink(); err != nil {
+		return err
+	} else if linked {
+		return ErrAlreadyLinked
+	}
+	a, ok := m.appliance()
+	if !ok {
+		return fmt.Errorf("%w: Nextcloud is not installed on this appliance", ErrInput)
+	}
+	if root == "" {
+		root = DefaultRoot
+	}
+	p := &Plan{Action: ActionLink, BaseURL: a.BaseURL, Account: a.Account, Root: root, Create: true, Appliance: true}
+	if err := m.apply(ctx, p, ApproveRequest{}); err != nil {
+		return err
+	}
+	m.audit(actor, "craftfiles.link", "ok", fmt.Sprintf("account=%s root=%s nextcloud=appliance", p.Account, p.Root))
+	return nil
 }
 
 func (m *Manager) unlink(ctx context.Context) error {
