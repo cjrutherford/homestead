@@ -5,6 +5,8 @@ import (
 	"encoding/xml"
 	"strings"
 	"testing"
+
+	"homestead/internal/catalog"
 )
 
 const ownerBranding = `<?xml version="1.0" encoding="utf-8"?>
@@ -16,20 +18,28 @@ const ownerBranding = `<?xml version="1.0" encoding="utf-8"?>
 `
 
 func TestJellyfinStartPathFollowsThePathBase(t *testing.T) {
-	for addr, want := range map[string]string{
-		"https://homestead.lan/apps/jellyfin":  "/apps/jellyfin/sso/OID/start/authentik",
-		"https://homestead.lan/apps/jellyfin/": "/apps/jellyfin/sso/OID/start/authentik",
-		"https://jellyfin.lan":                 "/sso/OID/start/authentik",
-		"":                                     "/sso/OID/start/authentik",
+	byPath := catalog.Manifest{Name: "jellyfin", Serve: catalog.ServePath, Path: "/apps/jellyfin/"}
+	for _, c := range []struct {
+		target Target
+		want   string
+	}{
+		// The address is only an origin when sign-in is applied (S331):
+		// the path comes from the package.
+		{Target{Manifest: byPath, Address: "https://homestead.lan"}, "/apps/jellyfin/sso/OID/start/authentik"},
+		{Target{Manifest: byPath, Address: "https://homestead.example.com"}, "/apps/jellyfin/sso/OID/start/authentik"},
+		{Target{Manifest: byPath}, "/apps/jellyfin/sso/OID/start/authentik"},
+		{Target{Address: "https://homestead.lan/apps/jellyfin/"}, "/apps/jellyfin/sso/OID/start/authentik"},
+		{Target{Address: "https://jellyfin.lan"}, "/sso/OID/start/authentik"},
+		{Target{}, "/sso/OID/start/authentik"},
 	} {
-		if got := jellyfinStartPath(addr); got != want {
-			t.Errorf("%q: %q, want %q", addr, got, want)
+		if got := jellyfinStartPath(c.target); got != c.want {
+			t.Errorf("%+v: %q, want %q", c.target.Address, got, c.want)
 		}
 	}
 }
 
 func TestBrandingInsertsIntoEmptyAndKeepsOwnerText(t *testing.T) {
-	start := jellyfinStartPath("https://homestead.lan/apps/jellyfin")
+	start := jellyfinStartPath(Target{Address: "https://homestead.lan/apps/jellyfin"})
 	out, changed, err := brandingWith("", start)
 	if err != nil || !changed || !strings.Contains(parsed(t, out).LoginDisclaimer, `href="/apps/jellyfin/sso/OID/start/authentik"`) ||
 		!strings.Contains(parsed(t, out).LoginDisclaimer, "Sign in with Authentik") || !strings.Contains(parsed(t, out).CustomCSS, "homestead:sso") {
@@ -91,8 +101,9 @@ func TestJellyfinAdapterWritesAndRemovesTheButton(t *testing.T) {
 		return "", nil
 	}
 	a := jellyfin{}
-	target := Target{Container: "jellyfin-jellyfin", Address: "https://homestead.lan/apps/jellyfin"}
-	if err := a.writeBranding(context.Background(), target, jellyfinStartPath(target.Address)); err != nil ||
+	target := Target{Container: "jellyfin-jellyfin", Address: "https://homestead.lan",
+		Manifest: catalog.Manifest{Name: "jellyfin", Serve: catalog.ServePath, Path: "/apps/jellyfin/"}}
+	if err := a.writeBranding(context.Background(), target, jellyfinStartPath(target)); err != nil ||
 		!strings.Contains(parsed(t, disk).LoginDisclaimer, `href="/apps/jellyfin/sso/OID/start/authentik"`) || !strings.Contains(disk, "Welcome") {
 		t.Fatalf("on: %v\n%s", err, disk)
 	}

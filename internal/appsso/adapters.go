@@ -576,7 +576,7 @@ func (a jellyfin) Enable(ctx context.Context, t Target, s Settings) error {
 	if err := copyInto(ctx, staged, t.Container, jellyfinPlugins+"/"); err != nil {
 		return fmt.Errorf("appsso: install the plugin: %w", err)
 	}
-	if err := a.writeBranding(ctx, t, jellyfinStartPath(t.Address)); err != nil {
+	if err := a.writeBranding(ctx, t, jellyfinStartPath(t)); err != nil {
 		return err
 	}
 	if err := a.writeConfig(ctx, t, &s); err != nil {

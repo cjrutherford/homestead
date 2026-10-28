@@ -685,7 +685,7 @@ func TestSettingsFromBeforeReplan(t *testing.T) {
 		t.Fatalf("an old record should replan: %+v", st)
 	}
 	again, _ := BuildPlan(in, true)
-	if !strings.Contains(strings.Join(again.Changes, "\n"), "each sign-in scope is asked for once") || strings.Contains(strings.Join(again.Changes, "\n"), "replaces") {
+	if !strings.Contains(strings.Join(again.Changes, "\n"), "Sign in with Authentik button are rewritten") || strings.Contains(strings.Join(again.Changes, "\n"), "replaces") {
 		t.Fatalf("changes: %v", again.Changes)
 	}
 }

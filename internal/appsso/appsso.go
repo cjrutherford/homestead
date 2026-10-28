@@ -385,7 +385,7 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 		if was, _, _ := strings.Cut(in.Applied.PluginVersion, "+"); pluginVersion(p.Plugin) != was {
 			p.Changes = append(p.Changes, fmt.Sprintf("Plugin %s %s replaces %s.", p.Plugin.Name, p.Plugin.Version, was))
 		} else if pluginState(p.Plugin) != in.Applied.PluginVersion {
-			p.Changes = append(p.Changes, fmt.Sprintf("Plugin %s settings are rewritten so each sign-in scope is asked for once.", p.Plugin.Name))
+			p.Changes = append(p.Changes, fmt.Sprintf("Plugin %s settings and the login page's Sign in with Authentik button are rewritten.", p.Plugin.Name))
 		}
 		if in.Applied.Access == nil {
 			p.Changes = append(p.Changes, "This sign-in is open to every Authentik user today. Applying closes it to the owner and the people granted below.")
@@ -422,10 +422,10 @@ func pluginVersion(p *catalog.PinnedPlugin) string {
 // pluginSettingsRev names the generation of the plugin settings Homestead
 // writes. It is stored after the version so that changing the settings
 // replans an app that was set up with the old ones.
-const pluginSettingsRev = "scopes2"
+const pluginSettingsRev = "start3"
 
 // pluginState is what a record keeps in PluginVersion: the plugin version
-// and the settings generation, "4.0.0.4+scopes2".
+// and the settings generation, "4.0.0.4+start3".
 func pluginState(p *catalog.PinnedPlugin) string {
 	if p == nil {
 		return ""

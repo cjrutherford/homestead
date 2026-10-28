@@ -28,12 +28,16 @@ const ssoCSS = ".loginDisclaimer a.homestead-sso{display:block;margin:1em 0 0;pa
 	"font-weight:500;text-decoration:none;border-radius:.2em;background:#00a4dc;color:#fff}" +
 	".loginDisclaimer a.homestead-sso:hover{filter:brightness(1.1)}"
 
-// jellyfinStartPath is where the plugin starts a sign-in, under the app's
-// path base (for example /apps/jellyfin) taken from its address.
-func jellyfinStartPath(address string) string {
-	base := ""
-	if u, err := url.Parse(address); err == nil {
-		base = strings.TrimRight(u.Path, "/")
+// jellyfinStartPath is where the plugin starts a sign-in, under the path
+// Jellyfin serves on (its BaseUrl, the package's /apps/<name>/ path). The
+// target's address is only an origin, so the path comes from the manifest
+// (S331); an address with a path is used when the package has none.
+func jellyfinStartPath(t Target) string {
+	base := strings.TrimRight(t.Manifest.AppPath(), "/")
+	if base == "" {
+		if u, err := url.Parse(t.Address); err == nil {
+			base = strings.TrimRight(u.Path, "/")
+		}
 	}
 	return base + "/sso/OID/start/" + ProviderKey
 }
