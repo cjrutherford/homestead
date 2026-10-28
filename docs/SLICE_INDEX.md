@@ -90,3 +90,5 @@ Then S310 lamplight (`docs/slices/S310-lamplight-depth-and-dark-default.md`): da
 Then S311 lamplight on every page (`docs/slices/S311-lamplight-on-every-page.md`): every routed page's sections are fields (plates) under the masthead, empty states are wells, claim and login are a centred lifted gate, failed rail orders are lamps, and `theme/lamplight.spec.ts` enforces it for every route.
 
 Then S332 release 0.0.1 (`docs/slices/S332-release-0-0-1.md`): `VERSION` file, `make release` (linux amd64 and arm64 binaries and ADR-025 `SHA256SUMS`), a tag-triggered draft-prerelease workflow, `CHANGELOG.md` and `docs/RELEASING.md`.
+
+Then S334 Authentik step-up on the public address (`docs/slices/S334-authentik-step-up-on-the-public-address.md`): `POST /api/v1/sso/step-up`, a fresh Authentik sign-in that steps an oidc session up for five minutes so the five People step-up routes work on a public dashboard name (error code `stepup-required`, ADR-049 §1-2).

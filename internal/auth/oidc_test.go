@@ -3,6 +3,7 @@ package auth
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 const oidcPassword = "long-enough-password"
@@ -95,5 +96,38 @@ func TestVerifyPasswordFeedsLockoutAndDoesNotForgive(t *testing.T) {
 	}
 	if err := svc.VerifyPassword("owner", oidcPassword); !errors.Is(err, ErrAccountLocked) {
 		t.Fatalf("locked re-auth = %v", err)
+	}
+}
+
+func TestMarkSteppedUpIsForTheOwnersOIDCSessionOnly(t *testing.T) {
+	svc := claimedAuthService(t)
+	admin, _ := svc.SetupAdmin("owner", oidcPassword)
+	pw, _ := svc.Login("owner", oidcPassword)
+	oidc, _ := svc.MintOIDCSession(admin.ID)
+	pv, _ := svc.Verify(pw.Token)
+	ov, _ := svc.Verify(oidc.Token)
+	if !ov.SteppedUpUntil.IsZero() || ov.ID == 0 {
+		t.Fatalf("a new session starts unstepped: %+v", ov)
+	}
+	if _, err := svc.MarkSteppedUp(pv.ID, admin.ID); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("password session stepped up: %v", err)
+	}
+	if _, err := svc.MarkSteppedUp(ov.ID, admin.ID+1); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("another identity's step-up: %v", err)
+	}
+	if _, err := svc.MarkSteppedUp(ov.ID+1000, admin.ID); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("unknown session: %v", err)
+	}
+	until, err := svc.MarkSteppedUp(ov.ID, admin.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ov, _ = svc.Verify(oidc.Token)
+	if d := time.Until(until); d < 4*time.Minute || d > StepUpTTL || !ov.SteppedUpUntil.Equal(until.Truncate(0)) && ov.SteppedUpUntil.Sub(until).Abs() > time.Second {
+		t.Fatalf("step-up ends %v (%v from now), session says %v", until, d, ov.SteppedUpUntil)
+	}
+	// No other session is touched.
+	if o2, _ := svc.Verify(pw.Token); !o2.SteppedUpUntil.IsZero() {
+		t.Fatal("the password session was stepped up")
 	}
 }

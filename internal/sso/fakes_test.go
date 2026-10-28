@@ -203,7 +203,7 @@ func (f *fakeIDP) token(w http.ResponseWriter, r *http.Request) {
 	}
 	claims := map[string]any{
 		"iss": f.issuer(), "sub": "user-1", "aud": ClientID, "nonce": flow.nonce,
-		"exp": time.Now().Add(10 * time.Minute).Unix(), "iat": time.Now().Unix(),
+		"exp": time.Now().Add(10 * time.Minute).Unix(), "iat": time.Now().Unix(), "auth_time": time.Now().Unix(),
 		"email": "owner@example.test", "groups": []string{"admins"},
 	}
 	if f.mutate != nil {

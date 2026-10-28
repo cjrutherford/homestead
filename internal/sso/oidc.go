@@ -267,6 +267,9 @@ func (p *Provider) key(ctx context.Context, kid string) (jwk, error) {
 type Claims struct {
 	Issuer  string
 	Subject string
+	// AuthTime is when the person last signed in at Authentik (auth_time);
+	// zero when the token does not say.
+	AuthTime time.Time
 }
 
 type rawClaims struct {
@@ -278,6 +281,8 @@ type rawClaims struct {
 	Exp   *float64        `json:"exp"`
 	Iat   *float64        `json:"iat"`
 	Nbf   *float64        `json:"nbf"`
+	// AuthTime is required by OIDC when max_age was requested.
+	AuthTime *float64 `json:"auth_time"`
 }
 
 func audiences(raw json.RawMessage) ([]string, bool) {
@@ -383,7 +388,11 @@ func (p *Provider) Verify(ctx context.Context, idToken, clientID, nonce string) 
 	if c.Nbf != nil && unix(*c.Nbf).After(now.Add(Skew)) {
 		return Claims{}, fmt.Errorf("%w: not valid yet", ErrToken)
 	}
-	return Claims{Issuer: c.Iss, Subject: c.Sub}, nil
+	out := Claims{Issuer: c.Iss, Subject: c.Sub}
+	if c.AuthTime != nil {
+		out.AuthTime = unix(*c.AuthTime)
+	}
+	return out, nil
 }
 
 func unix(f float64) time.Time { return time.Unix(int64(f), 0) }
@@ -400,6 +409,13 @@ func safeAlg(a string) string {
 // FreshMaxAge is the oldest Authentik sign-in (seconds) a link accepts.
 const FreshMaxAge = "30"
 
+// FreshWindow is how old auth_time may be when a step-up callback arrives
+// (ADR-049 §1): FreshMaxAge plus the redirect back and the code exchange.
+const FreshWindow = 30*time.Second + freshAllowance
+
+// freshAllowance covers the browser's return from Authentik.
+const freshAllowance = 30 * time.Second
+
 // AuthURLParams are the inputs of the authorize redirect.
 type AuthURLParams struct {
 	ClientID    string
@@ -410,7 +426,8 @@ type AuthURLParams struct {
 	// Fresh asks Authentik for a sign-in no older than FreshMaxAge: the link
 	// ceremony proves the owner is present now. prompt=login is not used:
 	// Authentik 2026.8 keeps it on the post-login redirect and asks again
-	// forever, and max_age=0 is ignored (S286 KVM review).
+	// forever, and max_age=0 is ignored (S286 KVM review). The Authentik
+	// step-up (ADR-049) asks for the same ceremony.
 	Fresh bool
 }
 

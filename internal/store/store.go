@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 54
+const CurrentVersion = 55
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -1039,6 +1039,18 @@ CREATE TABLE people_grants (
 	record TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );`,
+	},
+	{
+		version: 55,
+		name:    "authentik step-up",
+		// S334 (ADR-049 §1): an oidc session stepped up by a fresh
+		// Authentik sign-in on the public dashboard name carries the
+		// expiry of that step-up. A step-up flow's state is bound to the
+		// session that started it and carries the dashboard path to
+		// return to.
+		sql: `ALTER TABLE sessions ADD COLUMN stepped_up_until TEXT NOT NULL DEFAULT '';
+ALTER TABLE sso_state ADD COLUMN session_id INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sso_state ADD COLUMN return_to TEXT NOT NULL DEFAULT '';`,
 	},
 }
 

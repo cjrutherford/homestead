@@ -73,6 +73,7 @@ const (
 	reasonCSRFMismatch   = "csrf-mismatch"
 	reasonVerifyError    = "session-verify-error"
 	reasonReauth         = "reauth-required"
+	reasonStepUp         = "stepup-required"
 )
 
 // auditActionRejected is the audit action of aggregated rejection entries.
@@ -264,6 +265,7 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/sso/approve":                           ClassSession,
 	"POST /api/v1/sso/apply":                             ClassSession,
 	"POST /api/v1/sso/link":                              ClassSession,
+	"POST /api/v1/sso/step-up":                           ClassSession,
 	"DELETE /api/v1/sso/link":                            ClassSession,
 	"DELETE /api/v1/sso":                                 ClassSession,
 	"GET /api/v1/dashboard/address":                      ClassSession,
@@ -319,6 +321,16 @@ var stepUpRoutes = map[string]stepUpMode{
 	"POST /api/v1/people/{id}/resolve":         stepUpBoundary,
 }
 
+// publicStepUpRoutes are the step-up routes a public dashboard name accepts
+// on a fresh Authentik step-up instead of the local password (ADR-049 §1).
+var publicStepUpRoutes = map[string]bool{
+	"PUT /api/v1/people/{id}/apps/{app}/admin": true,
+	"POST /api/v1/people/{id}/password-reset":  true,
+	"POST /api/v1/people/{id}/mfa-reset":       true,
+	"POST /api/v1/people/{id}/remove":          true,
+	"POST /api/v1/people/{id}/resolve":         true,
+}
+
 // ReauthHeader carries the local password for fresh re-authentication.
 const ReauthHeader = "X-Homestead-Reauth"
 
@@ -331,6 +343,9 @@ const (
 	// ErrorCodePublicHost refuses a local-only action on a public
 	// dashboard name (ADR-037).
 	ErrorCodePublicHost = "public-host"
+	// ErrorCodeStepUpRequired: a People action on the public dashboard
+	// name needs a fresh Authentik sign-in (ADR-049 §1).
+	ErrorCodeStepUpRequired = "stepup-required"
 )
 
 // Classify returns the class declared for a registered pattern.
@@ -533,7 +548,11 @@ func (b *boundary) check(mux *recordingMux, r *http.Request) (*operatorSession, 
 		}
 	}
 	if session.Method == auth.MethodOIDC && stepUpRoutes[pattern] == stepUpBoundary {
-		if v := b.stepUp(r, session.Username, pattern); v.status != 0 {
+		if onPublicHost(r) && publicStepUpRoutes[pattern] {
+			if v := b.publicStepUp(r, session, pattern); v.status != 0 {
+				return nil, v
+			}
+		} else if v := b.stepUp(r, session.Username, pattern); v.status != 0 {
 			return nil, v
 		}
 	}
@@ -541,6 +560,21 @@ func (b *boundary) check(mux *recordingMux, r *http.Request) (*operatorSession, 
 		Token: token, Session: session,
 		stillValid: func() bool { _, err := b.sessions.Verify(token); return err == nil },
 	}, verdict{}
+}
+
+// publicStepUp lets a People step-up route through on a public dashboard
+// name when the oidc session was stepped up by a fresh Authentik sign-in
+// that has not expired. The password is never used here. Each authorised
+// action leaves an audit entry saying so.
+func (b *boundary) publicStepUp(r *http.Request, session auth.VerifiedSession, pattern string) verdict {
+	if !session.SteppedUpUntil.After(b.now()) {
+		v := reject(http.StatusForbidden, "sign in with Authentik again to continue", pattern, reasonStepUp)
+		v.code = ErrorCodeStepUpRequired
+		return v
+	}
+	_, _ = b.audit.Record(audit.Entry{Actor: session.Username, Action: "session.step-up.authorised", Outcome: audit.OutcomeOK,
+		Detail: "authorised by Authentik step-up until " + session.SteppedUpUntil.UTC().Format(time.RFC3339) + " for " + r.Method + " " + r.URL.Path})
+	return verdict{}
 }
 
 // stepUp checks the fresh local password an oidc session must present for

@@ -6,11 +6,19 @@ import { Observable, catchError, switchMap, throwError } from 'rxjs';
 export const REAUTH_HEADER = 'X-Homestead-Reauth';
 export const REAUTH_REQUIRED = 'reauth-required';
 export const REAUTH_INVALID = 'reauth-invalid';
+/** A People action on the public address needs a fresh Authentik sign-in (ADR-049). */
+export const STEPUP_REQUIRED = 'stepup-required';
 
 /** A pending request for the local password. */
 export interface ReauthRequest {
   /** True when the previous password was wrong. */
   invalid: boolean;
+  /**
+   * True on the public address: the dialog offers a fresh Authentik sign-in
+   * instead of the password (ADR-049). The page navigates away, so the
+   * request is not retried.
+   */
+  stepUp?: boolean;
   /** Answers with the password, or null when the owner cancelled. */
   answer: (password: string | null) => void;
 }
@@ -31,11 +39,12 @@ export class Reauth {
    */
   readonly dialog = signal<Type<unknown> | null>(null);
 
-  ask(invalid: boolean): Observable<string | null> {
+  ask(invalid: boolean, stepUp = false): Observable<string | null> {
     return new Observable((subscriber) => {
       void import('../ui/reauth-dialog').then((m) => this.dialog.set(m.ReauthDialog));
       this.request.set({
         invalid,
+        stepUp,
         answer: (password) => {
           this.request.set(null);
           this.dialog.set(null);
@@ -54,6 +63,9 @@ export const reauthInterceptor: HttpInterceptorFn = (req, next) => {
       catchError((err: unknown) => {
         const code =
           err instanceof HttpErrorResponse && err.status === 403 ? err.headers?.get('X-Homestead-Error') : null;
+        if (code === STEPUP_REQUIRED) {
+          return reauth.ask(false, true).pipe(switchMap(() => throwError(() => err)));
+        }
         if (code !== REAUTH_REQUIRED && code !== REAUTH_INVALID) {
           return throwError(() => err);
         }

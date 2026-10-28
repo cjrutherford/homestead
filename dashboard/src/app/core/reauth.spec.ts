@@ -77,4 +77,15 @@ describe('reauthInterceptor', () => {
     expect(status).toBe(429);
     expect(reauth.request()).toBeNull();
   });
+
+  it('shows the Authentik step-up, not the password, on stepup-required, and does not retry', () => {
+    let status = 0;
+    http.post('/api/v1/people/1/remove', {}).subscribe({ error: (e) => (status = e.status) });
+    backend.expectOne('/api/v1/people/1/remove').flush('no', refuse('stepup-required'));
+    expect(reauth.request()?.stepUp).toBe(true);
+    reauth.request()?.answer(null);
+    backend.expectNone('/api/v1/people/1/remove');
+    expect(status).toBe(403);
+    expect(reauth.request()).toBeNull();
+  });
 });

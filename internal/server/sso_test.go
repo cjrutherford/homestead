@@ -39,6 +39,8 @@ type ssoWorld struct {
 	pending  map[string]ssoFlow
 	sub      string
 	down     bool
+	// authAge is how long ago the person signed in at Authentik.
+	authAge time.Duration
 	// access state (S314)
 	groups   map[string]map[string]any
 	bindings []map[string]any
@@ -94,7 +96,8 @@ func (w *ssoWorld) serve(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 		claims := map[string]any{"iss": w.issuer(), "sub": w.sub, "aud": "homestead", "nonce": flow.nonce,
-			"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix()}
+			"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
+			"auth_time": time.Now().Add(-w.authAge).Unix()}
 		hb, _ := json.Marshal(map[string]any{"alg": "RS256", "kid": "k"})
 		cb, _ := json.Marshal(claims)
 		in := b64u(hb) + "." + b64u(cb)

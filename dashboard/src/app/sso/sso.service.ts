@@ -107,6 +107,11 @@ export class SsoService {
     return this.http.post<{ url: string; expires_at: string }>('/api/v1/sso/link', origin ? { origin } : {});
   }
 
+  /** Starts a fresh Authentik sign-in for the People actions on the public address (ADR-049). */
+  ssoStepUp(returnTo: string): Observable<{ url: string; expires_at: string }> {
+    return this.http.post<{ url: string; expires_at: string }>('/api/v1/sso/step-up', { return_to: returnTo });
+  }
+
   ssoUnlink(): Observable<SsoState> {
     return this.http.delete<SsoState>('/api/v1/sso/link');
   }

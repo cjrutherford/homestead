@@ -1326,3 +1326,24 @@ Craft apps under one host, by path (ADR-045).
 - Live check on VM 2 (re-plan shows the recovery flow, apply sets it on
   the brand, adding a person shows a working link). Not done: no VM access
   in this slice.
+
+## S334 Authentik step-up on the public address (2026-10-28)
+- The callback requires `auth_time` in the ID token and fails closed
+  (`stale`) when it is missing. Authentik includes `auth_time` when
+  `max_age` is sent per OIDC, but this was verified only against the test
+  provider, not a live Authentik 2026.8. If Authentik omits it, the
+  step-up never completes; live check needed.
+- The step-up callback runs on a cross-site return, so the Strict session
+  cookie is not sent. The browser is bound by the state cookie and the
+  session by the id stored with the state; the session is re-checked
+  (oidc, same owner, still live) when it is marked. A second browser that
+  shares neither cookie cannot finish the flow.
+- A failed step-up redirects to `/?sso_error=<code>` on the dashboard
+  root; the dashboard does not yet show those codes outside the login
+  page, so the owner returns to the dashboard with no message.
+- The step-up applies to the five People routes only. The other step-up
+  routes (sso plan, approve, apply, disable, secrets rekey, identity
+  export, secret reveal) stay unavailable on the public name.
+- Live check on VM 2 of the full ceremony on the public dashboard name
+  (Authentik prompt, return to the People page, action succeeds, expires
+  after five minutes). Not done: no VM access in this slice.

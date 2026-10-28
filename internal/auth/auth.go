@@ -35,6 +35,9 @@ const (
 	// touchInterval throttles the idle-clock write so verification
 	// stays read-mostly.
 	touchInterval = time.Minute
+	// StepUpTTL is how long a fresh Authentik sign-in steps an oidc
+	// session up on the public dashboard name (ADR-049 §1).
+	StepUpTTL = 5 * time.Minute
 )
 
 // MinPasswordLength is the floor for administrator passwords.
@@ -107,6 +110,8 @@ const (
 
 // VerifiedSession is a proven session with its owner.
 type VerifiedSession struct {
+	// ID is the session row; it never leaves the daemon.
+	ID         int64
 	IdentityID int64
 	Username   string
 	// Method is MethodPassword or MethodOIDC.
@@ -117,6 +122,9 @@ type VerifiedSession struct {
 	IdleExpiresAt time.Time
 	// CSRFHash is the stored SHA-256 of the session's CSRF token.
 	CSRFHash []byte
+	// SteppedUpUntil is when a fresh Authentik step-up of an oidc session
+	// ends (ADR-049); zero when it was never stepped up.
+	SteppedUpUntil time.Time
 }
 
 // CSRFMatches reports, in constant time, whether presented is this
@@ -556,12 +564,13 @@ func (s *Service) Verify(token string) (VerifiedSession, error) {
 		id                             int64
 		v                              VerifiedSession
 		expiresAt, createdAt, lastUsed string
+		steppedUp                      string
 	)
 	err := s.db.QueryRow(
-		`SELECT s.id, s.identity_id, i.username, s.expires_at, s.created_at, s.last_used_at, s.csrf_hash, s.method
+		`SELECT s.id, s.identity_id, i.username, s.expires_at, s.created_at, s.last_used_at, s.csrf_hash, s.method, s.stepped_up_until
 		 FROM sessions s JOIN identities i ON i.id = s.identity_id
 		 WHERE s.token_hash = ?`, sum[:],
-	).Scan(&id, &v.IdentityID, &v.Username, &expiresAt, &createdAt, &lastUsed, &v.CSRFHash, &v.Method)
+	).Scan(&id, &v.IdentityID, &v.Username, &expiresAt, &createdAt, &lastUsed, &v.CSRFHash, &v.Method, &steppedUp)
 	if err == sql.ErrNoRows {
 		return VerifiedSession{}, ErrInvalidSession
 	}
@@ -601,9 +610,31 @@ func (s *Service) Verify(token string) (VerifiedSession, error) {
 		}
 		idleExpiry = now.Add(IdleTTL)
 	}
+	v.ID = id
 	v.ExpiresAt = expiry
 	v.IdleExpiresAt = idleExpiry
+	if steppedUp != "" {
+		// An unreadable stamp is no step-up: fail closed.
+		v.SteppedUpUntil, _ = time.Parse(time.RFC3339Nano, steppedUp)
+	}
 	return v, nil
+}
+
+// MarkSteppedUp steps an oidc session up for StepUpTTL after a fresh
+// Authentik sign-in (ADR-049 §1). Only the identity's own oidc session
+// can be marked; any other session is ErrInvalidSession. No new session
+// is created.
+func (s *Service) MarkSteppedUp(sessionID, identityID int64) (time.Time, error) {
+	until := s.now().Add(StepUpTTL)
+	res, err := s.db.Exec(`UPDATE sessions SET stepped_up_until = ? WHERE id = ? AND identity_id = ? AND method = ?`,
+		formatTime(until), sessionID, identityID, MethodOIDC)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("auth: step up session: %w", err)
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		return time.Time{}, ErrInvalidSession
+	}
+	return until, nil
 }
 
 // Logout destroys the session for token. Unknown tokens fail.

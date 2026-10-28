@@ -56,7 +56,13 @@ const (
 const (
 	kindLogin = "login"
 	kindLink  = "link"
+	// kindStepUp is the fresh Authentik sign-in that steps the current
+	// oidc session up on the public dashboard name (ADR-049 §1).
+	kindStepUp = "step-up"
 )
+
+// StepUpStateTTL bounds an Authentik step-up in flight.
+const StepUpStateTTL = 5 * time.Minute
 
 // Fixed browser-facing failure codes (the login page maps each to a
 // sentence; the codes carry no detail).
@@ -70,6 +76,10 @@ const (
 	CodeOff         = "not-configured"
 	CodeConflict    = "link-conflict"
 	CodeOrigin      = "origin"
+	// CodeStale: the Authentik sign-in was not fresh (step-up).
+	CodeStale = "stale"
+	// CodeSession: the step-up came back to a different or ended session.
+	CodeSession = "session"
 )
 
 // Errors returned to API handlers.
@@ -82,6 +92,7 @@ var (
 	ErrNotApproved   = errors.New("the plan is not approved")
 	ErrInput         = errors.New("invalid request")
 	ErrOrigin        = errors.New("this address is not one of the sign-in addresses in the plan")
+	ErrNotOwner      = errors.New("this session is not the linked owner's")
 )
 
 // FlowError is a sign-in failure with its browser-facing code.
@@ -874,7 +885,16 @@ type FlowStart struct {
 	ExpiresAt time.Time
 }
 
-func (m *Manager) begin(ctx context.Context, kind, origin string, identityID int64, actor string) (FlowStart, error) {
+// binding is what a flow's state is bound to besides the browser.
+type binding struct {
+	identityID int64
+	actor      string
+	// sessionID and returnTo: the step-up's session and dashboard path.
+	sessionID int64
+	returnTo  string
+}
+
+func (m *Manager) begin(ctx context.Context, kind, origin string, bind binding) (FlowStart, error) {
 	spec, ok, err := m.readConfig()
 	if err != nil {
 		return FlowStart{}, err
@@ -913,9 +933,12 @@ func (m *Manager) begin(ctx context.Context, kind, origin string, identityID int
 		}
 	}
 	exp := now.Add(StateTTL)
+	if kind == kindStepUp {
+		exp = now.Add(StepUpStateTTL)
+	}
 	if _, err := m.DB.Exec(
-		`INSERT INTO sso_state (state_hash, kind, nonce, verifier, redirect_uri, identity_id, actor, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		hashState(state), kind, nonce, verifier, redirect, identityID, actor, stamp(exp)); err != nil {
+		`INSERT INTO sso_state (state_hash, kind, nonce, verifier, redirect_uri, identity_id, actor, expires_at, session_id, return_to) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		hashState(state), kind, nonce, verifier, redirect, bind.identityID, bind.actor, stamp(exp), bind.sessionID, bind.returnTo); err != nil {
 		return FlowStart{}, fmt.Errorf("sso: store state: %w", err)
 	}
 	if spec.PublicAuthentikURL != "" && slices.Contains(spec.PublicOrigins, origin) {
@@ -926,7 +949,7 @@ func (m *Manager) begin(ctx context.Context, kind, origin string, identityID int
 	}
 	return FlowStart{
 		URL: AuthURL(d, AuthURLParams{ClientID: spec.ClientID, RedirectURI: redirect, State: state, Nonce: nonce,
-			Challenge: Challenge(verifier), Fresh: kind == kindLink}),
+			Challenge: Challenge(verifier), Fresh: kind == kindLink || kind == kindStepUp}),
 		State: state, Secure: strings.HasPrefix(origin, "https://"), ExpiresAt: exp,
 	}, nil
 }
@@ -950,7 +973,7 @@ func (m *Manager) StartLogin(ctx context.Context, host string) (FlowStart, error
 	if !ok {
 		return FlowStart{}, ErrOrigin
 	}
-	return m.begin(ctx, kindLogin, origin, 0, "")
+	return m.begin(ctx, kindLogin, origin, binding{})
 }
 
 // CreateLinkIntent mints the single-use, ten minute link intent for the
@@ -977,11 +1000,42 @@ func (m *Manager) CreateLinkIntent(ctx context.Context, identityID int64, actor,
 	}
 	// A previous intent for the owner is replaced, so one is ever live.
 	_, _ = m.DB.Exec(`DELETE FROM sso_state WHERE kind = ? AND identity_id = ?`, kindLink, identityID)
-	start, err := m.begin(ctx, kindLink, origin, identityID, actor)
+	start, err := m.begin(ctx, kindLink, origin, binding{identityID: identityID, actor: actor})
 	if err != nil {
 		return FlowStart{}, err
 	}
 	return start, nil
+}
+
+// StartStepUp begins the fresh Authentik sign-in that steps the current
+// oidc session up (ADR-049 §1). The state is bound to that session and to
+// the browser (the state cookie), lives StepUpStateTTL and is single use;
+// a previous step-up of the same session is replaced. Only the linked
+// owner's session can start one. returnTo must already be validated.
+func (m *Manager) StartStepUp(ctx context.Context, sessionID, identityID int64, actor, host, returnTo string) (FlowStart, error) {
+	st, err := m.Status()
+	if err != nil {
+		return FlowStart{}, err
+	}
+	if !st.Offered {
+		return FlowStart{}, ErrNotConfigured
+	}
+	link, linked, err := m.readLink()
+	if err != nil {
+		return FlowStart{}, err
+	}
+	if !linked {
+		return FlowStart{}, ErrNotLinked
+	}
+	if link.IdentityID != identityID || sessionID <= 0 {
+		return FlowStart{}, ErrNotOwner
+	}
+	origin, ok := OriginFor(*st.Spec, host)
+	if !ok {
+		return FlowStart{}, ErrOrigin
+	}
+	_, _ = m.DB.Exec(`DELETE FROM sso_state WHERE kind = ? AND session_id = ?`, kindStepUp, sessionID)
+	return m.begin(ctx, kindStepUp, origin, binding{identityID: identityID, actor: actor, sessionID: sessionID, returnTo: returnTo})
 }
 
 // Outcome is a finished flow.
@@ -991,17 +1045,22 @@ type Outcome struct {
 	Subject    string
 	Actor      string
 	Secure     bool
+	// SessionID and ReturnTo are the step-up's session and dashboard path.
+	SessionID int64
+	ReturnTo  string
 }
 
 // Kinds exposed for handlers.
 const (
-	KindLogin = kindLogin
-	KindLink  = kindLink
+	KindLogin  = kindLogin
+	KindLink   = kindLink
+	KindStepUp = kindStepUp
 )
 
 type stateRow struct {
 	kind, nonce, verifier, redirect, actor string
-	identityID                             int64
+	identityID, sessionID                  int64
+	returnTo                               string
 	expires                                time.Time
 }
 
@@ -1009,8 +1068,8 @@ func (m *Manager) consume(state string) (stateRow, error) {
 	var r stateRow
 	var exp string
 	err := m.DB.QueryRow(
-		`DELETE FROM sso_state WHERE state_hash = ? RETURNING kind, nonce, verifier, redirect_uri, identity_id, actor, expires_at`,
-		hashState(state)).Scan(&r.kind, &r.nonce, &r.verifier, &r.redirect, &r.identityID, &r.actor, &exp)
+		`DELETE FROM sso_state WHERE state_hash = ? RETURNING kind, nonce, verifier, redirect_uri, identity_id, actor, expires_at, session_id, return_to`,
+		hashState(state)).Scan(&r.kind, &r.nonce, &r.verifier, &r.redirect, &r.identityID, &r.actor, &exp, &r.sessionID, &r.returnTo)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, flowErr(CodeState, errors.New("unknown or already used state"))
 	}
@@ -1038,14 +1097,14 @@ func (m *Manager) Callback(ctx context.Context, state, code, providerError, cook
 	// cannot burn it.
 	var pending string
 	if err := m.DB.QueryRow(`SELECT kind FROM sso_state WHERE state_hash = ?`, hashState(state)).Scan(&pending); err == nil &&
-		pending == kindLogin && subtle.ConstantTimeCompare([]byte(cookieState), []byte(state)) != 1 {
+		(pending == kindLogin || pending == kindStepUp) && subtle.ConstantTimeCompare([]byte(cookieState), []byte(state)) != 1 {
 		return Outcome{Kind: pending}, flowErr(CodeState, errors.New("state cookie does not match"))
 	}
 	row, err := m.consume(state)
 	if err != nil {
 		return Outcome{Kind: row.kind, Actor: row.actor}, err
 	}
-	if row.kind == kindLogin && subtle.ConstantTimeCompare([]byte(cookieState), []byte(state)) != 1 {
+	if (row.kind == kindLogin || row.kind == kindStepUp) && subtle.ConstantTimeCompare([]byte(cookieState), []byte(state)) != 1 {
 		return Outcome{Kind: row.kind, Actor: row.actor}, flowErr(CodeState, errors.New("state cookie does not match"))
 	}
 	spec, ok, err := m.readConfig()
@@ -1077,6 +1136,9 @@ func (m *Manager) Callback(ctx context.Context, state, code, providerError, cook
 		return Outcome{Kind: row.kind, Actor: row.actor}, classify(err)
 	}
 	out := Outcome{Kind: row.kind, Subject: claims.Subject, Actor: row.actor, Secure: strings.HasPrefix(row.redirect, "https://")}
+	if row.kind == kindStepUp {
+		out.SessionID, out.ReturnTo = row.sessionID, row.returnTo
+	}
 	switch row.kind {
 	case kindLink:
 		now := stamp(m.now())
@@ -1085,6 +1147,25 @@ func (m *Manager) Callback(ctx context.Context, state, code, providerError, cook
 			return out, flowErr(CodeConflict, errors.New("a link already exists"))
 		}
 		out.IdentityID = row.identityID
+	case kindStepUp:
+		// A fresh sign-in by the linked owner, for the session that
+		// asked. No session is created (ADR-049 §1). A token without
+		// auth_time cannot prove freshness and fails closed.
+		link, linked, err := m.readLink()
+		if err != nil {
+			return out, err
+		}
+		if !linked || link.Issuer != claims.Issuer || link.Sub != claims.Subject {
+			return out, flowErr(CodeUnlinked, errors.New("subject is not the linked identity"))
+		}
+		if row.identityID != link.IdentityID || row.sessionID <= 0 {
+			return out, flowErr(CodeSession, errors.New("step-up is not bound to the linked owner's session"))
+		}
+		age := m.now().Sub(claims.AuthTime)
+		if claims.AuthTime.IsZero() || age > FreshWindow || age < -Skew {
+			return out, flowErr(CodeStale, errors.New("Authentik sign-in is not fresh"))
+		}
+		out.IdentityID = link.IdentityID
 	default:
 		link, linked, err := m.readLink()
 		if err != nil {
@@ -1223,4 +1304,20 @@ func majorMinor(v string) string {
 		return v
 	}
 	return parts[0] + "." + parts[1]
+}
+
+// ValidReturnTo reports whether p is a dashboard path a step-up may return
+// to: it starts with a single "/", has no "//" or backslash, no scheme or
+// control characters, and is short.
+func ValidReturnTo(p string) bool {
+	if p == "" || len(p) > 512 || p[0] != '/' || strings.Contains(p, "//") || strings.Contains(p, "\\") {
+		return false
+	}
+	for _, r := range p {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	u, err := url.Parse(p)
+	return err == nil && u.Scheme == "" && u.Host == ""
 }

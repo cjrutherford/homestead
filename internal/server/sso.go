@@ -121,6 +121,7 @@ func (s *Server) MountSSO(c SSOConfig) *sso.Manager {
 	s.mux.HandleFunc("POST /api/v1/sso/apply", h.apply)
 	s.mux.HandleFunc("POST /api/v1/sso/link", h.link)
 	s.mux.HandleFunc("DELETE /api/v1/sso/link", h.unlink)
+	s.mux.HandleFunc("POST /api/v1/sso/step-up", h.stepUp)
 	s.mux.HandleFunc("DELETE /api/v1/sso", h.disable)
 	s.mountPeople(c, m, up.Client, record)
 	s.mountAppSignIn(&appSignIn{s: s, cfg: c, m: m, client: up.Client, runner: h.runner, audit: record})
@@ -414,6 +415,9 @@ func (h *ssoHandlers) callback(w http.ResponseWriter, r *http.Request) {
 	if out.Kind == sso.KindLink {
 		back = "/sign-in"
 	}
+	if out.Kind == sso.KindStepUp {
+		back = "/"
+	}
 	if err != nil {
 		code := sso.CodeToken
 		var fe *sso.FlowError
@@ -422,8 +426,11 @@ func (h *ssoHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		}
 		action := "sso.login"
 		actor := "anonymous"
-		if out.Kind == sso.KindLink {
+		switch out.Kind {
+		case sso.KindLink:
 			action, actor = "sso.link", orAnon(out.Actor)
+		case sso.KindStepUp:
+			action, actor = "sso.step-up", orAnon(out.Actor)
 		}
 		detail := "refused: " + code
 		if out.Subject != "" {
@@ -439,6 +446,10 @@ func (h *ssoHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/sign-in?linked=1", http.StatusFound)
 		return
 	}
+	if out.Kind == sso.KindStepUp {
+		h.finishStepUp(w, r, out)
+		return
+	}
 	session, err := h.cfg.Auth.MintOIDCSession(out.IdentityID)
 	if err != nil {
 		h.audit("anonymous", "sso.login", audit.OutcomeError, "session could not be created")
@@ -450,6 +461,60 @@ func (h *ssoHandlers) callback(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: ssoCookie, Value: "", Path: "/api/v1/sso", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	setSessionCookiesAs(w, out.Secure || requestIsTLS(r), session)
 	http.Redirect(w, r, "/login?sso=done", http.StatusFound)
+}
+
+// finishStepUp marks the bound oidc session stepped up. It creates no
+// session and sets no session cookie.
+func (h *ssoHandlers) finishStepUp(w http.ResponseWriter, r *http.Request, out sso.Outcome) {
+	clear := func() {
+		http.SetCookie(w, &http.Cookie{Name: ssoCookie, Value: "", Path: "/api/v1/sso", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	}
+	until, err := h.cfg.Auth.MarkSteppedUp(out.SessionID, out.IdentityID)
+	if err != nil || !sso.ValidReturnTo(out.ReturnTo) {
+		h.audit(orAnon(out.Actor), "sso.step-up", audit.OutcomeError, "refused: "+sso.CodeSession+" subject="+out.Subject)
+		h.failRedirect(w, r, "/", sso.CodeSession)
+		return
+	}
+	h.audit(orAnon(out.Actor), "sso.step-up", audit.OutcomeOK,
+		"method=oidc subject="+out.Subject+" until="+until.UTC().Format(time.RFC3339))
+	clear()
+	http.Redirect(w, r, out.ReturnTo, http.StatusFound)
+}
+
+// stepUp starts the fresh Authentik sign-in that steps the caller's oidc
+// session up for the People actions on the public dashboard name (ADR-049).
+func (h *ssoHandlers) stepUp(w http.ResponseWriter, r *http.Request) {
+	op, ok := requireOperator(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		ReturnTo string `json:"return_to"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !sso.ValidReturnTo(body.ReturnTo) {
+		http.Error(w, "return_to must be a dashboard path", http.StatusBadRequest)
+		return
+	}
+	if op.Session.Method != auth.MethodOIDC {
+		http.Error(w, "only a session signed in with Authentik steps up this way", http.StatusConflict)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	start, err := h.m.StartStepUp(r.Context(), op.Session.ID, op.Session.IdentityID, op.Session.Username, r.Host, body.ReturnTo)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	h.audit(op.Session.Username, "sso.step-up.start", audit.OutcomeOK, "fresh Authentik sign-in, single use, 5 minutes")
+	http.SetCookie(w, &http.Cookie{
+		Name: ssoCookie, Value: start.State, Path: "/api/v1/sso", MaxAge: int(sso.StepUpStateTTL.Seconds()),
+		HttpOnly: true, Secure: start.Secure, SameSite: http.SameSiteLaxMode,
+	})
+	writeJSON(w, map[string]any{"url": start.URL, "expires_at": start.ExpiresAt.UTC().Format(time.RFC3339)})
 }
 
 func orAnon(s string) string {

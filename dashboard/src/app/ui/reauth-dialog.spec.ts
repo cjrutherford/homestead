@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { of, throwError } from 'rxjs';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ReauthRequest } from '../core/reauth';
+import { SsoService } from '../sso/sso.service';
 import { ReauthDialog } from './reauth-dialog';
 
 describe('ReauthDialog', () => {
@@ -51,5 +53,60 @@ describe('ReauthDialog', () => {
     el.querySelector('dialog')?.dispatchEvent(new Event('cancel', { cancelable: true }));
     expect(answers).toEqual([null, null]);
     el.remove();
+  });
+
+  describe('step-up on the public address', () => {
+    async function openStepUp(ssoStepUp: () => unknown) {
+      await TestBed.configureTestingModule({
+        imports: [ReauthDialog],
+        providers: [{ provide: SsoService, useValue: { ssoStepUp } }],
+      }).compileComponents();
+      const answers: (string | null)[] = [];
+      const request: ReauthRequest = { invalid: false, stepUp: true, answer: (p) => answers.push(p) };
+      const fixture = TestBed.createComponent(ReauthDialog);
+      const assign = vi.fn();
+      (fixture.componentInstance as unknown as { assign: (u: string) => void }).assign = assign;
+      fixture.componentRef.setInput('request', request);
+      document.body.appendChild(fixture.nativeElement);
+      fixture.detectChanges();
+      return { fixture, answers, assign };
+    }
+
+    it('offers Authentik instead of a password field', async () => {
+      const { fixture } = await openStepUp(() => of({ url: 'x', expires_at: '' }));
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.textContent).toContain('Sign in with Authentik again');
+      expect(el.querySelector('input[type="password"]')).toBeNull();
+      expect(el.textContent).not.toContain('Confirm with your local password');
+      el.remove();
+    });
+
+    it('starts the step-up for the current path and goes to Authentik', async () => {
+      const ssoStepUp = vi.fn(() => of({ url: 'https://auth.example.com/authorize?x=1', expires_at: '' }));
+      const { fixture, assign } = await openStepUp(ssoStepUp);
+      const el = fixture.nativeElement as HTMLElement;
+      (el.querySelector('.dialog-actions button') as HTMLButtonElement).click();
+      expect(ssoStepUp).toHaveBeenCalledWith(window.location.pathname + window.location.search);
+      expect(assign).toHaveBeenCalledWith('https://auth.example.com/authorize?x=1');
+      el.remove();
+    });
+
+    it('says so and stays when the step-up cannot start', async () => {
+      const { fixture, assign } = await openStepUp(() => throwError(() => new Error('down')));
+      const el = fixture.nativeElement as HTMLElement;
+      (el.querySelector('.dialog-actions button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(assign).not.toHaveBeenCalled();
+      expect(el.textContent).toContain('Authentik could not be reached');
+      el.remove();
+    });
+
+    it('answers null on Cancel', async () => {
+      const { fixture, answers } = await openStepUp(() => of({ url: 'x', expires_at: '' }));
+      const el = fixture.nativeElement as HTMLElement;
+      (el.querySelector('.dialog-actions .quiet') as HTMLButtonElement).click();
+      expect(answers).toEqual([null]);
+      el.remove();
+    });
   });
 });
