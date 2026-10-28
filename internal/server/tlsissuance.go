@@ -84,6 +84,9 @@ func candidateRoutes(st *store.Store, set docker.RouteSet) ([]docker.Route, erro
 func (s *Server) MountTLSIssuance(st *store.Store, issuing *cert.Issuing) {
 	runner := operation.NewRunner(st)
 	s.certIssuing = issuing
+	if issuing.SetupZone == nil {
+		issuing.SetupZone = newSetupZoneResolver(st, issuing.Secrets).resolve
+	}
 	// The approval is audited before it is persisted: if the audit entry
 	// cannot be written, nothing is approved.
 	issuing.OnApprove = func(approval cert.Approval) error {

@@ -235,6 +235,11 @@
         @if (review.certificate; as c) {
           <section class="tunnel-certificate" aria-label="Certificate for the public dashboard name">
             <h3>Certificate for {{ c.name }}</h3>
+            @if (!c.issue && !c.placed && c.blockers?.length) {
+              <app-state-message kind="warning"
+                [headline]="'No certificate will be issued for ' + c.name + ' by this setup'"
+                [detail]="c.blockers!.join('; ') + '. Apps cannot sign in through the tunnel until a certificate covers this name. Fix this and plan again, or issue the certificate later from TLS.'" />
+            }
             <p>{{ c.note }}</p>
             @if (c.issue) {
               <dl>

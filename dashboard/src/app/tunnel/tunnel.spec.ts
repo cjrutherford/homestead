@@ -421,6 +421,23 @@ describe('Tunnel', () => {
     issuer_moves: MOVES,
   };
 
+  it('warns when the plan cannot issue the certificate (S328)', () => {
+    reviewPlan({
+      ...PLAN,
+      certificate: {
+        name: 'homestead.example.com',
+        issue: false,
+        note: 'The certificate for homestead.example.com is not issued by this plan.',
+        blockers: ['missing DNS credential "api_token"'],
+      },
+    });
+    const el = fixture.nativeElement as HTMLElement;
+    const section = el.querySelector('section[aria-label="Certificate for the public dashboard name"]') as HTMLElement;
+    expect(section.textContent).toContain('No certificate will be issued for homestead.example.com');
+    expect(section.textContent).toContain('missing DNS credential "api_token"');
+    expect(section.querySelector('input[type="checkbox"]')).toBeNull();
+  });
+
   it('shows the public certificate and holds approval until its terms are agreed (ADR-048 §5)', () => {
     reviewPlan(CERT_PLAN);
     const el = fixture.nativeElement as HTMLElement;

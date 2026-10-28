@@ -79,6 +79,12 @@ func stubCertIssuance(t *testing.T, calls *[]string, err error) {
 
 func tunnelCertRig(t *testing.T) (*Server, *store.Store, *fakeCloudflare, *cert.Issuing, func() tunnelCertView) {
 	t.Helper()
+	return tunnelCertRigZone(t, true)
+}
+
+// tunnelCertRigZone is the rig with or without a saved Domain page setup.
+func tunnelCertRigZone(t *testing.T, domainPage bool) (*Server, *store.Store, *fakeCloudflare, *cert.Issuing, func() tunnelCertView) {
+	t.Helper()
 	srv, st, secrets := tunnelTestServer(t)
 	cf := newFakeCloudflare(t)
 	fakeConnector(t)
@@ -90,7 +96,7 @@ func tunnelCertRig(t *testing.T) (*Server, *store.Store, *fakeCloudflare, *cert.
 	srv.signInStatus = func() (sso.Status, error) {
 		return sso.Status{Configured: true, TokenKept: true, Spec: &sso.Spec{Origins: []string{"https://homestead.lan"}}}, nil
 	}
-	issuing := mountTestIssuing(t, srv, st, secrets, issuanceCloudflareDNS{}, true)
+	issuing := mountTestIssuing(t, srv, st, secrets, issuanceCloudflareDNS{}, domainPage)
 	plan := func() tunnelCertView {
 		rec := serveRequest(t, srv, http.MethodPost, "/api/v1/tunnel/plan", map[string]any{"name": "homestead"})
 		var v tunnelCertView
@@ -392,5 +398,51 @@ func TestTLSIssuancePlanCarriesIssuerMoves(t *testing.T) {
 	t.Cleanup(func() { reapplyAppSignIn = prev })
 	if err := def.Steps[len(def.Steps)-1].Run(context.Background()); err != nil || strings.Join(tried, ";") != "owner immich" {
 		t.Fatalf("move step = %v, tried %v", err, tried)
+	}
+}
+
+func saveSetupChoices(t *testing.T, st *store.Store, provider, domainName string) {
+	t.Helper()
+	if _, err := wizard.New(st).Put("setup", "domain", map[string]any{"provider": provider, "domain": domainName, "access": "tunnel"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// S328: an appliance set up through the setup wizard alone (no Domain
+// page) resolves the DNS-01 zone from Cloudflare: the zone apex, not the
+// dashboard name, and the plan is stable between preview and apply.
+func TestTunnelPlanCertificateUsesSetupZone(t *testing.T) {
+	_, st, _, issuing, plan := tunnelCertRigZone(t, false)
+	saveSetupChoices(t, st, "cloudflare", "homestead.example.com")
+	p := plan()
+	c := p.Certificate
+	if c == nil || !c.Issue || c.Zone != "example.com" || c.Provider != "cloudflare" || len(c.Blockers) != 0 {
+		t.Fatalf("certificate = %+v", c)
+	}
+	if again := plan(); again.Digest != p.Digest {
+		t.Fatalf("digest changed: %s vs %s", p.Digest, again.Digest)
+	}
+	if provider, zone := issuing.SetupZone(); provider != "cloudflare" || zone != "example.com" {
+		t.Fatalf("SetupZone = %q, %q", provider, zone)
+	}
+}
+
+// An explicitly saved Domain page setup keeps precedence over the setup
+// wizard's choice.
+func TestDomainPageZoneKeepsPrecedence(t *testing.T) {
+	_, st, _, _, plan := tunnelCertRigZone(t, true)
+	saveSetupChoices(t, st, "cloudflare", "homestead.other.net")
+	if c := plan().Certificate; c == nil || !c.Issue || c.Zone != "example.com" {
+		t.Fatalf("certificate = %+v", c)
+	}
+}
+
+// Without any domain choice the certificate cannot be planned, and the
+// plan says why instead of dropping it quietly.
+func TestTunnelPlanCertificateBlockedWithoutZone(t *testing.T) {
+	_, _, _, _, plan := tunnelCertRigZone(t, false)
+	c := plan().Certificate
+	if c == nil || c.Issue || len(c.Blockers) == 0 || !strings.Contains(c.Note, "not issued") {
+		t.Fatalf("certificate = %+v", c)
 	}
 }

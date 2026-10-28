@@ -278,6 +278,12 @@ type Issuing struct {
 	// Authentik API token, as the issuance's last step.
 	MoveIssuers func(ctx context.Context, actor string, moves MovePlan) error
 
+	// SetupZone is the DNS provider and zone the setup wizard's domain
+	// choice resolves to. It is the fallback when the Domain page saved no
+	// zone, so an appliance set up through the wizard alone can still use
+	// DNS-01 (S328). Nil, or an empty result, means none.
+	SetupZone func() (provider, zone string)
+
 	accountMu sync.Mutex
 }
 
@@ -419,15 +425,21 @@ func isDNS01ACME(c Certificate) bool {
 	return c.Issuer.Type == IssuerACME && c.Issuer.Challenge == ChallengeDNS01
 }
 
-// domainZone reads the saved domain setup's provider and zone.
+// domainZone reads the saved domain setup's provider and zone. A Domain
+// page setup with a zone keeps precedence; without one, the setup
+// wizard's choice resolved by SetupZone is used.
 func (i *Issuing) domainZone() (provider, zone string) {
-	state, err := i.Wizards.Get(domain.WizardID)
-	if err != nil {
-		return "", ""
+	if state, err := i.Wizards.Get(domain.WizardID); err == nil {
+		provider, _ = state.Payload["provider"].(string)
+		zone, _ = state.Payload["zone"].(string)
+		if zone != "" {
+			return provider, zone
+		}
 	}
-	provider, _ = state.Payload["provider"].(string)
-	zone, _ = state.Payload["zone"].(string)
-	return provider, zone
+	if i.SetupZone != nil {
+		return i.SetupZone()
+	}
+	return "", ""
 }
 
 // Plans previews every certificate this flow can issue.
@@ -527,7 +539,7 @@ func (i *Issuing) buildPlan(c Certificate, routes []docker.Route, moves *MovePla
 	plan.Zone = zone
 	switch {
 	case zone == "":
-		block("no domain setup saved: DNS-01 needs the DNS provider and zone (set it up first)")
+		block("no DNS zone is known: DNS-01 needs the DNS provider and zone (choose a domain in setup, or save the Domain page)")
 	case domainProvider != c.Issuer.DNSProvider:
 		block("the saved domain setup uses provider %q, this certificate uses %q", domainProvider, c.Issuer.DNSProvider)
 	default:
