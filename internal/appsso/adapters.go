@@ -472,7 +472,8 @@ const (
 
 // jellyfin installs the pinned plugin release (refused unless its SHA-256
 // matches the catalog) and writes its configuration with one OpenID
-// provider. Jellyfin's own login form is untouched.
+// provider. Its login page gets a sign-in button through the login
+// disclaimer, between markers (jellyfin_branding.go).
 type jellyfin struct{ plugin catalog.PinnedPlugin }
 
 func (jellyfin) RedirectURIs(origins []string) []string {
@@ -489,12 +490,15 @@ func (a jellyfin) OnSettings(issuer, clientID string) []string {
 	return []string{
 		fmt.Sprintf("Jellyfin plugin %s %s: installed (checksum checked) into %s.", a.plugin.Name, a.plugin.Version, jellyfinPlugins),
 		fmt.Sprintf("Plugin provider %q: on, endpoint %s, client id %s, scopes openid email profile, every library visible.", ProviderKey, issuer, clientID),
-		"Jellyfin creates an account at a person's first sign-in. The Jellyfin login form and its admin are unchanged; people start at the sign-in link below.",
+		fmt.Sprintf("Jellyfin's login page gets a %q button, added to its login disclaimer and custom CSS between Homestead markers; a disclaimer or CSS you wrote is kept. Jellyfin creates an account at a person's first sign-in; its login form and admin are otherwise unchanged.", ButtonText),
 	}
 }
 
 func (a jellyfin) OffSettings() []string {
-	return []string{fmt.Sprintf("Plugin provider %q: removed from the plugin's settings (with its secret). The plugin stays installed.", ProviderKey)}
+	return []string{
+		fmt.Sprintf("Plugin provider %q: removed from the plugin's settings (with its secret). The plugin stays installed.", ProviderKey),
+		fmt.Sprintf("Jellyfin's login page loses the %q button; a disclaimer or CSS you wrote is kept.", ButtonText),
+	}
 }
 
 // TrustEnv adds the appliance root's directory to .NET's trust list.
@@ -572,6 +576,9 @@ func (a jellyfin) Enable(ctx context.Context, t Target, s Settings) error {
 	if err := copyInto(ctx, staged, t.Container, jellyfinPlugins+"/"); err != nil {
 		return fmt.Errorf("appsso: install the plugin: %w", err)
 	}
+	if err := a.writeBranding(ctx, t, jellyfinStartPath(t.Address)); err != nil {
+		return err
+	}
 	if err := a.writeConfig(ctx, t, &s); err != nil {
 		return err
 	}
@@ -579,6 +586,9 @@ func (a jellyfin) Enable(ctx context.Context, t Target, s Settings) error {
 }
 
 func (a jellyfin) Disable(ctx context.Context, t Target) error {
+	if err := a.writeBranding(ctx, t, ""); err != nil {
+		return err
+	}
 	if err := a.writeConfig(ctx, t, nil); err != nil {
 		return err
 	}

@@ -1295,3 +1295,11 @@ Craft apps under one host, by path (ADR-045).
   saying so to the client that sent it; the reconcile result shows the
   path route.
 - Not checked live on VM 2 (not touched in this slice).
+
+## S327 Jellyfin sign-in button (2026-10-28)
+- Live check on VM 2 that the button shows on Jellyfin's login page and
+  starts a sign-in, and that turning sign-in off removes it. Not done: no VM
+  access in this slice.
+- An owner who edits the disclaimer in Jellyfin's dashboard by hand inside
+  the Homestead markers loses that edit on the next apply. Documented by the
+  markers; no separate handling.
