@@ -45,11 +45,15 @@ type fakeAuthentik struct {
 	flowBindings  []map[string]any
 	recoveryPosts int
 	brandPatches  int
+	// login hint state (S336): the default authentication flow's title.
+	authTitle   string
+	noAuthFlow  bool
+	titlePatchs int
 }
 
 func newFakeAuthentik(t *testing.T) *fakeAuthentik {
 	f := &fakeAuthentik{version: "2026.8.3", nextPK: 41, groups: map[string]map[string]any{}, mappings: map[string]map[string]any{},
-		flows: map[string]map[string]any{}, named: map[string]map[string]any{},
+		authTitle: "Welcome to authentik!", flows: map[string]map[string]any{}, named: map[string]map[string]any{},
 		users: []map[string]any{
 			{"pk": 7, "uid": "user-1", "username": "owner", "type": "internal"},
 			{"pk": 8, "uid": "user-2", "username": "guest", "type": "internal"},
@@ -94,6 +98,16 @@ func (f *fakeAuthentik) serve(w http.ResponseWriter, r *http.Request) {
 		f.flows[slug] = body
 		f.recoveryPosts++
 		_ = enc.Encode(body)
+	case r.URL.Path == "/api/v3/flows/instances/default-authentication-flow/" && r.Method == http.MethodPatch:
+		f.authTitle, _ = body["title"].(string)
+		f.titlePatchs++
+		_ = enc.Encode(body)
+	case r.URL.Path == "/api/v3/flows/instances/" && r.URL.Query().Get("slug") == "default-authentication-flow":
+		if f.noAuthFlow {
+			_ = enc.Encode(list())
+			return
+		}
+		_ = enc.Encode(list(map[string]any{"pk": "flow-auth", "slug": "default-authentication-flow", "title": f.authTitle}))
 	case r.URL.Path == "/api/v3/flows/instances/":
 		slug := r.URL.Query().Get("slug")
 		if strings.HasPrefix(slug, "default-provider-") {
@@ -322,7 +336,7 @@ func TestPlanListsObjectsRedirectURIsAndLeavesTheRest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Inspected || len(plan.Objects) != 3 || plan.Objects[0].Action != ActionUnknown || plan.Objects[2].Kind != "Recovery flow" || plan.Objects[2].Action != ActionUnknown {
+	if plan.Inspected || len(plan.Objects) != 4 || plan.Objects[0].Action != ActionUnknown || plan.Objects[2].Kind != "Recovery flow" || plan.Objects[2].Action != ActionUnknown {
 		t.Fatalf("plan without a token must not claim to have read Authentik: %+v", plan.Objects)
 	}
 	want := []string{"http://127.0.0.1:8080/api/v1/sso/callback", "https://homestead.example.test/api/v1/sso/callback"}

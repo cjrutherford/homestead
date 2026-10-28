@@ -130,6 +130,8 @@ func (w *ssoWorld) admin(rw http.ResponseWriter, r *http.Request, enc *json.Enco
 		_ = enc.Encode(map[string]any{"version_current": "2026.8.3"})
 	case p == "/api/v3/flows/instances/" && r.Method == http.MethodPost:
 		_ = enc.Encode(map[string]any{"pk": "f-" + body["slug"].(string), "slug": body["slug"]})
+	case p == "/api/v3/flows/instances/default-authentication-flow/":
+		_ = enc.Encode(body)
 	case p == "/api/v3/flows/instances/":
 		res(map[string]any{"pk": "f", "slug": r.URL.Query().Get("slug")})
 	case p == "/api/v3/core/brands/":
@@ -851,6 +853,14 @@ func TestSSODefaultsWireNames(t *testing.T) {
 	}
 }
 
+// S336: a sign-in with a recovery flow but no login hint asks for a re-plan.
+func TestAccessReplanNamesTheMissingLoginHint(t *testing.T) {
+	st := sso.Status{Configured: true, Spec: &sso.Spec{Access: &sso.Access{}, RecoveryFlow: sso.RecoveryFlowSlug}}
+	if r := accessReplanReason(st); !strings.Contains(r, "ask the owner") {
+		t.Fatalf("re-plan reason = %q", r)
+	}
+}
+
 // S333: a sign-in applied before the recovery flow asks for a re-plan;
 // one that has it does not.
 func TestAccessReplanNamesTheMissingRecoveryFlow(t *testing.T) {
@@ -858,7 +868,7 @@ func TestAccessReplanNamesTheMissingRecoveryFlow(t *testing.T) {
 	if r := accessReplanReason(old); !strings.Contains(r, "recovery flow") {
 		t.Fatalf("no re-plan for a missing recovery flow: %q", r)
 	}
-	cur := sso.Status{Configured: true, Spec: &sso.Spec{Access: &sso.Access{}, RecoveryFlow: sso.RecoveryFlowSlug}}
+	cur := sso.Status{Configured: true, Spec: &sso.Spec{Access: &sso.Access{}, RecoveryFlow: sso.RecoveryFlowSlug, LoginHint: sso.LoginHint}}
 	if r := accessReplanReason(cur); r != "" {
 		t.Fatalf("re-plan reason = %q", r)
 	}

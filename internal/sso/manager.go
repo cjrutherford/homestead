@@ -349,6 +349,7 @@ func (m *Manager) BuildSpec(req PlanRequest) (Spec, error) {
 	spec.Access = &access
 	// ADR-049 §3: one-time sign-in links need a recovery flow.
 	spec.RecoveryFlow = RecoveryFlowSlug
+	spec.LoginHint = LoginHint
 	if m.Version != nil {
 		spec.AuthentikVersion = m.Version()
 	}
@@ -384,6 +385,9 @@ func (m *Manager) Plan(ctx context.Context, req PlanRequest, actor string) (Plan
 	}
 	if spec.RecoveryFlow != "" {
 		plan.Objects = append(plan.Objects, Object{Kind: "Recovery flow", Name: spec.RecoveryFlow, Action: ActionUnknown, Changes: []string{RecoveryLine}})
+	}
+	if spec.LoginHint != "" {
+		plan.Objects = append(plan.Objects, Object{Kind: "Login page hint", Name: AuthFlowSlug, Action: ActionUnknown, Changes: []string{LoginHintLine}})
 	}
 	if t := strings.TrimSpace(req.APIToken); t != "" {
 		secret, _ := m.Secrets.Get(ClientSecretName)

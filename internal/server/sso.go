@@ -576,6 +576,8 @@ func accessReplanReason(st sso.Status) string {
 		return "The owner is linked now: plan Sign-in again to add them to " + sso.OwnerGroup + " and bind the application to it."
 	case st.Spec.RecoveryFlow == "":
 		return "Sign-in was set up before Homestead added Authentik's password recovery flow, so one-time sign-in links for people fail. Re-plan Sign-in and approve it."
+	case st.Spec.LoginHint == "":
+		return "Sign-in was set up before Authentik's login page told people to ask the owner to reset a forgotten password. Re-plan Sign-in and approve it."
 	}
 	return ""
 }

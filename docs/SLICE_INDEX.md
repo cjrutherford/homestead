@@ -94,3 +94,5 @@ Then S332 release 0.0.1 (`docs/slices/S332-release-0-0-1.md`): `VERSION` file, `
 Then S334 Authentik step-up on the public address (`docs/slices/S334-authentik-step-up-on-the-public-address.md`): `POST /api/v1/sso/step-up`, a fresh Authentik sign-in that steps an oidc session up for five minutes so the five People step-up routes work on a public dashboard name (error code `stepup-required`, ADR-049 §1-2).
 
 Then S335 step-up messages (`docs/slices/S335-step-up-messages.md`): the dashboard shows a plain message for a failed Authentik step-up (`?sso_error=`) and drops the param; step-up routes that are not People routes answer 403 `local-only` on a public name and the dialog points to the local address.
+
+Then S336 Authentik's login page tells people to ask the owner (`docs/slices/S336-forgot-password-asks-the-owner.md`): no self-service recovery link; the sign-in plan sets the default authentication flow title to a hint, covered by the digest, with a re-plan reason for earlier sign-ins (ADR-049 amendment).

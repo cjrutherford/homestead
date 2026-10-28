@@ -1310,14 +1310,14 @@ Craft apps under one host, by path (ADR-045).
   markers; no separate handling.
 
 ## S333 recovery flow and the add dialog (2026-10-28)
-- ADR-049 §3 says people see "Forgot password" on Authentik's login page.
-  Authentik shows that link from the identification stage's own recovery
-  flow, not the brand's, and Homestead's flow only serves one-time links
-  (it has no identification or email stage, so a self-service reset from
-  the login page cannot work). The stock identification stage is not
-  changed and no "Forgot password" link appears. A self-service reset
-  (identification, email, then this flow's stages) needs Authentik's email
-  settings and an owner decision.
+- Forgot password: resolved by owner decision (2026-10-28, ADR-049
+  amendment). People ask the owner, who resets the password from People.
+  Authentik shows its "Forgot username or password?" link only from the
+  identification stage's own recovery flow, which Homestead leaves unset
+  (S336 shows a hint on the login page instead).
+- Deferred: outbound email for self-service recovery (identification,
+  email, then the recovery flow's stages; needs Authentik's email
+  settings and an owner decision).
 - The recovery flow has authentication "none" so Authentik can plan it
   during the administrator's API call that makes the link. Opening it
   without a link reaches the password prompt and then fails at the write
@@ -1344,3 +1344,8 @@ Craft apps under one host, by path (ADR-045).
 - Live check on VM 2 of the full ceremony on the public dashboard name
   (Authentik prompt, return to the People page, action succeeds, expires
   after five minutes). Not done: no VM access in this slice.
+
+## S336 login page hint (2026-10-28)
+- The hint is the title of Authentik's `default-authentication-flow`, the
+  only text a flow lets Homestead set. An owner who customised that flow's
+  title sees it replaced when the plan is applied. Not verified live.

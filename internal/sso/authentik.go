@@ -66,6 +66,11 @@ type Spec struct {
 	// the default brand has none (ADR-049 §3). Empty in specs from before
 	// S333 and in app sign-in specs, which never touch it.
 	RecoveryFlow string `json:"recovery_flow,omitempty"`
+	// LoginHint is the title Homestead sets on Authentik's default
+	// authentication flow, telling people to ask the owner for a password
+	// reset (ADR-049 amendment). Empty in specs from before S336 and in
+	// app sign-in specs.
+	LoginHint string `json:"login_hint,omitempty"`
 }
 
 // IssuerFor is the per-provider issuer Authentik publishes for the
@@ -442,6 +447,13 @@ func (a *API) Inspect(ctx context.Context, spec Spec, secret string) ([]Object, 
 		}
 		objects = append(objects, o)
 	}
+	if spec.LoginHint != "" {
+		o, err := a.inspectLoginHint(ctx, spec.LoginHint)
+		if err != nil {
+			return nil, err
+		}
+		objects = append(objects, o)
+	}
 	return objects, nil
 }
 
@@ -452,7 +464,12 @@ func (a *API) Reconcile(ctx context.Context, spec Spec, secret string, step func
 		return err
 	}
 	if spec.RecoveryFlow != "" {
-		return a.ensureRecovery(ctx, spec.RecoveryFlow, step)
+		if err := a.ensureRecovery(ctx, spec.RecoveryFlow, step); err != nil {
+			return err
+		}
+	}
+	if spec.LoginHint != "" {
+		return a.ensureLoginHint(ctx, spec.LoginHint, step)
 	}
 	return nil
 }
