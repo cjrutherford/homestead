@@ -11,11 +11,11 @@ var bg = context.Background()
 
 func (r *rig) add(username string, grants ...Grant) (Person, *Revealed) {
 	r.t.Helper()
-	p, rev, warn, err := r.svc.Add(bg, "owner", AddRequest{DisplayName: "Ada Lovelace", Username: username, Email: username + "@example.test", Grants: grants})
-	if err != nil || warn != "" {
-		r.t.Fatalf("add: %v %q", err, warn)
+	res, err := r.svc.Add(bg, "owner", AddRequest{DisplayName: "Ada Lovelace", Username: username, Email: username + "@example.test", Grants: grants})
+	if err != nil || res.Warning != "" || res.SignInFailed {
+		r.t.Fatalf("add: %v %+v", err, res)
 	}
-	return p, rev
+	return res.Person, res.Revealed
 }
 
 func TestAddCreatesTaggedUserRecordsItAndRevealsALinkOnce(t *testing.T) {
@@ -43,7 +43,8 @@ const managed = "homestead.managed"
 
 func TestGeneratedPasswordIsRevealedOnceAndNotAudited(t *testing.T) {
 	r := newRig(t)
-	p, rev, _, err := r.svc.Add(bg, "owner", AddRequest{DisplayName: "Bo", Username: "bo", Method: MethodGenerated})
+	res, err := r.svc.Add(bg, "owner", AddRequest{DisplayName: "Bo", Username: "bo", Method: MethodGenerated})
+	p, rev := res.Person, res.Revealed
 	if err != nil || rev == nil || rev.Kind != "password" || len(rev.Value) < 16 {
 		t.Fatalf("add: %v %+v", err, rev)
 	}
@@ -78,16 +79,16 @@ func TestAddValidatesAndRefusesDuplicates(t *testing.T) {
 		{DisplayName: "X", Username: "x", Grants: []Grant{{App: "jellyfin", Role: "user"}}},
 		{DisplayName: "X", Username: "x", Grants: []Grant{{App: "immich", Role: "king"}}},
 	} {
-		if _, _, _, err := r.svc.Add(bg, "owner", bad); !errors.Is(err, ErrInvalid) {
+		if _, err := r.svc.Add(bg, "owner", bad); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%+v: %v", bad, err)
 		}
 	}
 	r.add("dup")
-	if _, _, _, err := r.svc.Add(bg, "owner", AddRequest{DisplayName: "D", Username: "DUP"}); !errors.Is(err, ErrConflict) {
+	if _, err := r.svc.Add(bg, "owner", AddRequest{DisplayName: "D", Username: "DUP"}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate: %v", err)
 	}
 	// Authentik already has the name (a user Homestead did not make).
-	if _, _, _, err := r.svc.Add(bg, "owner", AddRequest{DisplayName: "C", Username: "cousin"}); !errors.Is(err, ErrConflict) {
+	if _, err := r.svc.Add(bg, "owner", AddRequest{DisplayName: "C", Username: "cousin"}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("existing in Authentik: %v", err)
 	}
 }
@@ -95,9 +96,17 @@ func TestAddValidatesAndRefusesDuplicates(t *testing.T) {
 func TestAddWithoutARecoveryFlowKeepsThePersonAndWarns(t *testing.T) {
 	r := newRig(t)
 	r.f.noRecover = true
-	p, rev, warn, err := r.svc.Add(bg, "owner", AddRequest{DisplayName: "Cy", Username: "cy"})
-	if err != nil || rev != nil || !strings.Contains(warn, "was added") || p.ID == 0 {
-		t.Fatalf("%v %+v %q", err, rev, warn)
+	res, err := r.svc.Add(bg, "owner", AddRequest{DisplayName: "Cy", Username: "cy", Grants: []Grant{{"immich", RoleUser}}})
+	if err != nil || res.Revealed != nil || !res.SignInFailed || !strings.Contains(res.Warning, "was added") || res.Person.ID == 0 {
+		t.Fatalf("%v %+v", err, res)
+	}
+	// The grants are made anyway, and a generated password still works.
+	if len(res.Person.Grants) != 1 || !r.f.member("homestead-immich-users", res.Person.pk) {
+		t.Fatalf("grants after a failed sign-in: %+v", res.Person.Grants)
+	}
+	rev, err := r.svc.ResetPassword(bg, "owner", res.Person.ID, MethodGenerated, "")
+	if err != nil || rev == nil || rev.Kind != "password" {
+		t.Fatalf("generate instead: %v %+v", err, rev)
 	}
 }
 
@@ -357,7 +366,7 @@ func TestWithoutAKeptTokenNothingActsAndTheListSaysSo(t *testing.T) {
 		t.Fatalf("list: %v %+v", err, v)
 	}
 	before := len(r.f.calls)
-	_, _, _, e1 := r.svc.Add(bg, "owner", AddRequest{DisplayName: "X", Username: "x"})
+	_, e1 := r.svc.Add(bg, "owner", AddRequest{DisplayName: "X", Username: "x"})
 	_, e2 := r.svc.Grant(bg, "owner", p.ID, Grant{"immich", RoleUser})
 	e3 := r.svc.Remove(bg, "owner", p.ID)
 	_, e4 := r.svc.ResetPassword(bg, "owner", p.ID, "", "")

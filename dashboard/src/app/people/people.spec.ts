@@ -108,6 +108,65 @@ describe('People', () => {
     expect(text()).not.toContain('Secret-Pass-123');
   });
 
+  function addSam() {
+    button('Add a person')!.click();
+    fixture.detectChanges();
+    for (const [name, value] of [['name', 'Sam Lee'], ['username', 'sam']]) {
+      const input = el().querySelector(`input[name="${name}"]`) as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+    }
+    fixture.detectChanges();
+    button('Add person')!.click();
+    return http.expectOne((r) => r.url === '/api/v1/people' && r.method === 'POST');
+  }
+
+  it('keeps the add dialog open when sign-in was not set up, and offers a generated password once', () => {
+    start();
+    addSam().flush({
+      person: SAM, revealed: null, sign_in_failed: true,
+      warning: 'sam was added, but how they sign in was not set up (a missing recovery flow). Reset their password to try again.',
+    });
+    http.expectOne('/api/v1/people').flush(VIEW);
+    fixture.detectChanges();
+    expect(text()).toContain('Sam Lee was added');
+    expect(text()).toContain('Their sign-in was not set up.');
+    expect(text()).toContain('a missing recovery flow');
+    button('Generate a password instead')!.click();
+    const req = http.expectOne('/api/v1/people/4/password-reset');
+    expect(req.request.body).toEqual({ method: 'generated', password: '', confirm: true });
+    req.flush({ revealed: { kind: 'password', value: 'Fresh-Pass-456' } });
+    http.expectOne('/api/v1/people').flush(VIEW);
+    fixture.detectChanges();
+    expect(text()).toContain('Fresh-Pass-456');
+    expect(text()).toContain('cannot show it again');
+    expect(button('Generate a password instead')).toBeUndefined();
+  });
+
+  it('shows why generating failed and stays on the added person', () => {
+    start();
+    addSam().flush({ person: SAM, revealed: null, sign_in_failed: true, warning: 'sam was added, but how they sign in was not set up (x).' });
+    http.expectOne('/api/v1/people').flush(VIEW);
+    fixture.detectChanges();
+    button('Generate a password instead')!.click();
+    http.expectOne('/api/v1/people/4/password-reset').flush('Authentik refused the password', { status: 502, statusText: 'Bad Gateway' });
+    fixture.detectChanges();
+    expect(text()).toContain('Authentik refused the password');
+    expect(button('Generate a password instead')).toBeDefined();
+    button('Close')!.click();
+    fixture.detectChanges();
+    expect(text()).not.toContain('Sam Lee was added');
+  });
+
+  it('closes the add dialog with a notice when only a grant failed', () => {
+    start();
+    addSam().flush({ person: SAM, revealed: { kind: 'link', value: 'https://auth.example/recover/x' }, warning: 'sam was added, but immich could not be granted (x).' });
+    http.expectOne('/api/v1/people').flush(VIEW);
+    fixture.detectChanges();
+    expect(text()).toContain('https://auth.example/recover/x');
+    expect(button('Generate a password instead')).toBeUndefined();
+  });
+
   it('grants and revokes only what changed, as separate confirmed calls', () => {
     start();
     (Array.from(el().querySelectorAll('.person[data-status="ok"] button')).find((b) => b.textContent?.trim() === 'Apps') as HTMLButtonElement).click();

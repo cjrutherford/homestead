@@ -210,3 +210,21 @@ func TestPeopleUsageErrors(t *testing.T) {
 		t.Errorf("unknown person: exit %d", code)
 	}
 }
+
+// S333: a person added without a working sign-in gets the reason and the
+// command that generates a password instead.
+func TestPeopleAddSuggestsAGeneratedPasswordWhenSignInFailed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = w.Write([]byte(`{"person":{"id":9,"display_name":"Cy","username":"cy","state":"active","grants":[]},"revealed":null,` +
+			`"warning":"cy was added, but how they sign in was not set up (no recovery flow).","sign_in_failed":true}`))
+	}))
+	t.Cleanup(srv.Close)
+	code, out, errOut := invoke(t, []string{"--server", srv.URL, "people", "add", "--name", "Cy", "--username", "cy"})
+	if code != exitOK || out != "" {
+		t.Fatalf("exit %d out %q", code, out)
+	}
+	if !strings.Contains(errOut, "no recovery flow") || !strings.Contains(errOut, "homesteadctl people reset-password cy --generate") {
+		t.Fatalf("err %q", errOut)
+	}
+}

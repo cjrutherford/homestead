@@ -291,6 +291,19 @@
           </div>
         </app-dialog>
       }
+      @case ('added') {
+        <app-dialog [heading]="d.person.display_name + ' was added'" (dismissed)="close()">
+          <app-state-message kind="warning" headline="Their sign-in was not set up." [detail]="d.reason" />
+          <p>They are kept with the apps you chose, but they have no way to sign in yet. You can generate a password for them now; it is shown once.</p>
+          @if (problem()) {
+            <app-state-message kind="error" [headline]="problem()" />
+          }
+          <div class="dialog-actions">
+            <button type="button" class="primary" [disabled]="busy()" (click)="generateInstead()">Generate a password instead</button>
+            <button type="button" class="quiet" (click)="close()">Close</button>
+          </div>
+        </app-dialog>
+      }
       @case ('reveal') {
         <app-dialog [heading]="d.revealed.kind === 'link' ? 'One-time sign-in link' : 'Generated password'" (dismissed)="close()">
           <p>

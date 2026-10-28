@@ -35,10 +35,21 @@ type fakeAuthentik struct {
 	mappings map[string]map[string]any // name -> custom scope mapping
 	users    []map[string]any
 	deleted  []string
+	// recovery state (S333): the default brand's recovery flow, and the
+	// flows, stages, prompts and flow bindings created for it. Their posts
+	// count in recoveryPosts, not posts.
+	recovery      string
+	noBrand       bool
+	flows         map[string]map[string]any // slug -> flow
+	named         map[string]map[string]any // path+name -> stage or prompt
+	flowBindings  []map[string]any
+	recoveryPosts int
+	brandPatches  int
 }
 
 func newFakeAuthentik(t *testing.T) *fakeAuthentik {
 	f := &fakeAuthentik{version: "2026.8.3", nextPK: 41, groups: map[string]map[string]any{}, mappings: map[string]map[string]any{},
+		flows: map[string]map[string]any{}, named: map[string]map[string]any{},
 		users: []map[string]any{
 			{"pk": 7, "uid": "user-1", "username": "owner", "type": "internal"},
 			{"pk": 8, "uid": "user-2", "username": "guest", "type": "internal"},
@@ -77,13 +88,60 @@ func (f *fakeAuthentik) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/api/v3/admin/version/":
 		_ = enc.Encode(map[string]any{"version_current": f.version})
+	case r.URL.Path == "/api/v3/flows/instances/" && r.Method == http.MethodPost:
+		slug := body["slug"].(string)
+		body["pk"] = "flow-" + slug
+		f.flows[slug] = body
+		f.recoveryPosts++
+		_ = enc.Encode(body)
 	case r.URL.Path == "/api/v3/flows/instances/":
 		slug := r.URL.Query().Get("slug")
 		if strings.HasPrefix(slug, "default-provider-") {
 			_ = enc.Encode(list(map[string]any{"pk": "flow-" + slug, "slug": slug}))
 			return
 		}
+		if fl, ok := f.flows[slug]; ok {
+			_ = enc.Encode(list(fl))
+			return
+		}
 		_ = enc.Encode(list())
+	case r.URL.Path == "/api/v3/core/brands/":
+		if f.noBrand {
+			_ = enc.Encode(list(map[string]any{"brand_uuid": "b-other", "default": false, "flow_recovery": nil}))
+			return
+		}
+		var rec any
+		if f.recovery != "" {
+			rec = f.recovery
+		}
+		_ = enc.Encode(list(map[string]any{"brand_uuid": "b-default", "domain": "authentik-default", "default": true, "flow_recovery": rec}))
+	case r.URL.Path == "/api/v3/core/brands/b-default/" && r.Method == http.MethodPatch:
+		f.recovery, _ = body["flow_recovery"].(string)
+		f.brandPatches++
+		_ = enc.Encode(body)
+	case r.URL.Path == "/api/v3/flows/bindings/" && r.Method == http.MethodGet:
+		var out []any
+		for _, b := range f.flowBindings {
+			if b["target"] == r.URL.Query().Get("target") {
+				out = append(out, b)
+			}
+		}
+		_ = enc.Encode(list(out...))
+	case r.URL.Path == "/api/v3/flows/bindings/" && r.Method == http.MethodPost:
+		f.flowBindings = append(f.flowBindings, body)
+		f.recoveryPosts++
+		_ = enc.Encode(body)
+	case strings.HasPrefix(r.URL.Path, "/api/v3/stages/") && r.Method == http.MethodGet:
+		if o, ok := f.named[r.URL.Path+r.URL.Query().Get("name")]; ok {
+			_ = enc.Encode(list(o))
+			return
+		}
+		_ = enc.Encode(list())
+	case strings.HasPrefix(r.URL.Path, "/api/v3/stages/") && r.Method == http.MethodPost:
+		body["pk"] = "pk-" + body["name"].(string)
+		f.named[r.URL.Path+body["name"].(string)] = body
+		f.recoveryPosts++
+		_ = enc.Encode(body)
 	case r.URL.Path == "/api/v3/crypto/certificatekeypairs/":
 		if f.noKey {
 			_ = enc.Encode(list())
@@ -264,7 +322,7 @@ func TestPlanListsObjectsRedirectURIsAndLeavesTheRest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Inspected || len(plan.Objects) != 2 || plan.Objects[0].Action != ActionUnknown {
+	if plan.Inspected || len(plan.Objects) != 3 || plan.Objects[0].Action != ActionUnknown || plan.Objects[2].Kind != "Recovery flow" || plan.Objects[2].Action != ActionUnknown {
 		t.Fatalf("plan without a token must not claim to have read Authentik: %+v", plan.Objects)
 	}
 	want := []string{"http://127.0.0.1:8080/api/v1/sso/callback", "https://homestead.example.test/api/v1/sso/callback"}

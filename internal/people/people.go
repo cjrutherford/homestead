@@ -482,72 +482,94 @@ type AddRequest struct {
 	Grants      []Grant `json:"grants,omitempty"`
 }
 
+// AddResult is what adding a person returns. Warning says what a later
+// step could not do; SignInFailed says how they sign in was not set up
+// (ADR-049 §4), so a client can offer a generated password instead.
+type AddResult struct {
+	Person       Person    `json:"person"`
+	Revealed     *Revealed `json:"revealed"`
+	Warning      string    `json:"warning"`
+	SignInFailed bool      `json:"sign_in_failed,omitempty"`
+}
+
 // Add creates the Authentik user, records the person, and sets up how they
-// sign in. If a later step fails the person exists and the error says what
-// to redo.
-func (s *Service) Add(ctx context.Context, actor string, req AddRequest) (Person, *Revealed, string, error) {
+// sign in. If a later step fails the person exists and the warning says
+// what to redo.
+func (s *Service) Add(ctx context.Context, actor string, req AddRequest) (AddResult, error) {
 	req.DisplayName, req.Username, req.Email = strings.TrimSpace(req.DisplayName), strings.TrimSpace(req.Username), strings.TrimSpace(req.Email)
 	switch {
 	case !validName(req.DisplayName):
-		return Person{}, nil, "", invalid("a name is required (up to 150 characters)")
+		return AddResult{}, invalid("a name is required (up to 150 characters)")
 	case !usernameRe.MatchString(req.Username):
-		return Person{}, nil, "", invalid("a username uses letters, digits and . _ @ + - only")
+		return AddResult{}, invalid("a username uses letters, digits and . _ @ + - only")
 	case !validEmail(req.Email):
-		return Person{}, nil, "", invalid("that email address is not valid")
+		return AddResult{}, invalid("that email address is not valid")
 	case req.Method != "" && req.Method != MethodLink && req.Method != MethodGenerated:
-		return Person{}, nil, "", invalid("method must be %q or %q", MethodLink, MethodGenerated)
+		return AddResult{}, invalid("method must be %q or %q", MethodLink, MethodGenerated)
 	}
 	apps, err := s.apps()
 	if err != nil {
-		return Person{}, nil, "", err
+		return AddResult{}, err
 	}
 	for _, g := range req.Grants {
 		if err := checkGrant(g, apps); err != nil {
-			return Person{}, nil, "", err
+			return AddResult{}, err
 		}
 	}
 	var n int
 	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM people WHERE lower(username) = lower(?)`, req.Username).Scan(&n); err != nil {
-		return Person{}, nil, "", err
+		return AddResult{}, err
 	}
 	if n > 0 {
-		return Person{}, nil, "", fmt.Errorf("%w: %s is already a person here", ErrConflict, req.Username)
+		return AddResult{}, fmt.Errorf("%w: %s is already a person here", ErrConflict, req.Username)
 	}
 	api, err := s.client()
 	if err != nil {
-		return Person{}, nil, "", err
+		return AddResult{}, err
 	}
 	acct, err := api.CreateAccount(ctx, sso.AccountFields{Username: req.Username, Name: req.DisplayName, Email: req.Email})
 	if err != nil {
 		s.audit(actor, "people.add", "error", "could not create "+req.Username)
 		var ae *sso.APIError
 		if errors.As(err, &ae) && ae.Status == 400 {
-			return Person{}, nil, "", fmt.Errorf("%w: Authentik refused the user (the username or email may already exist there; adopt the existing user instead)", ErrConflict)
+			return AddResult{}, fmt.Errorf("%w: Authentik refused the user (the username or email may already exist there; adopt the existing user instead)", ErrConflict)
 		}
-		return Person{}, nil, "", err
+		return AddResult{}, err
 	}
 	res, err := s.DB.Exec(`INSERT INTO people (display_name, username, email, authentik_pk, state, origin, created_by, created_at)
 		VALUES (?, ?, ?, ?, 'active', 'created', ?, ?)`, req.DisplayName, req.Username, req.Email, acct.PK, actor, s.now().Format(time.RFC3339))
 	if err != nil {
 		// Do not leave an unrecorded user behind.
 		_ = api.DeleteAccount(ctx, acct.PK)
-		return Person{}, nil, "", err
+		return AddResult{}, err
 	}
 	id, _ := res.LastInsertId()
 	s.audit(actor, "people.add", "ok", fmt.Sprintf("added %s (person %d)", req.Username, id))
-	var rev *Revealed
-	if rev, err = s.credential(ctx, api, acct.PK, req.Method, req.Password); err != nil {
-		p, _ := s.person(id)
-		return p, nil, fmt.Sprintf("%s was added, but how they sign in was not set up (%v). Reset their password to try again.", req.Username, err), nil
+	rev, cerr := s.credential(ctx, api, acct.PK, req.Method, req.Password)
+	var problems []string
+	if cerr != nil {
+		problems = append(problems, fmt.Sprintf("how they sign in was not set up (%v)", cerr))
 	}
+	// The grants are made even when sign-in failed, so a password set
+	// afterwards opens the chosen apps.
 	for _, g := range req.Grants {
 		if err := s.applyGrant(ctx, api, actor, id, acct.PK, g); err != nil {
-			p, _ := s.person(id)
-			return p, rev, fmt.Sprintf("%s was added, but %s could not be granted (%v).", req.Username, g.App, err), nil
+			problems = append(problems, fmt.Sprintf("%s could not be granted (%v)", g.App, err))
+			break
 		}
 	}
 	p, err := s.person(id)
-	return p, rev, "", err
+	if err != nil {
+		return AddResult{}, err
+	}
+	out := AddResult{Person: p, Revealed: rev, SignInFailed: cerr != nil}
+	if len(problems) > 0 {
+		out.Warning = fmt.Sprintf("%s was added, but %s.", req.Username, strings.Join(problems, ", and "))
+		if cerr != nil {
+			out.Warning += " Reset their password to try again."
+		}
+	}
+	return out, nil
 }
 
 func checkGrant(g Grant, apps []string) error {

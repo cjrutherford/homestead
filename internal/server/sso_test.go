@@ -46,6 +46,8 @@ type ssoWorld struct {
 	// people (S317)
 	users map[int]map[string]any
 	calls []string
+	// recovery flow on the default brand (S333)
+	recovery string
 }
 
 type ssoFlow struct{ nonce, challenge, redirect string }
@@ -123,8 +125,22 @@ func (w *ssoWorld) admin(rw http.ResponseWriter, r *http.Request, enc *json.Enco
 	switch p := r.URL.Path; {
 	case p == "/api/v3/admin/version/":
 		_ = enc.Encode(map[string]any{"version_current": "2026.8.3"})
+	case p == "/api/v3/flows/instances/" && r.Method == http.MethodPost:
+		_ = enc.Encode(map[string]any{"pk": "f-" + body["slug"].(string), "slug": body["slug"]})
 	case p == "/api/v3/flows/instances/":
 		res(map[string]any{"pk": "f", "slug": r.URL.Query().Get("slug")})
+	case p == "/api/v3/core/brands/":
+		res(map[string]any{"brand_uuid": "b1", "domain": "authentik-default", "default": true, "flow_recovery": w.recovery})
+	case p == "/api/v3/core/brands/b1/":
+		w.recovery, _ = body["flow_recovery"].(string)
+		_ = enc.Encode(body)
+	case strings.HasPrefix(p, "/api/v3/stages/") || p == "/api/v3/flows/bindings/":
+		if r.Method == http.MethodPost {
+			body["pk"] = "s-" + fmt.Sprint(body["name"])
+			_ = enc.Encode(body)
+			return
+		}
+		res()
 	case p == "/api/v3/crypto/certificatekeypairs/":
 		res(map[string]any{"pk": "kp", "name": r.URL.Query().Get("name")})
 	case p == "/api/v3/propertymappings/provider/scope/" && r.Method == http.MethodPost:
@@ -829,5 +845,18 @@ func TestSSODefaultsWireNames(t *testing.T) {
 	}
 	if got, want := string(raw), `{"authentik_url":"https://authentik.lan","origins":["https://homestead.lan"]}`; got != want {
 		t.Fatalf("defaults JSON = %s, want %s", got, want)
+	}
+}
+
+// S333: a sign-in applied before the recovery flow asks for a re-plan;
+// one that has it does not.
+func TestAccessReplanNamesTheMissingRecoveryFlow(t *testing.T) {
+	old := sso.Status{Configured: true, Spec: &sso.Spec{Access: &sso.Access{}}}
+	if r := accessReplanReason(old); !strings.Contains(r, "recovery flow") {
+		t.Fatalf("no re-plan for a missing recovery flow: %q", r)
+	}
+	cur := sso.Status{Configured: true, Spec: &sso.Spec{Access: &sso.Access{}, RecoveryFlow: sso.RecoveryFlowSlug}}
+	if r := accessReplanReason(cur); r != "" {
+		t.Fatalf("re-plan reason = %q", r)
 	}
 }

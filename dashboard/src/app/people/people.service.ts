@@ -54,6 +54,14 @@ export interface Revealed {
   value: string;
 }
 
+/** What adding a person returns; sign_in_failed: they were added but how they sign in was not set up. */
+export interface PersonAdded {
+  person: Person;
+  revealed: Revealed | null;
+  warning?: string;
+  sign_in_failed?: boolean;
+}
+
 export interface PersonAdd {
   display_name: string;
   username: string;
@@ -84,8 +92,8 @@ export class PeopleService {
     return this.http.get<PeopleView>('/api/v1/people');
   }
 
-  addPerson(body: PersonAdd): Observable<{ person: Person; revealed: Revealed | null; warning?: string }> {
-    return this.http.post<{ person: Person; revealed: Revealed | null; warning?: string }>('/api/v1/people', { ...body, confirm: true });
+  addPerson(body: PersonAdd): Observable<PersonAdded> {
+    return this.http.post<PersonAdded>('/api/v1/people', { ...body, confirm: true });
   }
 
   adoptPerson(username: string): Observable<{ person: Person }> {

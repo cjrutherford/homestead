@@ -455,7 +455,11 @@ touched, and service accounts are never listed.
 - **Add a person**: name, username, optional email, the apps they can open,
   and how they first sign in (a one-time link, a generated password or a
   password you choose). A generated password or link is shown once and is not
-  kept.
+  kept. One-time links need Authentik's recovery flow: the Sign-in plan adds
+  Homestead's own (`homestead-recovery`) when the default brand has none. If
+  sign-in could not be set up, the person is kept, the dialog says why and
+  offers **Generate a password instead** (CLI: `homesteadctl people
+  reset-password PERSON --generate`).
 - **Apps**: grant or revoke each app, or make someone an app admin. People are
   never Homestead administrators; the dashboard stays yours alone.
 - **Reset password**, **Reset second factor**, **Disable** and **Remove** each

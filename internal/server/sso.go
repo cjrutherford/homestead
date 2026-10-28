@@ -509,6 +509,8 @@ func accessReplanReason(st sso.Status) string {
 		return "Sign-in was set up before access groups: the dashboard application is not bound to " + sso.OwnerGroup + ". Re-plan Sign-in and approve it."
 	case st.Linked && st.Spec.Access.OwnerSub != st.Subject:
 		return "The owner is linked now: plan Sign-in again to add them to " + sso.OwnerGroup + " and bind the application to it."
+	case st.Spec.RecoveryFlow == "":
+		return "Sign-in was set up before Homestead added Authentik's password recovery flow, so one-time sign-in links for people fail. Re-plan Sign-in and approve it."
 	}
 	return ""
 }

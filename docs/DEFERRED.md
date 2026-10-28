@@ -1308,3 +1308,21 @@ Craft apps under one host, by path (ADR-045).
 - An owner who edits the disclaimer in Jellyfin's dashboard by hand inside
   the Homestead markers loses that edit on the next apply. Documented by the
   markers; no separate handling.
+
+## S333 recovery flow and the add dialog (2026-10-28)
+- ADR-049 §3 says people see "Forgot password" on Authentik's login page.
+  Authentik shows that link from the identification stage's own recovery
+  flow, not the brand's, and Homestead's flow only serves one-time links
+  (it has no identification or email stage, so a self-service reset from
+  the login page cannot work). The stock identification stage is not
+  changed and no "Forgot password" link appears. A self-service reset
+  (identification, email, then this flow's stages) needs Authentik's email
+  settings and an owner decision.
+- The recovery flow has authentication "none" so Authentik can plan it
+  during the administrator's API call that makes the link. Opening it
+  without a link reaches the password prompt and then fails at the write
+  stage (no pending user); nothing is changed. Not verified live.
+- Step-up for the generated password on a public dashboard name is S334.
+- Live check on VM 2 (re-plan shows the recovery flow, apply sets it on
+  the brand, adding a person shows a working link). Not done: no VM access
+  in this slice.

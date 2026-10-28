@@ -186,12 +186,12 @@ func (h *peopleHandlers) add(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := h.ctx(r)
 	defer cancel()
-	p, rev, warning, err := h.svc.Add(ctx, actor, body.AddRequest)
+	res, err := h.svc.Add(ctx, actor, body.AddRequest)
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"person": p, "revealed": rev, "warning": warning})
+	writeJSON(w, res)
 }
 
 type adoptBody struct {

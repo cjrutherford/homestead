@@ -336,6 +336,8 @@ func (m *Manager) BuildSpec(req PlanRequest) (Spec, error) {
 		access.OwnerSub = link.Sub
 	}
 	spec.Access = &access
+	// ADR-049 §3: one-time sign-in links need a recovery flow.
+	spec.RecoveryFlow = RecoveryFlowSlug
 	if m.Version != nil {
 		spec.AuthentikVersion = m.Version()
 	}
@@ -359,14 +361,18 @@ func (m *Manager) Plan(ctx context.Context, req PlanRequest, actor string) (Plan
 	plan := Plan{
 		Spec: spec, Digest: digestOf(spec), ExpiresAt: m.now().Add(PlanTTL),
 		Untouched: []string{
-			"users (other than finding the linked owner) and groups without the " + GroupPrefix + " prefix", "flows and stages (the two stock flows named here are only referenced)",
-			"policies and bindings other than the application's own", "every other application and provider", "Authentik's own settings",
+			"users (other than finding the linked owner) and groups without the " + GroupPrefix + " prefix", "flows and stages other than Homestead's own recovery flow (the two stock flows named here are only referenced)",
+			"policies and bindings other than the application's own", "every other application and provider",
+			"Authentik's own settings, except that the default brand gets the recovery flow when it has none",
 		},
 	}
 	plan.Warnings = planWarnings(spec)
 	plan.Objects = []Object{
 		{Kind: "OAuth2/OpenID provider", Name: spec.ProviderName, Action: ActionUnknown},
 		{Kind: "Application", Name: spec.AppName + " (" + spec.AppSlug + ")", Action: ActionUnknown},
+	}
+	if spec.RecoveryFlow != "" {
+		plan.Objects = append(plan.Objects, Object{Kind: "Recovery flow", Name: spec.RecoveryFlow, Action: ActionUnknown, Changes: []string{RecoveryLine}})
 	}
 	if t := strings.TrimSpace(req.APIToken); t != "" {
 		secret, _ := m.Secrets.Get(ClientSecretName)

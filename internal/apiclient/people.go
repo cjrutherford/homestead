@@ -92,6 +92,9 @@ type PersonResult struct {
 	Person   Person    `json:"person"`
 	Revealed *Revealed `json:"revealed"`
 	Warning  string    `json:"warning"`
+	// SignInFailed: the person was added but how they sign in was not
+	// set up (add only, ADR-049 §4).
+	SignInFailed bool `json:"sign_in_failed,omitempty"`
 }
 
 // SecondFactorReset says which devices were removed and which were left.

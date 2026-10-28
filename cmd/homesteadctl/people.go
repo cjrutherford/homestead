@@ -268,6 +268,9 @@ func runPeopleAdd(ctx context.Context, client *apiclient.Client, args []string, 
 	if res.Warning != "" {
 		fmt.Fprintln(stderr, "warning:", res.Warning)
 	}
+	if res.SignInFailed {
+		fmt.Fprintf(stderr, "To give them a generated password instead: homesteadctl people reset-password %s --generate\n", res.Person.Username)
+	}
 	printRevealed(stdout, stderr, res.Revealed)
 	return exitOK
 }

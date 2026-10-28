@@ -18,7 +18,8 @@ export type PeopleDialog =
   | { kind: 'apps'; person: Person }
   | { kind: 'reset'; person: Person }
   | { kind: 'confirm'; person: Person; action: 'mfa' | 'disable' | 'enable' | 'remove' | 'forget' }
-  | { kind: 'reveal'; who: string; revealed: Revealed };
+  | { kind: 'reveal'; who: string; revealed: Revealed }
+  | { kind: 'added'; person: Person; reason: string };
 
 /**
  * People (S317, ADR-043): who can open which apps. People are never
@@ -219,6 +220,12 @@ export class People implements OnInit {
     };
     this.run(this.service.addPerson(body), (result) => {
       this.formPassword = '';
+      if (result.sign_in_failed && !result.revealed) {
+        // ADR-049 §4: the person is kept; the dialog stays open on them.
+        this.dialog.set({ kind: 'added', person: result.person, reason: result.warning ?? '' });
+        this.load();
+        return;
+      }
       if (result.warning) {
         this.toast.show(result.warning, 'notice');
       }
@@ -269,6 +276,17 @@ export class People implements OnInit {
     const given = this.formHow === 'password';
     this.run(this.service.resetPassword(d.person.id, given ? 'link' : (this.formHow as 'link' | 'generated'), given ? this.formPassword : ''), (result) => {
       this.formPassword = '';
+      this.reveal(d.person.display_name, result.revealed, `Password for ${d.person.display_name} set`);
+    });
+  }
+
+  /** After a failed first sign-in, a generated password, shown once. */
+  protected generateInstead(): void {
+    const d = this.dialog();
+    if (d?.kind !== 'added') {
+      return;
+    }
+    this.run(this.service.resetPassword(d.person.id, 'generated'), (result) => {
       this.reveal(d.person.display_name, result.revealed, `Password for ${d.person.display_name} set`);
     });
   }

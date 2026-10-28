@@ -62,6 +62,10 @@ type Spec struct {
 	// Access is the groups, bindings and claim mapping (ADR-043). Nil in
 	// specs from before S314, which keep their digests.
 	Access *Access `json:"access,omitempty"`
+	// RecoveryFlow is the slug of the recovery flow Homestead adds when
+	// the default brand has none (ADR-049 §3). Empty in specs from before
+	// S333 and in app sign-in specs, which never touch it.
+	RecoveryFlow string `json:"recovery_flow,omitempty"`
 }
 
 // IssuerFor is the per-provider issuer Authentik publishes for the
@@ -431,12 +435,29 @@ func (a *API) Inspect(ctx context.Context, spec Spec, secret string) ([]Object, 
 		}
 		objects = append(objects, objs...)
 	}
+	if spec.RecoveryFlow != "" {
+		o, err := a.inspectRecovery(ctx, spec.RecoveryFlow)
+		if err != nil {
+			return nil, err
+		}
+		objects = append(objects, o)
+	}
 	return objects, nil
 }
 
 // Reconcile creates or updates the provider and the application so they
 // match spec, and is a no-op when they already do.
 func (a *API) Reconcile(ctx context.Context, spec Spec, secret string, step func(string)) error {
+	if err := a.reconcileApp(ctx, spec, secret, step); err != nil {
+		return err
+	}
+	if spec.RecoveryFlow != "" {
+		return a.ensureRecovery(ctx, spec.RecoveryFlow, step)
+	}
+	return nil
+}
+
+func (a *API) reconcileApp(ctx context.Context, spec Spec, secret string, step func(string)) error {
 	flow, err := a.flowPK(ctx, spec.AuthorizationFlow)
 	if err != nil {
 		return err
