@@ -55,7 +55,8 @@ When app sign-in through Authentik is set up (ADR-033 plan and apply), the
 plan also creates Authentik's recovery flow and sets it on the default
 brand, unless a recovery flow is already set:
 - One-time links for new people and password resets work.
-- People see "Forgot password" on Authentik's login page.
+- Authentik's login page shows no "Forgot password" link; see the
+  amendment (2026-10-28) at the end of this ADR.
 
 Plans for appliances set up earlier show the missing flow and add it when
 applied.
@@ -93,3 +94,17 @@ In order, one commit each:
    that stays open (§4).
 2. S334: the Authentik step-up on the public name for the People routes
    (§1–§2).
+
+## Amendment (2026-10-28)
+The owner decided that people who forget their Authentik password ask the
+owner, who resets it from People (over the tunnel since S334). This
+corrects §3:
+- the recovery flow exists only for one-time links that Homestead issues
+  (new people and password resets);
+- Authentik's login page shows no self-service recovery link, because the
+  appliance has no email. Authentik shows that link only from the
+  identification stage's own recovery flow, which Homestead leaves unset;
+  the brand's flow is used for one-time links alone;
+- the login page tells people to ask the owner to reset their password
+  (S336);
+- outbound email remains out of scope.
