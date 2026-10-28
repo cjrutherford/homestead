@@ -37,6 +37,8 @@ func appPublicRig(t *testing.T) (*Server, *store.Store, *fakeCloudflare, func() 
 	t.Helper()
 	srv, st, secrets := tunnelTestServer(t)
 	srv.MountAppPublic(st, secrets, filepath.Join("..", "..", "catalog"))
+	// The setup wizard's domain resolves to the zone (S328/S329).
+	srv.appPublic.setupZone = func() (string, string) { return "cloudflare", "example.com" }
 	cf := newFakeCloudflare(t)
 	fakeConnector(t)
 	var calls []string
@@ -219,6 +221,7 @@ func TestAppPublicAddRemove(t *testing.T) {
 func TestAppPublicAdoptedTunnelZone(t *testing.T) {
 	srv, st, _, _ := appPublicRig(t)
 	srv.setupDomain = func() string { return "" }
+	srv.appPublic.setupZone = nil
 	status := func() string {
 		recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/immich/public", nil)
 		if recorder.Code != http.StatusOK {
@@ -230,7 +233,7 @@ func TestAppPublicAdoptedTunnelZone(t *testing.T) {
 		t.Fatalf("no zone name yet, status = %s", body)
 	}
 	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/plan", map[string]any{"enabled": true})
-	if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), "no domain") {
+	if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), "no Cloudflare zone") {
 		t.Fatalf("plan without a name: %d %s", recorder.Code, recorder.Body.String())
 	}
 	plan := planAppPublic(t, srv, map[string]any{"enabled": true, "hostname": "immich.example.com"})
@@ -280,18 +283,13 @@ func TestAppPublicCertificateCoverage(t *testing.T) {
 	if len(plan.Coverage) != 1 || !plan.Coverage[0].Covered || strings.Contains(strings.Join(plan.Warnings, " "), "no certificate") {
 		t.Fatalf("one level: %+v", plan)
 	}
-	plan = planAppPublic(t, srv, map[string]any{"enabled": true, "hostname": "photos.homestead.example.com"})
-	if plan.Hostname != "photos.homestead.example.com" || len(plan.DNS) != 1 || plan.Coverage[0].Covered ||
-		!strings.Contains(strings.Join(plan.Warnings, " "), router.UncoveredText("photos.homestead.example.com", "example.com")) {
-		t.Fatalf("two levels: %+v", plan)
-	}
 	cf.denyCerts = true
-	plan = planAppPublic(t, srv, map[string]any{"enabled": true, "hostname": "photos.homestead.example.com"})
+	plan = planAppPublic(t, srv, map[string]any{"enabled": true, "hostname": "photos.example.com"})
 	if plan.Coverage[0].Checked || !strings.Contains(strings.Join(plan.Warnings, " "), router.CertificatePermission) {
 		t.Fatalf("unreadable: %+v", plan)
 	}
 	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/apply",
-		map[string]any{"enabled": true, "hostname": "photos.homestead.example.com", "digest": plan.Digest})
+		map[string]any{"enabled": true, "hostname": "photos.example.com", "digest": plan.Digest})
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("apply: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -306,13 +304,8 @@ func TestAppPublicCertificateCoverage(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &status); err != nil {
 		t.Fatal(err)
 	}
-	if len(status.Coverage) != 1 || status.Coverage[0].Hostname != "photos.homestead.example.com" || status.Coverage[0].Covered || !status.Coverage[0].Checked {
+	if len(status.Coverage) != 1 || status.Coverage[0].Hostname != "photos.example.com" || !status.Coverage[0].Covered || !status.Coverage[0].Checked {
 		t.Fatalf("status coverage = %+v", status.Coverage)
-	}
-	cf.certHosts = append(cf.certHosts, "*.homestead.example.com")
-	recorder = serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/immich/public", nil)
-	if !strings.Contains(recorder.Body.String(), `"covered":true,"by":"certificate pack"`) {
-		t.Fatalf("status = %s", recorder.Body.String())
 	}
 }
 
@@ -395,7 +388,7 @@ func TestAppPublicPlannedBeforeInstall(t *testing.T) {
 		!strings.Contains(recorder.Body.String(), `"available":false`) {
 		t.Fatalf("status before install: %s", recorder.Body.String())
 	}
-	body := map[string]any{"enabled": true, "before_install": true, "route": "immich.lan", "hostname": "immich.homestead.example.com"}
+	body := map[string]any{"enabled": true, "before_install": true, "route": "immich.lan", "hostname": "immich.example.com"}
 	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/plan", body)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("plan: %d %s", recorder.Code, recorder.Body.String())
@@ -404,15 +397,11 @@ func TestAppPublicPlannedBeforeInstall(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &before); err != nil {
 		t.Fatal(err)
 	}
-	if before.Route != "immich.lan" || before.Hostname != "immich.homestead.example.com" || before.Digest == "" {
+	if before.Route != "immich.lan" || before.Hostname != "immich.example.com" || before.Digest == "" {
 		t.Fatalf("plan = %+v", before)
 	}
-	// The name is two levels below the zone: a warning, never a refusal.
-	if !strings.Contains(strings.Join(before.Warnings, " "), "no certificate for immich.homestead.example.com") {
-		t.Fatalf("warnings = %v", before.Warnings)
-	}
 	// Not installed yet: the plan cannot be applied, with or without the flag.
-	applyBody := map[string]any{"enabled": true, "route": "immich.lan", "hostname": "immich.homestead.example.com", "digest": before.Digest}
+	applyBody := map[string]any{"enabled": true, "route": "immich.lan", "hostname": "immich.example.com", "digest": before.Digest}
 	if rec := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/apply", applyBody); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("apply before install: %d %s", rec.Code, rec.Body.String())
 	}
@@ -422,7 +411,7 @@ func TestAppPublicPlannedBeforeInstall(t *testing.T) {
 	}
 
 	installHostApp(t, st, "immich", "server", 2283)
-	after := planAppPublicFor(t, srv, "immich", map[string]any{"enabled": true, "route": "immich.lan", "hostname": "immich.homestead.example.com"})
+	after := planAppPublicFor(t, srv, "immich", map[string]any{"enabled": true, "route": "immich.lan", "hostname": "immich.example.com"})
 	if after.Digest != before.Digest {
 		t.Fatalf("digest moved across the install:\nbefore %+v\nafter  %+v", before, after)
 	}
@@ -438,7 +427,7 @@ func TestAppPublicPlannedBeforeInstall(t *testing.T) {
 	if op := waitOperation(t, st, rec.Body.Bytes()); op.Status != operation.StatusSucceeded {
 		t.Fatalf("op = %s: %s", op.Status, op.Error)
 	}
-	if fmt.Sprint(trusted) != "[[immich https://immich.lan immich.lan immich.local immich.homestead.example.com]]" {
+	if fmt.Sprint(trusted) != "[[immich https://immich.lan immich.lan immich.local immich.example.com]]" {
 		t.Fatalf("trusted = %v", trusted)
 	}
 	// A plan approved before something else changed is asked again.
@@ -527,6 +516,52 @@ func TestAppPublicPointsToTheMove(t *testing.T) {
 		recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/"+c.path+"/public/plan", c.body)
 		if recorder.Code != c.code || !strings.Contains(recorder.Body.String(), c.want) {
 			t.Errorf("%s %v: %d %s, want %d %q", c.path, c.body, recorder.Code, recorder.Body.String(), c.code, c.want)
+		}
+	}
+}
+
+// The dashboard's name may sit a level below the zone; an app with a name
+// of its own is proposed directly under the zone, never under the setup
+// domain, and a name two levels down is refused (S329).
+func TestAppPublicNameOneLevelUnderZone(t *testing.T) {
+	srv, st, _, _ := appPublicRig(t)
+	srv.setupDomain = func() string { return "homestead.example.com" }
+	status := func() string {
+		recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/immich/public", nil)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status: %d %s", recorder.Code, recorder.Body.String())
+		}
+		return recorder.Body.String()
+	}
+	// Zone from the setup zone resolver while no zone is stored.
+	if body := status(); !strings.Contains(body, `"proposed":"immich.example.com"`) {
+		t.Fatalf("resolver zone: %s", body)
+	}
+	plan := planAppPublic(t, srv, map[string]any{"enabled": true})
+	if plan.Hostname != "immich.example.com" {
+		t.Fatalf("default plan hostname = %q", plan.Hostname)
+	}
+	// The stored zone wins over the resolver.
+	srv.appPublic.setupZone = func() (string, string) { return "cloudflare", "other.test" }
+	if err := router.SetTunnelAccount(st, "tid", "abcd0000000000000000000000000001", "zone1", "example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if body := status(); !strings.Contains(body, `"proposed":"immich.example.com"`) {
+		t.Fatalf("stored zone: %s", body)
+	}
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/plan",
+		map[string]any{"enabled": true, "hostname": "immich.homestead.example.com"})
+	if recorder.Code != http.StatusUnprocessableEntity ||
+		!strings.Contains(recorder.Body.String(), "immich.homestead.example.com is more than one level below example.com") ||
+		!strings.Contains(recorder.Body.String(), "such as immich.example.com") {
+		t.Fatalf("two-level name: %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestBelowZone(t *testing.T) {
+	for host, want := range map[string]int{"example.com": 0, "a.example.com": 1, "a.b.example.com": 2, "x.other.test": 0} {
+		if got := belowZone(host, "example.com"); got != want {
+			t.Errorf("belowZone(%q) = %d, want %d", host, got, want)
 		}
 	}
 }

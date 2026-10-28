@@ -39,6 +39,8 @@ type appPublic struct {
 	st         *store.Store
 	secrets    *secret.Store
 	catalogDir string
+	// setupZone overrides the setup wizard's zone resolver (tests).
+	setupZone func() (provider, zone string)
 }
 
 type appPublicStatus struct {
@@ -212,13 +214,34 @@ func (p *appPublic) status(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-// proposedDomain is the setup domain, else the tunnel's stored zone name
-// (an adopted tunnel without a setup domain, S302).
+// proposedDomain is the Cloudflare zone an own-name app is proposed under
+// (S329): the tunnel's stored zone, else the zone the setup wizard's
+// domain resolves to (S328). The setup domain itself names the dashboard
+// and may be a level below the zone; Cloudflare's free certificate covers
+// only one level, so app names go directly under the zone.
 func (p *appPublic) proposedDomain(tunnelID string) (string, error) {
-	if domain := p.s.tunnelFacts().Domain; domain != "" {
-		return domain, nil
+	if zone, err := router.TunnelZoneName(p.st, tunnelID); err != nil || zone != "" {
+		return zone, err
 	}
-	return router.TunnelZoneName(p.st, tunnelID)
+	resolve := p.setupZone
+	if resolve == nil && p.s.certIssuing != nil {
+		resolve = p.s.certIssuing.SetupZone
+	}
+	if resolve != nil {
+		if _, zone := resolve(); zone != "" {
+			return zone, nil
+		}
+	}
+	return "", nil
+}
+
+// belowZone says how many labels a host name sits below its zone.
+func belowZone(hostname, zone string) int {
+	rest := strings.TrimSuffix(strings.ToLower(hostname), "."+strings.ToLower(zone))
+	if rest == strings.ToLower(hostname) || rest == "" {
+		return 0
+	}
+	return strings.Count(rest, ".") + 1
 }
 
 type appPublicRequest struct {
@@ -435,7 +458,7 @@ func (p *appPublic) planAdd(ctx context.Context, client *router.TunnelClient, to
 			return err
 		}
 		if domain == "" {
-			return refusePlan(http.StatusUnprocessableEntity, "no domain is chosen in setup: choose one on the Domain step, or name the hostname")
+			return refusePlan(http.StatusUnprocessableEntity, "no Cloudflare zone is known yet: set up the tunnel on the Tunnel page, or name the hostname")
 		}
 		hostname = f.manifest.Name + "." + domain
 	}
@@ -483,6 +506,11 @@ func (p *appPublic) planAdd(ctx context.Context, client *router.TunnelClient, to
 	}
 	if err != nil {
 		return err
+	}
+	if belowZone(hostname, zone.Name) > 1 {
+		return refusePlan(http.StatusUnprocessableEntity,
+			"%s is more than one level below %s; Cloudflare's free certificate only covers names one level below the zone, such as %s.%s",
+			hostname, zone.Name, f.manifest.Name, zone.Name)
 	}
 	tunnelZone, err := router.TunnelZone(p.st, f.tunnelID)
 	if err != nil {
