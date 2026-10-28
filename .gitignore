@@ -17,3 +17,6 @@ internal/dashboard/dist/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Release build output (make release; S332)
+/dist/

@@ -6,4 +6,5 @@ Homestead is a customer-owned private-cloud appliance built on Debian/Ubuntu, Do
 - **Prepare a unit for a customer (factory reset):** [`docs/INSTALL.md` Part F](docs/INSTALL.md#part-f--preparing-an-appliance-for-a-customer)
 - **Develop Homestead:** [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md), [`AGENTS.md`](AGENTS.md)
 - **How it is built:** [`docs/PROJECT.md`](docs/PROJECT.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/adr/`](docs/adr), [`docs/architecture/`](docs/architecture)
+- **Cut a release:** [`docs/RELEASING.md`](docs/RELEASING.md), [`CHANGELOG.md`](CHANGELOG.md)
 - **What is not done yet:** [`docs/DEFERRED.md`](docs/DEFERRED.md)

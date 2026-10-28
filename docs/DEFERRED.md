@@ -107,6 +107,11 @@
   and release tooling that publishes `version=`/`counter=` checksums
   and `.minisig` files are pending; owners may import a key by
   configuration meanwhile.
+- Release automation follow-ups (S332): signing is manual, so CI cannot
+  publish a signed release; `SHA256SUMS` lists per-platform file names and
+  nothing renames them to the bare component names; no
+  checksum-file counter automation (RELEASE_COUNTER is raised by hand);
+  no release notes beyond the CHANGELOG section.
 - Identity provider adapters: S202 defines the integration contract
   only; driving a provider's API (Authentik first, beyond the
   connection check) belongs to a later slice.

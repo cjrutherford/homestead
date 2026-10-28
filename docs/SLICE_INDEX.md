@@ -88,3 +88,5 @@ Then S309 dashboard design language (`docs/slices/S309-dashboard-design-language
 Then S310 lamplight (`docs/slices/S310-lamplight-depth-and-dark-default.md`): dark by default (Dark, Light, Match my system, High contrast), one light source and four tokenised depths (hedgerow, ground, plate, lifted, plus the well), lamps only for attention, a contour band and horizon under the masthead, the permit as lit paper, and the Status Appliance facts as a ledger.
 
 Then S311 lamplight on every page (`docs/slices/S311-lamplight-on-every-page.md`): every routed page's sections are fields (plates) under the masthead, empty states are wells, claim and login are a centred lifted gate, failed rail orders are lamps, and `theme/lamplight.spec.ts` enforces it for every route.
+
+Then S332 release 0.0.1 (`docs/slices/S332-release-0-0-1.md`): `VERSION` file, `make release` (linux amd64 and arm64 binaries and ADR-025 `SHA256SUMS`), a tag-triggered draft-prerelease workflow, `CHANGELOG.md` and `docs/RELEASING.md`.

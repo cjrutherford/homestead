@@ -1,4 +1,4 @@
-.PHONY: test test-py test-go build lint lint-scripts dashboard-install dashboard-build dashboard-test dashboard-embed install uninstall check
+.PHONY: release test test-py test-go build lint lint-scripts dashboard-install dashboard-build dashboard-test dashboard-embed install uninstall check
 
 test: test-py test-go
 
@@ -58,3 +58,25 @@ dashboard-embed:
 	cp -r dashboard/dist/homestead-dashboard/browser/. internal/dashboard/dist/
 
 check: lint build test
+
+# Release build (S332). VERSION is the single version source. Raise
+# RELEASE_COUNTER with every release (ADR-025 rollback protection).
+# Signing is offline and manual: this target never touches a key.
+VERSION := $(shell cat VERSION)
+RELEASE_COUNTER ?= 1
+RELEASE_DIR := dist/release
+
+release: dashboard-build dashboard-embed
+	rm -rf $(RELEASE_DIR)
+	mkdir -p $(RELEASE_DIR)
+	for arch in amd64 arm64; do \
+	  for bin in homestead-server homesteadctl; do \
+	    CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -tags embeddash -trimpath \
+	      -ldflags "-s -w -X homestead/internal/version.Version=$(VERSION)" \
+	      -o $(RELEASE_DIR)/$$bin-linux-$$arch ./cmd/$$bin || exit 1; \
+	  done; \
+	done
+	{ echo "version=$(VERSION)"; echo "counter=$(RELEASE_COUNTER)"; \
+	  cd $(RELEASE_DIR) && sha256sum homestead-server-linux-* homesteadctl-linux-*; } > $(RELEASE_DIR)/SHA256SUMS.tmp
+	mv $(RELEASE_DIR)/SHA256SUMS.tmp $(RELEASE_DIR)/SHA256SUMS
+
