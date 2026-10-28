@@ -658,6 +658,11 @@ type pluginConfiguration struct {
 	} `xml:"OidConfigs"`
 }
 
+// jellyfinExtraScopes are the scopes added to the plugin's own request. The
+// plugin always asks for "openid profile" itself and appends OidScopes, so
+// listing those two made the authorize URL name each twice.
+var jellyfinExtraScopes = []string{"email", sso.GroupsScope}
+
 func jellyfinConfig(s *Settings) (string, error) {
 	doc := pluginConfiguration{XSI: "http://www.w3.org/2001/XMLSchema-instance", XSD: "http://www.w3.org/2001/XMLSchema"}
 	if s != nil {
@@ -665,7 +670,7 @@ func jellyfinConfig(s *Settings) (string, error) {
 		item.Key.String = ProviderKey
 		item.Value.Config = oidConfig{
 			OidEndpoint: s.Issuer, OidClientID: s.ClientID, OidSecret: s.ClientSecret, Enabled: true,
-			EnableAllFolders: true, OidScopes: xmlStrings{Items: []string{"openid", "email", "profile", sso.GroupsScope}},
+			EnableAllFolders: true, OidScopes: xmlStrings{Items: jellyfinExtraScopes},
 			EnableAuthorization: true, RoleClaim: sso.GroupsScope,
 			Roles:          xmlStrings{Items: []string{s.Groups.Users, s.Groups.Admins, s.Groups.Owner}},
 			AdminRoles:     xmlStrings{Items: []string{s.Groups.Admins}},

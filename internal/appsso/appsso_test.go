@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"os"
@@ -118,7 +119,7 @@ func TestPlanRefusesWithoutThePreconditions(t *testing.T) {
 func TestANewNameReplansTheRedirects(t *testing.T) {
 	in := inputs(t, "jellyfin")
 	p, _ := BuildPlan(in, true)
-	in.Applied = &Record{Package: "jellyfin", Issuer: p.Issuer, RedirectURIs: p.RedirectURIs, PluginVersion: "4.0.0.4", Access: p.Access}
+	in.Applied = &Record{Package: "jellyfin", Issuer: p.Issuer, RedirectURIs: p.RedirectURIs, PluginVersion: pluginState(p.Plugin), Access: p.Access}
 	if st := BuildStatus(in, false); st.Replan || !st.Enabled || st.SignInURL != "https://jellyfin.lan/sso/OID/start/authentik" {
 		t.Fatalf("status: %+v", st)
 	}
@@ -656,5 +657,35 @@ func TestSetUpState(t *testing.T) {
 		if strings.Join(c.args, " ") != "php occ --no-interaction status --output=json" {
 			t.Fatalf("not read-only: %v", c.args)
 		}
+	}
+}
+
+func TestJellyfinAsksEachScopeOnce(t *testing.T) {
+	doc, err := jellyfinConfig(&Settings{Issuer: "https://a/", ClientID: "c", ClientSecret: "s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Scopes []string `xml:"OidConfigs>item>value>PluginConfiguration>OidScopes>string"`
+	}
+	if err := xml.Unmarshal([]byte(doc), &got); err != nil {
+		t.Fatal(err)
+	}
+	// The plugin itself requests "openid profile".
+	if strings.Join(got.Scopes, " ") != "email groups" {
+		t.Fatalf("scopes %q:\n%s", got.Scopes, doc)
+	}
+}
+
+func TestSettingsFromBeforeReplan(t *testing.T) {
+	in := inputs(t, "jellyfin")
+	p, _ := BuildPlan(in, true)
+	in.Applied = &Record{Package: "jellyfin", Issuer: p.Issuer, RedirectURIs: p.RedirectURIs, PluginVersion: p.Plugin.Version, Access: p.Access}
+	if st := BuildStatus(in, false); !st.Replan {
+		t.Fatalf("an old record should replan: %+v", st)
+	}
+	again, _ := BuildPlan(in, true)
+	if !strings.Contains(strings.Join(again.Changes, "\n"), "each sign-in scope is asked for once") || strings.Contains(strings.Join(again.Changes, "\n"), "replaces") {
+		t.Fatalf("changes: %v", again.Changes)
 	}
 }

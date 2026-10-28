@@ -372,7 +372,7 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 			fmt.Sprintf("Create the OAuth2/OpenID provider %q (client id %s, confidential) and the application %s in Authentik.", p.Provider, p.ClientID, p.Application),
 			"Generate a client secret and seal it in the secret store; it is never shown or logged.",
 			fmt.Sprintf("Set up %s to sign people in through Authentik. Accounts are created at first sign-in; the local admin keeps working.", m.Title))
-	case sameList(in.Applied.RedirectURIs, p.RedirectURIs) && in.Applied.Issuer == p.Issuer && pluginVersion(p.Plugin) == in.Applied.PluginVersion && sameAccess(in.Applied.Access, p.Access):
+	case sameList(in.Applied.RedirectURIs, p.RedirectURIs) && in.Applied.Issuer == p.Issuer && pluginState(p.Plugin) == in.Applied.PluginVersion && sameAccess(in.Applied.Access, p.Access):
 		p.Changes = append(p.Changes, "Nothing changes: sign-in with Authentik is on and matches the app's names. Applying checks Authentik and the app again.")
 	default:
 		p.Changes = append(p.Changes, "Update the provider and the app to match the app's current names:")
@@ -382,8 +382,10 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 		for _, line := range listDiff(in.Applied.RedirectURIs, p.RedirectURIs) {
 			p.Changes = append(p.Changes, line)
 		}
-		if pluginVersion(p.Plugin) != in.Applied.PluginVersion {
-			p.Changes = append(p.Changes, fmt.Sprintf("Plugin %s %s replaces %s.", p.Plugin.Name, p.Plugin.Version, in.Applied.PluginVersion))
+		if was, _, _ := strings.Cut(in.Applied.PluginVersion, "+"); pluginVersion(p.Plugin) != was {
+			p.Changes = append(p.Changes, fmt.Sprintf("Plugin %s %s replaces %s.", p.Plugin.Name, p.Plugin.Version, was))
+		} else if pluginState(p.Plugin) != in.Applied.PluginVersion {
+			p.Changes = append(p.Changes, fmt.Sprintf("Plugin %s settings are rewritten so each sign-in scope is asked for once.", p.Plugin.Name))
 		}
 		if in.Applied.Access == nil {
 			p.Changes = append(p.Changes, "This sign-in is open to every Authentik user today. Applying closes it to the owner and the people granted below.")
@@ -415,6 +417,20 @@ func pluginVersion(p *catalog.PinnedPlugin) string {
 		return ""
 	}
 	return p.Version
+}
+
+// pluginSettingsRev names the generation of the plugin settings Homestead
+// writes. It is stored after the version so that changing the settings
+// replans an app that was set up with the old ones.
+const pluginSettingsRev = "scopes2"
+
+// pluginState is what a record keeps in PluginVersion: the plugin version
+// and the settings generation, "4.0.0.4+scopes2".
+func pluginState(p *catalog.PinnedPlugin) string {
+	if p == nil {
+		return ""
+	}
+	return p.Version + "+" + pluginSettingsRev
 }
 
 func hostOf(raw string) string {
@@ -493,7 +509,7 @@ func BuildStatus(in Inputs, tokenKept bool) Status {
 		if p, err := BuildPlan(in, true); err == nil {
 			st.SignInURL = p.SignInURL
 			st.Replan = !sameList(in.Applied.RedirectURIs, p.RedirectURIs) || in.Applied.Issuer != p.Issuer ||
-				in.Applied.PluginVersion != pluginVersion(p.Plugin) || !sameAccess(in.Applied.Access, p.Access)
+				in.Applied.PluginVersion != pluginState(p.Plugin) || !sameAccess(in.Applied.Access, p.Access)
 		}
 	}
 	return st

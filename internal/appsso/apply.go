@@ -224,7 +224,7 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 		}},
 		{Name: "record", Run: func(context.Context) error {
 			rec := Record{Package: m.Name, Adapter: plan.Adapter, ClientID: plan.ClientID, Issuer: plan.Issuer,
-				RedirectURIs: plan.RedirectURIs, PluginVersion: pluginVersion(plan.Plugin), Actor: actor, Access: plan.Access}
+				RedirectURIs: plan.RedirectURIs, PluginVersion: pluginState(plan.Plugin), Actor: actor, Access: plan.Access}
 			if err := rt.Records.Save(rec); err != nil {
 				return err
 			}
