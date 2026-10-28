@@ -129,6 +129,7 @@
               }
             </dd>
           </dl>
+          <app-issuer-moves [moves]="plan.issuer_moves" />
           @if (plan.directory_class === 'production') {
             <app-state-message kind="warning" headline="This is a production certificate authority. Test against staging first; production has strict rate limits." />
           }

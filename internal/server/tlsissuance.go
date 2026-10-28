@@ -54,6 +54,10 @@ func servedCandidateRoutes(st *store.Store) ([]docker.Route, error) {
 	if err != nil {
 		return nil, err
 	}
+	return candidateRoutes(st, set)
+}
+
+func candidateRoutes(st *store.Store, set docker.RouteSet) ([]docker.Route, error) {
 	routes := append([]docker.Route(nil), set.Routes...)
 	seen := map[docker.Hostname]bool{}
 	for _, r := range routes {
@@ -79,15 +83,29 @@ func servedCandidateRoutes(st *store.Store) ([]docker.Route, error) {
 // before an approval of the current plan exists.
 func (s *Server) MountTLSIssuance(st *store.Store, issuing *cert.Issuing) {
 	runner := operation.NewRunner(st)
+	s.certIssuing = issuing
 	// The approval is audited before it is persisted: if the audit entry
 	// cannot be written, nothing is approved.
 	issuing.OnApprove = func(approval cert.Approval) error {
+		detail := approval.Certificate + " digest " + approval.Digest + " directory " + approval.Plan.Directory +
+			" (" + approval.Plan.DirectoryClass + ")"
+		if approval.Via != "" {
+			detail += ", approved with " + approval.Via
+		}
 		_, err := audit.New(st).Record(audit.Entry{Actor: approval.Actor, Action: "cert.issuance.approve",
-			Outcome: audit.OutcomeOK,
-			Detail: approval.Certificate + " digest " + approval.Digest + " directory " + approval.Plan.Directory +
-				" (" + approval.Plan.DirectoryClass + ")"})
+			Outcome: audit.OutcomeOK, Detail: detail})
 		return err
 	}
+	// A certificate covering the public dashboard name moves the apps
+	// whose sign-in waits for Authentik's public address (ADR-048 §6).
+	issuing.PlanMoves = func(names []string) (*cert.MovePlan, error) {
+		set, err := loadEdgeRoutes(st)
+		if err != nil {
+			return nil, err
+		}
+		return s.issuerMoves(set, names)
+	}
+	issuing.MoveIssuers = s.moveIssuers
 	s.mux.HandleFunc("GET /api/v1/tls/issuance/plans", func(w http.ResponseWriter, r *http.Request) {
 		plans, err := issuing.Plans()
 		if err != nil {

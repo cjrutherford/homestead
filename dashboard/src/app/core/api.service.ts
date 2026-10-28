@@ -1098,10 +1098,50 @@ export interface TlsIssuancePlan {
   terms: string;
   placement: { directory: string; chain_file: string; key_file: string; key_mode: string };
   served_routes: string[];
+  /** S325 (ADR-048 §6): apps whose sign-in moves to Authentik's public address with this certificate. */
+  issuer_moves?: IssuerMovePlan;
   ready: boolean;
   blockers: string[];
   digest: string;
   approved: boolean;
+}
+
+/** One app whose sign-in issuer moves to Authentik's public address (S325, ADR-048 §6). */
+export interface IssuerMove {
+  app: string;
+  title: string;
+  from: string;
+  to: string;
+  host_entry: string;
+  replaced_host_entry?: string;
+  digest: string;
+}
+
+/** The apps a certificate moves; re-applied only with the kept Authentik token. */
+export interface IssuerMovePlan {
+  apps: IssuerMove[];
+  token_kept: boolean;
+  note: string;
+}
+
+/** A tunnel plan's certificate for the public dashboard name (S325, ADR-048 §5). */
+export interface TunnelCertificate {
+  name: string;
+  /** The operation issues it; approving needs agree_terms (and confirm_production). */
+  issue: boolean;
+  placed?: string;
+  certificate?: string;
+  adds_to_strategy?: boolean;
+  directory?: string;
+  directory_class?: string;
+  challenge?: string;
+  provider?: string;
+  zone?: string;
+  renewal?: string;
+  terms_url?: string;
+  note: string;
+  blockers?: string[];
+  digest?: string;
 }
 
 /** GET /api/v1/tls/issuance/account/terms — terms to agree to (S272). */
@@ -1181,6 +1221,9 @@ export interface TunnelPlan {
   adopt?: TunnelAdoption;
   /** Whether Cloudflare has a certificate for each public name (S312). */
   coverage?: NameCoverage[];
+  /** S325: the public dashboard name's certificate, and the apps moving with it. */
+  certificate?: TunnelCertificate;
+  issuer_moves?: IssuerMovePlan;
   warnings: string[];
   digest: string;
 }
@@ -1208,6 +1251,12 @@ export interface TunnelRequest {
   adopt?: string;
   dashboard_hostname?: string;
   auth_hostname?: string;
+}
+
+/** The certificate approvals a tunnel setup carries (S325); they do not change the plan. */
+export interface TunnelApprovals {
+  agree_terms?: boolean;
+  confirm_production?: boolean;
 }
 
 /** GET /api/v1/catalog/{name}/public (S290, ADR-041 §1). */
@@ -2035,8 +2084,8 @@ export class ApiService {
   }
 
   /** Approves a reviewed plan by its digest; 409 when the plan changed since. */
-  tunnelSetup(request: TunnelRequest, digest: string): Observable<OperationStarted> {
-    return this.http.post<OperationStarted>('/api/v1/tunnel/setup', { ...request, digest });
+  tunnelSetup(request: TunnelRequest, digest: string, approvals: TunnelApprovals = {}): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>('/api/v1/tunnel/setup', { ...request, ...approvals, digest });
   }
 
   /** The account is the one stored at setup: teardown never asks for it. */

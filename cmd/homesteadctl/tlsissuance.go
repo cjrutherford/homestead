@@ -117,6 +117,7 @@ func printIssuancePlan(w io.Writer, p cert.IssuancePlan) {
 	} else {
 		fmt.Fprintf(w, "  ready:     no - %s\n", strings.Join(p.Blockers, "; "))
 	}
+	printIssuerMoves(w, "  ", p.IssuerMoves)
 	fmt.Fprintf(w, "  digest:    %s\n", p.Digest)
 }
 
@@ -306,4 +307,23 @@ func runTLSIssuanceCredentials(ctx context.Context, client *apiclient.Client, ar
 		fmt.Fprintf(stderr, "warning: %s\n", warning)
 	}
 	return exitOK
+}
+
+// printIssuerMoves prints the apps whose sign-in moves to Authentik's
+// public address with the certificate (ADR-048 §6).
+func printIssuerMoves(w io.Writer, indent string, m *cert.MovePlan) {
+	if m == nil || len(m.Apps) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "%ssign-in moves: %s\n", indent, m.Note)
+	for _, a := range m.Apps {
+		fmt.Fprintf(w, "%s  %s: issuer %s -> %s, host entry %s", indent, a.Title, a.From, a.To, a.HostEntry)
+		if a.ReplacedHostEntry != "" {
+			fmt.Fprintf(w, " (replaces %s)", a.ReplacedHostEntry)
+		}
+		fmt.Fprintln(w)
+		if !m.TokenKept {
+			fmt.Fprintf(w, "%s    re-plan: homesteadctl apps sign-in plan %s\n", indent, a.App)
+		}
+	}
 }

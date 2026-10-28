@@ -269,4 +269,34 @@ describe('Tls', () => {
     req.flush({});
     http.expectOne('/api/v1/tls/issuance/plans').flush({ plans: [] });
   });
+  it('lists the apps whose sign-in moves with a certificate for the public dashboard name (ADR-048 §6)', () => {
+    load([
+      plan({
+        certificate: 'dash',
+        names: ['homestead.example.com'],
+        issuer_moves: {
+          apps: [
+            {
+              app: 'immich',
+              title: 'Immich',
+              from: 'https://homestead.lan/apps/auth/application/o/homestead-immich/',
+              to: 'https://homestead.example.com/apps/auth/application/o/homestead-immich/',
+              host_entry: 'homestead.example.com:host-gateway',
+              digest: 'm1',
+            },
+          ],
+          token_kept: true,
+          note: 'Once the certificate is placed, each app\'s sign-in is applied again with the Authentik API token you kept.',
+        },
+      }),
+    ]);
+    const moves = fixture.nativeElement.querySelector(
+      'section[aria-label="Apps moving to Authentik\'s public address"]',
+    ) as HTMLElement;
+    expect(moves.textContent).toContain('applied again');
+    expect(moves.textContent).toContain('Immich');
+    expect(moves.textContent).toContain('homestead.example.com:host-gateway');
+    // With the kept token the move is applied, so there is no re-plan link.
+    expect(moves.querySelector('a')).toBeNull();
+  });
 });

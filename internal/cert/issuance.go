@@ -50,6 +50,15 @@ const (
 // LetsEncryptStagingDirectory is the staging directory URL.
 const LetsEncryptStagingDirectory = "https://acme-staging-v02.api.letsencrypt.org/directory"
 
+// LetsEncryptDirectory is Let's Encrypt's production directory, the CA
+// tunnel setup issues the public dashboard name's certificate from
+// (ADR-048 §5).
+const LetsEncryptDirectory = "https://acme-v02.api.letsencrypt.org/directory"
+
+// LetsEncryptTermsURL is where Let's Encrypt publishes the subscriber
+// agreement an owner agrees to when approving issuance from it.
+const LetsEncryptTermsURL = "https://letsencrypt.org/repository/"
+
 // testSuffixes are the private or reserved suffixes of test CAs.
 var testSuffixes = []string{"lan", "local", "localhost", "internal", "home.arpa", "test", "example", "invalid"}
 
@@ -140,11 +149,43 @@ type IssuancePlan struct {
 	Credentials []CredentialStatus `json:"credentials"`
 	Ready       bool               `json:"ready"`
 	Blockers    []string           `json:"blockers"`
+	// IssuerMoves lists the apps whose sign-in moves to Authentik's
+	// public address once this certificate is served (ADR-048 §6). Part
+	// of the digest; absent when none move.
+	IssuerMoves *MovePlan `json:"issuer_moves,omitempty"`
 	// Digest identifies exactly this plan; approval and apply bind to it.
 	Digest string `json:"digest"`
 	// Approved reports a current approval of this digest.
 	Approved bool `json:"approved"`
 }
+
+// IssuerMove is one applied app whose sign-in issuer moves to
+// Authentik's public address once the certificate is served (ADR-048
+// §6, ADR-047 §1): the issuer change, the host entry the app's
+// override gains (and the one it drops), and the app's sign-in plan
+// digest as it will stand, which the re-apply is checked against.
+type IssuerMove struct {
+	App               string `json:"app"`
+	Title             string `json:"title"`
+	From              string `json:"from"`
+	To                string `json:"to"`
+	HostEntry         string `json:"host_entry"`
+	ReplacedHostEntry string `json:"replaced_host_entry,omitempty"`
+	Digest            string `json:"digest"`
+}
+
+// MovePlan is the issuer-move list a certificate plan carries. With
+// TokenKept the plan's last step re-applies each app's sign-in with the
+// kept Authentik API token; without it nothing changes in Authentik and
+// Note says to re-plan each app.
+type MovePlan struct {
+	Apps      []IssuerMove `json:"apps"`
+	TokenKept bool         `json:"token_kept"`
+	Note      string       `json:"note"`
+}
+
+// Reapplies reports whether the plan's last step re-applies sign-in.
+func (m *MovePlan) Reapplies() bool { return m != nil && m.TokenKept && len(m.Apps) > 0 }
 
 // digestInput is what the digest covers: the facts the owner approves.
 // Account state and readiness are excluded: they change without the
@@ -158,13 +199,14 @@ type digestInput struct {
 	Directory    string        `json:"directory"`
 	Placement    PlacementPlan `json:"placement"`
 	ServedRoutes []string      `json:"served_routes"`
+	IssuerMoves  *MovePlan     `json:"issuer_moves,omitempty"`
 }
 
 func (p IssuancePlan) computeDigest() string {
 	raw, _ := json.Marshal(digestInput{
 		Certificate: p.Certificate, Names: p.Names, Provider: p.Provider, Zone: p.Zone,
 		Challenge: p.Challenge, Directory: p.Directory, Placement: p.Placement,
-		ServedRoutes: p.ServedRoutes,
+		ServedRoutes: p.ServedRoutes, IssuerMoves: p.IssuerMoves,
 	})
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
@@ -183,6 +225,10 @@ type Approval struct {
 	RenewalMode string       `json:"renewal_mode"`
 	ApprovedAt  time.Time    `json:"approved_at"`
 	Plan        IssuancePlan `json:"plan"`
+	// Via names the plan the owner approved this through, when it was
+	// not the TLS page's own (the tunnel plan, ADR-048 §5). Audited, not
+	// stored.
+	Via string `json:"via,omitempty"`
 }
 
 // Renewal modes an approval can record.
@@ -224,6 +270,13 @@ type Issuing struct {
 	Timeout time.Duration
 	// Now stamps records; nil means time.Now.
 	Now func() time.Time
+	// PlanMoves lists the applied apps whose sign-in moves to
+	// Authentik's public address once a certificate covering names is
+	// served (ADR-048 §6); nil, or a nil result, means none.
+	PlanMoves func(names []string) (*MovePlan, error)
+	// MoveIssuers re-applies the listed apps' sign-in with the kept
+	// Authentik API token, as the issuance's last step.
+	MoveIssuers func(ctx context.Context, actor string, moves MovePlan) error
 
 	accountMu sync.Mutex
 }
@@ -396,7 +449,7 @@ func (i *Issuing) Plans() ([]IssuancePlan, error) {
 		if !isDNS01ACME(c) {
 			continue
 		}
-		plan := i.buildPlan(c, routes)
+		plan := i.buildPlan(c, routes, nil, true)
 		if a, ok := approvals[c.Name]; ok && a.Digest == plan.Digest {
 			plan.Approved = true
 		}
@@ -426,7 +479,17 @@ func (i *Issuing) routes() ([]docker.Route, error) {
 	return i.Routes()
 }
 
-func (i *Issuing) buildPlan(c Certificate, routes []docker.Route) IssuancePlan {
+// Preview plans issuing c, which need not be in the saved strategy yet,
+// as if routes were the edge's and moves the apps moving with it (the
+// tunnel plan's projection, ADR-048 §5). It contacts no one and records
+// nothing; the plan issued later must come out with the same digest.
+func (i *Issuing) Preview(c Certificate, routes []docker.Route, moves *MovePlan) IssuancePlan {
+	return i.buildPlan(c, routes, moves, false)
+}
+
+// buildPlan previews c's issuance. With useHook the issuer moves come
+// from PlanMoves; otherwise moves is taken as given.
+func (i *Issuing) buildPlan(c Certificate, routes []docker.Route, moves *MovePlan, useHook bool) IssuancePlan {
 	fp := NewFingerprint(c.DNSNames, c.Issuer.DNSProvider, string(c.Issuer.Challenge))
 	chain, key := docker.CertPaths(i.StackDir, c.Name)
 	plan := IssuancePlan{
@@ -497,6 +560,16 @@ func (i *Issuing) buildPlan(c Certificate, routes []docker.Route) IssuancePlan {
 			plan.ServedRoutes = append(plan.ServedRoutes, string(route.Host))
 		}
 	}
+	if useHook && i.PlanMoves != nil {
+		got, err := i.PlanMoves(fp.Names)
+		if err != nil {
+			block("the apps moving to Authentik's public address could not be listed: %v", err)
+		}
+		moves = got
+	}
+	if moves != nil && len(moves.Apps) > 0 {
+		plan.IssuerMoves = moves
+	}
 	plan.Ready = len(plan.Blockers) == 0
 	plan.Digest = plan.computeDigest()
 	return plan
@@ -514,6 +587,13 @@ func (i *Issuing) Approve(name, digest, actor string, agreeTerms, confirmProduct
 // default when empty) or "manual", the owner's opt-out of unattended
 // re-issue.
 func (i *Issuing) ApproveWith(name, digest, actor string, agreeTerms, confirmProduction bool, renewalMode string) (Approval, error) {
+	return i.ApproveVia(name, digest, actor, agreeTerms, confirmProduction, renewalMode, "")
+}
+
+// ApproveVia is ApproveWith for an approval given through another plan
+// (via names it, for the audit): the tunnel plan approves the public
+// dashboard certificate (ADR-048 §5).
+func (i *Issuing) ApproveVia(name, digest, actor string, agreeTerms, confirmProduction bool, renewalMode, via string) (Approval, error) {
 	switch renewalMode {
 	case "":
 		renewalMode = RenewalAuto
@@ -542,7 +622,7 @@ func (i *Issuing) ApproveWith(name, digest, actor string, agreeTerms, confirmPro
 	}
 	approval := Approval{
 		Certificate: name, Digest: plan.Digest, Actor: actor, AgreedTerms: true,
-		ConfirmedProduction: confirmProduction, RenewalMode: renewalMode, ApprovedAt: i.now().UTC(), Plan: plan,
+		ConfirmedProduction: confirmProduction, RenewalMode: renewalMode, ApprovedAt: i.now().UTC(), Plan: plan, Via: via,
 	}
 	encoded, err := json.Marshal(plan)
 	if err != nil {
@@ -651,21 +731,48 @@ const OperationType = "cert.issue"
 // fingerprint recorded), refresh-routes (snippets of automatic-TLS routes
 // now covered), reload-edge (Caddy adopts them; a refused reload rolls
 // the snippets back and leaves the placed files in place).
+//
+// When the plan lists apps moving to Authentik's public address and the
+// API token is kept, a last app-sign-in step re-applies their sign-in
+// (ADR-048 §6) once the certificate is served.
 func (i *Issuing) Definition(name string) (operation.Definition, error) {
+	def, run, err := i.definition(name)
+	if err != nil {
+		return def, err
+	}
+	if moves := run.plan.IssuerMoves; moves.Reapplies() && i.MoveIssuers != nil {
+		def.Steps = append(def.Steps, operation.StepDef{Name: MoveStep, Run: func(ctx context.Context) error {
+			return i.MoveIssuers(ctx, run.approval.Actor, *moves)
+		}})
+	}
+	return def, nil
+}
+
+// MoveStep names the step that moves apps to the public issuer.
+const MoveStep = "app-sign-in"
+
+// IssueDefinition is Definition without the issuer-move step: the
+// tunnel operation runs the moves as a step of its own (ADR-048 §6).
+func (i *Issuing) IssueDefinition(name string) (operation.Definition, error) {
+	def, _, err := i.definition(name)
+	return def, err
+}
+
+func (i *Issuing) definition(name string) (operation.Definition, *issueRun, error) {
 	plan, err := i.Plan(name)
 	if err != nil {
-		return operation.Definition{}, err
+		return operation.Definition{}, nil, err
 	}
 	if !plan.Ready {
-		return operation.Definition{}, fmt.Errorf("cert: plan is not ready: %s", strings.Join(plan.Blockers, "; "))
+		return operation.Definition{}, nil, fmt.Errorf("cert: plan is not ready: %s", strings.Join(plan.Blockers, "; "))
 	}
 	approval, err := i.approvalFor(name, plan)
 	if err != nil {
-		return operation.Definition{}, err
+		return operation.Definition{}, nil, err
 	}
 	certificate, err := i.certificateNamed(name)
 	if err != nil {
-		return operation.Definition{}, err
+		return operation.Definition{}, nil, err
 	}
 	run := &issueRun{plan: plan, certificate: certificate, approval: approval, served: plan.ServedRoutes}
 	def := i.steps(run)
@@ -679,7 +786,7 @@ func (i *Issuing) Definition(name string) (operation.Definition, error) {
 		}
 		return err
 	}
-	return def, nil
+	return def, run, nil
 }
 
 func (i *Issuing) certificateNamed(name string) (Certificate, error) {

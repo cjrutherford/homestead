@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"homestead/internal/cert"
 	"homestead/internal/router"
 )
 
@@ -98,6 +99,10 @@ type TunnelRequest struct {
 	// Adopt names an existing tunnel to take over instead of creating one
 	// (S290); Name is then unused.
 	Adopt string `json:"adopt,omitempty"`
+	// AgreeTerms and ConfirmProduction approve the public dashboard
+	// name's certificate with the plan (ADR-048 §5).
+	AgreeTerms        bool `json:"agree_terms,omitempty"`
+	ConfirmProduction bool `json:"confirm_production,omitempty"`
 }
 
 // TunnelPlan is the reviewed tunnel change (ADR-037 §4): the public names,
@@ -121,8 +126,13 @@ type TunnelPlan struct {
 	SignInUpdate *TunnelSignIn   `json:"sign_in_update,omitempty"`
 	Adopt        *TunnelAdoption `json:"adopt,omitempty"`
 	Coverage     []NameCoverage  `json:"coverage"`
-	Warnings     []string        `json:"warnings"`
-	Digest       string          `json:"digest"`
+	// Certificate is the public dashboard name's certificate the plan
+	// issues or finds placed; IssuerMoves the apps whose sign-in moves
+	// to Authentik's public address with it (ADR-048 §5-§6).
+	Certificate *TunnelCertificate `json:"certificate,omitempty"`
+	IssuerMoves *cert.MovePlan     `json:"issuer_moves,omitempty"`
+	Warnings    []string           `json:"warnings"`
+	Digest      string             `json:"digest"`
 }
 
 // TunnelAdoption is what adopting an existing tunnel does (S290): the
@@ -220,4 +230,23 @@ type TunnelSignIn struct {
 	Origin       string `json:"origin"`
 	RedirectURI  string `json:"redirect_uri"`
 	AuthentikURL string `json:"authentik_url"`
+}
+
+// TunnelCertificate is a tunnel plan's certificate section (ADR-048 §5).
+type TunnelCertificate struct {
+	Name           string   `json:"name"`
+	Issue          bool     `json:"issue"`
+	Placed         string   `json:"placed,omitempty"`
+	Certificate    string   `json:"certificate,omitempty"`
+	AddsToStrategy bool     `json:"adds_to_strategy,omitempty"`
+	Directory      string   `json:"directory,omitempty"`
+	DirectoryClass string   `json:"directory_class,omitempty"`
+	Challenge      string   `json:"challenge,omitempty"`
+	Provider       string   `json:"provider,omitempty"`
+	Zone           string   `json:"zone,omitempty"`
+	Renewal        string   `json:"renewal,omitempty"`
+	TermsURL       string   `json:"terms_url,omitempty"`
+	Note           string   `json:"note"`
+	Blockers       []string `json:"blockers,omitempty"`
+	Digest         string   `json:"digest,omitempty"`
 }

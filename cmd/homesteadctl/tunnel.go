@@ -93,11 +93,13 @@ const retiredRouteFlagHelp = "the tunnel no longer takes a hostname and service:
 type tunnelFlags struct {
 	name, adopt, dashboard, auth, digest string
 	follow                               bool
+	agreeTerms, confirmProduction        bool
 	positional                           []string
 }
 
 func (f tunnelFlags) request() apiclient.TunnelRequest {
-	return apiclient.TunnelRequest{Name: f.name, Adopt: f.adopt, DashboardHostname: f.dashboard, AuthHostname: f.auth}
+	return apiclient.TunnelRequest{Name: f.name, Adopt: f.adopt, DashboardHostname: f.dashboard, AuthHostname: f.auth,
+		AgreeTerms: f.agreeTerms, ConfirmProduction: f.confirmProduction}
 }
 
 // oneTunnel says exactly one of --name (create) and --adopt was given.
@@ -132,6 +134,10 @@ func parseTunnelFlags(args []string, allowDigest, allowFollow bool, stderr io.Wr
 			i++
 		case allowFollow && args[i] == "--follow":
 			f.follow = true
+		case allowDigest && args[i] == "--agree-terms":
+			f.agreeTerms = true
+		case allowDigest && args[i] == "--confirm-production":
+			f.confirmProduction = true
 		case strings.HasPrefix(args[i], "-"):
 			fmt.Fprintf(stderr, "unknown flag %q\n", args[i])
 			return f, false
@@ -162,6 +168,12 @@ func runTunnelPlan(ctx context.Context, client *apiclient.Client, args []string,
 	}
 	if f.auth != "" {
 		approve += " --auth-hostname " + plan.AuthHostname
+	}
+	if c := plan.Certificate; c != nil && c.Issue {
+		approve += " --agree-terms"
+		if c.DirectoryClass == "production" {
+			approve += " --confirm-production"
+		}
 	}
 	fmt.Fprintf(stdout, "approve with: %s --digest %s\n", approve, plan.Digest)
 	return exitOK
@@ -210,13 +222,17 @@ func printTunnelPlan(w io.Writer, plan apiclient.TunnelPlan) {
 		fmt.Fprintf(w, "sign-in adds redirect: %s\n", u.RedirectURI)
 		fmt.Fprintf(w, "sign-in at: %s\n", u.AuthentikURL)
 	}
+	if c := plan.Certificate; c != nil {
+		printTunnelCertificate(w, *c)
+	}
+	printIssuerMoves(w, "", plan.IssuerMoves)
 	fmt.Fprintf(w, "digest: %s\n", plan.Digest)
 }
 
 func runTunnelSetup(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	f, ok := parseTunnelFlags(args, true, true, stderr)
 	if !ok || !f.oneTunnel() || len(f.positional) != 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl tunnel setup (--name NAME | --adopt TUNNEL-ID) [--dashboard-hostname HOST] [--auth-hostname HOST] --digest DIGEST [--follow]")
+		fmt.Fprintln(stderr, "usage: homesteadctl tunnel setup (--name NAME | --adopt TUNNEL-ID) [--dashboard-hostname HOST] [--auth-hostname HOST] --digest DIGEST [--agree-terms] [--confirm-production] [--follow]")
 		return exitUsage
 	}
 	if f.digest == "" {
@@ -249,4 +265,24 @@ func runTunnelTeardown(ctx context.Context, client *apiclient.Client, args []str
 		return exitOK
 	}
 	return followOperation(ctx, client, id, stdout, stderr)
+}
+
+// printTunnelCertificate prints the public dashboard name's certificate
+// (ADR-048 §5): placed already, issued by the plan, or why not.
+func printTunnelCertificate(w io.Writer, c apiclient.TunnelCertificate) {
+	switch {
+	case c.Placed != "":
+		fmt.Fprintf(w, "certificate: %s is already covered by %s\n", c.Name, c.Placed)
+	case c.Issue:
+		fmt.Fprintf(w, "certificate: %s as %s from %s (%s)\n", c.Name, c.Certificate, c.Directory, c.DirectoryClass)
+		fmt.Fprintf(w, "  challenge: %s via %s, zone %s; renewal %s\n", c.Challenge, c.Provider, c.Zone, c.Renewal)
+		if c.AddsToStrategy {
+			fmt.Fprintf(w, "  adds %s to TLS\n", c.Certificate)
+		}
+		if c.TermsURL != "" {
+			fmt.Fprintf(w, "  terms: %s (approve with --agree-terms)\n", c.TermsURL)
+		}
+	default:
+		fmt.Fprintf(w, "certificate: %s is not issued: %s\n", c.Name, strings.Join(c.Blockers, "; "))
+	}
 }

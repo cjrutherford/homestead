@@ -11,6 +11,7 @@ import {
   TlsRenewalStatus,
 } from '../core/api.service';
 import { isNotSetUp } from '../core/http-error';
+import { IssuerMoves } from '../ui/issuer-moves';
 import { StateMessage } from '../state/state-message';
 import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
@@ -32,7 +33,7 @@ const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
  * shown: the plan names where they are placed, nothing more.
  */
 @Component({
-  imports: [OperationProgress, Loading, Permit, StateMessage, RouterLink],
+  imports: [OperationProgress, Loading, Permit, StateMessage, RouterLink, IssuerMoves],
   selector: 'app-tls',
   templateUrl: './tls.html',
   styles: [

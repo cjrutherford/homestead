@@ -2,7 +2,7 @@ import { plural } from '../core/plural';
 import { Component, computed, effect, ElementRef, inject, OnInit, signal, input, untracked, viewChild } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
-import { ApiService, TunnelPlan, TunnelRequest, TunnelStatus } from '../core/api.service';
+import { ApiService, TunnelCertificate, TunnelPlan, TunnelRequest, TunnelStatus } from '../core/api.service';
 import { isTerminal } from '../core/operation-view';
 import { WorkOrders } from '../core/work-orders.service';
 import { StateMessage } from '../state/state-message';
@@ -11,6 +11,7 @@ import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
 import { SessionService } from '../auth/session.service';
 import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
+import { IssuerMoves } from '../ui/issuer-moves';
 import { coverageLamp, coverageRule } from '../core/coverage';
 
 /**
@@ -28,7 +29,7 @@ import { coverageLamp, coverageRule } from '../core/coverage';
  * an Authentik name; the page states the shared-origin trade-off once.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage, Dialog, RouterLink, Permit],
+  imports: [OperationProgress, Loading, StateMessage, Dialog, RouterLink, Permit, IssuerMoves],
   selector: 'app-tunnel',
   templateUrl: './tunnel.html',
 })
@@ -78,6 +79,16 @@ export class Tunnel implements OnInit {
   protected readonly plan = signal<TunnelPlan | null>(null);
   /** The plan approved here, kept as its stamped permit (S309). */
   protected readonly approved = signal<ApprovedPlan | null>(null);
+  /** S325 (ADR-048 §5): the certificate's terms and production confirmations. */
+  protected readonly agreeTerms = signal(false);
+  protected readonly confirmProduction = signal(false);
+  /** Approving waits for the confirmations the plan's certificate needs. */
+  protected readonly canApprove = computed(() => {
+    const c = this.plan()?.certificate;
+    if (this.busy()) return false;
+    if (!c?.issue) return true;
+    return this.agreeTerms() && (!this.isProduction(c) || this.confirmProduction());
+  });
   /** Why the appliance would not approve the plan on screen. */
   protected readonly refused = signal<string | null>(null);
   private readonly sessions = inject(SessionService);
@@ -151,6 +162,8 @@ export class Tunnel implements OnInit {
     this.plan.set(null);
     this.approved.set(null);
     this.refused.set(null);
+    this.agreeTerms.set(false);
+    this.confirmProduction.set(false);
     // Adopting (S290) takes over a tunnel this appliance's connector already serves.
     const request: TunnelRequest = adopt.trim() ? { adopt: adopt.trim().toLowerCase() } : { name: name.trim() };
     if (dashboardHostname.trim()) request.dashboard_hostname = dashboardHostname.trim();
@@ -185,7 +198,10 @@ export class Tunnel implements OnInit {
     this.notice.set(null);
     this.operationId.set(null);
     this.refused.set(null);
-    this.api.tunnelSetup(request, plan.digest).subscribe({
+    const approvals = plan.certificate?.issue
+      ? { agree_terms: this.agreeTerms(), confirm_production: this.confirmProduction() }
+      : {};
+    this.api.tunnelSetup(request, plan.digest, approvals).subscribe({
       next: ({ id }) => {
         this.busy.set(false);
         this.plan.set(null);
@@ -211,6 +227,10 @@ export class Tunnel implements OnInit {
         this.error.set(failure.error ?? failure.message);
       },
     });
+  }
+
+  protected isProduction(c: TunnelCertificate): boolean {
+    return c.directory_class === 'production';
   }
 
   /** Asks first: tearing a tunnel down cuts every hostname it serves. */

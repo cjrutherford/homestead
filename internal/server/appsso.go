@@ -48,6 +48,16 @@ func (a *appSignIn) inputs(name string) (appsso.Inputs, error) {
 var errUnknownApp = errors.New("unknown app")
 
 func appSignInInputs(st *store.Store, m *sso.Manager, manifest catalog.Manifest) (appsso.Inputs, error) {
+	set, err := loadEdgeRoutes(st)
+	if err != nil {
+		return appsso.Inputs{Manifest: manifest}, err
+	}
+	return appSignInInputsFrom(st, m, manifest, set)
+}
+
+// appSignInInputsFrom is appSignInInputs over the edge table set: the
+// current one, or the one a tunnel plan leads to (ADR-048 §6).
+func appSignInInputsFrom(st *store.Store, m *sso.Manager, manifest catalog.Manifest, set docker.RouteSet) (appsso.Inputs, error) {
 	in := appsso.Inputs{Manifest: manifest, AuthentikInstalled: authentikInstalled(st)}
 	installed, err := catalog.Installed(st, manifest.Name, stackDirFor(manifest.Name))
 	if err != nil {
@@ -62,10 +72,6 @@ func appSignInInputs(st *store.Store, m *sso.Manager, manifest catalog.Manifest)
 		return in, err
 	} else if ok {
 		in.Dashboard, in.DashboardOK = spec, status.Configured
-	}
-	set, err := loadEdgeRoutes(st)
-	if err != nil {
-		return in, err
 	}
 	in.Routes = docker.ServedRoutes(set.Routes, appsso.AppRoutes(manifest, set.Routes))
 	in.PublicAuthentikURL, in.PublicWaiting = publicAuthentik(set)

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"homestead/internal/audit"
+	"homestead/internal/cert"
 	"homestead/internal/docker"
 	"homestead/internal/domain"
 	"homestead/internal/operation"
@@ -281,8 +282,14 @@ type tunnelPlan struct {
 	// Coverage says whether Cloudflare has a certificate for each public
 	// name (S312); an uncovered name is also a warning.
 	Coverage []publicNameCoverage `json:"coverage"`
-	Warnings []string             `json:"warnings"`
-	Digest   string               `json:"digest"`
+	// Certificate is the public dashboard name's certificate (ADR-048
+	// §5): already placed, or issued by the operation once the tunnel is
+	// up. IssuerMoves are the apps whose sign-in then moves to
+	// Authentik's public address (§6). Both are bound into the digest.
+	Certificate *tunnelCertificate `json:"certificate,omitempty"`
+	IssuerMoves *cert.MovePlan     `json:"issuer_moves,omitempty"`
+	Warnings    []string           `json:"warnings"`
+	Digest      string             `json:"digest"`
 
 	// Hidden: never serialized, but bound into the digest.
 	zoneID    string
@@ -291,6 +298,9 @@ type tunnelPlan struct {
 	// keeps are existing CNAMEs already pointing at an adopted tunnel,
 	// recorded as Homestead's at approval.
 	keeps []router.DNSRecord
+	// addCert is the TLS strategy entry the certificate step adds; its
+	// content is bound into the digest through Certificate.Digest.
+	addCert *cert.Certificate
 }
 
 // tunnelAdoption is what adopting shows: the tunnel Cloudflare has, its
@@ -388,6 +398,11 @@ type tunnelRequest struct {
 	AuthHostname      string `json:"auth_hostname"`
 	// Adopt names an existing tunnel to take over instead of creating one.
 	Adopt string `json:"adopt,omitempty"`
+	// AgreeTerms and ConfirmProduction approve the public dashboard
+	// name's certificate with the plan (ADR-048 §5); required on setup
+	// when the plan issues one. They do not change the plan.
+	AgreeTerms        bool `json:"agree_terms,omitempty"`
+	ConfirmProduction bool `json:"confirm_production,omitempty"`
 }
 
 // validTunnelID accepts the shape of a Cloudflare tunnel ID (a UUID).
@@ -411,6 +426,10 @@ type tunnelFacts struct {
 	SignInLinked bool
 	SignIn       *sso.Spec
 	TokenKept    bool
+	// PublicCert plans the public dashboard name's certificate on the
+	// projected edge table, and the apps moving with it (ADR-048 §5-§6);
+	// nil where certificate issuance is not mounted.
+	PublicCert func(st *store.Store, dashName string, projected docker.RouteSet) (*tunnelCertificate, *cert.MovePlan, *cert.Certificate, error)
 }
 
 // tunnelSignIn is the sign-in change a tunnel plan carries (ADR-046).
@@ -432,6 +451,9 @@ func (s *Server) tunnelFacts() tunnelFacts {
 		if st, err := s.signInStatus(); err == nil && st.Configured {
 			f.SignIn, f.TokenKept = st.Spec, st.TokenKept
 		}
+	}
+	if s.certIssuing != nil {
+		f.PublicCert = s.planTunnelCertificate
 	}
 	return f
 }
@@ -698,6 +720,18 @@ func buildTunnelPlan(ctx context.Context, st *store.Store, secrets *secret.Store
 			plan.SignIn, plan.SignInUpdate = tunnelSignInChange(facts, dashName, signInAt)
 		}
 	}
+	if facts.PublicCert != nil && dash >= 0 && !legacyAuth && len(plan.Paths) > 0 {
+		projected := docker.RouteSet{Routes: append([]docker.Route(nil), set.Routes...)}
+		setTunnelNames(projected.Routes, plan.edgeNames())
+		c, moves, add, err := facts.PublicCert(st, dashName, projected)
+		if err != nil {
+			return tunnelPlan{}, err
+		}
+		plan.Certificate, plan.IssuerMoves, plan.addCert = c, moves, add
+		if c != nil && !c.Issue && c.Placed == "" {
+			plan.Warnings = append(plan.Warnings, c.Note)
+		}
+	}
 	plan.Digest = plan.digest()
 	return plan, nil
 }
@@ -915,6 +949,17 @@ func (s *Server) handleTunnelSetup(st *store.Store, secrets *secret.Store) http.
 			http.Error(w, "the plan changed since it was reviewed; review it again", http.StatusConflict)
 			return
 		}
+		if c := plan.Certificate; c != nil && c.Issue {
+			if !req.AgreeTerms {
+				http.Error(w, "agree_terms is required: approving this plan issues a certificate for "+c.Name+" from "+c.Directory+
+					", which records your agreement to the CA's terms ("+c.TermsURL+")", http.StatusUnprocessableEntity)
+				return
+			}
+			if c.DirectoryClass == cert.DirectoryProduction && !req.ConfirmProduction {
+				http.Error(w, "confirm_production is required: the certificate for "+c.Name+" comes from a production CA", http.StatusUnprocessableEntity)
+				return
+			}
+		}
 		token, err := tunnelToken(secrets)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
@@ -928,7 +973,13 @@ func (s *Server) handleTunnelSetup(st *store.Store, secrets *secret.Store) http.
 			}
 			return s.updateSignIn(ctx, actor, plan.Digest, want)
 		}
-		op, err := runner.Start(r.Context(), tunnelSetupDefinition(st, token, plan, signIn), "")
+		after := tunnelAfter{SignIn: signIn,
+			Certificate: func(ctx context.Context) error {
+				return s.issueTunnelCertificate(ctx, actor, plan.Digest, *plan.Certificate, plan.addCert, req.ConfirmProduction)
+			},
+			MoveIssuers: func(ctx context.Context) error { return s.moveIssuers(ctx, actor, *plan.IssuerMoves) },
+		}
+		op, err := runner.Start(r.Context(), tunnelSetupDefinition(st, token, plan, after), "")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -955,7 +1006,7 @@ func (s *Server) handleTunnelSetup(st *store.Store, secrets *secret.Store) http.
 // undoes what this run created and puts the replaced records back, so a
 // retry plans from scratch. A failed sign-in update leaves the working
 // tunnel up.
-func tunnelSetupDefinition(st *store.Store, apiToken string, plan tunnelPlan, signIn func(context.Context, tunnelSignIn) error) operation.Definition {
+func tunnelSetupDefinition(st *store.Store, apiToken string, plan tunnelPlan, after tunnelAfter) operation.Definition {
 	var tunnelID, runToken string
 	var recordIDs []string
 	adopting := plan.Adopt != nil
@@ -1144,18 +1195,48 @@ func tunnelSetupDefinition(st *store.Store, apiToken string, plan tunnelPlan, si
 			return router.SetTunnelAccount(st, tunnelID, plan.accountID, plan.zoneID, plan.Zone)
 		},
 	})
+	if c := plan.Certificate; c != nil && c.Issue {
+		def.Steps = append(def.Steps, operation.StepDef{
+			Name: "certificate",
+			Run: func(ctx context.Context) error {
+				if err := after.Certificate(ctx); err != nil {
+					msg := fmt.Sprintf("the tunnel is up, but the certificate for %s was not issued: %v. Retry it from TLS: plan %s, approve it and issue it", c.Name, err, c.Certificate)
+					if plan.SignInUpdate != nil {
+						msg += "; then re-plan Sign-in and approve it"
+					}
+					if plan.IssuerMoves != nil && len(plan.IssuerMoves.Apps) > 0 {
+						msg += "; the apps waiting to move to Authentik's public address move with it"
+					}
+					return errors.New(msg)
+				}
+				return nil
+			},
+		})
+	}
 	if want := plan.SignInUpdate; want != nil {
 		def.Steps = append(def.Steps, operation.StepDef{
 			Name: "sign-in",
 			Run: func(ctx context.Context) error {
-				if err := signIn(ctx, *want); err != nil {
+				if err := after.SignIn(ctx, *want); err != nil {
 					return fmt.Errorf("the tunnel is up, but sign-in was not updated for %s: %w. Re-plan Sign-in and approve it", want.Origin, err)
 				}
 				return nil
 			},
 		})
 	}
+	if plan.IssuerMoves.Reapplies() {
+		def.Steps = append(def.Steps, operation.StepDef{Name: cert.MoveStep, Run: after.MoveIssuers})
+	}
 	return def
+}
+
+// tunnelAfter is what the tunnel operation runs once the tunnel is up:
+// the public certificate (ADR-048 §5), the sign-in update (ADR-046) and
+// the app sign-in moves (ADR-048 §6), each only when the plan has it.
+type tunnelAfter struct {
+	Certificate func(context.Context) error
+	SignIn      func(context.Context, tunnelSignIn) error
+	MoveIssuers func(context.Context) error
 }
 
 func (s *Server) handleTunnelTeardown(st *store.Store, secrets *secret.Store) http.HandlerFunc {

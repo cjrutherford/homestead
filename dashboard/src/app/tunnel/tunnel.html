@@ -232,8 +232,42 @@
         @for (warning of review.warnings; track $index) {
           <app-state-message kind="warning" [headline]="warning" />
         }
+        @if (review.certificate; as c) {
+          <section class="tunnel-certificate" aria-label="Certificate for the public dashboard name">
+            <h3>Certificate for {{ c.name }}</h3>
+            <p>{{ c.note }}</p>
+            @if (c.issue) {
+              <dl>
+                <dt>Certificate</dt>
+                <dd>{{ c.certificate }}{{ c.adds_to_strategy ? ' (added to TLS)' : '' }}</dd>
+                <dt>Certificate authority</dt>
+                <dd><span class="mono">{{ c.directory }}</span> ({{ c.directory_class }})</dd>
+                <dt>Challenge</dt>
+                <dd>DNS-01 through {{ c.provider }} in the zone {{ c.zone }}</dd>
+                <dt>Renewal</dt>
+                <dd>{{ c.renewal === 'auto' ? 'Automatic: Homestead re-issues it before it expires' : 'Manual' }}</dd>
+              </dl>
+              <label>
+                <input type="checkbox" [checked]="agreeTerms()" [disabled]="busy()"
+                  (change)="agreeTerms.set($any($event.target).checked)" />
+                I agree to the certificate authority's terms of service
+                @if (c.terms_url) {
+                  (<a [href]="c.terms_url" target="_blank" rel="noopener">read the terms</a>)
+                }
+              </label>
+              @if (isProduction(c)) {
+                <label>
+                  <input type="checkbox" [checked]="confirmProduction()" [disabled]="busy()"
+                    (change)="confirmProduction.set($any($event.target).checked)" />
+                  I confirm issuing from a production certificate authority
+                </label>
+              }
+            }
+          </section>
+        }
+        <app-issuer-moves [moves]="review.issuer_moves" />
         <div class="risky-actions">
-          <button type="button" class="primary" (click)="approve()" [disabled]="busy()">{{ review.adopt ? 'Approve and adopt' : 'Approve and set up' }}</button>
+          <button type="button" class="primary" (click)="approve()" [disabled]="!canApprove()">{{ review.adopt ? 'Approve and adopt' : 'Approve and set up' }}</button>
           <button type="button" class="quiet" (click)="discardPlan()" [disabled]="busy()">Change</button>
         </div>
       </app-permit>

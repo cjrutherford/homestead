@@ -17,6 +17,7 @@ import (
 	"os"
 	"time"
 
+	"homestead/internal/cert"
 	"homestead/internal/craft"
 	"homestead/internal/doctor"
 	"homestead/internal/sso"
@@ -89,6 +90,10 @@ type Server struct {
 	// appSignIn serves app sign-in through Authentik (S298), set by
 	// MountSSO; the install plan reads it for its sign-in preview.
 	appSignIn *appSignIn
+	// certIssuing issues ACME certificates (S278), set by
+	// MountTLSIssuance; tunnel setup issues the public dashboard name's
+	// certificate through it (ADR-048 §5).
+	certIssuing *cert.Issuing
 	// appPublic, people and appSetup back the appliance-run app setup
 	// (ADR-048): set by MountAppPublic, MountSSO and MountAppSetup.
 	appPublic *appPublic

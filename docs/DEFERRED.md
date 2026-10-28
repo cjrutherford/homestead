@@ -1253,3 +1253,25 @@ Craft apps under one host, by path (ADR-045).
   restart it on its own.
 - Skipping ends the whole remaining setup. There is no way to skip one
   step and keep the rest.
+
+## S325 tunnel setup issues the public certificate and moves app sign-in (2026-10-27)
+
+- The tunnel always plans Let's Encrypt production. There is no choice
+  of staging or another CA from the tunnel plan; a different CA is set
+  up in TLS first, and the tunnel reuses a DNS-01 ACME entry covering
+  the name.
+- A TLS strategy entry covering the public name that is not ACME
+  DNS-01 (manual or internal) blocks the tunnel's certificate step. The
+  tunnel does not replace it.
+- After a fresh tunnel setup only the dashboard and Authentik's path
+  are published, so the tunnel's move list is usually empty; apps
+  published later plan at the public issuer directly. The move list
+  matters for certificates issued from TLS after apps were applied.
+- An app that cannot be re-planned when the moves are listed (not
+  installed, no address) is left out; its sign-in status shows its own
+  re-plan.
+- The certificate step's failure leaves the strategy entry it added in
+  TLS, where the retry uses it.
+- The terms URL shown is Let's Encrypt's repository page. The exact
+  subscriber agreement is the one the CA's directory names at
+  registration.

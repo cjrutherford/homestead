@@ -385,4 +385,100 @@ describe('Tunnel', () => {
     expect(paths).toContain('authentik.lan');
     expect(el.querySelectorAll('[data-shared-origin]').length).toBe(1);
   });
+  const MOVES = {
+    apps: [
+      {
+        app: 'immich',
+        title: 'Immich',
+        from: 'https://homestead.lan/apps/auth/application/o/homestead-immich/',
+        to: 'https://homestead.example.com/apps/auth/application/o/homestead-immich/',
+        host_entry: 'homestead.example.com:host-gateway',
+        replaced_host_entry: 'homestead.lan:host-gateway',
+        digest: 'm1',
+      },
+    ],
+    token_kept: false,
+    note: 'Homestead did not keep the Authentik API token, so nothing changes in Authentik.',
+  };
+
+  const CERT_PLAN = {
+    ...PLAN,
+    certificate: {
+      name: 'homestead.example.com',
+      issue: true,
+      certificate: 'public-dashboard',
+      adds_to_strategy: true,
+      directory: 'https://acme-v02.api.letsencrypt.org/directory',
+      directory_class: 'production',
+      challenge: 'dns-01',
+      provider: 'cloudflare',
+      zone: 'example.com',
+      renewal: 'auto',
+      terms_url: 'https://letsencrypt.org/repository/',
+      note: 'Approving also approves a certificate for homestead.example.com.',
+      digest: 'c1',
+    },
+    issuer_moves: MOVES,
+  };
+
+  it('shows the public certificate and holds approval until its terms are agreed (ADR-048 §5)', () => {
+    reviewPlan(CERT_PLAN);
+    const el = fixture.nativeElement as HTMLElement;
+    const section = el.querySelector('section[aria-label="Certificate for the public dashboard name"]') as HTMLElement;
+    expect(section.textContent).toContain('public-dashboard (added to TLS)');
+    expect(section.textContent).toContain('https://acme-v02.api.letsencrypt.org/directory');
+    expect(section.textContent).toContain('DNS-01 through cloudflare in the zone example.com');
+    expect(section.textContent).toContain('Automatic');
+    expect(section.querySelector('a[href="https://letsencrypt.org/repository/"]')).not.toBeNull();
+    const approve = Array.from(el.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Approve and set up',
+    ) as HTMLButtonElement;
+    expect(approve.disabled).toBe(true);
+    const boxes = section.querySelectorAll('input[type="checkbox"]');
+    expect(boxes.length).toBe(2);
+    (boxes[0] as HTMLInputElement).click();
+    fixture.detectChanges();
+    expect(approve.disabled).toBe(true);
+    (boxes[1] as HTMLInputElement).click();
+    fixture.detectChanges();
+    expect(approve.disabled).toBe(false);
+    approve.click();
+    const setup = http.expectOne('/api/v1/tunnel/setup');
+    expect(setup.request.body).toEqual({
+      name: 'homestead',
+      auth_hostname: 'login.example.com',
+      agree_terms: true,
+      confirm_production: true,
+      digest: 'd1g',
+    });
+    setup.flush({ id: 23 });
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+  });
+
+  it('says a placed certificate is used and asks for no terms', () => {
+    reviewPlan({
+      ...PLAN,
+      certificate: { name: 'homestead.example.com', issue: false, placed: 'imported', note: 'A certificate is already placed (imported).' },
+    });
+    const el = fixture.nativeElement as HTMLElement;
+    const section = el.querySelector('section[aria-label="Certificate for the public dashboard name"]') as HTMLElement;
+    expect(section.textContent).toContain('already placed');
+    expect(section.querySelectorAll('input[type="checkbox"]').length).toBe(0);
+    const approve = Array.from(el.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Approve and set up',
+    ) as HTMLButtonElement;
+    expect(approve.disabled).toBe(false);
+  });
+
+  it('lists the apps whose sign-in moves, each linked to its re-plan without the token (ADR-048 §6)', () => {
+    reviewPlan(CERT_PLAN);
+    const el = fixture.nativeElement as HTMLElement;
+    const moves = el.querySelector('section[aria-label="Apps moving to Authentik\'s public address"]') as HTMLElement;
+    expect(moves.textContent).toContain('nothing changes in Authentik');
+    expect(moves.textContent).toContain('Immich');
+    expect(moves.textContent).toContain('https://homestead.example.com/apps/auth/application/o/homestead-immich/');
+    expect(moves.textContent).toContain('homestead.example.com:host-gateway');
+    expect(moves.textContent).toContain('homestead.lan:host-gateway');
+    expect(moves.querySelector('a[href="/catalog#manage-immich"]')?.textContent).toContain('Re-plan Immich sign-in');
+  });
 });
