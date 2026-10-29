@@ -271,6 +271,9 @@ var routeClasses = map[string]RouteClass{
 	"DELETE /api/v1/sso":                                 ClassSession,
 	"GET /api/v1/dashboard/address":                      ClassSession,
 	"PUT /api/v1/dashboard/address":                      ClassSession,
+	// The apps list (S337, ADR-050 §4); S338 adds the person allowlist.
+	"GET /api/v1/me/apps":          ClassSession,
+	"GET /api/v1/people/{id}/apps": ClassSession,
 	// People (S317, ADR-043).
 	"GET /api/v1/people":                         ClassSession,
 	"POST /api/v1/people":                        ClassSession,

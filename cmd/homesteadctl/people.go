@@ -15,6 +15,7 @@ import (
 
 const peopleUsage = `usage: homesteadctl people <command> ...
   list
+  apps PERSON [--json]
   add --name NAME --username USER [--email EMAIL] [--app APP[:admin]]...
       [--link | --generate | --password-file FILE | --password-stdin]
   edit PERSON [--name NAME] [--username USER] [--email EMAIL]
@@ -46,6 +47,8 @@ func runPeople(ctx context.Context, client *apiclient.Client, args []string, std
 	switch args[0] {
 	case "list":
 		code = runPeopleList(ctx, client, stdout, stderr)
+	case "apps":
+		code = runPeopleApps(ctx, client, rest, stdout, stderr)
 	case "add":
 		code = runPeopleAdd(ctx, client, rest, stdout, stderr)
 	case "edit":

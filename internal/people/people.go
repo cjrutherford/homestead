@@ -190,6 +190,17 @@ func (s *Service) person(id int64) (Person, error) {
 	return p, err
 }
 
+// AppGrants is what a person may open (S337, ADR-050 §4): whether the
+// person is active and their grants from Homestead's own record. It never
+// calls Authentik. ErrNotFound for an unknown id.
+func (s *Service) AppGrants(id int64) (active bool, grants []Grant, err error) {
+	p, err := s.person(id)
+	if err != nil {
+		return false, nil, err
+	}
+	return p.State == StateActive, p.Grants, nil
+}
+
 func (s *Service) grants(id int64) ([]Grant, error) {
 	rows, err := s.DB.Query(`SELECT app, role FROM people_grants WHERE person_id = ? ORDER BY app`, id)
 	if err != nil {

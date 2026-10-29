@@ -18,12 +18,14 @@ import (
 // endpoints.
 func runApps(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|names|plan|install|reach|configure|secrets|sign-in|public|move|setup|uninstall>")
+		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|mine|names|plan|install|reach|configure|secrets|sign-in|public|move|setup|uninstall>")
 		return exitUsage
 	}
 	switch args[0] {
 	case "list":
 		return runAppsList(ctx, client, stdout, stderr)
+	case "mine":
+		return runAppsMine(ctx, client, args[1:], stdout, stderr)
 	case "names":
 		return runAppsNames(ctx, client, stdout, stderr)
 	case "plan":

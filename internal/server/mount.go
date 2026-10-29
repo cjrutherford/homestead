@@ -136,6 +136,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	})
 	srv.MountTunnel(st, secrets, c.Port)
 	srv.MountAppPublic(st, secrets, c.CatalogDir)
+	srv.MountMyApps(st, c.CatalogDir)
 	srv.MountAppSetup(st, c.CatalogDir, local)
 	srv.MountAppMove(st, secrets, c.CatalogDir)
 	srv.MountAppReach(st, names, local, c.CatalogDir)

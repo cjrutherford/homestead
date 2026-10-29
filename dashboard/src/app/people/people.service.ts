@@ -36,6 +36,19 @@ export interface UnmanagedUser {
   active: boolean;
 }
 
+/** One tile on the apps page (ADR-050). role is owner, user or admin. */
+export interface MyApp {
+  name: string;
+  title: string;
+  icon: string;
+  role: 'owner' | 'user' | 'admin';
+  url: string;
+}
+
+export interface MyAppsView {
+  apps: MyApp[];
+}
+
 export interface PeopleView {
   token_kept: boolean;
   people: Person[] | null;
@@ -87,6 +100,16 @@ export type DriftAction = 'put-back' | 'keep' | 'recreate' | 'forget';
 @Injectable({ providedIn: 'root' })
 export class PeopleService {
   private readonly http = inject(HttpClient);
+
+  /** The apps the signed-in owner sees; the apps page (S339) uses it. */
+  myApps(): Observable<MyAppsView> {
+    return this.http.get<MyAppsView>('/api/v1/me/apps');
+  }
+
+  /** The apps one person would see, for the owner's preview. */
+  personApps(id: number): Observable<MyAppsView> {
+    return this.http.get<MyAppsView>(`/api/v1/people/${id}/apps`);
+  }
 
   people(): Observable<PeopleView> {
     return this.http.get<PeopleView>('/api/v1/people');

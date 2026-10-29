@@ -1349,3 +1349,15 @@ Craft apps under one host, by path (ADR-045).
 - The hint is the title of Authentik's `default-authentication-flow`, the
   only text a flow lets Homestead set. An owner who customised that flow's
   title sees it replaced when the plan is applied. Not verified live.
+
+## S337 apps list (2026-10-28)
+- Person sessions, the owner-only boundary and the person allowlist for
+  `GET /api/v1/me/apps` are S338; until then the routes are owner session
+  class only.
+- The apps page itself, `/admin/` paths and redirects are S339. The
+  dashboard has only API client methods (`myApps`, `personApps`).
+- `--json` is new with S337; the other CLI commands have no JSON
+  output. Adding it everywhere is open.
+- The list shows a local address even when the owner is on the overlay
+  name; it follows the dashboard route's first name, not the name the
+  request used.
