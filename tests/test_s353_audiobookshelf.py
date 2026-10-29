@@ -22,7 +22,7 @@ class TestAudiobookshelfContract(unittest.TestCase):
         self.assertTrue(MANIFEST.is_file(), "catalog/audiobookshelf.yaml missing")
         for symbol in ("name: audiobookshelf", "version: 2.37.1",
                        "image: ghcr.io/advplyr/audiobookshelf:2.37.1",
-                       "exposes: web", "ports: [80]", "recommended: local"):
+                       "exposes: web", "containerport: 80", "recommended: local"):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, self.text)
 

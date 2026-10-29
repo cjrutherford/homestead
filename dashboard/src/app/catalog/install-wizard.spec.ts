@@ -443,6 +443,11 @@ describe('InstallWizard', () => {
       expect(options.filter((o) => o.startsWith('/mnt/big'))).toHaveLength(1);
     });
 
+    it('uses the exposed service container port without requiring a host port', () => {
+      start({ ...NEXTCLOUD_NO_PORTS, Services: NEXTCLOUD.Services.map((service) => ({ ...service, ContainerPort: 8088 })) });
+      expect(c().containerPorts()['nextcloud']).toBe('8088');
+    });
+
     it('defaults the container port to 80 for Nextcloud, which declares no host port', () => {
       start(NEXTCLOUD_NO_PORTS);
       expect(c().containerPorts()['nextcloud']).toBe('80');

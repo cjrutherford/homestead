@@ -20,6 +20,7 @@ services:
 - name: uptime-kuma
   image: docker.io/louislam/uptime-kuma:2.5.7
   exposes: web
+  containerport: 3001
   # No environment overrides: the image sets UPTIME_KUMA_IS_CONTAINER and
   # listens on 3001. The administrator account is created on first visit
   # (the application's own setup screen), so nothing is generated here.
@@ -38,7 +39,6 @@ requirements:
     minbytes: 2147483648
   # Uptime Kuma listens on 3001; routes proxy to it and no host port is
   # published by default.
-  ports: [3001]
 exposure:
   package: uptime-kuma
   endpoints:

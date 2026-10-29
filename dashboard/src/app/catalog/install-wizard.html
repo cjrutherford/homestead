@@ -504,7 +504,7 @@
               <p class="hint">Most apps need no change. Edit it only if the app listens on another port.</p>
               @for (service of routedServices(); track service.Name) {
                 <label class="wizard-field">
-                  {{ service.Name }} port
+                  {{ service.Name }} container port
                   <input
                     [name]="'port-' + service.Name"
                     [value]="containerPorts()[service.Name] ?? ''"

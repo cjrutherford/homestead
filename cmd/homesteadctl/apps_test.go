@@ -297,3 +297,14 @@ func TestAppsInstallApprovesTheNextcloudLink(t *testing.T) {
 		t.Fatalf("install body = %s", installBody)
 	}
 }
+
+func TestAppsShowIncludesContainerPort(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"Name":"jellyfin","Version":"12.2","Blurb":"Media","Services":[{"Name":"jellyfin","Exposes":"web","ContainerPort":8096}]}`))
+	}))
+	defer srv.Close()
+	code, stdout, stderr := invoke(t, []string{"--server", srv.URL, "apps", "show", "jellyfin"})
+	if code != exitOK || !strings.Contains(stdout, "container port: jellyfin 8096") {
+		t.Fatalf("exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+}

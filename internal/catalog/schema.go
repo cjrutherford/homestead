@@ -31,6 +31,8 @@ type Service struct {
 	Name    string
 	Image   string
 	Exposes string
+	// ContainerPort is the app listener inside its container, not a host port.
+	ContainerPort int
 	// Command overrides the image entrypoint command (official
 	// images like Authentik require `server`/`worker` verbs):
 	// empty inherits the image default.
@@ -54,6 +56,9 @@ type Service struct {
 
 // Validate checks service shape and endpoint linkage.
 func (s Service) Validate(endpoints map[string]bool) error {
+	if s.ContainerPort < 0 || s.ContainerPort > 65535 || (s.ContainerPort != 0 && s.Exposes == "") {
+		return fmt.Errorf("catalog: service %q has invalid container port %d", s.Name, s.ContainerPort)
+	}
 	if !validServiceName.MatchString(s.Name) {
 		return fmt.Errorf("catalog: invalid service name %q", s.Name)
 	}

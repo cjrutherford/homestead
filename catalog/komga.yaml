@@ -24,6 +24,7 @@ services:
 - name: komga
   image: docker.io/gotson/komga:1.29.1
   exposes: web
+  containerport: 25600
   environment:
     # The image sets no heap cap, so the JVM defaults to a quarter of the
     # host's RAM (several gigabytes on a typical appliance). A fixed cap
@@ -52,7 +53,6 @@ requirements:
     minbytes: 10737418240
   # Komga listens on 25600; routes proxy to it and no host port is
   # published by default.
-  ports: [25600]
 exposure:
   package: komga
   endpoints:

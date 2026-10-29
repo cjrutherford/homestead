@@ -21,6 +21,7 @@ services:
 - name: server
   image: ghcr.io/goauthentik/server:2026.8.3
   exposes: web
+  containerport: 9000
   command: [server]
   environment:
     AUTHENTIK_POSTGRESQL__HOST: postgresql
@@ -94,7 +95,6 @@ requirements:
   storage:
   - class: application
     minbytes: 2147483648
-  ports: [9000]
 exposure:
   package: authentik
   endpoints:

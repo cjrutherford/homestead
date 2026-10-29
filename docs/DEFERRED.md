@@ -349,13 +349,12 @@
   There is no catalog-load check against the manifest the daemon last
   verified, because an unsigned or absent manifest must not hide the whole
   catalog.
-- `requirements.ports` serves two jobs: the dashboard's default container
-  port and the host-port conflict check. Craft packages declare no
-  `requirements.ports` (the container publishes no host port and the daemon
-  itself listens on 8080, so declaring it refused every install); the
-  dashboard defaults a `homestead/craft-` service to container port 8080
-  instead. The fields should still be split so a container port has its own
-  manifest field.
+- Genuine published host ports: S383 separates container listener metadata
+  from `requirements.ports` and fixes false conflicts for proxy-routed curated
+  packages. No current curated install publishes host ports. A package that
+  truly needs one still requires a reviewed plan for an owner-selected host
+  port, Compose mapping, conflict checks and CLI/dashboard parity; the
+  container port must remain separate from the selected host port.
 - Edge network aliases: every service in a routed stack joins
   `homestead-edge` and routes target the bare service name, so two stacks
   using the same service name (for example `web`, `db`) would share an alias
@@ -648,13 +647,9 @@
     one failing check at a time as the daemon words it. A route returning the
     structured requirement report without planning would let the wizard list
     every check with its numbers.
-  - Closed after the S285 KVM review: `requirements.ports` are host ports and
-    Homestead publishes none, so Nextcloud's `ports: [80]` failed once Caddy held
-    80 (confirmed on VM 2). Nextcloud now declares none (as the craft packages
-    do) and the wizard defaults its container port to 80 from curated copy.
-    Left: Jellyfin (8096), Immich (2283) and Authentik (9000) still declare
-    their container ports as host ports, which only conflicts if something else
-    on the host listens there; decide whether `ports` should mean host ports at all.
+  - Closed by S383: curated proxy-routed packages declare container ports
+    separately from host requirements, so a listener on the host no longer
+    blocks an app that does not publish that port.
   - The plan route's storage floor check read free space only from class
     assignments, so a mount chosen in the request failed with "no space data".
     Fixed in the daemon (the chosen mount's free space is read from discovery),

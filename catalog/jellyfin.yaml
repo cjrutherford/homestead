@@ -13,6 +13,7 @@ services:
 - name: jellyfin
   image: jellyfin/jellyfin:12.2
   exposes: web
+  containerport: 8096
   # Image VOLUMEs: /config, /cache. The image runs as root by default
   # (no USER in the image config), so ownership stays untouched.
   #
@@ -60,7 +61,6 @@ requirements:
     minbytes: 1073741824
   - class: bulk
     minbytes: 21474836480
-  ports: [8096]
 exposure:
   package: jellyfin
   endpoints:

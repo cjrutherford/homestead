@@ -226,3 +226,5 @@ session). They are browser-protocol routes used by the craft wrapper page,
 not configuration routes, so they carry no CLI or dashboard row; every
 setting they depend on (link, rotate, unlink, opt-out, limits via the
 `craft_files_*` settings on `/api/v1/config`) is in the rows above.
+
+Catalog service `ContainerPort` is the suggested container listener for the install wizard; CLI plan requests continue to provide `container_ports`. Host `requirements.ports` are separate and continue to be checked.

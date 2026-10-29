@@ -19,6 +19,7 @@ services:
 - name: linkding
   image: docker.io/sissbruecker/linkding:1.47.0
   exposes: web
+  containerport: 9090
   # The image has no ENTRYPOINT; ./bootstrap.sh is its CMD (runs
   # migrations, creates the initial superuser, starts uwsgi). Naming it
   # as the entrypoint lets the supervisor export the password first and
@@ -49,7 +50,6 @@ requirements:
     minbytes: 1073741824
   # Linkding listens on 9090; routes proxy to it and no host port is
   # published by default.
-  ports: [9090]
 exposure:
   package: linkding
   endpoints:

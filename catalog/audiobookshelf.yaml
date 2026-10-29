@@ -22,6 +22,7 @@ services:
 - name: audiobookshelf
   image: ghcr.io/advplyr/audiobookshelf:2.37.1
   exposes: web
+  containerport: 80
   # The release image declares no VOLUME (verified from the GHCR image
   # config for 2.37.1); /config and /metadata are Homestead declarations.
   # /metadata/streams is the playback transcode scratch directory, so it
@@ -49,7 +50,6 @@ requirements:
     minbytes: 10737418240
   # Audiobookshelf listens on 80; routes proxy to it and no host port is
   # published by default.
-  ports: [80]
 exposure:
   package: audiobookshelf
   endpoints:

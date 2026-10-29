@@ -21,6 +21,7 @@ services:
 - name: server
   image: ghcr.io/immich-app/immich-server:v3.3.0
   exposes: web
+  containerport: 2283
   environment:
     DB_HOSTNAME: database
     DB_USERNAME: immich
@@ -80,7 +81,6 @@ requirements:
     minbytes: 5368709120
   - class: bulk
     minbytes: 107374182400
-  ports: [2283]
 exposure:
   package: immich
   endpoints:

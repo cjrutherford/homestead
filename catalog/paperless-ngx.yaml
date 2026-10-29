@@ -25,6 +25,7 @@ services:
 - name: webserver
   image: ghcr.io/paperless-ngx/paperless-ngx:3.3.4
   exposes: web
+  containerport: 8000
   # The image declares ENTRYPOINT ["/init"] and no command; the s6
   # services inside it start the application. Exporting secrets replaces
   # the entrypoint, so the supervisor execs /init exactly as the image
@@ -110,7 +111,6 @@ requirements:
     minbytes: 10737418240
   # Granian (inside s6) listens on 8000; routes proxy to it and no host
   # port is published by default.
-  ports: [8000]
 exposure:
   package: paperless-ngx
   endpoints:

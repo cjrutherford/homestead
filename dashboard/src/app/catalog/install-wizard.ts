@@ -515,7 +515,7 @@ export class InstallWizard implements OnInit {
     const ports: Record<string, string> = {};
     for (const service of manifest.Services) {
       if (service.Exposes !== '') {
-        ports[service.Name] = defaultContainerPort(manifest);
+        ports[service.Name] = defaultContainerPort(manifest, service.Name);
       }
     }
     this.containerPorts.set(ports);

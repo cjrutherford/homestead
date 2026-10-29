@@ -23,7 +23,7 @@ class TestCalibreWebAutomatedContract(unittest.TestCase):
         self.assertTrue(MANIFEST.is_file(), "catalog/calibre-web-automated.yaml missing")
         for symbol in ("name: calibre-web-automated", "version: 4.0.8",
                        "image: docker.io/crocodilestick/calibre-web-automated:v4.0.8",
-                       "exposes: web", "ports: [8083]", "recommended: local"):
+                       "exposes: web", "containerport: 8083", "recommended: local"):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, self.text)
 

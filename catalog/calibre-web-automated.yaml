@@ -25,6 +25,7 @@ services:
 - name: calibre-web-automated
   image: docker.io/crocodilestick/calibre-web-automated:v4.0.8
   exposes: web
+  containerport: 8083
   # The image runs s6 as root, creates the `abc` service user from
   # PUID/PGID, and drops to it for the web app and the ingest service.
   # The declared directories get the same owner so files are writable
@@ -68,7 +69,6 @@ requirements:
     minbytes: 10737418240
   # The app listens on 8083; routes proxy to it and no host port is
   # published by default.
-  ports: [8083]
 exposure:
   package: calibre-web-automated
   endpoints:

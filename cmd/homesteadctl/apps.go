@@ -575,6 +575,11 @@ func runAppsShow(ctx context.Context, client *apiclient.Client, args []string, s
 		return fail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "%s %s — %s\n", manifest.Name, manifest.Version, manifest.Blurb)
+	for _, service := range manifest.Services {
+		if service.Exposes != "" && service.ContainerPort != 0 {
+			fmt.Fprintf(stdout, "  container port: %s %d\n", service.Name, service.ContainerPort)
+		}
+	}
 	for _, integration := range manifest.Works {
 		fmt.Fprintf(stdout, "  integrates: %s %s %s (%s) — %s\n",
 			integration.Level, integration.Kind, integration.Target, integration.Title, integration.Note)

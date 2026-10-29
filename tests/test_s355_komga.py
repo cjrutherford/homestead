@@ -22,7 +22,7 @@ class TestKomgaContract(unittest.TestCase):
         self.assertTrue(MANIFEST.is_file(), "catalog/komga.yaml missing")
         for symbol in ("name: komga", "version: 1.29.1",
                        "image: docker.io/gotson/komga:1.29.1",
-                       "exposes: web", "ports: [25600]", "recommended: local"):
+                       "exposes: web", "containerport: 25600", "recommended: local"):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, self.text)
 

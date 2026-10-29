@@ -22,7 +22,7 @@ class TestNavidromeContract(unittest.TestCase):
         self.assertTrue(MANIFEST.is_file(), "catalog/navidrome.yaml missing")
         for symbol in ("name: navidrome", "version: 0.64.2",
                        "image: docker.io/navidrome/navidrome:0.64.2",
-                       "exposes: web", "ports: [4533]", "recommended: local"):
+                       "exposes: web", "containerport: 4533", "recommended: local"):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, self.text)
 

@@ -180,3 +180,62 @@ func TestNextcloudRequirementsPassWithTheEdgeOnPorts80And443(t *testing.T) {
 		t.Fatalf("requirements with 80 and 443 bound = %+v, %v", report, err)
 	}
 }
+
+func TestCuratedContainerPortsDoNotRequireHostPorts(t *testing.T) {
+	catalog := repoCatalog(t)
+	for name, port := range map[string]int{"jellyfin": 8096, "immich": 2283, "vaultwarden": 80, "gitea": 3000, "authentik": 9000, "audiobookshelf": 80, "calibre-web-automated": 8083, "freshrss": 80, "komga": 25600, "linkding": 9090, "mealie": 9000, "navidrome": 4533, "paperless-ngx": 8000, "uptime-kuma": 3001} {
+		m, err := catalog.Get(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(m.Requirements.Ports) != 0 {
+			t.Fatalf("%s declares host ports: %v", name, m.Requirements.Ports)
+		}
+		found := false
+		for _, svc := range m.Services {
+			if svc.Exposes != "" && svc.ContainerPort == port {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%s lacks exposed container port %d", name, port)
+		}
+		host := installHost()
+		host.UsedPorts = map[int]bool{port: true}
+		report, err := Evaluate(m, host)
+		if err != nil || !report.Passed {
+			t.Fatalf("%s occupied host port: %+v %v", name, report, err)
+		}
+	}
+}
+
+func TestContainerPortWithOccupiedHostPortPlansCaddyRoute(t *testing.T) {
+	m, err := repoCatalog(t).Get("jellyfin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := installHost()
+	host.UsedPorts = map[int]bool{8096: true}
+	plan, err := PlanInstall(InstallRequest{Manifest: m, Host: host, Domain: "lan", ContainerPorts: map[string]int{"jellyfin": 8096}, Storage: map[storage.Class]string{storage.ClassApplication: "/mnt/data", storage.ClassBulk: "/mnt/bulk"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Routes) != 1 || plan.Routes[0].Target.Port != 8096 {
+		t.Fatalf("routes: %+v", plan.Routes)
+	}
+	if strings.Contains(plan.Compose.ComposeYAML, "ports:") {
+		t.Fatalf("unexpected published port: %s", plan.Compose.ComposeYAML)
+	}
+}
+
+func TestServiceContainerPortValidation(t *testing.T) {
+	for _, svc := range []Service{
+		{Name: "web", Image: "example:1", Exposes: "web", ContainerPort: -1},
+		{Name: "web", Image: "example:1", Exposes: "web", ContainerPort: 65536},
+		{Name: "db", Image: "example:1", ContainerPort: 8080},
+	} {
+		if err := svc.Validate(map[string]bool{"web": true}); err == nil {
+			t.Fatalf("accepted %+v", svc)
+		}
+	}
+}

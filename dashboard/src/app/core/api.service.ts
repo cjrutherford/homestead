@@ -213,6 +213,8 @@ export interface CatalogService {
   Name: string;
   Image: string;
   Exposes: string;
+  /** Listening port inside this service container, not a host port. */
+  ContainerPort?: number;
   /** Container paths the package keeps (S276); empty for stateless apps. */
   Data?: CatalogDataPath[] | null;
 }

@@ -20,6 +20,7 @@ services:
 - name: gitea
   image: docker.io/gitea/gitea:28.2.0
   exposes: web
+  containerport: 3000
   environment:
     # The route host, never a hard-coded name; omitted when no route is
     # assigned, which leaves Gitea's local default in place.
@@ -60,7 +61,6 @@ requirements:
     minbytes: 5368709120
   # Gitea listens on 3000; routes proxy to it and no host port is
   # published by default.
-  ports: [3000]
 exposure:
   package: gitea
   endpoints:

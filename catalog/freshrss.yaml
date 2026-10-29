@@ -19,6 +19,7 @@ services:
 - name: freshrss
   image: docker.io/freshrss/freshrss:1.30.4
   exposes: web
+  containerport: 80
   environment:
     # Refresh feeds every twenty minutes; without CRON_MIN the image
     # installs no cron job and only manual refreshes fetch articles.
@@ -46,7 +47,6 @@ requirements:
   storage:
   - class: application
     minbytes: 1073741824
-  ports: [80]
 exposure:
   package: freshrss
   endpoints:

@@ -31,9 +31,10 @@ type CatalogIntegration struct {
 
 // CatalogService is one manifest service as served.
 type CatalogService struct {
-	Name    string `json:"Name"`
-	Image   string `json:"Image"`
-	Exposes string `json:"Exposes"`
+	Name          string `json:"Name"`
+	Image         string `json:"Image"`
+	Exposes       string `json:"Exposes"`
+	ContainerPort int    `json:"ContainerPort"`
 }
 
 // CatalogManifest is the curated manifest detail the CLI reviews.

@@ -69,7 +69,7 @@ func TestCuratedJellyfin(t *testing.T) {
 	if len(manifest.Services) != 1 || manifest.Services[0].Image != "jellyfin/jellyfin:12.2" {
 		t.Fatalf("services = %+v", manifest.Services)
 	}
-	if manifest.Requirements.MemoryMB < 1024 || len(manifest.Requirements.Ports) != 1 {
+	if manifest.Requirements.MemoryMB < 1024 || manifest.Services[0].ContainerPort != 8096 {
 		t.Fatalf("requirements = %+v", manifest.Requirements)
 	}
 	endpoint, ok := manifest.Exposure.Find("web")
@@ -868,8 +868,8 @@ func TestCuratedAudiobookshelf(t *testing.T) {
 		manifest.Database.Path != "config/absdatabase.sqlite" {
 		t.Fatalf("database = %+v, want the SQLite export", manifest.Database)
 	}
-	if len(manifest.Requirements.Ports) != 1 || manifest.Requirements.Ports[0] != 80 {
-		t.Fatalf("ports = %v", manifest.Requirements.Ports)
+	if len(manifest.Requirements.Ports) != 0 || manifest.Services[0].ContainerPort != 80 {
+		t.Fatalf("container port = %d, host ports = %v", manifest.Services[0].ContainerPort, manifest.Requirements.Ports)
 	}
 	endpoint, ok := manifest.Exposure.Find("web")
 	if !ok || string(endpoint.Recommended) != "local" || !endpoint.AllowWider || len(endpoint.Warnings) == 0 {
@@ -959,8 +959,8 @@ func TestCuratedNavidrome(t *testing.T) {
 		manifest.Database.Path != "data/navidrome.db" {
 		t.Fatalf("database = %+v, want the SQLite export", manifest.Database)
 	}
-	if len(manifest.Requirements.Ports) != 1 || manifest.Requirements.Ports[0] != 4533 {
-		t.Fatalf("ports = %v", manifest.Requirements.Ports)
+	if len(manifest.Requirements.Ports) != 0 || manifest.Services[0].ContainerPort != 4533 {
+		t.Fatalf("container port = %d, host ports = %v", manifest.Services[0].ContainerPort, manifest.Requirements.Ports)
 	}
 	endpoint, ok := manifest.Exposure.Find("web")
 	if !ok || string(endpoint.Recommended) != "local" || !endpoint.AllowWider || len(endpoint.Warnings) == 0 {
@@ -1046,8 +1046,8 @@ func TestCuratedKomga(t *testing.T) {
 		manifest.Database.Path != "config/database.sqlite" {
 		t.Fatalf("database = %+v, want the SQLite export", manifest.Database)
 	}
-	if len(manifest.Requirements.Ports) != 1 || manifest.Requirements.Ports[0] != 25600 {
-		t.Fatalf("ports = %v", manifest.Requirements.Ports)
+	if len(manifest.Requirements.Ports) != 0 || manifest.Services[0].ContainerPort != 25600 {
+		t.Fatalf("container port = %d, host ports = %v", manifest.Services[0].ContainerPort, manifest.Requirements.Ports)
 	}
 	if manifest.Requirements.MemoryMB != 1024 {
 		t.Fatalf("memory = %d MB, want the JVM cap to fit inside it", manifest.Requirements.MemoryMB)
@@ -1142,8 +1142,8 @@ func TestCuratedCalibreWebAutomated(t *testing.T) {
 		manifest.Database.Path != "config/app.db" {
 		t.Fatalf("database = %+v, want the SQLite export", manifest.Database)
 	}
-	if len(manifest.Requirements.Ports) != 1 || manifest.Requirements.Ports[0] != 8083 {
-		t.Fatalf("ports = %v", manifest.Requirements.Ports)
+	if len(manifest.Requirements.Ports) != 0 || manifest.Services[0].ContainerPort != 8083 {
+		t.Fatalf("container port = %d, host ports = %v", manifest.Services[0].ContainerPort, manifest.Requirements.Ports)
 	}
 	if manifest.Requirements.MemoryMB != 2048 {
 		t.Fatalf("memory = %d MB, want room for Calibre conversions", manifest.Requirements.MemoryMB)

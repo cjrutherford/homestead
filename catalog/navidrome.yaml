@@ -22,6 +22,7 @@ services:
 - name: navidrome
   image: docker.io/navidrome/navidrome:0.64.2
   exposes: web
+  containerport: 4533
   environment:
     # Artwork and transcode caches are regenerable and can grow with the
     # library, so they live on bulk storage instead of the backed-up data
@@ -50,7 +51,6 @@ requirements:
     minbytes: 10737418240
   # Navidrome listens on 4533; routes proxy to it and no host port is
   # published by default.
-  ports: [4533]
 exposure:
   package: navidrome
   endpoints:

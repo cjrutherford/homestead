@@ -19,6 +19,7 @@ services:
 - name: mealie
   image: ghcr.io/mealie-recipes/mealie:v3.29.0
   exposes: web
+  containerport: 9000
   environment:
     # Links in the app and its exports use the routed HTTPS host; the
     # variable is dropped when no route is assigned.
@@ -44,7 +45,6 @@ requirements:
     minbytes: 2147483648
   # Mealie listens on 9000; routes proxy to it and no host port is
   # published by default.
-  ports: [9000]
 exposure:
   package: mealie
   endpoints:

@@ -188,3 +188,5 @@ the task manager whose CalDAV support points at Nextcloud.
 The full remaining schedule is `docs/SLICE_PLAN.md`: S341 to S382 across a
 catalog track, an Everything-app track and the craft validation gate, with
 dependencies, the critical path and the recommended interleave.
+
+S383 separates curated container listening ports from actual host-port requirements (`docs/slices/S383-catalog-container-port-requirements.md`).
