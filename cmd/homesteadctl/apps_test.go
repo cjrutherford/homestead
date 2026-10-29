@@ -124,6 +124,37 @@ func TestAppsInstall(t *testing.T) {
 	}
 }
 
+func TestAppsInstallApprovesLocalAddressSetup(t *testing.T) {
+	var install map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/catalog/jellyfin/plan":
+			_, _ = w.Write([]byte(`{"Package":"jellyfin","Routes":[{"Host":"jellyfin.lan","Exposure":"local"}],"digest":"reviewed"}`))
+		case "/api/v1/catalog/jellyfin/install":
+			if err := json.NewDecoder(r.Body).Decode(&install); err != nil {
+				t.Error(err)
+			}
+			_, _ = w.Write([]byte(`{"id":7}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	file := writeInput(t, `{"domain":"lan","setup":{"sign_in":{"digest":"signin-reviewed"},"people":[42]}}`)
+	code, _, stderr := invoke(t, []string{"--server", srv.URL, "apps", "install", "jellyfin", "-f", file})
+	if code != exitOK {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+	if _, ok := install["setup"].(map[string]any); !ok || install["digest"] != "reviewed" {
+		t.Fatalf("install must approve its reviewed address setup: %#v", install)
+	}
+	setup := install["setup"].(map[string]any)
+	if setup["sign_in"] == nil || setup["people"] == nil {
+		t.Fatalf("install lost approved sign-in or people: %#v", setup)
+	}
+}
+
 func TestAppsConfigure(t *testing.T) {
 	url := appsStub(t)
 	code, stdout, _ := invoke(t, []string{"--server", url, "apps", "configure", "jellyfin",

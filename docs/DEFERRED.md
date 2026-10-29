@@ -1539,3 +1539,5 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
   the single run that closes both the stale notes and the DNS proof.
 
 - Audiobookshelf Authentik adapter (S385): its first-run recovery administrator is created by S384, but OIDC client provisioning, app-side actuation, group mapping, install-time approval, and live sign-in remain to be implemented and verified. Existing owner-created administrators must not be overwritten.
+
+- CLI install-time Authentik and people review: expose the sign-in plan and explicit person selections on the CLI, including public installs, instead of requiring manually assembled setup approvals. Other catalog packages still need individually verified adapters and role mappings.

@@ -249,10 +249,22 @@ func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string
 		return fail(stderr, err)
 	}
 	link := install.FilesLink
-	if link != nil {
-		printFilesLink(stdout, link)
+	setup := firstLocalRoute(install.Routes) != nil || link != nil
+	if setup {
 		body["digest"] = install.Digest
-		body["setup"] = map[string]any{"files_link": map[string]any{"digest": link.Digest}}
+		setupBody := map[string]any{}
+		if existing, ok := body["setup"]; ok && existing != nil {
+			var valid bool
+			setupBody, valid = existing.(map[string]any)
+			if !valid {
+				return fail(stderr, fmt.Errorf("setup must be an object"))
+			}
+		}
+		if link != nil {
+			printFilesLink(stdout, link)
+			setupBody["files_link"] = map[string]any{"digest": link.Digest}
+		}
+		body["setup"] = setupBody
 	}
 	id, err := client.InstallPackage(ctx, pkg, body)
 	if err != nil {
@@ -260,15 +272,15 @@ func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string
 	}
 	if !follow {
 		fmt.Fprintf(stdout, "operation: %d\n", id)
-		if link != nil {
-			fmt.Fprintf(stdout, "setup: the appliance adds the address and links Nextcloud after the install; homesteadctl apps setup status %s\n", pkg)
+		if setup {
+			fmt.Fprintf(stdout, "setup: the appliance completes the approved app setup after the install; homesteadctl apps setup status %s\n", pkg)
 		}
 		return exitOK
 	}
-	if code := followOperation(ctx, client, id, stdout, stderr); code != exitOK || link == nil {
+	if code := followOperation(ctx, client, id, stdout, stderr); code != exitOK || !setup {
 		return code
 	}
-	return followSetup(ctx, client, pkg, "setup (address, then Nextcloud link):", stdout, stderr)
+	return followSetup(ctx, client, pkg, "setup:", stdout, stderr)
 }
 
 // followSetup follows the setup the appliance runs after an install and
