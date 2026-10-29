@@ -122,3 +122,19 @@ describe('SessionService', () => {
     expect(service.isLoggedIn()).toBe(false);
   });
 });
+
+describe('SessionService role (S338)', () => {
+  it('learns the role from /api/v1/me', () => {
+    localStorage.clear();
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    const sessions = TestBed.inject(SessionService);
+    const ctrl = TestBed.inject(HttpTestingController);
+    sessions.loadRole().subscribe();
+    ctrl.expectOne('/api/v1/me').flush({ role: 'person', display_name: 'Sam' });
+    expect(sessions.role()).toBe('person');
+    expect(sessions.isPerson()).toBe(true);
+    ctrl.verify();
+  });
+});

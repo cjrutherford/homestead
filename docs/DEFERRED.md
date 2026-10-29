@@ -1361,3 +1361,19 @@ Craft apps under one host, by path (ADR-045).
 - The list shows a local address even when the owner is on the overlay
   name; it follows the dashboard route's first name, not the name the
   request used.
+
+## From S338 (person sessions)
+
+- Drift read-back of `homestead-people` membership (people who are active in
+  Homestead but missing from the group) is not reported; it would flag every
+  person before the owner re-plans. Membership is synced when a person
+  changes and when the re-plan applies.
+- The person shell, the apps page and redirects away from owner pages are
+  S339. The dashboard only learns the role (`SessionService.role`) and
+  records `owner-only` answers without toast loops or session expiry.
+- The CLI shows no person sign-in status.
+- A person session shares the idle and absolute lifetimes of the owner's;
+  no separate, shorter person lifetime.
+- Records from before S338 have no stored Authentik uid; the first sign-in or
+  People list asks Authentik for the user and remembers it (at most 50 per
+  list). Needs a kept token for the sign-in case.

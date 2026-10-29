@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 55
+const CurrentVersion = 56
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -1051,6 +1051,19 @@ CREATE TABLE people_grants (
 		sql: `ALTER TABLE sessions ADD COLUMN stepped_up_until TEXT NOT NULL DEFAULT '';
 ALTER TABLE sso_state ADD COLUMN session_id INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE sso_state ADD COLUMN return_to TEXT NOT NULL DEFAULT '';`,
+	},
+	{
+		version: 56,
+		name:    "person sessions",
+		// S338 (ADR-050 §1): a session carries a role. "owner" is every
+		// session before this one; "person" is a People record's session
+		// and has person_id and no identity. A person's Authentik uid (the
+		// OIDC subject under hashed_user_id) is kept on the record, taken
+		// from Authentik when the person is created, adopted or read back.
+		sql: `ALTER TABLE sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'owner';
+ALTER TABLE sessions ADD COLUMN person_id INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS sessions_person ON sessions(person_id) WHERE person_id != 0;
+ALTER TABLE people ADD COLUMN authentik_uid TEXT NOT NULL DEFAULT '';`,
 	},
 }
 

@@ -108,6 +108,13 @@ const (
 	MethodOIDC     = "oidc"
 )
 
+// Session roles (ADR-050 §1). The role is stored with the session when it
+// is minted and never changes.
+const (
+	RoleOwner  = "owner"
+	RolePerson = "person"
+)
+
 // VerifiedSession is a proven session with its owner.
 type VerifiedSession struct {
 	// ID is the session row; it never leaves the daemon.
@@ -116,6 +123,13 @@ type VerifiedSession struct {
 	Username   string
 	// Method is MethodPassword or MethodOIDC.
 	Method string
+	// Role is RoleOwner or RolePerson. A person session has no identity
+	// (IdentityID 0, Username empty); PersonID and DisplayName name the
+	// People record, which must still be active for the session to verify.
+	Role           string
+	PersonID       int64
+	DisplayName    string
+	PersonUsername string
 	// ExpiresAt is the absolute expiry; IdleExpiresAt is when the
 	// session dies if unused.
 	ExpiresAt     time.Time
@@ -271,8 +285,36 @@ func (s *Service) MintOIDCSession(identityID int64) (Session, error) {
 	return s.mintSession(identityID, MethodOIDC)
 }
 
+// MintPersonSession mints a person session for an active People record
+// whose Authentik sign-in the caller has already verified (ADR-050 §1). The
+// session has the person role and no identity; the role cannot be raised.
+func (s *Service) MintPersonSession(personID int64) (Session, error) {
+	var state string
+	if err := s.db.QueryRow(`SELECT state FROM people WHERE id = ?`, personID).Scan(&state); err != nil || state != "active" {
+		return Session{}, ErrInvalidCredentials
+	}
+	return s.insertSession(sql.NullInt64{}, MethodOIDC, RolePerson, personID)
+}
+
+// RevokePersonSessions ends a person's sessions. personID 0 ends every
+// person session (unlinking or turning off sign-in with Authentik).
+func (s *Service) RevokePersonSessions(personID int64) error {
+	q, args := `DELETE FROM sessions WHERE role = ? AND person_id = ?`, []any{RolePerson, personID}
+	if personID == 0 {
+		q, args = `DELETE FROM sessions WHERE role = ?`, []any{RolePerson}
+	}
+	if _, err := s.db.Exec(q, args...); err != nil {
+		return fmt.Errorf("auth: revoke person sessions: %w", err)
+	}
+	return nil
+}
+
 // mintSession creates the session row with the given method.
 func (s *Service) mintSession(id int64, method string) (Session, error) {
+	return s.insertSession(sql.NullInt64{Int64: id, Valid: true}, method, RoleOwner, 0)
+}
+
+func (s *Service) insertSession(id sql.NullInt64, method, role string, personID int64) (Session, error) {
 	token, err := randomToken()
 	if err != nil {
 		return Session{}, err
@@ -291,9 +333,9 @@ func (s *Service) mintSession(id int64, method string) (Session, error) {
 		return Session{}, fmt.Errorf("auth: sweep sessions: %w", err)
 	}
 	if _, err := s.db.Exec(
-		`INSERT INTO sessions (identity_id, token_hash, csrf_hash, expires_at, last_used_at, created_at, updated_at, method)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, sum[:], csrfSum[:], formatTime(expires), stamp, stamp, stamp, method,
+		`INSERT INTO sessions (identity_id, token_hash, csrf_hash, expires_at, last_used_at, created_at, updated_at, method, role, person_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, sum[:], csrfSum[:], formatTime(expires), stamp, stamp, stamp, method, role, personID,
 	); err != nil {
 		return Session{}, fmt.Errorf("auth: create session: %w", err)
 	}
@@ -565,17 +607,41 @@ func (s *Service) Verify(token string) (VerifiedSession, error) {
 		v                              VerifiedSession
 		expiresAt, createdAt, lastUsed string
 		steppedUp                      string
+		identity                       sql.NullInt64
+		username, pname, pstate, puser sql.NullString
 	)
 	err := s.db.QueryRow(
-		`SELECT s.id, s.identity_id, i.username, s.expires_at, s.created_at, s.last_used_at, s.csrf_hash, s.method, s.stepped_up_until
-		 FROM sessions s JOIN identities i ON i.id = s.identity_id
+		`SELECT s.id, s.identity_id, i.username, s.expires_at, s.created_at, s.last_used_at, s.csrf_hash, s.method, s.stepped_up_until,
+		        s.role, s.person_id, p.display_name, p.state, p.username
+		 FROM sessions s
+		 LEFT JOIN identities i ON i.id = s.identity_id
+		 LEFT JOIN people p ON p.id = s.person_id AND s.role = 'person'
 		 WHERE s.token_hash = ?`, sum[:],
-	).Scan(&id, &v.IdentityID, &v.Username, &expiresAt, &createdAt, &lastUsed, &v.CSRFHash, &v.Method, &steppedUp)
+	).Scan(&id, &identity, &username, &expiresAt, &createdAt, &lastUsed, &v.CSRFHash, &v.Method, &steppedUp,
+		&v.Role, &v.PersonID, &pname, &pstate, &puser)
 	if err == sql.ErrNoRows {
 		return VerifiedSession{}, ErrInvalidSession
 	}
 	if err != nil {
 		return VerifiedSession{}, fmt.Errorf("auth: find session: %w", err)
+	}
+	switch v.Role {
+	case RoleOwner:
+		// An owner session needs its identity (the old inner join).
+		if !identity.Valid || !username.Valid {
+			return VerifiedSession{}, ErrInvalidSession
+		}
+		v.IdentityID, v.Username = identity.Int64, username.String
+	case RolePerson:
+		// A person session is only as good as an active People record,
+		// even if revocation was missed. It never carries an identity.
+		if v.PersonID == 0 || !pstate.Valid || pstate.String != "active" {
+			_, _ = s.db.Exec(`DELETE FROM sessions WHERE id = ?`, id)
+			return VerifiedSession{}, ErrInvalidSession
+		}
+		v.DisplayName, v.PersonUsername = pname.String, puser.String
+	default:
+		return VerifiedSession{}, ErrInvalidSession
 	}
 	expiry, err := time.Parse(time.RFC3339Nano, expiresAt)
 	if err != nil {

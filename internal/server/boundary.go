@@ -75,6 +75,7 @@ const (
 	reasonReauth         = "reauth-required"
 	reasonStepUp         = "stepup-required"
 	reasonLocalOnly      = "local-only"
+	reasonOwnerOnly      = "owner-only"
 )
 
 // auditActionRejected is the audit action of aggregated rejection entries.
@@ -272,6 +273,7 @@ var routeClasses = map[string]RouteClass{
 	"GET /api/v1/dashboard/address":                      ClassSession,
 	"PUT /api/v1/dashboard/address":                      ClassSession,
 	// The apps list (S337, ADR-050 §4); S338 adds the person allowlist.
+	"GET /api/v1/me":               ClassSession,
 	"GET /api/v1/me/apps":          ClassSession,
 	"GET /api/v1/people/{id}/apps": ClassSession,
 	// People (S317, ADR-043).
@@ -354,7 +356,21 @@ const (
 	// public dashboard name; it only works from the local or overlay
 	// address (S335).
 	ErrorCodeLocalOnly = "local-only"
+	// ErrorCodeOwnerOnly: a person session reached a route that is not on
+	// the person allowlist (ADR-050 §2).
+	ErrorCodeOwnerOnly = "owner-only"
 )
+
+// personRoutes is the whole of what a person session may reach (ADR-050
+// §2): who am I, the apps list, and sign-out. The static dashboard is
+// public and needs no session. Every other route, including every
+// step-up route, answers 403 owner-only. A new route is owner-only until
+// it is added here on purpose; a test enumerates every route.
+var personRoutes = map[string]bool{
+	"GET /api/v1/me":          true,
+	"GET /api/v1/me/apps":     true,
+	"DELETE /api/v1/sessions": true,
+}
 
 // Classify returns the class declared for a registered pattern.
 func Classify(pattern string) (RouteClass, bool) {
@@ -555,7 +571,18 @@ func (b *boundary) check(mux *recordingMux, r *http.Request) (*operatorSession, 
 			return nil, reject(http.StatusForbidden, "CSRF token mismatch", pattern, reasonCSRFMismatch)
 		}
 	}
-	if session.Method == auth.MethodOIDC && stepUpRoutes[pattern] == stepUpBoundary {
+	switch session.Role {
+	case "", auth.RoleOwner:
+	case auth.RolePerson:
+		if !personRoutes[pattern] || stepUpRoutes[pattern] != 0 {
+			v := reject(http.StatusForbidden, "this is for the owner of this Homestead", pattern, reasonOwnerOnly)
+			v.code = ErrorCodeOwnerOnly
+			return nil, v
+		}
+	default:
+		return nil, reject(http.StatusForbidden, "unknown session role", pattern, reasonInvalidSession)
+	}
+	if session.Role != auth.RolePerson && session.Method == auth.MethodOIDC && stepUpRoutes[pattern] == stepUpBoundary {
 		if onPublicHost(r) && publicStepUpRoutes[pattern] {
 			if v := b.publicStepUp(r, session, pattern); v.status != 0 {
 				return nil, v

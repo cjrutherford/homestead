@@ -102,6 +102,11 @@ func (s *Server) MountSSO(c SSOConfig) *sso.Manager {
 			if name, err := c.Auth.Username(id); err == nil {
 				s.RevokeCraftSessions(name)
 			}
+			// People sign in through the same link; with it gone so are
+			// their sessions (ADR-050 §1).
+			if err := c.Auth.RevokePersonSessions(0); err != nil {
+				return err
+			}
 			return c.Auth.RevokeMethodSessions(id, auth.MethodOIDC)
 		},
 	}
@@ -450,6 +455,10 @@ func (h *ssoHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		h.finishStepUp(w, r, out)
 		return
 	}
+	if out.Person != nil {
+		h.personLogin(w, r, out)
+		return
+	}
 	session, err := h.cfg.Auth.MintOIDCSession(out.IdentityID)
 	if err != nil {
 		h.audit("anonymous", "sso.login", audit.OutcomeError, "session could not be created")
@@ -458,6 +467,23 @@ func (h *ssoHandlers) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	name, _ := h.cfg.Auth.Username(out.IdentityID)
 	h.audit(name, "sso.login", audit.OutcomeOK, "method=oidc subject="+out.Subject)
+	http.SetCookie(w, &http.Cookie{Name: ssoCookie, Value: "", Path: "/api/v1/sso", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	setSessionCookiesAs(w, out.Secure || requestIsTLS(r), session)
+	http.Redirect(w, r, "/login?sso=done", http.StatusFound)
+}
+
+// personLogin finishes a sign-in by an active person: a person session,
+// audited as session.login naming the person (ADR-050 §1).
+func (h *ssoHandlers) personLogin(w http.ResponseWriter, r *http.Request, out sso.Outcome) {
+	p := out.Person
+	session, err := h.cfg.Auth.MintPersonSession(p.ID)
+	if err != nil {
+		h.audit(p.Username, "session.login", audit.OutcomeError, fmt.Sprintf("role=person person=%d: session could not be created", p.ID))
+		h.failRedirect(w, r, "/login", sso.CodeUnlinked)
+		return
+	}
+	h.audit(p.Username, "session.login", audit.OutcomeOK,
+		fmt.Sprintf("role=person person=%d name=%s method=oidc subject=%s", p.ID, p.DisplayName, out.Subject))
 	http.SetCookie(w, &http.Cookie{Name: ssoCookie, Value: "", Path: "/api/v1/sso", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	setSessionCookiesAs(w, out.Secure || requestIsTLS(r), session)
 	http.Redirect(w, r, "/login?sso=done", http.StatusFound)
@@ -574,6 +600,8 @@ func accessReplanReason(st sso.Status) string {
 		return "Sign-in was set up before access groups: the dashboard application is not bound to " + sso.OwnerGroup + ". Re-plan Sign-in and approve it."
 	case st.Linked && st.Spec.Access.OwnerSub != st.Subject:
 		return "The owner is linked now: plan Sign-in again to add them to " + sso.OwnerGroup + " and bind the application to it."
+	case !hasString(st.Spec.Access.Groups, sso.PeopleGroup) || !hasString(st.Spec.Access.Bindings, sso.PeopleGroup):
+		return "Sign-in was set up before people could sign in to the dashboard: the application is not bound to " + sso.PeopleGroup + ". Re-plan Sign-in and approve it, then the people on the People page can sign in and see their apps."
 	case st.Spec.RecoveryFlow == "":
 		return "Sign-in was set up before Homestead added Authentik's password recovery flow, so one-time sign-in links for people fail. Re-plan Sign-in and approve it."
 	case st.Spec.LoginHint == "":
@@ -867,4 +895,13 @@ func (h *ssoHandlers) disable(w http.ResponseWriter, r *http.Request) {
 // ssoYAMLPath is where the non-secret mirror of the configuration lives.
 func ssoYAMLPath(configPath string) string {
 	return filepath.Join(filepath.Dir(configPath), "sso.yaml")
+}
+
+func hasString(list []string, want string) bool {
+	for _, v := range list {
+		if v == want {
+			return true
+		}
+	}
+	return false
 }

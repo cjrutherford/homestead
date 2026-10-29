@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -35,7 +36,8 @@ import (
 func (s *Server) MountAuth(svc *auth.Service, auditSvc *audit.Service) {
 	s.mux.HandleFunc("POST /api/v1/admins/setup", s.handleAdminSetup(svc, auditSvc))
 	s.mux.HandleFunc("POST /api/v1/sessions", s.handleLogin(svc, auditSvc))
-	s.mux.HandleFunc("DELETE /api/v1/sessions", s.handleLogout(svc))
+	s.mux.HandleFunc("DELETE /api/v1/sessions", s.handleLogout(svc, auditSvc))
+	s.mux.HandleFunc("GET /api/v1/me", s.handleMe())
 	s.mux.HandleFunc("POST /api/v1/admins/password", s.handleChangePassword(svc))
 	s.mux.HandleFunc("GET /api/v1/admins/lockout", s.handleLockoutStatus(svc))
 }
@@ -155,6 +157,20 @@ func (s *Server) handleLogin(svc *auth.Service, auditSvc *audit.Service) http.Ha
 // value means the handler is mounted without the boundary, which fails
 // closed.
 func requireOperator(w http.ResponseWriter, r *http.Request) (operatorSession, bool) {
+	op, ok := requireSession(w, r)
+	if ok && op.Session.Role == auth.RolePerson {
+		// The boundary already refuses person sessions; this keeps a
+		// handler mounted behind a mistake from serving one (ADR-050 §2).
+		w.Header().Set(ErrorCodeHeader, ErrorCodeOwnerOnly)
+		http.Error(w, "this is for the owner of this Homestead", http.StatusForbidden)
+		return operatorSession{}, false
+	}
+	return op, ok
+}
+
+// requireSession is requireOperator for the few routes a person session
+// may also reach (personRoutes).
+func requireSession(w http.ResponseWriter, r *http.Request) (operatorSession, bool) {
 	op, ok := operatorFromContext(r.Context())
 	if !ok {
 		http.Error(w, "missing session", http.StatusUnauthorized)
@@ -162,9 +178,32 @@ func requireOperator(w http.ResponseWriter, r *http.Request) (operatorSession, b
 	return op, ok
 }
 
-func (s *Server) handleLogout(svc *auth.Service) http.HandlerFunc {
+// handleMe says who the session is: the role and display name (ADR-050
+// §2). Both owner and person sessions may ask.
+func (s *Server) handleMe() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		op, ok := requireOperator(w, r)
+		op, ok := requireSession(w, r)
+		if !ok {
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		if op.Session.Role == auth.RolePerson {
+			writeJSON(w, map[string]any{
+				"role": auth.RolePerson, "display_name": op.Session.DisplayName,
+				"username": op.Session.PersonUsername, "person_id": op.Session.PersonID,
+			})
+			return
+		}
+		writeJSON(w, map[string]any{
+			"role": auth.RoleOwner, "display_name": op.Session.Username,
+			"username": op.Session.Username, "method": op.Session.Method,
+		})
+	}
+}
+
+func (s *Server) handleLogout(svc *auth.Service, auditSvc *audit.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		op, ok := requireSession(w, r)
 		if !ok {
 			return
 		}
@@ -175,6 +214,14 @@ func (s *Server) handleLogout(svc *auth.Service) http.HandlerFunc {
 			}
 			http.Error(w, "failed to log out", http.StatusInternalServerError)
 			return
+		}
+		if op.Session.Role == auth.RolePerson {
+			if _, err := auditSvc.Record(audit.Entry{
+				Actor: op.Session.PersonUsername, Action: "session.logout", Outcome: audit.OutcomeOK,
+				Detail: viaEdge(r, fmt.Sprintf("role=person person=%d name=%s", op.Session.PersonID, op.Session.DisplayName)),
+			}); err != nil {
+				s.log.Warn("audit record failed", "action", "session.logout", "error", err)
+			}
 		}
 		clearSessionCookies(w, r)
 		w.WriteHeader(http.StatusNoContent)

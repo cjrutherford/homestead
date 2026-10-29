@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"homestead/internal/appsso"
+	"homestead/internal/auth"
 	"homestead/internal/catalog"
 	"homestead/internal/docker"
 	"homestead/internal/people"
@@ -132,6 +133,14 @@ func (s *Server) MountMyApps(st *store.Store, catalogDir string) {
 
 func (s *Server) mountMyApps(src myAppsSource) {
 	s.mux.HandleFunc("GET /api/v1/me/apps", func(w http.ResponseWriter, r *http.Request) {
+		// A person session gets that person's list (ADR-050 §4); the
+		// person comes from the verified session, never the request.
+		if op, ok := operatorFromContext(r.Context()); ok && op.Session.Role == auth.RolePerson {
+			if grants, ok := s.personGrants(w, op.Session.PersonID); ok {
+				s.writeMyApps(w, src, onPublicHost(r), grants)
+			}
+			return
+		}
 		s.writeMyApps(w, src, onPublicHost(r), nil)
 	})
 	s.mux.HandleFunc("GET /api/v1/people/{id}/apps", func(w http.ResponseWriter, r *http.Request) {
@@ -144,24 +153,36 @@ func (s *Server) mountMyApps(src myAppsSource) {
 			http.Error(w, "no such person", http.StatusNotFound)
 			return
 		}
-		active, gs, err := s.people.AppGrants(id)
-		if errors.Is(err, people.ErrNotFound) {
-			http.Error(w, "no such person", http.StatusNotFound)
-			return
+		if grants, ok := s.personGrants(w, id); ok {
+			s.writeMyApps(w, src, onPublicHost(r), grants)
 		}
-		if err != nil {
-			s.log.Warn("people apps failed", "error", err)
-			http.Error(w, "the apps request failed", http.StatusInternalServerError)
-			return
-		}
-		grants := map[string]string{}
-		if active {
-			for _, g := range gs {
-				grants[g.App] = g.Role
-			}
-		}
-		s.writeMyApps(w, src, onPublicHost(r), grants)
 	})
+}
+
+// personGrants is a person's grants by app from Homestead's record (empty
+// for a disabled person). It writes the error and returns false on failure.
+func (s *Server) personGrants(w http.ResponseWriter, id int64) (map[string]string, bool) {
+	if s.people == nil {
+		http.Error(w, "no such person", http.StatusNotFound)
+		return nil, false
+	}
+	active, gs, err := s.people.AppGrants(id)
+	if errors.Is(err, people.ErrNotFound) {
+		http.Error(w, "no such person", http.StatusNotFound)
+		return nil, false
+	}
+	if err != nil {
+		s.log.Warn("people apps failed", "error", err)
+		http.Error(w, "the apps request failed", http.StatusInternalServerError)
+		return nil, false
+	}
+	grants := map[string]string{}
+	if active {
+		for _, g := range gs {
+			grants[g.App] = g.Role
+		}
+	}
+	return grants, true
 }
 
 func (s *Server) writeMyApps(w http.ResponseWriter, src myAppsSource, public bool, grants map[string]string) {

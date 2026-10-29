@@ -268,7 +268,7 @@ func newRig(t *testing.T) *rig {
 	}
 	t.Cleanup(func() { st.Close() })
 	r := &rig{t: t, f: newFake(t), db: st.DB(), kept: true}
-	for _, g := range []string{"homestead-owner", "homestead-nextcloud-users", "homestead-nextcloud-admins", "homestead-immich-users", "homestead-immich-admins", "plain-team"} {
+	for _, g := range []string{"homestead-owner", "homestead-people", "homestead-nextcloud-users", "homestead-nextcloud-admins", "homestead-immich-users", "homestead-immich-admins", "plain-team"} {
 		r.f.groups[g] = nil
 	}
 	r.f.seedUser(fakeUser{PK: 7, Username: "owner", Name: "Owner", Active: true, UID: "owner-sub"})

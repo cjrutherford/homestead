@@ -144,6 +144,9 @@ func TestAppSignInPlanCarriesGroupsAndAccessReadBack(t *testing.T) {
 	if rec := a.req("POST", "/api/v1/catalog/immich/sign-in/access", `{}`, a.owner.token); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("no token: %d %s", rec.Code, rec.Body)
 	}
+	// The fake shares one application pk; drop the dashboard binding that
+	// linking now creates (S338) so this app reads as open.
+	a.w.bindings = nil
 	groups, bindings := len(a.w.groups), len(a.w.bindings)
 	rec = a.req("POST", "/api/v1/catalog/immich/sign-in/access", `{"token":"`+ssoToken+`"}`, a.owner.token)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"open":true`) {

@@ -68,6 +68,15 @@ type Service struct {
 	OwnerSub func() string
 	Audit    func(actor, action, outcome, detail string)
 	Now      func() time.Time
+	// EndSessions ends a person's dashboard sessions (ADR-050 §1): when
+	// they are disabled, removed or no longer match Authentik.
+	EndSessions func(personID int64)
+}
+
+func (s *Service) endSessions(id int64) {
+	if s.EndSessions != nil {
+		s.EndSessions(id)
+	}
 }
 
 func (s *Service) now() time.Time {
@@ -122,6 +131,10 @@ type Person struct {
 	Status      string      `json:"status"`
 	Drift       []DriftItem `json:"drift"`
 	pk          int
+	// uid is the Authentik user's uid: the OIDC subject under the
+	// dashboard provider's hashed_user_id mode. Kept so a sign-in is matched
+	// to the record, never by username or email.
+	uid string
 }
 
 // Unmanaged is an Authentik user Homestead did not create.
@@ -165,12 +178,12 @@ func validRole(r string) bool { return r == RoleUser || r == RoleAdmin }
 
 // --- records ---
 
-const personCols = `id, display_name, username, email, authentik_pk, state, origin, created_by, created_at`
+const personCols = `id, display_name, username, email, authentik_pk, state, origin, created_by, created_at, authentik_uid`
 
 func scanPerson(sc interface{ Scan(...any) error }) (Person, error) {
 	var p Person
 	var at string
-	if err := sc.Scan(&p.ID, &p.DisplayName, &p.Username, &p.Email, &p.pk, &p.State, &p.Origin, &p.CreatedBy, &at); err != nil {
+	if err := sc.Scan(&p.ID, &p.DisplayName, &p.Username, &p.Email, &p.pk, &p.State, &p.Origin, &p.CreatedBy, &at, &p.uid); err != nil {
 		return p, err
 	}
 	p.CreatedAt, _ = time.Parse(time.RFC3339, at)
@@ -390,6 +403,11 @@ func (s *Service) List(ctx context.Context) (View, error) {
 		p := &v.People[i]
 		known[p.pk] = true
 		p.Status, p.Drift = inspect(*p, byPK[p.pk], v.Apps)
+		if a := byPK[p.pk]; a != nil && a.UID != "" && p.uid != a.UID && p.uid == "" {
+			// Older records have no uid yet: remember it (never
+			// overwrite one, which would move a sign-in to another user).
+			_, _ = s.DB.Exec(`UPDATE people SET authentik_uid = ? WHERE id = ? AND authentik_uid = ''`, a.UID, p.ID)
+		}
 	}
 	owner := ""
 	if s.OwnerSub != nil {
@@ -547,8 +565,8 @@ func (s *Service) Add(ctx context.Context, actor string, req AddRequest) (AddRes
 		}
 		return AddResult{}, err
 	}
-	res, err := s.DB.Exec(`INSERT INTO people (display_name, username, email, authentik_pk, state, origin, created_by, created_at)
-		VALUES (?, ?, ?, ?, 'active', 'created', ?, ?)`, req.DisplayName, req.Username, req.Email, acct.PK, actor, s.now().Format(time.RFC3339))
+	res, err := s.DB.Exec(`INSERT INTO people (display_name, username, email, authentik_pk, state, origin, created_by, created_at, authentik_uid)
+		VALUES (?, ?, ?, ?, 'active', 'created', ?, ?, ?)`, req.DisplayName, req.Username, req.Email, acct.PK, actor, s.now().Format(time.RFC3339), acct.UID)
 	if err != nil {
 		// Do not leave an unrecorded user behind.
 		_ = api.DeleteAccount(ctx, acct.PK)
@@ -558,6 +576,9 @@ func (s *Service) Add(ctx context.Context, actor string, req AddRequest) (AddRes
 	s.audit(actor, "people.add", "ok", fmt.Sprintf("added %s (person %d)", req.Username, id))
 	rev, cerr := s.credential(ctx, api, acct.PK, req.Method, req.Password)
 	var problems []string
+	if err := s.syncMember(ctx, api, acct.PK, true); err != nil {
+		problems = append(problems, fmt.Sprintf("they could not be added to the dashboard sign-in group (%v)", err))
+	}
 	if cerr != nil {
 		problems = append(problems, fmt.Sprintf("how they sign in was not set up (%v)", cerr))
 	}
@@ -733,7 +754,14 @@ func (s *Service) SetActive(ctx context.Context, actor string, id int64, active 
 	if _, err := s.DB.Exec(`UPDATE people SET state = ? WHERE id = ?`, state, id); err != nil {
 		return err
 	}
+	if !active {
+		s.endSessions(id)
+	}
 	s.audit(actor, action, "ok", fmt.Sprintf("%s (person %d)", p.Username, id))
+	if err := s.syncMember(ctx, api, p.pk, active); err != nil {
+		s.audit(actor, action, "error", fmt.Sprintf("%s (person %d): dashboard sign-in group not updated: %v", p.Username, id, err))
+		return fmt.Errorf("%s is %s, but their place in the dashboard sign-in group was not updated (%v): try again", p.Username, state, err)
+	}
 	return nil
 }
 
@@ -778,6 +806,9 @@ func (s *Service) Remove(ctx context.Context, actor string, id int64) error {
 
 // release takes an adopted (or untagged) user out of Homestead's hands.
 func (s *Service) release(ctx context.Context, api *sso.API, p Person, acct sso.RemoteAccount, apps []string) error {
+	if err := s.syncMember(ctx, api, p.pk, false); err != nil {
+		return err
+	}
 	for _, g := range acct.HomesteadGroups() {
 		if _, _, ok := appOfGroup(g, apps); ok {
 			if err := api.RemoveFromGroup(ctx, g, p.pk); err != nil {
@@ -792,6 +823,7 @@ func (s *Service) release(ctx context.Context, api *sso.API, p Person, acct sso.
 }
 
 func (s *Service) forget(id int64) error {
+	s.endSessions(id)
 	if _, err := s.DB.Exec(`DELETE FROM people_grants WHERE person_id = ?`, id); err != nil {
 		return err
 	}
@@ -929,8 +961,8 @@ func (s *Service) Adopt(ctx context.Context, actor, username string) (Person, er
 	if acct.IsActive {
 		state = StateActive
 	}
-	res, err := s.DB.Exec(`INSERT INTO people (display_name, username, email, authentik_pk, state, origin, created_by, created_at)
-		VALUES (?, ?, ?, ?, ?, 'adopted', ?, ?)`, name, acct.Username, acct.Email, acct.PK, state, actor, s.now().Format(time.RFC3339))
+	res, err := s.DB.Exec(`INSERT INTO people (display_name, username, email, authentik_pk, state, origin, created_by, created_at, authentik_uid)
+		VALUES (?, ?, ?, ?, ?, 'adopted', ?, ?, ?)`, name, acct.Username, acct.Email, acct.PK, state, actor, s.now().Format(time.RFC3339), acct.UID)
 	if err != nil {
 		return Person{}, err
 	}
@@ -947,6 +979,9 @@ func (s *Service) Adopt(ctx context.Context, actor, username string) (Person, er
 		}
 	}
 	s.audit(actor, "people.adopt", "ok", fmt.Sprintf("adopted %s (person %d)", username, id))
+	if err := s.syncMember(ctx, api, acct.PK, state == StateActive); err != nil {
+		s.audit(actor, "people.adopt", "error", fmt.Sprintf("person %d: dashboard sign-in group not updated: %v", id, err))
+	}
 	return s.person(id)
 }
 
@@ -1014,13 +1049,18 @@ func (s *Service) recreate(ctx context.Context, api *sso.API, p Person, method s
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.DB.Exec(`UPDATE people SET authentik_pk = ?, origin = 'created' WHERE id = ?`, acct.PK, p.ID); err != nil {
+	// A new Authentik user has a new uid: the old one signs in nobody.
+	if _, err := s.DB.Exec(`UPDATE people SET authentik_pk = ?, authentik_uid = ?, origin = 'created' WHERE id = ?`, acct.PK, acct.UID, p.ID); err != nil {
 		return nil, err
 	}
+	s.endSessions(p.ID)
 	if p.State == StateDisabled {
 		if err := api.PatchAccount(ctx, acct.PK, map[string]any{"is_active": false}); err != nil {
 			return nil, err
 		}
+	}
+	if err := s.syncMember(ctx, api, acct.PK, p.State == StateActive); err != nil {
+		return nil, err
 	}
 	for _, g := range p.Grants {
 		users, admins := sso.AppGroups(g.App)
@@ -1045,6 +1085,12 @@ func (s *Service) putBack(ctx context.Context, api *sso.API, p Person, acct sso.
 		if err := api.TagAccount(ctx, acct); err != nil {
 			return err
 		}
+	}
+	if p.State != StateActive {
+		s.endSessions(p.ID)
+	}
+	if err := s.syncMember(ctx, api, p.pk, p.State == StateActive); err != nil {
+		return err
 	}
 	have := map[string]string{}
 	for _, g := range acct.HomesteadGroups() {
@@ -1096,6 +1142,14 @@ func (s *Service) keep(p Person, acct sso.RemoteAccount, apps []string) error {
 		acct.Name, acct.Username, acct.Email, state, p.ID); err != nil {
 		return err
 	}
+	if state != StateActive {
+		s.endSessions(p.ID)
+	}
+	if acct.UID != "" {
+		if _, err := s.DB.Exec(`UPDATE people SET authentik_uid = ? WHERE id = ?`, acct.UID, p.ID); err != nil {
+			return err
+		}
+	}
 	have := map[string]string{}
 	for _, g := range acct.HomesteadGroups() {
 		if app, role, ok := appOfGroup(g, apps); ok && (role == RoleAdmin || have[app] == "") {
@@ -1116,4 +1170,102 @@ func (s *Service) keep(p Person, acct sso.RemoteAccount, apps []string) error {
 		}
 	}
 	return nil
+}
+
+// --- dashboard sign-in (ADR-050) ---
+
+// syncMember puts a person's Authentik user in sso.PeopleGroup, or takes
+// it out. The group exists only once the owner has approved the sign-in
+// plan that creates it; until then there is nothing to keep in step, and
+// applying that plan puts everyone in (SyncGroup).
+func (s *Service) syncMember(ctx context.Context, api *sso.API, pk int, member bool) error {
+	var err error
+	if member {
+		err = api.AddToGroup(ctx, sso.PeopleGroup, pk)
+	} else {
+		err = api.RemoveFromGroup(ctx, sso.PeopleGroup, pk)
+	}
+	if err != nil && strings.Contains(err.Error(), "does not exist") {
+		return nil
+	}
+	return err
+}
+
+// SyncGroup makes sso.PeopleGroup hold exactly the active people.
+func (s *Service) SyncGroup(ctx context.Context, api *sso.API) error {
+	people, err := s.records()
+	if err != nil {
+		return err
+	}
+	for _, p := range people {
+		if err := s.syncMember(ctx, api, p.pk, p.State == StateActive); err != nil {
+			return fmt.Errorf("%s: %w", p.Username, err)
+		}
+	}
+	return nil
+}
+
+// maxBackfill bounds the Authentik reads one sign-in may cause.
+const maxBackfill = 50
+
+// SignIn finds the active person whose Authentik user has the OIDC subject
+// sub (ADR-050 §1). The match is on Homestead's own record of the person's
+// Authentik user: the uid kept when the person was created, adopted or read
+// back. A record without a uid yet (made before S338) is checked by fetching
+// its Authentik user by pk and comparing that user's uid to sub; a match is
+// remembered. A username or email claim is never consulted. A disabled
+// person, or no match, is not found.
+func (s *Service) SignIn(ctx context.Context, sub string) (id int64, username, displayName string, found bool, err error) {
+	if sub == "" {
+		return 0, "", "", false, nil
+	}
+	p, err := scanPerson(s.DB.QueryRow(`SELECT `+personCols+` FROM people WHERE authentik_uid = ? AND authentik_uid != ''`, sub))
+	switch {
+	case err == nil:
+		if p.State != StateActive {
+			return 0, "", "", false, nil
+		}
+		return p.ID, p.Username, p.DisplayName, true, nil
+	case !errors.Is(err, sql.ErrNoRows):
+		return 0, "", "", false, err
+	}
+	// Records without a uid: ask Authentik about each, bounded.
+	rows, err := s.DB.Query(`SELECT `+personCols+` FROM people WHERE authentik_uid = '' AND state = 'active' ORDER BY id LIMIT ?`, maxBackfill)
+	if err != nil {
+		return 0, "", "", false, err
+	}
+	var pending []Person
+	for rows.Next() {
+		q, err := scanPerson(rows)
+		if err != nil {
+			rows.Close()
+			return 0, "", "", false, err
+		}
+		pending = append(pending, q)
+	}
+	rows.Close()
+	if len(pending) == 0 {
+		return 0, "", "", false, nil
+	}
+	api, aerr := s.API()
+	if aerr != nil {
+		// No kept token: nobody can be matched this way. Not a match.
+		return 0, "", "", false, nil
+	}
+	for _, q := range pending {
+		acct, err := api.GetAccount(ctx, q.pk)
+		if err != nil {
+			return 0, "", "", false, err
+		}
+		if acct == nil || acct.UID == "" {
+			continue
+		}
+		if _, err := s.DB.Exec(`UPDATE people SET authentik_uid = ? WHERE id = ? AND authentik_uid = ''`, acct.UID, q.ID); err != nil {
+			return 0, "", "", false, err
+		}
+		if acct.UID == sub && acct.IsActive {
+			return q.ID, q.Username, q.DisplayName, true, nil
+		}
+	}
+	return 0, "", "", false, nil
 }

@@ -144,6 +144,14 @@ type Manager struct {
 	Audit func(actor, action, outcome, detail string)
 	// RevokeOIDC ends an identity's oidc sessions (unlink, disable).
 	RevokeOIDC func(identityID int64) error
+	// Person finds the active People record whose Authentik user has
+	// subject sub (ADR-050 §1). It matches on Homestead's own record of
+	// the person's Authentik user, never on a username or email claim.
+	// nil, or no match, leaves the subject unlinked.
+	Person func(ctx context.Context, sub string) (PersonMatch, bool, error)
+	// SyncPeople puts every active person in PeopleGroup and takes every
+	// other person out, after an apply has made the group (ADR-050 §3).
+	SyncPeople func(ctx context.Context, api *API) error
 
 	mu        sync.Mutex
 	providers map[string]*Provider
@@ -342,7 +350,12 @@ func (m *Manager) BuildSpec(req PlanRequest) (Spec, error) {
 	}
 	// ADR-043 §1-2: the dashboard application is bound to the owner group,
 	// on top of the (issuer, sub) check, which stays.
-	access := Access{Groups: []string{OwnerGroup}, OwnerOf: []string{OwnerGroup}, Bindings: []string{OwnerGroup}}
+	// ADR-050 §3: and to the people group, whose members are the active
+	// people Homestead manages (kept in step by the People service).
+	access := Access{
+		Groups: []string{OwnerGroup, PeopleGroup}, OwnerOf: []string{OwnerGroup},
+		Bindings: []string{OwnerGroup, PeopleGroup},
+	}
 	if link, ok, _ := m.readLink(); ok && link.Issuer == spec.Issuer {
 		access.OwnerSub = link.Sub
 	}
@@ -432,6 +445,9 @@ func planWarnings(spec Spec) []string {
 			w = append(w, "No owner is linked yet, so the dashboard application is not bound to "+OwnerGroup+" and the owner group stays empty. Link the owner, then plan sign-in again to close the application to everyone else.")
 		} else {
 			w = append(w, "The dashboard application is bound to the group "+OwnerGroup+", which holds only the linked owner. The (issuer, subject) check is unchanged.")
+		}
+		if hasGroup(spec.Access.Groups, PeopleGroup) {
+			w = append(w, "The dashboard application is also bound to the group "+PeopleGroup+", which holds the active people on the People page. They sign in to the dashboard with Authentik and see only their apps; they can change nothing. Without a person, nobody else can sign in.")
 		}
 	}
 	for _, o := range spec.Origins {
@@ -577,6 +593,15 @@ func (m *Manager) ApplyDefinition(actor string) (operation.Definition, error) {
 					return m.failed(actor, "configure Authentik", err)
 				}
 				m.audit(actor, "sso.apply.authentik", "ok", strings.Join(steps, "; "))
+				return nil
+			}},
+			{Name: "sync-people", Run: func(ctx context.Context) error {
+				if m.SyncPeople == nil || spec.Access == nil || !hasGroup(spec.Access.Groups, PeopleGroup) {
+					return nil
+				}
+				if err := m.SyncPeople(ctx, api); err != nil {
+					return m.failed(actor, "put people in "+PeopleGroup, err)
+				}
 				return nil
 			}},
 			{Name: "verify-issuer", Run: func(ctx context.Context) error {
@@ -1052,6 +1077,16 @@ type Outcome struct {
 	// SessionID and ReturnTo are the step-up's session and dashboard path.
 	SessionID int64
 	ReturnTo  string
+	// Person is set when the subject is an active person, not the owner:
+	// the sign-in gets a person session and no identity (IdentityID 0).
+	Person *PersonMatch
+}
+
+// PersonMatch is the People record a sign-in subject belongs to.
+type PersonMatch struct {
+	ID          int64
+	Username    string
+	DisplayName string
 }
 
 // Kinds exposed for handlers.
@@ -1175,13 +1210,29 @@ func (m *Manager) Callback(ctx context.Context, state, code, providerError, cook
 		if err != nil {
 			return out, err
 		}
-		if !linked || link.Issuer != claims.Issuer || link.Sub != claims.Subject {
+		// Only the issuer Homestead linked is trusted, for the owner and
+		// for people alike.
+		if !linked || link.Issuer != claims.Issuer {
 			return out, flowErr(CodeUnlinked, errors.New("subject is not the linked identity"))
 		}
 		if m.Installed != nil && !m.Installed() {
 			return out, flowErr(CodeOff, errors.New("Authentik is not installed"))
 		}
-		out.IdentityID = link.IdentityID
+		if link.Sub == claims.Subject {
+			out.IdentityID = link.IdentityID
+			break
+		}
+		if m.Person == nil || claims.Subject == "" {
+			return out, flowErr(CodeUnlinked, errors.New("subject is not the linked identity"))
+		}
+		pm, found, err := m.Person(ctx, claims.Subject)
+		if err != nil {
+			return out, flowErr(CodeUnavailable, fmt.Errorf("people lookup failed: %w", err))
+		}
+		if !found {
+			return out, flowErr(CodeUnlinked, errors.New("subject is not the linked identity or an active person"))
+		}
+		out.Person = &pm
 	}
 	return out, nil
 }
@@ -1324,4 +1375,13 @@ func ValidReturnTo(p string) bool {
 	}
 	u, err := url.Parse(p)
 	return err == nil && u.Scheme == "" && u.Host == ""
+}
+
+func hasGroup(list []string, name string) bool {
+	for _, g := range list {
+		if g == name {
+			return true
+		}
+	}
+	return false
 }

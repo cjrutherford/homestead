@@ -202,7 +202,7 @@ func TestUpgradeFromV23PopulatedDatabase(t *testing.T) {
 		`ALTER TABLE cert_issuance_approvals DROP COLUMN renewal_mode`,
 		`ALTER TABLE cert_issuances DROP COLUMN directory`,
 		`ALTER TABLE craft_baseline DROP COLUMN artifact_sha256`,
-		`ALTER TABLE sessions DROP COLUMN stepped_up_until`, `ALTER TABLE sso_state DROP COLUMN session_id`, `ALTER TABLE sso_state DROP COLUMN return_to`,
+		`DROP INDEX sessions_person`, `ALTER TABLE sessions DROP COLUMN role`, `ALTER TABLE sessions DROP COLUMN person_id`, `ALTER TABLE people DROP COLUMN authentik_uid`, `ALTER TABLE sessions DROP COLUMN stepped_up_until`, `ALTER TABLE sso_state DROP COLUMN session_id`, `ALTER TABLE sso_state DROP COLUMN return_to`,
 		`ALTER TABLE sessions DROP COLUMN method`,
 		`ALTER TABLE craft_baseline DROP COLUMN context_digest`,
 		`ALTER TABLE tunnel_routes DROP COLUMN account_id`,
@@ -251,7 +251,7 @@ func TestUpgradeFromV30KeepsPopulatedBackupRecipients(t *testing.T) {
 		`ALTER TABLE cert_issuance_approvals DROP COLUMN renewal_mode`,
 		`ALTER TABLE cert_issuances DROP COLUMN directory`,
 		`ALTER TABLE craft_baseline DROP COLUMN artifact_sha256`,
-		`ALTER TABLE sessions DROP COLUMN stepped_up_until`, `ALTER TABLE sso_state DROP COLUMN session_id`, `ALTER TABLE sso_state DROP COLUMN return_to`,
+		`DROP INDEX sessions_person`, `ALTER TABLE sessions DROP COLUMN role`, `ALTER TABLE sessions DROP COLUMN person_id`, `ALTER TABLE people DROP COLUMN authentik_uid`, `ALTER TABLE sessions DROP COLUMN stepped_up_until`, `ALTER TABLE sso_state DROP COLUMN session_id`, `ALTER TABLE sso_state DROP COLUMN return_to`,
 		`ALTER TABLE sessions DROP COLUMN method`,
 		`ALTER TABLE craft_baseline DROP COLUMN context_digest`,
 		`ALTER TABLE tunnel_routes DROP COLUMN account_id`,
@@ -305,7 +305,7 @@ func TestSetupLegacyStampOnUpgrade(t *testing.T) {
 				t.Fatal(err)
 			}
 			steps := []string{`DELETE FROM wizard_state WHERE wizard = 'setup'`,
-				`ALTER TABLE sessions DROP COLUMN stepped_up_until`, `ALTER TABLE sso_state DROP COLUMN session_id`, `ALTER TABLE sso_state DROP COLUMN return_to`,
+				`DROP INDEX sessions_person`, `ALTER TABLE sessions DROP COLUMN role`, `ALTER TABLE sessions DROP COLUMN person_id`, `ALTER TABLE people DROP COLUMN authentik_uid`, `ALTER TABLE sessions DROP COLUMN stepped_up_until`, `ALTER TABLE sso_state DROP COLUMN session_id`, `ALTER TABLE sso_state DROP COLUMN return_to`,
 				`ALTER TABLE tunnel_routes DROP COLUMN account_id`, `ALTER TABLE tunnel_routes DROP COLUMN zone_id`, `ALTER TABLE tunnel_routes DROP COLUMN zone_name`,
 				`DROP TABLE tunnel_dns_records`,
 				`DROP TABLE tunnel_replaced_records`, `DROP TABLE local_resolver`, `DROP TABLE backup_policy`, `DROP TABLE app_sign_in`, `DROP TABLE IF EXISTS people`, `DROP TABLE IF EXISTS people_grants`, `DROP TABLE IF EXISTS app_setup`, `DELETE FROM schema_migrations WHERE version >= 44`}

@@ -12,6 +12,8 @@ export interface StoredSession {
   expiresAt: string;
 }
 
+export type SessionRole = 'owner' | 'person';
+
 /** localStorage key for the client session (S033). */
 export const SESSION_STORAGE_KEY = 'homestead.session';
 
@@ -29,6 +31,28 @@ export class SessionService {
 
   readonly username = computed(() => this.session()?.username ?? null);
   readonly isLoggedIn = computed(() => this.session() !== null);
+
+  /**
+   * Who the server says is signed in (S338, ADR-050): `owner`, or `person`
+   * for a person's session, which reaches only the apps list. Null until
+   * known. Display only; the server enforces it.
+   */
+  readonly role = signal<SessionRole | null>(null);
+  readonly isPerson = computed(() => this.role() === 'person');
+
+  /** Asks the server who this session is and remembers the role. */
+  loadRole(): Observable<SessionRole | null> {
+    return this.api.me().pipe(
+      map((me) => me.role ?? null),
+      catchError(() => of(null)),
+      tap((role) => this.role.set(role)),
+    );
+  }
+
+  /** A route answered owner-only: this is a person session. No retries. */
+  noteOwnerOnly(): void {
+    this.role.set('person');
+  }
 
   login(username: string, password: string): Observable<void> {
     return this.api.login(username, password).pipe(
@@ -64,6 +88,7 @@ export class SessionService {
 
   /** Drops the local hint after the server said the session is gone. */
   expire(): void {
+    this.role.set(null);
     this.clear();
   }
 

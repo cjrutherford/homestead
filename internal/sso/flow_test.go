@@ -733,3 +733,105 @@ func TestSpecWithoutPublicOriginsIsUnchanged(t *testing.T) {
 		t.Fatalf("public address without a public origin: %+v", spec)
 	}
 }
+
+// S338 (ADR-050 §1): a subject that is not the owner may be a person.
+func personHook(h *harness, uid string, found bool) {
+	h.m.Person = func(_ context.Context, sub string) (PersonMatch, bool, error) {
+		if found && sub == uid {
+			return PersonMatch{ID: 5, Username: "sam", DisplayName: "Sam"}, true, nil
+		}
+		return PersonMatch{}, false, nil
+	}
+}
+
+func TestPersonSubjectSignsInWithoutAnIdentity(t *testing.T) {
+	h := newHarness(t)
+	h.configure()
+	h.link()
+	personHook(h, "person-uid", true)
+	h.idp.mutate = func(c map[string]any) { c["sub"] = "person-uid" }
+	code, state := h.startLogin()
+	out, err := h.m.Callback(ctxb(), state, code, "", state)
+	if err != nil {
+		t.Fatalf("person login: %v", err)
+	}
+	if out.Person == nil || out.Person.ID != 5 || out.IdentityID != 0 {
+		t.Fatalf("outcome = %+v", out)
+	}
+}
+
+func TestOwnerStaysTheOwnerWhenPeopleExist(t *testing.T) {
+	h := newHarness(t)
+	h.configure()
+	h.link()
+	personHook(h, "user-1", true) // even a record claiming the owner's subject
+	code, state := h.startLogin()
+	out, err := h.m.Callback(ctxb(), state, code, "", state)
+	if err != nil || out.Person != nil || out.IdentityID != 7 {
+		t.Fatalf("owner outcome = %+v, %v", out, err)
+	}
+}
+
+func TestPersonNotMatchedOrWrongIssuerStaysUnlinked(t *testing.T) {
+	// No match (unknown, disabled or removed people are not found).
+	h := newHarness(t)
+	h.configure()
+	h.link()
+	personHook(h, "person-uid", false)
+	h.idp.mutate = func(c map[string]any) {
+		c["sub"] = "person-uid"
+		c["email"] = "sam@example.test"
+		c["preferred_username"] = "sam"
+	}
+	code, state := h.startLogin()
+	_, err := h.m.Callback(ctxb(), state, code, "", state)
+	wantCode(t, err, CodeUnlinked)
+	// A matching person under a different issuer than the linked one.
+	h = newHarness(t)
+	h.configure()
+	h.link()
+	personHook(h, "person-uid", true)
+	h.idp.mutate = func(c map[string]any) { c["sub"] = "person-uid" }
+	code, state = h.startLogin()
+	if _, err := h.st.DB().Exec(`UPDATE sso_link SET issuer = 'https://other.example/'`); err != nil {
+		t.Fatal(err)
+	}
+	_, err = h.m.Callback(ctxb(), state, code, "", state)
+	wantCode(t, err, CodeUnlinked)
+	// No link at all: no person sign-in.
+	h = newHarness(t)
+	h.configure()
+	personHook(h, "person-uid", true)
+	if _, err := h.m.StartLogin(ctxb(), "127.0.0.1:8080"); !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("login without a link = %v", err)
+	}
+}
+
+func TestPersonLookupFailureIsNotASignIn(t *testing.T) {
+	h := newHarness(t)
+	h.configure()
+	h.link()
+	h.m.Person = func(context.Context, string) (PersonMatch, bool, error) {
+		return PersonMatch{}, false, errors.New("db down")
+	}
+	h.idp.mutate = func(c map[string]any) { c["sub"] = "person-uid" }
+	code, state := h.startLogin()
+	_, err := h.m.Callback(ctxb(), state, code, "", state)
+	wantCode(t, err, CodeUnavailable)
+}
+
+func TestPersonCannotStepUp(t *testing.T) {
+	h := newHarness(t)
+	h.configure()
+	h.link()
+	personHook(h, "person-uid", true)
+	if h.m.Person == nil {
+		t.Fatal("hook")
+	}
+	// The step-up branch reads only the owner's link; a person subject on
+	// it is refused as unlinked.
+	h.idp.mutate = func(c map[string]any) { c["sub"] = "person-uid" }
+	code, state := h.stepUp(42, 7, "/people")
+	_, err := h.m.Callback(ctxb(), state, code, "", state)
+	wantCode(t, err, CodeUnlinked)
+}

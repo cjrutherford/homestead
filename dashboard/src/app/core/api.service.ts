@@ -2269,6 +2269,11 @@ export class ApiService {
     });
   }
 
+  /** Who is signed in (S338): the role and, for a person, their name. */
+  me(): Observable<MeView> {
+    return this.http.get<MeView>('/api/v1/me');
+  }
+
   /** Revokes the cookie session (the cookie rides along same-origin). */
   logout(): Observable<void> {
     return this.http.delete<void>('/api/v1/sessions');
@@ -2349,4 +2354,13 @@ export interface LockoutStatus {
   failures?: number;
   /** RFC 3339 unlock time; present only while locked. */
   locked_until?: string;
+}
+
+/** GET /api/v1/me (S338, ADR-050). */
+export interface MeView {
+  role?: 'owner' | 'person';
+  username?: string;
+  display_name?: string;
+  person_id?: number;
+  method?: string;
 }

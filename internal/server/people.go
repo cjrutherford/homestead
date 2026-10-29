@@ -57,6 +57,18 @@ func (s *Server) mountPeople(c SSOConfig, m *sso.Manager, client func() *http.Cl
 			return ""
 		},
 	}
+	if c.Auth != nil {
+		h.svc.EndSessions = func(id int64) {
+			if err := c.Auth.RevokePersonSessions(id); err != nil {
+				s.log.Warn("could not end a person's sessions", "person", id, "error", err)
+			}
+		}
+	}
+	m.Person = func(ctx context.Context, sub string) (sso.PersonMatch, bool, error) {
+		id, username, name, ok, err := h.svc.SignIn(ctx, sub)
+		return sso.PersonMatch{ID: id, Username: username, DisplayName: name}, ok, err
+	}
+	m.SyncPeople = h.svc.SyncGroup
 	s.people = h.svc
 	s.mux.HandleFunc("GET /api/v1/people", h.list)
 	s.mux.HandleFunc("POST /api/v1/people", h.add)

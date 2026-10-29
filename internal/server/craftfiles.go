@@ -55,6 +55,10 @@ func (a authOperator) Check(token string) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, craftfiles.ErrOperatorUnavailable
 	}
+	if v.Role == auth.RolePerson {
+		// Craft sessions belong to the owner (ADR-050 §2).
+		return time.Time{}, craftfiles.ErrOperatorInvalid
+	}
 	exp := v.ExpiresAt
 	if !v.IdleExpiresAt.IsZero() && v.IdleExpiresAt.Before(exp) {
 		exp = v.IdleExpiresAt

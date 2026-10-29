@@ -184,6 +184,9 @@ func (w *ssoWorld) admin(rw http.ResponseWriter, r *http.Request, enc *json.Enco
 	case p == "/api/v3/policies/bindings/" && r.Method == http.MethodGet:
 		var out []any
 		for _, b := range w.bindings {
+			if t := r.URL.Query().Get("target"); t != "" && b["target"] != t {
+				continue
+			}
 			out = append(out, b)
 		}
 		res(out...)
@@ -853,9 +856,21 @@ func TestSSODefaultsWireNames(t *testing.T) {
 	}
 }
 
+func peopleAccess() *sso.Access {
+	return &sso.Access{Groups: []string{sso.OwnerGroup, sso.PeopleGroup}, Bindings: []string{sso.OwnerGroup, sso.PeopleGroup}}
+}
+
+// S338: a sign-in applied before the people group asks for a re-plan.
+func TestAccessReplanNamesTheMissingPeopleGroup(t *testing.T) {
+	old := sso.Status{Configured: true, Spec: &sso.Spec{Access: &sso.Access{Groups: []string{sso.OwnerGroup}, Bindings: []string{sso.OwnerGroup}}, RecoveryFlow: sso.RecoveryFlowSlug, LoginHint: sso.LoginHint}}
+	if r := accessReplanReason(old); !strings.Contains(r, sso.PeopleGroup) {
+		t.Fatalf("no re-plan for a missing people group: %q", r)
+	}
+}
+
 // S336: a sign-in with a recovery flow but no login hint asks for a re-plan.
 func TestAccessReplanNamesTheMissingLoginHint(t *testing.T) {
-	st := sso.Status{Configured: true, Spec: &sso.Spec{Access: &sso.Access{}, RecoveryFlow: sso.RecoveryFlowSlug}}
+	st := sso.Status{Configured: true, Spec: &sso.Spec{Access: peopleAccess(), RecoveryFlow: sso.RecoveryFlowSlug}}
 	if r := accessReplanReason(st); !strings.Contains(r, "ask the owner") {
 		t.Fatalf("re-plan reason = %q", r)
 	}
@@ -864,12 +879,52 @@ func TestAccessReplanNamesTheMissingLoginHint(t *testing.T) {
 // S333: a sign-in applied before the recovery flow asks for a re-plan;
 // one that has it does not.
 func TestAccessReplanNamesTheMissingRecoveryFlow(t *testing.T) {
-	old := sso.Status{Configured: true, Spec: &sso.Spec{Access: &sso.Access{}}}
+	old := sso.Status{Configured: true, Spec: &sso.Spec{Access: peopleAccess()}}
 	if r := accessReplanReason(old); !strings.Contains(r, "recovery flow") {
 		t.Fatalf("no re-plan for a missing recovery flow: %q", r)
 	}
-	cur := sso.Status{Configured: true, Spec: &sso.Spec{Access: &sso.Access{}, RecoveryFlow: sso.RecoveryFlowSlug, LoginHint: sso.LoginHint}}
+	cur := sso.Status{Configured: true, Spec: &sso.Spec{Access: peopleAccess(), RecoveryFlow: sso.RecoveryFlowSlug, LoginHint: sso.LoginHint}}
 	if r := accessReplanReason(cur); r != "" {
 		t.Fatalf("re-plan reason = %q", r)
+	}
+}
+
+// S338 (ADR-050 §1): a person signs in through the same callback, matched by
+// the Authentik user Homestead recorded, and gets a person session.
+func TestSSOPersonSignsInAsAPersonAndIsAudited(t *testing.T) {
+	a := newSSOApp(t)
+	a.configure(t)
+	a.linkOwner(t)
+	if _, err := a.st.DB().Exec(`INSERT INTO people (id, display_name, username, email, authentik_pk, authentik_uid, state, origin, created_by, created_at)
+		VALUES (7, 'Sam Person', 'sam', '', 9, 'person-sub', 'active', 'created', 'o', '2026-01-01T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	a.w.mu.Lock()
+	a.w.sub = "person-sub"
+	a.w.mu.Unlock()
+	token, csrf := a.ssoSession(t)
+	rec := a.req("GET", "/api/v1/me", "", "", cookieAuth(token, ""))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"role":"person"`) {
+		t.Fatalf("me = %d %s", rec.Code, rec.Body)
+	}
+	if rec := a.req("GET", "/api/v1/sso", "", "", cookieAuth(token, "")); rec.Code != 403 || rec.Header().Get(ErrorCodeHeader) != ErrorCodeOwnerOnly {
+		t.Fatalf("owner route as a person = %d (%s)", rec.Code, rec.Header().Get(ErrorCodeHeader))
+	}
+	audit := a.req("GET", "/api/v1/audit?limit=200", "", a.owner.token).Body.String()
+	if !strings.Contains(audit, "session.login") || !strings.Contains(audit, "person=7") {
+		t.Fatalf("person sign-in not audited: %s", audit)
+	}
+	if rec := a.req("DELETE", "/api/v1/sessions", "", "", cookieAuth(token, csrf)); rec.Code != http.StatusNoContent {
+		t.Fatalf("sign-out = %d", rec.Code)
+	}
+	audit = a.req("GET", "/api/v1/audit?limit=200", "", a.owner.token).Body.String()
+	if !strings.Contains(audit, "session.logout") {
+		t.Fatalf("person sign-out not audited: %s", audit)
+	}
+	// A disabled person is refused as unlinked.
+	_, _ = a.st.DB().Exec(`UPDATE people SET state = 'disabled' WHERE id = 7`)
+	rec = a.browserLogin(t, ssoLocal)
+	if rec.Header().Get("Location") != "/login?sso_error=unlinked" {
+		t.Fatalf("disabled person = %s", rec.Header().Get("Location"))
 	}
 }

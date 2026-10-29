@@ -98,3 +98,5 @@ Then S335 step-up messages (`docs/slices/S335-step-up-messages.md`): the dashboa
 Then S336 Authentik's login page tells people to ask the owner (`docs/slices/S336-forgot-password-asks-the-owner.md`): no self-service recovery link; the sign-in plan sets the default authentication flow title to a hint, covered by the digest, with a re-plan reason for earlier sign-ins (ADR-049 amendment).
 
 Then S337 the apps list API (`docs/slices/S337-apps-list-api.md`): `GET /api/v1/me/apps` and `GET /api/v1/people/{id}/apps`, with `homesteadctl apps mine` and `people apps PERSON` (ADR-050 §4 contents, §5); no person sessions yet.
+
+Then S338 person sessions (`docs/slices/S338-person-sessions.md`): a person signs in through the SSO callback and gets a `person` session limited to an allowlist, deny-by-default for every other route; the `homestead-people` Authentik group and dashboard binding (ADR-050 §1–§3).

@@ -1,6 +1,7 @@
 package sso
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -37,14 +38,14 @@ func TestDashboardPlanGroupsMembershipBindingAndDigest(t *testing.T) {
 	linkOwner(t, h, ak)
 	plan := applyDashboard(t, h)
 	a := plan.Spec.Access
-	if a == nil || a.OwnerSub != "user-1" || len(a.Bindings) != 1 || a.Bindings[0] != OwnerGroup {
+	if a == nil || a.OwnerSub != "user-1" || len(a.Bindings) != 2 || a.Bindings[0] != OwnerGroup || a.Bindings[1] != PeopleGroup || !hasGroup(a.Groups, PeopleGroup) {
 		t.Fatalf("access in plan = %+v", a)
 	}
 	var kinds []string
 	for _, o := range plan.Objects {
 		kinds = append(kinds, o.Kind+" "+o.Name+" "+o.Action)
 	}
-	for _, want := range []string{"Group homestead-owner create", "Group member owner in homestead-owner create", "Binding application to homestead-owner create"} {
+	for _, want := range []string{"Group homestead-owner create", "Group homestead-people create", "Group member owner in homestead-owner create", "Binding application to homestead-owner create", "Binding application to homestead-people create"} {
 		if !strings.Contains(strings.Join(kinds, "|"), want) {
 			t.Errorf("plan lacks %q: %v", want, kinds)
 		}
@@ -53,7 +54,10 @@ func TestDashboardPlanGroupsMembershipBindingAndDigest(t *testing.T) {
 	if g == nil || len(g["users"].([]any)) != 1 || g["users"].([]any)[0] != float64(7) {
 		t.Fatalf("owner group = %v", g)
 	}
-	if len(ak.bindings) != 1 || ak.bindings[0]["group"] != "g-"+OwnerGroup {
+	if ak.groups[PeopleGroup] == nil {
+		t.Fatalf("the people group is created: %v", ak.groups)
+	}
+	if len(ak.bindings) != 2 || ak.bindings[0]["group"] != "g-"+OwnerGroup || ak.bindings[1]["group"] != "g-"+PeopleGroup {
 		t.Fatalf("bindings = %v", ak.bindings)
 	}
 	// A different link changes the digest.
@@ -75,7 +79,7 @@ func TestDashboardApplyIsIdempotent(t *testing.T) {
 	applyDashboard(t, h)
 	posts, patches := ak.posts, ak.patches
 	applyDashboard(t, h)
-	if ak.posts != posts || ak.patches != patches || len(ak.bindings) != 1 {
+	if ak.posts != posts || ak.patches != patches || len(ak.bindings) != 2 {
 		t.Fatalf("second apply changed things: posts %d->%d patches %d->%d bindings %d", posts, ak.posts, patches, ak.patches, len(ak.bindings))
 	}
 }
@@ -89,8 +93,11 @@ func TestDashboardWithoutALinkDoesNotBindTheEmptyOwnerGroup(t *testing.T) {
 	if _, ok := ak.groups[OwnerGroup]; !ok {
 		t.Fatal("the owner group is created")
 	}
-	if len(ak.bindings) != 0 {
-		t.Fatalf("an empty owner group must not be bound: %v", ak.bindings)
+	// The people group is bound even when empty: nobody outside the two
+	// groups can sign in. The empty owner group is not, so the owner is
+	// not locked out.
+	if len(ak.bindings) != 1 || ak.bindings[0]["group"] != "g-"+PeopleGroup {
+		t.Fatalf("only the people group is bound: %v", ak.bindings)
 	}
 	if !strings.Contains(strings.Join(plan.Warnings, "|"), "No owner is linked yet") {
 		t.Fatalf("warnings = %v", plan.Warnings)
@@ -184,5 +191,27 @@ func TestAppAccessApplyReadBackAndRemove(t *testing.T) {
 	}
 	if _, ok := ak.groups["outsider"]; !ok || len(ak.mappings) != 0 {
 		t.Fatalf("groups %v mappings %v", ak.groups, ak.mappings)
+	}
+}
+
+// S338: applying the plan asks the People service to fill the people group
+// once it exists, and a removal never deletes it.
+func TestApplySyncsPeopleAfterTheGroupExists(t *testing.T) {
+	h, ak := planHarness(t)
+	var existed bool
+	calls := 0
+	h.m.SyncPeople = func(_ context.Context, api *API) error {
+		calls++
+		g, err := api.FindGroup(ctxb(), PeopleGroup)
+		existed = err == nil && g != nil
+		return nil
+	}
+	applyDashboard(t, h)
+	if calls != 1 || !existed {
+		t.Fatalf("SyncPeople calls=%d, group existed=%v", calls, existed)
+	}
+	_ = ak
+	if got := (Access{Groups: []string{OwnerGroup, PeopleGroup, "homestead-demo-users"}}).RemovableGroups(); len(got) != 1 || got[0] != "homestead-demo-users" {
+		t.Fatalf("removable = %v: the owner and people groups are shared", got)
 	}
 }

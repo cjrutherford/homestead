@@ -11,6 +11,16 @@ export const CSRF_HEADER = 'X-CSRF-Token';
 /** Marks a 401 that is a wrong current password, not a dead session (S274). */
 export const ERROR_CODE_HEADER = 'X-Homestead-Error';
 export const WRONG_CURRENT_PASSWORD = 'invalid-current-password';
+/** A person session asked for an owner-only route (S338, ADR-050 §2). */
+export const OWNER_ONLY = 'owner-only';
+
+export function isOwnerOnly(err: unknown): boolean {
+  return (
+    err instanceof HttpErrorResponse &&
+    err.status === 403 &&
+    err.headers?.get(ERROR_CODE_HEADER) === OWNER_ONLY
+  );
+}
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -63,6 +73,10 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         if (path !== '/login' && path !== '/claim') {
           void router.navigateByUrl('/login');
         }
+      }
+      if (isApi && isOwnerOnly(err)) {
+        // Not a session problem: remember the role and do not retry.
+        sessions.noteOwnerOnly();
       }
       return throwError(() => err);
     }),

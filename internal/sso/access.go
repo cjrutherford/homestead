@@ -14,6 +14,10 @@ import (
 const (
 	GroupPrefix = "homestead-"
 	OwnerGroup  = GroupPrefix + "owner"
+	// PeopleGroup holds every active person Homestead manages (ADR-050
+	// §3). The dashboard application is bound to it and OwnerGroup, so
+	// people can reach the dashboard's sign-in and nobody else can.
+	PeopleGroup = GroupPrefix + "people"
 	// GroupsScope is the scope name of the groups claim mapping.
 	GroupsScope = "groups"
 )
@@ -66,7 +70,7 @@ func (x Access) Validate() error {
 func (x Access) RemovableGroups() []string {
 	var out []string
 	for _, g := range x.Groups {
-		if ownedGroup(g) && g != OwnerGroup {
+		if ownedGroup(g) && g != OwnerGroup && g != PeopleGroup {
 			out = append(out, g)
 		}
 	}
