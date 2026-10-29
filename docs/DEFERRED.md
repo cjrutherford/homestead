@@ -1391,15 +1391,15 @@ Craft apps under one host, by path (ADR-045).
   sign-in, account); only `/` is chrome-free.
 ## Catalog expansion (2026-10-23)
 
-The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md`; no app
-slice is scheduled yet.
+The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
+`docs/SLICE_PLAN.md`. The Everything track remains planned, not implemented.
 
-- Puter/Everything apps: deferred. The monorepo's apps are Vite SPAs that
+- Puter/Everything apps: planned in S367–S381, not yet available. The monorepo's apps are Vite SPAs that
   load the Puter cloud SDK (`https://js.puter.com/v2/`) for identity and
   storage, have no per-app Docker packaging, and overlap the existing craft
   suite. Revisit only with an ADR for a second static-app source, a fork or
   adapter that removes the Puter cloud dependency, or a self-hosted Puter
-  platform decision.
+  platform decision. S367 proposes the adapter and requires a new ADR first.
 - Not planned for v1: mail servers (deliverability and port-25/abuse
   burden), Matrix/chat servers (federation and identity duplication),
   Home Assistant (needs host networking or device passthrough), object

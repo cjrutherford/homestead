@@ -176,6 +176,12 @@ describe('App logged in', () => {
     document.documentElement.removeAttribute('data-theme');
   });
 
+  it('offers a link back to the apps dashboard from administration', async () => {
+    const fixture = await setup('CLAIMED');
+    const link = fixture.nativeElement.querySelector('nav a[href="/"]') as HTMLAnchorElement | null;
+    expect(link?.textContent?.trim()).toBe('Apps dashboard');
+  });
+
   it('shows the username with logout in the foot instead of login', async () => {
     const fixture = await setup('CLAIMED');
     const foot = fixture.nativeElement.querySelector('.sidebar-foot') as HTMLElement;

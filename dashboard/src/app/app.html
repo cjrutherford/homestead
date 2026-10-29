@@ -28,6 +28,9 @@
       <p class="brand">Homestead</p>
 
       <nav aria-label="Primary">
+        @if (sessions.isLoggedIn()) {
+          <a class="nav-link" routerLink="/">Apps dashboard</a>
+        }
         @for (group of groups(); track group.id) {
           <div class="nav-group">
             <button
