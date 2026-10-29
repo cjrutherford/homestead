@@ -85,8 +85,10 @@ func installPublicStub(t *testing.T, calls *[]string, bodies map[string]map[stri
 			bodies[r.URL.Path] = body
 		}
 		switch r.URL.Path {
+		case "/api/v1/people":
+			_, _ = w.Write([]byte(`{"token_kept":true,"people":[{"id":42,"state":"active","username":"reader","display_name":"Reader"}]}`))
 		case "/api/v1/catalog/nextcloud/plan":
-			_, _ = w.Write([]byte(`{"Package":"nextcloud","Requirements":{"Passed":true},"Routes":[{"Host":"nextcloud.lan","Target":{"Host":"nextcloud","Port":80},"Exposure":"local","TLS":"internal"}],"digest":"i1d"}`))
+			_, _ = w.Write([]byte(`{"Package":"nextcloud","Requirements":{"Passed":true},"Routes":[{"Host":"nextcloud.lan","Target":{"Host":"nextcloud","Port":80},"Exposure":"local","TLS":"internal"}],"digest":"i1d","sign_in":{"offered":true,"token_kept":true,"plan":{"package":"nextcloud","title":"Nextcloud","enabled":true,"digest":"s1d"}}}`))
 		case "/api/v1/catalog/nextcloud/public/plan":
 			_, _ = w.Write([]byte(`{"app":"nextcloud","action":"add","hostname":"nextcloud.homestead.example.com","route":"nextcloud.lan","tunnel":"homestead","zone":"example.com",
 				"dns":[{"name":"nextcloud.homestead.example.com","type":"CNAME","content":"tid.cfargotunnel.com","proxied":true,"action":"create","replaces":[]}],
@@ -135,7 +137,7 @@ func TestAppsInstallPublicPlansBoth(t *testing.T) {
 	code, stdout, stderr := invoke(t, []string{"--server", url, "apps", "install", "nextcloud", "-f", file, "--public"})
 	for _, want := range []string{"install digest: i1d", "public: https://nextcloud.homestead.example.com -> nextcloud.lan",
 		"app setting: Nextcloud trusts", "warning: No certificate covers", "public digest: p2d",
-		"--public nextcloud.homestead.example.com --approve-public p2d"} {
+		"--public nextcloud.homestead.example.com --approve-public p2d --approve-sign-in s1d"} {
 		if code != exitOK || !strings.Contains(stdout, want) {
 			t.Fatalf("missing %q: %d %s %s", want, code, stdout, stderr)
 		}
@@ -188,6 +190,24 @@ func TestAppsInstallPublicApproved(t *testing.T) {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("missing %q: %s", want, stdout)
 		}
+	}
+}
+
+func TestAppsInstallPublicApprovesSignInAndPeople(t *testing.T) {
+	var calls []string
+	bodies := map[string]map[string]any{}
+	url := installPublicStub(t, &calls, bodies, "p2d", http.StatusOK)
+	file := writeInput(t, `{"domain":"lan"}`)
+	code, stdout, stderr := invoke(t, []string{"--server", url, "apps", "install", "nextcloud", "-f", file,
+		"--public", "nextcloud.homestead.example.com", "--approve-public", "p2d", "--approve-sign-in", "s1d", "--person", "42"})
+	if code != exitOK {
+		t.Fatalf("exit %d: %s %s", code, stdout, stderr)
+	}
+	setup, _ := bodies["/api/v1/catalog/nextcloud/install"]["setup"].(map[string]any)
+	si, _ := setup["sign_in"].(map[string]any)
+	people, _ := setup["people"].([]any)
+	if si["digest"] != "s1d" || len(people) != 1 || people[0] != float64(42) {
+		t.Fatalf("setup = %#v", setup)
 	}
 }
 

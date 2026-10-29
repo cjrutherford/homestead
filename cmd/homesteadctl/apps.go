@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"homestead/internal/apiclient"
@@ -150,8 +151,97 @@ func runAppsPlan(ctx context.Context, client *apiclient.Client, args []string, s
 		fmt.Fprintf(stdout, "note: %s\n", note)
 	}
 	printFilesLink(stdout, plan.FilesLink)
+	printInstallSignIn(stdout, plan.SignIn)
 	fmt.Fprintf(stdout, "actions: %s\n", strings.Join(plan.Actions, ", "))
 	return exitOK
+}
+
+func printInstallSignIn(w io.Writer, offer *apiclient.InstallSignIn) {
+	if offer == nil {
+		return
+	}
+	if !offer.Offered || offer.Plan == nil {
+		fmt.Fprintf(w, "sign-in with Authentik unavailable: %s\n", offer.Reason)
+		return
+	}
+	p := offer.Plan
+	fmt.Fprintf(w, "sign-in with Authentik: %s; provider %s; application %s\n", p.Title, p.Provider, p.Application)
+	for _, line := range p.Changes {
+		fmt.Fprintf(w, "sign-in: %s\n", line)
+	}
+	for _, uri := range p.RedirectURIs {
+		fmt.Fprintf(w, "sign-in redirect: %s\n", uri)
+	}
+	for _, line := range p.AppSettings {
+		fmt.Fprintf(w, "sign-in setting: %s\n", line)
+	}
+	for _, line := range p.Warnings {
+		fmt.Fprintf(w, "sign-in note: %s\n", line)
+	}
+	if p.AdminRoles != "" {
+		fmt.Fprintf(w, "sign-in roles: %s\n", p.AdminRoles)
+	}
+	fmt.Fprintf(w, "sign-in digest: %s\n", p.Digest)
+	if !offer.TokenKept {
+		fmt.Fprintln(w, "sign-in cannot be set up during install without a retained Authentik API token")
+	}
+}
+
+func approveInstallSignIn(offer *apiclient.InstallSignIn, digest string, people []int64, setup map[string]any) error {
+	if digest == "" {
+		if len(people) != 0 {
+			return fmt.Errorf("--person requires --approve-sign-in")
+		}
+		return nil
+	}
+	if offer == nil || !offer.Offered || offer.Plan == nil {
+		return fmt.Errorf("sign-in is not offered for this install; review the install plan")
+	}
+	if !offer.TokenKept {
+		return fmt.Errorf("sign-in during install requires a retained Authentik API token")
+	}
+	if digest != offer.Plan.Digest {
+		return fmt.Errorf("the sign-in plan changed; review the install plan again")
+	}
+	setup["sign_in"] = map[string]any{"digest": digest}
+	if len(people) != 0 {
+		setup["people"] = people
+	}
+	return nil
+}
+
+// validateInstallPeople catches invalid selections before starting an install.
+// The server must still recheck them when the later grant step runs.
+func validateInstallPeople(ctx context.Context, client *apiclient.Client, ids []int64, w io.Writer) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	view, err := client.People(ctx)
+	if err != nil {
+		return fmt.Errorf("review selected people: %w", err)
+	}
+	if !view.TokenKept || view.ReadError != "" {
+		return fmt.Errorf("cannot review selected people; check homesteadctl people list")
+	}
+	active := map[int64]apiclient.Person{}
+	for _, p := range view.People {
+		if p.State == "active" {
+			active[p.ID] = p
+		}
+	}
+	seen := map[int64]bool{}
+	for _, id := range ids {
+		p, ok := active[id]
+		if !ok {
+			return fmt.Errorf("person %d is missing or disabled; review homesteadctl people list", id)
+		}
+		if seen[id] {
+			return fmt.Errorf("person %d was selected more than once", id)
+		}
+		seen[id] = true
+		fmt.Fprintf(w, "grant user access: %s (%s, %d)\n", p.DisplayName, p.Username, id)
+	}
+	return nil
 }
 
 // printFilesLink lists the craft apps the install's setup links to
@@ -198,10 +288,13 @@ const appsInstallUsage = `usage: homesteadctl apps install <package> -f FILE [--
                            public address, prints both digests and changes nothing
   --approve-public DIGEST  install; the appliance then adds the app's address
                            and publishes it by the reviewed digest (follows
-                           the install and the setup)`
+                           the install and the setup)
+  --approve-sign-in DIGEST approve the Authentik plan shown by apps plan
+  --person ID              grant a person access after sign-in (repeatable)`
 
 func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
-	var file, publicName, approvePublic string
+	var file, publicName, approvePublic, approveSignIn string
+	var people []int64
 	var positional []string
 	follow, public := false, false
 	for i := 0; i < len(args); i++ {
@@ -221,6 +314,17 @@ func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string
 		case args[i] == "--approve-public" && i+1 < len(args):
 			approvePublic = args[i+1]
 			i++
+		case args[i] == "--approve-sign-in" && i+1 < len(args):
+			approveSignIn = args[i+1]
+			i++
+		case args[i] == "--person" && i+1 < len(args):
+			id, err := strconv.ParseInt(args[i+1], 10, 64)
+			if err != nil || id <= 0 {
+				fmt.Fprintln(stderr, "--person requires a positive person ID")
+				return exitUsage
+			}
+			people = append(people, id)
+			i++
 		case strings.HasPrefix(args[i], "-"):
 			fmt.Fprintf(stderr, "unknown flag %q\n", args[i])
 			return exitUsage
@@ -238,7 +342,7 @@ func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string
 	}
 	pkg := positional[0]
 	if public {
-		return installWithPublic(ctx, client, pkg, file, body, publicName, approvePublic, stdout, stderr)
+		return installWithPublic(ctx, client, pkg, file, body, publicName, approvePublic, approveSignIn, people, stdout, stderr)
 	}
 	// A craft app, or Nextcloud, brings a Nextcloud link for files; the
 	// plan lists it (apps plan) and the install approves it, so the
@@ -249,7 +353,7 @@ func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string
 		return fail(stderr, err)
 	}
 	link := install.FilesLink
-	setup := firstLocalRoute(install.Routes) != nil || link != nil
+	setup := firstLocalRoute(install.Routes) != nil || link != nil || approveSignIn != "" || len(people) != 0
 	if setup {
 		body["digest"] = install.Digest
 		setupBody := map[string]any{}
@@ -263,6 +367,12 @@ func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string
 		if link != nil {
 			printFilesLink(stdout, link)
 			setupBody["files_link"] = map[string]any{"digest": link.Digest}
+		}
+		if err := approveInstallSignIn(install.SignIn, approveSignIn, people, setupBody); err != nil {
+			return fail(stderr, err)
+		}
+		if err := validateInstallPeople(ctx, client, people, stdout); err != nil {
+			return fail(stderr, err)
 		}
 		body["setup"] = setupBody
 	}
@@ -310,7 +420,7 @@ func followSetup(ctx context.Context, client *apiclient.Client, pkg, title strin
 // public plan, installs by the install digest, adds the app's address to
 // the edge, publishes by the approved digest, and checks each address.
 func installWithPublic(ctx context.Context, client *apiclient.Client, pkg, file string, body map[string]any,
-	name, approve string, stdout, stderr io.Writer) int {
+	name, approve, approveSignIn string, people []int64, stdout, stderr io.Writer) int {
 	body["public_name"] = name
 	install, err := client.PlanInstall(ctx, pkg, body)
 	if err != nil {
@@ -342,12 +452,20 @@ func installWithPublic(ctx context.Context, client *apiclient.Client, pkg, file 
 		fmt.Fprintf(stdout, "install digest: %s\n", install.Digest)
 		printPublicBeforeInstall(stdout, plan)
 		printFilesLink(stdout, install.FilesLink)
+		printInstallSignIn(stdout, install.SignIn)
 		named := " " + plan.Hostname
 		if plan.Path != "" {
 			// A path app has no name of its own to pass (ADR-044).
 			named = ""
 		}
-		fmt.Fprintf(stdout, "approve: homesteadctl apps install %s -f %s --public%s --approve-public %s\n", pkg, file, named, plan.Digest)
+		fmt.Fprintf(stdout, "approve: homesteadctl apps install %s -f %s --public%s --approve-public %s", pkg, file, named, plan.Digest)
+		if si := install.SignIn; si != nil && si.Offered && si.TokenKept && si.Plan != nil {
+			fmt.Fprintf(stdout, " --approve-sign-in %s", si.Plan.Digest)
+			for _, id := range people {
+				fmt.Fprintf(stdout, " --person %d", id)
+			}
+		}
+		fmt.Fprintln(stdout)
 		return exitOK
 	}
 	if approve != plan.Digest {
@@ -360,6 +478,23 @@ func installWithPublic(ctx context.Context, client *apiclient.Client, pkg, file 
 	// The appliance adds the app's address and publishes it by the
 	// approved digest once the install succeeds (S324, ADR-048).
 	setupBody := map[string]any{"public": map[string]any{"hostname": plan.Hostname, "route": string(route.Host), "digest": approve}}
+	if existing, ok := body["setup"]; ok && existing != nil {
+		prior, valid := existing.(map[string]any)
+		if !valid {
+			return fail(stderr, fmt.Errorf("setup must be an object"))
+		}
+		for k, v := range prior {
+			if k != "public" {
+				setupBody[k] = v
+			}
+		}
+	}
+	if err := approveInstallSignIn(install.SignIn, approveSignIn, people, setupBody); err != nil {
+		return fail(stderr, err)
+	}
+	if err := validateInstallPeople(ctx, client, people, stdout); err != nil {
+		return fail(stderr, err)
+	}
 	if install.FilesLink != nil {
 		// The Nextcloud link the install review listed (S326).
 		setupBody["files_link"] = map[string]any{"digest": install.FilesLink.Digest}

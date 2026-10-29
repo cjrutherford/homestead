@@ -194,3 +194,5 @@ S383 separates curated container listening ports from actual host-port requireme
 S384 adds a sealed Audiobookshelf first-run recovery administrator (`docs/slices/S384-audiobookshelf-first-run.md`); S385 will add its Authentik adapter.
 
 S386 schedules local-address setup for normal CLI installs (`docs/slices/S386-cli-install-address-setup.md`).
+
+S387 adds CLI install review of Authentik sign-in and people (`docs/slices/S387-cli-install-sign-in.md`).

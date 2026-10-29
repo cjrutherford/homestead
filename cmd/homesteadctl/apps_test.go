@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"homestead/internal/apiclient"
+	"homestead/internal/appsso"
 )
 
 func appsStub(t *testing.T) string {
@@ -152,6 +155,72 @@ func TestAppsInstallApprovesLocalAddressSetup(t *testing.T) {
 	setup := install["setup"].(map[string]any)
 	if setup["sign_in"] == nil || setup["people"] == nil {
 		t.Fatalf("install lost approved sign-in or people: %#v", setup)
+	}
+}
+
+func TestAppsInstallReviewsAndApprovesSignInAndPeople(t *testing.T) {
+	var install map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/catalog/jellyfin/plan":
+			_, _ = w.Write([]byte(`{"Package":"jellyfin","Routes":[{"Host":"jellyfin.lan","Exposure":"local"}],"digest":"install-d","sign_in":{"offered":true,"token_kept":true,"plan":{"package":"jellyfin","title":"Jellyfin","enabled":true,"digest":"signin-d","provider":"Jellyfin"}}}`))
+		case "/api/v1/people":
+			_, _ = w.Write([]byte(`{"token_kept":true,"people":[{"id":42,"state":"active","username":"reader","display_name":"Reader"}]}`))
+		case "/api/v1/catalog/jellyfin/install":
+			if err := json.NewDecoder(r.Body).Decode(&install); err != nil {
+				t.Error(err)
+			}
+			_, _ = w.Write([]byte(`{"id":7}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	file := writeInput(t, `{"domain":"lan"}`)
+	code, stdout, stderr := invoke(t, []string{"--server", srv.URL, "apps", "plan", "jellyfin", "-f", file})
+	if code != exitOK || !strings.Contains(stdout, "signin-d") {
+		t.Fatalf("plan: %d %s %s", code, stdout, stderr)
+	}
+	code, _, stderr = invoke(t, []string{"--server", srv.URL, "apps", "install", "jellyfin", "-f", file, "--approve-sign-in", "signin-d", "--person", "99"})
+	if code != exitError || install != nil || !strings.Contains(stderr, "missing or disabled") {
+		t.Fatalf("invalid person must stop before install: %d %s %#v", code, stderr, install)
+	}
+	code, _, stderr = invoke(t, []string{"--server", srv.URL, "apps", "install", "jellyfin", "-f", file, "--approve-sign-in", "signin-d", "--person", "42", "--person", "42"})
+	if code != exitError || install != nil || !strings.Contains(stderr, "more than once") {
+		t.Fatalf("duplicate person must stop before install: %d %s %#v", code, stderr, install)
+	}
+	code, _, stderr = invoke(t, []string{"--server", srv.URL, "apps", "install", "jellyfin", "-f", file, "--approve-sign-in", "signin-d", "--person", "42"})
+	if code != exitOK {
+		t.Fatalf("install: %d %s", code, stderr)
+	}
+	setup, _ := install["setup"].(map[string]any)
+	si, _ := setup["sign_in"].(map[string]any)
+	people, _ := setup["people"].([]any)
+	if si["digest"] != "signin-d" || len(people) != 1 || people[0] != float64(42) {
+		t.Fatalf("setup = %#v", setup)
+	}
+}
+
+func TestInstallSignInApprovalRefusesUnsafeOrStaleRequests(t *testing.T) {
+	ready := &apiclient.InstallSignIn{Offered: true, TokenKept: true, Plan: &appsso.Plan{Digest: "current"}}
+	for _, tc := range []struct {
+		name   string
+		offer  *apiclient.InstallSignIn
+		digest string
+		people []int64
+	}{
+		{"people without sign-in", ready, "", []int64{1}},
+		{"unavailable", nil, "current", nil},
+		{"no retained token", &apiclient.InstallSignIn{Offered: true, Plan: &appsso.Plan{Digest: "current"}}, "current", nil},
+		{"stale plan", ready, "old", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setup := map[string]any{}
+			if err := approveInstallSignIn(tc.offer, tc.digest, tc.people, setup); err == nil || len(setup) != 0 {
+				t.Fatalf("must reject without changing setup: %v %#v", err, setup)
+			}
+		})
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"homestead/internal/appsso"
 	"homestead/internal/docker"
 )
 
@@ -116,6 +117,15 @@ type InstallPlanReport struct {
 	// FilesLink is the Nextcloud link for craft files the install's
 	// setup makes (S326); install with setup.files_link to approve it.
 	FilesLink *InstallFilesLink `json:"files_link,omitempty"`
+	SignIn    *InstallSignIn    `json:"sign_in,omitempty"`
+}
+
+// InstallSignIn is the install-time Authentik offer and reviewed plan.
+type InstallSignIn struct {
+	Offered   bool         `json:"offered"`
+	Reason    string       `json:"reason,omitempty"`
+	TokenKept bool         `json:"token_kept"`
+	Plan      *appsso.Plan `json:"plan,omitempty"`
 }
 
 // InstallFilesLink is the nextcloud-link setup step an install brings:
