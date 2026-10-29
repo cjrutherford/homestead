@@ -8,7 +8,7 @@
     approve it under your name, then apply. The plan is only a preview:
     nothing is requested from the certificate authority until you approve
     and apply. Renewal status is shown
-    here and on the <a routerLink="/exposure">Exposure</a> page.
+    here and on the <a routerLink="/admin/exposure">Exposure</a> page.
   </p>
 
   @if (error()) {
@@ -21,7 +21,7 @@
   @if (operationId(); as id) {
     <app-operation-progress [id]="id" [operation]="operation()" />
     @if (streamError()) {
-      <app-state-message kind="error" [headline]="streamError()" actionLabel="Open operation" [actionLink]="['/operations', id]" />
+      <app-state-message kind="error" [headline]="streamError()" actionLabel="Open operation" [actionLink]="['/admin/operations', id]" />
     }
   }
 
@@ -92,7 +92,7 @@
         headline="No TLS strategy is saved yet."
         detail="Save one in the configuration, then come back to review issuance."
         actionLabel="Open configuration"
-        actionLink="/config"
+        actionLink="/admin/config"
       />
     } @else if (!loading() && !loadError() && plans().length === 0) {
       <app-state-message

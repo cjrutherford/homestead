@@ -141,7 +141,7 @@ func TestDoctorTunnelExists(t *testing.T) {
 	}
 	delete(rig.cf.tunnels, "tid")
 	c := only(t, probeTunnelExists(ctx, rig.cfg))
-	if c.Status != doctor.StatusFail || c.Fix == nil || c.Fix.Link != "/tunnel" {
+	if c.Status != doctor.StatusFail || c.Fix == nil || c.Fix.Link != "/admin/tunnel" {
 		t.Fatalf("missing: %+v", c)
 	}
 }

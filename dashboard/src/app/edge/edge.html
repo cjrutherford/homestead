@@ -5,7 +5,7 @@
   </header>
   <p>
     The edge is the Caddy reverse proxy that serves your apps by host name. Opening a route to the
-    public internet is planned, previewed and approved on the <a routerLink="/exposure">Exposure</a>
+    public internet is planned, previewed and approved on the <a routerLink="/admin/exposure">Exposure</a>
     page. Routes you save here are applied as written.
   </p>
 
@@ -19,7 +19,7 @@
   @if (operationId(); as id) {
     <app-operation-progress [id]="id" [operation]="operation()" />
     @if (streamError()) {
-      <app-state-message kind="error" [headline]="streamError()" actionLabel="Open operation" [actionLink]="['/operations', id]" />
+      <app-state-message kind="error" [headline]="streamError()" actionLabel="Open operation" [actionLink]="['/admin/operations', id]" />
     }
   }
 

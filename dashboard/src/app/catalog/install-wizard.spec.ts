@@ -377,7 +377,7 @@ describe('InstallWizard', () => {
       http.expectOne('/api/v1/edge/deploy').flush({ id: 21 });
       fixture.detectChanges();
       expect(TestBed.inject(WorkOrders).orders().length).toBe(1);
-      expect((fixture.nativeElement as HTMLElement).querySelector('app-operation-progress a[href="/operations/21"]')).not.toBeNull();
+      expect((fixture.nativeElement as HTMLElement).querySelector('app-operation-progress a[href="/admin/operations/21"]')).not.toBeNull();
       streams.get(21)!.next(opState(21, 'succeeded'));
       http.expectOne('/api/v1/docker/health').flush(HEALTH_WITH_CADDY);
       fixture.detectChanges();
@@ -516,7 +516,7 @@ describe('InstallWizard', () => {
       c().mountOptions.set([]);
       to('storage');
       expect(text()).toContain('No storage is registered yet.');
-      expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/storage"]')).not.toBeNull();
+      expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/admin/storage"]')).not.toBeNull();
       c().next();
       expect(c().current()).toBe('storage');
     });
@@ -562,7 +562,7 @@ describe('InstallWizard', () => {
       expect(text()).toContain('Local network only');
       expect(text()).toContain('This app cannot be widened.');
       expect(text()).toContain('Installing never opens GridCraft to anyone outside your network');
-      expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/exposure"]')).not.toBeNull();
+      expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/admin/exposure"]')).not.toBeNull();
     });
 
     it('sends a changed hostname as an override', () => {
@@ -658,7 +658,7 @@ describe('InstallWizard', () => {
       const rail = TestBed.inject(WorkOrders);
       expect(rail.orders().map((o) => o.title)).toEqual(['Install GridCraft']);
       expect(rail.orders()[0].done).toBe('GridCraft installed');
-      expect((fixture.nativeElement as HTMLElement).querySelector('app-operation-progress a[href="/operations/7"]')).not.toBeNull();
+      expect((fixture.nativeElement as HTMLElement).querySelector('app-operation-progress a[href="/admin/operations/7"]')).not.toBeNull();
 
       streams.get(7)!.next(opState(7, 'running'));
       fixture.detectChanges();
@@ -792,7 +792,7 @@ describe('InstallWizard', () => {
       await Promise.resolve();
       fixture.detectChanges();
       expect(text()).toContain('could not open that address securely');
-      expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/trust"]')).not.toBeNull();
+      expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/admin/trust"]')).not.toBeNull();
     });
 
     it('offers the usual address for an installed app that has none, merged into the table', () => {
@@ -815,7 +815,7 @@ describe('InstallWizard', () => {
       doneReads([], HEALTH_NO_CADDY);
       expect(text()).toContain('GridCraft will not be reachable until the edge is set up.');
       expect(button('Set up the edge')).toBeDefined();
-      expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/edge"]')).not.toBeNull();
+      expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/admin/edge"]')).not.toBeNull();
     });
 
     it('says plainly when the setup stopped before the address and offers to review it', () => {
@@ -858,7 +858,7 @@ describe('InstallWizard', () => {
       expect(text()).toContain('GridCraft was not installed.');
       expect(text()).toContain('Nothing is left half-installed and your data was kept');
       expect(text()).toContain('That did not work.');
-      expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/operations/9"]')).not.toBeNull();
+      expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/admin/operations/9"]')).not.toBeNull();
       button('Try again')!.click();
       http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft'));
       fixture.detectChanges();
@@ -936,7 +936,7 @@ describe('InstallWizard', () => {
       expect(text()).toContain('https://gridcraft.lan');
       expect(text()).toContain('https://gridcraft.local');
       expect(el().querySelector('[data-resolver-off]')).not.toBeNull();
-      expect(el().querySelector('a[href="/names"]')).not.toBeNull();
+      expect(el().querySelector('a[href="/admin/names"]')).not.toBeNull();
       expect(text()).toContain('Until then, use https://gridcraft.local');
     });
 
@@ -1001,7 +1001,7 @@ describe('InstallWizard', () => {
       start(CRAFT);
       to('address');
       expect(el().querySelector('[data-no-tunnel]')).not.toBeNull();
-      expect(el().querySelector('a[href="/tunnel"]')).not.toBeNull();
+      expect(el().querySelector('a[href="/admin/tunnel"]')).not.toBeNull();
       expect(el().querySelector('input[name="publish"]')).toBeNull();
       expect(c().publish()).toBe(false);
     });

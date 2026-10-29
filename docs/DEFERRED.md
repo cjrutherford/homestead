@@ -1377,3 +1377,12 @@ Craft apps under one host, by path (ADR-045).
 - Records from before S338 have no stored Authentik uid; the first sign-in or
   People list asks Authentik for the user and remembers it (at most 50 per
   list). Needs a kept token for the sign-in case.
+
+## From S339 (the apps page)
+- Tiles show a large monogram of the app's title, as the catalog page does.
+  The manifest `icon` (an `mdi:` name) is carried on the tile as `data-icon`
+  but no glyph set is bundled yet; render real icons when one is.
+- DEVELOPMENT.md history entries and ADRs still name pre-S339 paths such as
+  `/people`; they are records and were not rewritten.
+- The sidebar still shows on the root-level owner pages (setup, claim, login,
+  sign-in, account); only `/` is chrome-free.

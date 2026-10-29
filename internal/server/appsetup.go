@@ -1016,12 +1016,12 @@ func (a *appSetup) doctorChecks() []doctor.Check {
 		if rec.Status == setupStopped {
 			check.Title = title + "'s setup stopped"
 			check.Detail = firstNonEmpty(rec.Reason, title+"'s setup stopped before it finished.")
-			check.Fix = liveFix("Open the catalog, review the stopped step on "+title+"'s card, then resume or skip it.", "/catalog",
+			check.Fix = liveFix("Open the catalog, review the stopped step on "+title+"'s card, then resume or skip it.", "/admin/catalog",
 				"homesteadctl apps setup status "+rec.App)
 		} else {
 			check.Title = title + "'s setup is running"
 			check.Detail = title + "'s approved setup is still running."
-			check.Fix = liveFix("Wait for it to finish; its card in the catalog shows each step.", "/catalog", "homesteadctl apps setup status "+rec.App)
+			check.Fix = liveFix("Wait for it to finish; its card in the catalog shows each step.", "/admin/catalog", "homesteadctl apps setup status "+rec.App)
 		}
 		out = append(out, check)
 	}

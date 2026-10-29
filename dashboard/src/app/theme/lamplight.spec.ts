@@ -128,7 +128,7 @@ describe('lamplight on every page (S311)', () => {
   it('lists every routed path', () => {
     const routes = readFileSync(APP + 'app.routes.ts', 'utf8');
     const paths = Array.from(routes.matchAll(/path:\s*'([^']*)'/g), (m) => m[1]).filter(
-      (path) => path !== '',
+      (path) => path !== '' && path !== 'admin',
     );
     expect([...paths].sort()).toEqual(Object.keys(PAGES).sort());
   });

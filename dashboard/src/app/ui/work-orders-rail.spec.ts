@@ -44,7 +44,7 @@ describe('WorkOrdersRail', () => {
     stream.next(running(4));
     fixture.detectChanges();
     expect(root.querySelector('.rail-title')?.textContent).toContain('Reconcile routes');
-    expect(root.querySelector('.rail-title')?.getAttribute('href')).toBe('/operations/4');
+    expect(root.querySelector('.rail-title')?.getAttribute('href')).toBe('/admin/operations/4');
     expect(root.querySelector('.rail-step')?.textContent).toContain('Step 2 of 3: Start the containers');
     expect(root.querySelector('.rail-time')?.textContent).toMatch(/\d+:\d\d/);
     const bar = root.querySelector('[role="progressbar"]')!;

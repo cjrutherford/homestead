@@ -58,10 +58,12 @@ export class Login implements OnInit {
 
   /** The callback set the session cookies; learn who it is and carry on. */
   private finishSso(): void {
-    this.api.lockoutStatus().subscribe({
-      next: (status) => {
-        this.sessions.begin(status.username, '');
-        void this.router.navigateByUrl('/status');
+    // A person's session reaches only /me (ADR-050), so ask that, not the owner's lockout status.
+    this.api.me().subscribe({
+      next: (me) => {
+        this.sessions.begin(me.username ?? me.display_name ?? '', '');
+        this.sessions.role.set(me.role ?? null);
+        void this.router.navigateByUrl('/');
       },
       error: () =>
         this.error.set('Signed in with Authentik, but the dashboard could not confirm the session. Try again, or use your local password.'),
@@ -78,7 +80,7 @@ export class Login implements OnInit {
     this.sessions.login(username.trim(), password).subscribe({
       next: () => {
         this.busy.set(false);
-        void this.router.navigateByUrl('/status');
+        void this.router.navigateByUrl('/');
       },
       error: (err: HttpErrorResponse) => {
         this.busy.set(false);

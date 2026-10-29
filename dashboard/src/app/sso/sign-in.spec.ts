@@ -100,7 +100,7 @@ describe('SignIn', () => {
     await open();
     status({ ...NONE, authentik_installed: false });
     expect(text()).toContain('Authentik is not installed yet');
-    expect(el().querySelector('a[href="/catalog/authentik/install"]')?.textContent).toContain('Install Authentik');
+    expect(el().querySelector('a[href="/admin/catalog/authentik/install"]')?.textContent).toContain('Install Authentik');
     expect(el().querySelector('h1')?.textContent).toContain('Sign in with Authentik');
   });
 

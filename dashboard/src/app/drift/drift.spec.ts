@@ -125,7 +125,7 @@ describe('Drift', () => {
     expect(restore.request.body).toMatchObject({ action: 'restore' });
     restore.flush({ id: 11 });
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/11"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/11"]')).not.toBeNull();
   });
 
   it('shows the last scheduled scan and saves the cadence', () => {

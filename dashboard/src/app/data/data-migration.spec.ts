@@ -30,7 +30,7 @@ const STATUS = {
       volume: 'old1',
       package: 'jellyfin',
       service: 'jellyfin',
-      target: '/config',
+      target: '/admin/config',
       size_bytes: 5,
       state: 'pending-removal',
     },
@@ -118,7 +118,7 @@ describe('DataMigration', () => {
     });
     request.flush({ id: 9 });
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/9"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/9"]')).not.toBeNull();
   });
 
   it('removes old volumes only on the explicit action', () => {

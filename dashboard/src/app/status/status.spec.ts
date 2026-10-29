@@ -154,7 +154,7 @@ describe('Status', () => {
     fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('h2')?.textContent).toContain('Needs you (1)');
-    expect(el.querySelectorAll('.needs-you a[href="/doctor"]').length).toBe(2);
+    expect(el.querySelectorAll('.needs-you a[href="/admin/doctor"]').length).toBe(2);
     expect(el.querySelector('.needs-you-list code')).toBeNull();
   });
 
@@ -171,7 +171,7 @@ describe('Status', () => {
               group: 'Apps',
               title: "GridCraft's setup is unfinished",
               detail: 'Stopped at the public address: the plan changed after it was approved',
-              fix: { text: 'Review the setup on the GridCraft card, then resume or skip the rest.', link: '/catalog', command: 'homesteadctl apps setup status gridcraft' },
+              fix: { text: 'Review the setup on the GridCraft card, then resume or skip the rest.', link: '/admin/catalog', command: 'homesteadctl apps setup status gridcraft' },
             },
           ],
         });
@@ -186,7 +186,7 @@ describe('Status', () => {
     expect(el.querySelector('.needs-you-list h3')?.textContent).toContain("GridCraft's setup is unfinished");
     expect(el.textContent).toContain('Stopped at the public address');
     expect(el.textContent).toContain('Review the setup on the GridCraft card');
-    const link = el.querySelector('.needs-you a[href="/catalog"]');
+    const link = el.querySelector('.needs-you a[href="/admin/catalog"]');
     expect(link?.textContent?.trim()).toBe('Open the catalog');
   });
 });

@@ -1,89 +1,92 @@
+import { Location } from '@angular/common';
+import { TestBed } from '@angular/core/testing';
+import { provideRouter, Route, Router } from '@angular/router';
 import { describe, expect, it } from 'vitest';
+import { Account } from './account/account';
+import { Claim } from './claim/claim';
+import { Config } from './config/config';
+import { Home } from './home/home';
+import { Login } from './login/login';
+import { NotFound } from './not-found/not-found';
 import { routes } from './app.routes';
 import { Status } from './status/status';
-import { Claim } from './claim/claim';
-import { Login } from './login/login';
-import { Config } from './config/config';
-import { Account } from './account/account';
-import { NotFound } from './not-found/not-found';
+
+const admin = routes.find((route) => route.path === 'admin') as Route;
+const adminChild = (path: string) => admin.children?.find((route) => route.path === path);
+
+/** Every page that moved under /admin (ADR-050 §4, S339). */
+const ADMIN_PATHS = [
+  'status',
+  'config',
+  'firewall',
+  'catalog',
+  'catalog/:name/install',
+  'updates',
+  'data',
+  'advanced',
+  'doctor',
+  'people',
+  'drift',
+  'exposure',
+  'tunnel',
+  'names',
+  'backups',
+  'storage',
+  'edge',
+  'tls',
+  'trust',
+  'craft-apps',
+  'craft-files',
+  'audit',
+  'secrets',
+  'operations',
+  'operations/:id',
+  'validation-board',
+];
 
 describe('routes', () => {
-  it('loads the install wizard on demand under the catalog', () => {
-    const wizard = routes.find((route) => route.path === 'catalog/:name/install');
-    expect(wizard?.loadComponent).toBeTypeOf('function');
-  });
-
-  it('loads the sign-in settings page on demand', () => {
-    const page = routes.find((route) => route.path === 'sign-in');
-    expect(page?.loadComponent).toBeTypeOf('function');
-  });
-
-  it('loads the setup walkthrough on demand (S287)', () => {
-    const page = routes.find((route) => route.path === 'setup');
-    expect(page?.loadComponent).toBeTypeOf('function');
-  });
-
-  it('redirects the root to status', () => {
+  it('serves the apps page at the root', () => {
     const root = routes.find((route) => route.path === '');
-    expect(root?.redirectTo).toBe('status');
+    expect(root?.component).toBe(Home);
+    expect(root?.canActivate?.length).toBe(1);
   });
 
-  it('serves the status page', () => {
-    const status = routes.find((route) => route.path === 'status');
-    expect(status?.component).toBe(Status);
+  it('keeps setup, claim, login, sign-in and account at the root', () => {
+    expect(routes.find((route) => route.path === 'claim')?.component).toBe(Claim);
+    expect(routes.find((route) => route.path === 'login')?.component).toBe(Login);
+    expect(routes.find((route) => route.path === 'account')?.component).toBe(Account);
+    expect(routes.find((route) => route.path === 'setup')?.loadComponent).toBeTypeOf('function');
+    expect(routes.find((route) => route.path === 'sign-in')?.loadComponent).toBeTypeOf('function');
   });
 
-  it('serves the login page', () => {
-    const login = routes.find((route) => route.path === 'login');
-    expect(login?.component).toBe(Login);
+  it('puts the person guard on /admin and on the owner pages at the root', () => {
+    expect(admin.canActivate?.length).toBe(1);
+    for (const path of ['account', 'setup', 'sign-in']) {
+      expect(routes.find((route) => route.path === path)?.canActivate?.length, path).toBe(1);
+    }
   });
 
-  it('serves the claim page', () => {
-    const claim = routes.find((route) => route.path === 'claim');
-    expect(claim?.component).toBe(Claim);
+  it('shows status at /admin', () => {
+    expect(adminChild('')?.redirectTo).toBe('status');
+    expect(adminChild('status')?.component).toBe(Status);
   });
 
-  it('serves the configuration page', () => {
-    const config = routes.find((route) => route.path === 'config');
-    expect(config?.component).toBe(Config);
+  it('serves every administration page under /admin', () => {
+    for (const path of ADMIN_PATHS) {
+      const route = adminChild(path);
+      expect(route, path).toBeDefined();
+      expect(route?.component ?? route?.loadComponent, path).toBeTruthy();
+    }
+    expect(adminChild('config')?.component).toBe(Config);
   });
 
-  it('serves the firewall page', () => {
-    const firewall = routes.find((route) => route.path === 'firewall');
-    expect(firewall?.loadComponent).toBeTypeOf('function');
-  });
-
-  it('serves operations list and detail pages', () => {
-    expect(routes.find((route) => route.path === 'operations')?.loadComponent).toBeTypeOf('function');
-    expect(routes.find((route) => route.path === 'operations/:id')?.loadComponent).toBeTypeOf('function');
-  });
-
-  it('serves the updates page', () => {
-    expect(routes.find((route) => route.path === 'updates')?.loadComponent).toBeTypeOf('function');
-  });
-
-  it('serves the advanced page', () => {
-    expect(routes.find((route) => route.path === 'advanced')?.loadComponent).toBeTypeOf('function');
-  });
-
-  it('loads the People page on demand (S317)', () => {
-    expect(routes.find((route) => route.path === 'people')?.loadComponent).toBeTypeOf('function');
-  });
-
-  it('loads the Doctor page on demand (S316)', () => {
-    expect(routes.find((route) => route.path === 'doctor')?.loadComponent).toBeTypeOf('function');
-  });
-
-  it('serves the drift page', () => {
-    expect(routes.find((route) => route.path === 'drift')?.loadComponent).toBeTypeOf('function');
-  });
-
-  it('serves the validation board', () => {
-    expect(routes.find((route) => route.path === 'validation-board')?.loadComponent).toBeTypeOf('function');
-  });
-
-  it('serves the audit log', () => {
-    expect(routes.find((route) => route.path === 'audit')?.loadComponent).toBeTypeOf('function');
+  it('no longer serves an administration page at the root', () => {
+    for (const path of ADMIN_PATHS) {
+      const route = routes.find((r) => r.path === path);
+      expect(route?.component, path).toBeUndefined();
+      expect(route?.loadComponent, path).toBeUndefined();
+      expect(route?.redirectTo, path).toBe(`admin/${path}`);
+    }
   });
 
   it('falls back to not-found last', () => {
@@ -91,27 +94,38 @@ describe('routes', () => {
     expect(last.path).toBe('**');
     expect(last.component).toBe(NotFound);
   });
+});
 
-  it('serves the edge page', () => {
-    const edge = routes.find((route) => route.path === 'edge');
-    expect(edge?.loadComponent).toBeTypeOf('function');
+describe('legacy redirects', () => {
+  async function land(url: string): Promise<string> {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([
+          ...routes.filter((route) => route.redirectTo !== undefined),
+          // The target pages are not under test: a stub in place of /admin.
+          { path: 'admin', children: [{ path: '**', children: [] }] },
+          { path: '**', children: [] },
+        ]),
+      ],
+    });
+    await TestBed.inject(Router).navigateByUrl(url);
+    return TestBed.inject(Location).path(true);
+  }
+
+  it('sends each old path to its /admin path', async () => {
+    for (const path of ADMIN_PATHS.filter((p) => !p.includes(':'))) {
+      TestBed.resetTestingModule();
+      expect(await land(`/${path}`), path).toBe(`/admin/${path}`);
+    }
   });
 
-  it('serves the certificates page', () => {
-    expect(routes.find((route) => route.path === 'tls')?.loadComponent).toBeTypeOf('function');
+  it('keeps route params', async () => {
+    expect(await land('/operations/42')).toBe('/admin/operations/42');
+    TestBed.resetTestingModule();
+    expect(await land('/catalog/jellyfin/install')).toBe('/admin/catalog/jellyfin/install');
   });
 
-  it('serves the account page', () => {
-    expect(routes.find((route) => route.path === 'account')?.component).toBe(Account);
-  });
-
-  it('serves the craft files page', () => {
-    const page = routes.find((route) => route.path === 'craft-files');
-    expect(page?.loadComponent).toBeTypeOf('function');
-  });
-
-  it('serves the craft apps page', () => {
-    const page = routes.find((route) => route.path === 'craft-apps');
-    expect(page?.loadComponent).toBeTypeOf('function');
+  it('keeps the query and fragment', async () => {
+    expect(await land('/catalog?x=1#manage-jellyfin')).toBe('/admin/catalog?x=1#manage-jellyfin');
   });
 });

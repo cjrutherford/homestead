@@ -15,7 +15,7 @@
             headline="No operations yet."
             detail="Deploying, installing or updating something starts one. Progress shows here and in the work orders panel."
             actionLabel="Browse the catalog"
-            actionLink="/catalog"
+            actionLink="/admin/catalog"
           />
         } @else {
           <div class="table-scroll">
@@ -38,7 +38,7 @@
               <tbody>
                 @for (op of rows(); track op.id) {
                   <tr>
-                    <td><a [routerLink]="['/operations', op.id]">{{ labelOf(op.type) }}</a></td>
+                    <td><a [routerLink]="['/admin/operations', op.id]">{{ labelOf(op.type) }}</a></td>
                     <td><span class="badge" [class]="badgeOf(op.status)">{{ wordOf(op.status) }}</span></td>
                     <td class="num">{{ stepsOf(op) }}</td>
                     <td>@if (op.created_at) { <time [attr.datetime]="op.created_at">{{ op.created_at | when }}</time> }</td>

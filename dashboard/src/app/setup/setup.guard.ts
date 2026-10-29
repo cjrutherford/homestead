@@ -1,6 +1,6 @@
 import { inject } from '@angular/core';
-import { CanActivateFn, Router, Route } from '@angular/router';
-import { catchError, map, of } from 'rxjs';
+import { CanActivateFn, Router, Route, UrlTree } from '@angular/router';
+import { catchError, map, Observable, of } from 'rxjs';
 import { SessionService } from '../auth/session.service';
 import { SetupService } from './setup.service';
 
@@ -37,16 +37,19 @@ export const SETUP_EXEMPT_PATHS: readonly string[] = [
  */
 export const setupGuard: CanActivateFn = () => {
   const sessions = inject(SessionService);
-  const setup = inject(SetupService);
-  const router = inject(Router);
   if (!sessions.isLoggedIn()) {
     return true;
   }
+  return setupGate(inject(SetupService), inject(Router));
+};
+
+/** True, or the /setup tree while the walkthrough holds the owner. A failed read lets the owner through. */
+export function setupGate(setup: SetupService, router: Router): Observable<boolean | UrlTree> {
   return setup.setupStatus().pipe(
     map((status) => (status.gated ? router.parseUrl('/setup') : true)),
     catchError(() => of(true)),
   );
-};
+}
 
 /** Adds the guard to every route that is not exempt or a redirect/wildcard. */
 export function gateRoutes(routes: Route[]): Route[] {

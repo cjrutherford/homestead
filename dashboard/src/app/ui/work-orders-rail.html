@@ -23,7 +23,7 @@
       @for (order of store.visible(); track order.id) {
         <li class="rail-order" [attr.data-outcome]="outcome(order)">
           <p class="rail-line">
-            <a class="rail-title" [routerLink]="['/operations', order.id]">{{ order.title }}</a>
+            <a class="rail-title" [routerLink]="['/admin/operations', order.id]">{{ order.title }}</a>
             <span class="rail-time mono">{{ elapsed(order) }}</span>
           </p>
           <p class="rail-step">
@@ -45,7 +45,7 @@
       }
     </ul>
     @if (store.hiddenCount() > 0 && (variant() === 'rail' || open())) {
-      <a class="rail-more" routerLink="/operations">{{ store.hiddenCount() }} more in Operations</a>
+      <a class="rail-more" routerLink="/admin/operations">{{ store.hiddenCount() }} more in Operations</a>
     }
   </section>
 }

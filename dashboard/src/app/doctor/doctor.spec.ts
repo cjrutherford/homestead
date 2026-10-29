@@ -28,7 +28,7 @@ const PROBLEMS = {
       title: 'Tunnel connector',
       why: 'Without it the public names do not reach you.',
       live: true,
-      fix: { text: 'Restart the connector.', link: '/tunnel', command: 'sudo systemctl restart homestead-cloudflared' },
+      fix: { text: 'Restart the connector.', link: '/admin/tunnel', command: 'sudo systemctl restart homestead-cloudflared' },
     },
     { name: 'app-access:immich', status: 'warn', detail: 'open to every user', group: 'Apps', title: 'Immich access', fix: { text: 'Restrict it.' } },
     { name: 'authentik', status: 'unknown', detail: 'timed out', group: 'Sign-in', title: 'Authentik' },
@@ -76,7 +76,7 @@ describe('Doctor', () => {
     expect(items[0].getAttribute('data-status')).toBe('fail');
     expect(items[0].textContent).toContain('Restart the connector.');
     expect(items[0].textContent).toContain('Without it the public names');
-    expect(items[0].querySelector('a[href="/tunnel"]')).not.toBeNull();
+    expect(items[0].querySelector('a[href="/admin/tunnel"]')).not.toBeNull();
     expect(items[0].querySelector('code')?.textContent).toBe('sudo systemctl restart homestead-cloudflared');
     // Groups follow in order, and unknown is not counted as a problem.
     const headings = Array.from(el().querySelectorAll('h2')).map((h) => h.textContent?.trim());

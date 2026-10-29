@@ -1,0 +1,38 @@
+<div class="home">
+  <header class="home-bar">
+    <p class="home-mark">Homestead</p>
+    <nav class="home-actions" aria-label="Account">
+      @if (isOwner()) {
+        <a class="button" routerLink="/admin">Administration</a>
+      }
+      <button type="button" class="button" (click)="signOut()">Sign out</button>
+    </nav>
+  </header>
+
+  <section class="home-body" aria-labelledby="home-title">
+    <app-loading [loading]="loading()" shape="list">
+      @if (failed()) {
+        <h1 id="home-title">Your apps</h1>
+        <p class="home-note" role="alert">Homestead could not load your apps. Reload the page to try again.</p>
+      } @else {
+        <h1 id="home-title">Hello, {{ name() }}</h1>
+        @if (apps().length === 0) {
+          <p class="home-note">
+            No apps are shared with you yet. Ask the owner of this Homestead to give you access.
+          </p>
+        } @else {
+          <ul class="tiles" aria-label="Your apps">
+            @for (app of apps(); track app.name) {
+              <li>
+                <a class="tile" [href]="app.url" [attr.data-icon]="app.icon">
+                  <span class="tile-icon" aria-hidden="true">{{ initial(app) }}</span>
+                  <span class="tile-name">{{ app.title }}</span>
+                </a>
+              </li>
+            }
+          </ul>
+        }
+      }
+    </app-loading>
+  </section>
+</div>

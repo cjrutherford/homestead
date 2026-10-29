@@ -7,7 +7,7 @@
   @if (sessionsState.isLoggedIn()) {
     <p>
       Already logged in as {{ sessionsState.username() }}. Continue on the
-      <a routerLink="/status">status page</a>.
+      <a routerLink="/admin/status">status page</a>.
     </p>
   } @else {
     @if (error()) {

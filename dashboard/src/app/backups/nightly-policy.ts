@@ -56,7 +56,7 @@ function policyError(failure: HttpErrorResponse): string {
             headline="Nightly backups need a disk for the backup storage class."
             detail="Assign the backup class on the Storage page, then come back. You can still turn the policy off without one."
             actionLabel="Go to Storage"
-            actionLink="/storage"
+            actionLink="/admin/storage"
           />
         }
         <p>
@@ -131,7 +131,7 @@ function policyError(failure: HttpErrorResponse): string {
         @if (approvedNote()) {
           <app-state-message kind="status" [headline]="approvedNote()" />
           @if (!s.backup_storage) {
-            <p><a routerLink="/storage">Assign backup storage</a></p>
+            <p><a routerLink="/admin/storage">Assign backup storage</a></p>
           }
         }
       }

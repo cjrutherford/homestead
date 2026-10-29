@@ -76,6 +76,7 @@ export class SessionService {
 
   logout(): Observable<void> {
     const wasLoggedIn = this.isLoggedIn();
+    this.role.set(null);
     this.clear();
     if (!wasLoggedIn) {
       return of(undefined);

@@ -337,3 +337,13 @@
     display: none;
   }
 }
+
+/* The apps page and any person session: no sidebar, so the ground is one column. */
+.shell.bare {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.shell.bare::before,
+.shell.bare::after {
+  inset-inline: 0;
+}

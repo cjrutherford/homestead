@@ -50,7 +50,7 @@ class TestLoginExperience(unittest.TestCase):
 
     def test_login_page_flow(self):
         src = read_dash("src/app/login/login.ts")
-        self.assertIn("navigateByUrl('/status')", src)
+        self.assertIn("navigateByUrl('/')", src)
         self.assertIn("401", src)
 
 

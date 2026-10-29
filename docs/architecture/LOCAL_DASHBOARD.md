@@ -129,3 +129,17 @@ header, so no cookie or Origin is involved.
 
 SSO plans made before this slice do not list the new origins; re-run the
 Sign-in plan so the Authentik redirect covers them.
+
+## Pages and paths (S339, ADR-050)
+- `/` is the apps page for everyone who signs in: a greeting and one tile per
+  app (icon and name, opening the app in the same tab). The owner also gets an
+  Administration link. A signed-out visitor at `/` goes to `/login`.
+- Every administration screen lives under `/admin/` (`/admin` shows status).
+  The old root paths redirect to their `/admin/` path, keeping params, query
+  and fragment.
+- `setup`, `claim`, `login`, `sign-in` and `account` stay at the root: the
+  server's SSO redirects and the walkthrough send people to them by path.
+  `setup`, `sign-in` and `account` are owner pages.
+- A person session never reaches `/admin`: the owner guard sends it to `/`,
+  and the shell makes no owner API calls for it (the server answers them 403
+  `owner-only`).

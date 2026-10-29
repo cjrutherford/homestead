@@ -231,7 +231,7 @@ describe('Tunnel', () => {
     setup.flush({ id: 23 });
     http.expectOne('/api/v1/tunnel/status').flush(STATUS);
     fixture.detectChanges();
-    expect(el.querySelector('app-operation-progress a[href="/operations/23"]')).not.toBeNull();
+    expect(el.querySelector('app-operation-progress a[href="/admin/operations/23"]')).not.toBeNull();
     expect(el.querySelector('table[aria-label="DNS changes"]')).toBeNull();
     // The approved plan stays as its permit with the Approved stamp (S309).
     expect(el.querySelector('.permit[data-state="approved"] .permit-stamp')?.textContent).toContain('Approved');
@@ -290,7 +290,7 @@ describe('Tunnel', () => {
     teardown.flush({ id: 24 });
     http.expectOne('/api/v1/tunnel/status').flush({ ...STATUS, tunnels: [] });
     fixture.detectChanges();
-    expect(el.querySelector('app-operation-progress a[href="/operations/24"]')).not.toBeNull();
+    expect(el.querySelector('app-operation-progress a[href="/admin/operations/24"]')).not.toBeNull();
   });
 
   it('shows missing setup fields next to the field', () => {
@@ -496,6 +496,6 @@ describe('Tunnel', () => {
     expect(moves.textContent).toContain('https://homestead.example.com/apps/auth/application/o/homestead-immich/');
     expect(moves.textContent).toContain('homestead.example.com:host-gateway');
     expect(moves.textContent).toContain('homestead.lan:host-gateway');
-    expect(moves.querySelector('a[href="/catalog#manage-immich"]')?.textContent).toContain('Re-plan Immich sign-in');
+    expect(moves.querySelector('a[href="/admin/catalog#manage-immich"]')?.textContent).toContain('Re-plan Immich sign-in');
   });
 });

@@ -83,7 +83,7 @@ export interface DataRoot {
           <p role="alert">Nothing was removed.</p>
           @if (canAbandon()) {
             <p>
-              <a routerLink="/data">Plan a data move</a> to bring that data onto mounted storage first.
+              <a routerLink="/admin/data">Plan a data move</a> to bring that data onto mounted storage first.
             </p>
             <label>
               <input type="checkbox" [checked]="abandon()" (change)="abandon.set($any($event.target).checked)" />
@@ -114,14 +114,14 @@ export interface DataRoot {
           [headline]="title() + ' uninstalled'"
           [detail]="'Its containers and generated files are gone. Its data was ' + (dataDeleted() ? 'deleted.' : 'kept.')"
           actionLabel="Back to the catalog"
-          actionLink="/catalog"
+          actionLink="/admin/catalog"
         />
         @if (routeNote(); as note) {
           <p class="hint" role="status">{{ note }}</p>
         }
         @if (routeProblem(); as problem) {
           <p class="field-error" role="alert">
-            {{ problem }} <a routerLink="/edge">Open the Edge page</a> to remove it by hand.
+            {{ problem }} <a routerLink="/admin/edge">Open the Edge page</a> to remove it by hand.
           </p>
         }
       }

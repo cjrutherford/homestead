@@ -79,7 +79,7 @@ describe('StateMessage', () => {
     fixture.componentRef.setInput('kind', 'empty');
     fixture.componentRef.setInput('headline', 'No apps installed yet.');
     fixture.componentRef.setInput('actionLabel', 'Browse the catalog');
-    fixture.componentRef.setInput('actionLink', '/catalog');
+    fixture.componentRef.setInput('actionLink', '/admin/catalog');
     fixture.detectChanges();
     const link = fixture.nativeElement.querySelector('a.state-action');
     expect(link?.textContent).toContain('Browse the catalog');

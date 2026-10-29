@@ -124,7 +124,7 @@ describe('CraftImagesPanel', () => {
     request.flush({ id: 9 });
     reload();
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/9"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/9"]')).not.toBeNull();
   });
 
   it('adds and removes craft keys through the craft routes', () => {

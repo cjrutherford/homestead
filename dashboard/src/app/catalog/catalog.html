@@ -46,7 +46,7 @@
               </div>
               <div class="catalog-actions">
                 @if (settingUp(pkg.name)) {
-                  <a class="button primary" [routerLink]="['/catalog', pkg.name, 'install']">Continue setting up {{ pkg.title }}</a>
+                  <a class="button primary" [routerLink]="['/admin/catalog', pkg.name, 'install']">Continue setting up {{ pkg.title }}</a>
                 }
                 @if (pkg.installed) {
                   <button
@@ -59,7 +59,7 @@
                   </button>
                   <app-uninstall-app [name]="pkg.name" [title]="pkg.title" (uninstalled)="onUninstalled(pkg.name)" />
                 } @else {
-                  <a class="button primary" [routerLink]="['/catalog', pkg.name, 'install']">Install {{ pkg.title }}</a>
+                  <a class="button primary" [routerLink]="['/admin/catalog', pkg.name, 'install']">Install {{ pkg.title }}</a>
                 }
               </div>
               @if (selected(); as manifest) {
@@ -83,7 +83,7 @@
                         @for (name of localNames(); track name; let last = $last) {
                           <a class="mono" [href]="'https://' + name" target="_blank" rel="noopener">{{ name }}</a>{{ last ? '.' : ', ' }}
                         }
-                        <a routerLink="/names">About names</a>
+                        <a routerLink="/admin/names">About names</a>
                       </p>
                     }
 

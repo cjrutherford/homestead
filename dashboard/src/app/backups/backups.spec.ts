@@ -145,7 +145,7 @@ describe('Backups', () => {
     fixture.detectChanges();
     expect(text()).toContain('No backup schedules yet');
     expect(text()).toContain('No backup destination yet.');
-    expect(fixture.nativeElement.querySelector('a[href="/storage"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('a[href="/admin/storage"]')).not.toBeNull();
   });
 
   it('still shows a destination failure that is not a missing assignment', () => {

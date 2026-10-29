@@ -91,7 +91,7 @@
                 </tbody>
               </table>
             </div>
-            <p class="hint">The rules take effect when you next apply the <a routerLink="/firewall">firewall plan</a>.</p>
+            <p class="hint">The rules take effect when you next apply the <a routerLink="/admin/firewall">firewall plan</a>.</p>
             @for (warning of review.warnings; track $index) {
               <app-state-message kind="warning" [headline]="warning" />
             }

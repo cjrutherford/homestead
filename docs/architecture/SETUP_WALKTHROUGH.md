@@ -80,8 +80,8 @@ What the owner chose (`access`) decides what the step needs:
 | Router port forward | a stored provider and an approved exposure plan (`Facts.Exposures > 0`) |
 
 `PUT /api/v1/setup/steps/domain {"state":"done"}` answers 422 with a plain
-message when those facts are missing, naming the page that fixes it (`/tunnel`
-or `/exposure`). The dashboard reads the same facts and explains what is still
+message when those facts are missing, naming the page that fixes it (`/admin/tunnel`
+or `/admin/exposure`). The dashboard reads the same facts and explains what is still
 needed instead of offering "I have finished here". An acknowledgement made
 under home network only does not satisfy a later tunnel or router choice. A
 tunnel route or approved exposure plan that exists already counts as done, as
@@ -183,16 +183,16 @@ until the walkthrough is complete, except the pages below. Each is exempt becaus
 | `/setup` | the walkthrough itself |
 | `/login`, `/claim` | the way in; the owner must be able to sign in or claim |
 | `/account` | change the password |
-| `/backups` | export and acknowledge the recovery identity (step 1) |
+| `/admin/backups` | export and acknowledge the recovery identity (step 1) |
 | `/sign-in` | link or configure Authentik sign-in (step 2) |
-| `/tunnel` | create and approve a tunnel (step 3) |
-| `/exposure` | review and approve an exposure plan (step 3) |
-| `/tls` | certificates and DNS credentials (step 3) |
-| `/storage` | register mounted storage, which the install wizard needs before any app can be installed (steps 2 and 4) |
-| `/edge` | the install wizard's requirement step links here for the edge proxy |
-| `/trust` | the install wizard's address step links here for the Homestead root certificate |
+| `/admin/tunnel` | create and approve a tunnel (step 3) |
+| `/admin/exposure` | review and approve an exposure plan (step 3) |
+| `/admin/tls` | certificates and DNS credentials (step 3) |
+| `/admin/storage` | register mounted storage, which the install wizard needs before any app can be installed (steps 2 and 4) |
+| `/admin/edge` | the install wizard's requirement step links here for the edge proxy |
+| `/admin/trust` | the install wizard's address step links here for the Homestead root certificate |
 | `/catalog/:name/install` | the S285 install wizard for Authentik and starter apps |
-| `/operations`, `/operations/:id` | follow an install the walkthrough started, from the rail or the list |
+| `/admin/operations`, `/admin/operations/:id` | follow an install the walkthrough started, from the rail or the list |
 
 The guard fails open: it lets a navigation through when the owner is not
 logged in or the status cannot be read (any error from `GET /api/v1/setup`), so

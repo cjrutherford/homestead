@@ -28,7 +28,7 @@ describe('App', () => {
     fixture.detectChanges();
     // Drive navigation explicitly: the redirect is async and the status
     // page only fires its API calls once activated.
-    await TestBed.inject(Router).navigateByUrl('/status');
+    await TestBed.inject(Router).navigateByUrl('/admin/status');
     fixture.detectChanges();
     // The status page fires API calls on init; answer them.
     const http = TestBed.inject(HttpTestingController);
@@ -48,7 +48,7 @@ describe('App', () => {
   it('renders the brand and primary nav', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Homestead');
-    const link = fixture.nativeElement.querySelector('nav a[href="/status"]');
+    const link = fixture.nativeElement.querySelector('nav a[href="/admin/status"]');
     expect(link?.textContent).toContain('Status');
   });
 
@@ -152,19 +152,26 @@ describe('App logged in', () => {
     }).compileComponents();
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
-    TestBed.inject(HttpTestingController)
-      .match('/api/v1/identity')
-      .forEach((req) => req.flush({ state, version: 'test' }));
+    // A stored hint only says someone is signed in: the shell asks who, then makes owner calls.
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/v1/me').flush({ role: 'owner', username: 'owner' });
+    fixture.detectChanges();
+    http.match('/api/v1/identity').forEach((req) => req.flush({ state, version: 'test' }));
     fixture.detectChanges();
     return fixture;
   }
 
+  const startedAt = window.location.pathname + window.location.search;
+
   beforeEach(() => {
     localStorage.clear();
     localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ username: 'owner', expiresAt: '' }));
+    // The shell starts on an administration page: the apps page has no sidebar.
+    window.history.replaceState(null, '', '/admin/status');
   });
 
   afterEach(() => {
+    window.history.replaceState(null, '', startedAt);
     localStorage.clear();
     document.documentElement.removeAttribute('data-theme');
   });
@@ -213,7 +220,7 @@ describe('App logged in', () => {
 
   it('opens only the current group by default', async () => {
     const fixture = await setup('CLAIMED');
-    await visit(fixture, '/advanced');
+    await visit(fixture, '/admin/advanced');
     const open = Array.from(fixture.nativeElement.querySelectorAll('.nav-group-toggle'))
       .filter((b) => (b as HTMLElement).getAttribute('aria-expanded') === 'true')
       .map((b) => (b as HTMLElement).textContent?.trim());
@@ -239,7 +246,7 @@ describe('App logged in', () => {
   it('reopens the current group even after it was closed', async () => {
     localStorage.setItem(NAV_GROUPS_KEY, JSON.stringify({ system: false }));
     const fixture = await setup('CLAIMED');
-    await visit(fixture, '/advanced');
+    await visit(fixture, '/admin/advanced');
     const toggle = fixture.nativeElement.querySelectorAll('.nav-group-toggle')[4] as HTMLElement;
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
   });
@@ -283,7 +290,7 @@ describe('App logged in', () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
       fixture.detectChanges();
       expect(TestBed.inject(ToastService).toasts()[0]?.message).toContain("Authentik didn't ask for your password again");
-      expect(router.url).toBe('/advanced');
+      expect(router.url).toBe('/admin/advanced');
     });
 
     it('says nothing without a code', async () => {

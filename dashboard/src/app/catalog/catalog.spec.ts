@@ -84,7 +84,7 @@ describe('Catalog', () => {
 
   it('starts the install wizard from a package that is not installed, with no inline install form', () => {
     load();
-    const link = (fixture.nativeElement as HTMLElement).querySelector('a[href="/catalog/jellyfin/install"]');
+    const link = (fixture.nativeElement as HTMLElement).querySelector('a[href="/admin/catalog/jellyfin/install"]');
     expect(link?.textContent?.trim()).toBe('Install Jellyfin');
     expect((fixture.nativeElement as HTMLElement).querySelector('input[name="domain"]')).toBeNull();
     expect(text()).not.toContain('Review plan');
@@ -92,7 +92,7 @@ describe('Catalog', () => {
 
   it('offers Manage and Uninstall, not Install, for an installed package', () => {
     load();
-    expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/catalog/gridcraft/install"]')).toBeNull();
+    expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/admin/catalog/gridcraft/install"]')).toBeNull();
     expect(text()).toContain('Installed');
     expect(text()).toContain('Manage GridCraft');
     expect(text()).toContain('Uninstall GridCraft');
@@ -144,7 +144,7 @@ describe('Catalog', () => {
   it('points an install that is still being set up back to its wizard', () => {
     TestBed.inject(InstallDrafts).save('gridcraft', { installOperation: 7 } as never);
     load();
-    const link = (fixture.nativeElement as HTMLElement).querySelector('a[href="/catalog/gridcraft/install"]');
+    const link = (fixture.nativeElement as HTMLElement).querySelector('a[href="/admin/catalog/gridcraft/install"]');
     expect(link?.textContent?.trim()).toBe('Continue setting up GridCraft');
     expect(text()).toContain('Setting up');
     expect(text()).not.toContain('Installed');
@@ -181,7 +181,7 @@ describe('Catalog', () => {
     fixture.componentInstance['applyConfig']();
     http.expectOne('/api/v1/catalog/jellyfin/configure').flush({ id: 8 });
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/8"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/8"]')).not.toBeNull();
   });
 
   it('registers and rotates secret-backed variables without showing values', () => {

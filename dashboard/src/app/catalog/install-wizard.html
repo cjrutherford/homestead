@@ -10,7 +10,7 @@
       kind="error"
       [headline]="loadError()"
       actionLabel="Back to the catalog"
-      actionLink="/catalog"
+      actionLink="/admin/catalog"
     />
   }
 
@@ -198,7 +198,7 @@
                   [headline]="problem.headline"
                   [detail]="problem.fix"
                   [actionLabel]="problem.installed ? 'Back to the catalog' : 'Check again'"
-                  [actionLink]="problem.installed ? '/catalog' : null"
+                  [actionLink]="problem.installed ? '/admin/catalog' : null"
                   (action)="checkAgain()"
                 />
               } @else if (plan()) {
@@ -218,14 +218,14 @@
 
           @case ('storage') {
             @if (storageError()) {
-              <app-state-message kind="error" [headline]="storageError()" actionLabel="Open the Storage page" actionLink="/storage" />
+              <app-state-message kind="error" [headline]="storageError()" actionLabel="Open the Storage page" actionLink="/admin/storage" />
             } @else if (mountOptions().length === 0) {
               <app-state-message
                 kind="empty"
                 headline="No storage is registered yet."
                 detail="Mount a disk on the appliance, then register it on the Storage page. Homestead never formats or partitions."
                 actionLabel="Open the Storage page"
-                actionLink="/storage"
+                actionLink="/admin/storage"
               />
             }
             @for (className of classes(); track className) {
@@ -362,7 +362,7 @@
               @if (resolverOn() === false && lanAddress.includes('.lan/')) {
                 <p class="plan-note" data-resolver-off>
                   Your devices find <code>{{ applianceNames()[0] }}</code> only through the appliance resolver or a DNS entry
-                  on your router, and the resolver is off. Turn it on on the <a routerLink="/names">Names page</a>,
+                  on your router, and the resolver is off. Turn it on on the <a routerLink="/admin/names">Names page</a>,
                   or add the entry on your router.
                   @if (pathAddresses()[1]; as other) {
                     Until then, use <code>{{ other }}</code>.
@@ -371,7 +371,7 @@
               }
               <p>
                 The install adds this path to the edge for you, under the dashboard's certificate from your
-                Homestead internal CA. Your devices need to trust the <a routerLink="/trust">Homestead root</a>.
+                Homestead internal CA. Your devices need to trust the <a routerLink="/admin/trust">Homestead root</a>.
               </p>
             } @else if (endpoints().length > 0) {
               @let host = hostnameFor(endpoints()[0].endpoint, 0);
@@ -386,7 +386,7 @@
               @if (resolverOn() === false && host.endsWith('.lan')) {
                 <p class="plan-note" data-resolver-off>
                   Your devices find <code>{{ host }}</code> only through the appliance resolver or a DNS entry
-                  on your router, and the resolver is off. Turn it on on the <a routerLink="/names">Names page</a>,
+                  on your router, and the resolver is off. Turn it on on the <a routerLink="/admin/names">Names page</a>,
                   or add the entry on your router.
                   @if (alias) {
                     Until then, use <code>https://{{ alias }}</code>.
@@ -395,7 +395,7 @@
               }
               <p>
                 The install adds this address to the edge for you, with a certificate from your Homestead
-                internal CA. Your devices need to trust the <a routerLink="/trust">Homestead root</a>.
+                internal CA. Your devices need to trust the <a routerLink="/admin/trust">Homestead root</a>.
               </p>
             }
 
@@ -406,12 +406,12 @@
               } @else if (!tunnelReady()) {
                 <p data-no-tunnel>
                   No tunnel is set up, so {{ m.Title }} stays on your network. To publish it, set up a tunnel
-                  on the <a routerLink="/tunnel">Tunnel page</a>, then publish it under Manage on the catalog page.
+                  on the <a routerLink="/admin/tunnel">Tunnel page</a>, then publish it under Manage on the catalog page.
                 </p>
               } @else if (pathNeedsServer()) {
                 <p data-path-needs-server>
                   {{ m.Title }} would answer under the dashboard's public name, and the dashboard has none yet.
-                  Publish the dashboard on the <a routerLink="/tunnel">Tunnel page</a> first, then publish
+                  Publish the dashboard on the <a routerLink="/admin/tunnel">Tunnel page</a> first, then publish
                   {{ m.Title }} under Manage on the catalog page.
                 </p>
               } @else if (!publishable()) {
@@ -494,7 +494,7 @@
             } @else {
               <p>
                 Installing never opens {{ m.Title }} to anyone outside your network. To widen it later,
-                plan and approve it on the <a routerLink="/exposure">Exposure page</a>.
+                plan and approve it on the <a routerLink="/admin/exposure">Exposure page</a>.
               </p>
             }
 
@@ -580,7 +580,7 @@
               </p>
               <p class="hint">
                 Signing in is closed by default: you, and people you grant on the
-                <a routerLink="/people">People page</a>. The review lets you pick people to grant with the install.
+                <a routerLink="/admin/people">People page</a>. The review lets you pick people to grant with the install.
               </p>
             }
           }
@@ -593,7 +593,7 @@
                   [headline]="problem.headline"
                   [detail]="problem.fix"
                   [actionLabel]="problem.installed ? 'Back to the catalog' : 'Check again'"
-                  [actionLink]="problem.installed ? '/catalog' : null"
+                  [actionLink]="problem.installed ? '/admin/catalog' : null"
                   (action)="checkAgain()"
                 />
               } @else if (summary(); as s) {
@@ -829,7 +829,7 @@
                   @if (embedded()) {
                     <button type="button" (click)="closed.emit()">{{ closeLabel() }}</button>
                   } @else {
-                    <a class="button" routerLink="/catalog">Back to the catalog</a>
+                    <a class="button" routerLink="/admin/catalog">Back to the catalog</a>
                   }
                 </p>
               }
@@ -852,7 +852,7 @@
                   headline="This device could not open that address securely."
                   detail="Either the name does not resolve on this device, or this device does not trust the Homestead root yet. Install the root on the Trust page, then open the address again."
                   actionLabel="Open the Trust page"
-                  actionLink="/trust"
+                  actionLink="/admin/trust"
                 />
               }
             } @else {
@@ -871,7 +871,7 @@
                     actionLabel="Try again"
                     (action)="retryRoute()"
                   />
-                  <p class="hint"><a routerLink="/edge">Open the Edge page</a> to add it by hand.</p>
+                  <p class="hint"><a routerLink="/admin/edge">Open the Edge page</a> to add it by hand.</p>
                 }
                 @case ('no-edge') {
                   <app-state-message
@@ -886,7 +886,7 @@
                       }
                     } @else {
                       <button type="button" class="primary" (click)="askEdgeSetup()">Set up the edge</button>
-                      <a class="button" routerLink="/edge">Open the Edge page</a>
+                      <a class="button" routerLink="/admin/edge">Open the Edge page</a>
                     }
                   </p>
                   @if (edgeProblem(); as problem) {
@@ -925,7 +925,7 @@
                   />
                   <p class="wizard-actions">
                     <button type="button" class="primary" (click)="addMissingRoute()">Give {{ m.Title }} an address</button>
-                    <a class="button" routerLink="/edge">Open the Edge page</a>
+                    <a class="button" routerLink="/admin/edge">Open the Edge page</a>
                   </p>
                 }
               }
@@ -988,14 +988,14 @@
                   <li>On the storage you chose, in a folder named {{ m.Name }}.</li>
                 }
               </ul>
-              <p>Set up a backup schedule for {{ m.Title }} on the <a routerLink="/backups">Backups page</a>.</p>
+              <p>Set up a backup schedule for {{ m.Title }} on the <a routerLink="/admin/backups">Backups page</a>.</p>
             }
 
             <div class="wizard-actions">
               @if (embedded()) {
                 <button type="button" class="primary" (click)="finish(); closed.emit()">{{ closeLabel() }}</button>
               } @else {
-                <a class="button" routerLink="/catalog" (click)="finish()">Back to the catalog</a>
+                <a class="button" routerLink="/admin/catalog" (click)="finish()">Back to the catalog</a>
               }
               @if (!embedded()) {
                 <!-- Not offered inside setup: the step just installed it (S292). -->

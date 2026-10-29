@@ -155,6 +155,6 @@ describe('Exposure', () => {
     expect(apply.request.body).toMatchObject({ host: 'app.example.com' });
     apply.flush({ id: 17 });
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/17"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/17"]')).not.toBeNull();
   });
 });

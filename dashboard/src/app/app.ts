@@ -38,6 +38,10 @@ function readChoices(): Record<string, boolean> {
   }
 }
 
+function isHomeUrl(url: string): boolean {
+  return url.split(/[?#]/)[0] === '/';
+}
+
 function groupOf(url: string): string | null {
   const path = url.split(/[?#]/)[0];
   const current = NAV_GROUPS.find((group) =>
@@ -85,13 +89,40 @@ export class App {
     visibleGroups(this.sessions.isLoggedIn(), this.identity()?.state === 'UNCLAIMED', this.setup.navLabel()),
   );
 
+  /** The apps page (/) has a header of its own and no administration chrome (ADR-050 §4). */
+  private readonly home = signal(isHomeUrl(window.location.pathname));
+  /**
+   * The sidebar, drawer and work-orders rail: the owner's administration
+   * chrome. Never for a person, and not on the apps page.
+   */
+  protected readonly adminChrome = computed(() => !this.home() && !this.sessions.isPerson());
+
   private readonly menuButton = viewChild<ElementRef<HTMLElement>>('menuButton');
   private readonly closeButton = viewChild<ElementRef<HTMLElement>>('closeButton');
   private readonly sidebar = viewChild<ElementRef<HTMLElement>>('sidebar');
   private readonly main = viewChild<ElementRef<HTMLElement>>('main');
 
+  /**
+   * Owner API calls are made only for the owner (ADR-050 §2): a person's
+   * session answers them 403 owner-only. The claim state is public, so a
+   * signed-out visitor still reads it.
+   */
+  private ownerCallsAllowed(): boolean {
+    return !this.sessions.isLoggedIn() || this.sessions.role() === 'owner';
+  }
+
   constructor() {
-    this.loadIdentity();
+    // A stored session hint says someone is signed in, not who: ask the server first.
+    effect(() => {
+      if (this.sessions.isLoggedIn() && this.sessions.role() === null) {
+        untracked(() => this.sessions.loadRole().subscribe());
+      }
+    });
+    effect(() => {
+      if (!this.sessions.isLoggedIn() || this.sessions.role() === 'owner') {
+        untracked(() => this.loadIdentity());
+      }
+    });
     // A failed Authentik step-up lands on the root with ?sso_error=<code>.
     // The login and sign-in pages read their own codes.
     const ssoError = new URLSearchParams(window.location.search).get('sso_error');
@@ -101,12 +132,12 @@ export class App {
     }
     // Operations already running (started before a reload, or from the CLI) join the rail.
     effect(() => {
-      if (this.sessions.isLoggedIn()) {
+      if (this.sessions.isLoggedIn() && this.sessions.role() === 'owner') {
         this.workOrders.restore(true);
         // The Setup entry needs the walkthrough status (S287). A failure
         // leaves the entry out; it never blocks the shell.
         untracked(() => this.setup.setupStatus().subscribe({ error: () => this.setup.clear() }));
-      } else {
+      } else if (!this.sessions.isLoggedIn()) {
         untracked(() => this.setup.clear());
       }
     });
@@ -121,16 +152,17 @@ export class App {
           });
         }
       }
+      this.home.set(isHomeUrl(event.urlAfterRedirects));
       this.enter(event.urlAfterRedirects);
       if (this.drawerOpen()) {
         this.close(false);
         this.main()?.nativeElement.focus({ preventScroll: true });
       }
-      if (this.sessions.isLoggedIn()) {
+      if (this.sessions.isLoggedIn() && this.sessions.role() === 'owner') {
         this.workOrders.restore();
       }
       // Claim state only changes while unclaimed or unknown; once claimed, stop asking.
-      if (this.identity()?.state !== 'CLAIMED') {
+      if (this.identity()?.state !== 'CLAIMED' && this.ownerCallsAllowed()) {
         this.loadIdentity();
       }
     });

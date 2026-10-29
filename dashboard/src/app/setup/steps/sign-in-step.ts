@@ -31,7 +31,7 @@ import { StepGuide } from './step-guide';
       </li>
       <li>
         Trust the appliance's root certificate on this device, so the browser accepts the address
-        (<a routerLink="/trust" target="_blank">open Trust</a>).
+        (<a routerLink="/admin/trust" target="_blank">open Trust</a>).
       </li>
       <li>
         Open

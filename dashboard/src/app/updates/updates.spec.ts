@@ -114,7 +114,7 @@ describe('Updates', () => {
     expect(apply.request.body).toMatchObject({ backup: true });
     apply.flush({ id: 9 });
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/9"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/9"]')).not.toBeNull();
   });
 
   it('shows the skipped-backup note of a stateless package with its operation', () => {
@@ -127,7 +127,7 @@ describe('Updates', () => {
       .expectOne('/api/v1/updates/jellyfin/apply')
       .flush({ id: 11, detail: 'backup skipped: jellyfin is stateless' });
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/11"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/11"]')).not.toBeNull();
     expect(text()).toContain('backup skipped: jellyfin is stateless');
   });
 

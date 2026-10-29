@@ -18,7 +18,7 @@ describe('NotFound', () => {
   it('renders a way back to status', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Not found');
-    const link = fixture.nativeElement.querySelector('a[href="/status"]');
+    const link = fixture.nativeElement.querySelector('a[href="/admin/status"]');
     expect(link).not.toBeNull();
   });
 });

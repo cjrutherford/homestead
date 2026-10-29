@@ -121,7 +121,7 @@ describe('Trust', () => {
     expect(req.request.body).toEqual({ host: 'app.home.arpa' });
     req.flush({ id: 5 });
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/5"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/5"]')).not.toBeNull();
   });
 
   it('requires confirmation before approving a rotation by digest', () => {

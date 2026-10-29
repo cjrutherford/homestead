@@ -134,7 +134,7 @@ describe('AppPublic (S290)', () => {
   it('says why a public address is not available', () => {
     load(status({ available: false, reason: 'No tunnel is set up yet. Set one up, or adopt yours, on the Tunnel page.' }));
     expect(text()).toContain('not available: No tunnel is set up yet');
-    expect(el().querySelector('a[href="/tunnel"]')).not.toBeNull();
+    expect(el().querySelector('a[href="/admin/tunnel"]')).not.toBeNull();
     expect(button('Review public address')).toBeUndefined();
   });
 

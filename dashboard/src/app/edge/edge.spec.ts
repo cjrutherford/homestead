@@ -70,7 +70,7 @@ describe('Edge', () => {
 
   it('shows the empty table state and links to exposure', () => {
     expect(text()).toContain('No routes in the table');
-    expect(fixture.nativeElement.querySelector('a[href="/exposure"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('a[href="/admin/exposure"]')).toBeTruthy();
   });
 
   it('confirms before deploying and then streams progress', () => {
@@ -82,7 +82,7 @@ describe('Edge', () => {
     expect(req.request.method).toBe('POST');
     req.flush({ id: 7 });
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/7"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/7"]')).not.toBeNull();
     expect(text()).toContain('Starting');
     events.next(state('running', ['pull']));
     fixture.detectChanges();
@@ -168,7 +168,7 @@ describe('Edge', () => {
     });
     req.flush({ id: 9 });
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/9"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/9"]')).not.toBeNull();
   });
 
   it('warns about public routes and about emptying the table', () => {

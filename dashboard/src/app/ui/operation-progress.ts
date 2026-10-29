@@ -19,7 +19,7 @@ import { StepList } from './step-list';
     <section class="operation-progress" [attr.aria-label]="'Progress'">
       <p class="operation-progress-line">
         <span role="status" aria-live="polite">{{ progress().text }}</span>
-        <a [routerLink]="['/operations', id()]">Open operation</a>
+        <a [routerLink]="['/admin/operations', id()]">Open operation</a>
       </p>
       @if (state()?.error; as failure) {
         <app-state-message kind="error" [headline]="failure" />

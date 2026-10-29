@@ -22,7 +22,7 @@
           headline="No craft apps are installed."
           detail="Install one from the Catalog, then add an edge route for it."
           actionLabel="Browse the catalog"
-          actionLink="/catalog"
+          actionLink="/admin/catalog"
         />
       } @else {
         <ul class="catalog-list">
@@ -41,7 +41,7 @@
                 } @else {
                   <p data-testid="no-url">
                     No address yet. {{ app.url_reason }}
-                    <a routerLink="/edge">Add one on the Edge page</a>
+                    <a routerLink="/admin/edge">Add one on the Edge page</a>
                   </p>
                 }
               </div>

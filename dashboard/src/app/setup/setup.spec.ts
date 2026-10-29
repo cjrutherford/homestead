@@ -281,7 +281,7 @@ describe('Setup wizard (S291)', () => {
       await settle();
       expect(heading()).toBe('Step 6 of 6: Nightly backups');
       expect(text()).toContain('Set a nightly policy on the');
-      expect(el().querySelector('a[href="/backups"]')).not.toBeNull();
+      expect(el().querySelector('a[href="/admin/backups"]')).not.toBeNull();
     });
 
     it('calls a legacy appliance Finish setup and says nothing is required', async () => {
@@ -416,7 +416,7 @@ describe('Setup wizard (S291)', () => {
       expect(tasks.length).toBe(4);
       expect(tasks[0]).toContain('authentik.lan');
       expect(tasks[1]).toContain('root certificate');
-      expect(el().querySelector('a[href="/trust"]')).not.toBeNull();
+      expect(el().querySelector('a[href="/admin/trust"]')).not.toBeNull();
       expect(tasks[2]).toContain('https://authentik.lan/');
       expect(tasks[2]).not.toContain('initial-setup');
       expect(tasks[2]).toContain('akadmin');

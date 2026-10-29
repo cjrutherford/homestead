@@ -74,7 +74,7 @@ describe('NightlyPolicy (S297)', () => {
   it('explains and links to Storage without backup storage', () => {
     load(policyStatus({ backup_storage: false }));
     expect(text()).toContain('Nightly backups need a disk for the backup storage class.');
-    expect(el().querySelector('a[href="/storage"]')).not.toBeNull();
+    expect(el().querySelector('a[href="/admin/storage"]')).not.toBeNull();
   });
 
   it('plans, then approves exactly the reviewed request with its digest', () => {

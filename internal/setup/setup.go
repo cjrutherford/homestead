@@ -526,14 +526,14 @@ func domainMissing(st stored, f Facts) string {
 			return "choose Cloudflare as the DNS provider on this page first."
 		}
 		if f.Tunnels == 0 {
-			return "no tunnel exists yet. Create and approve it on the Tunnel page (/tunnel), then come back."
+			return "no tunnel exists yet. Create and approve it on the Tunnel page (/admin/tunnel), then come back."
 		}
 	case AccessRouter:
 		if effectiveProvider(st, f) == "" {
 			return "choose a DNS provider on this page first."
 		}
 		if f.Exposures == 0 {
-			return "no exposure plan is approved yet. Review and approve one on the Exposure page (/exposure), then come back."
+			return "no exposure plan is approved yet. Review and approve one on the Exposure page (/admin/exposure), then come back."
 		}
 	}
 	return ""

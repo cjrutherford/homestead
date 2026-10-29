@@ -77,7 +77,9 @@ describe('setup exemptions (S287)', () => {
   });
 
   it('guards every other page, and not redirects or the wildcard', () => {
-    for (const route of routes) {
+    // Guards live on the /admin children; the root apps page runs the same gate in its own guard.
+    const admin = routes.find((r) => r.path === 'admin')?.children ?? [];
+    for (const route of admin) {
       const path = route.path ?? '';
       const guarded = route.canActivate?.includes(setupGuard) ?? false;
       if (route.redirectTo !== undefined || path === '**' || SETUP_EXEMPT_PATHS.includes(path)) {
@@ -89,7 +91,10 @@ describe('setup exemptions (S287)', () => {
   });
 
   it('keeps every exempt path a real route', () => {
-    const paths = routes.map((route) => route.path);
+    const paths = [
+      ...routes.map((route) => route.path),
+      ...(routes.find((r) => r.path === 'admin')?.children ?? []).map((route) => route.path),
+    ];
     for (const path of SETUP_EXEMPT_PATHS) {
       expect(paths, path).toContain(path);
     }
@@ -112,27 +117,37 @@ describe('setup gate in navigation (S287)', () => {
 
   afterEach(() => localStorage.clear());
 
-  async function go(url: string, status: object): Promise<string> {
-    const navigation = router.navigateByUrl(url);
+  /** The owner guard asks who is signed in; then the setup gate asks the walkthrough. */
+  async function answer(status: object): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve));
+    http.match('/api/v1/me').forEach((req) => req.flush({ role: 'owner' }));
     await new Promise((resolve) => setTimeout(resolve));
     http.match('/api/v1/setup').forEach((req) => req.flush(status));
+  }
+
+  async function go(url: string, status: object): Promise<string> {
+    const navigation = router.navigateByUrl(url);
+    await answer(status);
     await navigation;
     return router.url;
   }
 
   it('redirects a gated owner from a gated page to /setup', async () => {
-    expect(await go('/firewall', setupStatus())).toBe('/setup');
+    expect(await go('/admin/firewall', setupStatus())).toBe('/setup');
   });
 
   it('lets a gated owner reach an exempt page the walkthrough links to', async () => {
     const navigation = router.navigateByUrl('/sign-in');
-    await new Promise((resolve) => setTimeout(resolve));
-    http.match('/api/v1/setup').forEach((req) => req.flush(setupStatus()));
+    await answer(setupStatus());
     await navigation;
     expect(router.url).toBe('/sign-in');
   });
 
+  it('holds a gated owner on the apps page too', async () => {
+    expect(await go('/', setupStatus())).toBe('/setup');
+  });
+
   it('does not hold a legacy appliance', async () => {
-    expect(await go('/firewall', setupStatus({ legacy: true, origin: 'legacy', gated: false }))).toBe('/firewall');
+    expect(await go('/admin/firewall', setupStatus({ legacy: true, origin: 'legacy', gated: false }))).toBe('/admin/firewall');
   });
 });

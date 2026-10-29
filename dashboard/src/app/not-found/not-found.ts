@@ -12,7 +12,7 @@ import { RouterLink } from '@angular/router';
         <p class="masthead-fact">This page does not exist.</p>
       </header>
       <section class="field-panel" aria-label="Where next">
-        <p><a routerLink="/status">Back to status</a></p>
+        <p><a routerLink="/admin/status">Back to status</a></p>
       </section>
     </section>
   `,

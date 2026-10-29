@@ -28,7 +28,7 @@ class TestDashboardExposureSurfaces(unittest.TestCase):
 
     def test_nav(self):
         src = read("dashboard/src/app/core/nav.ts")
-        for symbol in ("path: '/exposure'", "path: '/tunnel'"):
+        for symbol in ("path: '/admin/exposure'", "path: '/admin/tunnel'"):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, src)
 

@@ -9,7 +9,7 @@
         kind="empty"
         headline="No operation has this number."
         actionLabel="Back to operations"
-        actionLink="/operations"
+        actionLink="/admin/operations"
       />
     </section>
   } @else {
@@ -32,7 +32,7 @@
           }
           <app-step-list [steps]="op.steps" />
           <p>
-            <a routerLink="/operations">Back to operations</a>
+            <a routerLink="/admin/operations">Back to operations</a>
           </p>
         }
       </app-loading>

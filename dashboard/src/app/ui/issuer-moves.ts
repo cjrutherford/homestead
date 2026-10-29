@@ -26,7 +26,7 @@ import { IssuerMovePlan } from '../core/api.service';
                 <span class="mono">{{ app.host_entry }}</span>@if (app.replaced_host_entry) {, replacing
                   <span class="mono">{{ app.replaced_host_entry }}</span>}.
                 @if (!m.token_kept) {
-                  <a routerLink="/catalog" [fragment]="'manage-' + app.app">Re-plan {{ app.title }} sign-in</a>
+                  <a routerLink="/admin/catalog" [fragment]="'manage-' + app.app">Re-plan {{ app.title }} sign-in</a>
                 }
               </li>
             }

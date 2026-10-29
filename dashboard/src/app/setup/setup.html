@@ -95,7 +95,7 @@
           </ul>
           <p class="wizard-actions">
             <button type="button" (click)="back()">Back</button>
-            <a class="button primary" routerLink="/status">Go to status</a>
+            <a class="button primary" routerLink="/admin/status">Go to status</a>
           </p>
         </section>
       } @else if (step(); as st) {
@@ -137,10 +137,10 @@
             <p class="hint">
               @if (st.name === 'backups') {
                 Not required: setup was finished before this step existed. Set a nightly policy on the
-                <a routerLink="/backups">Backups page</a> when you want one.
+                <a routerLink="/admin/backups">Backups page</a> when you want one.
               } @else {
                 Not required: setup was finished before this step existed. Assign storage on the
-                <a routerLink="/storage">Storage page</a> when you need it.
+                <a routerLink="/admin/storage">Storage page</a> when you need it.
               }
             </p>
           }

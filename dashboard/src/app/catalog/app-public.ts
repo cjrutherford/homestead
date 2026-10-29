@@ -36,7 +36,7 @@ export function publicError(failure: HttpErrorResponse): string {
         @if (!s.available) {
           <p>A public address is not available: {{ s.reason }}</p>
           @if (s.reason?.includes('Tunnel page')) {
-            <p><a routerLink="/tunnel">Open the Tunnel page</a></p>
+            <p><a routerLink="/admin/tunnel">Open the Tunnel page</a></p>
           }
         } @else {
           @if (publicNames(s).length > 0) {

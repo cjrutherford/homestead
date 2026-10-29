@@ -121,7 +121,7 @@ describe('UninstallApp', () => {
     fixture.detectChanges();
     expect(TestBed.inject(WorkOrders).orders()[0].title).toBe('Uninstall Nextcloud');
     expect(TestBed.inject(WorkOrders).orders()[0].done).toBe('Nextcloud uninstalled');
-    expect((fixture.nativeElement as HTMLElement).querySelector('app-operation-progress a[href="/operations/21"]')).not.toBeNull();
+    expect((fixture.nativeElement as HTMLElement).querySelector('app-operation-progress a[href="/admin/operations/21"]')).not.toBeNull();
     expect(find('Uninstall Nextcloud')).toBeUndefined();
     stream.next(state(21, 'succeeded'));
     // The app's address leaves the edge table; the other route is sent back untouched.
@@ -161,7 +161,7 @@ describe('UninstallApp', () => {
     fixture.detectChanges();
     expect(text()).toContain('Nextcloud uninstalled');
     expect(text()).toContain('Its address nextcloud.lan is still in the edge route table.');
-    expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/edge"]')).not.toBeNull();
+    expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/admin/edge"]')).not.toBeNull();
   });
 
   it('deletes data only when asked, naming every root explicitly', () => {
@@ -200,7 +200,7 @@ describe('UninstallApp', () => {
     expect(dialog()).not.toBeNull();
     expect(text()).toContain('keeps data in Docker volumes');
     expect(text()).toContain('Nothing was removed.');
-    expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/data"]')).not.toBeNull();
+    expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/admin/data"]')).not.toBeNull();
     const abandon = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('input[type="checkbox"]')).pop() as HTMLInputElement;
     abandon.click();
     fixture.detectChanges();

@@ -64,7 +64,7 @@ class TestProgressSurface(unittest.TestCase):
         self.assertIn("path: 'operations'", routes)
         self.assertIn("path: 'operations/:id'", routes)
         html = read_dash("src/app/core/nav.ts")
-        self.assertIn("path: '/operations'", html)
+        self.assertIn("path: '/admin/operations'", html)
 
     def test_parity_row(self):
         parity = read("docs/PARITY.md")

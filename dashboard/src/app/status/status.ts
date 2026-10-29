@@ -43,21 +43,21 @@ const FIXES: Record<string, Fix> = {
   'root-disk': { text: 'Free space on the system disk. Remove old images and backups you no longer need.', command: 'docker system df' },
   'stale-mounts': {
     text: 'Reconnect the drive, or remove the mount on the Storage page.',
-    link: { path: '/storage', label: 'Open Storage' },
+    link: { path: '/admin/storage', label: 'Open Storage' },
   },
   'state-dirs': { text: 'Re-run the installer to recreate the Homestead folders.', command: 'sudo make install' },
 };
 
 /** Button words for the pages a daemon fix links to. */
 const PAGE_LABELS: Record<string, string> = {
-  '/catalog': 'Open the catalog',
-  '/doctor': 'Open Doctor',
-  '/people': 'Open People',
-  '/tunnel': 'Open Tunnel',
-  '/edge': 'Open the Edge page',
+  '/admin/catalog': 'Open the catalog',
+  '/admin/doctor': 'Open Doctor',
+  '/admin/people': 'Open People',
+  '/admin/tunnel': 'Open Tunnel',
+  '/admin/edge': 'Open the Edge page',
 };
 
-const DEFAULT_FIX: Fix = { text: 'Open Doctor for what this means and how to fix it.', link: { path: '/doctor', label: 'Open Doctor' } };
+const DEFAULT_FIX: Fix = { text: 'Open Doctor for what this means and how to fix it.', link: { path: '/admin/doctor', label: 'Open Doctor' } };
 
 /** Appliance status page: daemon health, claim state, diagnostics (S044). */
 @Component({

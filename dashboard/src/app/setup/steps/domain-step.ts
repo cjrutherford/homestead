@@ -72,7 +72,7 @@ import { StepGuide } from './step-guide';
         detail="Review it and confirm it is right. Nothing is changed or redone."
       />
       <p>
-        <a class="button" routerLink="/tls">Review certificates</a>
+        <a class="button" routerLink="/admin/tls">Review certificates</a>
       </p>
     }
 

@@ -69,7 +69,7 @@ describe('Operations', () => {
     fixture.detectChanges();
     expect(text()).toContain('B two');
     expect(text()).toContain('Running');
-    const link = fixture.nativeElement.querySelector('a[href="/operations/2"]');
+    const link = fixture.nativeElement.querySelector('a[href="/admin/operations/2"]');
     expect(link).not.toBeNull();
   });
 

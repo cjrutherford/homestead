@@ -29,7 +29,7 @@
         headline="No backup destination yet."
         detail="Backups land on the storage you assign the backup class to. Assign it on the Storage page, then come back."
         actionLabel="Go to Storage"
-        actionLink="/storage"
+        actionLink="/admin/storage"
       />
     } @else if (destinationError()) {
       <app-state-message kind="error" [headline]="destinationError()" />
@@ -115,7 +115,7 @@
     </button>
     <app-loading [loading]="loading() && schedules().length === 0" shape="list">
       @if (schedules().length === 0) {
-        <app-state-message kind="empty" headline="No backup schedules yet." detail="A schedule backs up an installed app on a fixed interval. Install an app from the catalog first." actionLabel="Browse the catalog" actionLink="/catalog" />
+        <app-state-message kind="empty" headline="No backup schedules yet." detail="A schedule backs up an installed app on a fixed interval. Install an app from the catalog first." actionLabel="Browse the catalog" actionLink="/admin/catalog" />
       } @else {
       <div class="table-scroll">
         <table aria-label="Backup schedules">

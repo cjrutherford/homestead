@@ -160,7 +160,7 @@ func probeTunnelConnector(ctx context.Context, c DoctorLiveConfig) []doctor.Chec
 	if err := tunnelSystemctl("is-active", "--quiet", tunnelUnitName); err != nil {
 		return []doctor.Check{{Name: name, Status: doctor.StatusFail,
 			Detail: "the connector service (" + tunnelUnitName + ") is not running, so no public name reaches the appliance",
-			Fix:    liveFix("Start the connector. If it stops again, read its log.", "/tunnel", "sudo journalctl -u "+tunnelUnitName+" -n 50")}}
+			Fix:    liveFix("Start the connector. If it stops again, read its log.", "/admin/tunnel", "sudo journalctl -u "+tunnelUnitName+" -n 50")}}
 	}
 	n, ok := connectorConnections(ctx)
 	switch {
@@ -172,7 +172,7 @@ func probeTunnelConnector(ctx context.Context, c DoctorLiveConfig) []doctor.Chec
 	case n == 0:
 		return []doctor.Check{{Name: name, Status: doctor.StatusFail,
 			Detail: "the connector is running but holds no connection to Cloudflare",
-			Fix:    liveFix("Check that the appliance reaches the internet and that the tunnel still exists in Cloudflare.", "/tunnel", "sudo journalctl -u "+tunnelUnitName+" -n 50")}}
+			Fix:    liveFix("Check that the appliance reaches the internet and that the tunnel still exists in Cloudflare.", "/admin/tunnel", "sudo journalctl -u "+tunnelUnitName+" -n 50")}}
 	default:
 		return []doctor.Check{{Name: name, Status: doctor.StatusOK,
 			Detail: fmt.Sprintf("the connector is running with %d connection(s) to Cloudflare", n)}}
@@ -233,7 +233,7 @@ func probeTunnelExists(ctx context.Context, c DoctorLiveConfig) []doctor.Check {
 		case errors.As(err, &apiErr) && (apiErr.Code == http.StatusNotFound || apiErr.Code == 1003):
 			out = append(out, doctor.Check{Name: name, Status: doctor.StatusFail,
 				Detail: "the tunnel no longer exists in Cloudflare, so no public name works",
-				Fix:    liveFix("Plan the tunnel again; a name that is already taken is explained in the plan.", "/tunnel", "homesteadctl tunnel plan")})
+				Fix:    liveFix("Plan the tunnel again; a name that is already taken is explained in the plan.", "/admin/tunnel", "homesteadctl tunnel plan")})
 		case err != nil:
 			out = append(out, unknownCheck(name, "Cloudflare could not be asked: "+err.Error()))
 		case status.Status == "healthy" || status.Status == "degraded" && len(status.Connections) > 0:
@@ -242,7 +242,7 @@ func probeTunnelExists(ctx context.Context, c DoctorLiveConfig) []doctor.Check {
 		default:
 			out = append(out, doctor.Check{Name: name, Status: doctor.StatusWarn,
 				Detail: fmt.Sprintf("the tunnel %q exists, but Cloudflare reports it %s", status.Name, status.Status),
-				Fix:    liveFix("Check that the connector is running and connected.", "/tunnel", "sudo systemctl status "+tunnelUnitName)})
+				Fix:    liveFix("Check that the connector is running and connected.", "/admin/tunnel", "sudo systemctl status "+tunnelUnitName)})
 		}
 	}
 	return out
@@ -290,15 +290,15 @@ func probeTunnelDNS(ctx context.Context, c DoctorLiveConfig) []doctor.Check {
 		case found == nil:
 			check.Status = doctor.StatusFail
 			check.Detail = route.Hostname + " has no DNS record pointing at the tunnel"
-			check.Fix = liveFix("Plan the tunnel again to create the record.", "/tunnel", "homesteadctl tunnel plan")
+			check.Fix = liveFix("Plan the tunnel again to create the record.", "/admin/tunnel", "homesteadctl tunnel plan")
 		case !strings.EqualFold(found.Content, want):
 			check.Status = doctor.StatusFail
 			check.Detail = route.Hostname + " points at " + found.Content + ", not at this tunnel (" + want + ")"
-			check.Fix = liveFix("Another tunnel or service owns the name. Plan again to see what would change; nothing is replaced until you approve.", "/tunnel", "homesteadctl tunnel plan")
+			check.Fix = liveFix("Another tunnel or service owns the name. Plan again to see what would change; nothing is replaced until you approve.", "/admin/tunnel", "homesteadctl tunnel plan")
 		case !found.Proxied:
 			check.Status = doctor.StatusWarn
 			check.Detail = route.Hostname + " points at the tunnel but is not proxied by Cloudflare"
-			check.Fix = liveFix("Turn the proxy on for the record in Cloudflare.", "/tunnel", "")
+			check.Fix = liveFix("Turn the proxy on for the record in Cloudflare.", "/admin/tunnel", "")
 		default:
 			check.Status = doctor.StatusOK
 			check.Detail = route.Hostname + " points at the tunnel"
@@ -350,7 +350,7 @@ func probeEdgeCertificates(ctx context.Context, c DoctorLiveConfig) []doctor.Che
 		default:
 			check.Status = doctor.StatusWarn
 			check.Detail = router.UncoveredText(cov.Hostname, zoneGuess(c.Store, cov.Hostname))
-			check.Fix = liveFix("Add a certificate for it in Cloudflare (Advanced Certificate Manager), or publish a name one level below your domain.", "/tunnel", "")
+			check.Fix = liveFix("Add a certificate for it in Cloudflare (Advanced Certificate Manager), or publish a name one level below your domain.", "/admin/tunnel", "")
 		}
 		out = append(out, check)
 	}
@@ -390,18 +390,18 @@ func probeAuthentik(ctx context.Context, c DoctorLiveConfig) []doctor.Check {
 	case err != nil:
 		return []doctor.Check{{Name: name, Status: doctor.StatusFail,
 			Detail: "Authentik does not answer at " + base + ": " + shortError(err),
-			Fix:    liveFix("Start Authentik's containers; sign-in works again once it answers.", "/catalog", "homesteadctl docker health")}}
+			Fix:    liveFix("Start Authentik's containers; sign-in works again once it answers.", "/admin/catalog", "homesteadctl docker health")}}
 	}
 	resp.Body.Close()
 	switch {
 	case resp.StatusCode >= 500:
 		return []doctor.Check{{Name: name, Status: doctor.StatusFail,
 			Detail: fmt.Sprintf("Authentik answers at %s but is not healthy (%d)", base, resp.StatusCode),
-			Fix:    liveFix("Wait a minute if it just started. If it stays, restart Authentik.", "/catalog", "homesteadctl docker health")}}
+			Fix:    liveFix("Wait a minute if it just started. If it stays, restart Authentik.", "/admin/catalog", "homesteadctl docker health")}}
 	case resp.StatusCode == http.StatusNotFound:
 		return []doctor.Check{{Name: name, Status: doctor.StatusWarn,
 			Detail: "something answers at " + base + ", but not as Authentik",
-			Fix:    liveFix("Check the Authentik route on the Edge page.", "/edge", "")}}
+			Fix:    liveFix("Check the Authentik route on the Edge page.", "/admin/edge", "")}}
 	default:
 		return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "Authentik answers at " + base}}
 	}
@@ -538,7 +538,7 @@ func probeAppContainers(ctx context.Context, l *lazyContainers, m catalog.Manife
 	}
 	check.Status = worst
 	check.Detail = strings.Join(problems, "; ")
-	check.Fix = liveFix("Start or restart the app. If it stops again, read its container log.", "/catalog", "docker compose -p "+m.Name+" ps")
+	check.Fix = liveFix("Start or restart the app. If it stops again, read its container log.", "/admin/catalog", "docker compose -p "+m.Name+" ps")
 	return []doctor.Check{check}
 }
 
@@ -566,7 +566,7 @@ func probeAppReach(ctx context.Context, c DoctorLiveConfig, m catalog.Manifest) 
 			check.Status, check.Detail = doctor.StatusFail, a.Reason
 		}
 		if check.Status != doctor.StatusOK && a.Fix != "" {
-			check.Fix = liveFix(a.Fix, "/catalog", "")
+			check.Fix = liveFix(a.Fix, "/admin/catalog", "")
 		}
 		out = append(out, check)
 	}
@@ -586,7 +586,7 @@ func probeAppSetUp(ctx context.Context, m catalog.Manifest) []doctor.Check {
 	case !setUp:
 		return []doctor.Check{{Name: name, Title: m.Title + " first run", Status: doctor.StatusWarn,
 			Detail: m.Title + " has not finished its own first-run setup",
-			Fix:    liveFix("Wait a few minutes if it just installed. If it stays, open it in a browser and finish its setup.", "/catalog", "")}}
+			Fix:    liveFix("Wait a few minutes if it just installed. If it stays, open it in a browser and finish its setup.", "/admin/catalog", "")}}
 	default:
 		return []doctor.Check{{Name: name, Title: m.Title + " first run", Status: doctor.StatusOK, Detail: m.Title + " has finished its first-run setup"}}
 	}

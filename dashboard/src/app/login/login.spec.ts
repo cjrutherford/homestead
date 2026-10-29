@@ -46,7 +46,7 @@ describe('Login', () => {
     const req = http.expectOne('/api/v1/sessions');
     expect(req.request.method).toBe('POST');
     req.flush({ token: 'session-token', expires_at: '2026-01-01T00:00:00Z' });
-    expect(navigate).toHaveBeenCalledWith('/status');
+    expect(navigate).toHaveBeenCalledWith('/');
     fixture.detectChanges();
     expect(localStorage.getItem(SESSION_STORAGE_KEY)).not.toContain('session-token');
     expect(localStorage.getItem(SESSION_STORAGE_KEY)).toContain('owner');
@@ -188,8 +188,8 @@ describe('Login with Authentik', () => {
   it('learns who signed in after the callback and continues to status', async () => {
     const fixture = await open({ sso: 'done' });
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
-    http.expectOne('/api/v1/admins/lockout').flush({ username: 'owner', locked: false, failures: 0 });
-    expect(navigate).toHaveBeenCalledWith('/status');
+    http.expectOne('/api/v1/me').flush({ role: 'owner', username: 'owner' });
+    expect(navigate).toHaveBeenCalledWith('/');
     expect(localStorage.getItem(SESSION_STORAGE_KEY)).toContain('owner');
     // No options probe once the callback finished.
     http.expectNone('/api/v1/sso/options');
@@ -197,7 +197,7 @@ describe('Login with Authentik', () => {
 
   it('says so when the session cannot be confirmed', async () => {
     const fixture = await open({ sso: 'done' });
-    http.expectOne('/api/v1/admins/lockout').flush('no', { status: 401, statusText: 'Unauthorized' });
+    http.expectOne('/api/v1/me').flush('no', { status: 401, statusText: 'Unauthorized' });
     fixture.detectChanges();
     expect(text(fixture)).toContain('could not confirm the session');
   });

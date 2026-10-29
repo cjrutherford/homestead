@@ -172,7 +172,7 @@ describe('PlatformUpdatesPanel', () => {
     request.flush({ id: 21 });
     reload();
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/21"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/21"]')).not.toBeNull();
   });
 
   it('asks for a separate older-release confirmation after an older refusal', () => {
@@ -244,6 +244,6 @@ describe('PlatformUpdatesPanel', () => {
     retry.flush({ id: 30 });
     reload();
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/operations/30"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/30"]')).not.toBeNull();
   });
 });

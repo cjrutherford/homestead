@@ -6,13 +6,16 @@ import { Config } from './config/config';
 import { Account } from './account/account';
 import { NotFound } from './not-found/not-found';
 import { gateRoutes } from './setup/setup.guard';
+import { Home } from './home/home';
+import { homeGuard, ownerGuard } from './home/home.guard';
 
-// Rarely visited pages load on demand to keep the initial bundle small.
-const walkthroughRoutes: Routes = [
+/**
+ * Every administration screen lives under /admin (ADR-050 §4). Rarely
+ * visited pages load on demand to keep the initial bundle small.
+ */
+const adminRoutes: Routes = [
   { path: '', redirectTo: 'status', pathMatch: 'full' },
   { path: 'status', component: Status },
-  { path: 'claim', component: Claim },
-  { path: 'login', component: Login },
   { path: 'config', component: Config },
   { path: 'firewall', loadComponent: () => import('./firewall/firewall').then((m) => m.Firewall) },
   {
@@ -46,24 +49,42 @@ const walkthroughRoutes: Routes = [
   { path: 'operations', loadComponent: () => import('./operations/operations').then((m) => m.Operations) },
   { path: 'operations/:id', loadComponent: () => import('./operations/operation-detail').then((m) => m.OperationDetail) },
   { path: 'validation-board', loadComponent: () => import('./validation/validation-board').then((m) => m.ValidationBoard) },
-  { path: 'account', component: Account },
+];
+
+/**
+ * Pre-S339 paths. Each redirects to its /admin path with its params, query
+ * and fragment, so bookmarks and old links keep working.
+ */
+const legacyRedirects: Routes = adminRoutes
+  .map((route) => route.path ?? '')
+  .filter((path) => path !== '')
+  .map((path) => ({ path, redirectTo: `admin/${path}`, pathMatch: 'full' as const }));
+
+/**
+ * The route table. The apps page is the root (ADR-050 §4). Claim, login,
+ * setup, sign-in and account stay at the root: the server and the
+ * walkthrough send people to them by path. While the post-claim
+ * walkthrough holds a fresh appliance's owner (S287, ADR-034), every admin
+ * route outside SETUP_EXEMPT_PATHS redirects to /setup.
+ */
+export const routes: Routes = [
+  { path: '', component: Home, pathMatch: 'full', canActivate: [homeGuard] },
+  { path: 'claim', component: Claim },
+  { path: 'login', component: Login },
+  { path: 'account', component: Account, canActivate: [ownerGuard] },
   {
     // Loaded on demand: only the walkthrough needs the page (S287).
     path: 'setup',
+    canActivate: [ownerGuard],
     loadComponent: () => import('./setup/setup').then((m) => m.Setup),
   },
   {
     // Loaded on demand: only the owner configuring Authentik sign-in needs it (S286).
     path: 'sign-in',
+    canActivate: [ownerGuard],
     loadComponent: () => import('./sso/sign-in').then((m) => m.SignIn),
   },
-  // Later slices register their routes here, before the wildcard.
+  { path: 'admin', canActivate: [ownerGuard], children: gateRoutes(adminRoutes) },
+  ...legacyRedirects,
   { path: '**', component: NotFound },
 ];
-
-/**
- * The route table. While the post-claim walkthrough holds a fresh appliance's
- * owner (S287, ADR-034), every route outside SETUP_EXEMPT_PATHS redirects to
- * /setup. The gate is this guard and nothing else.
- */
-export const routes: Routes = gateRoutes(walkthroughRoutes);
