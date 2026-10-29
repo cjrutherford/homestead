@@ -1541,3 +1541,5 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - Audiobookshelf Authentik adapter (S385): its first-run recovery administrator is created by S384, but OIDC client provisioning, app-side actuation, group mapping, install-time approval, and live sign-in remain to be implemented and verified. Existing owner-created administrators must not be overwritten.
 
 - Catalog-wide install-time Authentik: packages without a Homestead adapter still need individually verified adapters, user provisioning, role mappings, and recovery behavior. Authentik-unavailable installs and stateless or unsupported apps need clear access handling. Server-side setup validates all selected people before grants, but sequential cross-service grants still need partial-failure recovery and cannot prevent account changes after validation.
+
+- ADR-054 install access enforcement remains S390: connect the S389 decision contract to reviewed dashboard/CLI install flows, server-side step-up and verified app adapters; classify accountless apps and safely handle partial grants.

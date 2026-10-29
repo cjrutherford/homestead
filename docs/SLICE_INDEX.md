@@ -198,3 +198,5 @@ S386 schedules local-address setup for normal CLI installs (`docs/slices/S386-cl
 S387 adds CLI install review of Authentik sign-in and people (`docs/slices/S387-cli-install-sign-in.md`).
 
 S388 preflights install-time people selections on the daemon (`docs/slices/S388-install-people-preflight.md`).
+
+S389 defines explicit per-person access decisions (`docs/slices/S389-install-user-access.md`); S390 will enforce them at installation (`docs/slices/S390-install-user-access.md`).
