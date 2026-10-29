@@ -4,6 +4,7 @@ import { forkJoin } from 'rxjs';
 import { SessionService } from '../auth/session.service';
 import { ApiService, MeView } from '../core/api.service';
 import { MyApp, PeopleService } from '../people/people.service';
+import { AppIcon } from '../ui/app-icon';
 import { Loading } from '../ui/loading';
 
 /**
@@ -14,7 +15,7 @@ import { Loading } from '../ui/loading';
  */
 @Component({
   selector: 'app-home',
-  imports: [RouterLink, Loading],
+  imports: [RouterLink, Loading, AppIcon],
   templateUrl: './home.html',
   styleUrl: './home.css',
 })
@@ -48,10 +49,6 @@ export class Home implements OnInit {
         this.loading.set(false);
       },
     });
-  }
-
-  protected initial(app: MyApp): string {
-    return (app.title || app.name).charAt(0).toUpperCase();
   }
 
   protected signOut(): void {

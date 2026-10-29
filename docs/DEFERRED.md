@@ -1380,8 +1380,8 @@ Craft apps under one host, by path (ADR-045).
 
 ## From S339 (the apps page)
 - Tiles show a large monogram of the app's title, as the catalog page does.
-  The manifest `icon` (an `mdi:` name) is carried on the tile as `data-icon`
-  but no glyph set is bundled yet; render real icons when one is.
+  RESOLVED in S340: the bundled `mdi:` icons render; the monogram is the
+  fallback for an unknown name.
 - DEVELOPMENT.md history entries and ADRs still name pre-S339 paths such as
   `/people`; they are records and were not rewritten.
 - The sidebar still shows on the root-level owner pages (setup, claim, login,

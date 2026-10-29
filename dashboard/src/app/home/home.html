@@ -25,7 +25,7 @@
             @for (app of apps(); track app.name) {
               <li>
                 <a class="tile" [href]="app.url" [attr.data-icon]="app.icon">
-                  <span class="tile-icon" aria-hidden="true">{{ initial(app) }}</span>
+                  <hs-app-icon class="tile-icon" [icon]="app.icon" [title]="app.title || app.name" />
                   <span class="tile-name">{{ app.title }}</span>
                 </a>
               </li>

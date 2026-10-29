@@ -102,3 +102,5 @@ Then S337 the apps list API (`docs/slices/S337-apps-list-api.md`): `GET /api/v1/
 Then S338 person sessions (`docs/slices/S338-person-sessions.md`): a person signs in through the SSO callback and gets a `person` session limited to an allowlist, deny-by-default for every other route; the `homestead-people` Authentik group and dashboard binding (ADR-050 §1–§3).
 
 Then S339 the apps page (`docs/slices/S339-apps-page.md`): `/` is the apps page for the owner and every person, administration moves under `/admin` with redirects from the old paths, and a person never reaches or calls the owner screens (ADR-050 §4).
+
+Then S340 app icons (`docs/slices/S340-app-icons.md`): the manifest `mdi:` icons render on the apps page and the catalog from a bundled, offline map; Jellyfin's icon is no longer a competitor's logo.

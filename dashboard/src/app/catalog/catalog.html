@@ -24,7 +24,7 @@
         <ul class="catalog-list">
           @for (pkg of packages(); track pkg.name) {
             <li class="catalog-item">
-              <span class="app-icon" aria-hidden="true">{{ pkg.title.charAt(0) }}</span>
+              <hs-app-icon class="app-icon" [icon]="pkg.icon" [title]="pkg.title" />
               <div class="catalog-text">
                 <strong>{{ pkg.title }}</strong>
                 <span class="hint">Version {{ pkg.version }}</span>

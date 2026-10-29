@@ -8,7 +8,7 @@ description: Jellyfin streams your movies, shows, and music across the home
   and beyond, with no accounts, no tracking, and no fees. Libraries live on
   bulk storage; configuration stays small and backed up.
 category: media
-icon: mdi:plex
+icon: mdi:television-play
 services:
 - name: jellyfin
   image: jellyfin/jellyfin:12.2
