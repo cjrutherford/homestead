@@ -131,6 +131,9 @@ or **Remove from Homestead**.
 ## Amended by ADR-049
 On a public dashboard name, the People step-up routes accept a fresh Authentik sign-in instead of the local password, and the sign-in plan sets up Authentik's recovery flow; ADR-049 holds the substance.
 
+## Amended by ADR-050
+The dashboard's Authentik application is also bound to a Homestead-owned `homestead-people` group of every active person, so people can reach their apps page. ADR-050 holds the substance.
+
 ## Consequences
 - The Authentik-side plan grows from two objects to groups, bindings and a
   property mapping per app. It stays idempotent and re-plannable.

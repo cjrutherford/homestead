@@ -106,3 +106,4 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-047 | Published Apps Sign In at Authentik's Public Address | Accepted |
 | ADR-048 | Approved App Setup Runs on the Appliance; Tunnel Setup Issues the Public Certificate | Accepted |
 | ADR-049 | People Administration on the Public Dashboard; Authentik Recovery Links | Accepted |
+| ADR-050 | An Apps Page for Everyone Who Signs In; Administration Moves to /admin | Accepted |
