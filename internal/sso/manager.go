@@ -875,6 +875,21 @@ func rebase(endpoint, origin string) string {
 	return u.String()
 }
 
+// PublicLink moves a link Authentik built for its local address onto its
+// public (tunnel) address, keeping the path and query. It returns "" when
+// there is no public address or the link cannot be read.
+func PublicLink(link, publicBase string) string {
+	if strings.TrimSpace(link) == "" || strings.TrimSpace(publicBase) == "" {
+		return ""
+	}
+	u, err := url.Parse(link)
+	o, err2 := url.Parse(publicBase)
+	if err != nil || err2 != nil || u.Host == "" || o.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || (o.Scheme != "http" && o.Scheme != "https") {
+		return ""
+	}
+	return rebase(link, publicBase)
+}
+
 // OriginFor selects the redirect origin for a request by exact match of
 // its Host against the planned origins. The scheme comes from the planned
 // origin, never from the request or X-Forwarded-*; an unplanned Host is

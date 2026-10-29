@@ -44,6 +44,28 @@ func TestMyAppsOwnerListsInstalledAppsWithAddresses(t *testing.T) {
 	}
 }
 
+func TestMyAppsCarryBothAddresses(t *testing.T) {
+	src := mySource(t, map[string]bool{"nextcloud": true}, myAppsRoutes())
+	// Asked from the local network, the app still carries its public link.
+	apps, _ := src.list(false, nil)
+	if apps[0].LocalURL != "https://homestead.lan/apps/nextcloud/" || apps[0].PublicURL != "https://home.example.com/apps/nextcloud/" {
+		t.Fatalf("local request: %+v", apps[0])
+	}
+	// Asked from the public name, the local link is still there.
+	apps, _ = src.list(true, nil)
+	if apps[0].URL != apps[0].PublicURL || apps[0].LocalURL != "https://homestead.lan/apps/nextcloud/" {
+		t.Fatalf("public request: %+v", apps[0])
+	}
+	// Unpublished: no public link, and the local one remains.
+	routes := myAppsRoutes()
+	routes[1].Published = false
+	src = mySource(t, map[string]bool{"nextcloud": true}, routes)
+	apps, _ = src.list(false, nil)
+	if apps[0].PublicURL != "" || apps[0].LocalURL == "" {
+		t.Fatalf("unpublished: %+v", apps[0])
+	}
+}
+
 func TestMyAppsPublicVersusLocalURL(t *testing.T) {
 	src := mySource(t, map[string]bool{"nextcloud": true}, myAppsRoutes())
 	pub, _ := src.list(true, nil)

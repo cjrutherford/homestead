@@ -82,20 +82,43 @@ h1 {
     border-color var(--duration-base) var(--ease-standard);
 }
 
-.tile:hover {
+.tile:hover,
+.tile:focus-within {
   background: var(--surface-hover);
   border-color: var(--border-strong);
-  transform: translateY(-2px);
 }
 
-.tile:active {
-  transform: none;
-  box-shadow: var(--elevation-pressed);
+.tile-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--spacing-sm);
 }
 
-.tile:focus-visible {
+.tile-link {
+  padding: var(--spacing-xs) var(--spacing-md);
+  color: var(--foreground);
+  font-weight: 600;
+  text-decoration: none;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+}
+
+a.tile-link:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+a.tile-link:focus-visible {
   outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
+}
+
+.tile-link-off {
+  color: var(--foreground-muted, var(--foreground));
+  font-weight: 400;
+  opacity: 0.7;
 }
 
 .tile-icon {
@@ -142,9 +165,5 @@ h1 {
 @media (prefers-reduced-motion: reduce) {
   .tile {
     transition: none;
-  }
-
-  .tile:hover {
-    transform: none;
   }
 }

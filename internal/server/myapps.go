@@ -33,6 +33,12 @@ type MyApp struct {
 	// URL is the app's public address when the request came in on a public
 	// dashboard name and the app is published; otherwise its local address.
 	URL string `json:"url"`
+	// LocalURL is the app's address on the appliance's own names (always
+	// present); PublicURL its address on the tunnel, empty until the app
+	// is published. The apps page offers both, so a person away from the
+	// local network is never left with a link that cannot open.
+	LocalURL  string `json:"local_url"`
+	PublicURL string `json:"public_url,omitempty"`
 }
 
 type myAppsSource struct {
@@ -41,27 +47,26 @@ type myAppsSource struct {
 	Routes    func() ([]docker.Route, error)
 }
 
-// appURL is the address of an app for one request. public says the request
-// arrived on a public dashboard name.
-func appURL(m catalog.Manifest, all []docker.Route, public bool) (string, bool) {
+// appAddresses are the app's two addresses: local on the appliance's own
+// names, public on the tunnel (empty until the app is published). ok is
+// false when the app has no edge route and so no web address.
+func appAddresses(m catalog.Manifest, all []docker.Route) (local, public string, ok bool) {
 	routes := appsso.AppRoutes(m, all)
 	if len(routes) == 0 {
-		if r, ok := routeFor(m.Name, all); ok {
+		if r, found := routeFor(m.Name, all); found {
 			routes = []docker.Route{r}
 		}
 	}
 	if len(routes) == 0 {
-		return "", false
+		return "", "", false
 	}
 	route := routes[0]
-	if public {
-		if route.IsPath() {
-			if server := docker.PublicServerName(all); route.Published && server != "" {
-				return docker.PathURL(server, route.Path), true
-			}
-		} else if len(route.Tunnel) > 0 {
-			return "https://" + string(route.Tunnel[0]) + "/", true
+	if route.IsPath() {
+		if server := docker.PublicServerName(all); route.Published && server != "" {
+			public = docker.PathURL(server, route.Path)
 		}
+	} else if len(route.Tunnel) > 0 {
+		public = "https://" + string(route.Tunnel[0]) + "/"
 	}
 	scheme := "https"
 	if route.TLS == docker.TLSOff {
@@ -69,9 +74,19 @@ func appURL(m catalog.Manifest, all []docker.Route, public bool) (string, bool) 
 	}
 	if route.IsPath() {
 		route = docker.ServedRoutes(all, []docker.Route{route})[0]
-		return docker.PathURL(route.Host, route.Path), true
+		return docker.PathURL(route.Host, route.Path), public, true
 	}
-	return fmt.Sprintf("%s://%s/", scheme, route.Host), true
+	return fmt.Sprintf("%s://%s/", scheme, route.Host), public, true
+}
+
+// appURL is the address of an app for one request. public says the request
+// arrived on a public dashboard name, which prefers the public address.
+func appURL(m catalog.Manifest, all []docker.Route, public bool) (string, bool) {
+	local, pub, ok := appAddresses(m, all)
+	if public && pub != "" {
+		return pub, ok
+	}
+	return local, ok
 }
 
 // list builds the list. grants nil means the owner's (every app, role
@@ -101,11 +116,15 @@ func (src myAppsSource) list(public bool, grants map[string]string) ([]MyApp, er
 		if err != nil || !src.Installed(name) {
 			continue
 		}
-		url, ok := appURL(m, routes, public)
+		local, pub, ok := appAddresses(m, routes)
 		if !ok {
 			continue
 		}
-		out = append(out, MyApp{Name: m.Name, Title: m.Title, Icon: m.Icon, Role: role, URL: url})
+		url := local
+		if public && pub != "" {
+			url = pub
+		}
+		out = append(out, MyApp{Name: m.Name, Title: m.Title, Icon: m.Icon, Role: role, URL: url, LocalURL: local, PublicURL: pub})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Title != out[j].Title {

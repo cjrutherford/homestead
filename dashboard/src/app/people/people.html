@@ -313,10 +313,24 @@
               Give this password to {{ d.who }}. Homestead does not keep it and cannot show it again.
             }
           </p>
+          @if (d.revealed.kind === 'link') {
+            <p><strong>On the local network</strong></p>
+          }
           <p class="reveal">
             <code class="reveal-value">{{ d.revealed.value }}</code>
-            <button type="button" class="quiet" (click)="copy(d.revealed.value)">Copy</button>
+            <button type="button" class="quiet" (click)="copy(d.revealed.value)">{{ d.revealed.kind === 'link' ? 'Copy local link' : 'Copy' }}</button>
           </p>
+          @if (d.revealed.kind === 'link') {
+            @if (d.revealed.public_value) {
+              <p><strong>Over the internet</strong></p>
+              <p class="reveal">
+                <code class="reveal-value">{{ d.revealed.public_value }}</code>
+                <button type="button" class="quiet" (click)="copy(d.revealed.public_value)">Copy public link</button>
+              </p>
+            } @else {
+              <p>There is no public link yet: it appears here once Authentik has a public address.</p>
+            }
+          }
           <div class="dialog-actions">
             <button type="button" class="primary" (click)="close()">I have it</button>
           </div>

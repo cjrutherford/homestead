@@ -68,6 +68,9 @@ type PeopleView struct {
 type Revealed struct {
 	Kind  string `json:"kind"`
 	Value string `json:"value"`
+	// PublicValue is a link's address outside the local network, when
+	// Authentik has a public address.
+	PublicValue string `json:"public_value,omitempty"`
 }
 
 // PersonAdd is the body for adding a person.

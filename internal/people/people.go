@@ -71,6 +71,10 @@ type Service struct {
 	// EndSessions ends a person's dashboard sessions (ADR-050 §1): when
 	// they are disabled, removed or no longer match Authentik.
 	EndSessions func(personID int64)
+	// PublicAuthentik returns Authentik's public (tunnel) address, or "".
+	// A one-time link then also comes back on that address, so a person
+	// away from the local network can open it.
+	PublicAuthentik func() string
 }
 
 func (s *Service) endSessions(id int64) {
@@ -156,10 +160,13 @@ type View struct {
 	ReadError string `json:"read_error,omitempty"`
 }
 
-// Revealed is a credential shown once. Kind is password or link.
+// Revealed is a credential shown once. Kind is password or link. A link's
+// Value opens on the local network; PublicValue is the same link on
+// Authentik's public address, empty while there is none.
 type Revealed struct {
-	Kind  string `json:"kind"`
-	Value string `json:"value"`
+	Kind        string `json:"kind"`
+	Value       string `json:"value"`
+	PublicValue string `json:"public_value,omitempty"`
 }
 
 var usernameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@+-]{0,149}$`)
@@ -474,7 +481,11 @@ func (s *Service) credential(ctx context.Context, api *sso.API, pk int, method, 
 		if err != nil {
 			return nil, credError(err)
 		}
-		return &Revealed{Kind: "link", Value: link}, nil
+		rev := &Revealed{Kind: "link", Value: link}
+		if s.PublicAuthentik != nil {
+			rev.PublicValue = sso.PublicLink(link, s.PublicAuthentik())
+		}
+		return rev, nil
 	}
 	return nil, invalid("method must be %q or %q", MethodLink, MethodGenerated)
 }

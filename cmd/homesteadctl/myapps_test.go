@@ -12,9 +12,9 @@ func myAppsStub(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/v1/me/apps":
-			_, _ = w.Write([]byte(`{"apps":[{"name":"immich","title":"Immich","icon":"photo","role":"owner","url":"https://homestead.lan/apps/immich/"}]}`))
+			_, _ = w.Write([]byte(`{"apps":[{"name":"immich","title":"Immich","icon":"photo","role":"owner","url":"https://homestead.lan/apps/immich/","local_url":"https://homestead.lan/apps/immich/","public_url":"https://home.example.com/apps/immich/"}]}`))
 		case "/api/v1/people/4/apps":
-			_, _ = w.Write([]byte(`{"apps":[{"name":"immich","title":"Immich","icon":"photo","role":"user","url":"https://homestead.lan/apps/immich/"}]}`))
+			_, _ = w.Write([]byte(`{"apps":[{"name":"immich","title":"Immich","icon":"photo","role":"user","url":"https://homestead.lan/apps/immich/","local_url":"https://homestead.lan/apps/immich/"}]}`))
 		case "/api/v1/people":
 			_, _ = w.Write([]byte(`{"token_kept":true,"owner":"chris","people":[{"id":4,"display_name":"Sam","username":"sam","state":"active","grants":[]}]}`))
 		default:
@@ -28,7 +28,7 @@ func myAppsStub(t *testing.T) *httptest.Server {
 func TestAppsMineListsOwnerApps(t *testing.T) {
 	ts := myAppsStub(t)
 	code, out, _ := invoke(t, []string{"--server", ts.URL, "apps", "mine"})
-	if code != exitOK || !strings.Contains(out, "immich  Immich  owner  https://homestead.lan/apps/immich/") {
+	if code != exitOK || !strings.Contains(out, "immich  Immich  owner  local https://homestead.lan/apps/immich/  public https://home.example.com/apps/immich/") {
 		t.Fatalf("exit %d out %q", code, out)
 	}
 	code, out, _ = invoke(t, []string{"--server", ts.URL, "apps", "mine", "--json"})

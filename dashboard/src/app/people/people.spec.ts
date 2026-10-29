@@ -167,6 +167,31 @@ describe('People', () => {
     expect(button('Generate a password instead')).toBeUndefined();
   });
 
+  it('shows a one-time link for the local network and one for the internet', () => {
+    start();
+    addSam().flush({
+      person: SAM,
+      revealed: { kind: 'link', value: 'https://homestead.lan/apps/auth/if/flow/r/?flow_token=x', public_value: 'https://home.example.com/apps/auth/if/flow/r/?flow_token=x' },
+    });
+    http.expectOne('/api/v1/people').flush(VIEW);
+    fixture.detectChanges();
+    expect(text()).toContain('On the local network');
+    expect(text()).toContain('https://homestead.lan/apps/auth/if/flow/r/?flow_token=x');
+    expect(text()).toContain('Over the internet');
+    expect(text()).toContain('https://home.example.com/apps/auth/if/flow/r/?flow_token=x');
+    expect(button('Copy local link')).toBeDefined();
+    expect(button('Copy public link')).toBeDefined();
+  });
+
+  it('says there is no public link yet when Authentik has no public address', () => {
+    start();
+    addSam().flush({ person: SAM, revealed: { kind: 'link', value: 'https://homestead.lan/apps/auth/if/flow/r/?flow_token=x' } });
+    http.expectOne('/api/v1/people').flush(VIEW);
+    fixture.detectChanges();
+    expect(text()).toContain('There is no public link yet');
+    expect(button('Copy public link')).toBeUndefined();
+  });
+
   it('grants and revokes only what changed, as separate confirmed calls', () => {
     start();
     (Array.from(el().querySelectorAll('.person[data-status="ok"] button')).find((b) => b.textContent?.trim() === 'Apps') as HTMLButtonElement).click();

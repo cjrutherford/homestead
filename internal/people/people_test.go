@@ -406,3 +406,40 @@ func TestEveryActionIsAuditedWithoutSecrets(t *testing.T) {
 		}
 	}
 }
+
+func TestLinkComesBackOnTheLocalAndThePublicAddress(t *testing.T) {
+	r := newRig(t)
+	r.svc.PublicAuthentik = func() string { return "https://home.example.com/apps/auth" }
+	_, rev := r.add("ada")
+	if rev == nil || rev.Kind != "link" || !strings.HasPrefix(rev.Value, "https://auth.example/recover/tok-") {
+		t.Fatalf("local link: %+v", rev)
+	}
+	if want := "https://home.example.com/recover/" + strings.TrimPrefix(rev.Value, "https://auth.example/recover/"); rev.PublicValue != want {
+		t.Fatalf("public link %q, want %q", rev.PublicValue, want)
+	}
+	// A reset issues both again.
+	p, _ := r.svc.List(bg)
+	again, err := r.svc.ResetPassword(bg, "owner", p.People[0].ID, MethodLink, "")
+	if err != nil || again.PublicValue == "" || !strings.HasPrefix(again.Value, "https://auth.example/") {
+		t.Fatalf("reset: %v %+v", err, again)
+	}
+	for _, l := range r.logs {
+		if strings.Contains(l, rev.PublicValue) || strings.Contains(l, again.PublicValue) {
+			t.Fatalf("audit holds a link: %q", l)
+		}
+	}
+}
+
+func TestNoPublicLinkWithoutAPublicAuthentikAddress(t *testing.T) {
+	r := newRig(t)
+	_, rev := r.add("ada")
+	if rev == nil || rev.PublicValue != "" {
+		t.Fatalf("no tunnel: %+v", rev)
+	}
+	r.svc.PublicAuthentik = func() string { return "" }
+	p, _ := r.svc.List(bg)
+	again, err := r.svc.ResetPassword(bg, "owner", p.People[0].ID, MethodLink, "")
+	if err != nil || again.PublicValue != "" {
+		t.Fatalf("empty public address: %v %+v", err, again)
+	}
+}

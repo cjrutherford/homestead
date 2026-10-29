@@ -43,6 +43,10 @@ export interface MyApp {
   icon: string;
   role: 'owner' | 'user' | 'admin';
   url: string;
+  /** Always set: the app on the appliance's own names. */
+  local_url: string;
+  /** Set once the app is published on the tunnel. */
+  public_url?: string;
 }
 
 export interface MyAppsView {
@@ -64,7 +68,10 @@ export interface PeopleView {
 /** A credential shown once: a password or a one-time sign-in link. */
 export interface Revealed {
   kind: 'password' | 'link';
+  /** A password, or a link that opens on the local network. */
   value: string;
+  /** The same link on Authentik's public address, when there is one. */
+  public_value?: string;
 }
 
 /** What adding a person returns; sign_in_failed: they were added but how they sign in was not set up. */

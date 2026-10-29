@@ -228,11 +228,15 @@ func printRevealed(stdout, stderr io.Writer, rev *apiclient.Revealed) {
 	}
 	switch rev.Kind {
 	case "link":
-		fmt.Fprintln(stderr, "One-time sign-in link (shown once, not stored):")
+		fmt.Fprintln(stderr, "One-time sign-in link, for the local network (shown once, not stored):")
 	default:
 		fmt.Fprintln(stderr, "Generated password (shown once, not stored):")
 	}
 	fmt.Fprintln(stdout, rev.Value)
+	if rev.PublicValue != "" {
+		fmt.Fprintln(stderr, "The same link over the internet (it works once, from either address):")
+		fmt.Fprintln(stdout, rev.PublicValue)
+	}
 }
 
 func runPeopleAdd(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
