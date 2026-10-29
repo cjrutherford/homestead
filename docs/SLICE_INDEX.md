@@ -196,3 +196,5 @@ S384 adds a sealed Audiobookshelf first-run recovery administrator (`docs/slices
 S386 schedules local-address setup for normal CLI installs (`docs/slices/S386-cli-install-address-setup.md`).
 
 S387 adds CLI install review of Authentik sign-in and people (`docs/slices/S387-cli-install-sign-in.md`).
+
+S388 preflights install-time people selections on the daemon (`docs/slices/S388-install-people-preflight.md`).

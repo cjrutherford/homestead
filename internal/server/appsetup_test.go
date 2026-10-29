@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"homestead/internal/audit"
 	"homestead/internal/catalog"
 	"homestead/internal/operation"
+	"homestead/internal/people"
 	"homestead/internal/store"
 )
 
@@ -321,6 +323,40 @@ func TestAppSetupPrepareKeepsApprovedStepsOnly(t *testing.T) {
 	}
 	if states(rec) != "publish:waiting" || rec.Public.Digest != "p" {
 		t.Fatalf("prepared = %s %+v", states(rec), rec.Public)
+	}
+}
+
+func TestAppSetupRejectsPeopleWithoutSignIn(t *testing.T) {
+	f := newSetupFixture(t)
+	m := statelessManifest(t, "statelessapp")
+	if _, err := f.a.prepare(m, catalog.InstallPlan{}, setupApproval{People: []int64{1}}, "owner"); err == nil {
+		t.Fatal("people must not be silently discarded without sign-in")
+	}
+}
+
+func TestAppSetupValidatesAllPeopleBeforeGrants(t *testing.T) {
+	f := newSetupFixture(t)
+	f.srv.people = &people.Service{DB: f.st.DB()}
+	for _, row := range []struct {
+		id    int
+		state string
+	}{{1, "active"}, {2, "disabled"}} {
+		_, err := f.st.DB().Exec(`INSERT INTO people (id, display_name, username, authentik_pk, state, created_by, created_at) VALUES (?, ?, ?, ?, ?, 'owner', '2026-01-01T00:00:00Z')`, row.id, "person", fmt.Sprint(row.id), row.id, row.state)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, ids := range [][]int64{{1, 2}, {1, 99}, {1, 1}, {0}} {
+		if err := f.a.validatePeople(ids); err == nil {
+			t.Fatalf("accepted %v", ids)
+		}
+	}
+	if err := f.a.validatePeople([]int64{1}); err != nil {
+		t.Fatal(err)
+	}
+	rec := setupRecord{App: "statelessapp", People: []int64{1, 2}}
+	if _, err := f.a.startStep(context.Background(), rec, setupPeople, peopleDigest(rec.App, rec.People), ""); err == nil {
+		t.Fatal("disabled person must stop the step before the first grant")
 	}
 }
 

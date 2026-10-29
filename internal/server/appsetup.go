@@ -332,6 +332,32 @@ func peopleDigest(app string, ids []int64) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// validatePeople checks the whole selection before starting any grants.
+// Grant still rechecks each person because their state can change later.
+func (a *appSetup) validatePeople(ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if a.s.people == nil {
+		return errors.New("people are not managed on this appliance")
+	}
+	seen := map[int64]bool{}
+	for _, id := range ids {
+		if id <= 0 || seen[id] {
+			return fmt.Errorf("invalid or duplicate person %d", id)
+		}
+		seen[id] = true
+		active, _, err := a.s.people.AppGrants(id)
+		if errors.Is(err, people.ErrNotFound) || (err == nil && !active) {
+			return fmt.Errorf("person %d is missing or disabled", id)
+		}
+		if err != nil {
+			return fmt.Errorf("check person %d: %w", id, err)
+		}
+	}
+	return nil
+}
+
 // prepare builds the setup record for an install from the owner's
 // approvals and the reviewed install plan. Its steps are the approved
 // ones only. A sign-in approval needs the kept Authentik API token (a
@@ -339,6 +365,9 @@ func peopleDigest(app string, ids []int64) string {
 // with the way to set sign-in up later, and so are the people.
 func (a *appSetup) prepare(manifest catalog.Manifest, plan catalog.InstallPlan, approval setupApproval, actor string) (setupRecord, error) {
 	rec := setupRecord{App: manifest.Name, Status: setupWaiting, Actor: actor, Routes: []docker.Route{}, Digest: installDigest(plan)}
+	if len(approval.People) > 0 && approval.SignIn == nil {
+		return rec, errors.New("people require an approved sign-in plan")
+	}
 	for _, r := range plan.Routes {
 		if r.Exposure != docker.ExposurePublic {
 			rec.Routes = append(rec.Routes, r)
@@ -372,6 +401,11 @@ func (a *appSetup) prepare(manifest catalog.Manifest, plan catalog.InstallPlan, 
 		}
 		rec.Steps = append(rec.Steps, step)
 		if len(approval.People) > 0 {
+			if kept {
+				if err := a.validatePeople(approval.People); err != nil {
+					return rec, err
+				}
+			}
 			rec.People = append([]int64(nil), approval.People...)
 			ps := setupStep{Name: setupPeople, State: stepWaiting, Digest: peopleDigest(manifest.Name, rec.People)}
 			if !kept {
@@ -635,6 +669,9 @@ func (a *appSetup) startStep(ctx context.Context, rec setupRecord, name, approve
 		}
 		if a.s.people == nil {
 			return 0, errors.New("people are not managed on this appliance")
+		}
+		if err := a.validatePeople(rec.People); err != nil {
+			return 0, err
 		}
 		for _, id := range rec.People {
 			if _, err := a.s.people.Grant(ctx, rec.Actor, id, people.Grant{App: rec.App, Role: people.RoleUser}); err != nil {
