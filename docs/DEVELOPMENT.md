@@ -5441,3 +5441,7 @@ sudo homesteadctl claim token          # the new owner's claim token
   `app.routes.ts` (its `PAGES` map must list each route and template), and
   rejects colour literals and raw shadows in every stylesheet except
   `tokens.css` and `fonts.css`, including component `styles`.
+
+### Audiobookshelf first-run (S384)
+
+The pinned Audiobookshelf image is probed on its container loopback. When it has no root user, Homestead creates `homestead-admin` with a sealed, revealable recovery password through the app’s initialization API and checks that local login succeeds. An existing root is left untouched; no new password is generated for it. This prerequisite does not itself enable Authentik sign-in.

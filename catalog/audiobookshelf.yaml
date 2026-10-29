@@ -5,8 +5,8 @@
 # settings (callback /auth/openid/callback) because the image reads no OIDC
 # environment variables; the SSO posture is declared and the credentials
 # stay an owner step. The JWT signing secret is generated into the SQLite
-# database on first start, which the database export backs up, so no secret
-# is declared and the image entrypoint runs unchanged.
+# database on first start. Homestead separately holds a first-run recovery
+# password; the image entrypoint runs unchanged.
 name: audiobookshelf
 version: 2.37.1
 title: Audiobookshelf
@@ -68,6 +68,16 @@ database:
 sso:
   class: optional
   protocols: [oidc]
+secrets:
+- name: admin_password
+  immutable: true
+  reveal: true
+  note: Recovery password only when Homestead created the Audiobookshelf administrator; an existing administrator is never changed.
+firstrun:
+  routine: audiobookshelf
+  service: audiobookshelf
+  account: homestead-admin
+  secret: admin_password
 integrations:
 - kind: identity
   target: authentik

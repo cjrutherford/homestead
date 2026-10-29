@@ -478,8 +478,9 @@ type Manifest struct {
 // First-run routines (S318): each is first-party Go code in
 // internal/firstrun; the manifest only names one.
 const (
-	FirstRunImmich   = "immich"
-	FirstRunJellyfin = "jellyfin"
+	FirstRunImmich         = "immich"
+	FirstRunJellyfin       = "jellyfin"
+	FirstRunAudiobookshelf = "audiobookshelf"
 )
 
 // Library kinds a first run may create (Jellyfin's collection types).
@@ -509,7 +510,7 @@ type Library struct {
 
 func (f FirstRun) validate(m Manifest, services map[string]bool) error {
 	switch f.Routine {
-	case FirstRunImmich, FirstRunJellyfin:
+	case FirstRunImmich, FirstRunJellyfin, FirstRunAudiobookshelf:
 	default:
 		return fmt.Errorf("catalog: unknown first-run routine %q", f.Routine)
 	}

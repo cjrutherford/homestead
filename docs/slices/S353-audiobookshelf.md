@@ -1,5 +1,7 @@
 # S353 — Audiobookshelf
 
+**Later change:** S384 adds a Homestead-created first-run recovery administrator for fresh installations. Authentik configuration remains a separate planned adapter. The original S353 contract below records the initial package.
+
 ## Goal
 Ship the first Wave 2 package: an audiobook and podcast server the owner
 installs, points at media already on bulk storage, and listens to from a

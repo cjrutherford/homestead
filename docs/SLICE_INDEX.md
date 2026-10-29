@@ -190,3 +190,5 @@ catalog track, an Everything-app track and the craft validation gate, with
 dependencies, the critical path and the recommended interleave.
 
 S383 separates curated container listening ports from actual host-port requirements (`docs/slices/S383-catalog-container-port-requirements.md`).
+
+S384 adds a sealed Audiobookshelf first-run recovery administrator (`docs/slices/S384-audiobookshelf-first-run.md`); S385 will add its Authentik adapter.

@@ -835,8 +835,8 @@ func TestCuratedAudiobookshelf(t *testing.T) {
 	if len(service.Environment) != 0 {
 		t.Fatalf("environment = %v, want the image's own CONFIG_PATH/METADATA_PATH/PORT defaults", service.Environment)
 	}
-	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 0 {
-		t.Fatalf("audiobookshelf generates its JWT secret into the database; secrets = %+v", manifest.Secrets)
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 1 || !manifest.HeldSecret("admin_password") || manifest.FirstRun.Routine != FirstRunAudiobookshelf {
+		t.Fatalf("first run = %+v, secrets = %+v", manifest.FirstRun, manifest.Secrets)
 	}
 	wantData := []struct {
 		target  string

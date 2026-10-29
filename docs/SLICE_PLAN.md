@@ -8,10 +8,10 @@ tracks cannot collide; each slice's contract file is written when it is
 scheduled, not now.
 
 Numbering continues from S341 (catalog integration contract). The plan ends
-at **S383** — 43 slices. S383 fixes catalog port metadata. Work with no ID is listed in section 7 and is not
+at **S385** — 45 slices. S383 fixes catalog port metadata; S384 adds Audiobookshelf first-run and S385 is its Authentik adapter. Work with no ID is listed in section 7 and is not
 committed to.
 
-S383 is completed separately as the catalog container-port correction; see `docs/slices/S383-catalog-container-port-requirements.md`.
+S384 is the Audiobookshelf first-run prerequisite; S385 is its planned Authentik adapter. S383 is completed separately as the catalog container-port correction; see `docs/slices/S383-catalog-container-port-requirements.md`.
 
 ## 1. Rules that apply to every slice below
 

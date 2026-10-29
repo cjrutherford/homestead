@@ -1537,3 +1537,5 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
   batches are stale (the runs are recorded in `docs/DEVELOPMENT.md`), but
   none of those runs proved DNS resolution. S382's fresh-appliance matrix is
   the single run that closes both the stale notes and the DNS proof.
+
+- Audiobookshelf Authentik adapter (S385): its first-run recovery administrator is created by S384, but OIDC client provisioning, app-side actuation, group mapping, install-time approval, and live sign-in remain to be implemented and verified. Existing owner-created administrators must not be overwritten.

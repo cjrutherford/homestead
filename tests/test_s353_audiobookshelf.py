@@ -57,10 +57,11 @@ class TestAudiobookshelfContract(unittest.TestCase):
         self.assertIn("kind: library", self.text)
         self.assertIn("target: nextcloud", self.text)
 
-    def test_no_secret_or_entrypoint_override(self):
-        # The JWT signing secret is generated into the backed-up SQLite
-        # database; the image entrypoint runs unchanged.
-        self.assertNotIn("\nsecrets:", self.text)
+    def test_first_run_secret_and_unchanged_entrypoint(self):
+        self.assertIn("routine: audiobookshelf", self.text)
+        self.assertIn("name: admin_password", self.text)
+        self.assertIn("immutable: true", self.text)
+        self.assertIn("reveal: true", self.text)
         self.assertNotIn("entrypoint:", self.text)
 
     def test_no_latest_tag(self):
