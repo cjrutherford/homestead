@@ -64,6 +64,88 @@ func updateRequest(dir string) UpdateRequest {
 	}
 }
 
+func TestRewriteImagesUpdatesEveryMatchingServiceImage(t *testing.T) {
+	curated, err := catalog.Load(filepath.Join("..", "..", "catalog"))
+	if err != nil {
+		t.Fatalf("load curated catalog: %v", err)
+	}
+	manifest, err := curated.Get("authentik")
+	if err != nil {
+		t.Fatalf("load Authentik manifest: %v", err)
+	}
+	generated, err := catalog.Generate(manifest, catalog.Generation{})
+	if err != nil {
+		t.Fatalf("generate Authentik compose: %v", err)
+	}
+	compose := generated.ComposeYAML
+	dir := t.TempDir()
+	path := filepath.Join(dir, composeYAMLName)
+	if err := os.WriteFile(path, []byte(compose), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	moves := []ServiceUpdate{
+		{Service: "server", Current: "ghcr.io/goauthentik/server:2026.8.3", Target: "ghcr.io/goauthentik/server:2026.9.0", Source: SourceRegistry},
+		{Service: "worker", Current: "ghcr.io/goauthentik/server:2026.8.3", Target: "ghcr.io/goauthentik/server:2026.9.0", Source: SourceRegistry},
+	}
+	if err := rewriteImages(dir, moves, func(m ServiceUpdate) string { return m.Current }, func(m ServiceUpdate) string { return m.Target }); err != nil {
+		t.Fatalf("rewriteImages: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(raw)
+	if strings.Count(got, moves[0].Target) != 2 || strings.Contains(got, moves[0].Current) || !strings.Contains(got, "image: docker.io/library/postgres:16-alpine") {
+		t.Fatalf("expected both Authentik services updated, unrelated service retained:\n%s", got)
+	}
+}
+
+func TestRewriteImagesPreservesQuotedYAMLAndSupportsTagDigestTransitions(t *testing.T) {
+	const compose = "services:\n  server:\n    image: \"ghcr.io/goauthentik/server:2026.8.3\" # owner note\n  worker:\n    image: 'ghcr.io/goauthentik/server:2026.8.3'\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, composeYAMLName)
+	if err := os.WriteFile(path, []byte(compose), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	move := ServiceUpdate{Service: "server", Current: "ghcr.io/goauthentik/server:2026.8.3", Target: "ghcr.io/goauthentik/server@sha256:0123456789abcdef"}
+	if err := rewriteImages(dir, []ServiceUpdate{move}, func(m ServiceUpdate) string { return m.Current }, func(m ServiceUpdate) string { return m.Target }); err != nil {
+		t.Fatalf("tag to digest: %v", err)
+	}
+	move.Current, move.Target = move.Target, "ghcr.io/goauthentik/server:2026.9.0"
+	if err := rewriteImages(dir, []ServiceUpdate{move}, func(m ServiceUpdate) string { return m.Current }, func(m ServiceUpdate) string { return m.Target }); err != nil {
+		t.Fatalf("digest to tag: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(raw)
+	if strings.Count(got, move.Target) != 1 || !strings.Contains(got, `image: "`+move.Target+`" # owner note`) || !strings.Contains(got, "image: 'ghcr.io/goauthentik/server:2026.8.3'") {
+		t.Fatalf("quoted scalars/comments not preserved:\n%s", got)
+	}
+}
+
+func TestRewriteImagesNoMatchFailsWithoutWriting(t *testing.T) {
+	const compose = "services:\n  server:\n    image: ghcr.io/goauthentik/server:2026.8.3\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, composeYAMLName)
+	if err := os.WriteFile(path, []byte(compose), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	move := ServiceUpdate{Service: "server", Current: "ghcr.io/goauthentik/server:2026.8.2", Target: "ghcr.io/goauthentik/server:2026.9.0"}
+	err := rewriteImages(dir, []ServiceUpdate{move}, func(m ServiceUpdate) string { return m.Current }, func(m ServiceUpdate) string { return m.Target })
+	if err == nil {
+		t.Fatalf("error = %v, want missing image failure", err)
+	}
+	raw, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(raw) != compose {
+		t.Fatalf("no-match changed compose:\n%s", raw)
+	}
+}
+
 func openUpdateRunner(t *testing.T) *operation.Runner {
 	t.Helper()
 	s, err := store.Open(filepath.Join(t.TempDir(), "run.db"))
@@ -259,5 +341,101 @@ func TestUpdateRefusals(t *testing.T) {
 	}
 	if done.Status != operation.StatusFailed {
 		t.Fatalf("status = %q, want failed", done.Status)
+	}
+}
+
+func TestRewriteServiceBoundariesAndFlow(t *testing.T) {
+	from := func(m ServiceUpdate) string { return m.Current }
+	to := func(m ServiceUpdate) string { return m.Target }
+	tests := []struct {
+		name, input, want string
+		moves             []ServiceUpdate
+		fail              bool
+	}{
+		{"shared unplanned", "services:\n  server: {image: example/web:1}\n  worker: {image: example/web:1}\n", "services:\n  server: {image: example/web:2}\n  worker: {image: example/web:1}\n", []ServiceUpdate{{Service: "server", Current: "example/web:1", Target: "example/web:2"}}, false},
+		{"flow digest and quote", "services: {server: {image: 'example/web:1'}, worker: {image: example/web@sha256:abc}} # note\n", "services: {server: {image: 'example/web@sha256:def'}, worker: {image: example/web:2}} # note\n", []ServiceUpdate{{Service: "server", Current: "example/web:1", Target: "example/web@sha256:def"}, {Service: "worker", Current: "example/web@sha256:abc", Target: "example/web:2"}}, false},
+		{"drift after valid", "services:\n  server: {image: example/web:1}\n  worker: {image: example/web:other}\n", "", []ServiceUpdate{{Service: "server", Current: "example/web:1", Target: "example/web:2"}, {Service: "worker", Current: "example/web:1", Target: "example/web:2"}}, true},
+		{"absent", "services:\n  server: {image: example/web:1}\n", "", []ServiceUpdate{{Service: "missing", Current: "example/web:1", Target: "example/web:2"}}, true},
+		{"no match", "services:\n  server: {image: example/web:other}\n", "", []ServiceUpdate{{Service: "server", Current: "example/web:1", Target: "example/web:2"}}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, composeYAMLName)
+			if err := os.WriteFile(path, []byte(tt.input), 0600); err != nil {
+				t.Fatal(err)
+			}
+			err := rewriteImages(dir, tt.moves, from, to)
+			if (err != nil) != tt.fail {
+				t.Fatalf("error = %v", err)
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := tt.want
+			if tt.fail {
+				want = tt.input
+			}
+			if string(raw) != want {
+				t.Fatalf("got %q want %q", raw, want)
+			}
+		})
+	}
+}
+
+func TestRollbackConvergingImages(t *testing.T) {
+	dir := updateStack(t, map[string]string{"a": "example/web:1", "b": "example/web:2"})
+	moves := []ServiceUpdate{{Service: "a", Current: "example/web:1", Target: "example/web:3"}, {Service: "b", Current: "example/web:2", Target: "example/web:3"}}
+	from := func(m ServiceUpdate) string { return m.Current }
+	to := func(m ServiceUpdate) string { return m.Target }
+	if err := rewriteImages(dir, moves, from, to); err != nil {
+		t.Fatal(err)
+	}
+	if err := rewriteImages(dir, moves, to, from); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, composeYAMLName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "image: example/web:1") || !strings.Contains(string(raw), "image: example/web:2") {
+		t.Fatalf("not restored: %s", raw)
+	}
+}
+
+func TestUpdateReportsRollbackRewriteFailure(t *testing.T) {
+	dir := updateStack(t, map[string]string{"web": "example/web:1.0.0"})
+	req := updateRequest(dir)
+	old := execCompose
+	t.Cleanup(func() { execCompose = old })
+	ups := 0
+	execCompose = func(_ context.Context, _, _ string, args ...string) (string, error) {
+		if args[0] == "up" {
+			ups++
+		}
+		if args[0] == "ps" {
+			if err := os.WriteFile(filepath.Join(dir, composeYAMLName), []byte("services: {}\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			return `{"Service":"web","State":"exited"}`, nil
+		}
+		return "", nil
+	}
+	def, err := UpdateDefinition(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range def.Steps {
+		err = step.Run(context.Background())
+		if err != nil {
+			break
+		}
+	}
+	if err == nil || !strings.Contains(err.Error(), "rollback rewrite failed") || !strings.Contains(err.Error(), `service "web"`) {
+		t.Fatalf("error = %v", err)
+	}
+	if ups != 1 {
+		t.Fatalf("up calls = %d, want 1 after rollback rewrite failure", ups)
 	}
 }
