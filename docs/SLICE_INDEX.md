@@ -202,3 +202,5 @@ S388 preflights install-time people selections on the daemon (`docs/slices/S388-
 S389 defines explicit per-person access decisions (`docs/slices/S389-install-user-access.md`); S390 will enforce them at installation (`docs/slices/S390-install-user-access.md`).
 
 S394 makes catalog bundles emit empty lists instead of null and list their member apps (`docs/slices/S394-catalog-bundles-empty-lists.md`).
+
+S395 keeps Authentik published on the tunnel when it moves to its path with the dashboard tunneled and sign-in linked (`docs/slices/S395-authentik-move-keeps-public-sign-in.md`).

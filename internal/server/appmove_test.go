@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -278,5 +279,115 @@ func TestAppMoveCraftApp(t *testing.T) {
 	r := movedRoute(t, st, "cadcraft.lan")
 	if r.Path != "/apps/cadcraft/" || !r.StripPrefix || r.CraftApp != "cadcraft" {
 		t.Fatalf("route = %+v", r)
+	}
+}
+
+// S395: moving Authentik to the dashboard's path keeps it published on
+// the dashboard's tunnel when a fresh tunnel plan would publish it, so
+// public sign-in and recovery links keep answering.
+func authentikMoveRig(t *testing.T, tunneled, linked bool) (*Server, *store.Store) {
+	t.Helper()
+	srv, st, _, _ := moveRig(t)
+	set, _ := loadEdgeRoutes(st)
+	for i := range set.Routes {
+		switch {
+		case set.Routes[i].Host == "authentik.lan":
+			set.Routes[i].Tunnel = nil
+		case set.Routes[i].Dashboard && tunneled:
+			set.Routes[i].Tunnel = []docker.Hostname{"homestead.example.com"}
+		}
+	}
+	if err := saveEdgeRoutes(st, set); err != nil {
+		t.Fatal(err)
+	}
+	installApp(t, st, "authentik", docker.Route{Host: "auth.lan", Target: docker.Target{Host: "server", Port: 9000},
+		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal})
+	// Only the rig's own Authentik route stays; installApp added the marker.
+	set, _ = loadEdgeRoutes(st)
+	kept := set.Routes[:0]
+	for _, r := range set.Routes {
+		if r.Host != "auth.lan" {
+			kept = append(kept, r)
+		}
+	}
+	set.Routes = kept
+	if err := saveEdgeRoutes(st, set); err != nil {
+		t.Fatal(err)
+	}
+	srv.signInOffered = func() bool { return linked }
+	prev := reconcileEdgeSet
+	reconcileEdgeSet = func(_ context.Context, st *store.Store, set docker.RouteSet) error { return saveEdgeRoutes(st, set) }
+	t.Cleanup(func() { reconcileEdgeSet = prev })
+	return srv, st
+}
+
+func applyAuthentikMove(t *testing.T, srv *Server, st *store.Store) appMoveView {
+	t.Helper()
+	plan := movePlan(t, srv, "authentik")
+	rec := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/authentik/move/apply", map[string]any{"digest": plan.Digest})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply: %d %s", rec.Code, rec.Body.String())
+	}
+	if op := waitOperation(t, st, rec.Body.Bytes()); op.Status != operation.StatusSucceeded {
+		t.Fatalf("operation = %+v", op)
+	}
+	return plan
+}
+
+func TestAppMoveAuthentikKeepsPublicSignIn(t *testing.T) {
+	srv, st := authentikMoveRig(t, true, true)
+	plan := applyAuthentikMove(t, srv, st)
+	if !strings.Contains(strings.Join(plan.SignIn, " "), "stays published on the tunnel") {
+		t.Fatalf("plan text = %v", plan.SignIn)
+	}
+	set, _ := loadEdgeRoutes(st)
+	var ak docker.Route
+	for _, r := range set.Routes {
+		if r.Host == "authentik.lan" {
+			ak = r
+		}
+	}
+	if ak.Path != "/apps/auth/" || !ak.Published || len(ak.Tunnel) != 0 {
+		t.Fatalf("route = %+v", ak)
+	}
+	dir := t.TempDir()
+	if _, err := docker.ReconcileRoutes(dir, set, docker.RouteSet{}); err != nil {
+		t.Fatal(err)
+	}
+	var dashFile string
+	for _, r := range set.Routes {
+		if r.Dashboard {
+			dashFile = string(docker.RouteFilename(r.Host))
+		}
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "routes", dashFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tunnelBlock := string(body)[strings.Index(string(body), "# Tunnel entry"):]
+	if !strings.Contains(tunnelBlock, "handle /apps/auth/*") {
+		t.Fatalf("tunnel block lacks the Authentik handle:\n%s", tunnelBlock)
+	}
+}
+
+func TestAppMoveAuthentikStaysUnpublishedWithoutTunnelOrSignIn(t *testing.T) {
+	for name, tc := range map[string]struct {
+		tunneled, linked bool
+		note             string
+	}{
+		"no tunnel":        {false, true, ""},
+		"sign-in unlinked": {true, false, "sign-in is not linked"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv, st := authentikMoveRig(t, tc.tunneled, tc.linked)
+			plan := applyAuthentikMove(t, srv, st)
+			text := strings.Join(plan.SignIn, " ")
+			if strings.Contains(text, "stays published") || !strings.Contains(text, tc.note) {
+				t.Fatalf("plan text = %v", plan.SignIn)
+			}
+			if r := movedRoute(t, st, "authentik.lan"); r.Path != "/apps/auth/" || r.Published {
+				t.Fatalf("route = %+v", r)
+			}
+		})
 	}
 }

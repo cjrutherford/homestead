@@ -198,14 +198,21 @@ func requireLocalDashboardNames(routes []docker.Route) error {
 // public name nor loses one.
 func preserveTunnelNames(st *store.Store, routes []docker.Route) []docker.Route {
 	stored := map[docker.Hostname][]docker.Hostname{}
+	published := map[docker.Hostname]bool{}
 	if set, err := loadEdgeRoutes(st); err == nil {
 		for _, r := range set.Routes {
 			stored[r.Host] = r.Tunnel
+			published[r.Host] = r.Published
 		}
 	}
 	out := make([]docker.Route, len(routes))
 	for i, r := range routes {
 		r.Tunnel = stored[r.Host]
+		// A path route's publication on the dashboard's name is a tunnel
+		// name too (ADR-044): a posted table does not change it (S395).
+		if r.IsPath() {
+			r.Published = published[r.Host]
+		}
 		out[i] = r
 	}
 	return out

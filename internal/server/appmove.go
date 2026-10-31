@@ -75,6 +75,8 @@ type appMovePlan struct {
 	names    []string
 	env      []catalog.ConfigChange
 	seeds    []catalog.MoveSeed
+	// publish keeps the moved path published on the dashboard's tunnel.
+	publish bool
 }
 
 func (p appMovePlan) digest() string {
@@ -84,15 +86,36 @@ func (p appMovePlan) digest() string {
 	h := sha256.New()
 	h.Write(data)
 	hidden, _ := json.Marshal(struct {
-		Names []string
-		Env   []catalog.ConfigChange
-		Seeds []catalog.MoveSeed
-	}{p.names, p.env, p.seeds})
+		Names   []string
+		Env     []catalog.ConfigChange
+		Seeds   []catalog.MoveSeed
+		Publish bool
+	}{p.names, p.env, p.seeds, p.publish})
 	h.Write(hidden)
 	return hex.EncodeToString(h.Sum(nil))
 }
 
 // moveFacts is what the offer and the plan read.
+// keepsAuthentikPublic reports whether Authentik, once moved from route
+// to its path, is published on the dashboard's tunnel as a fresh tunnel
+// plan would publish it (buildTunnelPlan, via authentikPathPublished).
+// The move never creates a tunnel: the dashboard must already have
+// public names.
+func keepsAuthentikPublic(routes []docker.Route, route, path string, signInLinked bool) bool {
+	projected := append([]docker.Route(nil), routes...)
+	for i := range projected {
+		if strings.EqualFold(string(projected[i].Host), route) {
+			projected[i].Path = path
+		}
+	}
+	dash := dashboardRoute(projected)
+	return dash >= 0 && len(projected[dash].Tunnel) > 0 && authentikPathPublished(projected, signInLinked)
+}
+
+func (m *appMove) signInLinked() bool {
+	return m.s.signInOffered != nil && m.s.signInOffered()
+}
+
 type moveFacts struct {
 	manifest catalog.Manifest
 	route    docker.Route
@@ -237,6 +260,18 @@ func (m *appMove) buildPlan(name string) (appMovePlan, error) {
 		fmt.Sprintf("%s restarts to take its new settings.", mf.Title),
 		"Apps served by path share one web origin with the dashboard (ADR-044).")
 	if mf.Name == authentikPackage {
+		set, err := loadEdgeRoutes(m.st)
+		if err != nil {
+			return appMovePlan{}, err
+		}
+		plan.publish = keepsAuthentikPublic(set.Routes, plan.Route, plan.Path, m.signInLinked())
+		if plan.publish {
+			plan.SignIn = append(plan.SignIn,
+				"Public reachability: Authentik's path stays published on the tunnel with the dashboard, so public sign-in and recovery links keep answering at the dashboard's public name.")
+		} else if dash, ok := set.DashboardRoute(); ok && len(dash.Tunnel) > 0 {
+			plan.SignIn = append(plan.SignIn,
+				"Public reachability: the dashboard is on the tunnel but sign-in is not linked, so Authentik's path is not published; public sign-in is not offered.")
+		}
 		plan.SignIn = append(plan.SignIn,
 			"Dashboard sign-in and every app's sign-in use Authentik's old address and stop working until you set them up again at the new address (Settings, Sign-in, then each app). Password sign-in to the dashboard keeps working.")
 	} else if f.signIn {
@@ -324,7 +359,7 @@ func appMoveDefinition(st *store.Store, secrets *secret.Store, plan appMovePlan)
 		}})
 	}
 	def.Steps = append(def.Steps, configure.Steps...)
-	names := plan.names
+	names, publish := plan.names, plan.publish
 	address := strings.TrimSuffix(docker.PathURL(docker.Hostname(names[0]), plan.Path), "/")
 	def.Steps = append(def.Steps, operation.StepDef{Name: "app-hosts", Run: func(ctx context.Context) error {
 		return trustAppHosts(ctx, mf, address, names, nil)
@@ -341,7 +376,9 @@ func appMoveDefinition(st *store.Store, secrets *secret.Store, plan appMovePlan)
 				set.Routes[i].StripPrefix = mf.StripPrefix
 				set.Routes[i].Redirects = append([]docker.PathRedirect(nil), mf.Redirects...)
 				set.Routes[i].Tunnel = nil
-				set.Routes[i].Published = false
+				// Authentik stays published when a fresh tunnel plan would
+				// publish its path (S395).
+				set.Routes[i].Published = publish
 				if err := set.Routes[i].Validate(); err != nil {
 					return err
 				}
