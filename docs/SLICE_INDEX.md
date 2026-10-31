@@ -200,3 +200,5 @@ S387 adds CLI install review of Authentik sign-in and people (`docs/slices/S387-
 S388 preflights install-time people selections on the daemon (`docs/slices/S388-install-people-preflight.md`).
 
 S389 defines explicit per-person access decisions (`docs/slices/S389-install-user-access.md`); S390 will enforce them at installation (`docs/slices/S390-install-user-access.md`).
+
+S394 makes catalog bundles emit empty lists instead of null and list their member apps (`docs/slices/S394-catalog-bundles-empty-lists.md`).

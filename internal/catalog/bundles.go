@@ -154,6 +154,11 @@ func CheckBundle(cat Catalog, bundle Bundle, host HostFacts) (BundleReport, erro
 	report := BundleReport{
 		Bundle: bundle.Name, Title: bundle.Title, Blurb: bundle.Blurb,
 		HostMemory: host.MemoryMB,
+		// Non-nil so the JSON carries [] not null; the dashboard reads
+		// .length on these lists.
+		Members: []BundleMember{},
+		Missing: []string{},
+		Storage: []BundleStorage{},
 	}
 	needed := map[storage.Class]uint64{}
 	available := 0

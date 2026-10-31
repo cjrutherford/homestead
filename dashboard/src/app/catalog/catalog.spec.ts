@@ -102,6 +102,29 @@ describe('Catalog', () => {
     expect(text()).toContain('Not in the catalog yet: vaultwarden');
   });
 
+  it('lists bundle members and tolerates empty lists (S394)', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/catalog/bundles').flush([
+      {
+        Bundle: 'starter',
+        Title: 'Starter',
+        Blurb: 'Files.',
+        Members: [{ Name: 'nextcloud', Available: true, MemoryMB: 512 }],
+        Missing: null,
+        Complete: true,
+        TotalMemory: 512,
+        HostMemory: 16384,
+        Storage: null,
+        Passed: true,
+        Detail: 'bundle fits',
+      },
+    ]);
+    fixture.detectChanges();
+    expect(text()).toContain('nextcloud');
+    expect(text()).not.toContain('Not in the catalog yet');
+  });
+
   it('lists curated packages', () => {
     load();
     expect(text()).toContain('Jellyfin');

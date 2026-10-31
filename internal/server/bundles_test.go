@@ -73,3 +73,31 @@ func TestCatalogBundlesReportsHostDiscoveryFailure(t *testing.T) {
 		t.Fatalf("code = %d, want 502", recorder.Code)
 	}
 }
+
+// TestCatalogBundlesJSONListsAreArrays guards the dashboard contract: it
+// reads .length on Missing and iterates Members/Storage, so a nil slice
+// serialised as null broke the whole bundle render.
+func TestCatalogBundlesJSONListsAreArrays(t *testing.T) {
+	srv, _ := catalogTestServer(t)
+	old := hostFactsFor
+	hostFactsFor = func(*store.Store) (catalog.HostFacts, error) {
+		return catalog.HostFacts{Arch: "amd64", MemoryMB: 16384, FreeSpace: map[storage.Class]uint64{}}, nil
+	}
+	t.Cleanup(func() { hostFactsFor = old })
+
+	recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/bundles", nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("code = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+	var raw []map[string]json.RawMessage
+	if err := json.Unmarshal(recorder.Body.Bytes(), &raw); err != nil || len(raw) == 0 {
+		t.Fatalf("decode: %v (%d bundles)", err, len(raw))
+	}
+	for _, bundle := range raw {
+		for _, key := range []string{"Members", "Missing", "Storage"} {
+			if string(bundle[key]) == "null" || len(bundle[key]) == 0 || bundle[key][0] != '[' {
+				t.Errorf("%s %s = %s, want an array", bundle["Bundle"], key, bundle[key])
+			}
+		}
+	}
+}

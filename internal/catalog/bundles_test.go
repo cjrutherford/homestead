@@ -201,3 +201,16 @@ func TestBundleWithNoAvailableMembersIsBlocked(t *testing.T) {
 		t.Fatalf("report = %+v", report)
 	}
 }
+
+func TestCheckBundleEmptyListsAreNotNil(t *testing.T) {
+	report, err := CheckBundle(Catalog{}, Bundle{Name: "x", Title: "X", Blurb: "b", Packages: []string{"ghost"}}, HostFacts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Storage == nil || report.Members == nil || report.Missing == nil {
+		t.Fatalf("nil list in report: %+v", report)
+	}
+	if len(report.Members) != 1 || report.Members[0].Name != "ghost" {
+		t.Fatalf("members = %+v", report.Members)
+	}
+}

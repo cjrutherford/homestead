@@ -21,7 +21,10 @@
             <strong>{{ bundle.Title }}</strong> — {{ bundle.Blurb }}
             <p>{{ bundle.Detail }}</p>
             <ul>
-              @for (storage of bundle.Storage; track storage.Class) {
+              @for (member of bundle.Members ?? []; track member.Name) {
+                <li>{{ member.Name }}{{ member.Available ? '' : ' (not in the catalog yet)' }}</li>
+              }
+              @for (storage of bundle.Storage ?? []; track storage.Class) {
                 <li>
                   {{ storage.Class }} storage:
                   @if (storage.Known) {
@@ -32,7 +35,7 @@
                 </li>
               }
             </ul>
-            @if (bundle.Missing.length > 0) {
+            @if ((bundle.Missing ?? []).length > 0) {
               <p>Not in the catalog yet: {{ bundle.Missing.join(', ') }}</p>
             }
           </li>
