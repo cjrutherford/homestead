@@ -216,3 +216,4 @@ S399 makes publishing or unpublishing an app bring its Authentik sign-in (issuer
 S400 makes app moves work for every path-served app and keeps the app's sign-in and the craft files link in step (`docs/slices/S400-moves-keep-sign-in-and-files-in-step.md`).
 S401 fixes the deadlock that hung moves which write seed files but change no environment (`docs/slices/S401-seed-only-move-deadlock.md`).
 S402 adds the generic `env-oidc` sign-in adapter for apps configured by environment variables; the client secret is a declared package secret (`docs/slices/S402-env-oidc-adapter.md`).
+S403 turns on Authentik sign-in for Mealie through the `env-oidc` adapter and wires the declared secret into stacks installed before it (`docs/slices/S403-mealie-authentik.md`).

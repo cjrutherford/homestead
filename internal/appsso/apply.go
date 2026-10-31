@@ -103,11 +103,21 @@ func ensureDeclaredSecret(rt Runtime, m catalog.Manifest, dir string) (string, e
 		if err := catalog.EnsureSecrets(rt.AppSecrets, catalog.Manifest{Name: m.Name, Secrets: []catalog.SecretDecl{d}}); err != nil {
 			return "", err
 		}
-		if !catalog.SecretsWired(dir, m) {
-			return "", fmt.Errorf("appsso: %s was installed before it declared the secret %q; reinstall it or run configure so its stack carries the secret, then apply sign-in again", m.Title, name)
-		}
 		if err := catalog.WriteSecretFiles(dir, catalog.SecretFilesFor(m), rt.AppSecrets); err != nil {
 			return "", err
+		}
+		// An install made before the manifest declared the secret gets
+		// just that secret's wiring added to its stack file (S403); the
+		// plan said so. The secret file exists first.
+		if !catalog.SecretConsumerWired(dir, m, name) {
+			if _, err := catalog.WireDeclaredSecret(dir, m, name); err != nil {
+				return "", fmt.Errorf("appsso: %s was installed before it declared the secret %q and its stack file could not be updated (%v); reinstall it, then apply sign-in again", m.Title, name, err)
+			}
+			if rt.Fingerprint != nil {
+				if err := rt.Fingerprint(m.Name, dir); err != nil {
+					return "", err
+				}
+			}
 		}
 		return rt.AppSecrets.Get(catalog.SecretStoreName(m.Name, name))
 	}

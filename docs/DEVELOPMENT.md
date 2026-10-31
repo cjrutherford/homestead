@@ -2226,8 +2226,11 @@ The Mealie package (S350) in `catalog/` is the GHCR recipe manager: one
 container with SQLite on `/app/data`, `BASE_URL` following the routed
 HTTPS host, and signups closed. Mealie seeds the upstream-documented
 administrator (`changeme@example.com`), so the owner signs in once,
-changes the credentials, and creates household accounts; no secret is
-declared and the image entrypoint runs unchanged.
+changes the credentials, and creates household accounts. Since S403 people
+also sign in through Authentik (the `env-oidc` adapter): the only declared
+secret is the Authentik client secret, read from `OIDC_CLIENT_SECRET_FILE`,
+and the image entrypoint runs unchanged. An install from before that adds
+just the secret's wiring to its `compose.yaml` when sign-in is applied.
 The Uptime Kuma package (S351) in `catalog/` closes Wave 1 with the
 documented monitoring exception: one container on `/app/data`, the
 administrator created in the app, `unsupported` SSO, and an exposure

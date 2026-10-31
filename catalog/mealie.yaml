@@ -4,7 +4,9 @@
 # default administrator (changeme@example.com / MyPassword) on first
 # start, so the owner signs in with the documented credentials and
 # changes them, then creates household accounts; signups stay closed.
-# No secret is declared and the image's own entrypoint runs unchanged.
+# The only declared secret is the Authentik client secret (S403); the
+# image's own entrypoint runs unchanged, Mealie reads the secret from a
+# file (OIDC_CLIENT_SECRET_FILE).
 name: mealie
 version: 3.29.0
 title: Mealie
@@ -58,7 +60,37 @@ backuppaths:
 sso:
   class: optional
   protocols: [oidc]
+  # App sign-in through Authentik (S403): Mealie's built-in OIDC, set by
+  # environment alone. Authentik groups gate access (signup is on only
+  # for people Authentik lets in); the seeded local administrator keeps
+  # working because there is no auto-redirect.
+  oidc:
+    adapter: env-oidc
+    service: mealie
+    env:
+      redirectpaths: ["/login", "/login?direct=1"]
+      signinpath: /login
+      secret: oidc_client_secret
+      trust: OIDC_TLS_CACERTFILE
+      set:
+        OIDC_AUTH_ENABLED: "true"
+        OIDC_CONFIGURATION_URL: "{{issuer}}.well-known/openid-configuration"
+        OIDC_CLIENT_ID: "{{client_id}}"
+        OIDC_PROVIDER_NAME: Authentik
+        OIDC_SIGNUP_ENABLED: "true"
+        OIDC_AUTO_REDIRECT: "false"
+        OIDC_REMEMBER_ME: "true"
+        OIDC_GROUPS_CLAIM: groups
+        OIDC_ADMIN_GROUP: "{{admin_group}}"
+        OIDC_USER_GROUP: "{{user_group}}"
+secrets:
+- name: oidc_client_secret
+  # Authentik's client secret for Mealie; Homestead generates it, hands it
+  # to Authentik, and gives Mealie the file.
+  consumers:
+  - service: mealie
+    env: OIDC_CLIENT_SECRET_FILE
 integrations:
 - kind: identity
   target: authentik
-  note: Sign in with Authentik once its OIDC client is configured; local sign-in stays available.
+  note: People sign in with Authentik once sign-in is applied on the app's page; the local administrator stays available.

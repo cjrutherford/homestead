@@ -38,10 +38,14 @@ class TestMealieContract(unittest.TestCase):
         self.assertIn("class: application", self.text)
         self.assertIn("backuppaths:", self.text)
 
-    def test_no_secret_or_entrypoint_override(self):
+    def test_only_the_sign_in_secret_and_no_entrypoint_override(self):
         # Mealie seeds its administrator and generates its own secrets
-        # into the data volume; the image entrypoint runs unchanged.
-        self.assertNotIn("\nsecrets:", self.text)
+        # into the data volume; the only declared secret is the Authentik
+        # client secret (S403), read from a file. The image entrypoint
+        # runs unchanged.
+        self.assertIn("name: oidc_client_secret", self.text)
+        self.assertIn("env: OIDC_CLIENT_SECRET_FILE", self.text)
+        self.assertIn("adapter: env-oidc", self.text)
         self.assertNotIn("entrypoint:", self.text)
 
     def test_no_latest_tag(self):

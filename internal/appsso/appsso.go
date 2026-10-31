@@ -203,6 +203,10 @@ type Inputs struct {
 	// signs in at the local address.
 	PublicAuthentikURL string
 	PublicWaiting      string
+	// StackNeedsSecret is set when the installed stack's Compose file
+	// lacks the wiring for the app's declared sign-in secret (installed
+	// before the manifest declared it, S403): applying rewrites it.
+	StackNeedsSecret bool
 }
 
 // published reports an app with a public name: its own tunnel names, or
@@ -373,6 +377,9 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 	p.Access, p.AdminRoles = &access, roles.Note
 	noteRoles(&p, roles)
 	authHost := hostOf(base)
+	if in.StackNeedsSecret {
+		p.AppSettings = append(p.AppSettings, fmt.Sprintf("%s's stack file is rewritten to deliver the sign-in secret: only the secret's entry, its reference and the file-path variable are added to compose.yaml, then the app restarts.", m.Title))
+	}
 	p.AppSettings = append(p.AppSettings,
 		fmt.Sprintf("Service %s resolves %s to the appliance edge and trusts the appliance root (%s, read-only).", m.SSO.OIDC.Service, authHost, CAFile))
 	switch {

@@ -65,6 +65,9 @@ func appSignInInputsFrom(st *store.Store, m *sso.Manager, manifest catalog.Manif
 		return in, err
 	}
 	in.Installed = installed
+	if installed && manifest.SSO.OIDC != nil && manifest.SSO.OIDC.Env != nil {
+		in.StackNeedsSecret = !catalog.SecretConsumerWired(stackDirFor(manifest.Name), manifest, manifest.SSO.OIDC.Env.Secret)
+	}
 	status, err := m.Status()
 	if err != nil {
 		return in, err

@@ -1558,4 +1558,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S402: the S342 `catalog.ActivateOIDC`/`DeactivateOIDC` code (`internal/catalog/oidcapply.go`) is superseded by the env-oidc adapter (ADR-052 amendment) and unused; remove it and its tests.
 - S402: per-app env-oidc slices: Mealie; Linkding (no discovery, derive the endpoints from the issuer); FreshRSS (two secrets); Komga (Java truststore); Paperless (secret inside a JSON setting).
 - S402: Navidrome and Uptime Kuma have no OIDC; sign them in through forward-auth (owner reopened this 2026-10-31). An ADR is needed first.
-- S402: an install from before an app declared its client secret needs its Compose file regenerated before env-oidc sign-in can apply; apply refuses with guidance rather than doing it.
+- S402 (done in S403): an install from before an app declared its client secret now gets just that secret's wiring patched into its Compose file when sign-in is applied.
+- S403: the stack patch (`catalog.WireDeclaredSecret`) is for declared secrets consumed as file-path variables; it does not handle `export` consumers (entrypoint scripts) or secrets that need an owner or mode from another service. Other per-app slices should check this.
+- S403: Mealie's `BASE_URL` still follows the route host only; a path-served or multi-name Mealie may need it to follow the public name.
+- S403: the `OIDC_*` keys and the `_FILE` secret variant come from Mealie's documented settings and were not checked against a running v3.29.0 on the appliance; check on the first live apply.

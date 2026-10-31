@@ -709,7 +709,12 @@ func TestCuratedMealie(t *testing.T) {
 	if service.Environment["ALLOW_SIGNUP"] != "false" {
 		t.Fatal("signups stay closed; the seeded administrator creates accounts")
 	}
-	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 0 {
+	// Only the Authentik client secret (S403), handed over as a file: no
+	// supervisor and no exported value.
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 1 ||
+		manifest.Secrets[0].Name != "oidc_client_secret" ||
+		len(manifest.Secrets[0].Consumers) != 1 || manifest.Secrets[0].Consumers[0].Export ||
+		manifest.Secrets[0].Consumers[0].Env != "OIDC_CLIENT_SECRET_FILE" {
 		t.Fatalf("mealie needs no supervisor; secrets = %+v", manifest.Secrets)
 	}
 	if len(service.Data) != 1 || service.Data[0].Target != "/app/data" ||

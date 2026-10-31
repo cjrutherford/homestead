@@ -250,6 +250,20 @@ func TestInstallAccessClassificationFailsClosed(t *testing.T) {
 	}
 }
 
+func TestMealieInstallAccessIsManaged(t *testing.T) {
+	entries, err := catalog.Load("../../catalog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := entries.Get("mealie")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := installAccessMode(m); got != "managed" {
+		t.Fatalf("mealie install access = %s, want managed (S403)", got)
+	}
+}
+
 func TestAccessGrantPlanBindsEntireRosterAndRole(t *testing.T) {
 	a := installHandlerRig(t)
 	_, err := a.st.DB().Exec(`INSERT INTO people (id, display_name, username, authentik_pk, authentik_uid, state, created_by, created_at) VALUES (1, 'Person', 'person', 100, 'u100', 'active', 'owner', '2026-01-01T00:00:00Z')`)
