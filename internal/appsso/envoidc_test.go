@@ -263,6 +263,22 @@ func TestEnvOIDCOwnerValues(t *testing.T) {
 	if strings.Contains(string(raw), "OIDC_TLS_CACERTFILE") {
 		t.Fatalf("public issuer still has the trust variable:\n%s", raw)
 	}
+	// S406: an install wired before S405 keeps the trust variable on a
+	// public issuer; applying the same issuer again removes it.
+	stale := strings.Replace(string(raw), "    environment:\n", "    environment:\n      OIDC_TLS_CACERTFILE: "+CAFile+"\n", 1)
+	_ = os.WriteFile(overridePath, []byte(stale), 0o600)
+	rec, _, _ = Records{DB: st.DB()}.Get("envapp")
+	pub.Applied = &rec
+	pub.OwnerEnv, _ = catalog.OverrideEnv(dir, "app")
+	again, err := BuildPlan(pub, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run(again)
+	raw, _ = os.ReadFile(overridePath)
+	if strings.Contains(string(raw), "OIDC_TLS_CACERTFILE") || !strings.Contains(string(raw), "OIDC_CONFIGURATION_URL") {
+		t.Fatalf("re-apply on the public issuer kept the stale trust variable:\n%s", raw)
+	}
 	// Off keeps a value the owner changed after sign-in set it.
 	_ = os.WriteFile(overridePath, []byte(strings.Replace(string(raw), "OIDC_ADMIN_GROUP: "+groupNames("envapp").Admins, "OIDC_ADMIN_GROUP: custom", 1)), 0o600)
 	rec, _, _ = Records{DB: st.DB()}.Get("envapp")

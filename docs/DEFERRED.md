@@ -1566,3 +1566,4 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S404: turning sign-in off removes a variable the owner set to exactly the value sign-in sets (the override cannot tell the two apart).
 - S405: an env-oidc app on the local issuer that also needs public roots (a later issuer switch handled by the move) is not covered by a combined bundle; only the local issuer sets the trust variable.
 - S405: an existing Mealie install keeps a root-owned secret file until sign-in is applied again.
+- S406: a sign-in plan reads "Nothing changes" when only the override file is stale (e.g. a trust variable left from before S405); the apply fixes it. Plans should compare the override's sign-in keys too.

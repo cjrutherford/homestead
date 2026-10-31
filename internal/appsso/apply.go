@@ -85,6 +85,18 @@ func wiring(m catalog.Manifest, adapter Adapter, issuer string, s Settings) cata
 	}
 }
 
+// staleTrust is the adapter's trust variables that wire does not set,
+// with the values sign-in sets for them.
+func staleTrust(adapter Adapter, wire catalog.SignInWiring) map[string]string {
+	out := map[string]string{}
+	for k, v := range adapter.TrustEnv() {
+		if _, ok := wire.Env[k]; !ok {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // declaredSecret is the package secret an env-oidc app uses as its
 // client secret ("" for the other adapters).
 func declaredSecret(m catalog.Manifest) string {
@@ -175,6 +187,14 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 			old := settings
 			old.Issuer = plan.ReplacedIssuer
 			if _, err := catalog.ApplySignInWiring(dir, wiring(m, adapter, plan.ReplacedIssuer, old), false); err != nil {
+				return err
+			}
+		}
+		// A trust variable this issuer does not want (a public issuer,
+		// S405) goes if an earlier apply left it: it still holds the
+		// value sign-in set unless the owner changed it (S406).
+		if stale := staleTrust(adapter, wire); len(stale) > 0 {
+			if _, err := catalog.ApplySignInWiring(dir, catalog.SignInWiring{Service: wire.Service, Env: stale}, false); err != nil {
 				return err
 			}
 		}
