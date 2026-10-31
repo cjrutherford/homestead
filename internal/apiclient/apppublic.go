@@ -13,7 +13,9 @@ type AppPublicRequest struct {
 	Digest   string `json:"digest,omitempty"`
 	// BeforeInstall plans a name for an app the same install creates
 	// (S313); the plan is applied without it once the app is installed.
-	BeforeInstall bool `json:"before_install,omitempty"`
+	// Managed installs request the anticipated post-sign-in state.
+	BeforeInstall    bool `json:"before_install,omitempty"`
+	AnticipateSignIn bool `json:"anticipate_sign_in,omitempty"`
 }
 
 // AppPublicStatus is an app's public names on the tunnel.

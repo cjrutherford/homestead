@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"homestead/internal/appaccess"
 	"homestead/internal/audit"
 	"homestead/internal/catalog"
 	"homestead/internal/discover"
@@ -35,7 +36,9 @@ func (s *Server) MountCatalog(st *store.Store, catalogDir string, secrets catalo
 	s.mux.HandleFunc("GET /api/v1/catalog/bundles", handleCatalogBundles(st, catalogDir))
 	s.mux.HandleFunc("GET /api/v1/catalog/{name}", handleCatalogGet(catalogDir))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/plan", handleCatalogPlan(s, st, catalogDir))
-	s.mux.HandleFunc("POST /api/v1/catalog/{name}/install", handleCatalogInstall(s, st, catalogDir, runner, secrets))
+	s.mux.HandleFunc("POST /api/v1/catalog/{name}/access-plan", handleInstallAccessPlan(s, st, catalogDir))
+	s.mux.HandleFunc("POST /api/v1/catalog/{name}/install", handleCatalogInstall(s, st, catalogDir, runner, secrets, false))
+	s.mux.HandleFunc("POST /api/v1/catalog/{name}/install-admin", handleCatalogInstall(s, st, catalogDir, runner, secrets, true))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/configure", handleCatalogConfigure(s, st, catalogDir, runner, secrets))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/uninstall", handleCatalogUninstall(s, st, catalogDir, runner))
 }
@@ -206,7 +209,7 @@ type installBody struct {
 	PublicIP       string                      `json:"public_ip"`
 	// PublicName is the public address the owner reviews with the
 	// install (S313). The install itself ignores it; the plan's sign-in
-	// preview counts it, because the wizard publishes before sign-in.
+	// preview counts it. Managed installs set up sign-in before publishing.
 	PublicName string `json:"public_name,omitempty"`
 	// Digest, on install, is the reviewed install plan's digest (S313):
 	// a plan that changed since answers 409. Empty installs as planned
@@ -215,7 +218,8 @@ type installBody struct {
 	// Setup, on install, carries the steps the owner approved with it
 	// (S324, ADR-048): the daemon runs them after the install succeeds.
 	// Absent installs the app alone, as before.
-	Setup *setupApproval `json:"setup,omitempty"`
+	Setup   *setupApproval     `json:"setup,omitempty"`
+	Choices []appaccess.Choice `json:"choices,omitempty"`
 }
 
 // installRequest assembles the planner input: manifest from the
@@ -409,7 +413,8 @@ func decodeBody(r *http.Request, body any) error {
 // installPlanView is the install plan with its sign-in preview (S298).
 type installPlanView struct {
 	catalog.InstallPlan
-	SignIn *signInPreview `json:"sign_in,omitempty"`
+	SignIn *signInPreview     `json:"sign_in,omitempty"`
+	Access *installAccessView `json:"access,omitempty"`
 	// Path is where a package served by path answers (ADR-044), and
 	// Addresses are the local addresses the install gives the app: the
 	// path under each of the appliance's names, or the app's own names.
@@ -508,6 +513,12 @@ func handleCatalogPlan(s *Server, st *store.Store, catalogDir string) http.Handl
 		if s.appSignIn != nil {
 			view.SignIn = s.appSignIn.preview(req.Manifest, plan, strings.ToLower(strings.TrimSpace(body.PublicName)))
 		}
+		access, _, err := s.installAccess(r.Context(), st, req.Manifest, plan, body.PublicName)
+		if err != nil {
+			http.Error(w, "cannot read app access state", http.StatusInternalServerError)
+			return
+		}
+		view.Access = &access
 		if s.appSetup != nil {
 			view.FilesLink = s.appSetup.filesLinkPreview(req.Manifest)
 		}
@@ -515,7 +526,7 @@ func handleCatalogPlan(s *Server, st *store.Store, catalogDir string) http.Handl
 	}
 }
 
-func handleCatalogInstall(s *Server, st *store.Store, catalogDir string, runner *operation.Runner, secrets catalog.SecretStore) http.HandlerFunc {
+func handleCatalogInstall(s *Server, st *store.Store, catalogDir string, runner *operation.Runner, secrets catalog.SecretStore, adminAuthorized bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body installBody
 		if err := decodeBody(r, &body); err != nil {
@@ -535,6 +546,79 @@ func handleCatalogInstall(s *Server, st *store.Store, catalogDir string, runner 
 		if body.Digest != "" && body.Digest != installDigest(plan) {
 			http.Error(w, "the install plan changed since it was reviewed; review it again", http.StatusConflict)
 			return
+		}
+		access, integration, err := s.installAccess(r.Context(), st, req.Manifest, plan, body.PublicName)
+		if err != nil {
+			http.Error(w, "cannot read app access state", http.StatusInternalServerError)
+			return
+		}
+		if access.Mode == "unavailable" {
+			http.Error(w, access.Reason, http.StatusUnprocessableEntity)
+			return
+		}
+		if body.Setup != nil && body.Setup.Access != nil {
+			if err := validateInstallAdmin(body.Setup.Access.Choices, adminAuthorized); err != nil {
+				http.Error(w, err.Error(), http.StatusForbidden)
+				return
+			}
+			if access.Mode != "managed" {
+				http.Error(w, "this app does not accept managed access decisions", http.StatusBadRequest)
+				return
+			}
+		}
+		if access.Mode == "managed" {
+			if s.appSetup == nil {
+				http.Error(w, "app access setup is unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			if body.Setup == nil || body.Setup.Access == nil || body.Setup.SignIn == nil {
+				http.Error(w, "review app access and Authentik sign-in before installing", http.StatusBadRequest)
+				return
+			}
+			a := body.Setup.Access
+			si := s.appSignIn.preview(req.Manifest, plan, strings.ToLower(strings.TrimSpace(body.PublicName)))
+			if si == nil || si.Plan == nil || body.Setup.SignIn.Digest != si.Plan.Digest {
+				http.Error(w, "the Authentik sign-in plan changed; review it again", http.StatusConflict)
+				return
+			}
+			if err := appaccess.Verify(a.Digest, req.Manifest.Name, accessPeople(access), a.Choices, access.AdminSupported, integration); err != nil {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+			if body.Digest == "" {
+				http.Error(w, "review the install plan before installing", http.StatusBadRequest)
+				return
+			}
+			if strings.TrimSpace(body.PublicName) != "" && body.Setup.Public == nil {
+				http.Error(w, "review the public address plan before installing", http.StatusBadRequest)
+				return
+			}
+		}
+		if body.Setup != nil && body.Setup.Public != nil {
+			if s.appPublic == nil {
+				http.Error(w, "public addresses are unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			pub := body.Setup.Public
+			if access.Mode == "managed" && strings.ToLower(strings.TrimSpace(body.PublicName)) != strings.ToLower(strings.TrimSpace(pub.Hostname)) {
+				http.Error(w, "the public name and sign-in review must match", http.StatusConflict)
+				return
+			}
+			on := true
+			request := appPublicRequest{Enabled: &on, BeforeInstall: true, Hostname: pub.Hostname, Route: pub.Route}
+			build := s.appPublic.buildPlan
+			if access.Mode == "managed" {
+				build = s.appPublic.buildAnticipatedSignInPlan
+			}
+			publicPlan, err := build(r.Context(), req.Manifest.Name, request)
+			if err != nil {
+				s.appPublic.writeError(w, err)
+				return
+			}
+			if publicPlan.Digest != pub.Digest || publicPlan.Hostname != strings.ToLower(strings.TrimSpace(pub.Hostname)) || publicPlan.Route != strings.ToLower(strings.TrimSpace(pub.Route)) {
+				http.Error(w, "the public address plan changed; review it again", http.StatusConflict)
+				return
+			}
 		}
 		def, err := catalog.InstallDefinition(plan, storage.NewRegistry(st), "", st, secrets)
 		if err != nil {

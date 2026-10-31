@@ -175,7 +175,7 @@ func (cf *fakeCloudflare) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case len(parts) == 4 && parts[0] == "zones" && parts[2] == "ssl" && parts[3] == "certificate_packs":
-		ok([]any{map[string]any{"status": "active", "hosts": cf.certHosts}})
+		ok([]any{map[string]any{"id": "pack1", "status": "active", "hosts": cf.certHosts}})
 	case len(parts) == 4 && parts[0] == "zones" && parts[2] == "acm" && parts[3] == "total_tls":
 		ok(map[string]any{"enabled": cf.totalTLS})
 	case r.Method == http.MethodGet && r.URL.Path == "/zones":

@@ -88,7 +88,13 @@ func installPublicStub(t *testing.T, calls *[]string, bodies map[string]map[stri
 		case "/api/v1/people":
 			_, _ = w.Write([]byte(`{"token_kept":true,"people":[{"id":42,"state":"active","username":"reader","display_name":"Reader"}]}`))
 		case "/api/v1/catalog/nextcloud/plan":
-			_, _ = w.Write([]byte(`{"Package":"nextcloud","Requirements":{"Passed":true},"Routes":[{"Host":"nextcloud.lan","Target":{"Host":"nextcloud","Port":80},"Exposure":"local","TLS":"internal"}],"digest":"i1d","sign_in":{"offered":true,"token_kept":true,"plan":{"package":"nextcloud","title":"Nextcloud","enabled":true,"digest":"s1d"}}}`))
+			mode := "open"
+			if _, ok := bodies[r.URL.Path]["choices"]; ok {
+				mode = "managed"
+			}
+			_, _ = fmt.Fprintf(w, `{"Package":"nextcloud","access":{"mode":%q,"people":[{"id":42,"state":"active"}]},"Requirements":{"Passed":true},"Routes":[{"Host":"nextcloud.lan","Target":{"Host":"nextcloud","Port":80},"Exposure":"local","TLS":"internal"}],"digest":"i1d","sign_in":{"offered":true,"token_kept":true,"plan":{"package":"nextcloud","title":"Nextcloud","enabled":true,"digest":"s1d"}}}`, mode)
+		case "/api/v1/catalog/nextcloud/access-plan":
+			_, _ = w.Write([]byte(`{"digest":"a1d"}`))
 		case "/api/v1/catalog/nextcloud/public/plan":
 			_, _ = w.Write([]byte(`{"app":"nextcloud","action":"add","hostname":"nextcloud.homestead.example.com","route":"nextcloud.lan","tunnel":"homestead","zone":"example.com",
 				"dns":[{"name":"nextcloud.homestead.example.com","type":"CNAME","content":"tid.cfargotunnel.com","proxied":true,"action":"create","replaces":[]}],
@@ -153,6 +159,28 @@ func TestAppsInstallPublicPlansBoth(t *testing.T) {
 	}
 	if bodies["/api/v1/catalog/nextcloud/plan"]["public_name"] != "nextcloud.homestead.example.com" {
 		t.Fatalf("install plan body = %v", bodies["/api/v1/catalog/nextcloud/plan"])
+	}
+}
+
+func TestAppsInstallPublicPlanBindsManagedAccessAndAnticipatedSignIn(t *testing.T) {
+	var calls []string
+	bodies := map[string]map[string]any{}
+	url := installPublicStub(t, &calls, bodies, "p2d", http.StatusOK)
+	file := writeInput(t, `{"domain":"lan","choices":[{"person_id":42,"role":"user"}]}`)
+	code, stdout, stderr := invoke(t, []string{"--server", url, "apps", "install", "nextcloud", "-f", file, "--public"})
+	if code != exitOK || !strings.Contains(stdout, "--approve-access a1d") {
+		t.Fatalf("managed public review: %d %s %s", code, stdout, stderr)
+	}
+	if got := bodies["/api/v1/catalog/nextcloud/public/plan"]["anticipate_sign_in"]; got != true {
+		t.Fatalf("public review did not anticipate sign-in: %v", got)
+	}
+	code, stdout, stderr = invoke(t, []string{"--server", url, "apps", "install", "nextcloud", "-f", file, "--public", "--approve-public", "p2d", "--approve-sign-in", "s1d", "--approve-access", "a1d"})
+	if code != exitOK {
+		t.Fatalf("managed public install: %d %s %s", code, stdout, stderr)
+	}
+	setup := bodies["/api/v1/catalog/nextcloud/install"]["setup"].(map[string]any)
+	if setup["public"].(map[string]any)["digest"] != "p2d" || setup["access"] == nil || setup["sign_in"] == nil {
+		t.Fatalf("missing original approvals: %v", setup)
 	}
 }
 

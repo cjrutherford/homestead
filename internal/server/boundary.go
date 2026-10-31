@@ -174,6 +174,8 @@ var routeClasses = map[string]RouteClass{
 	"GET /api/v1/catalog/bundles":                         ClassSession,
 	"GET /api/v1/catalog/{name}":                          ClassSession,
 	"POST /api/v1/catalog/{name}/plan":                    ClassSession,
+	"POST /api/v1/catalog/{name}/access-plan":             ClassSession,
+	"POST /api/v1/catalog/{name}/install-admin":           ClassSession,
 	"POST /api/v1/catalog/{name}/install":                 ClassSession,
 	"POST /api/v1/catalog/{name}/configure":               ClassSession,
 	"GET /api/v1/catalog/{name}/secrets":                  ClassSession,
@@ -190,9 +192,10 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/catalog/{name}/public/plan":  ClassSession,
 	"POST /api/v1/catalog/{name}/public/apply": ClassSession,
 	// S324 (ADR-048 §3): the setup approved with an install.
-	"GET /api/v1/catalog/{name}/setup":         ClassSession,
-	"POST /api/v1/catalog/{name}/setup/resume": ClassSession,
-	"POST /api/v1/catalog/{name}/setup/skip":   ClassSession,
+	"GET /api/v1/catalog/{name}/setup":               ClassSession,
+	"POST /api/v1/catalog/{name}/setup/resume":       ClassSession,
+	"POST /api/v1/catalog/{name}/setup/resume-admin": ClassSession,
+	"POST /api/v1/catalog/{name}/setup/skip":         ClassSession,
 	// S315 (ADR-044 §5): moving an installed app to its path.
 	"GET /api/v1/catalog/{name}/move":                    ClassSession,
 	"POST /api/v1/catalog/{name}/move/plan":              ClassSession,
@@ -321,21 +324,25 @@ var stepUpRoutes = map[string]stepUpMode{
 	"POST /api/v1/catalog/{name}/secrets/{secret}/reveal": stepUpBoundary,
 	// People (S317): admin grants, password and second-factor resets,
 	// removal, and settling drift (which can restore or accept an admin).
-	"PUT /api/v1/people/{id}/apps/{app}/admin": stepUpBoundary,
-	"POST /api/v1/people/{id}/password-reset":  stepUpBoundary,
-	"POST /api/v1/people/{id}/mfa-reset":       stepUpBoundary,
-	"POST /api/v1/people/{id}/remove":          stepUpBoundary,
-	"POST /api/v1/people/{id}/resolve":         stepUpBoundary,
+	"PUT /api/v1/people/{id}/apps/{app}/admin":       stepUpBoundary,
+	"POST /api/v1/catalog/{name}/install-admin":      stepUpBoundary,
+	"POST /api/v1/catalog/{name}/setup/resume-admin": stepUpBoundary,
+	"POST /api/v1/people/{id}/password-reset":        stepUpBoundary,
+	"POST /api/v1/people/{id}/mfa-reset":             stepUpBoundary,
+	"POST /api/v1/people/{id}/remove":                stepUpBoundary,
+	"POST /api/v1/people/{id}/resolve":               stepUpBoundary,
 }
 
 // publicStepUpRoutes are the step-up routes a public dashboard name accepts
 // on a fresh Authentik step-up instead of the local password (ADR-049 §1).
 var publicStepUpRoutes = map[string]bool{
-	"PUT /api/v1/people/{id}/apps/{app}/admin": true,
-	"POST /api/v1/people/{id}/password-reset":  true,
-	"POST /api/v1/people/{id}/mfa-reset":       true,
-	"POST /api/v1/people/{id}/remove":          true,
-	"POST /api/v1/people/{id}/resolve":         true,
+	"POST /api/v1/catalog/{name}/install-admin":      true,
+	"POST /api/v1/catalog/{name}/setup/resume-admin": true,
+	"PUT /api/v1/people/{id}/apps/{app}/admin":       true,
+	"POST /api/v1/people/{id}/password-reset":        true,
+	"POST /api/v1/people/{id}/mfa-reset":             true,
+	"POST /api/v1/people/{id}/remove":                true,
+	"POST /api/v1/people/{id}/resolve":               true,
 }
 
 // ReauthHeader carries the local password for fresh re-authentication.

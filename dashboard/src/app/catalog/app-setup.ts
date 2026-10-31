@@ -248,7 +248,8 @@ export class AppSetup implements OnInit {
     this.refused.set(null);
     const token = this.token;
     this.token = '';
-    this.api.appSetupResume(this.name(), review.digest, token).subscribe({
+    // A setup that grants app administrators resumes on the step-up route.
+    this.api.appSetupResume(this.name(), review.digest, token, this.setup()?.admin_grants === true).subscribe({
       next: ({ id }) => {
         this.reviewing.set(false);
         this.follow(id);

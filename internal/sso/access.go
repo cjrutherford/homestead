@@ -108,8 +108,9 @@ type RemoteGroup struct {
 
 // RemoteUser is the part of an Authentik user used to find the owner.
 type RemoteUser struct {
-	PK  int    `json:"pk"`
-	UID string `json:"uid"`
+	PK       int    `json:"pk"`
+	UID      string `json:"uid"`
+	IsActive *bool  `json:"is_active"`
 }
 
 // remoteBinding is an Authentik policy binding as returned.
@@ -239,6 +240,17 @@ func (a *API) reconcileAccess(ctx context.Context, x Access, appPK string, step 
 	if err := x.Validate(); err != nil {
 		return err
 	}
+	var owner *RemoteUser
+	if x.OwnerSub != "" && len(x.OwnerOf) > 0 {
+		var err error
+		owner, err = a.OwnerUser(ctx, x.OwnerSub)
+		if err != nil {
+			return err
+		}
+		if owner == nil || owner.IsActive == nil || !*owner.IsActive {
+			return fmt.Errorf("sso: linked owner is missing or inactive in Authentik")
+		}
+	}
 	groups := map[string]*RemoteGroup{}
 	for _, name := range x.Groups {
 		g, created, err := a.ensureGroup(ctx, name)
@@ -252,32 +264,26 @@ func (a *API) reconcileAccess(ctx context.Context, x Access, appPK string, step 
 			step("group " + name + " already exists")
 		}
 	}
-	if x.OwnerSub != "" && len(x.OwnerOf) > 0 {
-		user, err := a.OwnerUser(ctx, x.OwnerSub)
-		if err != nil {
-			return err
-		}
-		if user == nil {
-			step("the linked owner was not found in Authentik: no membership made")
-		} else {
-			for _, name := range x.OwnerOf {
-				g := groups[name]
-				if g == nil {
-					if g, err = a.FindGroup(ctx, name); err != nil || g == nil {
-						return fmt.Errorf("sso: group %s is missing", name)
-					}
-					groups[name] = g
+	if owner != nil {
+		user := owner
+		for _, name := range x.OwnerOf {
+			g := groups[name]
+			if g == nil {
+				var err error
+				if g, err = a.FindGroup(ctx, name); err != nil || g == nil {
+					return fmt.Errorf("sso: group %s is missing", name)
 				}
-				if hasPK(g.Users, user.PK) {
-					step("owner already in " + name)
-					continue
-				}
-				if err := a.do(ctx, http.MethodPost, "/api/v3/core/groups/"+url.PathEscape(g.PK)+"/add_user/", map[string]any{"pk": user.PK}, nil); err != nil {
-					return err
-				}
-				g.Users = append(g.Users, user.PK)
-				step("added the owner to " + name)
+				groups[name] = g
 			}
+			if hasPK(g.Users, user.PK) {
+				step("owner already in " + name)
+				continue
+			}
+			if err := a.do(ctx, http.MethodPost, "/api/v3/core/groups/"+url.PathEscape(g.PK)+"/add_user/", map[string]any{"pk": user.PK}, nil); err != nil {
+				return err
+			}
+			g.Users = append(g.Users, user.PK)
+			step("added the owner to " + name)
 		}
 	}
 	if appPK == "" || len(x.Bindings) == 0 {

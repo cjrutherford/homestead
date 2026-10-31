@@ -54,7 +54,7 @@ requirements:
   storage:
   - class: application
     minbytes: 1048576
-  ports: [18080]
+  ports: []
 exposure:
   package: demo
   endpoints:
@@ -67,6 +67,8 @@ backuppaths: [data]
 		t.Fatalf("write: %v", err)
 	}
 	srv := New("127.0.0.1:0")
+	accountlessInstallApps["demo"] = true
+	t.Cleanup(func() { delete(accountlessInstallApps, "demo") })
 	srv.MountCatalog(s, catalogDir, nil)
 	// Planning verifies class mounts against live discovery; stub it
 	// so tests do not depend on the host mount table.

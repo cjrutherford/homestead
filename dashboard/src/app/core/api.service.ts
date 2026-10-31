@@ -168,8 +168,28 @@ export interface InstallSetupApproval {
   public?: { hostname?: string; route: string; digest: string };
   sign_in?: { digest: string };
   people?: number[];
+  /** S390: the explicit per-person access choices reviewed with the install. */
+  access?: { digest: string; choices: AppAccessChoice[] };
   /** S326: the Nextcloud link for craft files the install review listed. */
   files_link?: { digest: string };
+}
+
+export type AppAccessRole = 'none' | 'user' | 'admin';
+
+export interface AppAccessChoice {
+  person_id: number;
+  role: AppAccessRole;
+}
+
+export interface AppAccessPlan {
+  mode: 'managed' | 'open' | 'bootstrap' | 'unavailable';
+  people: { id: number; display_name: string; username: string; state: 'active' | 'disabled' }[];
+  admin_supported: boolean;
+  reason?: string;
+}
+
+export interface AppAccessPlanApproval {
+  digest: string;
 }
 
 export type AppSetupStepName = 'address' | 'publish' | 'sign-in' | 'people' | 'nextcloud-link';
@@ -205,6 +225,8 @@ export interface AppSetup {
   operation?: number;
   steps: AppSetupStep[];
   reason?: string;
+  /** Resuming applies app-administrator grants and needs fresh authentication. */
+  admin_grants?: boolean;
   review?: AppSetupReview;
 }
 
@@ -366,6 +388,8 @@ export interface InstallPlan {
   digest?: string;
   /** S326: the craft apps the install's setup links to Nextcloud for files. */
   files_link?: FilesLinkPlan;
+  /** S390: access controls available for this installation. */
+  access?: AppAccessPlan;
 }
 
 /**
@@ -1399,6 +1423,8 @@ export interface AppPublicRequest {
   route?: string;
   /** S313: plan a name for the route the install creates; applied without it once installed. */
   before_install?: boolean;
+  /** Preview publication after managed sign-in succeeds. */
+  anticipate_sign_in?: boolean;
 }
 
 /** GET /api/v1/catalog/{name}/move (S315, ADR-044 §5): whether the move to the app's path is offered. */
@@ -1597,6 +1623,16 @@ export class ApiService {
       `/api/v1/catalog/${name}/install`,
       body,
     );
+  }
+
+  /** S390: digest the explicit app access choices against current readiness. */
+  planCatalogAccess(name: string, body: Record<string, unknown>): Observable<AppAccessPlanApproval> {
+    return this.http.post<AppAccessPlanApproval>(`/api/v1/catalog/${name}/access-plan`, body);
+  }
+
+  /** S390: app administrator grants require a step-up session. */
+  installPackageAdmin(name: string, body: Record<string, unknown>): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(`/api/v1/catalog/${name}/install-admin`, body);
   }
 
   /** Removes the app; data stays unless remove_data names explicit roots. */
@@ -2000,12 +2036,13 @@ export class ApiService {
   }
 
   /** S324: approves the stopped step's current plan and runs it and the rest. The token is for this run only. */
-  appSetupResume(name: string, digest: string, token = ''): Observable<OperationStarted> {
+  appSetupResume(name: string, digest: string, token = '', admin = false): Observable<OperationStarted> {
     const body: { digest: string; token?: string } = { digest };
     if (token) {
       body.token = token;
     }
-    return this.http.post<OperationStarted>(`/api/v1/catalog/${encodeURIComponent(name)}/setup/resume`, body);
+    const route = admin ? 'resume-admin' : 'resume';
+    return this.http.post<OperationStarted>(`/api/v1/catalog/${encodeURIComponent(name)}/setup/${route}`, body);
   }
 
   /** S324: ends a stopped setup. */

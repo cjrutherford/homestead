@@ -126,6 +126,27 @@ func TestGroupsWithoutThePrefixAreNeverTouched(t *testing.T) {
 	}
 }
 
+func TestReconcileAccessRefusesMissingLinkedOwner(t *testing.T) {
+	_, ak := planHarness(t)
+	api := &API{Base: ak.srv.URL, Token: apiToken, Client: ak.client}
+	before := len(ak.groups)
+	access := Access{Groups: []string{OwnerGroup}, OwnerOf: []string{OwnerGroup}, OwnerSub: "missing-owner"}
+	if err := api.reconcileAccess(ctxb(), access, "app", func(string) {}); err == nil {
+		t.Fatal("access setup must not succeed without the linked owner")
+	}
+	if len(ak.groups) != before {
+		t.Fatal("owner must be checked before creating groups")
+	}
+	ak.users[0]["is_active"] = false
+	access.OwnerSub = "user-1"
+	if err := api.reconcileAccess(ctxb(), access, "app", func(string) {}); err == nil {
+		t.Fatal("access setup must not succeed with a disabled linked owner")
+	}
+	if len(ak.groups) != before {
+		t.Fatal("inactive owner must be checked before creating groups")
+	}
+}
+
 func appAccess() Access {
 	return Access{
 		Groups:   []string{OwnerGroup, "homestead-demo-users", "homestead-demo-admins"},

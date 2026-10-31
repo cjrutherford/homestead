@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"homestead/internal/apiclient"
+	"homestead/internal/appaccess"
 	"homestead/internal/appsso"
 )
 
@@ -24,7 +25,7 @@ func appsStub(t *testing.T) string {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/catalog":
 			_, _ = w.Write([]byte(`[{"name":"jellyfin","version":"12.2","title":"Jellyfin","blurb":"Media.","category":"media","icon":"mdi:plex"}]`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/plan"):
-			_, _ = w.Write([]byte(`{"Package":"jellyfin","Requirements":{"Passed":true},"Routes":[{"Host":"jellyfin.lan","Exposure":"local"}],"DNS":[],"TLS":[],"Firewall":[],"Directories":[],"Mounts":[{"Service":"jellyfin","Target":"/config","Source":"/mnt/app/jellyfin/config","Class":"application","Declared":true},{"Service":"cache","Target":"/data","Ephemeral":true,"Declared":true}],"BrowserAdvisories":[{"Capability":"webcodecs","Label":"Video codecs (WebCodecs)","Reason":"Hardware video decoding."}],"Notes":["owner volume ignored"],"Actions":["provision","up"]}`))
+			_, _ = w.Write([]byte(`{"Package":"jellyfin","access":{"mode":"open"},"Requirements":{"Passed":true},"Routes":[{"Host":"jellyfin.lan","Exposure":"local"}],"DNS":[],"TLS":[],"Firewall":[],"Directories":[],"Mounts":[{"Service":"jellyfin","Target":"/config","Source":"/mnt/app/jellyfin/config","Class":"application","Declared":true},{"Service":"cache","Target":"/data","Ephemeral":true,"Declared":true}],"BrowserAdvisories":[{"Capability":"webcodecs","Label":"Video codecs (WebCodecs)","Reason":"Hardware video decoding."}],"Notes":["owner volume ignored"],"Actions":["provision","up"]}`))
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/secrets"):
 			_, _ = w.Write([]byte(`[{"name":"db_password","store_name":"app_authentik_db_password","present":false,"immutable":false,"services":["postgresql","server"],"database_password":true}]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/catalog/nextcloud/secrets/admin_password/reveal":
@@ -102,7 +103,7 @@ func TestAppsPlan(t *testing.T) {
 
 func TestAppsPlanWithoutAdvisoriesPrintsNoBrowserLine(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"Package":"jellyfin","Requirements":{"Passed":true},"Routes":[],"BrowserAdvisories":null,"Notes":[],"Actions":["up"]}`))
+		_, _ = w.Write([]byte(`{"Package":"jellyfin","access":{"mode":"open"},"Requirements":{"Passed":true},"Routes":[],"BrowserAdvisories":null,"Notes":[],"Actions":["up"]}`))
 	}))
 	defer srv.Close()
 	file := writeInput(t, `{"domain":"lan"}`)
@@ -133,7 +134,7 @@ func TestAppsInstallApprovesLocalAddressSetup(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/v1/catalog/jellyfin/plan":
-			_, _ = w.Write([]byte(`{"Package":"jellyfin","Routes":[{"Host":"jellyfin.lan","Exposure":"local"}],"digest":"reviewed"}`))
+			_, _ = w.Write([]byte(`{"Package":"jellyfin","access":{"mode":"open"},"Routes":[{"Host":"jellyfin.lan","Exposure":"local"}],"digest":"reviewed"}`))
 		case "/api/v1/catalog/jellyfin/install":
 			if err := json.NewDecoder(r.Body).Decode(&install); err != nil {
 				t.Error(err)
@@ -164,7 +165,9 @@ func TestAppsInstallReviewsAndApprovesSignInAndPeople(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/v1/catalog/jellyfin/plan":
-			_, _ = w.Write([]byte(`{"Package":"jellyfin","Routes":[{"Host":"jellyfin.lan","Exposure":"local"}],"digest":"install-d","sign_in":{"offered":true,"token_kept":true,"plan":{"package":"jellyfin","title":"Jellyfin","enabled":true,"digest":"signin-d","provider":"Jellyfin"}}}`))
+			_, _ = w.Write([]byte(`{"Package":"jellyfin","Routes":[{"Host":"jellyfin.lan","Exposure":"local"}],"digest":"install-d","access":{"mode":"managed","people":[{"id":42,"state":"active","username":"reader","display_name":"Reader"}]},"sign_in":{"offered":true,"token_kept":true,"plan":{"package":"jellyfin","title":"Jellyfin","enabled":true,"digest":"signin-d","provider":"Jellyfin"}}}`))
+		case "/api/v1/catalog/jellyfin/access-plan":
+			_, _ = w.Write([]byte(`{"digest":"access-d"}`))
 		case "/api/v1/people":
 			_, _ = w.Write([]byte(`{"token_kept":true,"people":[{"id":42,"state":"active","username":"reader","display_name":"Reader"}]}`))
 		case "/api/v1/catalog/jellyfin/install":
@@ -177,27 +180,20 @@ func TestAppsInstallReviewsAndApprovesSignInAndPeople(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	file := writeInput(t, `{"domain":"lan"}`)
+	file := writeInput(t, `{"domain":"lan","choices":[{"person_id":42,"role":"user"}]}`)
 	code, stdout, stderr := invoke(t, []string{"--server", srv.URL, "apps", "plan", "jellyfin", "-f", file})
 	if code != exitOK || !strings.Contains(stdout, "signin-d") {
 		t.Fatalf("plan: %d %s %s", code, stdout, stderr)
 	}
-	code, _, stderr = invoke(t, []string{"--server", srv.URL, "apps", "install", "jellyfin", "-f", file, "--approve-sign-in", "signin-d", "--person", "99"})
-	if code != exitError || install != nil || !strings.Contains(stderr, "missing or disabled") {
-		t.Fatalf("invalid person must stop before install: %d %s %#v", code, stderr, install)
-	}
-	code, _, stderr = invoke(t, []string{"--server", srv.URL, "apps", "install", "jellyfin", "-f", file, "--approve-sign-in", "signin-d", "--person", "42", "--person", "42"})
-	if code != exitError || install != nil || !strings.Contains(stderr, "more than once") {
-		t.Fatalf("duplicate person must stop before install: %d %s %#v", code, stderr, install)
-	}
-	code, _, stderr = invoke(t, []string{"--server", srv.URL, "apps", "install", "jellyfin", "-f", file, "--approve-sign-in", "signin-d", "--person", "42"})
+	code, _, stderr = invoke(t, []string{"--server", srv.URL, "apps", "install", "jellyfin", "-f", file, "--approve-sign-in", "signin-d", "--approve-access", "access-d"})
 	if code != exitOK {
 		t.Fatalf("install: %d %s", code, stderr)
 	}
 	setup, _ := install["setup"].(map[string]any)
 	si, _ := setup["sign_in"].(map[string]any)
-	people, _ := setup["people"].([]any)
-	if si["digest"] != "signin-d" || len(people) != 1 || people[0] != float64(42) {
+	access, _ := setup["access"].(map[string]any)
+	choices, _ := access["choices"].([]any)
+	if si["digest"] != "signin-d" || access["digest"] != "access-d" || len(choices) != 1 {
 		t.Fatalf("setup = %#v", setup)
 	}
 }
@@ -219,6 +215,29 @@ func TestInstallSignInApprovalRefusesUnsafeOrStaleRequests(t *testing.T) {
 			setup := map[string]any{}
 			if err := approveInstallSignIn(tc.offer, tc.digest, tc.people, setup); err == nil || len(setup) != 0 {
 				t.Fatalf("must reject without changing setup: %v %#v", err, setup)
+			}
+		})
+	}
+}
+
+func TestInstallAccessSelectionAndAdminChoice(t *testing.T) {
+	access := &apiclient.InstallAccess{Mode: "managed", People: []apiclient.InstallAccessPerson{{ID: 1, State: "active"}}}
+	for _, tc := range []struct {
+		name    string
+		body    map[string]any
+		digest  string
+		wantErr bool
+		admin   bool
+	}{
+		{"missing choices", map[string]any{}, "approved", true, false},
+		{"missing approval", map[string]any{"choices": []appaccess.Choice{{PersonID: 1, Role: appaccess.User}}}, "", true, false},
+		{"admin", map[string]any{"choices": []appaccess.Choice{{PersonID: 1, Role: appaccess.Admin}}}, "approved", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setup := map[string]any{}
+			admin, err := setInstallAccess(access, tc.body, tc.digest, setup)
+			if (err != nil) != tc.wantErr || admin != tc.admin {
+				t.Fatalf("admin=%v err=%v setup=%v", admin, err, setup)
 			}
 		})
 	}
@@ -373,7 +392,7 @@ func TestAppsInstallApprovesTheNextcloudLink(t *testing.T) {
 		raw, _ := io.ReadAll(r.Body)
 		switch r.URL.Path {
 		case "/api/v1/catalog/cadcraft/plan":
-			_, _ = w.Write([]byte(`{"Package":"cadcraft","Requirements":{"Passed":true},"Routes":[],"Actions":["up"],"digest":"inst-d",
+			_, _ = w.Write([]byte(`{"Package":"cadcraft","access":{"mode":"open"},"Requirements":{"Passed":true},"Routes":[],"Actions":["up"],"digest":"inst-d",
 				"files_link":{"apps":["cadcraft"],"lines":["Link CADCraft to Nextcloud for files"],"base_url":"https://homestead.lan/apps/nextcloud","account":"admin","root":"Homestead","new_link":true,"digest":"link-d"}}`))
 		case "/api/v1/catalog/cadcraft/install":
 			installBody = string(raw)

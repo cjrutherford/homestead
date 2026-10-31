@@ -2,6 +2,10 @@ package apiclient
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
 	"net/url"
 
 	"homestead/internal/appsso"
@@ -32,13 +36,15 @@ type AppSetupReview struct {
 // AppSetup is an app's setup: none, waiting, running, stopped, done or
 // skipped.
 type AppSetup struct {
-	App       string          `json:"app"`
-	Status    string          `json:"status"`
-	Install   int64           `json:"install_operation,omitempty"`
-	Operation int64           `json:"operation,omitempty"`
-	Steps     []AppSetupStep  `json:"steps"`
-	Reason    string          `json:"reason,omitempty"`
-	Review    *AppSetupReview `json:"review,omitempty"`
+	App       string         `json:"app"`
+	Status    string         `json:"status"`
+	Install   int64          `json:"install_operation,omitempty"`
+	Operation int64          `json:"operation,omitempty"`
+	Steps     []AppSetupStep `json:"steps"`
+	Reason    string         `json:"reason,omitempty"`
+	// AdminGrants: resume needs fresh authentication (--reauth-file).
+	AdminGrants bool            `json:"admin_grants,omitempty"`
+	Review      *AppSetupReview `json:"review,omitempty"`
 }
 
 // AppSetupResumeRequest approves the stopped step's current plan. Token
@@ -65,6 +71,37 @@ func (c *Client) AppSetupResume(ctx context.Context, pkg string, req AppSetupRes
 	var out OperationStarted
 	err := c.postJSON(ctx, setupPath(pkg, "/resume"), req, &out)
 	return out.ID, err
+}
+
+// AppSetupResumeAdmin resumes a setup that applies app-administrator grants.
+// The daemon requires fresh authentication; a local password is sent only to
+// a loopback daemon address.
+func (c *Client) AppSetupResumeAdmin(ctx context.Context, pkg string, req AppSetupResumeRequest, password string) (int64, error) {
+	raw, err := json.Marshal(req)
+	if err != nil {
+		return 0, err
+	}
+	hr, err := c.post(ctx, setupPath(pkg, "/resume-admin"), raw)
+	if err != nil {
+		return 0, err
+	}
+	if password != "" {
+		u, err := url.Parse(c.BaseURL())
+		if err != nil {
+			return 0, fmt.Errorf("cannot verify local reauthentication address")
+		}
+		host := u.Hostname()
+		ip := net.ParseIP(host)
+		if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+			return 0, fmt.Errorf("local password reauthentication requires a loopback daemon address")
+		}
+		hr.Header.Set(ReauthHeader, password)
+	}
+	var out OperationStarted
+	if err := c.roundTrip(hr, http.StatusOK, &out); err != nil {
+		return 0, err
+	}
+	return out.ID, nil
 }
 
 // AppSetupSkip ends a stopped setup.

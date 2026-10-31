@@ -421,6 +421,9 @@
                   <input type="checkbox" name="publish" [checked]="publish()" (change)="setPublish($any($event.target).checked)" />
                   Also publish at
                 </label>
+                @if (managedAccess()) {
+                  <p data-managed-publish-deferred>Publication waits until Authentik sign-in and person access setup finish.</p>
+                }
                 @if (appPath()) {
                   <p><code data-public-url>{{ publicStatus()?.proposed_url }}</code></p>
                   <p class="hint">Under the dashboard's public name: no DNS record or name of its own.</p>
@@ -579,8 +582,8 @@
                 otherwise connect it after the install.
               </p>
               <p class="hint">
-                Signing in is closed by default: you, and people you grant on the
-                <a routerLink="/admin/people">People page</a>. The review lets you pick people to grant with the install.
+                The owner always keeps full access. Choose managed-person roles in the install review; you can change them later on the
+                <a routerLink="/admin/people">People page</a>.
               </p>
             }
           }
@@ -620,29 +623,11 @@
                     @if (si.offered && si.plan) {
                       <h4>Signing in</h4>
                       <label>
-                        <input type="checkbox" name="sign-in-wanted" [checked]="signInWanted()" (change)="signInWanted.set($any($event.target).checked)" />
+                        <input type="checkbox" name="sign-in-wanted" [checked]="managedSignInRequired() || signInWanted()" [disabled]="managedSignInRequired()" (change)="signInWanted.set($any($event.target).checked)" />
                         Sign in with Authentik
                       </label>
-                      @if (signInWanted() && si.plan; as sp) {
-                        <p>Who can sign in: you, and the people you choose here. Anyone else you can grant later on the People page.</p>
-                        @if (signInPeople(); as choices) {
-                          @if (choices.length) {
-                            <fieldset aria-label="People who can open this app">
-                              <legend>Let these people open {{ m.Title }}</legend>
-                              @for (person of choices; track person.id) {
-                                <label>
-                                  <input type="checkbox" [name]="'grant-' + person.id" [checked]="grantIds().includes(person.id)" (change)="toggleGrant(person.id, $any($event.target).checked)" />
-                                  {{ person.display_name }} ({{ person.username }})
-                                </label>
-                              }
-                            </fieldset>
-                            <p class="hint">Their access is set after sign-in is created. Make someone an app admin afterwards on the People page.</p>
-                          } @else {
-                            <p class="hint">No one else has been added yet. Add people on the People page.</p>
-                          }
-                        } @else {
-                          <p class="hint">Homestead cannot manage people yet (it has no kept Authentik token), so only you can sign in. See the People page.</p>
-                        }
+                      @if ((managedSignInRequired() || signInWanted()) && si.plan; as sp) {
+                        <p>The owner keeps full access. Choose access for each managed person below.</p>
                         <ul aria-label="What sign-in with Authentik creates">
                           <li>An Authentik provider, {{ sp.provider }}, and application, {{ sp.application }}</li>
                           @for (uri of sp.redirect_uris; track uri) {
@@ -665,6 +650,50 @@
                     } @else if (si.reason) {
                       <h4>Signing in</h4>
                       <p>Sign in with Authentik is not offered yet: {{ si.reason }}</p>
+                    }
+                  }
+                  @if (accessPlan(); as access) {
+                    <h4>App access</h4>
+                    @if (managedSignInRequired() && !managedSignInReady()) {
+                      <app-state-message kind="error" headline="Managed sign-in is not ready." detail="Refresh the install plan before choosing access. Managed access cannot be installed without its reviewed sign-in setup." />
+                    }
+                    @switch (access.mode) {
+                      @case ('managed') {
+                        <p>Choose a role for every managed person. “No access” is an explicit choice. The owner always has full access.</p>
+                        @if (access.people.length > 0) {
+                          <fieldset aria-label="Access for managed people">
+                            <legend>Who can use {{ m.Title }}</legend>
+                            @for (person of access.people; track person.id) {
+                              <label>
+                                {{ person.display_name }} ({{ person.username }})
+                                <select [name]="'access-' + person.id" [value]="person.state === 'active' ? (accessRoles()[person.id] ?? '') : 'none'" [disabled]="person.state !== 'active'" (change)="setAccessRole(person.id, $any($event.target).value)">
+                                  <option value="" disabled>Choose a role</option>
+                                  <option value="none">No access</option>
+                                  <option value="user">User</option>
+                                  @if (access.admin_supported) {
+                                    <option value="admin">Admin</option>
+                                  }
+                                </select>
+                                @if (person.state !== 'active') { <span class="hint">Disabled; no access can be granted.</span> }
+                              </label>
+                            }
+                          </fieldset>
+                          @if (!accessSelectionComplete()) {
+                            <p class="hint" role="status">Choose a role, including “No access”, for each active person before installing.</p>
+                          }
+                        } @else {
+                          <p class="hint">There are no managed people yet. The owner will have full access.</p>
+                        }
+                      }
+                      @case ('open') {
+                        <p>This verified app is open and has no managed-person access choices. The owner retains Homestead management access.</p>
+                      }
+                      @case ('bootstrap') {
+                        <p>This app will start in its owner bootstrap mode. Managed-person access can be chosen after setup.</p>
+                      }
+                      @case ('unavailable') {
+                        <app-state-message kind="error" headline="Access cannot be enforced for this app." [detail]="access.reason ?? 'The installation is unavailable until an access integration is ready.'" />
+                      }
                     }
                   }
                   @if (filesLink(); as fl) {
@@ -792,7 +821,7 @@
                   detail="The download was verified and built on this appliance. Now install it."
                 />
                 <p>
-                  <button type="button" class="primary" [attr.aria-busy]="starting() ? 'true' : null" [disabled]="starting()" (click)="startInstall()">
+                  <button type="button" class="primary" [attr.aria-busy]="starting() ? 'true' : null" [disabled]="starting() || accessUnavailable() || !accessSelectionComplete() || !managedSignInReady()" (click)="startInstall()">
                     Install {{ m.Title }}
                   </button>
                 </p>
@@ -1030,7 +1059,7 @@
                   type="button"
                   class="primary"
                   [attr.aria-busy]="starting() ? 'true' : null"
-                  [disabled]="starting() || planning() || planProblem() !== null || plan() === null || (publish() && (publicPlan() === null || publicPlanning()))"
+                  [disabled]="starting() || planning() || planProblem() !== null || plan() === null || accessUnavailable() || !accessSelectionComplete() || !managedSignInReady() || (publish() && (publicPlan() === null || publicPlanning()))"
                   (click)="startInstall()"
                 >
                   {{ publish() ? 'Approve both and install ' + m.Title : 'Install ' + m.Title }}

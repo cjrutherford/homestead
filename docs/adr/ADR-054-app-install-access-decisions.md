@@ -1,7 +1,9 @@
 # Explicit app access decisions during installation
 
 ## Status
-Accepted: appliance owner direction, 2026-10-29. Amends ADR-039 §3,
+Accepted
+
+Appliance owner direction, 2026-10-29. Amends ADR-039 §3,
 ADR-043, ADR-048 §1 and ADR-049 as described below.
 
 ## Decision
@@ -38,6 +40,11 @@ ADR-043, ADR-048 §1 and ADR-049 as described below.
   compatibly and must not gain administrators or other new access.
   Failures and partial remote grants are visible and auditable; no result
   claims success until the chosen access has actually been applied.
+
+## Consequences
+Installs gain a reviewed access step and a recorded decision digest;
+stale or unreviewed decisions are rejected before an operation exists.
+Unsupported account apps are not silently treated as open.
 
 ## Scope and migration
 Catalog entries require an evidence-based classification of their account

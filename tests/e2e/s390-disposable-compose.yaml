@@ -1,0 +1,52 @@
+services:
+  postgresql:
+    image: docker.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_USER: authentik
+      POSTGRES_DB: authentik
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    volumes:
+      - database:/var/lib/postgresql/data
+      - ${S390_SECRET_DIR}/db_password:/run/secrets/db_password:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  server:
+    image: ghcr.io/goauthentik/server:2026.8.3
+    command: server
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment: &authentik_env
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: file:///run/secrets/db_password
+      AUTHENTIK_SECRET_KEY: file:///run/secrets/secret_key
+      AUTHENTIK_WEB__PATH: /apps/auth/
+    volumes: &authentik_secrets
+      - ${S390_SECRET_DIR}/db_password:/run/secrets/db_password:ro
+      - ${S390_SECRET_DIR}/secret_key:/run/secrets/secret_key:ro
+    ports:
+      - "127.0.0.1::9000"
+  worker:
+    image: ghcr.io/goauthentik/server:2026.8.3
+    command: worker
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment: *authentik_env
+    volumes: *authentik_secrets
+  jellyfin:
+    image: jellyfin/jellyfin:12.2
+    volumes:
+      - jellyfin_config:/config
+      - jellyfin_cache:/cache
+    ports:
+      - "127.0.0.1::8096"
+volumes:
+  database:
+  jellyfin_config:
+  jellyfin_cache:

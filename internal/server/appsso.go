@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -208,6 +209,11 @@ func (a *appSignIn) start(ctx context.Context, name string, enabled bool, digest
 	if err != nil {
 		return 0, err
 	}
+	return a.startWithInputs(ctx, in, enabled, digest, token, actor)
+}
+
+// startWithInputs rebuilds the approved plan from authoritative inputs before starting any operation.
+func (a *appSignIn) startWithInputs(ctx context.Context, in appsso.Inputs, enabled bool, digest, token, actor string) (int64, error) {
 	plan, err := appsso.BuildPlan(in, enabled)
 	if err != nil {
 		return 0, err
@@ -254,6 +260,61 @@ func (a *appSignIn) start(ctx context.Context, name string, enabled bool, digest
 	}
 	a.s.auditOperation(a.cfg.Store, a.runner, op.ID, actor, "app.sign-in.operation", fmt.Sprintf("%s: operation %d", in.Manifest.Name, op.ID))
 	return op.ID, nil
+}
+
+// setupInputs constructs the anticipated public route only in a copied table.
+// The selected route must still be the reviewed local route belonging to the app.
+func (a *appSignIn) setupInputs(rec setupRecord) (appsso.Inputs, error) {
+	if rec.Public == nil || strings.TrimSpace(rec.Public.Route) == "" || strings.TrimSpace(rec.Public.Hostname) == "" {
+		return appsso.Inputs{}, errPlanChanged
+	}
+	entries, err := catalog.Load(a.cfg.CatalogDir)
+	if err != nil {
+		return appsso.Inputs{}, fmt.Errorf("catalog unavailable: %w", err)
+	}
+	manifest, err := entries.Get(rec.App)
+	if err != nil {
+		return appsso.Inputs{}, errUnknownApp
+	}
+	set, err := loadEdgeRoutes(a.cfg.Store)
+	if err != nil {
+		return appsso.Inputs{}, err
+	}
+	routes := append([]docker.Route(nil), set.Routes...)
+	selected := -1
+	for _, reviewed := range rec.Routes {
+		if !strings.EqualFold(string(reviewed.Host), rec.Public.Route) {
+			continue
+		}
+		for i, current := range routes {
+			if strings.EqualFold(string(current.Host), rec.Public.Route) && reflect.DeepEqual(current, reviewed) {
+				selected = i
+				break
+			}
+		}
+	}
+	if selected < 0 || len(appsso.AppRoutes(manifest, []docker.Route{routes[selected]})) != 1 {
+		return appsso.Inputs{}, errPlanChanged
+	}
+	r := routes[selected]
+	if r.IsPath() {
+		r.Published = true
+	} else {
+		r.Tunnel = append(append([]docker.Hostname(nil), r.Tunnel...), docker.Hostname(strings.ToLower(strings.TrimSpace(rec.Public.Hostname))))
+	}
+	routes[selected] = r
+	set.Routes = routes
+	return appSignInInputsFrom(a.cfg.Store, a.m, manifest, set)
+}
+
+// startSetup applies an approved sign-in plan against the anticipated route;
+// it does not save, reconcile, or publish that route.
+func (a *appSignIn) startSetup(ctx context.Context, rec setupRecord, digest, token, actor string) (int64, error) {
+	in, err := a.setupInputs(rec)
+	if err != nil {
+		return 0, err
+	}
+	return a.startWithInputs(ctx, in, true, digest, token, actor)
 }
 
 // access reads back the app's groups, the owner's membership, the

@@ -860,6 +860,18 @@ func (s *Service) Grant(ctx context.Context, actor string, id int64, g Grant) (P
 	if err != nil {
 		return p, err
 	}
+	// A setup checks its whole roster before the first grant. Check again
+	// here because Authentik may disable or replace a person mid-sequence.
+	if p.State != StateActive || p.pk == 0 || p.uid == "" {
+		return p, invalid("person %d has no active linked Authentik account", id)
+	}
+	account, err := api.GetAccount(ctx, p.pk)
+	if err != nil {
+		return p, fmt.Errorf("cannot verify the person's Authentik account")
+	}
+	if account == nil || !account.IsActive || account.UID == "" || account.UID != p.uid {
+		return p, invalid("person %d has no active linked Authentik account", id)
+	}
 	if err := s.applyGrant(ctx, api, actor, id, p.pk, g); err != nil {
 		return p, err
 	}

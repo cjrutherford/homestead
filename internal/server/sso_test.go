@@ -180,7 +180,7 @@ func (w *ssoWorld) admin(rw http.ResponseWriter, r *http.Request, enc *json.Enco
 		}
 		rw.WriteHeader(http.StatusNoContent)
 	case p == "/api/v3/core/users/":
-		res(map[string]any{"pk": 7, "uid": w.sub, "type": "internal"})
+		res(map[string]any{"pk": 7, "uid": w.sub, "type": "internal", "is_active": true})
 	case p == "/api/v3/policies/bindings/" && r.Method == http.MethodGet:
 		var out []any
 		for _, b := range w.bindings {
@@ -597,6 +597,8 @@ func TestSSOStepUpListIsExactAndClassified(t *testing.T) {
 		"POST /api/v1/secrets/rekey": stepUpBoundary, "POST /api/v1/backups/identity/export": stepUpBoundary,
 		"POST /api/v1/catalog/{name}/secrets/{secret}/reveal": stepUpBoundary,
 		"PUT /api/v1/people/{id}/apps/{app}/admin":            stepUpBoundary,
+		"POST /api/v1/catalog/{name}/install-admin":           stepUpBoundary,
+		"POST /api/v1/catalog/{name}/setup/resume-admin":      stepUpBoundary,
 		"POST /api/v1/people/{id}/password-reset":             stepUpBoundary,
 		"POST /api/v1/people/{id}/mfa-reset":                  stepUpBoundary,
 		"POST /api/v1/people/{id}/remove":                     stepUpBoundary,

@@ -55,8 +55,8 @@ func newFakeAuthentik(t *testing.T) *fakeAuthentik {
 	f := &fakeAuthentik{version: "2026.8.3", nextPK: 41, groups: map[string]map[string]any{}, mappings: map[string]map[string]any{},
 		authTitle: "Welcome to authentik!", flows: map[string]map[string]any{}, named: map[string]map[string]any{},
 		users: []map[string]any{
-			{"pk": 7, "uid": "user-1", "username": "owner", "type": "internal"},
-			{"pk": 8, "uid": "user-2", "username": "guest", "type": "internal"},
+			{"pk": 7, "uid": "user-1", "username": "owner", "type": "internal", "is_active": true},
+			{"pk": 8, "uid": "user-2", "username": "guest", "type": "internal", "is_active": true},
 		}}
 	f.groups["outsider"] = map[string]any{"pk": "g-outsider", "name": "outsider", "users": []any{}}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))

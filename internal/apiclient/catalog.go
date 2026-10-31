@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 
 	"homestead/internal/appsso"
 	"homestead/internal/docker"
@@ -118,6 +120,20 @@ type InstallPlanReport struct {
 	// setup makes (S326); install with setup.files_link to approve it.
 	FilesLink *InstallFilesLink `json:"files_link,omitempty"`
 	SignIn    *InstallSignIn    `json:"sign_in,omitempty"`
+	Access    *InstallAccess    `json:"access,omitempty"`
+}
+
+type InstallAccessPerson struct {
+	ID          int64  `json:"id"`
+	DisplayName string `json:"display_name"`
+	Username    string `json:"username"`
+	State       string `json:"state"`
+}
+type InstallAccess struct {
+	Mode           string                `json:"mode"`
+	People         []InstallAccessPerson `json:"people"`
+	AdminSupported bool                  `json:"admin_supported"`
+	Reason         string                `json:"reason,omitempty"`
 }
 
 // InstallSignIn is the install-time Authentik offer and reviewed plan.
@@ -224,6 +240,44 @@ func (c *Client) PlanInstall(ctx context.Context, name string, body map[string]a
 		return InstallPlanReport{}, err
 	}
 	return out, nil
+}
+
+func (c *Client) PlanInstallAccess(ctx context.Context, name string, body map[string]any) (string, error) {
+	var out struct {
+		Digest string `json:"digest"`
+	}
+	if err := c.postJSON(ctx, "/api/v1/catalog/"+name+"/access-plan", body, &out); err != nil {
+		return "", err
+	}
+	return out.Digest, nil
+}
+
+func (c *Client) InstallPackageWithAdmins(ctx context.Context, name string, body map[string]any, password string) (int64, error) {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return 0, err
+	}
+	req, err := c.post(ctx, "/api/v1/catalog/"+name+"/install-admin", raw)
+	if err != nil {
+		return 0, err
+	}
+	if password != "" {
+		u, err := url.Parse(c.BaseURL())
+		if err != nil {
+			return 0, fmt.Errorf("cannot verify local reauthentication address")
+		}
+		host := u.Hostname()
+		ip := net.ParseIP(host)
+		if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+			return 0, fmt.Errorf("local password reauthentication requires a loopback daemon address")
+		}
+		req.Header.Set(ReauthHeader, password)
+	}
+	var out OperationStarted
+	if err := c.roundTrip(req, http.StatusOK, &out); err != nil {
+		return 0, err
+	}
+	return out.ID, nil
 }
 
 // InstallPackage executes an approved install body, returning the

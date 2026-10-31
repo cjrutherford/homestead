@@ -109,5 +109,4 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-050 | An Apps Page for Everyone Who Signs In; Administration Moves to /admin | Accepted |
 | ADR-051 | Catalog Integration Metadata Is Advisory | Accepted |
 | ADR-052 | Secret Entrypoint Export and OIDC Client Actuation | Accepted |
-
-- [ADR-054: Explicit app access decisions during installation](ADR-054-app-install-access-decisions.md)
+| ADR-054 | Explicit app access decisions during installation | Accepted |

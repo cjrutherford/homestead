@@ -253,8 +253,11 @@ type appPublicRequest struct {
 	// on the route its install creates (S313): the install wizard and
 	// `apps install --public` review it with the install plan. It is a
 	// plan only. Apply takes the same request without it once the app is
-	// installed, and the digest must still match then.
+	// installed, and the digest must still match then. Managed installs
+	// request the anticipated post-sign-in state for their original approval.
 	BeforeInstall bool `json:"before_install,omitempty"`
+	// AnticipateSignIn previews publication after managed install sign-in.
+	AnticipateSignIn bool `json:"anticipate_sign_in,omitempty"`
 }
 
 // appPublicPlan is one public name added to or removed from an app.
@@ -280,9 +283,10 @@ type appPublicPlan struct {
 	AppSettings []string `json:"app_settings"`
 	// Coverage says whether Cloudflare has a certificate for the added
 	// name (S312); an uncovered name is also a warning.
-	Coverage []publicNameCoverage `json:"coverage"`
-	Warnings []string             `json:"warnings"`
-	Digest   string               `json:"digest"`
+	Coverage         []publicNameCoverage `json:"coverage"`
+	CertificateState string               `json:"certificate_state,omitempty"`
+	Warnings         []string             `json:"warnings"`
+	Digest           string               `json:"digest"`
 
 	zoneID   string
 	replaces []router.DNSRecord
@@ -334,9 +338,27 @@ func tunnelNameMap(routes []docker.Route) map[docker.Hostname][]docker.Hostname 
 
 // buildPlan reads Cloudflare and the store and changes nothing.
 func (p *appPublic) buildPlan(ctx context.Context, name string, req appPublicRequest) (appPublicPlan, error) {
+	return p.buildPlanState(ctx, name, req, false)
+}
+
+// buildAnticipatedSignInPlan is only a preview of the state after a future
+// successful sign-in setup. It is not proof of readiness and cannot apply a
+// plan. The caller must verify sign-in and grants before using the original
+// approved digest with start, which always reads actual state.
+func (p *appPublic) buildAnticipatedSignInPlan(ctx context.Context, name string, req appPublicRequest) (appPublicPlan, error) {
+	return p.buildPlanState(ctx, name, req, true)
+}
+
+func (p *appPublic) buildPlanState(ctx context.Context, name string, req appPublicRequest, anticipateSignIn bool) (appPublicPlan, error) {
 	f, err := p.facts(name)
 	if err != nil {
 		return appPublicPlan{}, err
+	}
+	if anticipateSignIn {
+		if !req.BeforeInstall || f.installed || f.signIn || f.manifest.SSO.OIDC == nil {
+			return appPublicPlan{}, refusePlan(http.StatusUnprocessableEntity, "anticipated sign-in requires an uninstalled app with OIDC and no existing sign-in")
+		}
+		f.signIn = true
 	}
 	if req.BeforeInstall && !f.installed && f.manifest.Name != authentikPackage {
 		if err := beforeInstall(&f, req); err != nil {
@@ -550,11 +572,12 @@ func (p *appPublic) planAdd(ctx context.Context, client *router.TunnelClient, to
 	}
 	plan.replaces = change.Replaces
 	plan.DNS = append(plan.DNS, change)
-	coverage, warnings, err := certificateCoverage(ctx, client, token, zone, []string{hostname})
+	coverage, warnings, fingerprint, err := publicationCoverage(ctx, client, token, zone, hostname)
 	if err != nil {
 		return err
 	}
 	plan.Coverage = coverage
+	plan.CertificateState = fingerprint
 	plan.Warnings = append(plan.Warnings, warnings...)
 	plan.Warnings = append(plan.Warnings,
 		"Anyone on the internet can reach "+f.manifest.Title+" at https://"+hostname+". Homestead puts no Authentik check in front of it: the app's own sign-in is what protects it.")
@@ -598,11 +621,12 @@ func (p *appPublic) planPathAdd(ctx context.Context, client *router.TunnelClient
 		return refusePlan(http.StatusUnprocessableEntity, "%s is not in the tunnel's Cloudflare zone", plan.Hostname)
 	}
 	plan.Zone, plan.zoneID = zone.Name, zone.ID
-	coverage, warnings, err := certificateCoverage(ctx, client, token, zone, []string{plan.Hostname})
+	coverage, warnings, fingerprint, err := publicationCoverage(ctx, client, token, zone, plan.Hostname)
 	if err != nil {
 		return err
 	}
 	plan.Coverage = coverage
+	plan.CertificateState = fingerprint
 	plan.Warnings = append(plan.Warnings, warnings...)
 	plan.Warnings = append(plan.Warnings,
 		"No DNS record changes: "+f.manifest.Title+" answers at "+plan.URL+", under the dashboard's public name the tunnel already carries.",
@@ -719,6 +743,10 @@ func (p *appPublic) decode(w http.ResponseWriter, r *http.Request, apply bool) (
 		http.Error(w, "a public name is applied once the app is installed: apply the same plan without before_install", http.StatusBadRequest)
 		return req, false
 	}
+	if req.AnticipateSignIn && (apply || !req.BeforeInstall || req.Enabled == nil || !*req.Enabled) {
+		http.Error(w, "anticipated sign-in is only available for a public install plan", http.StatusBadRequest)
+		return req, false
+	}
 	if apply && req.Digest == "" {
 		http.Error(w, "digest is required: review the plan, then approve it with its digest", http.StatusBadRequest)
 		return req, false
@@ -735,7 +763,11 @@ func (p *appPublic) plan(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	plan, err := p.buildPlan(r.Context(), r.PathValue("name"), req)
+	build := p.buildPlan
+	if req.AnticipateSignIn {
+		build = p.buildAnticipatedSignInPlan
+	}
+	plan, err := build(r.Context(), r.PathValue("name"), req)
 	if err != nil {
 		p.writeError(w, err)
 		return
