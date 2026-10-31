@@ -286,8 +286,8 @@ func TestAppPublicCertificateCoverage(t *testing.T) {
 	}
 	cf.denyCerts = true
 	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/plan", map[string]any{"enabled": true, "hostname": "photos.example.com"})
-	if recorder.Code == http.StatusOK {
-		t.Fatal("unreadable certificates must refuse a publication plan")
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "cannot confirm photos.example.com is covered") {
+		t.Fatalf("unreadable certificates must plan with a warning: %d %s", recorder.Code, recorder.Body.String())
 	}
 	cf.denyCerts = false
 	applyAppPublic(t, srv, st, true, plan.Digest)
@@ -614,15 +614,6 @@ func TestAppPublicAnticipatedSignIn(t *testing.T) {
 				req.Hostname = "other.example.com"
 			}
 			actual, err := srv.appPublic.buildPlan(context.Background(), "immich", req)
-			if change == "certificate" {
-				if err == nil {
-					t.Fatal("unavailable certificate state accepted")
-				}
-				if _, err := srv.appPublic.start(context.Background(), "immich", req, "owner"); err == nil {
-					t.Fatal("unavailable certificate state allowed apply")
-				}
-				return
-			}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -709,11 +700,39 @@ func TestPublicationCertificateFingerprintCanonical(t *testing.T) {
 	if fingerprint(changed) == want {
 		t.Fatal("Total TLS was not bound")
 	}
-	for _, state := range []router.ZoneCertificates{{Unreadable: true}, {TotalTLSUnreadable: true}, {Packs: []router.CertificatePack{{Hosts: []string{"*.example.com"}}}}} {
-		if _, err := publicationCertificateState(state, "immich.example.com"); err == nil {
-			t.Fatal("incomplete state accepted")
-		}
+	if _, err := publicationCertificateState(router.ZoneCertificates{Packs: []router.CertificatePack{{Hosts: []string{"*.example.com"}}}}, "immich.example.com"); err == nil {
+		t.Fatal("pack without identity accepted")
 	}
+	// S397: unreadable state is a stable marker, distinct per kind and from readable.
+	un := fingerprint(router.ZoneCertificates{Unreadable: true})
+	tt := fingerprint(router.ZoneCertificates{TotalTLSUnreadable: true})
+	if un == want || tt == want || un == tt {
+		t.Fatal("readability flip did not change the digest")
+	}
+	if fingerprint(router.ZoneCertificates{Unreadable: true}) != un {
+		t.Fatal("unreadable marker is not stable")
+	}
+	if fingerprint(router.ZoneCertificates{TotalTLSUnreadable: true, Packs: base.Packs}) == tt {
+		t.Fatal("packs not bound while Total TLS unreadable")
+	}
+}
+
+// S397: plan then apply succeeds while certificates stay unreadable, and
+// the plan goes stale if readability changes.
+func TestAppPublicUnreadableCertificatesPlanAndApply(t *testing.T) {
+	srv, st, cf, _ := appPublicRig(t)
+	cf.denyCerts = true
+	plan := planAppPublic(t, srv, map[string]any{"enabled": true})
+	if !strings.Contains(strings.Join(plan.Warnings, " "), "cannot confirm") {
+		t.Fatalf("no unreadable warning: %v", plan.Warnings)
+	}
+	cf.denyCerts = false
+	readable := planAppPublic(t, srv, map[string]any{"enabled": true})
+	if readable.Digest == plan.Digest {
+		t.Fatal("digest did not change when readability flipped")
+	}
+	cf.denyCerts = true
+	applyAppPublic(t, srv, st, true, plan.Digest)
 }
 
 func TestAppPublicOldDigestRejected(t *testing.T) {

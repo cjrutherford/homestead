@@ -97,8 +97,15 @@ func statusCoverage(ctx context.Context, secrets *secret.Store, names []string) 
 // the zone's Total TLS setting. Host duplicates, order, unrelated hosts and
 // timestamps do not affect it.
 func publicationCertificateState(certs router.ZoneCertificates, name string) (string, error) {
-	if certs.Unreadable || certs.TotalTLSUnreadable {
-		return "", fmt.Errorf("cannot review publication: Cloudflare certificate state is unavailable")
+	// An unreadable state (S397) is bound as a stable marker rather than
+	// refused: the plan stays valid while it stays unreadable and goes
+	// stale if readability or the readable packs change.
+	readability := ""
+	switch {
+	case certs.Unreadable:
+		readability = "unreadable"
+	case certs.TotalTLSUnreadable:
+		readability = "unreadable-total-tls"
 	}
 	type packState struct {
 		ID           string                   `json:"id"`
@@ -139,10 +146,11 @@ func publicationCertificateState(certs router.ZoneCertificates, name string) (st
 		return fmt.Sprint(packs[i].Hosts) < fmt.Sprint(packs[j].Hosts)
 	})
 	data, err := json.Marshal(struct {
-		Version  int         `json:"version"`
-		TotalTLS bool        `json:"total_tls"`
-		Packs    []packState `json:"packs"`
-	}{1, certs.TotalTLS, packs})
+		Version    int         `json:"version"`
+		TotalTLS   bool        `json:"total_tls"`
+		Unreadable string      `json:"unreadable,omitempty"`
+		Packs      []packState `json:"packs"`
+	}{1, certs.TotalTLS, readability, packs})
 	if err != nil {
 		return "", err
 	}
@@ -160,5 +168,10 @@ func publicationCoverage(ctx context.Context, client *router.TunnelClient, token
 		return nil, nil, "", err
 	}
 	coverage, warnings, err := coverageFromCertificates(certs, zone, []string{name})
+	if certs.Unreadable || certs.TotalTLSUnreadable {
+		warnings = append(warnings, fmt.Sprintf("Homestead cannot read this zone's certificates with the stored Cloudflare token, so it cannot confirm %s is covered. "+
+			"Cloudflare's Universal SSL covers first-level names such as %s unless it was disabled. "+
+			"Add Zone → SSL and Certificates → Read to the token to check.", router.NormalizeName(name), router.NormalizeName(name)))
+	}
 	return coverage, warnings, fingerprint, err
 }

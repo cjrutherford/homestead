@@ -206,3 +206,5 @@ S394 makes catalog bundles emit empty lists instead of null and list their membe
 S395 keeps Authentik published on the tunnel when it moves to its path with the dashboard tunneled and sign-in linked (`docs/slices/S395-authentik-move-keeps-public-sign-in.md`).
 
 S396 keeps Nextcloud's trusted domains in step with every name Homestead serves it on, and repairs a stopped GridCraft link on resume (`docs/slices/S396-nextcloud-trusts-its-names.md`).
+
+S397 lets public plans and installs go ahead, with a warning, when the Cloudflare token cannot read certificates (`docs/slices/S397-publish-without-certificate-read.md`).

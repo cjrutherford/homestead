@@ -579,8 +579,10 @@ func TestManagedInstallHandlerChecksOriginalPublicApprovalBeforeOperation(t *tes
 	}
 	cf.certHosts = cf.certHosts[:len(cf.certHosts)-1]
 	cf.denyCerts = true
-	if got := post("/api/v1/catalog/immich/install", base); got.code < 400 || got.code == http.StatusInternalServerError && strings.Contains(got.body, "test install stopped") {
-		t.Fatalf("unreadable certificate state reached install: %d %s", got.code, got.body)
+	// S397: an unreadable state is a different state from the reviewed one,
+	// so the approval is stale rather than refused as unavailable.
+	if got := post("/api/v1/catalog/immich/install", base); got.code != http.StatusConflict || !strings.Contains(got.body, "public address plan changed") {
+		t.Fatalf("unreadable certificate state did not stale the approval: %d %s", got.code, got.body)
 	}
 	cf.denyCerts = false
 	if got := post("/api/v1/catalog/immich/install", base); got.code != http.StatusInternalServerError || !strings.Contains(got.body, "test install stopped") {
