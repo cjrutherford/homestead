@@ -1555,3 +1555,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S400: the craft files link is moved by address only. Nothing checks that Nextcloud answers at the new address before the link is updated; the Craft files page shows the link's readiness afterwards.
 - S401 (S400 review): a move that fails between its stop step and its up step (a seed write fails) leaves the app stopped, and the error does not say so. A failure path should bring the stack back up or name the stopped app.
 - S401 (S400 review): when the craft files link step fails, the move stops before its sign-in step, and the error only mentions the link. It should also say sign-in was not updated.
+- S402: the S342 `catalog.ActivateOIDC`/`DeactivateOIDC` code (`internal/catalog/oidcapply.go`) is superseded by the env-oidc adapter (ADR-052 amendment) and unused; remove it and its tests.
+- S402: per-app env-oidc slices: Mealie; Linkding (no discovery, derive the endpoints from the issuer); FreshRSS (two secrets); Komga (Java truststore); Paperless (secret inside a JSON setting).
+- S402: Navidrome and Uptime Kuma have no OIDC; sign them in through forward-auth (owner reopened this 2026-10-31). An ADR is needed first.
+- S402: an install from before an app declared its client secret needs its Compose file regenerated before env-oidc sign-in can apply; apply refuses with guidance rather than doing it.

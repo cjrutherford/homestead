@@ -52,6 +52,9 @@ func OIDCCredentialRows(m Manifest) (id, secretRow string, err error) {
 // issued credentials. It is idempotent: an existing client keeps its
 // stored secret and only its redirect URIs are refreshed, so a re-run
 // after a route change does not invalidate the app's configuration.
+//
+// Superseded (S402, ADR-052 amendment): nothing calls this; env-configured
+// apps sign in through the appsso env-oidc adapter. Removal is deferred.
 func ActivateOIDC(ctx context.Context, req OIDCActivation) (OIDCResult, error) {
 	if req.Manager == nil {
 		return OIDCResult{}, fmt.Errorf("catalog: provider %q cannot manage OIDC clients", req.Provider)

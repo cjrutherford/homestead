@@ -63,7 +63,7 @@ func TestPathAppsSignInUnderTheirPaths(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if w := wiring(m, adapter, p.Issuer); fmt.Sprint(w.ExtraHosts) != "[homestead.lan:host-gateway]" {
+		if w := wiring(m, adapter, p.Issuer, Settings{}); fmt.Sprint(w.ExtraHosts) != "[homestead.lan:host-gateway]" {
 			t.Fatalf("%s: back channel = %v", c.name, w.ExtraHosts)
 		}
 	}
@@ -100,7 +100,7 @@ func TestPublishedAppsSignInAtPublicAddress(t *testing.T) {
 	if p.Issuer != public || p.ReplacedIssuer != "" {
 		t.Fatalf("published issuer = %s (replaces %q)", p.Issuer, p.ReplacedIssuer)
 	}
-	if w := wiring(m, adapter, p.Issuer); fmt.Sprint(w.ExtraHosts) != "[homestead.example.com:host-gateway]" ||
+	if w := wiring(m, adapter, p.Issuer, Settings{}); fmt.Sprint(w.ExtraHosts) != "[homestead.example.com:host-gateway]" ||
 		!strings.Contains(strings.Join(p.AppSettings, " "), "resolves homestead.example.com to the appliance edge") {
 		t.Fatalf("back channel = %v, settings %v", w.ExtraHosts, p.AppSettings)
 	}

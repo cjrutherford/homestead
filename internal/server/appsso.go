@@ -235,7 +235,7 @@ func (a *appSignIn) startWithInputs(ctx context.Context, in appsso.Inputs, enabl
 		dashboard.AuthentikURL = strings.SplitN(in.Applied.Issuer, "/application/", 2)[0]
 	}
 	rt := appsso.Runtime{
-		Records: appsso.Records{DB: a.cfg.Store.DB()}, Secrets: a.cfg.Secrets, Audit: a.audit,
+		Records: appsso.Records{DB: a.cfg.Store.DB()}, Secrets: a.cfg.Secrets, AppSecrets: a.cfg.Secrets, Audit: a.audit,
 		StackDir: stackDirFor,
 		RootPEM: func() ([]byte, error) {
 			if a.cfg.Local == nil {

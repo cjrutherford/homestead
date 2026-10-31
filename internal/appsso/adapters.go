@@ -114,6 +114,11 @@ func AdapterFor(d catalog.OIDCAdapter) (Adapter, error) {
 		return immich{}, nil
 	case catalog.AdapterNextcloud:
 		return nextcloud{}, nil
+	case catalog.AdapterEnvOIDC:
+		if d.Env == nil {
+			return nil, fmt.Errorf("appsso: %s needs its env settings", d.Adapter)
+		}
+		return envOIDC{cfg: *d.Env}, nil
 	case catalog.AdapterJellyfinSSO:
 		if d.Plugin == nil {
 			return nil, fmt.Errorf("appsso: %s needs a pinned plugin", d.Adapter)

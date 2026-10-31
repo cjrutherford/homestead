@@ -36,6 +36,9 @@ type Runtime struct {
 	// FirstRun finishes the app's own first-run setup (S318) before
 	// sign-in changes anything; nil skips it.
 	FirstRun func(ctx context.Context, m catalog.Manifest) error
+	// AppSecrets holds the packages' declared secrets (S402): an env-oidc
+	// app's client secret is one of them. Nil refuses env-oidc apps.
+	AppSecrets catalog.SecretStore
 }
 
 func (rt Runtime) audit(actor, action, outcome, detail string) {
@@ -58,13 +61,57 @@ func newSecret() (string, error) {
 // wiring is the override entries for the service that talks to Authentik.
 // The host entry follows the issuer's host (ADR-047): the local name, or
 // Authentik's public name, which the edge also answers on this box.
-func wiring(m catalog.Manifest, adapter Adapter, issuer string) catalog.SignInWiring {
+func wiring(m catalog.Manifest, adapter Adapter, issuer string, s Settings) catalog.SignInWiring {
+	env := map[string]string{}
+	for k, v := range adapter.TrustEnv() {
+		env[k] = v
+	}
+	if e, ok := adapter.(EnvSetter); ok {
+		for k, v := range e.Env(s) {
+			env[k] = v
+		}
+	}
 	return catalog.SignInWiring{
 		Service:    m.SSO.OIDC.Service,
 		ExtraHosts: []string{hostOf(issuer) + ":host-gateway"},
 		Volumes:    []string{"./" + CADir + ":" + CAMount + ":ro"},
-		Env:        adapter.TrustEnv(),
+		Env:        env,
 	}
+}
+
+// declaredSecret is the package secret an env-oidc app uses as its
+// client secret ("" for the other adapters).
+func declaredSecret(m catalog.Manifest) string {
+	if m.SSO.OIDC != nil && m.SSO.OIDC.Env != nil {
+		return m.SSO.OIDC.Env.Secret
+	}
+	return ""
+}
+
+// ensureDeclaredSecret creates the declared secret when the store has
+// none (an install from before the manifest declared it), writes its
+// file for the container, and returns the value.
+func ensureDeclaredSecret(rt Runtime, m catalog.Manifest, dir string) (string, error) {
+	if rt.AppSecrets == nil {
+		return "", fmt.Errorf("appsso: the package secret store is unavailable")
+	}
+	name := declaredSecret(m)
+	for _, d := range m.Secrets {
+		if d.Name != name {
+			continue
+		}
+		if err := catalog.EnsureSecrets(rt.AppSecrets, catalog.Manifest{Name: m.Name, Secrets: []catalog.SecretDecl{d}}); err != nil {
+			return "", err
+		}
+		if !catalog.SecretsWired(dir, m) {
+			return "", fmt.Errorf("appsso: %s was installed before it declared the secret %q; reinstall it or run configure so its stack carries the secret, then apply sign-in again", m.Title, name)
+		}
+		if err := catalog.WriteSecretFiles(dir, catalog.SecretFilesFor(m), rt.AppSecrets); err != nil {
+			return "", err
+		}
+		return rt.AppSecrets.Get(catalog.SecretStoreName(m.Name, name))
+	}
+	return "", fmt.Errorf("appsso: %s declares no secret %q", m.Name, name)
 }
 
 // Definition is the app.sign-in operation for an approved plan: on
@@ -85,7 +132,8 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 	if origins := originsOf(plan.RedirectURIs); len(origins) > 0 {
 		target.Address = origins[0]
 	}
-	wire := wiring(m, adapter, plan.Issuer)
+	settings := Settings{Issuer: plan.Issuer, ClientID: plan.ClientID, Groups: groupNames(m.Name)}
+	wire := wiring(m, adapter, plan.Issuer, settings)
 	failed := func(what string, err error) error {
 		rt.audit(actor, "app.sign-in", "error", fmt.Sprintf("%s: %s failed", m.Name, what))
 		return err
@@ -106,7 +154,9 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 		}
 		if on && plan.ReplacedIssuer != "" && hostOf(plan.ReplacedIssuer) != hostOf(plan.Issuer) {
 			// The host entry of the issuer this plan replaces goes.
-			if err := catalog.ApplySignInWiring(dir, wiring(m, adapter, plan.ReplacedIssuer), false); err != nil {
+			old := settings
+			old.Issuer = plan.ReplacedIssuer
+			if err := catalog.ApplySignInWiring(dir, wiring(m, adapter, plan.ReplacedIssuer, old), false); err != nil {
 				return err
 			}
 		}
@@ -151,8 +201,10 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 			}},
 			{Name: "unwire", Run: func(ctx context.Context) error { return rewire(ctx, false) }},
 			{Name: "forget", Run: func(context.Context) error {
-				if err := rt.Secrets.Delete(SecretName(m.Name)); err != nil {
-					return fmt.Errorf("forget the client secret: %w", err)
+				if declaredSecret(m) == "" {
+					if err := rt.Secrets.Delete(SecretName(m.Name)); err != nil {
+						return fmt.Errorf("forget the client secret: %w", err)
+					}
 				}
 				if err := rt.Records.Delete(m.Name); err != nil {
 					return err
@@ -190,6 +242,14 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 	}
 	def.Steps = append(def.Steps, []operation.StepDef{
 		{Name: "client-secret", Run: func(context.Context) error {
+			if declaredSecret(m) != "" {
+				s, err := ensureDeclaredSecret(rt, m, dir)
+				if err != nil || s == "" {
+					return failed("prepare the app's client secret", fmt.Errorf("the declared secret has no value: %v", err))
+				}
+				secret = s
+				return nil
+			}
 			s, err := rt.Secrets.Get(SecretName(m.Name))
 			if err != nil || s == "" {
 				if s, err = newSecret(); err != nil {

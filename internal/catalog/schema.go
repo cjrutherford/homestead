@@ -226,6 +226,9 @@ const (
 	AdapterImmich      = "immich"
 	AdapterNextcloud   = "nextcloud-user-oidc"
 	AdapterJellyfinSSO = "jellyfin-sso-plugin"
+	// AdapterEnvOIDC (S402) signs in an app that is configured by
+	// environment variables alone, through the generic adapter.
+	AdapterEnvOIDC = "env-oidc"
 )
 
 // OIDCAdapter declares how an app takes OpenID Connect sign-in: the
@@ -235,6 +238,81 @@ type OIDCAdapter struct {
 	Adapter string        `yaml:"adapter" json:"adapter"`
 	Service string        `yaml:"service" json:"service"`
 	Plugin  *PinnedPlugin `yaml:"plugin,omitempty" json:"plugin,omitempty"`
+	// Env is the environment an env-oidc app is configured with (S402).
+	Env *EnvOIDC `yaml:"env,omitempty" json:"env,omitempty"`
+}
+
+// EnvOIDC declares an env-configured app's sign-in (S402, ADR-052
+// amendment). Set maps environment variables to templates; the only
+// placeholders are {{issuer}}, {{client_id}}, {{admin_group}} and
+// {{user_group}}. The client secret is never templated: it is the
+// declared package Secret, delivered to the app as a file.
+type EnvOIDC struct {
+	// RedirectPaths are the app paths Authentik may redirect back to.
+	RedirectPaths []string `yaml:"redirectpaths" json:"redirectpaths"`
+	// SignInPath is where a person starts signing in.
+	SignInPath string `yaml:"signinpath" json:"signinpath"`
+	// Secret names the declared package secret that is the client secret.
+	Secret string `yaml:"secret" json:"secret"`
+	// Trust, when set, is the variable that receives the path of the
+	// appliance root inside the container.
+	Trust string            `yaml:"trust,omitempty" json:"trust,omitempty"`
+	Set   map[string]string `yaml:"set" json:"set"`
+}
+
+// EnvPlaceholders are the only placeholders an env-oidc template may use.
+var EnvPlaceholders = []string{"issuer", "client_id", "admin_group", "user_group"}
+
+var envPlaceholder = regexp.MustCompile(`\{\{\s*([^{}]*?)\s*\}\}`)
+
+func (e EnvOIDC) validate(service string, secrets []SecretDecl) error {
+	if len(e.RedirectPaths) == 0 {
+		return fmt.Errorf("catalog: env-oidc needs at least one redirect path")
+	}
+	for _, p := range append([]string{e.SignInPath}, e.RedirectPaths...) {
+		if !strings.HasPrefix(p, "/") || strings.Contains(p, "..") || strings.ContainsAny(p, " \t\r\n") {
+			return fmt.Errorf("catalog: env-oidc path %q must be absolute", p)
+		}
+	}
+	found := false
+	for _, d := range secrets {
+		if d.Name != e.Secret {
+			continue
+		}
+		for _, c := range d.Consumers {
+			found = found || c.Service == service
+		}
+	}
+	if !found {
+		return fmt.Errorf("catalog: env-oidc secret %q must be a declared secret consumed by service %q", e.Secret, service)
+	}
+	if e.Trust != "" && !validEnvKey.MatchString(e.Trust) {
+		return fmt.Errorf("catalog: env-oidc trust variable %q invalid", e.Trust)
+	}
+	if len(e.Set) == 0 {
+		return fmt.Errorf("catalog: env-oidc sets no variables")
+	}
+	for key, tmpl := range e.Set {
+		if !validEnvKey.MatchString(key) {
+			return fmt.Errorf("catalog: env-oidc variable %q invalid", key)
+		}
+		if key == e.Trust {
+			return fmt.Errorf("catalog: env-oidc variable %q is both set and trust", key)
+		}
+		for _, m := range envPlaceholder.FindAllStringSubmatch(tmpl, -1) {
+			ok := false
+			for _, name := range EnvPlaceholders {
+				ok = ok || m[1] == name
+			}
+			if !ok {
+				return fmt.Errorf("catalog: env-oidc variable %q uses placeholder {{%s}}; only issuer, client_id, admin_group and user_group are allowed", key, m[1])
+			}
+		}
+		if strings.Contains(strings.ReplaceAll(envPlaceholder.ReplaceAllString(tmpl, ""), "}}", ""), "{{") {
+			return fmt.Errorf("catalog: env-oidc variable %q has a malformed placeholder", key)
+		}
+	}
+	return nil
 }
 
 // PinnedPlugin is one third-party plugin release: Homestead downloads
@@ -254,9 +332,9 @@ var (
 // validate checks the adapter against the manifest's services: a known
 // adapter, an existing service that serves an endpoint, OIDC among the
 // protocols, and a plugin pin exactly for the Jellyfin adapter.
-func (a OIDCAdapter) validate(protocols []identity.Capability, services map[string]Service) error {
+func (a OIDCAdapter) validate(protocols []identity.Capability, services map[string]Service, secrets []SecretDecl) error {
 	switch a.Adapter {
-	case AdapterImmich, AdapterNextcloud, AdapterJellyfinSSO:
+	case AdapterImmich, AdapterNextcloud, AdapterJellyfinSSO, AdapterEnvOIDC:
 	default:
 		return fmt.Errorf("catalog: OIDC adapter %q unknown", a.Adapter)
 	}
@@ -270,6 +348,15 @@ func (a OIDCAdapter) validate(protocols []identity.Capability, services map[stri
 	service, ok := services[a.Service]
 	if !ok || service.Exposes == "" {
 		return fmt.Errorf("catalog: OIDC adapter service %q must be a service that serves an endpoint", a.Service)
+	}
+	if (a.Env != nil) != (a.Adapter == AdapterEnvOIDC) {
+		return fmt.Errorf("catalog: the %s adapter, and only it, takes env settings", AdapterEnvOIDC)
+	}
+	if a.Env != nil {
+		if a.Plugin != nil {
+			return fmt.Errorf("catalog: only the %s adapter pins a plugin", AdapterJellyfinSSO)
+		}
+		return a.Env.validate(a.Service, secrets)
 	}
 	if a.Adapter != AdapterJellyfinSSO {
 		if a.Plugin != nil {
@@ -746,7 +833,7 @@ func (m Manifest) Validate() error {
 		for _, service := range m.Services {
 			byName[service.Name] = service
 		}
-		if err := m.SSO.OIDC.validate(m.SSO.Protocols, byName); err != nil {
+		if err := m.SSO.OIDC.validate(m.SSO.Protocols, byName, m.Secrets); err != nil {
 			return err
 		}
 	}
