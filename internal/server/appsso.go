@@ -68,6 +68,11 @@ func appSignInInputsFrom(st *store.Store, m *sso.Manager, manifest catalog.Manif
 	if installed && manifest.SSO.OIDC != nil && manifest.SSO.OIDC.Env != nil {
 		in.StackNeedsSecret = !catalog.SecretConsumerWired(stackDirFor(manifest.Name), manifest, manifest.SSO.OIDC.Env.Secret)
 	}
+	if installed && manifest.SSO.OIDC != nil {
+		if env, err := catalog.OverrideEnv(stackDirFor(manifest.Name), manifest.SSO.OIDC.Service); err == nil {
+			in.OwnerEnv = env
+		}
+	}
 	status, err := m.Status()
 	if err != nil {
 		return in, err

@@ -162,16 +162,25 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 				return err
 			}
 		}
-		if on && plan.ReplacedIssuer != "" && hostOf(plan.ReplacedIssuer) != hostOf(plan.Issuer) {
-			// The host entry of the issuer this plan replaces goes.
+		if on && plan.ReplacedIssuer != "" {
+			// What was set for the issuer this plan replaces goes: its
+			// host entry and its variables, which still hold the old
+			// values unless the owner changed them since.
 			old := settings
 			old.Issuer = plan.ReplacedIssuer
-			if err := catalog.ApplySignInWiring(dir, wiring(m, adapter, plan.ReplacedIssuer, old), false); err != nil {
+			if _, err := catalog.ApplySignInWiring(dir, wiring(m, adapter, plan.ReplacedIssuer, old), false); err != nil {
 				return err
 			}
 		}
-		if err := catalog.ApplySignInWiring(dir, wire, on); err != nil {
+		notes, err := catalog.ApplySignInWiring(dir, wire, on)
+		if err != nil {
 			return err
+		}
+		if len(notes.Replaced) > 0 {
+			rt.audit(actor, "app.sign-in.wire", "ok", fmt.Sprintf("%s: %s set by the owner replaced while sign-in is on", m.Name, strings.Join(notes.Replaced, ", ")))
+		}
+		if len(notes.Kept) > 0 {
+			rt.audit(actor, "app.sign-in.wire", "ok", fmt.Sprintf("%s: %s left in place, the owner changed it since sign-in set it", m.Name, strings.Join(notes.Kept, ", ")))
 		}
 		if !on {
 			if err := os.RemoveAll(caDir); err != nil {
@@ -254,8 +263,11 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 		{Name: "client-secret", Run: func(context.Context) error {
 			if declaredSecret(m) != "" {
 				s, err := ensureDeclaredSecret(rt, m, dir)
-				if err != nil || s == "" {
-					return failed("prepare the app's client secret", fmt.Errorf("the declared secret has no value: %v", err))
+				if err != nil {
+					return failed("prepare the app's client secret", err)
+				}
+				if s == "" {
+					return failed("prepare the app's client secret", fmt.Errorf("the declared secret has no value"))
 				}
 				secret = s
 				return nil

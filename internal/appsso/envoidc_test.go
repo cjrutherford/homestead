@@ -179,3 +179,91 @@ func TestEnvOIDCNeedsSecretWiring(t *testing.T) {
 		t.Fatalf("unwired stack: %v", err)
 	}
 }
+
+func TestEnvOIDCSpacedPlaceholdersRender(t *testing.T) {
+	cfg := catalog.EnvOIDC{Set: map[string]string{"U": "{{ issuer }}x", "G": "{{ admin_group }}"}}
+	a := envOIDC{cfg: cfg}
+	if !a.uses("admin_group") {
+		t.Fatal("spaced placeholder not seen")
+	}
+	env := a.Env(Settings{Issuer: "https://a/", Groups: GroupNames{Admins: "adm"}})
+	if env["U"] != "https://a/x" || env["G"] != "adm" {
+		t.Fatalf("env: %v", env)
+	}
+}
+
+func TestEnvOIDCOwnerValues(t *testing.T) {
+	stubDocker(t)
+	st, err := store.Open(filepath.Join(t.TempDir(), "homestead.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	dir := t.TempDir()
+	compose := "services:\n  app:\n    image: envapp:1\nsecrets:\n  app_oidc_client_secret:\n    file: ./secrets/app_oidc_client_secret\n"
+	_ = os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(compose), 0o600)
+	overridePath := filepath.Join(dir, catalog.OverrideFileName)
+	_ = os.WriteFile(overridePath, []byte("services:\n  app:\n    environment:\n      OIDC_CLIENT_ID: mine\n      OIDC_USER_GROUP: keepme\n"), 0o600)
+	var audits []string
+	rt := Runtime{Records: Records{DB: st.DB()}, Secrets: &memSecrets{m: map[string]string{}}, AppSecrets: &appSecrets{m: map[string]string{}}, StackDir: func(string) string { return dir },
+		RootPEM: func() ([]byte, error) {
+			return []byte("-----BEGIN CERTIFICATE-----\nroot\n-----END CERTIFICATE-----\n"), nil
+		},
+		Audit: func(actor, action, outcome, detail string) { audits = append(audits, action+" "+detail) }}
+	m := envManifest()
+	local := Inputs{Manifest: m, Installed: true, AuthentikInstalled: true, Dashboard: dashboard, DashboardOK: true,
+		Routes: AppRoutes(m, []docker.Route{route("envapp.lan", "app")})}
+	local.OwnerEnv, _ = catalog.OverrideEnv(dir, "app")
+	run := func(plan Plan) {
+		def, err := Definition(rt, plan, m, dashboard, &fakeAuthentik{}, "owner")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, step := range def.Steps {
+			if err := step.Run(context.Background()); err != nil {
+				t.Fatalf("%s: %v", step.Name, err)
+			}
+		}
+	}
+	plan, err := BuildPlan(local, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := strings.Join(plan.Warnings, "\n"); !strings.Contains(w, "OIDC_CLIENT_ID set by the owner is replaced while sign-in is on") {
+		t.Fatalf("warnings: %s", w)
+	}
+	run(plan)
+	if !strings.Contains(strings.Join(audits, "\n"), "OIDC_CLIENT_ID") {
+		t.Fatalf("audit: %v", audits)
+	}
+	// Move the issuer local to public: old values go, new ones are set once.
+	rec, _, _ := Records{DB: st.DB()}.Get("envapp")
+	pub := local
+	pub.Applied = &rec
+	pub.PublicAuthentikURL = "https://auth.example.com"
+	pub.Routes = AppRoutes(m, []docker.Route{route("envapp.lan", "app", "envapp.example.com")})
+	pub.OwnerEnv, _ = catalog.OverrideEnv(dir, "app")
+	plan2, err := BuildPlan(pub, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan2.ReplacedIssuer == "" {
+		t.Fatal("issuer did not move")
+	}
+	run(plan2)
+	raw, _ := os.ReadFile(overridePath)
+	if strings.Count(string(raw), "OIDC_CONFIGURATION_URL") != 1 || strings.Contains(string(raw), "https://authentik.lan/") ||
+		!strings.Contains(string(raw), "https://auth.example.com/") {
+		t.Fatalf("moved override:\n%s", raw)
+	}
+	// Off keeps a value the owner changed after sign-in set it.
+	_ = os.WriteFile(overridePath, []byte(strings.Replace(string(raw), "OIDC_ADMIN_GROUP: "+groupNames("envapp").Admins, "OIDC_ADMIN_GROUP: custom", 1)), 0o600)
+	rec, _, _ = Records{DB: st.DB()}.Get("envapp")
+	pub.Applied = &rec
+	off, _ := BuildPlan(pub, false)
+	run(off)
+	raw, _ = os.ReadFile(overridePath)
+	if !strings.Contains(string(raw), "OIDC_ADMIN_GROUP: custom") || strings.Contains(string(raw), "OIDC_CLIENT_ID") {
+		t.Fatalf("off override:\n%s", raw)
+	}
+}

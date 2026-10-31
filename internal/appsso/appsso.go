@@ -207,6 +207,9 @@ type Inputs struct {
 	// lacks the wiring for the app's declared sign-in secret (installed
 	// before the manifest declared it, S403): applying rewrites it.
 	StackNeedsSecret bool
+	// OwnerEnv is the app service's environment in the override file
+	// now, so the plan can name values that sign-in replaces (S404).
+	OwnerEnv map[string]string
 }
 
 // published reports an app with a public name: its own tunnel names, or
@@ -377,6 +380,7 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 	p.Access, p.AdminRoles = &access, roles.Note
 	noteRoles(&p, roles)
 	authHost := hostOf(base)
+	p.Warnings = append(p.Warnings, replacedOwnerEnv(in, m, adapter, p)...)
 	if in.StackNeedsSecret {
 		p.AppSettings = append(p.AppSettings, fmt.Sprintf("%s's stack file is rewritten to deliver the sign-in secret: only the secret's entry, its reference and the file-path variable are added to compose.yaml, then the app restarts.", m.Title))
 	}
@@ -543,4 +547,36 @@ func signInURL(a Adapter, m catalog.Manifest, origin string) string {
 		}
 	}
 	return a.SignInURL(origin)
+}
+
+// replacedOwnerEnv names the variables the owner set in the override file
+// whose value differs from what sign-in sets: sign-in's value wins while
+// it is on (S404). Values equal to what an earlier apply set are not the
+// owner's.
+func replacedOwnerEnv(in Inputs, m catalog.Manifest, adapter Adapter, p Plan) []string {
+	if len(in.OwnerEnv) == 0 {
+		return nil
+	}
+	settings := Settings{Issuer: p.Issuer, ClientID: p.ClientID, Groups: groupNames(m.Name)}
+	want := wiring(m, adapter, p.Issuer, settings).Env
+	var earlier map[string]string
+	if in.Applied != nil {
+		old := settings
+		old.Issuer = in.Applied.Issuer
+		earlier = wiring(m, adapter, old.Issuer, old).Env
+	}
+	var keys []string
+	for k := range want {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var out []string
+	for _, k := range keys {
+		cur, ok := in.OwnerEnv[k]
+		if !ok || cur == want[k] || cur == earlier[k] {
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s set by the owner is replaced while sign-in is on.", k))
+	}
+	return out
 }

@@ -150,7 +150,7 @@ func TestApplySignInWiringAddsAndRemovesOnlyItsEntries(t *testing.T) {
 	w := SignInWiring{Service: "jellyfin", ExtraHosts: []string{"authentik.lan:host-gateway"},
 		Volumes: []string{"./homestead-ca:/etc/homestead/ca:ro"}, Env: map[string]string{"SSL_CERT_DIR": "/etc/ssl/certs:/etc/homestead/ca"}}
 	for i := 0; i < 2; i++ {
-		if err := ApplySignInWiring(dir, w, true); err != nil {
+		if _, err := ApplySignInWiring(dir, w, true); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -160,14 +160,42 @@ func TestApplySignInWiringAddsAndRemovesOnlyItsEntries(t *testing.T) {
 			t.Fatalf("on: %q not once in\n%s", want, on)
 		}
 	}
-	if err := ApplySignInWiring(dir, w, false); err != nil {
+	if _, err := ApplySignInWiring(dir, w, false); err != nil {
 		t.Fatal(err)
 	}
 	off, _ := os.ReadFile(filepath.Join(dir, OverrideFileName))
 	if string(off) != string(before) {
 		t.Fatalf("off:\n%s\nwant:\n%s", off, before)
 	}
-	if err := ApplySignInWiring(dir, SignInWiring{Service: "Bad!"}, true); err == nil {
+	if _, err := ApplySignInWiring(dir, SignInWiring{Service: "Bad!"}, true); err == nil {
 		t.Fatal("bad service accepted")
+	}
+}
+
+func TestApplySignInWiringKeepsAndReplacesOwnerValues(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, OverrideFileName)
+	seed := "services:\n  app:\n    environment:\n      A: owner\n      B: owner\n      TZ: UTC\n"
+	if err := os.WriteFile(path, []byte(seed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := SignInWiring{Service: "app", Env: map[string]string{"A": "old", "B": "owner"}}
+	// On: A differs and is replaced (reported); B already equals.
+	notes, err := ApplySignInWiring(dir, w, true)
+	if err != nil || len(notes.Replaced) != 1 || notes.Replaced[0] != "A" {
+		t.Fatalf("on: %v %+v", err, notes)
+	}
+	// The owner changes A again; off keeps it, removes B (still sign-in's value).
+	raw, _ := os.ReadFile(path)
+	if err := os.WriteFile(path, []byte(strings.Replace(string(raw), "A: old", "A: mine", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	notes, err = ApplySignInWiring(dir, w, false)
+	if err != nil || len(notes.Kept) != 1 || notes.Kept[0] != "A" {
+		t.Fatalf("off: %v %+v", err, notes)
+	}
+	raw, _ = os.ReadFile(path)
+	if !strings.Contains(string(raw), "A: mine") || strings.Contains(string(raw), "B:") || !strings.Contains(string(raw), "TZ: UTC") {
+		t.Fatalf("override:\n%s", raw)
 	}
 }

@@ -157,6 +157,7 @@ func TestEnvOIDCValidation(t *testing.T) {
 		{"no redirect", func(a *OIDCAdapter) { a.Env.RedirectPaths = nil }, "redirect path"},
 		{"undeclared secret", func(a *OIDCAdapter) { a.Env.Secret = "ghost" }, "declared secret"},
 		{"bad trust", func(a *OIDCAdapter) { a.Env.Trust = "bad name" }, "trust"},
+		{"secret variable collision", func(a *OIDCAdapter) { a.Env.Set["OIDC_CLIENT_SECRET_FILE"] = "x" }, "secret variable"},
 		{"no set", func(a *OIDCAdapter) { a.Env.Set = nil }, "sets no variables"},
 	}
 	for _, tc := range cases {
@@ -174,5 +175,23 @@ func TestEnvOIDCValidation(t *testing.T) {
 	m.Secrets[0].Consumers[0].Service = "other"
 	if err := m.Validate(); err == nil || !strings.Contains(err.Error(), "consumed by service") {
 		t.Fatalf("other consumer: %v", err)
+	}
+}
+
+func TestRenderEnvTemplateTrimsSpaces(t *testing.T) {
+	vals := map[string]string{"issuer": "https://a/", "admin_group": "g"}
+	if got := RenderEnvTemplate("{{ issuer }}x-{{admin_group}}-{{  admin_group  }}", vals); got != "https://a/x-g-g" {
+		t.Fatalf("got %q", got)
+	}
+	if !EnvTemplateUses("a {{ issuer }}", "issuer") || EnvTemplateUses("{{issuer}}", "client_id") {
+		t.Fatal("uses wrong")
+	}
+}
+
+func TestEnvOIDCRefusesManifestEnvCollision(t *testing.T) {
+	m := envOIDCManifest()
+	m.Services[0].Environment = map[string]string{"OIDC_CLIENT_ID": "fixed"}
+	if err := m.Validate(); err == nil || !strings.Contains(err.Error(), "already in") {
+		t.Fatalf("error %v", err)
 	}
 }

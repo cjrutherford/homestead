@@ -265,7 +265,30 @@ var EnvPlaceholders = []string{"issuer", "client_id", "admin_group", "user_group
 
 var envPlaceholder = regexp.MustCompile(`\{\{\s*([^{}]*?)\s*\}\}`)
 
-func (e EnvOIDC) validate(service string, secrets []SecretDecl) error {
+// RenderEnvTemplate fills an env-oidc template's placeholders from vals,
+// the same way validation reads them: spaces inside the braces are
+// ignored. Names that vals lacks are left as written.
+func RenderEnvTemplate(tmpl string, vals map[string]string) string {
+	return envPlaceholder.ReplaceAllStringFunc(tmpl, func(m string) string {
+		name := envPlaceholder.FindStringSubmatch(m)[1]
+		if v, ok := vals[name]; ok {
+			return v
+		}
+		return m
+	})
+}
+
+// EnvTemplateUses reports whether the template names the placeholder.
+func EnvTemplateUses(tmpl, name string) bool {
+	for _, m := range envPlaceholder.FindAllStringSubmatch(tmpl, -1) {
+		if m[1] == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (e EnvOIDC) validate(service string, svc Service, secrets []SecretDecl) error {
 	if len(e.RedirectPaths) == 0 {
 		return fmt.Errorf("catalog: env-oidc needs at least one redirect path")
 	}
@@ -298,6 +321,16 @@ func (e EnvOIDC) validate(service string, secrets []SecretDecl) error {
 		}
 		if key == e.Trust {
 			return fmt.Errorf("catalog: env-oidc variable %q is both set and trust", key)
+		}
+		if _, own := svc.Environment[key]; own {
+			return fmt.Errorf("catalog: env-oidc variable %q is already in the %s service's environment", key, service)
+		}
+		for _, d := range secrets {
+			for _, c := range d.Consumers {
+				if c.Service == service && c.Env == key {
+					return fmt.Errorf("catalog: env-oidc variable %q is the %s service's secret variable for %q", key, service, d.Name)
+				}
+			}
 		}
 		for _, m := range envPlaceholder.FindAllStringSubmatch(tmpl, -1) {
 			ok := false
@@ -356,7 +389,7 @@ func (a OIDCAdapter) validate(protocols []identity.Capability, services map[stri
 		if a.Plugin != nil {
 			return fmt.Errorf("catalog: only the %s adapter pins a plugin", AdapterJellyfinSSO)
 		}
-		return a.Env.validate(a.Service, secrets)
+		return a.Env.validate(a.Service, service, secrets)
 	}
 	if a.Adapter != AdapterJellyfinSSO {
 		if a.Plugin != nil {

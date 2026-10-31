@@ -54,7 +54,7 @@ func (a envOIDC) OffSettings() []string {
 
 func (a envOIDC) uses(name string) bool {
 	for _, t := range a.cfg.Set {
-		if strings.Contains(t, "{{"+name+"}}") {
+		if catalog.EnvTemplateUses(t, name) {
 			return true
 		}
 	}
@@ -78,11 +78,11 @@ func (a envOIDC) TrustEnv() map[string]string {
 
 // Env renders the manifest's templates.
 func (a envOIDC) Env(s Settings) map[string]string {
-	r := strings.NewReplacer("{{issuer}}", s.Issuer, "{{client_id}}", s.ClientID,
-		"{{admin_group}}", s.Groups.Admins, "{{user_group}}", s.Groups.Users)
+	vals := map[string]string{"issuer": s.Issuer, "client_id": s.ClientID,
+		"admin_group": s.Groups.Admins, "user_group": s.Groups.Users}
 	out := make(map[string]string, len(a.cfg.Set))
 	for k, t := range a.cfg.Set {
-		out[k] = r.Replace(t)
+		out[k] = catalog.RenderEnvTemplate(t, vals)
 	}
 	return out
 }

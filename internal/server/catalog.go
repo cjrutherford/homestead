@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"homestead/internal/appaccess"
+	"homestead/internal/appsso"
 	"homestead/internal/audit"
 	"homestead/internal/catalog"
 	"homestead/internal/discover"
@@ -730,8 +731,30 @@ func handleCatalogConfigure(s *Server, st *store.Store, catalogDir string, runne
 			// Names only; secret values are never logged or audited.
 			s.auditOperation(st, runner, op.ID, operatorActor(r), action, detail)
 		}
-		writeJSON(w, map[string]any{"id": op.ID})
+		resp := map[string]any{"id": op.ID}
+		if warnings := rotateSignInWarnings(st, manifest, plan.Rotate); len(warnings) > 0 {
+			resp["warnings"] = warnings
+		}
+		writeJSON(w, resp)
 	}
+}
+
+// rotateSignInWarnings says when a rotated secret is the client secret of
+// an applied env-oidc sign-in: Authentik keeps the old value until
+// sign-in is applied again (S404; re-sync deferred).
+func rotateSignInWarnings(st *store.Store, m catalog.Manifest, rotate []string) []string {
+	if m.SSO.OIDC == nil || m.SSO.OIDC.Env == nil {
+		return nil
+	}
+	for _, name := range rotate {
+		if name != m.SSO.OIDC.Env.Secret {
+			continue
+		}
+		if _, ok, err := (appsso.Records{DB: st.DB()}).Get(m.Name); err == nil && ok {
+			return []string{fmt.Sprintf("%s's sign-in keeps the old secret at Authentik until sign-in is applied again.", m.Title)}
+		}
+	}
+	return nil
 }
 
 func handleCatalogUninstall(s *Server, st *store.Store, catalogDir string, runner *operation.Runner) http.HandlerFunc {

@@ -1561,4 +1561,6 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S402 (done in S403): an install from before an app declared its client secret now gets just that secret's wiring patched into its Compose file when sign-in is applied.
 - S403: the stack patch (`catalog.WireDeclaredSecret`) is for declared secrets consumed as file-path variables; it does not handle `export` consumers (entrypoint scripts) or secrets that need an owner or mode from another service. Other per-app slices should check this.
 - S403: Mealie's `BASE_URL` still follows the route host only; a path-served or multi-name Mealie may need it to follow the public name.
-- S403: the `OIDC_*` keys and the `_FILE` secret variant come from Mealie's documented settings and were not checked against a running v3.29.0 on the appliance; check on the first live apply.
+- S404: rotating an env-oidc app's client secret does not re-sync Authentik; the configure response warns, and applying sign-in again fixes it. Chaining the re-sync needs the catalog to call the sign-in operation (an import cycle today).
+- S404: the warning about owner values sign-in replaces appears at plan time and in the audit; the operation step results carry no notes, so the dashboard cannot show the "left in place" note after turning sign-in off.
+- S404: turning sign-in off removes a variable the owner set to exactly the value sign-in sets (the override cannot tell the two apart).
