@@ -79,6 +79,53 @@ func WireDeclaredSecret(dir string, m Manifest, name string) (bool, error) {
 	return true, os.WriteFile(path, body, info.Mode().Perm())
 }
 
+// superviseService puts an installed service under the secret supervisor
+// when its stack predates the first exported secret (S411): the
+// entrypoint becomes the supervisor, the command the image's own start
+// followed by the service's existing command, and the script is mounted.
+// A service that already has the supervisor is left alone. It reports
+// whether it changed anything.
+func superviseService(svc *yaml.Node, m Manifest, service string) bool {
+	image := serviceEntrypoint(m, service)
+	if len(image) == 0 {
+		return false
+	}
+	if ep := mapKey(svc, "entrypoint"); ep != nil && len(ep.Content) == 1 && ep.Content[0].Value == EntrypointName {
+		return false
+	}
+	var existing []*yaml.Node
+	if cmd := mapKey(svc, "command"); cmd != nil && cmd.Kind == yaml.SequenceNode {
+		existing = cmd.Content
+	}
+	seq := func(items ...*yaml.Node) *yaml.Node {
+		return &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: items}
+	}
+	args := make([]*yaml.Node, 0, len(image)+len(existing))
+	for _, a := range image {
+		args = append(args, scalar(a))
+	}
+	args = append(args, existing...)
+	setSeq := func(key string, v *yaml.Node) {
+		if cur := mapKey(svc, key); cur != nil {
+			*cur = *v
+			return
+		}
+		svc.Content = append(svc.Content, scalar(key), v)
+	}
+	setSeq("entrypoint", seq(scalar(EntrypointName)))
+	setSeq("command", seq(args...))
+	var vol yaml.Node
+	_ = vol.Encode(composeVolume{Type: "bind", Source: "./" + EntrypointFile(service), Target: EntrypointName,
+		ReadOnly: true, Bind: &composeBind{CreateHostPath: false}})
+	vols := mapKey(svc, "volumes")
+	if vols == nil {
+		vols = seq()
+		svc.Content = append(svc.Content, scalar("volumes"), vols)
+	}
+	vols.Content = append(vols.Content, &vol)
+	return true
+}
+
 func mapKey(n *yaml.Node, key string) *yaml.Node {
 	if n == nil || n.Kind != yaml.MappingNode {
 		return nil
@@ -164,6 +211,9 @@ func secretWiringPatch(dir string, m Manifest, name string) ([]byte, bool, error
 			changed = true
 		}
 		if setScalar(ensureMap(svc, "environment"), c.Env, c.value(key)) {
+			changed = true
+		}
+		if c.Export && superviseService(svc, m, c.Service) {
 			changed = true
 		}
 	}

@@ -75,18 +75,28 @@ func (a envOIDC) TrustEnv() map[string]string {
 	if a.cfg.Trust == "" {
 		return nil
 	}
+	if a.JavaStore() {
+		return map[string]string{a.cfg.Trust: javaTrustOptions}
+	}
 	if a.combined() {
 		return map[string]string{a.cfg.Trust: BundleFile}
 	}
 	return map[string]string{a.cfg.Trust: CAFile}
 }
 
-func (a envOIDC) combined() bool { return a.cfg.TrustBundle == catalog.TrustBundleCombined }
+func (a envOIDC) combined() bool { return a.cfg.TrustBundle != "" }
+
+// JavaStore reports that the trust variable carries JVM options naming a
+// generated Java trust store instead of a PEM path (S411).
+func (a envOIDC) JavaStore() bool { return a.cfg.TrustBundle == catalog.TrustBundleJava }
+
+// javaTrustOptions is the value of the app's JDK_JAVA_OPTIONS (S411).
+const javaTrustOptions = "-Djavax.net.ssl.trustStore=" + JavaStoreFile + " -Djavax.net.ssl.trustStorePassword=" + JavaStorePassword
 
 // LegacyTrustEnv is the value an app set before it used the combined
 // bundle (S409), so a re-apply can still remove it by value (S410).
 func (a envOIDC) LegacyTrustEnv() map[string]string {
-	if a.cfg.Trust == "" || !a.combined() {
+	if a.cfg.Trust == "" || !a.combined() || a.JavaStore() {
 		return nil
 	}
 	return map[string]string{a.cfg.Trust: CAFile}

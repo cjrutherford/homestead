@@ -133,3 +133,14 @@ read-only CA directory: the host's system CA bundle followed by the appliance
 root, regenerated atomically (0644, public certificates only) by each sign-in
 apply and removed with the variable when the issuer turns public or sign-in
 turns off. Without the opt-in the variable points at the bare root as before.
+
+### Amendment (2026-10-31, S411): Java trust store
+A JVM app's `javax.net.ssl.trustStore` replaces the JDK's own CAs, so
+`trustbundle: java` (env-oidc) sets the trust variable (`JDK_JAVA_OPTIONS`) to
+the trustStore options for `bundle.jks` in the existing read-only CA
+directory. The file is a JKS (public certificates only, mode 0644, store
+password `changeit`) of the host's system CAs followed by the appliance root,
+written by each sign-in apply with the standard library and removed with the
+variable on a public issuer or sign-off. Applying a client secret to an
+install that predates the supervisor now also wraps the exporting service in
+the supervisor (entrypoint, command, script mount).

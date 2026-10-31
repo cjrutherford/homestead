@@ -1572,5 +1572,9 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S407: the dashboard lists the base-URL change in the plan's app settings but has no dedicated "refresh" button; the already-public fix is the same public add plan (CLI: `homesteadctl apps public plan|apply <app> --hostname <existing public name>`).
 - S409: Linkding has no group claim, so every Authentik person becomes an ordinary user; the first superuser stays the local `admin` and nobody is promoted from Authentik groups.
 - S410: the combined trust bundle is built from the appliance host's system CA bundle only when sign-in is applied, so host CA updates reach Linkding on the next re-apply, not automatically.
+- S411: Komga has no group or role mapping, so every Authentik person it creates is an ordinary user; the first admin stays the local recovery account.
+- S411: Komga signs in with explicit endpoints and no `issuer-uri`, so its OIDC `iss` check is skipped (Authentik still signs the token with the JWKS key); revisit if Komga stops needing startup discovery.
+- S411: the Java trust store is built from the appliance host's system CA bundle at sign-in apply only, so host CA updates reach Komga on the next re-apply.
+- S411: the Komga sign-in button and local-login coexistence are confirmed from source, not yet from a live VM.
 - S409: a Linkding stack from before S349's supervisor (no entrypoint in compose.yaml) is not repaired by the secret wiring; reinstall it.
 - S409: OIDC accounts match existing Linkding users by email; an Authentik person with no email gets a new account rather than the matching one.

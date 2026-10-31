@@ -1,7 +1,6 @@
 package appsso
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -9,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"homestead/internal/catalog"
 	"homestead/internal/operation"
@@ -115,24 +115,30 @@ var SystemBundlePaths = []string{"/etc/ssl/certs/ca-certificates.crt", "/etc/pki
 // CombinedBundle is the host's public CA bundle followed by the
 // appliance root (S410).
 func CombinedBundle(root []byte) ([]byte, error) {
-	for _, p := range SystemBundlePaths {
-		system, err := os.ReadFile(p)
-		if err != nil || len(bytes.TrimSpace(system)) == 0 {
-			continue
-		}
-		out := append([]byte{}, system...)
-		if out[len(out)-1] != '\n' {
-			out = append(out, '\n')
-		}
-		return append(out, root...), nil
+	system, err := systemBundle()
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("appsso: no system CA bundle found (looked in %s), so the combined trust bundle cannot be built", strings.Join(SystemBundlePaths, ", "))
+	out := append([]byte{}, system...)
+	if out[len(out)-1] != '\n' {
+		out = append(out, '\n')
+	}
+	return append(out, root...), nil
 }
 
 // writeBundle writes the combined bundle atomically, mode 0644 (public
 // certificates only).
-func writeBundle(dir string, root []byte) error {
+func writeBundle(dir string, root []byte) error { return writeBundleFile(dir, root, false) }
+
+// writeBundleFile writes bundle.pem, or with java the Java trust store
+// bundle.jks (S411).
+func writeBundleFile(dir string, root []byte, java bool) error {
+	name := bundleHostFn
 	body, err := CombinedBundle(root)
+	if java {
+		name = javaStoreHostFn
+		body, err = JavaTrustStore(root, time.Now())
+	}
 	if err != nil {
 		return err
 	}
@@ -152,7 +158,7 @@ func writeBundle(dir string, root []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), filepath.Join(dir, bundleHostFn))
+	return os.Rename(tmp.Name(), filepath.Join(dir, name))
 }
 
 // declaredSecret is the package secret an env-oidc app uses as its
@@ -240,11 +246,19 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 			// Regenerated on every apply, so host CA updates arrive with
 			// a re-apply; gone when this issuer wants no bundle (S410).
 			if c, ok := adapter.(interface{ CombinedBundleFor(string) bool }); ok && c.CombinedBundleFor(plan.Issuer) {
-				if err := writeBundle(caDir, pem); err != nil {
+				java := false
+				if j, ok := adapter.(interface{ JavaStore() bool }); ok {
+					java = j.JavaStore()
+				}
+				if err := writeBundleFile(caDir, pem, java); err != nil {
 					return err
 				}
-			} else if err := os.Remove(filepath.Join(caDir, bundleHostFn)); err != nil && !os.IsNotExist(err) {
-				return err
+			} else {
+				for _, fn := range []string{bundleHostFn, javaStoreHostFn} {
+					if err := os.Remove(filepath.Join(caDir, fn)); err != nil && !os.IsNotExist(err) {
+						return err
+					}
+				}
 			}
 		}
 		if on && plan.ReplacedIssuer != "" {

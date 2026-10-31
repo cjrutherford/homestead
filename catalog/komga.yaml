@@ -25,6 +25,16 @@ services:
   image: docker.io/gotson/komga:1.29.1
   exposes: web
   containerport: 25600
+  # The image's ENTRYPOINT (Dockerfile.tpl, 1.29.1) runs java directly in
+  # /app; the supervisor execs exactly that so it can export the OIDC
+  # client secret (S411).
+  entrypoint:
+  - java
+  - -Dspring.profiles.include=docker
+  - --enable-native-access=ALL-UNNAMED
+  - -jar
+  - application.jar
+  - --spring.config.additional-location=file:/config/
   environment:
     # The image sets no heap cap, so the JVM defaults to a quarter of the
     # host's RAM (several gigabytes on a typical appliance). A fixed cap
@@ -73,11 +83,52 @@ database:
 sso:
   class: optional
   protocols: [oidc]
+  # App sign-in through Authentik (S411): Spring Security's OAuth2 client,
+  # set by environment alone. Komga's own login page keeps the password
+  # form and lists the Authentik button beside it, so the local recovery
+  # account stays a break-glass login. Endpoints are explicit (no
+  # issuer-uri) because the issuer is discovered at startup, and Komga
+  # must still boot when Authentik is down.
+  oidc:
+    adapter: env-oidc
+    service: komga
+    env:
+      redirectpaths: ["/login/oauth2/code/authentik"]
+      signinpath: /oauth2/authorization/authentik
+      secret: oidc_client_secret
+      # The JVM's trustStore property replaces the JDK's own CAs, so a
+      # private issuer gets a generated Java trust store holding the
+      # host's public CAs plus the appliance root.
+      trust: JDK_JAVA_OPTIONS
+      trustbundle: java
+      set:
+        SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_PROVIDER: authentik
+        SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_CLIENTID: "{{client_id}}"
+        SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_CLIENTNAME: Authentik
+        SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_SCOPE: openid,profile,email
+        SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_AUTHORIZATIONGRANTTYPE: authorization_code
+        SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_AUTHENTIK_AUTHORIZATIONURI: "{{authentik_base}}/application/o/authorize/"
+        SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_AUTHENTIK_TOKENURI: "{{authentik_base}}/application/o/token/"
+        SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_AUTHENTIK_USERINFOURI: "{{authentik_base}}/application/o/userinfo/"
+        SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_AUTHENTIK_JWKSETURI: "{{issuer}}jwks/"
+        # Existing Komga users match by email; an Authentik person with
+        # no Komga user gets an ordinary (non-admin) account. Authentik
+        # access is closed by default (ADR-043), so only permitted people
+        # reach this.
+        KOMGA_OAUTH2ACCOUNTCREATION: "true"
 secrets:
 - name: recovery_password
   immutable: true
   reveal: true
   note: Local recovery password only for a freshly claimed Komga; existing accounts are never changed.
+- name: oidc_client_secret
+  # Authentik's client secret for Komga; Homestead generates it, hands it
+  # to Authentik, and the supervisor exports it as the Spring property's
+  # environment form.
+  consumers:
+  - service: komga
+    env: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_CLIENTSECRET_FILE
+    export: true
 firstrun:
   routine: komga
   service: komga
@@ -86,4 +137,4 @@ firstrun:
 integrations:
 - kind: identity
   target: authentik
-  note: Sign in with Authentik once its OIDC client is configured in Komga's application.yml under /config; Komga matches users by email, and local accounts stay available.
+  note: People sign in with Authentik once sign-in is applied on the app's page; Komga matches existing users by email and creates an ordinary account for the rest. The local recovery account stays available.

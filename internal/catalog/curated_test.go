@@ -1052,7 +1052,33 @@ func TestCuratedKomga(t *testing.T) {
 	if len(service.Environment) != 1 || service.Environment["JAVA_TOOL_OPTIONS"] != "-Xmx768m" {
 		t.Fatalf("environment = %v, want only the JVM heap cap", service.Environment)
 	}
-	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 1 || !manifest.HeldSecret("recovery_password") || manifest.FirstRun == nil || manifest.FirstRun.Routine != FirstRunKomga || manifest.FirstRun.Account != "homestead-recovery@localhost.invalid" {
+	// S411: the supervisor execs the image's own java command.
+	if len(service.Entrypoint) != 6 || service.Entrypoint[0] != "java" || service.Entrypoint[4] != "application.jar" ||
+		len(manifest.Secrets) != 2 || manifest.Secrets[1].Name != "oidc_client_secret" ||
+		len(manifest.Secrets[1].Consumers) != 1 || !manifest.Secrets[1].Consumers[0].Export ||
+		manifest.Secrets[1].Consumers[0].Env != "SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_CLIENTSECRET_FILE" {
+		t.Fatalf("entrypoint = %v, secrets = %+v", service.Entrypoint, manifest.Secrets)
+	}
+	oidc := manifest.SSO.OIDC
+	if oidc == nil || oidc.Adapter != AdapterEnvOIDC || oidc.Service != "komga" || oidc.Env == nil ||
+		oidc.Env.Secret != "oidc_client_secret" || oidc.Env.Trust != "JDK_JAVA_OPTIONS" || oidc.Env.TrustBundle != TrustBundleJava ||
+		oidc.Env.SignInPath != "/oauth2/authorization/authentik" || len(oidc.Env.RedirectPaths) != 1 ||
+		oidc.Env.RedirectPaths[0] != "/login/oauth2/code/authentik" ||
+		oidc.Env.Set["KOMGA_OAUTH2ACCOUNTCREATION"] != "true" ||
+		oidc.Env.Set["SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_CLIENTID"] != "{{client_id}}" ||
+		oidc.Env.Set["SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_AUTHENTIK_JWKSETURI"] != "{{issuer}}jwks/" {
+		t.Fatalf("sso = %+v", oidc)
+	}
+	for key := range oidc.Env.Set {
+		if strings.Contains(key, "CLIENTSECRET") || strings.Contains(key, "ISSUERURI") {
+			t.Fatalf("env %s: the secret is never set and discovery at startup is avoided", key)
+		}
+	}
+	if scripts := EntrypointScriptsFor(manifest); len(scripts) != 1 || scripts[0].Service != "komga" ||
+		!strings.Contains(scripts[0].Body, "export SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_CLIENTSECRET\n") {
+		t.Fatalf("scripts = %+v, want one komga supervisor exporting the client secret", scripts)
+	}
+	if len(manifest.Secrets) < 1 || !manifest.HeldSecret("recovery_password") || manifest.FirstRun == nil || manifest.FirstRun.Routine != FirstRunKomga || manifest.FirstRun.Account != "homestead-recovery@localhost.invalid" {
 		t.Fatalf("komga recovery first run = %+v, secrets = %+v", manifest.FirstRun, manifest.Secrets)
 	}
 	wantData := []struct {

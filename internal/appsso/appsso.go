@@ -43,6 +43,9 @@ const (
 	// same directory, so the existing read-only mount delivers it.
 	BundleFile   = CAMount + "/" + bundleHostFn
 	bundleHostFn = "bundle.pem"
+	// JavaStoreFile is the Java trust store (S411), beside the bundle.
+	JavaStoreFile   = CAMount + "/" + javaStoreHostFn
+	javaStoreHostFn = "bundle.jks"
 )
 
 // ErrUnavailable marks a plan that cannot be made (HTTP 422).

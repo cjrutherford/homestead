@@ -262,13 +262,20 @@ type EnvOIDC struct {
 	// at a bundle of the host's public CA certificates plus the appliance
 	// root instead of the bare root. For apps whose variable replaces the
 	// whole trust store (Python requests), so their other HTTPS fetches
-	// keep working. Needs Trust; empty keeps the bare root.
+	// keep working. "java" (S411) is the JVM form. Needs Trust; empty
+	// keeps the bare root.
 	TrustBundle string            `yaml:"trustbundle,omitempty" json:"trustbundle,omitempty"`
 	Set         map[string]string `yaml:"set" json:"set"`
 }
 
 // TrustBundleCombined is the one EnvOIDC.TrustBundle value (S410).
 const TrustBundleCombined = "combined"
+
+// TrustBundleJava (S411) is for JVM apps: the trust variable carries
+// JDK_JAVA_OPTIONS naming a generated Java trust store (the host's public
+// CAs plus the appliance root), since javax.net.ssl.trustStore replaces
+// the JDK's own cacerts.
+const TrustBundleJava = "java"
 
 // EnvPlaceholders are the only placeholders an env-oidc template may use.
 var EnvPlaceholders = []string{"issuer", "authentik_base", "client_id", "admin_group", "user_group"}
@@ -322,8 +329,8 @@ func (e EnvOIDC) validate(service string, svc Service, secrets []SecretDecl) err
 	if e.Trust != "" && !validEnvKey.MatchString(e.Trust) {
 		return fmt.Errorf("catalog: env-oidc trust variable %q invalid", e.Trust)
 	}
-	if e.TrustBundle != "" && e.TrustBundle != TrustBundleCombined {
-		return fmt.Errorf("catalog: env-oidc trustbundle %q must be %q or empty", e.TrustBundle, TrustBundleCombined)
+	if e.TrustBundle != "" && e.TrustBundle != TrustBundleCombined && e.TrustBundle != TrustBundleJava {
+		return fmt.Errorf("catalog: env-oidc trustbundle %q must be %q, %q or empty", e.TrustBundle, TrustBundleCombined, TrustBundleJava)
 	}
 	if e.TrustBundle != "" && e.Trust == "" {
 		return fmt.Errorf("catalog: env-oidc trustbundle needs a trust variable")
