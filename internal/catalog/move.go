@@ -162,3 +162,10 @@ var StopStack = func(ctx context.Context, dir, project string) error {
 	defer lockProject(project)()
 	return composeRun(ctx, dir, project, "stop")
 }
+
+// StartStack brings a stack stopped for a move back up with the files
+// it was left with (S400), for apps whose move changes no environment.
+var StartStack = func(ctx context.Context, dir, project string) error {
+	defer lockProject(project)()
+	return composeUp(ctx, dir, project)
+}

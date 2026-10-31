@@ -12,6 +12,7 @@ import (
 
 	"homestead/internal/appsso"
 	"homestead/internal/catalog"
+	"homestead/internal/cert"
 	"homestead/internal/docker"
 	"homestead/internal/operation"
 	"homestead/internal/secret"
@@ -43,6 +44,7 @@ type appMove struct {
 var (
 	moveConfigure = catalog.ConfigureDefinition
 	moveStop      = catalog.StopStack
+	moveStart     = catalog.StartStack
 	moveSeeds     = catalog.MoveSeeds
 	moveApplySeed = catalog.ApplyMoveSeed
 )
@@ -68,8 +70,15 @@ type appMovePlan struct {
 	// AppSettings are the app's own serving settings the move writes.
 	AppSettings []string `json:"app_settings"`
 	SignIn      []string `json:"sign_in"`
-	Warnings    []string `json:"warnings"`
-	Digest      string   `json:"digest"`
+	// SignInDigest is the digest of the app sign-in plan applied after
+	// the move (S400); approving this plan approves that change. Empty
+	// when sign-in is left alone.
+	SignInDigest string `json:"sign_in_digest,omitempty"`
+	// Links are other setup that follows the app's address: the craft
+	// files link when Nextcloud moves.
+	Links    []string `json:"links"`
+	Warnings []string `json:"warnings"`
+	Digest   string   `json:"digest"`
 
 	manifest catalog.Manifest
 	names    []string
@@ -77,6 +86,9 @@ type appMovePlan struct {
 	seeds    []catalog.MoveSeed
 	// publish keeps the moved path published on the dashboard's tunnel.
 	publish bool
+	// filesFrom and filesTo are the craft files link's old and new base
+	// URLs; empty unless the link moves with Nextcloud.
+	filesFrom, filesTo string
 }
 
 func (p appMovePlan) digest() string {
@@ -90,7 +102,8 @@ func (p appMovePlan) digest() string {
 		Env     []catalog.ConfigChange
 		Seeds   []catalog.MoveSeed
 		Publish bool
-	}{p.names, p.env, p.seeds, p.publish})
+		Files   [2]string
+	}{p.names, p.env, p.seeds, p.publish, [2]string{p.filesFrom, p.filesTo}})
 	h.Write(hidden)
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -218,7 +231,7 @@ func (m *appMove) buildPlan(name string) (appMovePlan, error) {
 	plan := appMovePlan{
 		App: mf.Name, Route: string(f.route.Host), From: "https://" + string(f.route.Host) + "/",
 		Path: mf.AppPath(), To: f.toURLs(), StripPrefix: mf.StripPrefix,
-		Redirects: []string{}, AppSettings: []string{}, SignIn: []string{}, Warnings: []string{},
+		Redirects: []string{}, AppSettings: []string{}, SignIn: []string{}, Links: []string{}, Warnings: []string{},
 		manifest: mf, names: f.names,
 	}
 	for _, rd := range mf.Redirects {
@@ -275,8 +288,13 @@ func (m *appMove) buildPlan(name string) (appMovePlan, error) {
 		plan.SignIn = append(plan.SignIn,
 			"Dashboard sign-in and every app's sign-in use Authentik's old address and stop working until you set them up again at the new address (Settings, Sign-in, then each app). Password sign-in to the dashboard keeps working.")
 	} else if f.signIn {
-		plan.SignIn = append(plan.SignIn,
-			fmt.Sprintf("%s's sign-in through Authentik names the old address; re-plan it on the app page after the move.", mf.Title))
+		if !m.planSignIn(f, &plan) {
+			plan.SignIn = append(plan.SignIn,
+				fmt.Sprintf("%s's sign-in through Authentik names the old address; re-plan it on the app page after the move.", mf.Title))
+		}
+	}
+	if mf.Name == nextcloudPackage {
+		m.planFilesLink(&plan)
 	}
 	plan.Digest = plan.digest()
 	return plan, nil
@@ -318,6 +336,12 @@ func (m *appMove) apply(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
+	if plan.filesTo != "" {
+		def.Steps = append(def.Steps, m.filesLinkStep(plan, operatorActor(r)))
+	}
+	if plan.SignInDigest != "" {
+		def.Steps = append(def.Steps, m.signInStep(plan, operatorActor(r)))
+	}
 	runner := operation.NewRunner(m.st)
 	op, err := runner.Start(r.Context(), def, "")
 	if err != nil {
@@ -339,11 +363,15 @@ func appMoveDefinition(st *store.Store, secrets *secret.Store, plan appMovePlan)
 	if secrets != nil {
 		secretStore = secrets
 	}
-	configure, err := moveConfigure(catalog.ConfigPlan{Manifest: mf, Changes: plan.env}, dir, project, st, secretStore)
-	if err != nil {
-		return operation.Definition{}, err
-	}
 	def := operation.Definition{Type: "app.move"}
+	var configure operation.Definition
+	if len(plan.env) > 0 {
+		var err error
+		configure, err = moveConfigure(catalog.ConfigPlan{Manifest: mf, Changes: plan.env}, dir, project, st, secretStore)
+		if err != nil {
+			return operation.Definition{}, err
+		}
+	}
 	if len(plan.seeds) > 0 {
 		seeds := plan.seeds
 		def.Steps = append(def.Steps, operation.StepDef{Name: "seed-path", Run: func(ctx context.Context) error {
@@ -358,7 +386,15 @@ func appMoveDefinition(st *store.Store, secrets *secret.Store, plan appMovePlan)
 			return nil
 		}})
 	}
-	def.Steps = append(def.Steps, configure.Steps...)
+	if len(plan.env) > 0 {
+		def.Steps = append(def.Steps, configure.Steps...)
+	} else if len(plan.seeds) > 0 {
+		// Nothing to configure, but the seed step stopped the stack: bring
+		// it back up with the files it was left with (S400).
+		def.Steps = append(def.Steps, operation.StepDef{Name: "up", Run: func(ctx context.Context) error {
+			return moveStart(ctx, dir, project)
+		}})
+	}
 	names, publish := plan.names, plan.publish
 	address := strings.TrimSuffix(docker.PathURL(docker.Hostname(names[0]), plan.Path), "/")
 	def.Steps = append(def.Steps, operation.StepDef{Name: "app-hosts", Run: func(ctx context.Context) error {
@@ -391,4 +427,99 @@ func appMoveDefinition(st *store.Store, secrets *secret.Store, plan appMovePlan)
 		return reconcileEdgeSet(ctx, st, set)
 	}})
 	return def, nil
+}
+
+// planSignIn projects the app's sign-in after the move and puts what
+// changes in the plan (S400), as the public plan does (S399). It returns
+// false when the owner has to re-plan: the change cannot be previewed or
+// the Authentik API token is not kept.
+func (m *appMove) planSignIn(f moveFacts, plan *appMovePlan) bool {
+	a := m.s.appSignIn
+	if a == nil || f.manifest.SSO.OIDC == nil || !a.tokenKept() {
+		return false
+	}
+	set, err := loadEdgeRoutes(m.st)
+	if err != nil {
+		return false
+	}
+	routes := append([]docker.Route(nil), set.Routes...)
+	for i, r := range routes {
+		if strings.EqualFold(string(r.Host), plan.Route) {
+			r.Path, r.Tunnel, r.Published = plan.Path, nil, plan.publish
+			routes[i] = r
+		}
+	}
+	set.Routes = routes
+	in, err := appSignInInputsFrom(m.st, a.m, f.manifest, set)
+	if err != nil || in.Applied == nil {
+		return false
+	}
+	next, err := appsso.BuildPlan(in, true)
+	if err != nil {
+		return false
+	}
+	var lines []string
+	if next.Issuer != in.Applied.Issuer {
+		lines = append(lines, fmt.Sprintf("moves to the issuer %s (now %s)", next.Issuer, in.Applied.Issuer))
+	}
+	added, removed := listChanges(in.Applied.RedirectURIs, next.RedirectURIs)
+	if len(added) > 0 {
+		lines = append(lines, "adds redirect URI "+strings.Join(added, ", "))
+	}
+	if len(removed) > 0 {
+		lines = append(lines, "removes redirect URI "+strings.Join(removed, ", "))
+	}
+	plan.Warnings = append(plan.Warnings, next.Warnings...)
+	if len(lines) == 0 {
+		plan.SignIn = append(plan.SignIn, f.manifest.Title+"'s sign-in through Authentik needs no change.")
+		return true
+	}
+	plan.SignIn = append(plan.SignIn, "App sign-in is on and is updated in this same change with the kept Authentik API token: it "+strings.Join(lines, "; ")+".")
+	plan.SignInDigest = next.Digest
+	return true
+}
+
+// signInStep applies the approved sign-in change once the app answers at
+// its path. A failure leaves the move done and says so.
+func (m *appMove) signInStep(plan appMovePlan, actor string) operation.StepDef {
+	return operation.StepDef{Name: "sign-in", Run: func(ctx context.Context) error {
+		if m.s.appSignIn == nil {
+			return fmt.Errorf("%s moved, but app sign-in is not available, so its sign-in still uses the old address; re-plan it from its card", plan.App)
+		}
+		err := reapplyAppSignIn(ctx, m.s.appSignIn, cert.IssuerMove{App: plan.App, Digest: plan.SignInDigest}, actor)
+		if err != nil {
+			return fmt.Errorf("%s moved, but its sign-in still uses the old address: %w; re-plan it from its card (homesteadctl apps sign-in plan %s) and approve it", plan.App, err, plan.App)
+		}
+		return nil
+	}}
+}
+
+// planFilesLink lists the craft files link following Nextcloud to its
+// path (S400). The link is left alone unless it points at the address
+// Nextcloud is leaving.
+func (m *appMove) planFilesLink(plan *appMovePlan) {
+	if m.s.files == nil || m.s.files.Manager == nil {
+		return
+	}
+	link, linked, err := m.s.files.Manager.CurrentLink()
+	if err != nil || !linked || strings.TrimSuffix(link.BaseURL, "/") != strings.TrimSuffix(plan.From, "/") {
+		return
+	}
+	names := plan.names
+	if len(names) == 0 {
+		names = catalog.DefaultApplianceNames
+	}
+	to := "https://" + names[0] + strings.TrimSuffix(plan.Path, "/")
+	plan.filesFrom, plan.filesTo = strings.TrimSuffix(link.BaseURL, "/"), to
+	plan.Links = append(plan.Links, "Craft files link moves to "+to+" (same account and credential; no new password).")
+}
+
+// filesLinkStep updates only the link's address.
+func (m *appMove) filesLinkStep(plan appMovePlan, actor string) operation.StepDef {
+	return operation.StepDef{Name: "files-link", Run: func(context.Context) error {
+		if err := m.s.files.Manager.MoveBaseURL(plan.filesFrom, plan.filesTo, actor); err != nil {
+			return fmt.Errorf("%s moved, but the craft files link still points at %s: %w; relink it on the Craft files page", plan.App, plan.filesFrom, err)
+		}
+		return nil
+	}}
 }

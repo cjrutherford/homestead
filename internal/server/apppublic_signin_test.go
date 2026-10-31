@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"homestead/internal/appsso"
+	"homestead/internal/catalog"
 	"homestead/internal/cert"
 	"homestead/internal/docker"
 	"homestead/internal/operation"
+	"homestead/internal/sso"
 )
 
 // publishSignInRig is the app sign-in rig (Authentik reachable, token
@@ -189,5 +191,114 @@ func TestAppPublicSignInFailureReported(t *testing.T) {
 	}
 	if !named {
 		t.Fatalf("the public name is not live: %+v", set.Routes)
+	}
+}
+
+// installPathNextcloud puts Nextcloud at its path with sign-in applied at
+// the plan the edge table gives now.
+func installPathNextcloud(t *testing.T, a *ssoApp) {
+	t.Helper()
+	installApp(t, a.st, "nextcloud", pathRoute("nextcloud", "nextcloud", 80, false))
+	saveNextcloudSignIn(t, a)
+}
+
+func saveNextcloudSignIn(t *testing.T, a *ssoApp) {
+	t.Helper()
+	in, err := a.srv.appSignIn.inputs("nextcloud")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := appsso.BuildPlan(in, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := (appsso.Records{DB: a.st.DB()}).Save(appsso.Record{Package: "nextcloud", Adapter: p.Adapter,
+		ClientID: p.ClientID, Issuer: p.Issuer, RedirectURIs: p.RedirectURIs}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func setNextcloudPublished(t *testing.T, a *ssoApp, published bool) {
+	t.Helper()
+	set, _ := loadEdgeRoutes(a.st)
+	for i := range set.Routes {
+		if set.Routes[i].Host == "nextcloud.lan" {
+			set.Routes[i].Published = published
+		}
+	}
+	if err := saveEdgeRoutes(a.st, set); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// S400: publishing a path-served app (the Published toggle) previews and
+// applies its sign-in change like a name does.
+func TestAppPublicPathPublishKeepsSignInInStep(t *testing.T) {
+	a, _ := publishSignInRig(t)
+	installPathNextcloud(t, a)
+	prevTrust := trustAppHosts
+	trustAppHosts = func(context.Context, catalog.Manifest, string, []string, []string) error { return nil }
+	t.Cleanup(func() { trustAppHosts = prevTrust })
+	on := true
+	req := appPublicRequest{Enabled: &on}
+	plan, err := a.srv.appPublic.buildPlan(context.Background(), "nextcloud", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.SignInDigest == "" || !strings.Contains(plan.SignIn, "https://homestead.example.com/apps/nextcloud/") {
+		t.Fatalf("plan sign-in = %q", plan.SignIn)
+	}
+	req.Digest = plan.Digest
+	id, err := a.srv.appPublic.start(context.Background(), "nextcloud", req, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	op, err := operation.NewRunner(a.st).Wait(ctx, id)
+	if err != nil || op.Status != operation.StatusSucceeded {
+		t.Fatalf("publish: %v %+v", err, op)
+	}
+	rec, _, _ := (appsso.Records{DB: a.st.DB()}).Get("nextcloud")
+	if !strings.Contains(strings.Join(rec.RedirectURIs, ","), "https://homestead.example.com/apps/nextcloud/") {
+		t.Fatalf("record = %+v", rec)
+	}
+}
+
+// Nothing changing in sign-in is not a reason to ask for a re-plan.
+func TestAppPublicSignInNoChangeDoesNotAskForReplan(t *testing.T) {
+	a, _ := publishSignInRig(t)
+	installPathNextcloud(t, a)
+	setNextcloudPublished(t, a, true)
+	saveNextcloudSignIn(t, a)
+	setNextcloudPublished(t, a, false)
+	on := true
+	plan, err := a.srv.appPublic.buildPlan(context.Background(), "nextcloud", appPublicRequest{Enabled: &on})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.SignInDigest != "" || strings.Contains(plan.SignIn, "re-plan") || !strings.Contains(plan.SignIn, "needs no change") {
+		t.Fatalf("sign-in = %q (%q)", plan.SignIn, plan.SignInDigest)
+	}
+}
+
+// Without the kept Authentik token the plan says to re-plan sign-in, and
+// the operation has no sign-in step.
+func TestAppPublicTokenNotKeptLeavesSignInToReplan(t *testing.T) {
+	a, _ := publishSignInRig(t)
+	if err := a.srv.appSignIn.cfg.Secrets.Delete(sso.APITokenName); err != nil {
+		t.Fatal(err)
+	}
+	on := true
+	plan, res, err := runAppPublic(t, a, appPublicRequest{Enabled: &on, Route: "immich.lan", Hostname: "immich.example.com"})
+	if err != nil || plan.SignInDigest != "" || !strings.Contains(plan.SignIn, "re-plan it on this page") {
+		t.Fatalf("plan = %v %q", err, plan.SignIn)
+	}
+	if res.Status != operation.StatusSucceeded {
+		t.Fatalf("publish: %s %s", res.Status, res.Error)
+	}
+	rec, _, _ := (appsso.Records{DB: a.st.DB()}).Get("immich")
+	if strings.Contains(strings.Join(rec.RedirectURIs, ","), "immich.example.com") {
+		t.Fatalf("sign-in changed without a token: %+v", rec)
 	}
 }

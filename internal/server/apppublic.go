@@ -503,12 +503,15 @@ func (p *appPublic) planSignIn(f appPublicFacts, path bool, plan *appPublicPlan)
 			lines = append(lines, "removes redirect URI "+strings.Join(removed, ", "))
 		}
 	}
+	plan.Warnings = append(plan.Warnings, next.Warnings...)
 	if len(lines) == 0 {
-		return false
+		// Nothing changes: no re-plan to ask for, but a public issuer that
+		// is not served yet is still worth saying (S400).
+		plan.SignIn = "App sign-in is on and needs no change."
+		return true
 	}
 	plan.SignIn = "App sign-in is on and is updated in this same change with the kept Authentik API token: it " + strings.Join(lines, "; ") + "."
 	plan.SignInDigest = next.Digest
-	plan.Warnings = append(plan.Warnings, next.Warnings...)
 	return true
 }
 

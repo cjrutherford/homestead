@@ -212,3 +212,5 @@ S397 lets public plans and installs go ahead, with a warning, when the Cloudflar
 S398 lets apps that keep their own accounts install again, with a plain notice and no per-person choices (`docs/slices/S398-install-self-managed-apps.md`).
 
 S399 makes publishing or unpublishing an app bring its Authentik sign-in (issuer and redirect URIs) along in the same operation (`docs/slices/S399-publish-keeps-sign-in-in-step.md`).
+
+S400 makes app moves work for every path-served app and keeps the app's sign-in and the craft files link in step (`docs/slices/S400-moves-keep-sign-in-and-files-in-step.md`).

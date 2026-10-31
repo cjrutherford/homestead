@@ -360,10 +360,10 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 	}
 	origins := Origins(in.Routes)
 	p.RedirectURIs = adapter.RedirectURIs(origins)
-	p.SignInURL = adapter.SignInURL(origins[0])
+	p.SignInURL = signInURL(adapter, m, origins[0])
 	for _, o := range origins {
 		if u, err := url.Parse(o); err == nil && !docker.IsPrivateName(docker.Hostname(u.Hostname())) {
-			p.PublicSignInURL = adapter.SignInURL(o)
+			p.PublicSignInURL = signInURL(adapter, m, o)
 			break
 		}
 	}
@@ -524,4 +524,16 @@ func BuildStatus(in Inputs, tokenKept bool) Status {
 		}
 	}
 	return st
+}
+
+// signInURL is where a person starts signing in. Jellyfin serves under
+// its app path (BaseUrl) even on a name of its own, so an origin without
+// that path gets it (S400); one that has it already is left alone.
+func signInURL(a Adapter, m catalog.Manifest, origin string) string {
+	if _, ok := a.(jellyfin); ok {
+		if path := strings.TrimSuffix(m.AppPath(), "/"); path != "" && !strings.HasSuffix(origin, path) {
+			origin += path
+		}
+	}
+	return a.SignInURL(origin)
 }

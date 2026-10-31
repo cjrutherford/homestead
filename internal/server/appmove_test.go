@@ -38,7 +38,7 @@ func moveRig(t *testing.T) (*Server, *store.Store, *[]string, *[][]string) {
 	srv, st, _, _ := appPublicRig(t)
 	srv.MountAppMove(st, nil, filepath.Join("..", "..", "catalog"))
 	steps := &[]string{}
-	prevConf, prevStop, prevSeeds, prevApply := moveConfigure, moveStop, moveSeeds, moveApplySeed
+	prevConf, prevStop, prevStart, prevSeeds, prevApply := moveConfigure, moveStop, moveStart, moveSeeds, moveApplySeed
 	moveConfigure = func(plan catalog.ConfigPlan, dir, project string, _ *store.Store, _ catalog.SecretStore) (operation.Definition, error) {
 		return operation.Definition{Type: "catalog.configure", Steps: []operation.StepDef{{Name: "write-config", Run: func(context.Context) error {
 			for _, c := range plan.Changes {
@@ -54,6 +54,10 @@ func moveRig(t *testing.T) (*Server, *store.Store, *[]string, *[][]string) {
 		*steps = append(*steps, "stop "+project)
 		return nil
 	}
+	moveStart = func(_ context.Context, _, project string) error {
+		*steps = append(*steps, "up "+project)
+		return nil
+	}
 	moveSeeds = func(m catalog.Manifest, dir string) ([]catalog.MoveSeed, error) {
 		return []catalog.MoveSeed{{Service: "jellyfin", Target: "/config/config/network.xml", Source: filepath.Join(dir, "network.xml"),
 			Elements: map[string]string{"BaseUrl": "/apps/jellyfin"}}}, nil
@@ -62,7 +66,9 @@ func moveRig(t *testing.T) (*Server, *store.Store, *[]string, *[][]string) {
 		*steps = append(*steps, "seed "+seed.Elements["BaseUrl"])
 		return nil
 	}
-	t.Cleanup(func() { moveConfigure, moveStop, moveSeeds, moveApplySeed = prevConf, prevStop, prevSeeds, prevApply })
+	t.Cleanup(func() {
+		moveConfigure, moveStop, moveStart, moveSeeds, moveApplySeed = prevConf, prevStop, prevStart, prevSeeds, prevApply
+	})
 	trusted := &[][]string{}
 	prevTrust := trustAppHosts
 	trustAppHosts = func(_ context.Context, m catalog.Manifest, address string, add, remove []string) error {

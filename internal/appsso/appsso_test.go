@@ -120,7 +120,7 @@ func TestANewNameReplansTheRedirects(t *testing.T) {
 	in := inputs(t, "jellyfin")
 	p, _ := BuildPlan(in, true)
 	in.Applied = &Record{Package: "jellyfin", Issuer: p.Issuer, RedirectURIs: p.RedirectURIs, PluginVersion: pluginState(p.Plugin), Access: p.Access}
-	if st := BuildStatus(in, false); st.Replan || !st.Enabled || st.SignInURL != "https://jellyfin.lan/sso/OID/start/authentik" {
+	if st := BuildStatus(in, false); st.Replan || !st.Enabled || st.SignInURL != "https://jellyfin.lan/apps/jellyfin/sso/OID/start/authentik" {
 		t.Fatalf("status: %+v", st)
 	}
 	same, _ := BuildPlan(in, true)
@@ -687,5 +687,29 @@ func TestSettingsFromBeforeReplan(t *testing.T) {
 	again, _ := BuildPlan(in, true)
 	if !strings.Contains(strings.Join(again.Changes, "\n"), "Sign in with Authentik button are rewritten") || strings.Contains(strings.Join(again.Changes, "\n"), "replaces") {
 		t.Fatalf("changes: %v", again.Changes)
+	}
+}
+
+// S400: Jellyfin serves under its app path (BaseUrl) on a name of its own
+// and on the appliance's names alike; the sign-in URL carries the path
+// once, never twice.
+func TestJellyfinSignInURLCarriesItsPath(t *testing.T) {
+	m := manifest(t, "jellyfin")
+	a, err := AdapterFor(*m.SSO.OIDC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for origin, want := range map[string]string{
+		"https://jellyfin.lan":                "https://jellyfin.lan/apps/jellyfin/sso/OID/start/authentik",
+		"https://homestead.lan/apps/jellyfin": "https://homestead.lan/apps/jellyfin/sso/OID/start/authentik",
+	} {
+		if got := signInURL(a, m, origin); got != want {
+			t.Errorf("%s: %s", origin, got)
+		}
+	}
+	n := manifest(t, "nextcloud")
+	na, _ := AdapterFor(*n.SSO.OIDC)
+	if got := signInURL(na, n, "https://nextcloud.lan"); got != "https://nextcloud.lan/login" {
+		t.Errorf("nextcloud: %s", got)
 	}
 }
