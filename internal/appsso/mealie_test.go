@@ -25,6 +25,14 @@ func realMealie(t *testing.T) catalog.Manifest {
 	if err := m.Validate(); err != nil {
 		t.Fatalf("mealie manifest: %v", err)
 	}
+	// The data owner (911:911, S405) makes the secret file a chown the
+	// daemon does as root; tests run unprivileged, so drop it here.
+	data := append([]catalog.DataPath(nil), m.Services[0].Data...)
+	for i := range data {
+		data[i].UID, data[i].GID = nil, nil
+	}
+	m.Services = append([]catalog.Service(nil), m.Services...)
+	m.Services[0].Data = data
 	return m
 }
 

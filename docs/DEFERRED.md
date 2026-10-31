@@ -1564,3 +1564,5 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S404: rotating an env-oidc app's client secret does not re-sync Authentik; the configure response warns, and applying sign-in again fixes it. Chaining the re-sync needs the catalog to call the sign-in operation (an import cycle today).
 - S404: the warning about owner values sign-in replaces appears at plan time and in the audit; the operation step results carry no notes, so the dashboard cannot show the "left in place" note after turning sign-in off.
 - S404: turning sign-in off removes a variable the owner set to exactly the value sign-in sets (the override cannot tell the two apart).
+- S405: an env-oidc app on the local issuer that also needs public roots (a later issuer switch handled by the move) is not covered by a combined bundle; only the local issuer sets the trust variable.
+- S405: an existing Mealie install keeps a root-owned secret file until sign-in is applied again.

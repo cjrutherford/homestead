@@ -63,7 +63,13 @@ func newSecret() (string, error) {
 // Authentik's public name, which the edge also answers on this box.
 func wiring(m catalog.Manifest, adapter Adapter, issuer string, s Settings) catalog.SignInWiring {
 	env := map[string]string{}
-	for k, v := range adapter.TrustEnv() {
+	trust := adapter.TrustEnv()
+	if t, ok := adapter.(interface {
+		TrustEnvFor(issuer string) map[string]string
+	}); ok {
+		trust = t.TrustEnvFor(issuer)
+	}
+	for k, v := range trust {
 		env[k] = v
 	}
 	if e, ok := adapter.(EnvSetter); ok {

@@ -48,6 +48,12 @@ class TestMealieContract(unittest.TestCase):
         self.assertIn("adapter: env-oidc", self.text)
         self.assertNotIn("entrypoint:", self.text)
 
+    def test_data_is_owned_by_the_image_user(self):
+        # run.sh chowns /app to 911 and drops to it before reading the
+        # secret file, so the file must be owned by 911:911 (S405).
+        self.assertIn("uid: 911", self.text)
+        self.assertIn("gid: 911", self.text)
+
     def test_no_latest_tag(self):
         self.assertNotIn(":latest", self.text)
 

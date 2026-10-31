@@ -32,12 +32,16 @@ services:
     # signup stays off.
     ALLOW_SIGNUP: "false"
   # Image VOLUME: /app/data (SQLite database, generated secrets,
-  # uploaded recipe images, and app-created backups). The image runs as
-  # root and keeps the volume root-owned.
+  # uploaded recipe images, and app-created backups). run.sh starts as
+  # root, chowns /app to PUID 911 and re-execs as that user before it
+  # reads the *_FILE secrets, so the volume and the sign-in secret file
+  # are owned by 911:911.
   data:
   - target: /app/data
     class: application
     subpath: data
+    uid: 911
+    gid: 911
 requirements:
   memorymb: 512
   cpucount: 1

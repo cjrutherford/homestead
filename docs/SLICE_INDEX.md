@@ -218,3 +218,4 @@ S401 fixes the deadlock that hung moves which write seed files but change no env
 S402 adds the generic `env-oidc` sign-in adapter for apps configured by environment variables; the client secret is a declared package secret (`docs/slices/S402-env-oidc-adapter.md`).
 S403 turns on Authentik sign-in for Mealie through the `env-oidc` adapter and wires the declared secret into stacks installed before it (`docs/slices/S403-mealie-authentik.md`).
 S404 makes env-oidc sign-in leave the owner's settings alone: placeholders render as validated, off removes only what sign-in set, replaced owner values are warned about, and Mealie's settings are checked against its docs (`docs/slices/S404-env-oidc-keeps-owner-settings.md`).
+S405 makes Mealie's sign-in work on a real appliance: its secret file is owned by the image user and the appliance root is trusted only for the local issuer (`docs/slices/S405-mealie-sign-in-on-appliance.md`).

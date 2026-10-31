@@ -233,6 +233,9 @@ func TestEnvOIDCOwnerValues(t *testing.T) {
 		t.Fatalf("warnings: %s", w)
 	}
 	run(plan)
+	if first, _ := os.ReadFile(overridePath); !strings.Contains(string(first), "OIDC_TLS_CACERTFILE") {
+		t.Fatalf("local issuer lacks the trust variable:\n%s", first)
+	}
 	if !strings.Contains(strings.Join(audits, "\n"), "OIDC_CLIENT_ID") {
 		t.Fatalf("audit: %v", audits)
 	}
@@ -256,6 +259,10 @@ func TestEnvOIDCOwnerValues(t *testing.T) {
 		!strings.Contains(string(raw), "https://auth.example.com/") {
 		t.Fatalf("moved override:\n%s", raw)
 	}
+	// The public issuer uses the image's own trust (S405).
+	if strings.Contains(string(raw), "OIDC_TLS_CACERTFILE") {
+		t.Fatalf("public issuer still has the trust variable:\n%s", raw)
+	}
 	// Off keeps a value the owner changed after sign-in set it.
 	_ = os.WriteFile(overridePath, []byte(strings.Replace(string(raw), "OIDC_ADMIN_GROUP: "+groupNames("envapp").Admins, "OIDC_ADMIN_GROUP: custom", 1)), 0o600)
 	rec, _, _ = Records{DB: st.DB()}.Get("envapp")
@@ -265,5 +272,26 @@ func TestEnvOIDCOwnerValues(t *testing.T) {
 	raw, _ = os.ReadFile(overridePath)
 	if !strings.Contains(string(raw), "OIDC_ADMIN_GROUP: custom") || strings.Contains(string(raw), "OIDC_CLIENT_ID") {
 		t.Fatalf("off override:\n%s", raw)
+	}
+}
+
+// S405: the appliance root replaces some apps' whole trust store, so the
+// variable is set for the local issuer only.
+func TestEnvOIDCTrustFollowsIssuer(t *testing.T) {
+	m := envManifest()
+	a, err := AdapterFor(*m.SSO.OIDC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for issuer, want := range map[string]bool{
+		"https://authentik.lan/application/o/x/":                   true,
+		"https://homestead.local/apps/auth/application/o/x/":       true,
+		"https://auth.example.com/application/o/x/":                false,
+		"https://homestead.example.com/apps/auth/application/o/x/": false,
+	} {
+		env := wiring(m, a, issuer, Settings{Issuer: issuer}).Env
+		if _, got := env["OIDC_TLS_CACERTFILE"]; got != want {
+			t.Fatalf("%s: trust variable present = %v, want %v", issuer, got, want)
+		}
 	}
 }

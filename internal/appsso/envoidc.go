@@ -3,10 +3,12 @@ package appsso
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 
 	"homestead/internal/catalog"
+	"homestead/internal/docker"
 )
 
 // EnvSetter is an adapter that configures the app through plain
@@ -74,6 +76,17 @@ func (a envOIDC) TrustEnv() map[string]string {
 		return nil
 	}
 	return map[string]string{a.cfg.Trust: CAFile}
+}
+
+// TrustEnvFor sets the trust variable only for the appliance's own
+// issuer. Apps like Mealie use that file as their whole trust store, so
+// pointing it at the appliance root breaks a public issuer, whose
+// Let's Encrypt certificate chains to the image's default roots (S405).
+func (a envOIDC) TrustEnvFor(issuer string) map[string]string {
+	if u, err := url.Parse(issuer); err != nil || !docker.IsPrivateName(docker.Hostname(u.Hostname())) {
+		return nil
+	}
+	return a.TrustEnv()
 }
 
 // Env renders the manifest's templates.

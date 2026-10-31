@@ -721,6 +721,15 @@ func TestCuratedMealie(t *testing.T) {
 		service.Data[0].Class != storage.ClassApplication || service.Data[0].Subpath != "data" {
 		t.Fatalf("data = %+v", service.Data)
 	}
+	// S405: run.sh drops to 911 before reading the *_FILE secret, so the
+	// data volume and the secret file belong to 911:911.
+	if d := service.Data[0]; d.UID == nil || d.GID == nil || *d.UID != 911 || *d.GID != 911 {
+		t.Fatalf("data owner = %v:%v, want 911:911", d.UID, d.GID)
+	}
+	files := SecretFilesFor(manifest)
+	if len(files) != 1 || files[0].UID == nil || files[0].GID == nil || *files[0].UID != 911 || *files[0].GID != 911 {
+		t.Fatalf("secret files = %+v, want owner 911:911", files)
+	}
 	if len(manifest.BackupPaths) != 1 || manifest.BackupPaths[0] != "data" {
 		t.Fatalf("backuppaths = %v", manifest.BackupPaths)
 	}
