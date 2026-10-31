@@ -248,9 +248,8 @@ func TestCuratedVaultwarden(t *testing.T) {
 	if _, enabled := service.Environment["ADMIN_TOKEN"]; enabled {
 		t.Fatal("the admin page must stay off by default")
 	}
-	if !strings.HasPrefix(service.Environment["DOMAIN"], "https://") ||
-		!strings.Contains(service.Environment["DOMAIN"], RouteHostToken) {
-		t.Fatalf("domain = %q, want the routed HTTPS host", service.Environment["DOMAIN"])
+	if service.Environment["DOMAIN"] != AppURLToken {
+		t.Fatalf("domain = %q, want the app address (S407)", service.Environment["DOMAIN"])
 	}
 	if len(service.Data) != 1 || service.Data[0].Target != "/data" ||
 		service.Data[0].Class != storage.ClassApplication || service.Data[0].Subpath != "data" {
@@ -699,9 +698,8 @@ func TestCuratedMealie(t *testing.T) {
 		t.Fatalf("services = %+v", manifest.Services)
 	}
 	service := manifest.Services[0]
-	if base := service.Environment["BASE_URL"]; !strings.HasPrefix(base, "https://") ||
-		!strings.Contains(base, RouteHostToken) {
-		t.Fatalf("BASE_URL = %q, want the routed HTTPS host", base)
+	if base := service.Environment["BASE_URL"]; base != AppURLToken {
+		t.Fatalf("BASE_URL = %q, want the app address (S407)", base)
 	}
 	if service.Environment["DB_ENGINE"] != "sqlite" {
 		t.Fatalf("DB_ENGINE = %q", service.Environment["DB_ENGINE"])

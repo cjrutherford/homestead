@@ -28,7 +28,7 @@ services:
     # The edge hostname is filled at render time. Passkeys and invitation
     # links need the exact URL the browser uses, so the domain must follow
     # the route rather than a hard-coded address.
-    DOMAIN: "https://{{route_host}}"
+    DOMAIN: "{{app_url}}"
     # Owner signup: the first account creates the vault. Family members
     # join by invitation; closing signups later is configuration, not a
     # manifest edit.

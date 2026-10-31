@@ -83,7 +83,7 @@ func (s Service) Validate(endpoints map[string]bool) error {
 		if len(value) > 4096 {
 			return fmt.Errorf("catalog: service %q variable %q exceeds 4096 characters", s.Name, key)
 		}
-		for _, token := range []string{RouteHostToken, RouteNamesToken, RoutePathToken, RouteURLToken} {
+		for _, token := range routeTokens {
 			if strings.Contains(value, token) && s.Exposes == "" {
 				return fmt.Errorf("catalog: service %q variable %q uses %s but the service exposes no endpoint", s.Name, key, token)
 			}

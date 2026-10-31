@@ -25,7 +25,7 @@ services:
   environment:
     # Links in the app and its exports use the routed HTTPS host; the
     # variable is dropped when no route is assigned.
-    BASE_URL: "https://{{route_host}}"
+    BASE_URL: "{{app_url}}"
     DB_ENGINE: sqlite
     # The seeded administrator signs in once and changes the password;
     # further household members are created from the admin UI, so public

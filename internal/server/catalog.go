@@ -270,8 +270,15 @@ func installRequest(st *store.Store, catalogDir, name string, body installBody) 
 			return catalog.InstallRequest{}, fmt.Errorf("public address: %w", err)
 		}
 	}
+	// An app published as part of the install renders its public address
+	// into the settings that take a single base URL (S407).
+	publicHostname := strings.ToLower(strings.TrimSpace(body.PublicName))
+	if publicHostname == "" && body.Setup != nil && body.Setup.Public != nil {
+		publicHostname = strings.ToLower(strings.TrimSpace(body.Setup.Public.Hostname))
+	}
 	return catalog.InstallRequest{
-		Manifest: manifest, Host: facts, Domain: body.Domain,
+		PublicHostname: publicHostname,
+		Manifest:       manifest, Host: facts, Domain: body.Domain,
 		Hostnames: body.Hostnames, ContainerPorts: body.ContainerPorts,
 		Storage: mountpoints, Volumes: body.Volumes, Networks: body.Networks,
 		Zone: body.Zone, PublicIP: publicIP, ApplianceNames: applianceNames(st),

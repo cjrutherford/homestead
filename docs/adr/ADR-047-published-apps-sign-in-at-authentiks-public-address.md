@@ -76,3 +76,13 @@ Checked live on VM 2 (2026-10-27):
   precondition for it.
 - Published apps' Authentik sign-in depends on the internet.
 - Changes require a superseding ADR.
+
+## Amendment 2026-10-31 (S407): single-base-URL apps follow publication
+An app that takes one base URL (Mealie's `BASE_URL`, Vaultwarden's `DOMAIN`)
+builds its sign-in redirect and links from it, so it must hold the address the
+browser used. Such settings use the `{{app_url}}` token: `https://<public name>`
+once the app is published at a name of its own, the local route address
+otherwise. Publishing and unpublishing plan the setting change (previewed,
+covered by the digest, run before the sign-in step); installs that are public
+at install time render the public address directly. Path-served apps keep the
+local base URL.

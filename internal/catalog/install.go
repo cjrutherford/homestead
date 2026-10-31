@@ -51,6 +51,10 @@ type InstallRequest struct {
 	// route's (homestead.lan, homestead.local): a package served by path
 	// answers under them (ADR-044). Empty means the defaults.
 	ApplianceNames []string
+	// PublicHostname is the public name the app is published at as part
+	// of this install (S407); it fills AppURLToken. Empty when the app
+	// is installed local-only.
+	PublicHostname string
 }
 
 // DefaultApplianceNames are the dashboard's names before the owner sets
@@ -356,6 +360,7 @@ func planCompose(plan *InstallPlan, req InstallRequest) error {
 	routeHosts := map[string]string{}
 	routeNames := map[string][]string{}
 	routePaths := map[string]string{}
+	publicHosts := map[string]string{}
 	for _, route := range plan.Routes {
 		if route.IsPath() {
 			// Served under the appliance's names (ADR-044).
@@ -366,12 +371,15 @@ func planCompose(plan *InstallPlan, req InstallRequest) error {
 			continue
 		}
 		routeHosts[route.Target.Host] = string(route.Host)
+		if req.PublicHostname != "" {
+			publicHosts[route.Target.Host] = req.PublicHostname
+		}
 		for _, n := range route.Names() {
 			routeNames[route.Target.Host] = append(routeNames[route.Target.Host], string(n))
 		}
 	}
 	files, err := Generate(req.Manifest, Generation{Networks: networks, EdgeServices: edgeServices, Services: specs,
-		RouteHosts: routeHosts, RouteNames: routeNames, RoutePaths: routePaths})
+		RouteHosts: routeHosts, RouteNames: routeNames, RoutePaths: routePaths, PublicHosts: publicHosts})
 	if err != nil {
 		return err
 	}

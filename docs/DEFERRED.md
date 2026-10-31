@@ -1567,3 +1567,6 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S405: an env-oidc app on the local issuer that also needs public roots (a later issuer switch handled by the move) is not covered by a combined bundle; only the local issuer sets the trust variable.
 - S405: an existing Mealie install keeps a root-owned secret file until sign-in is applied again.
 - S406: a sign-in plan reads "Nothing changes" when only the override file is stale (e.g. a trust variable left from before S405); the apply fixes it. Plans should compare the override's sign-in keys too.
+- S407: apps served by path (Nextcloud's `OVERWRITECLIURL`, Immich and others under `/apps/<svc>/`) keep the local base URL after they are published; `{{app_url}}` is only rendered public for apps with a name of their own. A path app that needs the public base URL would need its own token and plan step.
+- S407: with several public names on one route the base URL follows the first name; choosing which name an app builds its links on is not offered.
+- S407: the dashboard lists the base-URL change in the plan's app settings but has no dedicated "refresh" button; the already-public fix is the same public add plan (CLI: `homesteadctl apps public plan|apply <app> --hostname <existing public name>`).

@@ -299,6 +299,9 @@ type appPublicPlan struct {
 	owned    []router.OwnedRecord
 	restores []router.ReplacedRecord
 	manifest catalog.Manifest
+	// env is the base-URL setting the app's stack gets before sign-in
+	// (S407); the same changes are listed in AppSettings.
+	env []catalog.ConfigChange
 }
 
 func (p appPublicPlan) digest() string {
@@ -313,6 +316,10 @@ func (p appPublicPlan) digest() string {
 	}
 	if p.keep != nil {
 		fmt.Fprintf(h, "\nkeep=%s", p.keep.ID)
+	}
+	if len(p.env) > 0 {
+		env, _ := json.Marshal(p.env)
+		fmt.Fprintf(h, "\nenv=%s", env)
 	}
 	for _, record := range p.owned {
 		fmt.Fprintf(h, "\nowned=%s", record.RecordID)
@@ -398,6 +405,8 @@ func (p *appPublic) buildPlanState(ctx context.Context, name string, req appPubl
 		err = p.planPathAdd(ctx, client, token, f, hostname, req.Route, &plan)
 	case path:
 		err = p.planPathRemove(f, hostname, &plan)
+	case *req.Enabled && alreadyPublicName(f, hostname) != "":
+		err = p.planRefresh(f, hostname, alreadyPublicName(f, hostname), &plan)
 	case *req.Enabled:
 		err = p.planAdd(ctx, client, token, f, hostname, req.Route, &plan)
 	default:
@@ -425,7 +434,15 @@ func (p *appPublic) buildPlanState(ctx context.Context, name string, req appPubl
 	if plan.After == nil {
 		plan.After = []string{}
 	}
-	if f.signIn {
+	if !path {
+		if err := p.planAppURL(f, &plan); err != nil {
+			return appPublicPlan{}, err
+		}
+		if plan.Action == "refresh" && len(plan.env) == 0 {
+			return appPublicPlan{}, refusePlan(http.StatusUnprocessableEntity, "%s is already on the tunnel and its base URL already uses it", hostname)
+		}
+	}
+	if f.signIn && plan.Action != "refresh" {
 		if !p.planSignIn(f, path, &plan) {
 			verb := "accepts"
 			if plan.Action == "remove" {
@@ -439,13 +456,113 @@ func (p *appPublic) buildPlanState(ctx context.Context, name string, req appPubl
 				verb + " " + address + "."
 		}
 	}
-	if plan.Action == "add" {
+	if plan.Action == "refresh" {
+		// Only the app's base URL changes: the name is already live.
+	} else if plan.Action == "add" {
 		plan.AppSettings = append(plan.AppSettings, appsso.HostSettings(f.manifest, []string{plan.Hostname}, nil)...)
 	} else {
 		plan.AppSettings = append(plan.AppSettings, appsso.HostSettings(f.manifest, nil, []string{plan.Hostname})...)
 	}
 	plan.Digest = plan.digest()
 	return plan, nil
+}
+
+// alreadyPublicName returns the app route that already carries hostname
+// on the tunnel, or "" (S407).
+func alreadyPublicName(f appPublicFacts, hostname string) string {
+	if hostname == "" {
+		return ""
+	}
+	for _, r := range f.routes {
+		if r.IsPath() {
+			continue
+		}
+		for _, n := range r.Tunnel {
+			if strings.EqualFold(string(n), hostname) {
+				return string(r.Host)
+			}
+		}
+	}
+	return ""
+}
+
+// planRefresh plans bringing an already-public app's base URL in step
+// with its public name (S407): the fix for an app published before its
+// base URL followed the public address. No DNS or edge change; planAppURL
+// fills the setting and the caller refuses a refresh with nothing to do.
+func (p *appPublic) planRefresh(f appPublicFacts, hostname, route string, plan *appPublicPlan) error {
+	plan.Action = "refresh"
+	plan.Hostname = hostname
+	plan.Route = route
+	return nil
+}
+
+// planAppURL puts the base-URL setting the change calls for in the plan
+// (S407): for an installed app whose manifest uses AppURLToken, the
+// token's value once the public names are as the plan leaves them,
+// compared with the value the stack has now.
+func (p *appPublic) planAppURL(f appPublicFacts, plan *appPublicPlan) error {
+	if !f.installed || f.manifest.ServedByPath() {
+		return nil
+	}
+	var names []docker.Hostname
+	for _, r := range f.routes {
+		if strings.EqualFold(string(r.Host), plan.Route) {
+			names = r.Tunnel
+		}
+	}
+	public := ""
+	for _, n := range names {
+		if plan.Action == "remove" && strings.EqualFold(string(n), plan.Hostname) {
+			continue
+		}
+		public = string(n)
+		break
+	}
+	if public == "" && plan.Action != "remove" {
+		public = plan.Hostname
+	}
+	if plan.Action == "refresh" {
+		public = plan.Hostname
+	}
+	changes, err := catalog.AppURLChanges(f.manifest, stackDirFor(f.manifest.Name), plan.Route, public)
+	if err != nil {
+		return refusePlan(http.StatusUnprocessableEntity, "%v", err)
+	}
+	bySvc := map[string]*catalog.ConfigChange{}
+	for _, c := range changes {
+		entry := bySvc[c.Service]
+		if entry == nil {
+			plan.env = append(plan.env, catalog.ConfigChange{Service: c.Service, Set: map[string]string{}})
+			entry = &plan.env[len(plan.env)-1]
+			bySvc[c.Service] = entry
+		}
+		entry.Set[c.Key] = c.New
+		old := c.Old
+		if old == "" {
+			old = "(not set)"
+		}
+		plan.AppSettings = append(plan.AppSettings, fmt.Sprintf("%s: %s: %s -> %s (the app restarts)", c.Service, c.Key, old, c.New))
+	}
+	return nil
+}
+
+// appURLSteps writes the planned base URL and brings the stack up with
+// it, as the app move does (S407); they run before sign-in.
+func (p *appPublic) appURLSteps(plan appPublicPlan) ([]operation.StepDef, error) {
+	if len(plan.env) == 0 {
+		return nil, nil
+	}
+	var secretStore catalog.SecretStore
+	if p.secrets != nil {
+		secretStore = p.secrets
+	}
+	configure, err := moveConfigure(catalog.ConfigPlan{Manifest: plan.manifest, Changes: plan.env},
+		stackDirFor(plan.App), plan.App, p.st, secretStore)
+	if err != nil {
+		return nil, refusePlan(http.StatusUnprocessableEntity, "%v", err)
+	}
+	return configure.Steps, nil
 }
 
 // planSignIn plans the app's sign-in for the names after the change and
@@ -940,6 +1057,15 @@ func (p *appPublic) start(ctx context.Context, name string, req appPublicRequest
 		def = appPublicRemoveDefinition(p.st, token, plan)
 		action, detail = "app.public.remove", fmt.Sprintf("%s: %s off tunnel %s", plan.App, plan.Hostname, plan.Tunnel)
 	}
+	if plan.Action == "refresh" {
+		def = operation.Definition{Type: "app.public.refresh"}
+		action, detail = "app.public.refresh", fmt.Sprintf("%s: base URL follows %s", plan.App, plan.Hostname)
+	}
+	urlSteps, err := p.appURLSteps(plan)
+	if err != nil {
+		return 0, err
+	}
+	def.Steps = append(def.Steps, urlSteps...)
 	if plan.SignInDigest != "" {
 		def.Steps = append(def.Steps, p.signInStep(plan, actor))
 	}

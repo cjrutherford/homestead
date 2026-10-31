@@ -80,6 +80,10 @@ type Generation struct {
 	// without the trailing slash. It fills RoutePathToken, and
 	// RouteURLToken becomes https://<route host><path>.
 	RoutePaths map[string]string
+	// PublicHosts maps a routed service to its public hostname when the
+	// app is published on the tunnel at a name of its own (S407). It
+	// fills AppURLToken; a service with no entry gets its local address.
+	PublicHosts map[string]string
 }
 
 // RouteHostToken in a service environment value is replaced with the
@@ -101,6 +105,43 @@ const RoutePathToken = "{{route_path}}"
 // RouteURLToken is replaced with the app's address: https://<route
 // host><route path>, e.g. https://homestead.lan/apps/nextcloud.
 const RouteURLToken = "{{route_url}}"
+
+// AppURLToken is replaced with the address the app should build its own
+// links on (S407): https://<public hostname> once the app is published
+// at a public name of its own, else the same as RouteURLToken. Apps that
+// take a single base URL (Mealie's BASE_URL, Vaultwarden's DOMAIN) use
+// it so a sign-in that starts on the public name returns there. Apps
+// served by path keep the local base URL (see docs/DEFERRED.md).
+const AppURLToken = "{{app_url}}"
+
+// routeTokens lists every token a service environment value may carry.
+var routeTokens = []string{RouteHostToken, RouteNamesToken, RoutePathToken, RouteURLToken, AppURLToken}
+
+func usesRouteToken(value string) bool {
+	for _, token := range routeTokens {
+		if strings.Contains(value, token) {
+			return true
+		}
+	}
+	return false
+}
+
+// RenderRouteTokens fills every route token in value. public is the
+// app's public hostname, or "" while it has none.
+func RenderRouteTokens(value, host string, names []string, path, public string) string {
+	if len(names) == 0 {
+		names = []string{host}
+	}
+	appURL := "https://" + host + path
+	if public != "" {
+		appURL = "https://" + public
+	}
+	value = strings.ReplaceAll(value, AppURLToken, appURL)
+	value = strings.ReplaceAll(value, RouteURLToken, "https://"+host+path)
+	value = strings.ReplaceAll(value, RoutePathToken, path)
+	value = strings.ReplaceAll(value, RouteHostToken, host)
+	return strings.ReplaceAll(value, RouteNamesToken, strings.Join(names, " "))
+}
 
 // validate checks generation against the manifest: known services
 // only, sane ports and volumes, known networks, no duplicates.
@@ -303,23 +344,15 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 			})
 		}
 		for key, value := range rendered.Environment {
-			if strings.Contains(value, RouteHostToken) || strings.Contains(value, RouteNamesToken) ||
-				strings.Contains(value, RoutePathToken) || strings.Contains(value, RouteURLToken) {
+			if usesRouteToken(value) {
 				host := generation.RouteHosts[name]
 				if host == "" {
 					// No route serves this service: there is no name to trust.
 					delete(rendered.Environment, key)
 					continue
 				}
-				names := generation.RouteNames[name]
-				if len(names) == 0 {
-					names = []string{host}
-				}
-				path := generation.RoutePaths[name]
-				value = strings.ReplaceAll(value, RouteURLToken, "https://"+host+path)
-				value = strings.ReplaceAll(value, RoutePathToken, path)
-				value = strings.ReplaceAll(value, RouteHostToken, host)
-				rendered.Environment[key] = strings.ReplaceAll(value, RouteNamesToken, strings.Join(names, " "))
+				rendered.Environment[key] = RenderRouteTokens(value, host, generation.RouteNames[name],
+					generation.RoutePaths[name], generation.PublicHosts[name])
 			}
 		}
 		for _, network := range serviceNetworks {
