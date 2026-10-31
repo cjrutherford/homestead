@@ -1473,7 +1473,11 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
   client credentials are owner-supplied, and the catalog has no issuer
   input to build them from. The owner configures the client in Authentik
   and in that file (backed up with the config tree); local accounts stay
-  available. Actuating it like the `sso.oidc` packages is deferred.
+  available. S392 now establishes a local recovery administrator only on a
+  fresh install, refusing any reused `/config` content or claimed database.
+  Actuating OIDC and per-person access remains deferred because pinned Komga
+  cannot disable an existing account across Basic, sessions, API keys and OIDC
+  while preserving its data.
 - Several SQLite databases in one package: the catalog supports one
   database export per package. Komga's main `database.sqlite` is exported
   consistently, but `tasks.sqlite` and `sessions.sqlite` are copied as

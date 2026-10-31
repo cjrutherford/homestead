@@ -1014,8 +1014,8 @@ func TestCuratedKomga(t *testing.T) {
 	if len(service.Environment) != 1 || service.Environment["JAVA_TOOL_OPTIONS"] != "-Xmx768m" {
 		t.Fatalf("environment = %v, want only the JVM heap cap", service.Environment)
 	}
-	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 0 {
-		t.Fatalf("komga needs no entrypoint override or secret; secrets = %+v", manifest.Secrets)
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 1 || !manifest.HeldSecret("recovery_password") || manifest.FirstRun == nil || manifest.FirstRun.Routine != FirstRunKomga || manifest.FirstRun.Account != "homestead-recovery@localhost.invalid" {
+		t.Fatalf("komga recovery first run = %+v, secrets = %+v", manifest.FirstRun, manifest.Secrets)
 	}
 	wantData := []struct {
 		target  string

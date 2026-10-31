@@ -73,6 +73,16 @@ database:
 sso:
   class: optional
   protocols: [oidc]
+secrets:
+- name: recovery_password
+  immutable: true
+  reveal: true
+  note: Local recovery password only for a freshly claimed Komga; existing accounts are never changed.
+firstrun:
+  routine: komga
+  service: komga
+  account: homestead-recovery@localhost.invalid
+  secret: recovery_password
 integrations:
 - kind: identity
   target: authentik

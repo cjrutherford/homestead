@@ -542,6 +542,9 @@ func handleCatalogInstall(s *Server, st *store.Store, catalogDir string, runner 
 			return
 		}
 		if req.Manifest.FirstRun != nil {
+			if req.Manifest.FirstRun.Routine == catalog.FirstRunKomga {
+				def.Steps = append([]operation.StepDef{freshKomgaDataStep(plan)}, def.Steps...)
+			}
 			def.Steps = append(def.Steps, firstRunStep(req.Manifest, secrets))
 		}
 		setup := s.appSetup

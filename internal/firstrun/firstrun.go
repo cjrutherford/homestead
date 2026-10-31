@@ -72,6 +72,9 @@ func Run(ctx context.Context, m catalog.Manifest, secrets Secrets) (Result, erro
 	if f.Routine == catalog.FirstRunAudiobookshelf {
 		return audiobookshelfFirstRun(ctx, m, secrets)
 	}
+	if f.Routine == catalog.FirstRunKomga {
+		return komgaFirstRun(ctx, m, secrets)
+	}
 	password, err := Password(m, secrets)
 	if err != nil {
 		return "", err

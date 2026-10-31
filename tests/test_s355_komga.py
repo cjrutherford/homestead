@@ -51,7 +51,8 @@ class TestKomgaContract(unittest.TestCase):
         self.assertIn("protocols: [oidc]", self.text)
         self.assertIn("kind: identity", self.text)
         self.assertIn("target: authentik", self.text)
-        self.assertNotIn("\nsecrets:", self.text)
+        # S392: a recovery password is generated only for a fresh /config.
+        self.assertIn("firstrun:\n  routine: komga", self.text)
 
     def test_no_latest_tag(self):
         self.assertNotIn(":latest", self.text)
