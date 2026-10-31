@@ -82,8 +82,11 @@ sso:
       signinpath: /oidc/authenticate/
       secret: oidc_client_secret
       # requests honours REQUESTS_CA_BUNDLE as its whole trust store, so
-      # it is set only for the appliance's own issuer (S405).
+      # it is set only for the appliance's own issuer (S405), and then
+      # points at the host's public CAs plus the appliance root, so
+      # Linkding's fetches of public pages keep working (S410).
       trust: REQUESTS_CA_BUNDLE
+      trustbundle: combined
       set:
         LD_ENABLE_OIDC: "True"
         OIDC_OP_AUTHORIZATION_ENDPOINT: "{{authentik_base}}/application/o/authorize/"

@@ -42,6 +42,7 @@ func realLinkding(t *testing.T) catalog.Manifest {
 // address, and the secret value is in no Compose, override or script file.
 func TestLinkdingPlanAndApplyExistingInstall(t *testing.T) {
 	stubDocker(t)
+	useSystemBundle(t, "-----BEGIN CERTIFICATE-----\nsystem\n-----END CERTIFICATE-----\n")
 	m := realLinkding(t)
 	dir := t.TempDir()
 	old := m
@@ -117,7 +118,7 @@ func TestLinkdingPlanAndApplyExistingInstall(t *testing.T) {
 		"OIDC_OP_USER_ENDPOINT: https://authentik.lan/application/o/userinfo/",
 		"OIDC_OP_JWKS_ENDPOINT: https://authentik.lan/application/o/homestead-linkding/jwks/",
 		"OIDC_RP_CLIENT_ID: homestead-linkding", "OIDC_RP_SIGN_ALGO: RS256", "OIDC_USERNAME_CLAIM: preferred_username",
-		"REQUESTS_CA_BUNDLE: /etc/homestead/ca/ca.crt"} {
+		"REQUESTS_CA_BUNDLE: /etc/homestead/ca/bundle.pem"} {
 		if !strings.Contains(string(override), w) {
 			t.Fatalf("override lacks %q:\n%s", w, override)
 		}
@@ -154,7 +155,7 @@ func TestLinkdingPlanAndApplyExistingInstall(t *testing.T) {
 func TestLinkdingTrustFollowsIssuer(t *testing.T) {
 	m := realLinkding(t)
 	a := envOIDC{cfg: *m.SSO.OIDC.Env}
-	if got := a.TrustEnvFor("https://authentik.lan/application/o/homestead-linkding/"); got["REQUESTS_CA_BUNDLE"] != CAFile {
+	if got := a.TrustEnvFor("https://authentik.lan/application/o/homestead-linkding/"); got["REQUESTS_CA_BUNDLE"] != BundleFile {
 		t.Fatalf("private issuer trust = %v", got)
 	}
 	if got := a.TrustEnvFor("https://auth.example.com/application/o/homestead-linkding/"); got != nil {
@@ -171,5 +172,163 @@ func TestAuthentikBase(t *testing.T) {
 		if got := authentikBase(in); got != want {
 			t.Fatalf("authentikBase(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+const testRootPEM = "-----BEGIN CERTIFICATE-----\nroot\n-----END CERTIFICATE-----\n"
+
+func useSystemBundle(t *testing.T, body string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "ca-certificates.crt")
+	if body != "" {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := SystemBundlePaths
+	SystemBundlePaths = []string{filepath.Join(t.TempDir(), "missing.crt"), path}
+	t.Cleanup(func() { SystemBundlePaths = old })
+}
+
+func TestCombinedBundleContents(t *testing.T) {
+	useSystemBundle(t, "-----BEGIN CERTIFICATE-----\nsystem\n-----END CERTIFICATE-----")
+	dir := t.TempDir()
+	if err := writeBundle(dir, []byte(testRootPEM)); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "bundle.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(b); !strings.Contains(got, "system") || !strings.HasSuffix(got, testRootPEM) ||
+		strings.Index(got, "system") > strings.Index(got, "root") ||
+		strings.Contains(got, "END CERTIFICATE----------") {
+		t.Fatalf("bundle:\n%s", got)
+	}
+	if fi, _ := os.Stat(filepath.Join(dir, "bundle.pem")); fi.Mode().Perm() != 0o644 {
+		t.Fatalf("mode %v", fi.Mode())
+	}
+	if e, _ := filepath.Glob(filepath.Join(dir, ".bundle-*")); len(e) != 0 {
+		t.Fatalf("temp files left: %v", e)
+	}
+}
+
+func TestCombinedBundleNeedsSystemBundle(t *testing.T) {
+	useSystemBundle(t, "")
+	err := writeBundle(t.TempDir(), []byte(testRootPEM))
+	if err == nil || !strings.Contains(err.Error(), "no system CA bundle found") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestLinkdingCombinedBundleLifecycle (S410): a private issuer gets the
+// bundle file and the variable pointing at it; a move to a public issuer
+// and turning sign-in off take the variable and the file away.
+func TestLinkdingCombinedBundleLifecycle(t *testing.T) {
+	stubDocker(t)
+	useSystemBundle(t, "-----BEGIN CERTIFICATE-----\nsystem\n-----END CERTIFICATE-----\n")
+	m := realLinkding(t)
+	dir := t.TempDir()
+	files, err := catalog.Generate(m, catalog.Generation{
+		Services: []catalog.ServiceGeneration{{Service: "linkding"}}, RouteHosts: map[string]string{"linkding": "linkding.lan"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &appSecrets{m: map[string]string{catalog.SecretStoreName("linkding", "superuser_password"): "su",
+		catalog.SecretStoreName("linkding", "oidc_client_secret"): "client-secret-value"}}
+	if err := catalog.WriteStack(dir, files, app); err != nil {
+		t.Fatal(err)
+	}
+	rt, st, _ := mealieRuntime(t, dir, app)
+	bundle := filepath.Join(dir, CADir, "bundle.pem")
+	override := filepath.Join(dir, catalog.OverrideFileName)
+	run := func(plan Plan) {
+		def, err := Definition(rt, plan, m, dashboard, &fakeAuthentik{}, "owner")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, step := range def.Steps {
+			if err := step.Run(context.Background()); err != nil {
+				t.Fatalf("%s: %v", step.Name, err)
+			}
+		}
+	}
+	local := Inputs{Manifest: m, Installed: true, AuthentikInstalled: true, Dashboard: dashboard, DashboardOK: true,
+		Routes: AppRoutes(m, []docker.Route{route("linkding.lan", "linkding")})}
+	plan, err := BuildPlan(local, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run(plan)
+	raw, _ := os.ReadFile(override)
+	if !strings.Contains(string(raw), "REQUESTS_CA_BUNDLE: /etc/homestead/ca/bundle.pem") || !strings.Contains(string(raw), "./homestead-ca:/etc/homestead/ca:ro") {
+		t.Fatalf("override:\n%s", raw)
+	}
+	if b, err := os.ReadFile(bundle); err != nil || !strings.Contains(string(b), "system") || !strings.Contains(string(b), "root") {
+		t.Fatalf("bundle %v %q", err, b)
+	}
+	// An install from S409 still carries the bare-root value; a public
+	// move removes it too.
+	rec, _, _ := Records{DB: st.DB()}.Get("linkding")
+	pub := local
+	pub.Applied = &rec
+	pub.PublicAuthentikURL = "https://auth.example.com"
+	pub.Routes = AppRoutes(m, []docker.Route{route("linkding.lan", "linkding", "linkding.example.com")})
+	plan2, err := BuildPlan(pub, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run(plan2)
+	raw, _ = os.ReadFile(override)
+	if strings.Contains(string(raw), "REQUESTS_CA_BUNDLE") {
+		t.Fatalf("public issuer keeps the variable:\n%s", raw)
+	}
+	if _, err := os.Stat(bundle); !os.IsNotExist(err) {
+		t.Fatalf("bundle remains on a public issuer: %v", err)
+	}
+	// Legacy bare-root value from S409 is removed on a public re-apply.
+	if err := os.WriteFile(override, append(raw, []byte("")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := catalog.ApplySignInWiring(dir, catalog.SignInWiring{Service: "linkding", Env: map[string]string{"REQUESTS_CA_BUNDLE": CAFile}}, true); err != nil {
+		t.Fatal(err)
+	}
+	run(plan2)
+	if raw, _ = os.ReadFile(override); strings.Contains(string(raw), "REQUESTS_CA_BUNDLE") {
+		t.Fatalf("legacy value remains:\n%s", raw)
+	}
+	// Back to private, then off.
+	run(plan)
+	if _, err := os.Stat(bundle); err != nil {
+		t.Fatalf("bundle not regenerated: %v", err)
+	}
+	rec, _, _ = Records{DB: st.DB()}.Get("linkding")
+	offIn := local
+	offIn.Applied = &rec
+	off, err := BuildPlan(offIn, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run(off)
+	raw, _ = os.ReadFile(override)
+	if strings.Contains(string(raw), "REQUESTS_CA_BUNDLE") {
+		t.Fatalf("off keeps the variable:\n%s", raw)
+	}
+	if _, err := os.Stat(bundle); !os.IsNotExist(err) {
+		t.Fatalf("bundle remains after off: %v", err)
+	}
+}
+
+func TestEnvOIDCTrustBundleValidation(t *testing.T) {
+	m := realLinkding(t)
+	e := *m.SSO.OIDC.Env
+	e.TrustBundle = "bogus"
+	m.SSO.OIDC.Env = &e
+	if err := m.Validate(); err == nil || !strings.Contains(err.Error(), "trustbundle") {
+		t.Fatalf("err = %v", err)
+	}
+	e.TrustBundle, e.Trust = "combined", ""
+	if err := m.Validate(); err == nil {
+		t.Fatal("trustbundle without a trust variable validated")
 	}
 }

@@ -1,6 +1,7 @@
 package appsso
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -87,14 +88,71 @@ func wiring(m catalog.Manifest, adapter Adapter, issuer string, s Settings) cata
 
 // staleTrust is the adapter's trust variables that wire does not set,
 // with the values sign-in sets for them.
-func staleTrust(adapter Adapter, wire catalog.SignInWiring) map[string]string {
-	out := map[string]string{}
-	for k, v := range adapter.TrustEnv() {
-		if _, ok := wire.Env[k]; !ok {
-			out[k] = v
+func staleTrust(adapter Adapter, wire catalog.SignInWiring) []map[string]string {
+	var out []map[string]string
+	sets := []map[string]string{adapter.TrustEnv()}
+	if l, ok := adapter.(interface{ LegacyTrustEnv() map[string]string }); ok {
+		sets = append(sets, l.LegacyTrustEnv())
+	}
+	for _, set := range sets {
+		stale := map[string]string{}
+		for k, v := range set {
+			if _, ok := wire.Env[k]; !ok {
+				stale[k] = v
+			}
+		}
+		if len(stale) > 0 {
+			out = append(out, stale)
 		}
 	}
 	return out
+}
+
+// SystemBundlePaths are where the appliance host keeps its public CA
+// bundle, tried in order (S410). A variable so tests can point elsewhere.
+var SystemBundlePaths = []string{"/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt", "/etc/ssl/cert.pem"}
+
+// CombinedBundle is the host's public CA bundle followed by the
+// appliance root (S410).
+func CombinedBundle(root []byte) ([]byte, error) {
+	for _, p := range SystemBundlePaths {
+		system, err := os.ReadFile(p)
+		if err != nil || len(bytes.TrimSpace(system)) == 0 {
+			continue
+		}
+		out := append([]byte{}, system...)
+		if out[len(out)-1] != '\n' {
+			out = append(out, '\n')
+		}
+		return append(out, root...), nil
+	}
+	return nil, fmt.Errorf("appsso: no system CA bundle found (looked in %s), so the combined trust bundle cannot be built", strings.Join(SystemBundlePaths, ", "))
+}
+
+// writeBundle writes the combined bundle atomically, mode 0644 (public
+// certificates only).
+func writeBundle(dir string, root []byte) error {
+	body, err := CombinedBundle(root)
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".bundle-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(body); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), filepath.Join(dir, bundleHostFn))
 }
 
 // declaredSecret is the package secret an env-oidc app uses as its
@@ -179,6 +237,15 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 			if err := os.WriteFile(filepath.Join(caDir, caHostFn), pem, 0o644); err != nil {
 				return err
 			}
+			// Regenerated on every apply, so host CA updates arrive with
+			// a re-apply; gone when this issuer wants no bundle (S410).
+			if c, ok := adapter.(interface{ CombinedBundleFor(string) bool }); ok && c.CombinedBundleFor(plan.Issuer) {
+				if err := writeBundle(caDir, pem); err != nil {
+					return err
+				}
+			} else if err := os.Remove(filepath.Join(caDir, bundleHostFn)); err != nil && !os.IsNotExist(err) {
+				return err
+			}
 		}
 		if on && plan.ReplacedIssuer != "" {
 			// What was set for the issuer this plan replaces goes: its
@@ -193,7 +260,7 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 		// A trust variable this issuer does not want (a public issuer,
 		// S405) goes if an earlier apply left it: it still holds the
 		// value sign-in set unless the owner changed it (S406).
-		if stale := staleTrust(adapter, wire); len(stale) > 0 {
+		for _, stale := range staleTrust(adapter, wire) {
 			if _, err := catalog.ApplySignInWiring(dir, catalog.SignInWiring{Service: wire.Service, Env: stale}, false); err != nil {
 				return err
 			}

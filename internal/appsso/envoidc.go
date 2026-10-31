@@ -75,7 +75,33 @@ func (a envOIDC) TrustEnv() map[string]string {
 	if a.cfg.Trust == "" {
 		return nil
 	}
+	if a.combined() {
+		return map[string]string{a.cfg.Trust: BundleFile}
+	}
 	return map[string]string{a.cfg.Trust: CAFile}
+}
+
+func (a envOIDC) combined() bool { return a.cfg.TrustBundle == catalog.TrustBundleCombined }
+
+// LegacyTrustEnv is the value an app set before it used the combined
+// bundle (S409), so a re-apply can still remove it by value (S410).
+func (a envOIDC) LegacyTrustEnv() map[string]string {
+	if a.cfg.Trust == "" || !a.combined() {
+		return nil
+	}
+	return map[string]string{a.cfg.Trust: CAFile}
+}
+
+func privateIssuer(issuer string) bool {
+	u, err := url.Parse(issuer)
+	return err == nil && docker.IsPrivateName(docker.Hostname(u.Hostname()))
+}
+
+// CombinedBundleFor reports whether the app needs the combined trust
+// bundle written for this issuer: it asks for one and the issuer is the
+// appliance's own (S410).
+func (a envOIDC) CombinedBundleFor(issuer string) bool {
+	return a.combined() && privateIssuer(issuer)
 }
 
 // TrustEnvFor sets the trust variable only for the appliance's own
@@ -83,7 +109,7 @@ func (a envOIDC) TrustEnv() map[string]string {
 // pointing it at the appliance root breaks a public issuer, whose
 // Let's Encrypt certificate chains to the image's default roots (S405).
 func (a envOIDC) TrustEnvFor(issuer string) map[string]string {
-	if u, err := url.Parse(issuer); err != nil || !docker.IsPrivateName(docker.Hostname(u.Hostname())) {
+	if !privateIssuer(issuer) {
 		return nil
 	}
 	return a.TrustEnv()

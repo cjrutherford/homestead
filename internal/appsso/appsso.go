@@ -39,6 +39,10 @@ const (
 	CAFile   = CAMount + "/ca.crt"
 	CADir    = "homestead-ca"
 	caHostFn = "ca.crt"
+	// BundleFile is the combined trust bundle (S410): it lives in the
+	// same directory, so the existing read-only mount delivers it.
+	BundleFile   = CAMount + "/" + bundleHostFn
+	bundleHostFn = "bundle.pem"
 )
 
 // ErrUnavailable marks a plan that cannot be made (HTTP 422).

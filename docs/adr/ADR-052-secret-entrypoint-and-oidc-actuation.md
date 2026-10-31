@@ -124,3 +124,12 @@ unused. Its removal is deferred.
   endpoint and token configuration plus the owner-facing command belong
   to the slices that schedule the first SSO package; this ADR records
   only the mechanism they use.
+
+### Amendment (2026-10-31, S410): combined trust bundle
+An env-oidc app whose trust variable replaces its whole trust store (Linkding's
+`REQUESTS_CA_BUNDLE`) may declare `trustbundle: combined`. For the appliance's
+own (private) issuer the variable then points at `bundle.pem` in the existing
+read-only CA directory: the host's system CA bundle followed by the appliance
+root, regenerated atomically (0644, public certificates only) by each sign-in
+apply and removed with the variable when the issuer turns public or sign-in
+turns off. Without the opt-in the variable points at the bare root as before.

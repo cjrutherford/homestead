@@ -257,9 +257,18 @@ type EnvOIDC struct {
 	Secret string `yaml:"secret" json:"secret"`
 	// Trust, when set, is the variable that receives the path of the
 	// appliance root inside the container.
-	Trust string            `yaml:"trust,omitempty" json:"trust,omitempty"`
-	Set   map[string]string `yaml:"set" json:"set"`
+	Trust string `yaml:"trust,omitempty" json:"trust,omitempty"`
+	// TrustBundle, when "combined" (S410), makes the trust variable point
+	// at a bundle of the host's public CA certificates plus the appliance
+	// root instead of the bare root. For apps whose variable replaces the
+	// whole trust store (Python requests), so their other HTTPS fetches
+	// keep working. Needs Trust; empty keeps the bare root.
+	TrustBundle string            `yaml:"trustbundle,omitempty" json:"trustbundle,omitempty"`
+	Set         map[string]string `yaml:"set" json:"set"`
 }
+
+// TrustBundleCombined is the one EnvOIDC.TrustBundle value (S410).
+const TrustBundleCombined = "combined"
 
 // EnvPlaceholders are the only placeholders an env-oidc template may use.
 var EnvPlaceholders = []string{"issuer", "authentik_base", "client_id", "admin_group", "user_group"}
@@ -312,6 +321,12 @@ func (e EnvOIDC) validate(service string, svc Service, secrets []SecretDecl) err
 	}
 	if e.Trust != "" && !validEnvKey.MatchString(e.Trust) {
 		return fmt.Errorf("catalog: env-oidc trust variable %q invalid", e.Trust)
+	}
+	if e.TrustBundle != "" && e.TrustBundle != TrustBundleCombined {
+		return fmt.Errorf("catalog: env-oidc trustbundle %q must be %q or empty", e.TrustBundle, TrustBundleCombined)
+	}
+	if e.TrustBundle != "" && e.Trust == "" {
+		return fmt.Errorf("catalog: env-oidc trustbundle needs a trust variable")
 	}
 	if len(e.Set) == 0 {
 		return fmt.Errorf("catalog: env-oidc sets no variables")

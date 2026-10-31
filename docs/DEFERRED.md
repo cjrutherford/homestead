@@ -1571,6 +1571,6 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S407: with several public names on one route the base URL follows the first name; choosing which name an app builds its links on is not offered.
 - S407: the dashboard lists the base-URL change in the plan's app settings but has no dedicated "refresh" button; the already-public fix is the same public add plan (CLI: `homesteadctl apps public plan|apply <app> --hostname <existing public name>`).
 - S409: Linkding has no group claim, so every Authentik person becomes an ordinary user; the first superuser stays the local `admin` and nobody is promoted from Authentik groups.
-- S409: for the appliance's own (private) issuer, `REQUESTS_CA_BUNDLE` replaces Python requests' whole trust store, which also affects Linkding's fetching of page titles and archives from public HTTPS sites. A public issuer is unaffected. A combined bundle (appliance root plus system roots) would avoid it.
+- S410: the combined trust bundle is built from the appliance host's system CA bundle only when sign-in is applied, so host CA updates reach Linkding on the next re-apply, not automatically.
 - S409: a Linkding stack from before S349's supervisor (no entrypoint in compose.yaml) is not repaired by the secret wiring; reinstall it.
 - S409: OIDC accounts match existing Linkding users by email; an Authentik person with no email gets a new account rather than the matching one.
