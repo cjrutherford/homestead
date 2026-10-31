@@ -251,6 +251,9 @@ type Plan struct {
 	AppSettings    []string              `json:"app_settings"`
 	Plugin         *catalog.PinnedPlugin `json:"plugin,omitempty"`
 	SignInURL      string                `json:"sign_in_url,omitempty"`
+	// PublicSignInURL is where visitors through the tunnel start, set
+	// while the app has a public name.
+	PublicSignInURL string `json:"public_sign_in_url,omitempty"`
 	// Access is the groups, owner membership, bindings and groups claim
 	// mapping (ADR-043), and AdminRoles says how the app's admin role is
 	// set from the admin group.
@@ -358,6 +361,12 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 	origins := Origins(in.Routes)
 	p.RedirectURIs = adapter.RedirectURIs(origins)
 	p.SignInURL = adapter.SignInURL(origins[0])
+	for _, o := range origins {
+		if u, err := url.Parse(o); err == nil && !docker.IsPrivateName(docker.Hostname(u.Hostname())) {
+			p.PublicSignInURL = adapter.SignInURL(o)
+			break
+		}
+	}
 	p.AppSettings = adapter.OnSettings(p.Issuer, p.ClientID)
 	roles := adapter.Roles(groupNames(m.Name))
 	access := buildAccess(m.Name, m.Title, in.OwnerSub, roles)
@@ -485,6 +494,8 @@ type Status struct {
 	Adapter   string                `json:"adapter,omitempty"`
 	Plugin    *catalog.PinnedPlugin `json:"plugin,omitempty"`
 	SignInURL string                `json:"sign_in_url,omitempty"`
+	// PublicSignInURL is the sign-in address on the app's public name.
+	PublicSignInURL string `json:"public_sign_in_url,omitempty"`
 	// TokenKept says the dashboard sign-in token is sealed, so applying
 	// needs no token.
 	TokenKept bool `json:"token_kept"`
@@ -507,7 +518,7 @@ func BuildStatus(in Inputs, tokenKept bool) Status {
 	st.OpenToAll = st.Enabled && in.Applied.Access == nil
 	if st.Enabled && st.Offered {
 		if p, err := BuildPlan(in, true); err == nil {
-			st.SignInURL = p.SignInURL
+			st.SignInURL, st.PublicSignInURL = p.SignInURL, p.PublicSignInURL
 			st.Replan = !sameList(in.Applied.RedirectURIs, p.RedirectURIs) || in.Applied.Issuer != p.Issuer ||
 				in.Applied.PluginVersion != pluginState(p.Plugin) || !sameAccess(in.Applied.Access, p.Access)
 		}

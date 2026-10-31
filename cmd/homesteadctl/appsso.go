@@ -114,6 +114,9 @@ func printAppSignInStatus(w io.Writer, s appsso.Status) {
 		if s.SignInURL != "" {
 			fmt.Fprintf(w, "sign in at: %s\n", s.SignInURL)
 		}
+		if s.PublicSignInURL != "" {
+			fmt.Fprintf(w, "public sign in at: %s\n", s.PublicSignInURL)
+		}
 		if s.OpenToAll {
 			fmt.Fprintf(w, "warning: open to every Authentik user; plan again to close it: homesteadctl apps sign-in plan %s\n", s.Package)
 		}

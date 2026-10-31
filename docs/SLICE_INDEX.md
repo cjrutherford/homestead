@@ -210,3 +210,5 @@ S396 keeps Nextcloud's trusted domains in step with every name Homestead serves 
 S397 lets public plans and installs go ahead, with a warning, when the Cloudflare token cannot read certificates (`docs/slices/S397-publish-without-certificate-read.md`).
 
 S398 lets apps that keep their own accounts install again, with a plain notice and no per-person choices (`docs/slices/S398-install-self-managed-apps.md`).
+
+S399 makes publishing or unpublishing an app bring its Authentik sign-in (issuer and redirect URIs) along in the same operation (`docs/slices/S399-publish-keeps-sign-in-in-step.md`).

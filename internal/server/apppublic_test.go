@@ -17,6 +17,7 @@ import (
 	"homestead/internal/docker"
 	"homestead/internal/operation"
 	"homestead/internal/router"
+	"homestead/internal/secret"
 	"homestead/internal/store"
 )
 
@@ -39,6 +40,13 @@ func appPublicRig(t *testing.T) (*Server, *store.Store, *fakeCloudflare, func() 
 	t.Helper()
 	srv, st, secrets := tunnelTestServer(t)
 	srv.MountAppPublic(st, secrets, filepath.Join("..", "..", "catalog"))
+	return appPublicRigOn(t, srv, st, secrets)
+}
+
+// appPublicRigOn is appPublicRig over a server that already has
+// MountAppPublic.
+func appPublicRigOn(t *testing.T, srv *Server, st *store.Store, secrets *secret.Store) (*Server, *store.Store, *fakeCloudflare, func() []string) {
+	t.Helper()
 	// The setup wizard's domain resolves to the zone (S328/S329).
 	srv.appPublic.setupZone = func() (string, string) { return "cloudflare", "example.com" }
 	cf := newFakeCloudflare(t)

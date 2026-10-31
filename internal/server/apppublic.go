@@ -13,6 +13,7 @@ import (
 
 	"homestead/internal/appsso"
 	"homestead/internal/catalog"
+	"homestead/internal/cert"
 	"homestead/internal/docker"
 	"homestead/internal/operation"
 	"homestead/internal/router"
@@ -278,6 +279,10 @@ type appPublicPlan struct {
 	Before []string `json:"connector_before"`
 	After  []string `json:"connector_after"`
 	SignIn string   `json:"sign_in,omitempty"`
+	// SignInDigest is the digest of the app sign-in plan the change
+	// applies after the edge steps (S399); approving this plan approves
+	// that sign-in change. Empty when sign-in is left alone.
+	SignInDigest string `json:"sign_in_digest,omitempty"`
 	// AppSettings is what the app's own settings get (S313): Nextcloud's
 	// trusted domains follow its public names.
 	AppSettings []string `json:"app_settings"`
@@ -421,16 +426,18 @@ func (p *appPublic) buildPlanState(ctx context.Context, name string, req appPubl
 		plan.After = []string{}
 	}
 	if f.signIn {
-		verb := "accepts"
-		if plan.Action == "remove" {
-			verb = "stops accepting"
+		if !p.planSignIn(f, path, &plan) {
+			verb := "accepts"
+			if plan.Action == "remove" {
+				verb = "stops accepting"
+			}
+			address := "https://" + plan.Hostname
+			if path {
+				address = plan.URL
+			}
+			plan.SignIn = "App sign-in is on: afterwards, re-plan it on this page and approve it, so sign-in " +
+				verb + " " + address + "."
 		}
-		address := "https://" + plan.Hostname
-		if path {
-			address = plan.URL
-		}
-		plan.SignIn = "App sign-in is on: afterwards, re-plan it on this page and approve it, so sign-in " +
-			verb + " " + address + "."
 	}
 	if plan.Action == "add" {
 		plan.AppSettings = append(plan.AppSettings, appsso.HostSettings(f.manifest, []string{plan.Hostname}, nil)...)
@@ -439,6 +446,113 @@ func (p *appPublic) buildPlanState(ctx context.Context, name string, req appPubl
 	}
 	plan.Digest = plan.digest()
 	return plan, nil
+}
+
+// planSignIn plans the app's sign-in for the names after the change and
+// puts what moves in the plan (S399). It returns false when sign-in is
+// left for the owner to re-plan: the change cannot be previewed, the
+// Authentik API token is not kept, or nothing about sign-in changes.
+func (p *appPublic) planSignIn(f appPublicFacts, path bool, plan *appPublicPlan) bool {
+	a := p.s.appSignIn
+	if a == nil || !f.installed || f.manifest.SSO.OIDC == nil || !a.tokenKept() {
+		return false
+	}
+	set, err := loadEdgeRoutes(p.st)
+	if err != nil {
+		return false
+	}
+	routes := append([]docker.Route(nil), set.Routes...)
+	for i, r := range routes {
+		if !strings.EqualFold(string(r.Host), plan.Route) {
+			continue
+		}
+		switch {
+		case path:
+			r.Published = plan.Action == "add"
+		case plan.Action == "add":
+			r.Tunnel = append(append([]docker.Hostname(nil), r.Tunnel...), docker.Hostname(plan.Hostname))
+		default:
+			var kept []docker.Hostname
+			for _, n := range r.Tunnel {
+				if !strings.EqualFold(string(n), plan.Hostname) {
+					kept = append(kept, n)
+				}
+			}
+			r.Tunnel = kept
+		}
+		routes[i] = r
+	}
+	set.Routes = routes
+	in, err := appSignInInputsFrom(p.st, a.m, f.manifest, set)
+	if err != nil || in.Applied == nil {
+		return false
+	}
+	next, err := appsso.BuildPlan(in, true)
+	if err != nil {
+		return false
+	}
+	var lines []string
+	if next.Issuer != in.Applied.Issuer {
+		lines = append(lines, fmt.Sprintf("moves to the %s issuer %s (now %s)", map[bool]string{true: "public", false: "local"}[plan.Action == "add"], next.Issuer, in.Applied.Issuer))
+	}
+	if added, removed := listChanges(in.Applied.RedirectURIs, next.RedirectURIs); len(added)+len(removed) > 0 {
+		if len(added) > 0 {
+			lines = append(lines, "adds redirect URI "+strings.Join(added, ", "))
+		}
+		if len(removed) > 0 {
+			lines = append(lines, "removes redirect URI "+strings.Join(removed, ", "))
+		}
+	}
+	if len(lines) == 0 {
+		return false
+	}
+	plan.SignIn = "App sign-in is on and is updated in this same change with the kept Authentik API token: it " + strings.Join(lines, "; ") + "."
+	plan.SignInDigest = next.Digest
+	plan.Warnings = append(plan.Warnings, next.Warnings...)
+	return true
+}
+
+// listChanges is what next has that old lacks, and the reverse.
+func listChanges(old, next []string) (added, removed []string) {
+	has := func(list []string, v string) bool {
+		for _, x := range list {
+			if x == v {
+				return true
+			}
+		}
+		return false
+	}
+	for _, v := range next {
+		if !has(old, v) {
+			added = append(added, v)
+		}
+	}
+	for _, v := range old {
+		if !has(next, v) {
+			removed = append(removed, v)
+		}
+	}
+	return added, removed
+}
+
+// signInStep brings the app's sign-in in step once the name is live
+// (S399): the plan approved with the public plan, applied through the
+// app sign-in path. A failure leaves the name as it is and says so.
+func (p *appPublic) signInStep(plan appPublicPlan, actor string) operation.StepDef {
+	return operation.StepDef{Name: "sign-in", Run: func(ctx context.Context) error {
+		state := "is public"
+		if plan.Action == "remove" {
+			state = "is no longer public"
+		}
+		if p.s.appSignIn == nil {
+			return fmt.Errorf("%s %s, but app sign-in is not available, so its sign-in still uses the old issuer; re-plan it from its card", plan.App, state)
+		}
+		err := reapplyAppSignIn(ctx, p.s.appSignIn, cert.IssuerMove{App: plan.App, Digest: plan.SignInDigest}, actor)
+		if err != nil {
+			return fmt.Errorf("%s %s, but its sign-in still uses the old issuer: %w; re-plan it from its card (homesteadctl apps sign-in plan %s) and approve it", plan.App, state, err, plan.App)
+		}
+		return nil
+	}}
 }
 
 // beforeInstall stands the route the install creates in for the app's
@@ -822,6 +936,9 @@ func (p *appPublic) start(ctx context.Context, name string, req appPublicRequest
 	} else if plan.Action == "remove" {
 		def = appPublicRemoveDefinition(p.st, token, plan)
 		action, detail = "app.public.remove", fmt.Sprintf("%s: %s off tunnel %s", plan.App, plan.Hostname, plan.Tunnel)
+	}
+	if plan.SignInDigest != "" {
+		def.Steps = append(def.Steps, p.signInStep(plan, actor))
 	}
 	runner := operation.NewRunner(p.st)
 	op, err := runner.Start(ctx, def, "")
