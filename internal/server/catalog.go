@@ -31,6 +31,7 @@ import (
 // on the existing operation endpoints, so these routes return
 // operation IDs instead of blocking.
 func (s *Server) MountCatalog(st *store.Store, catalogDir string, secrets catalog.SecretStore) {
+	s.catalogDir = catalogDir
 	runner := operation.NewRunner(st)
 	s.mux.HandleFunc("GET /api/v1/catalog", handleCatalogList(s, st, catalogDir))
 	s.mux.HandleFunc("GET /api/v1/catalog/bundles", handleCatalogBundles(st, catalogDir))

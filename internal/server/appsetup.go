@@ -695,7 +695,7 @@ func (a *appSetup) startStep(ctx context.Context, rec setupRecord, name, approve
 		if len(review.add) == 0 {
 			return 0, nil
 		}
-		id, _, err := startEdgeReconcile(ctx, a.runner, a.st, a.local, review.add, rec.Actor)
+		id, _, err := startEdgeReconcile(ctx, a.runner, a.st, a.local, a.catalogDir, review.add, rec.Actor)
 		return id, err
 	case setupPublish:
 		if a.s.appPublic == nil || rec.Public == nil {

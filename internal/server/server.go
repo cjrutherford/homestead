@@ -66,6 +66,9 @@ type Server struct {
 	// waiters); serve cancels it when the daemon shuts down.
 	bg       context.Context
 	bgCancel context.CancelFunc
+	// catalogDir is the catalog MountCatalog serves; edge changes use it
+	// to keep apps' host allow-lists in step (S396).
+	catalogDir string
 	// craft is the verify-then-build pipeline (S279), set by MountCraft.
 	craft *craft.Pipeline
 	// files is the craft file proxy (S254), set by MountCraftFiles; the

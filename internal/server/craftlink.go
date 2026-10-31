@@ -235,6 +235,16 @@ func (a *appSetup) runFilesLink(ctx context.Context, rec setupRecord, approved s
 	}
 	mgr := a.filesManager()
 	apps := strings.Join(plan.Apps, ",")
+	// This appliance's Nextcloud answers only on names it trusts: bring
+	// its trusted domains up to the names Homestead serves it on before
+	// anything calls it, so a stopped setup resumes past an untrusted
+	// name (S396).
+	if base, _, ok := applianceNextcloud(a.st, a.catalogDir, true); ok && base == plan.BaseURL {
+		if err := reconcileAppHosts(ctx, a.st, a.catalogDir, nil); err != nil {
+			a.recordLink(rec.Actor, audit.OutcomeError, fmt.Sprintf("apps=%s account=%s root=%s: %v", apps, plan.Account, plan.Root, err))
+			return fmt.Errorf("Nextcloud does not trust the names it is served on: %w", err)
+		}
+	}
 	if plan.NewLink {
 		if err := a.linkNextcloud(ctx, mgr, plan.Root, rec.Actor); err != nil {
 			a.recordLink(rec.Actor, audit.OutcomeError, fmt.Sprintf("apps=%s account=%s root=%s: %v", apps, plan.Account, plan.Root, err))

@@ -38,7 +38,7 @@ func (s *Server) MountEdge(st *store.Store, local ...*cert.LocalTLS) {
 	runner := operation.NewRunner(st)
 	s.mux.HandleFunc("POST /api/v1/edge/deploy", handleEdgeDeploy(runner))
 	s.mux.HandleFunc("GET /api/v1/edge/routes", handleEdgeRoutesGet(st))
-	s.mux.HandleFunc("POST /api/v1/edge/routes", handleEdgeRoutes(runner, st, issuer))
+	s.mux.HandleFunc("POST /api/v1/edge/routes", handleEdgeRoutes(s, runner, st, issuer))
 }
 
 // loadEdgeRoutes reads the recorded reconcile table; none yet is empty.
@@ -237,14 +237,14 @@ func preserveDashboardRoute(st *store.Store, routes []docker.Route) []docker.Rou
 	return routes
 }
 
-func handleEdgeRoutes(runner *operation.Runner, st *store.Store, local *cert.LocalTLS) http.HandlerFunc {
+func handleEdgeRoutes(s *Server, runner *operation.Runner, st *store.Store, local *cert.LocalTLS) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body routeTableBody
 		if err := decodeBody(r, &body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		id, status, err := startEdgeReconcile(r.Context(), runner, st, local, body.Routes, operatorActor(r))
+		id, status, err := startEdgeReconcile(r.Context(), runner, st, local, s.catalogDir, body.Routes, operatorActor(r))
 		if err != nil {
 			http.Error(w, err.Error(), status)
 			return
@@ -257,7 +257,7 @@ func handleEdgeRoutes(runner *operation.Runner, st *store.Store, local *cert.Loc
 // reconcile as an operation, returning the status for a refusal. The
 // edge routes route and the appliance-run app setup (ADR-048) both go
 // through it.
-func startEdgeReconcile(ctx context.Context, runner *operation.Runner, st *store.Store, local *cert.LocalTLS, routes []docker.Route, actor string) (int64, int, error) {
+func startEdgeReconcile(ctx context.Context, runner *operation.Runner, st *store.Store, local *cert.LocalTLS, catalogDir string, routes []docker.Route, actor string) (int64, int, error) {
 	if routes == nil {
 		routes = []docker.Route{}
 	}
@@ -293,6 +293,12 @@ func startEdgeReconcile(ctx context.Context, runner *operation.Runner, st *store
 	if err != nil {
 		return 0, http.StatusUnprocessableEntity, err
 	}
+	// The apps' own host allow-lists follow the names the table gives
+	// them (S396); a failure fails the operation, it is not swallowed.
+	before := appHostsSnapshot(st, catalogDir)
+	def.Steps = append(def.Steps, operation.StepDef{Name: "app-hosts", Run: func(ctx context.Context) error {
+		return reconcileAppHosts(ctx, st, catalogDir, before)
+	}})
 	op, err := runner.Start(ctx, def, "")
 	if err != nil {
 		return 0, http.StatusInternalServerError, err
