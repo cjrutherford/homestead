@@ -688,6 +688,9 @@
                       @case ('open') {
                         <p>This verified app is open and has no managed-person access choices. The owner retains Homestead management access.</p>
                       }
+                      @case ('self-managed') {
+                        <p class="hint" role="status">{{ access.notice ?? 'This app keeps its own accounts. Homestead does not control who can sign in to it; create accounts in the app itself.' }}</p>
+                      }
                       @case ('bootstrap') {
                         <p>This app will start in its owner bootstrap mode. Managed-person access can be chosen after setup.</p>
                       }

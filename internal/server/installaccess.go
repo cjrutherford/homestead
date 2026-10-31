@@ -84,8 +84,27 @@ func installAccessMode(m catalog.Manifest) string {
 		if _, err := appsso.AdapterFor(*m.SSO.OIDC); err == nil {
 			return "managed"
 		}
+		// A declared adapter Homestead does not know is a catalog fault.
+		return "unavailable"
 	}
-	return "unavailable"
+	// No OIDC declaration: the app keeps its own accounts (S398).
+	return "self-managed"
+}
+
+// selfManagedNotice is the plain statement shown wherever the install
+// access review is shown for a self-managed app (ADR-054, S398).
+func selfManagedNotice(m catalog.Manifest) string {
+	title := m.Title
+	if title == "" {
+		title = m.Name
+	}
+	return title + " keeps its own accounts. Homestead does not control who can sign in to it; create accounts in the app itself."
+}
+
+// selfManagedIntegration binds the mode and the reviewed install plan into the
+// access digest so a self-managed review cannot be replayed as another mode.
+func selfManagedIntegration(plan catalog.InstallPlan) string {
+	return "self-managed-v1:" + installDigest(plan)
 }
 
 func validateInstallAdmin(choices []appaccess.Choice, adminAuthorized bool) error {
@@ -109,6 +128,8 @@ type installAccessView struct {
 	People         []installAccessPerson `json:"people"`
 	AdminSupported bool                  `json:"admin_supported"`
 	Reason         string                `json:"reason,omitempty"`
+	// Notice states plainly that the app keeps its own accounts (self-managed).
+	Notice string `json:"notice,omitempty"`
 }
 
 type installAccessApproval struct {
@@ -120,6 +141,10 @@ func (s *Server) installAccess(ctx context.Context, st *store.Store, m catalog.M
 	v := installAccessView{Mode: installAccessMode(m), People: []installAccessPerson{}}
 	if v.Mode == "open" || v.Mode == "bootstrap" {
 		return v, "", nil
+	}
+	if v.Mode == "self-managed" {
+		v.Notice = selfManagedNotice(m)
+		return v, selfManagedIntegration(plan), nil
 	}
 	if v.Mode == "unavailable" {
 		v.Reason = "Homestead cannot yet configure this app's accounts and permissions."
@@ -263,6 +288,20 @@ func handleInstallAccessPlan(s *Server, st *store.Store, catalogDir string) http
 		view, integration, err := s.installAccess(r.Context(), st, req.Manifest, plan, body.PublicName)
 		if err != nil {
 			http.Error(w, "cannot read app access state", http.StatusInternalServerError)
+			return
+		}
+		if view.Mode == "self-managed" {
+			if len(body.Choices) != 0 {
+				http.Error(w, "this app keeps its own accounts; Homestead cannot apply per-person access choices", http.StatusUnprocessableEntity)
+				return
+			}
+			p, err := appaccess.Build(req.Manifest.Name, nil, nil, false, integration)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Cache-Control", "no-store")
+			writeJSON(w, map[string]any{"digest": p.Digest})
 			return
 		}
 		if view.Mode != "managed" {

@@ -134,6 +134,7 @@ type InstallAccess struct {
 	People         []InstallAccessPerson `json:"people"`
 	AdminSupported bool                  `json:"admin_supported"`
 	Reason         string                `json:"reason,omitempty"`
+	Notice         string                `json:"notice,omitempty"`
 }
 
 // InstallSignIn is the install-time Authentik offer and reviewed plan.

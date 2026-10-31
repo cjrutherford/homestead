@@ -237,8 +237,8 @@ func TestInstallAccessClassificationFailsClosed(t *testing.T) {
 	}{
 		{"wordcraft", "open", nil},
 		{"authentik", "bootstrap", nil},
-		{"audiobookshelf", "unavailable", nil},
-		{"unknown", "unavailable", nil},
+		{"audiobookshelf", "self-managed", nil},
+		{"unknown", "self-managed", nil},
 		{"immich", "managed", &catalog.OIDCAdapter{Adapter: catalog.AdapterImmich}},
 		{"unknown", "unavailable", &catalog.OIDCAdapter{Adapter: "unknown"}},
 	} {

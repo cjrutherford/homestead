@@ -557,6 +557,26 @@ func handleCatalogInstall(s *Server, st *store.Store, catalogDir string, runner 
 			http.Error(w, access.Reason, http.StatusUnprocessableEntity)
 			return
 		}
+		if access.Mode == "self-managed" {
+			// The app keeps its own accounts, so no per-person claim can be
+			// honored; refuse any, and bind the reviewed mode if one is sent.
+			if len(body.Choices) != 0 || (body.Setup != nil && len(body.Setup.People) != 0) {
+				http.Error(w, "this app keeps its own accounts; Homestead cannot apply per-person access choices", http.StatusUnprocessableEntity)
+				return
+			}
+			if body.Setup != nil && body.Setup.Access != nil {
+				if len(body.Setup.Access.Choices) != 0 {
+					http.Error(w, "this app keeps its own accounts; Homestead cannot apply per-person access choices", http.StatusUnprocessableEntity)
+					return
+				}
+				if err := appaccess.Verify(body.Setup.Access.Digest, req.Manifest.Name, nil, nil, false, integration); err != nil {
+					http.Error(w, err.Error(), http.StatusConflict)
+					return
+				}
+				// Verified; nothing is managed, so no access step is recorded.
+				body.Setup.Access = nil
+			}
+		}
 		if body.Setup != nil && body.Setup.Access != nil {
 			if err := validateInstallAdmin(body.Setup.Access.Choices, adminAuthorized); err != nil {
 				http.Error(w, err.Error(), http.StatusForbidden)

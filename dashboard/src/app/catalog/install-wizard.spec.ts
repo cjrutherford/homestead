@@ -746,7 +746,7 @@ describe('InstallWizard', () => {
       fixture.detectChanges();
     });
 
-    it.each(['open', 'bootstrap'] as const)('installs %s apps without requesting access decisions', (mode) => {
+    it.each(['open', 'bootstrap', 'self-managed'] as const)('installs %s apps without requesting access decisions', (mode) => {
       start(CRAFT, { craft: { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] }, accessApi: true });
       to('review');
       http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft', {
@@ -759,6 +759,19 @@ describe('InstallWizard', () => {
       const install = http.expectOne('/api/v1/catalog/gridcraft/install');
       expect(install.request.body.setup).not.toHaveProperty('access');
       install.flush({ id: 8 });
+    });
+
+    it('shows the self-managed notice and renders no per-person selectors', () => {
+      start(CRAFT, { craft: { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] }, accessApi: true });
+      to('review');
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft', { access: {
+        mode: 'self-managed', people: [], admin_supported: false,
+        notice: 'GridCraft keeps its own accounts. Homestead does not control who can sign in to it; create accounts in the app itself.',
+      } }));
+      fixture.detectChanges();
+      expect(text()).toContain('keeps its own accounts');
+      expect((fixture.nativeElement as HTMLElement).querySelector('select[name^="access-"]')).toBeNull();
+      expect(button('Install GridCraft')!.disabled).toBe(false);
     });
 
     it('blocks installation when the app access integration is unavailable', () => {

@@ -208,3 +208,5 @@ S395 keeps Authentik published on the tunnel when it moves to its path with the 
 S396 keeps Nextcloud's trusted domains in step with every name Homestead serves it on, and repairs a stopped GridCraft link on resume (`docs/slices/S396-nextcloud-trusts-its-names.md`).
 
 S397 lets public plans and installs go ahead, with a warning, when the Cloudflare token cannot read certificates (`docs/slices/S397-publish-without-certificate-read.md`).
+
+S398 lets apps that keep their own accounts install again, with a plain notice and no per-person choices (`docs/slices/S398-install-self-managed-apps.md`).

@@ -52,3 +52,16 @@ and permissions behavior. Missing metadata is not proof of an open app.
 New integrations are delivered and tested individually. The policy must
 not silently convert an unsupported account app to an open app or alter an
 existing installation's accounts or permissions during upgrade.
+
+## Amendment (S398): self-managed apps
+
+This is a clarification consistent with the decision above, not a reversal.
+S390 implemented "refuse an installation that would otherwise claim these
+selections protect the app" too broadly, refusing every app without an
+adapter. The refusal applies only when per-person selections would be
+claimed. Apps that keep their own accounts install in a `self-managed` mode:
+the installer states that the app keeps its own accounts and Homestead does
+not control who can sign in, no per-person choices are offered, and any sent
+are refused. The mode is bound into the access digest. `unavailable` is kept
+for real blockers (unknown adapter, Authentik or people verification
+failing).

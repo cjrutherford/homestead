@@ -243,6 +243,36 @@ func TestInstallAccessSelectionAndAdminChoice(t *testing.T) {
 	}
 }
 
+func TestSelfManagedAppInstallsWithNoticeAndRefusesChoices(t *testing.T) {
+	var installed map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/plan"):
+			_, _ = w.Write([]byte(`{"Package":"mealie","access":{"mode":"self-managed","people":[],"notice":"Mealie keeps its own accounts. Homestead does not control who can sign in to it; create accounts in the app itself."},"Requirements":{"Passed":true},"Routes":[],"Actions":["up"],"digest":"d"}`))
+		case strings.HasSuffix(r.URL.Path, "/install"):
+			_ = json.NewDecoder(r.Body).Decode(&installed)
+			_, _ = w.Write([]byte(`{"id":5}`))
+		}
+	}))
+	defer srv.Close()
+	file := writeInput(t, `{"domain":"lan"}`)
+	code, stdout, _ := invoke(t, []string{"--server", srv.URL, "apps", "plan", "mealie", "-f", file})
+	if code != exitOK || !strings.Contains(stdout, "Mealie keeps its own accounts") {
+		t.Fatalf("plan exit=%d:\n%s", code, stdout)
+	}
+	code, stdout, _ = invoke(t, []string{"--server", srv.URL, "apps", "install", "mealie", "-f", file})
+	if code != exitOK || !strings.Contains(stdout, "operation: 5") {
+		t.Fatalf("install exit=%d:\n%s", code, stdout)
+	}
+	if _, ok := installed["choices"]; ok {
+		t.Fatalf("choices sent: %v", installed)
+	}
+	withChoices := writeInput(t, `{"domain":"lan","choices":[]}`)
+	if code, _, _ = invoke(t, []string{"--server", srv.URL, "apps", "install", "mealie", "-f", withChoices}); code == exitOK {
+		t.Fatal("per-person choices accepted for a self-managed app")
+	}
+}
+
 func TestAppsConfigure(t *testing.T) {
 	url := appsStub(t)
 	code, stdout, _ := invoke(t, []string{"--server", url, "apps", "configure", "jellyfin",

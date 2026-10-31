@@ -161,6 +161,13 @@ func runAppsPlan(ctx context.Context, client *apiclient.Client, args []string, s
 	return exitOK
 }
 
+func selfManagedNotice(access *apiclient.InstallAccess) string {
+	if access.Notice != "" {
+		return access.Notice
+	}
+	return "This app keeps its own accounts. Homestead does not control who can sign in to it; create accounts in the app itself."
+}
+
 func printInstallAccess(ctx context.Context, client *apiclient.Client, pkg string, body map[string]any, access *apiclient.InstallAccess, w io.Writer, digestOut *string) error {
 	if access == nil {
 		return fmt.Errorf("this appliance did not provide an app access review")
@@ -171,6 +178,12 @@ func printInstallAccess(ctx context.Context, client *apiclient.Client, pkg strin
 		return nil
 	case "bootstrap":
 		fmt.Fprintln(w, "access: identity provider bootstrap")
+		return nil
+	case "self-managed":
+		if _, supplied := body["choices"]; supplied {
+			return fmt.Errorf("this app keeps its own accounts and does not accept per-person access choices")
+		}
+		fmt.Fprintf(w, "access: %s\n", selfManagedNotice(access))
 		return nil
 	case "unavailable":
 		return fmt.Errorf("app access unavailable: %s", access.Reason)
@@ -213,7 +226,7 @@ func setInstallAccess(access *apiclient.InstallAccess, body map[string]any, dige
 		return false, fmt.Errorf("this appliance did not provide an app access review")
 	}
 	switch access.Mode {
-	case "open", "bootstrap":
+	case "open", "bootstrap", "self-managed":
 		if _, supplied := body["choices"]; supplied {
 			return false, fmt.Errorf("this app does not accept per-person access choices")
 		}
@@ -457,6 +470,12 @@ func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string
 		return fail(stderr, err)
 	}
 	link := install.FilesLink
+	if install.Access != nil && install.Access.Mode == "self-managed" {
+		if _, supplied := body["choices"]; supplied {
+			return fail(stderr, fmt.Errorf("this app keeps its own accounts and does not accept per-person access choices"))
+		}
+		fmt.Fprintf(stdout, "access: %s\n", selfManagedNotice(install.Access))
+	}
 	setup := firstLocalRoute(install.Routes) != nil || link != nil || approveSignIn != "" || len(people) != 0 || approveAccess != "" || (install.Access != nil && install.Access.Mode == "managed")
 	admin := false
 	if setup {

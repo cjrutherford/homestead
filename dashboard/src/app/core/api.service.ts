@@ -182,10 +182,12 @@ export interface AppAccessChoice {
 }
 
 export interface AppAccessPlan {
-  mode: 'managed' | 'open' | 'bootstrap' | 'unavailable';
+  mode: 'managed' | 'open' | 'bootstrap' | 'self-managed' | 'unavailable';
   people: { id: number; display_name: string; username: string; state: 'active' | 'disabled' }[];
   admin_supported: boolean;
   reason?: string;
+  /** self-managed: the app keeps its own accounts (S398). */
+  notice?: string;
 }
 
 export interface AppAccessPlanApproval {

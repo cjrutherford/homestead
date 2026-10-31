@@ -67,6 +67,9 @@ integrations:
 	if err := os.WriteFile(filepath.Join(cat, "immich.yaml"), []byte(manifest), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(cat, "mealie.yaml"), []byte(selfManagedManifest), 0644); err != nil {
+		t.Fatal(err)
+	}
 	provider, err := os.ReadFile(filepath.Join("..", "..", "catalog", "authentik.yaml"))
 	if err != nil {
 		t.Fatal(err)
