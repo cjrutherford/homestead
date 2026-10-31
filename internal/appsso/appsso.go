@@ -351,13 +351,15 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 		return Plan{}, unavailable("%s", why)
 	}
 	base := strings.TrimSuffix(in.Dashboard.AuthentikURL, "/")
-	if published(in.Routes) {
+	if published(in.Routes) || m.ServedByPath() {
 		// Browsers through the tunnel cannot reach the local name, so a
 		// published app signs in at Authentik's public address; the edge
-		// answers it on this box for the app's own calls (ADR-047).
+		// answers it on this box for the app's own calls (ADR-047). An
+		// app served by path shares the dashboard's origin, so it signs
+		// in there whether or not it is published itself (S408).
 		if in.PublicAuthentikURL != "" {
 			base = strings.TrimSuffix(in.PublicAuthentikURL, "/")
-		} else if in.PublicWaiting != "" {
+		} else if in.PublicWaiting != "" && published(in.Routes) {
 			p.Warnings = append(p.Warnings, fmt.Sprintf("Visitors through the tunnel cannot sign in to %s with Authentik yet: %s", m.Title, in.PublicWaiting))
 		}
 	}

@@ -86,3 +86,14 @@ otherwise. Publishing and unpublishing plan the setting change (previewed,
 covered by the digest, run before the sign-in step); installs that are public
 at install time render the public address directly. Path-served apps keep the
 local base URL.
+
+## Amendment 2026-10-31 (S408): path apps sign in at the public address
+The owner asked that every app served by path (`<server>/apps/<svc>/`, ADR-044)
+sign in at Authentik's public address. Such an app shares the dashboard's
+origin, which is already published, so §1's rule changes for it: once the edge
+answers Authentik's public address on this box, a path app's issuer is the
+public one whether or not the app itself is published. The back channel stays
+local (§2). An app with a name of its own keeps §1 unchanged. Path apps'
+Authentik sign-in therefore needs the internet even on the LAN (§4). Applied
+apps move through the existing re-plan (sign-in status asks for it) and the
+tunnel setup's issuer move (ADR-048 §6).

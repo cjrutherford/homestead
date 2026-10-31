@@ -221,3 +221,4 @@ S404 makes env-oidc sign-in leave the owner's settings alone: placeholders rende
 S405 makes Mealie's sign-in work on a real appliance: its secret file is owned by the image user and the appliance root is trusted only for the local issuer (`docs/slices/S405-mealie-sign-in-on-appliance.md`).
 S406 makes re-applying app sign-in remove a trust variable the current issuer no longer wants (`docs/slices/S406-stale-trust-variable.md`).
 S407 makes single-base-URL apps (Mealie, Vaultwarden) use their public address once published, with a previewed base-URL step in the public add/remove plan and a refresh for apps already public (`docs/slices/S407-public-base-url.md`).
+S408 makes apps served by path (`/apps/<svc>/`) sign in at Authentik's public address whether or not they are published; host apps keep the ADR-047 rule (`docs/slices/S408-path-apps-public-issuer.md`).

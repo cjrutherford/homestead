@@ -440,6 +440,13 @@ func TestApplyOnThenOff(t *testing.T) {
 	// Publishing moves the app to Authentik's public address (ADR-047):
 	// the host entry follows the issuer, the old one goes.
 	in.Applied = &rec
+	// An unpublished app with a name of its own keeps the local address
+	// even when the public one is answered (only path apps move, S408).
+	unpub := in
+	unpub.PublicAuthentikURL = "https://homestead.example.com/apps/auth"
+	if p, _ := BuildPlan(unpub, true); strings.Contains(p.Issuer, "example.com") {
+		t.Fatalf("unpublished host app issuer = %s", p.Issuer)
+	}
 	pub := in
 	pub.Routes = append([]docker.Route(nil), in.Routes...)
 	pub.Routes[0].Tunnel = []docker.Hostname{"immich.example.com"}
