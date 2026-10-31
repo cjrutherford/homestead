@@ -1553,3 +1553,5 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S399 skips the sign-in step when the Authentik API token is not kept (the public plan then tells the owner to re-plan sign-in); a one-time token field on the public apply request would let the same operation cover it.
 - S400: a move whose sign-in step fails (Authentik down) leaves the app moved with its sign-in on the old address; the owner re-plans from the app card. A one-time token field on the move apply request would let a move also cover the token-not-kept case.
 - S400: the craft files link is moved by address only. Nothing checks that Nextcloud answers at the new address before the link is updated; the Craft files page shows the link's readiness afterwards.
+- S401 (S400 review): a move that fails between its stop step and its up step (a seed write fails) leaves the app stopped, and the error does not say so. A failure path should bring the stack back up or name the stopped app.
+- S401 (S400 review): when the craft files link step fails, the move stops before its sign-in step, and the error only mentions the link. It should also say sign-in was not updated.

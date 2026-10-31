@@ -1,11 +1,13 @@
 package catalog
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMoveEnvPerPackage(t *testing.T) {
@@ -71,5 +73,27 @@ func TestMoveSeedSetsBaseURL(t *testing.T) {
 		if string(got) != want || info.Mode().Perm() != 0o640 {
 			t.Fatalf("from %q got %q (%v)", existing, got, info.Mode())
 		}
+	}
+}
+
+// StartStack must not hold the project lock that composeUp takes: the
+// two together deadlocked Jellyfin's move on VM 2 (S401).
+func TestStartStackDoesNotDeadlock(t *testing.T) {
+	old := composeRun
+	var args []string
+	composeRun = func(_ context.Context, _, _ string, a ...string) error { args = a; return nil }
+	t.Cleanup(func() { composeRun = old })
+	done := make(chan error, 1)
+	go func() { done <- StartStack(context.Background(), t.TempDir(), "s401-start") }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("StartStack deadlocked on the project lock")
+	}
+	if strings.Join(args, " ") != "up -d" {
+		t.Fatalf("ran %q, want up -d", args)
 	}
 }
