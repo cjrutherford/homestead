@@ -14,7 +14,35 @@ import (
 // top-level secret, the service reference and the file-path variable.
 func SecretConsumerWired(dir string, m Manifest, name string) bool {
 	_, missing, err := secretWiringPatch(dir, m, name)
-	return err == nil && !missing
+	return err == nil && !missing && len(staleEntrypoints(dir, m, name)) == 0
+}
+
+// staleEntrypoints lists the supervisor scripts of services that export
+// this secret and whose file in the stack differs from what the manifest
+// now generates (S409): a stack from before the export was declared has a
+// supervisor that does not read it.
+func staleEntrypoints(dir string, m Manifest, name string) []EntrypointScript {
+	exporting := map[string]bool{}
+	for _, d := range m.Secrets {
+		if d.Name != name {
+			continue
+		}
+		for _, c := range d.Consumers {
+			if c.Export {
+				exporting[c.Service] = true
+			}
+		}
+	}
+	var out []EntrypointScript
+	for _, sc := range EntrypointScriptsFor(m) {
+		if !exporting[sc.Service] {
+			continue
+		}
+		if cur, err := os.ReadFile(filepath.Join(dir, sc.File)); err != nil || string(cur) != sc.Body {
+			out = append(out, sc)
+		}
+	}
+	return out
 }
 
 // WireDeclaredSecret adds one declared secret's wiring to an installed
@@ -26,10 +54,23 @@ func SecretConsumerWired(dir string, m Manifest, name string) bool {
 // reports whether it wrote. The secret file must already exist.
 func WireDeclaredSecret(dir string, m Manifest, name string) (bool, error) {
 	body, missing, err := secretWiringPatch(dir, m, name)
-	if err != nil || !missing {
+	if err != nil {
 		return false, err
 	}
+	stale := staleEntrypoints(dir, m, name)
+	if !missing && len(stale) == 0 {
+		return false, nil
+	}
 	defer lockStackDir(dir)()
+	// A secret the service exports reaches it through the supervisor
+	// script the stack already mounts; the script is regenerated so it
+	// reads the new file too (S409). Scripts hold paths, never values.
+	if err := writeEntrypointScripts(dir, stale); err != nil {
+		return false, err
+	}
+	if !missing {
+		return true, nil
+	}
 	path := filepath.Join(dir, "compose.yaml")
 	info, err := os.Stat(path)
 	if err != nil {

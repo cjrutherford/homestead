@@ -244,8 +244,9 @@ type OIDCAdapter struct {
 
 // EnvOIDC declares an env-configured app's sign-in (S402, ADR-052
 // amendment). Set maps environment variables to templates; the only
-// placeholders are {{issuer}}, {{client_id}}, {{admin_group}} and
-// {{user_group}}. The client secret is never templated: it is the
+// placeholders are {{issuer}}, {{authentik_base}} (Authentik's own
+// address, for apps that cannot discover endpoints, S409), {{client_id}},
+// {{admin_group}} and {{user_group}}. The client secret is never templated: it is the
 // declared package Secret, delivered to the app as a file.
 type EnvOIDC struct {
 	// RedirectPaths are the app paths Authentik may redirect back to.
@@ -261,7 +262,7 @@ type EnvOIDC struct {
 }
 
 // EnvPlaceholders are the only placeholders an env-oidc template may use.
-var EnvPlaceholders = []string{"issuer", "client_id", "admin_group", "user_group"}
+var EnvPlaceholders = []string{"issuer", "authentik_base", "client_id", "admin_group", "user_group"}
 
 var envPlaceholder = regexp.MustCompile(`\{\{\s*([^{}]*?)\s*\}\}`)
 
@@ -338,7 +339,7 @@ func (e EnvOIDC) validate(service string, svc Service, secrets []SecretDecl) err
 				ok = ok || m[1] == name
 			}
 			if !ok {
-				return fmt.Errorf("catalog: env-oidc variable %q uses placeholder {{%s}}; only issuer, client_id, admin_group and user_group are allowed", key, m[1])
+				return fmt.Errorf("catalog: env-oidc variable %q uses placeholder {{%s}}; only issuer, authentik_base, client_id, admin_group and user_group are allowed", key, m[1])
 			}
 		}
 		if strings.Contains(strings.ReplaceAll(envPlaceholder.ReplaceAllString(tmpl, ""), "}}", ""), "{{") {

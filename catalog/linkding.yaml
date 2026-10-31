@@ -5,6 +5,9 @@
 # image's startup is unchanged, and the superuser password arrives as a
 # 0600 file that the supervisor exports (ADR-052). The initial superuser
 # is created once; changing the secret later does not reset the account.
+# The Authentik client secret (S409) rides the same supervisor: Linkding
+# reads OIDC_RP_CLIENT_SECRET only as plaintext, so the supervisor exports
+# it from a 0600 file and it never reaches Compose, argv, or logs.
 name: linkding
 version: 1.47.0
 title: Linkding
@@ -28,7 +31,10 @@ services:
   environment:
     # Behind the proxy the browser origin is HTTPS even though uwsgi is
     # plain HTTP; without this, logins and saves fail CSRF verification.
-    LD_CSRF_TRUSTED_ORIGINS: "https://{{route_host}}"
+    # Linkding splits the value on commas: the local address and the
+    # address the app is published on (the same address until it has a
+    # public name of its own, S407), so both origins can sign in (S409).
+    LD_CSRF_TRUSTED_ORIGINS: "{{route_url}},{{app_url}}"
     # Creates the first superuser once. The password comes from the
     # secret store through the supervisor, never from this block.
     LD_SUPERUSER_NAME: admin
@@ -63,6 +69,33 @@ backuppaths:
 sso:
   class: optional
   protocols: [oidc]
+  # App sign-in through Authentik (S409): mozilla-django-oidc, set by
+  # environment alone. It has no discovery, so each endpoint is built
+  # from Authentik's address. The local admin keeps working: the login
+  # form stays and OIDC adds a button. Linkding has no group claim, so
+  # every Authentik person becomes an ordinary user (see DEFERRED).
+  oidc:
+    adapter: env-oidc
+    service: linkding
+    env:
+      redirectpaths: ["/oidc/callback/"]
+      signinpath: /oidc/authenticate/
+      secret: oidc_client_secret
+      # requests honours REQUESTS_CA_BUNDLE as its whole trust store, so
+      # it is set only for the appliance's own issuer (S405).
+      trust: REQUESTS_CA_BUNDLE
+      set:
+        LD_ENABLE_OIDC: "True"
+        OIDC_OP_AUTHORIZATION_ENDPOINT: "{{authentik_base}}/application/o/authorize/"
+        OIDC_OP_TOKEN_ENDPOINT: "{{authentik_base}}/application/o/token/"
+        OIDC_OP_USER_ENDPOINT: "{{authentik_base}}/application/o/userinfo/"
+        OIDC_OP_JWKS_ENDPOINT: "{{issuer}}jwks/"
+        OIDC_RP_CLIENT_ID: "{{client_id}}"
+        # Authentik signs ID tokens with RS256 (Linkding's default too).
+        OIDC_RP_SIGN_ALGO: RS256
+        # The username Linkding creates; existing accounts still match
+        # by email.
+        OIDC_USERNAME_CLAIM: preferred_username
 secrets:
 - name: superuser_password
   # The initial superuser is created once from this value; rotating it
@@ -73,7 +106,14 @@ secrets:
   - service: linkding
     env: LD_SUPERUSER_PASSWORD_FILE
     export: true
+- name: oidc_client_secret
+  # Authentik's client secret for Linkding; Homestead generates it, hands
+  # it to Authentik, and the supervisor exports it as OIDC_RP_CLIENT_SECRET.
+  consumers:
+  - service: linkding
+    env: OIDC_RP_CLIENT_SECRET_FILE
+    export: true
 integrations:
 - kind: identity
   target: authentik
-  note: Sign in with Authentik once its OIDC client is configured; OIDC matches by email, so give the admin account one first.
+  note: People sign in with Authentik once sign-in is applied on the app's page; OIDC matches existing accounts by email, so give the admin account one first. The local administrator stays available.

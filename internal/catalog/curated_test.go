@@ -595,9 +595,10 @@ func TestCuratedLinkding(t *testing.T) {
 	if len(service.Entrypoint) != 1 || service.Entrypoint[0] != "./bootstrap.sh" {
 		t.Fatalf("entrypoint = %v, want the image CMD the supervisor execs", service.Entrypoint)
 	}
-	if origins := service.Environment["LD_CSRF_TRUSTED_ORIGINS"]; !strings.HasPrefix(origins, "https://") ||
-		!strings.Contains(origins, RouteHostToken) {
-		t.Fatalf("LD_CSRF_TRUSTED_ORIGINS = %q, want the routed HTTPS origin", origins)
+	// S409: Linkding splits the value on commas, so the local origin and
+	// the published one (the same until a public name exists) both pass.
+	if origins := service.Environment["LD_CSRF_TRUSTED_ORIGINS"]; origins != RouteURLToken+","+AppURLToken {
+		t.Fatalf("LD_CSRF_TRUSTED_ORIGINS = %q, want the local and published origins", origins)
 	}
 	if service.Environment["LD_SUPERUSER_NAME"] != "admin" {
 		t.Fatalf("superuser name = %q", service.Environment["LD_SUPERUSER_NAME"])
@@ -606,7 +607,12 @@ func TestCuratedLinkding(t *testing.T) {
 		t.Fatal("the superuser password must not be plain environment")
 	}
 	var exported bool
-	for _, decl := range manifest.Secrets {
+	if len(manifest.Secrets) != 2 || manifest.Secrets[1].Name != "oidc_client_secret" ||
+		len(manifest.Secrets[1].Consumers) != 1 || !manifest.Secrets[1].Consumers[0].Export ||
+		manifest.Secrets[1].Consumers[0].Env != "OIDC_RP_CLIENT_SECRET_FILE" {
+		t.Fatalf("secrets = %+v, want the exported Authentik client secret second (S409)", manifest.Secrets)
+	}
+	for _, decl := range manifest.Secrets[:1] {
 		if decl.Name != "superuser_password" || !decl.Immutable {
 			t.Fatalf("secret = %+v", decl)
 		}
@@ -620,8 +626,28 @@ func TestCuratedLinkding(t *testing.T) {
 	if !exported {
 		t.Fatalf("secrets = %+v, want the exported superuser password", manifest.Secrets)
 	}
-	if scripts := EntrypointScriptsFor(manifest); len(scripts) != 1 || scripts[0].Service != "linkding" {
-		t.Fatalf("scripts = %+v, want one linkding supervisor", scripts)
+	if scripts := EntrypointScriptsFor(manifest); len(scripts) != 1 || scripts[0].Service != "linkding" ||
+		!strings.Contains(scripts[0].Body, "export OIDC_RP_CLIENT_SECRET\n") ||
+		!strings.Contains(scripts[0].Body, "export LD_SUPERUSER_PASSWORD\n") {
+		t.Fatalf("scripts = %+v, want one linkding supervisor exporting both secrets", scripts)
+	}
+	// S409: the secret file belongs to the data owner (33:33), like the
+	// superuser password's.
+	for _, f := range SecretFilesFor(manifest) {
+		if f.UID == nil || f.GID == nil || *f.UID != 33 || *f.GID != 33 {
+			t.Fatalf("secret file %s owner = %v:%v, want 33:33", f.Key, f.UID, f.GID)
+		}
+	}
+	oidc := manifest.SSO.OIDC
+	if oidc == nil || oidc.Adapter != AdapterEnvOIDC || oidc.Service != "linkding" || oidc.Env == nil ||
+		oidc.Env.Secret != "oidc_client_secret" || oidc.Env.Trust != "REQUESTS_CA_BUNDLE" ||
+		oidc.Env.SignInPath != "/oidc/authenticate/" || len(oidc.Env.RedirectPaths) != 1 ||
+		oidc.Env.RedirectPaths[0] != "/oidc/callback/" || oidc.Env.Set["LD_ENABLE_OIDC"] != "True" ||
+		oidc.Env.Set["OIDC_RP_SIGN_ALGO"] != "RS256" || oidc.Env.Set["OIDC_OP_JWKS_ENDPOINT"] != "{{issuer}}jwks/" {
+		t.Fatalf("sso = %+v", oidc)
+	}
+	if _, secret := oidc.Env.Set["OIDC_RP_CLIENT_SECRET"]; secret {
+		t.Fatal("the client secret is never a set value")
 	}
 	if len(service.Data) != 1 || service.Data[0].Target != "/etc/linkding/data" ||
 		service.Data[0].Class != storage.ClassApplication || service.Data[0].Subpath != "data" ||

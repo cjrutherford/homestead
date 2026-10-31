@@ -91,7 +91,7 @@ func (a envOIDC) TrustEnvFor(issuer string) map[string]string {
 
 // Env renders the manifest's templates.
 func (a envOIDC) Env(s Settings) map[string]string {
-	vals := map[string]string{"issuer": s.Issuer, "client_id": s.ClientID,
+	vals := map[string]string{"issuer": s.Issuer, "authentik_base": authentikBase(s.Issuer), "client_id": s.ClientID,
 		"admin_group": s.Groups.Admins, "user_group": s.Groups.Users}
 	out := make(map[string]string, len(a.cfg.Set))
 	for k, t := range a.cfg.Set {
@@ -102,3 +102,14 @@ func (a envOIDC) Env(s Settings) map[string]string {
 
 func (envOIDC) Enable(context.Context, Target, Settings) error { return nil }
 func (envOIDC) Disable(context.Context, Target) error          { return nil }
+
+// authentikBase is Authentik's address without the application path: the
+// issuer https://auth.example/application/o/<slug>/ gives
+// https://auth.example. An issuer without that path is returned without
+// a trailing slash (S409).
+func authentikBase(issuer string) string {
+	if i := strings.Index(issuer, "/application/o/"); i >= 0 {
+		return issuer[:i]
+	}
+	return strings.TrimSuffix(issuer, "/")
+}

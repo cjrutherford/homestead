@@ -222,3 +222,4 @@ S405 makes Mealie's sign-in work on a real appliance: its secret file is owned b
 S406 makes re-applying app sign-in remove a trust variable the current issuer no longer wants (`docs/slices/S406-stale-trust-variable.md`).
 S407 makes single-base-URL apps (Mealie, Vaultwarden) use their public address once published, with a previewed base-URL step in the public add/remove plan and a refresh for apps already public (`docs/slices/S407-public-base-url.md`).
 S408 makes apps served by path (`/apps/<svc>/`) sign in at Authentik's public address whether or not they are published; host apps keep the ADR-047 rule (`docs/slices/S408-path-apps-public-issuer.md`).
+S409 signs Linkding in through Authentik with the env-oidc adapter: endpoints built from a new `{{authentik_base}}` placeholder, the client secret exported by the existing supervisor, and the supervisor script refreshed for installs made before (`docs/slices/S409-linkding-authentik.md`).
