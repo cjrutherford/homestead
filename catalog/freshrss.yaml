@@ -24,6 +24,7 @@ icon: mdi:rss
 services:
 - name: freshrss
   image: docker.io/freshrss/freshrss:1.30.4
+  publisher: upstream
   exposes: web
   containerport: 80
   # The image's ENTRYPOINT is ./Docker/entrypoint.sh and its CMD is the

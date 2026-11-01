@@ -195,3 +195,28 @@ func TestEnvOIDCRefusesManifestEnvCollision(t *testing.T) {
 		t.Fatalf("error %v", err)
 	}
 }
+
+func TestServicePublisherValidation(t *testing.T) {
+	endpoints := map[string]bool{}
+	cases := []struct {
+		name string
+		svc  Service
+		ok   bool
+	}{
+		{"none", Service{Name: "a", Image: "x/y:1"}, true},
+		{"upstream", Service{Name: "a", Image: "x/y:1", Publisher: PublisherUpstream}, true},
+		{"linuxserver", Service{Name: "a", Image: "lscr.io/linuxserver/y:1", Publisher: PublisherLinuxServer}, true},
+		{"community without justification", Service{Name: "a", Image: "x/y:1", Publisher: PublisherCommunity}, false},
+		{"community short justification", Service{Name: "a", Image: "x/y:1", Publisher: PublisherCommunity, Justification: "trust me"}, false},
+		{"community justified", Service{Name: "a", Image: "x/y:1", Publisher: PublisherCommunity, Justification: "Single maintainer, public Dockerfile, amd64 and arm64."}, true},
+		{"justification on upstream", Service{Name: "a", Image: "x/y:1", Publisher: PublisherUpstream, Justification: "Single maintainer, public Dockerfile, amd64 and arm64."}, false},
+		{"unknown publisher", Service{Name: "a", Image: "x/y:1", Publisher: "shady"}, false},
+		{"latest still refused", Service{Name: "a", Image: "x/y:latest", Publisher: PublisherUpstream}, false},
+	}
+	for _, tc := range cases {
+		err := tc.svc.Validate(endpoints)
+		if (err == nil) != tc.ok {
+			t.Errorf("%s: ok=%v err=%v", tc.name, tc.ok, err)
+		}
+	}
+}

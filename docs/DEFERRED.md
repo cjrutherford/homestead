@@ -1634,3 +1634,8 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S359 Turning sign-in off destroys the managed provider through a `removed` entry; if the owner disabled password sign-in in Memos, Memos refuses that plan and will not start (authentication invariant). The plan warns; an off-time guard is not built.
 - S359 Memos stores the client secret in its own database (`data/memos_prod.db`, backed up with the app) and in the private secret file. The provider is read-only in Memos while managed.
 - S359 Live check on VM 2 pending (see the slice file's "Verify live"). Memos cannot run under a path, so it keeps a name of its own (`memos.<zone>`). Not configured: S3 storage, webhooks, instance access mode, group-based sign-in denial beyond Authentik app groups.
+- S360 Image signature and build-attestation verification at install or update is not built; provenance is checked by hand at slice time (ADR-056 §5) and most publishers, LinuxServer.io included, publish none.
+- S360 Manifests pin tags, not digests (update discovery compares tags, S343). A rebuilt tag is only noticed at review time; digest pinning with drift detection is deferred.
+- S360 Multi-arch, maintenance and source checks are human-verified and recorded in each slice file; no registry automation checks them, and existing packages were not backfilled with digests or platform lists.
+- S360 The publisher is not shown to the owner in `apps show`, the plan or the dashboard; only the manifest and the catalog test carry it.
+- S360 The LinuxServer `FILE__` secret convention versus the ADR-052 secret entrypoint is confirmed per package in S361-S366, not decided here.

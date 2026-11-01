@@ -24,6 +24,7 @@ icon: mdi:piggy-bank-outline
 services:
 - name: actual-budget
   image: docker.io/actualbudget/actual-server:26.10.0
+  publisher: upstream
   exposes: web
   containerport: 5006
   environment:

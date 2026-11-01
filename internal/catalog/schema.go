@@ -21,6 +21,13 @@ var (
 	validServiceName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 )
 
+// Image publishers (S360, ADR-056).
+const (
+	PublisherUpstream    = "upstream"
+	PublisherLinuxServer = "linuxserver"
+	PublisherCommunity   = "community"
+)
+
 // Service is one container an app runs: a compose-safe name, a pinned
 // image (tags required, latest refused — reproducible installs only),
 // and the exposure endpoint key it serves. Internal services (database,
@@ -28,9 +35,19 @@ var (
 // posture to declare. Generation (S153) and recommendations (S154)
 // skip them for serving while still rendering their containers.
 type Service struct {
-	Name    string
-	Image   string
-	Exposes string
+	Name  string
+	Image string
+	// Publisher says who publishes Image (S360, ADR-056): upstream (the
+	// project itself, or a Docker official image of a dependency),
+	// linuxserver (LinuxServer.io, only the packages ADR-056 names) or
+	// community (a single-maintainer image, accepted case by case).
+	// Locally built craft images leave it empty. The curated catalog
+	// test requires it on every pulled service.
+	Publisher string `yaml:"publisher,omitempty"`
+	// Justification records why a community image is accepted. Required
+	// for Publisher community, refused for every other publisher.
+	Justification string `yaml:"justification,omitempty"`
+	Exposes       string
 	// ContainerPort is the app listener inside its container, not a host port.
 	ContainerPort int
 	// Command overrides the image entrypoint command (official
@@ -75,6 +92,18 @@ func (s Service) Validate(endpoints map[string]bool) error {
 	image, tag, found := strings.Cut(s.Image, ":")
 	if !found || image == "" || tag == "" || tag == "latest" {
 		return fmt.Errorf("catalog: image %q must pin a non-latest tag", s.Image)
+	}
+	switch s.Publisher {
+	case "", PublisherUpstream, PublisherLinuxServer:
+		if s.Justification != "" {
+			return fmt.Errorf("catalog: service %q: justification belongs only to community images", s.Name)
+		}
+	case PublisherCommunity:
+		if len(strings.TrimSpace(s.Justification)) < 40 {
+			return fmt.Errorf("catalog: service %q: a community image needs a recorded justification (ADR-056)", s.Name)
+		}
+	default:
+		return fmt.Errorf("catalog: service %q: unknown publisher %q", s.Name, s.Publisher)
 	}
 	for key, value := range s.Environment {
 		if !validEnvKey.MatchString(key) {

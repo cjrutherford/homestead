@@ -27,6 +27,7 @@ icon: mdi:music
 services:
 - name: navidrome
   image: docker.io/navidrome/navidrome:0.64.2
+  publisher: upstream
   exposes: web
   containerport: 4533
   environment:

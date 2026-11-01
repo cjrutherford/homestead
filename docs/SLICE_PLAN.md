@@ -80,7 +80,7 @@ needs the S341 library declaration to name its shared ingest path.
 
 | ID | Slice | Depends on | Scope |
 |----|-------|-----------|-------|
-| S360 | Community-image trust policy (F4) | S279 | Written policy plus ADR-035: trusted publishers, multi-arch requirement, pinned tags, provenance, update source. Gates every LinuxServer.io package. |
+| S360 | Community-image trust policy (F4) | S279 | Written policy plus ADR-056: trusted publishers, multi-arch requirement, pinned tags, provenance, update source; `publisher`/`justification` manifest fields with a catalog test (S360). Gates every LinuxServer.io package. **Done.** |
 
 | ID | Package | Depends on | Notes |
 |----|---------|-----------|-------|
@@ -213,7 +213,7 @@ Every package slice (S345-S351, S353-S366, S368-S381) closes only when:
 |-----|-------|----------|
 | ADR-051 | S341 | Catalog integration metadata is advisory, not actuation. |
 | ADR-052 | S342 | Secret delivery may export a 0600 file into the app environment at start, under supervision. Amends ADR-021. |
-| ADR-035 | S360 | Community image trust: accepted publishers, multi-arch, pinned tags, provenance. |
+| ADR-056 | S360 | Community image trust: accepted publishers, multi-arch, pinned tags, provenance. |
 | Pending | S367 | Decide whether Everything apps use a pinned upstream commit with a Homestead bridge; no fork or vendored SDK is proposed. ADR-036 is already the setup-wizard decision. |
 
 ## 7. Unscheduled — no ID

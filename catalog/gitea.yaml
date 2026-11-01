@@ -21,6 +21,7 @@ icon: mdi:git
 services:
 - name: gitea
   image: docker.io/gitea/gitea:28.2.0
+  publisher: upstream
   exposes: web
   containerport: 3000
   environment:

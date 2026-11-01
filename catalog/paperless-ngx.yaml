@@ -24,6 +24,7 @@ icon: mdi:file-document-multiple
 services:
 - name: webserver
   image: ghcr.io/paperless-ngx/paperless-ngx:3.3.4
+  publisher: upstream
   exposes: web
   containerport: 8000
   # The image declares ENTRYPOINT ["/init"] and no command; the s6
@@ -76,6 +77,7 @@ services:
     gid: 1000
 - name: db
   image: docker.io/library/postgres:18
+  publisher: upstream
   exposes: ""
   environment:
     POSTGRES_USER: paperless
@@ -92,6 +94,7 @@ services:
     gid: 999
 - name: broker
   image: docker.io/valkey/valkey:9-alpine
+  publisher: upstream
   exposes: ""
   # No image VOLUME; /data is the queue directory. The consumer re-reads
   # the consume folder on start, so a lost queue loses no documents.

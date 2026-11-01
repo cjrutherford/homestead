@@ -15,6 +15,7 @@ icon: mdi:cloud
 services:
 - name: nextcloud
   image: nextcloud:35.0.1-apache
+  publisher: upstream
   exposes: web
   # The edge route's local names are trusted domains from the first
   # install (S254, S313): <app>.lan and its mDNS name <app>.local. The

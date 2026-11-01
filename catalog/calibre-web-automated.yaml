@@ -24,6 +24,8 @@ icon: mdi:bookshelf
 services:
 - name: calibre-web-automated
   image: docker.io/crocodilestick/calibre-web-automated:v4.0.8
+  publisher: community
+  justification: Single-maintainer project (github.com/crocodilestick/Calibre-Web-Automated, public Dockerfile, amd64 and arm64 manifests, LinuxServer base image); the only image that ships Calibre-Web Automated, which has no upstream-published image elsewhere. ADR-056, S360.
   exposes: web
   containerport: 8083
   # The image runs s6 as root, creates the `abc` service user from

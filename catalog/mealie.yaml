@@ -20,6 +20,7 @@ icon: mdi:silverware-fork-knife
 services:
 - name: mealie
   image: ghcr.io/mealie-recipes/mealie:v3.29.0
+  publisher: upstream
   exposes: web
   containerport: 9000
   environment:

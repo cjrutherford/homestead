@@ -19,6 +19,7 @@ icon: mdi:notebook-edit-outline
 services:
 - name: memos
   image: docker.io/neosmemo/memos:26.10.0
+  publisher: upstream
   exposes: web
   containerport: 5230
   environment:

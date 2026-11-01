@@ -22,6 +22,7 @@ icon: mdi:shield-key
 services:
 - name: vaultwarden
   image: vaultwarden/server:1.37.4
+  publisher: upstream
   exposes: web
   containerport: 80
   environment:

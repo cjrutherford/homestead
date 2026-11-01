@@ -21,6 +21,7 @@ icon: mdi:monitor-eye
 services:
 - name: uptime-kuma
   image: docker.io/louislam/uptime-kuma:2.5.7
+  publisher: upstream
   exposes: web
   containerport: 3001
   # No environment overrides: the image sets UPTIME_KUMA_IS_CONTAINER and

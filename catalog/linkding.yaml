@@ -21,6 +21,7 @@ icon: mdi:bookmark-multiple
 services:
 - name: linkding
   image: docker.io/sissbruecker/linkding:1.47.0
+  publisher: upstream
   exposes: web
   containerport: 9090
   # The image has no ENTRYPOINT; ./bootstrap.sh is its CMD (runs

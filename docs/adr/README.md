@@ -111,3 +111,4 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-052 | Secret Entrypoint Export and OIDC Client Actuation | Accepted |
 | ADR-054 | Explicit app access decisions during installation | Accepted |
 | ADR-055 | Authentik forward-auth for Navidrome and Uptime Kuma | Accepted |
+| ADR-056 | Community container image trust policy | Accepted |

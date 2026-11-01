@@ -22,6 +22,7 @@ icon: mdi:checkbox-marked-circle-outline
 services:
 - name: vikunja
   image: docker.io/vikunja/vikunja:2.7.1
+  publisher: upstream
   exposes: web
   containerport: 3456
   environment:

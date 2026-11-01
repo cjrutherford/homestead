@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"homestead/internal/craft"
 	"homestead/internal/identity"
 	"homestead/internal/storage"
 )
@@ -1343,4 +1344,57 @@ func mapValues(m map[string]string) []string {
 		out = append(out, v)
 	}
 	return out
+}
+
+// linuxServerPackages are the only packages ADR-056 lets run a
+// LinuxServer.io image.
+var linuxServerPackages = map[string]bool{"prowlarr": true, "sonarr": true, "radarr": true, "sabnzbd": true, "bookstack": true}
+
+// TestCuratedImageTrust enforces ADR-056 on the shipped catalog: every
+// pulled image names its publisher, LinuxServer images are limited to the
+// packages the ADR names, community images carry a justification, and
+// craft images (built locally, ADR-028) carry none.
+func TestCuratedImageTrust(t *testing.T) {
+	catalog := repoCatalog(t)
+	for _, name := range catalog.Names() {
+		manifest, err := catalog.Get(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, service := range manifest.Services {
+			where := name + "/" + service.Name
+			if _, _, isCraft := craft.ParseRef(service.Image); isCraft {
+				if service.Publisher != "" {
+					t.Errorf("%s: locally built craft image must not declare a publisher", where)
+				}
+				continue
+			}
+			switch service.Publisher {
+			case PublisherUpstream:
+			case PublisherLinuxServer:
+				if !linuxServerPackages[name] {
+					t.Errorf("%s: LinuxServer.io images are limited to %v (ADR-056)", where, linuxServerPackages)
+				}
+				if !strings.Contains(service.Image, "linuxserver/") {
+					t.Errorf("%s: publisher linuxserver but image %q is not linuxserver/", where, service.Image)
+				}
+			case PublisherCommunity:
+				if service.Justification == "" {
+					t.Errorf("%s: community image without justification", where)
+				}
+			default:
+				t.Errorf("%s: image %q must declare publisher upstream, linuxserver or community (ADR-056)", where, service.Image)
+			}
+			if service.Publisher != PublisherLinuxServer && strings.Contains(service.Image, "linuxserver/") {
+				t.Errorf("%s: a linuxserver/ image must declare publisher linuxserver", where)
+			}
+		}
+	}
+	cwa, err := catalog.Get("calibre-web-automated")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cwa.Services[0].Publisher != PublisherCommunity {
+		t.Errorf("calibre-web-automated must be classified community, got %q", cwa.Services[0].Publisher)
+	}
 }

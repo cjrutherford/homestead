@@ -23,6 +23,7 @@ icon: mdi:book-open-page-variant
 services:
 - name: komga
   image: docker.io/gotson/komga:1.29.1
+  publisher: upstream
   exposes: web
   containerport: 25600
   # The image's ENTRYPOINT (Dockerfile.tpl, 1.29.1) runs java directly in
