@@ -1488,13 +1488,9 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
   restore may need Calibre's database restore to rebuild the library
   catalog, and CWA's ingest settings fall back to defaults. A multi-export
   declaration is deferred.
-- Calibre-Web Automated OIDC client actuation: S356 declares optional
-  OIDC, but the app takes the issuer discovery URL, client id, and secret
-  in its admin panel and stores them in `app.db`; the catalog has no
-  issuer input to build them from. The owner configures the client in
-  Authentik and in the app (redirect `/login/generic/authorized`), and
-  local accounts stay available. Actuating it like the `sso.oidc`
-  packages is deferred.
+- Calibre-Web Automated OIDC client actuation: done in S415 (`env-oidc`
+  with an inline script that writes CWA's own `app.db`; see the S415 lines
+  below).
 - Calibre-Web Automated original-backup growth: `processed_books` under
   `/config` keeps the original of each file CWA processes, so the
   application backup grows with the library. Per-path exclusions inside a
@@ -1590,3 +1586,8 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S414: no Authentik group to Vaultwarden organization mapping; SSO only signs people in, organizations and master passwords stay in Vaultwarden.
 - S409: a Linkding stack from before S349's supervisor (no entrypoint in compose.yaml) is not repaired by the secret wiring; reinstall it.
 - S409: OIDC accounts match existing Linkding users by email; an Authentik person with no email gets a new account rather than the matching one.
+- S415: Calibre-Web Automated sign-in depends on CWA's internal `app.db` schema (`oauthProvider`, `settings`) and on `/app/CWA_RELEASE`. Every CWA package update must re-verify the script first; a pin test (`TestCWASignInPinnedToVerifiedVersion`) fails until it is, and the script refuses another version or a missing column. If CWA gains an environment or file configuration for OAuth, replace the script with it.
+- S415: Calibre-Web Automated stores the redirect host in `app.db`, so an address change (public refresh or move) needs sign-in planned and applied again; Homestead does not re-run the script by itself. The script also assumes `/app/CWA_RELEASE` reads like `v4.0.8`; if it is absent it relies on the column check alone.
+- S415: Calibre-Web Automated's client secret sits in plaintext in `app.db` (application storage and backups); the app has no secret-file form. Group-to-role mapping is only admin (Homestead admin group at each sign-in); non-admin roles stay at CWA's default role.
+- S415: sign-in off clears the generic provider's client id, secret, discovery URL and admin group, and turns login type and group admin management off; it leaves the stored redirect host and button text, which are harmless.
+- S415: the Calibre-Web Automated sign-in script and restart are confirmed against the image's source and a v4.0.8 container's schema, not yet by a full live apply on VM 2 (restart timing, `/app/CWA_RELEASE` content, `groups` claim).

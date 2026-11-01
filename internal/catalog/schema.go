@@ -282,6 +282,12 @@ type EnvOIDC struct {
 	OnApply  []string `yaml:"onapply,omitempty" json:"onapply,omitempty"`
 	OnOff    []string `yaml:"onoff,omitempty" json:"onoff,omitempty"`
 	ExecUser string   `yaml:"execuser,omitempty" json:"execuser,omitempty"`
+	// Restart (S415) restarts the service's container once the OnApply
+	// or OnOff command has succeeded, for apps that read their sign-in
+	// setting only at startup. Needs OnApply and OnOff. An argument may
+	// span lines (an inline script); the plan shows it as a script, not
+	// its text.
+	Restart bool `yaml:"restart,omitempty" json:"restart,omitempty"`
 	// Exclusive (S412) says sign-in replaces the app's own login while
 	// it is on, so plans stop promising a working local login.
 	Exclusive bool `yaml:"exclusive,omitempty" json:"exclusive,omitempty"`
@@ -436,9 +442,12 @@ func (e EnvOIDC) validate(service string, svc Service, secrets []SecretDecl) err
 	if (len(e.OnApply) == 0) != (len(e.OnOff) == 0) {
 		return fmt.Errorf("catalog: env-oidc onapply and onoff come together")
 	}
+	if e.Restart && len(e.OnApply) == 0 {
+		return fmt.Errorf("catalog: env-oidc restart needs onapply and onoff")
+	}
 	for _, argv := range [][]string{e.OnApply, e.OnOff} {
 		for _, arg := range argv {
-			if arg == "" || strings.ContainsAny(arg, "\r\n") || strings.Contains(arg, "{{") {
+			if arg == "" || strings.ContainsAny(arg, "\r\x00") || strings.Contains(arg, "{{") {
 				return fmt.Errorf("catalog: env-oidc in-app command arguments must be non-empty static text without placeholders")
 			}
 		}

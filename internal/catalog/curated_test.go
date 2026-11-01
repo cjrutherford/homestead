@@ -1197,12 +1197,22 @@ func TestCuratedCalibreWebAutomated(t *testing.T) {
 		t.Fatalf("services = %+v", manifest.Services)
 	}
 	service := manifest.Services[0]
-	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 0 {
-		t.Fatalf("calibre-web-automated keeps the image entrypoint and has no secret; secrets = %+v", manifest.Secrets)
+	// S415: the two sign-in secrets are files for the sign-in script, not
+	// exported variables, so the image keeps its own entrypoint.
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 2 {
+		t.Fatalf("calibre-web-automated keeps the image entrypoint; secrets = %+v", manifest.Secrets)
 	}
-	if len(service.Environment) != 2 ||
-		service.Environment["PUID"] != "1000" || service.Environment["PGID"] != "1000" {
-		t.Fatalf("environment = %v, want only PUID/PGID for the abc user", service.Environment)
+	for _, secret := range manifest.Secrets {
+		for _, c := range secret.Consumers {
+			if c.Export {
+				t.Fatalf("secret %q is exported", secret.Name)
+			}
+		}
+	}
+	if len(service.Environment) != 3 ||
+		service.Environment["PUID"] != "1000" || service.Environment["PGID"] != "1000" ||
+		service.Environment["HOMESTEAD_CWA_URL"] != "{{app_url}}" {
+		t.Fatalf("environment = %v, want PUID/PGID for the abc user and the app address", service.Environment)
 	}
 	wantData := []struct {
 		target  string
@@ -1248,8 +1258,9 @@ func TestCuratedCalibreWebAutomated(t *testing.T) {
 		t.Fatalf("endpoint = %+v", endpoint)
 	}
 	if manifest.SSO.Class != SSOOptional || len(manifest.SSO.Protocols) != 1 ||
-		manifest.SSO.Protocols[0] != identity.CapabilityOIDC || manifest.SSO.OIDC != nil {
-		t.Fatalf("sso = %+v, want optional in-app OIDC with no actuated client", manifest.SSO)
+		manifest.SSO.Protocols[0] != identity.CapabilityOIDC || manifest.SSO.OIDC == nil ||
+		manifest.SSO.OIDC.Adapter != AdapterEnvOIDC || !manifest.SSO.OIDC.Env.Restart {
+		t.Fatalf("sso = %+v, want optional OIDC through env-oidc with a restart (S415)", manifest.SSO)
 	}
 	if len(manifest.Integrations) != 2 ||
 		manifest.Integrations[0].Kind != IntegrationIdentity ||

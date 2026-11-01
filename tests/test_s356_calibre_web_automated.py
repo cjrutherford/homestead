@@ -56,7 +56,8 @@ class TestCalibreWebAutomatedContract(unittest.TestCase):
         self.assertIn("target: authentik", self.text)
         self.assertIn("kind: library", self.text)
         self.assertIn("target: nextcloud", self.text)
-        self.assertNotIn("\nsecrets:", self.text)
+        # S415: the sign-in secrets are files for the sign-in script, not exported.
+        self.assertNotIn("export: true", self.text)
 
     def test_no_latest_tag(self):
         self.assertNotIn(":latest", self.text)

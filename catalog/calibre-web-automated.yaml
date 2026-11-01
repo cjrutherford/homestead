@@ -33,6 +33,10 @@ services:
   environment:
     PUID: "1000"
     PGID: "1000"
+    # The app's own address, for the sign-in script (S415): CWA builds its
+    # OAuth redirect from a stored host and finishes sign-in only there.
+    # An address change moves this value and sign-in is re-planned.
+    HOMESTEAD_CWA_URL: "{{app_url}}"
   # Image VOLUMEs: /config, /calibre-library, /cwa-book-ingest (verified
   # from the Docker Hub image config for v4.0.8: root user, 8083/tcp,
   # entrypoint /init, CALIBRE_CONFIG_DIR=/config/.config/calibre). The
@@ -91,10 +95,143 @@ database:
 sso:
   class: optional
   protocols: [oidc]
+  # App sign-in through Authentik (S415). CWA has no environment or
+  # file configuration for OAuth: its generic provider and login type are
+  # rows in its own SQLite settings database, /config/app.db (owner
+  # decision: write them, accepting the dependence on CWA's internal
+  # schema; ADR-052 amendment S415). The values reach the script in a
+  # private secret file (secretfile, env CWA_SIGNIN_FILE, never argv or
+  # Compose); the app's address is HOMESTEAD_CWA_URL. CWA reads the rows
+  # only at startup, so Homestead restarts it after the script (restart).
+  #
+  # RE-VERIFY ON EVERY VERSION BUMP: the inline script below was verified
+  # against CWA 4.0.8 (the oauthProvider and settings tables and columns
+  # it writes, /app/CWA_RELEASE, the startup read in
+  # cps/oauth_bb.py generate_oauth_blueprints). It refuses to run on a
+  # different version or a missing column. The pin test
+  # TestCWASignInPinnedToVerifiedVersion fails when version changes
+  # until the script and that constant are re-verified together.
+  oidc:
+    adapter: env-oidc
+    service: calibre-web-automated
+    env:
+      redirectpaths: ["/login/generic/authorized"]
+      signinpath: /login/generic
+      secret: oidc_client_secret
+      secretfile:
+        secret: cwa_signin
+        template: '{"client_id":"{{client_id}}","client_secret":"{{client_secret}}","metadata_url":"{{issuer}}.well-known/openid-configuration","admin_group":"{{admin_group}}"}'
+      # CWA fetches the discovery document with requests at startup; the
+      # combined bundle keeps its other HTTPS fetches working (S410).
+      trust: REQUESTS_CA_BUNDLE
+      trustbundle: combined
+      # The script runs as the app's own user so app.db keeps its owner.
+      execuser: abc
+      restart: true
+      onapply:
+      - /lsiopy/bin/python
+      - -c
+      - &cwa_signin_script |
+        import json, os, sqlite3, sys
+        VERIFIED = "4.0.8"
+        DB = "/config/app.db"
+        def die(msg):
+            sys.exit("calibre-web-automated sign-in: " + msg + " (CWA's own settings database is edited here; re-verify this script against the app.db schema after any CWA update)")
+        mode = sys.argv[1] if len(sys.argv) > 1 else ""
+        if mode not in ("on", "off"):
+            die("expected the argument on or off")
+        GENERIC = {"on": ["oauth_client_id", "oauth_client_secret", "metadata_url", "scope", "username_mapper", "email_mapper", "oauth_admin_group", "login_button", "active"],
+                   "off": ["oauth_client_id", "oauth_client_secret", "metadata_url", "oauth_admin_group", "active"]}[mode]
+        SETTINGS = {"on": ["config_login_type", "config_oauth_redirect_host", "config_enable_oauth_group_admin_management"],
+                    "off": ["config_login_type", "config_enable_oauth_group_admin_management"]}[mode]
+        if mode == "on":
+            try:
+                with open("/app/CWA_RELEASE") as f:
+                    seen = f.read().strip().lstrip("vV")
+            except OSError:
+                seen = None
+            if seen is not None and seen != VERIFIED:
+                die("this is CWA " + seen + " but the script was verified against " + VERIFIED)
+            try:
+                with open(os.environ["CWA_SIGNIN_FILE"]) as f:
+                    cfg = json.load(f)
+                values = [cfg["client_id"], cfg["client_secret"], cfg["metadata_url"], cfg["admin_group"], os.environ["HOMESTEAD_CWA_URL"]]
+            except (KeyError, OSError, ValueError) as e:
+                die("the sign-in values are missing: " + type(e).__name__)
+            if not all(values):
+                die("a sign-in value is empty")
+        if not os.path.exists(DB):
+            die(DB + " does not exist; open the app once so it creates its database, then apply again")
+        db = sqlite3.connect(DB, timeout=30, isolation_level=None)
+        try:
+            db.execute("PRAGMA busy_timeout=30000")
+            for table, need in (("oauthProvider", GENERIC + ["provider_name"]), ("settings", SETTINGS)):
+                have = [r[1] for r in db.execute("PRAGMA table_info(%s)" % table)]
+                missing = [c for c in need if c not in have]
+                if missing:
+                    die("table %s lacks column(s) %s" % (table, ", ".join(missing)))
+            db.execute("BEGIN IMMEDIATE")
+            if mode == "on":
+                client_id, secret, metadata, admin, url = values
+                g = (client_id, secret, metadata, "openid profile email", "preferred_username", "email", admin, "Authentik", 1)
+                s = (2, url.rstrip("/"), 1)
+            else:
+                g = ("", "", "", "", 0)
+                s = (0, 0)
+            sets = ", ".join("%s=?" % c for c in GENERIC)
+            n = db.execute("UPDATE oauthProvider SET %s WHERE provider_name='generic'" % sets, g).rowcount
+            if n != 1:
+                db.execute("ROLLBACK")
+                die("the generic OAuth provider row was not found; start the app once, then apply again")
+            sets = ", ".join("%s=?" % c for c in SETTINGS)
+            n = db.execute("UPDATE settings SET %s" % sets, s).rowcount
+            if n != 1:
+                db.execute("ROLLBACK")
+                die("expected one settings row, found %d" % n)
+            db.execute("COMMIT")
+        except sqlite3.Error as e:
+            die("database error: %s" % e)
+        finally:
+            db.close()
+        print("calibre-web-automated sign-in " + mode)
+      - "on"
+      onoff:
+      - /lsiopy/bin/python
+      - -c
+      - *cwa_signin_script
+      - "off"
+      warnings:
+      - Calibre-Web Automated keeps its sign-in in its own database, which Homestead edits directly; this is re-checked on every Calibre-Web Automated update and stops with a clear message if the database or the version is not the one it was verified against. Run this after the app has started once.
+      - Sign-in completes only at the address Calibre-Web Automated is set up for (the app's own address, stored in its settings); other addresses for the same app cannot complete sign-in. After the address changes, plan sign-in again.
+      - An Authentik username (preferred_username) equal to an existing Calibre-Web Automated user, including the default admin, signs in to and takes over that account; other people get a new account with the default role at first sign-in.
+      - Members of the app's Homestead admin group become administrators at every sign-in, and everyone else keeps their role. A person whose groups claim is empty is not changed, so an existing administrator stays one.
+      - The client secret is stored in plaintext in the app's database (app.db), on application storage and in backups.
+      - The local login form stays.
+      set:
+        # Markers, not settings the app reads: the script reads the values
+        # from the secret file. They make the stack's wiring change with
+        # sign-in and keep the admin group visible in the plan.
+        CWA_OIDC_ISSUER: "{{issuer}}"
+        CWA_OIDC_ADMIN_GROUP: "{{admin_group}}"
+secrets:
+- name: oidc_client_secret
+  # Authentik's client secret for Calibre-Web Automated; Homestead
+  # generates it and hands it to Authentik. It reaches the app only
+  # inside cwa_signin.
+  immutable: true
+- name: cwa_signin
+  # The sign-in values for the script, rendered at apply time; "{}" is
+  # the empty value while sign-in is off. The file is delivered 0600 and
+  # its path is CWA_SIGNIN_FILE; the value is never exported.
+  initial: "{}"
+  immutable: true
+  consumers:
+  - service: calibre-web-automated
+    env: CWA_SIGNIN_FILE
 integrations:
 - kind: identity
   target: authentik
-  note: Sign in with Authentik once its OIDC client is configured in the app's admin panel (redirect /login/generic/authorized); accounts match by email, and local sign-in stays available.
+  note: People sign in with Authentik from the login page once sign-in is applied on the app's page; the local login form stays.
 - kind: library
   target: nextcloud
   note: Mount the same bulk ingest directory into Calibre-Web Automated and Nextcloud external storage, so books dropped there are converted and filed.

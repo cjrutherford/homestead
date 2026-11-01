@@ -53,7 +53,10 @@ func (a envOIDC) OnSettings(issuer, clientID string) []string {
 		lines = append(lines, fmt.Sprintf("The app's provider setting contains the client secret, so Homestead writes it as the app's generated secret %q (a private file handed to the app, never in the stack's environment); sign-in off restores its empty value.", f.Secret))
 	}
 	if len(a.cfg.OnApply) > 0 {
-		lines = append(lines, fmt.Sprintf("After the app restarts, this command runs inside it: %s.", strings.Join(a.cfg.OnApply, " ")))
+		lines = append(lines, fmt.Sprintf("After the app restarts, this command runs inside it: %s.", describeArgv(a.cfg.OnApply)))
+	}
+	if a.cfg.Restart {
+		lines = append(lines, "The app is restarted afterwards, because it reads its sign-in setting only at startup.")
 	}
 	return lines
 }
@@ -61,7 +64,10 @@ func (a envOIDC) OnSettings(issuer, clientID string) []string {
 func (a envOIDC) OffSettings() []string {
 	lines := []string{fmt.Sprintf("Environment taken out of the app's override file: %s.", strings.Join(a.keys(), ", "))}
 	if len(a.cfg.OnOff) > 0 {
-		lines = append([]string{fmt.Sprintf("First, this command runs inside the app: %s.", strings.Join(a.cfg.OnOff, " "))}, lines...)
+		lines = append([]string{fmt.Sprintf("First, this command runs inside the app: %s.", describeArgv(a.cfg.OnOff))}, lines...)
+	}
+	if a.cfg.Restart {
+		lines = append(lines, "The app is restarted afterwards.")
 	}
 	return lines
 }
@@ -188,6 +194,12 @@ func (a envOIDC) run(ctx context.Context, t Target, argv []string) error {
 	var err error
 	for i := 0; i < readyTries; i++ {
 		if _, err = execIn(ctx, t.Container, a.cfg.ExecUser, "", argv...); err == nil {
+			if a.cfg.Restart {
+				// S415: the app reads the setting only at startup.
+				if rerr := restart(ctx, t.Container); rerr != nil {
+					return fmt.Errorf("appsso: the in-app command succeeded but restarting %s failed: %w", t.Container, rerr)
+				}
+			}
 			return nil
 		}
 		if i < readyTries-1 {
@@ -197,7 +209,21 @@ func (a envOIDC) run(ctx context.Context, t Target, argv []string) error {
 		}
 	}
 	return fmt.Errorf("appsso: the in-app command %q failed in %s (finish the app's own setup first if it has not been done; the manual fallback is in its slice notes): %w",
-		strings.Join(argv, " "), t.Container, err)
+		describeArgv(argv), t.Container, err)
+}
+
+// describeArgv is a command for the plan and for errors: an inline
+// script argument (one with line breaks) is shown as "<n-line script>",
+// so the plan stays readable and prints only the command's shape.
+func describeArgv(argv []string) string {
+	out := make([]string, len(argv))
+	for i, a := range argv {
+		if strings.Contains(a, "\n") {
+			a = fmt.Sprintf("<%d-line script>", strings.Count(strings.TrimRight(a, "\n"), "\n")+1)
+		}
+		out[i] = a
+	}
+	return strings.Join(out, " ")
 }
 
 // Exclusive reports that sign-in replaces the app's own login (S412).

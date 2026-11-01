@@ -204,3 +204,27 @@ Homestead renders:
   nothing else in the environment needs a restart (DEFERRED).
 - Paperless keeps its local login form (`PAPERLESS_DISABLE_REGULAR_LOGIN` is
   never set), so the break-glass rule holds.
+
+### Amendment (2026-10-31, S415): writing an app's own settings database
+Calibre-Web Automated keeps its OAuth provider and login type only in rows of
+its SQLite settings database (`/config/app.db`, tables `oauthProvider` and
+`settings`); it has no environment, file or CLI configuration for them, and
+reads them once at startup. The owner decided to write that database rather
+than leave the app unconfigured. The rule that follows:
+
+- An app's own settings database may be written only when the app has no
+  other configuration path, from a declared `onapply`/`onoff` script that
+  runs inside the app as its own user, updates named columns (never a
+  positional insert), in one transaction with a busy timeout.
+- The script carries a version guard (the app's own version marker) and a
+  schema guard (every column it writes exists) and fails with a message that
+  says to re-verify. The package version is pinned to the verified one by a
+  Go test, so a version bump cannot land without re-verification.
+- Values reach the script through a derived secret file (S413) and the
+  service environment; none is in argv, Compose, the override file or logs.
+  The client secret ends up in the app's database, which the plan says.
+- `env.restart: true` restarts the service's container after the on or off
+  command, for apps that read their settings only at startup. Arguments may
+  span lines; the plan shows an inline script as `<n-line script>`.
+- The app's local login stays (break-glass rule). Details:
+  `docs/slices/S415-calibre-web-automated-authentik.md`.
