@@ -50,6 +50,7 @@ var knownImageVolumes = map[string]imageVolumes{
 	"docker.io/library/postgres:18":    {Volumes: []string{"/var/lib/postgresql"}},
 	"docker.io/valkey/valkey:9-alpine": {},
 	"docker.io/gitea/gitea:28.2.0":     {Volumes: []string{"/data"}},
+	"docker.io/vikunja/vikunja:2.7.1":  {}, // FROM scratch, no VOLUME; /db and files are declared data
 	// S348: the Debian FreshRSS image declares no VOLUME; both writable
 	// directories are Homestead declarations.
 	"docker.io/freshrss/freshrss:1.30.4": {},

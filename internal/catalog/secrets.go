@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -50,6 +51,12 @@ type SecretConsumer struct {
 	Env     string
 	URI     bool
 	Export  bool
+	// Path (S357) mounts the secret file at this absolute container path
+	// instead of handing the app a variable holding its path: for apps
+	// that read a configuration file they find by name (Vikunja's
+	// /etc/vikunja/config.yml) and have no *_FILE form for it. Exclusive
+	// with Env; the mount is read-only, owned like any secret file.
+	Path string
 }
 
 // SecretDecl declares one secret-backed variable. Name is the logical
@@ -89,6 +96,35 @@ func secretKey(service, name string) string {
 }
 
 func secretContainerPath(key string) string { return "/run/secrets/" + key }
+
+// composeSecretRef is one service secret reference: the bare key, which
+// mounts at /run/secrets/<key>, or with a target the long form mounting
+// the file at that path (S357).
+type composeSecretRef struct {
+	Key    string
+	Target string
+}
+
+func (r composeSecretRef) MarshalYAML() (any, error) {
+	if r.Target == "" {
+		return r.Key, nil
+	}
+	return map[string]string{"source": r.Key, "target": r.Target}, nil
+}
+
+func (r composeSecretRef) node() *yaml.Node {
+	if r.Target == "" {
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: r.Key}
+	}
+	m := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	setScalar(m, "source", r.Key)
+	setScalar(m, "target", r.Target)
+	return m
+}
+
+func (c SecretConsumer) ref(key string) composeSecretRef {
+	return composeSecretRef{Key: key, Target: c.Path}
+}
 
 func (c SecretConsumer) value(key string) string {
 	if c.URI {
@@ -130,6 +166,21 @@ func validateSecrets(m Manifest, services map[string]bool) error {
 		for _, c := range decl.Consumers {
 			if !services[c.Service] {
 				return fmt.Errorf("catalog: secret %q consumer service %q unknown", decl.Name, c.Service)
+			}
+			if c.Path != "" {
+				if c.Env != "" || c.URI || c.Export {
+					return fmt.Errorf("catalog: secret %q consumer path excludes env, uri and export", decl.Name)
+				}
+				if clean := path.Clean(c.Path); clean != c.Path || !strings.HasPrefix(c.Path, "/") || c.Path == "/" ||
+					strings.HasPrefix(c.Path, "/run/secrets/") || strings.ContainsAny(c.Path, " :,\t\r\n") {
+					return fmt.Errorf("catalog: secret %q consumer path %q must be a clean absolute path outside /run/secrets", decl.Name, c.Path)
+				}
+				id := c.Service + "\x00" + c.Path
+				if envs[id] {
+					return fmt.Errorf("catalog: service %q path %q wired twice", c.Service, c.Path)
+				}
+				envs[id] = true
+				continue
 			}
 			if !validEnvKey.MatchString(c.Env) {
 				return fmt.Errorf("catalog: secret %q consumer variable %q invalid", decl.Name, c.Env)

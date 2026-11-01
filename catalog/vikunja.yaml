@@ -1,0 +1,138 @@
+# Vikunja household task lists (S357): a Wave 2 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# One container (the single vikunja/vikunja image, API and web UI together)
+# with SQLite and uploaded files on application storage. The image is built
+# FROM scratch (no shell), so nothing here uses the secret supervisor.
+#
+# Configuration is environment variables (VIKUNJA_<SECTION>_<KEY>), which
+# Vikunja merges over its config file. The JWT signing secret is read from a
+# file (VIKUNJA_SERVICE_SECRET_FILE). Authentik sign-in (below) needs the one
+# thing Vikunja only reads from a config file: the OpenID provider list.
+name: vikunja
+version: 2.7.1
+title: Vikunja
+blurb: Shared to-do lists and projects for the household.
+description: Vikunja keeps household to-do lists, projects, labels and due
+  dates, with list, board and calendar views. Tasks sync to phones and
+  desktop calendars through CalDAV. It runs as one container with SQLite
+  and uploaded files on application storage, so there is no database server
+  to maintain. Register the first account from the sign-in page.
+category: productivity
+icon: mdi:checkbox-marked-circle-outline
+services:
+- name: vikunja
+  image: docker.io/vikunja/vikunja:2.7.1
+  exposes: web
+  containerport: 3456
+  environment:
+    # The app's own address (the public name once published). Vikunja
+    # builds its sign-in callback, links and CORS origin from it; it must
+    # end in a slash and carries no path (Vikunja cannot run under one,
+    # so the package is served on a name of its own).
+    VIKUNJA_SERVICE_PUBLICURL: "{{app_url}}/"
+    VIKUNJA_SERVICE_ENABLECALDAV: "true"
+    VIKUNJA_DATABASE_TYPE: sqlite
+    VIKUNJA_DATABASE_PATH: /db/vikunja.db
+    VIKUNJA_FILES_BASEPATH: /app/vikunja/files
+  # The image runs as uid 1000 and declares no VOLUME; /db and the files
+  # directory are the only paths it writes besides /tmp (baked into the
+  # image, mode 1777).
+  data:
+  - target: /db
+    class: application
+    subpath: db
+    uid: 1000
+    gid: 1000
+  - target: /app/vikunja/files
+    class: application
+    subpath: files
+    uid: 1000
+    gid: 1000
+requirements:
+  memorymb: 256
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 1073741824
+  # Vikunja listens on 3456; routes proxy to it and no host port is
+  # published by default.
+exposure:
+  package: vikunja
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Tasks and attachments leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- db
+- files
+database:
+  service: vikunja
+  kind: sqlite
+  path: db/vikunja.db
+sso:
+  class: optional
+  protocols: [oidc]
+  # Sign-in (S357). Vikunja's OpenID provider list takes only a config
+  # file: environment variables are accepted only for fields of a provider
+  # the file already names, and *_FILE is not honoured for them. The
+  # client secret therefore cannot stay out of the file, and the file
+  # cannot be put in Compose or argv. Homestead renders the file at apply
+  # time (secretfile) into a private 0600 secret and mounts it read-only at
+  # /etc/vikunja/config.yml, one of the places Vikunja looks (the consumer's
+  # path: below; ADR-052 amendment S357). JSON is YAML, which Vikunja's
+  # loader reads. Before sign-in is on the file is "{}". VIKUNJA_AUTH_
+  # OPENID_ENABLED switches the feature, and the plain environment keeps
+  # Vikunja's local login (auth.local.enabled is left at its default).
+  #
+  # The provider key (authentik) fixes the callback:
+  # <publicurl>/auth/openid/authentik. The authurl is the issuer, which
+  # Vikunja discovers endpoints from and compares to the token's iss.
+  oidc:
+    adapter: env-oidc
+    service: vikunja
+    env:
+      redirectpaths: ["/auth/openid/authentik"]
+      signinpath: /login
+      secret: oidc_client_secret
+      secretfile:
+        secret: oidc_config
+        template: '{"auth":{"openid":{"providers":{"authentik":{"name":"Authentik","authurl":"{{issuer}}","clientid":"{{client_id}}","clientsecret":"{{client_secret}}","scope":"openid profile email"}}}}}'
+      # Go reads SSL_CERT_FILE as its whole trust store; the combined
+      # bundle keeps public HTTPS fetches working (S410).
+      trust: SSL_CERT_FILE
+      trustbundle: combined
+      warnings:
+      - "Vikunja has no administrator role and takes no role from Authentik: every person who signs in gets an ordinary account, named from their Authentik username. Who may sign in is decided by the app's Authentik groups. Vikunja's own login form and registration stay open, and an existing Vikunja account is not linked to Authentik by name or email."
+      - "Team membership from Authentik groups needs an extra Authentik scope mapping (vikunja_scope) that Homestead does not create; it is not wired."
+      - The client secret is stored in plaintext in a private file next to the app's other secrets, so it is part of encrypted backups of Homestead's secrets, never of the app's data.
+      set:
+        VIKUNJA_AUTH_OPENID_ENABLED: "true"
+secrets:
+- name: jwt_secret
+  # Signs session tokens; rotating it signs everyone out.
+  immutable: true
+  consumers:
+  - service: vikunja
+    env: VIKUNJA_SERVICE_SECRET_FILE
+# Sign-in (S357). The client secret has no consumer of its own: it reaches
+# Vikunja only inside oidc_config, the rendered configuration file.
+- name: oidc_client_secret
+  immutable: true
+- name: oidc_config
+  # "{}" is an empty configuration; sign-in on replaces it with the
+  # rendered provider list, off restores it.
+  initial: "{}"
+  immutable: true
+  consumers:
+  - service: vikunja
+    path: /etc/vikunja/config.yml
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in through Authentik from the Vikunja login page; the local login form stays available.
+- kind: handoff
+  target: nextcloud
+  note: Vikunja serves its own CalDAV endpoint, so a calendar app or Nextcloud's Calendar can subscribe to task lists. Homestead does not wire this; add the account in the calendar app.

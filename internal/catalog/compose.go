@@ -231,11 +231,11 @@ type composeService struct {
 	Command    []string `yaml:"command,omitempty"`
 	// Environment carries plain manifest variables and the in-container
 	// PATHS of secret files; never a secret value (ADR-021).
-	Environment map[string]string `yaml:"environment,omitempty"`
-	Secrets     []string          `yaml:"secrets,omitempty"`
-	Ports       []string          `yaml:"ports,omitempty"`
-	Volumes     []composeVolume   `yaml:"volumes,omitempty"`
-	Networks    []string          `yaml:"networks,omitempty"`
+	Environment map[string]string  `yaml:"environment,omitempty"`
+	Secrets     []composeSecretRef `yaml:"secrets,omitempty"`
+	Ports       []string           `yaml:"ports,omitempty"`
+	Volumes     []composeVolume    `yaml:"volumes,omitempty"`
+	Networks    []string           `yaml:"networks,omitempty"`
 }
 
 // composeNetwork renders one top-level network: external Homestead
@@ -422,7 +422,7 @@ func serviceEntrypoint(manifest Manifest, service string) []string {
 
 // serviceSecretWiring renders one service's environment (plain manifest
 // variables plus secret file paths) and its secret references.
-func serviceSecretWiring(manifest Manifest, service string) (map[string]string, []string) {
+func serviceSecretWiring(manifest Manifest, service string) (map[string]string, []composeSecretRef) {
 	env := map[string]string{}
 	for _, svc := range manifest.Services {
 		if svc.Name == service {
@@ -431,7 +431,7 @@ func serviceSecretWiring(manifest Manifest, service string) (map[string]string, 
 			}
 		}
 	}
-	var secrets []string
+	var secrets []composeSecretRef
 	seen := map[string]bool{}
 	for _, decl := range manifest.Secrets {
 		for _, c := range decl.Consumers {
@@ -439,14 +439,16 @@ func serviceSecretWiring(manifest Manifest, service string) (map[string]string, 
 				continue
 			}
 			key := secretKey(service, decl.Name)
-			env[c.Env] = c.value(key)
+			if c.Path == "" {
+				env[c.Env] = c.value(key)
+			}
 			if !seen[key] {
 				seen[key] = true
-				secrets = append(secrets, key)
+				secrets = append(secrets, c.ref(key))
 			}
 		}
 	}
-	sort.Strings(secrets)
+	sort.Slice(secrets, func(i, j int) bool { return secrets[i].Key < secrets[j].Key })
 	if len(env) == 0 {
 		env = nil
 	}

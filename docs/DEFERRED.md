@@ -1619,3 +1619,9 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S419 ADR-054 install review does not yet show Kuma's admin-only gate.
 - S419 Live check on VM 2 pending (see the slice file's "Verify live").
 - S419 Apply reports success a few seconds before the embedded outpost has loaded a new provider; the gate answers 404 (fail closed) until then. The apply could wait for /outpost.goauthentik.io/auth/caddy to redirect for the host.
+- S357 Vikunja team membership from Authentik groups (the `vikunja_scope` mapping and `vikunja_groups` claim) is not wired; Vikunja has no administrator role to map, so every person signs in as an ordinary user.
+- S357 CalDAV against Nextcloud is not wired: Vikunja serves its own CalDAV and the owner adds it in the calendar app. A guided hand-off is not built.
+- S357 Sign-in is not exclusive: Vikunja's local login and open registration stay on (`auth.local.enabled`, `service.enableregistration` untouched); an exclusive mode is not offered.
+- S357 Vikunja's OpenID provider cannot be a `*_FILE` or environment value, so the client secret lives in a rendered config file in the secret store (backed up with Homestead's secrets); a Vikunja update must re-verify the file shape (pin test).
+- S357 Live check on VM 2 pending (see the slice file's "Verify live").
+- S357 Vikunja cannot run under a path, so it keeps a name of its own (`vikunja.<zone>`), like Immich; Mailer, reminders by email and migration importers are not configured.

@@ -290,3 +290,18 @@ differences:
   adds for admins and for everyone else. Existing accounts are never matched
   (`MatchExistingBy` null). Local login and the recovery administrator stay.
   Details: `docs/slices/S417-audiobookshelf-authentik.md`.
+
+### Amendment (2026-11-01, S357): a secret mounted as a configuration file
+Vikunja (a `FROM scratch` image, so no supervisor) reads its OpenID provider
+list only from a config file; the provider's fields accept neither `*_FILE`
+nor, without the file, environment values. A secret consumer may therefore
+declare `path:` (an absolute, clean container path outside `/run/secrets`)
+instead of `env:`. The generator renders the long Compose form
+(`source: <key>`, `target: <path>`), so Docker bind-mounts the 0600 secret
+file read-only at that path; `env`, `uri` and `export` are excluded, and
+existing stacks are patched the same way as for an `env` consumer
+(`WireDeclaredSecret`). With the S413 `secretfile` the file's content is the
+rendered, JSON-escaped configuration (JSON is YAML), `{}` while sign-in is
+off. Nothing about custody changes: the value is in the secret store and the
+0600 file, not in Compose, the override, argv or the environment. Details:
+`docs/slices/S357-vikunja.md`.

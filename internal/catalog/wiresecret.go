@@ -204,13 +204,13 @@ func secretWiringPatch(dir string, m Manifest, name string) ([]byte, bool, error
 		}
 		found := false
 		for _, r := range refs.Content {
-			found = found || r.Value == key
+			found = found || r.Value == key || secretRefSource(r) == key
 		}
 		if !found {
-			refs.Content = append(refs.Content, scalar(key))
+			refs.Content = append(refs.Content, c.ref(key).node())
 			changed = true
 		}
-		if setScalar(ensureMap(svc, "environment"), c.Env, c.value(key)) {
+		if c.Path == "" && setScalar(ensureMap(svc, "environment"), c.Env, c.value(key)) {
 			changed = true
 		}
 		if c.Export && superviseService(svc, m, c.Service) {
@@ -230,4 +230,16 @@ func secretWiringPatch(dir string, m Manifest, name string) ([]byte, bool, error
 		return nil, false, err
 	}
 	return out.Bytes(), true, nil
+}
+
+// secretRefSource is the source key of a long-form service secret
+// reference (S357), or "" for any other node.
+func secretRefSource(n *yaml.Node) string {
+	if n.Kind != yaml.MappingNode {
+		return ""
+	}
+	if v := mapKey(n, "source"); v != nil {
+		return v.Value
+	}
+	return ""
 }
