@@ -286,7 +286,9 @@ type EnvOIDC struct {
 	// or OnOff command has succeeded, for apps that read their sign-in
 	// setting only at startup. Needs OnApply and OnOff. An argument may
 	// span lines (an inline script); the plan shows it as a script, not
-	// its text.
+	// its text. The script may be Python (S415) or an `sh -c` script
+	// driving an image's sqlite3 shell (S416, Gitea): either way the
+	// secret reaches it only through the secretfile, never as an argument.
 	Restart bool `yaml:"restart,omitempty" json:"restart,omitempty"`
 	// Exclusive (S412) says sign-in replaces the app's own login while
 	// it is on, so plans stop promising a working local login.

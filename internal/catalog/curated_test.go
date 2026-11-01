@@ -476,9 +476,9 @@ func TestCuratedGitea(t *testing.T) {
 			t.Fatalf("%s = %q, want %q", key, got, want)
 		}
 	}
-	if root := service.Environment["GITEA__server__ROOT_URL"]; !strings.HasPrefix(root, "https://") ||
-		!strings.Contains(root, RouteHostToken) || !strings.HasSuffix(root, "/") {
-		t.Fatalf("ROOT_URL = %q, want the routed HTTPS host with a trailing slash", root)
+	// S416: the app address, so Gitea's OAuth callback follows the public name.
+	if root := service.Environment["GITEA__server__ROOT_URL"]; root != AppURLToken+"/" {
+		t.Fatalf("ROOT_URL = %q, want the app address with a trailing slash", root)
 	}
 	if service.Environment["GITEA__service__DISABLE_REGISTRATION"] != "false" {
 		t.Fatal("registration must stay open until the owner creates the first account")
@@ -488,8 +488,19 @@ func TestCuratedGitea(t *testing.T) {
 		service.Data[0].UID == nil || *service.Data[0].UID != 1000 {
 		t.Fatalf("data = %+v", service.Data)
 	}
-	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 0 {
-		t.Fatalf("gitea generates its keys into the data volume; secrets = %+v", manifest.Secrets)
+	// Gitea generates its keys into the data volume; the only secrets are
+	// the Authentik client secret and the sign-in file's values (S416).
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 2 || manifest.Secrets[0].Name != "oidc_client_secret" ||
+		manifest.Secrets[1].Name != "gitea_signin" || manifest.Secrets[1].Initial != "{}" || len(manifest.Secrets[1].Consumers) != 1 ||
+		manifest.Secrets[1].Consumers[0].Env != "GITEA_SIGNIN_FILE" {
+		t.Fatalf("secrets = %+v", manifest.Secrets)
+	}
+	oidc := manifest.SSO.OIDC
+	if oidc == nil || oidc.Adapter != "env-oidc" || oidc.Env == nil || !oidc.Env.Restart || oidc.Env.ExecUser != "git" ||
+		oidc.Env.Trust != "SSL_CERT_FILE" || oidc.Env.TrustBundle != TrustBundleCombined ||
+		oidc.Env.SignInPath != "/user/oauth2/authentik" || len(oidc.Env.RedirectPaths) != 1 || oidc.Env.RedirectPaths[0] != "/user/oauth2/authentik/callback" ||
+		oidc.Env.Set["GITEA__oauth2_client__ACCOUNT_LINKING"] != "login" || oidc.Env.Set["GITEA__oauth2_client__USERNAME"] != "preferred_username" {
+		t.Fatalf("sso oidc = %+v", oidc)
 	}
 	if manifest.Database == nil || manifest.Database.Kind != DatabaseSQLite ||
 		manifest.Database.Path != "data/gitea/gitea.db" || manifest.Database.Service != "gitea" {

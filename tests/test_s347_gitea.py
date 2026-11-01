@@ -26,9 +26,10 @@ class TestGiteaContract(unittest.TestCase):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, self.text)
 
-    def test_root_url_follows_the_route(self):
-        self.assertIn('GITEA__server__ROOT_URL: "https://{{route_host}}/"',
-                      self.text)
+    def test_root_url_follows_the_app_address(self):
+        # S416: the public name once published; Gitea builds its OAuth
+        # callback from it.
+        self.assertIn('GITEA__server__ROOT_URL: "{{app_url}}/"', self.text)
 
     def test_https_only_without_ssh(self):
         for symbol in ('GITEA__server__DISABLE_SSH: "true"',
@@ -48,10 +49,15 @@ class TestGiteaContract(unittest.TestCase):
         self.assertIn("target: /data", self.text)
         self.assertIn("backuppaths:", self.text)
 
-    def test_no_declared_secrets_or_entrypoint_override(self):
+    def test_only_the_sign_in_secrets_and_no_entrypoint_override(self):
         # Gitea generates its signing keys and internal token into the
-        # data volume; nothing needs the S342 supervisor.
-        self.assertNotIn("\nsecrets:", self.text)
+        # data volume; the only secrets are the Authentik client secret
+        # and the sign-in file's values (S416). Nothing needs the S342
+        # supervisor.
+        self.assertIn("- name: oidc_client_secret", self.text)
+        self.assertIn("- name: gitea_signin", self.text)
+        secrets = self.text.split("\nsecrets:\n")[1].split("\nintegrations:")[0]
+        self.assertEqual(secrets.count("\n- name:") + 1, 2)
         self.assertNotIn("entrypoint:", self.text)
 
     def test_no_latest_tag(self):

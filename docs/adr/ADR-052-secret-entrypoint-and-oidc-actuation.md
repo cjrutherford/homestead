@@ -228,3 +228,31 @@ than leave the app unconfigured. The rule that follows:
   span lines; the plan shows an inline script as `<n-line script>`.
 - The app's local login stays (break-glass rule). Details:
   `docs/slices/S415-calibre-web-automated-authentik.md`.
+
+### Amendment (2026-10-31, S416): the same rule for Gitea, with the image's sqlite3 shell
+Gitea's only supported way to add an OAuth login source with a secret is
+`gitea admin auth add-oauth --secret`, which puts the secret in argv (S391
+found no other supported path and forbade direct database writes). The owner
+decided to write Gitea's own database instead; S416 supersedes that S391
+constraint. The S415 rule holds, with these differences:
+
+- The image has `/usr/bin/sqlite3` and no Python, so the `onapply`/`onoff`
+  script is an `sh -c` script (`execuser: git`) that drives the sqlite3 shell.
+  No new engine mechanism: the sqlite3 function `readfile()` takes the client
+  id, secret, discovery URL and admin group straight from the secretfile
+  (`GITEA_SIGNIN_FILE`), so the secret is never an argument, never expanded by
+  the shell, and never printed. The SQL itself carries no secret.
+- The script writes only the row named `authentik` (type 6), in one
+  `BEGIN IMMEDIATE` transaction with a 30 s busy timeout, and is idempotent
+  (update in place, insert when absent). A row of that name whose
+  `ClientID` is not `homestead-gitea` is foreign: `on` refuses, `off` leaves it
+  alone. Off deactivates the row (`is_active=0`) and clears `ClientSecret`; it
+  never deletes it, so accounts linked through `external_login_user` survive.
+- The guards are `gitea --version` (must equal the verified version) and
+  `PRAGMA table_info` for all nine `login_source` columns, with the same
+  "re-verify" message. `TestGiteaSignInPinnedToVerifiedVersion` pins the package.
+- Gitea registers OAuth providers only at startup, so `restart: true`. Gitea
+  logs, but survives, a discovery URL that is unreachable at startup.
+- Local login and local registration stay; denying a person (`none`) and closing
+  registration are not enforced (DEFERRED). Details:
+  `docs/slices/S416-gitea-authentik.md`.

@@ -4,7 +4,9 @@
 # environment-to-ini variables so the installer page never runs and no
 # file inside the container is edited. Gitea generates its signing keys
 # and internal token into /data/gitea/conf/app.ini on first start; they
-# live on the backed-up data volume, so no secret is declared.
+# live on the backed-up data volume, so no secret is declared for the
+# app itself; the two secrets at the end exist only for Authentik
+# sign-in (S416).
 name: gitea
 version: 28.2.0
 title: Gitea
@@ -22,9 +24,11 @@ services:
   exposes: web
   containerport: 3000
   environment:
-    # The route host, never a hard-coded name; omitted when no route is
-    # assigned, which leaves Gitea's local default in place.
-    GITEA__server__ROOT_URL: "https://{{route_host}}/"
+    # The app's own address, never a hard-coded name; omitted when no
+    # route is assigned, which leaves Gitea's local default in place. The
+    # public name once the app is published (S407, as Vaultwarden's
+    # DOMAIN). Gitea builds its OAuth callback from it (S416).
+    GITEA__server__ROOT_URL: "{{app_url}}/"
     # TLS terminates at the proxy, so Gitea speaks plain HTTP inside the
     # stack and builds absolute URLs from the HTTPS root above.
     GITEA__server__PROTOCOL: http
@@ -78,7 +82,132 @@ database:
 sso:
   class: optional
   protocols: [oidc]
+  # App sign-in through Authentik (S416). Gitea's only supported way to
+  # add an OAuth login source with a secret is `gitea admin auth add-oauth
+  # --secret`, which puts the secret in argv, so the source is written to
+  # Gitea's own database instead (owner decision: write it, accepting the
+  # dependence on Gitea's internal schema; ADR-052 amendment S416, which
+  # supersedes S391's "no direct writes"). The values reach the script in
+  # a private secret file (secretfile, env GITEA_SIGNIN_FILE, never argv or
+  # Compose). The image has no Python but has /usr/bin/sqlite3, whose
+  # readfile() takes the values straight from that file, so nothing secret
+  # is ever an argument. Gitea registers its OAuth providers only at
+  # startup, so Homestead restarts it after the script (restart).
+  #
+  # RE-VERIFY ON EVERY VERSION BUMP: the inline script below was verified
+  # against Gitea 28.2.0 (the login_source columns, type 6 = OAuth2, the
+  # oauth2.Source JSON in models/auth and services/auth/source/oauth2,
+  # `gitea --version`). It refuses to run on a different version or a
+  # missing column. The pin test TestGiteaSignInPinnedToVerifiedVersion
+  # fails when version changes until the script and that constant are
+  # re-verified together.
+  oidc:
+    adapter: env-oidc
+    service: gitea
+    env:
+      redirectpaths: ["/user/oauth2/authentik/callback"]
+      signinpath: /user/oauth2/authentik
+      secret: oidc_client_secret
+      secretfile:
+        secret: gitea_signin
+        template: '{"client_id":"{{client_id}}","client_secret":"{{client_secret}}","metadata_url":"{{issuer}}.well-known/openid-configuration","admin_group":"{{admin_group}}"}'
+      # Go reads SSL_CERT_FILE as its whole trust store; the combined
+      # bundle keeps public HTTPS fetches working (S410).
+      trust: SSL_CERT_FILE
+      trustbundle: combined
+      # The script runs as the app's own user (uid 1000) so gitea.db and
+      # its journal keep their owner.
+      execuser: git
+      restart: true
+      onapply:
+      - sh
+      - -c
+      - &gitea_signin_script |
+        set -eu
+        VERIFIED=28.2.0
+        DB=/data/gitea/gitea.db
+        NAME=authentik
+        CLIENT=homestead-gitea
+        die() { echo "gitea sign-in: $1 (Gitea's own database is edited here; re-verify this script against the login_source schema after any Gitea update)" >&2; exit 1; }
+        MODE="${1:-}"
+        case "$MODE" in on|off) ;; *) die "expected the argument on or off" ;; esac
+        [ -f "$DB" ] || die "$DB does not exist; open Gitea once so it creates its database, then apply again"
+        q() { sqlite3 -bail -cmd '.timeout 30000' "$DB" "$1"; }
+        F=
+        if [ "$MODE" = on ]; then
+          seen=$(gitea --version 2>/dev/null | sed -n 's/^[Gg]itea version \([0-9][0-9.]*\).*/\1/p')
+          [ -n "$seen" ] || die "cannot read the Gitea version"
+          [ "$seen" = "$VERIFIED" ] || die "this is Gitea $seen but the script was verified against $VERIFIED"
+          F="${GITEA_SIGNIN_FILE:-}"
+          [ -n "$F" ] && [ -r "$F" ] || die "the sign-in values are missing"
+          case "$F" in *\'*) die "the sign-in file path is not usable" ;; esac
+        fi
+        [ "$(q "SELECT json_valid('{}')")" = 1 ] || die "this sqlite3 has no JSON functions"
+        n=$(q "SELECT count(*) FROM pragma_table_info('login_source') WHERE name IN ('id','type','name','is_active','is_sync_enabled','two_factor_policy','cfg','created_unix','updated_unix')")
+        [ "$n" = 9 ] || die "table login_source lacks expected columns (found $n of 9)"
+        own=$(q "SELECT CASE WHEN type=6 AND json_valid(cfg) AND json_extract(cfg,'\$.ClientID')='$CLIENT' THEN 'ours' ELSE 'foreign' END FROM login_source WHERE name='$NAME'")
+        if [ "$own" = foreign ]; then
+          [ "$MODE" = off ] && { echo "gitea sign-in off (the source named $NAME is not Homestead's; left alone)"; exit 0; }
+          die "a sign-in source named $NAME exists that Homestead did not create; rename or remove it in Gitea, then apply again"
+        fi
+        NOW="CAST(strftime('%s','now') AS INTEGER)"
+        if [ "$MODE" = on ]; then
+          ok=$(q "SELECT count(*) FROM (SELECT readfile('$F') AS j) WHERE json_valid(j) AND coalesce(json_extract(j,'\$.client_id'),'')='$CLIENT' AND coalesce(json_extract(j,'\$.client_secret'),'')<>'' AND coalesce(json_extract(j,'\$.metadata_url'),'')<>'' AND coalesce(json_extract(j,'\$.admin_group'),'')<>''")
+          [ "$ok" = 1 ] || die "the sign-in values are missing or empty"
+          sqlite3 -bail -cmd '.timeout 30000' "$DB" <<SQL
+        BEGIN IMMEDIATE;
+        CREATE TEMP TABLE hs AS SELECT json_object('Provider','openidConnect','ClientID',json_extract(j,'\$.client_id'),'ClientSecret',json_extract(j,'\$.client_secret'),'OpenIDConnectAutoDiscoveryURL',json_extract(j,'\$.metadata_url'),'CustomURLMapping',json('null'),'IconURL','','Scopes',json('["openid","profile","email"]'),'RequiredClaimName','','RequiredClaimValue','','GroupClaimName','groups','AdminGroup',json_extract(j,'\$.admin_group'),'GroupTeamMap','','GroupTeamMapRemoval',json('false'),'RestrictedGroup','','SSHPublicKeyClaimName','','FullNameClaimName','','ExternalIDClaim','') AS cfg FROM (SELECT readfile('$F') AS j);
+        UPDATE login_source SET is_active=1, is_sync_enabled=0, cfg=(SELECT cfg FROM hs), updated_unix=$NOW WHERE name='$NAME' AND type=6 AND json_extract(cfg,'\$.ClientID')='$CLIENT';
+        INSERT INTO login_source(type,name,is_active,is_sync_enabled,two_factor_policy,cfg,created_unix,updated_unix) SELECT 6,'$NAME',1,0,'',cfg,$NOW,$NOW FROM hs WHERE NOT EXISTS (SELECT 1 FROM login_source WHERE name='$NAME');
+        COMMIT;
+        SQL
+          [ "$(q "SELECT count(*) FROM login_source WHERE name='$NAME' AND type=6 AND is_active=1")" = 1 ] || die "the source was not written"
+        else
+          q "UPDATE login_source SET is_active=0, cfg=json_set(cfg,'\$.ClientSecret',''), updated_unix=$NOW WHERE name='$NAME' AND type=6 AND json_valid(cfg) AND json_extract(cfg,'\$.ClientID')='$CLIENT'"
+        fi
+        echo "gitea sign-in $MODE"
+      - sh
+      - "on"
+      onoff:
+      - sh
+      - -c
+      - *gitea_signin_script
+      - sh
+      - "off"
+      warnings:
+      - Gitea keeps its sign-in source in its own database, which Homestead edits directly; this is re-checked on every Gitea update and stops with a clear message if the database or the version is not the one it was verified against. Run this after the app has started once, and with Authentik reachable, because Gitea contacts it when it restarts.
+      - Sign-in completes only at the address Gitea is set up for (its ROOT_URL, the app's own address); other addresses for the same app cannot complete sign-in. After the address changes, plan sign-in again so Authentik's redirect list follows.
+      - A person whose Authentik username equals an existing Gitea user is asked, at first sign-in, to confirm with that account's local password before the two are linked (no silent takeover); other people get a new account with their Authentik username and email.
+      - Members of the app's Homestead admin group become administrators at every sign-in, and everyone else who signs in through Authentik is made a non-administrator at that sign-in, unless they are the last administrator. A local administrator who never signs in through Authentik keeps the role.
+      - The local login form and local registration stay open; denying a person (none) is not enforced by Gitea and local accounts with passwords keep working.
+      - The client secret is stored in plaintext in the app's database (gitea.db), on application storage and in backups.
+      set:
+        # Read by Gitea at startup (env-to-ini): create an account at first
+        # sign-in, named from the Authentik username, and ask for the local
+        # password when a local account has that name or email (S416).
+        GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION: "true"
+        GITEA__oauth2_client__USERNAME: preferred_username
+        GITEA__oauth2_client__ACCOUNT_LINKING: login
+        # Markers, not settings the app reads: the script reads the values
+        # from the secret file. They make the stack's wiring change with
+        # sign-in and keep the admin group visible in the plan.
+        GITEA_OIDC_ISSUER: "{{issuer}}"
+        GITEA_OIDC_ADMIN_GROUP: "{{admin_group}}"
+secrets:
+- name: oidc_client_secret
+  # Authentik's client secret for Gitea; Homestead generates it and hands
+  # it to Authentik. It reaches the app only inside gitea_signin.
+  immutable: true
+- name: gitea_signin
+  # The sign-in values for the script, rendered at apply time; "{}" is
+  # the empty value while sign-in is off. The file is delivered 0600 and
+  # its path is GITEA_SIGNIN_FILE; the value is never exported.
+  initial: "{}"
+  immutable: true
+  consumers:
+  - service: gitea
+    env: GITEA_SIGNIN_FILE
 integrations:
 - kind: identity
   target: authentik
-  note: Sign in with Authentik once its OIDC source is configured; local accounts keep working.
+  note: People sign in with Authentik from the login page once sign-in is applied on the app's page; the local login form and local accounts stay.
