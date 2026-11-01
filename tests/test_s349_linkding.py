@@ -40,7 +40,7 @@ class TestLinkdingContract(unittest.TestCase):
         self.assertNotIn("LD_SUPERUSER_PASSWORD:", self.text)
 
     def test_csrf_origin_follows_the_route(self):
-        self.assertIn('LD_CSRF_TRUSTED_ORIGINS: "https://{{route_host}}"',
+        self.assertIn('LD_CSRF_TRUSTED_ORIGINS: "{{route_url}},{{app_url}}"',
                       self.text)
 
     def test_data_lives_on_application_storage(self):

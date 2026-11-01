@@ -27,7 +27,7 @@ class TestMealieContract(unittest.TestCase):
                 self.assertIn(symbol, self.text)
 
     def test_base_url_follows_the_route(self):
-        self.assertIn('BASE_URL: "https://{{route_host}}"', self.text)
+        self.assertIn('BASE_URL: "{{app_url}}"', self.text)
 
     def test_sqlite_with_closed_signups(self):
         self.assertIn("DB_ENGINE: sqlite", self.text)
