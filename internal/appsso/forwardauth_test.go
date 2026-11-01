@@ -455,3 +455,22 @@ func TestKumaForwardApplyHasNoWiringSteps(t *testing.T) {
 		t.Fatalf("off: %s", got)
 	}
 }
+
+func TestForwardPlanRequiresHostBlock(t *testing.T) {
+	in := faInputs(t)
+	in.Manifest.SSO.ForwardAuth.RequiresHostBlock = true
+	in.HostBlockRequired = true
+	in.HostBlockProblem = "nftables is not available on this host."
+	if _, err := BuildPlan(in, true); err == nil || !strings.Contains(err.Error(), "nothing but the edge") || !strings.Contains(err.Error(), "nftables is not available") {
+		t.Fatalf("a missing host block must refuse the plan: %v", err)
+	}
+	in.HostBlockProblem = ""
+	if _, err := BuildPlan(in, true); err != nil {
+		t.Fatalf("block available: %v", err)
+	}
+	in.HostBlockProblem = "x"
+	in.Manifest.SSO.ForwardAuth.RequiresHostBlock = false
+	if _, err := BuildPlan(in, true); err != nil {
+		t.Fatalf("an app that does not require it is never refused: %v", err)
+	}
+}

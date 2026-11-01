@@ -121,3 +121,11 @@ func TestKumaForwardAuthPin(t *testing.T) {
 		t.Fatalf("Kuma publishes host ports %v: it must be reachable only through the edge (ADR-055 section 5)", m.Requirements.Ports)
 	}
 }
+
+func TestForwardAuthRequiresHostBlockParses(t *testing.T) {
+	m := forwardManifest()
+	m.SSO.ForwardAuth.RequiresHostBlock = true
+	if err := m.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}

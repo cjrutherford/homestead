@@ -36,7 +36,9 @@ func navidromeRig(t *testing.T) *ssoApp {
 	appsso.ReadAccounts = func(context.Context, catalog.Manifest) appsso.AppAccounts {
 		return appsso.AppAccounts{Names: []string{"admin", "kid"}, Admins: 1}
 	}
-	t.Cleanup(func() { edgeSourceAddr, appsso.ReadAccounts = oldCIDR, oldRead })
+	oldBlock := reconcileGateBlock
+	reconcileGateBlock = func(context.Context, *store.Store) error { return nil }
+	t.Cleanup(func() { edgeSourceAddr, appsso.ReadAccounts, reconcileGateBlock = oldCIDR, oldRead, oldBlock })
 	return a
 }
 
@@ -200,5 +202,27 @@ func TestEdgeAddrFailureRefusesThePlan(t *testing.T) {
 	rec := a.req("POST", "/api/v1/catalog/navidrome/sign-in/plan", `{"enabled":true}`, a.owner.token)
 	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "edge network") {
 		t.Fatalf("plan: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestSetGateFailsWithoutTheHostBlockOnlyWhenRequired(t *testing.T) {
+	a := navidromeRig(t)
+	oldSet, oldPing := reconcileEdgeSet, outpostPing
+	reconcileEdgeSet = func(_ context.Context, st *store.Store, set docker.RouteSet) error { return saveEdgeRoutes(st, set) }
+	outpostPing = func(context.Context) error { return nil }
+	t.Cleanup(func() { reconcileEdgeSet, outpostPing = oldSet, oldPing })
+	reconcileGateBlock = func(context.Context, *store.Store) error { return errors.New("nft denied") }
+	entries, err := catalog.Load(filepath.Join("..", "..", "catalog"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := entries.Get("navidrome")
+	gate := &docker.Gate{Canonical: "navidrome.lan", CopyHeaders: []string{"X-Authentik-Username"}}
+	if err := a.srv.appSignIn.setGate(context.Background(), m, gate); err != nil {
+		t.Fatalf("an app that does not require the block still gates: %v", err)
+	}
+	m.SSO.ForwardAuth.RequiresHostBlock = true
+	if err := a.srv.appSignIn.setGate(context.Background(), m, gate); err == nil || !strings.Contains(err.Error(), "host block") {
+		t.Fatalf("a requiring app must fail: %v", err)
 	}
 }

@@ -1639,3 +1639,8 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S360 Multi-arch, maintenance and source checks are human-verified and recorded in each slice file; no registry automation checks them, and existing packages were not backfilled with digests or platform lists.
 - S360 The publisher is not shown to the owner in `apps show`, the plan or the dashboard; only the manifest and the catalog test carry it.
 - S360 The LinuxServer `FILE__` secret convention versus the ADR-052 secret entrypoint is confirmed per package in S361-S366, not decided here.
+- S421 Other containers sharing a network with an auth-off app can still reach its port (ADR-055 §5 residual); a dedicated app-only network is the real fix and is not built.
+- S421 The gate table is applied by the daemon's own reconcile and a five-minute pass, not persisted across reboot by an nftables unit; between boot and the first pass (Docker permitting) an auth-off app is unprotected. S422 must not turn a login off until it accepts that window or a boot-time rule is added.
+- S421 With `firewall_mode=external` the rules are not applied and no script for them is shown in the firewall plan; owners get the guidance in Doctor only.
+- S421 `nft --check` of the gate rules is skipped in unprivileged test runs, so the nft syntax (`ct status dnat`, `iifname != "br-*"`, `meta skuid`) is first confirmed on the VM.
+- S421 The host block drops non-root access to unpublished ports of every Docker container, not only Homestead's (owner-overridable with `firewall_mode=external`); a per-container allow list is not built.

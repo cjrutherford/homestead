@@ -253,6 +253,74 @@ shows its own login (fails safe). Sign-in status then reports re-plan needed
 (the gate revision covers the trusted source) and Doctor warns "re-plan and
 apply sign-in for <app>". Nothing is rewired automatically.
 
+**Amendment, 2026-11-01 (S421, owner decision: one sign-in for gated apps).**
+An app that turns its own login off behind the gate (Kuma next, then Prowlarr,
+Sonarr, Radarr, SABnzbd) is safe only if nothing but the edge can reach its
+container port. Homestead therefore keeps a **host block** in a second
+Homestead-owned nftables table, `inet homestead_gate` (separate from the
+`homestead` input table, which the management apply flushes and diffs whole).
+Each app container is on the shared `homestead-edge` network and on its own
+compose network (found live: a non-root user reached Kuma at its
+`uptime-kuma_default` address), so the rules match **Docker bridge interfaces**,
+not a subnet. Nothing tracks container or network addresses.
+
+```
+chain output  { type filter hook output  priority filter; policy accept;
+  oifname "docker0" ct status dnat accept
+  oifname "br-*"    ct status dnat accept
+  oifname "docker0" meta skuid != 0 drop
+  oifname "br-*"    meta skuid != 0 drop }
+chain forward { type filter hook forward priority filter; policy accept;
+  oifname "docker0" ct status dnat accept
+  oifname "br-*"    ct status dnat accept
+  oifname "docker0" iifname != "docker0" iifname != "br-*" ct state new drop
+  oifname "br-*"    iifname != "docker0" iifname != "br-*" ct state new drop }
+```
+
+(One rule per interface pattern, because wildcards are not reliable inside
+anonymous sets.)
+
+- **Host-originated.** Any packet leaving through a Docker bridge from a socket
+  owned by a non-root user is dropped. Root (the daemon, the owner under sudo)
+  is unaffected, and published ports still work for everyone: flows the kernel
+  DNATed to a published port are allowed first (this also keeps `docker-proxy`,
+  which runs as root, working). Packets with no socket owner never match.
+- **Forwarded from outside.** A LAN device that routes a container network via
+  the appliance is dropped unless the flow arrived on a Docker bridge or was
+  DNATed to a published port. Docker 26 already drops it for unpublished ports
+  by the FORWARD chain's DROP policy (its DOCKER chain accepts only published
+  ports) and by DOCKER-ISOLATION across bridges; it adds no explicit rule and
+  relies on that policy, which an administrator can change and which Docker
+  20-27 does not harden against direct routing to container IPs (Docker 28 adds
+  a raw-table drop). The Homestead rule makes the guarantee independent of the
+  policy. Established flows and container egress are never matched.
+- **Scope and trade-off: every Docker bridge, not only the gated apps.** While
+  any gate is on, non-root local users also lose direct access to the owner's
+  own, non-Homestead containers' unpublished ports (published ports work). This
+  buys robustness: no subnet or container address is read, tracked or
+  re-applied, so a recreated network or a new compose network needs nothing,
+  and no per-app rule can lag. An owner who needs the old behaviour sets
+  `firewall_mode=external` (Homestead then applies nothing, Doctor warns, and a
+  requiring app is refused). Interface matching in an `inet` table covers IPv4
+  and IPv6 alike, so there is no IPv4-only gap. The accepted residual is
+  unchanged: another container on a shared network can still reach a gated app
+  (§5, above).
+- **When.** The block exists while at least one forward-auth gate is on, and is
+  removed when the last gate goes off. It is reconciled where the edge is
+  reconciled (every `reconcileEdgeSet` and every gate change), at daemon start
+  and every five minutes (nft rules do not survive a reboot, and Docker may
+  start late). It is re-applied if the table is removed or edited.
+- **Requiring it.** A manifest may set `sso.forwardauth.requireshostblock:
+  true`. Its sign-in plan then refuses unless Homestead can provide the block
+  (managed firewall, nftables available and accessible), and the apply fails if
+  the block is not in place after the gate is applied. Kuma's manifest does not
+  set the flag yet (S422).
+- **Doctor** warns, with guidance, while a gate is on and the block is missing
+  or incomplete. Its live reader accepts nft's named and numeric forms
+  (`ct status dnat` / `0x20`, `ct state new` / `0x8`).
+- Not covered: a non-root process that gains root, and containers sharing a
+  network with a gated app.
+
 ### 6. Local and recovery login
 - **Navidrome:** the login form stays. It is the Subsonic path's login anyway,
   and the recovery route if Authentik is down: remove `ND_EXTAUTH_TRUSTEDSOURCES`

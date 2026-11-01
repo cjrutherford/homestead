@@ -874,6 +874,9 @@ var reconcileEdgeSet = func(ctx context.Context, st *store.Store, set docker.Rou
 			}
 		}
 	}
+	// The edge network may have been recreated with a new subnet (S421).
+	// Best effort here; the periodic pass and the Doctor report a miss.
+	_ = reconcileGateBlock(ctx, st)
 	return nil
 }
 

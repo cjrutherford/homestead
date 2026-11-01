@@ -188,6 +188,11 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, dashboardSocket, 
 			fmt.Fprintln(os.Stderr, "homestead-server: local TLS reconcile at start:", err)
 		}
 	}()
+	// Keep the gated-app host block in line with the gates and the edge
+	// network's subnet (S421); nft rules do not survive a reboot.
+	go server.RunGateBlock(ctx, st, 5*time.Minute, func(err error) {
+		fmt.Fprintln(os.Stderr, "homestead-server: gated-app host block:", err)
+	})
 	// Probe the router once now so the Tunnel page opens without the wait.
 	go server.WarmTunnelDiscovery(ctx)
 	if err := srv.Run(ctx); err != nil {

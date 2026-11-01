@@ -200,6 +200,9 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 	if in.EdgeSource == "" {
 		return Plan{}, unavailable("The edge network's address could not be read; deploy the edge and plan again.")
 	}
+	if fa.RequiresHostBlock && in.HostBlockProblem != "" {
+		return Plan{}, unavailable("%s turns its own login off, which is safe only when nothing but the edge can reach it. %s", m.Title, in.HostBlockProblem)
+	}
 	var existing []string
 	if fa.AccountsFrom != "" {
 		if in.Accounts == nil && in.AccountsFn != nil {

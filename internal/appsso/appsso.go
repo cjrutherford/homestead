@@ -221,7 +221,12 @@ type Inputs struct {
 	// trusts identity headers from (S418). Accounts and PeopleUsernames
 	// feed the forward-auth refusals.
 	EdgeSource string
-	Accounts   *AppAccounts
+	// HostBlockRequired is set for an app that declares
+	// forwardauth.requireshostblock; HostBlockProblem is why Homestead
+	// cannot keep other users off its port now ("" when it can, S421).
+	HostBlockRequired bool
+	HostBlockProblem  string
+	Accounts          *AppAccounts
 	// AccountsFn reads the accounts when a plan needs them, so a status
 	// that is not planning never opens the app's database.
 	AccountsFn      func() *AppAccounts

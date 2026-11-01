@@ -75,6 +75,7 @@ func doctorLiveProbes(c DoctorLiveConfig) func() []doctor.Probe {
 			{Name: "edge-certificate", Group: doctor.GroupCertificates, Timeout: 10 * time.Second, Run: func(ctx context.Context) []doctor.Check { return probeEdgeCertificates(ctx, c) }},
 			{Name: "authentik", Group: doctor.GroupSignIn, Run: func(ctx context.Context) []doctor.Check { return probeAuthentik(ctx, c) }},
 			{Name: "authentik-outpost", Group: doctor.GroupSignIn, Timeout: 12 * time.Second, Run: func(ctx context.Context) []doctor.Check { return gatedAppChecks(ctx, c) }},
+			{Name: "gated-app-host-block", Group: doctor.GroupSignIn, Timeout: 12 * time.Second, Run: func(ctx context.Context) []doctor.Check { return gateBlockChecks(ctx, c) }},
 		}
 		entries, err := catalog.Load(c.CatalogDir)
 		if err != nil {

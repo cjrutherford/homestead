@@ -79,6 +79,10 @@ func addForwardInputs(st *store.Store, in *appsso.Inputs, manifest catalog.Manif
 	if addr, err := edgeSourceAddr(ctx); err == nil {
 		in.EdgeSource = addr
 	}
+	if fa.RequiresHostBlock {
+		in.HostBlockRequired = true
+		in.HostBlockProblem = hostBlockProblem()
+	}
 	rows, err := st.DB().Query(`SELECT username FROM people WHERE state = 'active'`)
 	if err != nil {
 		return err
@@ -137,6 +141,11 @@ func (a *appSignIn) setGate(ctx context.Context, m catalog.Manifest, gate *docke
 	}
 	if err := reconcileEdgeSet(ctx, a.cfg.Store, set); err != nil {
 		return err
+	}
+	// The host block follows the gates (S421). An app that requires it
+	// must not be left gated without it; for the others the Doctor warns.
+	if err := reconcileGateBlock(ctx, a.cfg.Store); err != nil && requiresHostBlock(m) && gate != nil {
+		return fmt.Errorf("the host block that keeps other users off %s's port is not in place: %w", m.Title, err)
 	}
 	if gate != nil {
 		return outpostPing(ctx)

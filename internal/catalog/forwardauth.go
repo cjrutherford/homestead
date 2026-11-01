@@ -41,6 +41,11 @@ type ForwardAuth struct {
 	Access string `yaml:"access,omitempty" json:"access,omitempty"`
 	// Warnings are fixed lines for the sign-in plan.
 	Warnings []string `yaml:"warnings,omitempty" json:"warnings,omitempty"`
+	// RequiresHostBlock (S421, ADR-055 §6) marks an app whose own login is
+	// off: it is safe only if nothing but the edge can reach its port, so
+	// the sign-in plan refuses and the apply fails unless Homestead's host
+	// block (the homestead_gate nftables table) can be and is in place.
+	RequiresHostBlock bool `yaml:"requireshostblock,omitempty" json:"requireshostblock,omitempty"`
 	// AccountsFrom names how Homestead reads the app's existing usernames
 	// for the collision and no-administrator refusals: navidrome-sqlite
 	// is the only reader.
