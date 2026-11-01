@@ -1618,3 +1618,4 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S419 MariaDB-backed Kuma and Prometheus scraping of `/metrics` through the gate are not handled.
 - S419 ADR-054 install review does not yet show Kuma's admin-only gate.
 - S419 Live check on VM 2 pending (see the slice file's "Verify live").
+- S419 Apply reports success a few seconds before the embedded outpost has loaded a new provider; the gate answers 404 (fail closed) until then. The apply could wait for /outpost.goauthentik.io/auth/caddy to redirect for the host.

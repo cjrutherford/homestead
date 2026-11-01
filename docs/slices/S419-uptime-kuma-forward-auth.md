@@ -88,3 +88,21 @@ port 3001, local exposure; no inputs, no secrets) and create its administrator.
 ## Out of scope
 Kuma login-off (needs the host firewall rule, DEFERRED), user mapping,
 Prometheus scraping through the gate, MariaDB-backed Kuma, Trust Proxy.
+
+## Live results (VM 2, 2026-11-01, 56151b7)
+Uptime Kuma 2.5.7 installed local-only, no host port (`3001/tcp` only).
+Sign-in plan listed 7 open paths, admins + owner groups only, no trust
+settings. Apply succeeded (reach-authentik, configure-authentik, gate,
+record; no wire step) and the Kuma container was not recreated.
+- `/`, `/dashboard`, `/metrics`, `/status-page`, socket.io polling: 302 to
+  the public Authentik authorize URL. For a few seconds right after apply
+  they answered 404 (fail closed) until the embedded outpost loaded the new
+  provider (DEFERRED).
+- `/api/push/*`, `/status/*`, `/api/status-page/*`, `/api/badge/*`,
+  `/icon.svg`, `/upload/*`: reach Kuma without the gate.
+- `uptime-kuma.local` → 308 to `uptime-kuma.lan`. Doctor `--live`:
+  `authentik-outpost: ok` for both gated apps.
+- Not yet checked: a browser sign-in (Authentik, then Kuma's setup/login),
+  socket.io live updates, a user-role person refused, Authentik down, off.
+  Kuma's first-admin setup screen is now behind the gate, so only an
+  Authentik admin can claim it.
