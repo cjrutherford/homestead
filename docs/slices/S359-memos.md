@@ -101,3 +101,17 @@ Container port 5230, name `memos.<zone>` (host serving).
 5. Turn sign-in off: Memos restarts cleanly, the Authentik button is gone,
    password sign-in works, the person's account remains.
 6. Plan sign-in on again after off; it works.
+
+## Live results (VM 2, 2026-11-01, 476b4bb)
+Installed local-only with sign-in approved at install (others: no access);
+install and setup succeeded (address, sign-in, people).
+- Memos 26.10.0 started cleanly with the declarative config (no restarts,
+  no config errors); `/etc/memos/config/homestead.json` is 0600, uid 10001.
+- `GET /api/identity-providers` lists `identity-providers/authentik`
+  (OAUTH2, client `homestead-memos`, Authentik's local authorize, token and
+  userinfo endpoints) with `clientSecret` blank. Memos 26.10 removed
+  `/api/v1`; the REST path is `/api/...`.
+- Authentik authorize with `redirect_uri=https://memos.lan/auth/callback`
+  → 302 to its login flow; the callback route serves the web app.
+- Not yet checked: creating the password administrator first, a browser
+  Authentik sign-in, linking, sign-in off and back on.
