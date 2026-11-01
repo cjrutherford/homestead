@@ -314,6 +314,24 @@ apply sign-in for <app>". Nothing is rewired automatically.
   sign-in off with the normal plan, or remove the gate by hand as documented in
   the slice.
 
+**Amendment, 2026-11-01 (S419, owner-approved).** Kuma's login stays ON behind
+the gate; Homestead does not write Kuma's database and the `disableAuth`
+mechanism above (setting row, version/schema/db-type guards, `kumaSignInVerified`
+pin, no-administrator refusal, restart, ordering) is **not built**. Reason, found
+live on VM 2: the appliance host reaches any container directly through the
+Docker bridge gateway (Docker 26 also gives the host an address on `--internal`
+networks, verified with a spike), and Kuma needs outbound internet for its
+monitors, so no network layout keeps local appliance users away from Kuma's
+port. With Kuma's login off, any local user would be Kuma's administrator. So
+Kuma is gated at the edge for Authentik administrators only (the owner and the
+app's admins group; no users group), is given no identity header and no trust
+settings, and keeps its own login: two sign-ins, Authentik then Kuma. The bypass
+list of §4 is unchanged. `/metrics` keeps its API-token check because auth is
+never disabled. The route back to a single login is a host firewall rule that
+restricts non-root access to Kuma's port, after which login-off can be
+reconsidered; it is DEFERRED (S419). The §5 residual-risk text about a compromised
+app container reaching Kuma is therefore covered by Kuma's own login.
+
 ### 7. Plan, preview and audit
 - Same surface: `homesteadctl apps sign-in plan|apply [--off] <app>` and
   `/api/v1/catalog/{name}/sign-in/*`. The plan is the existing digest-bound,
@@ -409,6 +427,7 @@ finishes it.
 ## Owner decisions (2026-10-31)
 1. One canonical name per gated app: accepted.
 2. Kuma's own login off while gated, with a reversible, ordered write (§6).
+   Superseded 2026-11-01 (S419): Kuma's login stays on; see the §6 amendment.
 3. Navidrome admins are chosen inside Navidrome; refuse with no admin or on a
    username collision.
 4. Open paths: Navidrome `/rest/*` and `/share/*`; Kuma `/api/push/*` and

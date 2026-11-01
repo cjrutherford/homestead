@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -35,6 +36,7 @@ func TestForwardAuthValidation(t *testing.T) {
 		"secret env":          {func(m *Manifest) { m.SSO.ForwardAuth.Env["APP_TOKEN"] = "x" }, "not a secret"},
 		"unknown placeholder": {func(m *Manifest) { m.SSO.ForwardAuth.Env["APP_X"] = "{{secret}}" }, "unknown placeholder"},
 		"admin mapped":        {func(m *Manifest) { m.SSO.ForwardAuth.Admin = "group" }, "must be local"},
+		"unknown access":      {func(m *Manifest) { m.SSO.ForwardAuth.Access = "everyone" }, "admin-only"},
 		"unknown reader":      {func(m *Manifest) { m.SSO.ForwardAuth.AccountsFrom = "mongo" }, "unknown"},
 	}
 	for name, c := range cases {
@@ -77,5 +79,45 @@ func TestNavidromeForwardAuthPin(t *testing.T) {
 	}
 	if fa.Env["ND_EXTAUTH_USERHEADER"] != "{{user_header}}" || fa.Env["ND_EXTAUTH_TRUSTEDSOURCES"] != "{{edge_source}}" || len(fa.Env) != 2 {
 		t.Fatalf("env = %v", fa.Env)
+	}
+}
+
+// TestKumaForwardAuthPin pins the gate Uptime Kuma ships with (S419, ADR-055
+// §4): admins only, no header and no trust settings (Kuma keeps its own login),
+// the exact open paths, and no host port published, because the gate and
+// Kuma's login are the only way in. A version bump must re-check the status
+// page paths and the metrics/socket paths that stay gated.
+func TestKumaForwardAuthPin(t *testing.T) {
+	m, err := repoCatalog(t).Get("uptime-kuma")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Version != "2.5.7" {
+		t.Fatalf("uptime-kuma %s: re-check the status page requests and the gated paths, then update this pin", m.Version)
+	}
+	fa := m.SSO.ForwardAuth
+	if fa == nil || m.SSO.OIDC != nil || fa.Service != "uptime-kuma" || fa.Access != AccessAdminOnly ||
+		fa.UserHeader != "" || len(fa.CopyHeaders) != 0 || len(fa.Env) != 0 || fa.AccountsFrom != "" {
+		t.Fatalf("forwardauth = %+v", fa)
+	}
+	var paths []string
+	for _, b := range fa.Bypass {
+		paths = append(paths, b.Path)
+		if b.Reason == "" {
+			t.Fatalf("bypass %s has no reason", b.Path)
+		}
+	}
+	if got := strings.Join(paths, " "); got != `^/api/push/.* ^/status/.* ^/api/status-page/.* ^/api/badge/.* ^/assets/.* ^/upload/.* ^/icon\.svg$` {
+		t.Fatalf("bypass = %s", got)
+	}
+	for _, never := range []string{"/metrics", "/dashboard", "/socket.io/", "/status-page", "/manage-status-page", "/settings", "/"} {
+		for _, re := range paths {
+			if regexp.MustCompile(re).MatchString(never) {
+				t.Errorf("bypass %s opens %s", re, never)
+			}
+		}
+	}
+	if len(m.Requirements.Ports) > 0 {
+		t.Fatalf("Kuma publishes host ports %v: it must be reachable only through the edge (ADR-055 section 5)", m.Requirements.Ports)
 	}
 }

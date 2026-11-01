@@ -1,6 +1,8 @@
 package docker
 
 import (
+	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -126,6 +128,61 @@ func TestGateValidation(t *testing.T) {
 	for _, ok := range []string{`^/rest/.*`, `^/share/.*`, `^/api/push/.*`, `^/icon\.svg$`, `^/status(/.*)?$`} {
 		if err := ValidateBypass(ok); err != nil {
 			t.Errorf("%s: %v", ok, err)
+		}
+	}
+}
+
+// TestGatedKumaRoute pins the Uptime Kuma gate (S419, ADR-055 §4): its own
+// bypass list, no copied header, the never-bypassed paths, and a proxy that
+// carries WebSockets (Caddy's reverse_proxy upgrades by itself).
+func TestGatedKumaRoute(t *testing.T) {
+	bypass := []string{`^/api/push/.*`, `^/status/.*`, `^/api/status-page/.*`, `^/api/badge/.*`, `^/assets/.*`, `^/upload/.*`, `^/icon\.svg$`}
+	r := Route{
+		Host: "uptime-kuma.lan", Target: Target{Host: "uptime-kuma-uptime-kuma", Port: 3001},
+		Exposure: ExposureLocal, TLS: TLSInternal,
+		Gate: &Gate{Canonical: "uptime-kuma.lan", Bypass: bypass},
+	}
+	out, err := RenderRoute(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, re := range bypass {
+		idx(t, out, fmt.Sprintf("@gate_bypass%d path_regexp %s", i, re))
+	}
+	for _, never := range []string{"/metrics", "/dashboard", "/socket.io", "/status-page"} {
+		for i, re := range bypass {
+			if regexp.MustCompile(re).MatchString(never) || regexp.MustCompile(re).MatchString(never+"/") {
+				t.Errorf("bypass %d %s opens %s", i, re, never)
+			}
+		}
+		if strings.Contains(out, "path_regexp ^"+never) || strings.Contains(out, "handle "+never) {
+			t.Errorf("%s has its own handle:\n%s", never, out)
+		}
+	}
+	// A status page and its parts stay open; the owner's list does not.
+	for _, open := range []string{"/status/main", "/api/status-page/main", "/api/status-page/heartbeat/main", "/api/badge/1/status", "/assets/index.js", "/upload/logo.png", "/icon.svg", "/api/push/abc?status=up"} {
+		ok := false
+		for _, re := range bypass {
+			ok = ok || regexp.MustCompile(re).MatchString(strings.SplitN(open, "?", 2)[0])
+		}
+		if !ok {
+			t.Errorf("%s should be open", open)
+		}
+	}
+	if strings.Contains(out, "copy_headers") {
+		t.Fatalf("Kuma trusts no identity header:\n%s", out)
+	}
+	idx(t, out, "request_header -X-Authentik-*")
+	idx(t, out, "forward_auth authentik-server:9000 {")
+	// WebSockets (/socket.io/) reach Kuma only after forward_auth, through a
+	// plain reverse_proxy: nothing strips Upgrade/Connection or pins HTTP/1.
+	last := strings.LastIndex(out, "reverse_proxy uptime-kuma-uptime-kuma:3001")
+	if last < strings.Index(out, "forward_auth") {
+		t.Fatalf("the gated proxy must follow forward_auth:\n%s", out)
+	}
+	for _, bad := range []string{"-Upgrade", "-Connection", "header_up Upgrade", "header_up Connection", "versions 1.1", "transport http"} {
+		if strings.Contains(out, bad) {
+			t.Fatalf("the gate would break WebSockets (%s):\n%s", bad, out)
 		}
 	}
 }

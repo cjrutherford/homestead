@@ -1,8 +1,10 @@
 # Uptime Kuma monitor (S351): the last Wave 1 package.
 # Curated first-party manifest — versions pin here, updates bump this file.
-# This is the documented SSO exception and the one package that is not
-# allowed to widen: it holds monitor credentials and probes LAN addresses,
-# so it recommends local and refuses public exposure outright. The owner
+# It has no OIDC, so Homestead gates it at the edge with Authentik
+# forward-auth for administrators only (S419, ADR-055); Kuma keeps its own
+# login behind the gate. It is the one package that is not allowed to
+# widen: it holds monitor credentials and probes LAN addresses, so it
+# recommends local and refuses public exposure outright. The owner
 # creates the administrator account in the app on first visit; no secret
 # is declared and the image entrypoint sits before the Node process.
 name: uptime-kuma
@@ -46,8 +48,30 @@ exposure:
     recommended: local
     allowwider: false
     warnings:
-    - "Uptime Kuma is the documented SSO exception and must not become a public status page: it holds monitor credentials and probes LAN addresses. Keep it on the LAN or the overlay; public exposure is refused by design."
+    - "Uptime Kuma must not become a public status page: it holds monitor credentials and probes LAN addresses. Keep it on the LAN or the overlay; public exposure is refused by design. With the Authentik gate on, status pages, badges and push URLs stay open to the local network by design; they are never open to the internet."
 backuppaths:
 - data
 sso:
   class: unsupported
+  forwardauth:
+    service: uptime-kuma
+    access: admin-only
+    bypass:
+    - path: ^/api/push/.*
+      reason: Push monitors, called by cron jobs and other apps. The secret token in the URL is the credential and the endpoint only records a heartbeat.
+    - path: ^/status/.*
+      reason: Public status pages, which show only the monitors the owner put on a page. They were built to be anonymous and open to the local network only.
+    - path: ^/api/status-page/.*
+      reason: The JSON a status page loads (page data and heartbeats). It serves only what the owner chose to publish and changes no state.
+    - path: ^/api/badge/.*
+      reason: Status badges for the monitors on a status page. Read-only, anonymous by design.
+    - path: ^/assets/.*
+      reason: The web app's own script and style files, which a status page loads. They hold no user data.
+    - path: ^/upload/.*
+      reason: Logos and images the owner uploaded for status pages.
+    - path: ^/icon\.svg$
+      reason: The app icon a status page loads.
+    warnings:
+    - Uptime Kuma keeps its own login behind the Authentik gate, so you sign in twice, to Authentik and then to Uptime Kuma. Only administrators and the owner pass the gate.
+    - Status pages, badges and push URLs stay open to the local network without Authentik. Uptime Kuma can never be published, so they are never open to the internet.
+    - /metrics, /dashboard, /status-page and the live socket stay behind the gate and Kuma's login.

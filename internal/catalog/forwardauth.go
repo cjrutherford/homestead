@@ -35,6 +35,10 @@ type ForwardAuth struct {
 	// app, the only value this release supports; an admin cannot be
 	// mapped from a header).
 	Admin string `yaml:"admin,omitempty" json:"admin,omitempty"`
+	// Access narrows who the gate lets through: "" binds the app's users,
+	// admins and owner groups; AccessAdminOnly binds only the admins and
+	// owner groups and no users group exists (S419, ADR-055 §3).
+	Access string `yaml:"access,omitempty" json:"access,omitempty"`
 	// Warnings are fixed lines for the sign-in plan.
 	Warnings []string `yaml:"warnings,omitempty" json:"warnings,omitempty"`
 	// AccountsFrom names how Homestead reads the app's existing usernames
@@ -48,6 +52,9 @@ type ForwardBypass struct {
 	Path   string `yaml:"path" json:"path"`
 	Reason string `yaml:"reason" json:"reason"`
 }
+
+// AccessAdminOnly is the Access value of an app only administrators reach.
+const AccessAdminOnly = "admin-only"
 
 // Placeholders of the forward-auth env templates.
 var ForwardAuthPlaceholders = []string{"edge_source", "user_header"}
@@ -118,6 +125,11 @@ func (f ForwardAuth) validate(m Manifest, services map[string]Service) error {
 	case "", "local":
 	default:
 		return fmt.Errorf("catalog: forward-auth admin %q must be local: a header cannot set an app's admin role", f.Admin)
+	}
+	switch f.Access {
+	case "", AccessAdminOnly:
+	default:
+		return fmt.Errorf("catalog: forward-auth access %q must be empty or %s", f.Access, AccessAdminOnly)
 	}
 	switch f.AccountsFrom {
 	case "", AccountsNavidromeSQLite:

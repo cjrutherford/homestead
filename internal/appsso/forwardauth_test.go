@@ -348,3 +348,110 @@ func TestForwardStatusReplansWhenEdgeAddressMoves(t *testing.T) {
 		t.Fatal("a new edge address must replan")
 	}
 }
+
+func kumaInputs(t *testing.T) Inputs {
+	m := manifest(t, "uptime-kuma")
+	table := []docker.Route{route("uptime-kuma.lan", "uptime-kuma"), route("authentik.lan", "server")}
+	return Inputs{Manifest: m, Installed: true, AuthentikInstalled: true, Dashboard: dashboard, DashboardOK: true,
+		Routes: AppRoutes(m, table), OwnerSub: "owner-sub", EdgeSource: "172.30.0.5/32"}
+}
+
+// Kuma (S419): admins only, no header, no trust settings, no account reader.
+func TestKumaForwardPlan(t *testing.T) {
+	in := kumaInputs(t)
+	p, err := BuildPlan(in, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := p.Gate
+	if g == nil || g.Canonical != "uptime-kuma.lan" || len(g.CopyHeaders) != 0 || len(g.Env) != 0 || len(p.AppSettings) != 0 || len(g.ExistingUsers) != 0 {
+		t.Fatalf("gate: %+v settings %v", g, p.AppSettings)
+	}
+	if len(g.Bypass) != 7 || g.Bypass[0].Path != `^/api/push/.*` {
+		t.Fatalf("bypass: %+v", g.Bypass)
+	}
+	for _, b := range g.Bypass {
+		if b.Reason == "" || strings.Contains(b.Path, "metrics") || strings.Contains(b.Path, "dashboard") || strings.Contains(b.Path, "socket") {
+			t.Errorf("bad bypass %+v", b)
+		}
+	}
+	// Admin-only bindings: the admins and owner groups, no users group.
+	if len(p.Access.Bindings) != 2 || len(p.Access.Groups) != 2 || len(p.Access.OwnerOf) != 2 {
+		t.Fatalf("access: %+v", p.Access)
+	}
+	for _, name := range append(append([]string{}, p.Access.Groups...), p.Access.Bindings...) {
+		if strings.HasSuffix(name, "-users") {
+			t.Fatalf("a users group is bound for Kuma: %+v", p.Access)
+		}
+	}
+	all := strings.Join(p.Changes, "\n")
+	for _, want := range []string{"admins group only", "keeps its own login", "/api/push/"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("plan lacks %q:\n%s", want, all)
+		}
+	}
+	if strings.Contains(all, "Trust settings written") {
+		t.Fatalf("Kuma has no trust settings:\n%s", all)
+	}
+	// Needs no accounts reader and no admin check.
+	in.Accounts, in.AccountsFn = nil, nil
+	if q, err := BuildPlan(in, true); err != nil || q.Digest != p.Digest {
+		t.Fatalf("plan needs no account reader: %v", err)
+	}
+}
+
+func TestKumaForwardApplyHasNoWiringSteps(t *testing.T) {
+	stubDocker(t)
+	st, err := store.Open(filepath.Join(t.TempDir(), "homestead.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	var events []string
+	up = func(context.Context, string, string) error { events = append(events, "up"); return nil }
+	rt := Runtime{Records: Records{DB: st.DB()}, StackDir: func(string) string { return t.TempDir() },
+		SetGate: func(_ context.Context, _ catalog.Manifest, g *docker.Gate) error {
+			if g == nil {
+				events = append(events, "gate-off")
+			} else {
+				events = append(events, "gate-on")
+			}
+			return nil
+		}}
+	in := kumaInputs(t)
+	plan, err := BuildPlan(in, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ak := &fakeProxy{events: &events}
+	exec := func(p Plan) {
+		t.Helper()
+		def, err := Definition(rt, p, in.Manifest, dashboard, ak, "owner")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range def.Steps {
+			if err := s.Run(context.Background()); err != nil {
+				t.Fatalf("%s: %v", s.Name, err)
+			}
+		}
+	}
+	exec(plan)
+	if got := strings.Join(events, " "); !strings.HasPrefix(got, "authentik-on:") || !strings.HasSuffix(got, "gate-on") || strings.Contains(" "+got+" ", " up ") {
+		t.Fatalf("on: Authentik then gate, and Kuma is not recreated: %s", got)
+	}
+	rec, ok, _ := Records{DB: st.DB()}.Get("uptime-kuma")
+	if !ok {
+		t.Fatal("no record")
+	}
+	in.Applied = &rec
+	off, err := BuildPlan(in, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events = nil
+	exec(off)
+	if got := strings.Join(events, " "); got != "gate-off authentik-off" {
+		t.Fatalf("off: %s", got)
+	}
+}

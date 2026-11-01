@@ -78,9 +78,13 @@ func forwardEnv(fa *catalog.ForwardAuth, edge string) map[string]string {
 	return out
 }
 
-func forwardAccess(pkg, ownerSub string) sso.Access {
+func forwardAccess(fa *catalog.ForwardAuth, pkg, ownerSub string) sso.Access {
 	g := groupNames(pkg)
 	all := []string{g.Users, g.Admins, g.Owner}
+	if fa.Access == catalog.AccessAdminOnly {
+		// No users group is created: the app is for administrators only.
+		all = []string{g.Admins, g.Owner}
+	}
 	return sso.Access{Groups: all, OwnerSub: ownerSub, OwnerOf: append([]string(nil), all...), Bindings: append([]string(nil), all...)}
 }
 
@@ -163,8 +167,10 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 			}
 			p.AppSettings = append(p.AppSettings, fmt.Sprintf("%s is removed from %s.", k, m.Title))
 		}
+		if len(fa.Env) > 0 {
+			p.Changes = append(p.Changes, fmt.Sprintf("Take the trust settings out of %s first, so it ignores identity headers again.", m.Title))
+		}
 		p.Changes = append(p.Changes,
-			fmt.Sprintf("Take the trust settings out of %s first, so it ignores identity headers again.", m.Title),
 			fmt.Sprintf("Remove the Authentik gate from the edge: %s returns to a plain reverse proxy and the other names stop redirecting.", m.Title),
 			fmt.Sprintf("Remove the provider from the embedded outpost, delete the application %s and the provider %q from Authentik.", p.Application, p.Provider),
 			fmt.Sprintf("Delete the Authentik groups %s and %s. The shared group %s stays.", x.Groups[0], x.Groups[1], sso.OwnerGroup),
@@ -268,7 +274,7 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 		Env: env, Revision: forwardRevision(fa, string(canonical), redirects, env),
 	}
 	p.Gate = g
-	access := forwardAccess(m.Name, in.OwnerSub)
+	access := forwardAccess(fa, m.Name, in.OwnerSub)
 	p.Access = &access
 	p.AdminRoles = fmt.Sprintf("Who is an administrator inside %s is chosen in %s itself; the gate only decides who can reach it.", m.Title, m.Title)
 	switch {
@@ -293,8 +299,16 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 	for _, b := range g.Bypass {
 		p.Changes = append(p.Changes, fmt.Sprintf("Open without the gate: %s (%s)", b.Path, b.Reason))
 	}
-	p.Changes = append(p.Changes, fmt.Sprintf("Trust settings written to %s: %s.", m.Title, strings.Join(p.AppSettings, ", ")))
-	p.Changes = append(p.Changes, "Who can reach it: the owner, and members of the app's two groups (admins are also users).")
+	if len(p.AppSettings) > 0 {
+		p.Changes = append(p.Changes, fmt.Sprintf("Trust settings written to %s: %s.", m.Title, strings.Join(p.AppSettings, ", ")))
+	} else {
+		p.Changes = append(p.Changes, fmt.Sprintf("%s is given no identity header and no trust settings; it keeps its own login behind the gate.", m.Title))
+	}
+	if fa.Access == catalog.AccessAdminOnly {
+		p.Changes = append(p.Changes, fmt.Sprintf("Who can reach it: the owner and members of the admins group only. No users group is created; a person with the user role is refused at Authentik."))
+	} else {
+		p.Changes = append(p.Changes, "Who can reach it: the owner, and members of the app's two groups (admins are also users).")
+	}
 	p.Changes = append(p.Changes, access.Lines()...)
 	if len(existing) > 0 {
 		p.Changes = append(p.Changes, fmt.Sprintf("Accounts %s already has: %s. A person whose Authentik username matches one signs in as that account.", m.Title, strings.Join(existing, ", ")))
@@ -386,14 +400,15 @@ func forwardDefinition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.
 		// strips: the trust settings go first, then the gate, then
 		// Authentik (ADR-055 §11; the ADR lists the gate first, which
 		// would leave that window).
+		unwire := operation.StepDef{Name: "unwire", Run: func(ctx context.Context) error {
+			if err := env(ctx, false); err != nil {
+				return failed("remove the app's trust settings", err)
+			}
+			return nil
+		}}
 		def.Steps = []operation.StepDef{
 			reach,
-			{Name: "unwire", Run: func(ctx context.Context) error {
-				if err := env(ctx, false); err != nil {
-					return failed("remove the app's trust settings", err)
-				}
-				return nil
-			}},
+			unwire,
 			{Name: "ungate", Run: func(ctx context.Context) error {
 				if err := rt.SetGate(ctx, m, nil); err != nil {
 					return failed("remove the gate from the edge", err)
@@ -416,6 +431,7 @@ func forwardDefinition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.
 				return nil
 			}},
 		}
+		def.Steps = withoutEmptyWiring(def.Steps, len(fa.Env) == 0)
 		return def, nil
 	}
 	// On: Authentik first (so the outpost knows the provider), then the
@@ -453,5 +469,21 @@ func forwardDefinition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.
 			return nil
 		}},
 	}
+	def.Steps = withoutEmptyWiring(def.Steps, len(fa.Env) == 0)
 	return def, nil
+}
+
+// withoutEmptyWiring drops the trust-settings steps of an app that has none
+// (Uptime Kuma, S419), so applying does not recreate its container for nothing.
+func withoutEmptyWiring(steps []operation.StepDef, none bool) []operation.StepDef {
+	if !none {
+		return steps
+	}
+	out := make([]operation.StepDef, 0, len(steps))
+	for _, st := range steps {
+		if st.Name != "wire" && st.Name != "unwire" {
+			out = append(out, st)
+		}
+	}
+	return out
 }
