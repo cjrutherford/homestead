@@ -1,0 +1,137 @@
+# Memos private notes (S359): a Wave 2 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# One container (the neosmemo/memos image: alpine, a single Go binary, an
+# entrypoint that drops from root to uid/gid 10001) with its SQLite
+# database and uploads on application storage. Memos cannot run under a
+# path, so it is served on a name of its own.
+name: memos
+version: 26.10.0
+title: Memos
+blurb: Fast private notes with tags, search and a simple API.
+description: Memos is a lightweight, self-hosted note and microblog app. You
+  write short notes in Markdown, tag and search them, attach files, and
+  share a note by link when you choose to. It runs as one container with
+  SQLite on application storage, so there is no database server to
+  maintain. It complements Nextcloud Notes rather than replacing it. The
+  first account created in the app is the administrator.
+category: notes
+icon: mdi:notebook-edit-outline
+services:
+- name: memos
+  image: docker.io/neosmemo/memos:26.10.0
+  exposes: web
+  containerport: 5230
+  environment:
+    # The app's own address (the public name once published); Memos uses
+    # it as its canonical external URL.
+    MEMOS_INSTANCE_URL: "{{app_url}}"
+  # The image declares VOLUME /var/opt/memos (database memos_prod.db and
+  # assets). Its entrypoint re-owns the directory to uid/gid 10001 and
+  # runs Memos as that user, so the declared data matches.
+  data:
+  - target: /var/opt/memos
+    class: application
+    subpath: data
+    uid: 10001
+    gid: 10001
+requirements:
+  memorymb: 128
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 1073741824
+  # Memos listens on 5230 (MEMOS_PORT in the image); routes proxy to it
+  # and no host port is published by default.
+exposure:
+  package: memos
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Your notes leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- data
+database:
+  service: memos
+  kind: sqlite
+  path: data/memos_prod.db
+sso:
+  class: optional
+  protocols: [oidc]
+  # Sign-in through Authentik (S359). Memos 26.10.0 has declarative
+  # configuration: every *.json file directly in /etc/memos/config is
+  # read at startup and applied (identity providers, instance settings,
+  # bootstrap users). So, unlike Gitea or Audiobookshelf, no script and
+  # no write to Memos's database is needed. Homestead renders one such
+  # file into a private 0600 secret and mounts it read-only at
+  # /etc/memos/config/homestead.json (secret consumer path:, ADR-052
+  # amendment S357), owned by the data uid. The client secret is inside
+  # that file and so never in Compose, argv, the environment or logs.
+  #
+  # The file declares one OAuth2 provider, identity-providers/authentik,
+  # with the fixed Authentik endpoints under /application/o/. Memos
+  # keeps the provider (client secret included) in its own database, and
+  # marks it "Managed by configuration" (read-only in the app).
+  #
+  # OFF: a managed provider that disappears from the files fails the
+  # plan and Memos refuses to start, so the "off" value of the file is
+  # not empty but an explicit removal of that provider (destroy), which
+  # deletes it and its stored secret. The same document is the starting
+  # value, where it names nothing Memos manages yet and is ignored.
+  #
+  # Memos reads the file only at startup; the container is recreated
+  # because the sign-in wiring (marker and trust variables) changes.
+  #
+  # RE-VERIFY ON EVERY VERSION BUMP: verified against Memos 26.10.0
+  # (core/configuration decode/plan/apply and docs/design/declarative-
+  # configuration.md, server/api/auth_service_sso.go: callback
+  # <origin>/auth/callback, new SSO users are created with the USER role
+  # unless registration is disallowed, username from the identifier).
+  # The pin test TestMemosSignInPinnedToVerifiedVersion fails when version
+  # changes until this block and that constant are re-verified together.
+  oidc:
+    adapter: env-oidc
+    service: memos
+    env:
+      redirectpaths: ["/auth/callback"]
+      signinpath: /auth
+      secret: oidc_client_secret
+      secretfile:
+        secret: memos_config
+        template: '{"identityProviders":[{"name":"identity-providers/authentik","type":"OAUTH2","title":"Authentik","identifierFilter":"","config":{"oauth2Config":{"clientId":"{{client_id}}","clientSecret":"{{client_secret}}","authUrl":"{{authentik_base}}/application/o/authorize/","tokenUrl":"{{authentik_base}}/application/o/token/","userInfoUrl":"{{authentik_base}}/application/o/userinfo/","scopes":["openid","profile","email"],"fieldMapping":{"identifier":"preferred_username","displayName":"name","email":"email","avatarUrl":"picture"}}}}]}'
+      # Go reads SSL_CERT_FILE as its whole trust store; the combined
+      # bundle keeps public HTTPS fetches working (S410).
+      trust: SSL_CERT_FILE
+      trustbundle: combined
+      warnings:
+      - "Memos takes no role from Authentik groups: everyone who signs in through Authentik gets an ordinary account named from their Authentik username (a generated name if that is taken), never an administrator. The administrator is the first account created in Memos itself with a password; create it before anyone signs in through Authentik. Who may sign in is decided by the app's Authentik groups."
+      - "Memos never links an Authentik sign-in to an existing account by name or email. To use your own administrator account with Authentik, sign in to Memos with its password and link the Authentik identity from the account settings."
+      - "People are created at their first Authentik sign-in only while Memos allows user registration. If you turn off \"disallow user registration\" in Memos settings, new people can no longer sign in through Authentik for the first time."
+      - "Memos's own password sign-in stays open and is not changed. Before turning sign-in off here, make sure password sign-in is not disabled in Memos settings: Memos refuses to start without any sign-in method."
+      - "The provider is managed by this configuration: it shows as managed in Memos and cannot be edited there. Turning sign-in off deletes it; people created through Authentik keep their accounts but have no password until you set one."
+      - The client secret is stored in plaintext in a private file next to the app's other secrets (part of encrypted backups of Homestead's secrets) and in Memos's own database (data/memos_prod.db), which is part of the app's backups.
+      set:
+        # A marker, not a setting Memos reads: it makes the stack's wiring
+        # change with sign-in so Compose recreates the container, since
+        # Memos reads its configuration files only at startup.
+        HOMESTEAD_OIDC_ISSUER: "{{issuer}}"
+secrets:
+- name: oidc_client_secret
+  # Authentik's client secret for Memos; Homestead generates it and hands
+  # it to Authentik. It reaches Memos only inside memos_config.
+  immutable: true
+- name: memos_config
+  # The declarative configuration file. Before sign-in is on (and after
+  # it is turned off) it only asks Memos to delete the Authentik provider,
+  # which is a no-op while Memos manages no such provider.
+  initial: '{"removed":[{"resource":"identity-providers/authentik","destroy":true}]}'
+  immutable: true
+  consumers:
+  - service: memos
+    path: /etc/memos/config/homestead.json
+integrations:
+- kind: identity
+  target: authentik
+  note: People sign in with Authentik from the Memos login page once sign-in is applied on the app's page; password sign-in stays.

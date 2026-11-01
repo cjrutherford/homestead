@@ -97,8 +97,9 @@ func TestCheckBundleGradesAvailableMembers(t *testing.T) {
 }
 
 // TestCheckBundleNamesMissingMembers keeps the incomplete path covered now
-// that the starter profile is complete: the family bundle still names
-// curated members the catalog does not carry.
+// that the starter profile is complete: a copy of the family bundle with a
+// member the catalog does not carry (S359: Memos was its last missing
+// member).
 func TestCheckBundleNamesMissingMembers(t *testing.T) {
 	cat := repoCatalog(t)
 	var family Bundle
@@ -107,6 +108,7 @@ func TestCheckBundleNamesMissingMembers(t *testing.T) {
 			family = bundle
 		}
 	}
+	family.Packages = append(append([]string{}, family.Packages...), "not-yet-in-the-catalog")
 	report, err := CheckBundle(cat, family, bundleHost())
 	if err != nil {
 		t.Fatalf("CheckBundle: %v", err)

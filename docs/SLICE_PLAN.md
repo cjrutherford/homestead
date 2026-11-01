@@ -74,7 +74,7 @@ needs the S341 library declaration to name its shared ingest path.
 | S356 | `calibre-web-automated` | S341 | Community image; OIDC re-verified at slice time or documented as local-only. **Done.** |
 | S357 | `vikunja` | S341 | CalDAV against Nextcloud (S357: not wired; Vikunja's own CalDAV) and Authentik sign-in via env-oidc config file. **Done.** |
 | S358 | `actual-budget` | S276 | Native OpenID verified (env-oidc, S358); first sign-in is the server owner. **Done.** |
-| S359 | `memos` | S341 | Complements Nextcloud Notes; does not replace it. |
+| S359 | `memos` | S341 | Declarative-config OIDC (env-oidc, S359); SSO people are ordinary users. **Done.** |
 
 ### 2.5 Third foundation, then Wave 3
 

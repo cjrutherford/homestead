@@ -53,7 +53,9 @@ var knownImageVolumes = map[string]imageVolumes{
 	// S358: the sync-server Dockerfile declares no VOLUME and no USER (root);
 	// /data is a Homestead declaration.
 	"docker.io/actualbudget/actual-server:26.10.0": {},
-	"docker.io/vikunja/vikunja:2.7.1":              {}, // FROM scratch, no VOLUME; /db and files are declared data
+	// S359: the Memos Dockerfile declares VOLUME /var/opt/memos.
+	"docker.io/neosmemo/memos:26.10.0": {Volumes: []string{"/var/opt/memos"}},
+	"docker.io/vikunja/vikunja:2.7.1":  {}, // FROM scratch, no VOLUME; /db and files are declared data
 	// S348: the Debian FreshRSS image declares no VOLUME; both writable
 	// directories are Homestead declarations.
 	"docker.io/freshrss/freshrss:1.30.4": {},
