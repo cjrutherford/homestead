@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -1255,4 +1256,52 @@ func TestCuratedCalibreWebAutomated(t *testing.T) {
 	if !report.Passed {
 		t.Fatalf("report = %+v", report)
 	}
+}
+
+// TestPaperlessSignInSecrets pins the sign-in declaration (S413): the
+// provider JSON is a derived, immutable secret that starts as "{}" and is
+// exported by the supervisor, and the client secret has no consumer.
+func TestPaperlessSignInSecrets(t *testing.T) {
+	manifest, err := repoCatalog(t).Get("paperless-ngx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := manifest.SSO.OIDC.Env
+	if env == nil || env.SecretFile == nil || env.SecretFile.Secret != "oidc_providers" || env.Secret != "oidc_client_secret" ||
+		env.Trust != "REQUESTS_CA_BUNDLE" || env.TrustBundle != TrustBundleCombined {
+		t.Fatalf("sso = %+v", env)
+	}
+	if _, plain := env.Set["PAPERLESS_SOCIALACCOUNT_PROVIDERS"]; plain || strings.Contains(strings.Join(mapValues(env.Set), " "), "secret") {
+		t.Fatalf("provider setting or secret in the plain environment: %v", env.Set)
+	}
+	if _, disabled := env.Set["PAPERLESS_DISABLE_REGULAR_LOGIN"]; disabled {
+		t.Fatal("the local login form must stay")
+	}
+	mem := newMemSecrets(t)
+	if err := EnsureSecrets(mem, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if got := mem.values[SecretStoreName("paperless-ngx", "oidc_providers")]; got != "{}" {
+		t.Fatalf("initial provider setting = %q", got)
+	}
+	dir := t.TempDir()
+	for _, f := range SecretFilesFor(manifest) {
+		if f.Name == "oidc_client_secret" {
+			t.Fatal("the client secret must not be a file of its own")
+		}
+	}
+	if err := WriteSecretFiles(dir, SecretFilesFor(manifest), mem); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, SecretsDirName, "webserver_oidc_providers")); err != nil || string(b) != "{}" {
+		t.Fatalf("file = %q, %v", b, err)
+	}
+}
+
+func mapValues(m map[string]string) []string {
+	var out []string
+	for _, v := range m {
+		out = append(out, v)
+	}
+	return out
 }

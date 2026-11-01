@@ -176,3 +176,31 @@ passwords.
   `warnings` for plan text, `extrasecrets` (the session crypto key), and
   `trustbundle: system` with `trustpath` (the combined bundle mounted
   read-only over the image's own CA bundle for the appliance's own issuer).
+
+### Amendment (2026-10-31, S413): a derived secret file for settings that embed the client secret
+Paperless-ngx configures OIDC through one JSON variable,
+`PAPERLESS_SOCIALACCOUNT_PROVIDERS`, that contains the client secret. A secret
+inside a larger value cannot be a plain environment entry (it would sit in the
+override file and `docker inspect`). The image's init honours `<VAR>_FILE`
+for any `PAPERLESS_` variable, and the supervisor already exports a file's
+content into the variable, so the least new mechanism is a secret whose value
+Homestead renders:
+
+- `SecretDecl.initial` is a fixed, non-secret starting value stored in place
+  of a generated one (the secret must be `immutable`). For the provider JSON
+  it is `{}`, Paperless's empty list, so a stack that never signs in still
+  starts.
+- `env.secretfile: {secret, template}` on env-oidc names that secret and a
+  template with the usual placeholders plus `{{client_secret}}`, which is
+  valid there and nowhere else (`set` still refuses it). Values are
+  JSON-escaped when substituted.
+- Sign-in apply renders the template into the secret store (`app_`, sealed,
+  in backups) and rewrites the secret's 0600 file owned by the consuming user,
+  before the stack is brought up; sign-in off restores the initial value and
+  file. The client secret itself then has no consumer of its own.
+- No secret appears in Compose, the override file, argv, logs or any
+  world-readable file. A file change alone does not recreate a running
+  container (the supervisor reads it at start); an issuer move that changes
+  nothing else in the environment needs a restart (DEFERRED).
+- Paperless keeps its local login form (`PAPERLESS_DISABLE_REGULAR_LOGIN` is
+  never set), so the break-glass rule holds.

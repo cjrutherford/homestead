@@ -66,7 +66,11 @@ func appSignInInputsFrom(st *store.Store, m *sso.Manager, manifest catalog.Manif
 	}
 	in.Installed = installed
 	if installed && manifest.SSO.OIDC != nil && manifest.SSO.OIDC.Env != nil {
-		for _, name := range append([]string{manifest.SSO.OIDC.Env.Secret}, manifest.SSO.OIDC.Env.ExtraSecrets...) {
+		names := append([]string{manifest.SSO.OIDC.Env.Secret}, manifest.SSO.OIDC.Env.ExtraSecrets...)
+		if f := manifest.SSO.OIDC.Env.SecretFile; f != nil {
+			names = append(names, f.Secret)
+		}
+		for _, name := range names {
 			in.StackNeedsSecret = in.StackNeedsSecret || !catalog.SecretConsumerWired(stackDirFor(manifest.Name), manifest, name)
 		}
 	}

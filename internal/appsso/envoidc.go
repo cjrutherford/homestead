@@ -2,6 +2,7 @@ package appsso
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"sort"
@@ -48,6 +49,9 @@ func (a envOIDC) keys() []string {
 func (a envOIDC) OnSettings(issuer, clientID string) []string {
 	lines := []string{fmt.Sprintf("Environment set in the app's override file: %s (issuer %s, client id %s).", strings.Join(a.keys(), ", "), issuer, clientID)}
 	lines = append(lines, fmt.Sprintf("The client secret is the app's generated secret %q, handed to the app as a file; it is never shown or logged.", a.cfg.Secret))
+	if f := a.cfg.SecretFile; f != nil {
+		lines = append(lines, fmt.Sprintf("The app's provider setting contains the client secret, so Homestead writes it as the app's generated secret %q (a private file handed to the app, never in the stack's environment); sign-in off restores its empty value.", f.Secret))
+	}
 	if len(a.cfg.OnApply) > 0 {
 		lines = append(lines, fmt.Sprintf("After the app restarts, this command runs inside it: %s.", strings.Join(a.cfg.OnApply, " ")))
 	}
@@ -142,6 +146,24 @@ func (a envOIDC) Env(s Settings) map[string]string {
 		out[k] = catalog.RenderEnvTemplate(t, vals)
 	}
 	return out
+}
+
+// DerivedSecret is the declared secret whose value is rendered from the
+// manifest's secretfile template (S413): the app's one sign-in setting
+// that contains the client secret. The value goes to the secret store
+// and a 0600 file, never to Compose, the override file, argv or logs.
+func (a envOIDC) DerivedSecret(s Settings) (name, value string, ok bool) {
+	f := a.cfg.SecretFile
+	if f == nil {
+		return "", "", false
+	}
+	esc := func(v string) string {
+		b, _ := json.Marshal(v)
+		return string(b[1 : len(b)-1])
+	}
+	vals := map[string]string{"issuer": esc(s.Issuer), "authentik_base": esc(authentikBase(s.Issuer)), "client_id": esc(s.ClientID),
+		"admin_group": esc(s.Groups.Admins), "user_group": esc(s.Groups.Users), "client_secret": esc(s.ClientSecret)}
+	return f.Secret, catalog.RenderEnvTemplate(f.Template, vals), true
 }
 
 // Enable runs the manifest's in-app command (S412), if it has one, once

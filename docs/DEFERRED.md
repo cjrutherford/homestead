@@ -1580,5 +1580,9 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S412: the FreshRSS sign-in step needs the web installer finished; an unfinished install fails the in-app command with guidance rather than waiting like Nextcloud's set-up wait.
 - S412: the combined CA bundle laid over FreshRSS's system CAs is built at sign-in apply only, so host CA updates reach it on the next re-apply.
 - S412: FreshRSS sign-in is confirmed from source, not yet from a live VM (mod_auth_openidc return URL behind the edge, auto-registration, off restoring the form login).
+- S413: Paperless-ngx sign-in gives everyone an ordinary account with no permissions; admin rights and group sync (`PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS`, needs matching Paperless groups created first) are not wired.
+- S413: a re-apply that changes only the derived provider file (an issuer move between two private names) does not recreate the running container, so Paperless keeps the old setting until it restarts.
+- S413: Paperless sign-in is confirmed from docs and source, not yet from a live VM (login-page button, callback behind the edge, public-name CSRF origins via PAPERLESS_CSRF_TRUSTED_ORIGINS if needed).
+- S413: `oidc_client_secret` is immutable here; rotating a client secret is a re-apply of sign-in, not a secret rotation.
 - S409: a Linkding stack from before S349's supervisor (no entrypoint in compose.yaml) is not repaired by the secret wiring; reinstall it.
 - S409: OIDC accounts match existing Linkding users by email; an Authentik person with no email gets a new account rather than the matching one.

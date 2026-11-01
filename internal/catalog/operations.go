@@ -156,7 +156,7 @@ func InstallDefinition(plan InstallPlan, registry *storage.Registry, dir string,
 		Run: func(ctx context.Context) error {
 			// Generate any secret the store lacks (never overwriting),
 			// then materialize the 0600 files beside compose.yaml.
-			if err := ensureNames(secrets, storeNames(files.SecretFiles)); err != nil {
+			if err := ensureFileSecrets(secrets, files.SecretFiles); err != nil {
 				return err
 			}
 			if err := WriteStack(dir, files, secrets); err != nil {

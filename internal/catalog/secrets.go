@@ -67,6 +67,11 @@ type SecretDecl struct {
 	Immutable bool
 	Reveal    bool
 	Note      string
+	// Initial (S413) is a fixed, non-secret starting value stored
+	// instead of a generated one. For a derived secret file an adapter
+	// renders at sign-in time (EnvOIDC.SecretFile): before sign-in is on
+	// it is the app's "nothing configured" value. Needs Immutable.
+	Initial string
 }
 
 // SecretStoreName is the secret-store row holding a package secret.
@@ -116,6 +121,9 @@ func validateSecrets(m Manifest, services map[string]bool) error {
 			return fmt.Errorf("catalog: duplicate secret %q", decl.Name)
 		}
 		seen[decl.Name] = true
+		if decl.Initial != "" && (!decl.Immutable || decl.Reveal || strings.ContainsAny(decl.Initial, "\r\n")) {
+			return fmt.Errorf("catalog: secret %q has an initial value, so it must be immutable, not revealed and one line", decl.Name)
+		}
 		if len(decl.Consumers) == 0 && !m.HeldSecret(decl.Name) {
 			return fmt.Errorf("catalog: secret %q needs at least one consumer", decl.Name)
 		}
@@ -193,6 +201,8 @@ type SecretFile struct {
 	UID, GID  *int
 	// DatabasePassword marks the manifest's database password file.
 	DatabasePassword bool
+	// Initial is the declaration's fixed starting value (S413).
+	Initial string
 }
 
 // SecretFilesFor lists the files a manifest needs, sorted by key, with
@@ -219,7 +229,7 @@ func SecretFilesFor(m Manifest) []SecretFile {
 			o := owners[c.Service]
 			out = append(out, SecretFile{Key: key, Service: c.Service, Name: decl.Name,
 				StoreName: SecretStoreName(m.Name, decl.Name), UID: o[0], GID: o[1],
-				DatabasePassword: m.Database != nil && m.Database.PasswordSecret == decl.Name})
+				DatabasePassword: m.Database != nil && m.Database.PasswordSecret == decl.Name, Initial: decl.Initial})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
@@ -350,13 +360,19 @@ func generateSecretValue() (string, error) {
 // declared secret that has none. Existing values are never touched.
 func EnsureSecrets(src SecretStore, m Manifest) error {
 	var names []string
+	initial := map[string]string{}
 	for _, decl := range m.Secrets {
 		names = append(names, SecretStoreName(m.Name, decl.Name))
+		if decl.Initial != "" {
+			initial[SecretStoreName(m.Name, decl.Name)] = decl.Initial
+		}
 	}
-	return ensureNames(src, names)
+	return ensureNamesInitial(src, names, initial)
 }
 
-func ensureNames(src SecretStore, names []string) error {
+func ensureNames(src SecretStore, names []string) error { return ensureNamesInitial(src, names, nil) }
+
+func ensureNamesInitial(src SecretStore, names []string, initial map[string]string) error {
 	if len(names) == 0 {
 		return nil
 	}
@@ -369,15 +385,30 @@ func ensureNames(src SecretStore, names []string) error {
 		} else if !errors.Is(err, secret.ErrNotFound) {
 			return fmt.Errorf("catalog: read secret %q: %w", name, err)
 		}
-		value, err := generateSecretValue()
-		if err != nil {
-			return err
+		value, ok := initial[name]
+		if !ok {
+			var err error
+			if value, err = generateSecretValue(); err != nil {
+				return err
+			}
 		}
 		if err := src.SetApp(name, value); err != nil {
 			return fmt.Errorf("catalog: store secret %q: %w", name, err)
 		}
 	}
 	return nil
+}
+
+// ensureFileSecrets generates the values the files' secrets lack in the
+// store, using a declaration's fixed starting value where it has one.
+func ensureFileSecrets(src SecretStore, files []SecretFile) error {
+	initial := map[string]string{}
+	for _, f := range files {
+		if f.Initial != "" {
+			initial[f.StoreName] = f.Initial
+		}
+	}
+	return ensureNamesInitial(src, storeNames(files), initial)
 }
 
 func storeNames(files []SecretFile) []string {

@@ -209,6 +209,9 @@ func ensureDeclaredSecret(rt Runtime, m catalog.Manifest, dir string) (string, e
 	names := []string{name}
 	if m.SSO.OIDC != nil && m.SSO.OIDC.Env != nil {
 		names = append(names, m.SSO.OIDC.Env.ExtraSecrets...)
+		if f := m.SSO.OIDC.Env.SecretFile; f != nil {
+			names = append(names, f.Secret)
+		}
 	}
 	var decls []catalog.SecretDecl
 	for _, n := range names {
@@ -247,6 +250,45 @@ func ensureDeclaredSecret(rt Runtime, m catalog.Manifest, dir string) (string, e
 		}
 	}
 	return rt.AppSecrets.Get(catalog.SecretStoreName(m.Name, name))
+}
+
+// derivedAdapter is an adapter whose app setting contains the client
+// secret (S413).
+type derivedAdapter interface {
+	DerivedSecret(s Settings) (name, value string, ok bool)
+}
+
+// writeDerivedSecret renders the adapter's derived secret into the
+// secret store and its 0600 file. With on false it restores the
+// declaration's initial value. The file exists before the stack is
+// brought up, so the container never sees a half-written setting.
+func writeDerivedSecret(rt Runtime, m catalog.Manifest, dir string, adapter Adapter, s Settings, on bool) error {
+	d, ok := adapter.(derivedAdapter)
+	if !ok {
+		return nil
+	}
+	name, value, ok := d.DerivedSecret(s)
+	if !ok {
+		return nil
+	}
+	if rt.AppSecrets == nil {
+		return fmt.Errorf("appsso: the package secret store is unavailable")
+	}
+	var files []catalog.SecretFile
+	for _, decl := range m.Secrets {
+		if decl.Name == name && !on {
+			value = decl.Initial
+		}
+	}
+	for _, f := range catalog.SecretFilesFor(m) {
+		if f.Name == name {
+			files = append(files, f)
+		}
+	}
+	if err := rt.AppSecrets.SetApp(catalog.SecretStoreName(m.Name, name), value); err != nil {
+		return fmt.Errorf("appsso: store the derived secret: %w", err)
+	}
+	return catalog.WriteSecretFiles(dir, files, rt.AppSecrets)
 }
 
 // Definition is the app.sign-in operation for an approved plan: on
@@ -380,7 +422,14 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 				rt.audit(actor, "app.sign-in.authentik", "ok", m.Name+": "+strings.Join(steps, "; "))
 				return nil
 			}},
-			{Name: "unwire", Run: func(ctx context.Context) error { return rewire(ctx, false) }},
+			{Name: "unwire", Run: func(ctx context.Context) error {
+				// The derived secret goes back to its empty value before
+				// the container is recreated without the sign-in variables.
+				if err := writeDerivedSecret(rt, m, dir, adapter, Settings{}, false); err != nil {
+					return failed("restore the app's provider setting", err)
+				}
+				return rewire(ctx, false)
+			}},
 			{Name: "forget", Run: func(context.Context) error {
 				if declaredSecret(m) == "" {
 					if err := rt.Secrets.Delete(SecretName(m.Name)); err != nil {
@@ -455,6 +504,9 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 			return nil
 		}},
 		{Name: "wire", Run: func(ctx context.Context) error {
+			if err := writeDerivedSecret(rt, m, dir, adapter, Settings{Issuer: plan.Issuer, ClientID: plan.ClientID, ClientSecret: secret, Groups: groupNames(m.Name)}, true); err != nil {
+				return failed("write the app's provider setting", err)
+			}
 			if err := rewire(ctx, true); err != nil {
 				return failed("wire the app to Authentik", err)
 			}

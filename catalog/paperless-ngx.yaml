@@ -125,6 +125,35 @@ backuppaths:
 sso:
   class: optional
   protocols: [oidc]
+  # Sign-in (S413): django-allauth's openid_connect provider, enabled by
+  # PAPERLESS_APPS and configured by PAPERLESS_SOCIALACCOUNT_PROVIDERS, a
+  # JSON value that contains the client secret. Homestead renders that
+  # JSON at apply time into a private secret file (secretfile) that the
+  # supervisor exports; the stack's environment never holds it. Paperless's
+  # own login form stays (PAPERLESS_DISABLE_REGULAR_LOGIN is not set), so
+  # the local admin keeps working. The sign-in button is on the login page.
+  # Groups: Paperless can sync groups from the groups claim only into
+  # groups that already exist in Paperless by the same name, and never
+  # grants staff or superuser from them, so no role mapping is wired.
+  oidc:
+    adapter: env-oidc
+    service: webserver
+    env:
+      redirectpaths: ["/accounts/oidc/authentik/login/callback/"]
+      signinpath: /accounts/login/
+      secret: oidc_client_secret
+      secretfile:
+        secret: oidc_providers
+        template: '{"openid_connect":{"APPS":[{"provider_id":"authentik","name":"Authentik","client_id":"{{client_id}}","secret":"{{client_secret}}","settings":{"server_url":"{{issuer}}.well-known/openid-configuration"}}]}}'
+      # allauth fetches discovery and tokens with requests; the combined
+      # bundle keeps its other HTTPS fetches working (S410).
+      trust: REQUESTS_CA_BUNDLE
+      trustbundle: combined
+      warnings:
+      - "Paperless-ngx keeps its own login form. People who sign in through Authentik get an ordinary Paperless account created at first sign-in (username from their Authentik username); they have no permissions until a Paperless administrator grants them. Group membership and admin rights are not taken from Authentik. An existing Paperless account is not linked automatically: sign in to it, then link Authentik under My Profile."
+      set:
+        PAPERLESS_APPS: allauth.socialaccount.providers.openid_connect
+        PAPERLESS_SOCIAL_AUTO_SIGNUP: "true"
 database:
   service: db
   kind: postgres
@@ -146,6 +175,19 @@ secrets:
   - service: webserver
     env: PAPERLESS_SECRET_KEY_FILE
     export: true
+# Sign-in (S413). The client secret has no consumer of its own: it reaches
+# Paperless only inside oidc_providers, the rendered provider JSON.
+- name: oidc_client_secret
+  immutable: true
+- name: oidc_providers
+  # "{}" is Paperless's empty provider list; sign-in on replaces it with
+  # the rendered setting, off restores it.
+  initial: "{}"
+  immutable: true
+  consumers:
+  - service: webserver
+    env: PAPERLESS_SOCIALACCOUNT_PROVIDERS_FILE
+    export: true
 - name: admin_password
   # Only read when the first superuser is created; changing it later does
   # not reset an existing account (reset inside the app or with
@@ -158,7 +200,7 @@ secrets:
 integrations:
 - kind: identity
   target: authentik
-  note: Sign in through Authentik once its OIDC client is configured; local login stays available.
+  note: Sign in through Authentik from the Paperless login page; the local login form stays available.
 - kind: library
   target: nextcloud
   note: Nextcloud can mount Paperless's consume folder as external storage, so scans land where Paperless picks them up.

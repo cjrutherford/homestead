@@ -58,6 +58,15 @@ class TestPaperlessContract(unittest.TestCase):
         self.assertNotIn("PAPERLESS_SECRET_KEY:", self.text)
         self.assertNotIn("PAPERLESS_ADMIN_PASSWORD:", self.text)
 
+    def test_sign_in_secret_is_a_derived_file_not_env(self):
+        # S413: the provider JSON contains the client secret, so it is a
+        # rendered secret file; the manifest's plain env never holds it.
+        self.assertIn("env: PAPERLESS_SOCIALACCOUNT_PROVIDERS_FILE", self.text)
+        self.assertIn('initial: "{}"', self.text)
+        self.assertIn("{{client_secret}}", self.text)
+        self.assertNotIn("PAPERLESS_DISABLE_REGULAR_LOGIN:", self.text)
+        self.assertNotIn("PAPERLESS_SOCIALACCOUNT_PROVIDERS:", self.text)
+
     def test_url_follows_the_route_and_ocr_is_set(self):
         self.assertIn('PAPERLESS_URL: "https://{{route_host}}"', self.text)
         self.assertIn("PAPERLESS_OCR_LANGUAGE: eng", self.text)

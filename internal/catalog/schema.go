@@ -285,9 +285,27 @@ type EnvOIDC struct {
 	// Exclusive (S412) says sign-in replaces the app's own login while
 	// it is on, so plans stop promising a working local login.
 	Exclusive bool `yaml:"exclusive,omitempty" json:"exclusive,omitempty"`
+	// SecretFile (S413) is for apps whose sign-in setting is one value
+	// that contains the client secret (Paperless-ngx's provider JSON).
+	SecretFile *EnvSecretFile `yaml:"secretfile,omitempty" json:"secretfile,omitempty"`
 	// Warnings are shown in every sign-in plan for the app.
 	Warnings []string          `yaml:"warnings,omitempty" json:"warnings,omitempty"`
 	Set      map[string]string `yaml:"set" json:"set"`
+}
+
+// EnvSecretFile is a declared secret whose value Homestead renders at
+// sign-in time from Template, with the usual placeholders and
+// {{client_secret}}, and delivers like any other secret (a 0600 file
+// owned by the consuming user, the supervisor exporting it). Off
+// restores the declaration's Initial value. {{client_secret}} is valid
+// only here, never in Set, so the secret never reaches Compose.
+type EnvSecretFile struct {
+	// Secret names a declared secret with an initial value, consumed by
+	// the service.
+	Secret string `yaml:"secret" json:"secret"`
+	// Template is the rendered value. Substituted values are escaped for
+	// a JSON string, so the template is JSON.
+	Template string `yaml:"template" json:"template"`
 }
 
 // TrustBundleCombined is the one EnvOIDC.TrustBundle value (S410).
@@ -305,6 +323,10 @@ const TrustBundleSystem = "system"
 
 // EnvPlaceholders are the only placeholders an env-oidc template may use.
 var EnvPlaceholders = []string{"issuer", "authentik_base", "client_id", "admin_group", "user_group"}
+
+// SecretFilePlaceholders are the placeholders a secretfile template may
+// use: the env ones and the client secret (S413).
+var SecretFilePlaceholders = append(append([]string{}, EnvPlaceholders...), "client_secret")
 
 var validExecUser = regexp.MustCompile(`^([a-z_][a-z0-9_-]*|[0-9]+)$`)
 
@@ -364,6 +386,8 @@ func (e EnvOIDC) validate(service string, svc Service, secrets []SecretDecl) err
 		for _, c := range d.Consumers {
 			found = found || c.Service == service
 		}
+		// With a secretfile the client secret has no consumer of its own.
+		found = found || (e.SecretFile != nil && len(d.Consumers) == 0)
 	}
 	if !found {
 		return fmt.Errorf("catalog: env-oidc secret %q must be a declared secret consumed by service %q", e.Secret, service)
@@ -391,6 +415,22 @@ func (e EnvOIDC) validate(service string, svc Service, secrets []SecretDecl) err
 	for _, name := range e.ExtraSecrets {
 		if name == e.Secret || !secretConsumedBy(secrets, name, service) {
 			return fmt.Errorf("catalog: env-oidc extra secret %q must be a declared secret, other than the client secret, consumed by service %q", name, service)
+		}
+	}
+	if f := e.SecretFile; f != nil {
+		if f.Secret == e.Secret || containsName(e.ExtraSecrets, f.Secret) || !secretConsumedBy(secrets, f.Secret, service) {
+			return fmt.Errorf("catalog: env-oidc secretfile secret %q must be a declared secret of its own, consumed by service %q", f.Secret, service)
+		}
+		for _, d := range secrets {
+			if d.Name == f.Secret && d.Initial == "" {
+				return fmt.Errorf("catalog: env-oidc secretfile secret %q needs an initial value", f.Secret)
+			}
+		}
+		if !EnvTemplateUses(f.Template, "client_secret") {
+			return fmt.Errorf("catalog: env-oidc secretfile template must use {{client_secret}}")
+		}
+		if bad := unknownPlaceholders(f.Template, SecretFilePlaceholders); bad != "" {
+			return fmt.Errorf("catalog: env-oidc secretfile template uses unknown placeholder %q", bad)
 		}
 	}
 	if (len(e.OnApply) == 0) != (len(e.OnOff) == 0) {
@@ -776,7 +816,15 @@ func (f FirstRun) validate(m Manifest, services map[string]bool) error {
 // HeldSecret reports a declared secret Homestead holds for itself (the
 // first-run account's password): it has no consumer service.
 func (m Manifest) HeldSecret(name string) bool {
-	return m.FirstRun != nil && m.FirstRun.Secret == name
+	if m.FirstRun != nil && m.FirstRun.Secret == name {
+		return true
+	}
+	// The client secret of an app whose sign-in setting embeds it (S413)
+	// reaches the app only inside the derived secret file.
+	if m.SSO.OIDC != nil && m.SSO.OIDC.Env != nil && m.SSO.OIDC.Env.SecretFile != nil {
+		return m.SSO.OIDC.Env.Secret == name
+	}
+	return false
 }
 
 // Seed is one first-start file: Target is a container path inside one
@@ -1058,4 +1106,27 @@ func ValidateCraftListing(m Manifest, listed func(app, version string) bool) err
 		}
 	}
 	return nil
+}
+
+func containsName(list []string, name string) bool {
+	for _, v := range list {
+		if v == name {
+			return true
+		}
+	}
+	return false
+}
+
+// unknownPlaceholders returns the first placeholder in tmpl that is not
+// allowed, or a malformed-brace marker; "" when the template is clean.
+func unknownPlaceholders(tmpl string, allowed []string) string {
+	for _, m := range envPlaceholder.FindAllStringSubmatch(tmpl, -1) {
+		if !containsName(allowed, m[1]) {
+			return m[1]
+		}
+	}
+	if strings.Contains(strings.ReplaceAll(envPlaceholder.ReplaceAllString(tmpl, ""), "}}", ""), "{{") {
+		return "{{"
+	}
+	return ""
 }
