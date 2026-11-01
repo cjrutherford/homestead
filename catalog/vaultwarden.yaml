@@ -5,11 +5,11 @@
 # owner can create the first account, and the admin page is deliberately
 # off (no ADMIN_TOKEN) because a generated token would turn an
 # administrative surface on by default. Enabling the admin page is a
-# separate owner decision (see docs/DEFERRED.md). OIDC is declared
-# optional for the SSO wizard; wiring SSO_* values from a client
-# created by Authentik is not surfaced yet.
+# separate owner decision (see docs/DEFERRED.md). Sign-in through
+# Authentik (S414, Vaultwarden 1.35.0 and later) is optional and set by
+# environment alone; the password login stays.
 name: vaultwarden
-version: 1.34.3
+version: 1.37.4
 title: Vaultwarden
 blurb: Passwords and passkeys you control.
 description: Vaultwarden is a lightweight, Bitwarden-compatible password
@@ -21,7 +21,7 @@ category: passwords
 icon: mdi:shield-key
 services:
 - name: vaultwarden
-  image: vaultwarden/server:1.34.3
+  image: vaultwarden/server:1.37.4
   exposes: web
   containerport: 80
   environment:
@@ -64,7 +64,44 @@ backuppaths:
 sso:
   class: optional
   protocols: [oidc]
+  # App sign-in through Authentik (S414): Vaultwarden's built-in OpenID
+  # Connect. SSO_ONLY is deliberately not set, so email and master
+  # password login keeps working. The redirect is
+  # <DOMAIN>/identity/connect/oidc-signin, so sign-in works at the
+  # address DOMAIN names (the app's address). SSO_AUTHORITY must equal
+  # Authentik's issuer exactly, trailing slash included. Homestead's
+  # Authentik provider has no refresh-token scope, so
+  # SSO_AUTH_ONLY_NOT_SESSION keeps Vaultwarden's own session lifetime
+  # (2 hours, 7 days idle) instead of the 5 minute access token. The
+  # client secret is read from a file by Vaultwarden itself (_FILE).
+  oidc:
+    adapter: env-oidc
+    service: vaultwarden
+    env:
+      redirectpaths: ["/identity/connect/oidc-signin"]
+      signinpath: /
+      secret: oidc_client_secret
+      # The HTTP client takes extra roots from SSL_CERT_FILE next to the
+      # image's SSL_CERT_DIR, so the combined bundle (host public CAs plus
+      # the appliance root) is set only for the appliance's own issuer.
+      trust: SSL_CERT_FILE
+      trustbundle: combined
+      warnings:
+      - Signing in through Authentik replaces only the login identity. Everyone still needs their own master password, which Authentik does not hold and cannot reset; a forgotten master password cannot be recovered. The password login form stays.
+      - Vaultwarden joins an Authentik person to an existing vault account with the same email address (the account must be verified in Authentik). Sign-in works at the address Vaultwarden is set up for (its DOMAIN, the app's address); other addresses for the same app cannot complete sign-in.
+      set:
+        SSO_ENABLED: "true"
+        SSO_AUTHORITY: "{{issuer}}"
+        SSO_CLIENT_ID: "{{client_id}}"
+        SSO_AUTH_ONLY_NOT_SESSION: "true"
+secrets:
+- name: oidc_client_secret
+  # Authentik's client secret for Vaultwarden; Homestead generates it,
+  # hands it to Authentik, and gives Vaultwarden the file.
+  consumers:
+  - service: vaultwarden
+    env: SSO_CLIENT_SECRET_FILE
 integrations:
 - kind: identity
   target: authentik
-  note: Sign in through Authentik once its OIDC client is configured; local login stays available.
+  note: People sign in with Authentik once sign-in is applied on the app's page; email and master password login stays available, and everyone still needs their master password.

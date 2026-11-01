@@ -1584,5 +1584,9 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S413: a re-apply that changes only the derived provider file (an issuer move between two private names) does not recreate the running container, so Paperless keeps the old setting until it restarts.
 - S413: Paperless sign-in is confirmed from docs and source, not yet from a live VM (login-page button, callback behind the edge, public-name CSRF origins via PAPERLESS_CSRF_TRUSTED_ORIGINS if needed).
 - S413: `oidc_client_secret` is immutable here; rotating a client secret is a re-apply of sign-in, not a secret rotation.
+- S414: Vaultwarden sign-in sets no refresh-token scope (Homestead's Authentik provider has only the authorization-code grant and no `offline_access` mapping), so `SSO_AUTH_ONLY_NOT_SESSION=true` keeps Vaultwarden's own session lifetime; revisit if sessions should follow Authentik.
+- S414: sign-in completes only at the address Vaultwarden's `DOMAIN` names (the app address); other routes of the same app are listed as redirects but fail inside Vaultwarden.
+- S414: Vaultwarden sign-in is confirmed from release notes, wiki and source, not yet from a live VM (Authentik `email_verified`, existing-account email match, 1.34.3 to 1.37.4 data migration).
+- S414: no Authentik group to Vaultwarden organization mapping; SSO only signs people in, organizations and master passwords stay in Vaultwarden.
 - S409: a Linkding stack from before S349's supervisor (no entrypoint in compose.yaml) is not repaired by the secret wiring; reinstall it.
 - S409: OIDC accounts match existing Linkding users by email; an Authentik person with no email gets a new account rather than the matching one.

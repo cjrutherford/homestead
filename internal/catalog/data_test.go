@@ -87,7 +87,7 @@ var knownImageVolumes = map[string]imageVolumes{
 	// S345: Vaultwarden declares /data in its Dockerfile. Not yet inspected
 	// on the KVM appliance: re-verify with `docker image inspect` when the
 	// tag is next pulled there, and correct this row if the image differs.
-	"vaultwarden/server:1.34.3": {Volumes: []string{"/data"}},
+	"vaultwarden/server:1.37.4": {Volumes: []string{"/data"}},
 	// Craft images are built locally (S279), so this row is the locally
 	// built tag, not a pulled one. The shared craft Dockerfile declares no
 	// VOLUME (verified on the dev workstation 2026-10-17 with `docker image

@@ -236,10 +236,10 @@ func TestCuratedVaultwarden(t *testing.T) {
 	if err := manifest.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if manifest.Version != "1.34.3" {
+	if manifest.Version != "1.37.4" {
 		t.Fatalf("version = %q", manifest.Version)
 	}
-	if len(manifest.Services) != 1 || manifest.Services[0].Image != "vaultwarden/server:1.34.3" {
+	if len(manifest.Services) != 1 || manifest.Services[0].Image != "vaultwarden/server:1.37.4" {
 		t.Fatalf("services = %+v", manifest.Services)
 	}
 	service := manifest.Services[0]
@@ -272,6 +272,21 @@ func TestCuratedVaultwarden(t *testing.T) {
 	}
 	if manifest.Database != nil {
 		t.Fatalf("database = %+v, want SQLite in the volume", manifest.Database)
+	}
+	// S414: sign-in is environment alone, the secret is a file Vaultwarden
+	// reads itself, and local login is never turned off.
+	oidc := manifest.SSO.OIDC
+	if oidc == nil || oidc.Adapter != "env-oidc" || oidc.Env == nil {
+		t.Fatalf("sso.oidc = %+v", oidc)
+	}
+	if _, off := oidc.Env.Set["SSO_ONLY"]; off || oidc.Env.Set["SSO_AUTHORITY"] != "{{issuer}}" ||
+		oidc.Env.Trust != "SSL_CERT_FILE" || oidc.Env.TrustBundle != TrustBundleCombined {
+		t.Fatalf("env = %+v", oidc.Env)
+	}
+	if len(manifest.Secrets) != 1 || manifest.Secrets[0].Name != "oidc_client_secret" ||
+		len(manifest.Secrets[0].Consumers) != 1 || manifest.Secrets[0].Consumers[0].Env != "SSO_CLIENT_SECRET_FILE" ||
+		manifest.Secrets[0].Consumers[0].Export {
+		t.Fatalf("secrets = %+v", manifest.Secrets)
 	}
 	report, err := Evaluate(manifest, HostFacts{
 		Arch: "amd64", MemoryMB: 2048, CPUCount: 2,

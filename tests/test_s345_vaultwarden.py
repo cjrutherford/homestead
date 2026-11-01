@@ -18,8 +18,8 @@ class TestVaultwardenContract(unittest.TestCase):
         manifest = REPO / "catalog" / "vaultwarden.yaml"
         self.assertTrue(manifest.is_file(), "catalog/vaultwarden.yaml missing")
         text = manifest.read_text(encoding="utf-8")
-        for symbol in ("name: vaultwarden", "version: 1.34.3",
-                       "vaultwarden/server:1.34.3", "exposes: web",
+        for symbol in ("name: vaultwarden", "version: 1.37.4",
+                       "vaultwarden/server:1.37.4", "exposes: web",
                        "recommended: local", "allowwider: true"):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, text)
@@ -32,7 +32,7 @@ class TestVaultwardenContract(unittest.TestCase):
 
     def test_domain_follows_the_route(self):
         text = (REPO / "catalog" / "vaultwarden.yaml").read_text(encoding="utf-8")
-        self.assertIn('DOMAIN: "https://{{route_host}}"', text)
+        self.assertIn('DOMAIN: "{{app_url}}"', text)
 
     def test_no_latest_tag(self):
         text = (REPO / "catalog" / "vaultwarden.yaml").read_text(encoding="utf-8")
