@@ -87,3 +87,18 @@ patch), curated/SSO/image-volume tables, `tests/test_s357_vikunja.py`.
 5. Turn sign-in off; the file returns to `{}` and the button is gone.
 If discovery fails with a TLS error, the trust bundle is the first thing to
 check (`SSL_CERT_FILE` in the override).
+
+## Live results (VM 2, 2026-11-01, 11f190c)
+Installed local-only with sign-in approved at install (others: no access);
+install and setup succeeded (address, sign-in, people).
+- `/api/v1/info`: v2.7.1, local login on, OpenID enabled with provider
+  `authentik`, client `homestead-vikunja`, discovered from the local issuer
+  (`https://homestead.lan/apps/auth/...`), so `SSL_CERT_FILE` trust works
+  and the issuer's trailing slash is accepted.
+- `docker inspect` holds no client secret; mounts include
+  `/etc/vikunja/config.yml`; the stack's `secrets/vikunja_oidc_config` is
+  0600, uid 1000.
+- Authentik authorize with `redirect_uri=https://vikunja.lan/auth/openid/authentik`
+  → 302 to its login flow; a foreign redirect URI → 400. The callback route
+  serves the web app.
+- Not yet checked: a browser sign-in creating the account, sign-in off.
