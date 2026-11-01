@@ -80,3 +80,22 @@ On VM 2 with a gate on. `KUMA_EDGE` is the container's address on
 7. Turn the last gate off: the table is gone.
 8. LAN-routed test if feasible: from a LAN host add a route to a container
    network via the appliance; `curl -m 5` of the container address fails.
+
+## Live results (VM 2, 2026-11-01)
+
+Docker 26.1.5, iptables-nft, Navidrome and Uptime Kuma gated.
+
+- The rendered script passed `sudo nft --check -f`; after deploy
+  `nft -n list table inet homestead_gate` showed all eight rules and the
+  daemon logged no host-block error.
+- Non-root `curl` to Kuma on the edge network (192.168.48.16:3001) and on
+  its own compose network (172.29.0.2:3001) timed out; root got 302 on
+  both. Navidrome on both of its networks timed out for non-root.
+- The first build matched only the edge subnet and non-root still reached
+  Kuma on 172.29.0.2; that is why the rules match Docker bridge
+  interfaces instead.
+- Non-root HTTP to the edge on 127.0.0.1 got 308 (published ports work).
+- App egress unaffected: `curl https://example.com` inside Kuma got 200.
+- `homesteadctl doctor --live`: `gated-app-host-block: ok`.
+- Not run: steps 6–8 (manual table delete, last gate off, LAN-routed
+  test).
