@@ -78,3 +78,17 @@ with real node against a real `auth` table), curated/SSO/image-volume tables,
    and Actual asks for a server password.
 If discovery fails with a TLS error, check `NODE_EXTRA_CA_CERTS` in the
 override.
+
+## Live results (VM 2, 2026-11-01, c99ccfb)
+Installed local-only with sign-in approved at install (others: no access);
+install and setup succeeded (address, sign-in, people).
+- `/account/login-methods`: only `openid`, active. `/account/needs-bootstrap`:
+  bootstrapped, login method openid, multiuser.
+- `POST /account/login` (openid) returns an Authentik authorize URL for
+  `homestead-actual-budget` with `redirect_uri=https://actual-budget.lan/openid/callback`
+  and PKCE; Authentik answers 302 to its login flow (discovery over TLS
+  with `NODE_EXTRA_CA_CERTS` works).
+- `docker inspect`: only `ACTUAL_OPENID_CLIENT_SECRET_FILE` (a path); no
+  secret value.
+- Not yet checked: the owner's first browser sign-in (becomes server
+  owner — the owner must sign in first), a second user, sign-in off.
