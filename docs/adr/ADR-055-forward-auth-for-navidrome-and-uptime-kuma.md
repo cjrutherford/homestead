@@ -241,6 +241,18 @@ credentials or with an unguessable link or token.
 - The trust settings are written in the app's Compose through the existing env
   and secretfile mechanisms (ADR-052), so they come and go with sign-in.
 
+**Amendment, 2026-11-01 (S420).** `ND_EXTAUTH_TRUSTEDSOURCES` is the edge
+container's own IPv4 address on `homestead-edge` as a `/32`, never the network
+CIDR. Found live on VM 2: the host reaches containers from the bridge gateway
+(for example 192.168.48.1), which is inside the subnet, so any local user on
+the appliance could send `X-Authentik-Username` straight to the container and
+sign in as anyone. The plan is refused when the edge container is not running
+or has no IPv4 address on that network. If the edge container is recreated and
+gets a new address, the wired trust is stale: Navidrome ignores the header and
+shows its own login (fails safe). Sign-in status then reports re-plan needed
+(the gate revision covers the trusted source) and Doctor warns "re-plan and
+apply sign-in for <app>". Nothing is rewired automatically.
+
 ### 6. Local and recovery login
 - **Navidrome:** the login form stays. It is the Subsonic path's login anyway,
   and the recovery route if Authentik is down: remove `ND_EXTAUTH_TRUSTEDSOURCES`

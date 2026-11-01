@@ -1606,7 +1606,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S417 Audiobookshelf advanced permissions claim and the `guest` role are not mapped.
 - S417 Turning sign-in off leaves accounts created by it; they keep a link and can no longer sign in with OpenID.
 - S418 Forward-auth is wired for Navidrome only: MariaDB-backed apps, a second (non-embedded) outpost and other apps are not done (Kuma is S419).
-- S418 The trusted source is the edge subnet, not a /32 pin of the edge container; live on VM 2 the host reaches the container from the bridge gateway, inside that subnet, so a local user on the appliance can forge the header. Pin the edge /32.
+- S418 The trusted source was the edge subnet, not a /32 pin of the edge container; closed in S420 (edge /32, drift reported as re-plan and a Doctor warning).
 - S418 ADR-054 install-review does not yet show forward-auth apps (`installAccessMode` still says self-managed for Navidrome).
 - S418 `ReadAccounts` runs `docker cp` on every status call for an enabled gate; no cache.
 - S418 Owner username is not in the people table, so owner/local-account collisions are not checked; a person added later whose username matches an existing Navidrome account is only covered by a plan warning.

@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net"
 	"os/exec"
 	"strings"
 	"time"
@@ -18,20 +20,36 @@ import (
 // sign-in plan for a gated app, the gate's edge reconcile, and the
 // doctor check that the embedded outpost answers.
 
-// edgeSourceCIDR is the edge network's address range, the only source a
-// gated app trusts identity headers from. A var so tests skip Docker.
-var edgeSourceCIDR = func(ctx context.Context) (string, error) {
-	out, err := exec.CommandContext(ctx, "docker", "network", "inspect", docker.NetworkEdge,
-		"--format", "{{range .IPAM.Config}}{{.Subnet}} {{end}}").Output()
+// edgeSourceAddr is the edge container's own address on the edge network
+// as a /32, the only source a gated app trusts identity headers from. The
+// whole subnet would include the bridge gateway, which is how the host
+// reaches containers, so any local user could forge the header (ADR-055
+// §5, 2026-11-01). A var so tests skip Docker.
+var edgeSourceAddr = func(ctx context.Context) (string, error) {
+	out, err := exec.CommandContext(ctx, "docker", "inspect", "--format",
+		"{{.State.Running}} {{json .NetworkSettings.Networks}}", docker.CaddyContainerName).Output()
 	if err != nil {
-		return "", fmt.Errorf("inspect %s: %w", docker.NetworkEdge, err)
+		return "", fmt.Errorf("inspect %s: %w", docker.CaddyContainerName, err)
 	}
-	for _, f := range strings.Fields(string(out)) {
-		if !strings.Contains(f, ":") { // IPv4 only
-			return f, nil
-		}
+	return parseEdgeAddr(string(out))
+}
+
+// parseEdgeAddr reads `docker inspect` output of the form
+// "<running> <networks json>" into the edge container's IPv4 /32.
+func parseEdgeAddr(out string) (string, error) {
+	running, networks, _ := strings.Cut(strings.TrimSpace(out), " ")
+	if running != "true" {
+		return "", fmt.Errorf("the edge container %s is not running; start the edge and plan again", docker.CaddyContainerName)
 	}
-	return "", fmt.Errorf("%s has no IPv4 subnet", docker.NetworkEdge)
+	var nets map[string]struct{ IPAddress string }
+	if err := json.Unmarshal([]byte(networks), &nets); err != nil {
+		return "", fmt.Errorf("read %s networks: %w", docker.CaddyContainerName, err)
+	}
+	ip := net.ParseIP(nets[docker.NetworkEdge].IPAddress)
+	if ip == nil || ip.To4() == nil {
+		return "", fmt.Errorf("the edge container %s has no IPv4 address on %s", docker.CaddyContainerName, docker.NetworkEdge)
+	}
+	return ip.To4().String() + "/32", nil
 }
 
 // outpostPing asks the embedded outpost, from inside the edge container
@@ -58,8 +76,8 @@ func addForwardInputs(st *store.Store, in *appsso.Inputs, manifest catalog.Manif
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if cidr, err := edgeSourceCIDR(ctx); err == nil {
-		in.EdgeSource = cidr
+	if addr, err := edgeSourceAddr(ctx); err == nil {
+		in.EdgeSource = addr
 	}
 	rows, err := st.DB().Query(`SELECT username FROM people WHERE state = 'active'`)
 	if err != nil {
@@ -144,15 +162,49 @@ func gatedAppChecks(ctx context.Context, c DoctorLiveConfig) []doctor.Check {
 	if len(gated) == 0 {
 		return nil
 	}
+	drift := gatedTrustDrift(c)
 	err = outpostPing(ctx)
 	switch {
 	case timedOut(ctx):
-		return []doctor.Check{unknownCheck(name, "the embedded outpost did not answer in time")}
+		return append([]doctor.Check{unknownCheck(name, "the embedded outpost did not answer in time")}, drift...)
 	case err != nil:
-		return []doctor.Check{{Name: name, Status: doctor.StatusFail,
+		return append([]doctor.Check{{Name: name, Status: doctor.StatusFail,
 			Detail: "Authentik's embedded outpost does not answer, so " + strings.Join(gated, ", ") + " cannot be reached (the gate fails closed): " + shortError(err),
 			Fix: liveFix("Start Authentik's server container. To open the app again meanwhile, turn its Authentik gate off with its sign-in plan.",
-				"/admin/catalog", "homesteadctl docker health")}}
+				"/admin/catalog", "homesteadctl docker health")}}, drift...)
 	}
-	return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "Authentik's embedded outpost answers for " + strings.Join(gated, ", ")}}
+	return append([]doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "Authentik's embedded outpost answers for " + strings.Join(gated, ", ")}}, drift...)
+}
+
+// gatedTrustDrift warns for each signed-in gated app whose plan no longer
+// matches what was applied, typically because the edge container was
+// recreated and got a new address. The app fails safe (it ignores the
+// header and shows its own login); nothing is rewired automatically.
+func gatedTrustDrift(c DoctorLiveConfig) []doctor.Check {
+	if c.SSO == nil {
+		return nil
+	}
+	entries, err := catalog.Load(c.CatalogDir)
+	if err != nil {
+		return nil
+	}
+	set, err := loadEdgeRoutes(c.Store)
+	if err != nil {
+		return nil
+	}
+	var out []doctor.Check
+	for _, name := range entries.Names() {
+		m, err := entries.Get(name)
+		if err != nil || m.SSO.ForwardAuth == nil {
+			continue
+		}
+		in, err := appSignInInputsFrom(c.Store, c.SSO, m, set)
+		if err != nil || in.Applied == nil || !appsso.BuildStatus(in, false).Replan {
+			continue
+		}
+		out = append(out, doctor.Check{Name: "authentik-gate-" + m.Name, Status: doctor.StatusWarn,
+			Detail: m.Title + " trusts an edge address that is out of date (the edge was recreated), so it shows its own login page until sign-in is re-applied.",
+			Fix:    liveFix("Re-plan and apply sign-in for "+m.Name+".", "/admin/catalog", "homesteadctl apps sign-in plan "+m.Name)})
+	}
+	return out
 }

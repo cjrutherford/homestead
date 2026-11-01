@@ -31,12 +31,12 @@ func navidromeRig(t *testing.T) *ssoApp {
 	if err := saveEdgeRoutes(a.st, set); err != nil {
 		t.Fatal(err)
 	}
-	oldCIDR, oldRead := edgeSourceCIDR, appsso.ReadAccounts
-	edgeSourceCIDR = func(context.Context) (string, error) { return "172.30.0.0/16", nil }
+	oldCIDR, oldRead := edgeSourceAddr, appsso.ReadAccounts
+	edgeSourceAddr = func(context.Context) (string, error) { return "172.30.0.5/32", nil }
 	appsso.ReadAccounts = func(context.Context, catalog.Manifest) appsso.AppAccounts {
 		return appsso.AppAccounts{Names: []string{"admin", "kid"}, Admins: 1}
 	}
-	t.Cleanup(func() { edgeSourceCIDR, appsso.ReadAccounts = oldCIDR, oldRead })
+	t.Cleanup(func() { edgeSourceAddr, appsso.ReadAccounts = oldCIDR, oldRead })
 	return a
 }
 
@@ -51,7 +51,7 @@ func TestNavidromeSignInRoutesPlanTheGate(t *testing.T) {
 		t.Fatalf("plan: %d %s", rec.Code, rec.Body)
 	}
 	plan := decodeAs[appsso.Plan](t, rec.Body.Bytes())
-	if plan.Gate == nil || plan.Gate.Canonical != "navidrome.lan" || plan.Gate.Env["ND_EXTAUTH_TRUSTEDSOURCES"] != "172.30.0.0/16" ||
+	if plan.Gate == nil || plan.Gate.Canonical != "navidrome.lan" || plan.Gate.Env["ND_EXTAUTH_TRUSTEDSOURCES"] != "172.30.0.5/32" ||
 		strings.Join(plan.Gate.ExistingUsers, ",") != "admin,kid" || plan.Digest == "" {
 		t.Fatalf("plan: %+v", plan.Gate)
 	}
@@ -171,5 +171,34 @@ func TestDoctorChecksTheOutpostOnlyWhileAGateIsOn(t *testing.T) {
 	got := gatedAppChecks(context.Background(), c)
 	if len(got) != 1 || got[0].Status != doctor.StatusFail || got[0].Fix == nil || !strings.Contains(got[0].Detail, "navidrome.lan") {
 		t.Fatalf("down: %+v", got)
+	}
+}
+
+func TestParseEdgeAddr(t *testing.T) {
+	nets := `{"bridge":{"IPAddress":"172.17.0.2"},"homestead-edge":{"IPAddress":"192.168.48.3","Gateway":"192.168.48.1"}}`
+	got, err := parseEdgeAddr("true " + nets + "\n")
+	if err != nil || got != "192.168.48.3/32" {
+		t.Fatalf("got %q %v", got, err)
+	}
+	for name, out := range map[string]string{
+		"stopped":    "false " + nets,
+		"not on net": `true {"bridge":{"IPAddress":"172.17.0.2"}}`,
+		"empty ip":   `true {"homestead-edge":{"IPAddress":""}}`,
+		"ipv6 only":  `true {"homestead-edge":{"IPAddress":"fd00::3"}}`,
+		"bad json":   "true nope",
+		"nothing":    "",
+	} {
+		if got, err := parseEdgeAddr(out); err == nil {
+			t.Errorf("%s: want refusal, got %q", name, got)
+		}
+	}
+}
+
+func TestEdgeAddrFailureRefusesThePlan(t *testing.T) {
+	a := navidromeRig(t)
+	edgeSourceAddr = func(context.Context) (string, error) { return "", errors.New("not running") }
+	rec := a.req("POST", "/api/v1/catalog/navidrome/sign-in/plan", `{"enabled":true}`, a.owner.token)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "edge network") {
+		t.Fatalf("plan: %d %s", rec.Code, rec.Body)
 	}
 }

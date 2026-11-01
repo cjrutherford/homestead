@@ -20,7 +20,7 @@ func faInputs(t *testing.T) Inputs {
 	m := manifest(t, "navidrome")
 	table := []docker.Route{route("navidrome.lan", "navidrome"), route("authentik.lan", "server")}
 	return Inputs{Manifest: m, Installed: true, AuthentikInstalled: true, Dashboard: dashboard, DashboardOK: true,
-		Routes: AppRoutes(m, table), OwnerSub: "owner-sub", EdgeSource: "172.30.0.0/16",
+		Routes: AppRoutes(m, table), OwnerSub: "owner-sub", EdgeSource: "172.30.0.5/32",
 		Accounts:        &AppAccounts{Names: []string{"admin", "kid"}, Admins: 1},
 		PeopleUsernames: []string{"alice", "bob"}}
 }
@@ -37,7 +37,7 @@ func TestForwardPlanOn(t *testing.T) {
 	if len(p.Gate.Bypass) != 3 || p.Gate.Bypass[0].Path != `^/rest/.*` || p.Gate.Bypass[0].Reason == "" {
 		t.Fatalf("bypass: %+v", p.Gate.Bypass)
 	}
-	if p.Gate.Env["ND_EXTAUTH_USERHEADER"] != "X-Authentik-Username" || p.Gate.Env["ND_EXTAUTH_TRUSTEDSOURCES"] != "172.30.0.0/16" {
+	if p.Gate.Env["ND_EXTAUTH_USERHEADER"] != "X-Authentik-Username" || p.Gate.Env["ND_EXTAUTH_TRUSTEDSOURCES"] != "172.30.0.5/32" {
 		t.Fatalf("env: %v", p.Gate.Env)
 	}
 	if p.Gate.AuthentikHost != "https://authentik.lan/" || strings.Join(p.Gate.ExistingUsers, ",") != "admin,kid" {
@@ -157,7 +157,7 @@ func TestForwardPlanOff(t *testing.T) {
 	in := faInputs(t)
 	on, _ := BuildPlan(in, true)
 	in.Applied = &Record{Package: "navidrome", Adapter: ForwardAdapter, Issuer: on.Issuer, RedirectURIs: on.RedirectURIs, Access: on.Access}
-	in.OwnerEnv = map[string]string{"ND_EXTAUTH_USERHEADER": "X-Authentik-Username", "ND_EXTAUTH_TRUSTEDSOURCES": "172.30.0.0/16", "TZ": "UTC"}
+	in.OwnerEnv = map[string]string{"ND_EXTAUTH_USERHEADER": "X-Authentik-Username", "ND_EXTAUTH_TRUSTEDSOURCES": "172.30.0.5/32", "TZ": "UTC"}
 	// Off needs neither the accounts nor the edge address.
 	in.Accounts, in.EdgeSource = nil, ""
 	off, err := BuildPlan(in, false)
@@ -248,7 +248,7 @@ func TestForwardApplyOrderOnAndOff(t *testing.T) {
 		t.Fatalf("gate: %+v", g)
 	}
 	override, _ := os.ReadFile(filepath.Join(dir, catalog.OverrideFileName))
-	for _, want := range []string{"TZ: UTC", "ND_EXTAUTH_USERHEADER: X-Authentik-Username", "ND_EXTAUTH_TRUSTEDSOURCES: 172.30.0.0/16"} {
+	for _, want := range []string{"TZ: UTC", "ND_EXTAUTH_USERHEADER: X-Authentik-Username", "ND_EXTAUTH_TRUSTEDSOURCES: 172.30.0.5/32"} {
 		if !strings.Contains(string(override), want) {
 			t.Fatalf("override lacks %q:\n%s", want, override)
 		}
@@ -269,7 +269,7 @@ func TestForwardApplyOrderOnAndOff(t *testing.T) {
 
 	// Off: trust settings first, then the gate, then Authentik, then the record.
 	in.Applied = &rec
-	in.OwnerEnv = map[string]string{"ND_EXTAUTH_USERHEADER": "X-Authentik-Username", "ND_EXTAUTH_TRUSTEDSOURCES": "172.30.0.0/16"}
+	in.OwnerEnv = map[string]string{"ND_EXTAUTH_USERHEADER": "X-Authentik-Username", "ND_EXTAUTH_TRUSTEDSOURCES": "172.30.0.5/32"}
 	off, err := BuildPlan(in, false)
 	if err != nil {
 		t.Fatal(err)
@@ -331,5 +331,20 @@ func TestReadNavidromeAccounts(t *testing.T) {
 	copyFromContainer = func(context.Context, string, string, string) error { return os.ErrNotExist }
 	if got := ReadAccounts(context.Background(), manifest(t, "navidrome")); got.Err == "" {
 		t.Fatal("an unreadable database must report an error")
+	}
+}
+
+// A recreated edge container gets a new address: the applied trust no
+// longer matches, so status asks for a re-plan (S420).
+func TestForwardStatusReplansWhenEdgeAddressMoves(t *testing.T) {
+	in := faInputs(t)
+	first, _ := BuildPlan(in, true)
+	in.Applied = &Record{Package: "navidrome", Adapter: ForwardAdapter, Issuer: first.Issuer, RedirectURIs: first.RedirectURIs, PluginVersion: first.Gate.Revision, Access: first.Access}
+	if BuildStatus(in, true).Replan {
+		t.Fatal("same address must not replan")
+	}
+	in.EdgeSource = "172.30.0.9/32"
+	if !BuildStatus(in, true).Replan {
+		t.Fatal("a new edge address must replan")
 	}
 }
