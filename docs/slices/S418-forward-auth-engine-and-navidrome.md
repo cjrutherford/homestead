@@ -159,3 +159,24 @@ shape, Navidrome `ND_EXTAUTH_*` settings, proxy provider mode.
 5. Username collision behaviour; header trust with the edge CIDR.
 6. Edge network holds only the edge and routed apps.
 7. Publish, re-plan, canonical 308; sign-in off restores the plain route.
+
+## Live results (VM 2, 2026-11-01, cb78b37)
+Navidrome 0.64.2 installed local-only (op 194). Admin `cjrutherford` created
+in Navidrome first. Sign-in plan and apply (op 197) succeeded: reach-authentik,
+configure-authentik, gate, wire, record.
+- Logged-out `https://navidrome.lan/` → 302 to the public Authentik authorize
+  URL; a client-sent `X-Authentik-Username`/`Remote-User` changes nothing.
+- `/outpost.goauthentik.io/ping` through the gate → 204 (items 1–2 hold).
+- `/rest/ping.view` reaches Navidrome (Subsonic error for missing `u`);
+  `/share/<bogus>` and `/app/static/<bogus>` → Navidrome 404, not the gate.
+- `/metrics` → gated. `navidrome.local` → 308 to `navidrome.lan`.
+- `ReadAccounts` read the existing `cjrutherford` account (item 4).
+- Header trust: the edge with the header gets a session in `/app/`; without
+  it, none. **Finding:** the host also gets a session with a forged header
+  sent straight to the container address, because host traffic arrives from
+  the bridge gateway (192.168.48.1), which is inside the trusted /20. Any
+  local user on the appliance can therefore sign in as any Navidrome user.
+  A /32 pin of the edge is the fix (DEFERRED; owner decision pending).
+- Doctor `--live`: `authentik-outpost: ok`.
+- Not yet checked: a real browser sign-in, a real share link, publish +
+  re-plan, and `apply --off`.
