@@ -174,6 +174,9 @@ type Route struct {
 	// tunnel names (ADR-044 §3). Until then the public names answer 404
 	// for it. Set and cleared only by the approved public-address plan.
 	Published bool `json:",omitempty"`
+	// Gate, when set, puts the route behind Authentik forward-auth
+	// (S418, ADR-055). Set and cleared only by the app sign-in operation.
+	Gate *Gate `json:",omitempty"`
 	// paths are the path routes the dashboard route carries when it is
 	// rendered (render time only, never stored).
 	paths []Route
@@ -312,6 +315,9 @@ func (r Route) Validate() error {
 		return err
 	}
 	if err := r.validatePath(); err != nil {
+		return err
+	}
+	if err := r.validateGate(); err != nil {
 		return err
 	}
 	if r.Policy != nil {

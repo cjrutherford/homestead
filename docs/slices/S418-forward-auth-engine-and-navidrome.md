@@ -120,3 +120,42 @@ canonical redirects; turn sign-in off and confirm the plain route returns.
 ## Out of scope
 Kuma (S419), a Navidrome admin mapping, other apps,
 and any change to dashboard or OIDC sign-in.
+
+## Built (S418)
+- Edge gate: `internal/docker/gate.go` (`Gate`, bypass validation, rendering,
+  `HealGates`); gated sites strip identity headers, proxy
+  `/outpost.goauthentik.io/*` to `authentik-server:9000`, then `forward_auth`
+  copying only `X-Authentik-Username`. Fails closed.
+- Catalog: `sso.forwardauth` (`internal/catalog/forwardauth.go`); Navidrome
+  0.64.2 declares it.
+- Authentik: `internal/sso/proxy.go` (proxy provider `forward_single`,
+  application, embedded-outpost membership merged, never replaced).
+- Plan/apply: `internal/appsso/forwardauth.go`, same `apps sign-in
+  plan|apply [--off]` surface (PARITY.md unchanged). Record holds adapter
+  `forwardauth`, issuer, redirect `https://<canonical>`, gate revision.
+- Canonical name: public name if published, else `<app>.lan`; other names 308.
+  Plan states that the public Authentik name must resolve from the LAN.
+- Refusals: path-served app, no owner sub, no route or several named routes,
+  accounts unreadable, no Navidrome administrator, collision with an existing
+  local account (first plan only), published without a public Authentik URL.
+- Doctor: "authentik-outpost" probe while a gate is on.
+
+## Deviation from the ADR
+Apply order puts the Authentik side first, then the edge gate, then app
+settings, so the gate never fronts an app that still trusts no header; the
+outpost ping runs after the edge reconcile and fails the step. Turning off
+reverses it (app env, gate removed, then Authentik objects).
+
+## Spike results
+Resolved from code and docs: header names, outpost path, `forward_auth`
+shape, Navidrome `ND_EXTAUTH_*` settings, proxy provider mode.
+
+## Verify live (VM 2)
+1. Embedded outpost `authentik_host` set via instance `config`.
+2. Edge reaches `authentik-server:9000`; `wget` exists in the caddy image.
+3. Share-link paths and `^/app/(assets|static)/.*` are sufficient.
+4. Navidrome `user` columns `user_name`, `is_admin`; db `/data/navidrome.db`;
+   `docker cp` of the WAL database reads current rows.
+5. Username collision behaviour; header trust with the edge CIDR.
+6. Edge network holds only the edge and routed apps.
+7. Publish, re-plan, canonical 308; sign-in off restores the plain route.

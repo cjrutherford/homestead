@@ -1,7 +1,7 @@
 # Authentik forward-auth for Navidrome and Uptime Kuma
 
 ## Status
-Accepted (2026-10-31, owner decisions recorded)
+Accepted
 
 Owner direction, 2026-10-31: every app with user accounts signs in through
 Authentik. Navidrome 0.64.2 and Uptime Kuma 2.5.7 have no OIDC, so forward-auth

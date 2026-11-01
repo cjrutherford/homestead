@@ -217,6 +217,15 @@ type Inputs struct {
 	// OwnerEnv is the app service's environment in the override file
 	// now, so the plan can name values that sign-in replaces (S404).
 	OwnerEnv map[string]string
+	// EdgeSource is the edge network's address range, what a gated app
+	// trusts identity headers from (S418). Accounts and PeopleUsernames
+	// feed the forward-auth refusals.
+	EdgeSource string
+	Accounts   *AppAccounts
+	// AccountsFn reads the accounts when a plan needs them, so a status
+	// that is not planning never opens the app's database.
+	AccountsFn      func() *AppAccounts
+	PeopleUsernames []string
 }
 
 // published reports an app with a public name: its own tunnel names, or
@@ -233,6 +242,9 @@ func published(routes []docker.Route) bool {
 // Offered reports whether the app can be signed in to through Authentik
 // right now, and if not, why.
 func (in Inputs) Offered() (bool, string) {
+	if in.Manifest.SSO.ForwardAuth != nil {
+		return offeredForward(in)
+	}
 	switch {
 	case in.Manifest.SSO.OIDC == nil:
 		return false, fmt.Sprintf("%s has no Authentik sign-in adapter.", in.Manifest.Title)
@@ -273,9 +285,11 @@ type Plan struct {
 	// set from the admin group.
 	Access     *sso.Access `json:"access,omitempty"`
 	AdminRoles string      `json:"admin_roles,omitempty"`
-	Changes    []string    `json:"changes"`
-	Warnings   []string    `json:"warnings"`
-	Digest     string      `json:"digest"`
+	// Gate is set for a forward-auth app (S418): the edge gate.
+	Gate     *GatePlan `json:"gate,omitempty"`
+	Changes  []string  `json:"changes"`
+	Warnings []string  `json:"warnings"`
+	Digest   string    `json:"digest"`
 }
 
 func (p Plan) digest() string {
@@ -322,6 +336,9 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 	m := in.Manifest
 	if !in.Installed {
 		return Plan{}, unavailable("%s is not installed", m.Name)
+	}
+	if m.SSO.ForwardAuth != nil {
+		return buildForwardPlan(in, enable)
 	}
 	if m.SSO.OIDC == nil {
 		return Plan{}, unavailable("%s has no Authentik sign-in adapter", m.Title)
@@ -544,6 +561,9 @@ func BuildStatus(in Inputs, tokenKept bool) Status {
 	if in.Manifest.SSO.OIDC != nil {
 		st.Adapter, st.Plugin = in.Manifest.SSO.OIDC.Adapter, in.Manifest.SSO.OIDC.Plugin
 	}
+	if in.Manifest.SSO.ForwardAuth != nil {
+		st.Adapter = ForwardAdapter
+	}
 	st.Offered, st.Reason = in.Offered()
 	if !in.Installed {
 		st.Offered, st.Reason = false, fmt.Sprintf("%s is not installed.", in.Manifest.Title)
@@ -552,8 +572,12 @@ func BuildStatus(in Inputs, tokenKept bool) Status {
 	if st.Enabled && st.Offered {
 		if p, err := BuildPlan(in, true); err == nil {
 			st.SignInURL, st.PublicSignInURL = p.SignInURL, p.PublicSignInURL
+			want := pluginState(p.Plugin)
+			if p.Gate != nil {
+				want = p.Gate.Revision
+			}
 			st.Replan = !sameList(in.Applied.RedirectURIs, p.RedirectURIs) || in.Applied.Issuer != p.Issuer ||
-				in.Applied.PluginVersion != pluginState(p.Plugin) || !sameAccess(in.Applied.Access, p.Access)
+				in.Applied.PluginVersion != want || !sameAccess(in.Applied.Access, p.Access)
 		}
 	}
 	return st

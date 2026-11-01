@@ -214,6 +214,9 @@ type SSODeclaration struct {
 	// OpenID Connect sign-in through (S298, ADR-039 §3); nil when the app
 	// cannot be signed in to through Authentik.
 	OIDC *OIDCAdapter `yaml:"oidc,omitempty" json:"oidc,omitempty"`
+	// ForwardAuth (S418, ADR-055) gates an app that has no OIDC behind
+	// Authentik at the edge; exclusive with OIDC.
+	ForwardAuth *ForwardAuth `yaml:"forwardauth,omitempty" json:"forwardauth,omitempty"`
 	// Client declares the client an OIDC provider must host for this
 	// package (S342). Present only when the class admits SSO and the
 	// protocols include oidc. It is separate from OIDC, which names the
@@ -1040,6 +1043,15 @@ func (m Manifest) Validate() error {
 			byName[service.Name] = service
 		}
 		if err := m.SSO.OIDC.validate(m.SSO.Protocols, byName, m.Secrets); err != nil {
+			return err
+		}
+	}
+	if m.SSO.ForwardAuth != nil {
+		byName := map[string]Service{}
+		for _, service := range m.Services {
+			byName[service.Name] = service
+		}
+		if err := m.SSO.ForwardAuth.validate(m, byName); err != nil {
 			return err
 		}
 	}

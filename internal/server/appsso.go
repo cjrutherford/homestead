@@ -79,6 +79,9 @@ func appSignInInputsFrom(st *store.Store, m *sso.Manager, manifest catalog.Manif
 			in.OwnerEnv = env
 		}
 	}
+	if err := addForwardInputs(st, &in, manifest); err != nil {
+		return in, err
+	}
 	status, err := m.Status()
 	if err != nil {
 		return in, err
@@ -262,6 +265,7 @@ func (a *appSignIn) startWithInputs(ctx context.Context, in appsso.Inputs, enabl
 			_, err := firstrun.Run(ctx, m, a.cfg.Secrets)
 			return err
 		},
+		SetGate: a.setGate,
 	}
 	api := &sso.API{Base: dashboard.AuthentikURL, Token: token, Client: a.client}
 	def, err := appsso.Definition(rt, plan, in.Manifest, dashboard, api, actor)

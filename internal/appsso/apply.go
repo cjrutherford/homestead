@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"homestead/internal/catalog"
+	"homestead/internal/docker"
 	"homestead/internal/operation"
 	"homestead/internal/sso"
 )
@@ -40,6 +41,10 @@ type Runtime struct {
 	// AppSecrets holds the packages' declared secrets (S402): an env-oidc
 	// app's client secret is one of them. Nil refuses env-oidc apps.
 	AppSecrets catalog.SecretStore
+	// SetGate puts the Authentik gate on the app's edge routes, or takes
+	// it off with nil (S418), then reloads and probes the edge. Nil
+	// refuses forward-auth apps.
+	SetGate func(ctx context.Context, m catalog.Manifest, gate *docker.Gate) error
 }
 
 func (rt Runtime) audit(actor, action, outcome, detail string) {
@@ -296,6 +301,9 @@ func writeDerivedSecret(rt Runtime, m catalog.Manifest, dir string, adapter Adap
 // wires the app to reach and trust Authentik, configures it through its
 // adapter and records the result; off undoes each of those.
 func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, api Authentik, actor string) (operation.Definition, error) {
+	if m.SSO.ForwardAuth != nil {
+		return forwardDefinition(rt, plan, m, dashboard, api, actor)
+	}
 	if m.SSO.OIDC == nil {
 		return operation.Definition{}, unavailable("%s has no Authentik sign-in adapter", m.Title)
 	}

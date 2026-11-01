@@ -218,6 +218,25 @@ func preserveTunnelNames(st *store.Store, routes []docker.Route) []docker.Route 
 	return out
 }
 
+// preserveGates gives each posted route the Authentik gate recorded for
+// its host and drops any the client sent: only app sign-in changes a gate
+// (ADR-055), so replacing the table neither adds nor loses one (S418).
+func preserveGates(st *store.Store, routes []docker.Route) []docker.Route {
+	stored := map[docker.Hostname]*docker.Gate{}
+	if set, err := loadEdgeRoutes(st); err == nil {
+		for _, r := range set.Routes {
+			stored[r.Host] = r.Gate
+		}
+	}
+	out := make([]docker.Route, len(routes))
+	for i, r := range routes {
+		r.Gate = stored[r.Host]
+		out[i] = r
+	}
+	docker.HealGates(out)
+	return out
+}
+
 // preserveDashboardRoute keeps the recorded dashboard route when a posted
 // table omits it: the route is owned by PUT /api/v1/dashboard/address
 // (ADR-035), so an older client replacing the table cannot drop it.
@@ -265,6 +284,7 @@ func startEdgeReconcile(ctx context.Context, runner *operation.Runner, st *store
 	pathCraftRoutes(routes)
 	routes = preserveDashboardRoute(st, routes)
 	routes = preserveTunnelNames(st, routes)
+	routes = preserveGates(st, routes)
 	if err := requireLocalDashboardNames(routes); err != nil {
 		return 0, http.StatusUnprocessableEntity, err
 	}

@@ -1,0 +1,278 @@
+package docker
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+// Forward-auth gate (S418, ADR-055). A gated route sends every request
+// that is not on its bypass list through Authentik's embedded outpost
+// before the app sees it. The gate is set and cleared only by the app
+// sign-in operation; reconciling the table never invents one.
+const (
+	// OutpostUpstream is the embedded outpost, reached over the edge
+	// network, not through the public or path address. It answers at the
+	// root path, not under /apps/auth/ (ADR-055 §1, verified on VM 2).
+	OutpostUpstream = "authentik-server:9000"
+	// OutpostPrefix is where the outpost answers on every gated host, so
+	// the browser's sign-in redirect and callback land on the app's name.
+	OutpostPrefix = "/outpost.goauthentik.io/"
+	// OutpostAuthURI is the forward-auth endpoint of the outpost.
+	OutpostAuthURI = OutpostPrefix + "auth/caddy"
+)
+
+// stripHeaders are the identity headers a client can never send through
+// a gated host (ADR-055 §5). Wildcards are Caddy's delete form.
+var stripHeaders = []string{"X-Authentik-*", "Remote-User", "X-Forwarded-User"}
+
+// Gate puts an app route behind Authentik forward-auth.
+type Gate struct {
+	// Canonical is the one name that answers while the gate is on: the
+	// public name when published, otherwise the .lan name. Every other
+	// name of the route answers 308 to it (ADR-055 §2), because Authentik
+	// matches a request to a provider by one external host.
+	Canonical Hostname
+	// CopyHeaders are the only headers copied from the outpost's answer
+	// to the request the app receives. Empty for an app that trusts none.
+	CopyHeaders []string `json:",omitempty"`
+	// Bypass are anchored path regexes that skip the gate and keep the
+	// app's own authentication. The identity headers are stripped there
+	// too, so a bypass can only authenticate with the app's credentials.
+	Bypass []string `json:",omitempty"`
+}
+
+var (
+	validGateHeader = regexp.MustCompile(`^X-Authentik-[A-Za-z0-9-]+$`)
+	// bypassChars keeps a regex quotable in a Caddyfile and valid in both
+	// Go and Python (Authentik) regex syntax: no braces, quotes, spaces,
+	// comment marks or lookarounds.
+	bypassChars = regexp.MustCompile(`^[A-Za-z0-9/._\-()|?*+\[\]\\^$:]+$`)
+)
+
+// ValidateBypass checks one bypass regex: anchored, a narrow path, and
+// never the whole site.
+func ValidateBypass(re string) error {
+	switch {
+	case !strings.HasPrefix(re, "^/"):
+		return fmt.Errorf("gate.bypass: %q must be anchored with ^/", re)
+	case !bypassChars.MatchString(re):
+		return fmt.Errorf("gate.bypass: %q uses characters a bypass path may not", re)
+	case strings.Contains(re, "(?"):
+		return fmt.Errorf("gate.bypass: %q: lookarounds and flags are not allowed", re)
+	}
+	switch re {
+	case "^/.*", "^/.+", "^/", "^/(.*)", "^/(.*)$", "^/.*$", "^/.+$":
+		return fmt.Errorf("gate.bypass: %q would open the whole site", re)
+	}
+	if _, err := regexp.Compile(re); err != nil {
+		return fmt.Errorf("gate.bypass: %q: %v", re, err)
+	}
+	for _, probe := range []string{OutpostPrefix, OutpostAuthURI, "/"} {
+		if regexp.MustCompile(re).MatchString(probe) {
+			return fmt.Errorf("gate.bypass: %q matches %s; the outpost's paths are handled by the gate itself", re, probe)
+		}
+	}
+	return nil
+}
+
+// validateGate: a gated route is an app route on names of its own.
+func (r Route) validateGate() error {
+	g := r.Gate
+	if g == nil {
+		return nil
+	}
+	switch {
+	case r.Dashboard:
+		return fmt.Errorf("route.gate: the dashboard keeps its own sign-in and is never gated")
+	case r.IsPath():
+		return fmt.Errorf("route.gate: only an app on names of its own is gated")
+	case r.CraftApp != "":
+		return fmt.Errorf("route.gate: a craft app route is not gated")
+	}
+	if err := g.Canonical.Validate(); err != nil {
+		return fmt.Errorf("route.gate.canonical: %w", err)
+	}
+	found := false
+	for _, n := range r.AllNames() {
+		found = found || n == g.Canonical
+	}
+	if !found {
+		return fmt.Errorf("route.gate.canonical: %q is not one of the route's names", g.Canonical)
+	}
+	for _, h := range g.CopyHeaders {
+		if !validGateHeader.MatchString(h) {
+			return fmt.Errorf("route.gate.copyheaders: %q must be an X-Authentik-* header", h)
+		}
+	}
+	for _, b := range g.Bypass {
+		if err := ValidateBypass(b); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// stripped is the identity headers removed from every request, the
+// gate's copied headers included.
+func (g Gate) stripped() []string {
+	out := append([]string(nil), stripHeaders...)
+	for _, h := range g.CopyHeaders {
+		out = append(out, h)
+	}
+	return out
+}
+
+// renderGatedBody is the serving body of one gated site, inside one
+// route so the order holds (ADR-055 §1): strip identity headers, bypass
+// handles, the outpost's own paths, then forward-auth in front of the
+// app. proxy is the app's reverse_proxy block. The app is only reached
+// inside the last handle, after forward-auth succeeds, or in a bypass
+// handle; a missing or failing outpost answers 5xx and never the app
+// (fail closed, §9). On the tunnel entry the scheme the outpost builds
+// its redirects from is https, because Cloudflare terminated TLS.
+func (g Gate) renderGatedBody(proxy string, tunnel bool) string {
+	var b strings.Builder
+	b.WriteString("\t# Authentik forward-auth gate (ADR-055). Identity headers come only from the outpost.\n")
+	b.WriteString("\troute {\n")
+	for _, h := range g.stripped() {
+		fmt.Fprintf(&b, "\t\trequest_header -%s\n", h)
+	}
+	for i, re := range g.Bypass {
+		fmt.Fprintf(&b, "\t\t@gate_bypass%d path_regexp %s\n\t\thandle @gate_bypass%d {\n", i, re, i)
+		b.WriteString(indentBy(proxy, 3))
+		b.WriteString("\t\t}\n")
+	}
+	proto := ""
+	if tunnel {
+		proto = "\t\t\t\theader_up X-Forwarded-Proto https\n"
+	}
+	fmt.Fprintf(&b, "\t\thandle %s* {\n", OutpostPrefix)
+	if tunnel {
+		fmt.Fprintf(&b, "\t\t\treverse_proxy %s {\n%s\t\t\t}\n", OutpostUpstream, proto)
+	} else {
+		fmt.Fprintf(&b, "\t\t\treverse_proxy %s\n", OutpostUpstream)
+	}
+	b.WriteString("\t\t}\n\t\thandle {\n")
+	fmt.Fprintf(&b, "\t\t\tforward_auth %s {\n\t\t\t\turi %s\n", OutpostUpstream, OutpostAuthURI)
+	if len(g.CopyHeaders) > 0 {
+		fmt.Fprintf(&b, "\t\t\t\tcopy_headers %s\n", strings.Join(g.CopyHeaders, " "))
+	}
+	b.WriteString(proto)
+	b.WriteString("\t\t\t}\n")
+	b.WriteString(indentBy(proxy, 3))
+	b.WriteString("\t\t}\n\t}\n")
+	return b.String()
+}
+
+// renderRedirect answers every request on the other names of a gated
+// route with a 308 to the same path on the canonical name.
+func (g Gate) renderRedirect() string {
+	return fmt.Sprintf("\tredir https://%s{uri} 308\n", g.Canonical)
+}
+
+// indentBy puts every line of body n tabs deeper than it is written
+// (proxy blocks are written one tab deep).
+func indentBy(body string, n int) string {
+	pad := strings.Repeat("\t", n-1)
+	var b strings.Builder
+	for _, line := range strings.Split(strings.TrimSuffix(body, "\n"), "\n") {
+		b.WriteString(pad + line + "\n")
+	}
+	return b.String()
+}
+
+// siteList is a Caddy site address list for names.
+func siteList(names []Hostname, plain bool) string {
+	parts := make([]string, 0, len(names))
+	for _, n := range names {
+		if plain {
+			parts = append(parts, "http://"+string(n))
+		} else {
+			parts = append(parts, string(n))
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+func without(names []Hostname, skip Hostname) []Hostname {
+	var out []Hostname
+	for _, n := range names {
+		if n != skip {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// renderGatedSites renders the local and tunnel sites of a gated route:
+// the canonical name serves the gate, every other name redirects to it.
+func renderGatedSites(r Route, tlsLine, proxy, tunnelBody string) string {
+	g := r.Gate
+	local := r.Names()
+	plain := r.TLS == TLSOff
+	var out strings.Builder
+	canonicalLocal := false
+	for _, n := range local {
+		canonicalLocal = canonicalLocal || n == g.Canonical
+	}
+	writeGate := func(site, tls string, body string) {
+		fmt.Fprintf(&out, "%s {\n%s%s}\n", site, tls, body)
+	}
+	writeRedirect := func(site, tls string) {
+		fmt.Fprintf(&out, "\n# Redirect to the canonical name (ADR-055 §2).\n%s {\n%s%s}\n", site, tls, g.renderRedirect())
+	}
+	if canonicalLocal {
+		writeGate(siteList([]Hostname{g.Canonical}, plain), tlsLine,
+			renderUpstream(r.Policy, g.renderGatedBody(proxy, false)))
+		if others := without(local, g.Canonical); len(others) > 0 {
+			writeRedirect(siteList(others, plain), tlsLine)
+		}
+	} else {
+		writeRedirect(siteList(local, plain), tlsLine)
+	}
+	if len(r.Tunnel) > 0 {
+		var sites []string
+		for _, n := range r.Tunnel {
+			if n != g.Canonical {
+				sites = append(sites, fmt.Sprintf("http://%s:%d", n, TunnelEntryPort))
+			}
+		}
+		fmt.Fprintf(&out, "\n# Tunnel entry (ADR-037), gated (ADR-055).\n")
+		if !canonicalLocal {
+			writeGate(fmt.Sprintf("http://%s:%d", g.Canonical, TunnelEntryPort), "",
+				g.renderGatedBody(tunnelBody, true))
+		}
+		if len(sites) > 0 {
+			writeRedirect(strings.Join(sites, ", "), "")
+		}
+	}
+	return out.String()
+}
+
+// HealGates keeps every gate valid when a route's names change under it:
+// unpublishing removes the public name a gate answers on. A gate whose
+// canonical name is gone moves to the route's public name if it has one,
+// else its host. The gate stays on (fail closed); its Authentik provider
+// is out of date until sign-in is planned again, which the app's status
+// shows (S418).
+func HealGates(routes []Route) {
+	for i, r := range routes {
+		if r.Gate == nil {
+			continue
+		}
+		present := false
+		for _, n := range r.AllNames() {
+			present = present || n == r.Gate.Canonical
+		}
+		if present {
+			continue
+		}
+		g := *r.Gate
+		g.Canonical = r.Host
+		if len(r.Tunnel) > 0 {
+			g.Canonical = r.Tunnel[0]
+		}
+		routes[i].Gate = &g
+	}
+}

@@ -2,8 +2,14 @@
 # Curated first-party manifest — versions pin here, updates bump this file.
 # One Docker Hub container. Navidrome has no OIDC/SAML/LDAP; local accounts
 # are the documented exception, and the first visit creates the admin user.
-# Reverse-proxy header auth exists upstream but needs an edge that injects a
-# trusted user header, which Homestead does not do for apps, so it stays off.
+# Navidrome's proxy (external) auth reads a username header from a trusted
+# source. S418 (ADR-055) turns that on: `apps sign-in apply navidrome` gates
+# the site behind Authentik forward-auth at the edge, sets
+# ND_EXTAUTH_USERHEADER to the header the outpost supplies, and trusts only
+# the edge network (ND_EXTAUTH_TRUSTEDSOURCES). /rest/* (Subsonic clients)
+# and /share/* (share links) bypass the gate and keep Navidrome's own
+# credentials or links. Navidrome admins stay a Navidrome setting: only the
+# first proxy user becomes admin, so the plan refuses until an admin exists.
 # The JWT secrets are generated into the SQLite database on first start and
 # backed up with it, so no secret is declared and the entrypoint is
 # unchanged.
@@ -67,6 +73,30 @@ database:
   path: data/navidrome.db
 sso:
   class: unsupported
+  forwardauth:
+    service: navidrome
+    userheader: X-Authentik-Username
+    copyheaders: [X-Authentik-Username]
+    bypass:
+    - path: ^/rest/.*
+      reason: The Subsonic API. Native music apps cannot do a browser sign-in, so
+        it keeps Navidrome's own user and app password. The identity header is
+        stripped here, so it can only authenticate with those credentials.
+    - path: ^/share/.*
+      reason: Share links the owner made on purpose (page, audio stream, cover
+        art, download). Each id is an unguessable link the owner can delete, and
+        it serves only the shared items. The identity header is stripped here.
+    - path: ^/app/(assets|static)/.*
+      reason: The web player's own script and style files, which a share page
+        loads. They hold no user data.
+    env:
+      ND_EXTAUTH_USERHEADER: "{{user_header}}"
+      ND_EXTAUTH_TRUSTEDSOURCES: "{{edge_source}}"
+    admin: local
+    accountsfrom: navidrome-sqlite
+    warnings:
+    - Navidrome's administrator is chosen inside Navidrome, not from Authentik. Create the administrator in Navidrome first; people who sign in through Authentik get ordinary accounts.
+    - Subsonic apps (phones, desktop players) sign in with a Navidrome username and an app password set inside Navidrome. They do not use Authentik.
 integrations:
 - kind: library
   target: jellyfin

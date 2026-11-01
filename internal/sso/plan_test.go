@@ -49,6 +49,10 @@ type fakeAuthentik struct {
 	authTitle   string
 	noAuthFlow  bool
 	titlePatchs int
+	// proxy state (S418): the proxy provider and the embedded outpost.
+	proxy     map[string]any
+	outpost   map[string]any
+	noOutpost bool
 }
 
 func newFakeAuthentik(t *testing.T) *fakeAuthentik {
@@ -58,6 +62,8 @@ func newFakeAuthentik(t *testing.T) *fakeAuthentik {
 			{"pk": 7, "uid": "user-1", "username": "owner", "type": "internal", "is_active": true},
 			{"pk": 8, "uid": "user-2", "username": "guest", "type": "internal", "is_active": true},
 		}}
+	f.outpost = map[string]any{"pk": "op-1", "name": "authentik Embedded Outpost", "providers": []any{float64(5)},
+		"config": map[string]any{"authentik_host": "", "log_level": "info"}}
 	f.groups["outsider"] = map[string]any{"pk": "g-outsider", "name": "outsider", "users": []any{}}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
@@ -297,6 +303,40 @@ func (f *fakeAuthentik) serve(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(r.URL.Path, "/api/v3/providers/oauth2/") && r.Method == http.MethodDelete:
 		f.provider = nil
 		w.WriteHeader(http.StatusNoContent)
+	case r.URL.Path == "/api/v3/providers/proxy/" && r.Method == http.MethodGet:
+		if f.proxy != nil && f.proxy["name"] == r.URL.Query().Get("name") {
+			_ = enc.Encode(list(f.proxy))
+			return
+		}
+		_ = enc.Encode(list())
+	case r.URL.Path == "/api/v3/providers/proxy/" && r.Method == http.MethodPost:
+		f.posts++
+		f.nextPK++
+		body["pk"] = f.nextPK
+		f.proxy = body
+		w.WriteHeader(http.StatusCreated)
+		_ = enc.Encode(body)
+	case strings.HasPrefix(r.URL.Path, "/api/v3/providers/proxy/") && r.Method == http.MethodPatch:
+		f.patches++
+		for k, v := range body {
+			f.proxy[k] = v
+		}
+		_ = enc.Encode(f.proxy)
+	case strings.HasPrefix(r.URL.Path, "/api/v3/providers/proxy/") && r.Method == http.MethodDelete:
+		f.proxy = nil
+		w.WriteHeader(http.StatusNoContent)
+	case r.URL.Path == "/api/v3/outposts/instances/" && r.Method == http.MethodGet:
+		if f.noOutpost || r.URL.Query().Get("managed") != "goauthentik.io/outposts/embedded" {
+			_ = enc.Encode(list())
+			return
+		}
+		_ = enc.Encode(list(f.outpost))
+	case strings.HasPrefix(r.URL.Path, "/api/v3/outposts/instances/") && r.Method == http.MethodPatch:
+		f.patches++
+		for k, v := range body {
+			f.outpost[k] = v
+		}
+		_ = enc.Encode(f.outpost)
 	default:
 		http.NotFound(w, r)
 	}

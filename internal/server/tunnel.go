@@ -855,6 +855,7 @@ var applyTunnelNames = func(ctx context.Context, st *store.Store, names map[dock
 // reconcileEdgeSet deploys the edge stack and reconciles it to set,
 // saving set as the route table. A var so tests skip Docker.
 var reconcileEdgeSet = func(ctx context.Context, st *store.Store, set docker.RouteSet) error {
+	docker.HealGates(set.Routes)
 	deploy, err := docker.DeployDefinition(docker.CaddyStack())
 	if err != nil {
 		return err
