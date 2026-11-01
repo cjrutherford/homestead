@@ -46,10 +46,13 @@ class TestAudiobookshelfContract(unittest.TestCase):
         self.assertNotIn("target: /podcasts", self.text)
         self.assertIn("owner volumes", self.text)
 
-    def test_optional_oidc_without_actuated_client(self):
+    def test_optional_oidc_through_the_settings_database(self):
+        # S417: sign-in is written into the app's own settings database;
+        # the settings endpoint is never used (it logs the client secret).
         self.assertIn("class: optional", self.text)
         self.assertIn("protocols: [oidc]", self.text)
-        self.assertNotIn("\noidc:", self.text)
+        self.assertIn("adapter: env-oidc", self.text)
+        self.assertNotIn("auth-settings", self.text.split("onapply:")[1])
 
     def test_identity_and_library_integrations(self):
         self.assertIn("kind: identity", self.text)

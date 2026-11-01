@@ -1598,3 +1598,10 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S416: an Authentik group is mapped to Gitea administrators only; no group-to-organization or team mapping (`GroupTeamMap`) and no SSH key or avatar sync.
 - S416: Gitea reads its discovery document at startup, so Authentik must be reachable when the app restarts after apply; if it is not, Gitea logs the error and the source is not offered until the next restart. Homestead does not re-run the script by itself.
 - S416: the Gitea sign-in script and restart are confirmed against the v28.2.0 source and a live gitea/gitea:28.2.0 container with a stand-in discovery server (row written, listed by `gitea admin auth list`, `/user/oauth2/authentik` redirects to the authorize URL), not yet by a full apply against Authentik on VM 2 (token exchange, account linking page, admin sync, TLS trust with the combined bundle).
+- S417 Audiobookshelf sign-in must be re-verified on every Audiobookshelf update (schema, writer, redirects, groups, logging); `TestAudiobookshelfSignInPinnedToVerifiedVersion` forces it. Revisit if upstream gains a secret-safe settings API or file.
+- S417 With no automatic account matching, a person whose Authentik username equals an existing Audiobookshelf username gets a second account (the app does not check). No per-person "none" or link choice yet.
+- S417 The OpenID client secret sits in plaintext in `absdatabase.sqlite` (and its backups); the app offers no other store.
+- S417 Audiobookshelf logs the signed-in person's profile (name, email, groups) at info level on first sign-in; owner accepted, no mitigation available.
+- S417 Live check on VM 2 pending: Audiobookshelf is not installed there. Needs token exchange, `NODE_EXTRA_CA_CERTS` trust, the groups claim, mobile redirect, recovery login after apply and re-apply after an address change.
+- S417 Audiobookshelf advanced permissions claim and the `guest` role are not mapped.
+- S417 Turning sign-in off leaves accounts created by it; they keep a link and can no longer sign in with OpenID.

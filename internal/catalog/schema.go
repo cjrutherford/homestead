@@ -296,6 +296,13 @@ type EnvOIDC struct {
 	// SecretFile (S413) is for apps whose sign-in setting is one value
 	// that contains the client secret (Paperless-ngx's provider JSON).
 	SecretFile *EnvSecretFile `yaml:"secretfile,omitempty" json:"secretfile,omitempty"`
+	// AdminValue and UserValue (S417) are role names the app reads out
+	// of the groups claim itself (Audiobookshelf wants the values
+	// "admin" and "user"): the claim also lists "adminvalue" for members
+	// of the app's admin group and "uservalue" for everyone else. Both or
+	// neither.
+	AdminValue string `yaml:"adminvalue,omitempty" json:"adminvalue,omitempty"`
+	UserValue  string `yaml:"uservalue,omitempty" json:"uservalue,omitempty"`
 	// Warnings are shown in every sign-in plan for the app.
 	Warnings []string          `yaml:"warnings,omitempty" json:"warnings,omitempty"`
 	Set      map[string]string `yaml:"set" json:"set"`
@@ -335,6 +342,8 @@ var EnvPlaceholders = []string{"issuer", "authentik_base", "client_id", "admin_g
 // SecretFilePlaceholders are the placeholders a secretfile template may
 // use: the env ones and the client secret (S413).
 var SecretFilePlaceholders = append(append([]string{}, EnvPlaceholders...), "client_secret")
+
+var validRoleValue = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
 var validExecUser = regexp.MustCompile(`^([a-z_][a-z0-9_-]*|[0-9]+)$`)
 
@@ -453,6 +462,17 @@ func (e EnvOIDC) validate(service string, svc Service, secrets []SecretDecl) err
 				return fmt.Errorf("catalog: env-oidc in-app command arguments must be non-empty static text without placeholders")
 			}
 		}
+	}
+	if (e.AdminValue == "") != (e.UserValue == "") {
+		return fmt.Errorf("catalog: env-oidc adminvalue and uservalue come together")
+	}
+	for _, v := range []string{e.AdminValue, e.UserValue} {
+		if v != "" && !validRoleValue.MatchString(v) {
+			return fmt.Errorf("catalog: env-oidc role value %q invalid", v)
+		}
+	}
+	if e.AdminValue != "" && e.AdminValue == e.UserValue {
+		return fmt.Errorf("catalog: env-oidc adminvalue and uservalue must differ")
 	}
 	if e.ExecUser != "" && !validExecUser.MatchString(e.ExecUser) {
 		return fmt.Errorf("catalog: env-oidc execuser %q invalid", e.ExecUser)

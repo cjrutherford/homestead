@@ -256,3 +256,37 @@ constraint. The S415 rule holds, with these differences:
 - Local login and local registration stay; denying a person (`none`) and closing
   registration are not enforced (DEFERRED). Details:
   `docs/slices/S416-gitea-authentik.md`.
+
+### Amendment (2026-10-31, S417): the same rule for Audiobookshelf, with the image's node
+Audiobookshelf keeps its OpenID settings only in the `server-settings` JSON row
+of `settings` in `/config/absdatabase.sqlite`, reads them at startup, and its
+settings endpoint (`/api/auth-settings`) logs the old and new values, client
+secret included. The owner decided to write the database instead (S385 had
+forbidden calling the endpoint with secrets). The S415 rule holds, with these
+differences:
+
+- The image has no Python and no sqlite3 shell but runs Node 24, so the
+  `onapply`/`onoff` script is `node -e` using the built-in `node:sqlite`, as
+  the image's own user (root). It reads the secretfile (`ABS_SIGNIN_FILE`)
+  inside the process; the secret is never an argument and no error message
+  quotes the file.
+- It merges only the auth fields into the existing JSON (all other settings
+  are kept) in one `BEGIN IMMEDIATE` transaction with a 30 s busy timeout, and
+  is idempotent. The app does no discovery and drops `openid` unless every
+  endpoint is set, so the secretfile carries the endpoints, filled from
+  Authentik's fixed paths under the issuer. An OpenID setup whose client id is
+  not Homestead's is foreign: `on` refuses, `off` leaves it.
+- The guards are `/app/package.json` (must equal the verified version, `on`
+  only), the `settings` columns and the presence of every auth field.
+  `TestAudiobookshelfSignInPinnedToVerifiedVersion` pins the package, so each
+  Audiobookshelf update forces a re-check of the schema, the writer and the
+  logging.
+- The app logs the signed-in person's profile (name, email, groups) when it
+  auto-registers them; the owner accepted this, and the plan says so. The
+  client secret is never logged. It restarts only (`restart: true`); the app
+  never writes the row at shutdown, so no stop-write-start feature is needed.
+- The app reads role names from the group claim (`admin`, `user`), so the
+  manifest declares `adminvalue`/`uservalue`, which the groups claim mapping
+  adds for admins and for everyone else. Existing accounts are never matched
+  (`MatchExistingBy` null). Local login and the recovery administrator stay.
+  Details: `docs/slices/S417-audiobookshelf-authentik.md`.

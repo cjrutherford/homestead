@@ -1,12 +1,12 @@
 # Audiobookshelf audiobook and podcast server (S353): the first Wave 2
 # package.
 # Curated first-party manifest — versions pin here, updates bump this file.
-# One GHCR container. OpenID Connect is configured in the app's server
-# settings (callback /auth/openid/callback) because the image reads no OIDC
-# environment variables; the SSO posture is declared and the credentials
-# stay an owner step. The JWT signing secret is generated into the SQLite
-# database on first start. Homestead separately holds a first-run recovery
-# password; the image entrypoint runs unchanged.
+# One GHCR container. OpenID Connect lives only in the app's server
+# settings (the image reads no OIDC environment variables), so sign-in is
+# written into its SQLite database (S417, ADR-052). The JWT signing secret
+# is generated into the SQLite database on first start. Homestead
+# separately holds a first-run recovery password; the image entrypoint
+# runs unchanged.
 name: audiobookshelf
 version: 2.37.1
 title: Audiobookshelf
@@ -68,7 +68,162 @@ database:
 sso:
   class: optional
   protocols: [oidc]
+  # App sign-in through Authentik (S417). Audiobookshelf keeps its OpenID
+  # settings only in the `server-settings` JSON row of the `settings` table
+  # in /config/absdatabase.sqlite. Its settings endpoint (/api/auth-settings)
+  # logs the old and new settings, client secret included, so the owner
+  # decided to write the database instead (ADR-052 amendment S417). The
+  # values reach the script in a private secret file (secretfile, env
+  # ABS_SIGNIN_FILE, never argv or Compose); the image's own node reads it
+  # and writes with node:sqlite, so the secret is never an argument. The
+  # app loads the settings only at startup, so Homestead restarts it
+  # (restart). It does no discovery: every endpoint is filled from
+  # Authentik's fixed paths under the issuer.
+  #
+  # RE-VERIFY ON EVERY VERSION BUMP: the inline script below was verified
+  # against Audiobookshelf 2.37.1 (the settings table, the server-settings
+  # auth fields, /app/package.json, node:sqlite in the image's node 24, the
+  # startup-only read and the "openid is dropped unless every endpoint is
+  # set" rule in server/objects/settings/ServerSettings.js). It refuses to
+  # run on a different version or a missing field. The pin test
+  # TestAudiobookshelfSignInPinnedToVerifiedVersion fails when version
+  # changes until the script and that constant are re-verified together.
+  oidc:
+    adapter: env-oidc
+    service: audiobookshelf
+    env:
+      redirectpaths: ["/auth/openid/callback", "/auth/openid/mobile-redirect"]
+      signinpath: /login
+      secret: oidc_client_secret
+      secretfile:
+        secret: audiobookshelf_signin
+        template: '{"client_id":"{{client_id}}","client_secret":"{{client_secret}}","issuer":"{{issuer}}","authorize_url":"{{authentik_base}}/application/o/authorize/","token_url":"{{authentik_base}}/application/o/token/","userinfo_url":"{{authentik_base}}/application/o/userinfo/","jwks_url":"{{issuer}}jwks/","logout_url":"{{issuer}}end-session/"}'
+      # Node adds this file to its own CAs, so the bare appliance root is
+      # enough and public HTTPS keeps working.
+      trust: NODE_EXTRA_CA_CERTS
+      # The image runs Audiobookshelf as root, so the script needs no user.
+      # The app reads the group claim for the roles "admin" and "user".
+      adminvalue: admin
+      uservalue: user
+      restart: true
+      onapply:
+      - node
+      - -e
+      - &abs_signin_script |
+        const VERIFIED = '2.37.1'
+        const DB = '/config/absdatabase.sqlite'
+        const PKG = '/app/package.json'
+        const CLIENT = 'homestead-audiobookshelf'
+        const fs = require('node:fs')
+        const die = (m) => {
+          console.error('audiobookshelf sign-in: ' + m + " (Audiobookshelf's own database is edited here; re-verify this script against its server settings after any Audiobookshelf update)")
+          process.exit(1)
+        }
+        const mode = process.argv[1]
+        if (mode !== 'on' && mode !== 'off') die('expected the argument on or off')
+        let seen
+        try { seen = JSON.parse(fs.readFileSync(PKG, 'utf8')).version } catch { die('cannot read the Audiobookshelf version') }
+        if (mode === 'on' && seen !== VERIFIED) die('this is Audiobookshelf ' + seen + ' but the script was verified against ' + VERIFIED)
+        if (!fs.existsSync(DB)) die(DB + ' does not exist; open Audiobookshelf once so it creates its database, then apply again')
+        let v = {}
+        if (mode === 'on') {
+          let f
+          try { f = JSON.parse(fs.readFileSync(process.env.ABS_SIGNIN_FILE || '', 'utf8')) } catch { die('the sign-in values are missing or unreadable') }
+          for (const k of ['client_id', 'client_secret', 'issuer', 'authorize_url', 'token_url', 'userinfo_url', 'jwks_url', 'logout_url']) {
+            if (typeof f[k] !== 'string' || !f[k]) die('the sign-in values are missing or empty')
+          }
+          if (f.client_id !== CLIENT) die('the sign-in values are not for ' + CLIENT)
+          v = f
+        }
+        const FIELDS = ['authActiveAuthMethods', 'authOpenIDIssuerURL', 'authOpenIDAuthorizationURL', 'authOpenIDTokenURL', 'authOpenIDUserInfoURL', 'authOpenIDJwksURL', 'authOpenIDLogoutURL', 'authOpenIDClientID', 'authOpenIDClientSecret', 'authOpenIDTokenSigningAlgorithm', 'authOpenIDButtonText', 'authOpenIDAutoLaunch', 'authOpenIDAutoRegister', 'authOpenIDMatchExistingBy', 'authOpenIDMobileRedirectURIs', 'authOpenIDGroupClaim', 'authOpenIDAdvancedPermsClaim']
+        const { DatabaseSync } = require('node:sqlite')
+        const db = new DatabaseSync(DB)
+        let open = false
+        try {
+          db.exec('PRAGMA busy_timeout = 30000')
+          const cols = db.prepare("SELECT name FROM pragma_table_info('settings')").all().map((c) => c.name)
+          for (const c of ['key', 'value', 'updatedAt']) if (!cols.includes(c)) die('table settings lacks column ' + c)
+          db.exec('BEGIN IMMEDIATE')
+          open = true
+          const row = db.prepare("SELECT value FROM settings WHERE key = 'server-settings'").get()
+          if (!row) die('no server-settings row; open Audiobookshelf once so it creates its settings, then apply again')
+          let s
+          try { s = JSON.parse(row.value) } catch { die('the server-settings value is not JSON') }
+          if (!s || s.id !== 'server-settings' || !Array.isArray(s.authActiveAuthMethods)) die('the server-settings value has an unexpected shape')
+          for (const k of FIELDS) if (!(k in s)) die('server-settings lacks the field ' + k)
+          if (s.authOpenIDClientID && s.authOpenIDClientID !== CLIENT) {
+            if (mode === 'off') { console.log('audiobookshelf sign-in off (the OpenID setup is not Homestead\'s; left alone)'); db.exec('ROLLBACK'); process.exit(0) }
+            die('Audiobookshelf already has an OpenID setup that Homestead did not create; remove it in Audiobookshelf (Settings, Authentication), then apply again')
+          }
+          const methods = s.authActiveAuthMethods.filter((m) => m !== 'openid')
+          if (!methods.includes('local')) methods.unshift('local')
+          if (mode === 'on') {
+            methods.push('openid')
+            Object.assign(s, {
+              authActiveAuthMethods: methods,
+              authOpenIDIssuerURL: v.issuer, authOpenIDAuthorizationURL: v.authorize_url, authOpenIDTokenURL: v.token_url,
+              authOpenIDUserInfoURL: v.userinfo_url, authOpenIDJwksURL: v.jwks_url, authOpenIDLogoutURL: v.logout_url,
+              authOpenIDClientID: v.client_id, authOpenIDClientSecret: v.client_secret,
+              authOpenIDTokenSigningAlgorithm: 'RS256', authOpenIDButtonText: 'Sign in with Authentik',
+              authOpenIDAutoLaunch: false, authOpenIDAutoRegister: true, authOpenIDMatchExistingBy: null,
+              authOpenIDMobileRedirectURIs: ['audiobookshelf://oauth'], authOpenIDGroupClaim: 'groups', authOpenIDAdvancedPermsClaim: '',
+              authOpenIDSubfolderForRedirectURLs: ''
+            })
+          } else {
+            Object.assign(s, {
+              authActiveAuthMethods: methods,
+              authOpenIDIssuerURL: null, authOpenIDAuthorizationURL: null, authOpenIDTokenURL: null, authOpenIDUserInfoURL: null,
+              authOpenIDJwksURL: null, authOpenIDLogoutURL: null, authOpenIDClientID: null, authOpenIDClientSecret: null,
+              authOpenIDButtonText: 'Login with OpenId', authOpenIDAutoRegister: false, authOpenIDMatchExistingBy: null,
+              authOpenIDGroupClaim: ''
+            })
+            delete s.authOpenIDSubfolderForRedirectURLs
+          }
+          const now = new Date().toISOString().replace('T', ' ').replace('Z', ' +00:00')
+          db.prepare("UPDATE settings SET value = ?, updatedAt = ? WHERE key = 'server-settings'").run(JSON.stringify(s), now)
+          db.exec('COMMIT')
+          open = false
+        } catch (e) {
+          if (open) { try { db.exec('ROLLBACK') } catch {} }
+          die('the database write failed: ' + (e && e.code ? e.code : 'error'))
+        }
+        console.log('audiobookshelf sign-in ' + mode)
+      - "on"
+      onoff:
+      - node
+      - -e
+      - *abs_signin_script
+      - "off"
+      warnings:
+      - Audiobookshelf keeps its sign-in in its own database, which Homestead edits directly (the app's settings endpoint would write the client secret to its log); this is re-checked on every Audiobookshelf update and stops with a clear message if the database or the version is not the one it was verified against. Run this after the app has started once.
+      - Audiobookshelf logs the signed-in person's profile (name, email, groups) when they first sign in and an account is created for them; the owner accepted this. The client secret is never logged.
+      - Sign-in completes at the address the person opened Audiobookshelf at, from the app's own request, so each address must be in Authentik's redirect list; plan sign-in again after the address changes.
+      - A person who signs in through Authentik for the first time gets a new account named after their Authentik username, and an existing Audiobookshelf account is never matched or taken over (its sign-in matching is off). Audiobookshelf does not check that the name is free, so a person whose Authentik username equals an existing account's gets a second account of that name; the existing one keeps its password and role.
+      - Members of the app's Homestead admin group become administrators and everyone else a user, at every sign-in. The local root account cannot be demoted, so it is refused if it signs in through Authentik without the admin group.
+      - The local login form and the recovery administrator stay; denying a person (none) is not enforced by Audiobookshelf, which keeps its local accounts.
+      - The client secret is stored in plaintext in the app's database (absdatabase.sqlite), on application storage and in backups.
+      - The mobile app signs in through the same server address and returns to audiobookshelf://oauth; its sign-in needs the Authentik redirect for /auth/openid/mobile-redirect, which this plan adds.
+      set:
+        # Markers, not settings the app reads: the script reads the values
+        # from the secret file. They make the stack's wiring change with
+        # sign-in and keep the admin group visible in the plan.
+        ABS_OIDC_ISSUER: "{{issuer}}"
+        ABS_OIDC_ADMIN_GROUP: "{{admin_group}}"
 secrets:
+- name: oidc_client_secret
+  # Authentik's client secret for Audiobookshelf; Homestead generates it
+  # and hands it to Authentik. It reaches the app only inside
+  # audiobookshelf_signin.
+  immutable: true
+- name: audiobookshelf_signin
+  # The sign-in values for the script, rendered at apply time; "{}" is
+  # the empty value while sign-in is off. The file is delivered 0600 and
+  # its path is ABS_SIGNIN_FILE; the value is never exported.
+  initial: "{}"
+  immutable: true
+  consumers:
+  - service: audiobookshelf
+    env: ABS_SIGNIN_FILE
 - name: admin_password
   immutable: true
   reveal: true
@@ -81,7 +236,7 @@ firstrun:
 integrations:
 - kind: identity
   target: authentik
-  note: Sign in with Authentik once its OIDC client is configured in the app; local accounts keep working.
+  note: People sign in with Authentik from the login page once sign-in is applied on the app's page; the local login form and the recovery administrator stay.
 - kind: library
   target: nextcloud
   note: Mount the same bulk audiobook directory into Audiobookshelf and Nextcloud external storage.

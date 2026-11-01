@@ -82,6 +82,10 @@ func (a envOIDC) uses(name string) bool {
 }
 
 func (a envOIDC) Roles(g GroupNames) RoleMapping {
+	if a.cfg.AdminValue != "" {
+		return RoleMapping{Mapped: true, AdminAlias: a.cfg.AdminValue, UserAlias: a.cfg.UserValue,
+			Note: fmt.Sprintf("The groups claim carries the role %q for members of %s and %q for everyone else in %s, which the app reads as administrator and user.", a.cfg.AdminValue, g.Admins, a.cfg.UserValue, g.Users)}
+	}
 	if !a.uses("admin_group") {
 		return RoleMapping{Note: "its sign-in setting names no admin group."}
 	}

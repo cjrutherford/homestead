@@ -23,6 +23,9 @@ type RoleMapping struct {
 	// AdminAlias, when set, is added to the groups claim for members of the
 	// admin group (Nextcloud reads the group "admin").
 	AdminAlias string
+	// UserAlias (S417), when set, is added to the groups claim for
+	// everyone outside the admin group (Audiobookshelf reads "user").
+	UserAlias string
 	// Claims are extra claims, each a Python expression over `admin` (true
 	// for members of the admin group).
 	Claims map[string]string
@@ -50,6 +53,9 @@ func claimExpression(g GroupNames, rm RoleMapping) string {
 	b.WriteString("claims = {\"groups\": list(names)}\n")
 	if rm.AdminAlias != "" {
 		fmt.Fprintf(&b, "if admin:\n    claims[\"groups\"].append(%s)\n", pyStr(rm.AdminAlias))
+	}
+	if rm.UserAlias != "" {
+		fmt.Fprintf(&b, "if not admin:\n    claims[\"groups\"].append(%s)\n", pyStr(rm.UserAlias))
 	}
 	keys := make([]string, 0, len(rm.Claims))
 	for k := range rm.Claims {

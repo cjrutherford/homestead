@@ -915,7 +915,7 @@ func TestCuratedAudiobookshelf(t *testing.T) {
 	if len(service.Environment) != 0 {
 		t.Fatalf("environment = %v, want the image's own CONFIG_PATH/METADATA_PATH/PORT defaults", service.Environment)
 	}
-	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 1 || !manifest.HeldSecret("admin_password") || manifest.FirstRun.Routine != FirstRunAudiobookshelf {
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 3 || !manifest.HeldSecret("admin_password") || manifest.FirstRun.Routine != FirstRunAudiobookshelf {
 		t.Fatalf("first run = %+v, secrets = %+v", manifest.FirstRun, manifest.Secrets)
 	}
 	wantData := []struct {
@@ -956,8 +956,10 @@ func TestCuratedAudiobookshelf(t *testing.T) {
 		t.Fatalf("endpoint = %+v", endpoint)
 	}
 	if manifest.SSO.Class != SSOOptional || len(manifest.SSO.Protocols) != 1 ||
-		string(manifest.SSO.Protocols[0]) != "oidc" || manifest.SSO.OIDC != nil {
-		t.Fatalf("sso = %+v, want optional in-app OIDC with no actuated client", manifest.SSO)
+		string(manifest.SSO.Protocols[0]) != "oidc" || manifest.SSO.OIDC == nil || manifest.SSO.OIDC.Adapter != AdapterEnvOIDC ||
+		manifest.SSO.OIDC.Env == nil || !manifest.SSO.OIDC.Env.Restart || manifest.SSO.OIDC.Env.Trust != "NODE_EXTRA_CA_CERTS" || manifest.SSO.OIDC.Env.TrustBundle != "" ||
+		manifest.SSO.OIDC.Env.AdminValue != "admin" || manifest.SSO.OIDC.Env.UserValue != "user" {
+		t.Fatalf("sso = %+v, want optional OIDC through the env adapter (S417)", manifest.SSO)
 	}
 	if len(manifest.Integrations) != 2 ||
 		manifest.Integrations[0].Kind != IntegrationIdentity ||
