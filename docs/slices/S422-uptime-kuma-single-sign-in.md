@@ -96,3 +96,34 @@ name, `UK=uptime-kuma-uptime-kuma`).
    login page shows, and the account is kept. To sign in, set a password:
    `docker exec -it $UK npm run reset-password`.
 8. Re-apply on: the existing account is kept and `disableAuth` is true again.
+
+## Live results (VM 2, 2026-11-01)
+
+Kuma 2.5.7 had never been set up (no db-config.json, no kuma.db); the
+gate (S419) and host block (S421) were already on. Node v22.23.4,
+`/app/node_modules/@louislam/sqlite3` present.
+
+- `apps sign-in plan uptime-kuma` listed the login-off and account steps;
+  apply ran reach-authentik, configure-authentik, gate, login-off, record,
+  all succeeded.
+- `/app/data` gained `db-config.json` and `kuma.db`; setting
+  `disableAuth` = `true` (type `general`); one user `cjrutherford`, hash
+  length 60, active.
+- A socket.io polling handshake on the container address got `autoLogin`;
+  the Kuma log shows "Disabled Auth: auto login to admin".
+- Through the edge with no session, `/dashboard`, `/metrics` and
+  `/socket.io/` got 302 to Authentik; `/icon.svg` 200, `/status/x` and
+  `/api/push/x` 404 from Kuma (open, unknown slug/token).
+- Non-root direct curl to the container timed out; Doctor
+  `gated-app-host-block: ok`.
+- Off (`plan uptime-kuma --off`, apply): login-on ran before ungate;
+  `disableAuth` = `false`, the user row stayed, the socket got
+  `loginRequired`, the edge served Kuma's own login (200) with no gate.
+  The host block table stayed (Navidrome still gated).
+- On again: the existing account was kept, `disableAuth` = `true`,
+  `autoLogin`, edge 302 to Authentik.
+- Not run: `firewall_mode=external` refusal (unit-tested), owner browser
+  sign-in.
+- Seen: when the gate is already on and only login-off is pending, the
+  plan's first line still reads "Nothing changes: the Authentik gate is
+  on…" before listing the login-off step.
