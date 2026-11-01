@@ -397,6 +397,15 @@ func storeNames(files []SecretFile) []string {
 // descriptor, so a swapped path cannot redirect it.
 var chownSecret = func(f *os.File, uid, gid int) error { return f.Chown(uid, gid) }
 
+// SetSecretChown replaces the ownership step and returns the restore
+// function: a seam for tests of other packages that write secret files
+// for a service with a non-root data owner, run by a non-root user.
+func SetSecretChown(fn func(*os.File, int, int) error) (restore func()) {
+	old := chownSecret
+	chownSecret = fn
+	return func() { chownSecret = old }
+}
+
 // prepareSecretsDir creates dir/secrets 0700 and refuses a symlink or
 // non-directory in its place; the mode is set on the open descriptor,
 // never following a link.

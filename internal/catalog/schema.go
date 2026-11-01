@@ -264,8 +264,30 @@ type EnvOIDC struct {
 	// whole trust store (Python requests), so their other HTTPS fetches
 	// keep working. "java" (S411) is the JVM form. Needs Trust; empty
 	// keeps the bare root.
-	TrustBundle string            `yaml:"trustbundle,omitempty" json:"trustbundle,omitempty"`
-	Set         map[string]string `yaml:"set" json:"set"`
+	TrustBundle string `yaml:"trustbundle,omitempty" json:"trustbundle,omitempty"`
+	// TrustPath (S412), with trustbundle "system", is the container path
+	// of the image's own CA bundle; the combined bundle is mounted
+	// read-only over it for the appliance's own issuer. For apps whose
+	// TLS library has no trust variable (Apache mod_auth_openidc).
+	TrustPath string `yaml:"trustpath,omitempty" json:"trustpath,omitempty"`
+	// ExtraSecrets (S412) are further declared secrets the app needs
+	// before sign-in works (a session crypto key), wired and generated
+	// with the client secret. Each is consumed by the same service.
+	ExtraSecrets []string `yaml:"extrasecrets,omitempty" json:"extrasecrets,omitempty"`
+	// OnApply and OnOff (S412) are static argv run inside the service's
+	// container after the stack is up with the sign-in environment (on)
+	// or before it is taken away (off), as ExecUser: for apps that also
+	// keep their login method in their own configuration. No
+	// placeholders and no shell; both or neither.
+	OnApply  []string `yaml:"onapply,omitempty" json:"onapply,omitempty"`
+	OnOff    []string `yaml:"onoff,omitempty" json:"onoff,omitempty"`
+	ExecUser string   `yaml:"execuser,omitempty" json:"execuser,omitempty"`
+	// Exclusive (S412) says sign-in replaces the app's own login while
+	// it is on, so plans stop promising a working local login.
+	Exclusive bool `yaml:"exclusive,omitempty" json:"exclusive,omitempty"`
+	// Warnings are shown in every sign-in plan for the app.
+	Warnings []string          `yaml:"warnings,omitempty" json:"warnings,omitempty"`
+	Set      map[string]string `yaml:"set" json:"set"`
 }
 
 // TrustBundleCombined is the one EnvOIDC.TrustBundle value (S410).
@@ -277,8 +299,14 @@ const TrustBundleCombined = "combined"
 // the JDK's own cacerts.
 const TrustBundleJava = "java"
 
+// TrustBundleSystem (S412) mounts the combined bundle over the image's
+// own CA bundle at TrustPath instead of setting a variable.
+const TrustBundleSystem = "system"
+
 // EnvPlaceholders are the only placeholders an env-oidc template may use.
 var EnvPlaceholders = []string{"issuer", "authentik_base", "client_id", "admin_group", "user_group"}
+
+var validExecUser = regexp.MustCompile(`^([a-z_][a-z0-9_-]*|[0-9]+)$`)
 
 var envPlaceholder = regexp.MustCompile(`\{\{\s*([^{}]*?)\s*\}\}`)
 
@@ -300,6 +328,20 @@ func EnvTemplateUses(tmpl, name string) bool {
 	for _, m := range envPlaceholder.FindAllStringSubmatch(tmpl, -1) {
 		if m[1] == name {
 			return true
+		}
+	}
+	return false
+}
+
+func secretConsumedBy(secrets []SecretDecl, name, service string) bool {
+	for _, d := range secrets {
+		if d.Name != name {
+			continue
+		}
+		for _, c := range d.Consumers {
+			if c.Service == service {
+				return true
+			}
 		}
 	}
 	return false
@@ -329,11 +371,40 @@ func (e EnvOIDC) validate(service string, svc Service, secrets []SecretDecl) err
 	if e.Trust != "" && !validEnvKey.MatchString(e.Trust) {
 		return fmt.Errorf("catalog: env-oidc trust variable %q invalid", e.Trust)
 	}
-	if e.TrustBundle != "" && e.TrustBundle != TrustBundleCombined && e.TrustBundle != TrustBundleJava {
-		return fmt.Errorf("catalog: env-oidc trustbundle %q must be %q, %q or empty", e.TrustBundle, TrustBundleCombined, TrustBundleJava)
+	switch e.TrustBundle {
+	case "", TrustBundleCombined, TrustBundleJava, TrustBundleSystem:
+	default:
+		return fmt.Errorf("catalog: env-oidc trustbundle %q must be %q, %q, %q or empty", e.TrustBundle, TrustBundleCombined, TrustBundleJava, TrustBundleSystem)
 	}
-	if e.TrustBundle != "" && e.Trust == "" {
-		return fmt.Errorf("catalog: env-oidc trustbundle needs a trust variable")
+	if e.TrustBundle == TrustBundleSystem {
+		if e.Trust != "" || !strings.HasPrefix(e.TrustPath, "/") || strings.Contains(e.TrustPath, "..") || strings.ContainsAny(e.TrustPath, " :\t\r\n") {
+			return fmt.Errorf("catalog: env-oidc trustbundle %q needs an absolute trustpath and no trust variable", TrustBundleSystem)
+		}
+	} else {
+		if e.TrustPath != "" {
+			return fmt.Errorf("catalog: env-oidc trustpath needs trustbundle %q", TrustBundleSystem)
+		}
+		if e.TrustBundle != "" && e.Trust == "" {
+			return fmt.Errorf("catalog: env-oidc trustbundle needs a trust variable")
+		}
+	}
+	for _, name := range e.ExtraSecrets {
+		if name == e.Secret || !secretConsumedBy(secrets, name, service) {
+			return fmt.Errorf("catalog: env-oidc extra secret %q must be a declared secret, other than the client secret, consumed by service %q", name, service)
+		}
+	}
+	if (len(e.OnApply) == 0) != (len(e.OnOff) == 0) {
+		return fmt.Errorf("catalog: env-oidc onapply and onoff come together")
+	}
+	for _, argv := range [][]string{e.OnApply, e.OnOff} {
+		for _, arg := range argv {
+			if arg == "" || strings.ContainsAny(arg, "\r\n") || strings.Contains(arg, "{{") {
+				return fmt.Errorf("catalog: env-oidc in-app command arguments must be non-empty static text without placeholders")
+			}
+		}
+	}
+	if e.ExecUser != "" && !validExecUser.MatchString(e.ExecUser) {
+		return fmt.Errorf("catalog: env-oidc execuser %q invalid", e.ExecUser)
 	}
 	if len(e.Set) == 0 {
 		return fmt.Errorf("catalog: env-oidc sets no variables")

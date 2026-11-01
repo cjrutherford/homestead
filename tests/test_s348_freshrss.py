@@ -44,10 +44,11 @@ class TestFreshRSSContract(unittest.TestCase):
         self.assertIn("backuppaths:", self.text)
 
     def test_no_generated_credentials(self):
-        # The owner completes the web installer; nothing is declared or
-        # exported, so no supervisor entrypoint is needed.
-        self.assertNotIn("\nsecrets:", self.text)
-        self.assertNotIn("entrypoint:", self.text)
+        # The owner completes the web installer; the only secrets are the
+        # OIDC client secret and crypto key added by S412, never an
+        # installer account.
+        self.assertNotIn("FRESHRSS_INSTALL:", self.text)
+        self.assertNotIn("admin_password", self.text)
         self.assertNotIn("FRESHRSS_USER:", self.text)
 
     def test_no_latest_tag(self):

@@ -144,3 +144,35 @@ written by each sign-in apply with the standard library and removed with the
 variable on a public issuer or sign-off. Applying a client secret to an
 install that predates the supervisor now also wraps the exporting service in
 the supervisor (entrypoint, command, script mount).
+
+### Amendment (2026-10-31, S412): FreshRSS signs in through Authentik only
+The owner chose to force FreshRSS onto Authentik. With `OIDC_ENABLED`, the
+Debian image (`Docker/FreshRSS.Apache.conf`, 1.30.4) puts all of `/p/i/`, the
+whole web UI including the login form, behind Apache's `mod_auth_openidc`,
+and FreshRSS must run with `auth_type: http_auth`. FreshRSS's own form login
+therefore stops working while sign-in is on. This is an explicit exception to
+the rule that each app's local admin keeps working as a break-glass login
+(ADR-039 consequences, ADR-040 consequences, ADR-043 section 3, ADR-047).
+The feed API under `/p/api/` sits outside that directory and keeps its API
+passwords.
+
+- Why: the module cannot offer the form beside Authentik; the alternative,
+  not offering Authentik for FreshRSS, was the owner's to decide and was
+  decided the other way.
+- Administrator: FreshRSS's administrator is its `default_user` (or any
+  user flagged admin). The Authentik person whose `preferred_username` equals
+  that username becomes that administrator; unknown people are registered as
+  ordinary users at first sign-in (`http_auth_auto_register`, default true).
+  The sign-in plan says this in a warning.
+- Break-glass recovery: turn app sign-in off through the normal plan and apply
+  (`homesteadctl apps sign-in plan freshrss --off`, then
+  `apply freshrss --digest D --off`, or the dashboard). The off operation
+  first runs `php cli/reconfigure.php --auth-type form` inside the container,
+  then removes the OIDC environment and mounts. If the container cannot run
+  the command, the manual fallback is in `docs/slices/S412-freshrss-authentik.md`.
+- Mechanism: env-oidc gains declarative, static in-app commands
+  (`onapply`, `onoff`, `execuser`; no placeholders, no shell), run through the
+  same container exec the Nextcloud adapter uses, plus `exclusive` and
+  `warnings` for plan text, `extrasecrets` (the session crypto key), and
+  `trustbundle: system` with `trustpath` (the combined bundle mounted
+  read-only over the image's own CA bundle for the appliance's own issuer).

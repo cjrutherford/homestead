@@ -336,6 +336,10 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 		ClientID: ClientID(m.Name), Plugin: m.SSO.OIDC.Plugin,
 		RedirectURIs: []string{}, AppSettings: []string{}, Changes: []string{}, Warnings: []string{},
 	}
+	exclusive := false
+	if x, ok := adapter.(interface{ Exclusive() bool }); ok {
+		exclusive = x.Exclusive()
+	}
 	if !enable {
 		if in.Applied == nil {
 			p.Changes = append(p.Changes, "Nothing changes: sign-in with Authentik is already off.")
@@ -350,6 +354,9 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 				"Forget the sealed client secret and take the Authentik host entry and appliance root out of the app's override file.",
 				fmt.Sprintf("Delete the Authentik groups %s and %s and the groups claim mapping %q. The shared group %s stays.", x.Groups[0], x.Groups[1], x.ClaimMapping, sso.OwnerGroup),
 				fmt.Sprintf("People who signed in through Authentik keep their %s accounts; the local admin keeps working.", m.Title))
+			if exclusive {
+				p.Changes[len(p.Changes)-1] = fmt.Sprintf("People who signed in through Authentik keep their %s accounts. %s returns to its own login form, so its local password login works again.", m.Title, m.Title)
+			}
 		}
 		p.Digest = p.digest()
 		return p, nil
@@ -401,6 +408,9 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 			fmt.Sprintf("Create the OAuth2/OpenID provider %q (client id %s, confidential) and the application %s in Authentik.", p.Provider, p.ClientID, p.Application),
 			"Generate a client secret and seal it in the secret store; it is never shown or logged.",
 			fmt.Sprintf("Set up %s to sign people in through Authentik. Accounts are created at first sign-in; the local admin keeps working.", m.Title))
+		if exclusive {
+			p.Changes[len(p.Changes)-1] = fmt.Sprintf("Set up %s to sign people in through Authentik only. Accounts are created at first sign-in. %s's own login form stops working while sign-in is on.", m.Title, m.Title)
+		}
 	case sameList(in.Applied.RedirectURIs, p.RedirectURIs) && in.Applied.Issuer == p.Issuer && pluginState(p.Plugin) == in.Applied.PluginVersion && sameAccess(in.Applied.Access, p.Access):
 		p.Changes = append(p.Changes, "Nothing changes: sign-in with Authentik is on and matches the app's names. Applying checks Authentik and the app again.")
 	default:
@@ -425,6 +435,9 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 	if p.Plugin != nil {
 		p.Warnings = append(p.Warnings, fmt.Sprintf("%s uses the third-party plugin %s %s, downloaded from %s and refused unless its SHA-256 is %s.",
 			m.Title, p.Plugin.Name, p.Plugin.Version, p.Plugin.URL, p.Plugin.SHA256))
+	}
+	if w, ok := adapter.(interface{ PlanWarnings() []string }); ok {
+		p.Warnings = append(p.Warnings, w.PlanWarnings()...)
 	}
 	p.Warnings = append(p.Warnings, "Applying needs an Authentik API token, which can do anything an Authentik administrator can. It is used for this apply only, unless you kept the dashboard sign-in token.")
 	p.Digest = p.digest()

@@ -548,9 +548,24 @@ func TestCuratedFreshRSS(t *testing.T) {
 	if len(manifest.BackupPaths) != 1 || manifest.BackupPaths[0] != "data" {
 		t.Fatalf("backuppaths = %v, want the database and user configuration", manifest.BackupPaths)
 	}
-	if manifest.Database != nil || len(manifest.Secrets) != 0 || len(service.Entrypoint) != 0 {
+	// S412: the owner still completes the web installer (no database, no
+	// installer credential); the two secrets are the OIDC client secret
+	// and the session crypto key, exported through the supervisor, which
+	// execs the image's own ENTRYPOINT and CMD.
+	if manifest.Database != nil || len(manifest.Secrets) != 2 ||
+		manifest.Secrets[0].Name != "oidc_client_secret" || manifest.Secrets[1].Name != "oidc_crypto_key" {
 		t.Fatalf("freshrss installs through the web form; secrets = %+v, database = %+v",
 			manifest.Secrets, manifest.Database)
+	}
+	for _, sc := range manifest.Secrets {
+		if len(sc.Consumers) != 1 || !sc.Consumers[0].Export || !strings.HasSuffix(sc.Consumers[0].Env, "_FILE") {
+			t.Fatalf("secret %s = %+v, want one exported *_FILE consumer", sc.Name, sc.Consumers)
+		}
+	}
+	if len(service.Entrypoint) != 4 || service.Entrypoint[0] != "./Docker/entrypoint.sh" ||
+		!strings.Contains(service.Entrypoint[3], "exec apache2 -D FOREGROUND") ||
+		!strings.Contains(service.Entrypoint[3], `$$OIDC_ENABLED`) || strings.Contains(strings.ReplaceAll(service.Entrypoint[3], "$$", ""), "$") {
+		t.Fatalf("entrypoint = %q, want the image start with every $ escaped for Compose", service.Entrypoint)
 	}
 	endpoint, ok := manifest.Exposure.Find("web")
 	if !ok || string(endpoint.Recommended) != "local" || !endpoint.AllowWider || len(endpoint.Warnings) == 0 {

@@ -1576,5 +1576,9 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S411: Komga signs in with explicit endpoints and no `issuer-uri`, so its OIDC `iss` check is skipped (Authentik still signs the token with the JWKS key); revisit if Komga stops needing startup discovery.
 - S411: the Java trust store is built from the appliance host's system CA bundle at sign-in apply only, so host CA updates reach Komga on the next re-apply.
 - S411: the Komga sign-in button and local-login coexistence are confirmed from source, not yet from a live VM.
+- S412: the sign-in plan states the FreshRSS admin rule but does not read the default user from the app; a plan could show the actual username once the app exposes it cheaply.
+- S412: the FreshRSS sign-in step needs the web installer finished; an unfinished install fails the in-app command with guidance rather than waiting like Nextcloud's set-up wait.
+- S412: the combined CA bundle laid over FreshRSS's system CAs is built at sign-in apply only, so host CA updates reach it on the next re-apply.
+- S412: FreshRSS sign-in is confirmed from source, not yet from a live VM (mod_auth_openidc return URL behind the edge, auto-registration, off restoring the form login).
 - S409: a Linkding stack from before S349's supervisor (no entrypoint in compose.yaml) is not repaired by the secret wiring; reinstall it.
 - S409: OIDC accounts match existing Linkding users by email; an Authentik person with no email gets a new account rather than the matching one.

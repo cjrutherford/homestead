@@ -78,12 +78,25 @@ func wiring(m catalog.Manifest, adapter Adapter, issuer string, s Settings) cata
 			env[k] = v
 		}
 	}
+	volumes := []string{"./" + CADir + ":" + CAMount + ":ro"}
+	if t, ok := adapter.(interface{ TrustMount(string) string }); ok && t.TrustMount(issuer) != "" {
+		volumes = append(volumes, t.TrustMount(issuer))
+	}
 	return catalog.SignInWiring{
 		Service:    m.SSO.OIDC.Service,
 		ExtraHosts: []string{hostOf(issuer) + ":host-gateway"},
-		Volumes:    []string{"./" + CADir + ":" + CAMount + ":ro"},
+		Volumes:    volumes,
 		Env:        env,
 	}
+}
+
+func containsString(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // staleTrust is the adapter's trust variables that wire does not set,
@@ -129,6 +142,21 @@ func CombinedBundle(root []byte) ([]byte, error) {
 // writeBundle writes the combined bundle atomically, mode 0644 (public
 // certificates only).
 func writeBundle(dir string, root []byte) error { return writeBundleFile(dir, root, false) }
+
+// writeBundleKeepInode rewrites an existing bundle.pem in place, so a
+// single-file bind mount of it (trustbundle: system, S412) sees the new
+// content instead of the replaced inode. A new file is written normally.
+func writeBundleKeepInode(dir string, root []byte, java bool) error {
+	path := filepath.Join(dir, bundleHostFn)
+	if _, err := os.Stat(path); err != nil || java {
+		return writeBundleFile(dir, root, java)
+	}
+	body, err := CombinedBundle(root)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, body, 0o644)
+}
 
 // writeBundleFile writes bundle.pem, or with java the Java trust store
 // bundle.jks (S411).
@@ -178,32 +206,47 @@ func ensureDeclaredSecret(rt Runtime, m catalog.Manifest, dir string) (string, e
 		return "", fmt.Errorf("appsso: the package secret store is unavailable")
 	}
 	name := declaredSecret(m)
-	for _, d := range m.Secrets {
-		if d.Name != name {
+	names := []string{name}
+	if m.SSO.OIDC != nil && m.SSO.OIDC.Env != nil {
+		names = append(names, m.SSO.OIDC.Env.ExtraSecrets...)
+	}
+	var decls []catalog.SecretDecl
+	for _, n := range names {
+		found := false
+		for _, d := range m.Secrets {
+			if d.Name == n {
+				decls, found = append(decls, d), true
+			}
+		}
+		if !found {
+			return "", fmt.Errorf("appsso: %s declares no secret %q", m.Title, n)
+		}
+	}
+	// Every file exists before any wiring is written: a supervisor
+	// script that reads a secret refuses to start without its file.
+	if err := catalog.EnsureSecrets(rt.AppSecrets, catalog.Manifest{Name: m.Name, Secrets: decls}); err != nil {
+		return "", err
+	}
+	if err := catalog.WriteSecretFiles(dir, catalog.SecretFilesFor(m), rt.AppSecrets); err != nil {
+		return "", err
+	}
+	// An install made before the manifest declared a secret gets just
+	// that secret's wiring added to its stack file (S403); the plan said
+	// so.
+	for _, n := range names {
+		if catalog.SecretConsumerWired(dir, m, n) {
 			continue
 		}
-		if err := catalog.EnsureSecrets(rt.AppSecrets, catalog.Manifest{Name: m.Name, Secrets: []catalog.SecretDecl{d}}); err != nil {
-			return "", err
+		if _, err := catalog.WireDeclaredSecret(dir, m, n); err != nil {
+			return "", fmt.Errorf("appsso: %s was installed before it declared the secret %q and its stack file could not be updated (%v); reinstall it, then apply sign-in again", m.Title, n, err)
 		}
-		if err := catalog.WriteSecretFiles(dir, catalog.SecretFilesFor(m), rt.AppSecrets); err != nil {
-			return "", err
-		}
-		// An install made before the manifest declared the secret gets
-		// just that secret's wiring added to its stack file (S403); the
-		// plan said so. The secret file exists first.
-		if !catalog.SecretConsumerWired(dir, m, name) {
-			if _, err := catalog.WireDeclaredSecret(dir, m, name); err != nil {
-				return "", fmt.Errorf("appsso: %s was installed before it declared the secret %q and its stack file could not be updated (%v); reinstall it, then apply sign-in again", m.Title, name, err)
-			}
-			if rt.Fingerprint != nil {
-				if err := rt.Fingerprint(m.Name, dir); err != nil {
-					return "", err
-				}
+		if rt.Fingerprint != nil {
+			if err := rt.Fingerprint(m.Name, dir); err != nil {
+				return "", err
 			}
 		}
-		return rt.AppSecrets.Get(catalog.SecretStoreName(m.Name, name))
 	}
-	return "", fmt.Errorf("appsso: %s declares no secret %q", m.Name, name)
+	return rt.AppSecrets.Get(catalog.SecretStoreName(m.Name, name))
 }
 
 // Definition is the app.sign-in operation for an approved plan: on
@@ -250,7 +293,11 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 				if j, ok := adapter.(interface{ JavaStore() bool }); ok {
 					java = j.JavaStore()
 				}
-				if err := writeBundleFile(caDir, pem, java); err != nil {
+				write := writeBundleFile
+				if t, ok := adapter.(interface{ TrustMountAny() string }); ok && t.TrustMountAny() != "" {
+					write = writeBundleKeepInode
+				}
+				if err := write(caDir, pem, java); err != nil {
 					return err
 				}
 			} else {
@@ -277,6 +324,14 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 		for _, stale := range staleTrust(adapter, wire) {
 			if _, err := catalog.ApplySignInWiring(dir, catalog.SignInWiring{Service: wire.Service, Env: stale}, false); err != nil {
 				return err
+			}
+		}
+		// The same for the bundle laid over the image's own CAs (S412).
+		if t, ok := adapter.(interface{ TrustMountAny() string }); ok && t.TrustMountAny() != "" {
+			if !containsString(wire.Volumes, t.TrustMountAny()) {
+				if _, err := catalog.ApplySignInWiring(dir, catalog.SignInWiring{Service: wire.Service, Volumes: []string{t.TrustMountAny()}}, false); err != nil {
+					return err
+				}
 			}
 		}
 		notes, err := catalog.ApplySignInWiring(dir, wire, on)
