@@ -1612,3 +1612,4 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S418 Owner username is not in the people table, so owner/local-account collisions are not checked; a person added later whose username matches an existing Navidrome account is only covered by a plan warning.
 - S418 Moving a gated app to a path route fails validation.
 - S418 Live check on VM 2 pending (see the slice file's "Verify live").
+- S420 Sign-in status gives "the app's names changed" as the re-plan reason when only the edge address moved; it should name the trust change.

@@ -44,3 +44,12 @@ On VM 2 (needs the S418 gate applied for Navidrome):
    no longer signs in (own login page).
 3. `docker compose up -d --force-recreate` the edge; if its address changes,
    status shows re-plan, Doctor warns, and re-applying restores sign-in.
+
+## Live results (VM 2, 2026-11-01, 3b21af9)
+- After deploy, sign-in status showed re-plan (the old subnet no longer
+  matched); the plan pinned `ND_EXTAUTH_TRUSTEDSOURCES=192.168.48.3/32`, the
+  `homestead-caddy` address. Apply succeeded.
+- Forged `X-Authentik-Username` from the host to the container: no session.
+  The same header from the edge: session. The gate still answers 302.
+- The re-plan reason read "the app's names changed", which is wrong for an
+  edge-address change (DEFERRED).
