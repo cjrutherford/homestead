@@ -73,7 +73,7 @@ needs the S341 library declaration to name its shared ingest path.
 | S355 | `komga` | S341 | JVM heap cap in the manifest so it cannot crowd the appliance. **Done.** |
 | S356 | `calibre-web-automated` | S341 | Community image; OIDC re-verified at slice time or documented as local-only. **Done.** |
 | S357 | `vikunja` | S341 | CalDAV against Nextcloud (S357: not wired; Vikunja's own CalDAV) and Authentik sign-in via env-oidc config file. **Done.** |
-| S358 | `actual-budget` | S276 | OIDC verified at slice time, else local-only exception. |
+| S358 | `actual-budget` | S276 | Native OpenID verified (env-oidc, S358); first sign-in is the server owner. **Done.** |
 | S359 | `memos` | S341 | Complements Nextcloud Notes; does not replace it. |
 
 ### 2.5 Third foundation, then Wave 3

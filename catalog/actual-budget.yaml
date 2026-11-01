@@ -1,0 +1,171 @@
+# Actual Budget household budgeting (S358): a Wave 2 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# One container (the actualbudget/actual-server image: node 24 on Debian,
+# runs as root, entrypoint tini, CMD node build/app.js) with budgets and
+# its account database on application storage. Actual cannot run under a
+# path, so it is served on a name of its own.
+#
+# OpenID Connect is native: at every start the server reads
+# ACTUAL_OPENID_* from its environment and, when a discovery URL is set,
+# switches itself to OpenID (forced bootstrap, app.ts run()). The client
+# secret comes from ACTUAL_OPENID_CLIENT_SECRET_FILE (load-config.js).
+name: actual-budget
+version: 26.10.0
+title: Actual Budget
+blurb: Private household budgeting that syncs across devices.
+description: Actual Budget is a local-first envelope budgeting app. Your
+  budget lives on the server as one file per budget and syncs to every
+  browser and phone you sign in from, with bank file import and rules.
+  It runs as one container with its data on application storage, so
+  there is no database server to maintain. The first person to sign in
+  becomes the server owner.
+category: finance
+icon: mdi:piggy-bank-outline
+services:
+- name: actual-budget
+  image: docker.io/actualbudget/actual-server:26.10.0
+  exposes: web
+  containerport: 5006
+  environment:
+    # The app's own address (the public name once published). Actual
+    # builds its sign-in callback, <hostname>/openid/callback, from it
+    # and refuses sign-in redirects to any other host. It does nothing
+    # until an OpenID discovery URL is set.
+    ACTUAL_OPENID_SERVER_HOSTNAME: "{{app_url}}"
+  # The image declares no VOLUME (verified from sync-server.Dockerfile at
+  # 26.10.0); /data is the Homestead declaration. It holds server-files/
+  # (account.sqlite) and user-files/ (one file per budget).
+  data:
+  - target: /data
+    class: application
+    subpath: data
+requirements:
+  memorymb: 256
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 1073741824
+  # Actual listens on 5006; routes proxy to it and no host port is
+  # published by default.
+exposure:
+  package: actual-budget
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Your budgets and account history leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- data
+database:
+  service: actual-budget
+  kind: sqlite
+  path: data/server-files/account.sqlite
+sso:
+  class: optional
+  protocols: [oidc]
+  # Sign-in through Authentik (S358): Actual's native OpenID, set by
+  # environment alone. On start Actual stores the settings in its own
+  # account database (auth table) and makes OpenID the active login. The
+  # script below runs inside the container: "on" confirms Actual has
+  # switched (retried while it starts), "off" removes the OpenID row so
+  # the app falls back to its server password (or asks for a new one),
+  # because the stored row would otherwise outlive the environment.
+  #
+  # RE-VERIFY ON EVERY VERSION BUMP: verified against Actual 26.10.0
+  # (packages/sync-server: load-config.js env names and ACTUAL_OPENID_
+  # CLIENT_SECRET_FILE, app.ts run() forced bootstrap, account-db.js auth
+  # table, accounts/openid.ts callback /openid/callback, owner = first
+  # sign-in, userCreationMode, preferred_username identity). The pin test
+  # TestActualBudgetSignInPinnedToVerifiedVersion fails when version
+  # changes until this block and that constant are re-verified together.
+  oidc:
+    adapter: env-oidc
+    service: actual-budget
+    env:
+      redirectpaths: ["/openid/callback"]
+      signinpath: /login
+      secret: oidc_client_secret
+      # Node adds this file to its own CAs, so the bare appliance root is
+      # enough and public HTTPS keeps working.
+      trust: NODE_EXTRA_CA_CERTS
+      set:
+        # The full well-known URL: openid-client uses it as given.
+        ACTUAL_OPENID_DISCOVERY_URL: "{{issuer}}.well-known/openid-configuration"
+        ACTUAL_OPENID_CLIENT_ID: "{{client_id}}"
+        ACTUAL_OPENID_PROVIDER_NAME: Authentik
+        # People Authentik lets in get an account on first sign-in;
+        # otherwise the owner would have to pre-create every username.
+        ACTUAL_USER_CREATION_MODE: login
+      onapply:
+      - node
+      - -e
+      - &actual_signin_script |
+        const VERIFIED = '26.10.0'
+        const DB = '/data/server-files/account.sqlite'
+        const PKG = '/app/package.json'
+        const fs = require('node:fs')
+        const die = (m) => {
+          console.error('actual-budget sign-in: ' + m + " (Actual's own account database is read here; re-verify this script against its auth table after any Actual update)")
+          process.exit(1)
+        }
+        const mode = process.argv[1]
+        if (mode !== 'on' && mode !== 'off') die('expected the argument on or off')
+        let seen
+        try { seen = JSON.parse(fs.readFileSync(PKG, 'utf8')).version } catch { die('cannot read the Actual version') }
+        if (mode === 'on' && seen !== VERIFIED) die('this is Actual ' + seen + ' but the script was verified against ' + VERIFIED)
+        if (!fs.existsSync(DB)) {
+          if (mode === 'off') { console.log('actual-budget sign-in off (no account database yet)'); process.exit(0) }
+          die('the account database is not there yet (the server is still starting)')
+        }
+        const { DatabaseSync } = require('node:sqlite')
+        const db = new DatabaseSync(DB)
+        let open = false
+        try {
+          db.exec('PRAGMA busy_timeout = 30000')
+          const cols = db.prepare("SELECT name FROM pragma_table_info('auth')").all().map((c) => c.name)
+          for (const c of ['method', 'display_name', 'extra_data', 'active']) if (!cols.includes(c)) die('table auth lacks column ' + c)
+          db.exec('BEGIN IMMEDIATE')
+          open = true
+          const rows = db.prepare('SELECT method, active FROM auth').all()
+          const openid = rows.find((r) => r.method === 'openid')
+          if (mode === 'on') {
+            if (!openid || openid.active !== 1) die('Actual has not switched to OpenID yet (it does so at startup from its environment)')
+            console.log('actual-budget sign-in on')
+          } else if (!openid) {
+            console.log('actual-budget sign-in off (already off)')
+          } else {
+            db.prepare("DELETE FROM auth WHERE method = 'openid'").run()
+            if (rows.some((r) => r.method === 'password')) db.prepare("UPDATE auth SET active = 1 WHERE method = 'password'").run()
+            console.log('actual-budget sign-in off')
+          }
+          db.exec('COMMIT')
+          open = false
+        } catch (e) {
+          if (open) { try { db.exec('ROLLBACK') } catch {} }
+          die('the database access failed: ' + (e && e.code ? e.code : 'error'))
+        }
+      - "on"
+      onoff:
+      - node
+      - -e
+      - *actual_signin_script
+      - "off"
+      warnings:
+      - "The first person to sign in through Authentik becomes the Actual server owner and administrator, and the owner cannot be changed afterwards. Sign in yourself first. Later people get an ordinary account, named from their Authentik username; Actual takes no role from Authentik groups, and who may sign in is decided by the app's Authentik groups."
+      - "Actual signs in by the Authentik username. If the server already had a password, budgets owned by the password account move to the first OpenID person."
+      - "Sign-in makes OpenID Actual's active login method. Actual keeps its server password only if one was set before; the login page then offers it as a second choice. With no password set, losing Authentik means losing the sign-in: turn sign-in off here, which removes the OpenID setting from Actual's account database so Actual asks for a new server password."
+      - Actual stores the OpenID client secret in its own account database (data/server-files/account.sqlite), which is part of the app's backups. Homestead hands it to Actual as a file, never in Compose, argv or logs.
+      - Sign-in completes at the address Actual was opened at, so the address in the plan is the only one that signs in; plan sign-in again after the address changes.
+secrets:
+- name: oidc_client_secret
+  # Authentik's client secret for Actual; Homestead generates it, hands
+  # it to Authentik, and gives Actual the file.
+  consumers:
+  - service: actual-budget
+    env: ACTUAL_OPENID_CLIENT_SECRET_FILE
+integrations:
+- kind: identity
+  target: authentik
+  note: People sign in with Authentik once sign-in is applied on the app's page; the server password (if one was set) stays as a second choice.

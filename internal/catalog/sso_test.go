@@ -51,6 +51,7 @@ func TestSSOClassEffective(t *testing.T) {
 func TestCuratedSSO(t *testing.T) {
 	catalog := repoCatalog(t)
 	want := map[string]SSODeclaration{
+		"actual-budget":         {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"audiobookshelf":        {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"authentik":             {Class: SSOUnsupported},
 		"immich":                {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
