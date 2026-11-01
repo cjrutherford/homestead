@@ -1644,3 +1644,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S421 With `firewall_mode=external` the rules are not applied and no script for them is shown in the firewall plan; owners get the guidance in Doctor only.
 - S421 `nft --check` of the gate rules is skipped in unprivileged test runs, so the nft syntax (`ct status dnat`, `iifname != "br-*"`, `meta skuid`) is first confirmed on the VM.
 - S421 The host block drops non-root access to unpublished ports of every Docker container, not only Homestead's (owner-overridable with `firewall_mode=external`); a per-container allow list is not built.
+- S422 Only the built-in SQLite database is supported for Kuma's own-login-off; a Kuma on MariaDB (embedded or external) is refused with guidance and keeps its login.
+- S422 The Kuma script writes Kuma's own database and must be re-verified on every Kuma update (pin test `kumaSignInVerified`); the `/app/node_modules/@louislam/sqlite3` path is first confirmed on VM 2.
+- S422 The Kuma account has a random unknown password; the owner who wants Kuma's own login back sets one with `npm run reset-password`. A Homestead-run password reset is not built.
+- S422 The boot window before the daemon's first host-block reconcile (accepted by the owner) and containers sharing a network with Kuma (S421 residual) are not closed.

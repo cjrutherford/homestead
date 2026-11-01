@@ -167,6 +167,9 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 			}
 			p.AppSettings = append(p.AppSettings, fmt.Sprintf("%s is removed from %s.", k, m.Title))
 		}
+		if fa.OwnLoginOff != nil {
+			p.Changes = append(p.Changes, fmt.Sprintf("Turn %s's own login back on first, before the gate is removed, so it is never open to anyone who reaches it. To sign in to it afterwards, set a password with: docker exec -it %s npm run reset-password.", m.Title, container(m, fa.Service)))
+		}
 		if len(fa.Env) > 0 {
 			p.Changes = append(p.Changes, fmt.Sprintf("Take the trust settings out of %s first, so it ignores identity headers again.", m.Title))
 		}
@@ -304,8 +307,16 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 	}
 	if len(p.AppSettings) > 0 {
 		p.Changes = append(p.Changes, fmt.Sprintf("Trust settings written to %s: %s.", m.Title, strings.Join(p.AppSettings, ", ")))
+	} else if fa.OwnLoginOff != nil {
+		p.Changes = append(p.Changes, fmt.Sprintf("%s is given no identity header and no trust settings.", m.Title))
 	} else {
 		p.Changes = append(p.Changes, fmt.Sprintf("%s is given no identity header and no trust settings; it keeps its own login behind the gate.", m.Title))
+	}
+	if fa.OwnLoginOff != nil {
+		p.Changes = append(p.Changes,
+			fmt.Sprintf("Turn %s's own login off, so you sign in once, to Authentik. This runs after the gate is on and is safe because only administrators and the owner pass the gate, and Homestead keeps every other host user and container off its port (the host block); sign-in is refused if the block cannot be kept.", m.Title),
+			fmt.Sprintf("Use %s's built-in SQLite database (chosen now if it has not been set up), create one %s account named after you with a random password nobody knows if it has none, and restart %s. An existing account and its password are kept.", m.Title, m.Title, m.Title),
+			fmt.Sprintf("Running a command inside %s (pinned to version %s; it refuses any other) changes its own database: %s.", m.Title, m.Version, describeArgv(fa.OwnLoginOff.OnApply)))
 	}
 	if fa.Access == catalog.AccessAdminOnly {
 		p.Changes = append(p.Changes, fmt.Sprintf("Who can reach it: the owner and members of the admins group only. No users group is created; a person with the user role is refused at Authentik."))
@@ -397,6 +408,22 @@ func forwardDefinition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.
 		}
 		return nil
 	}}
+	// The app's own login goes back on before anything else is undone, so
+	// it is never open with neither the gate nor a login (S422).
+	loginOn := operation.StepDef{Name: "login-on", Run: func(ctx context.Context) error {
+		if err := ownLoginOn(ctx, container(m, fa.Service), *fa.OwnLoginOff); err != nil {
+			return failed("turn the app's own login back on", err)
+		}
+		rt.audit(actor, "app.sign-in.login", "ok", m.Name+": the app's own login is on")
+		return nil
+	}}
+	loginOff := operation.StepDef{Name: "login-off", Run: func(ctx context.Context) error {
+		if err := ownLoginOff(ctx, container(m, fa.Service), actor, *fa.OwnLoginOff); err != nil {
+			return failed("turn the app's own login off", err)
+		}
+		rt.audit(actor, "app.sign-in.login", "ok", m.Name+": the app's own login is off behind the gate")
+		return nil
+	}}
 	def := operation.Definition{Type: "app.sign-in"}
 	if !plan.Enabled {
 		// Never a window where the app trusts a header the edge no longer
@@ -411,6 +438,7 @@ func forwardDefinition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.
 		}}
 		def.Steps = []operation.StepDef{
 			reach,
+			loginOn,
 			unwire,
 			{Name: "ungate", Run: func(ctx context.Context) error {
 				if err := rt.SetGate(ctx, m, nil); err != nil {
@@ -435,6 +463,7 @@ func forwardDefinition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.
 			}},
 		}
 		def.Steps = withoutEmptyWiring(def.Steps, len(fa.Env) == 0)
+		def.Steps = withoutOwnLogin(def.Steps, fa.OwnLoginOff == nil)
 		return def, nil
 	}
 	// On: Authentik first (so the outpost knows the provider), then the
@@ -462,6 +491,7 @@ func forwardDefinition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.
 			}
 			return nil
 		}},
+		loginOff,
 		{Name: "record", Run: func(context.Context) error {
 			rec := Record{Package: m.Name, Adapter: plan.Adapter, ClientID: plan.ClientID, Issuer: plan.Issuer,
 				RedirectURIs: plan.RedirectURIs, PluginVersion: plan.Gate.Revision, Actor: actor, Access: plan.Access}
@@ -473,7 +503,22 @@ func forwardDefinition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.
 		}},
 	}
 	def.Steps = withoutEmptyWiring(def.Steps, len(fa.Env) == 0)
+	def.Steps = withoutOwnLogin(def.Steps, fa.OwnLoginOff == nil)
 	return def, nil
+}
+
+// withoutOwnLogin drops the own-login steps of an app whose login stays on.
+func withoutOwnLogin(steps []operation.StepDef, none bool) []operation.StepDef {
+	if !none {
+		return steps
+	}
+	out := make([]operation.StepDef, 0, len(steps))
+	for _, st := range steps {
+		if st.Name != "login-on" && st.Name != "login-off" {
+			out = append(out, st)
+		}
+	}
+	return out
 }
 
 // withoutEmptyWiring drops the trust-settings steps of an app that has none

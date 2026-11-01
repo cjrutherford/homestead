@@ -50,10 +50,11 @@ class TestHostBlock(unittest.TestCase):
         self.assertIn("RunGateBlock", read("cmd/homestead-server/main.go"))
         self.assertIn("gated-app-host-block", read("internal/server/doctorlive.go"))
 
-    def test_no_manifest_requires_it_yet(self):
+    def test_only_kuma_requires_it(self):
+        # S422: Kuma's own login is off behind the gate, so only it requires the block.
         for path in (REPO / "catalog").glob("*.yaml"):
             fa = (yaml.safe_load(path.read_text()).get("sso") or {}).get("forwardauth") or {}
-            self.assertNotIn("requireshostblock", fa, path.name)
+            self.assertEqual("requireshostblock" in fa, path.name == "uptime-kuma.yaml", path.name)
 
     def test_docs(self):
         adr = read("docs/adr/ADR-055-forward-auth-for-navidrome-and-uptime-kuma.md")

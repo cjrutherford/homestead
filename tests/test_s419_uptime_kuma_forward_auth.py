@@ -1,7 +1,7 @@
 """S419 - the Uptime Kuma forward-auth declaration (ADR-055).
 
-Kuma is gated at the edge for Authentik administrators only and keeps its own
-login behind the gate (no database write, no copied header). The rendered
+Kuma is gated at the edge for Authentik administrators only (no copied header).
+Its own login was kept at S419 and turned off at S422 (see test_s422). The rendered
 Caddy site is covered by the Go tests; this pins the catalog facts that need a
 deliberate re-check on a version bump.
 """
@@ -55,9 +55,11 @@ class TestKumaForwardAuth(unittest.TestCase):
         self.assertEqual(ep["recommended"], "local")
         self.assertFalse(ep["allowwider"])
 
-    def test_no_database_write_left(self):
-        for word in ("disableAuth", "onapply", "onoff"):
-            self.assertNotIn(word, self.text)
+    def test_database_write_is_the_s422_block_only(self):
+        # S422 replaced "no database write": the only write is the pinned
+        # ownloginoff block, which needs the host block.
+        self.assertIn("ownloginoff", self.fa)
+        self.assertTrue(self.fa["requireshostblock"])
 
     def test_version_pinned(self):
         self.assertEqual(self.m["version"], "2.5.7")

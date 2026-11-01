@@ -83,7 +83,8 @@ func TestNavidromeForwardAuthPin(t *testing.T) {
 }
 
 // TestKumaForwardAuthPin pins the gate Uptime Kuma ships with (S419, ADR-055
-// §4): admins only, no header and no trust settings (Kuma keeps its own login),
+// §4): admins only, no header and no trust settings (its own login goes off
+// behind the gate and the host block, S422),
 // the exact open paths, and no host port published, because the gate and
 // Kuma's login are the only way in. A version bump must re-check the status
 // page paths and the metrics/socket paths that stay gated.
@@ -99,6 +100,9 @@ func TestKumaForwardAuthPin(t *testing.T) {
 	if fa == nil || m.SSO.OIDC != nil || fa.Service != "uptime-kuma" || fa.Access != AccessAdminOnly ||
 		fa.UserHeader != "" || len(fa.CopyHeaders) != 0 || len(fa.Env) != 0 || fa.AccountsFrom != "" {
 		t.Fatalf("forwardauth = %+v", fa)
+	}
+	if !fa.RequiresHostBlock || fa.OwnLoginOff == nil {
+		t.Fatalf("Kuma's own login is off behind the gate (S422): it must require the host block and declare ownloginoff: %+v", fa)
 	}
 	var paths []string
 	for _, b := range fa.Bypass {
@@ -127,5 +131,36 @@ func TestForwardAuthRequiresHostBlockParses(t *testing.T) {
 	m.SSO.ForwardAuth.RequiresHostBlock = true
 	if err := m.Validate(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestForwardAuthOwnLoginOffValidation(t *testing.T) {
+	argv := []string{"node", "-e", "x", "on"}
+	ok := func() Manifest {
+		m := forwardManifest()
+		fa := m.SSO.ForwardAuth
+		fa.Env, fa.RequiresHostBlock, fa.Access = nil, true, AccessAdminOnly
+		fa.OwnLoginOff = &ForwardOwnLoginOff{Prepare: argv, OnApply: argv, OnOff: argv}
+		return m
+	}
+	m := ok()
+	if err := m.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]struct {
+		mut  func(*Manifest)
+		want string
+	}{
+		"no host block":  {func(m *Manifest) { m.SSO.ForwardAuth.RequiresHostBlock = false }, "requireshostblock"},
+		"not admin only": {func(m *Manifest) { m.SSO.ForwardAuth.Access = "" }, "admin-only"},
+		"no off command": {func(m *Manifest) { m.SSO.ForwardAuth.OwnLoginOff.OnOff = nil }, "prepare, onapply and onoff"},
+		"placeholder":    {func(m *Manifest) { m.SSO.ForwardAuth.OwnLoginOff.OnApply = []string{"sh", "{{secret}}"} }, "static text"},
+		"bad exec user":  {func(m *Manifest) { m.SSO.ForwardAuth.OwnLoginOff.ExecUser = "a b;" }, "execuser"},
+	} {
+		m := ok()
+		c.mut(&m)
+		if err := m.Validate(); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }

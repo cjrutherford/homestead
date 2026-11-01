@@ -3,6 +3,7 @@ package appsso
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -385,7 +386,7 @@ func TestKumaForwardPlan(t *testing.T) {
 		}
 	}
 	all := strings.Join(p.Changes, "\n")
-	for _, want := range []string{"admins group only", "keeps its own login", "/api/push/"} {
+	for _, want := range []string{"admins group only", "own login off, so you sign in once", "host block", "/api/push/"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("plan lacks %q:\n%s", want, all)
 		}
@@ -400,8 +401,8 @@ func TestKumaForwardPlan(t *testing.T) {
 	}
 }
 
-func TestKumaForwardApplyHasNoWiringSteps(t *testing.T) {
-	stubDocker(t)
+func TestKumaForwardApplyOrdersLoginAroundTheGate(t *testing.T) {
+	f := stubDocker(t)
 	st, err := store.Open(filepath.Join(t.TempDir(), "homestead.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -409,6 +410,12 @@ func TestKumaForwardApplyHasNoWiringSteps(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	var events []string
 	up = func(context.Context, string, string) error { events = append(events, "up"); return nil }
+	restart = func(context.Context, string) error { events = append(events, "restart"); return nil }
+	f.fail = func(c call) (string, error) {
+		mode := c.args[len(c.args)-1]
+		events = append(events, "exec:"+mode)
+		return "[restart]\n", nil
+	}
 	rt := Runtime{Records: Records{DB: st.DB()}, StackDir: func(string) string { return t.TempDir() },
 		SetGate: func(_ context.Context, _ catalog.Manifest, g *docker.Gate) error {
 			if g == nil {
@@ -437,8 +444,23 @@ func TestKumaForwardApplyHasNoWiringSteps(t *testing.T) {
 		}
 	}
 	exec(plan)
-	if got := strings.Join(events, " "); !strings.HasPrefix(got, "authentik-on:") || !strings.HasSuffix(got, "gate-on") || strings.Contains(" "+got+" ", " up ") {
-		t.Fatalf("on: Authentik then gate, and Kuma is not recreated: %s", got)
+	got := strings.Join(events, " ")
+	if !strings.HasPrefix(got, "authentik-on:") || !strings.HasSuffix(got, "gate-on exec:prepare restart exec:on restart") || strings.Contains(" "+got+" ", " up ") {
+		t.Fatalf("on: Authentik, the gate, and only then Kuma's login off; Kuma is not recreated: %s", got)
+	}
+	// The account reaches the command on stdin, never in argv.
+	var onCall call
+	for _, c := range f.calls {
+		if c.args[len(c.args)-1] == "on" {
+			onCall = c
+		}
+	}
+	var acct ownLoginAccount
+	if err := json.Unmarshal([]byte(onCall.stdin), &acct); err != nil || acct.Username != "owner" || !strings.HasPrefix(acct.Hash, "$2a$10$") {
+		t.Fatalf("stdin %q: %v", onCall.stdin, err)
+	}
+	if f.argvHolds(acct.Hash) {
+		t.Fatal("the hash is in argv")
 	}
 	rec, ok, _ := Records{DB: st.DB()}.Get("uptime-kuma")
 	if !ok {
@@ -451,8 +473,8 @@ func TestKumaForwardApplyHasNoWiringSteps(t *testing.T) {
 	}
 	events = nil
 	exec(off)
-	if got := strings.Join(events, " "); got != "gate-off authentik-off" {
-		t.Fatalf("off: %s", got)
+	if got := strings.Join(events, " "); got != "exec:off restart gate-off authentik-off" {
+		t.Fatalf("off: Kuma's login back on before the gate goes: %s", got)
 	}
 }
 

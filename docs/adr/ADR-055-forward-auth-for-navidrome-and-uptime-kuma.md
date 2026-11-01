@@ -400,6 +400,33 @@ restricts non-root access to Kuma's port, after which login-off can be
 reconsidered; it is DEFERRED (S419). The §5 residual-risk text about a compromised
 app container reaching Kuma is therefore covered by Kuma's own login.
 
+**Amendment, 2026-11-01 (S422, owner decision; replaces the "login stays on"
+decision of the S419 amendment above).** Kuma's own login is turned OFF behind
+the gate and the host block, so the owner signs in once. S421 built the host
+block (`inet homestead_gate`), which was the precondition named above, and
+Kuma now sets `requireshostblock`, so its sign-in plan refuses and its apply
+fails when the block cannot be kept. The mechanism is the §6 `disableAuth`
+design, pinned: a manifest `ownloginoff` block of three static in-app
+commands run in Kuma's container (one `node` script, verified against 2.5.7,
+with `prepare`, `on` and `off` modes). Applying, after the gate is on:
+`prepare` writes `db-config.json` `{"type":"sqlite"}` when absent (refuses any
+other type) and Kuma is restarted; `on` waits for the `user` and `setting`
+tables, creates the first account only when the user table is empty (the
+owner's Homestead username, a bcrypt hash of a random password nobody knows,
+passed on stdin, never in argv, plan, audit or logs), sets the setting
+`disableAuth` to `true` (JSON-encoded value text, as `Settings.set` stores
+it), and Kuma is restarted so it re-reads its settings. Turning sign-in off
+runs `off` first (`disableAuth` back to `false`, account kept, Kuma
+restarted), then removes the gate: Kuma's login is back before the gate is
+gone. The way back for an owner who never had a password is Kuma's own
+`npm run reset-password` (shown in the plan and slice). The bypass paths
+(§4) were reviewed against the 2.5.7 routers: none is behind `apiAuth` or
+`basicAuth` and `/socket.io/` and `/metrics` stay gated, so `disableAuth`
+gives them no extra power. The boot window before the daemon's first
+reconcile, in which the host block may not yet be in place, is accepted (no
+boot-time rule), as is the S421 residual (other containers on a shared
+network). Nothing else in this ADR changes; Status stays Accepted.
+
 ### 7. Plan, preview and audit
 - Same surface: `homesteadctl apps sign-in plan|apply [--off] <app>` and
   `/api/v1/catalog/{name}/sign-in/*`. The plan is the existing digest-bound,
@@ -496,6 +523,7 @@ finishes it.
 1. One canonical name per gated app: accepted.
 2. Kuma's own login off while gated, with a reversible, ordered write (§6).
    Superseded 2026-11-01 (S419): Kuma's login stays on; see the §6 amendment.
+   Restored 2026-11-01 (S422): login off behind the gate and host block; see the second §6 amendment.
 3. Navidrome admins are chosen inside Navidrome; refuse with no admin or on a
    username collision.
 4. Open paths: Navidrome `/rest/*` and `/share/*`; Kuma `/api/push/*` and

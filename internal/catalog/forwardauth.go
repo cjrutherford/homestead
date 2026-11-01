@@ -50,7 +50,29 @@ type ForwardAuth struct {
 	// for the collision and no-administrator refusals: navidrome-sqlite
 	// is the only reader.
 	AccountsFrom string `yaml:"accountsfrom,omitempty" json:"accountsfrom,omitempty"`
+	// OwnLoginOff (S422, ADR-055 §6 amendment) turns the app's own login
+	// off behind the gate, so the owner signs in once. Needs
+	// requireshostblock and admin-only access.
+	OwnLoginOff *ForwardOwnLoginOff `yaml:"ownloginoff,omitempty" json:"ownloginoff,omitempty"`
 }
+
+// ForwardOwnLoginOff is the in-app commands that switch an app's own login
+// off and on. Static argv run inside the forward-auth service's container
+// as ExecUser. Prepare gets the app ready (it may print the restart marker
+// to ask for a restart); OnApply reads one JSON line {"username","hash"}
+// on stdin (a bcrypt hash of a random password nobody knows, so the
+// secret never crosses argv) and prints the marker if it changed
+// anything; OnOff switches the login back on. All three are required.
+type ForwardOwnLoginOff struct {
+	Prepare  []string `yaml:"prepare" json:"prepare"`
+	OnApply  []string `yaml:"onapply" json:"onapply"`
+	OnOff    []string `yaml:"onoff" json:"onoff"`
+	ExecUser string   `yaml:"execuser,omitempty" json:"execuser,omitempty"`
+}
+
+// RestartMarker is what an own-login-off command prints on a line of its
+// own when the app must be restarted to notice the change.
+const RestartMarker = "[restart]"
 
 // ForwardBypass is one open path and why it is safe.
 type ForwardBypass struct {
@@ -135,6 +157,24 @@ func (f ForwardAuth) validate(m Manifest, services map[string]Service) error {
 	case "", AccessAdminOnly:
 	default:
 		return fmt.Errorf("catalog: forward-auth access %q must be empty or %s", f.Access, AccessAdminOnly)
+	}
+	if o := f.OwnLoginOff; o != nil {
+		if !f.RequiresHostBlock || f.Access != AccessAdminOnly {
+			return fmt.Errorf("catalog: forward-auth ownloginoff needs requireshostblock and access %s: an app with no login of its own must be reachable only through the edge, by administrators", AccessAdminOnly)
+		}
+		for _, argv := range [][]string{o.Prepare, o.OnApply, o.OnOff} {
+			if len(argv) == 0 {
+				return fmt.Errorf("catalog: forward-auth ownloginoff needs prepare, onapply and onoff")
+			}
+			for _, arg := range argv {
+				if arg == "" || strings.ContainsAny(arg, "\r\x00") || strings.Contains(arg, "{{") {
+					return fmt.Errorf("catalog: forward-auth ownloginoff arguments must be non-empty static text without placeholders")
+				}
+			}
+		}
+		if o.ExecUser != "" && !validExecUser.MatchString(o.ExecUser) {
+			return fmt.Errorf("catalog: forward-auth ownloginoff execuser %q invalid", o.ExecUser)
+		}
 	}
 	switch f.AccountsFrom {
 	case "", AccountsNavidromeSQLite:

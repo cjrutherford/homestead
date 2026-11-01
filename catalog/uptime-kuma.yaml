@@ -1,12 +1,16 @@
 # Uptime Kuma monitor (S351): the last Wave 1 package.
 # Curated first-party manifest — versions pin here, updates bump this file.
 # It has no OIDC, so Homestead gates it at the edge with Authentik
-# forward-auth for administrators only (S419, ADR-055); Kuma keeps its own
-# login behind the gate. It is the one package that is not allowed to
+# forward-auth for administrators only (S419, ADR-055). From S422 Kuma's
+# own login is off behind the gate and the host block (disableAuth, set in
+# its SQLite database by the pinned ownloginoff script), so the owner
+# signs in once. It is the one package that is not allowed to
 # widen: it holds monitor credentials and probes LAN addresses, so it
-# recommends local and refuses public exposure outright. The owner
-# creates the administrator account in the app on first visit; no secret
-# is declared and the image entrypoint sits before the Node process.
+# recommends local and refuses public exposure outright. Without sign-in
+# the owner creates the administrator account in the app on first visit;
+# with it Homestead creates one with a random password nobody knows (the
+# way back is Kuma's reset-password command). No secret is declared and
+# the image entrypoint sits before the Node process.
 name: uptime-kuma
 version: 2.5.7
 title: Uptime Kuma
@@ -72,7 +76,110 @@ sso:
       reason: Logos and images the owner uploaded for status pages.
     - path: ^/icon\.svg$
       reason: The app icon a status page loads.
+    ownloginoff:
+      prepare:
+      - node
+      - -e
+      - &kuma_signin_script |
+        const VERIFIED = '2.5.7'
+        const DIR = '/app/data'
+        const PKG = '/app/package.json'
+        const SQLITE = '/app/node_modules/@louislam/sqlite3'
+        const fs = require('node:fs')
+        const path = require('node:path')
+        const die = (m) => {
+          console.error('uptime-kuma sign-in: ' + m + " (Uptime Kuma's own database is written here; re-verify this script against its user and setting tables after any Kuma update)")
+          process.exit(1)
+        }
+        const mode = process.argv[1]
+        if (!['prepare', 'on', 'off'].includes(mode)) die('expected the argument prepare, on or off')
+        const CFG = path.join(DIR, 'db-config.json')
+        const DB = path.join(DIR, 'kuma.db')
+        if (mode !== 'off') {
+          let seen
+          try { seen = JSON.parse(fs.readFileSync(PKG, 'utf8')).version } catch { die('cannot read the Uptime Kuma version') }
+          if (seen !== VERIFIED) die('this is Uptime Kuma ' + seen + ' but the script was verified against ' + VERIFIED)
+        }
+        if (mode === 'prepare') {
+          if (!fs.existsSync(CFG)) {
+            fs.writeFileSync(CFG, JSON.stringify({ type: 'sqlite' }, null, 4), { mode: 0o600 })
+            console.log('uptime-kuma sign-in: chose the built-in SQLite database')
+            console.log('[restart]')
+            process.exit(0)
+          }
+          let cfg
+          try { cfg = JSON.parse(fs.readFileSync(CFG, 'utf8')) } catch { die('db-config.json cannot be read') }
+          if (!cfg || cfg.type !== 'sqlite') die('Uptime Kuma uses the ' + (cfg && typeof cfg.type === 'string' ? cfg.type : 'unknown') + ' database; Homestead turns its login off only for the built-in SQLite database. Keep its own login on, or move it to SQLite first')
+          console.log('uptime-kuma sign-in: SQLite database in use')
+          process.exit(0)
+        }
+        if (!fs.existsSync(DB)) {
+          if (mode === 'off') { console.log('uptime-kuma sign-in off (no database yet)'); process.exit(0) }
+          die('the database is not there yet (the server is still starting)')
+        }
+        let who = null
+        if (mode === 'on') {
+          try { who = JSON.parse(fs.readFileSync(0, 'utf8')) } catch { die('expected the account as JSON on stdin') }
+          if (!who || typeof who.username !== 'string' || who.username.length < 1 || who.username.length > 255 || typeof who.hash !== 'string' || !/^\$2[aby]\$10\$[./A-Za-z0-9]{53}$/.test(who.hash)) die('the account on stdin is not a username and a bcrypt hash')
+        }
+        const sqlite3 = require(SQLITE)
+        const db = new sqlite3.Database(DB)
+        const run = (q, p) => new Promise((res, rej) => db.run(q, p || [], (e) => (e ? rej(e) : res())))
+        const all = (q, p) => new Promise((res, rej) => db.all(q, p || [], (e, rows) => (e ? rej(e) : res(rows))))
+        const main = async () => {
+          let open = false
+          try {
+            await run('PRAGMA busy_timeout = 30000')
+            const want = { user: ['id', 'username', 'password', 'active'], setting: ['key', 'value', 'type'] }
+            for (const t of Object.keys(want)) {
+              const cols = (await all("SELECT name FROM pragma_table_info('" + t + "')")).map((c) => c.name)
+              for (const c of want[t]) if (!cols.includes(c)) die('table ' + t + ' lacks column ' + c + ' (the server may still be creating its tables)')
+            }
+            await run('BEGIN IMMEDIATE')
+            open = true
+            const row = (await all("SELECT value FROM setting WHERE key = 'disableAuth'"))[0]
+            const now = row && row.value === 'true'
+            let changed = false
+            if (mode === 'on') {
+              const users = (await all('SELECT COUNT(*) AS n FROM user'))[0].n
+              if (users === 0) {
+                await run('INSERT INTO user (username, password, active) VALUES (?, ?, 1)', [who.username, who.hash])
+                changed = true
+              }
+              if (!row) { await run("INSERT INTO setting (key, value, type) VALUES ('disableAuth', 'true', 'general')"); changed = true }
+              else if (!now) { await run("UPDATE setting SET value = 'true' WHERE key = 'disableAuth'"); changed = true }
+              console.log(changed ? 'uptime-kuma sign-in on' : 'uptime-kuma sign-in on (already on)')
+            } else if (now) {
+              await run("UPDATE setting SET value = 'false' WHERE key = 'disableAuth'")
+              changed = true
+              console.log('uptime-kuma sign-in off')
+            } else {
+              console.log('uptime-kuma sign-in off (already off)')
+            }
+            await run('COMMIT')
+            open = false
+            if (changed) console.log('[restart]')
+          } catch (e) {
+            if (open) { try { await run('ROLLBACK') } catch {} }
+            die('the database access failed: ' + (e && e.code ? e.code : 'error'))
+          }
+          db.close()
+        }
+        main()
+      - prepare
+      onapply:
+      - node
+      - -e
+      - *kuma_signin_script
+      - "on"
+      onoff:
+      - node
+      - -e
+      - *kuma_signin_script
+      - "off"
+    requireshostblock: true
     warnings:
-    - Uptime Kuma keeps its own login behind the Authentik gate, so you sign in twice, to Authentik and then to Uptime Kuma. Only administrators and the owner pass the gate.
+    - Uptime Kuma's own login is turned off behind the Authentik gate, so you sign in once, to Authentik. Only administrators and the owner pass the gate, and Homestead keeps every other account on the host and every other container off Uptime Kuma's port. Turning sign-in off puts Kuma's own login back first.
+    - Homestead creates one Kuma account named after you, with a random password nobody knows. To use Kuma's own login after sign-in is off, set a password with docker exec -it uptime-kuma-uptime-kuma npm run reset-password.
     - Status pages, badges and push URLs stay open to the local network without Authentik. Uptime Kuma can never be published, so they are never open to the internet.
-    - /metrics, /dashboard, /status-page and the live socket stay behind the gate and Kuma's login.
+    - /metrics, /dashboard, /status-page and the live socket stay behind the gate.
