@@ -79,6 +79,36 @@ class EverythingSourceTest(unittest.TestCase):
             # Preserve upstream bytes; S367 still needs to replace this with a local bridge.
             self.assertEqual(index.count(b'https://js.puter.com/v2/'), 1)
 
+    def test_share_and_calendar_feed_ui_is_hidden_and_patch_target_is_pinned(self):
+        spec = importlib.util.spec_from_file_location('prepare_tasks', ROOT / 'scripts/everything/prepare_tasks.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            bridge = base / 'bridge.js'
+            bridge.write_text('// b')
+            module.prepare(ARCHIVE, bridge, base / 'out')
+            lists = (base / 'out/src/tasks/src/views/lists.js').read_text()
+            settings = (base / 'out/src/tasks/src/views/settings.js').read_text()
+            self.assertIn("false && el('button.icon-btn', {\n          html: icon('share', 18),", lists)
+            self.assertIn("false && root.append(\n    el('div.section-label', {}, 'Calendar integration'),", settings)
+            # the local, browser-built .ics download is not a feed and stays
+            calendar = (base / 'out/src/tasks/src/views/calendar.js').read_text()
+            self.assertIn('Download .ics calendar file', calendar)
+            # a changed upstream target must fail preparation, leaving no output
+            changed = base / 'changed.tar.gz'
+            with tarfile.open(ARCHIVE) as src, tarfile.open(changed, 'w:gz') as dst:
+                for m in src.getmembers():
+                    data = src.extractfile(m).read()
+                    if m.name.endswith('views/lists.js'):
+                        data = data.replace(b"icon('share', 18)", b"icon('share', 19)")
+                    m.size = len(data)
+                    dst.addfile(m, io.BytesIO(data))
+            module.EXPECTED_SHA256 = hashlib.sha256(changed.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(ValueError, 'UI patch target changed'):
+                module.prepare(changed, bridge, base / 'out2')
+            self.assertFalse((base / 'out2').exists())
+
     def test_bridge_shim_and_gate_are_local_only_and_dev_identity_is_tag_gated(self):
         shim = (ROOT / 'scripts/everything/puter-bridge.js').read_text()
         self.assertNotIn('puter.com', shim)

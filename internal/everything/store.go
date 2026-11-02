@@ -78,7 +78,12 @@ func OpenStore(filename string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("everything: initialize store: %w", err)
 	}
-	return &Store{db: db}, nil
+	st := &Store{db: db}
+	if err = st.initSessions(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("everything: initialize sessions: %w", err)
+	}
+	return st, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }

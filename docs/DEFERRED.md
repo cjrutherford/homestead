@@ -1631,6 +1631,10 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S366 Live check on VM 2 pending: install, default-admin refusal, sign-in apply/off, roles, discovery over the appliance CA, backup dump (commands in the slice file). The sign-in warnings assume the redirect URI list has the same origins pattern as other env-OIDC apps; confirm in the browser.
 - S366 The seeded administrator keeps a generated password nobody sees unless revealed; no Homestead-run reset. BookStack mail, LDAP/SAML, per-shelf permissions and a person-to-existing-account link are not built (an existing account with the same email blocks that person's sign-in).
 - S366 The `docker exec` one-liner for the database check in the slice file reads the password from the mounted file; a CLI database shell is not built.
-- S367: the Tasks UI still shows sharing and the calendar-feed publish button on the Everything bridge, where they fail with a bridge error; hiding them (a patch to the pinned source) needs an owner decision.
-- S367: real Authentik verification and the CSRF token source for `cmd/everything-bridge` are unbuilt; ADR-053 needs to pick forward-auth header or OIDC first.
 - S367: the bridge store is last-write-wins per key with no compare-and-set; Tasks heals concurrent edits by record-level merge, but a stricter revision check could be added later.
+- S367: Authentik provider and application provisioning for the bridge client (client id, secret file, redirect URI) is not done by the daemon; the bridge only consumes them.
+- S367: the Tasks service worker precaches and serves the app root from cache, which conflicts with the per-session CSRF meta injected by the bridge (a cached index carries a stale or missing token, or a cached sign-in redirect); root navigation needs network-first handling and a real-browser test.
+- S367: the shim's `auth.signOut` navigates with GET, while the bridge logout is POST with CSRF; the Tasks logout button is hidden (`env` is `app`), so no logout UI exists yet.
+- S367: the OIDC bridge gate (the six bridge gate tests against the fake-provider verifier) is not built; the gate still uses the development verifier, and OIDC is covered by Go tests with a fake provider.
+- S367: the bridge accepts only RS256 and ES256 ID tokens, requests only the `openid` scope and uses `sub`; Authentik providers without a signing key (HS256) are not supported.
+- S367: the bridge gate test "two concurrent clients" fails in this environment at HEAD before and after the OIDC work (5 of 6 pass); cause not investigated.
