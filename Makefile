@@ -26,6 +26,7 @@ lint-scripts:
 	bash -n scripts/craft-manifest.sh
 	bash -n scripts/sign-craft-manifest.sh
 	bash -n scripts/craft-header-check.sh
+	bash -n scripts/everything/gate/run_compose_check.sh
 
 acceptance:
 	sudo ./scripts/acceptance.sh

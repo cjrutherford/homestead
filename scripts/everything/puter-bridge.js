@@ -132,6 +132,7 @@
       if (res.status === 404) return null;
       if (res.status === 401) fail('auth_required', 'Not signed in', 401);
       if (res.status === 403) fail('forbidden', 'Request refused by the bridge', 403);
+      if (res.status === 413) fail('quota_exceeded', 'Your storage quota for this app is full', 413);
       if (!res.ok) {
         fail(res.status === 400 ? 'bridge_rejected' : 'bridge_error',
           res.status === 400 ? 'Request rejected (invalid or storage limit exceeded)' : 'Bridge storage unavailable',

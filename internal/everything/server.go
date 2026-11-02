@@ -8,6 +8,26 @@ import (
 // DataPath is the same-origin route the browser shim posts to.
 const DataPath = "/_homestead/data"
 
+// HealthPath is the unauthenticated liveness route: no data, never cached.
+const HealthPath = "/_homestead/healthz"
+
+func healthHandler(store *Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if store.Ping(r.Context()) != nil {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte("ok\n"))
+	}
+}
+
 // NewServer builds the bridge's HTTP routes. extra may add routes (used only
 // by the development build); it is nil in production.
 func NewServer(store *Store, identity Identity, origins []string, extra func(*http.ServeMux)) (http.Handler, error) {
@@ -23,6 +43,7 @@ func NewServerAt(base string, store *Store, identity Identity, origins []string,
 	}
 	mux := http.NewServeMux()
 	mux.Handle(base+DataPath, h)
+	mux.HandleFunc(base+HealthPath, healthHandler(store))
 	if src, ok := identity.(SessionSource); ok {
 		mux.HandleFunc(base+SessionPath, sessionHandler(src))
 	}

@@ -1073,3 +1073,11 @@ SHA-256 `f158417e9207b5362f9b71a2fe779ce5bb836ad972f38445c3163af39d2c998d`);
 no package scripts were run. Licence: SIL Open Font License 1.1 (Copyright
 2017 The Barlow Project Authors); the OFL text ships beside the font as
 `OFL-Barlow.txt`. The file is unmodified.
+
+## Everything image base images (S367, ADR-053)
+`images/everything/Dockerfile` pins by index digest (recorded 2026-11-02):
+`python:3.13-alpine@sha256:7984cf56ceaddebe4fefeb75d64000b9f45d8b77b11a09b24524da6cdc3af0c8` (PSF licence),
+`node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85` (MIT),
+`golang:1.26-alpine@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308` (BSD-3-Clause),
+`alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f` (build-only), and the runtime
+`gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab` (Apache-2.0 with Debian package licences). Updating a digest is a reviewed change.

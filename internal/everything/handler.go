@@ -169,6 +169,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
+	case errors.Is(err, ErrQuota):
+		http.Error(w, "quota_exceeded", http.StatusRequestEntityTooLarge)
 	case errors.Is(err, ErrInvalid):
 		http.Error(w, "invalid request", http.StatusBadRequest)
 	default:

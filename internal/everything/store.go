@@ -22,7 +22,10 @@ import (
 var (
 	ErrInvalid  = errors.New("everything: invalid data request")
 	ErrNotFound = errors.New("everything: data not found")
-	appName     = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+	// ErrQuota means a write would take a person or the whole application
+	// past its byte quota. The handler answers 413 "quota_exceeded".
+	ErrQuota = errors.New("everything: storage quota exceeded")
+	appName  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 )
 
 // MaxValueBytes bounds a single stored KV value or file; this is not a total quota.
@@ -40,7 +43,30 @@ type Scope struct {
 	App     string
 	Subject string
 }
-type Store struct{ db *sql.DB }
+
+// Default quotas (bytes of keys plus values). A person may hold 256 MiB in
+// one application and the application's total is capped at 4 GiB.
+const (
+	DefaultPersonQuota int64 = 256 << 20
+	DefaultAppQuota    int64 = 4 << 30
+)
+
+type Store struct {
+	db                    *sql.DB
+	personQuota, appQuota int64
+}
+
+// SetQuota sets the per-person and per-application byte quotas; a value of
+// zero or less keeps the default. Call it before serving.
+func (s *Store) SetQuota(person, app int64) {
+	s.personQuota, s.appQuota = DefaultPersonQuota, DefaultAppQuota
+	if person > 0 {
+		s.personQuota = person
+	}
+	if app > 0 {
+		s.appQuota = app
+	}
+}
 
 // OpenStore opens a SQLite data file in an owner-selected application storage
 // directory. The database is ordinary SQLite and is independent of the daemon.
@@ -79,6 +105,7 @@ func OpenStore(filename string) (*Store, error) {
 		return nil, fmt.Errorf("everything: initialize store: %w", err)
 	}
 	st := &Store{db: db}
+	st.SetQuota(0, 0)
 	if err = st.initSessions(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("everything: initialize sessions: %w", err)
@@ -119,9 +146,7 @@ func (s *Store) Put(ctx context.Context, scope Scope, kind Kind, key string, val
 	if value == nil {
 		value = []byte{}
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO objects(app,subject,kind,object_key,value) VALUES(?,?,?,?,?)
-        ON CONFLICT(app,subject,kind,object_key) DO UPDATE SET value=excluded.value`, scope.App, scope.Subject, kind, key, value)
-	return err
+	return s.write(ctx, scope, kind, []Entry{{Key: key, Value: value}})
 }
 func (s *Store) Get(ctx context.Context, scope Scope, kind Kind, key string) ([]byte, error) {
 	if err := validate(scope, kind, key); err != nil {
@@ -197,11 +222,43 @@ func (s *Store) PutBatch(ctx context.Context, scope Scope, kind Kind, entries []
 			return ErrInvalid
 		}
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	return s.write(ctx, scope, kind, entries)
+}
+
+// usage returns the bytes held by one person and by the whole application.
+func usage(ctx context.Context, q *sql.Conn, scope Scope) (person, app int64, err error) {
+	err = q.QueryRowContext(ctx, `SELECT
+        COALESCE(SUM(CASE WHEN subject=? THEN length(object_key)+length(value) ELSE 0 END),0),
+        COALESCE(SUM(length(object_key)+length(value)),0)
+        FROM objects WHERE app=?`, scope.Subject, scope.App).Scan(&person, &app)
+	return
+}
+
+// write applies entries in one transaction and enforces the quotas inside
+// it. The store has a single connection and SQLite serialises writers, so
+// concurrent writers cannot both pass the check. A write that does not grow
+// usage (a delete-like shrink or equal replace) is allowed even when over.
+func (s *Store) write(ctx context.Context, scope Scope, kind Kind, entries []Entry) error {
+	// BEGIN IMMEDIATE takes the write lock before the usage read, so two
+	// bridge processes (or this one) cannot both pass the quota check.
+	tx, err := s.db.Conn(ctx)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer tx.Close()
+	if _, err = tx.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_, _ = tx.ExecContext(context.Background(), `ROLLBACK`)
+		}
+	}()
+	p0, a0, err := usage(ctx, tx, scope)
+	if err != nil {
+		return err
+	}
 	for _, entry := range entries {
 		value := entry.Value
 		if value == nil {
@@ -211,5 +268,16 @@ func (s *Store) PutBatch(ctx context.Context, scope Scope, kind Kind, entries []
 			return err
 		}
 	}
-	return tx.Commit()
+	p1, a1, err := usage(ctx, tx, scope)
+	if err != nil {
+		return err
+	}
+	if (p1 > p0 && p1 > s.personQuota) || (a1 > a0 && a1 > s.appQuota) {
+		return ErrQuota
+	}
+	if _, err = tx.ExecContext(ctx, `COMMIT`); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }

@@ -1,0 +1,81 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+
+	"homestead/internal/everything"
+)
+
+// runTool runs the offline subcommands: export, import, backup and the
+// container healthcheck. They work on the SQLite file directly, so they need
+// neither the daemon nor a running bridge (stop the bridge for import).
+// They print counts and paths only, never stored values or session data.
+func runTool(cmd string, args []string, out, errw io.Writer) int {
+	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
+	fs.SetOutput(errw)
+	db := fs.String("db", "", "SQLite data file")
+	ctx := context.Background()
+	fail := func(err error) int { fmt.Fprintln(errw, "everything-bridge "+cmd+":", err); return 1 }
+	switch cmd {
+	case "export":
+		subject := fs.String("subject", "", "export one person (sub claim); empty for everyone")
+		app := fs.String("app", "", "export one application; empty for all")
+		dir := fs.String("out", "", "empty or new output directory")
+		if fs.Parse(args) != nil || *db == "" || *dir == "" {
+			return 2
+		}
+		n, err := everything.Export(ctx, *db, *subject, *app, *dir)
+		if err != nil {
+			return fail(err)
+		}
+		fmt.Fprintf(out, "exported %d objects to %s\n", n, *dir)
+	case "import":
+		dir := fs.String("in", "", "export directory")
+		if fs.Parse(args) != nil || *db == "" || *dir == "" {
+			return 2
+		}
+		st, err := everything.OpenStore(*db)
+		if err != nil {
+			return fail(err)
+		}
+		defer st.Close()
+		n, err := everything.Import(ctx, st, *dir)
+		if err != nil {
+			return fail(err)
+		}
+		fmt.Fprintf(out, "imported %d objects\n", n)
+	case "backup":
+		dst := fs.String("out", "", "new backup file (sessions are not copied)")
+		if fs.Parse(args) != nil || *db == "" || *dst == "" {
+			return 2
+		}
+		if err := everything.Backup(ctx, *db, *dst); err != nil {
+			return fail(err)
+		}
+		fmt.Fprintf(out, "backup written to %s\n", *dst)
+	case "healthcheck":
+		listen := fs.String("listen", envDefault("LISTEN", "127.0.0.1:8081"), "bridge listen address")
+		base := fs.String("base-path", envDefault("BASE_PATH", ""), "application path prefix")
+		if fs.Parse(args) != nil {
+			return 2
+		}
+		c := http.Client{Timeout: 3 * time.Second}
+		res, err := c.Get("http://" + *listen + *base + everything.HealthPath)
+		if err != nil {
+			return fail(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			return fail(fmt.Errorf("status %d", res.StatusCode))
+		}
+	default:
+		fmt.Fprintln(errw, "usage: everything-bridge [serve flags] | export|import|backup|healthcheck")
+		return 2
+	}
+	return 0
+}
