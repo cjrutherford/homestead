@@ -1,6 +1,6 @@
 # Everything Tasks bridge: ordinary Docker Compose, no Homestead daemon needed (S367, ADR-053).
 #
-#   docker build -f images/everything/Dockerfile -t homestead/everything-tasks:0.0.1 .
+#   bash scripts/everything/build-image.sh tasks homestead/everything-tasks:0.0.1
 #   cp images/everything/compose.env.example .env      # then edit
 #   install -d -m 0700 secrets && printf %s "<client secret>" > secrets/oidc_client_secret && chmod 0444 secrets/oidc_client_secret
 #   docker compose -f images/everything/compose.example.yaml --env-file .env up -d

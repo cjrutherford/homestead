@@ -18,7 +18,7 @@ cleanup() { own >/dev/null 2>&1 || true; "${compose[@]}" down -v --remove-orphan
 trap cleanup EXIT
 ok() { echo "PASS $*"; }; bad() { echo "FAIL $*" >&2; exit 1; }
 
-docker build -q -f "$repo/images/everything/Dockerfile" -t "$tag" "$repo" >/dev/null
+bash "$repo/scripts/everything/build-image.sh" tasks "$tag" >/dev/null
 export EVERYTHING_VERSION=$ver
 mkdir -p "$work/secrets" "$work/seed" "$work/out1" "$work/out2"
 printf %s 'not-a-real-secret' > "$work/secrets/oidc_client_secret"; chmod 0444 "$work/secrets/oidc_client_secret"

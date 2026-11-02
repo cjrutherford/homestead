@@ -1075,7 +1075,7 @@ no package scripts were run. Licence: SIL Open Font License 1.1 (Copyright
 `OFL-Barlow.txt`. The file is unmodified.
 
 ## Everything image base images (S367, ADR-053)
-`images/everything/Dockerfile` pins by index digest (recorded 2026-11-02):
+`images/everything/Dockerfile` (ADR-057) pins by index digest (recorded 2026-11-02):
 `python:3.13-alpine@sha256:7984cf56ceaddebe4fefeb75d64000b9f45d8b77b11a09b24524da6cdc3af0c8` (PSF licence),
 `node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85` (MIT),
 `golang:1.26-alpine@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308` (BSD-3-Clause),

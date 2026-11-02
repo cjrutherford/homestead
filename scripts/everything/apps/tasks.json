@@ -1,0 +1,69 @@
+{
+  "app": "tasks",
+  "version": "0.1.0",
+  "title": "Tasks",
+  "archive": "tasks-source.tar.gz",
+  "sha256": "864f60484a1aa759427fec5d308a2215200fa5873d7579bb73594850b8f5db2e",
+  "size": 2760974,
+  "subtree": "src/tasks",
+  "extra_files": [
+    "LICENSE",
+    "dev/puter-localhost.mjs"
+  ],
+  "required": [
+    "LICENSE",
+    "dev/puter-localhost.mjs",
+    "src/tasks/index.html",
+    "src/tasks/package-lock.json",
+    "src/tasks/sw.template.js"
+  ],
+  "index": "src/tasks/index.html",
+  "sdk_tag": "<script src=\"https://js.puter.com/v2/\" defer></script>",
+  "service_worker": {
+    "template": "tasks-sw.template.js",
+    "target": "src/tasks/sw.template.js"
+  },
+  "patches": [
+    {
+      "file": "src/tasks/src/views/lists.js",
+      "old": "el('button.icon-btn', {\n          html: icon('share', 18),",
+      "new": "false && el('button.icon-btn', {\n          html: icon('share', 18),",
+      "why": "Share button hidden: the bridge refuses signed public URLs (ADR-053 amendment)."
+    },
+    {
+      "file": "src/tasks/src/views/settings.js",
+      "old": "root.append(\n    el('div.section-label', {}, 'Calendar integration'),",
+      "new": "false && root.append(\n    el('div.section-label', {}, 'Calendar integration'),",
+      "why": "Calendar-feed (ICS URL) setting hidden for the same reason."
+    }
+  ],
+  "sdk_surface": {
+    "supported": [
+      "kv.get",
+      "kv.set",
+      "kv.list",
+      "kv.del",
+      "fs.write",
+      "fs.read",
+      "fs.delete",
+      "auth.isSignedIn",
+      "auth.getUser",
+      "env"
+    ],
+    "refused": [
+      "fs.getReadURL",
+      "kv.share",
+      "kv.unshare",
+      "kv.listShared",
+      "kv.listSharedByMe",
+      "perms.*",
+      "events.*",
+      "appID"
+    ],
+    "disabled": {
+      "ai": "no AI backend",
+      "net": "no network bridge (S381 only)",
+      "sharing": "needs an exposure plan"
+    }
+  }
+}

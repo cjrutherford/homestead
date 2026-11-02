@@ -25,7 +25,14 @@ var _ craft.Builder = BuildClient{}
 func (BuildClient) Build(ctx context.Context, spec craft.BuildSpec) error {
 	// --network none: the artifact is already staged and verified, so no
 	// build step may reach the network (the base pull is the daemon's).
-	args := []string{"build", "--network", "none", "--tag", spec.Tag, "--progress=plain", "--file", "Dockerfile"}
+	file := spec.File
+	if file == "" {
+		file = "Dockerfile"
+	}
+	args := []string{"build", "--tag", spec.Tag, "--progress=plain", "--file", file}
+	if !spec.Network {
+		args = append(args, "--network", "none")
+	}
 	keys := make([]string, 0, len(spec.Args))
 	for k := range spec.Args {
 		keys = append(keys, k)

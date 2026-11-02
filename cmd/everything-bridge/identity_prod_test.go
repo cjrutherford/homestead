@@ -3,6 +3,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -53,5 +55,51 @@ func TestProductionRefusesIncompleteConfigAndIgnoresDevIdentity(t *testing.T) {
 	id, routes, err := newIdentity(good, store)
 	if err != nil || id == nil || routes == nil {
 		t.Fatalf("complete config rejected: %v", err)
+	}
+}
+
+// TestAwaitSignInServesNothingUntilConfigured: the package starts the bridge
+// before Homestead has applied sign-in (ADR-057). It must answer 503, refuse
+// data and sessions, and still refuse a half-configured bridge.
+func TestAwaitSignInServesNothingUntilConfigured(t *testing.T) {
+	dir := t.TempDir()
+	store, err := everything.OpenStore(filepath.Join(dir, "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	c := config{app: "tasks", base: "/apps/tasks", await: true}
+	id, extra, err := newIdentity(c, store)
+	if err != nil || id == nil {
+		t.Fatalf("awaiting bridge refused to start: %v", err)
+	}
+	h, err := everything.NewServerAt(c.base, store, id, []string{"https://sign-in-pending.invalid"}, extra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/apps/tasks/", "/apps/tasks/index.html", "/apps/tasks/_homestead/login"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Cache-Control") != "no-store" {
+			t.Errorf("%s = %d %q", path, rec.Code, rec.Header().Get("Cache-Control"))
+		}
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/apps/tasks/_homestead/data", nil)
+	req.Header.Set("Origin", "https://sign-in-pending.invalid")
+	h.ServeHTTP(rec, req)
+	if rec.Code < 400 {
+		t.Errorf("data route answered %d with no sign-in", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/apps/tasks/_homestead/healthz", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf("healthz = %d, the container must stay healthy while waiting", rec.Code)
+	}
+	// Half configured is still an error even with the flag.
+	half := c
+	half.issuer = "https://auth.example/"
+	if id, _, err := newIdentity(half, store); id != nil || err == nil {
+		t.Fatal("half-configured bridge started")
 	}
 }

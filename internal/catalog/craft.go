@@ -72,6 +72,9 @@ func CheckCraftStack(ctx context.Context, dir, project string) error {
 // craftMarker is how every craft image reference starts.
 const craftMarker = "homestead/craft-"
 
+// bridgeMarker is how every Everything bridge image reference starts.
+const bridgeMarker = "homestead/everything-"
+
 // checkCraftStack fails closed: it reads the stack's compose files raw
 // (not through the drift reader, which blanks interpolated images),
 // expands ${VAR} references from the stack .env and the daemon
@@ -96,7 +99,7 @@ func checkCraftStack(ctx context.Context, dir, project string) error {
 		if err != nil {
 			return fmt.Errorf("catalog: refusing to start %s: cannot read %s to check for craft images: %w", project, name, err)
 		}
-		if strings.Contains(string(raw), craftMarker) {
+		if strings.Contains(string(raw), craftMarker) || strings.Contains(string(raw), bridgeMarker) {
 			mentioned = true
 		}
 		var doc struct {

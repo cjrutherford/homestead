@@ -33,6 +33,11 @@ type config struct {
 	origins                      []string
 	issuer, clientID, secretFile string
 	redirectURL, caFile          string
+	// await starts the bridge unconfigured: it serves a plain "sign-in is
+	// not set up" answer and no data until Homestead applies sign-in
+	// (ADR-057). It only takes effect when no issuer or client id is set;
+	// a half-configured bridge still refuses to start.
+	await bool
 }
 
 func envDefault(name, fallback string) string {
@@ -66,9 +71,14 @@ func main() {
 	caFile := flag.String("ca-file", envDefault("OIDC_CA_FILE", ""), "optional PEM CA bundle for a private issuer")
 	personQuota := flag.Int64("quota-person-bytes", envInt("QUOTA_PERSON_BYTES"), "per-person byte quota (0 = default 256 MiB)")
 	appQuota := flag.Int64("quota-app-bytes", envInt("QUOTA_APP_BYTES"), "whole-application byte quota (0 = default 4 GiB)")
+	await := flag.Bool("await-signin", os.Getenv("HOMESTEAD_EVERYTHING_AWAIT_SIGNIN") == "1", "serve nothing until sign-in is configured (set by the Homestead package)")
 	flag.Parse()
 	if len(origins) == 0 && os.Getenv("HOMESTEAD_EVERYTHING_ORIGIN") != "" {
 		origins = listFlag{os.Getenv("HOMESTEAD_EVERYTHING_ORIGIN")}
+	}
+	if *await && len(origins) == 0 {
+		// Only used to build the (denying) data route while unconfigured.
+		origins = listFlag{"https://sign-in-pending.invalid"}
 	}
 	if *dbPath == "" {
 		log.Fatal("everything-bridge: -db is required")
@@ -80,7 +90,7 @@ func main() {
 	defer store.Close()
 	store.SetQuota(*personQuota, *appQuota)
 	identity, extra, err := newIdentity(config{dev: *dev, app: *app, listen: *listen, base: *base, static: *static, origins: origins,
-		issuer: *issuer, clientID: *clientID, secretFile: *secretFile, redirectURL: *redirect, caFile: *caFile}, store)
+		issuer: *issuer, clientID: *clientID, secretFile: *secretFile, redirectURL: *redirect, caFile: *caFile, await: *await}, store)
 	if err != nil {
 		log.Fatal(err)
 	}

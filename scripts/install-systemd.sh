@@ -47,6 +47,15 @@ cp -r "$CATALOG_SRC" "$CATALOG_DST"
 mkdir -p "$CATALOG_DST/craft"
 rm -rf "$CATALOG_DST/craft/context"
 cp -r "$REPO/images/craft" "$CATALOG_DST/craft/context"
+# Everything apps (ADR-057) build on the appliance from a bridge build
+# context and pinned source archives that ship in the catalog directory.
+# They are separate from the signed craft context above, so the owner-signed
+# craft manifest is unaffected.
+mkdir -p "$CATALOG_DST/everything"
+rm -rf "$CATALOG_DST/everything/context"
+cp -r "$REPO/images/everything" "$CATALOG_DST/everything/context"
+mkdir -p "$CATALOG_DST/everything/sources"
+cp "$REPO"/third_party/everything/*.tar.gz "$CATALOG_DST/everything/sources/"
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"
 # The privileged apply unit (ADR-027) ships disabled: the daemon starts it
 # on demand when a verified platform update is applied. Only this unit may

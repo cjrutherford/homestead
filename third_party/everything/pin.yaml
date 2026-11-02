@@ -1,4 +1,4 @@
-# S367 pilot source. This is not yet a catalog package.
+# Pinned source for the tasks package (S367 pilot, S368 catalog package).
 repository: https://github.com/HeyPuter/everything
 commit: e7d07c48546ef0650a8f3ab94ae82b8b50d3646a
 app: tasks

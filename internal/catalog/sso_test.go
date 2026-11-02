@@ -61,6 +61,7 @@ func TestCuratedSSO(t *testing.T) {
 		"paperless-ngx":         {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"vaultwarden":           {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"wordcraft":             {Class: SSOUnsupported},
+		"tasks":                 {Class: SSORecommended, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"gridcraft":             {Class: SSOUnsupported},
 		"pdfcraft":              {Class: SSOUnsupported},
 		"deckcraft":             {Class: SSOUnsupported},

@@ -48,7 +48,7 @@ class TestImageTrust(unittest.TestCase):
                 seen += 1
                 where = f"{name}: {image}"
                 self.assertNotRegex(image, r":latest$", where)
-                if image.startswith("homestead/craft-"):
+                if image.startswith(("homestead/craft-", "homestead/everything-")):
                     self.assertIsNone(publisher, where)
                     continue
                 self.assertIn(publisher, ("upstream", "linuxserver", "community"), where)

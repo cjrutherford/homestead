@@ -236,8 +236,21 @@
         fail('bridge_unsupported', 'Sign in through the Homestead sign-in page');
       },
       async signOut() {
-        if (config.signOutUrl && root.location) { root.location.assign(config.signOutUrl); return; }
-        fail('bridge_unsupported', 'Sign out through Homestead');
+        // POST to the bridge's logout with a fresh CSRF token, then return
+        // to the app (which sends a signed-out visitor to sign-in).
+        if (!root.document || !root.location) fail('bridge_unsupported', 'Sign out through Homestead');
+        var url = config.signOutUrl || new URL('./_homestead/logout', root.document.baseURI).href;
+        if (await refreshCsrf({ operation: 'signOut' })) {
+          var headers = Object.assign({}, config.headers || {}, { 'X-Homestead-CSRF': csrf() });
+          if (config.origin) headers.Origin = config.origin;
+          try {
+            await fetch(url, { method: 'POST', headers: headers, credentials: 'same-origin', redirect: 'error', cache: 'no-store' });
+          } catch (e) {
+            fail('network_error', 'Could not reach the Homestead bridge');
+          }
+          freshCsrf = '';
+        }
+        root.location.assign(new URL('./', root.document.baseURI).href);
       },
     };
 

@@ -975,6 +975,9 @@ func (m Manifest) validateServe() error {
 	if len(m.CraftImages()) > 0 && !m.StripPrefix {
 		return fmt.Errorf("catalog: a craft app served by path strips its path (strip_prefix: true, ADR-045)")
 	}
+	if len(m.BridgeImages()) > 0 && m.StripPrefix {
+		return fmt.Errorf("catalog: an Everything app knows its base path and must not have it stripped (ADR-057)")
+	}
 	probe := docker.Route{Host: "probe.lan", Target: docker.Target{Host: "probe", Port: 80},
 		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal, Path: m.AppPath(),
 		StripPrefix: m.StripPrefix, Redirects: m.Redirects}
@@ -1131,10 +1134,24 @@ func (m Manifest) Stateless() bool {
 
 // CraftImages returns the locally built craft images (S249) the manifest's
 // services run, in service order.
+// Everything bridge images (ADR-057) are not included: they are served by
+// their own bridge, not the shared craft file server.
 func (m Manifest) CraftImages() []string {
 	var out []string
 	for _, service := range m.Services {
-		if _, _, ok := craft.ParseRef(service.Image); ok {
+		if _, _, ok := craft.ParseRef(service.Image); ok && !craft.IsBridgeRef(service.Image) {
+			out = append(out, service.Image)
+		}
+	}
+	return out
+}
+
+// BridgeImages returns the locally built Everything bridge images
+// (`homestead/everything-<app>:<version>`, ADR-057) the manifest runs.
+func (m Manifest) BridgeImages() []string {
+	var out []string
+	for _, service := range m.Services {
+		if craft.IsBridgeRef(service.Image) {
 			out = append(out, service.Image)
 		}
 	}
@@ -1149,12 +1166,12 @@ func (m Manifest) CraftImages() []string {
 // craft manifest move together.
 func validateCraftServices(m Manifest) error {
 	for _, service := range m.Services {
-		if !strings.Contains(service.Image, craftMarker) {
+		if !strings.Contains(service.Image, craftMarker) && !strings.Contains(service.Image, bridgeMarker) {
 			continue
 		}
 		app, version, ok := craft.ParseRef(service.Image)
 		if !ok {
-			return fmt.Errorf("catalog: service %q image %q: craft images use the local tag homestead/craft-<app>:<version> and are built on the appliance, never pulled from a registry", service.Name, service.Image)
+			return fmt.Errorf("catalog: service %q image %q: craft images use the local tag homestead/craft-<app>:<version> (or homestead/everything-<app>:<version>) and are built on the appliance, never pulled from a registry", service.Name, service.Image)
 		}
 		if app != m.Name {
 			return fmt.Errorf("catalog: service %q image %q must be the package's own craft app %q", service.Name, service.Image, m.Name)

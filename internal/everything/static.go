@@ -2,6 +2,8 @@ package everything
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -45,6 +47,32 @@ func sessionHandler(src SessionSource) http.HandlerFunc {
 
 var headTag = regexp.MustCompile(`(?i)<head(\s[^>]*)?>`)
 
+// inlineScript matches a script element with no src attribute: its body is
+// the only inline script the policy admits, by SHA-256 hash.
+var inlineScript = regexp.MustCompile(`(?is)<script(\s[^>]*)?>(.*?)</script>`)
+var scriptSrcAttr = regexp.MustCompile(`(?i)\ssrc\s*=`)
+
+// ContentSecurityPolicy is the bridge's fail-closed policy (ADR-057): code
+// only from the app's own origin, plus the hashes of the inline scripts the
+// built index.html itself carries; no framing, no plugins, no <base>, and
+// network access only back to the bridge. Styles may be inline because the
+// app sets element styles from script. Computed from the page being served,
+// so a changed inline script is refused until the build is reviewed again.
+func ContentSecurityPolicy(index []byte) string {
+	scripts := "'self'"
+	for _, m := range inlineScript.FindAllSubmatch(index, -1) {
+		if scriptSrcAttr.Match(m[1]) {
+			continue
+		}
+		sum := sha256.Sum256(m[2])
+		scripts += " 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+	}
+	return "default-src 'none'; script-src " + scripts + "; style-src 'self' 'unsafe-inline'; " +
+		"img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: data:; " +
+		"connect-src 'self'; manifest-src 'self'; worker-src 'self'; form-action 'self'; " +
+		"object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+}
+
 // hashedAsset matches build output like assets/index-AbC123xy.js: a content
 // hash in the file name makes the URL immutable, so it may be cached long.
 var hashedAsset = regexp.MustCompile(`^/assets/[^/]+-[A-Za-z0-9_]{8,}\.[A-Za-z0-9]+$`)
@@ -66,6 +94,8 @@ func registerApp(mux *http.ServeMux, base, dir string, src SessionSource) {
 
 func (a *appServer) serve(w http.ResponseWriter, r *http.Request) {
 	p := strings.TrimPrefix(r.URL.Path, a.base)
+	w.Header().Set("Content-Security-Policy", ContentSecurityPolicy(nil))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	switch {
 	case p == "/" || p == "/index.html":
 		a.index(w, r)
@@ -102,7 +132,7 @@ func (a *appServer) index(w http.ResponseWriter, r *http.Request) {
 	meta := `<meta name="homestead-csrf" content="` + csrf + `">`
 	out := append(append(append([]byte{}, page[:loc[1]]...), meta...), page[loc[1]:]...)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", ContentSecurityPolicy(page))
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	_, _ = io.Copy(w, bytes.NewReader(out))
