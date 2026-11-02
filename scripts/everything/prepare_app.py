@@ -49,8 +49,15 @@ def prepare_app(definition: dict, archive_path: Path, bridge_path: Path, output:
     if output.exists():
         raise ValueError('output already exists')
     worker = (HERE / d['service_worker']['template']).read_bytes()
-    if b'__VERSION__' not in worker or b'__ASSETS__' not in worker:
+    # mode "build" (Tasks): the upstream build fills in __VERSION__ and
+    # __ASSETS__. mode "runtime" (Projects): upstream has no such step, so the
+    # worker only has __VERSION__, filled in here from the pinned digest, and
+    # caches content-hashed assets as they are fetched.
+    mode = d['service_worker'].get('mode', 'build')
+    if mode not in ('build', 'runtime') or b'__VERSION__' not in worker or (b'__ASSETS__' in worker) != (mode == 'build'):
         raise ValueError('invalid local service worker template')
+    if mode == 'runtime':
+        worker = worker.replace(b'__VERSION__', (expected_sha256 or d['sha256'])[:12].encode())
     patches = {}
     for p in d['patches']:
         patches.setdefault(p['file'], []).append((p['old'].encode(), p['new'].encode()))

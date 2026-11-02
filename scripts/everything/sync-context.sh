@@ -12,6 +12,7 @@ cp -r "$repo/cmd/everything-bridge" "$dst/cmd/"
 cp -r "$repo/internal/everything" "$dst/internal/"
 find "$dst" -name '*_test.go' -delete
 cp "$repo/scripts/everything/prepare_app.py" "$repo/scripts/everything/puter-bridge.js" \
-   "$repo/scripts/everything/tasks-sw.template.js" "$dst/scripts/everything/"
+   "$dst/scripts/everything/"
+cp "$repo"/scripts/everything/*-sw.template.js "$dst/scripts/everything/"
 cp "$repo"/scripts/everything/apps/*.json "$dst/scripts/everything/apps/"
 echo "synced $dst"

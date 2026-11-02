@@ -12,7 +12,7 @@ if ! node -e 'process.exit(typeof WebSocket==="function"?0:1)'; then echo "SKIP:
 if ! command -v "${CHROME:-}" >/dev/null 2>&1 && ! command -v google-chrome >/dev/null && ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
   echo "SKIP: no Chrome/Chromium on PATH (set CHROME to run the real-browser check)"; exit 0
 fi
-sha=$(sed -n 's/^sha256: //p' "$repo/third_party/everything/pin.yaml")
+sha=$(sed -n '1,/^---$/s/^sha256: //p' "$repo/third_party/everything/pin.yaml")
 echo "$sha  $repo/third_party/everything/tasks-source.tar.gz" | sha256sum -c - >&2
 python3 -I "$repo/scripts/everything/prepare_tasks.py" "$repo/third_party/everything/tasks-source.tar.gz" "$repo/scripts/everything/puter-bridge.js" "$work/prepared"
 ( cd "$repo" && go build -tags everythingdev -o "$work/everything-bridge-dev" ./cmd/everything-bridge )

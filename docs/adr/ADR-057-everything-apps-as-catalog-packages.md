@@ -79,9 +79,10 @@ path. The `backup` snapshot takes a consistent copy.
 **SDK surface per app.** Each definition lists what the app may call. Anything
 not supported fails closed with `bridge_unsupported`.
 
-| Capability | Tasks |
+| Capability | Tasks / Projects |
 | --- | --- |
 | `kv.get/set/list/del`, `fs.write/read/delete` | supported, scoped to the person |
+| `fs.stat`, `fs.readdir`, recursive `fs.delete` (S369) | supported, scoped to the person; folders are key prefixes |
 | `auth.isSignedIn`, `auth.getUser`, `env` | supported (verified `sub`) |
 | `fs.getReadURL`, `kv` sharing, `perms`, `events`, `appID` | refused |
 | `ai` | disabled (no backend) |

@@ -1081,3 +1081,12 @@ no package scripts were run. Licence: SIL Open Font License 1.1 (Copyright
 `golang:1.26-alpine@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308` (BSD-3-Clause),
 `alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f` (build-only), and the runtime
 `gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab` (Apache-2.0 with Debian package licences). Updating a digest is a reviewed change.
+
+## Projects source (S369, ADR-057)
+`third_party/everything/projects-source.tar.gz` is the `src/projects` subtree plus
+the root `LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU
+tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 137 entries). SHA-256
+`368795cb9e68e8e8fb70095459b2586b409c3a816bf5fb6cba1031881748b981`, recorded in
+`third_party/everything/pin.yaml`. Licence: MIT (see the `LICENSE` file inside the
+archive). The source is unmodified; only `npm ci --ignore-scripts` and the build run.

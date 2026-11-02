@@ -150,8 +150,18 @@
       if (opts && opts.handle) fail('bridge_unsupported', 'Shared key-value handles are not supported by the Homestead bridge');
     }
     function fsKey(path) {
-      var p = String(path).replace(/^\/+/, '');
-      return p;
+      // Paths are relative to the person's own space for this app; leading and
+      // trailing slashes are cosmetic. The bridge rejects anything that is
+      // not a clean relative path (no .., no empty parts, no backslashes).
+      return String(path).replace(/^\/+/, '').replace(/\/+$/, '');
+    }
+    function fileItem(dir, info) {
+      var path = dir ? dir + '/' + info.name : info.name;
+      return { path: path, name: info.name, size: info.size || 0, modified: info.modified || 0,
+        is_dir: !!info.is_dir, isDirectory: !!info.is_dir };
+    }
+    function noFile(what) {
+      fail('subject_does_not_exist', 'No such ' + what);
     }
 
     var kv = {
@@ -195,22 +205,44 @@
     };
 
     var fs = {
+      // Options such as createMissingParents are implied: folders exist while
+      // a file is beneath them. Writes replace the file and are counted
+      // against the person's and the app's storage quota.
       async write(path, data) {
         var bytes;
         if (typeof data === 'string') bytes = enc.encode(data);
         else if (data && typeof data.arrayBuffer === 'function') bytes = new Uint8Array(await data.arrayBuffer());
         else bytes = enc.encode(String(data));
         if (bytes.length > MAX_VALUE) fail('storage_limit', 'storage limit exceeded');
-        await call({ operation: 'put', kind: 'file', key: fsKey(path), value: toBase64(bytes) });
-        return { path: path };
+        var key = fsKey(path);
+        var r = await call({ operation: 'put', kind: 'file', key: key, value: toBase64(bytes) });
+        var name = key.split('/').pop();
+        return { path: path, name: name, size: (r && r.size) || bytes.length, modified: (r && r.modified) || 0, is_dir: false };
       },
       async read(path) {
         var r = await call({ operation: 'get', kind: 'file', key: fsKey(path) });
-        if (r === null) fail('subject_does_not_exist', 'No such file');
+        if (r === null) noFile('file');
         return new Blob([fromBase64(r.value)]);
       },
-      async delete(path) {
-        await call({ operation: 'delete', kind: 'file', key: fsKey(path) });
+      async stat(path) {
+        var r = await call({ operation: 'stat', kind: 'file', key: fsKey(path) });
+        if (r === null) noFile('file or directory');
+        var item = fileItem('', r);
+        item.path = path;
+        return item;
+      },
+      // Direct children of a folder: [{ name, path, size, modified, is_dir }].
+      async readdir(path) {
+        var dir = fsKey(path);
+        var r = await call({ operation: 'readdir', kind: 'file', key: dir });
+        if (r === null) noFile('directory');
+        return ((r && r.entries) || []).map(function (e) { return fileItem(dir, e); });
+      },
+      // { recursive: true } removes a folder and everything under it. Missing
+      // paths are not an error.
+      async delete(path, opts) {
+        var recursive = !!(opts && opts.recursive);
+        await call({ operation: recursive ? 'deletetree' : 'delete', kind: 'file', key: fsKey(path) });
       },
       // Signed public read URLs are public exposure; ADR-053 requires an
       // explicit exposure plan first, so this is refused.
@@ -232,7 +264,9 @@
         return user;
       },
       async signIn() {
-        if (config.signInUrl && root.location) { root.location.assign(config.signInUrl); return new Promise(function () {}); }
+        // The only sign-in is Homestead's (Authentik) page; leave for it. The
+        // promise never settles because the page is going away.
+        if (root.document && root.location) { toSignIn(); return new Promise(function () {}); }
         fail('bridge_unsupported', 'Sign in through the Homestead sign-in page');
       },
       async signOut() {

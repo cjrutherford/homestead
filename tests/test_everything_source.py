@@ -54,8 +54,11 @@ class EverythingSourceTest(unittest.TestCase):
             self.assertFalse((base / 'output').exists())
 
     def test_pinned_source_is_safe_and_matches_digest(self):
-        metadata = dict(line.split(': ', 1) for line in PIN.read_text().splitlines()
+        # pin.yaml holds one document per app, separated by ---; this is Tasks.
+        first = PIN.read_text().split('\n---\n')[0]
+        metadata = dict(line.split(': ', 1) for line in first.splitlines()
                         if line and not line.startswith('#'))
+        self.assertEqual(metadata['app'], 'tasks')
         self.assertEqual(metadata['repository'], 'https://github.com/HeyPuter/everything')
         self.assertEqual(metadata['commit'], 'e7d07c48546ef0650a8f3ab94ae82b8b50d3646a')
         data = ARCHIVE.read_bytes()

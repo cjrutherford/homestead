@@ -1,0 +1,63 @@
+{
+  "app": "projects",
+  "version": "0.1.0",
+  "title": "Projects",
+  "archive": "projects-source.tar.gz",
+  "sha256": "368795cb9e68e8e8fb70095459b2586b409c3a816bf5fb6cba1031881748b981",
+  "size": 926653,
+  "subtree": "src/projects",
+  "extra_files": [
+    "LICENSE",
+    "dev/puter-localhost.mjs"
+  ],
+  "required": [
+    "LICENSE",
+    "dev/puter-localhost.mjs",
+    "src/projects/index.html",
+    "src/projects/package-lock.json",
+    "src/projects/public/sw.js"
+  ],
+  "index": "src/projects/index.html",
+  "sdk_tag": "<script src=\"https://js.puter.com/v2/\" defer></script>",
+  "service_worker": {
+    "template": "projects-sw.template.js",
+    "target": "src/projects/public/sw.js",
+    "mode": "runtime"
+  },
+  "patches": [],
+  "sdk_surface": {
+    "supported": [
+      "kv.get",
+      "kv.set",
+      "fs.write",
+      "fs.read",
+      "fs.delete",
+      "fs.stat",
+      "fs.readdir",
+      "auth.isSignedIn",
+      "auth.getUser",
+      "auth.signIn",
+      "auth.signOut",
+      "env"
+    ],
+    "refused": [
+      "fs.getReadURL",
+      "kv.share",
+      "kv.unshare",
+      "kv.listShared",
+      "kv.listSharedByMe",
+      "perms.*",
+      "events.*",
+      "appID"
+    ],
+    "absent": [
+      "ui.showOpenFilePicker",
+      "ui.showSaveFilePicker"
+    ],
+    "disabled": {
+      "ai": "no AI backend",
+      "net": "no network bridge (S381 only)",
+      "sharing": "needs an exposure plan"
+    }
+  }
+}

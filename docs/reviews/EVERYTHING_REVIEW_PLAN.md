@@ -29,6 +29,24 @@ Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10
 
 Report failures with the time; `docker logs` of the Tasks container and the daemon journal give the cause.
 
+## S369 — Projects catalog package
+Prerequisites: VM 2 on the build with S369; Authentik sign-in set up; a second
+person exists in People.
+
+Steps and expected results:
+1. Build `projects` in the craft page or CLI. Expected: image `homestead/everything-projects:0.1.0` recorded.
+2. Install Projects with a plan, preview and apply. Expected: route `/apps/projects/`, no public exposure.
+3. Apply sign-in. Expected: `https://homestead.lan/apps/projects/` redirects to Authentik; the owner sees Projects. No request to js.puter.com.
+4. Create a project, add a column and two tasks, attach a small file; reload. Expected: all remain.
+5. Open the project in a second tab, edit in both. Expected: the conflict prompt appears, no silent loss.
+6. Second person: closed by default, then granted in People. Expected: an empty Projects account.
+7. Offline: go Offline, edit, go Online. Expected: edits sync; reloading offline shows the offline page.
+8. Attachment over 8 MiB. Expected: a clear size error; existing data intact.
+9. No share, calendar feed or cloud-drive picker is offered. DevTools Console shows no CSP violation.
+10. Backup contains `data/bridge.db`; uninstall removes route and container.
+
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10
+
 ## Template for a new app section
 ## SNNN — <App>
 Prerequisites: ...

@@ -127,8 +127,40 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "put":
 		err = h.store.Put(r.Context(), scope, kind, body.Key, body.Value)
 		if err == nil {
+			// A file write reports the new size and modification time, which
+			// an app uses as its change stamp.
+			if kind == KindFile {
+				if info, serr := h.store.Stat(r.Context(), scope, body.Key); serr == nil {
+					_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "size": info.Size, "modified": info.Modified})
+					return
+				}
+			}
 			_, _ = w.Write([]byte(`{"ok":true}`))
 			return
+		}
+	case "stat", "readdir", "deletetree":
+		if kind != KindFile {
+			err = ErrInvalid
+			break
+		}
+		switch body.Operation {
+		case "stat":
+			var info FileInfo
+			if info, err = h.store.Stat(r.Context(), scope, body.Key); err == nil {
+				_ = json.NewEncoder(w).Encode(info)
+				return
+			}
+		case "readdir":
+			var infos []FileInfo
+			if infos, err = h.store.Readdir(r.Context(), scope, body.Key); err == nil {
+				_ = json.NewEncoder(w).Encode(map[string][]FileInfo{"entries": infos})
+				return
+			}
+		default:
+			if _, err = h.store.DeleteTree(r.Context(), scope, body.Key); err == nil {
+				_, _ = w.Write([]byte(`{"ok":true}`))
+				return
+			}
 		}
 	case "putbatch":
 		entries := make([]Entry, len(body.Entries))

@@ -13,6 +13,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -104,6 +105,10 @@ func OpenStore(filename string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("everything: initialize store: %w", err)
 	}
+	if err = ensureModifiedColumn(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("everything: upgrade store: %w", err)
+	}
 	st := &Store{db: db}
 	st.SetQuota(0, 0)
 	if err = st.initSessions(); err != nil {
@@ -111,6 +116,38 @@ func OpenStore(filename string) (*Store, error) {
 		return nil, fmt.Errorf("everything: initialize sessions: %w", err)
 	}
 	return st, nil
+}
+
+// ensureModifiedColumn adds the per-object modification time (Unix
+// milliseconds) that file stat and directory listings report. Rows written
+// before the column existed read as 0. The change is additive and older
+// bridge builds ignore the column.
+func ensureModifiedColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(objects)`)
+	if err != nil {
+		return err
+	}
+	has := false
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt sql.NullString
+		if err = rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "modified" {
+			has = true
+		}
+	}
+	if err = rows.Close(); err != nil {
+		return err
+	}
+	if has {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE objects ADD COLUMN modified INTEGER NOT NULL DEFAULT 0`)
+	return err
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -259,12 +296,13 @@ func (s *Store) write(ctx context.Context, scope Scope, kind Kind, entries []Ent
 	if err != nil {
 		return err
 	}
+	now := time.Now().UnixMilli()
 	for _, entry := range entries {
 		value := entry.Value
 		if value == nil {
 			value = []byte{}
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO objects(app,subject,kind,object_key,value) VALUES(?,?,?,?,?) ON CONFLICT(app,subject,kind,object_key) DO UPDATE SET value=excluded.value`, scope.App, scope.Subject, kind, entry.Key, value); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO objects(app,subject,kind,object_key,value,modified) VALUES(?,?,?,?,?,?) ON CONFLICT(app,subject,kind,object_key) DO UPDATE SET value=excluded.value, modified=MAX(excluded.modified, objects.modified+1)`, scope.App, scope.Subject, kind, entry.Key, value, now); err != nil {
 			return err
 		}
 	}
@@ -280,4 +318,112 @@ func (s *Store) write(ctx context.Context, scope Scope, kind Kind, entries []Ent
 	}
 	committed = true
 	return nil
+}
+
+// FileInfo describes a stored file or a directory implied by file keys.
+// Modified is Unix milliseconds and strictly increases with each rewrite of
+// the same file, so a changed file never keeps its stamp.
+type FileInfo struct {
+	Name     string `json:"name"`
+	Size     int64  `json:"size"`
+	Modified int64  `json:"modified"`
+	IsDir    bool   `json:"is_dir"`
+}
+
+// MaxDirEntries bounds how many stored files one directory listing considers.
+const MaxDirEntries = 20000
+
+// Stat reports a file (exact key) or, when no file has that key, a directory
+// that other file keys sit under. Directories are not stored: they exist
+// while a file does beneath them, as in a flat object store.
+func (s *Store) Stat(ctx context.Context, scope Scope, key string) (FileInfo, error) {
+	if err := validate(scope, KindFile, key); err != nil {
+		return FileInfo{}, err
+	}
+	name := path.Base(key)
+	var size, modified int64
+	err := s.db.QueryRowContext(ctx, `SELECT length(value), modified FROM objects WHERE app=? AND subject=? AND kind=? AND object_key=?`, scope.App, scope.Subject, KindFile, key).Scan(&size, &modified)
+	if err == nil {
+		return FileInfo{Name: name, Size: size, Modified: modified}, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return FileInfo{}, err
+	}
+	var n int64
+	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(MAX(modified),0) FROM objects WHERE app=? AND subject=? AND kind=? AND substr(object_key,1,length(?))=?`, scope.App, scope.Subject, KindFile, key+"/", key+"/").Scan(&n, &modified)
+	if err != nil {
+		return FileInfo{}, err
+	}
+	if n == 0 {
+		return FileInfo{}, ErrNotFound
+	}
+	return FileInfo{Name: name, Modified: modified, IsDir: true}, nil
+}
+
+// Readdir lists the direct children of a directory in name order. A
+// directory with no files beneath it does not exist (ErrNotFound).
+func (s *Store) Readdir(ctx context.Context, scope Scope, dir string) ([]FileInfo, error) {
+	if err := validate(scope, KindFile, dir); err != nil {
+		return nil, err
+	}
+	prefix := dir + "/"
+	rows, err := s.db.QueryContext(ctx, `SELECT object_key, length(value), modified FROM objects WHERE app=? AND subject=? AND kind=? AND substr(object_key,1,length(?))=? ORDER BY object_key LIMIT ?`, scope.App, scope.Subject, KindFile, prefix, prefix, MaxDirEntries+1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	byName := map[string]*FileInfo{}
+	var order []string
+	seen := 0
+	for rows.Next() {
+		var key string
+		var size, modified int64
+		if err := rows.Scan(&key, &size, &modified); err != nil {
+			return nil, err
+		}
+		if seen++; seen > MaxDirEntries {
+			return nil, errors.New("everything: directory holds too many files to list")
+		}
+		rest := key[len(prefix):]
+		name, _, nested := strings.Cut(rest, "/")
+		fi := byName[name]
+		if fi == nil {
+			fi = &FileInfo{Name: name}
+			byName[name] = fi
+			order = append(order, name)
+		}
+		if nested {
+			fi.IsDir = true
+		} else {
+			fi.Size = size
+		}
+		if modified > fi.Modified {
+			fi.Modified = modified
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(order) == 0 {
+		return nil, ErrNotFound
+	}
+	out := make([]FileInfo, 0, len(order))
+	for _, name := range order {
+		out = append(out, *byName[name])
+	}
+	return out, nil
+}
+
+// DeleteTree removes the file with this key and every file under it, within
+// the authenticated scope. Missing is not an error. It returns how many files
+// were removed.
+func (s *Store) DeleteTree(ctx context.Context, scope Scope, key string) (int64, error) {
+	if err := validate(scope, KindFile, key); err != nil {
+		return 0, err
+	}
+	res, err := s.db.ExecContext(ctx, `DELETE FROM objects WHERE app=? AND subject=? AND kind=? AND (object_key=? OR substr(object_key,1,length(?))=?)`, scope.App, scope.Subject, KindFile, key, key+"/", key+"/")
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }

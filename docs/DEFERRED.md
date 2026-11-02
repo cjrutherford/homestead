@@ -1648,3 +1648,8 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S368: the Content-Security-Policy and the full sign-in flow are covered by Go and gate tests but have not been checked in a browser; the review plan is the check.
 - S368: bridge images are not byte-identical across Docker engines, are not in the update flow or `Prune`, and a new pinned archive or version bump is a manual catalog edit plus `sync-context.sh`.
 - S368: the dashboard and CLI craft status do not list bridge apps separately; they are built with the existing craft plan and build calls by app name.
+- S369: the upstream Projects tests were not run against the real bridge; the real-browser check and Go/gate tests cover the bridge path only.
+- S369: not run on VM 2 or through Authentik; the review plan S369 section is the owner checklist.
+- S369: cloud-drive picking, sharing and calendar feeds are not offered (no `ui`, `fs.getReadURL`, sharing); a later slice may add them with an exposure plan.
+- S369: the 8 MiB per-attachment limit is the app's own; the bridge enforces only the per-person and per-app quotas.
+- S369: `modified` is the bridge write time in Unix ms, strictly increasing per rewrite; restoring a backup does not preserve upstream timestamps.

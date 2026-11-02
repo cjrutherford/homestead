@@ -173,4 +173,38 @@ describe('real Tasks store through the real bridge', () => {
     await p.kv.set([{ key: 'a', value: 1 }, { key: 'b', value: 2 }]);
     expect(await p.kv.list('*')).toEqual(['a', 'b']);
   });
+
+  // S369: the folder operations Projects needs, through the shim to the real
+  // bridge. Folders are implied by file paths; everything is per person.
+  it('stat, readdir and recursive delete work on folders, per person', async () => {
+    const p = shimFor(await bridge.login('fs-person'));
+    const q = shimFor(await bridge.login('fs-other'));
+    const w1 = await p.fs.write('pd/snapshots/p1/2026-01-01.json', '{"a":1}', { createMissingParents: true });
+    expect(w1.size).toBe(7);
+    expect(w1.modified).toBeGreaterThan(0);
+    await p.fs.write('pd/snapshots/p1/2026-01-02.json', new Blob(['bb']));
+    await p.fs.write('pd/snapshots/p10/keep.json', 'k');
+    await q.fs.write('pd/snapshots/p1/theirs.json', 't');
+    const names = (await p.fs.readdir('pd/snapshots/p1')).map((e) => e.name);
+    expect(names).toEqual(['2026-01-01.json', '2026-01-02.json']);
+    const top = await p.fs.readdir('pd/snapshots');
+    expect(top.map((e) => [e.name, e.is_dir])).toEqual([['p1', true], ['p10', true]]);
+    const st = await p.fs.stat('pd/snapshots/p1/2026-01-01.json');
+    expect(st.size).toBe(7);
+    // A rewrite changes the stamp even with identical bytes (conflict check).
+    const w2 = await p.fs.write('pd/snapshots/p1/2026-01-01.json', '{"a":1}');
+    expect(w2.modified).toBeGreaterThan(st.modified);
+    expect((await p.fs.stat('pd/snapshots/p1/2026-01-01.json')).modified).toBe(w2.modified);
+    expect((await p.fs.stat('pd/snapshots')).is_dir).toBe(true);
+    expect((await rejects(p.fs.stat('pd/nothing'))).code).toBe('subject_does_not_exist');
+    expect((await rejects(p.fs.readdir('pd/nothing'))).code).toBe('subject_does_not_exist');
+    expect((await rejects(p.fs.read('pd/nothing'))).code).toBe('subject_does_not_exist');
+    expect((await rejects(p.fs.stat('../escape'))).code).toBe('bridge_rejected');
+    expect((await rejects(q.fs.stat('pd/snapshots/p1/2026-01-01.json'))).code).toBe('subject_does_not_exist');
+    await p.fs.delete('pd/snapshots/p1', { recursive: true });
+    expect((await rejects(p.fs.readdir('pd/snapshots/p1'))).code).toBe('subject_does_not_exist');
+    expect((await p.fs.readdir('pd/snapshots/p10')).length).toBe(1);
+    expect((await q.fs.readdir('pd/snapshots/p1')).map((e) => e.name)).toEqual(['theirs.json']);
+    await p.fs.delete('pd/snapshots/p1', { recursive: true }); // already gone: no error
+  });
 });

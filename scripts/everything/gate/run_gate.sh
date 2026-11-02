@@ -8,7 +8,8 @@ set -euo pipefail
 work=${1:?empty work dir}; mode=${2:-suite}
 here=$(cd "$(dirname "$0")" && pwd); repo=$(cd "$here/../../.." && pwd)
 [ -d "$work" ] && [ -z "$(ls -A "$work")" ] || { echo "work dir must exist and be empty" >&2; exit 2; }
-sha=$(sed -n 's/^sha256: //p' "$repo/third_party/everything/pin.yaml")
+# pin.yaml has one document per app (separated by ---); the gate runs Tasks.
+sha=$(sed -n '1,/^---$/s/^sha256: //p' "$repo/third_party/everything/pin.yaml")
 echo "$sha  $repo/third_party/everything/tasks-source.tar.gz" | sha256sum -c - >&2
 tar -xzf "$repo/third_party/everything/tasks-source.tar.gz" -C "$work"
 ( cd "$repo" && go build -tags everythingdev -o "$work/everything-bridge-dev" ./cmd/everything-bridge )

@@ -8,3 +8,15 @@ sha256: 864f60484a1aa759427fec5d308a2215200fa5873d7579bb73594850b8f5db2e
 # The archive contains the tracked src/tasks tree, the root LICENSE, and
 # dev/puter-localhost.mjs (required by the upstream Vite config). It does
 # not contain npm dependencies or generated build output.
+---
+# Pinned source for the projects package (S369). Same upstream repository and
+# commit as above; archive built the same way (tracked files of src/projects,
+# LICENSE, dev/puter-localhost.mjs; GNU tar, sorted, mode 0664, owner 0, mtime
+# 0, gzip -n). Licence: the repository root MIT licence; src/projects has no
+# licence file of its own and its package.json declares MIT.
+repository: https://github.com/HeyPuter/everything
+commit: e7d07c48546ef0650a8f3ab94ae82b8b50d3646a
+app: projects
+license: MIT
+archive: projects-source.tar.gz
+sha256: 368795cb9e68e8e8fb70095459b2586b409c3a816bf5fb6cba1031881748b981
