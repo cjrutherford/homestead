@@ -191,7 +191,7 @@ dependencies, the critical path and the recommended interleave.
 
 S383 separates curated container listening ports from actual host-port requirements (`docs/slices/S383-catalog-container-port-requirements.md`).
 
-S367 bridge planning and upstream baseline are in `docs/slices/S367-everything-bridge-and-build.md`; ADR-053 sets the constraints and the bridge and applications are not implemented.
+S367 bridge planning and upstream baseline are in `docs/slices/S367-everything-bridge-and-build.md`; ADR-053 sets the constraints; S367 finished as a spike on VM 2 (plain Compose, hand-made Authentik client, pending only the owner's browser sign-in) and Homestead packaging is a later slice.
 
 S384 adds a sealed Audiobookshelf first-run recovery administrator (`docs/slices/S384-audiobookshelf-first-run.md`); S385 will add its Authentik adapter.
 

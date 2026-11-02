@@ -1,7 +1,7 @@
 # S367 — Everything bridge and build pipeline
 
 ## Status
-Implementation in progress. S367 is not complete and no Everything app is installable yet.
+Spike (owner decision 2026-11-02): S367 finishes as a spike. Tasks runs on VM 2 under plain Docker Compose with a hand-made Authentik OAuth2/OIDC client; everything except the owner's browser sign-in has passed there (see "Live results"). Homestead packaging (ADR plus catalog package, provider provisioning, edge route) is a later slice. No Everything app is installable from Homestead yet.
 
 ## Goal and dependencies
 Prove an independent, customer-owned bridge and reproducible build for selected Everything apps, beginning with Tasks. S279 and S341 are present; S382's craft serving and DNS validation is still unfinished. ADR-053 constrains the new architecture; implementation details must meet its security and recovery requirements. Do not ship the pilot without its own complete build, serve and reachability proof.
@@ -63,3 +63,44 @@ Export, import, backup (work on the SQLite file; the bridge may be stopped): `ev
 Recovery (no daemon, no sign-in): stop the bridge; copy the backup file over `/data/bridge.db` (owner uid 65532, mode 0600) or run `import`; start it. All KV and files are restored. Sessions are deliberately not restored: everyone signs in again through Authentik. With stock tools, `sqlite3 bridge.db 'select app,subject,kind,object_key,length(value) from objects'` works on a stopped copy.
 
 Daemon-independence proof (`scripts/everything/gate/run_compose_check.sh`, plain `docker compose`, no Homestead daemon, dead issuer URL because discovery is lazy): refusal without OIDC config; healthy container with read-only root and no host port; `healthz` 200; unauthenticated page 302; data API 401; data seeded with `import` survives `down`/`up`; export from the stopped volume; backup restored into a fresh volume re-exports the same data. Not proven here: an actual sign-in against Authentik over Compose, and a catalog package.
+
+## Live results (VM 2, 2026-11-02)
+
+Scope: spike only. Plain Compose, no Homestead daemon involvement, hand-made Authentik client. Homestead packaging is a later slice (ADR + catalog package); recorded in `docs/DEFERRED.md`.
+
+What was run (HEAD e805f14, `git archive` copied to `~/everything-spike` on VM 2):
+- Image built on the VM (`docker build -f images/everything/Dockerfile --build-arg SOURCE_DATE_EPOCH=1767225600`, Docker 26.1.5): ID `sha256:6f115a89b59e...`. The local build (Docker 29.1.2) is `sha256:7aa053a8b8dc...`. The IDs differ; reproducibility is therefore shown per Docker engine version only, not across engine versions (image-config/serialisation differences are the likely cause; not investigated).
+- Authentik provider and application `everything-tasks-spike` created with Authentik's own `ak shell` (ORM, run inside `authentik-server`; no API token used). Confidential, signing key `authentik Self-signed Certificate` (RS256), implicit-consent authorization flow, strict redirect URI `https://homestead.lan:8443/apps/tasks/_homestead/callback`, mappings openid/email/profile. The secret was generated in the container and written straight to `~/everything-spike/secrets/oidc_client_secret` (never displayed). No policy bindings: any signed-in Authentik user can use it (spike only). Homestead's own providers were not touched.
+- Routing: a separate Caddy container (`caddy:2.11.7`, in the same Compose project) publishes host port 8443 and serves `https://homestead.lan:8443` with the appliance's existing homestead.lan leaf certificate (mounted read-only), proxying to the bridge on the Compose network. Homestead's managed Caddy files were not edited. The bridge reaches the issuer `https://homestead.lan/apps/auth/application/o/everything-tasks-spike/` through `extra_hosts: homestead.lan:host-gateway` and `-ca-file` (the appliance CA, public cert from `/etc/homestead/internal-ca.yaml`). The Compose network needed an explicit subnet (10.200.77.0/24) because Docker's default pools were exhausted on the appliance. Files: `~/everything-spike/{.env,spike/compose.spike.yaml,spike/Caddyfile,spike/ca.pem}`. Origin: `https://homestead.lan:8443`, base path `/apps/tasks`. A different port is a different origin from the appliance's `homestead.lan`, but cookies are host-scoped (not port-scoped); the bridge cookies are path-scoped (`/apps/tasks/`), so they are sent only to the bridge, but the appliance's own cookies on `homestead.lan` are also sent to port 8443. The bridge ignores them; this is a spike-only exposure.
+
+Results:
+| Check | Result |
+| --- | --- |
+| `GET _homestead/healthz` | 200 `ok`, `no-store`; also 200 from another LAN host over TLS with the appliance CA |
+| Unauthenticated index | 302 to `/apps/tasks/_homestead/login`, `no-store` |
+| Login | 302 to the Authentik `authorize/` with `client_id=everything-tasks-spike`, `response_type=code`, `scope=openid`, `code_challenge_method=S256`, 43-char `code_challenge`, `state`, `nonce`, exact `redirect_uri`; `hs_everything_login` cookie HttpOnly, Secure, SameSite=Lax, path `/apps/tasks/`. Discovery therefore worked from inside the container through the CA bundle. |
+| JWKS | Not fetched yet: JWKS is fetched at the first callback; the discovery document advertises `.../jwks/` and S256. Verified only by the owner sign-in. |
+| Data API | 403 without Origin/CSRF; 401 with the correct Origin and no session; `session` 401 |
+| Path outside base | 404 |
+| Headers | `no-store` on healthz, redirect and login, `no-cache` on the shim, `nosniff` on assets. There is no Content-Security-Policy header in the code (no `Content-Security-Policy` in `internal/everything`); the slice's earlier CSP gap remains open and is not covered here. The signed-in index headers were not inspected (needs a session). |
+| Scope | The bridge requests only `openid` (documented limit); the provider also allows profile and email. |
+| Export / backup | With the bridge stopped: `export` (0 objects, valid manifest, mode 0600), `backup` (file written, mode 0600); the bridge was started again and is healthy. The data volume was empty, so restore of real data was not re-proven here (see `run_compose_check.sh`). |
+
+Spike exit gate: PENDING only on the owner's real browser sign-in (OIDC callback with a real Authentik token, JWKS verification, offline behaviour, second-person isolation). Everything that can be tested without a human passed. CSP is not implemented.
+
+Owner checklist (browser trusts the appliance CA; `homestead.lan` must resolve to VM 2, 10.187.0.2):
+1. Open `https://homestead.lan:8443/apps/tasks/`. Expected: redirect to the Authentik sign-in at `homestead.lan/apps/auth/`.
+2. Sign in as the owner. Expected: back on `/apps/tasks/` showing Tasks; no page mentions js.puter.com in DevTools Network.
+3. Add a list and two tasks; reload and confirm they remain.
+4. In DevTools, set Network to Offline, add a task (it queues), set Online again and confirm it syncs after a moment. Reloading while offline shows the plain offline page (by design).
+5. In a second browser profile, open the same URL and sign in as a second person. Expected: an empty Tasks account, none of the owner's lists. Add a task there; confirm it does not appear for the owner.
+6. Confirm no Share button and no calendar-feed setting appear (hidden by design).
+7. Sign out of Authentik at `https://homestead.lan/apps/auth/` and reload Tasks: the bridge session is separate (12h idle), so Tasks stays signed in until its session ends; this is the current design (no logout UI yet, see DEFERRED).
+Report any failure with the time; `docker compose ... logs tasks` on VM 2 shows the cause.
+
+Left running on VM 2: Compose project `everything-tasks` (containers `everything-tasks-tasks-1`, `everything-tasks-edge-1`, volume `everything-tasks_data`, network `everything-tasks_default`, host port 8443); the Authentik provider and application `everything-tasks-spike`.
+
+Cleanup (VM 2):
+- `cd ~/everything-spike && sudo docker compose -f images/everything/compose.example.yaml -f spike/compose.spike.yaml --env-file .env down -v`
+- `sudo docker rmi homestead/everything-tasks:0.0.1; rm -rf ~/everything-spike`
+- Delete the Authentik application and provider `everything-tasks-spike` in the Authentik admin UI, or with `ak shell`: `Application.objects.filter(slug="everything-tasks-spike").delete(); OAuth2Provider.objects.filter(name="everything-tasks-spike").delete()`.
