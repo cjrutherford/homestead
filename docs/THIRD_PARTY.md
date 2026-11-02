@@ -1170,3 +1170,24 @@ only. The source is changed only by the pinned patches listed in
 hosted-SDK preconnect, the Plausible analytics script, the Smart add button and
 its Puter AI call, service worker registration, manifest URLs); only
 `npm ci --ignore-scripts` and the build run.
+
+## Inventory source (S373, ADR-057)
+`third_party/everything/inventory-source.tar.gz` is the `src/inventory` subtree plus
+the root `LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU
+tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 203 entries, 6,365,897
+bytes; it carries the app's store screenshots and the other-app icons for its
+landing page, which the build copies). SHA-256
+`cd9c23d16cb5844db332719ee498644559e5b9a8cf46bd60a9e008d53c3a345b`, recorded in
+`third_party/everything/pin.yaml`. The recipe was first run on the records subtree
+and reproduced the records digest. Licence: MIT. The repository root `LICENSE` is
+MIT (Copyright (c) 2026 Puter Technologies Inc.); `src/inventory` has no licence
+file of its own, its `package.json` has no licence field and its README says the
+code is under the repository's MIT licence. It is not AGPL or copyleft. One
+runtime dependency is bundled into the app: `lucide` 1.28.0 (ISC, permissive; its
+licence text ships in the npm package, not in our archive). Build and test tools
+(vite, vitest, jsdom) are not shipped. The source is changed only by the pinned
+patches listed in `scripts/everything/apps/inventory.json` (Plausible analytics
+removed, the public handbook and landing page not built, Puter wording and
+outbound links removed, the opaque user id kept off screen); only
+`npm ci --ignore-scripts` and the build run.

@@ -107,6 +107,26 @@ Steps and expected results:
 
 Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10 [ ] 11 [ ] 12
 
+## S373 — Inventory catalog package
+Prerequisites: VM 2 on the build with S373; Authentik sign-in set up; a second
+person exists in People; a phone or laptop with a camera for step 6.
+
+Steps and expected results:
+1. Build `inventory` in the craft page or CLI. Expected: image `homestead/everything-inventory:0.1.0` recorded.
+2. Install Inventory with a plan, preview and apply. Expected: route `/apps/inventory/`, no public exposure.
+3. Apply sign-in. Expected: `https://homestead.lan/apps/inventory/` redirects to Authentik; the owner sees the first-run welcome, with no "Puter" wording. No request to js.puter.com or plausible.io.
+4. Skip the welcome, add a product with a name, SKU, opening stock and a photo; reload. Expected: it remains, with the photo as its thumbnail.
+5. Import a CSV of products, add a location and a supplier, record a stock movement and open Reports. Expected: all work; Export gives a CSV.
+6. Scan a barcode with the camera on the Scan button (allow the camera). Expected: the camera opens and a scanned code finds or starts a product.
+7. Open Settings. Expected: no Documentation or Guides links, no link to Puter, no Sign out, and the account row says "Homestead user" (no raw user id).
+8. Create a backup in Settings and restore it. Expected: the data returns.
+9. Second person: closed by default, then granted in People. Expected: an empty inventory, none of the first person's products or photos, even in the same browser.
+10. Stop the container and reload. Expected: the "You are offline" page, no product names. Start it again.
+11. Check a large photo (12 megapixels). Expected: it is shrunk and saved; storage use stays small.
+12. DevTools Console shows no CSP violation. Backup contains `data/bridge.db`; uninstall removes route and container.
+
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10 [ ] 11 [ ] 12
+
 ## Template for a new app section
 ## SNNN — <App>
 Prerequisites: ...

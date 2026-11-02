@@ -16,7 +16,7 @@ import (
 // everythingPackages lists the Everything bridge packages (ADR-057). Each
 // Everything slice appends its app here, adds its YAML, craft manifest
 // entry (build: everything), knownImageVolumes row and sign-in posture.
-var everythingPackages = []string{"tasks", "projects", "records", "notes", "contacts"}
+var everythingPackages = []string{"tasks", "projects", "records", "notes", "contacts", "inventory"}
 
 func TestEverythingPackages(t *testing.T) {
 	cat := repoCatalog(t)
@@ -134,7 +134,7 @@ func TestEverythingContextIsInSync(t *testing.T) {
 			pairs[dir[0]+"/"+e.Name()] = dir[1] + "/" + e.Name()
 		}
 	}
-	for _, f := range []string{"prepare_app.py", "puter-bridge.js", "tasks-sw.template.js", "projects-sw.template.js", "contacts-sw.template.js"} {
+	for _, f := range []string{"prepare_app.py", "puter-bridge.js", "tasks-sw.template.js", "projects-sw.template.js", "contacts-sw.template.js", "inventory-sw.template.js"} {
 		pairs["scripts/everything/"+f] = "../../scripts/everything/" + f
 	}
 	for dst, src := range pairs {

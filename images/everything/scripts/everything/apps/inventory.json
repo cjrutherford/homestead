@@ -1,0 +1,133 @@
+{
+  "app": "inventory",
+  "version": "0.1.0",
+  "title": "Inventory",
+  "archive": "inventory-source.tar.gz",
+  "sha256": "cd9c23d16cb5844db332719ee498644559e5b9a8cf46bd60a9e008d53c3a345b",
+  "size": 6365897,
+  "subtree": "src/inventory",
+  "extra_files": [
+    "LICENSE",
+    "dev/puter-localhost.mjs"
+  ],
+  "required": [
+    "LICENSE",
+    "dev/puter-localhost.mjs",
+    "src/inventory/index.html",
+    "src/inventory/package-lock.json",
+    "src/inventory/vite.config.js"
+  ],
+  "index": "src/inventory/index.html",
+  "sdk_tag": "<script src=\"https://js.puter.com/v2/\" defer></script>",
+  "service_worker": {
+    "template": "inventory-sw.template.js",
+    "target": "src/inventory/public/sw.js",
+    "mode": "runtime"
+  },
+  "patches": [
+    {
+      "file": "src/inventory/index.html",
+      "old": "  <!-- Privacy-friendly analytics by Plausible -->\n  <script async src=\"https://plausible.io/js/pa-2yMvoQPYNHnCQ4VVrJlNU.js\"></script>\n  <script>\n    window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};\n    plausible.init()\n  </script>\n",
+      "new": "",
+      "why": "Remove the Plausible analytics script and its stub: no third-party tracking, and the CSP would refuse the script anyway."
+    },
+    {
+      "file": "src/inventory/site/content.js",
+      "old": "process.env.SITE_URL ?? 'https://inventory.zone'",
+      "new": "process.env.SITE_URL ?? ''",
+      "why": "Do not build the public inventory.zone origin into canonical, Open Graph and sitemap metadata; this copy is not that site (upstream's own empty override)."
+    },
+    {
+      "file": "src/inventory/site/plugin.js",
+      "old": "    generateBundle() {\n      const css",
+      "new": "    generateBundle() {\n      // Homestead (S373): the public handbook site is not part of the appliance app.\n      return;\n      const css",
+      "why": "Do not emit the 50-odd static handbook and guide pages: they carry Plausible and the hosted SDK on every page, link to the root of the host, and are marketing for the public site."
+    },
+    {
+      "file": "src/inventory/vite.config.js",
+      "old": "        `<div id=\"landing-top\" class=\"landing\">${readFileSync(new URL('./src/views/landing.html', import.meta.url), 'utf8')}</div>`);",
+      "new": "        '');",
+      "why": "Do not pre-render the public landing page (promotional links to other sites and to /docs/ and /guides/) into index.html; the app builds the signed-out view itself, and behind Homestead sign-in is always present."
+    },
+    {
+      "file": "src/inventory/src/views/settings.js",
+      "old": "  root.append(el('section', {},\n    el('h2.section-title', {}, 'Help & resources'),\n    el('div.row', {},\n      el('a', { href: '/docs/', target: '_blank', rel: 'noopener' }, 'Documentation'),\n      el('a', { href: '/guides/', target: '_blank', rel: 'noopener' }, 'Practical guides')\n    )\n  ));\n\n",
+      "new": "",
+      "why": "Remove the Documentation and Guides links: they point at the host root (/docs/, /guides/), where no handbook is served."
+    },
+    {
+      "file": "src/inventory/src/views/settings.js",
+      "old": "          el('div.title', {}, username || 'Puter user'),\n          el('div.sub', {}, isPuterApp ? 'Signed in with Puter' : 'Signed in with Puter cloud storage')",
+      "new": "          el('div.title', {}, username || 'Homestead user'),\n          el('div.sub', {}, 'Signed in with Homestead')",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/inventory/src/views/settings.js",
+      "old": "    el('p.small.muted', { style: { margin: '18px 4px' } },\n      'Inventory stores everything in your own Puter account. Powered by ',\n      el('a', { href: 'https://developer.puter.com', target: '_blank', rel: 'noopener' }, 'Puter'), '.')",
+      "new": "    el('p.small.muted', { style: { margin: '18px 4px' } },\n      'Inventory stores everything on your own Homestead.')",
+      "why": "Remove the outbound link to developer.puter.com and the claim that data is in a Puter account."
+    },
+    {
+      "file": "src/inventory/src/lib/store.js",
+      "old": "    this.user = user;",
+      "new": "    this.user = null; // Homestead: the account is an opaque subject, never shown",
+      "why": "The bridge's user name is the opaque sign-in subject; keep it out of the sidebar and settings."
+    },
+    {
+      "file": "src/inventory/src/ui/shell.js",
+      "old": "store.user?.username || 'Puter user'",
+      "new": "store.user?.username || 'Homestead user'",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/inventory/src/ui/onboarding.js",
+      "old": "Stored in your own Puter account, never sold or shared.",
+      "new": "Stored on your own Homestead, never sold or shared.",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/inventory/src/ui/productform.js",
+      "old": "kept in your own Puter drive.",
+      "new": "kept on your own Homestead.",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/inventory/src/main.js",
+      "old": "talking to your Puter cloud.",
+      "new": "talking to your Homestead.",
+      "why": "Say Homestead, not Puter."
+    }
+  ],
+  "sdk_surface": {
+    "supported": [
+      "kv.get",
+      "kv.set",
+      "kv.del",
+      "kv.list",
+      "fs.write",
+      "fs.read",
+      "fs.delete",
+      "auth.isSignedIn",
+      "auth.getUser",
+      "auth.signIn",
+      "auth.signOut",
+      "env"
+    ],
+    "refused": [
+      "fs.getReadURL",
+      "kv.share",
+      "kv.unshare",
+      "kv.listShared",
+      "kv.listSharedByMe",
+      "perms.*",
+      "events.*",
+      "appID"
+    ],
+    "absent": [],
+    "disabled": {
+      "ai": "no AI backend",
+      "net": "no network bridge (S381 only)",
+      "sharing": "needs an exposure plan"
+    }
+  }
+}

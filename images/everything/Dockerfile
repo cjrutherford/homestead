@@ -41,7 +41,7 @@ RUN cd "/work/$(cat /work/.subtree)" && npm ci --ignore-scripts --no-audit --no-
 RUN set -eu; \
     d="/work/$(cat /work/.subtree)/dist"; \
     test -f "${d}/index.html"; \
-    if grep -rIl 'js\.puter\.com' "${d}"; then echo "hosted Puter SDK reference in build" >&2; exit 1; fi; \
+    if grep -rIlE 'js\.puter\.com|plausible\.io' "${d}"; then echo "hosted Puter SDK or analytics reference in build" >&2; exit 1; fi; \
     mkdir -p /out/srv && cp -a "${d}" /out/srv/app
 
 FROM ${GOLANG} AS bridge

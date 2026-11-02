@@ -1674,3 +1674,12 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S372: the sign-in gate and service-mode panel in `main.js` still point at an absolute `/icon.svg`; neither is reachable under the bridge.
 - S372: a large address book (a few thousand contacts) loads in one page-by-page read but the app re-reads all of it on each load; no paging in the UI, and save while offline is not queued (the app shows an error).
 - S372: the account menu shows no identity because the bridge's user name is the opaque sign-in subject; a friendlier name needs the OIDC email passed through `whoami`.
+- S373: the upstream Inventory tests (722/722, 34 files) run against the pristine tree with a mock; they were not run against the real bridge and a changed pin must re-run them by hand.
+- S373: not run on VM 2 or through Authentik; the review plan S373 section is the owner checklist.
+- S373: barcode scanning with the camera (`getUserMedia`) was not exercised: headless Chrome has no camera. It needs HTTPS, which the appliance serves, and no Permissions-Policy blocks it; a hand check is in the review plan.
+- S373: the app keeps its own browser-side mirror (IndexedDB `inv-offline`) of the person's inventory and a write queue, so a signed-in person's data stays in that browser until a different person signs in there (the app then wipes it). Sign-out is hidden (`env` is `app`) so it never runs the app's own wipe; a Homestead sign-out that clears it is a later slice.
+- S373: with the Homestead service worker an offline page load shows the offline page, not the app shell, so the app's offline-first start (open the installed app with no connection) does not work; already-open tabs still queue writes.
+- S373: the whole inventory is a few large KV values (`inv:products:v2`, activity and so on, 8 MiB each at most) rewritten on change; a very large inventory could hit the value limit.
+- S373: the unreachable landing page and some error strings in the built JS still say Puter and link to other sites (promotional links, not scripts); the visible onboarding, settings and product form strings are patched.
+- S373: the public handbook and guides (about 50 pages upstream) are not shipped; a local help page would be a later slice.
+- S373: key-only `kv.list` still stops at 1000 entries; the app lists by prefix without values only for small prefixes.
