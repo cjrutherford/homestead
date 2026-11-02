@@ -106,7 +106,7 @@ designcraft cadcraft"`. Run on VM 2 as root unless noted.
 5. Headers, through the edge with the S280 root, no `-k`, no `--resolve`
    (the host name must resolve, so run after step 7):
    `scripts/craft-header-check.sh https://homestead.lan/apps/<app>/ --cacert <ca.pem>`
-   with `--unhashed` for lightcraft and effectcraft; exit 0 for all 13.
+   with `--unhashed` for lightcraft, effectcraft and filmcraft; exit 0 for all 13.
    Compare each result with the row in `docs/architecture/CRAFT_HEADER_TABLE.md`.
 6. Start page: `homesteadctl craft apps` lists all 13 with
    `https://homestead.lan/apps/<app>/`; open `/craft-apps` in a browser on
@@ -148,3 +148,43 @@ Needs the owner: a second physical LAN device (or a bridged VM) for the
 `.local` proof; a router conditional forward for `lan`, or one client
 pointed at the appliance, for the `.lan` proof beyond `dig @$A`; approval of
 the resolver plan.
+
+## Live results (VM 2, 2026-11-02)
+Commit 0252f17 deployed. Run by an agent over SSH; the resolver was already
+on at the start (plan: "nothing changes"), so no resolver plan was applied.
+The root CA was exported with `homesteadctl tls root export`.
+
+| App | Build (counter 8) | Digest = `craft status` | Installed, healthy | user/mounts/diff | Headers | Served at `/apps/<app>/` |
+| --- | --- | --- | --- | --- | --- | --- |
+| wordcraft, gridcraft, deckcraft | pre-existing, verified only | match | healthy | nginx, only `/tmp` tmpfs, diff empty | PASS | yes |
+| pdfcraft, vectorcraft, photocraft, figcraft, soundcraft, designcraft, cadcraft | ok | match | healthy | ok | PASS | yes |
+| lightcraft, effectcraft | ok | match | healthy | ok | PASS with `--unhashed` | yes |
+| filmcraft | ok | match | healthy | ok | PASS only with `--unhashed` | yes |
+
+- A second build of the ten non-installed apps left all 13 image IDs
+  identical. Five of those images were already cached from earlier runs, so
+  the builds were fast; the identity check still holds.
+- Runbook correction: filmcraft also needs `--unhashed` (its table row says
+  unhashed names with `?v=`). Without it the check fails with
+  `FAIL filmcraft_web_bg.wasm is not immutable (hashed wasm must be)`.
+  effectcraft without `--unhashed` fails likewise, as expected.
+- Header checks used `--resolve homestead.lan:443:<A>` because the VM host
+  does not use the appliance resolver (`getent hosts homestead.lan` is empty),
+  so the no-`--resolve` form was not exercised.
+- `homesteadctl craft apps` lists all 13 with `https://homestead.lan/apps/<app>/`.
+  The browser `/craft-apps` page check is owner-pending.
+- Resolver, `dig @10.187.0.2` (dnsutils installed on the VM): `homestead.lan`
+  returns 10.187.0.2, `nosuch.lan` NXDOMAIN, `example.com` REFUSED; identical
+  after `systemctl restart homestead-server`. Craft apps add no extra names
+  (the names list still shows the path routes only).
+- Lifecycle on soundcraft: uninstall left the image and removed the
+  container, reinstall converged to healthy with the route intact (header
+  check PASS).
+- Doctor: no craft findings; two pre-existing warns (release-trust placeholder
+  key, navidrome data placement). `drift review` for soundcraft, pdfcraft and
+  cadcraft: no drift. A craft install also ran its approved "link to Nextcloud
+  for files" step for pdfcraft, filmcraft, effectcraft and cadcraft.
+- Skipped: throwaway-key/bumped-version update (trust changes).
+- Owner-pending: mDNS (`avahi-resolve`) from a second L2 device, router
+  conditional forward for `lan`, `/craft-apps` in a browser, public-leak check
+  with a public route.
