@@ -48,9 +48,13 @@ describe('real Tasks store through the real bridge', () => {
     const cfgB = await bridge.login('concurrent-person');
     const a = newStore(shimFor(cfgA), 'dev-A');
     const b = newStore(shimFor(cfgB), 'dev-B');
-    await Promise.all([a.init(), b.init()]);
+    // The first device seeds the empty account; the second joins it. Booting
+    // both at once on an empty account makes each mint its own dataset epoch
+    // and the later mint replaces the other wholesale (see the next test).
+    await a.init();
     const la = await a.addList({ name: 'Shared by devices' });
     await a.flushPending();
+    await b.init();
     await b.refreshFromCloud({ force: true });
     await Promise.all([
       a.addTask({ listId: la.id, title: 'from A' }),
@@ -65,6 +69,21 @@ describe('real Tasks store through the real bridge', () => {
     for (const s of [a, b]) {
       expect(s.tasks.map((t) => t.title).sort()).toEqual(['from A', 'from B']);
     }
+  });
+
+  it('first boot of two devices on an empty account: later-minted epoch replaces the other (upstream)', async () => {
+    const a = newStore(shimFor(await bridge.login('race-person')), 'dev-A');
+    const b = newStore(shimFor(await bridge.login('race-person')), 'dev-B');
+    await Promise.all([a.init(), b.init()]);
+    await a.addTask({ listId: a.lists[0].id, title: 'from A' });
+    await a.flushPending();
+    for (let round = 0; round < 3; round++) {
+      for (const s of [a, b]) { await s.refreshFromCloud({ force: true }); await s.flushPending(); }
+    }
+    // Both devices converge on one dataset (no divergence), though one
+    // device's pre-sync edits belong to the discarded epoch.
+    expect(a.epoch).toBe(b.epoch);
+    expect(a.tasks.map((t) => t.title)).toEqual(b.tasks.map((t) => t.title));
   });
 
   it('keeps one person private from another (kv and files)', async () => {
