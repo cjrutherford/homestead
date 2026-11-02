@@ -1653,3 +1653,8 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S369: cloud-drive picking, sharing and calendar feeds are not offered (no `ui`, `fs.getReadURL`, sharing); a later slice may add them with an exposure plan.
 - S369: the 8 MiB per-attachment limit is the app's own; the bridge enforces only the per-person and per-app quotas.
 - S369: `modified` is the bridge write time in Unix ms, strictly increasing per rewrite; restoring a backup does not preserve upstream timestamps.
+- S370: the upstream Records tests were not run against the real bridge; the real-browser check and Go/gate tests cover the bridge path only.
+- S370: not run on VM 2 or through Authentik; the review plan S370 section is the owner checklist.
+- S370: Records has no service worker (upstream has none), so the page cannot be reopened offline; a later slice may add a runtime worker as for Projects.
+- S370: the app runs with `env` set to `app`, so it shows no sign-out button; sign-out is the Homestead sign-out route until a small patch adds a menu entry.
+- S370: attachments over 8 MiB fail with a generic "Could not upload the file" message; only the per-person and per-app quotas map to the storage-full wording.

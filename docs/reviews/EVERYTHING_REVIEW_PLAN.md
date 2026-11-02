@@ -47,6 +47,26 @@ Steps and expected results:
 
 Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10
 
+## S370 — Records catalog package
+Prerequisites: VM 2 on the build with S370; Authentik sign-in set up; a second
+person exists in People.
+
+Steps and expected results:
+1. Build `records` in the craft page or CLI. Expected: image `homestead/everything-records:0.1.0` recorded.
+2. Install Records with a plan, preview and apply. Expected: route `/apps/records/`, no public exposure.
+3. Apply sign-in. Expected: `https://homestead.lan/apps/records/` redirects to Authentik; the owner sees the Records home. No request to js.puter.com.
+4. Create a base, add a table with a few field types (text, number, single select, link) and several records; reload. Expected: all remain.
+5. Switch the table between grid, board, calendar, gallery and form views; add a filter and a sort; reload. Expected: views and settings remain.
+6. Attach a small file to a record; reload and download it. Expected: it opens. A file over 8 MiB gives an error and existing data is intact.
+7. Import a CSV as a new base and export one. Expected: both work.
+8. Open the base in a second tab, edit in both. Expected: a conflict message, no silent loss.
+9. Second person: closed by default, then granted in People. Expected: an empty Records account.
+10. Go Offline in DevTools, edit, go Online. Expected: edits save. Reloading while offline shows the browser error page (there is no offline page).
+11. Delete a base to the trash and purge it. Expected: gone, and its files are removed.
+12. No Share-to-people feature appears; DevTools Console shows no CSP violation. Backup contains `data/bridge.db`; uninstall removes route and container.
+
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10 [ ] 11 [ ] 12
+
 ## Template for a new app section
 ## SNNN — <App>
 Prerequisites: ...

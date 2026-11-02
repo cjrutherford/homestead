@@ -1090,3 +1090,20 @@ tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 137 entries). SHA-2
 `368795cb9e68e8e8fb70095459b2586b409c3a816bf5fb6cba1031881748b981`, recorded in
 `third_party/everything/pin.yaml`. Licence: MIT (see the `LICENSE` file inside the
 archive). The source is unmodified; only `npm ci --ignore-scripts` and the build run.
+
+## Records source (S370, ADR-057)
+`third_party/everything/records-source.tar.gz` is the `src/records` subtree plus
+the root `LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU
+tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 95 entries). SHA-256
+`8ed5aa77f9264b341ec8bf0e07b41ca053f7eb3ba4edd224cc6f1472c3c26aa2`, recorded in
+`third_party/everything/pin.yaml`. Licence: MIT (the root `LICENSE` inside the
+archive; `src/records` has no licence file of its own and its `package.json`
+declares MIT). It is not AGPL or copyleft. The only runtime dependency is
+`lucide` 1.55.0 (ISC, bundled icons); the dev dependencies (vite, vitest, jsdom,
+fake-indexeddb, axe-core) are build and test only. Upstream's own
+`tools/check-licenses.mjs` runs as the `prebuild` step and fails the build on any
+package outside its approved permissive list (73 packages passed). The source is
+changed only by three user-facing wording patches listed in
+`scripts/everything/apps/records.json`; only `npm ci --ignore-scripts` and the
+build run.

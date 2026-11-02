@@ -63,6 +63,7 @@ func TestCuratedSSO(t *testing.T) {
 		"wordcraft":             {Class: SSOUnsupported},
 		"tasks":                 {Class: SSORecommended, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"projects":              {Class: SSORecommended, Protocols: []identity.Capability{identity.CapabilityOIDC}},
+		"records":               {Class: SSORecommended, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"gridcraft":             {Class: SSOUnsupported},
 		"pdfcraft":              {Class: SSOUnsupported},
 		"deckcraft":             {Class: SSOUnsupported},

@@ -48,13 +48,16 @@ def prepare_app(definition: dict, archive_path: Path, bridge_path: Path, output:
         raise ValueError('bridge is empty or too large')
     if output.exists():
         raise ValueError('output already exists')
-    worker = (HERE / d['service_worker']['template']).read_bytes()
+    # "service_worker": null (Records, S370): upstream ships and registers no
+    # worker, so none is added; the app is online-only after first load.
+    sw = d['service_worker']
+    worker = (HERE / sw['template']).read_bytes() if sw else b''
     # mode "build" (Tasks): the upstream build fills in __VERSION__ and
     # __ASSETS__. mode "runtime" (Projects): upstream has no such step, so the
     # worker only has __VERSION__, filled in here from the pinned digest, and
     # caches content-hashed assets as they are fetched.
-    mode = d['service_worker'].get('mode', 'build')
-    if mode not in ('build', 'runtime') or b'__VERSION__' not in worker or (b'__ASSETS__' in worker) != (mode == 'build'):
+    mode = sw.get('mode', 'build') if sw else 'none'
+    if sw and (mode not in ('build', 'runtime') or b'__VERSION__' not in worker or (b'__ASSETS__' in worker) != (mode == 'build')):
         raise ValueError('invalid local service worker template')
     if mode == 'runtime':
         worker = worker.replace(b'__VERSION__', (expected_sha256 or d['sha256'])[:12].encode())
@@ -95,7 +98,7 @@ def prepare_app(definition: dict, archive_path: Path, bridge_path: Path, output:
             content = archive.extractfile(member).read()
             if member.name == d['index']:
                 content = content.replace(sdk_tag, local_tag)
-            if member.name == d['service_worker']['target']:
+            if sw and member.name == sw['target']:
                 content = worker
             for old, new in patches.get(member.name, []):
                 content = content.replace(old, new)
