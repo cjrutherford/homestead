@@ -51,10 +51,16 @@ func NewHandler(store *Store, identity Identity, origins []string) (http.Handler
 }
 
 type request struct {
-	Operation string `json:"operation"`
-	Kind      string `json:"kind"`
-	Key       string `json:"key"`
-	Value     []byte `json:"value"`
+	Operation string       `json:"operation"`
+	Kind      string       `json:"kind"`
+	Key       string       `json:"key"`
+	Value     []byte       `json:"value"`
+	Entries   []batchEntry `json:"entries"`
+}
+
+type batchEntry struct {
+	Key   string `json:"key"`
+	Value []byte `json:"value"`
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -100,6 +106,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
+	if body.Operation == "whoami" {
+		// The caller's own verified identity; the client never supplies it.
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"app": scope.App, "subject": scope.Subject})
+		return
+	}
 	var kind Kind
 	switch body.Kind {
 	case "kv":
@@ -114,6 +126,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch body.Operation {
 	case "put":
 		err = h.store.Put(r.Context(), scope, kind, body.Key, body.Value)
+		if err == nil {
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
+	case "putbatch":
+		entries := make([]Entry, len(body.Entries))
+		for i, e := range body.Entries {
+			entries[i] = Entry{Key: e.Key, Value: e.Value}
+		}
+		err = h.store.PutBatch(r.Context(), scope, kind, entries)
 		if err == nil {
 			_, _ = w.Write([]byte(`{"ok":true}`))
 			return

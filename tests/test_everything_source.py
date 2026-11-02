@@ -79,6 +79,24 @@ class EverythingSourceTest(unittest.TestCase):
             # Preserve upstream bytes; S367 still needs to replace this with a local bridge.
             self.assertEqual(index.count(b'https://js.puter.com/v2/'), 1)
 
+    def test_bridge_shim_and_gate_are_local_only_and_dev_identity_is_tag_gated(self):
+        shim = (ROOT / 'scripts/everything/puter-bridge.js').read_text()
+        self.assertNotIn('puter.com', shim)
+        self.assertNotRegex(shim, r'https?://')
+        # Sharing capabilities are absent, and signed URLs are refused.
+        self.assertIn("bridge_unsupported", shim)
+        for name in ('share', 'perms', 'events', 'appID'):
+            self.assertNotRegex(shim, r'\b%s\s*:' % name)
+        for rel in ('scripts/everything/gate/run_gate.sh', 'scripts/everything/gate/bridge-gate.test.js',
+                    'scripts/everything/gate/mock-puter-bridge.js'):
+            self.assertTrue((ROOT / rel).is_file(), rel)
+        dev = (ROOT / 'internal/everything/devauth.go').read_text()
+        self.assertTrue(dev.startswith('//go:build everythingdev'))
+        cmd = ROOT / 'cmd/everything-bridge'
+        self.assertTrue((cmd / 'identity_dev.go').read_text().startswith('//go:build everythingdev'))
+        self.assertTrue((cmd / 'identity_prod.go').read_text().startswith('//go:build !everythingdev'))
+        self.assertNotIn('InsecureDev', (cmd / 'identity_prod.go').read_text())
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1631,3 +1631,6 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S366 Live check on VM 2 pending: install, default-admin refusal, sign-in apply/off, roles, discovery over the appliance CA, backup dump (commands in the slice file). The sign-in warnings assume the redirect URI list has the same origins pattern as other env-OIDC apps; confirm in the browser.
 - S366 The seeded administrator keeps a generated password nobody sees unless revealed; no Homestead-run reset. BookStack mail, LDAP/SAML, per-shelf permissions and a person-to-existing-account link are not built (an existing account with the same email blocks that person's sign-in).
 - S366 The `docker exec` one-liner for the database check in the slice file reads the password from the mounted file; a CLI database shell is not built.
+- S367: the Tasks UI still shows sharing and the calendar-feed publish button on the Everything bridge, where they fail with a bridge error; hiding them (a patch to the pinned source) needs an owner decision.
+- S367: real Authentik verification and the CSRF token source for `cmd/everything-bridge` are unbuilt; ADR-053 needs to pick forward-auth header or OIDC first.
+- S367: the bridge store is last-write-wins per key with no compare-and-set; Tasks heals concurrent edits by record-level merge, but a stricter revision check could be added later.

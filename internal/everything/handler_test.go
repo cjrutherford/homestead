@@ -136,3 +136,36 @@ func TestBridgeRejectsInvalidConfigurationAndRequests(t *testing.T) {
 		}
 	}
 }
+
+func TestWhoamiAndAtomicBatch(t *testing.T) {
+	store, err := OpenStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	h, err := NewHandler(store, fakeIdentity{scope: Scope{App: "tasks", Subject: "alice"}, csrf: true}, []string{"https://home.example"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("POST", "https://home.example/bridge", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", "https://home.example")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := post(`{"operation":"whoami"}`); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"subject":"alice"`) {
+		t.Fatalf("whoami: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := post(`{"operation":"putbatch","kind":"kv","entries":[{"key":"a","value":"AQ=="},{"key":"b","value":"Ag=="}]}`); rec.Code != 200 {
+		t.Fatalf("batch: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := post(`{"operation":"list","kind":"kv","key":""}`); !strings.Contains(rec.Body.String(), `["a","b"]`) {
+		t.Fatalf("list: %s", rec.Body.String())
+	}
+	// A duplicate key rejects the whole batch.
+	if rec := post(`{"operation":"putbatch","kind":"kv","entries":[{"key":"c","value":"AQ=="},{"key":"c","value":"Ag=="}]}`); rec.Code != 400 {
+		t.Fatalf("dup batch: %d", rec.Code)
+	}
+}
