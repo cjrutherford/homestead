@@ -191,6 +191,8 @@ dependencies, the critical path and the recommended interleave.
 
 S383 separates curated container listening ports from actual host-port requirements (`docs/slices/S383-catalog-container-port-requirements.md`).
 
+S367 bridge planning and upstream baseline are in `docs/slices/S367-everything-bridge-and-build.md`; ADR-053 sets the constraints and the bridge and applications are not implemented.
+
 S384 adds a sealed Audiobookshelf first-run recovery administrator (`docs/slices/S384-audiobookshelf-first-run.md`); S385 will add its Authentik adapter.
 
 S386 schedules local-address setup for normal CLI installs (`docs/slices/S386-cli-install-address-setup.md`).

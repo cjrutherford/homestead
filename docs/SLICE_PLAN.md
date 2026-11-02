@@ -113,20 +113,20 @@ integration metadata (S341) and reuses the craft static-image shape
 
 | ID | Slice | Depends on | Scope |
 |----|-------|-----------|-------|
-| S367 | Puter bridge and app build pipeline | S279,S341 | `vendor/everything/pin.yaml`; per-app patch that swaps the CDN script and adds a fail-closed CSP; `bridge/` implementing `auth`, `env`, `fs`, `kv`, `ui`, `perms`, `exit`; multi-stage image that builds the pinned commit and serves it; upstream test suite run against the bridge; a new ADR must decide the model (pin + patch + bridge, no fork, no vendored SDK) before implementation. |
+| S367 | Puter bridge and app build pipeline | S279,S341 | `third_party/everything/pin.yaml`; per-app patch that swaps the CDN script and adds a fail-closed CSP; `bridge/` implementing `auth`, `env`, `fs`, `kv`, `ui`, `perms`, `exit`; multi-stage image that builds the pinned commit and serves it; upstream behavior run against the actual bridge; ADR-053 constrains the model (pin + patch + bridge, no fork, no vendored SDK) before implementation. |
 
 S367 is the riskiest slice in the plan. If the bridge cannot pass
-upstream's own tests for `tasks`, Track B stops at S367 and nothing after
-it is scheduled. Treat S367 as a spike with a hard exit criterion.
+the Tasks behavioral gate against the actual bridge, Track B stops at S367 and
+nothing after it is scheduled. The upstream mock suite alone is not the gate. Treat S367 as a spike with a hard exit criterion.
 
-### 3.2 Apps that ship clean
+### 3.2 Planned candidates
 
-Order is by bridge surface exercised, not by appeal: `tasks` is the pilot
-because it needs one file write.
+Tasks is the pilot; its current storage, synchronization and sharing surface
+must be re-evaluated against the bridge before the later candidates ship.
 
 | ID | App | Also needs | Why here |
 |----|-----|-----------|----------|
-| S368 | `tasks` | — | Pilot. 1 fs, 3 auth. Proves the pipeline end to end. |
+| S368 | `tasks` | — | Pilot. Current Tasks uses authentication, KV, files, offline sync and sharing; proves the pipeline end to end. |
 | S369 | `projects` | — | 24 fs, 4 ui, 2 kv. First real `fs` consumer. |
 | S370 | `records` | — | Tables and forms; the Airtable gap. |
 | S371 | `notes` | — | AGPL. AI assist disabled behind a clear message. |
@@ -214,7 +214,7 @@ Every package slice (S345-S351, S353-S366, S368-S381) closes only when:
 | ADR-051 | S341 | Catalog integration metadata is advisory, not actuation. |
 | ADR-052 | S342 | Secret delivery may export a 0600 file into the app environment at start, under supervision. Amends ADR-021. |
 | ADR-056 | S360 | Community image trust: accepted publishers, multi-arch, pinned tags, provenance. |
-| Pending | S367 | Decide whether Everything apps use a pinned upstream commit with a Homestead bridge; no fork or vendored SDK is proposed. ADR-036 is already the setup-wizard decision. |
+| ADR-053 | S367 | Independent bridge and customer-owned per-person app data; no fork or hosted SDK. ADR-036 is the setup-wizard decision. |
 
 ## 7. Unscheduled — no ID
 

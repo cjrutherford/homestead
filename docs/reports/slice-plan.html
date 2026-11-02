@@ -303,14 +303,14 @@
         <tr class="grp" data-phase="bridge"><td colspan="4">Bridge and build pipeline</td></tr>
         <tr data-phase="bridge">
           <td class="id">S367</td>
-          <td class="title">Puter bridge and app build pipeline<em>pin · patch · bridge · upstream tests · ADR-036</em></td>
+          <td class="title">Puter bridge and app build pipeline<em>pin · patch · bridge · actual bridge tests · ADR-053</em></td>
           <td class="dep">S279, S341</td>
           <td class="gate"><span class="pill spike">spike exit</span></td>
         </tr>
 
-        <tr class="grp" data-phase="apps"><td colspan="4">Apps that ship clean</td></tr>
-        <tr data-phase="apps"><td class="id">S368</td><td class="title">tasks<em>pilot — 1 fs, 3 auth</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
-        <tr data-phase="apps"><td class="id">S369</td><td class="title">projects<em>first real fs consumer</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
+        <tr class="grp" data-phase="apps"><td colspan="4">Planned candidates (bridge gate pending)</td></tr>
+        <tr data-phase="apps"><td class="id">S368</td><td class="title">tasks<em>pilot — auth, KV, files, offline sync and sharing</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
+        <tr data-phase="apps"><td class="id">S369</td><td class="title">projects<em>projects and file storage</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
         <tr data-phase="apps"><td class="id">S370</td><td class="title">records<em>tables and forms</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
         <tr data-phase="apps"><td class="id">S371</td><td class="title">notes<em>AGPL · AI assist disabled</em></td><td class="dep">S367</td><td class="gate">AGPL</td></tr>
         <tr data-phase="apps"><td class="id">S372</td><td class="title">contacts<em>kv and ui heavy</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
@@ -395,7 +395,7 @@
       <div class="n">ADR-051</div><div class="s">S341</div><div class="d">Catalog integration metadata is advisory, not actuation.</div>
       <div class="n">ADR-052</div><div class="s">S342</div><div class="d">Secret delivery may export a 0600 file into the app environment at start, under supervision. Amends ADR-021.</div>
       <div class="n">ADR-035</div><div class="s">S360</div><div class="d">Community image trust: accepted publishers, multi-arch, pinned tags, provenance.</div>
-      <div class="n">ADR-036</div><div class="s">S367</div><div class="d">Everything apps are vendored at a pinned commit with a Homestead bridge; no fork, no vendored SDK.</div>
+      <div class="n">ADR-053</div><div class="s">S367</div><div class="d">Everything apps are vendored at a pinned commit with a Homestead bridge; no fork, no vendored SDK.</div>
     </div>
   </section>
 

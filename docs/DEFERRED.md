@@ -1394,7 +1394,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
   storage, have no per-app Docker packaging, and overlap the existing craft
   suite. Revisit only with an ADR for a second static-app source, a fork or
   adapter that removes the Puter cloud dependency, or a self-hosted Puter
-  platform decision. S367 proposes the adapter and requires a new ADR first.
+  platform decision. S367 proposes the adapter in ADR-053; the person-scoped storage and authorization contract, daemon-independent operation and bridge-specific tests remain unproven.
 - Not planned for v1: mail servers (deliverability and port-25/abuse
   burden), Matrix/chat servers (federation and identity duplication),
   Home Assistant (needs host networking or device passthrough), object

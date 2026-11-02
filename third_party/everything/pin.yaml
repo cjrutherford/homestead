@@ -1,0 +1,10 @@
+# S367 pilot source. This is not yet a catalog package.
+repository: https://github.com/HeyPuter/everything
+commit: e7d07c48546ef0650a8f3ab94ae82b8b50d3646a
+app: tasks
+license: MIT
+archive: tasks-source.tar.gz
+sha256: 864f60484a1aa759427fec5d308a2215200fa5873d7579bb73594850b8f5db2e
+# The archive contains the tracked src/tasks tree, the root LICENSE, and
+# dev/puter-localhost.mjs (required by the upstream Vite config). It does
+# not contain npm dependencies or generated build output.
