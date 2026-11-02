@@ -147,6 +147,26 @@ Steps and expected results:
 
 Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10 [ ] 11 [ ] 12
 
+## S375 — Circuits catalog package
+Prerequisites: VM 2 on the build with S375; Authentik sign-in set up; a second
+person exists in People.
+
+Steps and expected results:
+1. Build `circuits` in the craft page or CLI. Expected: image `homestead/everything-circuits:0.1.0` recorded.
+2. Install Circuits with a plan, preview and apply. Expected: route `/apps/circuits/`, no public exposure.
+3. Apply sign-in. Expected: `https://homestead.lan/apps/circuits/` redirects to Authentik; the start page says nothing about Puter and has no link to another site. No request to js.puter.com or any other host.
+4. Choose "Open the example", then Save. Expected: the title shows the project saved; Open project lists it.
+5. Open the account menu. Expected: "Homestead user" (not your user id), Preferences, no Sign out; the File menu has no Share.
+6. In the board, run Design rule check and add a copper pour (Repour). Expected: a result list appears, no console error; DevTools Console shows no CSP violation.
+7. Rename the project from the project panel. Expected: the new name shows in Open project and the old one is gone.
+8. Reload. Expected: the project reopens from Open project; the autosaved edit remains. File > Version history lists versions and restores one.
+9. Draw a part into a schematic, update the board from the schematic, route a track, export Gerber and open the 3D view. Expected: all work.
+10. Open a KiCad schematic or board file. Expected: it imports.
+11. Second person: closed by default, then granted in People. Expected: an empty Open project list, none of the first person's projects. (Known: the recent-projects names in the same browser, see DEFERRED.)
+12. Backup contains `data/bridge.db`; uninstall removes route and container.
+
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10 [ ] 11 [ ] 12
+
 ## Template for a new app section
 ## SNNN — <App>
 Prerequisites: ...

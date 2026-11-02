@@ -86,3 +86,18 @@ app: time-tracking
 license: MIT
 archive: time-tracking-source.tar.gz
 sha256: fcb03e792bc2ca41c53f4a7d31c8838d71e66c03d1ccd570f5553c69d620c161
+---
+# Pinned source for the circuits package (S375). Same upstream repository and
+# commit as above; archive built the same way (tracked files of src/circuits,
+# LICENSE, dev/puter-localhost.mjs; GNU tar, sorted, mode 0664, owner 0, mtime
+# 0, gzip -n; the recipe was first re-run on src/inventory and src/time-tracking
+# and reproduced both digests). Licence: MIT, from the repository root licence;
+# src/circuits has no licence file of its own and its package.json has no
+# licence field. The archive carries the Rust source of the geometry kernel
+# (MIT, its Cargo.toml) and the prebuilt kernel.wasm built from it.
+repository: https://github.com/HeyPuter/everything
+commit: e7d07c48546ef0650a8f3ab94ae82b8b50d3646a
+app: circuits
+license: MIT
+archive: circuits-source.tar.gz
+sha256: a26240e8f85292e33b7b6980503edfa93b7652e47a4110e0a79e25d4dec4f685

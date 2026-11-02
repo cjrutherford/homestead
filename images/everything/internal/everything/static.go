@@ -6,8 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -58,7 +60,13 @@ var scriptSrcAttr = regexp.MustCompile(`(?i)\ssrc\s*=`)
 // network access only back to the bridge. Styles may be inline because the
 // app sets element styles from script. Computed from the page being served,
 // so a changed inline script is refused until the build is reviewed again.
-func ContentSecurityPolicy(index []byte) string {
+func ContentSecurityPolicy(index []byte) string { return contentSecurityPolicy(index, false) }
+
+// contentSecurityPolicy adds 'wasm-unsafe-eval' when wasm is true (S375): an
+// app whose build ships a WebAssembly module (Circuits' geometry kernel) must
+// be allowed to compile it. That keyword permits WebAssembly compilation only;
+// JavaScript eval stays refused, and apps without a .wasm file are unchanged.
+func contentSecurityPolicy(index []byte, wasm bool) string {
 	scripts := "'self'"
 	for _, m := range inlineScript.FindAllSubmatch(index, -1) {
 		if scriptSrcAttr.Match(m[1]) {
@@ -66,6 +74,9 @@ func ContentSecurityPolicy(index []byte) string {
 		}
 		sum := sha256.Sum256(m[2])
 		scripts += " 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+	}
+	if wasm {
+		scripts += " 'wasm-unsafe-eval'"
 	}
 	return "default-src 'none'; script-src " + scripts + "; style-src 'self' 'unsafe-inline'; " +
 		"img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: data:; " +
@@ -77,14 +88,28 @@ func ContentSecurityPolicy(index []byte) string {
 // hash in the file name makes the URL immutable, so it may be cached long.
 var hashedAsset = regexp.MustCompile(`^/assets/[^/]+-[A-Za-z0-9_]{8,}\.[A-Za-z0-9]+$`)
 
+// hasWasm reports whether the built app ships any WebAssembly module.
+func hasWasm(dir string) bool {
+	found := false
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(strings.ToLower(d.Name()), ".wasm") {
+			found = true
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return found
+}
+
 type appServer struct {
+	wasm      bool
 	base, dir string
 	src       SessionSource
 	files     http.Handler
 }
 
 func registerApp(mux *http.ServeMux, base, dir string, src SessionSource) {
-	a := &appServer{base: base, dir: dir, src: src}
+	a := &appServer{base: base, dir: dir, src: src, wasm: hasWasm(dir)}
 	a.files = http.FileServer(noListingFS{http.Dir(dir)})
 	if base != "" {
 		a.files = http.StripPrefix(base, a.files)
@@ -94,7 +119,7 @@ func registerApp(mux *http.ServeMux, base, dir string, src SessionSource) {
 
 func (a *appServer) serve(w http.ResponseWriter, r *http.Request) {
 	p := strings.TrimPrefix(r.URL.Path, a.base)
-	w.Header().Set("Content-Security-Policy", ContentSecurityPolicy(nil))
+	w.Header().Set("Content-Security-Policy", contentSecurityPolicy(nil, a.wasm))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	switch {
 	case p == "/" || p == "/index.html":
@@ -132,7 +157,7 @@ func (a *appServer) index(w http.ResponseWriter, r *http.Request) {
 	meta := `<meta name="homestead-csrf" content="` + csrf + `">`
 	out := append(append(append([]byte{}, page[:loc[1]]...), meta...), page[loc[1]:]...)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Security-Policy", ContentSecurityPolicy(page))
+	w.Header().Set("Content-Security-Policy", contentSecurityPolicy(page, a.wasm))
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	_, _ = io.Copy(w, bytes.NewReader(out))

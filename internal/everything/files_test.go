@@ -260,3 +260,116 @@ func TestHandlerFileOperations(t *testing.T) {
 		t.Fatalf("after tree delete %d", rec.Code)
 	}
 }
+
+// S375: Circuits renames a project file in place.
+func TestRenameMovesOneFileInItsFolderAndNeverReplaces(t *testing.T) {
+	store := openTest(t)
+	ctx := context.Background()
+	alice := Scope{App: "circuits", Subject: "alice"}
+	bob := Scope{App: "circuits", Subject: "bob"}
+	other := Scope{App: "tasks", Subject: "alice"}
+	for _, p := range []struct {
+		s Scope
+		k string
+		v string
+	}{{alice, "Circuits/a.circuits", "one"}, {alice, "Circuits/b.circuits", "two"}, {bob, "Circuits/a.circuits", "bobs"}, {other, "Circuits/a.circuits", "other"}} {
+		if err := store.Put(ctx, p.s, KindFile, p.k, []byte(p.v)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before, _ := store.Stat(ctx, alice, "Circuits/a.circuits")
+	if err := store.Rename(ctx, alice, "Circuits/a.circuits", "Circuits/c.circuits"); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := store.Get(ctx, alice, KindFile, "Circuits/c.circuits"); err != nil || string(v) != "one" {
+		t.Fatalf("renamed value %q %v", v, err)
+	}
+	if _, err := store.Get(ctx, alice, KindFile, "Circuits/a.circuits"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("old name remains: %v", err)
+	}
+	if after, _ := store.Stat(ctx, alice, "Circuits/c.circuits"); after.Modified <= before.Modified {
+		t.Fatal("rename keeps the old stamp")
+	}
+	// Another person's and another app's same-named files are untouched.
+	if v, _ := store.Get(ctx, bob, KindFile, "Circuits/a.circuits"); string(v) != "bobs" {
+		t.Fatal("rename reached another person")
+	}
+	if v, _ := store.Get(ctx, other, KindFile, "Circuits/a.circuits"); string(v) != "other" {
+		t.Fatal("rename reached another app")
+	}
+	if err := store.Rename(ctx, alice, "Circuits/c.circuits", "Circuits/b.circuits"); !errors.Is(err, ErrExists) {
+		t.Fatalf("replace: %v", err)
+	}
+	if v, _ := store.Get(ctx, alice, KindFile, "Circuits/b.circuits"); string(v) != "two" {
+		t.Fatal("rename replaced a file")
+	}
+	if err := store.Rename(ctx, bob, "Circuits/c.circuits", "Circuits/d.circuits"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-person: %v", err)
+	}
+	for _, to := range []string{"Other/c.circuits", "../x", "/etc/x", "Circuits/c.circuits", "Circuits/sub/x", "a\\b"} {
+		if err := store.Rename(ctx, alice, "Circuits/c.circuits", to); !errors.Is(err, ErrInvalid) {
+			t.Errorf("rename to %q: %v", to, err)
+		}
+	}
+	if err := store.Rename(ctx, alice, "Circuits/zzz.circuits", "Circuits/y.circuits"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing: %v", err)
+	}
+}
+
+func TestRenameCountsKeyGrowthAgainstTheQuota(t *testing.T) {
+	store := openTest(t)
+	ctx := context.Background()
+	s := Scope{App: "circuits", Subject: "alice"}
+	store.SetQuota(30, 0)
+	if err := store.Put(ctx, s, KindFile, "c/a", []byte("1234567890123456789")); err != nil { // 3+19 = 22
+		t.Fatal(err)
+	}
+	if err := store.Rename(ctx, s, "c/a", "c/abcdefghijkl"); !errors.Is(err, ErrQuota) { // 14+19 = 33
+		t.Fatalf("growth over quota: %v", err)
+	}
+	if _, err := store.Get(ctx, s, KindFile, "c/a"); err != nil {
+		t.Fatalf("failed rename lost the file: %v", err)
+	}
+	if err := store.Rename(ctx, s, "c/a", "c/b"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHandlerRename(t *testing.T) {
+	store := openTest(t)
+	mk := func(sub string) func(string) *httptest.ResponseRecorder {
+		h, err := NewHandler(store, fakeIdentity{scope: Scope{App: "circuits", Subject: sub}, csrf: true}, []string{"https://home.example"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return func(body string) *httptest.ResponseRecorder {
+			req := httptest.NewRequest("POST", "https://home.example/bridge", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Origin", "https://home.example")
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			return rec
+		}
+	}
+	alice, bob := mk("alice"), mk("bob")
+	alice(`{"operation":"put","kind":"file","key":"C/a.circuits","value":"aGk="}`)
+	alice(`{"operation":"put","kind":"file","key":"C/b.circuits","value":"aGk="}`)
+	if rec := alice(`{"operation":"rename","kind":"file","key":"C/a.circuits","to":"C/n.circuits"}`); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"size":2`) {
+		t.Fatalf("rename %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := alice(`{"operation":"rename","kind":"file","key":"C/n.circuits","to":"C/b.circuits"}`); rec.Code != http.StatusConflict {
+		t.Fatalf("replace %d", rec.Code)
+	}
+	if rec := bob(`{"operation":"rename","kind":"file","key":"C/n.circuits","to":"C/m.circuits"}`); rec.Code != 404 {
+		t.Fatalf("cross-person %d", rec.Code)
+	}
+	for _, body := range []string{
+		`{"operation":"rename","kind":"kv","key":"C/n.circuits","to":"C/m.circuits"}`,
+		`{"operation":"rename","kind":"file","key":"C/n.circuits","to":"../m"}`,
+		`{"operation":"rename","kind":"file","key":"C/n.circuits"}`,
+	} {
+		if rec := alice(body); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d", body, rec.Code)
+		}
+	}
+}

@@ -1,0 +1,181 @@
+{
+  "app": "circuits",
+  "version": "0.1.0",
+  "title": "Circuits",
+  "archive": "circuits-source.tar.gz",
+  "sha256": "a26240e8f85292e33b7b6980503edfa93b7652e47a4110e0a79e25d4dec4f685",
+  "size": 2952550,
+  "subtree": "src/circuits",
+  "extra_files": [
+    "LICENSE",
+    "dev/puter-localhost.mjs"
+  ],
+  "required": [
+    "LICENSE",
+    "dev/puter-localhost.mjs",
+    "src/circuits/index.html",
+    "src/circuits/package-lock.json",
+    "src/circuits/vite.config.js",
+    "src/circuits/src/kernel/kernel.wasm"
+  ],
+  "index": "src/circuits/index.html",
+  "sdk_tag": "<script src=\"https://js.puter.com/v2/\" defer></script>",
+  "service_worker": null,
+  "patches": [
+    {
+      "file": "src/circuits/index.html",
+      "old": "stored in your own Puter cloud.",
+      "new": "stored on your own Homestead.",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/circuits/src/app/app.js",
+      "old": "    this.user = await P.getUser();",
+      "new": "    const who = await P.getUser();\n    this.user = who ? { username: 'Homestead user' } : null; // Homestead: the account is an opaque subject, never shown",
+      "why": "Keep the opaque sign-in subject out of the account menu, its label and the sign-in toast."
+    },
+    {
+      "file": "src/circuits/src/app/app.js",
+      "old": "'Sign in to save projects to your Puter cloud'",
+      "new": "'Sign in to save projects to your Homestead'",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/circuits/src/app/app.js",
+      "old": "New projects are saved to your Puter cloud.",
+      "new": "New projects are saved to your Homestead.",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/circuits/src/app/app.js",
+      "old": "'Project moved to your Puter cloud.'",
+      "new": "'Project moved to your Homestead.'",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/circuits/src/app/app.js",
+      "old": "'From your Puter cloud or this browser'",
+      "new": "'From your Homestead or this browser'",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/circuits/src/app/app.js",
+      "old": "'Sign in to Puter'), ' to keep projects in your own cloud storage and open them anywhere.'",
+      "new": "'Sign in'), ' to keep projects on your Homestead and open them anywhere.'",
+      "why": "Say Homestead, not Puter (unreachable under the bridge)."
+    },
+    {
+      "file": "src/circuits/src/app/app.js",
+      "old": "    s.append(h('span.cell.powered.tablet-hide', 'Built on ', h('a', { href: 'https://developer.puter.com', target: '_blank', rel: 'noopener noreferrer' }, 'Puter')));\n",
+      "new": "",
+      "why": "Remove the outbound Built on Puter link from the status bar."
+    },
+    {
+      "file": "src/circuits/src/app/dialogs.js",
+      "old": "It is part of the Everything project and runs on Puter.'",
+      "new": "It is part of the Everything project and runs on your Homestead.'",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/circuits/src/app/dialogs.js",
+      "old": "      h('p', h('a', { href: 'https://github.com/heyputer/everything', target: '_blank', rel: 'noopener noreferrer' }, 'Source code on GitHub'), ' . ', h('a', { href: 'https://developer.puter.com', target: '_blank', rel: 'noopener noreferrer' }, 'Built on Puter')),\n",
+      "new": "",
+      "why": "Remove the outbound GitHub and developer.puter.com links from About (the source is the pinned archive in Homestead)."
+    },
+    {
+      "file": "src/circuits/src/app/dialogs.js",
+      "old": "Sign in to see projects saved in your Puter cloud.",
+      "new": "Sign in to see projects saved on your Homestead.",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/circuits/src/app/dialogs.js",
+      "old": "      cloudAvailable() ? { label: 'Browse Puter files...', left: true, run: () => { app.openFromCloudPicker(); return true; } } : null,\n",
+      "new": "",
+      "why": "Hide the Puter file picker: the bridge has no ui.* (the button would do nothing)."
+    },
+    {
+      "file": "src/circuits/src/app/storage.js",
+      "old": "Download the project or sign in to save it to your Puter cloud.",
+      "new": "Download the project or sign in to save it to your Homestead.",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/circuits/src/app/storage.js",
+      "old": "'Puter storage is not available.'",
+      "new": "'Homestead storage is not available.'",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/circuits/src/app/actions.js",
+      "old": "    { id: 'file.share', label: 'Share project', menuLabel: 'S&hare...', icon: 'share', enabled: hasProject, run: () => app.share() },\n",
+      "new": "",
+      "why": "Hide sharing: it needs fs.share/getShares, which ADR-057 refuses (sharing needs an exposure plan)."
+    },
+    {
+      "file": "src/circuits/src/app/menus.js",
+      "old": ", { command: 'file.share' },",
+      "new": ",",
+      "why": "Hide the Share menu entry (sharing is refused by ADR-057)."
+    },
+    {
+      "file": "src/circuits/src/app/app.js",
+      "old": "      h('a.icon-btn', { href: REPO_URL, target: '_blank', rel: 'noopener noreferrer', 'aria-label': 'Source code on GitHub (opens in a new tab)', 'data-tip': 'Source code on GitHub' }, icon('github', 17)),\n",
+      "new": "",
+      "why": "Remove the outbound GitHub icon link from the header."
+    },
+    {
+      "file": "src/circuits/src/app/menus.js",
+      "old": "{ separator: true }, { command: 'help.github' }, ",
+      "new": "",
+      "why": "Remove the Source code on GitHub menu entry."
+    },
+    {
+      "file": "src/circuits/src/app/actions.js",
+      "old": "    { id: 'help.github', label: 'Source code on GitHub', menuLabel: 'Source code on &GitHub', icon: 'github', run: () => window.open('https://github.com/heyputer/everything', '_blank', 'noopener,noreferrer') },\n",
+      "new": "",
+      "why": "Remove the Source code on GitHub command (an outbound link)."
+    }
+  ],
+  "sdk_surface": {
+    "supported": [
+      "kv.get",
+      "kv.set",
+      "fs.write",
+      "fs.read",
+      "fs.delete",
+      "fs.readdir",
+      "fs.rename",
+      "auth.isSignedIn",
+      "auth.getUser",
+      "env",
+      "auth.signIn",
+      "auth.signOut"
+    ],
+    "refused": [
+      "fs.getReadURL",
+      "kv.share",
+      "kv.unshare",
+      "kv.listShared",
+      "kv.listSharedByMe",
+      "perms.*",
+      "events.*",
+      "appID"
+    ],
+    "absent": [
+      "auth.getProfilePicture",
+      "fs.share",
+      "fs.getShares",
+      "fs.unshare",
+      "fs.listShared",
+      "ui.showOpenFilePicker",
+      "ui.showSaveFilePicker",
+      "ui.onLaunchedWithItems"
+    ],
+    "disabled": {
+      "ai": "no AI backend",
+      "net": "no network bridge (S381 only)",
+      "sharing": "needs an exposure plan"
+    }
+  }
+}

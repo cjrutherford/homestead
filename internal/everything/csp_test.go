@@ -75,3 +75,36 @@ func TestAppResponsesCarryThePolicy(t *testing.T) {
 		t.Fatalf("unauthenticated index = %d", rec.Code)
 	}
 }
+
+// S375: an app that ships a .wasm file may compile WebAssembly (and only
+// that); one without keeps the strict policy.
+func TestPolicyAllowsWebAssemblyOnlyWhenTheBuildShipsAModule(t *testing.T) {
+	plain, withWasm := t.TempDir(), t.TempDir()
+	for _, d := range []string{plain, withWasm} {
+		if err := os.WriteFile(filepath.Join(d, "index.html"), []byte(cspIndex), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(withWasm, "assets"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(withWasm, "assets", "kernel-AbCd1234.wasm"), []byte("\x00asm"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for dir, want := range map[string]bool{plain: false, withWasm: true} {
+		mux := http.NewServeMux()
+		registerApp(mux, "/apps/c", dir, fixedSession{ok: true})
+		for _, path := range []string{"/apps/c/", "/apps/c/assets/kernel-AbCd1234.wasm", "/apps/c/missing"} {
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+			got := rec.Header().Get("Content-Security-Policy")
+			scripts := strings.Split(got, "style-src")[0]
+			if strings.Contains(scripts, "'wasm-unsafe-eval'") != want || strings.Contains(scripts, "unsafe-eval'") && !strings.Contains(scripts, "wasm-unsafe-eval") {
+				t.Errorf("%s (wasm %v): %s", path, want, got)
+			}
+			if strings.Contains(strings.ReplaceAll(scripts, "'wasm-unsafe-eval'", ""), "eval") {
+				t.Errorf("%s: JavaScript eval allowed: %s", path, got)
+			}
+		}
+	}
+}

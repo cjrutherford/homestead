@@ -132,6 +132,7 @@
       if (res.status === 404) return null;
       if (res.status === 401) fail('auth_required', 'Not signed in', 401);
       if (res.status === 403) fail('forbidden', 'Request refused by the bridge', 403);
+      if (res.status === 409) fail('item_with_same_name_exists', 'A file with that name already exists', 409);
       if (res.status === 413) fail('quota_exceeded', 'Your storage quota for this app is full', 413);
       if (!res.ok) {
         fail(res.status === 400 ? 'bridge_rejected' : 'bridge_error',
@@ -254,6 +255,18 @@
         var r = await call({ operation: 'readdir', kind: 'file', key: dir });
         if (r === null) noFile('directory');
         return ((r && r.entries) || []).map(function (e) { return fileItem(dir, e); });
+      },
+      // Renames a file within its folder (S375): newName is a bare name, never
+      // a path, and an existing file is never replaced.
+      async rename(path, newName) {
+        var key = fsKey(path);
+        var name = String(newName);
+        if (!name || name.indexOf('/') !== -1 || name === '.' || name === '..') fail('bridge_rejected', 'Invalid file name', 400);
+        var slash = key.lastIndexOf('/');
+        var to = (slash === -1 ? '' : key.slice(0, slash + 1)) + name;
+        var r = await call({ operation: 'rename', kind: 'file', key: key, to: to });
+        if (r === null) noFile('file');
+        return { path: to, name: name, size: (r && r.size) || 0, modified: (r && r.modified) || 0, is_dir: false };
       },
       // { recursive: true } removes a folder and everything under it. Missing
       // paths are not an error.

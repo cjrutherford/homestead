@@ -1,0 +1,117 @@
+# Circuits (S375, ADR-057): an Everything app. Schematic capture and PCB layout
+# that run in the browser; projects live on the appliance behind a small
+# Homestead bridge that replaces the Puter cloud the app was written for.
+# Projects, their saved versions and the personal component library are files,
+# preferences are one key-value record, all in the bridge's per-person storage.
+# Curated first-party manifest. The image is built on the appliance from a
+# pinned in-repo source archive by the signed, verify-then-build operation
+# (ADR-028, ADR-057); it is never pulled, so there is no registry reference and
+# no catalog digest. The version below is the package version and must equal
+# the image tag.
+name: circuits
+version: 0.1.0
+title: Circuits
+blurb: Draw schematics and lay out circuit boards from your own server.
+description: Circuits is schematic capture and printed circuit board layout in
+  the browser. It has a library of more than 100 parts, multi-sheet schematics
+  with electrical rules checks, board layout with interactive routing, copper
+  pours, design rule checks, an autorouter, a 3D view, KiCad import, and
+  Gerber, drill, bill of materials and pick and place export. It runs in the
+  browser from a small web server on your appliance, and each person's
+  projects, saved versions and parts are kept on the appliance, private to that
+  person. People sign in through Authentik; until the owner sets up sign-in the
+  app serves nothing. Sharing with other people and links to other sites in the
+  original are not included, and nothing you draw leaves your appliance. Data
+  is limited by a per-person storage quota. It is served over your local
+  network with a certificate from your Homestead internal CA.
+category: productivity
+icon: mdi:vector-curve
+services:
+- name: circuits
+  image: homestead/everything-circuits:0.1.0
+  exposes: web
+  containerport: 8081
+  environment:
+    # The bridge knows its own base path (no prefix is stripped) and the
+    # origin its pages are served from, which it requires on every
+    # state-changing request.
+    HOMESTEAD_EVERYTHING_BASE_PATH: "{{route_path}}"
+    HOMESTEAD_EVERYTHING_ORIGIN: "https://{{route_host}}"
+    HOMESTEAD_EVERYTHING_OIDC_REDIRECT_URL: "{{route_url}}/_homestead/callback"
+    # Until sign-in is applied the bridge starts and answers only that
+    # sign-in is not set up (fail closed); it never serves data.
+    HOMESTEAD_EVERYTHING_AWAIT_SIGNIN: "1"
+    # Per-person and whole-app storage limits, in bytes.
+    HOMESTEAD_EVERYTHING_QUOTA_PERSON_BYTES: "268435456"
+    HOMESTEAD_EVERYTHING_QUOTA_APP_BYTES: "2147483648"
+  # The image declares VOLUME /data (the bridge's SQLite database); the
+  # bridge runs as uid/gid 65532.
+  data:
+  - target: /data
+    class: application
+    subpath: data
+    uid: 65532
+    gid: 65532
+requirements:
+  memorymb: 128
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 1073741824
+# Served at <server>/apps/circuits/ (ADR-044). The bridge serves under the path
+# itself, so the edge keeps it.
+serve: path
+exposure:
+  package: circuits
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Your circuit designs leave the LAN when widened; expose only behind HTTPS with a certificate you trust, and only to people who have an Authentik account.
+backuppaths:
+- data
+database:
+  service: circuits
+  kind: sqlite
+  path: data/bridge.db
+sso:
+  class: recommended
+  protocols: [oidc]
+  # Sign-in through Authentik (S368, ADR-053, ADR-057). The bridge is its own
+  # OIDC client: it needs the issuer, its client id and a client secret file,
+  # all handed over by the normal sign-in plan. People who are not granted
+  # the app in Homestead cannot sign in (closed by default, ADR-043).
+  #
+  # The app is served by path, so the origins sign-in is planned for already
+  # end in /apps/circuits (ADR-044): the redirect and sign-in paths below are
+  # relative to the app, matching the bridge's own /_homestead/ routes.
+  oidc:
+    adapter: env-oidc
+    service: circuits
+    env:
+      redirectpaths: ["/_homestead/callback"]
+      signinpath: /_homestead/login
+      secret: oidc_client_secret
+      # The bridge has no password sign-in of its own: once sign-in is on it
+      # is the only way in.
+      exclusive: true
+      # The bridge trusts exactly the bundle it is given; the combined
+      # bundle keeps a public issuer (Let's Encrypt) working too.
+      trust: HOMESTEAD_EVERYTHING_OIDC_CA_FILE
+      trustbundle: combined
+      set:
+        HOMESTEAD_EVERYTHING_OIDC_ISSUER: "{{issuer}}"
+        HOMESTEAD_EVERYTHING_OIDC_CLIENT_ID: "{{client_id}}"
+secrets:
+- name: oidc_client_secret
+  # Authentik's client secret for Circuits; Homestead generates it, hands it to
+  # Authentik, and gives the bridge the file (never an environment value).
+  consumers:
+  - service: circuits
+    env: HOMESTEAD_EVERYTHING_OIDC_CLIENT_SECRET_FILE
+integrations:
+- kind: identity
+  target: authentik
+  note: People sign in with Authentik once sign-in is applied on the app's page; the app serves nothing before that.

@@ -26,7 +26,9 @@ var (
 	// ErrQuota means a write would take a person or the whole application
 	// past its byte quota. The handler answers 413 "quota_exceeded".
 	ErrQuota = errors.New("everything: storage quota exceeded")
-	appName  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+	// ErrExists means a rename would replace an existing file (S375).
+	ErrExists = errors.New("everything: file already exists")
+	appName   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 )
 
 // MaxValueBytes bounds a single stored KV value or file; this is not a total quota.
@@ -476,4 +478,65 @@ func (s *Store) DeleteTree(ctx context.Context, scope Scope, key string) (int64,
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// Rename gives the file at from the name to within the same folder (S375).
+// Both are file keys in the authenticated scope. It fails with ErrNotFound if
+// from is not a file and ErrExists if to is already taken, so a rename never
+// replaces data. The value moves unchanged; the longer or shorter key is
+// counted against the quota like any other write.
+func (s *Store) Rename(ctx context.Context, scope Scope, from, to string) error {
+	if err := validate(scope, KindFile, from); err != nil {
+		return err
+	}
+	if err := validate(scope, KindFile, to); err != nil {
+		return err
+	}
+	if from == to || path.Dir(from) != path.Dir(to) {
+		return ErrInvalid
+	}
+	tx, err := s.db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Close()
+	if _, err = tx.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_, _ = tx.ExecContext(context.Background(), `ROLLBACK`)
+		}
+	}()
+	var n int
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM objects WHERE app=? AND subject=? AND kind=? AND object_key=?`, scope.App, scope.Subject, KindFile, to).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return ErrExists
+	}
+	p0, a0, err := usage(ctx, tx, scope)
+	if err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE objects SET object_key=?, modified=MAX(?, modified+1) WHERE app=? AND subject=? AND kind=? AND object_key=?`, to, time.Now().UnixMilli(), scope.App, scope.Subject, KindFile, from)
+	if err != nil {
+		return err
+	}
+	if changed, _ := res.RowsAffected(); changed == 0 {
+		return ErrNotFound
+	}
+	p1, a1, err := usage(ctx, tx, scope)
+	if err != nil {
+		return err
+	}
+	if (p1 > p0 && p1 > s.personQuota) || (a1 > a0 && a1 > s.appQuota) {
+		return ErrQuota
+	}
+	if _, err = tx.ExecContext(ctx, `COMMIT`); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }

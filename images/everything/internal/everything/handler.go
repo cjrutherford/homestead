@@ -57,6 +57,7 @@ type request struct {
 	Value     []byte       `json:"value"`
 	Entries   []batchEntry `json:"entries"`
 	After     string       `json:"after"`
+	To        string       `json:"to"`
 }
 
 type batchEntry struct {
@@ -163,6 +164,21 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	case "rename":
+		// A file moves to a new name in the same folder (S375); never over
+		// another file.
+		if kind != KindFile {
+			err = ErrInvalid
+			break
+		}
+		if err = h.store.Rename(r.Context(), scope, body.Key, body.To); err == nil {
+			if info, serr := h.store.Stat(r.Context(), scope, body.To); serr == nil {
+				_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "size": info.Size, "modified": info.Modified})
+				return
+			}
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
 	case "putbatch":
 		entries := make([]Entry, len(body.Entries))
 		for i, e := range body.Entries {
@@ -215,6 +231,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
+	case errors.Is(err, ErrExists):
+		http.Error(w, "exists", http.StatusConflict)
 	case errors.Is(err, ErrQuota):
 		http.Error(w, "quota_exceeded", http.StatusRequestEntityTooLarge)
 	case errors.Is(err, ErrInvalid):

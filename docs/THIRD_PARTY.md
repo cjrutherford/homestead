@@ -1210,3 +1210,25 @@ and test tools (vite, vitest, jsdom) are not shipped. The source is changed only
 by the pinned patches listed in `scripts/everything/apps/time-tracking.json` (Puter
 wording and outbound links removed, the opaque user id kept off screen); only
 `npm ci --ignore-scripts` and the build run. The app has no analytics script.
+
+## Circuits source (S375, ADR-057)
+`third_party/everything/circuits-source.tar.gz` is the `src/circuits` subtree plus the
+root `LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU
+tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 138 entries, 2,952,550
+bytes). SHA-256 `a26240e8f85292e33b7b6980503edfa93b7652e47a4110e0a79e25d4dec4f685`, recorded in
+`third_party/everything/pin.yaml`. The recipe was first re-run on the inventory and
+time-tracking subtrees and reproduced both digests. Licence: MIT. The repository
+root `LICENSE` is MIT (Copyright (c) 2026 Puter Technologies Inc.); `src/circuits`
+has no licence file of its own and its `package.json` has no licence field. It is
+not AGPL or copyleft. The archive includes the Rust source of the geometry kernel
+(`wasm/kernel`, `license = "MIT"`, one dependency, `i_overlay` 9.0.1 and its `i_*`
+helper crates, MIT) and the prebuilt `src/kernel/kernel.wasm` built from it; the
+image build uses the committed `.wasm` and does not run Rust. Four runtime
+dependencies are bundled into the app: `earcut` 3.2.4 (ISC), `fflate` 0.8.3 (MIT),
+`lucide` 1.55.0 (ISC) and `rbush` 4.0.1 (MIT); the app's own `check:licenses` step
+(it runs before the build and fails on any licence outside a reviewed permissive
+set) passes. Build and test tools (vite, vitest, jsdom, axe-core) are not shipped.
+The source is changed only by the pinned patches listed in
+`scripts/everything/apps/circuits.json`; only `npm ci --ignore-scripts` and the
+build run. The app has no analytics script.

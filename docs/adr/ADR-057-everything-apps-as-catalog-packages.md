@@ -85,9 +85,11 @@ not supported fails closed with `bridge_unsupported`.
 | `kv.list(prefix*, true)` with values, in bounded pages of at most 500 entries or about 4 MiB, so a book longer than the 1000-key list limit loads (S372; read-only, KV only) | supported, scoped to the person |
 | `fs.stat`, `fs.readdir`, recursive `fs.delete` (S369) | supported, scoped to the person; folders are key prefixes |
 | `auth.isSignedIn`, `auth.getUser`, `env` | supported (verified `sub`) |
+| `fs.rename(path, newName)` (S375; same folder, never replaces, quota-checked) | supported, scoped to the person |
 | `fs.getReadURL`, `kv` sharing, `perms`, `events`, `appID` | refused |
 | `ai` | disabled (no backend) |
 | `net` | disabled (only if S381 adds a network bridge) |
+| WebAssembly (S375) | allowed only for a build that ships a `.wasm` file: the page policy adds `'wasm-unsafe-eval'`; JavaScript eval stays refused |
 | sharing / calendar feed UI | hidden by a pinned patch (needs an exposure plan) |
 
 **Adding an app (S369 and later).** Add `scripts/everything/apps/<app>.json`,

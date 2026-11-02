@@ -115,6 +115,7 @@ var knownImageVolumes = map[string]imageVolumes{
 	"homestead/everything-contacts:0.1.0":      {Volumes: []string{"/data"}},
 	"homestead/everything-inventory:0.1.0":     {Volumes: []string{"/data"}},
 	"homestead/everything-time-tracking:0.1.0": {Volumes: []string{"/data"}},
+	"homestead/everything-circuits:0.1.0":      {Volumes: []string{"/data"}},
 	// S250 office craft images. Verified with `docker image inspect` on the
 	// KVM appliance 2026-10-17 (VM 2, images built by the daemon from a
 	// throwaway-signed manifest): Config.Volumes null and user nginx for
