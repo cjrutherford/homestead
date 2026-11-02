@@ -23,6 +23,9 @@ func NewServerAt(base string, store *Store, identity Identity, origins []string,
 	}
 	mux := http.NewServeMux()
 	mux.Handle(base+DataPath, h)
+	if src, ok := identity.(SessionSource); ok {
+		mux.HandleFunc(base+SessionPath, sessionHandler(src))
+	}
 	if extra != nil {
 		extra(mux)
 	}

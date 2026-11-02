@@ -1,7 +1,6 @@
 package everything
 
 import (
-	"bytes"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
@@ -523,42 +522,10 @@ func (o *OIDC) logout(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
-var headTag = regexp.MustCompile(`(?i)<head(\s[^>]*)?>`)
-
-func (o *OIDC) index(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
+// Session implements SessionSource.
+func (o *OIDC) Session(r *http.Request) (string, string, bool) {
 	info, _, ok := o.session(r)
-	if !ok {
-		http.Redirect(w, r, o.cfg.BasePath+LoginPath, http.StatusFound)
-		return
-	}
-	page, err := os.ReadFile(o.cfg.StaticDir + "/index.html")
-	loc := headTag.FindIndex(page)
-	if err != nil || loc == nil {
-		deny(w, http.StatusInternalServerError)
-		return
-	}
-	meta := `<meta name="homestead-csrf" content="` + info.csrf + `">`
-	out := append(append(append([]byte{}, page[:loc[1]]...), meta...), page[loc[1]:]...)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("Referrer-Policy", "no-referrer")
-	_, _ = io.Copy(w, bytes.NewReader(out))
-}
-
-type noListingFS struct{ http.FileSystem }
-
-func (n noListingFS) Open(name string) (http.File, error) {
-	f, err := n.FileSystem.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	if st, err := f.Stat(); err != nil || st.IsDir() {
-		f.Close()
-		return nil, os.ErrNotExist
-	}
-	return f, nil
+	return info.subject, info.csrf, ok
 }
 
 // Routes registers sign-in, logout, the personalised index and the static
@@ -568,17 +535,7 @@ func (o *OIDC) Routes(mux *http.ServeMux) {
 	mux.HandleFunc(b+LoginPath, o.login)
 	mux.HandleFunc(b+CallbackPath, o.callback)
 	mux.HandleFunc(b+LogoutPath, o.logout)
-	files := http.FileServer(noListingFS{http.Dir(o.cfg.StaticDir)})
-	if b != "" {
-		files = http.StripPrefix(b, files)
-	}
-	mux.HandleFunc(b+"/", func(w http.ResponseWriter, r *http.Request) {
-		if p := strings.TrimPrefix(r.URL.Path, b); p == "/" || p == "/index.html" {
-			o.index(w, r)
-			return
-		}
-		files.ServeHTTP(w, r)
-	})
+	registerApp(mux, b, o.cfg.StaticDir, o)
 }
 
 // ReadSecretFile reads a client secret from a regular file, never a symlink

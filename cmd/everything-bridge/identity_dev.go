@@ -26,5 +26,8 @@ func newIdentity(c config, _ *everything.Store) (everything.Identity, func(*http
 		return nil, nil, errors.New("everything-bridge: dev identity only listens on a loopback IP")
 	}
 	d := everything.NewDevIdentity(c.app)
+	if c.static != "" {
+		d.Static(c.base, c.static)
+	}
 	return d, d.Routes, nil
 }

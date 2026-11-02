@@ -687,3 +687,97 @@ func TestClientWithCATrustsOnlyTheGivenBundle(t *testing.T) {
 func pemEncode(der []byte) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 }
+
+func TestOIDCSessionEndpoint(t *testing.T) {
+	e := newEnv(t)
+	b := e.browser()
+	url := testBase + SessionPath
+	rec := b.do("GET", url, nil, nil)
+	if rec.Code != 401 || rec.Header().Get("Cache-Control") != "no-store" || strings.Contains(rec.Body.String(), "csrf") {
+		t.Fatalf("unauthenticated session: %d %q", rec.Code, rec.Header().Get("Cache-Control"))
+	}
+	csrf := e.signIn(b, "sub-alice")
+	rec = b.do("GET", url, nil, nil)
+	var out map[string]string
+	json.Unmarshal(rec.Body.Bytes(), &out)
+	if rec.Code != 200 || out["csrf"] != csrf || out["subject"] != "sub-alice" {
+		t.Fatalf("session: %d %s", rec.Code, rec.Body)
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" || rec.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("headers: %v", rec.Header())
+	}
+	for h := range rec.Header() {
+		if strings.HasPrefix(strings.ToLower(h), "access-control-") {
+			t.Fatalf("CORS header %s on session endpoint", h)
+		}
+	}
+	if rec = b.do("POST", url, map[string]string{"Origin": testOrigin}, nil); rec.Code != 405 {
+		t.Fatalf("POST: %d", rec.Code)
+	}
+	if rec = b.do("GET", url, map[string]string{"Sec-Fetch-Site": "cross-site"}, nil); rec.Code != 403 {
+		t.Fatalf("cross-site: %d", rec.Code)
+	}
+	// Another person gets their own token, never this one.
+	b2 := e.browser()
+	e.signIn(b2, "sub-bob")
+	rec = b2.do("GET", url, nil, nil)
+	json.Unmarshal(rec.Body.Bytes(), &out)
+	if out["csrf"] == csrf || out["subject"] != "sub-bob" {
+		t.Fatalf("bob session: %s", rec.Body)
+	}
+	// After logout the endpoint refuses and the old token is gone.
+	if rec = b.do("POST", testBase+LogoutPath, map[string]string{"Origin": testOrigin, CSRFHeader: csrf}, nil); rec.Code != 200 {
+		t.Fatalf("logout: %d", rec.Code)
+	}
+	if rec = b.do("GET", url, nil, nil); rec.Code != 401 {
+		t.Fatalf("after logout: %d", rec.Code)
+	}
+}
+
+func TestOIDCCacheHeaders(t *testing.T) {
+	e := newEnv(t)
+	os.WriteFile(filepath.Join(e.static, "assets", "index-AbC123xy.js"), []byte("x"), 0o600)
+	os.MkdirAll(filepath.Join(e.static, "_homestead"), 0o700)
+	os.WriteFile(filepath.Join(e.static, "_homestead", "puter-bridge.js"), []byte("y"), 0o600)
+	os.WriteFile(filepath.Join(e.static, "_homestead", "secret.json"), []byte("z"), 0o600)
+	b := e.browser()
+	cc := func(path string, want int) string {
+		rec := b.do("GET", testBase+path, nil, nil)
+		if rec.Code != want {
+			t.Fatalf("%s: %d want %d", path, rec.Code, want)
+		}
+		return rec.Header().Get("Cache-Control")
+	}
+	// Signed out: the sign-in redirect and the login redirect are never stored.
+	if got := cc("/", 302); got != "no-store" {
+		t.Fatalf("redirect cache: %q", got)
+	}
+	if got := cc("/index.html", 302); got != "no-store" {
+		t.Fatalf("redirect cache: %q", got)
+	}
+	e.signIn(b, "sub-a")
+	if got := cc("/", 200); got != "no-store" {
+		t.Fatalf("index cache: %q", got)
+	}
+	if got := cc("/index.html", 200); got != "no-store" {
+		t.Fatalf("index.html cache: %q", got)
+	}
+	if got := cc("/assets/index-AbC123xy.js", 200); got != "public, max-age=31536000, immutable" {
+		t.Fatalf("hashed asset: %q", got)
+	}
+	if got := cc("/assets/app.js", 200); got != "no-cache" {
+		t.Fatalf("unhashed asset: %q", got)
+	}
+	if got := cc("/_homestead/puter-bridge.js", 200); got != "no-cache" {
+		t.Fatalf("bridge shim: %q", got)
+	}
+	// Other _homestead/ files are not served and the refusal is not stored.
+	if got := cc("/_homestead/secret.json", 404); got != "no-store" {
+		t.Fatalf("_homestead file: %q", got)
+	}
+	for _, p := range []string{LoginPath, CallbackPath, LogoutPath, DataPath} {
+		if got := b.do("GET", testBase+p, nil, nil).Header().Get("Cache-Control"); got != "no-store" {
+			t.Fatalf("%s cache: %q", p, got)
+		}
+	}
+}

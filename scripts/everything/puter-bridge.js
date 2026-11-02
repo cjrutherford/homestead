@@ -9,7 +9,10 @@
  *
  * Config (all optional) from globalThis.__HOMESTEAD_BRIDGE__:
  *   endpoint  bridge URL (default ./_homestead/data resolved against the page)
- *   csrf      CSRF token (default: <meta name="homestead-csrf">)
+ *   csrf      CSRF token (default: <meta name="homestead-csrf">). The token is
+ *             refreshed from GET ./_homestead/session (no-store) when the
+ *             bridge refuses a request, then the request is retried once.
+ *   sessionEndpoint  override for that refresh URL
  *   origin    Origin header to send (non-browser harnesses only)
  *   headers   extra request headers (non-browser harnesses only, e.g. Cookie)
  *   signInUrl / signOutUrl  where the Homestead edge sign-in lives
@@ -56,21 +59,57 @@
       var base = (root.document && root.document.baseURI) || (root.location && root.location.href);
       return new URL('./_homestead/data', base).href;
     }
+    var freshCsrf = '';
     function csrf() {
+      if (freshCsrf) return freshCsrf;
       if (config.csrf) return config.csrf;
       var m = root.document && root.document.querySelector('meta[name="homestead-csrf"]');
       return (m && m.content) || '';
     }
+    function sessionEndpoint() {
+      if (config.sessionEndpoint) return config.sessionEndpoint;
+      if (config.endpoint) return config.endpoint.replace(/data$/, 'session');
+      var base = (root.document && root.document.baseURI) || (root.location && root.location.href);
+      return new URL('./_homestead/session', base).href;
+    }
+    function toSignIn() {
+      if (!root.document || !root.location) return;
+      var url = config.signInUrl || new URL('./_homestead/login', root.document.baseURI).href;
+      root.location.assign(url);
+    }
+    // Fetch a fresh token from the authenticated session endpoint. Never
+    // cached (cache: 'no-store'). Returns true if a token was obtained.
+    async function refreshCsrf(body) {
+      var headers = Object.assign({}, config.headers || {});
+      if (config.origin) headers.Origin = config.origin;
+      var res;
+      try {
+        res = await fetch(sessionEndpoint(), {
+          method: 'GET', headers: headers, credentials: 'same-origin', redirect: 'error', cache: 'no-store',
+        });
+      } catch (e) {
+        fail('network_error', 'Could not reach the Homestead bridge');
+      }
+      if (res.status === 401) {
+        freshCsrf = '';
+        if (body.operation !== 'whoami') toSignIn();
+        fail('auth_required', 'Not signed in', 401);
+      }
+      if (!res.ok) return false;
+      var info = await res.json();
+      if (!info || !info.csrf) return false;
+      freshCsrf = info.csrf;
+      return true;
+    }
 
-    async function call(body) {
+    async function send(body) {
       var headers = Object.assign({}, config.headers || {}, {
         'Content-Type': 'application/json',
         'X-Homestead-CSRF': csrf(),
       });
       if (config.origin) headers.Origin = config.origin;
-      var res;
       try {
-        res = await fetch(endpoint(), {
+        return await fetch(endpoint(), {
           method: 'POST',
           headers: headers,
           body: JSON.stringify(body),
@@ -79,7 +118,16 @@
           cache: 'no-store',
         });
       } catch (e) {
+        // Offline or unreachable: Tasks' offline queue relies on this reject.
         fail('network_error', 'Could not reach the Homestead bridge');
+      }
+    }
+
+    async function call(body) {
+      var res = await send(body);
+      if (res.status === 401 || res.status === 403) {
+        // The page-load token may be stale (new session, restored tab).
+        if (await refreshCsrf(body)) res = await send(body);
       }
       if (res.status === 404) return null;
       if (res.status === 401) fail('auth_required', 'Not signed in', 401);

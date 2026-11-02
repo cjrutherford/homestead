@@ -131,15 +131,31 @@ describe('real Tasks store through the real bridge', () => {
     const p = shimFor(good);
     await p.kv.set('k', 1);
     expect(await p.auth.isSignedIn()).toBe(true);
-    // Wrong CSRF token with a valid session is forbidden.
-    const badCsrf = shimFor({ ...good, csrf: 'wrong' });
-    expect((await rejects(badCsrf.kv.set('k', 2))).code).toBe('forbidden');
+    // Wrong CSRF token with a valid session is forbidden on the wire...
+    const raw = await fetch(bridge.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: bridge.origin, 'X-Homestead-CSRF': 'wrong', Cookie: good.headers.Cookie },
+      body: JSON.stringify({ operation: 'whoami' }),
+    });
+    expect(raw.status).toBe(403);
+    // ...but the shim recovers a stale page-load token from the session
+    // endpoint (no-store) and retries once, so the write lands.
+    const stale = shimFor({ ...good, csrf: 'wrong' });
+    expect(await stale.kv.set('k', 2)).toBe(true);
+    expect(await p.kv.get('k')).toBe(2);
+    const noCache = await fetch(bridge.endpoint.replace(/data$/, 'session'), { headers: { Cookie: good.headers.Cookie } });
+    expect(noCache.headers.get('cache-control')).toBe('no-store');
+    expect((await noCache.json()).csrf).toBe(good.csrf);
+    // A session endpoint without a session reveals nothing.
+    const anon = await fetch(bridge.endpoint.replace(/data$/, 'session'));
+    expect(anon.status).toBe(401);
     // Foreign origin is forbidden.
     const badOrigin = shimFor({ ...good, origin: 'http://evil.example' });
     expect((await rejects(badOrigin.kv.get('k'))).code).toBe('forbidden');
     await bridge.revoke(good.cookie);
     expect(await p.auth.isSignedIn()).toBe(false);
     expect((await rejects(p.kv.get('k'))).code).toBe('auth_required');
+    expect((await rejects(stale.kv.set('k', 3))).code).toBe('auth_required');
 
     const short = await bridge.login('expiring-person', 150);
     const q = shimFor(short);

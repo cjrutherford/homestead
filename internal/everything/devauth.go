@@ -31,6 +31,18 @@ type DevIdentity struct {
 	mu       sync.Mutex
 	sessions map[string]devSession
 	now      func() time.Time
+
+	base, static string // optional: serve the prepared app for a real browser
+}
+
+// Static makes Routes also serve the prepared application under base, with
+// the same index/CSRF behaviour as production, and a GET sign-in page.
+func (d *DevIdentity) Static(base, dir string) { d.base, d.static = base, dir }
+
+// Session implements SessionSource.
+func (d *DevIdentity) Session(r *http.Request) (string, string, bool) {
+	s, ok := d.lookup(r)
+	return s.subject, s.csrf, ok
 }
 
 func NewDevIdentity(app string) *DevIdentity {
@@ -89,6 +101,24 @@ func (d *DevIdentity) CheckCSRF(r *http.Request) bool {
 
 // Routes adds /_dev/login and /_dev/revoke for the test harness.
 func (d *DevIdentity) Routes(mux *http.ServeMux) {
+	if d.static != "" {
+		registerApp(mux, d.base, d.static, d)
+		// Browser sign-in for the real-browser test: any subject, no password.
+		mux.HandleFunc(d.base+LoginPath, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
+			subject := r.URL.Query().Get("subject")
+			if subject == "" {
+				subject = "dev-user"
+			}
+			if !validText(subject, 512) {
+				http.Error(w, "invalid request", http.StatusBadRequest)
+				return
+			}
+			c, _ := d.Login(subject, time.Hour)
+			http.SetCookie(w, &http.Cookie{Name: DevCookie, Value: c, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
+			http.Redirect(w, r, d.base+"/", http.StatusFound)
+		})
+	}
 	mux.HandleFunc("/_dev/login", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			Subject string `json:"subject"`
