@@ -1,204 +1,150 @@
 # S382 — Craft build, serve and DNS advertisement validation
 
 ## Goal
-Prove, on one fresh appliance, that every craft package builds from the
+Prove, on one appliance (VM 2), that every craft package builds from the
 committed signed craft manifest, serves through the edge with an internal-CA
-leaf, and is reachable **by name** from another LAN client; close the local
-DNS advertisement gap that leaves the Craft apps start page links
-unresolvable, and fix any build/serve defect the run finds.
+leaf, and is reachable **by name** from another LAN client, using the local
+name path that already exists (ADR-039, S295). Fix any build or serve defect
+the run finds.
+
+## Re-scope (2026-11-02)
+The first version of this slice (2026-10-29) planned to write an AdGuard A
+answer per route during reconcile. Later accepted work superseded that and
+this slice does **not** build a second DNS path:
+
+- S295 (ADR-039, `e82434d`) derives local names from the edge route table.
+  `internal/mdns` announces `homestead.local` and `<label>.local` for each
+  host route. The optional resolver `internal/localdns` (off until the owner
+  approves a plan with its port 53 firewall rules; `homesteadctl names`,
+  `apps names`, the Names page) answers `homestead.lan` and each host route's
+  `<label>.lan`, NXDOMAIN for other `.lan` names, REFUSED for everything
+  else, with the A record on the asker's own subnet.
+- S315/S320 serve craft apps by path: `https://homestead.lan/apps/<app>/`
+  (and `homestead.local`). A path route adds no name of its own, so the 13
+  craft apps need no per-app DNS record. Public routes are skipped by both
+  the resolver and mDNS.
+- Names come from the route table, so there is nothing to make idempotent or
+  to remove on route delete: the answer set changes with the table (the
+  resolver reads it per query). No schema, no ownership record, no proxy
+  reload coupling.
+- `docker.EnsureNameDefinition`, `jellyfin.LocalRewrite`,
+  `docker.AdguardDeployDefinition` and `dns.EstablishSplitDNS` still have no
+  reconcile caller. Wiring them would be the second DNS path; see
+  `docs/DEFERRED.md` (S382).
+
+No ADR is contradicted: ADR-007/ADR-009 describe the split-DNS provider path
+for the customer domain; ADR-039 is the accepted local-name design.
 
 ## Dependencies
-S249,S250,S251,S252,S253,S279,S280,S281,S237,S84,S85,S86,S96,S98,S221
+S249,S250,S251,S252,S253,S279,S280,S281,S295,S315,S320,S221
 
-## Scope
-Implement only the functionality required for this slice. Preserve all
-accepted ADRs and customer-ownership guarantees. Do not pull deferred
-features into scope without an ADR and slice update.
+## In scope
+- Gap analysis of the old acceptance blocks against later slices (below).
+- Go tests pinning the name derivation for craft apps
+  (`internal/docker/craftnames_test.go`).
+- Correcting the stale "unsigned manifest" and "KVM acceptance pending" notes
+  in `docs/DEFERRED.md` (the manifest is signed at counter 8, commit
+  `3af901f`).
+- The exact VM 2 runbook. The live run itself is owner-run.
 
-This is a validation slice with fixes, not a new catalog package. It runs
-after S356 and before S357. Governed by ADR-007 (customer domain and split
-DNS), ADR-009 (DNS provider abstraction), ADR-018 and ADR-028 (craft
-packages), ADR-030 (local TLS through the internal CA), ADR-031 (Craft apps
-start page) and ADR-021 (secret custody). No new architecture is expected:
-the slice wires the already-accepted S84-S86 local DNS capability into
-route reconciliation. If a different DNS design is needed, supersede the
-ADR first.
+## Out of scope (recorded in DEFERRED, S382 section)
+AdGuard bootstrap, per-route DNS rewrites, an "advertised" flag on the Craft
+apps API/start page (no new API, CLI or dashboard surface, so
+`docs/PARITY.md` is unchanged), mDNS for multi-label names, AAAA, DHCP
+advertisement of the resolver.
 
-Why this slice exists:
+## Gap analysis
+| Old block | State |
+| --- | --- |
+| 13-app build/serve matrix | Live-only. Build, serve, headers and start page code is done (S249-S253, S279-S281, S320); VM 2 holds deckcraft, gridcraft, wordcraft. |
+| Signed manifest | Done: signed at counter 8 (`3af901f`); the shipped-key test verifies it. Stale notes corrected here. |
+| Header table / `knownImageVolumes` | Done: all 13 versions match the catalog; `data_test.go` has the 13 `homestead/craft-*` rows. Live re-check is part of the runbook. |
+| Local DNS answer per route | Done by S295 with a different design (above). Tests added for the craft path case. |
+| Idempotence, removal, public leak, LAN selection | Done by construction: derived per query from the route table; public routes skipped; `Answer` picks the address on the asker's subnet (`internal/localdns` tests). |
+| Managed/external/off modes, AdGuard bootstrap, port 53 | Superseded: the resolver is on/off by approved plan; the doctor warns when port 53 is taken (S295). |
+| Start page advertised state | Not built (see Out of scope). |
+| mDNS scope | Superseded: S295 announces `<label>.local` for host routes; craft path apps are reached at `homestead.local`. |
 
-- S249 to S253 proved build and serve with `curl --resolve`, Chromium
-  `--host-resolver-rules` or an ssh tunnel. No run proved that a LAN client
-  can resolve `<app>.lan`; the KVM transcripts bypassed DNS.
-- Route reconciliation (`internal/docker/routes.go`,
-  `internal/server/edge.go`) writes Caddy snippets and records
-  `edge_routes`; it never writes a local DNS answer.
-  `docker.EnsureNameDefinition`, `jellyfin.LocalRewrite`,
-  `docker.AdguardDeployDefinition` and `dns.EstablishSplitDNS` have no
-  production caller, and the daemon has no local DNS configuration.
-- The Craft apps start page (`internal/server/craftapps.go`) renders
-  `https://<route host>/`. From any device without a hosts entry, that link
-  fails, so the page promises reachability it does not have.
-- The craft manifest is now signed (counter 8, commit `3af901f`); the older
-  per-batch "unsigned manifest" notes in `docs/DEFERRED.md` are stale and
-  are corrected by this slice.
+## Built
+- `internal/docker/craftnames_test.go`: thirteen craft path routes add no
+  `.lan` or `.local` names; removing a host-served craft route removes its
+  names and keeps `homestead.lan`; a public route never enters the local
+  answers.
+- DEFERRED corrections; SLICE_INDEX entry.
 
-## Acceptance Criteria
+## Verify live (VM 2, owner-run)
+Let `A` be the appliance IP and `APPS="wordcraft gridcraft pdfcraft deckcraft
+vectorcraft photocraft lightcraft figcraft filmcraft effectcraft soundcraft
+designcraft cadcraft"`. Run on VM 2 as root unless noted.
 
-### Build and serve matrix (all 13 craft packages)
+1. Sign in and verify the manifest:
+   `homesteadctl login -username cjrutherford -password-file /root/homestead-owner-recovered.pass`
+   `homesteadctl craft trust list` (the HAI craft key is present) and
+   `homesteadctl craft plan wordcraft` (verifies `catalog/craft/craft-manifest.yaml`
+   against its `.minisig`; no throwaway key, no `--manifest` override).
+2. Build all 13, then a second build for identity:
+   `for a in $APPS; do homesteadctl craft plan $a && homesteadctl craft build $a --follow; done`
+   `docker image inspect -f '{{.Id}}' homestead/craft-<app>:<version>` before and after
+   `homesteadctl craft build <app> --follow` again: the image ID is identical.
+   `homesteadctl craft status` shows each tag matching its recorded digest.
+   If a counter at or above 8 is already recorded from earlier throwaway
+   runs, `--allow-older` is the audited override.
+3. Install each (VM 2 already has deckcraft, gridcraft and wordcraft: for
+   these use `apps uninstall <app> --follow` first, or skip and test update
+   in step 8). Body file `/tmp/<app>.json`:
+   `{"domain":"lan","networks":[{"Name":"<app>-net"}],"container_ports":{"<app>":8080}}`
+   (the plan names any missing field).
+   `homesteadctl apps plan <app> -f /tmp/<app>.json` then
+   `homesteadctl apps install <app> -f /tmp/<app>.json --approve-sign-in D1 --approve-access D2 --follow`
+   where D1 and D2 are the digests the plan prints (a craft app has no
+   sign-in; if the plan prints no digest, omit the flag).
+4. Image checks per app (`C` = the app's container):
+   `docker inspect -f '{{.Config.User}} {{json .Config.Volumes}} {{json .Config.Healthcheck.Test}} {{.State.Health.Status}}' $C`
+   expects `nginx null` `/healthz` `healthy`;
+   `docker inspect -f '{{json .Mounts}}' $C` shows only `/tmp` (tmpfs);
+   `docker diff $C` is empty.
+5. Headers, through the edge with the S280 root, no `-k`, no `--resolve`
+   (the host name must resolve, so run after step 7):
+   `scripts/craft-header-check.sh https://homestead.lan/apps/<app>/ --cacert <ca.pem>`
+   with `--unhashed` for lightcraft and effectcraft; exit 0 for all 13.
+   Compare each result with the row in `docs/architecture/CRAFT_HEADER_TABLE.md`.
+6. Start page: `homesteadctl craft apps` lists all 13 with
+   `https://homestead.lan/apps/<app>/`; open `/craft-apps` in a browser on
+   the second client and follow a link.
+7. Name resolution from a second LAN client. The VM 2 host behind the NAT
+   can run the `.lan` check; mDNS does not cross the NAT.
+   - Turn the resolver on: `homesteadctl names` (status), then the plan and
+     apply verbs it prints (approve the port 53 firewall lines).
+   - `dig +short @$A homestead.lan` returns the appliance LAN address;
+     `dig @$A nosuch.lan` is NXDOMAIN; `dig @$A example.com` is REFUSED.
+   - Restart the daemon (`systemctl restart homestead-server`) and repeat:
+     the same answers.
+   - With a resolver entry for `lan` pointing at `$A` (or `getent hosts
+     homestead.lan` on a client that uses it), `curl --cacert <ca.pem>
+     https://homestead.lan/apps/wordcraft/` returns 200.
+   - On a device on the same L2 segment (a phone, laptop, or a VM bridged
+     to the LAN): `avahi-resolve -n homestead.local` returns the address and
+     the app loads at `https://homestead.local/apps/<app>/`.
+   - Public leak: with a route set public, `dig @$A` for its name is
+     NXDOMAIN and `avahi-resolve -n` fails.
+8. Lifecycle: `apps uninstall <app> --follow` (image stays:
+   `docker image ls homestead/craft-<app>`), reinstall as in step 3, then
+   update with a throwaway bumped version: raise `version` and the image tag
+   in `catalog/<app>.yaml` and the manifest entry, sign with a throwaway key
+   (`craft trust add`), `homesteadctl apps update <app> --craft-manifest ...
+   --craft-signature ... --craft-allow-older` as needed. Each converges to
+   `healthy` with the route intact.
+9. Drift scan after install and after update: `homesteadctl doctor` and
+   `homesteadctl status` show no drift or names warnings; the Names page
+   agrees with step 7.
 
-- On one fresh appliance and one daemon build, verify the committed
-  `catalog/craft/craft-manifest.yaml` with the shipped HAI craft public key
-  (no throwaway key, no unsigned copy), then for **wordcraft, gridcraft,
-  pdfcraft, deckcraft, vectorcraft, photocraft, lightcraft, figcraft,
-  filmcraft, effectcraft, soundcraft, designcraft and cadcraft**:
-  - `craft plan` verifies, `craft build --follow` produces
-    `homestead/craft-<app>:<version>` and records its digest, and a second
-    build of the same manifest is byte-identical (same image ID).
-  - The image is stateless and non-root: `Config.Volumes` null, user
-    `nginx`, `/healthz` healthcheck, `/tmp` the only mount (tmpfs),
-    `docker diff` empty, container `healthy`.
-  - `apps install`, route `<app>.lan` (local exposure, TLS internal),
-    `scripts/craft-header-check.sh` PASS including gzip through the Caddy
-    edge, and the Craft apps start page lists the app with its URL.
-  - Remove, reinstall and update (a throwaway bumped version) converge;
-    the drift scan is clean after install and after update; the craft image
-    stays after uninstall by design.
-- Every header-table row and `knownImageVolumes` row is re-checked against
-  the current manifest versions and the run; stale "pending" or stale
-  version notes are corrected.
-- Any build/serve defect found is fixed in the shared place with a test.
-  A defect that cannot be fixed in this slice is recorded in
-  `docs/DEFERRED.md` and the affected app is called out explicitly in the
-  KVM transcript; it is not silently counted as a pass.
+Timing estimate for the 13-app matrix: a build is about 10 to 60 s for the
+small apps and up to a few minutes for the 60 MB wasm apps (effectcraft,
+photocraft), so builds take roughly 25 to 40 minutes serially, installs
+about 15 minutes, the checks about 30 minutes, and lifecycle another 30 to
+60 minutes: plan about 2.5 to 3 hours for a full pass.
 
-### Local DNS advertisement
-
-- The route reconcile operation ensures exactly one local DNS A answer per
-  **local-exposure** route: the route host resolves to the appliance LAN
-  address through the local DNS provider (S85 AdGuard client). The answer
-  uses the same LAN-address selection as split DNS (`internal/dns`
-  `applianceLAN`/`servableLAN`), not a container bridge address.
-- Overlay routes are left to the overlay DNS path (S115) and public routes
-  to the public DNS provider path. The local path never creates a public
-  record and never widens exposure.
-- Re-running reconcile is idempotent: unchanged routes add nothing, a
-  changed LAN address updates the answer, and a route removed from the
-  table removes the answer Homestead wrote for it. Foreign rewrites (owner
-  or another tool) are never deleted. The previously recorded route table
-  is the ownership record; no new schema is added unless the implementation
-  proves it cannot be done safely without one.
-- Reconcile reloads the proxy once for the whole table, not once per name.
-  The per-name four-step `names.ensure` definition is not invoked in a loop;
-  the DNS step joins the existing reconcile operation so a partial failure
-  names the host and leaves no served-but-unresolvable route reported as
-  success.
-- After reconcile, resolution is verified through local DNS
-  (`VerifyName`/`LookupVia`, dialling the configured resolver, not the host
-  resolver configuration) and the result is visible on the existing doctor
-  and edge surfaces. If a new API route, CLI command or dashboard surface
-  is added, `docs/PARITY.md` is updated and the parity test is green.
-- There is exactly one local-name implementation: `jellyfin.LocalRewrite`
-  and the unused `EnsureNameDefinition` path are folded into it or removed,
-  with tests covering the shared path.
-- Local DNS is owner-configurable and never hijacked: a mode selects a
-  Homestead-managed AdGuard, an owner-provided local DNS endpoint with
-  credentials in the secret store, or advertisement off. With
-  advertisement off, routes still serve but the start page and doctor say
-  the name is not advertised instead of presenting a broken link.
-
-### Fresh-appliance local DNS bootstrap
-
-- The daemon can deploy AdGuard (S84) as a planned operation and complete
-  first-run setup deterministically: either the version-checked install API
-  or a pre-seeded minimal configuration. The administrator credential is
-  generated and sealed through the S96/ADR-021 secret store, never an
-  environment variable or a committed file.
-- Owner-supplied upstream resolvers are configuration with a documented
-  default taken from the appliance's current resolvers; no hard-coded
-  public resolver is shipped.
-- A port 53 conflict (for example the systemd-resolved stub) is detected
-  and either resolved by binding to the appliance LAN address or reported
-  as a doctor blocker with the exact remedy. It is never a silent partial
-  setup.
-- Doctor reports local DNS state: provider reachable, DNS answering, the
-  managed answer count, and any route whose host is not advertised.
-- On a fresh appliance, a LAN client configured to use the appliance's
-  local DNS resolves `<app>.lan` with no `/etc/hosts` entry and no
-  `--resolve`, and the craft page loads over the internal-CA HTTPS leaf.
-  The client-side DNS requirement (point the client or the router's DHCP
-  DNS at the appliance) is written down.
-
-### Start page and surfaces
-
-- `GET /api/v1/craft/apps`, `homesteadctl craft apps` and the Craft apps
-  dashboard page distinguish "route exists and the name is advertised" from
-  "route exists but the name is not advertised". The URL is not presented
-  as working when local DNS does not answer it; the reason and the fix are
-  shown. An app with no route keeps the existing reason.
-- If the API shape changes (for example an `advertised`/`url_reason`
-  field), the CLI, dashboard and `docs/PARITY.md` change in the same
-  commit and their tests cover both states.
-
-### mDNS scope
-
-- The mDNS advertisement is validated and documented: S221 advertises
-  `homestead.local` and `_homestead._tcp` only; app hostnames are not mDNS
-  names and are not added here. Adding them would require a `.local` naming
-  decision and an ADR; it is recorded in `docs/DEFERRED.md` with the
-  reason. The slice must not imply that mDNS advertises app names.
-
-### Tests
-
-- Unit tests with a fake local DNS client: rewrite added for a local route;
-  no rewrite for overlay or public routes; changed answer updates; removed
-  route deletes only the managed rewrite; foreign rewrite preserved;
-  idempotent re-run; DNS failure fails the reconcile with the host named;
-  one proxy reload for the table.
-- Bootstrap tests: managed mode config and sealed credential; external mode
-  endpoint and credential; off mode; port 53 conflict detection; doctor
-  states; upstream resolver default.
-- Start page tests: advertised, not advertised, no route, advertisement
-  off; CLI output and dashboard component for each state.
-- `go test ./...`, `python3 -m unittest discover -s tests`, dashboard
-  `ng test`/`ng build`, `gofmt`, `go vet` and `make lint` green.
-
-### KVM acceptance
-
-- Fresh VM, no manual hosts entry and no `--resolve` anywhere. Deploy
-  AdGuard through the daemon, complete setup, install and route the craft
-  apps, then from a second LAN client (or the KVM host through a tunnel
-  that uses the appliance as its resolver) show:
-  - `dig`/`getent hosts <app>.lan` returns the appliance LAN address before
-    and after a daemon restart;
-  - the app loads at `https://<app>.lan/` with the S280 root and no `-k`;
-  - clearing the route stops the name resolving, and an unrelated rewrite
-    added by hand survives the reconcile;
-  - the Craft apps start page link opens from the second client;
-  - `doctor` and the edge/start-page surfaces agree with the observed
-    state.
-- Record the commands and observed output in `docs/DEVELOPMENT.md`,
-  including the 13-app matrix result and any deferred defect.
-
-## Required Documentation
-- `docs/architecture/LOCAL_NAME_ADVERTISEMENT.md`: route to snippet to local
-  DNS answer to verification; ownership and removal; overlay/public
-  boundaries; managed/external/off modes; AdGuard bootstrap and port 53;
-  client-side DNS requirement; failure modes; mDNS scope.
-- `docs/architecture/CRAFT_HEADER_TABLE.md`: re-check every row against the
-  current versions and the run; remove stale pending notes.
-- `docs/DEVELOPMENT.md`: an S382 section with the 13-app build/serve matrix
-  and the KVM transcript summary, including the second-client DNS proof.
-- `docs/PARITY.md`: every added or changed route, CLI command and dashboard
-  surface.
-- `docs/DEFERRED.md`: remaining gaps (IPv6/AAAA local answers, multi-homed
-  answer selection, mDNS app names, DHCP/DNS advertisement to clients,
-  AdGuard API version drift, external-DNS mode limits) and correction of
-  the stale per-batch craft-signature notes.
-- `docs/THIRD_PARTY.md` only if a vendored version changes; the slice
-  should not need to change one.
-- An ADR only if the implementation needs a DNS design different from
-  ADR-007/ADR-009.
-
-## Handoff
-Leave the repository buildable, tests passing, and the next slice able to
-begin without hidden manual state. One slice, one commit on main.
+Needs the owner: a second physical LAN device (or a bridged VM) for the
+`.local` proof; a router conditional forward for `lan`, or one client
+pointed at the appliance, for the `.lan` proof beyond `dig @$A`; approval of
+the resolver plan.

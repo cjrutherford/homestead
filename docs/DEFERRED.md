@@ -332,7 +332,7 @@
 
 ## Static craft packages (S249, ADR-028)
 
-- Owner signature: `catalog/craft/craft-manifest.yaml` is committed
+- S382 correction (stale, the manifest is signed at counter 8 by the HAI craft key, commit 3af901f): Owner signature: `catalog/craft/craft-manifest.yaml` is committed
   unsigned; no `.minisig` exists until the owner generates the craft key
   offline and signs it (`docs/architecture/CRAFT_SIGNING_RUNBOOK.md`). Until
   then WordCraft cannot be built or installed outside a throwaway-key test.
@@ -379,10 +379,10 @@
 
 ## Office craft packages (S250)
 
-- Owner signature: the four-app craft manifest (counter 2) is unsigned;
+- S382 correction (stale, the manifest is signed at counter 8 by the HAI craft key, commit 3af901f): Owner signature: the four-app craft manifest (counter 2) is unsigned;
   GridCraft, PdfCraft and DeckCraft cannot be built outside a throwaway-key
   test until the owner signs it.
-- KVM acceptance for the three apps is pending (see
+- S382 correction (stale, the run is recorded in docs/DEVELOPMENT.md; DNS resolution is S382's live check): KVM acceptance for the three apps is pending (see
   `docs/DEVELOPMENT.md`); the `knownImageVolumes` rows and header-table
   rows are marked pending until then.
 - First-load size: the uncompressed wasm is 18.9 MB (GridCraft), 38.1 MB
@@ -394,12 +394,12 @@
 
 ## Graphics craft packages (S251)
 
-- Owner signature: the eight-app craft manifest (counter 3) is unsigned; the
+- S382 correction (stale, the manifest is signed at counter 8 by the HAI craft key, commit 3af901f): Owner signature: the eight-app craft manifest (counter 3) is unsigned; the
   four graphics apps cannot be built outside a throwaway-key test until the
   owner signs it. A KVM appliance that already holds a baseline at counter 3
   or higher from throwaway manifests (the S249 VM held 4) refuses this
   manifest; use a fresh appliance or a higher throwaway counter there.
-- KVM acceptance for the four apps is pending (see `docs/DEVELOPMENT.md`);
+- S382 correction (stale, the run is recorded in docs/DEVELOPMENT.md; DNS resolution is S382's live check): KVM acceptance for the four apps is pending (see `docs/DEVELOPMENT.md`);
   the `knownImageVolumes` rows and header-table rows are marked pending until
   then.
 - VectorCraft moved to v0.12.0 between planning (v0.11.0) and S251; a bump
@@ -436,11 +436,11 @@
   deckcraft and the four S251 graphics apps) still carry the WebGPU/WebGL2
   note as description text; adding structured `browser` entries to them is a
   catalog-only follow-up.
-- Owner signature: the eleven-app craft manifest (counter 4) is unsigned;
+- S382 correction (stale, the manifest is signed at counter 8 by the HAI craft key, commit 3af901f): Owner signature: the eleven-app craft manifest (counter 4) is unsigned;
   FilmCraft, EffectCraft and SoundCraft cannot be built outside a
   throwaway-key test until the owner signs it. A KVM appliance holding a
   baseline at counter 4 or higher from throwaway manifests refuses it.
-- KVM acceptance for the three apps is pending (see `docs/DEVELOPMENT.md`);
+- S382 correction (stale, the run is recorded in docs/DEVELOPMENT.md; DNS resolution is S382's live check): KVM acceptance for the three apps is pending (see `docs/DEVELOPMENT.md`);
   the `knownImageVolumes` rows and header-table rows are marked pending.
 - None of the three needs `SharedArrayBuffer`, COOP or COEP (upstream
   builds are single-threaded; their `HOSTING.md` says so). Upstream's local
@@ -494,7 +494,7 @@
   texts only;
   `docs/THIRD_PARTY.md` records the licences. Ask upstream to include NOTICE
   and the OFL texts in the web zips.
-- Owner signature: the thirteen-app craft manifest (counter 7 since S254) is unsigned;
+- S382 correction (stale, the manifest is signed at counter 8 by the HAI craft key, commit 3af901f): Owner signature: the thirteen-app craft manifest (counter 7 since S254) is unsigned;
   DesignCraft and CADCraft cannot be built outside a throwaway-key test until
   the owner signs it. A KVM appliance holding a baseline at counter 7 or
   higher from throwaway manifests refuses it.
@@ -1510,33 +1510,10 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 
 ## Craft serve and DNS advertisement validation (S382)
 
-- Local DNS advertisement gap: route reconciliation writes the Caddy snippet
-  and records `edge_routes`, but writes no local DNS answer.
-  `docker.EnsureNameDefinition`, `jellyfin.LocalRewrite`,
-  `docker.AdguardDeployDefinition` and `dns.EstablishSplitDNS` have no
-  production caller, and the daemon has no local DNS configuration. The
-  Craft apps start page renders `https://<route host>/`, so a link only
-  works on a device with a hosts entry. S382 wires the accepted S84-S86
-  capability into reconcile, adds the managed/external/off owner choice and
-  proves resolution from a second LAN client.
-- mDNS app names: S221 advertises `homestead.local` and `_homestead._tcp`
-  only. App hostnames are not mDNS names; advertising them would need a
-  `.local` naming decision (and probably a wildcard answer), so it stays out
-  of S382 and is recorded here.
-- Local DNS beyond IPv4: S382 advertises A answers for the appliance's
-  selected LAN address. AAAA answers, multi-homed appliances (which address
-  is advertised), and telling LAN clients to use the appliance as their
-  resolver through DHCP are later work; S382 documents the client-side DNS
-  requirement instead.
-- Stale craft signature notes: the committed craft manifest is signed at
-  counter 8 (commit `3af901f`) and the shipped-key test verifies it. The
-  per-batch "unsigned manifest" notes under the S250-S253 sections above are
-  stale; S382 re-runs the full matrix against the signed manifest and
-  corrects them.
-- Craft KVM leftovers: the "KVM acceptance pending" notes for the S250-S253
-  batches are stale (the runs are recorded in `docs/DEVELOPMENT.md`), but
-  none of those runs proved DNS resolution. S382's fresh-appliance matrix is
-  the single run that closes both the stale notes and the DNS proof.
+- S382 found the planned AdGuard route-reconcile design superseded: ADR-039 (S295) built the accepted local-name path. Names derive from the edge route table: the in-process mDNS responder announces `homestead.local` and `<label>.local` for each host route, and the optional `.lan` resolver (`internal/localdns`, off until the owner approves a plan) answers `homestead.lan` and each host route's `<label>.lan`. Craft apps are served by path (S320), so they add no names of their own. `docker.EnsureNameDefinition`, `jellyfin.LocalRewrite`, `docker.AdguardDeployDefinition` and `dns.EstablishSplitDNS` still have no reconcile caller; S382 does not wire them (a second DNS path). Removing or folding them into one path is cleanup left for a later slice.
+- S382 does not add an "advertised" state to the Craft apps start page: the page links `https://homestead.lan/apps/<app>/`, which resolves through mDNS on devices that do `.local`, or the `.lan` resolver or a router entry. A per-device claim cannot be made from the appliance. The Names page states which resolver is on.
+- S382 AAAA/IPv6 answers, multi-homed appliances beyond the per-subnet address choice in `internal/localdns`, and advertising the resolver to clients through DHCP stay out of scope.
+- S382 live-only: the 13-app build matrix and a second-client resolution proof are run by the owner on VM 2 from the slice runbook; mDNS does not cross the VM 2 NAT, so `.local` needs a device on the same L2 segment.
 
 - Audiobookshelf Authentik adapter (S385): its first-run recovery administrator is created by S384, but OIDC client provisioning, app-side actuation, group mapping, install-time approval, and live sign-in remain to be implemented and verified. Existing owner-created administrators must not be overwritten.
 
