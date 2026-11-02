@@ -38,7 +38,10 @@ def prepare_app(definition: dict, archive_path: Path, bridge_path: Path, output:
     d = definition
     sub = d['subtree'].rstrip('/') + '/'
     extra = set(d.get('extra_files', []))
-    sdk_tag = d['sdk_tag'].encode()
+    # "sdk_tag": null (3D, S377): upstream never loads the hosted SDK from its
+    # page, so the local shim tag is added in front of "sdk_inject_before"
+    # (which must occur exactly once). Otherwise the hosted tag is replaced.
+    sdk_tag = (d['sdk_tag'] or d['sdk_inject_before']).encode()
     local_tag = b'<script src="./_homestead/puter-bridge.js" defer></script>'
     data = archive_path.read_bytes()
     if hashlib.sha256(data).hexdigest() != (expected_sha256 or d['sha256']):
@@ -61,6 +64,12 @@ def prepare_app(definition: dict, archive_path: Path, bridge_path: Path, output:
         raise ValueError('invalid local service worker template')
     if mode == 'runtime':
         worker = worker.replace(b'__VERSION__', (expected_sha256 or d['sha256'])[:12].encode())
+    added_files = []
+    for a in d.get('add_files', []):
+        t = PurePosixPath(a['target'])
+        if t.is_absolute() or '..' in t.parts or not t.as_posix().startswith(sub) or '/' in a['source'] or '\\' in a['source']:
+            raise ValueError('unsafe added file: ' + a['target'])
+        added_files.append({'target': a['target'], 'body': (HERE / 'files' / a['source']).read_bytes()})
     patches = {}
     for p in d['patches']:
         patches.setdefault(p['file'], []).append((p['old'].encode(), p['new'].encode()))
@@ -79,6 +88,8 @@ def prepare_app(definition: dict, archive_path: Path, bridge_path: Path, output:
             total += member.size
         if total > MAX_TOTAL:
             raise ValueError('source archive too large')
+        if {a['target'] for a in added_files} & names:
+            raise ValueError('added file would overwrite a source file')
         if not set(d['required']).issubset(names):
             raise ValueError('source archive missing required files')
         index = archive.extractfile(d['index']).read()
@@ -97,12 +108,19 @@ def prepare_app(definition: dict, archive_path: Path, bridge_path: Path, output:
             destination.parent.mkdir(parents=True, exist_ok=True)
             content = archive.extractfile(member).read()
             if member.name == d['index']:
-                content = content.replace(sdk_tag, local_tag)
+                content = content.replace(sdk_tag, local_tag + (b'\n    ' + sdk_tag if not d['sdk_tag'] else b''))
             if sw and member.name == sw['target']:
                 content = worker
             for old, new in patches.get(member.name, []):
                 content = content.replace(old, new)
             destination.write_bytes(content)
+        # "add_files" (3D, S377): small Homestead-owned source files added to
+        # the tree (a storage layer the patches wire in). The source lives in
+        # scripts/everything/files/; it may not overwrite an upstream file.
+        for added in added_files:
+            destination = output.joinpath(*PurePosixPath(added['target']).parts)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(added['body'])
         target = output / sub / 'public/_homestead/puter-bridge.js'
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(bridge)

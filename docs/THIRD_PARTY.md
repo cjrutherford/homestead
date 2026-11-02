@@ -1251,3 +1251,29 @@ and are served with the app. Other bundled notices are in the same folder (repli
 flatbush, flatqueue, lucide, opentype.js, ps-parser, solid-diff). The source is
 changed only by the pinned patches in `scripts/everything/apps/parametric.json`.
 The app has no analytics script.
+
+## 3D source (S377, ADR-057) — AGPL-3.0-only
+`third_party/everything/three-d-source.tar.gz` is the `src/3d` subtree plus the root
+`LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU tar,
+sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 1,898 entries, 11,576,110
+bytes). SHA-256 `1dccd506f1e94f01b29602ee7bd34370c343203e8ca97949550bdccbb06b8aed`,
+recorded in `third_party/everything/pin.yaml`. The package is named `three-d` because
+Homestead package names must start with a letter.
+
+**Licence: GNU Affero General Public License v3, AGPL-3.0-only** (the app's own
+`LICENSE`; the MIT repository root `LICENSE` is also in the archive). Compliance is the
+same as for Notes (S371): the Corresponding Source of the 3D the appliance runs is the
+pinned archive plus the patch list `scripts/everything/apps/three-d.json` (17 patches,
+each with a `why`), the entry point `scripts/everything/files/3d-person-storage.ts`
+and the bridge shim `scripts/everything/puter-bridge.js`, all in the Homestead
+repository; the image is built on the appliance from them. An in-app source link is not
+built (DEFERRED, owner to confirm AGPL section 13 handling).
+
+Bundled packages (from the app's `THIRD_PARTY_NOTICES.md`): three, three-mesh-bvh,
+three-gpu-pathtracer, three-bvh-csg, xatlas-web, fzstd, opentype.js (all MIT),
+`@dimforge/rapier3d-compat` (Apache-2.0, its WebAssembly is embedded as base64 in a
+script), `@fontsource/inter` and `@fontsource/jetbrains-mono` (SIL OFL 1.1, font files
+served from the app's own origin). All permissive and AGPL-compatible. Not shipped:
+Pyodide (MPL-2.0, loaded by upstream from a public CDN) is removed by patch, so the
+Python console and scripts are off.

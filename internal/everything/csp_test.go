@@ -108,3 +108,42 @@ func TestPolicyAllowsWebAssemblyOnlyWhenTheBuildShipsAModule(t *testing.T) {
 		}
 	}
 }
+
+// S377: a build whose script carries its WebAssembly inline (the 3D app's
+// physics engine) gets the same permission as one with a .wasm file; a script
+// that merely mentions the word, or a file that is not script, does not.
+func TestPolicyAllowsWebAssemblyForScriptThatInstantiatesAnInlineModule(t *testing.T) {
+	cases := map[string]struct {
+		name, body string
+		want       bool
+	}{
+		"inline instantiate":  {"rapier-AbCd1234.js", `const m=await WebAssembly.instantiate(bytes,imports);`, true},
+		"inline compile":      {"engine-AbCd1234.mjs", `WebAssembly.compile(b)`, true},
+		"only a feature test": {"vendor-AbCd1234.js", `if(typeof WebAssembly==="object"&&WebAssembly.validate)ok()`, false},
+		"not script":          {"notes-AbCd1234.txt", `WebAssembly.instantiate`, false},
+	}
+	for label, c := range cases {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte(cspIndex), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(dir, "assets"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "assets", c.name), []byte(c.body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		mux := http.NewServeMux()
+		registerApp(mux, "/apps/c", dir, fixedSession{ok: true})
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("GET", "/apps/c/", nil))
+		got := rec.Header().Get("Content-Security-Policy")
+		scripts := strings.Split(got, "style-src")[0]
+		if strings.Contains(scripts, "'wasm-unsafe-eval'") != c.want {
+			t.Errorf("%s: want wasm %v: %s", label, c.want, got)
+		}
+		if strings.Contains(strings.ReplaceAll(scripts, "'wasm-unsafe-eval'", ""), "eval") {
+			t.Errorf("%s: JavaScript eval allowed: %s", label, got)
+		}
+	}
+}

@@ -16,7 +16,7 @@ import (
 // everythingPackages lists the Everything bridge packages (ADR-057). Each
 // Everything slice appends its app here, adds its YAML, craft manifest
 // entry (build: everything), knownImageVolumes row and sign-in posture.
-var everythingPackages = []string{"tasks", "projects", "records", "notes", "contacts", "inventory", "time-tracking", "circuits", "parametric"}
+var everythingPackages = []string{"tasks", "projects", "records", "notes", "contacts", "inventory", "time-tracking", "circuits", "parametric", "three-d"}
 
 func TestEverythingPackages(t *testing.T) {
 	cat := repoCatalog(t)
@@ -122,7 +122,7 @@ func TestEverythingPackages(t *testing.T) {
 func TestEverythingContextIsInSync(t *testing.T) {
 	const ctx = "../../images/everything/"
 	pairs := map[string]string{"go.mod": "../../go.mod", "go.sum": "../../go.sum"}
-	for _, dir := range [][2]string{{"cmd/everything-bridge", "../../cmd/everything-bridge"}, {"internal/everything", "../../internal/everything"}, {"scripts/everything/apps", "../../scripts/everything/apps"}} {
+	for _, dir := range [][2]string{{"cmd/everything-bridge", "../../cmd/everything-bridge"}, {"internal/everything", "../../internal/everything"}, {"scripts/everything/apps", "../../scripts/everything/apps"}, {"scripts/everything/files", "../../scripts/everything/files"}} {
 		entries, err := os.ReadDir(dir[1])
 		if err != nil {
 			t.Fatal(err)

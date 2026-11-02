@@ -88,17 +88,54 @@ func contentSecurityPolicy(index []byte, wasm bool) string {
 // hash in the file name makes the URL immutable, so it may be cached long.
 var hashedAsset = regexp.MustCompile(`^/assets/[^/]+-[A-Za-z0-9_]{8,}\.[A-Za-z0-9]+$`)
 
-// hasWasm reports whether the built app ships any WebAssembly module.
+// wasmCode marks JavaScript that compiles WebAssembly itself. A module the
+// build inlines into a script (the 3D app's physics engine carries its
+// kernel as base64) needs the same permission as a .wasm file (S377).
+var wasmCode = [][]byte{[]byte("WebAssembly.instantiate"), []byte("WebAssembly.compile"), []byte("WebAssembly.Module(")}
+
+// maxScanBytes bounds how much of one script is read when looking for wasmCode.
+const maxScanBytes = 16 << 20
+
+// hasWasm reports whether the built app ships any WebAssembly module: a
+// .wasm file, or script that instantiates or compiles one it carries inline.
 func hasWasm(dir string) bool {
 	found := false
 	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && strings.HasSuffix(strings.ToLower(d.Name()), ".wasm") {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		name := strings.ToLower(d.Name())
+		if strings.HasSuffix(name, ".wasm") {
 			found = true
 			return fs.SkipAll
+		}
+		if strings.HasSuffix(name, ".js") || strings.HasSuffix(name, ".mjs") {
+			if inlineWasm(p) {
+				found = true
+				return fs.SkipAll
+			}
 		}
 		return nil
 	})
 	return found
+}
+
+func inlineWasm(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	body, err := io.ReadAll(io.LimitReader(f, maxScanBytes))
+	if err != nil {
+		return false
+	}
+	for _, marker := range wasmCode {
+		if bytes.Contains(body, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 type appServer struct {

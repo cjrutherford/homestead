@@ -186,6 +186,23 @@ Steps and expected results:
 
 Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10 [ ] 11
 
+## S377 — 3D catalog package
+Prerequisites: VM 2 on the build with S377; Authentik sign-in set up; a second
+person exists in People; use Chrome or Edge for step 6.
+
+Steps and expected results:
+1. Build `three-d` in the craft page or CLI. Expected: image `homestead/everything-three-d:0.1.0` recorded.
+2. Install with a plan, preview and apply. Expected: route `/apps/three-d/`, no public exposure.
+3. Apply sign-in. Expected: redirect to Authentik; the 3D editor opens with a cube; no request to any other host; no Console CSP violation.
+4. Look for AI, Report a Bug, Python and any Puter link. Expected: none; the Python console says it is not available and the script console says scripts cannot run.
+5. Change a preference (for example the theme) and reload. Expected: it is kept.
+6. In Chrome, use Open Folder in the file browser. Expected: the picker opens. In Firefox or Safari: only Add Files is offered.
+7. Add an object, wait 3 seconds, reload. Expected: it is recovered (known race, see DEFERRED).
+8. Second person (closed, then granted): Expected: default preferences and none of the first person's recovery or files.
+9. Backup contains `data/bridge.db` (settings only; scenes are in the browser); uninstall removes route and container.
+
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9
+
 ## Template for a new app section
 ## SNNN — <App>
 Prerequisites: ...

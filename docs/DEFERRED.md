@@ -1709,3 +1709,14 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S376: the upstream tests (104) ran with mocks, not against the real bridge; the built image was not run in a real appliance.
 - S376: sharing and publish are hidden; AI is disabled with no backend (a future AI slice would need an approved bridge).
 - S376: the app's unused-name TypeScript rules are relaxed so patched code compiles; unreachable strings still mention Puter.
+- S377: the app is AGPL-3.0-only; the source is offered as for Notes (pinned archive plus patch list in the repository) and no in-app source link is built. Owner should confirm this is acceptable (AGPL section 13).
+- S377: scenes, libraries, presets, snapshots and the autosave stay in the browser's IndexedDB (and the browser file system), separated by person with a per-person database name but not encrypted, not backed up and not on the appliance; clearing site data or changing browser loses them. Only settings (localStorage) go to the person's bridge storage, capped at 3 MB.
+- S377: concurrent tabs of one person overwrite the settings snapshot (last write wins).
+- S377: Python (Pyodide from a public CDN) and AI are off. The script console, Run Script and style modules need `unsafe-eval`, which the policy refuses, so they report that they cannot run; the "Allow Online Access" preference text still mentions them.
+- S377: no service worker, so there is no offline page; the first load is about 8 MB of script.
+- S377: folder access ("Open Folder...") needs the File System Access API and works only in Chromium; other browsers get "Add Files..." and downloads (upstream behaviour, checked only by reading the code and by removing the API in headless Chrome, not in Firefox or Safari).
+- S377: exported files still say "Puter 3D" in their metadata and OBJ exports carry a `https://puter.com` comment; they are file-format identifiers (the USD reader depends on one) and were left unchanged.
+- S377: the Dockerfile guard was not extended for jsdelivr; the Pyodide reference is removed by patch and checked in the prepared tree and the built output by the tests.
+- S377: upstream's 3,018 tests ran against mocks, not the real bridge; the headless Chrome check covers boot, settings and database separation, reload and a second person, not modelling, rendering (no WebGL check), import or export.
+- S377: not run on VM 2 or through Authentik; the review plan S377 section is the owner checklist.
+- S377: a recovered autosave was read from the person's database on reload but upstream's own startup race (a font-load change before the read returns) can skip applying it; it was seen in headless Chrome and not investigated further.
