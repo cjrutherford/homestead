@@ -174,6 +174,27 @@ describe('real Tasks store through the real bridge', () => {
     expect(await p.kv.list('*')).toEqual(['a', 'b']);
   });
 
+  // S372: Contacts reads its whole address book with kv.list('contact:*', true).
+  // More than the 1000-key list limit must still come back, in pages.
+  it('lists key-value pairs past the 1000-key limit, per person', async () => {
+    const p = shimFor(await bridge.login('book-person'));
+    const q = shimFor(await bridge.login('book-other'));
+    for (let from = 0; from < 1150; from += 100) {
+      const batch = [];
+      for (let i = from; i < Math.min(from + 100, 1150); i++) batch.push({ key: 'contact:' + String(i).padStart(5, '0'), value: { id: i, name: 'n' + i } });
+      await p.kv.set(batch);
+    }
+    await p.kv.set('other:1', { x: 1 });
+    await q.kv.set('contact:q', { id: 'q' });
+    const all = await p.kv.list('contact:*', true);
+    expect(all.length).toBe(1150);
+    expect(all[0]).toEqual({ key: 'contact:00000', value: { id: 0, name: 'n0' } });
+    expect(all[1149].value.id).toBe(1149);
+    expect((await q.kv.list('contact:*', true)).map((e) => e.key)).toEqual(['contact:q']);
+    expect(await p.kv.list('nothing:*', true)).toEqual([]);
+    expect((await rejects(p.kv.list('*'))).code).toBeTruthy(); // key-only list keeps its 1000 limit
+  });
+
   // S369: the folder operations Projects needs, through the shim to the real
   // bridge. Folders are implied by file paths; everything is per person.
   it('stat, readdir and recursive delete work on folders, per person', async () => {

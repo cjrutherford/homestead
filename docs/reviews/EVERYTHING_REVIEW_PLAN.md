@@ -87,6 +87,26 @@ Steps and expected results:
 
 Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10 [ ] 11 [ ] 12
 
+## S372 — Contacts catalog package
+Prerequisites: VM 2 on the build with S372; Authentik sign-in set up; a second
+person exists in People.
+
+Steps and expected results:
+1. Build `contacts` in the craft page or CLI. Expected: image `homestead/everything-contacts:0.1.0` recorded.
+2. Install Contacts with a plan, preview and apply. Expected: route `/apps/contacts/`, no public exposure.
+3. Apply sign-in. Expected: `https://homestead.lan/apps/contacts/` redirects to Authentik; the owner sees an empty address book. No request to js.puter.com or plausible.io.
+4. New contact with a name, company, an email and a photo; reload. Expected: it remains, with the photo.
+5. Import a `.vcf` with several cards (use the Import menu item and also drag one onto the window). Expected: all appear. Export all and open the file. Expected: every contact is in it.
+6. Search by name, company and email. Expected: the list narrows as you type.
+7. Look for Smart add. Expected: no such button anywhere and no "Puter" wording on screen.
+8. Open the account menu and a contact's menu. Expected: the app's own menus appear; there is no Sign out and no raw user id in the account menu. A contact with a birthday has no "Add birthday to Calendar".
+9. Import or create a few thousand contacts (a large `.vcf`). Expected: after a reload they all load (it may take a few seconds).
+10. Second person: closed by default, then granted in People. Expected: an empty address book.
+11. Stop the container and reload. Expected: the "You are offline" page, no contacts shown. Start it again.
+12. DevTools Console shows no CSP violation. Backup contains `data/bridge.db`; uninstall removes route and container.
+
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10 [ ] 11 [ ] 12
+
 ## Template for a new app section
 ## SNNN — <App>
 Prerequisites: ...

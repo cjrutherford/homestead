@@ -196,6 +196,23 @@
         var star = pattern.indexOf('*');
         if (star !== -1 && star !== pattern.length - 1) fail('bridge_unsupported', 'Only trailing-* key patterns are supported');
         var prefix = star === -1 ? pattern : pattern.slice(0, -1);
+        if (returnValues && star !== -1) {
+          // Key-value pairs in bounded pages (S372): works for address books
+          // longer than the 1000-key list limit and needs one request per page,
+          // not one per key. A page's "next" is the cursor for the following one.
+          var out = [];
+          var after = '';
+          for (var pages = 0; pages < 100000; pages++) {
+            var page = await call({ operation: 'listvalues', kind: 'kv', key: prefix, after: after });
+            var entries = (page && page.entries) || [];
+            for (var i = 0; i < entries.length; i++) {
+              out.push({ key: entries[i].key, value: JSON.parse(dec.decode(fromBase64(entries[i].value))) });
+            }
+            if (!page || !page.next) return out;
+            after = page.next;
+          }
+          fail('bridge_error', 'Key list did not end');
+        }
         var r = await call({ operation: 'list', kind: 'kv', key: prefix });
         var keys = (r && r.keys) || [];
         if (star === -1) keys = keys.filter(function (k) { return k === prefix; });

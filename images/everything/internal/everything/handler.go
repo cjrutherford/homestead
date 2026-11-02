@@ -56,6 +56,7 @@ type request struct {
 	Key       string       `json:"key"`
 	Value     []byte       `json:"value"`
 	Entries   []batchEntry `json:"entries"`
+	After     string       `json:"after"`
 }
 
 type batchEntry struct {
@@ -193,6 +194,19 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				keys = []string{}
 			}
 			_ = json.NewEncoder(w).Encode(map[string][]string{"keys": keys})
+			return
+		}
+	case "listvalues":
+		// Key-value pairs in bounded pages; the client follows "next".
+		var entries []Entry
+		var next string
+		entries, next, err = h.store.ListValues(r.Context(), scope, kind, body.Key, body.After)
+		if err == nil {
+			out := make([]batchEntry, len(entries))
+			for i, e := range entries {
+				out[i] = batchEntry{Key: e.Key, Value: e.Value}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"entries": out, "next": next})
 			return
 		}
 	default:

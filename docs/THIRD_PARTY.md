@@ -1150,3 +1150,23 @@ What Homestead does to comply:
   that talk to it over HTTP, and the shim file is served to the browser alongside
   Notes; the shim is Homestead's own and is available at the same repository.
   Homestead's own licensing position on the shim is not changed by this slice.
+
+## Contacts source (S372, ADR-057)
+`third_party/everything/contacts-source.tar.gz` is the `src/contacts` subtree plus
+the root `LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU
+tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 109 entries, 5,885,527
+bytes; it carries the app's store screenshots, which the build copies but the
+patched manifest no longer lists). SHA-256
+`1c833f87a8e839ea1664739936de202ca2bf2d8c43a450c3b75bb4b3ac0724fd`, recorded in
+`third_party/everything/pin.yaml`. The recipe was first run on the records subtree
+and reproduced the records digest. Licence: MIT. Both the repository root `LICENSE`
+and `src/contacts/LICENSE` are the MIT licence (Copyright (c) 2026 Puter
+Technologies Inc.); the app's `package.json` has no licence field. It is not AGPL
+or copyleft. The app has no runtime dependencies at all (only app code is
+bundled); the dev dependencies (vite, vitest, happy-dom, eslint) are build and test
+only. The source is changed only by the pinned patches listed in
+`scripts/everything/apps/contacts.json` (relative asset base, removal of the
+hosted-SDK preconnect, the Plausible analytics script, the Smart add button and
+its Puter AI call, service worker registration, manifest URLs); only
+`npm ci --ignore-scripts` and the build run.

@@ -45,3 +45,16 @@ app: notes
 license: AGPL-3.0-only
 archive: notes-source.tar.gz
 sha256: 035ec22bde035d8fe56cac74afdcee6126ae4d3a22c6139e1930b1964097d1d6
+---
+# Pinned source for the contacts package (S372). Same upstream repository and
+# commit as above; archive built the same way (tracked files of src/contacts,
+# LICENSE, dev/puter-localhost.mjs; GNU tar, sorted, mode 0664, owner 0, mtime
+# 0, gzip -n). Licence: MIT. src/contacts has its own LICENSE file (MIT,
+# Copyright 2026 Puter Technologies Inc.), identical in kind to the repository
+# root licence, and its package.json declares no licence field.
+repository: https://github.com/HeyPuter/everything
+commit: e7d07c48546ef0650a8f3ab94ae82b8b50d3646a
+app: contacts
+license: MIT
+archive: contacts-source.tar.gz
+sha256: 1c833f87a8e839ea1664739936de202ca2bf2d8c43a450c3b75bb4b3ac0724fd

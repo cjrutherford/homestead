@@ -164,6 +164,16 @@ func TestWhoamiAndAtomicBatch(t *testing.T) {
 	if rec := post(`{"operation":"list","kind":"kv","key":""}`); !strings.Contains(rec.Body.String(), `["a","b"]`) {
 		t.Fatalf("list: %s", rec.Body.String())
 	}
+	// S372: key-value pairs come back in pages with a cursor.
+	if rec := post(`{"operation":"listvalues","kind":"kv","key":""}`); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"entries":[{"key":"a","value":"AQ=="},{"key":"b","value":"Ag=="}]`) || !strings.Contains(rec.Body.String(), `"next":""`) {
+		t.Fatalf("listvalues: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := post(`{"operation":"listvalues","kind":"kv","key":"","after":"a"}`); !strings.Contains(rec.Body.String(), `"entries":[{"key":"b"`) {
+		t.Fatalf("listvalues after: %s", rec.Body.String())
+	}
+	if rec := post(`{"operation":"listvalues","kind":"file","key":""}`); rec.Code != 400 {
+		t.Fatalf("listvalues file: %d", rec.Code)
+	}
 	// A duplicate key rejects the whole batch.
 	if rec := post(`{"operation":"putbatch","kind":"kv","entries":[{"key":"c","value":"AQ=="},{"key":"c","value":"Ag=="}]}`); rec.Code != 400 {
 		t.Fatalf("dup batch: %d", rec.Code)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -235,5 +236,99 @@ func TestConcurrentStoresShareDatabase(t *testing.T) {
 	keys, err := a.List(ctx, scope, KindKV, "shared:")
 	if err != nil || len(keys) != 30 {
 		t.Fatalf("keys %d: %v", len(keys), err)
+	}
+}
+
+// S372: reading a whole address book (Contacts lists "contact:*" with values)
+// must work past the 1000-key list cap, in bounded pages, scoped to the person.
+func TestListValuesPagesPastTheKeyListCapAndStaysScoped(t *testing.T) {
+	store, err := OpenStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	a := Scope{App: "contacts", Subject: "alice"}
+	b := Scope{App: "contacts", Subject: "bob"}
+	var batch []Entry
+	flush := func() {
+		if len(batch) > 0 {
+			if err := store.PutBatch(ctx, a, KindKV, batch); err != nil {
+				t.Fatal(err)
+			}
+			batch = nil
+		}
+	}
+	for i := 0; i < 1250; i++ {
+		batch = append(batch, Entry{Key: fmt.Sprintf("contact:%05d", i), Value: []byte("v")})
+		if len(batch) == 100 {
+			flush()
+		}
+	}
+	flush()
+	_ = store.Put(ctx, a, KindKV, "other:1", []byte("x"))
+	_ = store.Put(ctx, a, KindKV, "contact%", []byte("x"))
+	_ = store.Put(ctx, b, KindKV, "contact:bob", []byte("secret"))
+	if _, err := store.List(ctx, a, KindKV, "contact:"); err == nil {
+		t.Fatal("the key list should still refuse more than 1000 entries")
+	}
+	var got []Entry
+	after, pages := "", 0
+	for {
+		page, next, err := store.ListValues(ctx, a, KindKV, "contact:", after)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) == 0 || len(page) > ListValuesMax {
+			t.Fatalf("page %d has %d entries", pages, len(page))
+		}
+		got = append(got, page...)
+		pages++
+		if next == "" {
+			break
+		}
+		after = next
+	}
+	if len(got) != 1250 || pages != 3 {
+		t.Fatalf("got %d entries in %d pages", len(got), pages)
+	}
+	for i, e := range got {
+		if e.Key != fmt.Sprintf("contact:%05d", i) || string(e.Value) != "v" {
+			t.Fatalf("entry %d = %q", i, e.Key)
+		}
+	}
+	// Bob sees only his own; a file scope and an invalid cursor are refused.
+	if page, next, err := store.ListValues(ctx, b, KindKV, "contact:", ""); err != nil || next != "" || len(page) != 1 || string(page[0].Value) != "secret" {
+		t.Fatalf("bob: %v %q %v", page, next, err)
+	}
+	if _, _, err := store.ListValues(ctx, a, KindFile, "contact:", ""); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("file kind: %v", err)
+	}
+	if _, _, err := store.ListValues(ctx, a, KindKV, "contact:", strings.Repeat("x", 2000)); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("long cursor: %v", err)
+	}
+}
+
+func TestListValuesPagesByBytes(t *testing.T) {
+	store, err := OpenStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	s := Scope{App: "contacts", Subject: "alice"}
+	big := make([]byte, 3*1024*1024)
+	for i := 0; i < 3; i++ {
+		if err := store.Put(ctx, s, KindKV, fmt.Sprintf("k%d", i), big); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page, next, err := store.ListValues(ctx, s, KindKV, "k", "")
+	if err != nil || len(page) != 1 || next != "k0" {
+		t.Fatalf("first page: %d entries, next %q, %v", len(page), next, err)
+	}
+	page, next, err = store.ListValues(ctx, s, KindKV, "k", next)
+	if err != nil || len(page) != 1 || page[0].Key != "k1" || next != "k1" {
+		t.Fatalf("second page: %v %q %v", page, next, err)
 	}
 }

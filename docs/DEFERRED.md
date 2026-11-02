@@ -1665,3 +1665,12 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S371: the app runs with `env` set to `app`, so it shows no sign-out button; sign-out is the Homestead sign-out route until a small patch adds a menu entry.
 - S371: AI assist, read-only public page links and picking from a cloud drive are not offered; AI would need a local model backend and links an exposure plan, both a later slice.
 - S371: the unreachable publish handler and `backend.readURL` remain in the built source; they are refused by the bridge if ever called.
+- S372: the upstream Contacts tests (313/313) run against the pristine tree with a mock; they were not run against the real bridge, and the image build skips them (patched Smart add tests would fail), so a changed pin must re-run them by hand.
+- S372: not run on VM 2 or through Authentik; the review plan S372 section is the owner checklist.
+- S372: Smart add (needs an AI backend), "Add birthday to Calendar" and the Calendar suggestions (need the Puter desktop and a Calendar app) are not offered; a local model backend or a Homestead calendar link would be later slices.
+- S372: no browser-native replacement was added for the Puter desktop file drop or window title: OS drag and drop, the Import file picker and the export download link already work in a browser and are used.
+- S372: key-only `kv.list` still stops at 1000 entries; only the with-values form pages. No Everything app lists more than 1000 keys without values today.
+- S372: the store screenshots (about 5 MB) stay in the archive and the image because patches cannot delete files; the manifest no longer lists them. The unused `.well-known/mcp.json`, `robots.txt` sitemap line and social-card meta tags still name contacts.puter.com.
+- S372: the sign-in gate and service-mode panel in `main.js` still point at an absolute `/icon.svg`; neither is reachable under the bridge.
+- S372: a large address book (a few thousand contacts) loads in one page-by-page read but the app re-reads all of it on each load; no paging in the UI, and save while offline is not queued (the app shows an error).
+- S372: the account menu shows no identity because the bridge's user name is the opaque sign-in subject; a friendlier name needs the OIDC email passed through `whoami`.

@@ -233,6 +233,56 @@ func (s *Store) List(ctx context.Context, scope Scope, kind Kind, prefix string)
 	return keys, rows.Err()
 }
 
+// ListPageBytes bounds the values returned by one ListValues page, so that a
+// large address book is read in several bounded responses (S372).
+const ListPageBytes = 4 * 1024 * 1024
+
+// ListValuesMax bounds the number of entries in one ListValues page.
+const ListValuesMax = 500
+
+// ListValues returns the key-value pairs whose key starts with prefix and sorts
+// after the cursor (empty for the first page), in lexical order, within the
+// authenticated scope. A page holds at most ListValuesMax entries and about
+// ListPageBytes of values (always at least one entry). next is the cursor for
+// the following page, or empty when there is none. It reads only; it changes
+// no quota. KV only.
+func (s *Store) ListValues(ctx context.Context, scope Scope, kind Kind, prefix, after string) (entries []Entry, next string, err error) {
+	if kind != KindKV {
+		return nil, "", ErrInvalid
+	}
+	if prefix == "" {
+		err = validate(scope, kind, "_")
+	} else {
+		err = validate(scope, kind, prefix)
+	}
+	if err == nil && after != "" {
+		err = validate(scope, kind, after)
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT object_key, value FROM objects WHERE app=? AND subject=? AND kind=? AND substr(object_key,1,length(?))=? AND object_key>? ORDER BY object_key LIMIT ?`,
+		scope.App, scope.Subject, kind, prefix, prefix, after, ListValuesMax+1)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+	size := 0
+	for rows.Next() {
+		var e Entry
+		if err := rows.Scan(&e.Key, &e.Value); err != nil {
+			return nil, "", err
+		}
+		if len(entries) >= ListValuesMax || (len(entries) > 0 && size+len(e.Value) > ListPageBytes) {
+			next = entries[len(entries)-1].Key
+			break
+		}
+		size += len(e.Value)
+		entries = append(entries, e)
+	}
+	return entries, next, rows.Err()
+}
+
 // Entry is one item in an atomic batch. Limits protect the bridge service
 // independently of request-size limits at its future HTTP boundary.
 type Entry struct {
