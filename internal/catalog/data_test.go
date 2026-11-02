@@ -71,6 +71,11 @@ var knownImageVolumes = map[string]imageVolumes{
 	// no Volumes, root user, 80/tcp; /config and /metadata are Homestead
 	// declarations and the media libraries are owner volumes.
 	"ghcr.io/advplyr/audiobookshelf:2.37.1": {},
+	// S366: verified from the registry image configs on 2026-11-01:
+	// BookStack (LinuxServer) VOLUME /config, root user, 80/tcp; MariaDB
+	// 11.8.9 VOLUME /var/lib/mysql, 3306/tcp.
+	"lscr.io/linuxserver/bookstack:26.09.2": {Volumes: []string{"/config"}},
+	"docker.io/library/mariadb:11.8.9":      {Volumes: []string{"/var/lib/mysql"}},
 	// S354: verified from the Docker Hub image config for 0.64.2 on
 	// 2026-10-23: /data and /music, root user, 4533/tcp. /music is the
 	// owner's shared music library, supplied at install, not declared.

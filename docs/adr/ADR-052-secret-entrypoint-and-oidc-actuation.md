@@ -305,3 +305,23 @@ rendered, JSON-escaped configuration (JSON is YAML), `{}` while sign-in is
 off. Nothing about custody changes: the value is in the secret store and the
 0600 file, not in Compose, the override, argv or the environment. Details:
 `docs/slices/S357-vikunja.md`.
+
+### Amendment (2026-11-01, S366): BookStack, a MariaDB sidecar and a Laravel key
+BookStack signs in through native OIDC set by environment, with its client
+secret, database password and `APP_KEY` delivered as files (`FILE__*`,
+LinuxServer's convention; MariaDB's own `*_FILE`). Three points go beyond the
+earlier amendments, none changing the custody rules:
+- A generated secret may declare `encoding: laravel-key`: `base64:` plus 32
+  random bytes, which Laravel requires for `APP_KEY`. The default stays 64 hex
+  characters. The encoding is not combined with an initial value, reveal or
+  the database password, and the value is never regenerated.
+- Role mapping needs the app's own database: BookStack matches groups to roles
+  by `roles.external_auth_id`, which no environment variable sets. The S415-S417
+  rule applies unchanged to the `onapply`/`onoff` PHP script: version guard,
+  schema guard, wait for migrations, one transaction, idempotent, never
+  overwrites values it did not write, writes the two roles' IDs only, and a pin
+  test (`TestBookStackSignInPinnedToVerifiedVersion`). The script connects to
+  the sidecar with the password file already mounted for the app.
+- A package's well-known seeded administrator is neutralised at install by a
+  first-run routine (`bookstack`), independent of sign-in, so it holds when
+  sign-in is off. Details: `docs/slices/S366-bookstack.md`.

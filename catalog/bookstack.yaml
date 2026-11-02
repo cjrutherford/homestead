@@ -1,0 +1,274 @@
+# BookStack household wiki (S366): the last Wave 3 package, and the first
+# with a MariaDB service.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# Two containers: the LinuxServer BookStack image (ADR-056: BookStack has no
+# upstream-published image; s6 init, nginx + php-fpm, service user abc from
+# PUID/PGID, all state under /config) and the Docker official MariaDB 11.8
+# LTS image (upstream class: a dependency's own project image). The image's
+# entrypoint runs unchanged; secrets use LinuxServer's FILE__<VAR> convention
+# (no supervisor, ADR-056 §4) and MariaDB's own *_FILE variable.
+#
+# BookStack cannot run under a path ("APP_URL must be the root URL that you
+# want to host BookStack on"; every link is generated from it), so the
+# package is served on a name of its own.
+#
+# BookStack seeds an administrator (admin@admin.com / "password"). The
+# first-run routine (firstrun below) replaces that password at install with a
+# generated one the owner can reveal, before and apart from Authentik
+# sign-in, so the well-known password never survives the first start.
+name: bookstack
+version: 26.09.2
+title: BookStack
+blurb: A structured wiki for household documentation.
+description: BookStack is a wiki organised as shelves, books, chapters and
+  pages, with a visual editor, full-text search, page history and
+  per-role permissions. Use it for house manuals, warranties, wifi and
+  appliance notes, and recipes you want to keep in order. It runs as the
+  BookStack app plus a MariaDB database, with uploads and settings on
+  application storage. Homestead replaces the seeded administrator's
+  well-known password at install; reveal the new one from the app's page.
+category: documents
+icon: mdi:book-open-page-variant
+services:
+- name: bookstack
+  image: lscr.io/linuxserver/bookstack:26.09.2
+  publisher: linuxserver
+  exposes: web
+  containerport: 80
+  environment:
+    # The service user abc is created from these; /config is chowned to it
+    # by the image's init on every start.
+    PUID: "1000"
+    PGID: "1000"
+    # The app's own address (the public name once published). BookStack
+    # builds every link, its OIDC callback and its asset URLs from it. It is
+    # left out when no route is assigned, and the app then uses the
+    # address it was opened at. Changing it after content exists needs
+    # `bookstack:update-url` (docs/slices/S366-bookstack.md).
+    APP_URL: "{{app_url}}"
+    # Traffic arrives only through Homestead's edge, so its forwarding
+    # headers are trusted (https scheme, client address).
+    APP_PROXIES: "*"
+    DB_HOST: db
+    DB_PORT: "3306"
+    DB_DATABASE: bookstack
+    DB_USERNAME: bookstack
+  # Image VOLUME: /config (www/.env, www/uploads, www/files, www/images,
+  # www/themes, framework cache and sessions, logs, backups). Verified from
+  # the image config at 26.09.2: entrypoint /init, root user, 80/tcp.
+  data:
+  - target: /config
+    class: application
+    subpath: config
+    uid: 1000
+    gid: 1000
+- name: db
+  image: docker.io/library/mariadb:11.8.9
+  publisher: upstream
+  exposes: ""
+  environment:
+    MARIADB_DATABASE: bookstack
+    MARIADB_USER: bookstack
+    # No root password anywhere: the image generates one and prints it to
+    # its log on first start. Homestead and the apps use the bookstack
+    # user, and the owner can reach the server as root over the container's
+    # local socket (docker exec).
+    MARIADB_RANDOM_ROOT_PASSWORD: "yes"
+  # Image VOLUME: /var/lib/mysql (user mysql, uid 999, 0700).
+  data:
+  - target: /var/lib/mysql
+    class: application
+    subpath: mariadb
+    database: true
+    mode: "0700"
+    uid: 999
+    gid: 999
+requirements:
+  memorymb: 768
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 2147483648
+  # nginx inside the image listens on 80; routes proxy to it and no host
+  # port is published by default.
+exposure:
+  package: bookstack
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Household documentation (wifi passwords, warranties, account notes) leaves the LAN when widened; expose only behind HTTPS with a certificate you trust, and keep sign-in with Authentik on.
+backuppaths:
+- config
+database:
+  service: db
+  kind: mariadb
+  database: bookstack
+  username: bookstack
+  passwordsecret: db_password
+sso:
+  class: optional
+  protocols: [oidc]
+  # Sign-in (S366): BookStack's native OIDC, set by environment alone. The
+  # client secret is read from FILE__OIDC_CLIENT_SECRET (the image's init
+  # exports it as OIDC_CLIENT_SECRET for the app). With AUTH_METHOD=oidc
+  # BookStack turns its own login form and password reset off, so sign-in
+  # is exclusive here; the way back is the off plan (the warnings say
+  # what it means for people who only ever signed in with Authentik).
+  #
+  # Roles come from the Authentik groups claim at every sign-in
+  # (OIDC_USER_TO_GROUPS, OIDC_REMOVE_FROM_GROUPS): BookStack matches a
+  # group to a role by the role's "External Authentication IDs" field.
+  # The environment cannot set that field, so the script below writes it
+  # on the Admin role (the app's admin group and the owner group) and the
+  # Editor role (the app's user group). Nothing else is written.
+  #
+  # RE-VERIFY ON EVERY VERSION BUMP: verified against BookStack v26.09.2
+  # (app/Access/GroupSyncService.php role matching, app/Config/oidc.php and
+  # auth.php env names, OidcService/OidcProviderSettings issuer equality and
+  # discovery, RegistrationService.findOrRegister, the roles table:
+  # display_name, system_name, external_auth_id, updated_at; /app/www/version).
+  # The pin test TestBookStackSignInPinnedToVerifiedVersion fails when the
+  # version changes until this block and that constant are re-verified
+  # together.
+  oidc:
+    adapter: env-oidc
+    service: bookstack
+    env:
+      redirectpaths: ["/oidc/callback"]
+      signinpath: /login
+      secret: oidc_client_secret
+      exclusive: true
+      # PHP's TLS (curl/OpenSSL) reads the image's own CA bundle; for the
+      # appliance's own issuer the combined bundle is laid over it. A
+      # public issuer (Let's Encrypt) needs nothing.
+      trustbundle: system
+      trustpath: /etc/ssl/certs/ca-certificates.crt
+      set:
+        AUTH_METHOD: oidc
+        OIDC_NAME: Authentik
+        OIDC_DISPLAY_NAME_CLAIMS: name
+        OIDC_CLIENT_ID: "{{client_id}}"
+        # BookStack compares the issuer with the discovery document's
+        # "issuer" exactly; Authentik's ends in a slash, as {{issuer}} does.
+        OIDC_ISSUER: "{{issuer}}"
+        OIDC_ISSUER_DISCOVER: "true"
+        OIDC_END_SESSION_ENDPOINT: "true"
+        OIDC_USER_TO_GROUPS: "true"
+        OIDC_GROUPS_CLAIM: groups
+        OIDC_REMOVE_FROM_GROUPS: "true"
+        # The group names the role script writes; removed again on off.
+        HOMESTEAD_ADMIN_GROUP: "{{admin_group}}"
+        HOMESTEAD_USER_GROUP: "{{user_group}}"
+      onapply:
+      - php
+      - -r
+      - &bookstack_signin_script |
+        $VERIFIED = 'v26.09.2';
+        $OWNER = 'homestead-owner';
+        $die = function ($m) { fwrite(STDERR, 'bookstack sign-in: ' . $m . " (BookStack's own database is written here; re-verify this script against its roles table after any BookStack update)\n"); exit(1); };
+        $mode = $argv[1] ?? '';
+        if ($mode !== 'on' && $mode !== 'off') $die('expected the argument on or off');
+        $admins = (string) getenv('HOMESTEAD_ADMIN_GROUP');
+        $users = (string) getenv('HOMESTEAD_USER_GROUP');
+        if ($admins === '' || $users === '') {
+          if ($mode === 'off') { echo "bookstack sign-in off (no group names to undo)\n"; exit(0); }
+          $die('the app\'s Authentik group names are not set');
+        }
+        foreach ([$admins, $users, $OWNER] as $g) if (!preg_match('/^[a-z0-9][a-z0-9-]*$/', $g)) $die('unexpected group name');
+        $seen = trim((string) @file_get_contents('/app/www/version'));
+        if ($mode === 'on' && $seen !== $VERIFIED) $die('this is BookStack ' . $seen . ' but the script was verified against ' . $VERIFIED);
+        $file = getenv('FILE__DB_PASSWORD');
+        $pw = $file ? rtrim((string) @file_get_contents($file), "\r\n") : '';
+        if ($pw === '' || !getenv('DB_HOST') || !getenv('DB_DATABASE') || !getenv('DB_USERNAME')) $die('the database settings are not readable');
+        try {
+          $pdo = new PDO('mysql:host=' . getenv('DB_HOST') . ';port=' . (getenv('DB_PORT') ?: '3306') . ';dbname=' . getenv('DB_DATABASE') . ';charset=utf8mb4', getenv('DB_USERNAME'), $pw, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 5]);
+          $files = count(glob('/app/www/database/migrations/*.php'));
+          $done = (int) $pdo->query('SELECT COUNT(*) FROM migrations')->fetchColumn();
+        } catch (Throwable $e) { $die('the database is not ready'); }
+        if ($files < 1 || $done < $files) $die('BookStack is still migrating its database');
+        $open = false;
+        try {
+          $cols = $pdo->query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'roles'")->fetchAll(PDO::FETCH_COLUMN);
+          foreach (['id', 'display_name', 'system_name', 'external_auth_id', 'updated_at'] as $c) if (!in_array($c, $cols, true)) $die('table roles lacks column ' . $c);
+          $pdo->beginTransaction();
+          $open = true;
+          $roles = $pdo->query('SELECT id, display_name, system_name, external_auth_id FROM roles FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);
+          $admin = null; $editor = null;
+          foreach ($roles as $r) {
+            if ($r['system_name'] === 'admin') $admin = $r;
+            if (($r['system_name'] === null || $r['system_name'] === '') && strtolower(trim($r['display_name'])) === 'editor') $editor = $r;
+          }
+          if (!$admin || !$editor) $die('the Admin or Editor role is missing');
+          $set = $pdo->prepare('UPDATE roles SET external_auth_id = ?, updated_at = NOW() WHERE id = ?');
+          foreach ([[$admin, $admins . ',' . $OWNER], [$editor, $users]] as [$r, $want]) {
+            $cur = (string) $r['external_auth_id'];
+            if ($mode === 'on') {
+              if ($cur === $want) continue;
+              if ($cur !== '') $die('the ' . $r['display_name'] . ' role already has External Authentication IDs of its own');
+              $set->execute([$want, $r['id']]);
+            } elseif ($cur === $want) {
+              $set->execute(['', $r['id']]);
+            }
+          }
+          $pdo->commit();
+          $open = false;
+          echo 'bookstack sign-in ' . $mode . "\n";
+        } catch (Throwable $e) {
+          if ($open) { try { $pdo->rollBack(); } catch (Throwable $x) {} }
+          $die('the database access failed');
+        }
+      - "on"
+      onoff:
+      - php
+      - -r
+      - *bookstack_signin_script
+      - "off"
+      warnings:
+      - "Sign-in with Authentik replaces BookStack's own login form while it is on, including password reset. The administrator account Homestead set up at install (admin@admin.com, password revealable on the app's page) cannot sign in until sign-in is turned off again."
+      - "Roles follow Authentik groups at every sign-in: members of the app's admin group and the owner become BookStack Admins, everyone else Authentik lets in becomes an Editor, and roles an administrator gave a person inside BookStack are removed at their next sign-in. Homestead writes the Admin and Editor roles' External Authentication IDs in BookStack's database for this, and refuses if you already set your own."
+      - "People who sign in get an account named from their Authentik name and email, matched by their Authentik subject. A BookStack account with the same email that was made another way is not linked: sign-in for that person is refused until one of the two emails changes."
+      - "Turning sign-in off puts BookStack's own login back. People who only ever signed in with Authentik have random passwords nobody knows: reset them as the administrator (Settings, Users), or set up BookStack's mail first. If no administrator is left, `docker exec -it bookstack-bookstack php /app/www/artisan bookstack:create-admin` makes one."
+      - "BookStack logs people out of Authentik too (end-session). Sign-in completes at the address BookStack was opened at, so plan sign-in again after the address changes."
+secrets:
+- name: db_password
+  # The MariaDB user's password; the app and the backup export use it.
+  # Rotation is not offered for MariaDB (S352).
+  immutable: true
+  consumers:
+  - service: db
+    env: MARIADB_PASSWORD_FILE
+  - service: bookstack
+    env: FILE__DB_PASSWORD
+- name: app_key
+  # Laravel's encryption key (cookies, stored secrets such as two-factor
+  # keys). Rotating it signs everyone out and loses the stored secrets.
+  encoding: laravel-key
+  immutable: true
+  consumers:
+  - service: bookstack
+    env: FILE__APP_KEY
+- name: oidc_client_secret
+  # Authentik's client secret for BookStack; Homestead generates it, hands
+  # it to Authentik, and gives BookStack the file.
+  consumers:
+  - service: bookstack
+    env: FILE__OIDC_CLIENT_SECRET
+- name: admin_password
+  # The seeded administrator's (admin@admin.com) password, set at install
+  # in place of the well-known one. Only applied while that account still
+  # has the seeded password; an administrator you changed is never touched.
+  immutable: true
+  reveal: true
+  note: Password for admin@admin.com, the local administrator Homestead set up at install. It signs in only while Authentik sign-in is off.
+firstrun:
+  routine: bookstack
+  service: bookstack
+  account: admin@admin.com
+  secret: admin_password
+integrations:
+- kind: identity
+  target: authentik
+  note: People sign in with Authentik from the BookStack login page once sign-in is applied on the app's page; admins and the owner become BookStack Admins and everyone else an Editor.

@@ -89,7 +89,7 @@ needs the S341 library declaration to name its shared ingest path.
 | S363 | `radarr` | S360,S341 | Movies; same shape as Sonarr. |
 | S364 | `sabnzbd` | S360 | Usenet client; owner supplies the provider. |
 | S365 | `seerr` | S341 | Jellyfin login; LAN only. |
-| S366 | `bookstack` | S352,S360 | MariaDB export, OIDC, LinuxServer image. Last slice of the catalog track. |
+| S366 | `bookstack` | S352,S360 | MariaDB export, OIDC, LinuxServer image. Last slice of the catalog track. Built (S366). |
 
 ### 2.6 Validation gate — craft build, serve and local names
 

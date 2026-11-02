@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -79,7 +80,16 @@ type SecretDecl struct {
 	// renders at sign-in time (EnvOIDC.SecretFile): before sign-in is on
 	// it is the app's "nothing configured" value. Needs Immutable.
 	Initial string
+	// Encoding (S366) names the format a generated value must take, for
+	// an app that refuses the default 64 hex characters. Empty is the
+	// default; SecretEncodingLaravelKey is a Laravel APP_KEY. Not with
+	// Initial.
+	Encoding string
 }
+
+// SecretEncodingLaravelKey generates "base64:" and 32 random bytes, the
+// APP_KEY form Laravel's AES-256 encrypter accepts (BookStack).
+const SecretEncodingLaravelKey = "laravel-key"
 
 // SecretStoreName is the secret-store row holding a package secret.
 // The `app_` prefix marks app-owned secrets, which configuration export
@@ -159,6 +169,15 @@ func validateSecrets(m Manifest, services map[string]bool) error {
 		seen[decl.Name] = true
 		if decl.Initial != "" && (!decl.Immutable || decl.Reveal || strings.ContainsAny(decl.Initial, "\r\n")) {
 			return fmt.Errorf("catalog: secret %q has an initial value, so it must be immutable, not revealed and one line", decl.Name)
+		}
+		switch decl.Encoding {
+		case "":
+		case SecretEncodingLaravelKey:
+			if decl.Initial != "" || decl.Reveal || m.Database != nil && m.Database.PasswordSecret == decl.Name {
+				return fmt.Errorf("catalog: secret %q has an encoding, so it takes no initial value, is not revealed and is not the database password", decl.Name)
+			}
+		default:
+			return fmt.Errorf("catalog: secret %q encoding %q must be %q or empty", decl.Name, decl.Encoding, SecretEncodingLaravelKey)
 		}
 		if len(decl.Consumers) == 0 && !m.HeldSecret(decl.Name) {
 			return fmt.Errorf("catalog: secret %q needs at least one consumer", decl.Name)
@@ -254,6 +273,8 @@ type SecretFile struct {
 	DatabasePassword bool
 	// Initial is the declaration's fixed starting value (S413).
 	Initial string
+	// Encoding is the declaration's generated-value format (S366).
+	Encoding string
 }
 
 // SecretFilesFor lists the files a manifest needs, sorted by key, with
@@ -280,7 +301,7 @@ func SecretFilesFor(m Manifest) []SecretFile {
 			o := owners[c.Service]
 			out = append(out, SecretFile{Key: key, Service: c.Service, Name: decl.Name,
 				StoreName: SecretStoreName(m.Name, decl.Name), UID: o[0], GID: o[1],
-				DatabasePassword: m.Database != nil && m.Database.PasswordSecret == decl.Name, Initial: decl.Initial})
+				DatabasePassword: m.Database != nil && m.Database.PasswordSecret == decl.Name, Initial: decl.Initial, Encoding: decl.Encoding})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
@@ -407,6 +428,18 @@ func generateSecretValue() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
+// generateEncodedValue makes a value in a declared encoding (S366).
+func generateEncodedValue(encoding string) (string, error) {
+	if encoding != SecretEncodingLaravelKey {
+		return generateSecretValue()
+	}
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("catalog: generate secret: %w", err)
+	}
+	return "base64:" + base64.StdEncoding.EncodeToString(buf), nil
+}
+
 // EnsureSecrets generates a strong value into the store for every
 // declared secret that has none. Existing values are never touched.
 func EnsureSecrets(src SecretStore, m Manifest) error {
@@ -416,6 +449,14 @@ func EnsureSecrets(src SecretStore, m Manifest) error {
 		names = append(names, SecretStoreName(m.Name, decl.Name))
 		if decl.Initial != "" {
 			initial[SecretStoreName(m.Name, decl.Name)] = decl.Initial
+		}
+		if decl.Encoding != "" {
+			// Used only when the store has no value yet.
+			v, err := generateEncodedValue(decl.Encoding)
+			if err != nil {
+				return err
+			}
+			initial[SecretStoreName(m.Name, decl.Name)] = v
 		}
 	}
 	return ensureNamesInitial(src, names, initial)
@@ -457,6 +498,13 @@ func ensureFileSecrets(src SecretStore, files []SecretFile) error {
 	for _, f := range files {
 		if f.Initial != "" {
 			initial[f.StoreName] = f.Initial
+		}
+		if f.Encoding != "" {
+			v, err := generateEncodedValue(f.Encoding)
+			if err != nil {
+				return err
+			}
+			initial[f.StoreName] = v
 		}
 	}
 	return ensureNamesInitial(src, storeNames(files), initial)

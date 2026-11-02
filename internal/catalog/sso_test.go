@@ -53,6 +53,7 @@ func TestCuratedSSO(t *testing.T) {
 	want := map[string]SSODeclaration{
 		"actual-budget":         {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"audiobookshelf":        {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
+		"bookstack":             {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"authentik":             {Class: SSOUnsupported},
 		"immich":                {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"jellyfin":              {Class: SSOOptional, Protocols: []identity.Capability{identity.CapabilityOIDC, identity.CapabilitySAML}},
