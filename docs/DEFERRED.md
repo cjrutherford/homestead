@@ -1701,3 +1701,11 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S375: the committed `kernel.wasm` is upstream's prebuilt binary; the image build does not rebuild it from the Rust source in the archive, so the binary is trusted at the pin. A reproducible rebuild check is a later slice.
 - S375: the project file is written whole on every save (autosave included) and each save keeps a version snapshot under `Projects/.versions/`; the per-person quota (256 MiB) bounds both and old snapshots are trimmed only by the app's own rule.
 - S375: the unreachable sign-in strings, the keyboard-shortcuts and getting-started text and some error strings still mention Puter; the visible start page, account, open-project, About and status bar strings are patched.
+- S376: not run on VM 2 or through Authentik; the review plan S376 section is the owner checklist.
+- S376: the OpenCascade kernel (`replicad-opencascadejs`, LGPL-2.1-only) comes from npm at image build time and is not rebuilt from source; the licence texts ship in `public/licenses/`. Owner should confirm the LGPL terms are acceptable.
+- S376: the 23 MB wasm is served uncompressed and the app has no service worker, so there is no offline page and the first load is heavy.
+- S376: sketching, STEP/STL/SolidWorks import and export, drawings and PDF were not driven in a browser; only boot, an extrude, save, reload and reopen were.
+- S376: the "recent files" list is kept in localStorage, so a second person in the same browser sees the first person's recent names (not content).
+- S376: the upstream tests (104) ran with mocks, not against the real bridge; the built image was not run in a real appliance.
+- S376: sharing and publish are hidden; AI is disabled with no backend (a future AI slice would need an approved bridge).
+- S376: the app's unused-name TypeScript rules are relaxed so patched code compiles; unreachable strings still mention Puter.

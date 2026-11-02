@@ -1232,3 +1232,22 @@ set) passes. Build and test tools (vite, vitest, jsdom, axe-core) are not shippe
 The source is changed only by the pinned patches listed in
 `scripts/everything/apps/circuits.json`; only `npm ci --ignore-scripts` and the
 build run. The app has no analytics script.
+
+## Parametric source (S376, ADR-057)
+`third_party/everything/parametric-source.tar.gz` is the `src/parametric` subtree plus the
+root `LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU
+tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 138 entries, 3,163,907
+bytes). SHA-256 `4406f14a97a05131d5881739cb30d8886c1ae728e149b7d5d2c0968bcc90dfe4`, recorded in
+`third_party/everything/pin.yaml`. Licence of the app: MIT (repository root `LICENSE`,
+Copyright (c) 2026 Puter Technologies Inc.). Copyleft note: the app bundles the
+OpenCascade geometry kernel through the npm package `replicad-opencascadejs`
+(`.wasm`, about 23 MB), which is **LGPL-2.1-only**. It is fetched from npm by
+`npm ci --ignore-scripts` at image build time (not vendored in the archive, not
+rebuilt from C++ source) and shipped unmodified as a separate `.wasm` file loaded by
+a module worker; the licence text and the upstream notices are kept in the app's
+`public/licenses/` (`replicad-opencascadejs-LICENSE.txt`, `THIRD_PARTY_NOTICES.txt`)
+and are served with the app. Other bundled notices are in the same folder (replicad,
+flatbush, flatqueue, lucide, opentype.js, ps-parser, solid-diff). The source is
+changed only by the pinned patches in `scripts/everything/apps/parametric.json`.
+The app has no analytics script.

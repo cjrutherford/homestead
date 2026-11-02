@@ -1,0 +1,292 @@
+{
+  "app": "parametric",
+  "version": "0.1.0",
+  "title": "Parametric",
+  "archive": "parametric-source.tar.gz",
+  "sha256": "4406f14a97a05131d5881739cb30d8886c1ae728e149b7d5d2c0968bcc90dfe4",
+  "size": 3163907,
+  "subtree": "src/parametric",
+  "extra_files": [
+    "LICENSE",
+    "dev/puter-localhost.mjs"
+  ],
+  "required": [
+    "LICENSE",
+    "dev/puter-localhost.mjs",
+    "src/parametric/LICENSE",
+    "src/parametric/index.html",
+    "src/parametric/package-lock.json",
+    "src/parametric/vite.config.ts",
+    "src/parametric/tsconfig.json",
+    "src/parametric/public/licenses/THIRD_PARTY_NOTICES.txt"
+  ],
+  "index": "src/parametric/index.html",
+  "sdk_tag": "<script src=\"https://js.puter.com/v2/\" defer></script>",
+  "service_worker": null,
+  "sdk_surface": {
+    "supported": [
+      "kv.get",
+      "kv.set",
+      "fs.write",
+      "fs.read",
+      "fs.delete",
+      "fs.readdir",
+      "fs.rename",
+      "auth.isSignedIn",
+      "auth.getUser",
+      "env",
+      "auth.signIn",
+      "auth.signOut"
+    ],
+    "refused": [
+      "fs.getReadURL",
+      "kv.share",
+      "kv.unshare",
+      "kv.listShared",
+      "kv.listSharedByMe",
+      "perms.*",
+      "events.*",
+      "appID"
+    ],
+    "absent": [
+      "auth.getProfilePicture",
+      "fs.share",
+      "fs.getShares",
+      "fs.unshare",
+      "fs.listShared",
+      "ui.showOpenFilePicker",
+      "ui.showSaveFilePicker",
+      "ui.onLaunchedWithItems",
+      "ui.wasLaunchedWithItems"
+    ],
+    "disabled": {
+      "ai": "no AI backend: the assistant is hidden and any remaining path fails closed",
+      "net": "no network bridge (S381 only)",
+      "sharing": "needs an exposure plan"
+    }
+  },
+  "patches": [
+    {
+      "file": "src/parametric/public/licenses/THIRD_PARTY_NOTICES.txt",
+      "old": "Puter.js (loaded at runtime from https://js.puter.com/v2/) provides\nsign-in, cloud storage and settings. It is not bundled with the app.",
+      "new": "On Homestead, sign-in, storage and settings are provided by the appliance bridge.",
+      "why": "Notice text must not name the hosted SDK address."
+    },
+    {
+      "file": "src/parametric/index.html",
+      "old": "    <meta property=\"og:url\" content=\"https://parametric.puter.com/\" />\n",
+      "new": "",
+      "why": "Remove the link-preview address on puter.com (a third-party host)."
+    },
+    {
+      "file": "src/parametric/index.html",
+      "old": "    <meta property=\"og:image\" content=\"https://parametric.puter.com/og-image.png\" />\n",
+      "new": "",
+      "why": "Remove the link-preview image on puter.com (a third-party host)."
+    },
+    {
+      "file": "src/parametric/index.html",
+      "old": "    <meta name=\"twitter:image\" content=\"https://parametric.puter.com/og-image.png\" />\n",
+      "new": "",
+      "why": "Remove the link-preview image on puter.com (a third-party host)."
+    },
+    {
+      "file": "src/parametric/tsconfig.json",
+      "old": "\"noUnusedLocals\": true,",
+      "new": "\"noUnusedLocals\": false,",
+      "why": "Hiding sharing, the assistant and outbound links leaves imports unused; the typecheck in the build stays on otherwise."
+    },
+    {
+      "file": "src/parametric/tsconfig.json",
+      "old": "\"noUnusedParameters\": true,",
+      "new": "\"noUnusedParameters\": false,",
+      "why": "Same: keep the typecheck, drop only the unused-name rules."
+    },
+    {
+      "file": "src/parametric/src/platform/puter.ts",
+      "old": "    return await sdk.auth.getUser();",
+      "new": "    const who = await sdk.auth.getUser();\n    return who ? { username: 'Homestead user' } : null; // Homestead: the account is an opaque subject, never shown",
+      "why": "Keep the opaque sign-in subject off screen (account button, label, menu); show Homestead user."
+    },
+    {
+      "file": "src/parametric/src/platform/puter.ts",
+      "old": "'Your Puter storage is full. Free up space or upgrade your plan, then save again.'",
+      "new": "'Your Homestead storage is full. Delete something you no longer need, then save again.'",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/parametric/src/platform/puter.ts",
+      "old": "'Something went wrong while talking to Puter.'",
+      "new": "'Something went wrong while talking to your Homestead.'",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/parametric/src/platform/files.ts",
+      "old": "Download the part or sign in to save it to your Puter cloud.",
+      "new": "Download the part or sign in to save it on your Homestead.",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/parametric/src/platform/files.ts",
+      "old": "'Puter storage is not available.'",
+      "new": "'Homestead storage is not available.'",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/parametric/src/app/start.ts",
+      "old": "'Open a part from your Puter cloud or this browser'",
+      "new": "'Open a part from your Homestead or this browser'",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/parametric/src/app/start.ts",
+      "old": "h('span', {}, 'You can use Parametric without an account; parts are then saved in this browser.'),\n        h('a', { href: REPO_URL, target: '_blank', rel: 'noopener noreferrer' }, 'Open source on GitHub')),",
+      "new": "h('span', {}, 'Your parts are saved on your own Homestead.')),",
+      "why": "Say where parts are saved, and remove the outbound GitHub link from the start screen."
+    },
+    {
+      "file": "src/parametric/src/app/start.ts",
+      "old": "Your parts will now be saved to your Puter cloud.",
+      "new": "Your parts will now be saved on your Homestead.",
+      "why": "Say Homestead, not Puter. (unreachable under the bridge)."
+    },
+    {
+      "file": "src/parametric/src/app/start.ts",
+      "old": "label: 'Sign in with Puter'",
+      "new": "label: 'Sign in'",
+      "why": "Say Homestead, not Puter. (unreachable under the bridge)."
+    },
+    {
+      "file": "src/parametric/src/app/start.ts",
+      "old": "      { label: 'Source code on GitHub', icon: 'github', run: () => window.open(REPO_URL, '_blank', 'noopener') },\n",
+      "new": "",
+      "why": "Remove the outbound GitHub link from the account menu."
+    },
+    {
+      "file": "src/parametric/src/app/shell.ts",
+      "old": "  const github = h('a', { class: 'icon-btn', href: REPO_URL, target: '_blank', rel: 'noopener noreferrer', 'aria-label': 'Source code on GitHub' }, icon('github', 18));\n  attachTooltip(github, 'Source code on GitHub');\n",
+      "new": "",
+      "why": "Remove the outbound GitHub icon link from the title bar."
+    },
+    {
+      "file": "src/parametric/src/app/shell.ts",
+      "old": "      commandButton(cmds, 'assistant'),\n      (() => { const b = commandButton(cmds, 'share'); b.classList.add('hide-mobile'); return b; })(), github, account));",
+      "new": "      account));",
+      "why": "Hide the Assistant (AI is disabled), Share (needs fs.share, refused by ADR-057) and GitHub buttons in the title bar."
+    },
+    {
+      "file": "src/parametric/src/app/actions.ts",
+      "old": "    {\n      id: 'assistant', label: 'Assistant', icon: 'assistant', shortcut: 'Ctrl+J', keywords: 'ai chat copilot design help agent claude',\n      description: 'Design and change the part by describing what you want.',\n      checked: () => app.taskPaneOpen() === 'assistant', run: () => app.toggleTaskPane('assistant'),\n    },\n",
+      "new": "",
+      "why": "Remove the Assistant command and its Ctrl+J shortcut: AI is disabled on Homestead."
+    },
+    {
+      "file": "src/parametric/src/app/actions.ts",
+      "old": "    { id: 'share', label: 'Share...', icon: 'share', keywords: 'collaborate invite team access', description: 'Let other Puter users view or edit this part.', run: () => shareDialog(app, files) },\n",
+      "new": "",
+      "why": "Hide sharing: it needs fs.share/getShares/listShared, which ADR-057 refuses."
+    },
+    {
+      "file": "src/parametric/src/app/actions.ts",
+      "old": "    { id: 'github', label: 'Source Code on GitHub', icon: 'github', run: () => { window.open(REPO_URL, '_blank', 'noopener'); } },\n",
+      "new": "",
+      "why": "Remove the Source Code on GitHub command (an outbound link)."
+    },
+    {
+      "file": "src/parametric/src/app/actions.ts",
+      "old": "m('share'), m('rename')",
+      "new": "m('rename')",
+      "why": "Remove the Share entry from the File menu."
+    },
+    {
+      "file": "src/parametric/src/app/actions.ts",
+      "old": "sep, m('github'), m('about')",
+      "new": "sep, m('about')",
+      "why": "Remove the GitHub entry from the Help menu."
+    },
+    {
+      "file": "src/parametric/src/app/taskpane.ts",
+      "old": "[['assistant', 'assistant', 'Assistant'], ['files'",
+      "new": "[['files'",
+      "why": "Remove the Assistant tab: AI is disabled on Homestead."
+    },
+    {
+      "file": "src/parametric/src/app/taskpane.ts",
+      "old": "['6. Save and share', 'Save to your Puter cloud (or this browser), or export STEP and STL files.']",
+      "new": "['6. Save', 'Save to your Homestead (or this browser), or export STEP and STL files.']",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/parametric/src/main.ts",
+      "old": "  if (matchMedia('(min-width: 981px)').matches) taskPane.open('assistant', false);\n",
+      "new": "",
+      "why": "Do not open the Assistant pane at start: AI is disabled on Homestead."
+    },
+    {
+      "file": "src/parametric/src/app/dialogs.ts",
+      "old": "h('a', { href: REPO_URL, target: '_blank', rel: 'noopener noreferrer' }, 'Source code on GitHub'), ' \u00b7 ',\n        ",
+      "new": "",
+      "why": "Remove the outbound GitHub link from About (the third-party notices link stays: it carries the licence texts)."
+    },
+    {
+      "file": "src/parametric/src/app/fileops.ts",
+      "old": "'No parts saved in this browser yet. Sign in to Puter to keep parts in your cloud storage.'",
+      "new": "'No parts saved in this browser yet.'",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/parametric/src/app/fileops.ts",
+      "old": "It will be moved to your Puter Trash.",
+      "new": "It will be deleted from your Homestead.",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/parametric/src/app/fileops.ts",
+      "old": "    if (cloudAvailable()) {\n      const shared = h(",
+      "new": "    if (false) { // Homestead: sharing is not available\n      const shared = h(",
+      "why": "Hide the Shared with me list: sharing is refused by ADR-057 and the list would always be empty."
+    },
+    {
+      "file": "src/parametric/src/app/fileops.ts",
+      "old": "Saved in this browser only. Sign in to Puter to keep your parts in the cloud and open them anywhere.",
+      "new": "Saved in this browser only. Sign in to keep your parts on your Homestead and open them anywhere.",
+      "why": "Say Homestead, not Puter. (unreachable under the bridge)."
+    },
+    {
+      "file": "src/parametric/src/platform/ai.ts",
+      "old": "  if (!p?.ai?.chat) throw new Error('The assistant needs Puter, which is not available right now. Check your connection and reload.');",
+      "new": "  if (globalThis) throw new Error('AI is not available on Homestead. Nothing you write is sent anywhere.'); // Homestead: never reaches a hosted model, even if an SDK offers one\n  if (!p?.ai?.chat) throw new Error('AI is not available on Homestead. Nothing you write is sent anywhere.');",
+      "why": "AI is disabled: the chat call always fails before anything is sent."
+    },
+    {
+      "file": "src/parametric/src/assistant/panel.ts",
+      "old": "'Sends your messages and a description of the part to Puter AI. Check designs before relying on them.'",
+      "new": "'AI is not available on Homestead. Nothing you write is sent anywhere.'",
+      "why": "Say plainly that AI is off."
+    },
+    {
+      "file": "src/parametric/src/assistant/panel.ts",
+      "old": "    if (!sdk?.ai) {\n      this.notice('The assistant needs Puter, which is not available right now. Check your connection and reload the page.');",
+      "new": "    if (!sdk?.ai || sdk) {\n      this.notice('AI is not available on Homestead. Nothing you write is sent anywhere.');",
+      "why": "AI is disabled: any remaining path shows this message and sends nothing."
+    },
+    {
+      "file": "src/parametric/src/platform/files.ts",
+      "old": "export async function writeRecovery(text: string) {\n  const dir = await opfsDir();\n  if (!dir) return;\n  try {\n    await writeFile(dir, RECOVERY_FILE, text);",
+      "new": "export async function writeRecovery(text: string) {\n  try {\n    await cloudWrite(`Recovery/${RECOVERY_FILE}`, text); // Homestead: per person on the appliance, not in the shared browser profile",
+      "why": "Keep the crash-recovery snapshot of unsaved work private to the person: browser storage is shared by everyone using the same browser profile."
+    },
+    {
+      "file": "src/parametric/src/platform/files.ts",
+      "old": "export async function readRecovery(): Promise<string | null> {\n  const dir = await opfsDir();\n  if (!dir) return null;\n  try {\n    return await (await (await dir.getFileHandle(RECOVERY_FILE)).getFile()).text();",
+      "new": "export async function readRecovery(): Promise<string | null> {\n  try {\n    return await cloudRead(`Recovery/${RECOVERY_FILE}`);",
+      "why": "Same: read the recovery snapshot from the person's own storage."
+    },
+    {
+      "file": "src/parametric/src/platform/files.ts",
+      "old": "export async function clearRecovery() {\n  const dir = await opfsDir();\n  try {\n    await dir?.removeEntry(RECOVERY_FILE);",
+      "new": "export async function clearRecovery() {\n  try {\n    await puter()?.fs.delete(`Recovery/${RECOVERY_FILE}`);",
+      "why": "Same: clear the recovery snapshot from the person's own storage."
+    }
+  ]
+}

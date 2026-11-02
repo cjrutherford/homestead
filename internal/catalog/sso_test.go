@@ -69,6 +69,7 @@ func TestCuratedSSO(t *testing.T) {
 		"inventory":             {Class: SSORecommended, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"time-tracking":         {Class: SSORecommended, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"circuits":              {Class: SSORecommended, Protocols: []identity.Capability{identity.CapabilityOIDC}},
+		"parametric":            {Class: SSORecommended, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"gridcraft":             {Class: SSOUnsupported},
 		"pdfcraft":              {Class: SSOUnsupported},
 		"deckcraft":             {Class: SSOUnsupported},

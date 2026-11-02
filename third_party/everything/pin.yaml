@@ -101,3 +101,18 @@ app: circuits
 license: MIT
 archive: circuits-source.tar.gz
 sha256: a26240e8f85292e33b7b6980503edfa93b7652e47a4110e0a79e25d4dec4f685
+---
+# Pinned source for the parametric package (S376). Same upstream repository and
+# commit as above; archive built the same way (tracked files of src/parametric,
+# LICENSE, dev/puter-localhost.mjs; GNU tar, sorted, mode 0664, owner 0, mtime
+# 0, gzip -n; the recipe was first re-run on src/circuits and reproduced its
+# digest). Licence: MIT. The app has its own MIT licence file ("Parametric
+# contributors"), the repository root licence is MIT too. The built app ships
+# the OpenCascade kernel as a separate WebAssembly module from the npm package
+# replicad-opencascadejs (LGPL-2.1-only); that module is not in the archive.
+repository: https://github.com/HeyPuter/everything
+commit: e7d07c48546ef0650a8f3ab94ae82b8b50d3646a
+app: parametric
+license: MIT
+archive: parametric-source.tar.gz
+sha256: 4406f14a97a05131d5881739cb30d8886c1ae728e149b7d5d2c0968bcc90dfe4

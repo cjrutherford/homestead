@@ -167,6 +167,25 @@ Steps and expected results:
 
 Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10 [ ] 11 [ ] 12
 
+## S376 — Parametric catalog package
+Prerequisites: VM 2 on the build with S376; Authentik sign-in set up; a second
+person exists in People.
+
+Steps and expected results:
+1. Build `parametric` in the craft page or CLI. Expected: image `homestead/everything-parametric:0.1.0` recorded.
+2. Install with a plan, preview and apply. Expected: route `/apps/parametric/`, no public exposure.
+3. Apply sign-in. Expected: redirect to Authentik; no mention of Puter and no outbound link; no request to any other host.
+4. Wait for the kernel to load, create a sketch and Extrude, then Save. Expected: the part saves and appears in Open.
+5. Account menu. Expected: "Homestead user" (not your user id), no Sign out; no Share or Publish.
+6. Look for any AI or assistant button. Expected: none; DevTools Network shows no AI request.
+7. Rename the part. Expected: new name in Open, old gone.
+8. Reload. Expected: the part reopens with its features.
+9. Sketch, export STL/STEP, import a STEP file. Expected: all work.
+10. Second person (closed, then granted): Expected: an empty Open list and no recovery prompt for the first person's work. (Known: recents names in localStorage.)
+11. Backup contains `data/bridge.db`; uninstall removes route and container.
+
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10 [ ] 11
+
 ## Template for a new app section
 ## SNNN — <App>
 Prerequisites: ...
