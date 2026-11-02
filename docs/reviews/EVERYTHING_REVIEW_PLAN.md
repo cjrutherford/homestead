@@ -67,6 +67,26 @@ Steps and expected results:
 
 Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10 [ ] 11 [ ] 12
 
+## S371 — Notes catalog package (AGPL)
+Prerequisites: VM 2 on the build with S371; Authentik sign-in set up; a second
+person exists in People.
+
+Steps and expected results:
+1. Build `notes` in the craft page or CLI. Expected: image `homestead/everything-notes:0.1.0` recorded.
+2. Install Notes with a plan, preview and apply. Expected: route `/apps/notes/`, no public exposure.
+3. Apply sign-in. Expected: `https://homestead.lan/apps/notes/` redirects to Authentik; the owner sees a notebook with a page. No request to js.puter.com.
+4. Add a section and a page, type text, add a to-do tag, draw with a pen and insert a picture; reload. Expected: all remain.
+5. Search for a word on the page. Expected: the page is found.
+6. Open Assist from the ribbon. Expected: "AI assist is not available on Homestead" and no AI buttons; DevTools Network shows no request.
+7. Open Share. Expected: no "Create Link" or read-only link; Copy Link to Page, Email Page and Export work.
+8. Insert a PDF printout. Expected: pages appear as pictures (the PDF worker runs under the CSP).
+9. Export a notebook backup and import it again. Expected: a second notebook with the same pages and pictures.
+10. Second person: closed by default, then granted in People. Expected: an empty Notes account.
+11. Delete a page and restore it from Deleted Notes. Expected: it returns.
+12. DevTools Console shows no CSP violation. Note whether any source offer or AGPL statement is reachable from the app (expected: not yet, see DEFERRED S371). Backup contains `data/bridge.db`; uninstall removes route and container.
+
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10 [ ] 11 [ ] 12
+
 ## Template for a new app section
 ## SNNN — <App>
 Prerequisites: ...

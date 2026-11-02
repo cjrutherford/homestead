@@ -32,3 +32,16 @@ app: records
 license: MIT
 archive: records-source.tar.gz
 sha256: 8ed5aa77f9264b341ec8bf0e07b41ca053f7eb3ba4edd224cc6f1472c3c26aa2
+---
+# Pinned source for the notes package (S371). Same upstream repository and
+# commit as above; archive built the same way (tracked files of src/notes,
+# LICENSE, dev/puter-localhost.mjs; GNU tar, sorted, mode 0664, owner 0, mtime
+# 0, gzip -n). Licence: src/notes is AGPL-3.0-only (its own LICENSE file and
+# package.json); the repository root licence is MIT. Not permissive: see
+# docs/THIRD_PARTY.md for what that asks of Homestead.
+repository: https://github.com/HeyPuter/everything
+commit: e7d07c48546ef0650a8f3ab94ae82b8b50d3646a
+app: notes
+license: AGPL-3.0-only
+archive: notes-source.tar.gz
+sha256: 035ec22bde035d8fe56cac74afdcee6126ae4d3a22c6139e1930b1964097d1d6

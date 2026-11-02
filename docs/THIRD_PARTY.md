@@ -1107,3 +1107,46 @@ package outside its approved permissive list (73 packages passed). The source is
 changed only by three user-facing wording patches listed in
 `scripts/everything/apps/records.json`; only `npm ci --ignore-scripts` and the
 build run.
+
+## Notes source (S371, ADR-057) — AGPL-3.0-only
+`third_party/everything/notes-source.tar.gz` is the `src/notes` subtree plus the
+root `LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU
+tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 84 entries). SHA-256
+`035ec22bde035d8fe56cac74afdcee6126ae4d3a22c6139e1930b1964097d1d6`, recorded in
+`third_party/everything/pin.yaml`.
+
+**Licence: GNU Affero General Public License v3, AGPL-3.0-only.** This is not the
+MIT licence of the repository root and of the other Everything apps. It was
+checked in the app's own `LICENSE` (the full AGPL text, 661 lines), its
+`package.json` (`"license": "AGPL-3.0-only"`) and its README. The root `LICENSE`
+(MIT) is also in the archive. Third-party packages are permissive and compatible
+with the AGPL: `lucide` (ISC), `perfect-freehand` (MIT), `temml` (MIT) and
+`pdfjs-dist` (Apache-2.0); upstream's `check-licenses` step passed for all 118
+locked packages.
+
+What Homestead does to comply:
+- **Source.** The Corresponding Source of the Notes the appliance runs is the
+  pinned archive above plus the patch list in `scripts/everything/apps/notes.json`
+  (ten patches, each with a `why`) and the Homestead bridge shim
+  `scripts/everything/puter-bridge.js` that `prepare_app.py` adds. Those files are
+  in the Homestead repository, which the owner has. Nothing is minified from a
+  private source; the image is built on the appliance from them.
+- **Modification.** The patch list is the record of modifications. Patch targets
+  are pinned: preparation fails if upstream text changes, so the list cannot
+  silently drift from what is built.
+- **Network use (AGPL section 13).** Notes is modified, and people other than the
+  owner use it over the network, so those users must be offered the source of the
+  version they are using. Homestead does not yet show that offer inside the app:
+  this is recorded in `docs/DEFERRED.md` (S371) and must be closed before the
+  package is distributed beyond the owner's own appliance (a source link from the
+  Notes help dialog or a bridge route that serves the archive, plus the patch list).
+  Upstream's About dialog names its libraries but does not state the app's
+  own licence, so today there is no in-app statement at all.
+- **Licence text and notices** are kept: `src/notes/LICENSE` and the copyright
+  lines stay in the archive and in the built source; no patch touches them.
+- **Scope.** The AGPL applies to the Notes app and to anything combined with it
+  into one program. The Go bridge and the Homestead daemon are separate programs
+  that talk to it over HTTP, and the shim file is served to the browser alongside
+  Notes; the shim is Homestead's own and is available at the same repository.
+  Homestead's own licensing position on the shim is not changed by this slice.

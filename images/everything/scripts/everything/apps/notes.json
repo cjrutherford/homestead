@@ -1,0 +1,120 @@
+{
+  "app": "notes",
+  "version": "0.1.0",
+  "title": "Notes",
+  "archive": "notes-source.tar.gz",
+  "sha256": "035ec22bde035d8fe56cac74afdcee6126ae4d3a22c6139e1930b1964097d1d6",
+  "size": 1427742,
+  "subtree": "src/notes",
+  "extra_files": [
+    "LICENSE",
+    "dev/puter-localhost.mjs"
+  ],
+  "required": [
+    "LICENSE",
+    "dev/puter-localhost.mjs",
+    "src/notes/LICENSE",
+    "src/notes/index.html",
+    "src/notes/package-lock.json"
+  ],
+  "index": "src/notes/index.html",
+  "sdk_tag": "<script src=\"https://js.puter.com/v2/\" defer></script>",
+  "service_worker": null,
+  "patches": [
+    {
+      "file": "src/notes/src/ui/assist.js",
+      "old": "return typeof puter !== 'undefined' && Boolean(puter.ai?.chat);",
+      "new": "return true;",
+      "why": "Keep the Assist command enabled so it can explain that AI assist is not available; the pane makes no request."
+    },
+    {
+      "file": "src/notes/src/ui/assist.js",
+      "old": "const res = await puter.ai.chat(prompt);",
+      "new": "throw new Error('AI assist is not available on Homestead.');\n      const res = '';",
+      "why": "AI is disabled (ADR-057): ask never calls the SDK, whatever the pane does."
+    },
+    {
+      "file": "src/notes/src/ui/task-panes.js",
+      "old": "      h('p.field-hint', 'Assist uses AI through your Puter account. Check its answers before relying on them.'),\n      ...buttons,\n      h('div.field', { style: { marginTop: '8px' } }, ask, askBtn),\n      output,\n      outputActions,\n",
+      "new": "      h('p.dialog-message', { role: 'status' }, 'AI assist is not available on Homestead. Nothing you write is sent anywhere.'),\n",
+      "why": "Replace the Assist actions with a clear message; no AI backend exists on Homestead."
+    },
+    {
+      "file": "src/notes/src/ui/features.js",
+      "old": "      h('h3.share-head', 'Read-only link'),\n      h('p.dialog-message', 'Create a link anyone can open to read this page, without signing in.'),\n      h('div.share-row', expiry, publishBtn, stopBtn),\n      h('div.share-row', linkInput, copyBtn),\n      status,\n",
+      "new": "",
+      "why": "Hide the public read-only link: publishing needs an exposure plan (ADR-057) and getReadURL is refused. Copy Link, Email and Export remain."
+    },
+    {
+      "file": "src/notes/src/ui/commands.js",
+      "old": "        { label: 'From Puter...', icon: 'cloud', disabled: !app.cloudPicker(), run: () => app.pickFromCloud({ attach: true }) },\n",
+      "new": "",
+      "why": "Remove a cloud-drive picker the bridge does not provide."
+    },
+    {
+      "file": "src/notes/src/ui/commands.js",
+      "old": "        { label: 'From Puter...', icon: 'cloud', disabled: !app.cloudPicker(), run: () => app.pickFromCloud({ accept: 'image/*' }) },\n",
+      "new": "",
+      "why": "Remove a cloud-drive picker the bridge does not provide."
+    },
+    {
+      "file": "src/notes/src/ui/commands.js",
+      "old": "Insert pictures from your device or your Puter files.",
+      "new": "Insert pictures from your device.",
+      "why": "Wording only: no cloud drive."
+    },
+    {
+      "file": "src/notes/src/ui/features.js",
+      "old": "Everything saves automatically to your Puter account.",
+      "new": "Everything saves automatically to your account on this server.",
+      "why": "Wording only."
+    },
+    {
+      "file": "src/notes/src/ui/features.js",
+      "old": "Your notebooks are stored as files in your own Puter cloud storage.",
+      "new": "Your notebooks are stored as files on this server, private to you.",
+      "why": "Wording only."
+    },
+    {
+      "file": "src/notes/src/ui/features.js",
+      "old": "blob = await (await fetch(dataUrl)).blob();",
+      "new": "blob = (() => {\n        const m = /^data:([^;,]*)(;base64)?,([\\s\\S]*)$/.exec(String(dataUrl));\n        if (!m) throw new Error('not a data URL');\n        const bin = m[2] ? atob(m[3]) : decodeURIComponent(m[3]);\n        return new Blob([Uint8Array.from(bin, (c) => c.charCodeAt(0))], { type: m[1] });\n      })();",
+      "why": "Restoring a backup read embedded files with fetch(data:), which the page's connect-src 'self' refuses; decode the data URL locally instead (no request)."
+    }
+  ],
+  "sdk_surface": {
+    "supported": [
+      "kv.get",
+      "kv.set",
+      "fs.write",
+      "fs.read",
+      "fs.delete",
+      "fs.readdir",
+      "auth.isSignedIn",
+      "auth.getUser",
+      "auth.signIn",
+      "auth.signOut",
+      "env"
+    ],
+    "refused": [
+      "fs.getReadURL",
+      "kv.share",
+      "kv.unshare",
+      "kv.listShared",
+      "kv.listSharedByMe",
+      "perms.*",
+      "events.*",
+      "appID"
+    ],
+    "absent": [
+      "ui",
+      "auth.getProfilePicture",
+      "ui.showOpenFilePicker"
+    ],
+    "disabled": {
+      "ai": "no AI backend; Assist shows a message and sends nothing",
+      "net": "no network bridge (S381 only)",
+      "sharing": "needs an exposure plan"
+    }
+  }
+}

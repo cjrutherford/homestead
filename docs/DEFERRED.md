@@ -1658,3 +1658,10 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S370: Records has no service worker (upstream has none), so the page cannot be reopened offline; a later slice may add a runtime worker as for Projects.
 - S370: the app runs with `env` set to `app`, so it shows no sign-out button; sign-out is the Homestead sign-out route until a small patch adds a menu entry.
 - S370: attachments over 8 MiB fail with a generic "Could not upload the file" message; only the per-person and per-app quotas map to the storage-full wording.
+- S371: AGPL section 13: Notes is modified and used over the network, so its users must be offered the source (pinned archive plus `scripts/everything/apps/notes.json` patch list); an in-app link or a bridge route serving it is not built and must land before Notes is shared beyond the owner's own appliance.
+- S371: the upstream Notes tests were not run against the real bridge; the real-browser check and Go/gate tests cover the bridge path only.
+- S371: not run on VM 2 or through Authentik; the review plan S371 section is the owner checklist.
+- S371: Notes has no service worker (upstream has none), so the page cannot be reopened offline; a later slice may add a runtime worker as for Projects.
+- S371: the app runs with `env` set to `app`, so it shows no sign-out button; sign-out is the Homestead sign-out route until a small patch adds a menu entry.
+- S371: AI assist, read-only public page links and picking from a cloud drive are not offered; AI would need a local model backend and links an exposure plan, both a later slice.
+- S371: the unreachable publish handler and `backend.readURL` remain in the built source; they are refused by the bridge if ever called.
