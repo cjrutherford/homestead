@@ -108,12 +108,13 @@ var knownImageVolumes = map[string]imageVolumes{
 	// `docker diff` of the running container is empty with /tmp the tmpfs.
 	"homestead/craft-wordcraft:0.7.0": {},
 	// S368: the Everything bridge image declares VOLUME /data.
-	"homestead/everything-tasks:0.1.0":    {Volumes: []string{"/data"}},
-	"homestead/everything-projects:0.1.0": {Volumes: []string{"/data"}},
-	"homestead/everything-records:0.1.0":  {Volumes: []string{"/data"}},
-	"homestead/everything-notes:0.1.0":    {Volumes: []string{"/data"}},
-	"homestead/everything-contacts:0.1.0": {Volumes: []string{"/data"}},
-	"homestead/everything-inventory:0.1.0": {Volumes: []string{"/data"}},
+	"homestead/everything-tasks:0.1.0":         {Volumes: []string{"/data"}},
+	"homestead/everything-projects:0.1.0":      {Volumes: []string{"/data"}},
+	"homestead/everything-records:0.1.0":       {Volumes: []string{"/data"}},
+	"homestead/everything-notes:0.1.0":         {Volumes: []string{"/data"}},
+	"homestead/everything-contacts:0.1.0":      {Volumes: []string{"/data"}},
+	"homestead/everything-inventory:0.1.0":     {Volumes: []string{"/data"}},
+	"homestead/everything-time-tracking:0.1.0": {Volumes: []string{"/data"}},
 	// S250 office craft images. Verified with `docker image inspect` on the
 	// KVM appliance 2026-10-17 (VM 2, images built by the daemon from a
 	// throwaway-signed manifest): Config.Volumes null and user nginx for

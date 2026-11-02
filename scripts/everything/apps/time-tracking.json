@@ -1,0 +1,139 @@
+{
+  "app": "time-tracking",
+  "version": "0.1.0",
+  "title": "Time tracking",
+  "archive": "time-tracking-source.tar.gz",
+  "sha256": "fcb03e792bc2ca41c53f4a7d31c8838d71e66c03d1ccd570f5553c69d620c161",
+  "size": 1914107,
+  "subtree": "src/time-tracking",
+  "extra_files": [
+    "LICENSE",
+    "dev/puter-localhost.mjs"
+  ],
+  "required": [
+    "LICENSE",
+    "dev/puter-localhost.mjs",
+    "src/time-tracking/index.html",
+    "src/time-tracking/package-lock.json",
+    "src/time-tracking/vite.config.js"
+  ],
+  "index": "src/time-tracking/index.html",
+  "sdk_tag": "<script src=\"https://js.puter.com/v2/\" defer></script>",
+  "service_worker": {
+    "template": "time-tracking-sw.template.js",
+    "target": "src/time-tracking/public/sw.js",
+    "mode": "runtime"
+  },
+  "patches": [
+    {
+      "file": "src/time-tracking/src/main.js",
+      "old": "talking to your Puter cloud.",
+      "new": "talking to your Homestead.",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/time-tracking/src/main.js",
+      "old": "showError('Could not reach Puter', 'The Puter SDK failed to load. Check your connection and try again.'",
+      "new": "showError('Could not reach Homestead', 'The Homestead connection failed to load. Check your connection and try again.'",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/time-tracking/src/lib/store.js",
+      "old": "    this.user = user || (offline.user ? { username: offline.user.username } : null);",
+      "new": "    this.user = null; // Homestead: the account is an opaque subject, never shown",
+      "why": "The bridge's user name is the opaque sign-in subject; keep it out of the sidebar, settings and the printed timesheet header."
+    },
+    {
+      "file": "src/time-tracking/src/ui/shell.js",
+      "old": "store.user?.username || 'Puter user'",
+      "new": "store.user?.username || 'Homestead user'",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/time-tracking/src/views/settings.js",
+      "old": "store.user?.username || 'Puter user'",
+      "new": "store.user?.username || 'Homestead user'",
+      "why": "Show Homestead user, not the opaque subject or Puter."
+    },
+    {
+      "file": "src/time-tracking/src/views/settings.js",
+      "old": "'Synced with your Puter cloud'",
+      "new": "'Synced with your Homestead'",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/time-tracking/src/views/settings.js",
+      "old": "Stored in your own Puter files and printed",
+      "new": "Stored on your own Homestead and printed",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/time-tracking/src/views/settings.js",
+      "old": "Save a snapshot to your Puter cloud right away",
+      "new": "Save a snapshot to your Homestead right away",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/time-tracking/src/views/settings.js",
+      "old": "Saves a full snapshot into your Puter cloud when",
+      "new": "Saves a full snapshot onto your Homestead when",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/time-tracking/src/views/settings.js",
+      "old": "`Hourly stores everything in your own Puter account. Amounts are shown in ${store.settings.currency}. `,\n      'Built with ', el('a', { href: 'https://developer.puter.com', target: '_blank', rel: 'noopener' }, 'Puter'), '.')",
+      "new": "`Hourly stores everything on your own Homestead. Amounts are shown in ${store.settings.currency}.`)",
+      "why": "Remove the outbound link to developer.puter.com and the claim that data is in a Puter account."
+    },
+    {
+      "file": "src/time-tracking/src/ui/onboarding.js",
+      "old": "Stored in your own Puter account, never sold or shared.",
+      "new": "Stored on your own Homestead, never sold or shared.",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/time-tracking/src/views/auth.js",
+      "old": "'Powered by ',\n      el('a', { href: 'https://developer.puter.com', target: '_blank', rel: 'noopener' }, 'Puter'))",
+      "new": "'Runs on your Homestead')",
+      "why": "Remove the outbound link to developer.puter.com from the sign-in view (unreachable under the bridge, but it would ship in the build)."
+    },
+    {
+      "file": "src/time-tracking/src/views/auth.js",
+      "old": "Your data lives in your own Puter cloud, not on our servers",
+      "new": "Your data lives on your own Homestead, not on our servers",
+      "why": "Say Homestead, not Puter."
+    }
+  ],
+  "sdk_surface": {
+    "supported": [
+      "kv.get",
+      "kv.set",
+      "kv.del",
+      "kv.list",
+      "fs.write",
+      "fs.read",
+      "fs.delete",
+      "auth.isSignedIn",
+      "auth.getUser",
+      "auth.signIn",
+      "auth.signOut",
+      "env"
+    ],
+    "refused": [
+      "fs.getReadURL",
+      "kv.share",
+      "kv.unshare",
+      "kv.listShared",
+      "kv.listSharedByMe",
+      "perms.*",
+      "events.*",
+      "appID"
+    ],
+    "absent": [],
+    "disabled": {
+      "ai": "no AI backend",
+      "net": "no network bridge (S381 only)",
+      "sharing": "needs an exposure plan"
+    }
+  }
+}

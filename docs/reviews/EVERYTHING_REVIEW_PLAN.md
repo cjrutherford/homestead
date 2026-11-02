@@ -127,6 +127,26 @@ Steps and expected results:
 
 Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10 [ ] 11 [ ] 12
 
+## S374 — Time tracking catalog package
+Prerequisites: VM 2 on the build with S374; Authentik sign-in set up; a second
+person exists in People.
+
+Steps and expected results:
+1. Build `time-tracking` in the craft page or CLI. Expected: image `homestead/everything-time-tracking:0.1.0` recorded.
+2. Install Time tracking with a plan, preview and apply. Expected: route `/apps/time-tracking/`, no public exposure.
+3. Apply sign-in. Expected: `https://homestead.lan/apps/time-tracking/` redirects to Authentik; the owner sees the welcome screen with no "Puter" wording. No request to js.puter.com or any other host.
+4. Choose "Set up tracking", add a client and a project, start the timer, stop it, and log a manual entry (`1:30`). Reload. Expected: everything remains.
+5. Open Settings. Expected: the account row says "Homestead user" (no raw user id), no Sign out, no link to Puter.
+6. Create a client invoice from unbilled time, record a payment, open the printable invoice and timesheet, upload a logo. Expected: all work; the logo shows after a reload.
+7. Import a Toggl, Clockify or Harvest CSV and run Reports with CSV export. Expected: both work.
+8. Use "Back up now" in Settings, then restore it. Expected: the data returns.
+9. Second person: closed by default, then granted in People. Expected: an empty app, none of the first person's entries, even in the same browser.
+10. Stop the container and reload. Expected: the "You are offline" page, no entry names. Start it again.
+11. Check a week's entries, install the app as a PWA from the browser and open its "Log time" shortcut. Expected: the form opens.
+12. DevTools Console shows no CSP violation. Backup contains `data/bridge.db`; uninstall removes route and container.
+
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10 [ ] 11 [ ] 12
+
 ## Template for a new app section
 ## SNNN — <App>
 Prerequisites: ...

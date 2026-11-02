@@ -1683,3 +1683,11 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S373: the unreachable landing page and some error strings in the built JS still say Puter and link to other sites (promotional links, not scripts); the visible onboarding, settings and product form strings are patched.
 - S373: the public handbook and guides (about 50 pages upstream) are not shipped; a local help page would be a later slice.
 - S373: key-only `kv.list` still stops at 1000 entries; the app lists by prefix without values only for small prefixes.
+- S374: the upstream Time tracking tests (205/205, 10 files) run against the pristine tree with a mock; they were not run against the real bridge and a changed pin must re-run them by hand.
+- S374: not run on VM 2 or through Authentik; the review plan S374 section is the owner checklist.
+- S374: the app keeps a localStorage mirror (`hourly:cache:v1`) of the person's entries and a write queue, so a signed-in person's data stays in that browser until a different person signs in there (the app then wipes it). Sign-out is hidden (`env` is `app`), so the app's own wipe never runs; a Homestead sign-out that clears it is a later slice.
+- S374: with the Homestead service worker an offline page load shows the offline page, not the app shell, so the app's offline-first start does not work; already-open tabs still queue writes.
+- S374: the app skips its service worker on localhost and 127.0.0.1 (upstream), so a loopback-only appliance install gets no worker; the normal install serves a real host name.
+- S374: the app opens with an automatic backup (a full snapshot, last 8 kept) into `hourly-data/backups/` and re-writes whole month files; each person's quota (256 MiB) bounds both, and a very large backup history is not trimmed by Homestead.
+- S374: forgot-to-stop system notifications need the browser's permission and a page that stays open; not exercised.
+- S374: the unreachable sign-in view and the sign-out confirmation text and some error strings (for example the stub used when the SDK cannot load) still say Puter; the visible onboarding, Settings and main error strings are patched.

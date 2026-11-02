@@ -174,3 +174,28 @@ func TestInventorySignInUsesTheBridgesOwnRoutes(t *testing.T) {
 		t.Fatalf("sign-in URL = %s", got)
 	}
 }
+
+// S374: TimeTracking signs in through the same generic adapter, at its own path.
+func TestTimeTrackingSignInUsesTheBridgesOwnRoutes(t *testing.T) {
+	entries, err := catalog.Load("../../catalog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := entries.Get("time-tracking")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := AdapterFor(*m.SSO.OIDC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := docker.Route{Host: "homestead.lan", Path: "/apps/time-tracking/", Target: docker.Target{Host: "time-tracking", Port: 8081},
+		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal}
+	origins := Origins([]docker.Route{r})
+	if uris := a.RedirectURIs(origins); len(uris) == 0 || uris[0] != "https://homestead.lan/apps/time-tracking/_homestead/callback" {
+		t.Fatalf("redirect URIs = %v", uris)
+	}
+	if got := a.SignInURL(origins[0]); got != "https://homestead.lan/apps/time-tracking/_homestead/login" {
+		t.Fatalf("sign-in URL = %s", got)
+	}
+}

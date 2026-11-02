@@ -71,3 +71,18 @@ app: inventory
 license: MIT
 archive: inventory-source.tar.gz
 sha256: cd9c23d16cb5844db332719ee498644559e5b9a8cf46bd60a9e008d53c3a345b
+---
+# Pinned source for the time-tracking package (S374). Same upstream repository
+# and commit as above; archive built the same way (tracked files of
+# src/time-tracking, LICENSE, dev/puter-localhost.mjs; GNU tar, sorted, mode
+# 0664, owner 0, mtime 0, gzip -n; the recipe was first re-run on src/inventory
+# and reproduced the inventory digest). Licence: MIT, from the repository root
+# licence; src/time-tracking has no licence file of its own, its package.json
+# has no licence field and its README says it is under the repository's MIT
+# licence.
+repository: https://github.com/HeyPuter/everything
+commit: e7d07c48546ef0650a8f3ab94ae82b8b50d3646a
+app: time-tracking
+license: MIT
+archive: time-tracking-source.tar.gz
+sha256: fcb03e792bc2ca41c53f4a7d31c8838d71e66c03d1ccd570f5553c69d620c161
