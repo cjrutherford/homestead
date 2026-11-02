@@ -171,3 +171,34 @@ name, `<name>` BookStack's own name). Not run in this slice.
 10. Sign-in off: `homesteadctl apps sign-in plan bookstack --off`, apply with
     its digest. The login form returns, the roles' External Authentication
     IDs are empty again, and the revealed admin password signs in.
+
+## Live results (VM 2, 2026-11-01)
+
+- Install JSON needs `"container_ports":{"bookstack":80}` beside the usual
+  domain/storage/choices; without it the plan refuses ("no container port
+  for service bookstack"). The plan showed bookstack.lan (local), the
+  config and MariaDB mounts, the sign-in steps and both digests.
+- `apps install bookstack … --follow`: install and the approved setup
+  (address, sign-in, people) all succeeded. Containers
+  `bookstack-bookstack` (lscr.io/linuxserver/bookstack:26.09.2) and
+  `bookstack-db` (mariadb:11.8.9) up; 103 migrations.
+- Container env holds only `FILE__DB_PASSWORD`, `FILE__APP_KEY`,
+  `FILE__OIDC_CLIENT_SECRET` (paths); `AUTH_METHOD=oidc`,
+  `APP_URL=https://bookstack.lan`, issuer
+  `https://homestead.lan/apps/auth/application/o/homestead-bookstack/`
+  (the local issuer, as for the other local-only apps).
+- Roles: Admin `homestead-bookstack-admins,homestead-owner`, Editor
+  `homestead-bookstack-users`, Viewer/Public empty.
+- Default admin: the stored hash for admin@admin.com does not verify
+  `password` (checked with `password_verify` in the app container, hash
+  piped on stdin; DB password read from the mounted file inside the DB
+  container, never in argv).
+- `/login` shows the Authentik button; POST `/oidc/login` gets 302 to
+  `https://homestead.lan/apps/auth/application/o/authorize/` with
+  `redirect_uri=https://bookstack.lan/oidc/callback`, PKCE S256.
+- Re-plan said "Nothing changes"; re-apply succeeded with the same roles.
+- Backup: the nightly policy (02:00 UTC, keep 7) now lists bookstack; the
+  CLI has no run-now, so the first MariaDB dump is checked after tonight's
+  run.
+- Not run: browser sign-ins (owner as Admin, a person as Editor),
+  end-session, the hand-set role refusal, sign-in off.
