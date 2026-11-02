@@ -274,3 +274,28 @@ func TestThreeDSignInUsesTheBridgesOwnRoutes(t *testing.T) {
 		t.Fatalf("sign-in URL = %s", got)
 	}
 }
+
+// S378: Solitaire signs in through the same generic adapter, at its own path.
+func TestSolitaireSignInUsesTheBridgesOwnRoutes(t *testing.T) {
+	entries, err := catalog.Load("../../catalog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := entries.Get("solitaire")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := AdapterFor(*m.SSO.OIDC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := docker.Route{Host: "homestead.lan", Path: "/apps/solitaire/", Target: docker.Target{Host: "solitaire", Port: 8081},
+		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal}
+	origins := Origins([]docker.Route{r})
+	if uris := a.RedirectURIs(origins); len(uris) == 0 || uris[0] != "https://homestead.lan/apps/solitaire/_homestead/callback" {
+		t.Fatalf("redirect URIs = %v", uris)
+	}
+	if got := a.SignInURL(origins[0]); got != "https://homestead.lan/apps/solitaire/_homestead/login" {
+		t.Fatalf("sign-in URL = %s", got)
+	}
+}

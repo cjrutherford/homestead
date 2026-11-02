@@ -1720,3 +1720,8 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S377: upstream's 3,018 tests ran against mocks, not the real bridge; the headless Chrome check covers boot, settings and database separation, reload and a second person, not modelling, rendering (no WebGL check), import or export.
 - S377: not run on VM 2 or through Authentik; the review plan S377 section is the owner checklist.
 - S377: a recovered autosave was read from the person's database on reload but upstream's own startup race (a font-load change before the read returns) can skip applying it; it was seen in headless Chrome and not investigated further.
+- S378: not run on VM 2 or through Authentik; the review plan S378 section is the owner checklist.
+- S378: the catalog icon is `mdi:image-multiple` because no cards or games icon is bundled in app-icons.ts; owner may bundle a better one (for example a playing-cards icon).
+- S378: the browser keeps a copy of the saved game and statistics (separated by person, not encrypted); the appliance copy is the one that is backed up. Anything written to unprefixed localStorage keys by an earlier visit is left in place, ignored.
+- S378: the headless check plays one stock move, not a game to a win; touch and drag play, undo and the Vegas bank are covered only by upstream's 209 unit tests, not by the real bridge.
+- S378: Solitaire shows no user name; if upstream adds one, it must show "Homestead user", not the subject.

@@ -1,0 +1,110 @@
+# Solitaire (S378, ADR-057): an Everything app. Klondike solitaire (draw one
+# or three, undo, statistics) that runs in the browser. MIT licence; the card
+# artwork is a vendored public-domain (Unlicense) deck. The saved game and
+# statistics sync to the bridge's per-person storage; the copy kept in the
+# browser is separated by person. Nothing online: no sharing, leaderboards or
+# links to other sites.
+name: solitaire
+version: 0.1.0
+title: Solitaire
+blurb: Klondike solitaire from your own server, with your games and statistics kept private to you.
+description: Solitaire is the classic Klondike card game in the browser, with
+  undo and statistics. Your saved game and statistics are
+  kept on your appliance, private to each person, and a copy is kept in the
+  browser, separated by person, so a game resumes where you left it. People
+  sign in through Authentik; until the owner sets up sign-in the app serves
+  nothing. Nothing in it goes online, and there is no sharing, leaderboard or
+  link to other sites, and nothing you play leaves your appliance. It is
+  served over your local network with a certificate from your Homestead
+  internal CA.
+category: media
+icon: mdi:image-multiple
+services:
+- name: solitaire
+  image: homestead/everything-solitaire:0.1.0
+  exposes: web
+  containerport: 8081
+  environment:
+    # The bridge knows its own base path (no prefix is stripped) and the
+    # origin its pages are served from, which it requires on every
+    # state-changing request.
+    HOMESTEAD_EVERYTHING_BASE_PATH: "{{route_path}}"
+    HOMESTEAD_EVERYTHING_ORIGIN: "https://{{route_host}}"
+    HOMESTEAD_EVERYTHING_OIDC_REDIRECT_URL: "{{route_url}}/_homestead/callback"
+    # Until sign-in is applied the bridge starts and answers only that
+    # sign-in is not set up (fail closed); it never serves data.
+    HOMESTEAD_EVERYTHING_AWAIT_SIGNIN: "1"
+    # Per-person and whole-app storage limits, in bytes.
+    HOMESTEAD_EVERYTHING_QUOTA_PERSON_BYTES: "268435456"
+    HOMESTEAD_EVERYTHING_QUOTA_APP_BYTES: "2147483648"
+  # The image declares VOLUME /data (the bridge's SQLite database); the
+  # bridge runs as uid/gid 65532.
+  data:
+  - target: /data
+    class: application
+    subpath: data
+    uid: 65532
+    gid: 65532
+requirements:
+  memorymb: 128
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 1073741824
+# Served at <server>/apps/solitaire/ (ADR-044). The bridge serves under the path
+# itself, so the edge keeps it.
+serve: path
+exposure:
+  package: solitaire
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Your games and statistics leave the LAN when widened; expose only behind HTTPS with a certificate you trust, and only to people who have an Authentik account.
+backuppaths:
+- data
+database:
+  service: solitaire
+  kind: sqlite
+  path: data/bridge.db
+sso:
+  class: recommended
+  protocols: [oidc]
+  # Sign-in through Authentik (S368, ADR-053, ADR-057). The bridge is its own
+  # OIDC client: it needs the issuer, its client id and a client secret file,
+  # all handed over by the normal sign-in plan. People who are not granted
+  # the app in Homestead cannot sign in (closed by default, ADR-043).
+  #
+  # The app is served by path, so the origins sign-in is planned for already
+  # end in /apps/solitaire (ADR-044): the redirect and sign-in paths below are
+  # relative to the app, matching the bridge's own /_homestead/ routes.
+  oidc:
+    adapter: env-oidc
+    service: solitaire
+    env:
+      redirectpaths: ["/_homestead/callback"]
+      signinpath: /_homestead/login
+      secret: oidc_client_secret
+      # The bridge has no password sign-in of its own: once sign-in is on it
+      # is the only way in.
+      exclusive: true
+      # The bridge trusts exactly the bundle it is given; the combined
+      # bundle keeps a public issuer (Let's Encrypt) working too.
+      trust: HOMESTEAD_EVERYTHING_OIDC_CA_FILE
+      trustbundle: combined
+      set:
+        HOMESTEAD_EVERYTHING_OIDC_ISSUER: "{{issuer}}"
+        HOMESTEAD_EVERYTHING_OIDC_CLIENT_ID: "{{client_id}}"
+secrets:
+- name: oidc_client_secret
+  # Authentik's client secret for Solitaire; Homestead generates it, hands it to
+  # Authentik, and gives the bridge the file (never an environment value).
+  consumers:
+  - service: solitaire
+    env: HOMESTEAD_EVERYTHING_OIDC_CLIENT_SECRET_FILE
+integrations:
+- kind: identity
+  target: authentik
+  note: People sign in with Authentik once sign-in is applied on the app's page; the app serves nothing before that.

@@ -131,3 +131,17 @@ app: three-d
 license: AGPL-3.0-only
 archive: three-d-source.tar.gz
 sha256: 1dccd506f1e94f01b29602ee7bd34370c343203e8ca97949550bdccbb06b8aed
+---
+# Pinned source for the solitaire package (S378). Same upstream repository and
+# commit as above; archive built the same way (tracked files of src/solitaire,
+# LICENSE, dev/puter-localhost.mjs; GNU tar, sorted, mode 0664, owner 0, mtime
+# 0, gzip -n; the recipe was re-run on src/parametric and reproduced its
+# digest). Licence: MIT (the repository root LICENSE, Puter Technologies Inc.;
+# the app has no licence file of its own). The vendored card deck
+# src/solitaire/src/vendor/cardmeister.js is The Unlicense (public domain).
+repository: https://github.com/HeyPuter/everything
+commit: e7d07c48546ef0650a8f3ab94ae82b8b50d3646a
+app: solitaire
+license: MIT
+archive: solitaire-source.tar.gz
+sha256: 1ca610831752eca35a833dce4a87a78bd9932dd96af8a487a57c83bbe34a25b2

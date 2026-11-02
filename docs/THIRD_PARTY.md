@@ -1277,3 +1277,21 @@ script), `@fontsource/inter` and `@fontsource/jetbrains-mono` (SIL OFL 1.1, font
 served from the app's own origin). All permissive and AGPL-compatible. Not shipped:
 Pyodide (MPL-2.0, loaded by upstream from a public CDN) is removed by patch, so the
 Python console and scripts are off.
+
+## Solitaire source (S378, ADR-057)
+
+Source of the Solitaire catalog package: `third_party/everything/solitaire-source.tar.gz`,
+the `src/solitaire` subtree of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU tar,
+sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 79 entries, 9,631,266 bytes; the
+recipe reproduced the Parametric digest first). SHA-256
+`1ca610831752eca35a833dce4a87a78bd9932dd96af8a487a57c83bbe34a25b2`, recorded in
+`third_party/everything/pin.yaml`.
+
+**Licence: MIT** (Puter Technologies Inc., the repository root `LICENSE`, which is in the
+archive; the app has no licence file of its own and its README says the repository
+licence applies). Nothing is shipped from npm: `package.json` has only build and test
+tools (vite, vitest; their dependency set includes MPL-2.0 lightningcss, used at build time
+and not part of the output). The one bundled third-party file is the vendored card deck
+`src/vendor/cardmeister.js`, The Unlicense (public domain), artwork derived from CC0
+cards. No non-permissive licence; no DEFERRED licence line.

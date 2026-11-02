@@ -203,6 +203,21 @@ Steps and expected results:
 
 Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9
 
+## S378 — Solitaire catalog package
+Prerequisites: VM 2 on the build with S378; Authentik sign-in set up; a second person exists in People.
+
+Steps and expected results:
+1. Build `solitaire` in the craft page or CLI. Expected: image `homestead/everything-solitaire:0.1.0` recorded.
+2. Install with a plan, preview and apply. Expected: route `/apps/solitaire/`, no public exposure.
+3. Apply sign-in. Expected: redirect to Authentik; the board is dealt; no request to any other host; no Console CSP violation.
+4. Look for "Powered by Puter" and any outbound link. Expected: none.
+5. Make a few moves, reload. Expected: the game and move count are kept.
+6. Second person (closed, then granted): Expected: a fresh game and empty statistics, none of the first person's.
+7. Stop the container and reload. Expected: the fixed "You are offline" page, not an error page.
+8. Backup contains `data/bridge.db` (saved game and statistics); uninstall removes route and container.
+
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8
+
 ## Template for a new app section
 ## SNNN — <App>
 Prerequisites: ...
