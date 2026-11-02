@@ -1,0 +1,104 @@
+# Everything apps as catalog packages
+
+## Status
+Accepted
+
+Owner decision 2026-11-02, after the S367 spike: "a short ADR plus a new slice
+makes Tasks an ordinary catalog package: locally built image, path route,
+sign-in through the normal plan". Builds on ADR-053 (Everything application
+bridge), ADR-028 (locally built craft images), ADR-039 (path serving), ADR-043
+(closed-by-default apps) and ADR-047 (public issuer sign-in). Implemented by
+S368 (Tasks).
+
+## Context
+S367 proved that an Everything app (an upstream Puter-SDK web app) can run on a
+customer-owned bridge with no Puter service. It ran under hand-written Compose
+with a hand-made Authentik client. It is not yet something an owner can install
+from the catalog.
+
+The owner rejected extending the owner-signed craft manifest
+(`catalog/craft/craft-manifest.yaml`, counter 8) for these images. That
+manifest and `images/craft` stay exactly as they are.
+
+## Decision
+**One recipe, one image per app, built on the appliance.**
+- `images/everything/Dockerfile` is one shared recipe. The build argument `APP`
+  selects the app definition; the per-app data lives in
+  `scripts/everything/apps/<app>.json` (pinned archive name, SHA-256 and size,
+  subtree, patches, service worker template, SDK surface).
+- The image is `homestead/everything-<app>:<version>`, built from the pinned
+  in-repo source (`third_party/everything/<archive>`) and the bridge sources
+  (`cmd/everything-bridge`, `internal/everything`, `scripts/everything`). The
+  Dockerfile is digest-pinned for its base images and uses lockfiles
+  (`npm ci --ignore-scripts`, `go.sum`). The runtime is distroless, non-root.
+
+**Install path (as implemented).**
+1. `scripts/install-systemd.sh` ships the build context to
+   `<catalog>/everything/context` and the pinned archives to
+   `<catalog>/everything/sources`, next to (not inside) the signed craft
+   context.
+2. The existing craft `plan` and `build` operations accept the app name. The
+   bridge pipeline (`internal/craft/bridge.go`) reuses the craft machinery:
+   staging, disk preflight, private context copy compared by tree digest,
+   pinned-base check, archive scan, docker builder and the craft image record.
+   It differs in two ways: the archive is checked against the definition's
+   SHA-256 and size (not the craft manifest), and the build has network access
+   because `npm ci` and `go mod download` need it. A bridge build never touches
+   the craft baseline or the signed-manifest counter.
+3. The catalog package (`catalog/tasks.yaml`) names the local image. The
+   existing image gates (`CheckImage`, recorded ID) refuse to start it until it
+   is built.
+
+**Integrity.** The archive SHA-256 in `third_party/everything/pin.yaml` and in
+the app definition, cross-checked by a test against the real archive, plus the
+signed Homestead release that carries both. It is not the craft manifest. The
+owner-signed craft manifest is untouched.
+
+**Serving.** By path, `/apps/<app>/`, without prefix stripping (`serve: path`;
+the catalog refuses `strip_prefix` for these apps). The bridge is given
+`BASE_PATH`, `ORIGIN` and its redirect URL from route tokens.
+
+**Sign-in.** The normal sign-in plan with the generic `env-oidc` adapter. The
+bridge is its own Authentik OIDC client (ADR-053): redirect
+`<app_url>/_homestead/callback`, sign-in path `/_homestead/login`, client
+secret passed as a file (`HOMESTEAD_EVERYTHING_OIDC_CLIENT_SECRET_FILE`). The
+package starts in await-sign-in mode and answers 503 "Sign-in is not set up"
+until the plan is applied; a half-configured bridge refuses to start.
+
+**Access.** Closed by default (ADR-043): nobody but the owner reaches the app
+until granted. Data is scoped by (app, `sub`); quotas apply per person and per
+app.
+
+**Browser safety.** The bridge sets a fail-closed Content-Security-Policy:
+`default-src 'none'`, scripts from self plus hashes of the inline scripts in the
+built index, no framing, no objects, no base-uri.
+
+**Backup.** The bridge's SQLite database lives under `data/`, a catalog backup
+path. The `backup` snapshot takes a consistent copy.
+
+**SDK surface per app.** Each definition lists what the app may call. Anything
+not supported fails closed with `bridge_unsupported`.
+
+| Capability | Tasks |
+| --- | --- |
+| `kv.get/set/list/del`, `fs.write/read/delete` | supported, scoped to the person |
+| `auth.isSignedIn`, `auth.getUser`, `env` | supported (verified `sub`) |
+| `fs.getReadURL`, `kv` sharing, `perms`, `events`, `appID` | refused |
+| `ai` | disabled (no backend) |
+| `net` | disabled (only if S381 adds a network bridge) |
+| sharing / calendar feed UI | hidden by a pinned patch (needs an exposure plan) |
+
+**Adding an app (S369 and later).** Add `scripts/everything/apps/<app>.json`,
+the pinned archive and a `pin.yaml` entry, `catalog/<app>.yaml`, an
+`everythingPackages` row and the SSO posture and image volume rows in the
+catalog tests, then run `scripts/everything/sync-context.sh`. No Go change.
+
+## Consequences
+- Tasks becomes installable, signed in and backed up like any package.
+- The build needs network access on the appliance at install time.
+- `images/everything` carries a generated copy of the bridge sources; a test
+  fails when it drifts from the originals.
+- Cross-engine byte-identical images are not promised (see DEFERRED).
+- The CSP and the full flow are covered by Go and gate tests, and by the owner
+  review plan in `docs/reviews/EVERYTHING_REVIEW_PLAN.md`; they were not
+  verified in a browser by the implementer.

@@ -113,3 +113,4 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-054 | Explicit app access decisions during installation | Accepted |
 | ADR-055 | Authentik forward-auth for Navidrome and Uptime Kuma | Accepted |
 | ADR-056 | Community container image trust policy | Accepted |
+| ADR-057 | Everything apps as catalog packages | Accepted |
