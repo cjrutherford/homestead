@@ -124,6 +124,10 @@ func OpenStore(filename string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("everything: initialize people: %w", err)
 	}
+	if err = st.initGrants(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("everything: initialize grants: %w", err)
+	}
 	return st, nil
 }
 

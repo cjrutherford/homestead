@@ -1746,3 +1746,6 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S425: the 24-hour recheck of session age for shared operations arrives with the first shared operation (S428); nothing in this slice reads the age.
 - S425: the Homestead sign-in plan does not pass `-oidc-groups` yet; the bridge accepts it (flag or `HOMESTEAD_EVERYTHING_OIDC_GROUPS`) and the daemon wiring is left to the slice that changes the Everything package environment.
 - S425: the whoami and session answers no longer carry the `sub`; the development identity names people by subject for the gate only.
+- S426: the share-attempt rate limit (60 per hour per person per app) and the 24 hour session-age recheck for recipient operations are enforced where the first remote share operation lands (S428), since the store has no caller yet.
+- S426: kv `listSharedByMe`/`listShared` cursors, fs `readdir`/`stat`/`rename` through a grant, and `{handle}` list resolution are handler concerns left to the SDK slices; the store provides the resolved owner scope and key.
+- S426: no per-grant byte cap; a trusted writer can fill the owner's quota (as ADR-058 accepts).

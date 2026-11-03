@@ -98,3 +98,77 @@ func TestToolsPeoplePurge(t *testing.T) {
 		t.Fatal(c)
 	}
 }
+
+func TestToolsGrantsListRevokeAndExportImport(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "g.db")
+	st, err := everything.OpenStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for _, p := range [][2]string{{"s1", "Alice"}, {"s2", "Bob"}} {
+		if err = st.RecordSignIn(ctx, "tasks", p[0], p[1], time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = st.Put(ctx, everything.Scope{App: "tasks", Subject: "s1"}, everything.KindKV, "p:x", []byte(`"top-secret-value"`)); err != nil {
+		t.Fatal(err)
+	}
+	g, _, err := st.CreateGrant(ctx, everything.Scope{App: "tasks", Subject: "s1"},
+		everything.GrantRequest{Username: "bob", Kind: "kv", Key: "p:", IsPrefix: true, Access: "read"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	var out, errb bytes.Buffer
+	run := func(args ...string) int {
+		out.Reset()
+		errb.Reset()
+		return runTool("grants", args, &out, &errb)
+	}
+	if c := run("list", "-db", db); c != 0 || !strings.Contains(out.String(), g.ID) || !strings.Contains(out.String(), "Alice -> Bob") || !strings.HasSuffix(out.String(), "1 grants\n") || strings.Contains(out.String(), "top-secret") {
+		t.Fatal(c, out.String(), errb.String())
+	}
+	// Export carries the grant; import into a store with the same people restores it.
+	exp := filepath.Join(dir, "exp")
+	if c := runTool("export", []string{"-db", db, "-out", exp}, &out, &errb); c != 0 {
+		t.Fatal(c, errb.String())
+	}
+	if c := run("revoke", "-db", db, "-app", "notes", "-id", g.ID); c != 0 || out.String() != "revoked 0 grants\n" {
+		t.Fatalf("other app: %d %q", c, out.String())
+	}
+	if c := run("revoke", "-db", db, "-app", "tasks", "-id", g.ID); c != 0 || out.String() != "revoked 1 grants\n" {
+		t.Fatalf("revoke: %d %q", c, out.String())
+	}
+	if c := run("revoke", "-db", db, "-app", "tasks", "-id", g.ID); c != 0 || out.String() != "revoked 0 grants\n" {
+		t.Fatalf("again: %d %q", c, out.String())
+	}
+	if c := run("list", "-db", db); c != 0 || out.String() != "0 grants\n" {
+		t.Fatalf("live list: %d %q", c, out.String())
+	}
+	if c := run("list", "-db", db, "-all"); c != 0 || !strings.Contains(out.String(), "revoked") {
+		t.Fatalf("all list: %d %q", c, out.String())
+	}
+	db2 := filepath.Join(dir, "g2.db")
+	st2, _ := everything.OpenStore(db2)
+	for _, p := range [][2]string{{"s1", "Alice"}, {"s2", "Bob"}} {
+		st2.RecordSignIn(ctx, "tasks", p[0], p[1], time.Now())
+	}
+	st2.Close()
+	if c := runTool("import", []string{"-db", db2, "-in", exp}, &out, &errb); c != 0 || !strings.Contains(out.String(), "restored 1 grants, skipped 0") {
+		t.Fatal(c, out.String(), errb.String())
+	}
+	for _, args := range [][]string{{}, {"nope"}, {"revoke", "-db", db}, {"revoke", "-db", db, "-app", "tasks"}} {
+		if c := run(args...); c != 2 {
+			t.Fatalf("%v: %d", args, c)
+		}
+	}
+	missing := filepath.Join(dir, "none.db")
+	if c := run("list", "-db", missing); c == 0 {
+		t.Fatal("missing db accepted")
+	}
+	if _, err := os.Stat(missing); err == nil {
+		t.Fatal("grants tool created a data file")
+	}
+}

@@ -144,8 +144,8 @@ func (s *Store) Person(ctx context.Context, scope Scope) (Person, error) {
 }
 
 // PurgePerson marks a person purged in one app and ends their sessions.
-// Their stored data stays and remains exportable. Later slices extend this
-// with grants and read links. Exactly one of subject and username is used
+// Their grants (as owner and as recipient) are revoked. Their stored data
+// stays and remains exportable. Later slices extend this with read links. Exactly one of subject and username is used
 // (subject wins). It is idempotent and returns how many live people it
 // purged; an unknown or already purged person is zero, not an error.
 func (s *Store) PurgePerson(ctx context.Context, app, subject, username string, now time.Time) (int, error) {
@@ -190,6 +190,12 @@ func (s *Store) PurgePerson(ctx context.Context, app, subject, username string, 
 			return 0, err
 		}
 		if _, err = tx.ExecContext(ctx, `DELETE FROM sessions WHERE app = ? AND subject = ?`, app, sub); err != nil {
+			return 0, err
+		}
+		// Grants as owner and as recipient end; the data they named stays.
+		if _, err = tx.ExecContext(ctx, `UPDATE grants SET revoked_at = ?, updated_at = ?
+            WHERE app = ? AND revoked_at IS NULL AND (owner_subject = ? OR recipient_subject = ?)`,
+			now.Unix(), now.Unix(), app, sub, sub); err != nil {
 			return 0, err
 		}
 	}
