@@ -1770,4 +1770,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S431: there is no per-app definition switch for read links and no `read_links` entry in `sdk_surface` yet; `fs.getReadURL` works on every Everything bridge. The packages' `refused` lists for Tasks and Notes still name it until S437 and S438 re-enable those UIs.
 - S431: rate-limit state is in memory per bridge process (a restart resets it). `X-Forwarded-For` is believed from loopback and private peers by default (`-trusted-proxies`); a bridge whose port is published to a LAN must set it to `none`. Not tested against a live Caddy.
 - S431: read links are not exported or imported (only a hash is stored, so a restored link could not be re-issued); the `links` tool and People purge are the only revokers besides deleting the file.
-- S431: the viewer route (`/_homestead/view/<token>`) is S432.
+- S431: the viewer route (`/_homestead/view/<token>`) is S432 (done).
+- S432: the viewer is only on the app's own origin; the public name and its edge route need the exposure plan (S433). The apps still show their own links until S437 and S438.
+- S432: only the two named formats have a renderer. Notes tables are flattened to cells in a row, math is shown as the text the snapshot carries, and Notes images, ink and embeds are a marker. Other formats (Circuits, Parametric, Contacts) need their own renderer slice.
+- S432: the viewer output is not cached and is rendered per request (bounded to 1 MiB of output and 4 MiB of HTML per outline); the per-client limiter is the only throttle.

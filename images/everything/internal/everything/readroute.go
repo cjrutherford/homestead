@@ -212,13 +212,30 @@ func downloadName(key string) string {
 // serveRead answers GET and HEAD <base>/_homestead/read/<token>. It ignores
 // and sets no cookie, reads no Authorization header, and answers one plain 404
 // for every token that does not work.
-func (h *handler) serveRead(w http.ResponseWriter, r *http.Request) {
+func (h *handler) serveRead(w http.ResponseWriter, r *http.Request) { h.serveLink(w, r, false) }
+
+// serveView answers GET and HEAD <base>/_homestead/view/<token>: the same
+// token, expiry, revocation, rate limit and uniform 404 as serveRead, with the
+// file rendered as a script-free page (viewer.go).
+func (h *handler) serveView(w http.ResponseWriter, r *http.Request) { h.serveLink(w, r, true) }
+
+func (h *handler) serveLink(w http.ResponseWriter, r *http.Request, view bool) {
+	prefix := ReadPrefix
+	if view {
+		prefix = ViewPrefix
+	}
 	hd := w.Header()
 	hd.Set("Cache-Control", "private, no-store")
 	hd.Set("X-Content-Type-Options", "nosniff")
 	hd.Set("Referrer-Policy", "no-referrer")
 	hd.Set("Cross-Origin-Resource-Policy", "same-origin")
-	hd.Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	if view {
+		hd.Set("Content-Security-Policy", ViewerPolicy)
+		hd.Set("X-Frame-Options", "DENY")
+		hd.Set("X-Robots-Tag", "noindex, nofollow")
+	} else {
+		hd.Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		hd.Set("Allow", "GET, HEAD")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -235,10 +252,10 @@ func (h *handler) serveRead(w http.ResponseWriter, r *http.Request) {
 		h.reads.penalize(client, now) // a miss costs double
 		http.Error(w, "not found", http.StatusNotFound)
 	}
-	i := strings.Index(r.URL.Path, ReadPrefix)
+	i := strings.Index(r.URL.Path, prefix)
 	token := ""
 	if i >= 0 {
-		token = r.URL.Path[i+len(ReadPrefix):]
+		token = r.URL.Path[i+len(prefix):]
 	}
 	if !readTokenRe.MatchString(token) {
 		notFound()
@@ -251,6 +268,17 @@ func (h *handler) serveRead(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if view {
+		page := renderViewer(link.Key, value)
+		hd.Set("Content-Type", "text/html; charset=utf-8")
+		hd.Set("Content-Length", strconv.Itoa(len(page)))
+		w.WriteHeader(http.StatusOK)
+		if r.Method == http.MethodGet {
+			_, _ = w.Write(page)
+		}
+		h.logf("everything: view link id=%s status=200 bytes=%d", link.ID, len(page))
 		return
 	}
 	ctype, inline := readType(link.Key)
