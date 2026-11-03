@@ -181,7 +181,7 @@ func TestEverythingServeRules(t *testing.T) {
 }
 
 // S437 (ADR-058): sharing between people, events and share notices are switched
-// on by the package, and so far only Tasks and Circuits have switched them on; net.fetch stays
+// on by the package, and so far only Tasks, Circuits and Parametric have switched them on; net.fetch stays
 // off everywhere except api-client.
 func TestEverythingSharingSwitchIsPerPackage(t *testing.T) {
 	cat := repoCatalog(t)
@@ -198,7 +198,7 @@ func TestEverythingSharingSwitchIsPerPackage(t *testing.T) {
 			}
 			return false
 		}
-		if got, want := on("HOMESTEAD_EVERYTHING_SHARING"), name == "tasks" || name == "circuits"; got != want {
+		if got, want := on("HOMESTEAD_EVERYTHING_SHARING"), name == "tasks" || name == "circuits" || name == "parametric"; got != want {
 			t.Errorf("%s: sharing on = %v, want %v", name, got, want)
 		}
 		if got, want := on("HOMESTEAD_EVERYTHING_NET"), name == "api-client"; got != want {

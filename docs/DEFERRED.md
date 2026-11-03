@@ -1706,7 +1706,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S376: sketching, STEP/STL/SolidWorks import and export, drawings and PDF were not driven in a browser; only boot, an extrude, save, reload and reopen were.
 - S376: the "recent files" list is kept in localStorage, so a second person in the same browser sees the first person's recent names (not content).
 - S376: the upstream tests (104) ran with mocks, not against the real bridge; the built image was not run in a real appliance.
-- S376: sharing and publish are hidden; AI is disabled with no backend (a future AI slice would need an approved bridge).
+- S376: publish is hidden (sharing is on since S440); AI is disabled with no backend (a future AI slice would need an approved bridge).
 - S376: the app's unused-name TypeScript rules are relaxed so patched code compiles; unreachable strings still mention Puter.
 - S377: scenes, libraries, presets, snapshots and the autosave stay in the browser's IndexedDB (and the browser file system), separated by person with a per-person database name but not encrypted, not backed up and not on the appliance; clearing site data or changing browser loses them. Only settings (localStorage) go to the person's bridge storage, capped at 3 MB.
 - S377: concurrent tabs of one person overwrite the settings snapshot (last write wins).
@@ -1760,7 +1760,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S429: no per-grant byte cap: a trusted folder writer can fill the owner's quota (ADR-058 accepts this).
 - S429: `fs.share.received` / `fs.share.revoked` notifications wait for S430; recipients poll `fs.listShared`.
 - S429: `fs.getShares` reports only live direct and folder-inherited grants of the caller's own paths; grants made on a path that later changes between file and folder keep the type recorded at share time.
-- S429: Parametric still hides its sharing UI (S440); Circuits opens and saves shared files since S439 (browser-checked).
+- S429: Circuits (S439) and Parametric (S440) open and save shared files (browser-checked).
 - S429: no `fs.copy`/`fs.move`/`mkdir` exist in the shim, so nothing else needed grant support.
 - S430: events are in memory per bridge process. Changes made by another process (the `people purge` and `grants revoke` tools, import) reach streams only through the 25 s heartbeat re-check (streams end or drop the handle and send `gap`), not as live events.
 - S430: fs revocations caused by deleting or renaming a shared file send no `fs.share.revoked` notice; recipients see it on their next `fs.listShared`.
@@ -1804,3 +1804,9 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S439: the share dialog's email recipients are refused by the bridge (no emails); the error text is the bridge's code (`user_does_not_exist`, `cannot_share_with_self`) rather than a sentence.
 - S439: browser-checked with the development identity only; no live Authentik two-person run, and Firefox/Safari are untried. The upstream vitest suite on the patched tree is 206/207: the one failure, "links to the source code on GitHub", asserts the link the S375 patch removes.
 - S439: the shim now fails a `fs.write` the bridge answered 404 (a write through a revoked or unknown share) instead of reporting success; no other app relied on the old behaviour (gate and Go/Python tests pass).
+- S440: Parametric has no read links and its part files have no viewer renderer (S432); an outsider cannot see a part, only people with Parametric access who are shared with by name. A Parametric viewer is a later slice if the owner wants link sharing.
+- S440: a view-only share is opened by the app as a detached copy: Save makes a new part in the recipient's own Parts (named like the original), not a write to the owner's file. An edit share is a single file grant: the recipient overwrites the owner's file but cannot rename, delete or re-share it (the app's Rename on a shared part saves the content but shows "the file could not be renamed"). The `manage` choice is never offered (the bridge refuses it). Edit saves count against the owner's quota.
+- S440: two people editing the same part overwrite each other (upstream says so in the dialog); there is no live update or merge.
+- S440: the share dialog shows the bridge's code for some refusals (email address: "Could not share: Share with a Homestead username, not an email address").
+- S440: browser-checked with the development identity only (Chrome, headless); no live Authentik two-person run, no Firefox/Safari. The upstream vitest suite is 104/104 on the patched tree. One earlier run of the check showed a "Geometry engine failed to start" toast (CSP unsafe-eval message) on a page the kernel then built in; it did not recur in the final passing runs and the CSP-violation hook stayed empty, but it is unexplained.
+- S440: the OpenCascade LGPL notice, licence texts and S423 source offer are unchanged (the patches do not touch them); sketching, import/export and drawing were not driven with a shared part.

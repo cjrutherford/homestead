@@ -35,7 +35,7 @@ const HOST = 'hs-check.test';
 const origin = `http://${HOST}:${port}`;
 let bridge = null;
 async function startBridge() {
-  bridge = spawn(bin, ['-dev-identity', '-db', path.join(tmp, 'bridge.db'), '-app', 'parametric', '-listen', `127.0.0.1:${port}`,
+  bridge = spawn(bin, ['-dev-identity', '-sharing', '-db', path.join(tmp, 'bridge.db'), '-app', 'parametric', '-listen', `127.0.0.1:${port}`,
     '-origin', origin, '-base-path', BASE, '-static-dir', dist],
   { env: { ...process.env, HOMESTEAD_EVERYTHING_INSECURE_DEV: 'i-understand-this-is-not-authentication' }, stdio: ['ignore', 'ignore', 'pipe'] });
   let log = '';
@@ -119,11 +119,12 @@ try {
   assert.deepEqual(await evalJs(`performance.getEntriesByType('resource').map(e=>new URL(e.name).origin).filter(o=>o!==location.origin)`), [], 'only same-origin requests');
   const html = await evalJs(`document.documentElement.outerHTML`);
   assert.ok(!/js\.puter\.com|plausible|puter\.com|developer\.puter/.test(html), 'no hosted SDK, analytics or puter.com reference');
-  assert.equal(await evalJs(`typeof puter.ui + ' ' + typeof puter.ai + ' ' + typeof puter.net + ' ' + typeof puter.fs.share + ' ' + typeof puter.fs.rename`), 'undefined undefined undefined undefined function');
+  assert.equal(await evalJs(`typeof puter.ui + ' ' + typeof puter.ai + ' ' + typeof puter.net + ' ' + typeof puter.fs.share + ' ' + typeof puter.fs.rename`), 'undefined undefined object function function');
+  assert.equal(await evalJs(`puter.net.fetch('https://example.com/').then(()=>'ok',e=>e.code||'err')`), 'net_disabled', 'net stays off');
   const text0 = await evalJs(`document.body.innerText`);
   assert.ok(!/Puter/.test(text0) && !text0.includes('alice'), 'start screen: no Puter wording or subject: ' + text0.slice(0, 300));
   assert.deepEqual(await evalJs(`[...document.querySelectorAll('a[href^="http"]')].map(a=>a.href)`), [], 'no outbound links on the start screen');
-  assert.equal(await evalJs(`!!document.querySelector('[data-cmd=assistant],[data-cmd=share],[data-pane=assistant],.assistant,a[aria-label*=GitHub]')`), false, 'no Assistant, Share or GitHub control');
+  assert.equal(await evalJs(`!!document.querySelector('[data-cmd=assistant],[data-pane=assistant],.assistant,a[aria-label*=GitHub]')`), false, 'no Assistant or GitHub control (the Share button is there since S440)');
   // The start screen offers no account chooser; start the work from the example.
   await clickText('.start-action', 'Mounting Bracket');
   // The kernel (OpenCascade, WebAssembly in a worker) builds the example.
@@ -145,7 +146,7 @@ try {
   const status = await evalJs(`document.querySelector('.statusbar, footer')?.textContent?.replace(/\\s+/g,' ').slice(0,160)`);
   console.log('status bar:', status);
 
-  // 2. The account button names a Homestead user, never the subject; no Sign out; no Share, GitHub or Assistant anywhere.
+  // 2. The account button names a Homestead user, never the subject; no Sign out; no GitHub or Assistant anywhere (Share is in File since S440).
   await evalJs(`document.querySelector('.avatar-btn').click()`);
   await until(`!!document.querySelector('[role=menu]')`, 'the account menu');
   const menu = await evalJs(`document.querySelector('[role=menu]').textContent`);
@@ -158,7 +159,7 @@ try {
     await clickText('[role=menubar] [role=menuitem], .menubar button, .menubar [role=menuitem]', m);
     await sleep(200);
     const t = await evalJs(`[...document.querySelectorAll('[role=menu]')].map(x=>x.textContent).join(' ')`);
-    assert.ok(!/Share|GitHub|Puter|Assistant/.test(t), m + ' menu: ' + t.slice(0, 300));
+    assert.ok(!/GitHub|Puter|Assistant/.test(t) && (m !== 'File' || /Share/.test(t)), m + ' menu: ' + t.slice(0, 300));
     await evalJs(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
     await sleep(100);
   }
@@ -174,7 +175,7 @@ try {
   assert.equal(await evalJs(`document.querySelector('#cmd-results').textContent.trim()`).then((t) => /Assistant|AI/.test(t)), false, 'command search offers no Assistant');
   await setValue('input[type=search]', 'share');
   await sleep(300);
-  assert.equal(await evalJs(`/Share/.test(document.querySelector('#cmd-results').textContent)`), false, 'command search offers no Share');
+  assert.equal(await evalJs(`/Share/.test(document.querySelector('#cmd-results').textContent)`), true, 'command search offers Share (S440)');
   await setValue('input[type=search]', '');
   assert.deepEqual(await evalJs(`[...document.querySelectorAll('.tp-strip [role=tab], [data-pane]')].map(b=>b.dataset.pane)`), ['files', 'appearance', 'help'], 'task pane tabs have no assistant');
   assert.equal(await evalJs(`window.__net.length`), before, 'Ctrl+J, search and tabs sent no request');
@@ -203,7 +204,7 @@ try {
   await clickText('.start-action', 'Open');
   await until(`!!document.querySelector('.dialog .file-item')`, 'the Open dialog');
   const openText = await evalJs(`document.querySelector('.dialog-body').textContent`);
-  assert.ok(openText.includes('Renamed bracket') && !/Shared with me|Puter/.test(openText), 'Open dialog: ' + openText.slice(0, 200));
+  assert.ok(openText.includes('Renamed bracket') && /Shared with me/.test(openText) && !/Puter/.test(openText), 'Open dialog: ' + openText.slice(0, 200));
   await clickText('.dialog .file-item', 'Renamed bracket');
   await until(`document.querySelector('.doc-title').textContent.includes('Renamed bracket') && /Extrude1/.test(document.querySelector('.tree').textContent) && !document.querySelector('.loading-kernel')`, 'the saved part to open');
   await sleep(1500);

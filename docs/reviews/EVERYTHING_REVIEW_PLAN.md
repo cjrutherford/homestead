@@ -176,7 +176,7 @@ Steps and expected results:
 2. Install with a plan, preview and apply. Expected: route `/apps/parametric/`, no public exposure.
 3. Apply sign-in. Expected: redirect to Authentik; no mention of Puter and no outbound link; no request to any other host.
 4. Wait for the kernel to load, create a sketch and Extrude, then Save. Expected: the part saves and appears in Open.
-5. Account menu. Expected: "Homestead user" (not your user id), no Sign out; no Share or Publish.
+5. Account menu. Expected: "Homestead user" (not your user id), no Sign out; the File menu has Share (S440), no Publish.
 6. Look for any AI or assistant button. Expected: none; DevTools Network shows no AI request.
 7. Rename the part. Expected: new name in Open, old gone.
 8. Reload. Expected: the part reopens with its features.
@@ -322,3 +322,17 @@ Steps and expected results:
 7. There is no link to share: Circuits has no read-only link (no viewer for circuit files).
 8. Watch the container log: no token or project content appears.
 Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8
+
+## S440 - Parametric sharing (ADR-058)
+Prerequisites: Parametric installed with sign-in applied; two people granted the app (A, B) and a third with Homestead but no Parametric access (C).
+Steps and expected results:
+1. A opens the Mounting Bracket example, saves it, then File > Share (or the Share button in the title bar). Expected: "Not shared with anyone yet"; the field says "Homestead username"; no Puter wording.
+2. A shares with a name nobody has, then with A's own name, then with an email address. Expected: "There is no Homestead user called ... with access to Parametric.", "You already own this part.", "Could not share: ..."; nothing is shared.
+3. A shares with B as "Can view". Expected: B listed. B opens Open. Expected: "Shared with me" lists the part, "From A - View only". B opens it. Expected: a notice that it is view only; B's Save makes B's own copy in B's Parts; A's file is unchanged.
+4. A changes B to "Can edit" (choose Can edit and press Share). B reopens the part from Shared with me ("Can edit"), changes it (for example Part Properties, decimal places) and saves. Expected: A reopens the part and sees B's change; A has one part file.
+5. C (signed in, no access) opens Open. Expected: "Nothing has been shared with you yet"; cannot reach A's part.
+6. A removes B in the Share dialog. Expected: B's "Shared with me" is empty; B's next save from the open part fails with "Could not save" (it does not look saved); A keeps the part.
+7. There is no link to share: Parametric has no read-only link (no viewer for part files). An outsider with no sign-in cannot see anything.
+8. The OpenCascade licence notice and the source page (S423) are still reachable from Help. Expected: both open.
+9. Watch the container log: no token or part content appears.
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9

@@ -36,24 +36,15 @@
       "auth.getUser",
       "env",
       "auth.signIn",
-      "auth.signOut"
-    ],
-    "refused": [
-      "fs.getReadURL",
-      "kv.share",
-      "kv.unshare",
-      "kv.listShared",
-      "kv.listSharedByMe",
-      "perms.*",
-      "events.*",
-      "appID"
-    ],
-    "absent": [
-      "auth.getProfilePicture",
+      "auth.signOut",
       "fs.share",
       "fs.getShares",
       "fs.unshare",
-      "fs.listShared",
+      "fs.listShared"
+    ],
+    "refused": [],
+    "absent": [
+      "auth.getProfilePicture",
       "ui.showOpenFilePicker",
       "ui.showSaveFilePicker",
       "ui.onLaunchedWithItems",
@@ -61,8 +52,7 @@
     ],
     "disabled": {
       "ai": "no AI backend: the assistant is hidden and any remaining path fails closed",
-      "net": "no network bridge (S381 only)",
-      "sharing": "needs an exposure plan"
+      "net": "no network bridge (S381 only)"
     }
   },
   "patches": [
@@ -171,8 +161,8 @@
     {
       "file": "src/parametric/src/app/shell.ts",
       "old": "      commandButton(cmds, 'assistant'),\n      (() => { const b = commandButton(cmds, 'share'); b.classList.add('hide-mobile'); return b; })(), github, account));",
-      "new": "      account));",
-      "why": "Hide the Assistant (AI is disabled), Share (needs fs.share, refused by ADR-057) and GitHub buttons in the title bar."
+      "new": "      (() => { const b = commandButton(cmds, 'share'); b.classList.add('hide-mobile'); return b; })(), account));",
+      "why": "Hide the Assistant (AI is disabled) and GitHub buttons in the title bar; the Share button stays (S440)."
     },
     {
       "file": "src/parametric/src/app/actions.ts",
@@ -182,21 +172,15 @@
     },
     {
       "file": "src/parametric/src/app/actions.ts",
-      "old": "    { id: 'share', label: 'Share...', icon: 'share', keywords: 'collaborate invite team access', description: 'Let other Puter users view or edit this part.', run: () => shareDialog(app, files) },\n",
-      "new": "",
-      "why": "Hide sharing: it needs fs.share/getShares/listShared, which ADR-057 refuses."
+      "old": "description: 'Let other Puter users view or edit this part.'",
+      "new": "description: 'Let other people with access to Parametric view or edit this part.'",
+      "why": "Say Homestead, not Puter; sharing is on (S440)."
     },
     {
       "file": "src/parametric/src/app/actions.ts",
       "old": "    { id: 'github', label: 'Source Code on GitHub', icon: 'github', run: () => { window.open(REPO_URL, '_blank', 'noopener'); } },\n",
       "new": "",
       "why": "Remove the Source Code on GitHub command (an outbound link)."
-    },
-    {
-      "file": "src/parametric/src/app/actions.ts",
-      "old": "m('share'), m('rename')",
-      "new": "m('rename')",
-      "why": "Remove the Share entry from the File menu."
     },
     {
       "file": "src/parametric/src/app/actions.ts",
@@ -242,12 +226,6 @@
     },
     {
       "file": "src/parametric/src/app/fileops.ts",
-      "old": "    if (cloudAvailable()) {\n      const shared = h(",
-      "new": "    if (false) { // Homestead: sharing is not available\n      const shared = h(",
-      "why": "Hide the Shared with me list: sharing is refused by ADR-057 and the list would always be empty."
-    },
-    {
-      "file": "src/parametric/src/app/fileops.ts",
       "old": "Saved in this browser only. Sign in to Puter to keep your parts in the cloud and open them anywhere.",
       "new": "Saved in this browser only. Sign in to keep your parts on your Homestead and open them anywhere.",
       "why": "Say Homestead, not Puter. (unreachable under the bridge)."
@@ -287,6 +265,36 @@
       "old": "export async function clearRecovery() {\n  const dir = await opfsDir();\n  try {\n    await dir?.removeEntry(RECOVERY_FILE);",
       "new": "export async function clearRecovery() {\n  try {\n    await puter()?.fs.delete(`Recovery/${RECOVERY_FILE}`);",
       "why": "Same: clear the recovery snapshot from the person's own storage."
+    },
+    {
+      "file": "src/parametric/src/app/share.ts",
+      "old": "Sharing needs Puter, which could not be loaded. Check your connection and reload.",
+      "new": "Sharing is not available. Check your connection and reload.",
+      "why": "Say Homestead, not Puter; people are named by Homestead user name (ADR-058), email recipients are refused."
+    },
+    {
+      "file": "src/parametric/src/app/share.ts",
+      "old": "Sign in to Puter to save this part to your cloud and share it with others.",
+      "new": "Sign in to save this part to your Homestead and share it with others.",
+      "why": "Say Homestead, not Puter; people are named by Homestead user name (ADR-058), email recipients are refused."
+    },
+    {
+      "file": "src/parametric/src/app/share.ts",
+      "old": "Save the part to your Puter cloud first, then share it.",
+      "new": "Save the part to your Homestead first, then share it.",
+      "why": "Say Homestead, not Puter; people are named by Homestead user name (ADR-058), email recipients are refused."
+    },
+    {
+      "file": "src/parametric/src/app/share.ts",
+      "old": "placeholder: 'Puter username or email'",
+      "new": "placeholder: 'Homestead username'",
+      "why": "Say Homestead, not Puter; people are named by Homestead user name (ADR-058), email recipients are refused."
+    },
+    {
+      "file": "src/parametric/src/app/share.ts",
+      "old": "`There is no Puter user called ${v}.`",
+      "new": "`There is no Homestead user called ${v} with access to Parametric.`",
+      "why": "Say Homestead, not Puter; people are named by Homestead user name (ADR-058), email recipients are refused."
     }
   ],
   "source_offer": {

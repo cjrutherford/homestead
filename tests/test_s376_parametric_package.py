@@ -93,15 +93,24 @@ class ParametricPackageTest(unittest.TestCase):
         self.assertFalse(calls & {'ai.chat', 'net.fetch'})
         shim = (ROOT / 'scripts/everything/puter-bridge.js').read_text()
         self.assertNotRegex(shim, r'(?m)^\s*ui\s*[:=]')  # ui.* stays absent
-        # fs sharing exists since S429 (the apps' sharing UI stays hidden until S439/S440).
+        # fs sharing exists since S429 (S439 Circuits and S440 Parametric show their sharing UI).
         fs_block = shim[shim.index('var fs = {'):shim.index('var user = null;')]
         for refused in ('getProfilePicture',):
             self.assertNotRegex(fs_block, r'(?m)^\s*(async\s+)?' + refused + r'\s*[(:]')
         self.assertRegex(shim, r'(?m)^\s*async rename\(')  # S376
-        # Sharing and the Puter file picker are hidden, not left to error.
-        self.assertTrue(any("id: 'share'" in p['old'] for p in d['patches']))
-        self.assertTrue(any("m('share')" in p['old'] for p in d['patches']))
-        self.assertTrue(any('const shared' in p['old'] for p in d['patches']))
+        # S440: sharing is on (ADR-058); the Puter file picker is absent and its button is never shown.
+        self.assertFalse(any("id: 'share'" in p['old'] or "m('share')" in p['old'] or 'const shared' in p['old'] for p in d['patches']))
+        self.assertEqual(d['sdk_surface']['refused'], [])
+        for call in ('fs.share', 'fs.unshare', 'fs.getShares', 'fs.listShared'):
+            self.assertIn(call, d['sdk_surface']['supported'])
+            self.assertNotIn(call, d['sdk_surface']['absent'])
+        self.assertEqual(set(d['sdk_surface']['disabled']), {'ai', 'net'})
+        news = '\n'.join(p['new'] for p in d['patches'])
+        self.assertNotIn('Puter username', news)
+        self.assertIn('Homestead username', news)
+        cat = (ROOT / 'catalog/parametric.yaml').read_text()
+        self.assertIn('HOMESTEAD_EVERYTHING_SHARING: "1"', cat)
+        self.assertNotIn('HOMESTEAD_EVERYTHING_NET', cat)
 
     def test_the_kernel_wasm_is_shipped_so_the_policy_allows_it(self):
         go = (ROOT / 'internal/everything/static.go').read_text()
@@ -112,7 +121,7 @@ class ParametricPackageTest(unittest.TestCase):
         generic = load('prepare_app')
         d = generic.load_definition('parametric')
         self.assertIsNone(d['service_worker'])  # upstream ships and registers none
-        self.assertEqual(len(d["patches"]), 37)
+        self.assertEqual(len(d["patches"]), 40)
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             (base / 'bridge.js').write_text('// bridge')
@@ -136,9 +145,11 @@ class ParametricPackageTest(unittest.TestCase):
                 for f in ('app/start.ts', 'app/dialogs.ts', 'app/shell.ts', 'app/actions.ts'):
                     text = (src / f).read_text().replace("export const REPO_URL = 'https://github.com/heyputer/everything';", '')
                     self.assertNotIn(gone, text, f)
-            self.assertNotIn("id: 'share'", (src / 'app/actions.ts').read_text())
+            self.assertIn("id: 'share'", (src / 'app/actions.ts').read_text())
+            self.assertIn("m('share')", (src / 'app/actions.ts').read_text())
+            self.assertIn("commandButton(cmds, 'share')", (src / 'app/shell.ts').read_text())
+            self.assertNotIn('Puter', (src / 'app/share.ts').read_text().split('\n', 3)[3])
             self.assertNotIn("id: 'assistant'", (src / 'app/actions.ts').read_text())
-            self.assertNotIn("m('share')", (src / 'app/actions.ts').read_text())
             self.assertNotIn("commandButton(cmds, 'assistant')", (src / 'app/shell.ts').read_text())
             self.assertNotIn("['assistant', 'assistant', 'Assistant']", (src / 'app/taskpane.ts').read_text())
             self.assertNotIn("taskPane.open('assistant'", (src / 'main.ts').read_text())
