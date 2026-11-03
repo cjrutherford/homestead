@@ -29,6 +29,7 @@ type handler struct {
 	now      func() time.Time
 	hub      *eventHub
 	reads    readLimiter
+	netLim   netLimiter
 	base     string
 	logger   func(string, ...any)
 }
@@ -80,6 +81,11 @@ type request struct {
 	Topic  string `json:"topic"`
 	// Read links (ADR-058): lifetime in seconds (0 = default).
 	TTL int64 `json:"ttl"`
+	// net.fetch (ADR-058): the target, method, headers and base64 body.
+	URL     string            `json:"url"`
+	Method  string            `json:"method"`
+	Headers map[string]string `json:"headers"`
+	Body    []byte            `json:"body"`
 }
 
 type batchEntry struct {
@@ -171,6 +177,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if eventsOp(body.Operation) {
 		w.Header().Set("Content-Type", "application/json")
 		h.handleEventsOp(w, r, scope, body)
+		return
+	}
+	if body.Operation == "net.fetch" {
+		h.handleNetFetch(w, r, scope, body)
 		return
 	}
 	if body.Operation == "fs.getReadURL" {

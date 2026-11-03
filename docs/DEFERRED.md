@@ -1780,3 +1780,6 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S433: the generated Caddyfile for the read-link handle was not run through a live Caddy or a public name; only the daemon's rendered text and the bridge were tested.
 - S433: the bridge decides that an origin is a public name by shape (https, a host name, no private suffix); a lookalike private name in the public form would be answered `read_links_not_exposed` rather than refused.
 - S434: the net operation, request/response header rules, size caps, per-person and per-app limits, `net_log` and the `net-log` tool are S435; the shim `puter.net.fetch` is S435/S436.
+- S435: the bridge switch (`-net` / `HOMESTEAD_EVERYTHING_NET=1`) is set by hand or by the `api-client` package (S436); the daemon does not yet turn it on from the app definition's `sdk_surface`.
+- S435: `net.fetch` limits are in memory (a bridge restart resets the per-minute, per-day and concurrency counts); the `net_log` keeps 30 days or 10,000 rows for the whole database, so a busy person can push out older rows of others. The daemon does not yet show `net_log` (the `net-log` tool is the owner's view).
+- S435: no real public host or TLS handshake was exercised (tests use a fake resolver and dialer onto local servers); the host firewall egress rule remains S421/ADR-008 defence in depth.

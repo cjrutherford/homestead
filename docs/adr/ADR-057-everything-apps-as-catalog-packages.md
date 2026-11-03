@@ -91,7 +91,8 @@ not supported fails closed with `bridge_unsupported`.
 | `fs.getReadURL` | supported on the app's own origin (S431, ADR-058) with a script-free viewer link (S432); a public-name link needs the exposure plan (S433) |
 | `events.onLocal`/`events.on` | supported (S430, ADR-058): SSE stream, own prefix, shared handles, share notices |
 | `ai` | disabled (no backend) |
-| `net` | disabled (only if S381 adds a network bridge) |
+| `net.fetch(url, init)` | supported by ADR-058 (S435): public internet only through the egress fence, 60 a minute and 5,000 a day per person, logged in `net_log` (`everything-bridge net-log`); answers `net_disabled` unless the bridge runs with `-net` (or `HOMESTEAD_EVERYTHING_NET=1`) |
+| `net.Socket`, `net.tls.TLSSocket`, WebSocket/wisp URLs | `bridge_unsupported` |
 | WebAssembly (S375) | allowed only for a build that ships a `.wasm` file: the page policy adds `'wasm-unsafe-eval'`; JavaScript eval stays refused |
 | sharing / calendar feed UI | hidden by a pinned patch (needs an exposure plan) |
 

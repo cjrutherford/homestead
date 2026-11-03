@@ -228,3 +228,49 @@ func TestLinksTool(t *testing.T) {
 		t.Fatal("links tool created a data file")
 	}
 }
+
+func TestNetLogTool(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "n.db")
+	st, err := everything.OpenStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	now := time.Now().Unix()
+	for _, e := range []everything.NetLogEntry{
+		{Time: now, App: "api-client", Person: "p_aaa", Method: "GET", Scheme: "https", Host: "api.example", Port: 443, Path: "/v1", Addr: "93.184.216.34", Status: 200, BytesIn: 12, BytesOut: 0, DurationMS: 7, Class: "ok"},
+		{Time: now, App: "api-client", Person: "p_bbb", Method: "GET", Scheme: "http", Host: "10.0.0.1", Port: 80, Path: "/", Class: "blocked_address"},
+		{Time: now, App: "other", Person: "p_ccc", Method: "GET", Scheme: "http", Host: "other.example", Port: 80, Path: "/", Class: "ok"},
+	} {
+		if err = st.LogNet(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st.Close()
+	var out, errb bytes.Buffer
+	run := func(args ...string) int {
+		out.Reset()
+		errb.Reset()
+		return runTool("net-log", args, &out, &errb)
+	}
+	if c := run("-db", db, "-app", "api-client"); c != 0 || !strings.Contains(out.String(), "p_aaa") || !strings.Contains(out.String(), "blocked_address") ||
+		!strings.Contains(out.String(), "GET https://api.example:443/v1") || strings.Contains(out.String(), "other.example") || !strings.HasSuffix(out.String(), "2 requests\n") {
+		t.Fatal(c, out.String(), errb.String())
+	}
+	if c := run("-db", db, "-app", "api-client", "-limit", "1"); c != 0 || !strings.HasSuffix(out.String(), "1 requests\n") {
+		t.Fatal(c, out.String())
+	}
+	for _, args := range [][]string{{}, {"-db", db}, {"-app", "x"}} {
+		if c := run(args...); c != 2 {
+			t.Fatalf("%v: %d", args, c)
+		}
+	}
+	missing := filepath.Join(dir, "none.db")
+	if c := run("-db", missing, "-app", "x"); c == 0 {
+		t.Fatal("missing db accepted")
+	}
+	if _, err := os.Stat(missing); err == nil {
+		t.Fatal("net-log tool created a data file")
+	}
+}

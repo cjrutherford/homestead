@@ -66,6 +66,8 @@ type Store struct {
 	trusted               []*net.IPNet
 	trustedSet            bool
 	publicRead            string
+	netOn                 bool
+	netFence              *NetFence
 }
 
 // SetSharing turns KV sharing on or off (ADR-058: an app whose definition has
@@ -141,6 +143,10 @@ func OpenStore(filename string) (*Store, error) {
 	if err = st.initReadLinks(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("everything: initialize read links: %w", err)
+	}
+	if err = st.initNetLog(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("everything: initialize net log: %w", err)
 	}
 	return st, nil
 }

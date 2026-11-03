@@ -8,7 +8,9 @@
  * fs.unshare, fs.getShares, fs.listShared, ~shared/<id>/... paths) follow
  * ADR-058. Read links (fs.getReadURL) mint an expiring, read-only URL on the
  * page's own origin. Events (events.onLocal over a Server-Sent Events stream,
- * ADR-058 section 6) need EventSource. Anything outside ADR-053 and ADR-058
+ * ADR-058 section 6) need EventSource. net.fetch (ADR-058 section 5) goes
+ * through the bridge's fenced client (public internet only, limited, logged)
+ * and answers net_disabled unless the bridge runs with -net. Anything outside ADR-053 and ADR-058
  * is either absent or rejects
  * with { code: 'bridge_unsupported' }; it never silently succeeds.
  *
@@ -565,7 +567,54 @@
       },
     };
     events.on = events.onLocal;
-    var sdk = { env: 'app', kv: kv, fs: fs, auth: auth, perms: perms, events: events };
+
+    // net.fetch (ADR-058 section 5): the bridge makes the request. Only
+    // fetch exists; raw sockets, TLS sockets and WebSocket/wisp stay
+    // bridge_unsupported. Bodies are bytes (base64 on the wire).
+    var NET_MAX_REQUEST = 2 * 1024 * 1024;
+    var NET_METHODS = { GET: 1, HEAD: 1, POST: 1, PUT: 1, PATCH: 1, DELETE: 1, OPTIONS: 1 };
+    async function netBytes(body) {
+      if (body === undefined || body === null) return null;
+      if (typeof body === 'string') return enc.encode(body);
+      if (body instanceof ArrayBuffer) return new Uint8Array(body);
+      if (ArrayBuffer.isView(body)) return new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+      if (typeof root.URLSearchParams === 'function' && body instanceof root.URLSearchParams) return enc.encode(body.toString());
+      if (typeof root.Blob === 'function' && body instanceof root.Blob) return new Uint8Array(await body.arrayBuffer());
+      return fail('bridge_unsupported', 'net.fetch bodies must be text or bytes');
+    }
+    function netHeaders(h) {
+      var out = {};
+      if (!h) return out;
+      var add = function (k, v) { k = String(k); out[k] = Object.prototype.hasOwnProperty.call(out, k) ? out[k] + ', ' + String(v) : String(v); };
+      if (typeof h.forEach === 'function' && !Array.isArray(h)) h.forEach(function (v, k) { add(k, v); });
+      else if (Array.isArray(h)) h.forEach(function (kv) { add(kv[0], kv[1]); });
+      else Object.keys(h).forEach(function (k) { add(k, h[k]); });
+      return out;
+    }
+    var net = {
+      async fetch(input, init) {
+        init = init || {};
+        var url = input && typeof input === 'object' && 'url' in input ? input.url : input;
+        var src = input && typeof input === 'object' && 'url' in input ? input : {};
+        url = String(url);
+        if (/^(wss?|wisp):/i.test(url)) fail('bridge_unsupported', 'WebSocket is not supported');
+        var method = String(init.method || src.method || 'GET').toUpperCase();
+        if (!NET_METHODS[method]) fail('invalid_argument', 'Unsupported method');
+        var headers = Object.assign(netHeaders(src.headers), netHeaders(init.headers));
+        var bytes = await netBytes(init.body);
+        if (bytes && bytes.length > NET_MAX_REQUEST) fail('net_invalid', 'Request body is too large');
+        var req = { operation: 'net.fetch', url: url, method: method, headers: headers };
+        if (bytes && bytes.length) req.body = toBase64(bytes);
+        var r = await call(req);
+        if (!r || typeof r.status !== 'number') fail('bridge_error', 'Bridge storage unavailable', 500);
+        var data = fromBase64(r.body);
+        var nullBody = method === 'HEAD' || r.status === 204 || r.status === 205 || r.status === 304;
+        return new root.Response(nullBody ? null : data, { status: r.status, statusText: r.statusText || '', headers: r.headers || {} });
+      },
+      Socket: function () { fail('bridge_unsupported', 'Raw sockets are not supported'); },
+      tls: { TLSSocket: function () { fail('bridge_unsupported', 'TLS sockets are not supported'); } },
+    };
+    var sdk = { env: 'app', kv: kv, fs: fs, auth: auth, perms: perms, events: events, net: net };
     Object.defineProperty(sdk, 'appID', { enumerable: true, get: function () { return appId || undefined; } });
     return sdk;
   }

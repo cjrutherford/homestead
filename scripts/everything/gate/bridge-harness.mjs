@@ -14,11 +14,11 @@ function freePort() {
   });
 }
 
-export async function startBridge({ bin, db, app = 'tasks' }) {
+export async function startBridge({ bin, db, app = 'tasks', extraArgs = [] }) {
   const port = await freePort();
   const origin = `http://127.0.0.1:${port}`;
   const child = spawn(bin, [
-    '-dev-identity', '-db', db, '-app', app, '-listen', `127.0.0.1:${port}`, '-origin', origin,
+    '-dev-identity', '-db', db, '-app', app, '-listen', `127.0.0.1:${port}`, '-origin', origin, ...extraArgs,
   ], {
     env: { ...process.env, HOMESTEAD_EVERYTHING_INSECURE_DEV: 'i-understand-this-is-not-authentication' },
     stdio: ['ignore', 'ignore', 'pipe'],

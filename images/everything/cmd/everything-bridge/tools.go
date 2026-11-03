@@ -176,6 +176,33 @@ func runTool(cmd string, args []string, out, errw io.Writer) int {
 				time.Unix(l.ExpiresAt, 0).UTC().Format(time.RFC3339), l.Hits, state)
 		}
 		fmt.Fprintf(out, "%d links\n", len(ls))
+	case "net-log":
+		// net-log: the appliance owner's view of net.fetch requests (newest
+		// first). Person ids are per-app pseudonyms; no URL query strings,
+		// headers or bodies are ever stored.
+		app := fs.String("app", "", "application name")
+		limit := fs.Int("limit", 100, "most recent rows to print")
+		if fs.Parse(args) != nil || *db == "" || *app == "" {
+			fmt.Fprintln(errw, "usage: everything-bridge net-log -db FILE -app APP [-limit N]")
+			return 2
+		}
+		if _, err := os.Stat(*db); err != nil {
+			return fail(err) // never create a data file by typo
+		}
+		st, err := everything.OpenStore(*db)
+		if err != nil {
+			return fail(err)
+		}
+		defer st.Close()
+		rows, err := st.NetLog(ctx, *app, *limit)
+		if err != nil {
+			return fail(err)
+		}
+		for _, r := range rows {
+			fmt.Fprintf(out, "%s\t%s\t%s\t%s %s://%s:%d%s\t%s\tstatus %d\tin %d out %d\t%dms\t%s\n", time.Unix(r.Time, 0).UTC().Format(time.RFC3339),
+				r.App, r.Person, r.Method, r.Scheme, r.Host, r.Port, r.Path, r.Addr, r.Status, r.BytesIn, r.BytesOut, r.DurationMS, r.Class)
+		}
+		fmt.Fprintf(out, "%d requests\n", len(rows))
 	case "healthcheck":
 		listen := fs.String("listen", envDefault("LISTEN", "127.0.0.1:8081"), "bridge listen address")
 		base := fs.String("base-path", envDefault("BASE_PATH", ""), "application path prefix")
@@ -192,7 +219,7 @@ func runTool(cmd string, args []string, out, errw io.Writer) int {
 			return fail(fmt.Errorf("status %d", res.StatusCode))
 		}
 	default:
-		fmt.Fprintln(errw, "usage: everything-bridge [serve flags] | export|import|backup|people|grants|links|healthcheck")
+		fmt.Fprintln(errw, "usage: everything-bridge [serve flags] | export|import|backup|people|grants|links|net-log|healthcheck")
 		return 2
 	}
 	return 0

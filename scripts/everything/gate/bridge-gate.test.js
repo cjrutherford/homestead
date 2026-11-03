@@ -350,3 +350,40 @@ describe('real Tasks store through the real bridge', () => {
     await p.fs.delete('pd/snapshots/p1', { recursive: true }); // already gone: no error
   });
 });
+
+describe('puter.net.fetch (S435, ADR-058)', () => {
+  it('is off by default: net_disabled, and raw sockets stay unsupported', async () => {
+    const p = shimFor(await bridge.login('net-off'));
+    expect(typeof p.net.fetch).toBe('function');
+    expect((await rejects(p.net.fetch('https://example.com/'))).code).toBe('net_disabled');
+    expect(() => new p.net.Socket()).toThrow();
+    try { new p.net.tls.TLSSocket(); } catch (e) { expect(e.code).toBe('bridge_unsupported'); }
+    expect((await rejects(p.net.fetch('wss://example.com/'))).code).toBe('bridge_unsupported');
+  });
+
+  it('with -net still refuses the local network and bad input, uniformly, and needs a session', async () => {
+    const netDir = mkdtempSync(path.join(tmpdir(), 's435-net-'));
+    const nb = await startBridge({ bin: BIN, db: path.join(netDir, 'net.db'), extraArgs: ['-net'] });
+    try {
+      const p = shimFor(await nb.login('net-on'));
+      for (const target of ['http://127.0.0.1:1/', 'http://localhost/', 'http://169.254.169.254/latest/meta-data/', 'http://[::1]/', 'http://10.1.2.3:8080/', 'http://192.168.1.1/']) {
+        const e = await rejects(p.net.fetch(target));
+        expect(e.code).toBe('net_failed');
+        expect(e.status).toBe(502);
+      }
+      expect((await rejects(p.net.fetch('ftp://example.com/'))).code).toBe('net_invalid');
+      expect((await rejects(p.net.fetch('http://user:pw@example.com/'))).code).toBe('net_invalid');
+      expect((await rejects(p.net.fetch('https://example.com/', { method: 'TRACE' }))).code).toBe('invalid_argument');
+      expect((await rejects(p.net.fetch('https://example.com/', { method: 'GET', body: 'x' }))).code).toBe('net_invalid');
+      expect((await rejects(p.net.fetch('http://example.com:25/'))).code).toBe('net_failed');
+      const anon = await realFetch(nb.endpoint, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Origin: nb.origin },
+        body: JSON.stringify({ operation: 'net.fetch', url: 'https://example.com/' }),
+      });
+      expect(anon.status).toBe(401);
+    } finally {
+      await nb.stop();
+      rmSync(netDir, { recursive: true, force: true });
+    }
+  });
+});
