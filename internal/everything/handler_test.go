@@ -155,7 +155,7 @@ func TestWhoamiAndAtomicBatch(t *testing.T) {
 		h.ServeHTTP(rec, req)
 		return rec
 	}
-	if rec := post(`{"operation":"whoami"}`); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"subject":"alice"`) {
+	if rec := post(`{"operation":"whoami"}`); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"uuid":"p_`) || strings.Contains(rec.Body.String(), "alice") {
 		t.Fatalf("whoami: %d %s", rec.Code, rec.Body.String())
 	}
 	if rec := post(`{"operation":"putbatch","kind":"kv","entries":[{"key":"a","value":"AQ=="},{"key":"b","value":"Ag=="}]}`); rec.Code != 200 {

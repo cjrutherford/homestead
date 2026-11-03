@@ -37,13 +37,13 @@ func sessionHandler(src SessionSource) http.HandlerFunc {
 			deny(w, http.StatusForbidden)
 			return
 		}
-		subject, csrf, ok := src.Session(r)
+		_, csrf, ok := src.Session(r)
 		if !ok {
 			deny(w, http.StatusUnauthorized)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"csrf": csrf, "subject": subject})
+		_ = json.NewEncoder(w).Encode(map[string]string{"csrf": csrf})
 	}
 }
 

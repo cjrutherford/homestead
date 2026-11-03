@@ -2,6 +2,7 @@ package everything
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -250,11 +251,29 @@ func (e *testEnv) data(b *browser, csrf string, body string) *httptest.ResponseR
 	return b.do("POST", testBase+DataPath, h, []byte(body))
 }
 
+// whoami returns the status and the person's own uuid; the sub claim must
+// never appear in the answer.
 func (e *testEnv) whoami(b *browser, csrf string) (int, string) {
+	code, out := e.whoamiFull(b, csrf)
+	return code, out["uuid"]
+}
+
+func (e *testEnv) whoamiFull(b *browser, csrf string) (int, map[string]string) {
 	rec := e.data(b, csrf, `{"operation":"whoami"}`)
 	var out map[string]string
 	json.Unmarshal(rec.Body.Bytes(), &out)
-	return rec.Code, out["subject"]
+	if strings.Contains(rec.Body.String(), "sub-") {
+		e.t.Fatalf("whoami leaks the subject: %s", rec.Body)
+	}
+	return rec.Code, out
+}
+
+func (e *testEnv) uuidOf(sub string) string {
+	u, err := e.store.personUUID(context.Background(), "tasks", sub)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return u
 }
 
 func TestOIDCGoodLogin(t *testing.T) {
@@ -269,7 +288,7 @@ func TestOIDCGoodLogin(t *testing.T) {
 
 	q := e.startLogin(b)
 	if q.Get("response_type") != "code" || q.Get("client_id") != testClient || q.Get("redirect_uri") != testOrigin+testBase+CallbackPath ||
-		q.Get("code_challenge_method") != "S256" || q.Get("code_challenge") == "" || q.Get("state") == "" || q.Get("nonce") == "" || q.Get("scope") != "openid" {
+		q.Get("code_challenge_method") != "S256" || q.Get("code_challenge") == "" || q.Get("state") == "" || q.Get("nonce") == "" || q.Get("scope") != "openid profile" {
 		t.Fatalf("authorize params: %v", q)
 	}
 	lc := b.cookies[loginName]
@@ -293,7 +312,7 @@ func TestOIDCGoodLogin(t *testing.T) {
 		t.Fatal("login cookie not cleared")
 	}
 	csrf := e.csrf(b)
-	if code, sub := e.whoami(b, csrf); code != 200 || sub != "sub-alice" {
+	if code, sub := e.whoami(b, csrf); code != 200 || sub != e.uuidOf("sub-alice") {
 		t.Fatalf("whoami: %d %q", code, sub)
 	}
 	if rec = e.data(b, csrf, `{"operation":"put","kind":"kv","key":"k","value":"dg=="}`); rec.Code != 200 {
@@ -455,7 +474,7 @@ func TestOIDCForgedForgeHelpersAreValidWhenCorrectlySigned(t *testing.T) {
 	if rec := e.callback(b, q.Get("state"), code); rec.Code != 302 {
 		t.Fatalf("control token rejected: %d", rec.Code)
 	}
-	if _, sub := e.whoami(b, e.csrf(b)); sub != "sub-mallory" {
+	if _, sub := e.whoami(b, e.csrf(b)); sub != e.uuidOf("sub-mallory") {
 		t.Fatalf("subject %q", sub)
 	}
 }
@@ -700,7 +719,7 @@ func TestOIDCSessionEndpoint(t *testing.T) {
 	rec = b.do("GET", url, nil, nil)
 	var out map[string]string
 	json.Unmarshal(rec.Body.Bytes(), &out)
-	if rec.Code != 200 || out["csrf"] != csrf || out["subject"] != "sub-alice" {
+	if rec.Code != 200 || out["csrf"] != csrf || out["subject"] != "" {
 		t.Fatalf("session: %d %s", rec.Code, rec.Body)
 	}
 	if rec.Header().Get("Cache-Control") != "no-store" || rec.Header().Get("Content-Type") != "application/json" {
@@ -722,7 +741,7 @@ func TestOIDCSessionEndpoint(t *testing.T) {
 	e.signIn(b2, "sub-bob")
 	rec = b2.do("GET", url, nil, nil)
 	json.Unmarshal(rec.Body.Bytes(), &out)
-	if out["csrf"] == csrf || out["subject"] != "sub-bob" {
+	if out["csrf"] == csrf || out["subject"] != "" {
 		t.Fatalf("bob session: %s", rec.Body)
 	}
 	// After logout the endpoint refuses and the old token is gone.

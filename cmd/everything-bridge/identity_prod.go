@@ -37,7 +37,7 @@ func newIdentity(c config, store *everything.Store) (everything.Identity, func(*
 		return nil, nil, err
 	}
 	o, err := everything.NewOIDC(everything.OIDCConfig{App: c.app, Issuer: c.issuer, ClientID: c.clientID, ClientSecret: secret,
-		RedirectURL: c.redirectURL, Origin: c.origins[0], BasePath: c.base, StaticDir: c.static, HTTPClient: hc}, store)
+		RedirectURL: c.redirectURL, Origin: c.origins[0], BasePath: c.base, StaticDir: c.static, HTTPClient: hc, Groups: c.groups}, store)
 	if err != nil {
 		return nil, nil, err
 	}

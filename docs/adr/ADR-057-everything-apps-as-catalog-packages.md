@@ -84,7 +84,7 @@ not supported fails closed with `bridge_unsupported`.
 | `kv.get/set/list/del`, `fs.write/read/delete` | supported, scoped to the person |
 | `kv.list(prefix*, true)` with values, in bounded pages of at most 500 entries or about 4 MiB, so a book longer than the 1000-key list limit loads (S372; read-only, KV only) | supported, scoped to the person |
 | `fs.stat`, `fs.readdir`, recursive `fs.delete` (S369) | supported, scoped to the person; folders are key prefixes |
-| `auth.isSignedIn`, `auth.getUser`, `env` | supported (verified `sub`) |
+| `auth.isSignedIn`, `auth.getUser`, `env` | supported; `getUser` returns the person's own `preferred_username` and a per-app pseudonymous uuid, never the `sub` (S425, ADR-058) |
 | `fs.rename(path, newName)` (S375; same folder, never replaces, quota-checked) | supported, scoped to the person |
 | `fs.getReadURL`, `kv` sharing, `perms`, `events`, `appID` | refused |
 | `ai` | disabled (no backend) |

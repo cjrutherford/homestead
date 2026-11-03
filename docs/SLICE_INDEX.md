@@ -268,3 +268,5 @@ S380 adds Expenses as the thirteenth Everything catalog package (ADR-057): pinne
 S381 (`api-client`) is deferred by the owner (2026-11-02): it needs a bridge network capability (`puter.net`) that ADR-057 does not allow. See docs/DEFERRED.md.
 
 S423 adds the in-app source offer (ADR-057 amendment): Notes and 3D (AGPL-3.0-only) and Parametric (bundles LGPL-2.1-only replicad-opencascadejs) serve `/_homestead/source` to signed-in people, a reproducible Corresponding Source tarball for the AGPL apps, and a small "Source" link in the served page. See docs/slices/S423-everything-source-offer.md.
+
+S425 adds the Everything bridge people registry (ADR-058): sign-in requests `openid profile`, records the person in a `people` table, `auth.getUser` returns the person's own username and a per-app uuid, an optional group check, and the offline `people purge` tool. See docs/slices/S425-everything-people-registry.md.

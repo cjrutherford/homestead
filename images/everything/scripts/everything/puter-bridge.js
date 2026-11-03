@@ -290,7 +290,7 @@
       async getUser() {
         var r = await call({ operation: 'whoami' });
         if (!r) fail('auth_required', 'Not signed in', 401);
-        user = { username: r.subject, uuid: r.subject };
+        user = { username: r.username || 'Homestead user', uuid: r.uuid };
         return user;
       },
       async signIn() {

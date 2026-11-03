@@ -111,7 +111,17 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if body.Operation == "whoami" {
 		// The caller's own verified identity; the client never supplies it.
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"app": scope.App, "subject": scope.Subject})
+		// The sub claim is never sent to a page: only the person's own
+		// name (when the sign-in had one) and a per-app pseudonymous id.
+		p, perr := h.store.Person(r.Context(), scope)
+		if perr != nil {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if n, ok := h.identity.(interface{ DisplayName(Scope) string }); ok && p.Username == "" {
+			p.Username = n.DisplayName(scope) // development identity only
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"app": scope.App, "username": p.Username, "uuid": p.UUID})
 		return
 	}
 	var kind Kind

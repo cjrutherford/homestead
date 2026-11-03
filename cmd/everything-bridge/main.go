@@ -33,6 +33,7 @@ type config struct {
 	origins                      []string
 	issuer, clientID, secretFile string
 	redirectURL, caFile          string
+	groups                       []string // optional defence-in-depth group names (ADR-058)
 	// await starts the bridge unconfigured: it serves a plain "sign-in is
 	// not set up" answer and no data until Homestead applies sign-in
 	// (ADR-057). It only takes effect when no issuer or client id is set;
@@ -69,6 +70,7 @@ func main() {
 	secretFile := flag.String("oidc-client-secret-file", envDefault("OIDC_CLIENT_SECRET_FILE", ""), "file holding the OIDC client secret")
 	redirect := flag.String("redirect-url", envDefault("OIDC_REDIRECT_URL", ""), "OIDC redirect URL, <origin><base-path>/_homestead/callback")
 	caFile := flag.String("ca-file", envDefault("OIDC_CA_FILE", ""), "optional PEM CA bundle for a private issuer")
+	groups := flag.String("oidc-groups", envDefault("OIDC_GROUPS", ""), "optional comma-separated group names; a token with a groups claim must list one")
 	personQuota := flag.Int64("quota-person-bytes", envInt("QUOTA_PERSON_BYTES"), "per-person byte quota (0 = default 256 MiB)")
 	appQuota := flag.Int64("quota-app-bytes", envInt("QUOTA_APP_BYTES"), "whole-application byte quota (0 = default 4 GiB)")
 	await := flag.Bool("await-signin", os.Getenv("HOMESTEAD_EVERYTHING_AWAIT_SIGNIN") == "1", "serve nothing until sign-in is configured (set by the Homestead package)")
@@ -90,7 +92,7 @@ func main() {
 	defer store.Close()
 	store.SetQuota(*personQuota, *appQuota)
 	identity, extra, err := newIdentity(config{dev: *dev, app: *app, listen: *listen, base: *base, static: *static, origins: origins,
-		issuer: *issuer, clientID: *clientID, secretFile: *secretFile, redirectURL: *redirect, caFile: *caFile, await: *await}, store)
+		issuer: *issuer, clientID: *clientID, secretFile: *secretFile, redirectURL: *redirect, caFile: *caFile, await: *await, groups: splitGroups(*groups)}, store)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -105,4 +107,15 @@ func main() {
 	fmt.Fprintf(os.Stderr, "everything-bridge listening on %s\n", ln.Addr())
 	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
 	log.Fatal(srv.Serve(ln))
+}
+
+// splitGroups parses the comma-separated group list, dropping blanks.
+func splitGroups(v string) []string {
+	var out []string
+	for _, g := range strings.Split(v, ",") {
+		if g = strings.TrimSpace(g); g != "" {
+			out = append(out, g)
+		}
+	}
+	return out
 }

@@ -147,3 +147,7 @@ func (d *DevIdentity) Routes(mux *http.ServeMux) {
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	})
 }
+
+// DisplayName gives the development identity a name per subject, since it
+// has no sign-in claims; production names come from the people registry.
+func (d *DevIdentity) DisplayName(s Scope) string { return s.Subject }

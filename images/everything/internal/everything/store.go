@@ -13,6 +13,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -57,6 +58,8 @@ const (
 type Store struct {
 	db                    *sql.DB
 	personQuota, appQuota int64
+	keyMu                 sync.Mutex
+	hmacKey               []byte
 }
 
 // SetQuota sets the per-person and per-application byte quotas; a value of
@@ -116,6 +119,10 @@ func OpenStore(filename string) (*Store, error) {
 	if err = st.initSessions(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("everything: initialize sessions: %w", err)
+	}
+	if err = st.initPeople(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("everything: initialize people: %w", err)
 	}
 	return st, nil
 }

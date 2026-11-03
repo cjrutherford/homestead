@@ -1741,3 +1741,8 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S423: the Parametric offer links upstream source at the bundled version (replicad-opencascadejs 1.1.0 and Open CASCADE Technology) and the licence text served with the app; it does not ship the C++/Emscripten sources or a relinking kit, so a person who wants to replace the `.wasm` module builds it from upstream themselves.
 - S423: the Source link is a fixed corner link; it was checked for overlap in headless Chrome at one viewport for the three apps, not in every dialog or on small screens.
 - S423: the offer text and links are in English only and the tarball is rebuilt with each image, so its checksum changes when the recipe changes (it is reproducible for the same inputs).
+- S425: the registry has no remote surface yet; the daemon runs `people purge` on People removal in S427, and grants, read links and event streams join the purge as S426, S430 and S431 add them.
+- S425: a person whose token has no `preferred_username` signs in and can use the app but has no name; the one-line explanation in the page is added with the sharing UI (S428), and until then `getUser` answers "Homestead user".
+- S425: the 24-hour recheck of session age for shared operations arrives with the first shared operation (S428); nothing in this slice reads the age.
+- S425: the Homestead sign-in plan does not pass `-oidc-groups` yet; the bridge accepts it (flag or `HOMESTEAD_EVERYTHING_OIDC_GROUPS`) and the daemon wiring is left to the slice that changes the Everything package environment.
+- S425: the whoami and session answers no longer carry the `sub`; the development identity names people by subject for the gate only.

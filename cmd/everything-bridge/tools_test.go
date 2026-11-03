@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"homestead/internal/everything"
 )
@@ -46,5 +47,54 @@ func TestToolsExportImportBackup(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "nope.db")); err == nil {
 		t.Fatal("export created a data file")
+	}
+}
+
+func TestToolsPeoplePurge(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "p.db")
+	st, err := everything.OpenStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range [][2]string{{"s1", "Alice"}, {"s2", "bob"}} {
+		if err = st.RecordSignIn(context.Background(), "tasks", p[0], p[1], time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st.Close()
+	var out, errb bytes.Buffer
+	run := func(args ...string) int {
+		out.Reset()
+		errb.Reset()
+		return runTool("people", append([]string{"purge"}, args...), &out, &errb)
+	}
+	if c := run("-db", db, "-app", "tasks", "-username", "@alice"); c != 0 || out.String() != "purged 1 people\n" {
+		t.Fatal(c, out.String(), errb.String())
+	}
+	if c := run("-db", db, "-app", "tasks", "-subject", "s1"); c != 0 || out.String() != "purged 0 people\n" {
+		t.Fatalf("repeat: %d %q", c, out.String())
+	}
+	if c := run("-db", db, "-app", "notes", "-subject", "s2"); c != 0 || out.String() != "purged 0 people\n" {
+		t.Fatalf("other app: %d %q", c, out.String())
+	}
+	if c := run("-db", db, "-app", "tasks", "-subject", "s2"); c != 0 || out.String() != "purged 1 people\n" {
+		t.Fatalf("subject: %d %q", c, out.String())
+	}
+	// Exactly one selector; no created files on typos.
+	for _, args := range [][]string{{"-db", db, "-app", "tasks"}, {"-db", db, "-app", "tasks", "-subject", "a", "-username", "b"}} {
+		if c := run(args...); c != 2 {
+			t.Fatalf("%v: %d", args, c)
+		}
+	}
+	missing := filepath.Join(dir, "none.db")
+	if c := run("-db", missing, "-app", "tasks", "-subject", "x"); c == 0 {
+		t.Fatal("missing db accepted")
+	}
+	if _, err := os.Stat(missing); err == nil {
+		t.Fatal("purge created a data file")
+	}
+	if c := runTool("people", []string{"list"}, &out, &errb); c != 2 {
+		t.Fatal(c)
 	}
 }

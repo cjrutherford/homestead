@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"homestead/internal/everything"
@@ -58,6 +59,33 @@ func runTool(cmd string, args []string, out, errw io.Writer) int {
 			return fail(err)
 		}
 		fmt.Fprintf(out, "backup written to %s\n", *dst)
+	case "people":
+		// people purge: the owner's (or, in S427, the daemon's) revocation
+		// step. It ends the person's sessions in this app and marks them
+		// purged; their data stays and remains exportable.
+		if len(args) == 0 || args[0] != "purge" {
+			fmt.Fprintln(errw, "usage: everything-bridge people purge -db FILE -app APP (-subject SUB | -username NAME)")
+			return 2
+		}
+		app := fs.String("app", "", "application name")
+		subject := fs.String("subject", "", "the person's sub claim")
+		username := fs.String("username", "", "the person's username (used when no subject)")
+		if fs.Parse(args[1:]) != nil || *db == "" || *app == "" || (*subject == "") == (*username == "") {
+			return 2
+		}
+		if _, err := os.Stat(*db); err != nil {
+			return fail(err) // never create a data file by typo
+		}
+		st, err := everything.OpenStore(*db)
+		if err != nil {
+			return fail(err)
+		}
+		defer st.Close()
+		n, err := st.PurgePerson(ctx, *app, *subject, *username, time.Now())
+		if err != nil {
+			return fail(err)
+		}
+		fmt.Fprintf(out, "purged %d people\n", n)
 	case "healthcheck":
 		listen := fs.String("listen", envDefault("LISTEN", "127.0.0.1:8081"), "bridge listen address")
 		base := fs.String("base-path", envDefault("BASE_PATH", ""), "application path prefix")
@@ -74,7 +102,7 @@ func runTool(cmd string, args []string, out, errw io.Writer) int {
 			return fail(fmt.Errorf("status %d", res.StatusCode))
 		}
 	default:
-		fmt.Fprintln(errw, "usage: everything-bridge [serve flags] | export|import|backup|healthcheck")
+		fmt.Fprintln(errw, "usage: everything-bridge [serve flags] | export|import|backup|people|healthcheck")
 		return 2
 	}
 	return 0

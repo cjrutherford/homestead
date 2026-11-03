@@ -40,6 +40,9 @@ type OIDCConfig struct {
 	HTTPClient   *http.Client
 	IdleTTL      time.Duration // default 12h
 	AbsoluteTTL  time.Duration // default 7d
+	// Groups, when set, is a defence-in-depth check: a token that carries a
+	// groups claim must list one of them (ADR-058).
+	Groups []string
 
 	now func() time.Time
 }
@@ -284,58 +287,86 @@ type idClaims struct {
 	Exp   float64         `json:"exp"`
 	Nbf   float64         `json:"nbf"`
 	Nonce string          `json:"nonce"`
+	// profile scope (ADR-058): the name a sharer types and the groups the
+	// optional defence-in-depth check compares.
+	PreferredUsername string          `json:"preferred_username"`
+	Groups            json.RawMessage `json:"groups"`
+}
+
+// verifiedClaims is what a successful sign-in hands on.
+type verifiedClaims struct{ Sub, Username string }
+
+// groupAllowed applies the optional group check. A token with no groups
+// claim passes (Authentik's own binding already decided); a token that
+// carries one must list at least one configured group.
+func groupAllowed(raw json.RawMessage, allowed []string) bool {
+	if len(allowed) == 0 || len(raw) == 0 || string(raw) == "null" {
+		return true
+	}
+	var have []string
+	if json.Unmarshal(raw, &have) != nil {
+		return false
+	}
+	for _, h := range have {
+		for _, a := range allowed {
+			if h == a {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 const clockSkew = 30 * time.Second
 
-func (o *OIDC) verifyIDToken(ctx context.Context, token, nonce string) (string, error) {
+func (o *OIDC) verifyIDToken(ctx context.Context, token, nonce string) (verifiedClaims, error) {
 	fail := errors.New("everything: invalid id token")
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
-		return "", fail
+		return verifiedClaims{}, fail
 	}
 	hb, e1 := b64(parts[0])
 	pb, e2 := b64(parts[1])
 	sig, e3 := b64(parts[2])
 	if e1 != nil || e2 != nil || e3 != nil {
-		return "", fail
+		return verifiedClaims{}, fail
 	}
 	var hdr struct{ Alg, Kid string }
 	if json.Unmarshal(hb, &hdr) != nil {
-		return "", fail
+		return verifiedClaims{}, fail
 	}
 	pub, err := o.key(ctx, hdr.Kid)
 	if err != nil {
-		return "", err
+		return verifiedClaims{}, err
 	}
 	digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
 	switch k := pub.(type) {
 	case *rsa.PublicKey:
 		if hdr.Alg != "RS256" || rsa.VerifyPKCS1v15(k, crypto.SHA256, digest[:], sig) != nil {
-			return "", fail
+			return verifiedClaims{}, fail
 		}
 	case *ecdsa.PublicKey:
 		if hdr.Alg != "ES256" || len(sig) != 64 ||
 			!ecdsa.Verify(k, digest[:], new(big.Int).SetBytes(sig[:32]), new(big.Int).SetBytes(sig[32:])) {
-			return "", fail
+			return verifiedClaims{}, fail
 		}
 	default:
-		return "", fail
+		return verifiedClaims{}, fail
 	}
 	var c idClaims
 	if json.Unmarshal(pb, &c) != nil {
-		return "", fail
+		return verifiedClaims{}, fail
 	}
 	now := o.cfg.now()
 	if c.Iss != o.cfg.Issuer || c.Exp == 0 || !now.Before(time.Unix(int64(c.Exp), 0).Add(clockSkew)) ||
 		(c.Nbf != 0 && now.Add(clockSkew).Before(time.Unix(int64(c.Nbf), 0))) {
-		return "", fail
+		return verifiedClaims{}, fail
 	}
 	var auds []string
 	if json.Unmarshal(c.Aud, &auds) != nil {
 		var one string
 		if json.Unmarshal(c.Aud, &one) != nil {
-			return "", fail
+			return verifiedClaims{}, fail
 		}
 		auds = []string{one}
 	}
@@ -344,15 +375,18 @@ func (o *OIDC) verifyIDToken(ctx context.Context, token, nonce string) (string, 
 		okAud = okAud || a == o.cfg.ClientID
 	}
 	if !okAud || (len(auds) > 1 && c.Azp != o.cfg.ClientID) || (c.Azp != "" && c.Azp != o.cfg.ClientID) {
-		return "", fail
+		return verifiedClaims{}, fail
 	}
 	if nonce == "" || subtle.ConstantTimeCompare([]byte(c.Nonce), []byte(nonce)) != 1 {
-		return "", fail
+		return verifiedClaims{}, fail
 	}
 	if !validText(c.Sub, 255) {
-		return "", fail
+		return verifiedClaims{}, fail
 	}
-	return c.Sub, nil
+	if !groupAllowed(c.Groups, o.cfg.Groups) {
+		return verifiedClaims{}, fail
+	}
+	return verifiedClaims{Sub: c.Sub, Username: c.PreferredUsername}, nil
 }
 
 func (o *OIDC) exchange(ctx context.Context, d *discovery, code, verifier string) (string, error) {
@@ -438,7 +472,7 @@ func (o *OIDC) login(w http.ResponseWriter, r *http.Request) {
 	}
 	chal := sha256.Sum256([]byte(verifier))
 	q := url.Values{"response_type": {"code"}, "client_id": {o.cfg.ClientID}, "redirect_uri": {o.cfg.RedirectURL},
-		"scope": {"openid"}, "state": {state}, "nonce": {ls.nonce},
+		"scope": {"openid profile"}, "state": {state}, "nonce": {ls.nonce},
 		"code_challenge": {base64.RawURLEncoding.EncodeToString(chal[:])}, "code_challenge_method": {"S256"}}
 	o.setCookie(w, loginName, state, 600)
 	au, _ := url.Parse(d.AuthURL)
@@ -480,12 +514,16 @@ func (o *OIDC) callback(w http.ResponseWriter, r *http.Request) {
 		deny(w, http.StatusForbidden)
 		return
 	}
-	sub, err := o.verifyIDToken(r.Context(), tok, ls.nonce)
+	vc, err := o.verifyIDToken(r.Context(), tok, ls.nonce)
 	if err != nil {
 		deny(w, http.StatusForbidden)
 		return
 	}
-	id, _, err := o.store.createSession(r.Context(), o.cfg.App, sub, o.cfg.now())
+	if err = o.store.RecordSignIn(r.Context(), o.cfg.App, vc.Sub, vc.Username, o.cfg.now()); err != nil {
+		deny(w, http.StatusServiceUnavailable)
+		return
+	}
+	id, _, err := o.store.createSession(r.Context(), o.cfg.App, vc.Sub, o.cfg.now())
 	if err != nil {
 		deny(w, http.StatusServiceUnavailable)
 		return
