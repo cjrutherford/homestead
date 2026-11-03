@@ -179,3 +179,30 @@ func TestEverythingServeRules(t *testing.T) {
 		t.Fatal("another app's bridge image was accepted")
 	}
 }
+
+// S437 (ADR-058): sharing between people, events and share notices are switched
+// on by the package, and only Tasks has switched them on so far; net.fetch stays
+// off everywhere except api-client.
+func TestEverythingSharingSwitchIsPerPackage(t *testing.T) {
+	cat := repoCatalog(t)
+	for _, name := range everythingPackages {
+		m, err := cat.Get(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		on := func(env string) bool {
+			for _, s := range m.Services {
+				if s.Environment[env] == "1" {
+					return true
+				}
+			}
+			return false
+		}
+		if got, want := on("HOMESTEAD_EVERYTHING_SHARING"), name == "tasks"; got != want {
+			t.Errorf("%s: sharing on = %v, want %v", name, got, want)
+		}
+		if got, want := on("HOMESTEAD_EVERYTHING_NET"), name == "api-client"; got != want {
+			t.Errorf("%s: net on = %v, want %v", name, got, want)
+		}
+	}
+}

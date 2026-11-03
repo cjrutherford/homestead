@@ -25,16 +25,64 @@
   },
   "patches": [
     {
-      "file": "src/tasks/src/views/lists.js",
-      "old": "el('button.icon-btn', {\n          html: icon('share', 18),",
-      "new": "false && el('button.icon-btn', {\n          html: icon('share', 18),",
-      "why": "Share button hidden: the bridge refuses signed public URLs (ADR-053 amendment)."
+      "file": "src/tasks/src/lib/store.js",
+      "old": "link: shareLink(url),",
+      "new": "link: String(url).replace('/_homestead/read/', '/_homestead/view/'),",
+      "why": "The link handed out is the bridge's script-free viewer for the same token (S432), not the app page: an outsider has no sign-in, and the app requires one."
     },
     {
-      "file": "src/tasks/src/views/settings.js",
-      "old": "root.append(\n    el('div.section-label', {}, 'Calendar integration'),",
-      "new": "false && root.append(\n    el('div.section-label', {}, 'Calendar integration'),",
-      "why": "Calendar-feed (ICS URL) setting hidden for the same reason."
+      "file": "src/tasks/src/ui/sharesheet.js",
+      "old": "? 'Invite people by their Puter username to add",
+      "new": "? 'Invite people by their Homestead username to add",
+      "why": "Puter wording: invite by the person's name on this Homestead."
+    },
+    {
+      "file": "src/tasks/src/ui/sharesheet.js",
+      "old": "placeholder: 'Puter username'",
+      "new": "placeholder: 'Homestead username'",
+      "why": "Puter wording."
+    },
+    {
+      "file": "src/tasks/src/ui/sharesheet.js",
+      "old": "'Invite by Puter username'",
+      "new": "'Invite by Homestead username'",
+      "why": "Puter wording."
+    },
+    {
+      "file": "src/tasks/src/ui/sharesheet.js",
+      "old": "Invite someone by their Puter username.",
+      "new": "Invite someone by their Homestead username.",
+      "why": "Puter wording."
+    },
+    {
+      "file": "src/tasks/src/lib/collab.js",
+      "old": "`No Puter user is named \"${username}\"`",
+      "new": "`No one with access to Tasks is named \"${username}\". They need access, and to have opened Tasks once`",
+      "why": "Puter wording; the bridge answers the same for an unknown name and for a person without app access."
+    },
+    {
+      "file": "src/tasks/src/lib/collab.js",
+      "old": "'Enter a Puter username, not an email address'",
+      "new": "'Enter a Homestead username, not an email address'",
+      "why": "Puter wording."
+    },
+    {
+      "file": "src/tasks/src/lib/store.js",
+      "old": "throw new Error('Enter a Puter username');",
+      "new": "throw new Error('Enter a Homestead username');",
+      "why": "Puter wording."
+    },
+    {
+      "file": "src/tasks/tests/kvshare.test.js",
+      "old": "message: 'No Puter user is named \"nobody\"', code:",
+      "new": "message: 'No one with access to Tasks is named \"nobody\". They need access, and to have opened Tasks once', code:",
+      "why": "Keeps the upstream test in step with the reworded refusal."
+    },
+    {
+      "file": "src/tasks/tests/store.test.js",
+      "old": "expect(shared.link).toContain('#/shared?u=');",
+      "new": "expect(shared.link).toBe(shared.url); // the mock URL has no /_homestead/read/ part to turn into a viewer link",
+      "why": "Keeps the upstream test in step with the viewer link (the link is the bridge viewer URL)."
     }
   ],
   "sdk_surface": {
@@ -48,22 +96,22 @@
       "fs.delete",
       "auth.isSignedIn",
       "auth.getUser",
-      "env"
-    ],
-    "refused": [
-      "fs.getReadURL",
+      "env",
       "kv.share",
       "kv.unshare",
       "kv.listShared",
       "kv.listSharedByMe",
-      "perms.*",
-      "events.*",
-      "appID"
+      "kv {handle} option",
+      "perms.request",
+      "appID",
+      "fs.getReadURL",
+      "events.onLocal"
     ],
+    "refused": [],
     "disabled": {
       "ai": "no AI backend",
-      "net": "no network bridge (S381 only)",
-      "sharing": "needs an exposure plan"
-    }
+      "net": "no network bridge (S381 only)"
+    },
+    "sharing": "enabled for this package only, by HOMESTEAD_EVERYTHING_SHARING=1 in catalog/tasks.yaml (S437, ADR-058)"
   }
 }

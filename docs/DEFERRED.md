@@ -1791,3 +1791,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S436: the package turns the net switch on through the `HOMESTEAD_EVERYTHING_NET=1` environment value in the catalog entry; the daemon still does not read `sdk_surface` to decide it.
 - S436: the catalog icon is `mdi:cloud`; the owner may choose a better bundled icon.
 - S436: `ui/share-dialog.js` still carries upstream's "Verify your Puter account to share." strings; the dialog is unreachable because sharing is hidden, so they are not patched.
+- S437: the Tasks browser check uses the development identity with a people registry entry per login; a live two-person run against Authentik, the `profile` claim shape and a real browser through Caddy (event stream not buffered) are unproven.
+- S437: Tasks still carries upstream's in-app shared-list page (`#/shared?u=`) and its "Powered by Tasks on Puter" footer; no link points to it since the view-only link is the bridge viewer.
+- S437: the calendar feed (`.ics` read link, up to 365 days) is shown again; whether a calendar client can reach it from outside the LAN depends on the S433 public read-link plan and was not tried with a real client.
+- S437: `perms.request` always resolves true for Tasks' own prefix (no consent prompt); the owner may want a per-person consent screen later.

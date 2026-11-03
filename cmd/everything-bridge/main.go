@@ -73,7 +73,7 @@ func main() {
 	groups := flag.String("oidc-groups", envDefault("OIDC_GROUPS", ""), "optional comma-separated group names; a token with a groups claim must list one")
 	personQuota := flag.Int64("quota-person-bytes", envInt("QUOTA_PERSON_BYTES"), "per-person byte quota (0 = default 256 MiB)")
 	appQuota := flag.Int64("quota-app-bytes", envInt("QUOTA_APP_BYTES"), "whole-application byte quota (0 = default 4 GiB)")
-	sharing := flag.Bool("sharing", os.Getenv("SHARING") == "1", "enable KV sharing between people of this app (ADR-058; off = kv_handles_disabled)")
+	sharing := flag.Bool("sharing", os.Getenv("HOMESTEAD_EVERYTHING_SHARING") == "1" || os.Getenv("SHARING") == "1", "enable KV sharing between people of this app (ADR-058; off = kv_handles_disabled)")
 	netOn := flag.Bool("net", os.Getenv("HOMESTEAD_EVERYTHING_NET") == "1", "enable the net.fetch operation: public internet only, limited and logged (ADR-058; off = net_disabled)")
 	linkDays := flag.Int("read-link-max-days", int(envInt("READ_LINK_MAX_DAYS")), "longest read link lifetime in days (0 = 365, the cap)")
 	proxies := flag.String("trusted-proxies", envDefault("TRUSTED_PROXIES", ""), "comma-separated CIDRs whose X-Forwarded-For is believed (empty = loopback and private ranges, the Homestead edge; none = trust no peer)")

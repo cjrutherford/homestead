@@ -29,10 +29,28 @@ class TasksPackageTest(unittest.TestCase):
         self.assertRegex(d['version'], r'^\d+\.\d+\.\d+$')
         self.assertIn('version: ' + d['version'], (ROOT / 'catalog/tasks.yaml').read_text())
 
-    def test_sdk_surface_fails_closed_for_ai_net_and_sharing(self):
+    def test_sdk_surface_fails_closed_for_ai_and_net_and_allows_sharing(self):
+        # S437 (ADR-058): sharing, read links and events are on for Tasks.
         d = json.loads(DEF.read_text())
-        self.assertEqual(set(d['sdk_surface']['disabled']), {'ai', 'net', 'sharing'})
-        self.assertIn('fs.getReadURL', d['sdk_surface']['refused'])
+        self.assertEqual(set(d['sdk_surface']['disabled']), {'ai', 'net'})
+        self.assertEqual(d['sdk_surface']['refused'], [])
+        for call in ('fs.getReadURL', 'kv.share', 'kv.listShared', 'perms.request', 'appID', 'events.onLocal'):
+            self.assertIn(call, d['sdk_surface']['supported'])
+        cat = (ROOT / 'catalog/tasks.yaml').read_text()
+        self.assertIn('HOMESTEAD_EVERYTHING_SHARING: "1"', cat)
+        self.assertNotIn('HOMESTEAD_EVERYTHING_NET', cat)
+
+    def test_only_tasks_turns_sharing_on(self):
+        for f in sorted((ROOT / 'catalog').glob('*.yaml')):
+            if f.name != 'tasks.yaml':
+                self.assertNotIn('HOMESTEAD_EVERYTHING_SHARING', f.read_text(), f.name)
+
+    def test_sharing_patches_present_and_hiding_patches_gone(self):
+        d = json.loads(DEF.read_text())
+        news = '\n'.join(p['new'] for p in d['patches'])
+        self.assertIn('/_homestead/view/', news)
+        self.assertNotIn('false &&', news)
+        self.assertNotIn('Puter username', news)
 
     def test_generic_prepare_matches_the_s367_wrapper(self):
         generic, wrapper = load('prepare_app'), load('prepare_tasks')

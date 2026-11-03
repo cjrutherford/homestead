@@ -94,7 +94,7 @@ not supported fails closed with `bridge_unsupported`.
 | `net.fetch(url, init)` | supported by ADR-058 (S435): public internet only through the egress fence, 60 a minute and 5,000 a day per person, logged in `net_log` (`everything-bridge net-log`); answers `net_disabled` unless the bridge runs with `-net` (or `HOMESTEAD_EVERYTHING_NET=1`) |
 | `net.Socket`, `net.tls.TLSSocket`, WebSocket/wisp URLs | `bridge_unsupported` |
 | WebAssembly (S375) | allowed only for a build that ships a `.wasm` file: the page policy adds `'wasm-unsafe-eval'`; JavaScript eval stays refused |
-| sharing / calendar feed UI | hidden by a pinned patch (needs an exposure plan) |
+| sharing / calendar feed UI | Tasks: shown since S437 (ADR-058; the package sets `HOMESTEAD_EVERYTHING_SHARING=1`, view-only links open the bridge viewer). Other apps: hidden by a pinned patch until their slice |
 
 **Adding an app (S369 and later).** Add `scripts/everything/apps/<app>.json`,
 the pinned archive and a `pin.yaml` entry, `catalog/<app>.yaml`, an

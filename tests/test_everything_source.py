@@ -82,7 +82,7 @@ class EverythingSourceTest(unittest.TestCase):
             # Preserve upstream bytes; S367 still needs to replace this with a local bridge.
             self.assertEqual(index.count(b'https://js.puter.com/v2/'), 1)
 
-    def test_share_and_calendar_feed_ui_is_hidden_and_patch_target_is_pinned(self):
+    def test_share_and_calendar_feed_ui_is_shown_and_patch_target_is_pinned(self):
         spec = importlib.util.spec_from_file_location('prepare_tasks', ROOT / 'scripts/everything/prepare_tasks.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -93,8 +93,12 @@ class EverythingSourceTest(unittest.TestCase):
             module.prepare(ARCHIVE, bridge, base / 'out')
             lists = (base / 'out/src/tasks/src/views/lists.js').read_text()
             settings = (base / 'out/src/tasks/src/views/settings.js').read_text()
-            self.assertIn("false && el('button.icon-btn', {\n          html: icon('share', 18),", lists)
-            self.assertIn("false && root.append(\n    el('div.section-label', {}, 'Calendar integration'),", settings)
+            # S437 (ADR-058): the sharing UI and the calendar feed are shown again
+            self.assertIn("el('button.icon-btn', {\n          html: icon('share', 18),", lists)
+            self.assertNotIn("false && el('button.icon-btn', {\n          html: icon('share', 18),", lists)
+            self.assertIn("root.append(\n    el('div.section-label', {}, 'Calendar integration'),", settings)
+            self.assertNotIn("false && root.append(", settings)
+            self.assertIn("/_homestead/view/", (base / 'out/src/tasks/src/lib/store.js').read_text())
             # the local, browser-built .ics download is not a feed and stays
             calendar = (base / 'out/src/tasks/src/views/calendar.js').read_text()
             self.assertIn('Download .ics calendar file', calendar)
@@ -103,8 +107,8 @@ class EverythingSourceTest(unittest.TestCase):
             with tarfile.open(ARCHIVE) as src, tarfile.open(changed, 'w:gz') as dst:
                 for m in src.getmembers():
                     data = src.extractfile(m).read()
-                    if m.name.endswith('views/lists.js'):
-                        data = data.replace(b"icon('share', 18)", b"icon('share', 19)")
+                    if m.name.endswith('lib/store.js'):
+                        data = data.replace(b"link: shareLink(url),", b"link: shareLink(url, 1),")
                     m.size = len(data)
                     dst.addfile(m, io.BytesIO(data))
             module.EXPECTED_SHA256 = hashlib.sha256(changed.read_bytes()).hexdigest()

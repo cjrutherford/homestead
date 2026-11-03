@@ -284,3 +284,16 @@ Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10
 Prerequisites: ...
 Steps and expected results: (install via plan/apply, sign-in, second person closed then granted, offline, quota, backup, uninstall, SDK-surface checks specific to the app)
 Pass/fail: [ ] 1 [ ] 2 ...
+
+## S437 - Tasks sharing (ADR-058)
+Prerequisites: Tasks installed with sign-in applied; two people granted the app (A, B) and a third with Homestead but no Tasks access (C).
+Steps and expected results:
+1. A makes a list with a task, opens Share, chooses "Invite people to edit". Expected: no Puter wording; an invite field.
+2. A invites B by name, then a name nobody has. Expected: B can now edit; the unknown name is refused with "No one with access to Tasks is named ...".
+3. B opens Tasks. Expected: the list and its task appear; A adds a task and B sees it within seconds without reload; B adds one and A sees it.
+4. C (signed in, no access) opens Tasks. Expected: nothing of A's; C cannot be invited.
+5. A creates a view-only link and opens it in a private window. Expected: a plain page with the list and tasks, no script, no sign-in; "Stop sharing" makes the link a 404.
+6. A removes B. Expected: B no longer receives changes; B keeps a private copy as it was.
+7. Settings: turn on the calendar feed. Expected: a feed URL; opening it on the LAN shows the calendar text.
+8. Watch the container log: no token appears in any line.
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8

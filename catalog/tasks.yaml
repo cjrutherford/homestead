@@ -14,9 +14,12 @@ description: Tasks is a to-do app with lists, due dates, priorities and
   reminders. It runs in the browser from a small web server on your
   appliance, and each person's tasks are kept on the appliance, private to
   that person. People sign in through Authentik; until the owner sets up
-  sign-in the app serves nothing. Sharing a list and calendar feeds are not
-  offered. It is served over your local network with a certificate from your
-  Homestead internal CA.
+  sign-in the app serves nothing. You can work on a list together with other
+  people who have access to Tasks (they are named by their Homestead user
+  name), and share a read-only link or a calendar feed; a link only works
+  from outside your network when you plan and approve public links. It is
+  served over your local network with a certificate from your Homestead
+  internal CA.
 category: productivity
 icon: mdi:checkbox-marked-circle-outline
 services:
@@ -34,6 +37,10 @@ services:
     # Until sign-in is applied the bridge starts and answers only that
     # sign-in is not set up (fail closed); it never serves data.
     HOMESTEAD_EVERYTHING_AWAIT_SIGNIN: "1"
+    # Sharing between people who have access to Tasks, live updates and
+    # share notices (S437, ADR-058). Only the people granted this app can
+    # be named; read links stay local until the owner approves public ones.
+    HOMESTEAD_EVERYTHING_SHARING: "1"
     # Per-person and whole-app storage limits, in bytes.
     HOMESTEAD_EVERYTHING_QUOTA_PERSON_BYTES: "268435456"
     HOMESTEAD_EVERYTHING_QUOTA_APP_BYTES: "2147483648"

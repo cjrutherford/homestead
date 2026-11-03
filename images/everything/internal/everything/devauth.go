@@ -8,6 +8,7 @@ package everything
 // therefore cannot contain it, whatever their configuration says.
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -34,7 +35,14 @@ type DevIdentity struct {
 	now      func() time.Time
 
 	base, static string // optional: serve the prepared app for a real browser
+
+	store *Store // optional: record each login in the people registry (S437, test only)
 }
+
+// RecordPeople makes every development login also register the person
+// (username = subject), as a verified OIDC sign-in would, so sharing between
+// development people can resolve names. Test only.
+func (d *DevIdentity) RecordPeople(s *Store) { d.store = s }
 
 // Static makes Routes also serve the prepared application under base, with
 // the same index/CSRF behaviour as production, and a GET sign-in page.
@@ -62,6 +70,9 @@ func (d *DevIdentity) Login(subject string, ttl time.Duration) (cookie, csrf str
 	d.mu.Lock()
 	d.sessions[cookie] = devSession{subject, csrf, d.now().Add(ttl), d.now()}
 	d.mu.Unlock()
+	if d.store != nil {
+		_ = d.store.RecordSignIn(context.Background(), d.app, subject, subject, d.now())
+	}
 	return
 }
 
