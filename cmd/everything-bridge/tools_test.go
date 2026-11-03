@@ -172,3 +172,59 @@ func TestToolsGrantsListRevokeAndExportImport(t *testing.T) {
 		t.Fatal("grants tool created a data file")
 	}
 }
+
+func TestLinksTool(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "l.db")
+	st, err := everything.OpenStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err = st.RecordSignIn(ctx, "tasks", "s1", "Alice", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	sc := everything.Scope{App: "tasks", Subject: "s1"}
+	if err = st.Put(ctx, sc, everything.KindFile, "cal/feed.ics", []byte("top-secret-body")); err != nil {
+		t.Fatal(err)
+	}
+	tok, l, err := st.CreateReadLink(ctx, sc, "cal/feed.ics", time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	var out, errb bytes.Buffer
+	run := func(args ...string) int {
+		out.Reset()
+		errb.Reset()
+		return runTool("links", args, &out, &errb)
+	}
+	if c := run("list", "-db", db, "-app", "tasks"); c != 0 || !strings.Contains(out.String(), l.ID) || !strings.Contains(out.String(), "Alice") ||
+		!strings.Contains(out.String(), "live") || !strings.HasSuffix(out.String(), "1 links\n") || strings.Contains(out.String(), tok) || strings.Contains(out.String(), "top-secret") {
+		t.Fatal(c, out.String(), errb.String())
+	}
+	if c := run("revoke", "-db", db, "-app", "notes", "-id", l.ID); c != 0 || out.String() != "revoked 0 links\n" {
+		t.Fatalf("other app: %d %q", c, out.String())
+	}
+	if c := run("revoke", "-db", db, "-app", "tasks", "-id", l.ID); c != 0 || out.String() != "revoked 1 links\n" {
+		t.Fatalf("revoke: %d %q", c, out.String())
+	}
+	if c := run("list", "-db", db, "-app", "tasks"); c != 0 || out.String() != "0 links\n" {
+		t.Fatalf("live list: %d %q", c, out.String())
+	}
+	if c := run("list", "-db", db, "-app", "tasks", "-all"); c != 0 || !strings.Contains(out.String(), "revoked") {
+		t.Fatalf("all list: %d %q", c, out.String())
+	}
+	for _, args := range [][]string{{}, {"nope"}, {"list", "-db", db}, {"revoke", "-db", db, "-app", "tasks"}} {
+		if c := run(args...); c != 2 {
+			t.Fatalf("%v: %d", args, c)
+		}
+	}
+	missing := filepath.Join(dir, "none.db")
+	if c := run("list", "-db", missing, "-app", "tasks"); c == 0 {
+		t.Fatal("missing db accepted")
+	}
+	if _, err := os.Stat(missing); err == nil {
+		t.Fatal("links tool created a data file")
+	}
+}

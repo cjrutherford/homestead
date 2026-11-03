@@ -6,9 +6,9 @@
  * Puter cloud. KV sharing (kv.share/unshare/listShared/listSharedByMe, the
  * {handle} option, perms.request, appID) and file sharing (fs.share,
  * fs.unshare, fs.getShares, fs.listShared, ~shared/<id>/... paths) follow
- * ADR-058. Events (events.onLocal over a Server-Sent Events stream, ADR-058
- * section 6) need EventSource. Anything outside ADR-053 and ADR-058 (signed
- * read URLs)
+ * ADR-058. Read links (fs.getReadURL) mint an expiring, read-only URL on the
+ * page's own origin. Events (events.onLocal over a Server-Sent Events stream,
+ * ADR-058 section 6) need EventSource. Anything outside ADR-053 and ADR-058
  * is either absent or rejects
  * with { code: 'bridge_unsupported' }; it never silently succeeds.
  *
@@ -34,13 +34,17 @@
     if (status) err.status = status;
     throw err;
   }
-  function unsupported(what) {
-    return function () {
-      return Promise.reject({
-        code: 'bridge_unsupported',
-        message: what + ' is not supported by the Homestead bridge',
-      });
-    };
+  // '30m', '12h', '7d', '2w', '1y' or a number of seconds; 0 means the default.
+  function ttlSeconds(v) {
+    if (v === undefined || v === null || v === '') return 0;
+    if (typeof v === 'number') {
+      if (!isFinite(v) || v < 0) fail('invalid_argument', 'Invalid expiry');
+      return Math.floor(v);
+    }
+    var m = /^(\d{1,5})([smhdwy])$/.exec(String(v));
+    if (!m) fail('invalid_argument', 'Invalid expiry');
+    var unit = { s: 1, m: 60, h: 3600, d: 86400, w: 604800, y: 31536000 }[m[2]];
+    return Number(m[1]) * unit;
   }
 
   function toBase64(bytes) {
@@ -406,9 +410,16 @@
         });
         return page;
       },
-      // Signed public read URLs are public exposure; ADR-053 requires an
-      // explicit exposure plan first, so this is refused.
-      getReadURL: unsupported('Public read URLs'),
+      // A read-only, expiring link to one of the caller's own files (ADR-058).
+      // expiresIn is seconds or a string such as '1d', '7d', '30d', '365d',
+      // '1y'; the bridge clamps it to its maximum. The URL is on the origin
+      // the page is using and serves the file's current content until it
+      // expires or the file is deleted.
+      async getReadURL(path, expiresIn) {
+        var r = await call({ operation: 'fs.getReadURL', key: fsKey(path), ttl: ttlSeconds(expiresIn) });
+        if (!r || !r.url) fail('bridge_error', 'Bridge storage unavailable', 500);
+        return r.url;
+      },
     };
 
     var user = null;

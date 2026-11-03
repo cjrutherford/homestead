@@ -113,7 +113,9 @@ describe('real Tasks store through the real bridge', () => {
     // S430: events exist, but need EventSource (absent in node) and sharing on.
     expect(typeof p.events.onLocal).toBe('function');
     expect((await rejects(p.events.onLocal('notif:app-user', () => {}))).code).toBe('bridge_unsupported');
-    expect((await rejects(p.fs.getReadURL('tasks-data/x', 60))).code).toBe('bridge_unsupported');
+    // S431: read links work without the sharing switch; a missing file is path_not_found.
+    expect((await rejects(p.fs.getReadURL('tasks-data/x', 60))).code).toBe('path_not_found');
+    expect((await rejects(p.fs.getReadURL('tasks-data/x', 'soon'))).code).toBe('invalid_argument');
     expect((await rejects(p.kv.share({ prefix: 'tasks:collab:x:', recipient: 'bob', access: 'write' }))).code).toBe('kv_handles_disabled');
     expect((await rejects(p.kv.listShared({ limit: 200 }))).code).toBe('kv_handles_disabled');
     // S429: file sharing is off the same way, and plain files still work.
@@ -126,6 +128,29 @@ describe('real Tasks store through the real bridge', () => {
     expect(await p.auth.getUser()).toMatchObject({ username: 'share-person' });
     expect(p.appID).toBe('app-tasks');
     expect(await shimFor(await bridge.login('share-other')).kv.list('*')).toEqual([]);
+  });
+
+  it('mints read links on the page origin that serve the current file with no sign-in and die with the file (S431)', async () => {
+    const cfg = await bridge.login('link-person');
+    const p = shimFor(cfg);
+    await p.fs.write('cal/feed.ics', 'BEGIN:VCALENDAR\nEND:VCALENDAR\n');
+    const url = await p.fs.getReadURL('cal/feed.ics', '1y');
+    expect(url.startsWith(bridge.origin + '/_homestead/read/')).toBe(true);
+    const anon = await realFetch(url); // no cookie, no CSRF header
+    expect(anon.status).toBe(200);
+    expect(await anon.text()).toContain('BEGIN:VCALENDAR');
+    expect(anon.headers.get('content-type')).toContain('text/calendar');
+    expect(anon.headers.get('content-security-policy')).toBe("sandbox; default-src 'none'");
+    expect(anon.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(anon.headers.get('cache-control')).toBe('private, no-store');
+    expect(anon.headers.get('set-cookie')).toBeNull();
+    await p.fs.write('cal/feed.ics', 'BEGIN:VCALENDAR\nX-NEW:1\nEND:VCALENDAR\n');
+    expect(await (await realFetch(url)).text()).toContain('X-NEW');
+    await p.fs.delete('cal/feed.ics');
+    expect((await realFetch(url)).status).toBe(404);
+    await p.fs.write('cal/feed.ics', 'again');
+    expect((await realFetch(url)).status).toBe(404); // re-creating the file does not revive it
+    expect((await realFetch(url.slice(0, -3) + 'abc')).status).toBe(404);
   });
 
   it('maps sharing replies and cursors through the shim (stubbed bridge)', async () => {

@@ -130,6 +130,52 @@ func runTool(cmd string, args []string, out, errw io.Writer) int {
 			fmt.Fprintf(out, "%s\t%s\t%s\t%s\t%s -> %s\t%s\t%s\n", g.ID, g.App, g.Kind, g.Access, g.OwnerName, g.RecipName, g.Key, state)
 		}
 		fmt.Fprintf(out, "%d grants\n", len(gs))
+	case "links":
+		// links list|revoke: the appliance owner's view of read links. It
+		// prints ids, names, paths and counts; tokens are never stored.
+		if len(args) == 0 || (args[0] != "list" && args[0] != "revoke") {
+			fmt.Fprintln(errw, "usage: everything-bridge links list -db FILE -app APP [-all] | links revoke -db FILE -app APP -id ID")
+			return 2
+		}
+		app := fs.String("app", "", "application name")
+		id := fs.String("id", "", "link id (revoke)")
+		all := fs.Bool("all", false, "list: include expired and revoked links")
+		if fs.Parse(args[1:]) != nil || *db == "" || *app == "" || (args[0] == "revoke" && *id == "") {
+			return 2
+		}
+		if _, err := os.Stat(*db); err != nil {
+			return fail(err) // never create a data file by typo
+		}
+		st, err := everything.OpenStore(*db)
+		if err != nil {
+			return fail(err)
+		}
+		defer st.Close()
+		if args[0] == "revoke" {
+			n, err := st.RevokeReadLink(ctx, *app, *id, time.Now())
+			if err != nil {
+				return fail(err)
+			}
+			fmt.Fprintf(out, "revoked %d links\n", n)
+			break
+		}
+		ls, err := st.ReadLinks(ctx, *app, *all, time.Now())
+		if err != nil {
+			return fail(err)
+		}
+		now := time.Now().Unix()
+		for _, l := range ls {
+			state := "live"
+			switch {
+			case l.RevokedAt != 0:
+				state = "revoked"
+			case l.ExpiresAt <= now:
+				state = "expired"
+			}
+			fmt.Fprintf(out, "%s\t%s\t%s\texpires %s\thits %d\t%s\n", l.ID, l.OwnerName, l.Key,
+				time.Unix(l.ExpiresAt, 0).UTC().Format(time.RFC3339), l.Hits, state)
+		}
+		fmt.Fprintf(out, "%d links\n", len(ls))
 	case "healthcheck":
 		listen := fs.String("listen", envDefault("LISTEN", "127.0.0.1:8081"), "bridge listen address")
 		base := fs.String("base-path", envDefault("BASE_PATH", ""), "application path prefix")
@@ -146,7 +192,7 @@ func runTool(cmd string, args []string, out, errw io.Writer) int {
 			return fail(fmt.Errorf("status %d", res.StatusCode))
 		}
 	default:
-		fmt.Fprintln(errw, "usage: everything-bridge [serve flags] | export|import|backup|people|grants|healthcheck")
+		fmt.Fprintln(errw, "usage: everything-bridge [serve flags] | export|import|backup|people|grants|links|healthcheck")
 		return 2
 	}
 	return 0

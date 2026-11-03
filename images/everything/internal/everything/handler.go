@@ -28,6 +28,9 @@ type handler struct {
 	limiter  shareLimiter
 	now      func() time.Time
 	hub      *eventHub
+	reads    readLimiter
+	base     string
+	logger   func(string, ...any)
 }
 
 // NewHandler refuses to start without an identity verifier and an explicit
@@ -75,6 +78,8 @@ type request struct {
 	// Events (ADR-058): the page instance id, and the subject to (un)subscribe.
 	Client string `json:"client"`
 	Topic  string `json:"topic"`
+	// Read links (ADR-058): lifetime in seconds (0 = default).
+	TTL int64 `json:"ttl"`
 }
 
 type batchEntry struct {
@@ -148,6 +153,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if eventsOp(body.Operation) {
 		w.Header().Set("Content-Type", "application/json")
 		h.handleEventsOp(w, r, scope, body)
+		return
+	}
+	if body.Operation == "fs.getReadURL" {
+		h.handleReadURL(w, r, scope, body)
 		return
 	}
 	if shareOp(body.Operation) {

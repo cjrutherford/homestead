@@ -74,6 +74,8 @@ func main() {
 	personQuota := flag.Int64("quota-person-bytes", envInt("QUOTA_PERSON_BYTES"), "per-person byte quota (0 = default 256 MiB)")
 	appQuota := flag.Int64("quota-app-bytes", envInt("QUOTA_APP_BYTES"), "whole-application byte quota (0 = default 4 GiB)")
 	sharing := flag.Bool("sharing", os.Getenv("SHARING") == "1", "enable KV sharing between people of this app (ADR-058; off = kv_handles_disabled)")
+	linkDays := flag.Int("read-link-max-days", int(envInt("READ_LINK_MAX_DAYS")), "longest read link lifetime in days (0 = 365, the cap)")
+	proxies := flag.String("trusted-proxies", envDefault("TRUSTED_PROXIES", ""), "comma-separated CIDRs whose X-Forwarded-For is believed (empty = loopback and private ranges, the Homestead edge; none = trust no peer)")
 	await := flag.Bool("await-signin", os.Getenv("HOMESTEAD_EVERYTHING_AWAIT_SIGNIN") == "1", "serve nothing until sign-in is configured (set by the Homestead package)")
 	flag.Parse()
 	if len(origins) == 0 && os.Getenv("HOMESTEAD_EVERYTHING_ORIGIN") != "" {
@@ -93,6 +95,10 @@ func main() {
 	defer store.Close()
 	store.SetQuota(*personQuota, *appQuota)
 	store.SetSharing(*sharing)
+	store.SetReadLinkMax(time.Duration(*linkDays) * 24 * time.Hour)
+	if err = store.SetTrustedProxies(splitGroups(*proxies)); err != nil {
+		log.Fatal(err)
+	}
 	identity, extra, err := newIdentity(config{dev: *dev, app: *app, listen: *listen, base: *base, static: *static, origins: origins,
 		issuer: *issuer, clientID: *clientID, secretFile: *secretFile, redirectURL: *redirect, caFile: *caFile, await: *await, groups: splitGroups(*groups)}, store)
 	if err != nil {

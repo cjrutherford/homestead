@@ -88,7 +88,7 @@ not supported fails closed with `bridge_unsupported`.
 | `fs.rename(path, newName)` (S375; same folder, never replaces, quota-checked) | supported, scoped to the person |
 | `kv.share`, `kv.unshare`, `kv.listShared`, `kv.listSharedByMe`, the kv `{handle}` option, `perms.request`, `appID` | supported by ADR-058 (S428); answers `kv_handles_disabled` unless the bridge runs with `-sharing` |
 | `fs.share`, `fs.unshare`, `fs.getShares`, `fs.listShared`, `~shared/<id>/...` paths for `fs.read/write/stat/readdir/rename/delete` | supported by ADR-058 (S429); answers `fs_sharing_disabled` unless the bridge runs with `-sharing` |
-| `fs.getReadURL` | refused (S431) |
+| `fs.getReadURL` | supported on the app's own origin (S431, ADR-058); a public-name link needs the exposure plan (S433) |
 | `events.onLocal`/`events.on` | supported (S430, ADR-058): SSE stream, own prefix, shared handles, share notices |
 | `ai` | disabled (no backend) |
 | `net` | disabled (only if S381 adds a network bridge) |

@@ -42,7 +42,9 @@ func NewServerAt(base string, store *Store, identity Identity, origins []string,
 		return nil, err
 	}
 	mux := http.NewServeMux()
+	h.(*handler).base = base
 	mux.Handle(base+DataPath, h)
+	mux.HandleFunc(base+ReadPrefix, h.(*handler).serveRead)
 	mux.HandleFunc(base+EventsPath, h.(*handler).serveEvents)
 	mux.HandleFunc(base+HealthPath, healthHandler(store))
 	if src, ok := identity.(SessionSource); ok {

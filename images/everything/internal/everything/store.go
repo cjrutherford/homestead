@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path"
 	"regexp"
@@ -61,6 +62,9 @@ type Store struct {
 	keyMu                 sync.Mutex
 	hmacKey               []byte
 	sharing               bool
+	linkMax               time.Duration
+	trusted               []*net.IPNet
+	trustedSet            bool
 }
 
 // SetSharing turns KV sharing on or off (ADR-058: an app whose definition has
@@ -132,6 +136,10 @@ func OpenStore(filename string) (*Store, error) {
 	if err = st.initGrants(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("everything: initialize grants: %w", err)
+	}
+	if err = st.initReadLinks(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("everything: initialize read links: %w", err)
 	}
 	return st, nil
 }
@@ -248,8 +256,10 @@ func revokeFileGrants(ctx context.Context, tx *sql.Tx, scope Scope, key string, 
 		q += ` OR substr(object_key,1,length(?)) = ?`
 		args = append(args, key+"/", key+"/")
 	}
-	_, err := tx.ExecContext(ctx, q+`)`, args...)
-	return err
+	if _, err := tx.ExecContext(ctx, q+`)`, args...); err != nil {
+		return err
+	}
+	return revokeFileLinks(ctx, tx, scope, key, tree)
 }
 
 // List returns matching names in lexical order within the authenticated scope.
@@ -587,6 +597,9 @@ func (s *Store) Rename(ctx context.Context, scope Scope, from, to string) error 
 	// A renamed file leaves its shares behind: revoked, not moved.
 	now := time.Now().Unix()
 	if _, err = tx.ExecContext(ctx, `UPDATE grants SET revoked_at = ?, updated_at = ? WHERE app=? AND owner_subject=? AND kind='fs' AND object_key=? AND revoked_at IS NULL`, now, now, scope.App, scope.Subject, from); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE read_links SET revoked_at = ? WHERE app=? AND owner_subject=? AND object_key=? AND revoked_at IS NULL`, now, scope.App, scope.Subject, from); err != nil {
 		return err
 	}
 	p1, a1, err := usage(ctx, tx, scope)

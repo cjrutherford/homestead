@@ -1766,3 +1766,8 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S430: fs revocations caused by deleting or renaming a shared file send no `fs.share.revoked` notice; recipients see it on their next `fs.listShared`.
 - S430: the edge (Caddy `reverse_proxy` for Everything routes) was not verified live to stream SSE; see the slice doc. Polling in Tasks covers a buffering edge.
 - S430: an open stream re-validates the session each beat, which refreshes the session's last-seen time, so an open tab does not idle out (the absolute lifetime still applies).
+- S431: a link minted on the public name (`read_links_not_exposed`, `HOMESTEAD_EVERYTHING_PUBLIC_READ_ORIGIN`) and the edge route for `read`/`view` are S433. Until then the bridge accepts only its one configured origin, so every link is on that origin.
+- S431: there is no per-app definition switch for read links and no `read_links` entry in `sdk_surface` yet; `fs.getReadURL` works on every Everything bridge. The packages' `refused` lists for Tasks and Notes still name it until S437 and S438 re-enable those UIs.
+- S431: rate-limit state is in memory per bridge process (a restart resets it). `X-Forwarded-For` is believed from loopback and private peers by default (`-trusted-proxies`); a bridge whose port is published to a LAN must set it to `none`. Not tested against a live Caddy.
+- S431: read links are not exported or imported (only a hash is stored, so a restored link could not be re-issued); the `links` tool and People purge are the only revokers besides deleting the file.
+- S431: the viewer route (`/_homestead/view/<token>`) is S432.

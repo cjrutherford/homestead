@@ -225,3 +225,47 @@ func TestReconcilePathRoutesWritesNoAppSite(t *testing.T) {
 		t.Fatalf("MDNSLabels = %v", labels)
 	}
 }
+
+// S431: the Everything bridge rate-limits read links on the address in
+// X-Forwarded-For, which it believes only from the edge. That is sound only
+// while the edge never forwards a client-sent value: Caddy replaces
+// X-Forwarded-For with the address it saw unless trusted_proxies is set, so
+// the generated config must never set it, and the tunnel entry must set the
+// header itself from Cloudflare's header (loopback-only listener).
+func TestEdgeNeverForwardsAClientSentAddress(t *testing.T) {
+	set := pathSet()
+	set.Routes = append(set.Routes, Route{Host: "tasks.lan", Target: Target{Host: "tasks", Port: 8081}, Exposure: ExposureLocal, TLS: TLSInternal})
+	if err := ValidateRenderable(set); err != nil {
+		t.Fatal(err)
+	}
+	local, tunnel := renderDashboard(t, set)
+	for _, r := range withPaths(set.Routes) {
+		if r.Path != "" {
+			continue // rendered inside the dashboard site, checked below
+		}
+		out, err := RenderRoute(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out, "X-Forwarded-For") && !r.Dashboard {
+			t.Fatalf("%s sets X-Forwarded-For:\n%s", r.Host, out)
+		}
+		if strings.Contains(out, "trusted_proxies") {
+			t.Fatalf("%s: trusted_proxies set:\n%s", r.Host, out)
+		}
+	}
+	if strings.Contains(local+tunnel, "trusted_proxies") {
+		t.Fatal("trusted_proxies set")
+	}
+	app := local[strings.Index(local, "handle /apps/jellyfin/*"):]
+	app = app[:strings.Index(app, "handle /apps/*")]
+	if strings.Contains(app, "X-Forwarded-For") {
+		t.Fatalf("local app handle sets X-Forwarded-For from something else:\n%s", app)
+	}
+	if n := strings.Count(tunnel, "header_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}"); n < 2 {
+		t.Fatalf("tunnel app handles must set X-Forwarded-For themselves (%d):\n%s", n, tunnel)
+	}
+	if strings.Contains(tunnel, "{http.request.header.X-Forwarded-For}") || strings.Contains(local, "{http.request.header.X-Forwarded-For}") {
+		t.Fatal("an edge route copies a client-sent X-Forwarded-For")
+	}
+}
