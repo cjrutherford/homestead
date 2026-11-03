@@ -118,6 +118,11 @@ section 13 owes the offer to the people who use the app over the network; all of
 them are signed in, and the catalog is closed by default. Apps without a
 `source_offer` answer 404 and carry no link. Nothing is fetched at run time.
 
+## Note 2026-11-03: refused rows under review
+ADR-058 (Accepted 2026-11-03) replaces the refused rows (`fs.getReadURL`, `kv`
+sharing, `perms`, `events`, `appID`, `net`) with bridge-provided versions, one
+slice at a time. Until the slice for a row lands, this table stands.
+
 ## Consequences
 - Tasks becomes installable, signed in and backed up like any package.
 - The build needs network access on the appliance at install time.

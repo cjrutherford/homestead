@@ -144,7 +144,18 @@ must be re-evaluated against the bridge before the later candidates ship.
 |----|-----|-----------|------|
 | S379 | `sudoku` | S367 | Same shape as solitaire. |
 | S380 | `expense` | S367 | Local-only; do not ship the "AI OCR" claim. |
-| S381 | `api-client` | S367 | Needs the `puter.net` bridge extension — the only surface addition after S367. **Deferred by the owner 2026-11-02**; see DEFERRED. |
+| S381 | `api-client` | S367 | Needs the `puter.net` bridge extension — the only surface addition after S367. **Deferred by the owner 2026-11-02; un-deferred 2026-11-03 under ADR-058 and planned as S436 after `net` (S434-S435).** |
+
+### 3.4 ADR-058 slices (S424-S441)
+
+Accepted 2026-11-03 and strictly sequential, one commit each. Order: S424 ADR;
+S425 people registry; S426 share grants store; S427 automatic purge on People
+removal; S428 KV sharing, `perms`, `appID`; S429 FS sharing; S430 events;
+S431 read links on local names; S432 script-free read-only viewer; S433
+read-link and viewer public exposure plan (daemon, API, CLI, dashboard);
+S434 net fence; S435 net operation, limits and log; S436 `api-client` (S381);
+S437 Tasks, S438 Notes, S439 Circuits, S440 Parametric (one app per slice,
+re-enabling the hidden UI); S441 review plan and ADR-057 table.
 
 ## 4. Critical path and recommended order
 
@@ -214,6 +225,7 @@ Every package slice (S345-S351, S353-S366, S368-S381) closes only when:
 | ADR-051 | S341 | Catalog integration metadata is advisory, not actuation. |
 | ADR-052 | S342 | Secret delivery may export a 0600 file into the app environment at start, under supervision. Amends ADR-021. |
 | ADR-056 | S360 | Community image trust: accepted publishers, multi-arch, pinned tags, provenance. |
+| ADR-058 | S424 | Everything SDK sharing, read links, net and events replace ADR-057's refused rows (Accepted 2026-11-03). Slices S425-S441. |
 | ADR-053 | S367 | Independent bridge and customer-owned per-person app data; no fork or hosted SDK. ADR-036 is the setup-wizard decision. |
 
 ## 7. Unscheduled — no ID
