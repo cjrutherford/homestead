@@ -104,20 +104,58 @@ describe('real Tasks store through the real bridge', () => {
     expect(res.status).toBe(401);
   });
 
-  it('refuses sharing, collaboration and signed URLs instead of succeeding', async () => {
+  it('keeps sharing off by default, refuses events and signed URLs, and never succeeds silently', async () => {
+    // S428: the SDK has the sharing calls, but a bridge started without
+    // -sharing answers kv_handles_disabled (Tasks reads that as "use links").
     const p = shimFor(await bridge.login('share-person'));
-    expect(p.kv.share).toBeUndefined();
-    expect(p.perms).toBeUndefined();
+    expect(typeof p.kv.share).toBe('function');
+    expect(p.perms.Resource.KV_SHARE).toBe('kvShare');
     expect(p.events).toBeUndefined();
     expect((await rejects(p.fs.getReadURL('tasks-data/x', 60))).code).toBe('bridge_unsupported');
-    expect((await rejects(p.kv.get('meta', { handle: 'kvh-1' }))).code).toBe('bridge_unsupported');
-    const s = newStore(p, 'dev-S');
-    await s.init();
-    const list = await s.addList({ name: 'Try to share' });
-    expect(s.collabMode()).toBe('link');
-    const err = await rejects(s.enableShare(list.id));
-    expect(err.code).toBe('bridge_unsupported');
+    expect((await rejects(p.kv.share({ prefix: 'tasks:collab:x:', recipient: 'bob', access: 'write' }))).code).toBe('kv_handles_disabled');
+    expect((await rejects(p.kv.listShared({ limit: 200 }))).code).toBe('kv_handles_disabled');
+    expect((await rejects(p.kv.get('meta', { handle: 'kvh-1' }))).code).toBe('kv_handles_disabled');
+    expect((await rejects(p.perms.request(p.perms.Resource.KV_SHARE, { prefix: 'tasks:collab:', access: 'write' }))).code).toBe('invalid_argument');
+    expect(await p.auth.getUser()).toMatchObject({ username: 'share-person' });
+    expect(p.appID).toBe('app-tasks');
     expect(await shimFor(await bridge.login('share-other')).kv.list('*')).toEqual([]);
+  });
+
+  it('maps sharing replies and cursors through the shim (stubbed bridge)', async () => {
+    const seen = [];
+    const reply = (status, body) => ({ status, ok: status < 400, headers: { get: () => 'application/json' }, json: async () => body });
+    const stub = async (url, init) => {
+      const b = JSON.parse(init.body);
+      seen.push(b);
+      if (b.operation === 'kv.share') return reply(200, { handle: 'h1', holder: 'Bob', prefix: b.prefix, access: b.access, appUid: 'app-tasks', revokedAt: null });
+      if (b.operation === 'kv.listShared') return reply(200, { items: [{ handle: 'h1' }], cursor: b.cursor ? '' : '1:h1' });
+      if (b.operation === 'perms.request') return reply(200, { granted: true });
+      if (b.operation === 'get') return reply(404, { error: 'kv_handle_not_found', message: 'x' });
+      return reply(200, { ok: true });
+    };
+    const saved = globalThis.fetch;
+    globalThis.fetch = stub;
+    try {
+      const p = shimFor({ endpoint: 'http://x.invalid/_homestead/data', origin: 'http://x.invalid', csrf: 'c' });
+      expect(p.appID).toBeUndefined();
+      const r = await p.kv.share({ prefix: 'tasks:collab:x:', recipient: 'bob', access: 'write', label: null });
+      expect(r.handle).toBe('h1');
+      expect(p.appID).toBe('app-tasks');
+      expect(seen[0]).toMatchObject({ operation: 'kv.share', recipient: 'bob', label: '' });
+      const page1 = await p.kv.listShared({ limit: 200 });
+      expect(page1.cursor).toBe('1:h1');
+      expect((await p.kv.listShared({ limit: 200, cursor: page1.cursor })).cursor).toBeUndefined();
+      expect(await p.perms.request('kvShare', { prefix: 'tasks:collab:', access: 'write' })).toBe(true);
+      expect((await rejects(p.perms.request('other', {}))).code).toBe('invalid_argument');
+      expect((await rejects(p.kv.get('meta', { handle: 'h1' }))).code).toBe('kv_handle_not_found');
+      expect(seen.at(-1)).toMatchObject({ operation: 'get', key: 'meta', handle: 'h1' });
+      await p.kv.set('k', 1, { handle: 'h1' });
+      expect(seen.at(-1)).toMatchObject({ operation: 'put', handle: 'h1' });
+      await p.kv.del('k');
+      expect(seen.at(-1).handle).toBeUndefined();
+    } finally {
+      globalThis.fetch = saved;
+    }
   });
 
   it('refuses missing, forged, revoked and expired sessions', async () => {

@@ -73,6 +73,7 @@ func main() {
 	groups := flag.String("oidc-groups", envDefault("OIDC_GROUPS", ""), "optional comma-separated group names; a token with a groups claim must list one")
 	personQuota := flag.Int64("quota-person-bytes", envInt("QUOTA_PERSON_BYTES"), "per-person byte quota (0 = default 256 MiB)")
 	appQuota := flag.Int64("quota-app-bytes", envInt("QUOTA_APP_BYTES"), "whole-application byte quota (0 = default 4 GiB)")
+	sharing := flag.Bool("sharing", os.Getenv("SHARING") == "1", "enable KV sharing between people of this app (ADR-058; off = kv_handles_disabled)")
 	await := flag.Bool("await-signin", os.Getenv("HOMESTEAD_EVERYTHING_AWAIT_SIGNIN") == "1", "serve nothing until sign-in is configured (set by the Homestead package)")
 	flag.Parse()
 	if len(origins) == 0 && os.Getenv("HOMESTEAD_EVERYTHING_ORIGIN") != "" {
@@ -91,6 +92,7 @@ func main() {
 	}
 	defer store.Close()
 	store.SetQuota(*personQuota, *appQuota)
+	store.SetSharing(*sharing)
 	identity, extra, err := newIdentity(config{dev: *dev, app: *app, listen: *listen, base: *base, static: *static, origins: origins,
 		issuer: *issuer, clientID: *clientID, secretFile: *secretFile, redirectURL: *redirect, caFile: *caFile, await: *await, groups: splitGroups(*groups)}, store)
 	if err != nil {

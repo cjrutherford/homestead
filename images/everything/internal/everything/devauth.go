@@ -23,6 +23,7 @@ const DevCSRFHeader = "X-Homestead-CSRF"
 type devSession struct {
 	subject, csrf string
 	expires       time.Time
+	created       time.Time
 }
 
 // DevIdentity is an in-memory session table for tests.
@@ -59,7 +60,7 @@ func randHex() string {
 func (d *DevIdentity) Login(subject string, ttl time.Duration) (cookie, csrf string) {
 	cookie, csrf = randHex(), randHex()
 	d.mu.Lock()
-	d.sessions[cookie] = devSession{subject, csrf, d.now().Add(ttl)}
+	d.sessions[cookie] = devSession{subject, csrf, d.now().Add(ttl), d.now()}
 	d.mu.Unlock()
 	return
 }
@@ -91,6 +92,15 @@ func (d *DevIdentity) Authenticate(r *http.Request) (Scope, error) {
 		return Scope{}, ErrInvalid
 	}
 	return Scope{App: d.app, Subject: s.subject}, nil
+}
+
+// SessionAge reports the session's age for the sharing recheck.
+func (d *DevIdentity) SessionAge(r *http.Request) (time.Duration, bool) {
+	s, ok := d.lookup(r)
+	if !ok {
+		return 0, false
+	}
+	return d.now().Sub(s.created), true
 }
 
 func (d *DevIdentity) CheckCSRF(r *http.Request) bool {

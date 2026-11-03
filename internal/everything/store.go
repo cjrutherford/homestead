@@ -60,7 +60,12 @@ type Store struct {
 	personQuota, appQuota int64
 	keyMu                 sync.Mutex
 	hmacKey               []byte
+	sharing               bool
 }
+
+// SetSharing turns KV sharing on or off (ADR-058: an app whose definition has
+// no `sharing` answers kv_handles_disabled). Call it before serving.
+func (s *Store) SetSharing(on bool) { s.sharing = on }
 
 // SetQuota sets the per-person and per-application byte quotas; a value of
 // zero or less keeps the default. Call it before serving.

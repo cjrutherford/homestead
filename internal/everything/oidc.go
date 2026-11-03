@@ -430,6 +430,16 @@ func (o *OIDC) Authenticate(r *http.Request) (Scope, error) {
 	return Scope{App: info.app, Subject: info.subject}, nil
 }
 
+// SessionAge reports how old the caller's session is (ADR-058: recipient-side
+// shared operations need a session under 24 hours).
+func (o *OIDC) SessionAge(r *http.Request) (time.Duration, bool) {
+	info, _, ok := o.session(r)
+	if !ok {
+		return 0, false
+	}
+	return o.cfg.now().Sub(time.Unix(info.created, 0)), true
+}
+
 func (o *OIDC) CheckCSRF(r *http.Request) bool {
 	info, _, ok := o.session(r)
 	got := r.Header.Get(CSRFHeader)

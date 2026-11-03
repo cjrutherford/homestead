@@ -116,10 +116,13 @@ class EverythingSourceTest(unittest.TestCase):
         shim = (ROOT / 'scripts/everything/puter-bridge.js').read_text()
         self.assertNotIn('puter.com', shim)
         self.assertNotRegex(shim, r'https?://')
-        # Sharing capabilities are absent, and signed URLs are refused.
+        # KV sharing arrived in S428 (ADR-058); events are still absent and
+        # signed URLs are still refused.
         self.assertIn("bridge_unsupported", shim)
-        for name in ('share', 'perms', 'events', 'appID'):
+        for name in ('events',):
             self.assertNotRegex(shim, r'\b%s\s*:' % name)
+        self.assertIn('async share(', shim)
+        self.assertIn('var perms = {', shim)
         for rel in ('scripts/everything/gate/run_gate.sh', 'scripts/everything/gate/bridge-gate.test.js',
                     'scripts/everything/gate/mock-puter-bridge.js'):
             self.assertTrue((ROOT / rel).is_file(), rel)

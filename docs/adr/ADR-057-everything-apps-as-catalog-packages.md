@@ -86,7 +86,8 @@ not supported fails closed with `bridge_unsupported`.
 | `fs.stat`, `fs.readdir`, recursive `fs.delete` (S369) | supported, scoped to the person; folders are key prefixes |
 | `auth.isSignedIn`, `auth.getUser`, `env` | supported; `getUser` returns the person's own `preferred_username` and a per-app pseudonymous uuid, never the `sub` (S425, ADR-058) |
 | `fs.rename(path, newName)` (S375; same folder, never replaces, quota-checked) | supported, scoped to the person |
-| `fs.getReadURL`, `kv` sharing, `perms`, `events`, `appID` | refused |
+| `kv.share`, `kv.unshare`, `kv.listShared`, `kv.listSharedByMe`, the kv `{handle}` option, `perms.request`, `appID` | supported by ADR-058 (S428); answers `kv_handles_disabled` unless the bridge runs with `-sharing` |
+| `fs.getReadURL`, `events` | refused |
 | `ai` | disabled (no backend) |
 | `net` | disabled (only if S381 adds a network bridge) |
 | WebAssembly (S375) | allowed only for a build that ships a `.wasm` file: the page policy adds `'wasm-unsafe-eval'`; JavaScript eval stays refused |

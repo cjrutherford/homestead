@@ -1752,3 +1752,8 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S427: a pending purge is retried by a two-minute timer only, not at the moment the app starts; a stopped app that starts leaves up to two minutes of shared access.
 - S427: disabling a person in People does not purge (ADR-058 purges on removal and on app revoke only); Authentik refuses new sign-ins and shared operations need a session under 24 hours.
 - S427: a person who was never recorded in an app's `people` table (never signed in) matches nothing, so the purge reports done; a later purge of a name reused by someone else is guarded only by cancelling pending purges when access is granted again.
+- S428: the definition flag `sharing` is realised as the bridge's `-sharing` flag (env `SHARING=1`, default off); no package or catalog manifest sets it yet, so sharing stays disabled in every shipped app until S437 wires it (prepare_app does not read `sdk_surface.sharing` either).
+- S428: `puter.appID` is known only after the first `auth.getUser()` or share reply (or `config.appID`), because serving it synchronously would need a new meta tag in the app shell; S437 should check Tasks' use of it before the first `getUser`.
+- S428: `kv.unshare` of an unknown, foreign or already revoked handle answers `subject_does_not_exist` (what Tasks reads as "nothing left to stop"), not `kv_handle_not_found`.
+- S428: the share-attempt limiter is in memory per bridge process (a restart resets it); `kv.share.received` notifications and `kv:<handle>:*` events wait for S430.
+- S428: with the shim's `kv.share` defined, Tasks reports collaboration mode `kv` even while sharing is off; its UI stays hidden until S437 and a `kv_handles_disabled` reply falls back to links there.

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"time"
 )
 
 // Identity is implemented by the bridge's future standalone authentication
@@ -24,6 +25,8 @@ type handler struct {
 	store    *Store
 	identity Identity
 	origins  map[string]bool
+	limiter  shareLimiter
+	now      func() time.Time
 }
 
 // NewHandler refuses to start without an identity verifier and an explicit
@@ -47,7 +50,7 @@ func NewHandler(store *Store, identity Identity, origins []string) (http.Handler
 		}
 		allowed[raw] = true
 	}
-	return &handler{store: store, identity: identity, origins: allowed}, nil
+	return &handler{store: store, identity: identity, origins: allowed, now: time.Now}, nil
 }
 
 type request struct {
@@ -58,6 +61,16 @@ type request struct {
 	Entries   []batchEntry `json:"entries"`
 	After     string       `json:"after"`
 	To        string       `json:"to"`
+	// Sharing (ADR-058).
+	Handle     string `json:"handle"`
+	Prefix     string `json:"prefix"`
+	Recipient  string `json:"recipient"`
+	Access     string `json:"access"`
+	Label      string `json:"label"`
+	Limit      int    `json:"limit"`
+	Cursor     string `json:"cursor"`
+	Resource   string `json:"resource"`
+	Permission string `json:"permission"`
 }
 
 type batchEntry struct {
@@ -124,6 +137,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"app": scope.App, "username": p.Username, "uuid": p.UUID})
 		return
 	}
+	if shareOp(body.Operation) {
+		w.Header().Set("Content-Type", "application/json")
+		h.handleShareOp(w, r, scope, body)
+		return
+	}
 	var kind Kind
 	switch body.Kind {
 	case "kv":
@@ -135,6 +153,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	if body.Handle != "" {
+		if kind != KindKV {
+			err = ErrInvalid
+		} else if err = h.handleKVOp(w, r, scope, body); err == nil {
+			return
+		}
+		body.Operation = "" // fall to the common error mapping below
+	}
 	switch body.Operation {
 	case "put":
 		err = h.store.Put(r.Context(), scope, kind, body.Key, body.Value)
@@ -236,7 +262,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	default:
-		err = ErrInvalid
+		if err == nil {
+			err = ErrInvalid
+		}
 	}
 	switch {
 	case errors.Is(err, ErrNotFound):

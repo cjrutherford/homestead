@@ -75,7 +75,10 @@ func (s *Store) takeLoginState(ctx context.Context, state string, now time.Time)
 	return ls, now.Unix() <= exp
 }
 
-type sessionInfo struct{ app, subject, csrf string }
+type sessionInfo struct {
+	app, subject, csrf string
+	created            int64 // unix seconds; used for the sharing session-age recheck
+}
 
 func (s *Store) createSession(ctx context.Context, app, subject string, now time.Time) (id string, info sessionInfo, err error) {
 	id = randomToken(32)
@@ -96,6 +99,7 @@ func (s *Store) lookupSession(ctx context.Context, id, app string, now time.Time
 	if err != nil {
 		return sessionInfo{}, false
 	}
+	info.created = created
 	if info.app != app || now.Unix() >= created+int64(abs/time.Second) || now.Unix() >= seen+int64(idle/time.Second) {
 		_, _ = s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id_hash = ?`, h)
 		return sessionInfo{}, false

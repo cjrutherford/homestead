@@ -3,9 +3,10 @@
  *
  * Exposes only the `puter` surface the pinned Tasks revision uses, backed by
  * same-origin HTTP calls to the Homestead Everything bridge. It never talks to
- * Puter cloud. Anything outside ADR-053 (sharing, collaboration, permissions,
- * events, signed read URLs) is either absent or rejects with
- * { code: 'bridge_unsupported' }; it never silently succeeds.
+ * Puter cloud. KV sharing (kv.share/unshare/listShared/listSharedByMe, the
+ * {handle} option, perms.request, appID) follows ADR-058. Anything outside
+ * ADR-053 and ADR-058 (events, signed read URLs) is either absent or rejects
+ * with { code: 'bridge_unsupported' }; it never silently succeeds.
  *
  * Config (all optional) from globalThis.__HOMESTEAD_BRIDGE__:
  *   endpoint  bridge URL (default ./_homestead/data resolved against the page)
@@ -123,11 +124,29 @@
       }
     }
 
+    // The bridge answers sharing failures as JSON { error: code }; throw that
+    // code. Anything else (plain-text refusals) is handled by call().
+    async function jsonError(res) {
+      if (res.status < 400 || res.status === 401) return;
+      var ct = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
+      if (ct.indexOf('application/json') === -1) return;
+      var j = null;
+      try { j = await res.json(); } catch (e) { return; }
+      if (j && j.error) fail(String(j.error), String(j.message || j.error), res.status);
+    }
+
     async function call(body) {
       var res = await send(body);
+      await jsonError(res);
       if (res.status === 401 || res.status === 403) {
         // The page-load token may be stale (new session, restored tab).
-        if (await refreshCsrf(body)) res = await send(body);
+        if (await refreshCsrf(body)) {
+          res = await send(body);
+          await jsonError(res);
+          // A session that is valid but too old for a shared operation
+          // (ADR-058: 24 h): sign in again; silent if Authentik still allows.
+          if (res.status === 401 && body.operation !== 'whoami') toSignIn();
+        }
       }
       if (res.status === 404) return null;
       if (res.status === 401) fail('auth_required', 'Not signed in', 401);
@@ -147,9 +166,19 @@
       if (bytes.length > MAX_VALUE) fail('storage_limit', 'storage limit exceeded');
       return toBase64(bytes);
     }
-    function noHandle(opts) {
-      if (opts && opts.handle) fail('bridge_unsupported', 'Shared key-value handles are not supported by the Homestead bridge');
+    // The {handle} option of kv calls (ADR-058): keys are relative to the
+    // shared prefix and the bridge proves the handle belongs to the caller.
+    function handleOf(opts) {
+      if (!opts || opts.handle === undefined || opts.handle === null) return '';
+      if (typeof opts.handle !== 'string' || !opts.handle) fail('kv_handle_not_found', 'Unknown share handle');
+      return opts.handle;
     }
+    function withHandle(body, handle) {
+      if (handle) body.handle = handle;
+      return body;
+    }
+    var appId = config.appID || '';
+    function learnApp(app) { if (!appId && app) appId = 'app-' + app; }
     function fsKey(path) {
       // Paths are relative to the person's own space for this app; leading and
       // trailing slashes are cosmetic. The bridge rejects anything that is
@@ -167,33 +196,30 @@
 
     var kv = {
       async get(key, opts) {
-        noHandle(opts);
-        var r = await call({ operation: 'get', kind: 'kv', key: String(key) });
+        var r = await call(withHandle({ operation: 'get', kind: 'kv', key: String(key) }, handleOf(opts)));
         return r === null ? null : JSON.parse(dec.decode(fromBase64(r.value)));
       },
       async set(key, value, opts) {
         if (Array.isArray(key)) {
-          noHandle(value);
+          var batchHandle = handleOf(value);
           if (!key.length) return true;
-          await call({
+          await call(withHandle({
             operation: 'putbatch', kind: 'kv',
             entries: key.map(function (e) { return { key: String(e.key), value: encodeValue(e.value) }; }),
-          });
+          }, batchHandle));
           return true;
         }
-        noHandle(opts);
-        await call({ operation: 'put', kind: 'kv', key: String(key), value: encodeValue(value) });
+        await call(withHandle({ operation: 'put', kind: 'kv', key: String(key), value: encodeValue(value) }, handleOf(opts)));
         return true;
       },
       async del(key, opts) {
-        noHandle(opts);
-        await call({ operation: 'delete', kind: 'kv', key: String(key) });
+        await call(withHandle({ operation: 'delete', kind: 'kv', key: String(key) }, handleOf(opts)));
         return true;
       },
       async list(pattern, returnValues, opts) {
         if (typeof pattern === 'boolean') { opts = returnValues; returnValues = pattern; pattern = '*'; }
         pattern = pattern === undefined ? '*' : String(pattern);
-        noHandle(opts);
+        var handle = handleOf(opts);
         var star = pattern.indexOf('*');
         if (star !== -1 && star !== pattern.length - 1) fail('bridge_unsupported', 'Only trailing-* key patterns are supported');
         var prefix = star === -1 ? pattern : pattern.slice(0, -1);
@@ -204,7 +230,7 @@
           var out = [];
           var after = '';
           for (var pages = 0; pages < 100000; pages++) {
-            var page = await call({ operation: 'listvalues', kind: 'kv', key: prefix, after: after });
+            var page = await call(withHandle({ operation: 'listvalues', kind: 'kv', key: prefix, after: after }, handle));
             var entries = (page && page.entries) || [];
             for (var i = 0; i < entries.length; i++) {
               out.push({ key: entries[i].key, value: JSON.parse(dec.decode(fromBase64(entries[i].value))) });
@@ -214,11 +240,58 @@
           }
           fail('bridge_error', 'Key list did not end');
         }
-        var r = await call({ operation: 'list', kind: 'kv', key: prefix });
+        var r = await call(withHandle({ operation: 'list', kind: 'kv', key: prefix }, handle));
         var keys = (r && r.keys) || [];
         if (star === -1) keys = keys.filter(function (k) { return k === prefix; });
         if (!returnValues) return keys;
-        return Promise.all(keys.map(async function (k) { return { key: k, value: await kv.get(k) }; }));
+        return Promise.all(keys.map(async function (k) { return { key: k, value: await kv.get(k, handle ? { handle: handle } : undefined) }; }));
+      },
+      // ADR-058 KV sharing. Recipients are Homestead people of this app who
+      // have signed in; access is 'read' or 'write' ('manage' is refused).
+      async share(args) {
+        args = args || {};
+        var r = await call({ operation: 'kv.share', prefix: String(args.prefix === undefined ? '' : args.prefix),
+          recipient: String(args.recipient === undefined || args.recipient === null ? '' : args.recipient),
+          access: String(args.access === undefined ? 'write' : args.access),
+          label: args.label === undefined || args.label === null ? '' : String(args.label) });
+        if (r && r.appUid && !appId) appId = r.appUid;
+        return r;
+      },
+      async unshare(handle) {
+        await call({ operation: 'kv.unshare', handle: String(handle === undefined || handle === null ? '' : handle) });
+        return true;
+      },
+      async listShared(opts) { return sharedPage('kv.listShared', opts); },
+      async listSharedByMe(opts) { return sharedPage('kv.listSharedByMe', opts); },
+    };
+    async function sharedPage(operation, opts) {
+      opts = opts || {};
+      var body = { operation: operation };
+      if (opts.limit !== undefined && opts.limit !== null) body.limit = Number(opts.limit) || 0;
+      if (opts.cursor) body.cursor = String(opts.cursor);
+      var r = await call(body);
+      var out = { items: (r && r.items) || [] };
+      if (r && r.cursor) out.cursor = r.cursor;
+      return out;
+    }
+
+    // perms.request maps to the sharing permission, shows no prompt and keeps
+    // no state: the share click in the app is the consent (ADR-058).
+    var perms = {
+      Resource: { KV_SHARE: 'kvShare' },
+      async request(resource, args) {
+        args = args || {};
+        var body;
+        if (resource === 'kvShare') {
+          body = { operation: 'perms.request', resource: 'kvShare', prefix: String(args.prefix === undefined ? '' : args.prefix),
+            access: String(args.access === undefined ? '' : args.access) };
+        } else if (resource === 'permission') {
+          body = { operation: 'perms.request', resource: 'permission', permission: String(args.permission === undefined ? '' : args.permission) };
+        } else {
+          fail('invalid_argument', 'Unsupported permission request');
+        }
+        var r = await call(body);
+        return !!(r && r.granted);
       },
     };
 
@@ -290,6 +363,7 @@
       async getUser() {
         var r = await call({ operation: 'whoami' });
         if (!r) fail('auth_required', 'Not signed in', 401);
+        learnApp(r.app);
         user = { username: r.username || 'Homestead user', uuid: r.uuid };
         return user;
       },
@@ -318,11 +392,12 @@
       },
     };
 
-    // Deliberately absent: appID, perms, events, kv.share/unshare/listShared/
-    // listSharedByMe. Tasks treats an SDK without kv.share as one that
-    // predates KV shares and falls back to link sharing, which needs
-    // fs.getReadURL and is refused above.
-    return { env: 'app', kv: kv, fs: fs, auth: auth };
+    // Deliberately absent: events (S430) and fs sharing (S429). appID is the
+    // constant app-<app>; it is known once the bridge has said which app this
+    // is (the first whoami or share reply, or config.appID).
+    var sdk = { env: 'app', kv: kv, fs: fs, auth: auth, perms: perms };
+    Object.defineProperty(sdk, 'appID', { enumerable: true, get: function () { return appId || undefined; } });
+    return sdk;
   }
 
   root.createHomesteadPuter = create;
