@@ -184,15 +184,21 @@ func (h *handler) handleShareOp(w http.ResponseWriter, r *http.Request, scope Sc
 		g, _, err := h.store.CreateGrant(ctx, scope, GrantRequest{Username: name, Kind: GrantKV, Key: body.Prefix, IsPrefix: true,
 			Access: access, Label: body.Label}, h.now())
 		if err == nil {
+			h.notify(scope.App, g.Recipient, "kv.share.received", map[string]any{"handle": g.ID})
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(toItem(g))
 			return
 		}
 		grantErr(w, err, "subject_does_not_exist")
 	case "kv.unshare":
+		prior, _ := h.store.grantByID(ctx, body.Handle) // for the recipient's notice
 		err := h.store.RevokeGrant(ctx, scope, body.Handle, h.now())
 		switch {
 		case err == nil:
+			if prior.Owner == scope.Subject && prior.Kind == GrantKV {
+				h.hub.dropHandle(scope.App, prior.ID)
+				h.notify(scope.App, prior.Recipient, "kv.share.revoked", map[string]any{"handle": prior.ID})
+			}
 			_, _ = w.Write([]byte(`{"ok":true}`))
 		case errors.Is(err, ErrNotFound):
 			// Unknown, someone else's and already revoked answer alike; Tasks
@@ -384,6 +390,11 @@ func (h *handler) handleKVOp(w http.ResponseWriter, r *http.Request, scope Scope
 		if err != nil {
 			return err
 		}
+		op := "set"
+		if body.Operation == "delete" {
+			op = "del"
+		}
+		h.publishKVWrite(rv.Owner, scope, body.Client, op, rv.Key)
 		_, _ = w.Write([]byte(`{"ok":true}`))
 		return nil
 	case "putbatch":
@@ -406,6 +417,9 @@ func (h *handler) handleKVOp(w http.ResponseWriter, r *http.Request, scope Scope
 		}
 		if err := h.store.PutBatch(ctx, owner, KindKV, entries); err != nil {
 			return err
+		}
+		for _, e := range entries {
+			h.publishKVWrite(owner, scope, body.Client, "set", e.Key)
 		}
 		_, _ = w.Write([]byte(`{"ok":true}`))
 		return nil

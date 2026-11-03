@@ -110,7 +110,9 @@ describe('real Tasks store through the real bridge', () => {
     const p = shimFor(await bridge.login('share-person'));
     expect(typeof p.kv.share).toBe('function');
     expect(p.perms.Resource.KV_SHARE).toBe('kvShare');
-    expect(p.events).toBeUndefined();
+    // S430: events exist, but need EventSource (absent in node) and sharing on.
+    expect(typeof p.events.onLocal).toBe('function');
+    expect((await rejects(p.events.onLocal('notif:app-user', () => {}))).code).toBe('bridge_unsupported');
     expect((await rejects(p.fs.getReadURL('tasks-data/x', 60))).code).toBe('bridge_unsupported');
     expect((await rejects(p.kv.share({ prefix: 'tasks:collab:x:', recipient: 'bob', access: 'write' }))).code).toBe('kv_handles_disabled');
     expect((await rejects(p.kv.listShared({ limit: 200 }))).code).toBe('kv_handles_disabled');
@@ -177,6 +179,38 @@ describe('real Tasks store through the real bridge', () => {
       expect(seen.at(-1)).toMatchObject({ operation: 'get', kind: 'file', key: '~shared/i1/a.txt' });
       await p.fs.rename('~shared/i1/d/a.txt', 'b.txt');
       expect(seen.at(-1)).toMatchObject({ operation: 'rename', key: '~shared/i1/d/a.txt', to: '~shared/i1/d/b.txt' });
+      // S430 events: a fake EventSource drives the shim.
+      const sources = [];
+      class FakeES {
+        constructor(url, o) { this.url = url; this.o = o; this.l = {}; this.readyState = 1; sources.push(this); }
+        addEventListener(n, f) { this.l[n] = f; }
+        close() { this.closed = true; }
+        emit(n, d) { this.l[n]({ data: JSON.stringify(d) }); }
+      }
+      globalThis.EventSource = FakeES;
+      try {
+        const got = [];
+        const pending = p.events.onLocal('kv:h1:*', (e) => got.push(e));
+        await new Promise((r) => setTimeout(r, 5));
+        expect(sources[0].url).toMatch(/\/_homestead\/events\?client=[A-Za-z0-9_-]{16,}$/);
+        sources[0].l.ready({});
+        const sub = await pending;
+        expect(seen.at(-1)).toMatchObject({ operation: 'events.subscribe', topic: 'kv:h1:*' });
+        expect(seen.at(-1).client).toBe(sources[0].url.split('client=')[1]);
+        sources[0].emit('msg', { subject: 'kv:h1:*', event: { op: 'set', key: 'k', self: false } });
+        sources[0].emit('msg', { subject: 'other', event: { op: 'set' } });
+        expect(got).toEqual([{ event: { op: 'set', key: 'k', self: false } }]);
+        sources[0].l.gap({});
+        expect(got.at(-1).event.op).toBe('gap');
+        await p.kv.set('k', 1);
+        expect(seen.at(-1).client).toBe(seen.find((b) => b.operation === 'events.subscribe').client);
+        sub.off();
+        await new Promise((r) => setTimeout(r, 5));
+        expect(seen.at(-1)).toMatchObject({ operation: 'events.unsubscribe', topic: 'kv:h1:*' });
+        expect(sources[0].closed).toBe(true);
+      } finally {
+        delete globalThis.EventSource;
+      }
     } finally {
       globalThis.fetch = saved;
     }

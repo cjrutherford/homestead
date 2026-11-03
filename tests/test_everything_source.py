@@ -119,8 +119,9 @@ class EverythingSourceTest(unittest.TestCase):
         # KV sharing arrived in S428 (ADR-058); events are still absent and
         # signed URLs are still refused.
         self.assertIn("bridge_unsupported", shim)
-        for name in ('events',):
-            self.assertNotRegex(shim, r'\b%s\s*:' % name)
+        # Events arrived in S430 (ADR-058): EventSource-backed, no polling.
+        self.assertIn('events.subscribe', shim)
+        self.assertIn('EventSource', shim)
         self.assertIn('async share(', shim)
         # fs sharing arrived in S429.
         for name in ('async getShares(', 'async unshare(', 'async listShared('):

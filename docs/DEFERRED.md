@@ -1762,3 +1762,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S429: `fs.getShares` reports only live direct and folder-inherited grants of the caller's own paths; grants made on a path that later changes between file and folder keep the type recorded at share time.
 - S429: Circuits and Parametric still hide their sharing UI and "Shared with me" (S439, S440); opening a shared file with those apps (path `~shared/<id>/<name>`) is untested against the real app code.
 - S429: no `fs.copy`/`fs.move`/`mkdir` exist in the shim, so nothing else needed grant support.
+- S430: events are in memory per bridge process. Changes made by another process (the `people purge` and `grants revoke` tools, import) reach streams only through the 25 s heartbeat re-check (streams end or drop the handle and send `gap`), not as live events.
+- S430: fs revocations caused by deleting or renaming a shared file send no `fs.share.revoked` notice; recipients see it on their next `fs.listShared`.
+- S430: the edge (Caddy `reverse_proxy` for Everything routes) was not verified live to stream SSE; see the slice doc. Polling in Tasks covers a buffering edge.
+- S430: an open stream re-validates the session each beat, which refreshes the session's last-seen time, so an open tab does not idle out (the absolute lifetime still applies).

@@ -6,7 +6,9 @@
  * Puter cloud. KV sharing (kv.share/unshare/listShared/listSharedByMe, the
  * {handle} option, perms.request, appID) and file sharing (fs.share,
  * fs.unshare, fs.getShares, fs.listShared, ~shared/<id>/... paths) follow
- * ADR-058. Anything outside ADR-053 and ADR-058 (events, signed read URLs)
+ * ADR-058. Events (events.onLocal over a Server-Sent Events stream, ADR-058
+ * section 6) need EventSource. Anything outside ADR-053 and ADR-058 (signed
+ * read URLs)
  * is either absent or rejects
  * with { code: 'bridge_unsupported' }; it never silently succeeds.
  *
@@ -105,7 +107,25 @@
       return true;
     }
 
+    // A random id for this page instance. Writes carry it so the bridge can
+    // tell the writer's own stream (`self`) from a second tab (ADR-058).
+    var clientId = (function () {
+      var b = new Uint8Array(18);
+      if (root.crypto && root.crypto.getRandomValues) root.crypto.getRandomValues(b);
+      else for (var i = 0; i < b.length; i++) b[i] = Math.floor(Math.random() * 256);
+      return toBase64(b).replace(/\+/g, '-').replace(/\//g, '_');
+    })();
+    function eventsEndpoint() {
+      if (config.eventsEndpoint) return config.eventsEndpoint;
+      if (config.endpoint) return config.endpoint.replace(/data$/, 'events');
+      var base = (root.document && root.document.baseURI) || (root.location && root.location.href);
+      return new URL('./_homestead/events', base).href;
+    }
+
     async function send(body) {
+      if (body.kind === 'kv' && (body.operation === 'put' || body.operation === 'delete' || body.operation === 'putbatch')) {
+        body.client = clientId;
+      }
       var headers = Object.assign({}, config.headers || {}, {
         'Content-Type': 'application/json',
         'X-Homestead-CSRF': csrf(),
@@ -431,10 +451,110 @@
       },
     };
 
-    // Deliberately absent: events (S430). appID is the
-    // constant app-<app>; it is known once the bridge has said which app this
+    // appID is the constant app-<app>; it is known once the bridge has said which app this
     // is (the first whoami or share reply, or config.appID).
-    var sdk = { env: 'app', kv: kv, fs: fs, auth: auth, perms: perms };
+
+    // ADR-058 events: one EventSource per page, a subscription per distinct
+    // subject, callbacks fanned out locally. Values never arrive; `gap` means
+    // "re-read" and is also delivered after every reconnect.
+    var ev = { source: null, ready: false, everReady: false, waiters: [], subs: new Map() };
+    function evFail(entry, err) {
+      entry.cbs.forEach(function (c) { if (c.onError) { try { c.onError(err); } catch (e) { /* ignore */ } } });
+    }
+    function evGapAll() {
+      ev.subs.forEach(function (entry, subject) {
+        entry.cbs.forEach(function (c) { try { c.cb({ event: { op: 'gap', subject: subject } }); } catch (e) { /* ignore */ } });
+      });
+    }
+    function evRemote(entry, subject) {
+      return call({ operation: 'events.subscribe', client: clientId, topic: subject });
+    }
+    function evClose() {
+      if (ev.source) { try { ev.source.close(); } catch (e) { /* ignore */ } }
+      ev.source = null; ev.ready = false; ev.everReady = false;
+    }
+    function evOpen() {
+      if (ev.source) return;
+      var ES = root.EventSource;
+      if (typeof ES !== 'function') fail('bridge_unsupported', 'Events need EventSource');
+      var src = new ES(eventsEndpoint() + '?client=' + encodeURIComponent(clientId), { withCredentials: true });
+      ev.source = src;
+      src.addEventListener('ready', function () {
+        if (ev.source !== src) return;
+        var again = ev.everReady;
+        ev.ready = true; ev.everReady = true;
+        var w = ev.waiters; ev.waiters = [];
+        w.forEach(function (f) { f(); });
+        if (again) {
+          // A resumed stream has no subscriptions server-side: renew, then re-read.
+          ev.subs.forEach(function (entry, subject) {
+            evRemote(entry, subject).catch(function (e) {
+              if (ev.subs.get(subject) === entry) { ev.subs.delete(subject); evFail(entry, e); }
+            });
+          });
+          evGapAll();
+        }
+      });
+      src.addEventListener('gap', function () { if (ev.source === src) evGapAll(); });
+      src.addEventListener('msg', function (m) {
+        if (ev.source !== src) return;
+        var d;
+        try { d = JSON.parse(m.data); } catch (e) { return; }
+        var entry = d && ev.subs.get(d.subject);
+        if (!entry) return;
+        entry.cbs.forEach(function (c) { try { c.cb({ event: d.event }); } catch (e) { /* ignore */ } });
+      });
+      src.onerror = function () {
+        if (ev.source !== src) return;
+        ev.ready = false;
+        if (src.readyState === 2) { // the bridge refused the stream: give up, callers poll
+          var all = Array.from(ev.subs.values());
+          ev.subs.clear();
+          evClose();
+          var w = ev.waiters; ev.waiters = [];
+          w.forEach(function (f) { f(new Error('closed')); });
+          all.forEach(function (entry) { evFail(entry, { code: 'network_error', message: 'The event stream is closed' }); });
+        }
+      };
+    }
+    function evReady() {
+      if (ev.ready) return Promise.resolve();
+      return new Promise(function (resolve, reject) {
+        var t = setTimeout(function () { reject({ code: 'network_error', message: 'The event stream did not start' }); }, 15000);
+        ev.waiters.push(function (err) { clearTimeout(t); if (err) reject({ code: 'network_error', message: 'The event stream is closed' }); else resolve(); });
+      });
+    }
+    var events = {
+      async onLocal(subject, cb, opts) {
+        if (typeof subject !== 'string' || !subject || typeof cb !== 'function') fail('invalid_argument', 'events.onLocal needs a subject and a callback');
+        evOpen();
+        var sub = { cb: cb, onError: opts && typeof opts.onError === 'function' ? opts.onError : null };
+        var entry = ev.subs.get(subject);
+        if (!entry) {
+          entry = { cbs: new Set(), pending: null };
+          ev.subs.set(subject, entry);
+          entry.pending = evReady().then(function () { return evRemote(entry, subject); });
+        }
+        entry.cbs.add(sub);
+        try {
+          await entry.pending;
+        } catch (e) {
+          entry.cbs.delete(sub);
+          if (!entry.cbs.size && ev.subs.get(subject) === entry) { ev.subs.delete(subject); if (!ev.subs.size) evClose(); }
+          throw e;
+        }
+        return {
+          off: function () {
+            if (!entry.cbs.delete(sub) || entry.cbs.size || ev.subs.get(subject) !== entry) return;
+            ev.subs.delete(subject);
+            if (ev.ready) call({ operation: 'events.unsubscribe', client: clientId, topic: subject }).catch(function () {});
+            if (!ev.subs.size) evClose();
+          },
+        };
+      },
+    };
+    events.on = events.onLocal;
+    var sdk = { env: 'app', kv: kv, fs: fs, auth: auth, perms: perms, events: events };
     Object.defineProperty(sdk, 'appID', { enumerable: true, get: function () { return appId || undefined; } });
     return sdk;
   }

@@ -27,6 +27,7 @@ type handler struct {
 	origins  map[string]bool
 	limiter  shareLimiter
 	now      func() time.Time
+	hub      *eventHub
 }
 
 // NewHandler refuses to start without an identity verifier and an explicit
@@ -50,7 +51,7 @@ func NewHandler(store *Store, identity Identity, origins []string) (http.Handler
 		}
 		allowed[raw] = true
 	}
-	return &handler{store: store, identity: identity, origins: allowed, now: time.Now}, nil
+	return &handler{store: store, identity: identity, origins: allowed, now: time.Now, hub: newEventHub()}, nil
 }
 
 type request struct {
@@ -71,6 +72,9 @@ type request struct {
 	Cursor     string `json:"cursor"`
 	Resource   string `json:"resource"`
 	Permission string `json:"permission"`
+	// Events (ADR-058): the page instance id, and the subject to (un)subscribe.
+	Client string `json:"client"`
+	Topic  string `json:"topic"`
 }
 
 type batchEntry struct {
@@ -137,6 +141,15 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"app": scope.App, "username": p.Username, "uuid": p.UUID})
 		return
 	}
+	if body.Client != "" && !clientIDRe.MatchString(body.Client) {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if eventsOp(body.Operation) {
+		w.Header().Set("Content-Type", "application/json")
+		h.handleEventsOp(w, r, scope, body)
+		return
+	}
 	if shareOp(body.Operation) {
 		w.Header().Set("Content-Type", "application/json")
 		h.handleShareOp(w, r, scope, body)
@@ -153,6 +166,27 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	if kind == KindKV && body.Handle == "" && (body.Operation == "put" || body.Operation == "delete" || body.Operation == "putbatch") {
+		// Tell subscribers about a successful own write (never the value).
+		sw := &statusWriter{ResponseWriter: w}
+		w = sw
+		defer func() {
+			if sw.status != http.StatusOK {
+				return
+			}
+			op := "set"
+			if body.Operation == "delete" {
+				op = "del"
+			}
+			if body.Operation == "putbatch" {
+				for _, e := range body.Entries {
+					h.publishKVWrite(scope, scope, body.Client, op, e.Key)
+				}
+				return
+			}
+			h.publishKVWrite(scope, scope, body.Client, op, body.Key)
+		}()
+	}
 	if _, _, shared := sharedFSPath(body.Key); kind == KindFile && shared {
 		if err = h.handleSharedFS(w, r, scope, body); err == nil {
 			return

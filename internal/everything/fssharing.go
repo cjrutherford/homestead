@@ -199,6 +199,11 @@ func (h *handler) handleFSShareOp(w http.ResponseWriter, r *http.Request, scope 
 			n, err := h.store.RevokeShare(ctx, scope, name, GrantFS, body.Key, h.now())
 			switch {
 			case err == nil:
+				if n > 0 {
+					if rs, rerr := resolveName(ctx, h.store.db, scope.App, name); rerr == nil {
+						h.notify(scope.App, rs, "fs.share.revoked", nil)
+					}
+				}
 				reply(map[string]int{"revoked": n})
 			case errors.Is(err, ErrNoRecipient):
 				reply(map[string]int{"revoked": 0}) // same answer as "no such share"
@@ -227,6 +232,7 @@ func (h *handler) handleFSShareOp(w http.ResponseWriter, r *http.Request, scope 
 			grantErr(w, err, "user_does_not_exist")
 			return
 		}
+		h.notify(scope.App, g.Recipient, "fs.share.received", map[string]any{"id": g.ID})
 		reply(map[string]any{"isNew": isNew, "holder": g.RecipName, "mode": g.Access, "path": body.Key})
 	case "fs.getShares":
 		if validate(scope, KindFile, body.Key) != nil {
