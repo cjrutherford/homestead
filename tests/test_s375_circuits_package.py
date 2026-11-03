@@ -91,8 +91,18 @@ class CircuitsPackageTest(unittest.TestCase):
         for refused in ('getProfilePicture',):
             self.assertNotRegex(fs_block, r'(?m)^\s*(async\s+)?' + refused + r'\s*[(:]')
         self.assertRegex(shim, r'(?m)^\s*async rename\(')  # S375
-        # Sharing and the Puter file picker are hidden, not left to error.
-        self.assertTrue(any("id: 'file.share'" in p['old'] for p in d['patches']))
+        # S439: sharing is on (ADR-058), the Puter file picker stays hidden.
+        self.assertFalse(any("file.share" in p['old'] for p in d['patches']))
+        self.assertEqual(d['sdk_surface']['refused'], [])
+        for call in ('fs.share', 'fs.unshare', 'fs.getShares', 'fs.listShared'):
+            self.assertIn(call, d['sdk_surface']['supported'])
+        self.assertEqual(set(d['sdk_surface']['disabled']), {'ai', 'net'})
+        news = '\n'.join(p['new'] for p in d['patches'])
+        self.assertNotIn('Puter username', news)
+        self.assertIn('Homestead username', news)
+        cat = (ROOT / 'catalog/circuits.yaml').read_text()
+        self.assertIn('HOMESTEAD_EVERYTHING_SHARING: "1"', cat)
+        self.assertNotIn('HOMESTEAD_EVERYTHING_NET', cat)
         self.assertTrue(any('Browse Puter files' in p['old'] for p in d['patches']))
 
     def test_the_kernel_wasm_is_shipped_so_the_policy_allows_it(self):
@@ -126,8 +136,9 @@ class CircuitsPackageTest(unittest.TestCase):
             self.assertIn("{ username: 'Homestead user' }", appjs)
             self.assertNotIn('developer.puter.com', appjs)
             self.assertNotIn('developer.puter.com', (app / 'src/app/dialogs.js').read_text())
-            self.assertNotIn('file.share', (app / 'src/app/menus.js').read_text())
-            self.assertNotIn("id: 'file.share'", (app / 'src/app/actions.js').read_text())
+            self.assertIn('file.share', (app / 'src/app/menus.js').read_text())
+            self.assertIn("id: 'file.share'", (app / 'src/app/actions.js').read_text())
+            self.assertNotIn('Puter', (app / 'src/app/share.js').read_text().split('\n', 3)[3])
             self.assertIn('"build": "vite build"', (app / 'package.json').read_text())
             manifest = json.loads((app / 'public/manifest.json').read_text())
             self.assertEqual(manifest['start_url'], './')

@@ -35,7 +35,7 @@ const HOST = 'hs-check.test';
 const origin = `http://${HOST}:${port}`;
 let bridge = null;
 async function startBridge() {
-  bridge = spawn(bin, ['-dev-identity', '-db', path.join(tmp, 'bridge.db'), '-app', 'circuits', '-listen', `127.0.0.1:${port}`,
+  bridge = spawn(bin, ['-dev-identity', '-sharing', '-db', path.join(tmp, 'bridge.db'), '-app', 'circuits', '-listen', `127.0.0.1:${port}`,
     '-origin', origin, '-base-path', BASE, '-static-dir', dist],
   { env: { ...process.env, HOMESTEAD_EVERYTHING_INSECURE_DEV: 'i-understand-this-is-not-authentication' }, stdio: ['ignore', 'ignore', 'pipe'] });
   let log = '';
@@ -114,12 +114,12 @@ try {
   assert.deepEqual(await evalJs(`performance.getEntriesByType('resource').map(e=>new URL(e.name).origin).filter(o=>o!==location.origin)`), [], 'only same-origin requests');
   const html = await evalJs(`document.documentElement.outerHTML`);
   assert.ok(!/js\.puter\.com|plausible|developer\.puter/.test(html), 'no hosted SDK or analytics reference');
-  assert.equal(await evalJs(`typeof puter.ui + ' ' + typeof puter.ai + ' ' + typeof puter.fs.share + ' ' + typeof puter.fs.rename`), 'undefined undefined undefined function');
+  assert.equal(await evalJs(`typeof puter.ui + ' ' + typeof puter.ai + ' ' + typeof puter.fs.listShared + ' ' + typeof puter.fs.rename`), 'undefined undefined function function');
   const text0 = await evalJs(`document.body.innerText`);
   assert.ok(!/Puter/.test(text0) && !text0.includes('alice'), 'start page: no Puter wording or subject: ' + text0.slice(0, 200));
   assert.deepEqual(await evalJs(`[...document.querySelectorAll('a[href^="http"]')].map(a=>a.href)`), [], 'no outbound links on the start page');
 
-  // 2. Account menu names a Homestead user, never the subject; no Sign out; no Share.
+  // 2. Account menu names a Homestead user, never the subject; no Sign out.
   await clickText('.account-btn', '');
   await until(`!!document.querySelector('[role=menu]')`, 'the account menu');
   const menu = await evalJs(`document.querySelector('[role=menu]').textContent`);

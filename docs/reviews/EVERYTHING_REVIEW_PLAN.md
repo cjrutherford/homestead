@@ -156,7 +156,7 @@ Steps and expected results:
 2. Install Circuits with a plan, preview and apply. Expected: route `/apps/circuits/`, no public exposure.
 3. Apply sign-in. Expected: `https://homestead.lan/apps/circuits/` redirects to Authentik; the start page says nothing about Puter and has no link to another site. No request to js.puter.com or any other host.
 4. Choose "Open the example", then Save. Expected: the title shows the project saved; Open project lists it.
-5. Open the account menu. Expected: "Homestead user" (not your user id), Preferences, no Sign out; the File menu has no Share.
+5. Open the account menu. Expected: "Homestead user" (not your user id), Preferences, no Sign out; the File menu has a Share entry (S439).
 6. In the board, run Design rule check and add a copper pour (Repour). Expected: a result list appears, no console error; DevTools Console shows no CSP violation.
 7. Rename the project from the project panel. Expected: the new name shows in Open project and the old one is gone.
 8. Reload. Expected: the project reopens from Open project; the autosaved edit remains. File > Version history lists versions and restores one.
@@ -309,3 +309,16 @@ Steps and expected results:
 6. A chooses "Stop Sharing". Expected: reloading the link shows "not found".
 7. Watch the container log: no token appears in any line.
 Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7
+
+## S439 - Circuits sharing (ADR-058)
+Prerequisites: Circuits installed with sign-in applied; two people granted the app (A, B) and a third with Homestead but no Circuits access (C).
+Steps and expected results:
+1. A opens the example, saves it, then File > Share. Expected: "Not shared with anyone yet"; the field says "Homestead username"; no Puter wording.
+2. A shares with a name nobody has, then with A's own name. Expected: "Could not share: ..." each time; nothing is shared.
+3. A shares with B as "Can view". Expected: B listed. B opens Open project. Expected: a "Shared with me" list with the project, "Shared by A . view only". B opens it, changes it and saves. Expected: the save is refused; A's file is unchanged.
+4. A changes B to "Can edit" (choose Can edit and press Share). Expected: "Updated access for B". B edits and saves. Expected: A reopens the project and sees B's change; A has one project file.
+5. C (signed in, no access) opens Circuits. Expected: no "Shared with me", no projects, cannot reach A's project.
+6. A removes B in the Share dialog. Expected: B's "Shared with me" is empty; B's next save fails with a message (it does not look saved); A keeps the project.
+7. There is no link to share: Circuits has no read-only link (no viewer for circuit files).
+8. Watch the container log: no token or project content appears.
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8

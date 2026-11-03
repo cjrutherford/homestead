@@ -1694,7 +1694,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S375: not run on VM 2 or through Authentik; the review plan S375 section is the owner checklist.
 - S375: the browser keeps a "recent projects" list of project names and the last-opened location in localStorage, so a second person in the same browser sees the first person's recent project names (opening one fails; the files are private on the appliance). A Homestead sign-out that clears it is a later slice.
 - S375: upstream ships and registers no service worker and the bridge's worker mechanism only replaces an existing one, so Circuits has no offline page and is not installable as a PWA; a lost connection shows the browser's error page and a save while offline fails with a message.
-- S375: sharing a project with other people is hidden (it needs `fs.share`, which ADR-057 refuses); the Puter file picker, "Open from the desktop" and the profile picture are absent.
+- S375: (sharing is on since S439) the Puter file picker, "Open from the desktop" and the profile picture are absent.
 - S375: the board's WebGL2 rendering, the 3D view, the autorouter, KiCad import, Gerber, drill and fabrication export, printing and the component editor were not driven in a browser; only the kernel (design rule check, copper pours) is exercised.
 - S375: the page policy now allows `'wasm-unsafe-eval'` for any app whose build ships a `.wasm` file (WebAssembly compilation only; JavaScript eval stays refused); a policy per app in the catalog would be tighter.
 - S375: the committed `kernel.wasm` is upstream's prebuilt binary; the image build does not rebuild it from the Rust source in the archive, so the binary is trusted at the pin. A reproducible rebuild check is a later slice.
@@ -1760,7 +1760,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S429: no per-grant byte cap: a trusted folder writer can fill the owner's quota (ADR-058 accepts this).
 - S429: `fs.share.received` / `fs.share.revoked` notifications wait for S430; recipients poll `fs.listShared`.
 - S429: `fs.getShares` reports only live direct and folder-inherited grants of the caller's own paths; grants made on a path that later changes between file and folder keep the type recorded at share time.
-- S429: Circuits and Parametric still hide their sharing UI and "Shared with me" (S439, S440); opening a shared file with those apps (path `~shared/<id>/<name>`) is untested against the real app code.
+- S429: Parametric still hides its sharing UI (S440); Circuits opens and saves shared files since S439 (browser-checked).
 - S429: no `fs.copy`/`fs.move`/`mkdir` exist in the shim, so nothing else needed grant support.
 - S430: events are in memory per bridge process. Changes made by another process (the `people purge` and `grants revoke` tools, import) reach streams only through the 25 s heartbeat re-check (streams end or drop the handle and send `gap`), not as live events.
 - S430: fs revocations caused by deleting or renaming a shared file send no `fs.share.revoked` notice; recipients see it on their next `fs.listShared`.
@@ -1798,3 +1798,9 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S438: Notes has no person-to-person sharing or live updates (upstream offers read links only); the sharing switch stays off for the package. Sharing a notebook between people would need new upstream-free UI and is not planned.
 - S438: the viewer shows page text only; pictures, handwriting, tags, tables' layout and the page background are not shown (marked "not shown in this viewer"). Upstream's in-app `#view=<url>` page is still in the bundle but no link points to it.
 - S438: the Notes browser check uses the development identity; a live run against Authentik, a public read link through Caddy and Cloudflare, and Firefox/Safari are unproven.
+- S439: Circuits has no read links and its project files have no viewer renderer (S432); an outsider cannot see a project, only people with Circuits access who are shared with by name. A Circuits viewer is a later slice if the owner wants link sharing.
+- S439: a shared project is a single file grant: the recipient can open and overwrite it (edit mode) but not rename, delete or re-share it; the app's Rename and Delete on a shared project show an error, and its version snapshots (History) go to the recipient's own `Projects/.versions/`, not the owner's. The `manage` ("Can edit and share") choice is never offered (the bridge refuses it).
+- S439: two people editing the same project overwrite each other (upstream says so in the dialog); there is no live update or merge. Edit saves count against the owner's quota.
+- S439: the share dialog's email recipients are refused by the bridge (no emails); the error text is the bridge's code (`user_does_not_exist`, `cannot_share_with_self`) rather than a sentence.
+- S439: browser-checked with the development identity only; no live Authentik two-person run, and Firefox/Safari are untried. The upstream vitest suite on the patched tree is 206/207: the one failure, "links to the source code on GitHub", asserts the link the S375 patch removes.
+- S439: the shim now fails a `fs.write` the bridge answered 404 (a write through a revoked or unknown share) instead of reporting success; no other app relied on the old behaviour (gate and Go/Python tests pass).

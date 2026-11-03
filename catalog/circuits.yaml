@@ -20,8 +20,10 @@ description: Circuits is schematic capture and printed circuit board layout in
   browser from a small web server on your appliance, and each person's
   projects, saved versions and parts are kept on the appliance, private to that
   person. People sign in through Authentik; until the owner sets up sign-in the
-  app serves nothing. Sharing with other people and links to other sites in the
-  original are not included, and nothing you draw leaves your appliance. Data
+  app serves nothing. You can share a project with other people who have
+  access to Circuits (named by their Homestead user name) to view or edit it;
+  links to other sites in the original are not included, and nothing you draw
+  leaves your appliance. Data
   is limited by a per-person storage quota. It is served over your local
   network with a certificate from your Homestead internal CA.
 category: productivity
@@ -41,6 +43,10 @@ services:
     # Until sign-in is applied the bridge starts and answers only that
     # sign-in is not set up (fail closed); it never serves data.
     HOMESTEAD_EVERYTHING_AWAIT_SIGNIN: "1"
+    # Sharing a project with people who have access to Circuits (S439,
+    # ADR-058). Only people granted this app can be named; nothing becomes
+    # public.
+    HOMESTEAD_EVERYTHING_SHARING: "1"
     # Per-person and whole-app storage limits, in bytes.
     HOMESTEAD_EVERYTHING_QUOTA_PERSON_BYTES: "268435456"
     HOMESTEAD_EVERYTHING_QUOTA_APP_BYTES: "2147483648"

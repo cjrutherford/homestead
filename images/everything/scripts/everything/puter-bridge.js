@@ -341,6 +341,9 @@
         if (bytes.length > MAX_VALUE) fail('storage_limit', 'storage limit exceeded');
         var key = fsKey(path);
         var r = await call({ operation: 'put', kind: 'file', key: key, value: toBase64(bytes) });
+        // A write through a share that was revoked (or never existed) answers
+        // 404; do not report a save that did not happen.
+        if (r === null) noFile('file');
         var name = key.split('/').pop();
         return { path: path, name: name, size: (r && r.size) || bytes.length, modified: (r && r.modified) || 0, is_dir: false };
       },

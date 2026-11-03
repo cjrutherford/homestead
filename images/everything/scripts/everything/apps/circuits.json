@@ -107,18 +107,6 @@
       "why": "Say Homestead, not Puter."
     },
     {
-      "file": "src/circuits/src/app/actions.js",
-      "old": "    { id: 'file.share', label: 'Share project', menuLabel: 'S&hare...', icon: 'share', enabled: hasProject, run: () => app.share() },\n",
-      "new": "",
-      "why": "Hide sharing: it needs fs.share/getShares, which ADR-057 refuses (sharing needs an exposure plan)."
-    },
-    {
-      "file": "src/circuits/src/app/menus.js",
-      "old": ", { command: 'file.share' },",
-      "new": ",",
-      "why": "Hide the Share menu entry (sharing is refused by ADR-057)."
-    },
-    {
       "file": "src/circuits/src/app/app.js",
       "old": "      h('a.icon-btn', { href: REPO_URL, target: '_blank', rel: 'noopener noreferrer', 'aria-label': 'Source code on GitHub (opens in a new tab)', 'data-tip': 'Source code on GitHub' }, icon('github', 17)),\n",
       "new": "",
@@ -135,6 +123,18 @@
       "old": "    { id: 'help.github', label: 'Source code on GitHub', menuLabel: 'Source code on &GitHub', icon: 'github', run: () => window.open('https://github.com/heyputer/everything', '_blank', 'noopener,noreferrer') },\n",
       "new": "",
       "why": "Remove the Source code on GitHub command (an outbound link)."
+    },
+    {
+      "file": "src/circuits/src/app/share.js",
+      "old": "Save the project to your Puter cloud first, then share it.",
+      "new": "Save the project to your Homestead first, then share it.",
+      "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/circuits/src/app/share.js",
+      "old": "placeholder: 'Puter username or email'",
+      "new": "placeholder: 'Homestead username'",
+      "why": "People are named by their Homestead user name (ADR-058); email recipients are refused."
     }
   ],
   "sdk_surface": {
@@ -150,32 +150,22 @@
       "auth.getUser",
       "env",
       "auth.signIn",
-      "auth.signOut"
+      "auth.signOut",
+      "fs.share",
+      "fs.unshare",
+      "fs.getShares",
+      "fs.listShared"
     ],
-    "refused": [
-      "fs.getReadURL",
-      "kv.share",
-      "kv.unshare",
-      "kv.listShared",
-      "kv.listSharedByMe",
-      "perms.*",
-      "events.*",
-      "appID"
-    ],
+    "refused": [],
     "absent": [
       "auth.getProfilePicture",
-      "fs.share",
-      "fs.getShares",
-      "fs.unshare",
-      "fs.listShared",
       "ui.showOpenFilePicker",
       "ui.showSaveFilePicker",
       "ui.onLaunchedWithItems"
     ],
     "disabled": {
       "ai": "no AI backend",
-      "net": "no network bridge (S381 only)",
-      "sharing": "needs an exposure plan"
+      "net": "no network bridge (S381 only)"
     }
   }
 }

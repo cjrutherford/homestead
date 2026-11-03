@@ -40,9 +40,9 @@ class TasksPackageTest(unittest.TestCase):
         self.assertIn('HOMESTEAD_EVERYTHING_SHARING: "1"', cat)
         self.assertNotIn('HOMESTEAD_EVERYTHING_NET', cat)
 
-    def test_only_tasks_turns_sharing_on(self):
+    def test_only_tasks_and_circuits_turn_sharing_on(self):
         for f in sorted((ROOT / 'catalog').glob('*.yaml')):
-            if f.name != 'tasks.yaml':
+            if f.name not in ('tasks.yaml', 'circuits.yaml'):
                 self.assertNotIn('HOMESTEAD_EVERYTHING_SHARING', f.read_text(), f.name)
 
     def test_sharing_patches_present_and_hiding_patches_gone(self):
