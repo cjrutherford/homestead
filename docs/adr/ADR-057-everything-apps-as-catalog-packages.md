@@ -97,6 +97,27 @@ the pinned archive and a `pin.yaml` entry, `catalog/<app>.yaml`, an
 `everythingPackages` row and the SSO posture and image volume rows in the
 catalog tests, then run `scripts/everything/sync-context.sh`. No Go change.
 
+## Amendment 2026-11-02 (S423): source offer for copyleft apps
+Not an architecture change. Owner decision: "we can link to the agpl or lgpl
+source directly on the page we serve." An app whose definition has a
+`source_offer` (Notes and 3D, AGPL-3.0-only; Parametric, which bundles the
+LGPL-2.1-only `replicad-opencascadejs` kernel) gets, from the same bridge:
+
+- `GET <base>/_homestead/source`, a script-free HTML page (its own policy, no
+  `script-src`) with the licence, upstream repository, pinned commit, the
+  tarball link and any bundled components with their licence and source link;
+- `GET <base>/_homestead/source/<app>-source.tar.gz` for AGPL apps: the
+  deterministic Corresponding Source (pinned upstream archive byte for byte,
+  the patch list, added files, shim, preparation script, image recipe and a
+  README with the rebuild command), built into the image at `/srv/source`;
+- a small fixed "Source" link added to the served `index.html` right after
+  `<body>`, a style attribute only (no script, so the page policy is unchanged).
+
+Both routes need a sign-in (page: redirect to sign-in, tarball: 401). AGPL
+section 13 owes the offer to the people who use the app over the network; all of
+them are signed in, and the catalog is closed by default. Apps without a
+`source_offer` answer 404 and carry no link. Nothing is fetched at run time.
+
 ## Consequences
 - Tasks becomes installable, signed in and backed up like any package.
 - The build needs network access on the appliance at install time.

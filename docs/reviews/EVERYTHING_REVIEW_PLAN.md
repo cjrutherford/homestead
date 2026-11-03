@@ -249,6 +249,19 @@ Steps and expected results:
 
 Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9
 
+## S423 — Source offer (Notes, 3D, Parametric)
+Prerequisites: VM 2 on the build with S423; Notes, 3D and Parametric built and installed; sign-in set up.
+
+Steps and expected results:
+1. Open each of the three apps. Expected: a small "Source" link at the bottom of the page; it covers no button or text you need.
+2. Click it in Notes. Expected: a plain page naming AGPL-3.0-only, the HeyPuter/everything repository, the pinned commit and a download link; no sign-in prompt while signed in.
+3. Download the tarball (Notes, 3D). Expected: `<app>-source.tar.gz`; `sha256sum` equals the checksum on the page; it unpacks to a README, the pinned archive, the patch list, the shim and the Dockerfile.
+4. Open the source page for Parametric. Expected: replicad-opencascadejs 1.1.0 (LGPL-2.1-only) with a source link and a licence-text link that opens the licence; no tarball link.
+5. Open the same URL in a private window that is not signed in. Expected: sign-in, not the page.
+6. Open `/apps/tasks/_homestead/source`. Expected: Not Found; Tasks shows no Source link.
+
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6
+
 ## Template for a new app section
 ## SNNN — <App>
 Prerequisites: ...

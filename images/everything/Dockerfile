@@ -8,6 +8,9 @@
 #   ARTIFACT_FILE    the pinned upstream source archive, staged in artifact/
 #   ARTIFACT_SHA256  its digest; the build fails if the staged file differs
 #
+# Source offer (S423): for an app whose definition declares "source_offer",
+# the prepare stage also builds the Corresponding Source tarball and
+# offer.json into /srv/source, which the bridge serves at /_homestead/source.
 # Stages: prepare (verify archive, apply the Homestead patches), web
 # (npm ci --ignore-scripts, lockfile-verified; npm run build), bridge (Go,
 # production tags, CGO off, go.sum-verified), then a distroless/static
@@ -28,12 +31,14 @@ ARG ARTIFACT_FILE
 ARG ARTIFACT_SHA256
 COPY artifact/ /in/
 COPY scripts/everything/ /scripts/everything/
+COPY Dockerfile /recipe/Dockerfile
 RUN set -eu; \
     test -n "${APP}" && test -n "${ARTIFACT_FILE}" && test -n "${ARTIFACT_SHA256}"; \
     echo "${ARTIFACT_SHA256}  /in/${ARTIFACT_FILE}" | sha256sum -c -; \
     sub="$(python3 -I /scripts/everything/prepare_app.py --print-subtree "${APP}" /in/x /scripts/everything/puter-bridge.js /x)"; \
     python3 -I /scripts/everything/prepare_app.py "${APP}" "/in/${ARTIFACT_FILE}" /scripts/everything/puter-bridge.js /work; \
-    test -d "/work/${sub}"; echo "${sub}" > /work/.subtree
+    test -d "/work/${sub}"; echo "${sub}" > /work/.subtree; \
+    python3 -I /scripts/everything/make_source_offer.py "${APP}" "/in/${ARTIFACT_FILE}" /recipe/Dockerfile /offer
 
 FROM ${NODE} AS web
 COPY --from=prepare /work /work
@@ -57,6 +62,7 @@ RUN mkdir -p /out/data && \
 FROM alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f AS assemble
 COPY --from=web /out/ /out/
 COPY --from=bridge /out/ /out/
+COPY --from=prepare /offer/ /out/srv/source/
 RUN find /out -type d -exec chmod 755 {} + && \
     find /out -type f -exec chmod 644 {} + && \
     chmod 755 /out/everything-bridge && chmod 700 /out/data && \
@@ -68,6 +74,7 @@ ARG APP
 COPY --from=assemble /out/ /
 ENV HOMESTEAD_EVERYTHING_STATIC_DIR=/srv/app \
     HOMESTEAD_EVERYTHING_LISTEN=0.0.0.0:8081 \
+    HOMESTEAD_EVERYTHING_SOURCE_DIR=/srv/source \
     HOMESTEAD_EVERYTHING_APP=${APP}
 USER 65532:65532
 VOLUME /data

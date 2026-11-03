@@ -163,5 +163,16 @@
       "new": "    return { ok: false, error: `${msg.includes('eval') ? \"Scripts and the console cannot run on Homestead: the page's security policy does not allow running code typed into the app.\" : `SyntaxError: ${msg}`}`, line: msg.includes('eval') ? undefined : syntaxErrorLine(code, msg) };",
       "why": "Run Script builds a function from the script text, which the page policy refuses; say so instead of reporting a syntax error."
     }
-  ]
+  ],
+  "source_offer": {
+    "license": "AGPL-3.0-only",
+    "license_url": "https://www.gnu.org/licenses/agpl-3.0.html",
+    "repository": "https://github.com/HeyPuter/everything",
+    "commit": "e7d07c48546ef0650a8f3ab94ae82b8b50d3646a",
+    "tarball": true,
+    "link_offset": {
+      "left": "40%",
+      "bottom": "4px"
+    }
+  }
 }

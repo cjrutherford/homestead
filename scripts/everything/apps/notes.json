@@ -116,5 +116,16 @@
       "net": "no network bridge (S381 only)",
       "sharing": "needs an exposure plan"
     }
+  },
+  "source_offer": {
+    "license": "AGPL-3.0-only",
+    "license_url": "https://www.gnu.org/licenses/agpl-3.0.html",
+    "repository": "https://github.com/HeyPuter/everything",
+    "commit": "e7d07c48546ef0650a8f3ab94ae82b8b50d3646a",
+    "tarball": true,
+    "link_offset": {
+      "right": "4px",
+      "bottom": "28px"
+    }
   }
 }

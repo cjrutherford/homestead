@@ -143,10 +143,15 @@ type appServer struct {
 	base, dir string
 	src       SessionSource
 	files     http.Handler
+	offer     *sourceOffer // nil unless the image carries a source offer (S423)
 }
 
 func registerApp(mux *http.ServeMux, base, dir string, src SessionSource) {
-	a := &appServer{base: base, dir: dir, src: src, wasm: hasWasm(dir)}
+	srcDir := os.Getenv(SourceDirEnv)
+	if srcDir == "" {
+		srcDir = DefaultSourceDir
+	}
+	a := &appServer{base: base, dir: dir, src: src, wasm: hasWasm(dir), offer: loadSourceOffer(srcDir)}
 	a.files = http.FileServer(noListingFS{http.Dir(dir)})
 	if base != "" {
 		a.files = http.StripPrefix(base, a.files)
@@ -159,6 +164,8 @@ func (a *appServer) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", contentSecurityPolicy(nil, a.wasm))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	switch {
+	case p == SourcePath || strings.HasPrefix(p, SourcePath+"/"):
+		a.source(w, r, p)
 	case p == "/" || p == "/index.html":
 		a.index(w, r)
 	case strings.HasPrefix(p, "/_homestead/") && p != "/_homestead/puter-bridge.js":
@@ -193,6 +200,12 @@ func (a *appServer) index(w http.ResponseWriter, r *http.Request) {
 	}
 	meta := `<meta name="homestead-csrf" content="` + csrf + `">`
 	out := append(append(append([]byte{}, page[:loc[1]]...), meta...), page[loc[1]:]...)
+	if a.offer != nil {
+		// The Source link goes right after the opening <body> tag (S423).
+		if b := bodyTag.FindIndex(out); b != nil {
+			out = append(append(append([]byte{}, out[:b[1]]...), a.sourceLink()...), out[b[1]:]...)
+		}
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Security-Policy", contentSecurityPolicy(page, a.wasm))
 	w.Header().Set("X-Frame-Options", "DENY")

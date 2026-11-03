@@ -1136,13 +1136,13 @@ What Homestead does to comply:
   are pinned: preparation fails if upstream text changes, so the list cannot
   silently drift from what is built.
 - **Network use (AGPL section 13).** Notes is modified, and people other than the
-  owner use it over the network, so those users must be offered the source of the
-  version they are using. Homestead does not yet show that offer inside the app:
-  this is recorded in `docs/DEFERRED.md` (S371) and must be closed before the
-  package is distributed beyond the owner's own appliance (a source link from the
-  Notes help dialog or a bridge route that serves the archive, plus the patch list).
-  Upstream's About dialog names its libraries but does not state the app's
-  own licence, so today there is no in-app statement at all.
+  owner use it over the network, so those users are offered the source of the
+  version they are using (S423): a "Source" link in the served page opens
+  `<base>/_homestead/source`, which names the licence, the upstream repository and
+  pinned commit and links `notes-source.tar.gz`, built into the image: the pinned
+  archive byte for byte, the patch list, the shim, the preparation script, the
+  image recipe and a README with the rebuild command. The page and tarball are for
+  signed-in people (they are the people who use the app).
 - **Licence text and notices** are kept: `src/notes/LICENSE` and the copyright
   lines stay in the archive and in the built source; no patch touches them.
 - **Scope.** The AGPL applies to the Notes app and to anything combined with it
@@ -1250,6 +1250,12 @@ a module worker; the licence text and the upstream notices are kept in the app's
 and are served with the app. Other bundled notices are in the same folder (replicad,
 flatbush, flatqueue, lucide, opentype.js, ps-parser, solid-diff). The source is
 changed only by the pinned patches in `scripts/everything/apps/parametric.json`.
+S423: the in-app page `<base>/_homestead/source` (signed-in people) lists the kernel
+with its licence, the upstream source at the bundled version
+(https://github.com/sgenoud/replicad, `packages/replicad-opencascadejs`, npm
+`replicad-opencascadejs` 1.1.0, built from Open CASCADE Technology) and links the
+licence text the app serves. The owner accepted linking to the upstream source;
+no relinking kit is shipped.
 The app has no analytics script.
 
 ## 3D source (S377, ADR-057) — AGPL-3.0-only
@@ -1267,8 +1273,10 @@ same as for Notes (S371): the Corresponding Source of the 3D the appliance runs 
 pinned archive plus the patch list `scripts/everything/apps/three-d.json` (17 patches,
 each with a `why`), the entry point `scripts/everything/files/3d-person-storage.ts`
 and the bridge shim `scripts/everything/puter-bridge.js`, all in the Homestead
-repository; the image is built on the appliance from them. An in-app source link is not
-built (DEFERRED, owner to confirm AGPL section 13 handling).
+repository; the image is built on the appliance from them. S423 offers exactly that
+source inside the app: a "Source" link opens `<base>/_homestead/source` and the
+`three-d-source.tar.gz` it links (pinned archive, patch list, added file, shim,
+preparation script, image recipe, README), for signed-in people.
 
 Bundled packages (from the app's `THIRD_PARTY_NOTICES.md`): three, three-mesh-bvh,
 three-gpu-pathtracer, three-bvh-csg, xatlas-web, fzstd, opentype.js (all MIT),

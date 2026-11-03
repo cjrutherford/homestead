@@ -288,5 +288,26 @@
       "new": "export async function clearRecovery() {\n  try {\n    await puter()?.fs.delete(`Recovery/${RECOVERY_FILE}`);",
       "why": "Same: clear the recovery snapshot from the person's own storage."
     }
-  ]
+  ],
+  "source_offer": {
+    "license": "MIT",
+    "repository": "https://github.com/HeyPuter/everything",
+    "commit": "e7d07c48546ef0650a8f3ab94ae82b8b50d3646a",
+    "tarball": false,
+    "components": [
+      {
+        "name": "replicad-opencascadejs",
+        "license": "LGPL-2.1-only",
+        "version": "1.1.0",
+        "source_url": "https://github.com/sgenoud/replicad/tree/main/packages/replicad-opencascadejs",
+        "license_url": "https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html",
+        "license_file": "licenses/replicad-opencascadejs-LICENSE.txt",
+        "note": "The OpenCascade geometry kernel, shipped unmodified as a separate WebAssembly module (npm package replicad-opencascadejs 1.1.0). It is built from Open CASCADE Technology: https://github.com/Open-Cascade-SAS/OCCT"
+      }
+    ],
+    "link_offset": {
+      "left": "50%",
+      "bottom": "4px"
+    }
+  }
 }

@@ -11,7 +11,7 @@ cp "$repo/go.mod" "$repo/go.sum" "$dst/"
 cp -r "$repo/cmd/everything-bridge" "$dst/cmd/"
 cp -r "$repo/internal/everything" "$dst/internal/"
 find "$dst" -name '*_test.go' -delete
-cp "$repo/scripts/everything/prepare_app.py" "$repo/scripts/everything/puter-bridge.js" \
+cp "$repo/scripts/everything/prepare_app.py" "$repo/scripts/everything/make_source_offer.py" "$repo/scripts/everything/puter-bridge.js" \
    "$dst/scripts/everything/"
 cp "$repo"/scripts/everything/*-sw.template.js "$dst/scripts/everything/"
 cp "$repo"/scripts/everything/apps/*.json "$dst/scripts/everything/apps/"

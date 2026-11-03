@@ -1658,7 +1658,6 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S370: Records has no service worker (upstream has none), so the page cannot be reopened offline; a later slice may add a runtime worker as for Projects.
 - S370: the app runs with `env` set to `app`, so it shows no sign-out button; sign-out is the Homestead sign-out route until a small patch adds a menu entry.
 - S370: attachments over 8 MiB fail with a generic "Could not upload the file" message; only the per-person and per-app quotas map to the storage-full wording.
-- S371: AGPL section 13: Notes is modified and used over the network, so its users must be offered the source (pinned archive plus `scripts/everything/apps/notes.json` patch list); an in-app link or a bridge route serving it is not built and must land before Notes is shared beyond the owner's own appliance.
 - S371: the upstream Notes tests were not run against the real bridge; the real-browser check and Go/gate tests cover the bridge path only.
 - S371: not run on VM 2 or through Authentik; the review plan S371 section is the owner checklist.
 - S371: Notes has no service worker (upstream has none), so the page cannot be reopened offline; a later slice may add a runtime worker as for Projects.
@@ -1702,14 +1701,13 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S375: the project file is written whole on every save (autosave included) and each save keeps a version snapshot under `Projects/.versions/`; the per-person quota (256 MiB) bounds both and old snapshots are trimmed only by the app's own rule.
 - S375: the unreachable sign-in strings, the keyboard-shortcuts and getting-started text and some error strings still mention Puter; the visible start page, account, open-project, About and status bar strings are patched.
 - S376: not run on VM 2 or through Authentik; the review plan S376 section is the owner checklist.
-- S376: the OpenCascade kernel (`replicad-opencascadejs`, LGPL-2.1-only) comes from npm at image build time and is not rebuilt from source; the licence texts ship in `public/licenses/`. Owner should confirm the LGPL terms are acceptable.
+- S376: the OpenCascade kernel (`replicad-opencascadejs`, LGPL-2.1-only) comes from npm at image build time and is not rebuilt from source; the licence texts ship in `public/licenses/` and the in-app source page (S423) links the upstream source at the bundled version.
 - S376: the 23 MB wasm is served uncompressed and the app has no service worker, so there is no offline page and the first load is heavy.
 - S376: sketching, STEP/STL/SolidWorks import and export, drawings and PDF were not driven in a browser; only boot, an extrude, save, reload and reopen were.
 - S376: the "recent files" list is kept in localStorage, so a second person in the same browser sees the first person's recent names (not content).
 - S376: the upstream tests (104) ran with mocks, not against the real bridge; the built image was not run in a real appliance.
 - S376: sharing and publish are hidden; AI is disabled with no backend (a future AI slice would need an approved bridge).
 - S376: the app's unused-name TypeScript rules are relaxed so patched code compiles; unreachable strings still mention Puter.
-- S377: the app is AGPL-3.0-only; the source is offered as for Notes (pinned archive plus patch list in the repository) and no in-app source link is built. Owner should confirm this is acceptable (AGPL section 13).
 - S377: scenes, libraries, presets, snapshots and the autosave stay in the browser's IndexedDB (and the browser file system), separated by person with a per-person database name but not encrypted, not backed up and not on the appliance; clearing site data or changing browser loses them. Only settings (localStorage) go to the person's bridge storage, capped at 3 MB.
 - S377: concurrent tabs of one person overwrite the settings snapshot (last write wins).
 - S377: Python (Pyodide from a public CDN) and AI are off. The script console, Run Script and style modules need `unsafe-eval`, which the policy refuses, so they report that they cannot run; the "Allow Online Access" preference text still mentions them.
@@ -1737,3 +1735,9 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S380: the catalog icon is `mdi:piggy-bank-outline` (also Actual Budget's) because no receipt or cash icon is bundled in app-icons.ts; owner may bundle a better one.
 - S381 (`api-client`): deferred by the owner on 2026-11-02. It needs the bridge to make network requests for the person (`puter.net`), which no other Everything app has and which could reach the local network unless fenced. Revisit only with an ADR-057 amendment (owner-only, public addresses only after DNS resolution, size and time limits, logged) and an owner decision.
 - S380: the headless check adds expenses and receipts; reports, statement import and reconciliation, the dashboard totals, CSV and JSON export, backup restore and sample data are covered only by upstream's 79 unit tests, not by the real bridge. Delete all data now removes the receipts folder recursively; that path is covered only by the pinned patch test, not driven in a real browser.
+- S423: the source offer was proven with Go tests, a Python test and a headless Chrome check against the dev bridge; it was not run on VM 2 or through Authentik, and the image build was run once for one app.
+- S423: only the bridge's own `GET` route serves the offer; a person who is not signed in gets a sign-in redirect (page) or 401 (tarball). That is a deliberate reading of AGPL section 13 (the offer is to the people who use the app, and all of them are signed in); the owner may widen it.
+- S423: the offer covers the app, Homestead's patches, added files, the shim and the image recipe. The Go bridge (a separate program, MIT) and the npm dependencies fetched at build time are not in the tarball; their sources are public upstream and pinned by `package-lock.json` in the archive.
+- S423: the Parametric offer links upstream source at the bundled version (replicad-opencascadejs 1.1.0 and Open CASCADE Technology) and the licence text served with the app; it does not ship the C++/Emscripten sources or a relinking kit, so a person who wants to replace the `.wasm` module builds it from upstream themselves.
+- S423: the Source link is a fixed corner link; it was checked for overlap in headless Chrome at one viewport for the three apps, not in every dialog or on small screens.
+- S423: the offer text and links are in English only and the tarball is rebuilt with each image, so its checksum changes when the recipe changes (it is reproducible for the same inputs).
