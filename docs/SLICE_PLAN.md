@@ -144,7 +144,7 @@ must be re-evaluated against the bridge before the later candidates ship.
 |----|-----|-----------|------|
 | S379 | `sudoku` | S367 | Same shape as solitaire. |
 | S380 | `expense` | S367 | Local-only; do not ship the "AI OCR" claim. |
-| S381 | `api-client` | S367 | Needs the `puter.net` bridge extension — the only surface addition after S367. |
+| S381 | `api-client` | S367 | Needs the `puter.net` bridge extension — the only surface addition after S367. **Deferred by the owner 2026-11-02**; see DEFERRED. |
 
 ## 4. Critical path and recommended order
 

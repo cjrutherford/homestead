@@ -1389,7 +1389,7 @@ Craft apps under one host, by path (ADR-045).
 The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 `docs/SLICE_PLAN.md`. The Everything track remains planned, not implemented.
 
-- Puter/Everything apps: planned in S367–S381, not yet available. The monorepo's apps are Vite SPAs that
+- Puter/Everything apps: S367–S380 are packaged (ADR-057) and S381 is deferred; the note below is the original evaluation. The monorepo's apps are Vite SPAs that
   load the Puter cloud SDK (`https://js.puter.com/v2/`) for identity and
   storage, have no per-app Docker packaging, and overlap the existing craft
   suite. Revisit only with an ADR for a second static-app source, a fork or
@@ -1735,4 +1735,5 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S380: receipts are limited to 8 MB each (the bridge's per-file limit; upstream allowed 10 MB). A PDF receipt cannot be previewed in the app (the page policy has no frame source); it can be downloaded. The headless check stores two image receipts (one just under 8 MB) and refuses one over; PDF receipts, the receipt viewer and download are not driven in a real browser.
 - S380: the browser keeps only the chosen theme (separated by person, not encrypted); everything else is on the appliance. The inline theme script reads one unprefixed key that is never written, so a person's theme applies after the app starts, not before first paint.
 - S380: the catalog icon is `mdi:piggy-bank-outline` (also Actual Budget's) because no receipt or cash icon is bundled in app-icons.ts; owner may bundle a better one.
+- S381 (`api-client`): deferred by the owner on 2026-11-02. It needs the bridge to make network requests for the person (`puter.net`), which no other Everything app has and which could reach the local network unless fenced. Revisit only with an ADR-057 amendment (owner-only, public addresses only after DNS resolution, size and time limits, logged) and an owner decision.
 - S380: the headless check adds expenses and receipts; reports, statement import and reconciliation, the dashboard totals, CSV and JSON export, backup restore and sample data are covered only by upstream's 79 unit tests, not by the real bridge. Delete all data now removes the receipts folder recursively; that path is covered only by the pinned patch test, not driven in a real browser.
