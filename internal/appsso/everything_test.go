@@ -324,3 +324,28 @@ func TestSudokuSignInUsesTheBridgesOwnRoutes(t *testing.T) {
 		t.Fatalf("sign-in URL = %s", got)
 	}
 }
+
+// S380: Expenses signs in through the same generic adapter, at its own path.
+func TestExpenseSignInUsesTheBridgesOwnRoutes(t *testing.T) {
+	entries, err := catalog.Load("../../catalog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := entries.Get("expense")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := AdapterFor(*m.SSO.OIDC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := docker.Route{Host: "homestead.lan", Path: "/apps/expense/", Target: docker.Target{Host: "expense", Port: 8081},
+		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal}
+	origins := Origins([]docker.Route{r})
+	if uris := a.RedirectURIs(origins); len(uris) == 0 || uris[0] != "https://homestead.lan/apps/expense/_homestead/callback" {
+		t.Fatalf("redirect URIs = %v", uris)
+	}
+	if got := a.SignInURL(origins[0]); got != "https://homestead.lan/apps/expense/_homestead/login" {
+		t.Fatalf("sign-in URL = %s", got)
+	}
+}

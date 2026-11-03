@@ -233,6 +233,22 @@ Steps and expected results:
 
 Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8
 
+## S380 — Expenses catalog package
+Prerequisites: VM 2 on the build with S380; Authentik sign-in set up; a second person exists in People.
+
+Steps and expected results:
+1. Build `expense` in the craft page or CLI. Expected: image `homestead/everything-expense:0.1.0` recorded.
+2. Install with a plan, preview and apply. Expected: route `/apps/expense/`, no public exposure.
+3. Apply sign-in. Expected: redirect to Authentik; the welcome dialog appears; no request to any other host; no Console CSP violation.
+4. Look for "AI", "OCR", "read your receipts", "Puter", any outbound link and the account name. Expected: none of the first four; no link; the name reads "Homestead user", not your sign-in name. Settings has no AI section.
+5. Capture a receipt photo (and a PDF), fill in merchant and amount, save, reload. Expected: the expense and receipt are kept; the Network tab shows only requests to this app's own path, none to an AI or other host; a file over 8 MB is refused with a notice.
+6. Create a report, add the expense, export CSV. Expected: works with no request outside the app.
+7. Second person (closed, then granted): Expected: no expenses, receipts or theme from the first person.
+8. Stop the container and reload. Expected: the fixed "You are offline" page, not an error page.
+9. Backup contains `data/bridge.db` (expenses and receipts); uninstall removes route and container.
+
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9
+
 ## Template for a new app section
 ## SNNN — <App>
 Prerequisites: ...

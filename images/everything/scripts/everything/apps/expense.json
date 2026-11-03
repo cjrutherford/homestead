@@ -1,0 +1,282 @@
+{
+  "app": "expense",
+  "version": "0.1.0",
+  "title": "Expenses",
+  "archive": "expense-source.tar.gz",
+  "sha256": "4d4f6e81de6314872f69f3c57a87b0d9227ccda64011a395016d43ebd73f47f0",
+  "size": 1644903,
+  "subtree": "src/expense",
+  "extra_files": [
+    "LICENSE",
+    "dev/puter-localhost.mjs"
+  ],
+  "required": [
+    "LICENSE",
+    "dev/puter-localhost.mjs",
+    "src/expense/index.html",
+    "src/expense/package-lock.json",
+    "src/expense/src/main.js",
+    "src/expense/src/lib/ocr.js",
+    "src/expense/src/lib/store.js",
+    "src/expense/public/sw.js",
+    "src/expense/public/manifest.webmanifest"
+  ],
+  "index": "src/expense/index.html",
+  "sdk_tag": "<script src=\"https://js.puter.com/v2/\" defer></script>",
+  "service_worker": {
+    "template": "expense-sw.template.js",
+    "target": "src/expense/public/sw.js",
+    "mode": "runtime"
+  },
+  "patches": [
+    {
+      "file": "src/expense/index.html",
+      "old": "<meta name=\"description\" content=\"Receipt capture with AI OCR, expense reports, and reconciliation. Private, fast, on every device.\" />",
+      "new": "<meta name=\"description\" content=\"Expense reports and reconciliation, kept private on your own server.\" />",
+      "why": "Remove the receipt-reading (AI OCR) claim from the page description."
+    },
+    {
+      "file": "src/expense/index.html",
+      "old": "<script type=\"module\" src=\"/src/main.js\"></script>",
+      "new": "<script type=\"module\" src=\"/src/homestead/boot.js\"></script>",
+      "why": "Start through the Homestead entry point, which gives browser storage a per-person name and registers the service worker, then starts the app."
+    },
+    {
+      "file": "src/expense/public/manifest.webmanifest",
+      "old": "\"description\": \"Receipt capture with AI OCR, expense reports, and reconciliation. Private, fast, on every device.\"",
+      "new": "\"description\": \"Expense reports and reconciliation, kept private on your own server.\"",
+      "why": "Remove the AI OCR claim from the installable manifest."
+    },
+    {
+      "file": "src/expense/public/manifest.webmanifest",
+      "old": "\"id\": \"expenses-puter\"",
+      "new": "\"id\": \"expenses-homestead\"",
+      "why": "No Puter wording in the manifest id."
+    },
+    {
+      "file": "src/expense/src/main.js",
+      "old": "showError('Couldn’t reach Puter', 'The Puter SDK failed to load. Check your connection and try again.', () => location.reload());",
+      "new": "showError('Couldn’t reach your Homestead', 'The page could not start. Check your connection and try again.', () => location.reload());",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/expense/src/main.js",
+      "old": "'Something went wrong talking to your Puter cloud.'",
+      "new": "'Something went wrong talking to your Homestead.'",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/expense/src/views/auth.js",
+      "old": "cta.textContent = 'Waiting for Puter';",
+      "new": "cta.textContent = 'Waiting for sign-in';",
+      "why": "No Puter wording on the (rarely reached) sign-in page."
+    },
+    {
+      "file": "src/expense/src/views/auth.js",
+      "old": "cta.textContent = 'Continue with Puter';",
+      "new": "cta.textContent = 'Sign in';",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/expense/src/views/auth.js",
+      "old": "}, 'Continue with Puter');",
+      "new": "}, 'Sign in');",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/expense/src/views/auth.js",
+      "old": "'Snap a receipt, let AI read it, file it in a report, and reconcile it against your card statement. Private, fast, on every device.'",
+      "new": "'Keep a receipt with each expense, file expenses in a report, and reconcile them against your card statement. Private to you on your own server.'",
+      "why": "Remove the AI claim."
+    },
+    {
+      "file": "src/expense/src/views/auth.js",
+      "old": "feature('scan', 'Receipt capture with AI OCR', 'Merchant, date, total, tax and category are read for you. You confirm, it saves.'),",
+      "new": "feature('scan', 'Receipts', 'Attach a photo or PDF to each expense. You type the merchant, date and total; nothing is read or sent anywhere.'),",
+      "why": "Remove the receipt-reading (AI OCR) claim."
+    },
+    {
+      "file": "src/expense/src/views/auth.js",
+      "old": "feature('cloud', 'Your data, your cloud', 'Everything lives in your own Puter account. Nothing is sent anywhere else.')",
+      "new": "feature('cloud', 'Your data, your server', 'Everything lives on your own Homestead. Nothing is sent anywhere else.')",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/expense/src/views/auth.js",
+      "old": "      el('p.auth-note', {}, 'Free. No ads. Powered by ',\n        el('a', { href: 'https://developer.puter.com', target: '_blank', rel: 'noopener' }, 'Puter'))\n",
+      "new": "      el('p.auth-note', {}, 'Private to you. No ads.')\n",
+      "why": "Remove the outbound Puter link."
+    },
+    {
+      "file": "src/expense/src/views/settings.js",
+      "old": "message: 'Your data stays in your Puter account. Sign back in anytime.'",
+      "new": "message: 'Your data stays on your Homestead. Sign back in anytime.'",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/expense/src/views/settings.js",
+      "old": "      el('h2.section-title', {}, 'AI receipt reading'),\n      el('div.settings-list', {},\n        el('div.settings-row', {},\n          el('div.grow', {}, el('div.title', {}, 'Read receipts automatically'), el('div.sub', {}, 'Run OCR when a receipt is captured. Off means every field is typed by hand.')),\n          switchEl(s.autoOcr, (v) => store.updateSettings({ autoOcr: v }).then(render))),\n        el('div.settings-row', {},\n          el('div.grow', {}, el('div.title', {}, 'Vision model'), el('div.sub', {}, 'Any vision-capable model Puter offers. Leave blank for the default.')),\n          el('input.input', { type: 'text', value: s.ocrModel === DEFAULT_OCR_MODEL ? '' : s.ocrModel, placeholder: DEFAULT_OCR_MODEL, 'aria-label': 'Vision model', style: { maxWidth: '220px' },\n            onchange: (e) => store.updateSettings({ ocrModel: e.target.value.trim() || DEFAULT_OCR_MODEL }).then(() => toast('Model saved')).catch(() => toast('Couldn’t save', { icon: 'wifiOff' })) }))),\n\n",
+      "new": "",
+      "why": "Hide the AI receipt reading settings (automatic reading and vision model): AI is not available."
+    },
+    {
+      "file": "src/expense/src/views/settings.js",
+      "old": "permanently deleted from your Puter account.",
+      "new": "permanently deleted from your Homestead.",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/expense/src/views/settings.js",
+      "old": "(store.user?.username || 'P').charAt(0).toUpperCase()",
+      "new": "'H'",
+      "why": "Avatar initial for \"Homestead user\", never from the opaque subject."
+    },
+    {
+      "file": "src/expense/src/views/settings.js",
+      "old": "store.user?.username || 'Puter user'",
+      "new": "'Homestead user'",
+      "why": "Show \"Homestead user\", never the opaque subject."
+    },
+    {
+      "file": "src/expense/src/views/settings.js",
+      "old": "store.user?.email || 'Signed in with Puter'",
+      "new": "'Signed in with Homestead'",
+      "why": "No Puter wording; no address is shown."
+    },
+    {
+      "file": "src/expense/src/views/settings.js",
+      "old": "'Expenses stores everything in your own Puter account. Powered by ',\n        el('a', { href: 'https://developer.puter.com', target: '_blank', rel: 'noopener' }, 'Puter'), '.')",
+      "new": "'Expenses stores everything on your own Homestead.')",
+      "why": "Remove the outbound Puter link."
+    },
+    {
+      "file": "src/expense/src/lib/store.js",
+      "old": "await this.sdk.fs.delete(RECEIPTS_DIR).catch(() => {});",
+      "new": "await this.sdk.fs.delete(RECEIPTS_DIR, { recursive: true }).catch(() => {});",
+      "why": "Delete all data must remove the receipts folder and free the person's quota; the bridge needs recursive for a folder."
+    },
+    {
+      "file": "src/expense/src/lib/ocr.js",
+      "old": "  const prompt = buildOcrPrompt({ categories, baseCurrency });\n  let lastError = null;\n",
+      "new": "  // Homestead: there is no AI. Fail closed before anything is built or sent.\n  if (!sdk || !sdk.ai) throw new Error('AI is not available on Homestead. Nothing you write is sent anywhere.');\n  const prompt = buildOcrPrompt({ categories, baseCurrency });\n  let lastError = null;\n",
+      "why": "Fail closed: reading a receipt shows the AI-unavailable message and sends no request (the bridge has no ai)."
+    },
+    {
+      "file": "src/expense/src/ui/capture.js",
+      "old": "const MAX_BYTES = 10 * 1024 * 1024;",
+      "new": "const MAX_BYTES = 8 * 1024 * 1024;",
+      "why": "The bridge stores at most 8 MB per file."
+    },
+    {
+      "file": "src/expense/src/ui/capture.js",
+      "old": "'Photos, scans, or PDFs up to 10 MB. Several at once is fine.'",
+      "new": "'Photos, scans, or PDFs up to 8 MB. Several at once is fine.'",
+      "why": "The bridge stores at most 8 MB per file."
+    },
+    {
+      "file": "src/expense/src/ui/capture.js",
+      "old": "over 10 MB and skipped",
+      "new": "over 8 MB and skipped",
+      "why": "The bridge stores at most 8 MB per file."
+    },
+    {
+      "file": "src/expense/src/ui/capture.js",
+      "old": "title: `Reading receipt${label}`",
+      "new": "title: `Receipt${label}`",
+      "why": "No receipt reading."
+    },
+    {
+      "file": "src/expense/src/ui/capture.js",
+      "old": "'Reading the receipt with AI'",
+      "new": "'Attaching the receipt'",
+      "why": "No AI claim."
+    },
+    {
+      "file": "src/expense/src/ui/capture.js",
+      "old": "'Skip AI, fill in manually'",
+      "new": "'Fill in manually'",
+      "why": "No AI claim."
+    },
+    {
+      "file": "src/expense/src/ui/capture.js",
+      "old": "    if (!store.settings.autoOcr) { skip.click(); return; }\n",
+      "new": "    // Homestead: receipts are attached, never read by AI; go straight to the form.\n    skip.click(); return;\n",
+      "why": "Never start receipt reading (AI OCR): a captured receipt goes straight to the form, whatever the saved setting."
+    },
+    {
+      "file": "src/expense/src/ui/expenseform.js",
+      "old": "'Stored in your Puter drive'",
+      "new": "'Stored on your Homestead'",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/expense/src/ui/receipt.js",
+      "old": "deleted from your Puter drive.",
+      "new": "deleted from your Homestead.",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/expense/src/ui/receipt.js",
+      "old": "      body.append(\n        el('iframe.receipt-pdf', { src: url, title: 'Receipt PDF' }),\n        el('p.small.muted', { style: { textAlign: 'center', marginTop: '10px' } },\n          el('a', { href: url, target: '_blank', rel: 'noopener' }, 'Open in a new tab'))\n      );\n",
+      "new": "      body.append(el('p.small.muted', { style: { textAlign: 'center', padding: '24px 0' } }, 'PDF receipts cannot be previewed here. Use the download button to open the file.'));\n",
+      "why": "The page policy has no frame source, so the PDF preview and its new-tab link cannot work; offer the download instead."
+    },
+    {
+      "file": "src/expense/src/ui/onboarding.js",
+      "old": "'Capture receipts and let AI read them, bundle them into reports, and reconcile against your statement. Stored in your own Puter account.'",
+      "new": "'Attach receipts to your expenses, bundle them into reports, and reconcile against your statement. Stored on your own Homestead.'",
+      "why": "Remove the AI claim and Puter wording."
+    },
+    {
+      "file": "src/expense/src/views/dashboard.js",
+      "old": "'Capture your first receipt and AI will read the merchant, date and total for you.'",
+      "new": "'Add your first expense, with a photo or PDF of the receipt if you have one.'",
+      "why": "Remove the AI claim."
+    },
+    {
+      "file": "src/expense/src/ui/shell.js",
+      "old": "store.user?.username || 'Puter user'",
+      "new": "'Homestead user'",
+      "why": "Show \"Homestead user\", never the opaque subject."
+    },
+    {
+      "file": "src/expense/src/views/dashboard.js",
+      "old": "const who = store.user?.username ? `, ${store.user.username}` : '';",
+      "new": "const who = store.user ? ', Homestead user' : '';",
+      "why": "The greeting shows \"Homestead user\", never the opaque subject."
+    }
+  ],
+  "sdk_surface": {
+    "supported": [
+      "kv.get",
+      "kv.set",
+      "fs.write",
+      "fs.read",
+      "fs.delete",
+      "auth.isSignedIn",
+      "auth.getUser"
+    ],
+    "refused": [
+      "fs.getReadURL",
+      "kv.share",
+      "kv.unshare",
+      "kv.listShared",
+      "kv.listSharedByMe",
+      "perms.*",
+      "events.*",
+      "appID"
+    ],
+    "absent": [],
+    "disabled": {
+      "ai": "no AI backend; receipt reading is off and any path left shows \"AI is not available on Homestead. Nothing you write is sent anywhere.\"",
+      "net": "no network bridge (S381 only)",
+      "sharing": "needs an exposure plan"
+    }
+  },
+  "add_files": [
+    {
+      "target": "src/expense/src/homestead/boot.js",
+      "source": "expense-person-storage.js"
+    }
+  ]
+}

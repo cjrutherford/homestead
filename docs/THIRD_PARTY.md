@@ -1309,3 +1309,17 @@ licence file of its own and its README says the repository licence applies). Bun
 app's own origin: `@fontsource/inter` (SIL OFL 1.1, Inter font files) and `lucide` (ISC). All permissive. Build-time
 only (not shipped): jsdom, vite, vitest and their dependency sets (including MPL-2.0 lightningcss). No
 non-permissive licence; no DEFERRED licence line.
+
+## Expenses source (S380, ADR-057)
+
+Source of the Expenses catalog package: `third_party/everything/expense-source.tar.gz`, the `src/expense` subtree of
+HeyPuter/everything at commit `e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU tar,
+sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 68 entries, 1,644,903 bytes; the recipe reproduced the
+Sudoku digest first). SHA-256 `4d4f6e81de6314872f69f3c57a87b0d9227ccda64011a395016d43ebd73f47f0`, recorded in
+`third_party/everything/pin.yaml`.
+
+**Licence: MIT** (Puter Technologies Inc., the repository root `LICENSE`, which is in the archive; the app has no
+licence file of its own and its `package.json` has no licence field, so the repository licence applies). The one
+runtime dependency bundled from npm and served from the app's own origin is `lucide` (ISC). Build-time only (not
+shipped): jsdom, vite, vitest and their dependency sets (including MPL-2.0 lightningcss). No non-permissive licence;
+no DEFERRED licence line. The upstream "AI OCR" receipt reading (Puter AI) is not shipped.

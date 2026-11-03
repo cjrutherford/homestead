@@ -73,6 +73,7 @@ func TestCuratedSSO(t *testing.T) {
 		"three-d":               {Class: SSORecommended, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"solitaire":             {Class: SSORecommended, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"sudoku":                {Class: SSORecommended, Protocols: []identity.Capability{identity.CapabilityOIDC}},
+		"expense":               {Class: SSORecommended, Protocols: []identity.Capability{identity.CapabilityOIDC}},
 		"gridcraft":             {Class: SSOUnsupported},
 		"pdfcraft":              {Class: SSOUnsupported},
 		"deckcraft":             {Class: SSOUnsupported},
