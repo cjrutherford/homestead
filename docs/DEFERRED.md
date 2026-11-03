@@ -1779,3 +1779,4 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S433: the viewer link is not yet shown in the Tasks and Notes UIs (S437, S438).
 - S433: the generated Caddyfile for the read-link handle was not run through a live Caddy or a public name; only the daemon's rendered text and the bridge were tested.
 - S433: the bridge decides that an origin is a public name by shape (https, a host name, no private suffix); a lookalike private name in the public form would be answered `read_links_not_exposed` rather than refused.
+- S434: the net operation, request/response header rules, size caps, per-person and per-app limits, `net_log` and the `net-log` tool are S435; the shim `puter.net.fetch` is S435/S436.
