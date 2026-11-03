@@ -3,6 +3,8 @@
 ## Status
 Accepted
 
+Implementation complete (S425-S441, 2026-11-03); live acceptance is the ADR-058 section of `docs/reviews/EVERYTHING_REVIEW_PLAN.md`.
+
 Accepted on 2026-11-03. The owner decided the five points below that day and, in a second round the
 same day, chose a bridge-served read-only viewer for public links, automatic
 purge on People removal, and accepted every proposed limit. Extends ADR-057, whose "refused" rows
