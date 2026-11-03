@@ -147,12 +147,13 @@ try {
   assert.deepEqual(requests, [], 'assist made no network request');
   assert.ok(!(await evalJs(`puter.ai`)), 'no puter.ai');
 
-  // 3c. Sharing: no public link is offered; copy link, email and export remain.
+  // 3c. Sharing (S438): the Create Link controls are present; the full read-link flow is run by browser-check-notes-sharing.
   await evalJs(`window.notesApp.runCommand('share')`);
   await sleep(500);
   const dialog = await evalJs(`document.body.textContent`);
   assert.ok(dialog.includes('Other ways to share'), 'share dialog opened');
-  assert.ok(!/Create Link|Read-only link|Stop Sharing/.test(dialog), 'no public link controls');
+  assert.ok(/Create Link/.test(dialog) && /Read-only link/.test(dialog), 'read-only link controls shown');
+  assert.ok(!/Puter/.test(dialog), 'no Puter wording in the share dialog');
   await evalJs(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
 
   // 3d. Restoring a notebook backup decodes its embedded files without a request

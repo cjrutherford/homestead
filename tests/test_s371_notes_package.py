@@ -81,9 +81,11 @@ class NotesPackageTest(unittest.TestCase):
         self.assertTrue(calls, 'no puter calls found')
         for call in calls:
             self.assertTrue(call in allowed or call == 'env' or call.split('.')[0] == 'env', 'unlisted SDK call puter.' + call)
-        # The only refused call left in the source is getReadURL (publishing),
-        # and the only AI calls are in assist.js; patches remove their use.
-        self.assertEqual(calls & {r for r in d['sdk_surface']['refused'] if not r.endswith('*')}, {'fs.getReadURL'})
+        # S438 (ADR-058): getReadURL (publishing) is supported now; nothing the app
+        # calls is refused. The only AI calls are in assist.js; patches remove their use.
+        self.assertIn('fs.getReadURL', calls)
+        self.assertIn('fs.getReadURL', d['sdk_surface']['supported'])
+        self.assertEqual(calls & {r for r in d['sdk_surface']['refused'] if not r.endswith('*')}, set())
         self.assertEqual(sorted(calls & {'ai.chat', 'ai'}), ['ai.chat'])
         for prefix in ('net', 'perms', 'events', 'hosting', 'apps'):
             self.assertFalse([c for c in calls if c.split('.')[0] == prefix], prefix)
@@ -93,11 +95,19 @@ class NotesPackageTest(unittest.TestCase):
         self.assertNotIn('showOpenFilePicker', shim)
         self.assertNotIn('showSaveFilePicker', shim)
 
+    def test_sharing_switch_stays_off_and_ai_net_stay_disabled(self):
+        # S438: Notes needs read links only (not gated by the sharing switch).
+        d = json.loads(DEF.read_text())
+        self.assertEqual(set(d['sdk_surface']['disabled']), {'ai', 'net', 'sharing'})
+        cat = (ROOT / 'catalog/notes.yaml').read_text()
+        self.assertNotIn('HOMESTEAD_EVERYTHING_SHARING', cat)
+        self.assertNotIn('HOMESTEAD_EVERYTHING_NET', cat)
+
     def test_preparation_replaces_sdk_patches_wording_and_adds_no_worker(self):
         generic = load('prepare_app')
         d = generic.load_definition('notes')
         self.assertIsNone(d['service_worker'])
-        self.assertEqual(len(d['patches']), 10)
+        self.assertEqual(len(d['patches']), 11)
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             (base / 'bridge.js').write_text('// bridge')
@@ -116,9 +126,12 @@ class NotesPackageTest(unittest.TestCase):
             # AI assist makes no call and says so; no public link; no cloud picker;
             # no fetch of a data URL (the CSP refuses it).
             built = ''.join(p.read_text() for p in (app / 'src').rglob('*.js'))
-            for gone in ('puter.ai', "h('h3.share-head', 'Read-only link')", "'From Puter...'", 'fetch(dataUrl)'):
+            for gone in ('puter.ai', "'From Puter...'", 'fetch(dataUrl)', '#view=${encodeURIComponent'):
                 self.assertNotIn(gone, built)
-            # backend.readURL still names getReadURL but nothing calls it any more.
+            # S438: the Create Link controls are back and hand out the bridge viewer.
+            self.assertIn("h('h3.share-head', 'Read-only link')", built)
+            self.assertIn("/_homestead/view/", built)
+            self.assertIn("Pictures and handwriting are not shown in the viewer", built)
             self.assertEqual(built.count('getReadURL'), 1)
             self.assertIn('AI assist is not available on Homestead', (app / 'src/ui/task-panes.js').read_text())
             self.assertIn('AI assist is not available on Homestead', (app / 'src/ui/assist.js').read_text())

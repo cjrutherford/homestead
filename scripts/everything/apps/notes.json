@@ -41,9 +41,15 @@
     },
     {
       "file": "src/notes/src/ui/features.js",
-      "old": "      h('h3.share-head', 'Read-only link'),\n      h('p.dialog-message', 'Create a link anyone can open to read this page, without signing in.'),\n      h('div.share-row', expiry, publishBtn, stopBtn),\n      h('div.share-row', linkInput, copyBtn),\n      status,\n",
-      "new": "",
-      "why": "Hide the public read-only link: publishing needs an exposure plan (ADR-057) and getReadURL is refused. Copy Link, Email and Export remain."
+      "old": "linkInput.value = `${location.origin}${location.pathname}#view=${encodeURIComponent(url)}`;",
+      "new": "linkInput.value = String(url).replace('/_homestead/read/', '/_homestead/view/');",
+      "why": "The link handed out is the bridge's script-free viewer for the same token (S432), not the app page: an outsider has no sign-in, and the app requires one."
+    },
+    {
+      "file": "src/notes/src/ui/features.js",
+      "old": "Anyone with the link can read a copy of this page as it is now, for ${expiry.selectedOptions[0].textContent}. Publish again after editing to update it.",
+      "new": "Anyone with the link can read the text of this page as it is now, for ${expiry.selectedOptions[0].textContent}. Pictures and handwriting are not shown in the viewer. Publish again after editing to update it.",
+      "why": "Honest wording: the viewer shows text only (ADR-058, S432)."
     },
     {
       "file": "src/notes/src/ui/commands.js",
@@ -94,10 +100,10 @@
       "auth.getUser",
       "auth.signIn",
       "auth.signOut",
-      "env"
+      "env",
+      "fs.getReadURL"
     ],
     "refused": [
-      "fs.getReadURL",
       "kv.share",
       "kv.unshare",
       "kv.listShared",
@@ -114,7 +120,7 @@
     "disabled": {
       "ai": "no AI backend; Assist shows a message and sends nothing",
       "net": "no network bridge (S381 only)",
-      "sharing": "needs an exposure plan"
+      "sharing": "not enabled for Notes: it has no person-to-person sharing; only read links (S438, ADR-058)"
     }
   },
   "source_offer": {

@@ -1795,3 +1795,6 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S437: Tasks still carries upstream's in-app shared-list page (`#/shared?u=`) and its "Powered by Tasks on Puter" footer; no link points to it since the view-only link is the bridge viewer.
 - S437: the calendar feed (`.ics` read link, up to 365 days) is shown again; whether a calendar client can reach it from outside the LAN depends on the S433 public read-link plan and was not tried with a real client.
 - S437: `perms.request` always resolves true for Tasks' own prefix (no consent prompt); the owner may want a per-person consent screen later.
+- S438: Notes has no person-to-person sharing or live updates (upstream offers read links only); the sharing switch stays off for the package. Sharing a notebook between people would need new upstream-free UI and is not planned.
+- S438: the viewer shows page text only; pictures, handwriting, tags, tables' layout and the page background are not shown (marked "not shown in this viewer"). Upstream's in-app `#view=<url>` page is still in the bundle but no link points to it.
+- S438: the Notes browser check uses the development identity; a live run against Authentik, a public read link through Caddy and Cloudflare, and Firefox/Safari are unproven.

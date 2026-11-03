@@ -297,3 +297,15 @@ Steps and expected results:
 7. Settings: turn on the calendar feed. Expected: a feed URL; opening it on the LAN shows the calendar text.
 8. Watch the container log: no token appears in any line.
 Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8
+
+## S438 - Notes read links (ADR-058)
+Prerequisites: Notes installed with sign-in applied; two people granted the app (A, B).
+Steps and expected results:
+1. A writes a page with text, a picture and a pen stroke, opens Share, chooses a 7 day expiry and "Create Link". Expected: a link ending in `/_homestead/view/<43 characters>`; no Puter wording.
+2. Open the link in a private window with no session. Expected: a plain page with the title and text; the picture and handwriting are replaced by "not shown in this viewer"; no script, no sign-in.
+3. B opens the same link while signed in. Expected: the same plain page.
+4. A adds a paragraph and chooses "Create Link" again. Expected: reloading the link shows the new text.
+5. B (no link) opens A's page address `#page=<id>`. Expected: B does not see A's page.
+6. A chooses "Stop Sharing". Expected: reloading the link shows "not found".
+7. Watch the container log: no token appears in any line.
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7

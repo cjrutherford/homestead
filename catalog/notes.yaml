@@ -20,8 +20,10 @@ description: Notes is a free-form digital notebook. Keep notebooks, sections and
   server on your appliance, and each person's notebooks are kept on the
   appliance, private to that person. People sign in through Authentik; until the
   owner sets up sign-in the app serves nothing. AI assist is not available on
-  Homestead and nothing you write is sent to an AI service. Read-only public
-  links and opening files from a cloud drive are not offered. The page needs your
+  Homestead and nothing you write is sent to an AI service. You can create a
+  read-only link to a page (text only; pictures and handwriting are not
+  shown), which works from outside your network only when you plan and approve
+  public links. Opening files from a cloud drive is not offered. The page needs your
   appliance to open; there is no offline start. Notes is free software under the
   GNU Affero General Public License v3; its source is part of Homestead. It is
   served over your local network with a certificate from your Homestead internal CA.
