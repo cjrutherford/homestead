@@ -1749,3 +1749,6 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S426: the share-attempt rate limit (60 per hour per person per app) and the 24 hour session-age recheck for recipient operations are enforced where the first remote share operation lands (S428), since the store has no caller yet.
 - S426: kv `listSharedByMe`/`listShared` cursors, fs `readdir`/`stat`/`rename` through a grant, and `{handle}` list resolution are handler concerns left to the SDK slices; the store provides the resolved owner scope and key.
 - S426: no per-grant byte cap; a trusted writer can fill the owner's quota (as ADR-058 accepts).
+- S427: a pending purge is retried by a two-minute timer only, not at the moment the app starts; a stopped app that starts leaves up to two minutes of shared access.
+- S427: disabling a person in People does not purge (ADR-058 purges on removal and on app revoke only); Authentik refuses new sign-ins and shared operations need a session under 24 hours.
+- S427: a person who was never recorded in an app's `people` table (never signed in) matches nothing, so the purge reports done; a later purge of a name reused by someone else is guarded only by cancelling pending purges when access is granted again.

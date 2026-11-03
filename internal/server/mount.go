@@ -103,6 +103,8 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountBackupRecipients(st, secrets, filepath.Join(filepath.Dir(c.ConfigPath), "backup-recipients.yaml"))
 	sched := NewSchedulerWith(st, c.CatalogDir, secrets, issuing)
 	sched.Register("localtls", localTLSSource(local, sched.Now))
+	purger := NewEverythingPurger(st, c.CatalogDir, sched.Now)
+	sched.Register("everything-purge", everythingPurgeSource(purger, sched.Now))
 	srv.MountScheduler(sched)
 	srv.MountDriftScan(st, sched.Now)
 	srv.MountDrift(st, c.CatalogDir)
@@ -132,7 +134,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountExposure(st, c.Port)
 	ssoManager := srv.MountSSO(SSOConfig{
 		Store: st, Secrets: secrets, Auth: authSvc, Claim: claimSvc, Local: local,
-		CatalogDir: c.CatalogDir, YAMLPath: ssoYAMLPath(c.ConfigPath), Port: c.Port,
+		CatalogDir: c.CatalogDir, YAMLPath: ssoYAMLPath(c.ConfigPath), Port: c.Port, Purge: purger,
 	})
 	srv.MountTunnel(st, secrets, c.Port)
 	srv.MountAppPublic(st, secrets, c.CatalogDir)

@@ -50,6 +50,11 @@ describe('People', () => {
     expect(text()).toContain('never Homestead administrators');
   });
 
+  it('says plainly when a removed person\'s sharing is not purged yet', () => {
+    start({ ...VIEW, purges: [{ app: 'tasks', username: 'gone', since: '2026-11-03T00:00:00Z', attempts: 1 }] });
+    expect(text()).toContain('Sharing for gone in tasks is not removed yet.');
+  });
+
   it('adopts an unmanaged account after one click, with confirm', () => {
     start();
     button('Adopt')!.click();

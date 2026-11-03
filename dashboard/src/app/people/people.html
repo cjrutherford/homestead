@@ -40,6 +40,9 @@
             @if (v.read_error) {
               <app-state-message kind="warning" headline="Authentik could not be read, so access below is as Homestead recorded it." [detail]="v.read_error" actionLabel="Check again" (action)="load()" />
             }
+            @for (pp of v.purges ?? []; track pp.app + pp.username) {
+              <app-state-message kind="warning" headline="Sharing for {{ pp.username }} in {{ pp.app }} is not removed yet." detail="The app is not running. Homestead keeps trying and removes their shares and links once it runs." />
+            }
             <ul class="people-list">
               <li class="person person-owner">
                 <div class="person-who">

@@ -34,7 +34,7 @@ type peopleHandlers struct {
 func (s *Server) mountPeople(c SSOConfig, m *sso.Manager, client func() *http.Client, record func(actor, action, outcome, detail string)) {
 	h := &peopleHandlers{s: s, m: m, cfg: c}
 	h.svc = &people.Service{
-		DB: c.Store.DB(), Audit: record, Now: c.Now,
+		DB: c.Store.DB(), Audit: record, Now: c.Now, Purge: c.Purge,
 		API: func() (*sso.API, error) {
 			spec, ok, err := m.Config()
 			if err != nil {

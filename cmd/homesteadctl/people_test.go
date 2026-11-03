@@ -39,7 +39,7 @@ func newPeopleStub(t *testing.T, tokenKept bool) *peopleStub {
 				_, _ = w.Write([]byte(`{"token_kept":false,"people":[],"unmanaged":[],"apps":[],"owner":"chris","reason":"no-token","token_words":"It can create people."}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"token_kept":true,"owner":"chris","apps":["immich"],"people":[` + person + `,{"id":5,"display_name":"Pat","username":"pat","state":"active","grants":[],"status":"drift","drift":[{"kind":"grant","app":"immich","homestead":"user","authentik":"none"}]}],"unmanaged":[{"username":"old","name":"Old One","active":true}]}`))
+			_, _ = w.Write([]byte(`{"token_kept":true,"owner":"chris","apps":["immich"],"people":[` + person + `,{"id":5,"display_name":"Pat","username":"pat","state":"active","grants":[],"status":"drift","drift":[{"kind":"grant","app":"immich","homestead":"user","authentik":"none"}]}],"unmanaged":[{"username":"old","name":"Old One","active":true}],"purges":[{"app":"tasks","username":"gone","attempts":2}]}`))
 		case r.URL.Path == "/api/v1/people" && r.Method == "POST":
 			_, _ = w.Write([]byte(`{"person":` + person + `,"revealed":{"kind":"password","value":"s3cretGenerated"}}`))
 		case strings.HasSuffix(r.URL.Path, "/password-reset") && body["password"] != nil && body["password"] != "":
@@ -84,7 +84,7 @@ func TestPeopleListShowsOwnerGrantsDriftAndUnmanaged(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit %d", code)
 	}
-	for _, want := range []string{"chris (owner): every app", "Sam Lee (sam)", "immich", "drift: app immich", "not managed: old", "people adopt old"} {
+	for _, want := range []string{"chris (owner): every app", "Sam Lee (sam)", "immich", "drift: app immich", "not managed: old", "people adopt old", "purge pending: gone in tasks (2 tries)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in %q", want, out)
 		}

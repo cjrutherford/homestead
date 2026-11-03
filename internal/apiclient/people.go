@@ -52,12 +52,23 @@ type UnmanagedUser struct {
 	Active   bool   `json:"active"`
 }
 
+// PendingPurge is a removed person's Everything sharing that could not be
+// purged yet (the app was stopped); the appliance retries it (S427).
+type PendingPurge struct {
+	App       string    `json:"app"`
+	Username  string    `json:"username"`
+	Since     time.Time `json:"since"`
+	Attempts  int       `json:"attempts"`
+	LastError string    `json:"last_error,omitempty"`
+}
+
 // PeopleView is the People list.
 type PeopleView struct {
 	TokenKept  bool            `json:"token_kept"`
 	People     []Person        `json:"people"`
 	Unmanaged  []UnmanagedUser `json:"unmanaged"`
 	Apps       []string        `json:"apps"`
+	Purges     []PendingPurge  `json:"purges"`
 	ReadError  string          `json:"read_error,omitempty"`
 	Owner      string          `json:"owner"`
 	Reason     string          `json:"reason,omitempty"`

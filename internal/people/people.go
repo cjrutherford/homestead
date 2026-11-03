@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"homestead/internal/purge"
 	"homestead/internal/sso"
 )
 
@@ -75,6 +76,38 @@ type Service struct {
 	// A one-time link then also comes back on that address, so a person
 	// away from the local network can open it.
 	PublicAuthentik func() string
+	// Purge ends a removed person's sharing in the Everything apps (S427,
+	// ADR-058). Nil when there is nothing to purge.
+	Purge *purge.Service
+}
+
+// purgeNote runs the purge for a person who lost app (every Everything app
+// when app is empty) and returns audit text saying how it went. It never
+// fails the caller: removal does not wait on a purge.
+func (s *Service) purgeNote(ctx context.Context, actor string, p Person, app string) string {
+	if s.Purge == nil {
+		return ""
+	}
+	outs := s.Purge.Request(ctx, actor, p.Username, p.uid, app)
+	var done, pending []string
+	for _, o := range outs {
+		if o.State == purge.StateDone {
+			done = append(done, o.App)
+		} else {
+			pending = append(pending, o.App)
+		}
+	}
+	var parts []string
+	if len(done) > 0 {
+		parts = append(parts, "sharing purged in "+strings.Join(done, ", "))
+	}
+	if len(pending) > 0 {
+		parts = append(parts, "purge pending in "+strings.Join(pending, ", "))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "; " + strings.Join(parts, "; ")
 }
 
 func (s *Service) endSessions(id int64) {
@@ -156,6 +189,9 @@ type View struct {
 	People    []Person    `json:"people"`
 	Unmanaged []Unmanaged `json:"unmanaged"`
 	Apps      []string    `json:"apps"`
+	// Purges are removals whose Everything sharing could not be purged yet
+	// (the app was stopped); they are retried (S427).
+	Purges []purge.Pending `json:"purges"`
 	// ReadError says why the read-back could not run, when it could not.
 	ReadError string `json:"read_error,omitempty"`
 }
@@ -377,8 +413,11 @@ func roleWord(r string) string {
 // List returns the page. Without the kept token it still lists the record,
 // unchecked, and says so.
 func (s *Service) List(ctx context.Context) (View, error) {
-	v := View{People: []Person{}, Unmanaged: []Unmanaged{}}
+	v := View{People: []Person{}, Unmanaged: []Unmanaged{}, Purges: []purge.Pending{}}
 	var err error
+	if v.Purges, err = s.Purge.List(); err != nil {
+		return v, err
+	}
 	if v.Apps, err = s.apps(); err != nil {
 		return v, err
 	}
@@ -811,7 +850,8 @@ func (s *Service) Remove(ctx context.Context, actor string, id int64) error {
 	if err := s.forget(id); err != nil {
 		return err
 	}
-	s.audit(actor, "people.remove", "ok", fmt.Sprintf("removed %s (person %d, %s)", p.Username, id, p.Origin))
+	note := s.purgeNote(ctx, actor, p, "")
+	s.audit(actor, "people.remove", "ok", fmt.Sprintf("removed %s (person %d, %s)%s", p.Username, id, p.Origin, note))
 	return nil
 }
 
@@ -895,6 +935,13 @@ func (s *Service) applyGrant(ctx context.Context, api *sso.API, actor string, id
 	if err := s.setGrant(id, g.App, g.Role); err != nil {
 		return err
 	}
+	if s.Purge != nil {
+		// Access is back: a stored purge for the same name must not remove it.
+		var username string
+		if s.DB.QueryRow(`SELECT username FROM people WHERE id = ?`, id).Scan(&username) == nil {
+			s.Purge.Cancel(username, g.App)
+		}
+	}
 	s.audit(actor, "people.grant", "ok", fmt.Sprintf("person %d: %s as %s", id, g.App, g.Role))
 	return nil
 }
@@ -929,7 +976,8 @@ func (s *Service) Revoke(ctx context.Context, actor string, id int64, app string
 	if err := s.dropGrant(id, app); err != nil {
 		return p, err
 	}
-	s.audit(actor, "people.revoke", "ok", fmt.Sprintf("person %d: %s", id, app))
+	note := s.purgeNote(ctx, actor, p, app)
+	s.audit(actor, "people.revoke", "ok", fmt.Sprintf("person %d: %s%s", id, app, note))
 	return s.person(id)
 }
 

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"homestead/internal/purge"
 )
 
 var bg = context.Background()
@@ -441,5 +443,82 @@ func TestNoPublicLinkWithoutAPublicAuthentikAddress(t *testing.T) {
 	again, err := r.svc.ResetPassword(bg, "owner", p.People[0].ID, MethodLink, "")
 	if err != nil || again.PublicValue != "" {
 		t.Fatalf("empty public address: %v %+v", err, again)
+	}
+}
+
+// purgeRig wires a purge service whose Everything apps are tasks and notes.
+func purgeRig(t *testing.T) (*rig, *[]string, map[string]bool) {
+	r := newRig(t)
+	r.svc.Apps = func() ([]string, error) { return []string{"nextcloud", "immich", "tasks"}, nil }
+	for _, g := range []string{"homestead-tasks-users", "homestead-tasks-admins"} {
+		r.f.groups[g] = nil
+	}
+	var calls []string
+	down := map[string]bool{}
+	r.svc.Purge = &purge.Service{
+		DB: r.db,
+		Apps: func(context.Context) ([]purge.Target, error) {
+			return []purge.Target{{App: "tasks", Container: "tasks-tasks"}}, nil
+		},
+		Exec: func(_ context.Context, c string, argv ...string) (string, error) {
+			calls = append(calls, c+" "+strings.Join(argv, " "))
+			if down[c] {
+				return "", errors.New("not running")
+			}
+			return "purged 1 people\n", nil
+		},
+		Audit: func(actor, action, outcome, detail string) { r.logs = append(r.logs, action+"|"+outcome+"|"+detail) },
+	}
+	return r, &calls, down
+}
+
+func TestRevokePurgesOnlyEverythingApps(t *testing.T) {
+	r, calls, _ := purgeRig(t)
+	p, _ := r.add("ada", Grant{"nextcloud", RoleUser}, Grant{"tasks", RoleUser})
+	if _, err := r.svc.Revoke(bg, "owner", p.ID, "nextcloud"); err != nil || len(*calls) != 0 {
+		t.Fatalf("a non-Everything app is not purged: %v %q", err, *calls)
+	}
+	if _, err := r.svc.Revoke(bg, "owner", p.ID, "tasks"); err != nil || len(*calls) != 1 {
+		t.Fatalf("%v %q", err, *calls)
+	}
+	if !strings.Contains((*calls)[0], "-app tasks -subject=") || !strings.Contains(strings.Join(r.logs, "\n"), "sharing purged in tasks") {
+		t.Fatalf("%q %q", *calls, r.logs)
+	}
+}
+
+func TestRemoveStoresPendingPurgeAndListShowsIt(t *testing.T) {
+	r, calls, down := purgeRig(t)
+	p, _ := r.add("ada", Grant{"immich", RoleUser})
+	down["tasks-tasks"] = true
+	if err := r.svc.Remove(bg, "owner", p.ID); err != nil {
+		t.Fatalf("removal must not wait on the purge: %v", err)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("%q", *calls)
+	}
+	v, _ := r.svc.List(bg)
+	if len(v.People) != 0 || len(v.Purges) != 1 || v.Purges[0].App != "tasks" || v.Purges[0].Username != "ada" {
+		t.Fatalf("%+v", v.Purges)
+	}
+	if !strings.Contains(strings.Join(r.logs, "\n"), "removed ada") || !strings.Contains(strings.Join(r.logs, "\n"), "purge pending in tasks") {
+		t.Fatalf("%q", r.logs)
+	}
+}
+
+func TestGrantAgainCancelsPendingPurge(t *testing.T) {
+	r, _, down := purgeRig(t)
+	p, _ := r.add("ada", Grant{"tasks", RoleUser})
+	down["tasks-tasks"] = true
+	if _, err := r.svc.Revoke(bg, "owner", p.ID, "tasks"); err != nil {
+		t.Fatal(err)
+	}
+	if !r.svc.Purge.HasPending() {
+		t.Fatal("pending expected")
+	}
+	if _, err := r.svc.Grant(bg, "owner", p.ID, Grant{"tasks", RoleUser}); err != nil {
+		t.Fatal(err)
+	}
+	if r.svc.Purge.HasPending() {
+		t.Fatal("access is back: the stored purge must be dropped")
 	}
 }

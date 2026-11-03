@@ -53,11 +53,21 @@ export interface MyAppsView {
   apps: MyApp[];
 }
 
+export interface PendingPurge {
+  app: string;
+  username: string;
+  since: string;
+  attempts: number;
+  last_error?: string;
+}
+
 export interface PeopleView {
   token_kept: boolean;
   people: Person[] | null;
   unmanaged: UnmanagedUser[] | null;
   apps: string[] | null;
+  /** Everything sharing not yet purged for a removed person (S427). */
+  purges?: PendingPurge[] | null;
   read_error?: string;
   owner: string;
   /** no-token or no-sign-in when Homestead cannot act. */

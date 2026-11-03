@@ -133,6 +133,9 @@ func runPeopleList(ctx context.Context, client *apiclient.Client, stdout, stderr
 	if len(view.People) == 0 {
 		fmt.Fprintln(stdout, "no other people yet")
 	}
+	for _, p := range view.Purges {
+		fmt.Fprintf(stdout, "purge pending: %s in %s (%d tries); the appliance retries it when the app runs\n", p.Username, p.App, p.Attempts)
+	}
 	if view.ReadError != "" {
 		fmt.Fprintf(stdout, "could not read Authentik: %s\n", view.ReadError)
 	}
