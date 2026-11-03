@@ -140,6 +140,8 @@
 
                     <app-app-move [name]="manifest.Name" [title]="manifest.Title" (moved)="onMoved(manifest.Name)" />
 
+                    <app-read-links [name]="manifest.Name" [title]="manifest.Title" />
+
                     @if (manifest.Name !== 'authentik') {
                       <h3>Public address</h3>
                       <app-app-public [name]="manifest.Name" [title]="manifest.Title" [refresh]="moves()" />

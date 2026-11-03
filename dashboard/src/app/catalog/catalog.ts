@@ -19,6 +19,7 @@ import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
 import { appRoutes } from './app-routes';
 import { AppPublic } from './app-public';
+import { ReadLinks } from './read-links';
 import { AppMove } from './app-move';
 import { AppSignIn } from './app-sign-in';
 import { AppSetup } from './app-setup';
@@ -38,7 +39,7 @@ interface ConfigRow {
  * lives in the wizard (`install-wizard.ts`), not on this page.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage, RouterLink, UninstallApp, AppSignIn, AppPublic, AppMove, AppSetup, Dialog, AppIcon],
+  imports: [OperationProgress, Loading, StateMessage, RouterLink, UninstallApp, AppSignIn, AppPublic, ReadLinks, AppMove, AppSetup, Dialog, AppIcon],
   selector: 'app-catalog',
   templateUrl: './catalog.html',
 })

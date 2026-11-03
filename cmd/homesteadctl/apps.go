@@ -21,7 +21,7 @@ import (
 // endpoints.
 func runApps(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|show|bundles|mine|names|plan|install|reach|configure|secrets|sign-in|public|move|setup|uninstall>")
+		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|show|bundles|mine|names|plan|install|reach|configure|secrets|sign-in|public|read-links|move|setup|uninstall>")
 		return exitUsage
 	}
 	switch args[0] {
@@ -47,6 +47,8 @@ func runApps(ctx context.Context, client *apiclient.Client, args []string, stdou
 		return runAppsSecrets(ctx, client, args[1:], stdout, stderr)
 	case "sign-in":
 		return runAppsSignIn(ctx, client, args[1:], stdout, stderr)
+	case "read-links":
+		return runAppsReadLinks(ctx, client, args[1:], stdout, stderr)
 	case "public":
 		return runAppsPublic(ctx, client, args[1:], stdout, stderr)
 	case "setup":

@@ -95,9 +95,17 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !h.origins[r.Header.Get("Origin")] {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
+	// Only the configured origins may use the data route. A public name is
+	// not one of them: a request from it is allowed to ask for a read link
+	// (and nothing else), and only once the owner approved the exposure
+	// (S433, ADR-058); otherwise the answer is read_links_not_exposed.
+	origin := r.Header.Get("Origin")
+	public := originLocal
+	if !h.origins[origin] {
+		if public = h.store.publicOriginUse(origin); public == originRefused {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 	}
 	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
 		http.Error(w, "forbidden", http.StatusForbidden)
@@ -129,6 +137,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err = dec.Decode(&extra); !errors.Is(err, io.EOF) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
+	}
+	if public != originLocal {
+		if body.Operation != "fs.getReadURL" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if public == originNotExposed {
+			shareErr(w, http.StatusForbidden, "read_links_not_exposed")
+			return
+		}
 	}
 	if body.Operation == "whoami" {
 		// The caller's own verified identity; the client never supplies it.

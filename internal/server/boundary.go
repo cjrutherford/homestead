@@ -191,6 +191,10 @@ var routeClasses = map[string]RouteClass{
 	"GET /api/v1/catalog/{name}/reach":         ClassSession,
 	"POST /api/v1/catalog/{name}/public/plan":  ClassSession,
 	"POST /api/v1/catalog/{name}/public/apply": ClassSession,
+	// S433 (ADR-058): public exposure of Everything read links.
+	"GET /api/v1/apps/{name}/read-links":          ClassSession,
+	"POST /api/v1/apps/{name}/read-links/plan":    ClassSession,
+	"POST /api/v1/apps/{name}/read-links/approve": ClassSession,
 	// S324 (ADR-048 §3): the setup approved with an install.
 	"GET /api/v1/catalog/{name}/setup":               ClassSession,
 	"POST /api/v1/catalog/{name}/setup/resume":       ClassSession,

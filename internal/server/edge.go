@@ -199,10 +199,12 @@ func requireLocalDashboardNames(routes []docker.Route) error {
 func preserveTunnelNames(st *store.Store, routes []docker.Route) []docker.Route {
 	stored := map[docker.Hostname][]docker.Hostname{}
 	published := map[docker.Hostname]bool{}
+	readLinks := map[docker.Hostname]bool{}
 	if set, err := loadEdgeRoutes(st); err == nil {
 		for _, r := range set.Routes {
 			stored[r.Host] = r.Tunnel
 			published[r.Host] = r.Published
+			readLinks[r.Host] = r.ReadLinks
 		}
 	}
 	out := make([]docker.Route, len(routes))
@@ -212,6 +214,8 @@ func preserveTunnelNames(st *store.Store, routes []docker.Route) []docker.Route 
 		// name too (ADR-044): a posted table does not change it (S395).
 		if r.IsPath() {
 			r.Published = published[r.Host]
+			// Read-link exposure is likewise only the approved plan's (S433).
+			r.ReadLinks = readLinks[r.Host]
 		}
 		out[i] = r
 	}

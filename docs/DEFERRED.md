@@ -1766,11 +1766,16 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S430: fs revocations caused by deleting or renaming a shared file send no `fs.share.revoked` notice; recipients see it on their next `fs.listShared`.
 - S430: the edge (Caddy `reverse_proxy` for Everything routes) was not verified live to stream SSE; see the slice doc. Polling in Tasks covers a buffering edge.
 - S430: an open stream re-validates the session each beat, which refreshes the session's last-seen time, so an open tab does not idle out (the absolute lifetime still applies).
-- S431: a link minted on the public name (`read_links_not_exposed`, `HOMESTEAD_EVERYTHING_PUBLIC_READ_ORIGIN`) and the edge route for `read`/`view` are S433. Until then the bridge accepts only its one configured origin, so every link is on that origin.
+- S431: a link minted on the public name and the edge route for `read`/`view` are S433 (done).
 - S431: there is no per-app definition switch for read links and no `read_links` entry in `sdk_surface` yet; `fs.getReadURL` works on every Everything bridge. The packages' `refused` lists for Tasks and Notes still name it until S437 and S438 re-enable those UIs.
 - S431: rate-limit state is in memory per bridge process (a restart resets it). `X-Forwarded-For` is believed from loopback and private peers by default (`-trusted-proxies`); a bridge whose port is published to a LAN must set it to `none`. Not tested against a live Caddy.
 - S431: read links are not exported or imported (only a hash is stored, so a restored link could not be re-issued); the `links` tool and People purge are the only revokers besides deleting the file.
 - S431: the viewer route (`/_homestead/view/<token>`) is S432 (done).
-- S432: the viewer is only on the app's own origin; the public name and its edge route need the exposure plan (S433). The apps still show their own links until S437 and S438.
+- S432: the public name and its edge route are S433 (done). The apps still show their own links until S437 and S438.
 - S432: only the two named formats have a renderer. Notes tables are flattened to cells in a row, math is shown as the text the snapshot carries, and Notes images, ink and embeds are a marker. Other formats (Circuits, Parametric, Contacts) need their own renderer slice.
 - S432: the viewer output is not cached and is rendered per request (bounded to 1 MiB of output and 4 MiB of HTML per outline); the per-client limiter is the only throttle.
+- S433: if the dashboard's public name changes or is removed, the app's stored public read origin and its tunnel route flag stay as they were; the owner must plan the removal and a new exposure by hand.
+- S433: a link minted on the public name needs the app itself to be reachable there with a session (an OIDC redirect URI and public sign-in for a published app); until an app is published with sign-in, links are minted on the local name and only opened on the public one.
+- S433: the viewer link is not yet shown in the Tasks and Notes UIs (S437, S438).
+- S433: the generated Caddyfile for the read-link handle was not run through a live Caddy or a public name; only the daemon's rendered text and the bridge were tested.
+- S433: the bridge decides that an origin is a public name by shape (https, a host name, no private suffix); a lookalike private name in the public form would be answered `read_links_not_exposed` rather than refused.

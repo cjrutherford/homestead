@@ -63,6 +63,7 @@ describe('Catalog', () => {
     // The app page's Public address panel (S290) reads its own status; app-public.spec covers it.
     http.match('/api/v1/catalog/jellyfin/public');
     http.match('/api/v1/catalog/jellyfin/move');
+    http.match((r) => /^\/api\/v1\/apps\/[^/]+\/read-links$/.test(r.url));
     // Bundle grading (S344) is advisory; bundles.spec-style tests flush it explicitly.
     http.match('/api/v1/catalog/bundles');
     http.verify();

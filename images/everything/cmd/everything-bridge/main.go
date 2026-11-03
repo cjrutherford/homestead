@@ -76,6 +76,7 @@ func main() {
 	sharing := flag.Bool("sharing", os.Getenv("SHARING") == "1", "enable KV sharing between people of this app (ADR-058; off = kv_handles_disabled)")
 	linkDays := flag.Int("read-link-max-days", int(envInt("READ_LINK_MAX_DAYS")), "longest read link lifetime in days (0 = 365, the cap)")
 	proxies := flag.String("trusted-proxies", envDefault("TRUSTED_PROXIES", ""), "comma-separated CIDRs whose X-Forwarded-For is believed (empty = loopback and private ranges, the Homestead edge; none = trust no peer)")
+	publicRead := flag.String("public-read-origin", envDefault("PUBLIC_READ_ORIGIN", ""), "public https origin that may mint read links (set when the owner approved read-link exposure; empty = none)")
 	await := flag.Bool("await-signin", os.Getenv("HOMESTEAD_EVERYTHING_AWAIT_SIGNIN") == "1", "serve nothing until sign-in is configured (set by the Homestead package)")
 	flag.Parse()
 	if len(origins) == 0 && os.Getenv("HOMESTEAD_EVERYTHING_ORIGIN") != "" {
@@ -96,6 +97,9 @@ func main() {
 	store.SetQuota(*personQuota, *appQuota)
 	store.SetSharing(*sharing)
 	store.SetReadLinkMax(time.Duration(*linkDays) * 24 * time.Hour)
+	if err = store.SetPublicReadOrigin(*publicRead); err != nil {
+		log.Fatal(err)
+	}
 	if err = store.SetTrustedProxies(splitGroups(*proxies)); err != nil {
 		log.Fatal(err)
 	}

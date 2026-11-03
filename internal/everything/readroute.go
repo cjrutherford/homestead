@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"path"
 	"regexp"
 	"strconv"
@@ -329,4 +330,69 @@ func (h *handler) handleReadURL(w http.ResponseWriter, r *http.Request, scope Sc
 	default:
 		http.Error(w, "storage unavailable", http.StatusInternalServerError)
 	}
+}
+
+// originUse says what the data route may do for the Origin of a request.
+type originUse int
+
+const (
+	// originLocal is a configured origin (a local or overlay name): every
+	// operation.
+	originLocal originUse = iota
+	// originRefused is an origin the bridge does not know: 403.
+	originRefused
+	// originNotExposed is a public name the owner has not approved read links
+	// for: fs.getReadURL answers read_links_not_exposed, anything else 403.
+	originNotExposed
+	// originExposed is the approved public origin: fs.getReadURL only.
+	originExposed
+)
+
+// SetPublicReadOrigin names the one public origin that may mint read links
+// (HOMESTEAD_EVERYTHING_PUBLIC_READ_ORIGIN, set by the exposure plan through
+// Compose, S433). Empty means no approval. It must be a bare https origin.
+func (s *Store) SetPublicReadOrigin(origin string) error {
+	if origin == "" {
+		s.publicRead = ""
+		return nil
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" ||
+		strings.ContainsAny(u.Host, "* ") || origin != "https://"+u.Host || !publicHost(u.Hostname()) {
+		return fmt.Errorf("everything: public read origin %q is not a bare https origin on a public name", origin)
+	}
+	s.publicRead = origin
+	return nil
+}
+
+// privateSuffixes are names that are not public: LAN conventions and
+// reserved suffixes (the same list the edge uses to refuse public ACME).
+var privateSuffixes = []string{"lan", "local", "localhost", "internal", "home.arpa", "test", "example", "invalid"}
+
+// publicHost reports a host that looks like a public DNS name: not an IP,
+// not a single label, not a private suffix.
+func publicHost(host string) bool {
+	host = strings.ToLower(host)
+	if _, err := netip.ParseAddr(host); err == nil || !strings.Contains(host, ".") {
+		return false
+	}
+	for _, s := range privateSuffixes {
+		if host == s || strings.HasSuffix(host, "."+s) {
+			return false
+		}
+	}
+	return true
+}
+
+// publicOriginUse classifies an Origin that is not a configured origin.
+func (s *Store) publicOriginUse(origin string) originUse {
+	if s.publicRead != "" && origin == s.publicRead {
+		return originExposed
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" ||
+		origin != "https://"+u.Host || !publicHost(u.Hostname()) {
+		return originRefused
+	}
+	return originNotExposed
 }

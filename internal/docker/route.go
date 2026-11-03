@@ -174,6 +174,12 @@ type Route struct {
 	// tunnel names (ADR-044 §3). Until then the public names answer 404
 	// for it. Set and cleared only by the approved public-address plan.
 	Published bool `json:",omitempty"`
+	// ReadLinks makes exactly the app's read-link and viewer paths
+	// (ReadLinkPaths) answer on the dashboard route's tunnel names, with
+	// no gate and nothing else of the app (ADR-058). It is independent of
+	// Published, applies to bridge-served path routes only, and is set and
+	// cleared only by the approved read-link exposure plan.
+	ReadLinks bool `json:",omitempty"`
 	// Gate, when set, puts the route behind Authentik forward-auth
 	// (S418, ADR-055). Set and cleared only by the app sign-in operation.
 	Gate *Gate `json:",omitempty"`
@@ -370,8 +376,8 @@ func (r Route) validateTunnel() error {
 // without names of its own on the edge.
 func (r Route) validatePath() error {
 	if !r.IsPath() {
-		if r.StripPrefix || len(r.Redirects) > 0 || r.Published {
-			return fmt.Errorf("route.path: strip, redirects and published apply to path routes only")
+		if r.StripPrefix || len(r.Redirects) > 0 || r.Published || r.ReadLinks {
+			return fmt.Errorf("route.path: strip, redirects, published and read links apply to path routes only")
 		}
 		return nil
 	}
@@ -387,6 +393,8 @@ func (r Route) validatePath() error {
 		return fmt.Errorf("route.path: a path route is published on the appliance's public name, not by tunnel names")
 	case r.Exposure == ExposurePublic:
 		return fmt.Errorf("route.path: a path route is local or overlay; publish it through the tunnel")
+	case r.ReadLinks && (r.CraftApp != "" || r.StripPrefix):
+		return fmt.Errorf("route.path: read links are for an app that serves its own path (the Everything bridge); a stripped or craft route is not one")
 	}
 	for _, rd := range r.Redirects {
 		if !validRedirectFrom.MatchString(rd.From) || !validRedirectTo.MatchString(rd.To) ||

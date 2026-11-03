@@ -1430,6 +1430,32 @@ export interface AppPublicRequest {
 }
 
 /** GET /api/v1/catalog/{name}/move (S315, ADR-044 §5): whether the move to the app's path is offered. */
+export interface ReadLinksStatus {
+  app: string;
+  title: string;
+  available: boolean;
+  reason?: string;
+  exposed: boolean;
+  origin?: string;
+  patterns?: string[];
+  links: number;
+  sign_in: boolean;
+}
+
+export interface ReadLinksPlan {
+  app: string;
+  title: string;
+  action: 'expose' | 'unexpose';
+  origin: string;
+  route: string;
+  patterns: string[];
+  refused: string[];
+  links: number;
+  expiry_cap_days: number;
+  warnings: string[];
+  digest: string;
+}
+
 export interface AppMoveStatus {
   app: string;
   offered: boolean;
@@ -1993,6 +2019,19 @@ export class ApiService {
 
   appPublicApply(name: string, request: AppPublicRequest, digest: string): Observable<OperationStarted> {
     return this.http.post<OperationStarted>(`/api/v1/catalog/${encodeURIComponent(name)}/public/apply`, { ...request, digest });
+  }
+
+  /** S433: whether an Everything app's read and view links are on the public name. */
+  readLinks(name: string): Observable<ReadLinksStatus> {
+    return this.http.get<ReadLinksStatus>(`/api/v1/apps/${encodeURIComponent(name)}/read-links`);
+  }
+
+  readLinksPlan(name: string, enabled: boolean): Observable<ReadLinksPlan> {
+    return this.http.post<ReadLinksPlan>(`/api/v1/apps/${encodeURIComponent(name)}/read-links/plan`, { enabled });
+  }
+
+  readLinksApprove(name: string, enabled: boolean, digest: string): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(`/api/v1/apps/${encodeURIComponent(name)}/read-links/approve`, { enabled, digest });
   }
 
   /** S315: whether moving the app to its path is offered. */

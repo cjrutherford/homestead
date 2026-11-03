@@ -90,8 +90,8 @@ func TestEveryRegisteredRouteIsClassified(t *testing.T) {
 			t.Errorf("routeClasses has stale entry %q (not registered)", p)
 		}
 	}
-	if len(routes) != 175 {
-		t.Errorf("TCP route count = %d, want 175 (update deliberately with routeClasses)", len(routes))
+	if len(routes) != 178 {
+		t.Errorf("TCP route count = %d, want 178 (update deliberately with routeClasses)", len(routes))
 	}
 	counts := map[RouteClass]int{}
 	for _, p := range routes {

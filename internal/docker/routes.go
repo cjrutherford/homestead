@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"homestead/internal/operation"
@@ -191,6 +192,9 @@ func renderPathHandles(paths []Route, tunnel bool) string {
 	b.WriteString("\t# Apps under the appliance's names (ADR-044).\n")
 	for _, p := range paths {
 		if tunnel && !p.Published {
+			if p.ReadLinks {
+				b.WriteString(renderReadLinkHandle(p))
+			}
 			continue
 		}
 		bare := strings.TrimSuffix(p.Path, "/")
@@ -205,20 +209,9 @@ func renderPathHandles(paths []Route, tunnel bool) string {
 		if p.StripPrefix {
 			fmt.Fprintf(&b, "\t\turi strip_prefix %s\n", bare)
 		}
-		var up strings.Builder
-		fmt.Fprintf(&up, "\treverse_proxy %s:%d {\n", p.Target.Host, p.Target.Port)
-		if p.Health.Path != "" {
-			fmt.Fprintf(&up, "\t\thealth_uri %s\n", p.Health.Path)
-			if p.Health.IntervalSeconds != 0 {
-				fmt.Fprintf(&up, "\t\thealth_interval %ds\n", p.Health.IntervalSeconds)
-			}
-		}
-		if tunnel {
-			up.WriteString("\t\theader_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}\n\t\theader_up X-Forwarded-Proto https\n")
-		}
-		up.WriteString("\t\theader_up X-Forwarded-Host {http.request.host}\n\t}\n")
+		up := pathUpstream(p, tunnel)
 		if p.CraftApp == "" {
-			b.WriteString(indent(up.String()))
+			b.WriteString(indent(up))
 		} else {
 			// A craft app's wrapper page and file path go to the daemon
 			// (ADR-045). header_up replaces anything the client sent; the
@@ -226,12 +219,58 @@ func renderPathHandles(paths []Route, tunnel bool) string {
 			// https on both the dashboard site and the tunnel entry.
 			fmt.Fprintf(&b, "\t\thandle %s* {\n\t\t\treverse_proxy unix/%s {\n\t\t\t\theader_up %s %s\n\t\t\t\theader_up %s {http.request.host}\n\t\t\t\theader_up %s %s\n\t\t\t\theader_up X-Forwarded-Proto https\n\t\t\t}\n\t\t}\n",
 				CraftWrapperPrefix, CraftSocketPath, CraftAppHeader, p.CraftApp, CraftHostHeader, CraftPrefixHeader, bare)
-			b.WriteString(indent(wrapHandle(up.String())))
+			b.WriteString(indent(wrapHandle(up)))
 		}
 		b.WriteString("\t}\n")
 	}
 	fmt.Fprintf(&b, "\thandle %s* {\n\t\trespond 404\n\t}\n", AppsPrefix)
 	return b.String()
+}
+
+// ReadLinkPaths are the only two paths below an app's path that the
+// read-link exposure plan opens on the public names (ADR-058): the raw
+// route and the viewer, each followed by a 43 character token.
+var ReadLinkPaths = []string{"_homestead/read/", "_homestead/view/"}
+
+// ReadLinkTokenPattern is what the edge lets through as a token: one path
+// segment of base64url characters, so no dot, slash or escape can reach the
+// bridge. The bridge checks the exact length. It has no braces, which a
+// Caddyfile reads as placeholders.
+const ReadLinkTokenPattern = "[A-Za-z0-9_-]+"
+
+// renderReadLinkHandle is the tunnel entry's handle for an app whose path
+// is not published but whose read links are exposed. Only GET and HEAD of
+// <path>_homestead/read/<token> and <path>_homestead/view/<token> reach
+// the app; every other path below _homestead/ and every other app path
+// answers 404 at the edge (the /apps/ catch-all). The client address is the
+// one Cloudflare saw, replacing anything the client sent, which is what the
+// bridge's -trusted-proxies expects.
+func renderReadLinkHandle(p Route) string {
+	var b strings.Builder
+	b.WriteString("\t# Read links only (ADR-058): never the app itself.\n")
+	fmt.Fprintf(&b, "\thandle %s_homestead/* {\n", p.Path)
+	fmt.Fprintf(&b, "\t\t@readlink {\n\t\t\tmethod GET HEAD\n\t\t\tpath_regexp ^%s_homestead/(read|view)/%s$\n\t\t}\n", regexp.QuoteMeta(p.Path), ReadLinkTokenPattern)
+	b.WriteString("\t\thandle @readlink {\n")
+	b.WriteString(indent(indent(pathUpstream(p, true))))
+	b.WriteString("\t\t}\n\t\thandle {\n\t\t\trespond 404\n\t\t}\n\t}\n")
+	return b.String()
+}
+
+// pathUpstream is the reverse_proxy block of an app path.
+func pathUpstream(p Route, tunnel bool) string {
+	var up strings.Builder
+	fmt.Fprintf(&up, "\treverse_proxy %s:%d {\n", p.Target.Host, p.Target.Port)
+	if p.Health.Path != "" {
+		fmt.Fprintf(&up, "\t\thealth_uri %s\n", p.Health.Path)
+		if p.Health.IntervalSeconds != 0 {
+			fmt.Fprintf(&up, "\t\thealth_interval %ds\n", p.Health.IntervalSeconds)
+		}
+	}
+	if tunnel {
+		up.WriteString("\t\theader_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}\n\t\theader_up X-Forwarded-Proto https\n")
+	}
+	up.WriteString("\t\theader_up X-Forwarded-Host {http.request.host}\n\t}\n")
+	return up.String()
 }
 
 // ValidateRenderable checks a desired table end to end, including that

@@ -65,6 +65,7 @@ type Store struct {
 	linkMax               time.Duration
 	trusted               []*net.IPNet
 	trustedSet            bool
+	publicRead            string
 }
 
 // SetSharing turns KV sharing on or off (ADR-058: an app whose definition has
