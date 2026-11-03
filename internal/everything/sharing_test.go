@@ -450,7 +450,8 @@ func TestHandlerRejectsUnknownShareFieldsAndCSRF(t *testing.T) {
 	e := newShareEnv(t, true)
 	// CSRF and origin are enforced before any share operation.
 	h, _ := NewHandler(e.store, fakeIdentity{scope: gAlice}, []string{"https://home.example"})
-	for _, op := range []string{"kv.share", "kv.unshare", "kv.listShared", "kv.listSharedByMe", "perms.request"} {
+	for _, op := range []string{"kv.share", "kv.unshare", "kv.listShared", "kv.listSharedByMe", "perms.request",
+		"fs.share", "fs.unshare", "fs.getShares", "fs.listShared"} {
 		req := httptest.NewRequest("POST", "https://home.example/b", strings.NewReader(`{"operation":"`+op+`"}`))
 		req.Header.Set("Origin", "https://home.example")
 		req.Header.Set("Content-Type", "application/json")

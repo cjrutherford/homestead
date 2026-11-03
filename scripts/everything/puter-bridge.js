@@ -4,8 +4,10 @@
  * Exposes only the `puter` surface the pinned Tasks revision uses, backed by
  * same-origin HTTP calls to the Homestead Everything bridge. It never talks to
  * Puter cloud. KV sharing (kv.share/unshare/listShared/listSharedByMe, the
- * {handle} option, perms.request, appID) follows ADR-058. Anything outside
- * ADR-053 and ADR-058 (events, signed read URLs) is either absent or rejects
+ * {handle} option, perms.request, appID) and file sharing (fs.share,
+ * fs.unshare, fs.getShares, fs.listShared, ~shared/<id>/... paths) follow
+ * ADR-058. Anything outside ADR-053 and ADR-058 (events, signed read URLs)
+ * is either absent or rejects
  * with { code: 'bridge_unsupported' }; it never silently succeeds.
  *
  * Config (all optional) from globalThis.__HOMESTEAD_BRIDGE__:
@@ -190,6 +192,12 @@
       return { path: path, name: info.name, size: info.size || 0, modified: info.modified || 0,
         is_dir: !!info.is_dir, isDirectory: !!info.is_dir };
     }
+    function recipientName(r) {
+      if (typeof r === 'string') return r;
+      if (r && typeof r.username === 'string') return r.username;
+      // The bridge holds no email addresses.
+      fail('invalid_recipient', 'Share with a Homestead username, not an email address');
+    }
     function noFile(what) {
       fail('subject_does_not_exist', 'No such ' + what);
     }
@@ -347,6 +355,37 @@
         var recursive = !!(opts && opts.recursive);
         await call({ operation: recursive ? 'deletetree' : 'delete', kind: 'file', key: fsKey(path) });
       },
+      // ADR-058 file sharing. Recipients are Homestead people of this app who
+      // have signed in, given as {username} or a bare name; {email} is refused.
+      // mode is 'read' or 'write' ('manage' is refused). Resolves
+      // [{ isNew, holder, mode }] as Circuits and Parametric expect.
+      async share(path, recipient, mode) {
+        var r = await call({ operation: 'fs.share', key: fsKey(path), recipient: recipientName(recipient),
+          access: String(mode === undefined || mode === null ? 'read' : mode) });
+        return [{ isNew: !!(r && r.isNew), holder: r && r.holder, mode: r && r.mode }];
+      },
+      async unshare(path, recipient) {
+        var r = await call({ operation: 'fs.unshare', key: fsKey(path), recipient: recipientName(recipient) });
+        return { revoked: (r && r.revoked) || 0 };
+      },
+      // [{ holder, mode, inheritedFrom }] for a path the caller owns.
+      async getShares(path) {
+        var r = await call({ operation: 'fs.getShares', key: fsKey(path) });
+        return ((r && r.items) || []).map(function (i) {
+          return { holder: i.holder, mode: i.mode, inheritedFrom: i.inheritedFrom || null };
+        });
+      },
+      // { items: [{ path, name, owner, mode, modified, size, is_dir }], cursor }
+      // Items' paths are ~shared/<id>[/<name>] and work with read/write/stat/
+      // readdir/rename/delete.
+      async listShared(opts) {
+        var page = await sharedPage('fs.listShared', opts);
+        page.items = page.items.map(function (i) {
+          i.isDir = !!i.is_dir;
+          return i;
+        });
+        return page;
+      },
       // Signed public read URLs are public exposure; ADR-053 requires an
       // explicit exposure plan first, so this is refused.
       getReadURL: unsupported('Public read URLs'),
@@ -392,7 +431,7 @@
       },
     };
 
-    // Deliberately absent: events (S430) and fs sharing (S429). appID is the
+    // Deliberately absent: events (S430). appID is the
     // constant app-<app>; it is known once the bridge has said which app this
     // is (the first whoami or share reply, or config.appID).
     var sdk = { env: 'app', kv: kv, fs: fs, auth: auth, perms: perms };

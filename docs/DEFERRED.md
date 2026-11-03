@@ -1757,3 +1757,8 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S428: `kv.unshare` of an unknown, foreign or already revoked handle answers `subject_does_not_exist` (what Tasks reads as "nothing left to stop"), not `kv_handle_not_found`.
 - S428: the share-attempt limiter is in memory per bridge process (a restart resets it); `kv.share.received` notifications and `kv:<handle>:*` events wait for S430.
 - S428: with the shim's `kv.share` defined, Tasks reports collaboration mode `kv` even while sharing is off; its UI stays hidden until S437 and a `kv_handles_disabled` reply falls back to links there.
+- S429: no per-grant byte cap: a trusted folder writer can fill the owner's quota (ADR-058 accepts this).
+- S429: `fs.share.received` / `fs.share.revoked` notifications wait for S430; recipients poll `fs.listShared`.
+- S429: `fs.getShares` reports only live direct and folder-inherited grants of the caller's own paths; grants made on a path that later changes between file and folder keep the type recorded at share time.
+- S429: Circuits and Parametric still hide their sharing UI and "Shared with me" (S439, S440); opening a shared file with those apps (path `~shared/<id>/<name>`) is untested against the real app code.
+- S429: no `fs.copy`/`fs.move`/`mkdir` exist in the shim, so nothing else needed grant support.

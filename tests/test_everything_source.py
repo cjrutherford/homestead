@@ -122,6 +122,9 @@ class EverythingSourceTest(unittest.TestCase):
         for name in ('events',):
             self.assertNotRegex(shim, r'\b%s\s*:' % name)
         self.assertIn('async share(', shim)
+        # fs sharing arrived in S429.
+        for name in ('async getShares(', 'async unshare(', 'async listShared('):
+            self.assertIn(name, shim)
         self.assertIn('var perms = {', shim)
         for rel in ('scripts/everything/gate/run_gate.sh', 'scripts/everything/gate/bridge-gate.test.js',
                     'scripts/everything/gate/mock-puter-bridge.js'):

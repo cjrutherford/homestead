@@ -87,7 +87,8 @@ func shareErr(w http.ResponseWriter, status int, code string) {
 // shareOp reports whether op is one of the sharing operations.
 func shareOp(op string) bool {
 	switch op {
-	case "kv.share", "kv.unshare", "kv.listShared", "kv.listSharedByMe", "perms.request":
+	case "kv.share", "kv.unshare", "kv.listShared", "kv.listSharedByMe", "perms.request",
+		"fs.share", "fs.unshare", "fs.getShares", "fs.listShared":
 		return true
 	}
 	return false
@@ -147,6 +148,10 @@ func (h *handler) handleShareOp(w http.ResponseWriter, r *http.Request, scope Sc
 		h.permsRequest(w, r, scope, body)
 		return
 	}
+	if strings.HasPrefix(body.Operation, "fs.") {
+		h.handleFSShareOp(w, r, scope, body)
+		return
+	}
 	if !h.store.sharing {
 		shareErr(w, http.StatusForbidden, "kv_handles_disabled")
 		return
@@ -178,21 +183,12 @@ func (h *handler) handleShareOp(w http.ResponseWriter, r *http.Request, scope Sc
 		}
 		g, _, err := h.store.CreateGrant(ctx, scope, GrantRequest{Username: name, Kind: GrantKV, Key: body.Prefix, IsPrefix: true,
 			Access: access, Label: body.Label}, h.now())
-		switch {
-		case err == nil:
+		if err == nil {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(toItem(g))
-		case errors.Is(err, ErrNoRecipient):
-			shareErr(w, http.StatusNotFound, "subject_does_not_exist")
-		case errors.Is(err, ErrSelfShare):
-			shareErr(w, http.StatusBadRequest, "cannot_share_with_self")
-		case errors.Is(err, ErrGrantLimit):
-			shareErr(w, http.StatusTooManyRequests, "share_limit")
-		case errors.Is(err, ErrInvalid):
-			shareErr(w, http.StatusBadRequest, "invalid_argument")
-		default:
-			http.Error(w, "storage unavailable", http.StatusInternalServerError)
+			return
 		}
+		grantErr(w, err, "subject_does_not_exist")
 	case "kv.unshare":
 		err := h.store.RevokeGrant(ctx, scope, body.Handle, h.now())
 		switch {
@@ -231,9 +227,35 @@ func (h *handler) handleShareOp(w http.ResponseWriter, r *http.Request, scope Sc
 	}
 }
 
-// pageGrants applies limit and an opaque cursor ("<created>:<id>", the last
-// item returned) to grants already sorted by (created, id).
+// grantErr maps a CreateGrant failure to the SDK's error codes; noUser is the
+// code for an unknown recipient (kv and fs differ).
+func grantErr(w http.ResponseWriter, err error, noUser string) {
+	switch {
+	case errors.Is(err, ErrNoRecipient):
+		shareErr(w, http.StatusNotFound, noUser)
+	case errors.Is(err, ErrSelfShare):
+		shareErr(w, http.StatusBadRequest, "cannot_share_with_self")
+	case errors.Is(err, ErrGrantLimit):
+		shareErr(w, http.StatusTooManyRequests, "share_limit")
+	case errors.Is(err, ErrInvalid):
+		shareErr(w, http.StatusBadRequest, "invalid_argument")
+	default:
+		http.Error(w, "storage unavailable", http.StatusInternalServerError)
+	}
+}
+
 func pageGrants(gs []Grant, limit int, cursor string) ([]shareItem, string, bool) {
+	page, next, ok := pageGrantRows(gs, limit, cursor)
+	items := make([]shareItem, len(page))
+	for i, g := range page {
+		items[i] = toItem(g)
+	}
+	return items, next, ok
+}
+
+// pageGrantRows applies limit and an opaque cursor ("<created>:<id>", the last
+// item returned) to grants already sorted by (created, id).
+func pageGrantRows(gs []Grant, limit int, cursor string) ([]Grant, string, bool) {
 	if limit < 0 {
 		return nil, "", false
 	}
@@ -258,7 +280,7 @@ func pageGrants(gs []Grant, limit int, cursor string) ([]shareItem, string, bool
 		}
 		after.at, after.id = n, cursor[i+1:]
 	}
-	items := []shareItem{}
+	items := []Grant{}
 	next := ""
 	for _, g := range gs {
 		if cursor != "" && (g.CreatedAt < after.at || (g.CreatedAt == after.at && g.ID <= after.id)) {
@@ -266,10 +288,10 @@ func pageGrants(gs []Grant, limit int, cursor string) ([]shareItem, string, bool
 		}
 		if len(items) == limit {
 			last := items[len(items)-1]
-			next = strconv.FormatInt(last.CreatedAt, 10) + ":" + last.Handle
+			next = strconv.FormatInt(last.CreatedAt, 10) + ":" + last.ID
 			break
 		}
-		items = append(items, toItem(g))
+		items = append(items, g)
 	}
 	return items, next, true
 }

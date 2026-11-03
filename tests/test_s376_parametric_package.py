@@ -93,9 +93,9 @@ class ParametricPackageTest(unittest.TestCase):
         self.assertFalse(calls & {'ai.chat', 'net.fetch'})
         shim = (ROOT / 'scripts/everything/puter-bridge.js').read_text()
         self.assertNotRegex(shim, r'(?m)^\s*ui\s*[:=]')  # ui.* stays absent
-        # File sharing stays absent from fs until S429 (kv.share exists since S428).
+        # fs sharing exists since S429 (the apps' sharing UI stays hidden until S439/S440).
         fs_block = shim[shim.index('var fs = {'):shim.index('var user = null;')]
-        for refused in ('share', 'getShares', 'unshare', 'listShared', 'getProfilePicture'):
+        for refused in ('getProfilePicture',):
             self.assertNotRegex(fs_block, r'(?m)^\s*(async\s+)?' + refused + r'\s*[(:]')
         self.assertRegex(shim, r'(?m)^\s*async rename\(')  # S376
         # Sharing and the Puter file picker are hidden, not left to error.

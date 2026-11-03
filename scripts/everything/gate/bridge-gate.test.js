@@ -114,6 +114,11 @@ describe('real Tasks store through the real bridge', () => {
     expect((await rejects(p.fs.getReadURL('tasks-data/x', 60))).code).toBe('bridge_unsupported');
     expect((await rejects(p.kv.share({ prefix: 'tasks:collab:x:', recipient: 'bob', access: 'write' }))).code).toBe('kv_handles_disabled');
     expect((await rejects(p.kv.listShared({ limit: 200 }))).code).toBe('kv_handles_disabled');
+    // S429: file sharing is off the same way, and plain files still work.
+    expect((await rejects(p.fs.share('a.txt', { username: 'bob' }, 'read'))).code).toBe('fs_sharing_disabled');
+    expect((await rejects(p.fs.listShared())).code).toBe('fs_sharing_disabled');
+    expect((await rejects(p.fs.read('~shared/x/a.txt'))).code).toBe('fs_sharing_disabled');
+    expect((await rejects(p.fs.share('a.txt', { email: 'b@example.com' }, 'read'))).code).toBe('invalid_recipient');
     expect((await rejects(p.kv.get('meta', { handle: 'kvh-1' }))).code).toBe('kv_handles_disabled');
     expect((await rejects(p.perms.request(p.perms.Resource.KV_SHARE, { prefix: 'tasks:collab:', access: 'write' }))).code).toBe('invalid_argument');
     expect(await p.auth.getUser()).toMatchObject({ username: 'share-person' });
@@ -130,7 +135,11 @@ describe('real Tasks store through the real bridge', () => {
       if (b.operation === 'kv.share') return reply(200, { handle: 'h1', holder: 'Bob', prefix: b.prefix, access: b.access, appUid: 'app-tasks', revokedAt: null });
       if (b.operation === 'kv.listShared') return reply(200, { items: [{ handle: 'h1' }], cursor: b.cursor ? '' : '1:h1' });
       if (b.operation === 'perms.request') return reply(200, { granted: true });
-      if (b.operation === 'get') return reply(404, { error: 'kv_handle_not_found', message: 'x' });
+      if (b.operation === 'fs.share') return reply(200, { isNew: true, holder: 'Bob', mode: b.access, path: b.key });
+      if (b.operation === 'fs.unshare') return reply(200, { revoked: 1 });
+      if (b.operation === 'fs.getShares') return reply(200, { items: [{ holder: 'Bob', mode: 'read', inheritedFrom: 'team' }, { holder: 'Cy', mode: 'write', inheritedFrom: null }] });
+      if (b.operation === 'fs.listShared') return reply(200, { items: [{ path: '~shared/i1/a.txt', name: 'a.txt', owner: 'Al', mode: 'read', is_dir: false }], cursor: '' });
+      if (b.operation === 'get' && b.kind === 'kv') return reply(404, { error: 'kv_handle_not_found', message: 'x' });
       return reply(200, { ok: true });
     };
     const saved = globalThis.fetch;
@@ -153,6 +162,21 @@ describe('real Tasks store through the real bridge', () => {
       expect(seen.at(-1)).toMatchObject({ operation: 'put', handle: 'h1' });
       await p.kv.del('k');
       expect(seen.at(-1).handle).toBeUndefined();
+      // S429 file sharing: Circuits and Parametric's call shapes.
+      const [sh] = await p.fs.share('/proj/a.circuits', { username: 'bob' }, 'write');
+      expect(sh).toMatchObject({ isNew: true, holder: 'Bob', mode: 'write' });
+      expect(seen.at(-1)).toMatchObject({ operation: 'fs.share', key: 'proj/a.circuits', recipient: 'bob', access: 'write' });
+      expect((await p.fs.share('a', 'bob'))[0].mode).toBe('read');
+      expect(await p.fs.unshare('a', { username: 'bob' })).toEqual({ revoked: 1 });
+      expect(await p.fs.getShares('proj/a')).toEqual([
+        { holder: 'Bob', mode: 'read', inheritedFrom: 'team' }, { holder: 'Cy', mode: 'write', inheritedFrom: null }]);
+      const sp = await p.fs.listShared({ limit: 100 });
+      expect(sp.items[0]).toMatchObject({ path: '~shared/i1/a.txt', owner: 'Al', mode: 'read', isDir: false });
+      expect(sp.cursor).toBeUndefined();
+      await p.fs.read('~shared/i1/a.txt'); // stub answers {ok:true}: no value
+      expect(seen.at(-1)).toMatchObject({ operation: 'get', kind: 'file', key: '~shared/i1/a.txt' });
+      await p.fs.rename('~shared/i1/d/a.txt', 'b.txt');
+      expect(seen.at(-1)).toMatchObject({ operation: 'rename', key: '~shared/i1/d/a.txt', to: '~shared/i1/d/b.txt' });
     } finally {
       globalThis.fetch = saved;
     }

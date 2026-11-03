@@ -185,6 +185,9 @@ func validate(scope Scope, kind Kind, key string) error {
 	if !appName.MatchString(scope.App) || !validText(scope.Subject, 512) || !validText(key, 1024) || (kind != KindKV && kind != KindFile) {
 		return ErrInvalid
 	}
+	if kind == KindFile && (key == SharedRoot || strings.HasPrefix(key, SharedRoot+"/")) {
+		return ErrInvalid // reserved for paths through a share (ADR-058)
+	}
 	if kind == KindFile && (strings.Contains(key, `\`) || strings.HasPrefix(key, "/") || key == ".." || strings.HasPrefix(key, "../") || path.Clean(key) != key || key == ".") {
 		return ErrInvalid
 	}
@@ -218,7 +221,34 @@ func (s *Store) Delete(ctx context.Context, scope Scope, kind Kind, key string) 
 	if err := validate(scope, kind, key); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM objects WHERE app=? AND subject=? AND kind=? AND object_key=?`, scope.App, scope.Subject, kind, key)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `DELETE FROM objects WHERE app=? AND subject=? AND kind=? AND object_key=?`, scope.App, scope.Subject, kind, key); err != nil {
+		return err
+	}
+	if kind == KindFile {
+		if err = revokeFileGrants(ctx, tx, scope, key, false); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// revokeFileGrants permanently revokes the owner's fs grants on a deleted or
+// renamed file (key) and, with tree, on everything at or under a deleted
+// folder, so re-creating a file at that path never revives a share (ADR-058).
+func revokeFileGrants(ctx context.Context, tx *sql.Tx, scope Scope, key string, tree bool) error {
+	now := time.Now().Unix()
+	q := `UPDATE grants SET revoked_at = ?, updated_at = ? WHERE app = ? AND owner_subject = ? AND kind = 'fs' AND revoked_at IS NULL AND (object_key = ?`
+	args := []any{now, now, scope.App, scope.Subject, key}
+	if tree {
+		q += ` OR substr(object_key,1,length(?)) = ?`
+		args = append(args, key+"/", key+"/")
+	}
+	_, err := tx.ExecContext(ctx, q+`)`, args...)
 	return err
 }
 
@@ -489,8 +519,19 @@ func (s *Store) DeleteTree(ctx context.Context, scope Scope, key string) (int64,
 	if err := validate(scope, KindFile, key); err != nil {
 		return 0, err
 	}
-	res, err := s.db.ExecContext(ctx, `DELETE FROM objects WHERE app=? AND subject=? AND kind=? AND (object_key=? OR substr(object_key,1,length(?))=?)`, scope.App, scope.Subject, KindFile, key, key+"/", key+"/")
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `DELETE FROM objects WHERE app=? AND subject=? AND kind=? AND (object_key=? OR substr(object_key,1,length(?))=?)`, scope.App, scope.Subject, KindFile, key, key+"/", key+"/")
+	if err != nil {
+		return 0, err
+	}
+	if err = revokeFileGrants(ctx, tx, scope, key, true); err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(); err != nil {
 		return 0, err
 	}
 	return res.RowsAffected()
@@ -542,6 +583,11 @@ func (s *Store) Rename(ctx context.Context, scope Scope, from, to string) error 
 	}
 	if changed, _ := res.RowsAffected(); changed == 0 {
 		return ErrNotFound
+	}
+	// A renamed file leaves its shares behind: revoked, not moved.
+	now := time.Now().Unix()
+	if _, err = tx.ExecContext(ctx, `UPDATE grants SET revoked_at = ?, updated_at = ? WHERE app=? AND owner_subject=? AND kind='fs' AND object_key=? AND revoked_at IS NULL`, now, now, scope.App, scope.Subject, from); err != nil {
+		return err
 	}
 	p1, a1, err := usage(ctx, tx, scope)
 	if err != nil {

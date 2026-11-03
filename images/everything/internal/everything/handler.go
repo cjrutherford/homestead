@@ -153,7 +153,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if body.Handle != "" {
+	if _, _, shared := sharedFSPath(body.Key); kind == KindFile && shared {
+		if err = h.handleSharedFS(w, r, scope, body); err == nil {
+			return
+		}
+		body.Operation = "" // fall to the common error mapping below
+	} else if body.Handle != "" {
 		if kind != KindKV {
 			err = ErrInvalid
 		} else if err = h.handleKVOp(w, r, scope, body); err == nil {
