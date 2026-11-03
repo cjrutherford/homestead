@@ -145,3 +145,17 @@ app: solitaire
 license: MIT
 archive: solitaire-source.tar.gz
 sha256: 1ca610831752eca35a833dce4a87a78bd9932dd96af8a487a57c83bbe34a25b2
+---
+# Pinned source for the sudoku package (S379). Same upstream repository and
+# commit as above; archive built the same way (tracked files of src/sudoku,
+# LICENSE, dev/puter-localhost.mjs; GNU tar, sorted, mode 0664, owner 0, mtime
+# 0, gzip -n; the recipe was re-run on src/solitaire and reproduced its
+# digest). Licence: MIT (the repository root LICENSE, Puter Technologies Inc.;
+# the app has no licence file of its own). Bundled from npm: @fontsource/inter
+# (SIL OFL 1.1) and lucide (ISC).
+repository: https://github.com/HeyPuter/everything
+commit: e7d07c48546ef0650a8f3ab94ae82b8b50d3646a
+app: sudoku
+license: MIT
+archive: sudoku-source.tar.gz
+sha256: 18d0c4c6dc4d86b5ea7e52cffedf01e1f1339c6e8670dd64a5cd31d80f4cdb1b

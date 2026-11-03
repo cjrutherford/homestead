@@ -1725,3 +1725,8 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S378: the browser keeps a copy of the saved game and statistics (separated by person, not encrypted); the appliance copy is the one that is backed up. Anything written to unprefixed localStorage keys by an earlier visit is left in place, ignored.
 - S378: the headless check plays one stock move, not a game to a win; touch and drag play, undo and the Vegas bank are covered only by upstream's 209 unit tests, not by the real bridge.
 - S378: Solitaire shows no user name; if upstream adds one, it must show "Homestead user", not the subject.
+- S379: not run on VM 2 or through Authentik; the review plan S379 section is the owner checklist.
+- S379: the catalog icon is `mdi:image-multiple` because no grid or puzzle icon is bundled in app-icons.ts; owner may bundle a better one.
+- S379: the browser keeps a copy of records and the puzzle in progress (separated by person, not encrypted); the appliance copy is the one that is backed up. The inline theme script reads one unprefixed settings key (never written), so a person's theme choice applies after the app starts, not before first paint.
+- S379: the headless check places one digit, not a full puzzle to a solve; the daily puzzle, hints, pencil marks, touch input and the solved dialog are covered only by upstream's 333 unit tests, not by the real bridge.
+- S379: the daily puzzle uses the browser's local date; two people see the same puzzle by design. Nothing online is involved.

@@ -1295,3 +1295,17 @@ tools (vite, vitest; their dependency set includes MPL-2.0 lightningcss, used at
 and not part of the output). The one bundled third-party file is the vendored card deck
 `src/vendor/cardmeister.js`, The Unlicense (public domain), artwork derived from CC0
 cards. No non-permissive licence; no DEFERRED licence line.
+
+## Sudoku source (S379, ADR-057)
+
+Source of the Sudoku catalog package: `third_party/everything/sudoku-source.tar.gz`, the `src/sudoku` subtree of
+HeyPuter/everything at commit `e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU tar,
+sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 53 entries, 1,537,150 bytes; the recipe reproduced the
+Solitaire digest first). SHA-256 `18d0c4c6dc4d86b5ea7e52cffedf01e1f1339c6e8670dd64a5cd31d80f4cdb1b`, recorded in
+`third_party/everything/pin.yaml`.
+
+**Licence: MIT** (Puter Technologies Inc., the repository root `LICENSE`, which is in the archive; the app has no
+licence file of its own and its README says the repository licence applies). Bundled from npm and served from the
+app's own origin: `@fontsource/inter` (SIL OFL 1.1, Inter font files) and `lucide` (ISC). All permissive. Build-time
+only (not shipped): jsdom, vite, vitest and their dependency sets (including MPL-2.0 lightningcss). No
+non-permissive licence; no DEFERRED licence line.
