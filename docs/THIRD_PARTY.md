@@ -1331,3 +1331,15 @@ licence file of its own and its `package.json` has no licence field, so the repo
 runtime dependency bundled from npm and served from the app's own origin is `lucide` (ISC). Build-time only (not
 shipped): jsdom, vite, vitest and their dependency sets (including MPL-2.0 lightningcss). No non-permissive licence;
 no DEFERRED licence line. The upstream "AI OCR" receipt reading (Puter AI) is not shipped.
+
+## API Client source (S436, ADR-057, ADR-058)
+
+Source of the API Client catalog package: `third_party/everything/api-client-source.tar.gz`, the `src/api-client` subtree
+of HeyPuter/everything at commit `e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU tar,
+sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 133 entries, 506,505 bytes). SHA-256
+`35a33090e2a23e96cc633c086558b5a8d2f70dbb21d7d92e33950ba4d1c79146`, recorded in `third_party/everything/pin.yaml`.
+
+**Licence: MIT** (Puter Technologies Inc., the repository root `LICENSE`, which is in the archive; the app has no licence
+file of its own). Bundled from npm and served from the app's own origin: CodeMirror and Lezer packages (MIT), `yaml` (ISC)
+and `lucide` (ISC). Build-time only (not shipped): vite, vitest, jsdom and their dependency sets. No copyleft licence, so
+no source offer is needed and there is no DEFERRED licence line.

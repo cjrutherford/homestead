@@ -1,0 +1,433 @@
+{
+  "app": "api-client",
+  "version": "0.1.0",
+  "title": "API Client",
+  "archive": "api-client-source.tar.gz",
+  "sha256": "35a33090e2a23e96cc633c086558b5a8d2f70dbb21d7d92e33950ba4d1c79146",
+  "size": 506505,
+  "subtree": "src/api-client",
+  "extra_files": [
+    "LICENSE",
+    "dev/puter-localhost.mjs"
+  ],
+  "required": [
+    "LICENSE",
+    "dev/puter-localhost.mjs",
+    "src/api-client/index.html",
+    "src/api-client/package-lock.json",
+    "src/api-client/src/main.js",
+    "src/api-client/src/core/send.js",
+    "src/api-client/src/core/websocket.js",
+    "src/api-client/src/data/sync.js",
+    "src/api-client/public/manifest.json"
+  ],
+  "index": "src/api-client/index.html",
+  "sdk_tag": "<script src=\"https://js.puter.com/v2/\" defer></script>",
+  "service_worker": null,
+  "patches": [
+    {
+      "file": "src/api-client/index.html",
+      "old": "sync with your Puter account.",
+      "new": "keep them on your own server.",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/index.html",
+      "old": "<script type=\"module\" src=\"/src/main.js\"></script>",
+      "new": "<script type=\"module\" src=\"/src/homestead/boot.js\"></script>",
+      "why": "Start through the Homestead entry point (per-person browser storage)."
+    },
+    {
+      "file": "src/api-client/src/core/send.js",
+      "old": "import { isPrivateHost } from './url.js';",
+      "new": "import { isPrivateHost } from './url.js';\nimport { sendViaNet } from './homestead-net.js';",
+      "why": "Relay through puter.net.fetch."
+    },
+    {
+      "file": "src/api-client/src/core/send.js",
+      "old": "  return (host, port, tls) => (tls ? new puter.net.tls.TLSSocket(host, port) : new puter.net.Socket(host, port));",
+      "new": "  return Object.assign(() => { throw new Error('Raw sockets are not available on Homestead.'); }, { netFetch: (...args) => puter.net.fetch(...args) });",
+      "why": "No raw sockets: the opener carries only puter.net.fetch."
+    },
+    {
+      "file": "src/api-client/src/core/send.js",
+      "old": "  if (!openSocket) throw new SendError('Sign in to Puter to send requests through the relay.', { code: 'relay-unavailable', transport: 'relay' });",
+      "new": "  if (!openSocket) throw new SendError('Sending to other servers is not available.', { code: 'relay-unavailable', transport: 'relay' });\n  if (openSocket.netFetch) return sendViaNet(resolved, { files, signal, timeoutMs, followRedirects: follow, netFetch: openSocket.netFetch, maxBytes });",
+      "why": "Send through puter.net.fetch."
+    },
+    {
+      "file": "src/api-client/src/core/send.js",
+      "old": "  const { mode = 'auto', relay = null, relayHosts = new Set() } = options;",
+      "new": "  const { relay = null, relayHosts = new Set() } = options;\n  // Homestead: the page policy lets the browser reach only this server, so every request goes through the relay.\n  const mode = globalThis.puter?.env === 'app' ? 'relay' : options.mode || 'auto';",
+      "why": "Always the relay on Homestead."
+    },
+    {
+      "file": "src/api-client/src/core/send.js",
+      "old": "        warnings: ['The server sent a redirect. Browsers hide redirect details from pages; turn on following redirects or use the Puter relay to see it.'],",
+      "new": "        warnings: ['The server sent a redirect. Browsers hide redirect details from pages; turn on following redirects or use the relay to see it.'],",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/core/send.js",
+      "old": "      hint: 'Use https://, or send it through the Puter relay.',",
+      "new": "      hint: 'Use https://, or send it through the relay.',",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/core/send.js",
+      "old": "      : 'The server may not allow requests from web pages (CORS), or it may be unreachable. Sending through the Puter relay avoids CORS.',",
+      "new": "      : 'The server may not allow requests from web pages (CORS), or it may be unreachable. Sending through the relay avoids CORS.',",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/core/send.js",
+      "old": "    if (dropped.length && mode === 'auto') res.warnings.push(`The browser does not let pages set ${dropped.join(', ')}. Use the Puter relay to send ${dropped.length > 1 ? 'them' : 'it'}.`);",
+      "new": "    if (dropped.length && mode === 'auto') res.warnings.push(`The browser does not let pages set ${dropped.join(', ')}. Use the relay to send ${dropped.length > 1 ? 'them' : 'it'}.`);",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/core/send.js",
+      "old": "      err.hint = `${err.hint} Sign in to Puter to use the relay.`.trim();",
+      "new": "      err.hint = `${err.hint} `.trim();",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/core/send.js",
+      "old": "        hint: 'Send it again through the Puter relay if repeating it is safe.',",
+      "new": "        hint: 'Send it again through the relay if repeating it is safe.',",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/core/prepare.js",
+      "old": "export const USER_AGENT = 'PuterAPIClient/0.1';",
+      "new": "export const USER_AGENT = 'HomesteadAPIClient/0.1';",
+      "why": "User-Agent without Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/prefs.js",
+      "old": "  transport: 'auto',",
+      "new": "  transport: globalThis.puter?.env === 'app' ? 'relay' : 'auto',",
+      "why": "The relay is the only transport on Homestead."
+    },
+    {
+      "file": "src/api-client/src/core/websocket.js",
+      "old": "    const Impl = this.WebSocketImpl;\n    if (typeof Impl !== 'function') {",
+      "new": "    const Impl = this.WebSocketImpl;\n    if (globalThis.puter?.env === 'app' && Impl === globalThis.WebSocket) {\n      this.#system('error', 'WebSocket connections are not available on Homestead.');\n      this.#setState('closed');\n      return false;\n    }\n    if (typeof Impl !== 'function') {",
+      "why": "WebSocket needs a connection the page policy and bridge do not allow; fail visibly."
+    },
+    {
+      "file": "src/api-client/src/ui/tabbar.js",
+      "old": "      { label: 'New WebSocket request', icon: 'plug', run: () => app.newWebSocket() },\n",
+      "new": "",
+      "why": "No New WebSocket entry."
+    },
+    {
+      "file": "src/api-client/src/ui/sidebar.js",
+      "old": "      { label: 'Add WebSocket', icon: 'plug', run: () => app.addWebSocketTo(cid, item.id) },\n",
+      "new": "",
+      "why": "No Add WebSocket entry."
+    },
+    {
+      "file": "src/api-client/src/ui/sidebar.js",
+      "old": "      item.type === 'collection' && !item.shared ? { label: 'Share...', icon: 'share', run: () => app.shareCollection(item.id) } : null,\n",
+      "new": "",
+      "why": "Sharing is not offered."
+    },
+    {
+      "file": "src/api-client/src/ui/app.js",
+      "old": "          action('plug', 'New WebSocket', () => this.newWebSocket()),\n",
+      "new": "",
+      "why": "No New WebSocket action."
+    },
+    {
+      "file": "src/api-client/src/ui/app.js",
+      "old": "        h('a.status-btn.icon-only.github-link', { href: REPO_URL, target: '_blank', rel: 'noopener', 'aria-label': 'Source code on GitHub', title: 'Source code on GitHub' }, icon('github', 14)),\n",
+      "new": "",
+      "why": "No GitHub link: nothing leaves the appliance."
+    },
+    {
+      "file": "src/api-client/src/data/sync.js",
+      "old": "        this.fs.readdir(`${this.root}/collections`),",
+      "new": "        this.fs.readdir(`${this.root}/collections`).catch((err) => (isMissing(err) ? [] : Promise.reject(err))),",
+      "why": "A folder that holds no file yet is an empty folder (the bridge has folders only while a file is under them)."
+    },
+    {
+      "file": "src/api-client/src/data/sync.js",
+      "old": "        this.fs.readdir(`${this.root}/environments`),",
+      "new": "        this.fs.readdir(`${this.root}/environments`).catch((err) => (isMissing(err) ? [] : Promise.reject(err))),",
+      "why": "A folder that holds no file yet is an empty folder (the bridge has folders only while a file is under them)."
+    },
+    {
+      "file": "src/api-client/src/data/sync.js",
+      "old": "        this.fs.readdir(this.root),",
+      "new": "        this.fs.readdir(this.root).catch((err) => (isMissing(err) ? [] : Promise.reject(err))),",
+      "why": "A folder that holds no file yet is an empty folder (the bridge has folders only while a file is under them)."
+    },
+    {
+      "file": "src/api-client/src/main.js",
+      "old": "  const shared = s.signedIn && puter ? new SharedCollections({ ws, fs: puter.fs, sync, self: s.user.username }) : null;",
+      "new": "  const shared = null;",
+      "why": "Sharing is not offered."
+    },
+    {
+      "file": "src/api-client/src/main.js",
+      "old": "  if (moved.count) toast({ kind: 'success', title: 'Your work moved to your account', text: `${moved.count} item${moved.count > 1 ? 's' : ''} from this browser now sync with Puter.` });",
+      "new": "  if (moved.count) toast({ kind: 'success', title: 'Your work moved to your account', text: `${moved.count} item${moved.count > 1 ? 's' : ''} from this browser now saved on your Homestead.` });",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/app.js",
+      "old": "    const where = this.sync ? 'It is still saved to your Puter cloud.' : 'It will be lost when you close the app.';",
+      "new": "    const where = this.sync ? 'It is still saved to your Homestead.' : 'It will be lost when you close the app.';",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/app.js",
+      "old": "      message: 'Your collections stay in your Puter account. This browser will show the signed-out workspace.',",
+      "new": "      message: 'Your collections stay on your Homestead. This browser will show the signed-out workspace.',",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/app.js",
+      "old": "      fill(this.syncEl, h('span.sync-local', { title: 'Saved in this browser only. Sign in to sync with your Puter account.' }, icon('cloudOff', 15), h('span.sr-only', 'Saved in this browser only')));",
+      "new": "      fill(this.syncEl, h('span.sync-local', { title: 'Saved in this browser only.' }, icon('cloudOff', 15), h('span.sr-only', 'Saved in this browser only')));",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/app.js",
+      "old": "      idle: ['cloud', 'Synced with Puter'],",
+      "new": "      idle: ['cloud', 'Synced with your Homestead'],",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/app.js",
+      "old": "      synced: ['cloudCheck', 'All changes saved to Puter'],",
+      "new": "      synced: ['cloudCheck', 'All changes saved to your Homestead'],",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/app.js",
+      "old": "      syncing: ['refresh', 'Syncing with Puter...'],",
+      "new": "      syncing: ['refresh', 'Syncing with your Homestead...'],",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/app.js",
+      "old": "      error: ['cloudOff', 'Could not reach Puter. Changes are kept on this device and will sync later.'],",
+      "new": "      error: ['cloudOff', 'Could not reach your Homestead. Changes are kept on this device and will sync later.'],",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/app.js",
+      "old": "      { label: 'Automatic', icon: 'zap', checked: t === 'auto', run: () => this.setTransport('auto') },\n",
+      "new": "",
+      "why": "Only the relay exists."
+    },
+    {
+      "file": "src/api-client/src/ui/app.js",
+      "old": "      { label: 'Browser only', icon: 'globe', checked: t === 'browser', run: () => this.setTransport('browser') },\n",
+      "new": "",
+      "why": "Only the relay exists."
+    },
+    {
+      "file": "src/api-client/src/ui/app.js",
+      "old": "      { label: signed ? 'Puter relay' : 'Puter relay (sign in)', icon: 'server', checked: t === 'relay', disabled: !signed, run: () => this.setTransport('relay') },",
+      "new": "      { label: 'Through your Homestead', icon: 'server', checked: t === 'relay', run: () => this.setTransport('relay') },",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/app.js",
+      "old": "      toast({ kind: 'info', title: 'Sign in to share', text: 'Sharing uses your Puter account.', actions: this.session.puter ? [{ label: 'Sign in', run: () => this.signIn() }] : [] });",
+      "new": "      toast({ kind: 'info', title: 'Sign in to share', text: 'Sharing is not available here.', actions: this.session.puter ? [{ label: 'Sign in', run: () => this.signIn() }] : [] });",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/request-view.js",
+      "old": "      { label: 'Send from the browser', icon: 'globe', run: () => this.app.sendTab(this.tab, { transport: 'browser' }) },\n",
+      "new": "",
+      "why": "Only the relay exists."
+    },
+    {
+      "file": "src/api-client/src/ui/request-view.js",
+      "old": "      { label: this.app.session.signedIn ? 'Send through Puter relay' : 'Send through Puter relay (sign in)', icon: 'server', disabled: !this.app.session.signedIn, run: () => this.app.sendTab(this.tab, { transport: 'relay' }) },",
+      "new": "      { label: 'Send through your Homestead', icon: 'server', run: () => this.app.sendTab(this.tab, { transport: 'relay' }) },",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/request-view.js",
+      "old": "      [['auto', 'App default'], ['browser', 'Browser'], ['relay', 'Puter relay']].map(([v, l]) => h('option', { value: v, selected: s.transport === v }, l)),",
+      "new": "      [['relay', 'Your Homestead']].map(([v, l]) => h('option', { value: v, selected: s.transport === v }, l)),",
+      "why": "Only the relay exists."
+    },
+    {
+      "file": "src/api-client/src/ui/response-view.js",
+      "old": "      if (signedIn) actions.push(h('button.btn.sm.primary', { type: 'button', onclick: () => this.onRelay?.() }, icon('server', 14), 'Send through Puter relay'));",
+      "new": "      if (signedIn) actions.push(h('button.btn.sm.primary', { type: 'button', onclick: () => this.onRelay?.() }, icon('server', 14), 'Send through your Homestead'));",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/response-view.js",
+      "old": "      else if (this.app.session.puter) actions.push(h('button.btn.sm.primary', { type: 'button', onclick: () => this.app.signIn() }, icon('logIn', 14), 'Sign in to use the relay'));",
+      "new": "      else if (false) actions.push(h('button.btn.sm.primary', { type: 'button', onclick: () => this.app.signIn() }, icon('logIn', 14), 'Sign in to use the relay'));",
+      "why": "No sign-in button."
+    },
+    {
+      "file": "src/api-client/src/ui/response-view.js",
+      "old": "      { title: r.transport === 'relay' ? (r.autoRelay === 'fallback' ? 'Sent through the Puter relay because the browser could not reach the server' : 'Sent through the Puter relay') : 'Sent from the browser' },",
+      "new": "      { title: r.transport === 'relay' ? 'Sent from your Homestead' : 'Sent from the browser' },",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/response-view.js",
+      "old": "      h('p.metric-note', r.transport === 'relay' ? 'Measured in this browser, through the Puter relay.' : 'Measured in this browser. Browsers hide connection details for cross-origin requests.'),",
+      "new": "      h('p.metric-note', r.transport === 'relay' ? 'Measured in this browser, from your Homestead.' : 'Measured in this browser. Browsers hide connection details for cross-origin requests.'),",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/response-view.js",
+      "old": "        ? h('p.resp-note', icon('info', 13), h('span', 'Browsers only show headers the server exposes to web pages. Send through the Puter relay to see every header.'))",
+      "new": "        ? h('p.resp-note', icon('info', 13), h('span', 'Browsers only show headers the server exposes to web pages.'))",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/response-view.js",
+      "old": "          r.transport === 'browser' ? h('p.resp-hint', 'Send through the Puter relay to see and keep cookies.') : null,",
+      "new": "          r.transport === 'browser' ? h('p.resp-hint', 'Homestead does not pass cookies on.') : null,",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/core/io/insomnia.js",
+      "old": "        ctx.w.add('An API key sent as a cookie became a Cookie header; browsers only send it through the Puter relay.');",
+      "new": "        ctx.w.add('An API key sent as a cookie became a Cookie header; Homestead does not send cookies.');",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/palette.js",
+      "old": "  list.push(cmd('transport-auto', 'Send through: Automatic', 'zap', () => app.setTransport('auto'), { keywords: 'transport relay browser cors', detail: transport === 'auto' ? 'Current' : '' }));\n",
+      "new": "",
+      "why": "Only the relay exists."
+    },
+    {
+      "file": "src/api-client/src/ui/palette.js",
+      "old": "  list.push(cmd('transport-browser', 'Send through: Browser only', 'globe', () => app.setTransport('browser'), { keywords: 'transport cors', detail: transport === 'browser' ? 'Current' : '' }));\n",
+      "new": "",
+      "why": "Only the relay exists."
+    },
+    {
+      "file": "src/api-client/src/ui/palette.js",
+      "old": "  if (signedIn) list.push(cmd('transport-relay', 'Send through: Puter relay', 'server', () => app.setTransport('relay'), { keywords: 'transport cors proxy', detail: transport === 'relay' ? 'Current' : '' }));",
+      "new": "  if (signedIn) list.push(cmd('transport-relay', 'Send through: your Homestead', 'server', () => app.setTransport('relay'), { keywords: 'transport cors proxy', detail: transport === 'relay' ? 'Current' : '' }));",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/palette.js",
+      "old": "  if (app.session?.puter && !signedIn) list.push(cmd('sign-in', 'Sign in to Puter', 'logIn', () => app.signIn(), { keywords: 'account sync login' }));",
+      "new": "  if (false) list.push(cmd('sign-in', 'Sign in to Puter', 'logIn', () => app.signIn(), { keywords: 'account sync login' }));",
+      "why": "No sign-in command."
+    },
+    {
+      "file": "src/api-client/src/ui/dialogs.js",
+      "old": "        h('a.btn', { href: SOURCE_URL, target: '_blank', rel: 'noopener' }, icon('github', 15), h('span', 'Source code'), h('span.sr-only', '(opens in a new tab)')),\n",
+      "new": "",
+      "why": "No link to other sites."
+    },
+    {
+      "file": "src/api-client/src/ui/dialogs.js",
+      "old": "      h('p.st-about-text', 'Build, send and test HTTP requests in your browser. Organize them in collections, switch between environments, and optionally sync everything with your Puter account.'),",
+      "new": "      h('p.st-about-text', 'Build, send and test HTTP requests in your browser. Organize them in collections, switch between environments, and send requests from your own server.'),",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/dialogs.js",
+      "old": "    text: 'Works with any server. Every header is sent exactly as written and every response header is shown. Traffic passes through the Puter relay, while TLS (HTTPS encryption) is done in your browser. Requires signing in.',",
+      "new": "    text: 'Works with any server. Requests are sent from your Homestead to public internet addresses only (not your local network). Redirects are followed, cookies are not passed on, and only safe response headers are shown. A request body can be up to 2 MB and a response up to 8 MB.',",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/dialogs.js",
+      "old": "    label: 'Puter relay',",
+      "new": "    label: 'Your Homestead',",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/dialogs.js",
+      "old": "const cards = TRANSPORTS.map((t) => {",
+      "new": "const cards = TRANSPORTS.filter((t) => t.value === 'relay' || globalThis.puter?.env !== 'app').map((t) => {",
+      "why": "Only the relay exists."
+    },
+    {
+      "file": "src/api-client/src/ui/dialogs.js",
+      "old": "          disabled && app.session?.puter",
+      "new": "          disabled && false",
+      "why": "No sign-in link."
+    },
+    {
+      "file": "src/api-client/src/ui/dialogs.js",
+      "old": "      ? h('div.callout', { dataset: { kind: 'info' } }, icon('cloud', 16), h('div', h('strong', 'Synced to your Puter account'), h('div', `Collections, environments and history are saved on this device and synced to ${user ? `${user}'s` : 'your'} Puter account. Cookies and saved responses stay on this device.`)))",
+      "new": "      ? h('div.callout', { dataset: { kind: 'info' } }, icon('cloud', 16), h('div', h('strong', 'Kept on your Homestead'), h('div', `Collections, environments and history are saved on this device and also kept on your Homestead, private to you. Cookies and saved responses stay on this device.`)))",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/dialogs.js",
+      "old": "            app.session?.puter ? h('div.st-callout-action', h('button.link-btn', { type: 'button', onclick: () => app.signIn() }, 'Sign in'), ' to sync across devices.') : null,",
+      "new": "            false ? h('div.st-callout-action', h('button.link-btn', { type: 'button', onclick: () => app.signIn() }, 'Sign in'), ' to sync across devices.') : null,",
+      "why": "No sign-in link."
+    },
+    {
+      "file": "src/api-client/src/ui/dialogs.js",
+      "old": "            h('p', 'Cookies set by servers on requests sent through the Puter relay appear here. You can also add one yourself.'),",
+      "new": "            h('p', 'Cookies set by servers on requests sent through the relay appear here. You can also add one yourself.'),",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/ui/dialogs.js",
+      "old": "    h('div.callout', { dataset: { kind: 'info' } }, icon('info', 16), h('div', \"Cookies are stored on this device and sent with requests that go through the Puter relay. Browser requests use the browser's own cookie rules and cannot read or send these.\")),",
+      "new": "    h('div.callout', { dataset: { kind: 'info' } }, icon('info', 16), h('div', \"Homestead does not pass cookies on, so these are kept only for the app's own use.\")),",
+      "why": "No Puter wording."
+    }
+  ],
+  "sdk_surface": {
+    "supported": [
+      "fs.write",
+      "fs.read",
+      "fs.readdir",
+      "fs.delete",
+      "auth.getUser",
+      "net.fetch"
+    ],
+    "refused": [
+      "fs.getReadURL",
+      "kv.share",
+      "kv.unshare",
+      "kv.listShared",
+      "kv.listSharedByMe",
+      "fs.share",
+      "fs.unshare",
+      "fs.getShares",
+      "fs.listShared",
+      "perms.*",
+      "events.*",
+      "appID",
+      "net.Socket",
+      "net.tls.TLSSocket"
+    ],
+    "absent": [
+      "fs.mkdir"
+    ],
+    "disabled": {
+      "ai": "no AI backend; the app does not use it",
+      "sharing": "hidden: the package does not turn sharing on",
+      "websocket": "the page policy allows only this origin; the WebSocket entries are removed and a connection fails with a visible message"
+    }
+  },
+  "add_files": [
+    {
+      "target": "src/api-client/src/homestead/boot.js",
+      "source": "api-client-person-storage.js"
+    },
+    {
+      "target": "src/api-client/src/core/homestead-net.js",
+      "source": "api-client-net.js"
+    }
+  ]
+}

@@ -172,3 +172,17 @@ app: expense
 license: MIT
 archive: expense-source.tar.gz
 sha256: 4d4f6e81de6314872f69f3c57a87b0d9227ccda64011a395016d43ebd73f47f0
+---
+# Pinned source for the api-client package (S436). Same upstream repository and
+# commit as above; archive built the same way (tracked files of src/api-client,
+# LICENSE, dev/puter-localhost.mjs; GNU tar, sorted, mode 0664, owner 0, mtime
+# 0, gzip -n; the recipe was re-run on src/expense and reproduced its digest).
+# Licence: MIT (the repository root LICENSE, Puter Technologies Inc.; the app
+# has no licence file of its own). Bundled from npm: CodeMirror and Lezer (MIT),
+# yaml (ISC), lucide (ISC).
+repository: https://github.com/HeyPuter/everything
+commit: e7d07c48546ef0650a8f3ab94ae82b8b50d3646a
+app: api-client
+license: MIT
+archive: api-client-source.tar.gz
+sha256: 35a33090e2a23e96cc633c086558b5a8d2f70dbb21d7d92e33950ba4d1c79146

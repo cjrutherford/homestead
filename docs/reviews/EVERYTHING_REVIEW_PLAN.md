@@ -262,6 +262,23 @@ Steps and expected results:
 
 Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6
 
+## S436 — API Client catalog package
+Prerequisites: VM 2 on the build with S436; Authentik sign-in set up; a second person exists in People; the host firewall egress rule from S421 in place.
+
+Steps and expected results:
+1. Build `api-client` in the craft page or CLI. Expected: image `homestead/everything-api-client:0.1.0` recorded.
+2. Install with a plan, preview and apply. Expected: route `/apps/api-client/`, no public exposure; the container runs the bridge with `-net`.
+3. Apply sign-in. Expected: redirect to Authentik; the app opens; no request to any other host; no Console CSP violation; no "Puter" wording or link.
+4. Send a GET to a public address you own (for example a test page). Expected: status, headers and body shown; the Network tab shows only this app's own path.
+5. Send to `http://127.0.0.1/`, a LAN address and the appliance name. Expected: each refused with "That address could not be reached from your Homestead"; `everything-bridge net-log` shows `blocked_address`, host and path only.
+6. Send a request with a body over 2 MB, one whose response is over 8 MB, and 61 requests in a minute. Expected: a clear message for each (too large, too large, rate limited).
+7. Look for New WebSocket, Share, raw sockets and the hosted-sync wording. Expected: none offered; a WebSocket import fails with "not available on Homestead".
+8. Add a script to a request (pre-request or tests). Expected: unproven; note whether it runs or fails visibly (see DEFERRED S436).
+9. Second person (closed, then granted): Expected: none of the first person's collections, environments or history.
+10. Backup contains `data/bridge.db`; uninstall removes route and container.
+
+Pass/fail: [ ] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6 [ ] 7 [ ] 8 [ ] 9 [ ] 10
+
 ## Template for a new app section
 ## SNNN — <App>
 Prerequisites: ...
