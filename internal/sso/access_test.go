@@ -93,11 +93,11 @@ func TestDashboardWithoutALinkDoesNotBindTheEmptyOwnerGroup(t *testing.T) {
 	if _, ok := ak.groups[OwnerGroup]; !ok {
 		t.Fatal("the owner group is created")
 	}
-	// The people group is bound even when empty: nobody outside the two
-	// groups can sign in. The empty owner group is not, so the owner is
-	// not locked out.
-	if len(ak.bindings) != 1 || ak.bindings[0]["group"] != "g-"+PeopleGroup {
-		t.Fatalf("only the people group is bound: %v", ak.bindings)
+	// Nothing is bound while the owner group is empty: a people-group
+	// binding alone would refuse the unlinked owner at the Link step
+	// ("Policy binding 'None' returned result 'False'").
+	if len(ak.bindings) != 0 {
+		t.Fatalf("no binding before the owner is linked: %v", ak.bindings)
 	}
 	if !strings.Contains(strings.Join(plan.Warnings, "|"), "No owner is linked yet") {
 		t.Fatalf("warnings = %v", plan.Warnings)

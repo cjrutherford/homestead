@@ -442,7 +442,7 @@ func planWarnings(spec Spec) []string {
 	}
 	if spec.Access != nil {
 		if spec.Access.OwnerSub == "" {
-			w = append(w, "No owner is linked yet, so the dashboard application is not bound to "+OwnerGroup+" and the owner group stays empty. Link the owner, then plan sign-in again to close the application to everyone else.")
+			w = append(w, "No owner is linked yet, so the dashboard application is not bound to any group and the owner group stays empty: binding now would stop you signing in to Authentik to link. Homestead still lets in only the linked owner and active people. Link the owner, then plan sign-in again (the tunnel setup does this for you) to close the application to everyone else.")
 		} else {
 			w = append(w, "The dashboard application is bound to the group "+OwnerGroup+", which holds only the linked owner. The (issuer, subject) check is unchanged.")
 		}

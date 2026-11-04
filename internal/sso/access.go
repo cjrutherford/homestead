@@ -289,6 +289,22 @@ func (a *API) reconcileAccess(ctx context.Context, x Access, appPK string, step 
 	if appPK == "" || len(x.Bindings) == 0 {
 		return nil
 	}
+	if hasGroup(x.Bindings, OwnerGroup) {
+		g := groups[OwnerGroup]
+		if g == nil {
+			var err error
+			if g, err = a.FindGroup(ctx, OwnerGroup); err != nil {
+				return err
+			}
+		}
+		if g == nil || len(g.Users) == 0 {
+			// Binding any group now would close the application to the
+			// unlinked owner, who must sign in to Authentik to link.
+			// Homestead's own subject check still refuses everyone else.
+			step("owner group is empty: no binding is made yet, so the owner can sign in to link")
+			return nil
+		}
+	}
 	have, err := a.listBindings(ctx, appPK)
 	if err != nil {
 		return err
@@ -303,10 +319,6 @@ func (a *API) reconcileAccess(ctx context.Context, x Access, appPK string, step 
 			if g, err = a.FindGroup(ctx, name); err != nil || g == nil {
 				return fmt.Errorf("sso: group %s is missing", name)
 			}
-		}
-		if name == OwnerGroup && len(g.Users) == 0 {
-			step("owner group is empty: not bound, so the owner is not locked out")
-			continue
 		}
 		if bound[g.PK] {
 			step("binding to " + name + " already exists")
@@ -444,11 +456,14 @@ func (a *API) ReadAccess(ctx context.Context, x Access, appSlug string) (AccessR
 			}
 		}
 		rep.Open = len(have) == 0
+		og := byName[OwnerGroup]
+		// While the owner group is empty no binding is made (the owner
+		// must be able to sign in to link), so nothing is drift.
+		waiting := hasGroup(x.Bindings, OwnerGroup) && (og == nil || len(og.Users) == 0)
 		for _, name := range x.Bindings {
 			g := byName[name]
 			st := BindingState{Group: name, Bound: g != nil && bound[g.PK]}
-			// An empty owner group is deliberately unbound.
-			if !st.Bound && !(name == OwnerGroup && (g == nil || len(g.Users) == 0)) {
+			if !st.Bound && !waiting {
 				rep.Drift = append(rep.Drift, "the application is not bound to "+name)
 			}
 			rep.Bindings = append(rep.Bindings, st)
@@ -519,14 +534,16 @@ func (a *API) inspectAccess(ctx context.Context, x Access, app *Application) ([]
 			bound[b.Group] = true
 		}
 	}
+	og := byName[OwnerGroup]
+	waiting := hasGroup(x.Bindings, OwnerGroup) && owner == nil && (og == nil || len(og.Users) == 0)
 	for _, name := range x.Bindings {
 		o := Object{Kind: "Binding", Name: "application to " + name, Action: ActionCreate}
 		g := byName[name]
 		switch {
 		case g != nil && bound[g.PK]:
 			o.Action = ActionUnchanged
-		case name == OwnerGroup && owner == nil && (g == nil || len(g.Users) == 0):
-			o.Action, o.Changes = ActionUnchanged, []string{"not bound while the owner group has no member"}
+		case waiting:
+			o.Action, o.Changes = ActionUnchanged, []string{"not bound until the owner is linked, so the owner can sign in to link"}
 		}
 		out = append(out, o)
 	}

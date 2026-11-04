@@ -412,8 +412,8 @@ func TestPlanWithATokenInspectsAndIsIdempotent(t *testing.T) {
 	if err := runDef(t, h); err != nil {
 		t.Fatal(err)
 	}
-	if ak.posts != 5 || ak.patches != 0 {
-		t.Fatalf("first apply: posts=%d patches=%d, want two groups, provider, application, people binding", ak.posts, ak.patches)
+	if ak.posts != 4 || ak.patches != 0 {
+		t.Fatalf("first apply: posts=%d patches=%d, want two groups, provider, application (no binding before a link)", ak.posts, ak.patches)
 	}
 	body, _ := json.Marshal(ak.provider)
 	for _, must := range []string{`"client_type":"confidential"`, `"grant_types":["authorization_code"]`, `"matching_mode":"strict"`, `"signing_key":"key-1"`, `"sub_mode":"hashed_user_id"`,
