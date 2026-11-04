@@ -1,6 +1,10 @@
 # Testing report
 
-Dated 2026-11-03 at commit `905773d`. Companion: `docs/reviews/OWNER_ACCEPTANCE_CHECKLIST.md` (the live walkthrough that closes the gaps below) and `docs/reviews/EVERYTHING_REVIEW_PLAN.md`.
+Dated 2026-11-03 at commit `905773d`. **VM 2 state: factory-reset at `ad89b28` (2026-11-03), daemon active and unclaimed, nothing installed** (no Authentik, no apps, no tunnel; mounts wiped; new appliance CA). The "Verified live" notes below describe earlier VM 2 runs that no longer exist on the machine; the acceptance run starts from a clean appliance. Companion: `docs/reviews/OWNER_ACCEPTANCE_CHECKLIST.md` (the live walkthrough that closes the gaps below) and `docs/reviews/EVERYTHING_REVIEW_PLAN.md`.
+
+## How to run the acceptance
+
+Open `docs/reviews/acceptance-form.html` in a browser (a copy can be taken to any machine; it works offline) and walk `docs/reviews/OWNER_ACCEPTANCE_CHECKLIST.md` in order, setting a result and notes per step. A FAIL or BLOCKED step opens an issue panel. When done, press **Export results** and hand the Markdown and JSON files (and the named screenshots) to Claude. Never enter passwords, tokens or secrets.
 
 ## Test layers
 
@@ -22,9 +26,9 @@ Dated 2026-11-03 at commit `905773d`. Companion: `docs/reviews/OWNER_ACCEPTANCE_
 - Dashboard: 1171 of 1172 pass. The one failure is the actual-budget curated first-login copy in `dashboard/src/app/catalog/curated-copy.spec.ts`.
 - Upstream suites: Contacts 313, Inventory 722, Time tracking 205, Circuits 206/207 (patched), Parametric 104, 3D 3,018 (5 skipped), Solitaire 209, Sudoku 333, Expense 79, API Client 679, Records 445, Notes 275. Tasks was 172/235 against the bridge at S367 chunk 2 (final count not recorded). Projects count not recorded.
 
-## Verified live on VM 2, and what never was
+## Verified live on VM 2 earlier, and what never was
 
-Verified or partly verified (from the memory notes; VM 2 last known at ee51984 for Wave 3, later 32c45d6 for path apps):
+VM 2 was reset on 2026-11-03, so none of this is installed now. Verified or partly verified before the reset (from the memory notes; VM 2 last known at ee51984 for Wave 3, later 32c45d6 for path apps):
 - Authentik sign-in redirect with PKCE for Nextcloud, Jellyfin and Immich; Mealie public SSO redirect.
 - Vaultwarden 1.37.4 with sign-in applied; CWA, Gitea, Audiobookshelf redirects; Navidrome gate; Kuma login-off.
 - BookStack live-checked; all 13 craft apps validated (S382).

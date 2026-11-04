@@ -1,174 +1,157 @@
 # Owner acceptance checklist
 
-Run on VM 2 and hand back filled in. Companion documents: `docs/reviews/TESTING_REPORT.md` (what is already tested and what is not) and `docs/reviews/EVERYTHING_REVIEW_PLAN.md` (per-slice detail for the Everything apps; the ADR-058 owner section S441 is folded in below as `EV-ADR058-*`).
+Run on VM 2 from a **freshly reset appliance** and hand back filled in. Companion documents: `docs/reviews/TESTING_REPORT.md` (what is already tested and what is not) and `docs/reviews/EVERYTHING_REVIEW_PLAN.md` (per-slice detail for the Everything apps; the ADR-058 owner section S441 is folded in below as `EV-ADR058-*`).
+
+## How to run the acceptance
+
+1. Open `docs/reviews/acceptance-form.html` in a browser (double-click it; it works offline, and a copy can be taken to any machine, such as a laptop next to the VM or a phone). It lists every step below with the same IDs.
+2. Walk this file in order. For each step choose a result (PASS, FAIL, SKIP, BLOCKED) in the form and add notes. A FAIL or BLOCKED step opens an issue panel (severity, what happened, steps to reproduce, URL, screenshot file name, error text, workaround). **Do not enter passwords, tokens or secrets** in the form or in this file.
+3. Answers are saved in the browser as you type. When done (or at the end of each day) press **Export results**: it downloads a Markdown file and a JSON file.
+4. Hand both files (and the screenshots they name) to Claude. The JSON can be re-imported into the form to continue a run on another machine.
+
+The form is generated from this file by `python3 -I scripts/review/make_acceptance_form.py`; if this file changes, regenerate it.
 
 ## How to use this file
 
-1. **Be honest about the starting point.** The 18 server apps and the platform have been partly checked live on VM 2 (see the testing report). The 14 Everything apps (S367 onward) and all ADR-058 features (sharing, read links, events, net, purge) have **never been deployed to VM 2**, and the 13 craft apps were last validated in S382. So step PLAT-DEPLOY-1 is deploying the current commit. Do not skip it.
-2. **Order:** Platform, server apps (SRV), Everything apps (EV), craft apps (CRAFT), then cross-cutting END steps. Installs and features on day 1. Backup steps need the nightly 02:00 run, so they are checked on day 2. END steps last.
+1. **Starting point.** The appliance was factory-reset (`scripts/factory-reset.sh` with all three mounts wiped, then `--reinstall`) and deployed from the current commit by Claude. It is **active and unclaimed**; nothing is installed (no Authentik, no apps, no tunnel, no public DNS records for the zone's Homestead names); `/mnt/app`, `/mnt/bulk` and `/mnt/backup` are empty; the appliance has a **new root CA**, so browsers distrust it until you trust it (PLAT-CLAIM-1a). Every app install below is therefore a **first install**.
+2. **Order:** Platform (start, claim, wizard, people, tunnel), server apps (SRV), platform checks that need apps (PLAT-AFTER), Everything apps (EV), craft apps (CRAFT), then cross-cutting END steps. Installs and features on day 1. Backup steps that need the nightly 02:00 run are checked on day 2. END steps last.
 3. **Prerequisites:**
-   - VM 2 on the current commit, with the packages built and installed (PLAT-DEPLOY).
-   - An owner account.
-   - Person A and person B: both granted every app you test. Person C: a Homestead person with **no** app access (closed by default, ADR-043).
+   - The claim token Claude handed you (it lasts 30 minutes; if it expired, run `sudo homesteadctl claim token` on the VM for a new one).
+   - A Cloudflare API token for the zone you want to use, with the permissions listed in `docs/INSTALL.md` D4 (Zone Read, DNS Edit, Account Cloudflare Tunnel Edit, SSL and Certificates Read), and that zone active on Cloudflare. Keep it in your password manager; paste it only into the Homestead form that asks for it.
+   - A password manager for the owner, `akadmin`, person and app passwords.
+   - Names for people A, B and C (A and B get every app you test; C is a Homestead person with **no** app access, closed by default, ADR-043).
    - A phone or second browser (not just a private window of the same profile) and a public internet connection.
+   - The host reaches the VM by `/etc/hosts` names (`homestead.lan` and the app names) and by `homestead.local` over mDNS.
    - Placeholders: `<server>` is `homestead.lan` or `homestead.local`; `<public-domain>` is your tunnel zone (the public dashboard is `homestead.<public-domain>`); `<lan-suffix>` is `lan` or `local`.
    - Container names are `<package>-<service>`; for a few server apps the service name differs from the package name, so confirm with `docker ps` before a restart step.
-4. **Recording:** tick the box and fill `Result:` with PASS, FAIL, SKIP (not applicable) or BLOCKED (could not get that far; say why). Notes always. For a FAIL write what you saw, the URL and the screenshot filename. Do not paste passwords, tokens or secrets anywhere in this file.
-5. **Hand back** the whole file to Claude.
-
+4. **Recording:** use the form (or tick the box and fill `Result:` here) with PASS, FAIL, SKIP (not applicable) or BLOCKED (could not get that far; say why). Notes always. For a FAIL write what you saw, the URL and the screenshot filename.
+5. **Hand back** the exported files (or this whole file) to Claude.
 
 
 ## Platform
 
-- [ ] **PLAT-DEPLOY-1 — Deploy the current commit**
-  - Action: On the build host: `git rev-parse --short HEAD`, build the dashboard and the binaries as in `docs/INSTALL.md`, then on VM 2 run `sudo scripts/install-systemd.sh` (this also ships the Everything and craft build contexts). Restart the daemon.
-  - Expected: `systemctl status homestead-server` active; `homesteadctl version` (or the dashboard footer) shows the commit.
-  - If it fails: `journalctl -u homestead-server -n 100`.
+### Starting point
+
+- [ ] **PLAT-DEPLOY-1 — Confirm the starting point**
+  - Action: On the VM (SSH): `systemctl is-active homestead-server docker`; `curl -s localhost:8080/api/v1/claim/status`; `sudo docker ps --format '{{.Names}}'`; `findmnt /mnt/app /mnt/bulk /mnt/backup`; `ls -A /mnt/app /mnt/bulk /mnt/backup`; `ls /opt/homestead/stacks`; `homesteadctl version` and `cat ~/homestead/.deployed-commit` (the commit Claude deployed). In a browser open `https://homestead.local/` (continue past the certificate warning for now).
+  - Expected: The daemon is `active`; claim status says the appliance is not claimed, and the dashboard shows the Status page as **Unclaimed** with a **Claim this appliance** option (no login screen, no setup wizard). `docker ps` lists only `homestead-caddy` (the edge proxy the daemon starts; no Authentik and no app containers). The three mounts are mounted and empty (only `lost+found` may exist); `/opt/homestead/stacks` is empty. The Status page version and `homesteadctl version` show `0.0.1` (the release version; the build commit is in `~/homestead/.deployed-commit`, expected `ad89b28`). Write the commit in the form's run info.
+  - If it fails: INSTALL Part B and Part F; `journalctl -u homestead-server -n 100`. If anything is installed or claimed, stop and tell Claude: the reset did not complete.
+  - Result: ____  Notes: ____
+
+### Claim
+
+- [ ] **PLAT-CLAIM-1 — Claim the appliance with the token**
+  - Action: Open `https://homestead.local/` (or `https://homestead.lan/`), choose **Claim this appliance**, paste the claim token and create the owner account with a password from your password manager (INSTALL Part C). After you are signed in, try to claim again (reload the claim page or `homesteadctl claim ...` with the same token).
+  - Expected: Claim succeeds; you are signed in and the setup wizard opens; a second claim attempt is refused.
+  - If it fails: INSTALL Part C. If the token is refused, make a new one with `sudo homesteadctl claim token`.
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-CLAIM-1a — Trust the appliance root certificate**
+  - Action: The reset made a **new** appliance CA, so earlier trust is void. Open the **Trust** page (Network group, `/admin/trust`) and download the root certificate; check its SHA-256 fingerprint against the page (or `homesteadctl tls root show`). Install it as trusted on the browser/device you are using, following `docs/architecture/INTERNAL_CA_TRUST.md` for your OS; remove any older Homestead root first. Restart the browser, then open `https://homestead.local/` and `https://homestead.lan/`.
+  - Expected: Fingerprints match. Both names open with no certificate warning on a device that trusts the root. Homestead did not install the certificate for you.
+  - If it fails: INSTALL C3 and INTERNAL_CA_TRUST.md. Record the OS/browser and whether a stale old root is still trusted.
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-DEPLOY-2 — Catalog shows all packages**
-  - Action: `homesteadctl catalog list` and the dashboard Catalog page.
+  - Action: Sign in as the owner on the CLI (`homesteadctl login`), then `homesteadctl catalog list`, and open the dashboard Catalog page.
   - Expected: 46 packages (18 server, 14 Everything, 13 craft, plus Authentik). Counts match on both.
   - If it fails: Catalog page and CLI disagree: record both counts.
   - Result: ____  Notes: ____
 
-- [ ] **PLAT-CLAIM-1 — Claim the appliance**
-  - Note: VM 2 is already claimed and set up. Run PLAT-CLAIM and PLAT-SETUP only on a freshly reset appliance; otherwise mark them SKIP (already claimed) and continue at the next section.
-  - Action: Open `https://<server>/` for the first time and follow the claim step in INSTALL Part A with the owner account.
-  - Expected: Claim succeeds; a second attempt is refused.
-  - If it fails: INSTALL Part A.
+### Setup wizard
+
+- [ ] **PLAT-SETUP-1 — Wizard step 1, Account**
+  - Action: The wizard opens on **Account**. On the **Backups** page, under the recovery identity, **export** the file (or `homesteadctl backup identity export --out <file>`), store it off the appliance, and acknowledge the export. Back in the wizard choose **Confirm my password**.
+  - Expected: The step reads done; the progress list shows Account, Storage, Sign-in, Domain and access, Apps, Backups. The recovery file is not shown or pasted anywhere.
+  - If it fails: INSTALL D1; docs/architecture/SETUP_WALKTHROUGH.md.
   - Result: ____  Notes: ____
 
-- [ ] **PLAT-SETUP-1 — Setup wizard step 1: identity and network**
-  - Action: Walk the first-run wizard, step 1.
-  - Expected: Names resolve (`<server>` by mDNS and DNS); local-first, nothing public yet.
-  - If it fails: INSTALL Parts A-C.
+- [ ] **PLAT-SETUP-2 — Wizard step 2, Storage**
+  - Action: On the Storage step (Storage page) register each mount with a short label (`app` = `/mnt/app`, `bulk` = `/mnt/bulk`, `backup` = `/mnt/backup`) and assign classes: `application` and `database` to `/mnt/app`, `bulk` to `/mnt/bulk`, `backup` to `/mnt/backup`. Compare `homesteadctl storage list`.
+  - Expected: All three mounts are listed with free space; no partition or format action exists anywhere; the step is done once `application` is assigned; CLI and page agree.
+  - If it fails: INSTALL D2.
   - Result: ____  Notes: ____
 
-- [ ] **PLAT-SETUP-2 — Setup wizard step 2: storage**
-  - Action: Pick mounted storage (no formatting offered).
-  - Expected: Mounts of each class are listed; no partition or format action exists.
-  - If it fails: INSTALL Parts A-C.
+- [ ] **PLAT-SETUP-3 — Wizard step 3, Sign-in: install Authentik**
+  - Action: On the Sign-in step choose **install Authentik**. Read the requirements check and the plan, approve, and follow the operation to the end (the first start takes a few minutes).
+  - Expected: Plan lists ports, volumes and names before approval; afterwards `docker ps` shows the Authentik containers and the app card says running. Authentik is reachable at `https://<server>/apps/auth/`.
+  - If it fails: Operations page; `docker logs` for the Authentik containers; INSTALL D3.
   - Result: ____  Notes: ____
 
-- [ ] **PLAT-SETUP-3 — Setup wizard step 3: Authentik**
-  - Action: Install Authentik from the wizard (plan preview, approve).
-  - Expected: Authentik is reachable at `https://<server>/apps/auth/`.
-  - If it fails: INSTALL Parts A-C.
+- [ ] **PLAT-SETUP-3a — Authentik first run and API token**
+  - Action: Open `https://homestead.local/apps/auth/` (Authentik starts its first-run setup only at this address). Create the `akadmin` account with a strong password from your password manager. In Authentik: Admin interface, Directory, Tokens and App passwords, Create; make a token for `akadmin` with intent **API Token** and copy the key.
+  - Expected: You can sign in to the Authentik admin interface as `akadmin`; you hold an API token (do not paste it anywhere but the next step).
+  - If it fails: INSTALL D3 steps 2 and 3; Authentik container log. Vendor menus may be renamed: record the menu path you actually used.
   - Result: ____  Notes: ____
 
-- [ ] **PLAT-SETUP-4 — Setup wizard step 4: owner and SSO**
-  - Action: Create the owner sign-in.
-  - Expected: Owner can sign in to Homestead through Authentik.
-  - If it fails: INSTALL Parts A-C.
-  - Result: ____  Notes: ____
-
-- [ ] **PLAT-SETUP-5 — Setup wizard step 5: backups**
-  - Action: Accept or change the nightly policy (02:00 local, keep 7) and name the backup mount.
-  - Expected: Policy is saved and visible on the Backups page.
-  - If it fails: INSTALL Parts A-C.
-  - Result: ____  Notes: ____
-
-- [ ] **PLAT-SETUP-6 — Setup wizard step 6: finish**
-  - Action: Finish the wizard.
-  - Expected: You land on the dashboard; the wizard does not return.
-  - If it fails: INSTALL Parts A-C.
+- [ ] **PLAT-SETUP-4 — Wizard step 3, Sign-in: plan, approve, link owner SSO**
+  - Action: On the Sign-in page paste the token, tick **Keep the token, sealed on this appliance, for later changes** (needed for People and for the tunnel to set up public sign-in in one approval, ADR-046), choose **Plan**, read what will be created in Authentik, then **Approve and set up sign-in**. Choose **Link**, sign in to Authentik, return, then sign out of Homestead.
+  - Expected: The plan lists what is created; the token field is cleared; after sign-out the login page offers **Sign in with Authentik** and the local password still works as the way back in; the wizard shows Sign-in done.
+  - If it fails: INSTALL D3 steps 4 and 5; docs/architecture/DASHBOARD_SSO.md.
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-AUTH-1 — Authentik admin works**
-  - Action: Open `https://<server>/apps/auth/` and sign in as the Authentik admin.
+  - Action: Open `https://<server>/apps/auth/` and sign in as `akadmin`; look for the Homestead application/provider and the `homestead-` groups the sign-in plan created.
   - Expected: Admin interface opens.
   - If it fails: Authentik container log.
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-OWNER-1 — Owner sign-in and apps page**
-  - Action: Sign in as the owner on `https://<server>/` (apps page) and then `https://<server>/admin`.
-  - Expected: Apps page lists installed apps; admin opens only for the owner (ADR-050).
+  - Action: Sign in as the owner with **Sign in with Authentik** on `https://<server>/` (apps page; it lists no apps yet) and then `https://<server>/admin`.
+  - Expected: Signed in as the owner; apps page shows nothing installed yet; admin opens only for the owner (ADR-050).
   - If it fails: Sign-in page loops: record URL.
   - Result: ____  Notes: ____
 
+### People A, B and C
+
+- [ ] **PLAT-PEOPLE-1 — Add people A, B and C**
+  - Action: People page (or `homesteadctl people add`): add A, B and C, each with a one-time link, generated password or chosen password (shown once; store it in your password manager). Do not grant any app yet.
+  - Expected: Each appears in People and in Authentik (`homestead-` groups only); none has app access.
+  - If it fails: docs/INSTALL.md People section; ADR-043/049. If a one-time link is not offered, record the dialog text.
+  - Result: ____  Notes: ____
+
 - [ ] **PLAT-OWNER-2 — A person sees only the apps page**
-  - Action: Sign in as person A at `/` and try `/admin`.
-  - Expected: A sees granted apps only; `/admin` is refused.
-  - If it fails: People page grants.
+  - Action: In a separate browser sign in as person A at `https://<server>/` and try `https://<server>/admin`.
+  - Expected: A reaches the apps page (empty, nothing granted yet) and `/admin` is refused.
+  - If it fails: People page grants; ADR-050.
   - Result: ____  Notes: ____
 
-- [ ] **PLAT-DASH-1 — Dashboard pages load**
-  - Action: Click through every admin page: Catalog, Apps, People, Backups, Updates, Doctor, Network, Files, Craft, Audit, Settings.
-  - Expected: Each loads without error.
-  - If it fails: docs/PARITY.md.
-  - Result: ____  Notes: ____
+### Domain and access: tunnel and public sign-in
 
-- [ ] **PLAT-DASH-2 — Dashboard/CLI parity spot check**
-  - Action: Install nothing; compare `homesteadctl apps list`, `people list`, `backups list`, `audit list` with the matching pages.
-  - Expected: Same data in both. Also check `docs/PARITY.md` lists any control you notice missing from one side.
-  - If it fails: docs/PARITY.md.
+- [ ] **PLAT-SETUP-4a — Wizard step 4, Domain and access**
+  - Action: In the wizard Domain step: add your domain to Cloudflare if needed (it must be **Active**), choose **Cloudflare** as provider and **Cloudflare Tunnel** as access, paste your Cloudflare token (it is sealed and the form cleared), enter the public domain and choose **Save domain**.
+  - Expected: Domain saved; a local-only suffix (`.lan`, `.local`) would be refused; with a token a domain not in the token's zones is refused; the token field is empty afterwards.
+  - If it fails: INSTALL D4; SETUP_WALKTHROUGH.md Domain completion.
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-TUNNEL-1 — Tunnel plan preview**
-  - Action: Settings > Tunnel (or `homesteadctl tunnel plan`): enter the Cloudflare token and `<public-domain>`. Read the plan.
-  - Expected: Plan lists CNAMEs, the Let's Encrypt certificate, the public dashboard sign-in and each affected app; nothing changes before approval.
+  - Action: Open the **Tunnel** page (or `homesteadctl tunnel plan`). Name a **new** tunnel (for example `homestead-vm2`); the form proposes `homestead.<public-domain>` for the dashboard and `auth.<public-domain>` for Authentik (keep both). Choose **Review plan** and read it.
+  - Expected: Plan lists the tunnel to create, each CNAME (none exists yet), the Let's Encrypt certificate, the public dashboard sign-in change and each affected app; certificate lamps for each name; nothing changes before approval.
   - If it fails: Doctor Tunnel and Certificates sections; ADR-046/047/048.
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-TUNNEL-2 — Approve by digest**
-  - Action: Approve (dashboard or `tunnel approve --digest`).
-  - Expected: The appliance runs the steps itself; progress shows; audit shows `tunnel.*` entries.
+  - Action: Choose **Approve and set up** (or `tunnel approve --digest`) and follow the operation to the end.
+  - Expected: The appliance runs the steps itself (DNS, connector, certificate, sign-in); progress shows each step; `systemctl is-active homestead-tunnel` is active; audit shows `tunnel.*` and `tunnel.sign-in` entries. No separate Sign-in re-plan was needed.
   - If it fails: Doctor Tunnel and Certificates sections; ADR-046/047/048.
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-TUNNEL-3 — Public dashboard sign-in**
-  - Action: From a phone off the LAN open `https://homestead.<public-domain>/`.
+  - Action: From a phone off the LAN open `https://homestead.<public-domain>/` and sign in as the owner.
   - Expected: You are sent to Authentik's public sign-in at `https://auth.<public-domain>/` (the tunnel default; locally Authentik stays at `https://<server>/apps/auth/`); a password login on the Homestead name is refused; after sign-in the apps page shows.
   - If it fails: Doctor Tunnel and Certificates sections; ADR-046/047/048.
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-TUNNEL-4 — Public admin is gated**
-  - Action: On the public name open `/admin` as the owner.
+  - Action: On the public name open `/admin` as the owner, then as person A.
   - Expected: Allowed only after Authentik sign-in; a person is refused.
   - If it fails: Doctor Tunnel and Certificates sections; ADR-046/047/048.
   - Result: ____  Notes: ____
 
-- [ ] **PLAT-TUNNEL-5 — Apps move to the public issuer**
-  - Action: Open an OIDC app (for example Mealie) via its public name.
-  - Expected: Sign-in redirects to the public Authentik and returns.
-  - If it fails: Doctor Tunnel and Certificates sections; ADR-046/047/048.
-  - Result: ____  Notes: ____
-
 - [ ] **PLAT-TUNNEL-6 — Stop-on-drift and resume**
-  - Action: If a step fails or drift is shown, use Resume on the app card. Otherwise SKIP.
+  - Action: Only if a step failed or the Tunnel page shows drift: use Resume and read what it says. Otherwise SKIP.
   - Expected: It stops on failure, never retries blindly, and resumes only after approval.
   - If it fails: Doctor Tunnel and Certificates sections; ADR-046/047/048.
-  - Result: ____  Notes: ____
-
-- [ ] **PLAT-TUNNEL-7 — Remove the tunnel plan**
-  - Action: Plan removal, approve.
-  - Expected: Public names stop answering; local names still work.
-  - If it fails: Doctor Tunnel and Certificates sections; ADR-046/047/048.
-  - Result: ____  Notes: ____
-
-- [ ] **PLAT-PEOPLE-1 — Add people**
-  - Action: People page (or `homesteadctl people add`): add A, B and C.
-  - Expected: Each appears; none has app access.
-  - If it fails: docs/INSTALL.md People section; ADR-043/049.
-  - Result: ____  Notes: ____
-
-- [ ] **PLAT-PEOPLE-2 — Closed by default**
-  - Action: As C open an installed app.
-  - Expected: Refused. Grant A and B on one app and re-test: A and B in, C out.
-  - If it fails: docs/INSTALL.md People section; ADR-043/049.
-  - Result: ____  Notes: ____
-
-- [ ] **PLAT-PEOPLE-3 — App-admin groups**
-  - Action: Check that the `homestead-<app>-admins` group exists in Authentik and a member is admin in an app that honours it.
-  - Expected: Group exists; behaviour matches the app.
-  - If it fails: docs/INSTALL.md People section; ADR-043/049.
-  - Result: ____  Notes: ____
-
-- [ ] **PLAT-PEOPLE-4 — Reset password and MFA**
-  - Action: `people reset-password A`, `people reset-mfa A`.
-  - Expected: A can sign in again after the reset flow.
-  - If it fails: docs/INSTALL.md People section; ADR-043/049.
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-PEOPLE-5 — Public step-up**
@@ -183,46 +166,54 @@ Run on VM 2 and hand back filled in. Companion documents: `docs/reviews/TESTING_
   - If it fails: docs/INSTALL.md People section; ADR-043/049.
   - Result: ____  Notes: ____
 
-- [ ] **PLAT-PEOPLE-7 — Disable and enable**
-  - Action: `people disable B`, B tries to sign in, `people enable B`.
-  - Expected: Refused while disabled; works after. Disabling does not purge data.
-  - If it fails: docs/INSTALL.md People section; ADR-043/049.
+### Remaining wizard steps and first look
+
+- [ ] **PLAT-SETUP-4b — Wizard step 4, finish Domain; step 5, Apps**
+  - Action: Back in the wizard choose **I have finished here** on Domain and access. On the Apps step acknowledge it without installing anything (apps are installed in the server-app sections below).
+  - Expected: Both steps read done; Next became enabled only when each was done or skipped.
+  - If it fails: SETUP_WALKTHROUGH.md; the Domain step explains what is still missing if it will not finish.
   - Result: ____  Notes: ____
 
-- [ ] **PLAT-PEOPLE-8 — Adopt and resolve**
-  - Action: If an existing app user exists, use `people adopt` / `resolve`; else SKIP.
-  - Expected: Link is made; no duplicate person.
-  - If it fails: docs/INSTALL.md People section; ADR-043/049.
+- [ ] **PLAT-SETUP-5 — Wizard step 6, Backups**
+  - Action: On the Backups step read the proposed nightly policy (02:00 local, keep 7) and the apps it covers and leaves out; adjust if you like and **Approve**. Backups go to the `backup`-class disk.
+  - Expected: Policy is saved and visible on the Backups page.
+  - If it fails: INSTALL D6.
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-SETUP-6 — Wizard summary and finish**
+  - Action: Read the summary (each step's outcome) and finish.
+  - Expected: You land on the dashboard; the wizard does not return.
+  - If it fails: INSTALL D6.
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-DASH-1 — Dashboard pages load**
+  - Action: Click through every admin page by its menu entry: Status, Setup, Catalog, Craft apps, Craft files, Updates, Data, Edge, Exposure, Tunnel, Names, Certificates, Trust, Firewall, Storage, Backups, Configuration, Doctor, Drift, Secrets, People, Sign-in, Operations, Audit, Account, Advanced.
+  - Expected: Each loads without error.
+  - If it fails: docs/PARITY.md.
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-DASH-2 — Dashboard/CLI parity spot check**
+  - Action: Compare `homesteadctl apps list`, `people list`, `backups list`, `audit list` with the matching pages (nothing is installed yet; People and Audit have entries).
+  - Expected: Same data in both. Also check `docs/PARITY.md` lists any control you notice missing from one side.
+  - If it fails: docs/PARITY.md.
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-DOCTOR-1 — Doctor page and live probes**
-  - Action: Open Doctor and run `homesteadctl doctor --live`.
-  - Expected: Sections System, Storage, Network, Certificates, Tunnel, Sign-in, Apps; guidance only, nothing is changed; matches between page and CLI.
+  - Action: Open Doctor and run `homesteadctl doctor --live` on the near-empty appliance.
+  - Expected: Sections System, Storage, Network, Certificates, Tunnel, Sign-in, Apps; guidance only, nothing is changed; page and CLI match; no red items (record amber ones with their guidance).
   - If it fails: Record any red or amber item and its guidance text.
   - Result: ____  Notes: ____
 
-- [ ] **PLAT-DOCTOR-2 — Doctor finds a deliberate fault**
-  - Action: Stop one app container, reload Doctor.
-  - Expected: Doctor reports it with guidance and does not restart it. Start it again.
+- [ ] **PLAT-NAMES-1 — Names resolve**
+  - Action: From a second device on the LAN open `https://homestead.lan/` and `https://homestead.local/` (app names are checked in each app section).
+  - Expected: Both resolve; no certificate warning on a device that trusts the root (PLAT-CLAIM-1a), the documented warning on one that does not.
+  - If it fails: Network page, Doctor.
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-CATALOG-1 — Plan preview before every install**
+  - Action: Start an install from Catalog (any app) and read the plan before approving; cancel once.
+  - Expected: Plan lists ports, names, volumes, exposure; cancelling changes nothing.
   - If it fails: 
-  - Result: ____  Notes: ____
-
-- [ ] **PLAT-FIREWALL-1 — Gate table present**
-  - Action: `sudo nft list table inet homestead_gate`.
-  - Expected: Table exists and covers gated app ports (S421).
-  - If it fails: Doctor Network section.
-  - Result: ____  Notes: ____
-
-- [ ] **PLAT-FIREWALL-2 — Non-root local access is blocked**
-  - Action: As a normal user on the VM `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<gated-port>/` (port from the app's compose/plan).
-  - Expected: Connection refused or blocked; via the Caddy name it works.
-  - If it fails: 
-  - Result: ____  Notes: ____
-
-- [ ] **PLAT-FIREWALL-3 — Forged identity header is ignored**
-  - Action: `curl -H 'X-Authentik-Username: admin' https://<server>/apps/<forward-auth-app>/` from the LAN without a session.
-  - Expected: Redirected to sign-in, not logged in as admin.
-  - If it fails: Forward-auth edge config.
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-BACKUP-1 — Backup policy visible**
@@ -232,26 +223,14 @@ Run on VM 2 and hand back filled in. Companion documents: `docs/reviews/TESTING_
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-BACKUP-2 — Export the recovery identity**
-  - Action: `homesteadctl backup identity export --out <file>` and store it off the appliance.
+  - Action: Done in PLAT-SETUP-1; confirm the file is stored off the appliance (do not paste it anywhere), and that `homesteadctl backup identity export --out <file>` writes a file with mode 0600.
   - Expected: File is written; do not paste it anywhere.
   - If it fails: docs/architecture/BACKUP_RESTORE_RUNBOOK.md.
   - Result: ____  Notes: ____
 
-- [ ] **PLAT-BACKUP-3 — A run exists after 02:00 (day 2)**
-  - Action: Look at `<backup root>/<package>/<UTC timestamp>/backup.json`.
-  - Expected: One run per backup-capable package, encrypted; old runs pruned beyond 7.
-  - If it fails: docs/architecture/BACKUP_RESTORE_RUNBOOK.md.
-  - Result: ____  Notes: ____
-
 - [ ] **PLAT-UPDATE-1 — Updates list**
-  - Action: `homesteadctl updates list` and the Updates page.
+  - Action: `homesteadctl updates list` and the Updates page (no apps yet; platform updates only).
   - Expected: Same list in both; each item states whether a backup is made first.
-  - If it fails: 
-  - Result: ____  Notes: ____
-
-- [ ] **PLAT-UPDATE-2 — Apply one app update with backup**
-  - Action: `homesteadctl updates apply <pkg> --backup` for an app with an update (else SKIP).
-  - Expected: A backup run appears, then the update; the app still works. For vaultwarden/CWA/Gitea/ABS re-check sign-in (see their SRV update step).
   - If it fails: 
   - Result: ____  Notes: ____
 
@@ -259,24 +238,6 @@ Run on VM 2 and hand back filled in. Companion documents: `docs/reviews/TESTING_
   - Action: Platform update verify (dashboard or CLI) without applying.
   - Expected: Verify reports OK or the reason; rollback option is shown.
   - If it fails: 
-  - Result: ____  Notes: ____
-
-- [ ] **PLAT-CATALOG-1 — Plan preview before every install**
-  - Action: Start an install from Catalog and read the plan before approving; cancel once.
-  - Expected: Plan lists ports, names, volumes, exposure; cancelling changes nothing.
-  - If it fails: 
-  - Result: ____  Notes: ____
-
-- [ ] **PLAT-NAMES-1 — Names resolve**
-  - Action: From a second device on the LAN open `https://<server>/` and `https://<some-host-app>.<lan-suffix>/`.
-  - Expected: Both resolve and show a trusted or expected certificate warning only as documented.
-  - If it fails: Network page, Doctor.
-  - Result: ____  Notes: ____
-
-- [ ] **PLAT-CRAFTLINK-1 — Nextcloud link for craft**
-  - Action: Craft Files page / `homesteadctl files ...` after Nextcloud is installed.
-  - Expected: Link status shows linked; the craft install links automatically (S326).
-  - If it fails: Craft page.
   - Result: ____  Notes: ____
 
 
@@ -290,6 +251,12 @@ _Known: the dashboard curated first-login copy test for Actual Budget fails (see
 - [ ] **SRV-ACTUAL-BUDGET-1 — Install: plan preview, then approve**
   - Action: Catalog > Actual Budget > Install. Read the plan, then approve (or `homesteadctl catalog plan actual-budget` then approve).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
+  - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
+  - Result: ____  Notes: ____
+
+- [ ] **SRV-ACTUAL-BUDGET-1a — First sign-in makes you the server owner**
+  - Action: Open the app and sign in through Authentik yourself before anyone else does. The first person to sign in becomes the Actual server owner and the owner cannot be changed afterwards.
+  - Expected: You are the Actual server owner; later people get ordinary accounts.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -344,7 +311,7 @@ _Known: the dashboard curated first-login copy test for Actual Budget fails (see
 
 ### SRV-AUDIOBOOKSHELF: Audiobookshelf
 
-_DB-write sign-in: re-verify after EVERY Audiobookshelf update (pin test TestAudiobookshelfSignInPinnedToVerifiedVersion). Client secret is stored in plaintext in absdatabase.sqlite (accepted). Browser token exchange was not yet done live as of the 2026-10-31 memory._
+_DB-write sign-in: re-verify after EVERY Audiobookshelf update (pin test TestAudiobookshelfSignInPinnedToVerifiedVersion). Client secret is stored in plaintext in absdatabase.sqlite (accepted). Browser token exchange has not been recorded live._
 
 - [ ] **SRV-AUDIOBOOKSHELF-1 — Install: plan preview, then approve**
   - Action: Catalog > Audiobookshelf > Install. Read the plan, then approve (or `homesteadctl catalog plan audiobookshelf` then approve).
@@ -415,7 +382,7 @@ _DB-write sign-in: re-verify after EVERY Audiobookshelf update (pin test TestAud
 
 ### SRV-BOOKSTACK: BookStack
 
-_S366 live check done on VM 2 (d836c73); browser sign-ins pending._
+_Browser sign-ins have not been recorded yet._
 
 - [ ] **SRV-BOOKSTACK-1 — Install: plan preview, then approve**
   - Action: Catalog > BookStack > Install. Read the plan, then approve (or `homesteadctl catalog plan bookstack` then approve).
@@ -551,11 +518,17 @@ _Re-verify the sign-in script after every CWA update (pin test). app.db holds th
 
 ### SRV-FRESHRSS: FreshRSS
 
-_First sign-in needs the FreshRSS web installer finished first. Not installed on VM 2 as of 2026-11-01; source/unit/contract tests only (DEFERRED S412: return URL behind the edge, auto-registration, off restoring the form login unproven)._
+_First sign-in needs the FreshRSS web installer finished first (SRV-FRESHRSS-1a). First install on this appliance; source/unit/contract tests only (DEFERRED S412: return URL behind the edge, auto-registration, off restoring the form login unproven)._
 
 - [ ] **SRV-FRESHRSS-1 — Install: plan preview, then approve**
   - Action: Catalog > FreshRSS > Install. Read the plan, then approve (or `homesteadctl catalog plan freshrss` then approve).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
+  - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
+  - Result: ____  Notes: ____
+
+- [ ] **SRV-FRESHRSS-1a — Finish the web installer**
+  - Action: Open https://freshrss.<lan-suffix>/ and finish FreshRSS's web installer (database: SQLite; create the default administrator with the same username as your Authentik owner). Then apply sign-in again from the app card if it was waiting.
+  - Expected: Installer completes; the Authentik person whose username equals the default user becomes the administrator.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -616,11 +589,17 @@ _First sign-in needs the FreshRSS web installer finished first. Not installed on
 
 ### SRV-GITEA: Gitea
 
-_Re-verify after every Gitea update (pin test). Per-person `none` is NOT enforced for local registration: registration stays open and local passwords work (DEFERRED S416). No local admin exists on VM 2 until someone registers. Client secret in plaintext in gitea.db._
+_Re-verify after every Gitea update (pin test). Per-person `none` is NOT enforced for local registration: registration stays open and local passwords work (DEFERRED S416). No local admin exists until someone registers (SRV-GITEA-1a). Client secret in plaintext in gitea.db._
 
 - [ ] **SRV-GITEA-1 — Install: plan preview, then approve**
   - Action: Catalog > Gitea > Install. Read the plan, then approve (or `homesteadctl catalog plan gitea` then approve).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
+  - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
+  - Result: ____  Notes: ____
+
+- [ ] **SRV-GITEA-1a — Register the first local account**
+  - Action: Open the app and register the first local account. The first person to register locally becomes the Gitea administrator; keep its password in your password manager.
+  - Expected: Registration works; that account is administrator; the Authentik option is offered on the login page.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -758,7 +737,7 @@ _Immich 3.3.0. S318 first-run admin fix is live-unverified after reset; S298 liv
 
 ### SRV-JELLYFIN: Jellyfin
 
-_Verified live on VM 2: SSO start 302 to the public Authentik (op 163). A real browser login to completion should be recorded here._
+_An earlier live check saw the SSO start 302 to the public Authentik; a real browser login to completion has not been recorded. Jellyfin sets itself up at install (S319)._
 
 - [ ] **SRV-JELLYFIN-1 — Install: plan preview, then approve**
   - Action: Catalog > Jellyfin > Install. Read the plan, then approve (or `homesteadctl catalog plan jellyfin` then approve).
@@ -829,7 +808,7 @@ _Verified live on VM 2: SSO start 302 to the public Authentik (op 163). A real b
 
 ### SRV-KOMGA: Komga
 
-_Not installed on VM 2 as of 2026-11-01; sign-in confirmed from source only (DEFERRED S411). Every Authentik person becomes an ordinary user; no group mapping._
+_First install on this appliance; sign-in confirmed from source only (DEFERRED S411). Every Authentik person becomes an ordinary user; no group mapping._
 
 - [ ] **SRV-KOMGA-1 — Install: plan preview, then approve**
   - Action: Catalog > Komga > Install. Read the plan, then approve (or `homesteadctl catalog plan komga` then approve).
@@ -888,7 +867,7 @@ _Not installed on VM 2 as of 2026-11-01; sign-in confirmed from source only (DEF
 
 ### SRV-LINKDING: Linkding
 
-_Not installed on VM 2 as of 2026-11-01 (S409/S410 unit and contract tests only). No group claim: Authentik people are ordinary users; accounts match by email._
+_First install on this appliance (S409/S410 unit and contract tests only). No group claim: Authentik people are ordinary users; accounts match by email._
 
 - [ ] **SRV-LINKDING-1 — Install: plan preview, then approve**
   - Action: Catalog > Linkding > Install. Read the plan, then approve (or `homesteadctl catalog plan linkding` then approve).
@@ -947,7 +926,7 @@ _Not installed on VM 2 as of 2026-11-01 (S409/S410 unit and contract tests only)
 
 ### SRV-MEALIE: Mealie
 
-_Public SSO redirect verified live on VM 2 (redirect_uri https://mealie.<domain>/login accepted by Authentik); browser login to completion not recorded._
+_An earlier live check saw Authentik accept the Mealie redirect URI; a browser login to completion has not been recorded._
 
 - [ ] **SRV-MEALIE-1 — Install: plan preview, then approve**
   - Action: Catalog > Mealie > Install. Read the plan, then approve (or `homesteadctl catalog plan mealie` then approve).
@@ -956,7 +935,7 @@ _Public SSO redirect verified live on VM 2 (redirect_uri https://mealie.<domain>
   - Result: ____  Notes: ____
 
 - [ ] **SRV-MEALIE-2 — Opens at the right path or name**
-  - Action: Open https://mealie.<lan-suffix>/ (own name; public mealie.<public-domain> on VM 2).
+  - Action: Open https://mealie.<lan-suffix>/ (own name; public mealie.<public-domain> once published).
   - Expected: The app's own page loads (no 404, no certificate surprise beyond the documented one).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -998,7 +977,7 @@ _Public SSO redirect verified live on VM 2 (redirect_uri https://mealie.<domain>
   - Result: ____  Notes: ____
 
 - [ ] **SRV-MEALIE-9 — Uninstall leaves no orphan route (END pass)**
-  - Action: Done in END-UNINSTALL-*: uninstall Mealie, then open https://mealie.<lan-suffix>/ (own name; public mealie.<public-domain> on VM 2) and check the Caddy/route list.
+  - Action: Done in END-UNINSTALL-*: uninstall Mealie, then open https://mealie.<lan-suffix>/ (own name; public mealie.<public-domain> once published) and check the Caddy/route list.
   - Expected: The URL no longer answers; app disappears from the apps page and Doctor; no leftover route or container.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1006,11 +985,17 @@ _Public SSO redirect verified live on VM 2 (redirect_uri https://mealie.<domain>
 
 ### SRV-MEMOS: Memos
 
-_Installed on VM 2 with sign-in on; browser sign-in pending._
+_Browser sign-in has not been recorded yet._
 
 - [ ] **SRV-MEMOS-1 — Install: plan preview, then approve**
   - Action: Catalog > Memos > Install. Read the plan, then approve (or `homesteadctl catalog plan memos` then approve).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
+  - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
+  - Result: ____  Notes: ____
+
+- [ ] **SRV-MEMOS-1a — Create the first Memos account**
+  - Action: If Memos asks for a first account, create it (the first account is the administrator). Keep its password in your password manager.
+  - Expected: An administrator exists; Authentik sign-in creates ordinary accounts.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -1065,11 +1050,17 @@ _Installed on VM 2 with sign-in on; browser sign-in pending._
 
 ### SRV-NAVIDROME: Navidrome
 
-_S418 cb78b37, S420 3b21af9 live on VM 2; owner browser sign-in still pending as of 2026-11-01. Install refuses if no Navidrome admin exists or a username collides with a Homestead person; the admin account on VM 2 was created by the owner (password kept on VM 2, not in this file)._
+_Install refuses if no Navidrome admin exists or a username collides with a Homestead person, so create the Navidrome admin first (SRV-NAVIDROME-1a). Keep its password in your password manager, not in this file. Owner browser sign-in has not been recorded yet._
 
 - [ ] **SRV-NAVIDROME-1 — Install: plan preview, then approve**
   - Action: Catalog > Navidrome > Install. Read the plan, then approve (or `homesteadctl catalog plan navidrome` then approve).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
+  - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
+  - Result: ____  Notes: ____
+
+- [ ] **SRV-NAVIDROME-1a — Create the Navidrome admin**
+  - Action: If install or the sign-in step says no Navidrome admin exists, open https://navidrome.<lan-suffix>/ and create the admin account when Navidrome asks, then retry the step (Apply sign-in again). Keep the password in your password manager.
+  - Expected: The admin exists; the install or sign-in step then goes through; a username that collides with a Homestead person is refused with a clear message.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -1144,6 +1135,12 @@ _Nextcloud 35.0.1; sign-in verified live (S298, S408); public base URL for path 
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
+- [ ] **SRV-NEXTCLOUD-1a — Admin account is created at install**
+  - Action: Nextcloud sets itself up: install creates the `admin` account with a generated password and there is no setup page to finish. In the app card Manage panel, Secrets, **Reveal** the admin password (it asks you to sign in again; the reveal is audited) or `homesteadctl apps secrets reveal nextcloud admin_password`. Wait a few minutes for Nextcloud to finish installing; if sign-in says it is not ready use **Apply sign-in again**.
+  - Expected: Reveal works and is audited; `admin` signs in locally; no Nextcloud setup page appears. (If it does, that contradicts the S312 change: FAIL.)
+  - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
+  - Result: ____  Notes: ____
+
 - [ ] **SRV-NEXTCLOUD-2 — Opens at the right path or name**
   - Action: Open https://<server>/apps/nextcloud/.
   - Expected: The app's own page loads (no 404, no certificate surprise beyond the documented one).
@@ -1175,7 +1172,7 @@ _Nextcloud 35.0.1; sign-in verified live (S298, S408); public base URL for path 
   - Result: ____  Notes: ____
 
 - [ ] **SRV-NEXTCLOUD-7 — WebDAV for craft apps**
-  - Action: Used later by GridCraft/CADCraft/PdfCraft; see CRAFT-PLAT-LINK-1.
+  - Action: Used later by GridCraft/CADCraft/PdfCraft; see PLAT-CRAFTLINK-1.
   - Expected: Linked in the Craft files page.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1201,7 +1198,7 @@ _Nextcloud 35.0.1; sign-in verified live (S298, S408); public base URL for path 
 
 ### SRV-PAPERLESS-NGX: Paperless-ngx
 
-_Not installed on VM 2 as of 2026-11-01; sign-in confirmed from docs and source only (DEFERRED S413). Admin rights and group sync are not wired._
+_First install on this appliance; sign-in confirmed from docs and source only (DEFERRED S413). Admin rights and group sync are not wired._
 
 - [ ] **SRV-PAPERLESS-NGX-1 — Install: plan preview, then approve**
   - Action: Catalog > Paperless-ngx > Install. Read the plan, then approve (or `homesteadctl catalog plan paperless-ngx` then approve).
@@ -1260,7 +1257,7 @@ _Not installed on VM 2 as of 2026-11-01; sign-in confirmed from docs and source 
 
 ### SRV-UPTIME-KUMA: Uptime Kuma
 
-_S419 56151b7 and S422 366860b live on VM 2; first-run setup screen was behind the gate; owner browser sign-in pending. NOTE: an earlier memory says Kuma login stays on; S422 later turned it off. The host firewall gate table (S421) must be active (PLAT-FIREWALL-3)._
+_Kuma's first-run setup screen is behind the Authentik gate; owner browser sign-in has not been recorded yet. NOTE: an earlier memory says Kuma login stays on; S422 later turned it off. The host firewall gate table (S421) must be active (PLAT-FIREWALL-3)._
 
 - [ ] **SRV-UPTIME-KUMA-1 — Install: plan preview, then approve**
   - Action: Catalog > Uptime Kuma > Install. Read the plan, then approve (or `homesteadctl catalog plan uptime-kuma` then approve).
@@ -1337,7 +1334,7 @@ _S419 56151b7 and S422 366860b live on VM 2; first-run setup screen was behind t
 
 ### SRV-VAULTWARDEN: Vaultwarden
 
-_Updated 1.34.3 to 1.37.4 with a backup (op 170); public authorize redirect verified live; NO real browser login done yet; existing-account email match and email_verified claim unproven (DEFERRED S414)._
+_Public authorize redirect was verified live earlier; NO real browser login done yet; existing-account email match and email_verified claim unproven (DEFERRED S414)._
 
 - [ ] **SRV-VAULTWARDEN-1 — Install: plan preview, then approve**
   - Action: Catalog > Vaultwarden > Install. Read the plan, then approve (or `homesteadctl catalog plan vaultwarden` then approve).
@@ -1345,8 +1342,14 @@ _Updated 1.34.3 to 1.37.4 with a backup (op 170); public authorize redirect veri
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
+- [ ] **SRV-VAULTWARDEN-1a — Create the first Vaultwarden account**
+  - Action: Open the app and create your own account (signup is how the first account is made; the admin page is off by design). Use a strong master password and store it safely; it cannot be recovered.
+  - Expected: Account created; the Authentik sign-in option is offered.
+  - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
+  - Result: ____  Notes: ____
+
 - [ ] **SRV-VAULTWARDEN-2 — Opens at the right path or name**
-  - Action: Open https://vaultwarden.<lan-suffix>/ (own name; public vaultwarden.<public-domain> on VM 2).
+  - Action: Open https://vaultwarden.<lan-suffix>/ (own name; public vaultwarden.<public-domain> once published).
   - Expected: The app's own page loads (no 404, no certificate surprise beyond the documented one).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1388,7 +1391,7 @@ _Updated 1.34.3 to 1.37.4 with a backup (op 170); public authorize redirect veri
   - Result: ____  Notes: ____
 
 - [ ] **SRV-VAULTWARDEN-9 — Uninstall leaves no orphan route (END pass)**
-  - Action: Done in END-UNINSTALL-*: uninstall Vaultwarden, then open https://vaultwarden.<lan-suffix>/ (own name; public vaultwarden.<public-domain> on VM 2) and check the Caddy/route list.
+  - Action: Done in END-UNINSTALL-*: uninstall Vaultwarden, then open https://vaultwarden.<lan-suffix>/ (own name; public vaultwarden.<public-domain> once published) and check the Caddy/route list.
   - Expected: The URL no longer answers; app disappears from the apps page and Doctor; no leftover route or container.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1396,7 +1399,7 @@ _Updated 1.34.3 to 1.37.4 with a backup (op 170); public authorize redirect veri
 
 ### SRV-VIKUNJA: Vikunja
 
-_Installed on VM 2 with sign-in on (2026-11-01); browser sign-in pending._
+_Browser sign-in has not been recorded yet. Create the first Vaultwarden account yourself (SRV-VAULTWARDEN-1a)._
 
 - [ ] **SRV-VIKUNJA-1 — Install: plan preview, then approve**
   - Action: Catalog > Vikunja > Install. Read the plan, then approve (or `homesteadctl catalog plan vikunja` then approve).
@@ -1450,6 +1453,94 @@ _Installed on VM 2 with sign-in on (2026-11-01); browser sign-in pending._
   - Action: Done in END-UNINSTALL-*: uninstall Vikunja, then open https://vikunja.<lan-suffix>/ (own name) and check the Caddy/route list.
   - Expected: The URL no longer answers; app disappears from the apps page and Doctor; no leftover route or container.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
+  - Result: ____  Notes: ____
+
+## Platform checks with apps installed (PLAT-AFTER)
+
+Do these after the server apps above are installed. Steps that use an app say which.
+
+### Sign-in, access and groups
+
+- [ ] **PLAT-TUNNEL-5 — Apps move to the public issuer**
+  - Action: Open an OIDC app you installed with a public name (for example Mealie at `https://mealie.<public-domain>/`).
+  - Expected: Sign-in redirects to the public Authentik and returns.
+  - If it fails: Doctor Tunnel and Certificates sections; ADR-046/047/048.
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-PEOPLE-2 — Closed by default**
+  - Action: As C open an installed app. Grant A and B on one app and re-test.
+  - Expected: Refused. Grant A and B on one app and re-test: A and B in, C out.
+  - If it fails: docs/INSTALL.md People section; ADR-043/049.
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-PEOPLE-3 — App-admin groups**
+  - Action: In Authentik check that the `homestead-<app>-admins` group exists for an installed app and make a member an app admin in an app that honours it (Gitea, for example).
+  - Expected: Group exists; behaviour matches the app.
+  - If it fails: docs/INSTALL.md People section; ADR-043/049.
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-PEOPLE-4 — Reset password and MFA**
+  - Action: `homesteadctl people reset-password A`, `homesteadctl people reset-mfa A`.
+  - Expected: A can sign in again after the reset flow.
+  - If it fails: docs/INSTALL.md People section; ADR-043/049.
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-PEOPLE-7 — Disable and enable**
+  - Action: `homesteadctl people disable B`, B tries to sign in, `homesteadctl people enable B`.
+  - Expected: Refused while disabled; works after. Disabling does not purge data.
+  - If it fails: docs/INSTALL.md People section; ADR-043/049.
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-PEOPLE-8 — Adopt and resolve**
+  - Action: If an app has a user that matches an Authentik person (for example a local account you made in Gitea), use `people adopt` / `resolve`; else SKIP.
+  - Expected: Link is made; no duplicate person.
+  - If it fails: docs/INSTALL.md People section; ADR-043/049.
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-DOCTOR-2 — Doctor finds a deliberate fault**
+  - Action: Stop one app container (`docker stop <package>-<service>`), reload Doctor.
+  - Expected: Doctor reports it with guidance and does not restart it. Start it again.
+  - If it fails: 
+  - Result: ____  Notes: ____
+
+### Firewall
+
+- [ ] **PLAT-FIREWALL-1a — Plan and apply the firewall**
+  - Action: Open the **Firewall** page (or `homesteadctl firewall plan`), read the plan, approve and apply it (`homesteadctl firewall apply`).
+  - Expected: The plan shows the nftables rules before anything changes; after apply the page reads applied; no router port forward is needed for the tunnel.
+  - If it fails: INSTALL Part E (optional hardening); Doctor Network section.
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-FIREWALL-1 — Gate table present**
+  - Action: `sudo nft list table inet homestead_gate`.
+  - Expected: Table exists and covers gated app ports (S421).
+  - If it fails: Doctor Network section.
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-FIREWALL-2 — Non-root local access is blocked**
+  - Action: As a normal user on the VM `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<gated-port>/` (port from the app's compose/plan).
+  - Expected: Connection refused or blocked; via the Caddy name it works.
+  - If it fails: 
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-FIREWALL-3 — Forged identity header is ignored**
+  - Action: `curl -H 'X-Authentik-Username: admin' https://<server>/apps/<forward-auth-app>/` from the LAN without a session.
+  - Expected: Redirected to sign-in, not logged in as admin.
+  - If it fails: Forward-auth edge config.
+  - Result: ____  Notes: ____
+
+### Backups and updates
+
+- [ ] **PLAT-BACKUP-3 — A run exists after 02:00 (day 2)**
+  - Action: Look at `<backup root>/<package>/<UTC timestamp>/backup.json`.
+  - Expected: One run per backup-capable package, encrypted; old runs pruned beyond 7.
+  - If it fails: docs/architecture/BACKUP_RESTORE_RUNBOOK.md.
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-UPDATE-2 — Apply one app update with backup**
+  - Action: `homesteadctl updates apply <pkg> --backup` for an app with an update (else SKIP).
+  - Expected: A backup run appears, then the update; the app still works. For vaultwarden/CWA/Gitea/ABS re-check sign-in (see their SRV update step).
+  - If it fails: 
   - Result: ____  Notes: ____
 
 
@@ -2666,7 +2757,6 @@ Prerequisites: Tasks, Notes, Circuits, Parametric and API Client installed with 
   - If it fails: S441 section of the review plan; DEFERRED S427-S441.
   - Result: ____  Notes: ____
 
-
 ## Craft apps
 
 Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed manifest, served at `https://<server>/apps/<app>/`, have no sign-in (local only; not exposed publicly) and are stateless. Hooked apps open/save through Nextcloud (needs an operator session); the rest are browser-local.
@@ -2683,6 +2773,12 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: S281.
   - Result: ____  Notes: ____
 
+
+- [ ] **PLAT-CRAFTLINK-1 — Nextcloud link for craft**
+  - Action: Craft Files page / `homesteadctl files ...` after Nextcloud (SRV-NEXTCLOUD) and at least one hooked craft app are installed.
+  - Expected: Link status shows linked; the craft install links automatically (S326).
+  - If it fails: Craft page.
+  - Result: ____  Notes: ____
 
 ### CRAFT-WORDCRAFT: WordCraft (word processor, browser-local)
 
@@ -3346,7 +3442,6 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-
 ## End-of-run checks
 
 - [ ] **END-PURGE-1 — People removal purge**
@@ -3377,6 +3472,12 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - Action: Pick five actions (grant, install plan, backup list, tunnel plan, updates list) and do each on both sides.
   - Expected: Same result either way.
   - If it fails: docs/PARITY.md.
+  - Result: ____  Notes: ____
+
+- [ ] **PLAT-TUNNEL-7 — Remove the tunnel plan**
+  - Action: Do this last of the tunnel work. Plan removal of the tunnel on the Tunnel page, approve.
+  - Expected: Public names stop answering; local names still work.
+  - If it fails: Doctor Tunnel and Certificates sections; ADR-046/047/048.
   - Result: ____  Notes: ____
 
 - [ ] **END-UNINSTALL-1 — Uninstall: Everything apps**
@@ -3421,38 +3522,37 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | Group | Step IDs | PASS | FAIL | SKIP | BLOCKED |
 |---|---|---|---|---|---|
 | PLAT-DEPLOY | PLAT-DEPLOY-1 to PLAT-DEPLOY-2 (2) |  |  |  |  |
-| PLAT-CLAIM | PLAT-CLAIM-1 to PLAT-CLAIM-1 (1) |  |  |  |  |
-| PLAT-SETUP | PLAT-SETUP-1 to PLAT-SETUP-6 (6) |  |  |  |  |
+| PLAT-CLAIM | PLAT-CLAIM-1 to PLAT-CLAIM-1a (2) |  |  |  |  |
+| PLAT-SETUP | PLAT-SETUP-1 to PLAT-SETUP-6 (9) |  |  |  |  |
 | PLAT-AUTH | PLAT-AUTH-1 to PLAT-AUTH-1 (1) |  |  |  |  |
 | PLAT-OWNER | PLAT-OWNER-1 to PLAT-OWNER-2 (2) |  |  |  |  |
-| PLAT-DASH | PLAT-DASH-1 to PLAT-DASH-2 (2) |  |  |  |  |
-| PLAT-TUNNEL | PLAT-TUNNEL-1 to PLAT-TUNNEL-7 (7) |  |  |  |  |
 | PLAT-PEOPLE | PLAT-PEOPLE-1 to PLAT-PEOPLE-8 (8) |  |  |  |  |
+| PLAT-TUNNEL | PLAT-TUNNEL-1 to PLAT-TUNNEL-7 (7) |  |  |  |  |
+| PLAT-DASH | PLAT-DASH-1 to PLAT-DASH-2 (2) |  |  |  |  |
 | PLAT-DOCTOR | PLAT-DOCTOR-1 to PLAT-DOCTOR-2 (2) |  |  |  |  |
-| PLAT-FIREWALL | PLAT-FIREWALL-1 to PLAT-FIREWALL-3 (3) |  |  |  |  |
-| PLAT-BACKUP | PLAT-BACKUP-1 to PLAT-BACKUP-3 (3) |  |  |  |  |
-| PLAT-UPDATE | PLAT-UPDATE-1 to PLAT-UPDATE-3 (3) |  |  |  |  |
-| PLAT-CATALOG | PLAT-CATALOG-1 to PLAT-CATALOG-1 (1) |  |  |  |  |
 | PLAT-NAMES | PLAT-NAMES-1 to PLAT-NAMES-1 (1) |  |  |  |  |
-| PLAT-CRAFTLINK | PLAT-CRAFTLINK-1 to PLAT-CRAFTLINK-1 (1) |  |  |  |  |
-| SRV-ACTUAL-BUDGET | SRV-ACTUAL-BUDGET-1 to SRV-ACTUAL-BUDGET-9 (9) |  |  |  |  |
+| PLAT-CATALOG | PLAT-CATALOG-1 to PLAT-CATALOG-1 (1) |  |  |  |  |
+| PLAT-BACKUP | PLAT-BACKUP-1 to PLAT-BACKUP-3 (3) |  |  |  |  |
+| PLAT-UPDATE | PLAT-UPDATE-1 to PLAT-UPDATE-2 (3) |  |  |  |  |
+| SRV-ACTUAL-BUDGET | SRV-ACTUAL-BUDGET-1 to SRV-ACTUAL-BUDGET-9 (10) |  |  |  |  |
 | SRV-AUDIOBOOKSHELF | SRV-AUDIOBOOKSHELF-1 to SRV-AUDIOBOOKSHELF-11 (11) |  |  |  |  |
 | SRV-BOOKSTACK | SRV-BOOKSTACK-1 to SRV-BOOKSTACK-10 (10) |  |  |  |  |
 | SRV-CALIBRE-WEB-AUTOMATED | SRV-CALIBRE-WEB-AUTOMATED-1 to SRV-CALIBRE-WEB-AUTOMATED-11 (11) |  |  |  |  |
-| SRV-FRESHRSS | SRV-FRESHRSS-1 to SRV-FRESHRSS-10 (10) |  |  |  |  |
-| SRV-GITEA | SRV-GITEA-1 to SRV-GITEA-11 (11) |  |  |  |  |
+| SRV-FRESHRSS | SRV-FRESHRSS-1 to SRV-FRESHRSS-10 (11) |  |  |  |  |
+| SRV-GITEA | SRV-GITEA-1 to SRV-GITEA-11 (12) |  |  |  |  |
 | SRV-IMMICH | SRV-IMMICH-1 to SRV-IMMICH-11 (11) |  |  |  |  |
 | SRV-JELLYFIN | SRV-JELLYFIN-1 to SRV-JELLYFIN-11 (11) |  |  |  |  |
 | SRV-KOMGA | SRV-KOMGA-1 to SRV-KOMGA-9 (9) |  |  |  |  |
 | SRV-LINKDING | SRV-LINKDING-1 to SRV-LINKDING-9 (9) |  |  |  |  |
 | SRV-MEALIE | SRV-MEALIE-1 to SRV-MEALIE-9 (9) |  |  |  |  |
-| SRV-MEMOS | SRV-MEMOS-1 to SRV-MEMOS-9 (9) |  |  |  |  |
-| SRV-NAVIDROME | SRV-NAVIDROME-1 to SRV-NAVIDROME-11 (11) |  |  |  |  |
-| SRV-NEXTCLOUD | SRV-NEXTCLOUD-1 to SRV-NEXTCLOUD-10 (10) |  |  |  |  |
+| SRV-MEMOS | SRV-MEMOS-1 to SRV-MEMOS-9 (10) |  |  |  |  |
+| SRV-NAVIDROME | SRV-NAVIDROME-1 to SRV-NAVIDROME-11 (12) |  |  |  |  |
+| SRV-NEXTCLOUD | SRV-NEXTCLOUD-1 to SRV-NEXTCLOUD-10 (11) |  |  |  |  |
 | SRV-PAPERLESS-NGX | SRV-PAPERLESS-NGX-1 to SRV-PAPERLESS-NGX-9 (9) |  |  |  |  |
 | SRV-UPTIME-KUMA | SRV-UPTIME-KUMA-1 to SRV-UPTIME-KUMA-12 (12) |  |  |  |  |
-| SRV-VAULTWARDEN | SRV-VAULTWARDEN-1 to SRV-VAULTWARDEN-9 (9) |  |  |  |  |
+| SRV-VAULTWARDEN | SRV-VAULTWARDEN-1 to SRV-VAULTWARDEN-9 (10) |  |  |  |  |
 | SRV-VIKUNJA | SRV-VIKUNJA-1 to SRV-VIKUNJA-9 (9) |  |  |  |  |
+| PLAT-FIREWALL | PLAT-FIREWALL-1a to PLAT-FIREWALL-3 (4) |  |  |  |  |
 | EV-TASKS | EV-TASKS-1 to EV-TASKS-16 (16) |  |  |  |  |
 | EV-PROJECTS | EV-PROJECTS-1 to EV-PROJECTS-13 (13) |  |  |  |  |
 | EV-RECORDS | EV-RECORDS-1 to EV-RECORDS-14 (14) |  |  |  |  |
@@ -3469,6 +3569,7 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | EV-API-CLIENT | EV-API-CLIENT-1 to EV-API-CLIENT-14 (14) |  |  |  |  |
 | EV-ADR058 | EV-ADR058-1 to EV-ADR058-11 (11) |  |  |  |  |
 | CRAFT-PLAT | CRAFT-PLAT-1 to CRAFT-PLAT-2 (2) |  |  |  |  |
+| PLAT-CRAFTLINK | PLAT-CRAFTLINK-1 to PLAT-CRAFTLINK-1 (1) |  |  |  |  |
 | CRAFT-WORDCRAFT | CRAFT-WORDCRAFT-1 to CRAFT-WORDCRAFT-8 (8) |  |  |  |  |
 | CRAFT-GRIDCRAFT | CRAFT-GRIDCRAFT-1 to CRAFT-GRIDCRAFT-8 (8) |  |  |  |  |
 | CRAFT-PDFCRAFT | CRAFT-PDFCRAFT-1 to CRAFT-PDFCRAFT-8 (8) |  |  |  |  |
@@ -3488,3 +3589,4 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | END-AUDIT | END-AUDIT-1 to END-AUDIT-1 (1) |  |  |  |  |
 | END-PARITY | END-PARITY-1 to END-PARITY-1 (1) |  |  |  |  |
 | END-UNINSTALL | END-UNINSTALL-1 to END-UNINSTALL-6 (6) |  |  |  |  |
+| **Total** | 541 steps |  |  |  |  |
