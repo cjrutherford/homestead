@@ -1,5 +1,7 @@
 # Everything apps review plan
 
+See also `docs/reviews/TESTING_REPORT.md` (test results and gaps) and `docs/reviews/OWNER_ACCEPTANCE_CHECKLIST.md` (owner walkthrough on VM 2; its EV-ADR058 steps mirror the S441 section below).
+
 Owner checklists for the Everything apps, one section per slice, newest last.
 Each later app slice appends a section using the template at the end.
 
