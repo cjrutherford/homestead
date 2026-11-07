@@ -1500,10 +1500,8 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
   no SSH port and deploys no keys. Enabling `ssh://` clones — an SSH port
   through the host or an overlay tunnel, authorized keys, and clone URLs
   that match — is an explicit owner decision not scheduled yet.
-- Closing Gitea registration after the first account: S347 leaves
-  self-registration open so the first user becomes the administrator, and
-  the owner turns it off in the app's admin settings. Homestead cannot
-  observe "the first account exists" and flip the setting today.
+- (Done in S444) Closing Gitea registration: the first run creates
+  `homestead-admin` and `DISABLE_REGISTRATION` is true from install.
 - SAML and LDAP client actuation, provider-side secret rotation, and
   authorisation-group mapping stay out of scope until a package needs
   them; the S342 mechanism is OIDC-only.
@@ -1569,7 +1567,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S415: sign-in off clears the generic provider's client id, secret, discovery URL and admin group, and turns login type and group admin management off; it leaves the stored redirect host and button text, which are harmless.
 - S415: the Calibre-Web Automated sign-in script and restart are confirmed against the image's source and a v4.0.8 container's schema, not yet by a full live apply on VM 2 (restart timing, `/app/CWA_RELEASE` content, `groups` claim).
 - S416: Gitea sign-in depends on Gitea's internal `login_source` schema (nine columns, type 6 = OAuth2, the `oauth2.Source` JSON) and on `gitea --version`. Every Gitea package update must re-verify the script first; a pin test (`TestGiteaSignInPinnedToVerifiedVersion`) fails until it is, and the script refuses another version or a missing column. If Gitea gains a secret-file or stdin form of `admin auth add-oauth` or an admin API for sources, replace the script with it.
-- S416: per-person `none` is not enforced for Gitea: local registration stays open (`DISABLE_REGISTRATION` false) and local passwords keep working, and sign-in has no required-claim gate. Closing registration needs a proven local recovery administrator first (S391 notes); a `RequiredClaimName`/`RestrictedGroup` mapping from Homestead's `user` and `none` choices is also deferred.
+- S416: per-person `none` is not enforced for Gitea: local passwords keep working, and sign-in has no required-claim gate. Local registration was closed in S444 with a first-run administrator; a `RequiredClaimName`/`RestrictedGroup` mapping from Homestead's `user` and `none` choices is also deferred.
 - S416: Gitea's client secret sits in plaintext in `gitea.db` (application storage and backups); the source has no secret-file form. Off clears it and deactivates the source but leaves the row, so linked accounts keep their link.
 - S416: Gitea sign-in off leaves `external_login_user` links and every account in place; a Gitea account created through Authentik has no local password until the person sets one.
 - S416: an Authentik group is mapped to Gitea administrators only; no group-to-organization or team mapping (`GroupTeamMap`) and no SSH key or avatar sync.
@@ -1815,3 +1813,6 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - Release trust (S443, from the platform run; PLAT-UPDATE-3, PLAT-DOCTOR-1): the release signing key is still a placeholder, so Doctor shows release-trust amber and Verify has nothing real to verify. Replace with the real key when the owner signs the first release.
 
 - Curated install copy (found in S443): the dashboard spec `curated-copy.spec.ts` fails at HEAD because 17 catalog packages have no entry in `curated-copy.ts` (actual-budget, api-client, bookstack, circuits, contacts, expense, inventory, memos, notes, parametric, projects, records, solitaire, sudoku, tasks, three-d, time-tracking, vikunja). Pre-existing, not touched by S443; with ADR-059 most need only a "nothing to do on first run" line.
+
+- S444: after Gitea is published, Authentik sign-in started from its LAN address fails with "could not find a matching session" (ROOT_URL is the public name, so the callback lands on another host). Documented in the plan warning; a per-address ROOT_URL is not possible in Gitea.
+- S444: the Gitea administrator's one-time password is read from `gitea admin user create --random-password` output because the command has no stdin/file password option; re-check on every Gitea bump.

@@ -14,8 +14,8 @@ blurb: A private Git forge for your own projects.
 description: Gitea hosts Git repositories with issues, pull requests,
   packages, and a small web UI. It runs as one container with SQLite on
   application storage, so a household forge starts with no database
-  server to maintain. Sign in, create the first account, and push over
-  HTTPS through the routed host.
+  server to maintain. Homestead creates the administrator at install; sign in
+  through Authentik and push over HTTPS through the routed host.
 category: development
 icon: mdi:git
 services:
@@ -39,11 +39,13 @@ services:
     GITEA__server__DISABLE_SSH: "true"
     GITEA__server__START_SSH_SERVER: "false"
     # Configuration comes from these variables, not from the web
-    # installer; the first account registered becomes the administrator.
+    # installer. Registration is closed so nobody can claim the app; the
+    # first run creates the administrator (ADR-059) and Authentik sign-in
+    # (auto-registration below) creates everyone else.
     GITEA__security__INSTALL_LOCK: "true"
     GITEA__database__DB_TYPE: sqlite3
     GITEA__database__PATH: /data/gitea/gitea.db
-    GITEA__service__DISABLE_REGISTRATION: "false"
+    GITEA__service__DISABLE_REGISTRATION: "true"
     # Private forge: repositories and users are not readable anonymously.
     GITEA__service__REQUIRE_SIGNIN_VIEW: "true"
     GITEA__repository__ROOT: /data/git/repositories
@@ -180,7 +182,7 @@ sso:
       - Sign-in completes only at the address Gitea is set up for (its ROOT_URL, the app's own address); other addresses for the same app cannot complete sign-in. After the address changes, plan sign-in again so Authentik's redirect list follows.
       - A person whose Authentik username equals an existing Gitea user is asked, at first sign-in, to confirm with that account's local password before the two are linked (no silent takeover); other people get a new account with their Authentik username and email.
       - Members of the app's Homestead admin group become administrators at every sign-in, and everyone else who signs in through Authentik is made a non-administrator at that sign-in, unless they are the last administrator. A local administrator who never signs in through Authentik keeps the role.
-      - The local login form and local registration stay open; denying a person (none) is not enforced by Gitea and local accounts with passwords keep working.
+      - The local login form stays open and local registration is closed; denying a person (none) is not enforced by Gitea and local accounts with passwords keep working.
       - The client secret is stored in plaintext in the app's database (gitea.db), on application storage and in backups.
       set:
         # Read by Gitea at startup (env-to-ini): create an account at first
@@ -194,6 +196,11 @@ sso:
         # sign-in and keep the admin group visible in the plan.
         GITEA_OIDC_ISSUER: "{{issuer}}"
         GITEA_OIDC_ADMIN_GROUP: "{{admin_group}}"
+firstrun:
+  routine: gitea
+  service: gitea
+  account: homestead-admin
+  secret: admin_password
 secrets:
 - name: oidc_client_secret
   # Authentik's client secret for Gitea; Homestead generates it and hands
@@ -208,6 +215,10 @@ secrets:
   consumers:
   - service: gitea
     env: GITEA_SIGNIN_FILE
+- name: admin_password
+  immutable: true
+  reveal: true
+  note: Password for homestead-admin, the local administrator Homestead created at install. Sign in with Authentik for everyday use.
 integrations:
 - kind: identity
   target: authentik

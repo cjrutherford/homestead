@@ -118,7 +118,7 @@ func TestGiteaPlanRedirectWarningsAndScript(t *testing.T) {
 	}
 	all := strings.Join(plan.Warnings, "\n")
 	for _, w := range []string{"own database", "re-checked on every Gitea update", "Run this after the app has started once",
-		"only at the address", "ROOT_URL", "local password", "no silent takeover", "last administrator", "local registration stay open", "plaintext", "gitea.db"} {
+		"only at the address", "ROOT_URL", "local password", "no silent takeover", "last administrator", "local registration is closed", "plaintext", "gitea.db"} {
 		if !strings.Contains(all, w) {
 			t.Errorf("warnings lack %q:\n%s", w, all)
 		}

@@ -30,7 +30,7 @@ export const CURATED_COPY: Record<string, CuratedCopy> = {
   'audiobookshelf': { firstLogin: ['Open Audiobookshelf and sign in or follow its setup instructions.'] },
   'calibre-web-automated': { firstLogin: ['Open Calibre-Web Automated and sign in or follow its setup instructions.'] },
   'freshrss': { firstLogin: ['Open FreshRSS and sign in or follow its setup instructions.'] },
-  'gitea': { firstLogin: ['Open Gitea and sign in or follow its setup instructions.'] },
+  'gitea': { firstLogin: ['Open Gitea and choose Sign in with authentik. Homestead already created its administrator (homestead-admin); its password is under Secrets in the app card Manage panel (Reveal), for emergencies only.'] },
   'komga': { firstLogin: ['Open Komga and sign in or follow its setup instructions.'] },
   'linkding': { firstLogin: ['Open Linkding and sign in or follow its setup instructions.'] },
   'mealie': { firstLogin: ['Open Mealie and sign in or follow its setup instructions.'] },

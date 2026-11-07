@@ -589,7 +589,7 @@ _First sign-in needs the FreshRSS web installer finished first (SRV-FRESHRSS-1a)
 
 ### SRV-GITEA: Gitea
 
-_Re-verify after every Gitea update (pin test). Per-person `none` is NOT enforced for local registration: registration stays open and local passwords work (DEFERRED S416). No local admin exists until someone registers (SRV-GITEA-1a). Client secret in plaintext in gitea.db._
+_Re-verify after every Gitea update (pin test). Per-person `none` is NOT enforced for the local login form: local passwords work (DEFERRED S416). Local registration is closed and Homestead creates the `homestead-admin` administrator at install (ADR-059, S444). Client secret in plaintext in gitea.db._
 
 - [ ] **SRV-GITEA-1 — Install: plan preview, then approve**
   - Action: Catalog > Gitea > Install. Read the plan, then approve (or `homesteadctl apps plan gitea -f FILE`, then `homesteadctl apps install gitea -f FILE`).
@@ -597,9 +597,9 @@ _Re-verify after every Gitea update (pin test). Per-person `none` is NOT enforce
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **SRV-GITEA-1a — Register the first local account**
-  - Action: Open the app and register the first local account. The first person to register locally becomes the Gitea administrator; keep its password in your password manager.
-  - Expected: Registration works; that account is administrator; the Authentik option is offered on the login page.
+- [ ] **SRV-GITEA-1a — No first-run screen; administrator already exists**
+  - Action: Open the app's address. Confirm there is no installer and no Register link. Reveal the `homestead-admin` password in the app card Manage panel, Secrets (or `homesteadctl apps secrets reveal gitea admin_password`) only if you need it.
+  - Expected: The sign-in page appears at once with the Authentik option and no registration; the revealed password opens `homestead-admin`.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -610,7 +610,7 @@ _Re-verify after every Gitea update (pin test). Per-person `none` is NOT enforce
   - Result: ____  Notes: ____
 
 - [ ] **SRV-GITEA-3 — Owner sign-in**
-  - Action: Open the app, use the Authentik/OpenID sign-in option as the owner. Login page offers 'Sign in with authentik' (OAuth2 source); DB-write sign-in (login_source row; Gitea 28.2.0 pinned). First person to register locally becomes admin.
+  - Action: Open the app, use the Authentik/OpenID sign-in option as the owner. Login page offers 'Sign in with authentik' (OAuth2 source). Once Gitea is published, start from its public name (its ROOT_URL): starting from the LAN name ends with 'could not find a matching session'; DB-write sign-in (login_source row; Gitea 28.2.0 pinned). The first-run administrator is `homestead-admin`; owner (Homestead admin group) becomes a Gitea administrator at sign-in.
   - Expected: Owner is signed in and named correctly.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____

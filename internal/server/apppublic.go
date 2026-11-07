@@ -443,7 +443,13 @@ func (p *appPublic) buildPlanState(ctx context.Context, name string, req appPubl
 		}
 	}
 	if f.signIn && plan.Action != "refresh" {
-		if !p.planSignIn(f, path, &plan) {
+		if anticipateSignIn && p.s.appSignIn != nil && p.s.appSignIn.tokenKept() {
+			// The install applies sign-in with the public name already in its
+			// redirect list, so after install, with the Authentik token kept,
+			// this step's plan reads "no change". Say the same now, or the
+			// approved digest never matches the plan the setup re-checks (S444).
+			plan.SignIn = "App sign-in is on and needs no change."
+		} else if !p.planSignIn(f, path, &plan) {
 			verb := "accepts"
 			if plan.Action == "remove" {
 				verb = "stops accepting"
@@ -620,13 +626,16 @@ func (p *appPublic) planSignIn(f appPublicFacts, path bool, plan *appPublicPlan)
 			lines = append(lines, "removes redirect URI "+strings.Join(removed, ", "))
 		}
 	}
-	plan.Warnings = append(plan.Warnings, next.Warnings...)
 	if len(lines) == 0 {
 		// Nothing changes: no re-plan to ask for, but a public issuer that
-		// is not served yet is still worth saying (S400).
+		// is not served yet is still worth saying (S400). The sign-in
+		// plan's own warnings were shown with the sign-in review, so they
+		// are not repeated here (S444: they made the install-time public
+		// plan differ from the one approved before install).
 		plan.SignIn = "App sign-in is on and needs no change."
 		return true
 	}
+	plan.Warnings = append(plan.Warnings, next.Warnings...)
 	plan.SignIn = "App sign-in is on and is updated in this same change with the kept Authentik API token: it " + strings.Join(lines, "; ") + "."
 	plan.SignInDigest = next.Digest
 	return true

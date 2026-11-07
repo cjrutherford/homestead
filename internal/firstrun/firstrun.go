@@ -75,6 +75,9 @@ func Run(ctx context.Context, m catalog.Manifest, secrets Secrets) (Result, erro
 	if f.Routine == catalog.FirstRunKomga {
 		return komgaFirstRun(ctx, m, secrets)
 	}
+	if f.Routine == catalog.FirstRunGitea {
+		return giteaFirstRun(ctx, m, secrets)
+	}
 	if f.Routine == catalog.FirstRunBookStack {
 		return bookstackFirstRun(ctx, m, secrets)
 	}

@@ -800,6 +800,7 @@ const (
 	FirstRunAudiobookshelf = "audiobookshelf"
 	FirstRunKomga          = "komga"
 	FirstRunBookStack      = "bookstack"
+	FirstRunGitea          = "gitea"
 )
 
 // Library kinds a first run may create (Jellyfin's collection types).
@@ -829,7 +830,7 @@ type Library struct {
 
 func (f FirstRun) validate(m Manifest, services map[string]bool) error {
 	switch f.Routine {
-	case FirstRunImmich, FirstRunJellyfin, FirstRunAudiobookshelf, FirstRunKomga, FirstRunBookStack:
+	case FirstRunImmich, FirstRunJellyfin, FirstRunAudiobookshelf, FirstRunKomga, FirstRunBookStack, FirstRunGitea:
 	default:
 		return fmt.Errorf("catalog: unknown first-run routine %q", f.Routine)
 	}

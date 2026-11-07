@@ -302,3 +302,29 @@ func TestAppPublicTokenNotKeptLeavesSignInToReplan(t *testing.T) {
 		t.Fatalf("sign-in changed without a token: %+v", rec)
 	}
 }
+
+// With the Authentik token kept, the plan approved before install says
+// sign-in needs no change, as the plan the setup re-checks after install
+// does; otherwise the setup stops with "plan changed" (S444).
+func TestAppPublicAnticipatedPlanFollowsKeptToken(t *testing.T) {
+	for _, kept := range []bool{true, false} {
+		a, _ := publishSignInRig(t)
+		uninstallImmich(t, a.st)
+		if err := (appsso.Records{DB: a.st.DB()}).Delete("immich"); err != nil {
+			t.Fatal(err)
+		}
+		if !kept {
+			if err := a.srv.appSignIn.cfg.Secrets.Delete(sso.APITokenName); err != nil {
+				t.Fatal(err)
+			}
+		}
+		on := true
+		plan, err := a.srv.appPublic.buildAnticipatedSignInPlan(context.Background(), "immich", appPublicRequest{Enabled: &on, BeforeInstall: true, Route: "immich.lan", Hostname: "immich.example.com"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(plan.SignIn, "needs no change"); got != kept {
+			t.Fatalf("kept=%v sign-in = %q", kept, plan.SignIn)
+		}
+	}
+}

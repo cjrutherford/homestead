@@ -481,8 +481,8 @@ func TestCuratedGitea(t *testing.T) {
 	if root := service.Environment["GITEA__server__ROOT_URL"]; root != AppURLToken+"/" {
 		t.Fatalf("ROOT_URL = %q, want the app address with a trailing slash", root)
 	}
-	if service.Environment["GITEA__service__DISABLE_REGISTRATION"] != "false" {
-		t.Fatal("registration must stay open until the owner creates the first account")
+	if service.Environment["GITEA__service__DISABLE_REGISTRATION"] != "true" {
+		t.Fatal("local registration must be closed so nobody can claim the app (ADR-059)")
 	}
 	if len(service.Data) != 1 || service.Data[0].Target != "/data" ||
 		service.Data[0].Class != storage.ClassApplication || service.Data[0].Subpath != "data" ||
@@ -491,7 +491,7 @@ func TestCuratedGitea(t *testing.T) {
 	}
 	// Gitea generates its keys into the data volume; the only secrets are
 	// the Authentik client secret and the sign-in file's values (S416).
-	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 2 || manifest.Secrets[0].Name != "oidc_client_secret" ||
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 3 || manifest.Secrets[2].Name != "admin_password" || !manifest.Secrets[2].Reveal || manifest.FirstRun == nil || manifest.FirstRun.Routine != FirstRunGitea || manifest.Secrets[0].Name != "oidc_client_secret" ||
 		manifest.Secrets[1].Name != "gitea_signin" || manifest.Secrets[1].Initial != "{}" || len(manifest.Secrets[1].Consumers) != 1 ||
 		manifest.Secrets[1].Consumers[0].Env != "GITEA_SIGNIN_FILE" {
 		t.Fatalf("secrets = %+v", manifest.Secrets)

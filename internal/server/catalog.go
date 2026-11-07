@@ -828,6 +828,12 @@ func handleCatalogUninstall(s *Server, st *store.Store, catalogDir string, runne
 		if body.LeaveSignIn {
 			def.Steps = append(def.Steps, s.forgetSignInStep(st, name, operatorActor(r)))
 		}
+		// People's grants for an app that is gone mean nothing, and a left-over
+		// grant makes the next install of it refuse the access choice (S444).
+		def.Steps = append(def.Steps, operation.StepDef{Name: "forget people's access to the app", Run: func(context.Context) error {
+			_, err := st.DB().Exec(`DELETE FROM people_grants WHERE app = ?`, name)
+			return err
+		}})
 		if setup := s.appSetup; setup != nil {
 			def.Steps = append(def.Steps, operation.StepDef{Name: "forget the app's setup", Run: func(context.Context) error {
 				setup.forgetFinished(name)

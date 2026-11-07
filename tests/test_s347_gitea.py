@@ -57,7 +57,7 @@ class TestGiteaContract(unittest.TestCase):
         self.assertIn("- name: oidc_client_secret", self.text)
         self.assertIn("- name: gitea_signin", self.text)
         secrets = self.text.split("\nsecrets:\n")[1].split("\nintegrations:")[0]
-        self.assertEqual(secrets.count("\n- name:") + 1, 2)
+        self.assertEqual(secrets.count("\n- name:") + 1, 3)  # plus the first-run admin_password (S444)
         self.assertNotIn("entrypoint:", self.text)
 
     def test_no_latest_tag(self):
