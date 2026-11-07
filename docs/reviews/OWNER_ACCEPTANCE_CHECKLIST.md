@@ -246,7 +246,7 @@ The form is generated from this file by `python3 -I scripts/review/make_acceptan
 
 ### SRV-ACTUAL-BUDGET: Actual Budget
 
-_Known: the dashboard curated first-login copy test for Actual Budget fails (see Known failures). Bank-sync providers are not configured (DEFERRED S358)._
+_Known: bank-sync providers are not configured (DEFERRED S358)._
 
 - [ ] **SRV-ACTUAL-BUDGET-1 — Install: plan preview, then approve**
   - Action: Catalog > Actual Budget > Install. Read the plan, then approve (or `homesteadctl apps plan actual-budget -f FILE`, then `homesteadctl apps install actual-budget -f FILE`).
@@ -254,9 +254,9 @@ _Known: the dashboard curated first-login copy test for Actual Budget fails (see
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **SRV-ACTUAL-BUDGET-1a — First sign-in makes you the server owner**
-  - Action: Open the app and sign in through Authentik yourself before anyone else does. The first person to sign in becomes the Actual server owner and the owner cannot be changed afterwards.
-  - Expected: You are the Actual server owner; later people get ordinary accounts.
+- [ ] **SRV-ACTUAL-BUDGET-1a — You are already the server owner**
+  - Action: Homestead made you the Actual server owner at install, under your Authentik username, so there is no race to sign in first. Sign in through Authentik as the owner, then as a person with access.
+  - Expected: You are the Actual server owner whoever signs in first; later people get ordinary accounts. There is no first-run screen; a new user may be offered to create a budget file, which is normal use.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -267,7 +267,7 @@ _Known: the dashboard curated first-login copy test for Actual Budget fails (see
   - Result: ____  Notes: ____
 
 - [ ] **SRV-ACTUAL-BUDGET-3 — Owner sign-in**
-  - Action: Sign in with the Authentik/OpenID button on the app's login page as the owner. Actual's login page offers OpenID (Authentik); env-oidc adapter, set by environment variables.
+  - Action: Sign in with the Authentik/OpenID button on the app's login page as the owner. Actual's login page offers OpenID (Authentik); env-oidc adapter, set by environment variables. Once the app is published, start from its public name: Actual accepts one sign-in address, and the .lan name shows "Invalid redirect URL" (DEFERRED S447).
   - Expected: Owner is signed in and named correctly.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____

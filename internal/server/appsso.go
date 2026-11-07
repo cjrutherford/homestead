@@ -34,10 +34,10 @@ type appSignIn struct {
 }
 
 // firstRunOwner is the linked owner's Authentik username for a first run
-// that sets the app up for the owner (FreshRSS, S445); empty for every
+// that sets the app up for the owner (FreshRSS, S445; Actual Budget, S447); empty for every
 // other app, and when Authentik or the link is not available.
 func (a *appSignIn) firstRunOwner(ctx context.Context, m catalog.Manifest) string {
-	if a == nil || a.m == nil || m.FirstRun == nil || m.FirstRun.Routine != catalog.FirstRunFreshRSS {
+	if a == nil || a.m == nil || m.FirstRun == nil || (m.FirstRun.Routine != catalog.FirstRunFreshRSS && m.FirstRun.Routine != catalog.FirstRunActualBudget) {
 		return ""
 	}
 	status, err := a.m.Status()

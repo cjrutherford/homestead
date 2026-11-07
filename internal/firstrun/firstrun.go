@@ -91,6 +91,9 @@ func RunAs(ctx context.Context, m catalog.Manifest, secrets Secrets, owner strin
 	if f.Routine == catalog.FirstRunFreshRSS {
 		return freshrssFirstRun(ctx, m, secrets, owner)
 	}
+	if f.Routine == catalog.FirstRunActualBudget {
+		return actualBudgetFirstRun(ctx, m, owner)
+	}
 	if f.Routine == catalog.FirstRunBookStack {
 		return bookstackFirstRun(ctx, m, secrets)
 	}

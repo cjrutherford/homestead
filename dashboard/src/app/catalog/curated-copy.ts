@@ -27,6 +27,23 @@ const NEXTCLOUD_LINK =
 const NO_NEXTCLOUD = 'It has no Nextcloud file link, so files stay in your browser and download to your device.';
 
 export const CURATED_COPY: Record<string, CuratedCopy> = {
+  'actual-budget': { firstLogin: ['Open Actual Budget and choose to sign in with Authentik. Homestead already made you its server owner under your Authentik username, so nobody else can claim that role. After sign-in Actual may offer to create a budget file; that is normal use, not setup. People who sign in get ordinary accounts.'] },
+  'api-client': { firstLogin: ['Open API Client and sign in or follow its setup instructions.'] },
+  'bookstack': { firstLogin: ['Open BookStack and sign in or follow its setup instructions.'] },
+  'circuits': { firstLogin: ['Open Circuits and sign in or follow its setup instructions.'] },
+  'contacts': { firstLogin: ['Open Contacts and sign in or follow its setup instructions.'] },
+  'expense': { firstLogin: ['Open Expenses and sign in or follow its setup instructions.'] },
+  'inventory': { firstLogin: ['Open Inventory and sign in or follow its setup instructions.'] },
+  'notes': { firstLogin: ['Open Notes and sign in or follow its setup instructions.'] },
+  'parametric': { firstLogin: ['Open Parametric and sign in or follow its setup instructions.'] },
+  'projects': { firstLogin: ['Open Projects and sign in or follow its setup instructions.'] },
+  'records': { firstLogin: ['Open Records and sign in or follow its setup instructions.'] },
+  'solitaire': { firstLogin: ['Open Solitaire and sign in or follow its setup instructions.'] },
+  'sudoku': { firstLogin: ['Open Sudoku and sign in or follow its setup instructions.'] },
+  'tasks': { firstLogin: ['Open Tasks and sign in or follow its setup instructions.'] },
+  'three-d': { firstLogin: ['Open 3D and sign in or follow its setup instructions.'] },
+  'time-tracking': { firstLogin: ['Open Time tracking and sign in or follow its setup instructions.'] },
+  'vikunja': { firstLogin: ['Open Vikunja and sign in or follow its setup instructions.'] },
   'audiobookshelf': { firstLogin: ['Open Audiobookshelf and sign in or follow its setup instructions.'] },
   'calibre-web-automated': { firstLogin: ['Open Calibre-Web Automated and sign in or follow its setup instructions.'] },
   'freshrss': { firstLogin: ['Open FreshRSS and choose to sign in with Authentik; Homestead already installed it, so there is no web installer. Your Authentik username is FreshRSS\'s administrator. Its own password is under Secrets in the app card Manage panel (Reveal) and works only while sign-in is off.'] },

@@ -803,6 +803,7 @@ const (
 	FirstRunGitea          = "gitea"
 	FirstRunFreshRSS       = "freshrss"
 	FirstRunMemos          = "memos"
+	FirstRunActualBudget   = "actual-budget"
 )
 
 // Library kinds a first run may create (Jellyfin's collection types).
@@ -832,7 +833,7 @@ type Library struct {
 
 func (f FirstRun) validate(m Manifest, services map[string]bool) error {
 	switch f.Routine {
-	case FirstRunImmich, FirstRunJellyfin, FirstRunAudiobookshelf, FirstRunKomga, FirstRunBookStack, FirstRunGitea, FirstRunFreshRSS, FirstRunMemos:
+	case FirstRunImmich, FirstRunJellyfin, FirstRunAudiobookshelf, FirstRunKomga, FirstRunBookStack, FirstRunGitea, FirstRunFreshRSS, FirstRunMemos, FirstRunActualBudget:
 	default:
 		return fmt.Errorf("catalog: unknown first-run routine %q", f.Routine)
 	}
@@ -864,6 +865,13 @@ func (f FirstRun) validate(m Manifest, services map[string]bool) error {
 		if !targets[lib.Path] {
 			return fmt.Errorf("catalog: first-run library %q path %q is not a persistent data path of %s", lib.Name, lib.Path, f.Service)
 		}
+	}
+	if f.Routine == FirstRunActualBudget {
+		// Seeds the owner's own sign-in name: no account or password.
+		if f.Account != "" || f.Secret != "" {
+			return fmt.Errorf("catalog: first-run %q has no account or secret", f.Routine)
+		}
+		return nil
 	}
 	secrets := m.Secrets
 	if strings.TrimSpace(f.Account) == "" {

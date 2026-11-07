@@ -17,8 +17,8 @@ description: Actual Budget is a local-first envelope budgeting app. Your
   budget lives on the server as one file per budget and syncs to every
   browser and phone you sign in from, with bank file import and rules.
   It runs as one container with its data on application storage, so
-  there is no database server to maintain. The first person to sign in
-  becomes the server owner.
+  there is no database server to maintain. Homestead makes you the
+  server owner when it installs the app, so nobody else can claim that role.
 category: finance
 icon: mdi:piggy-bank-outline
 services:
@@ -154,11 +154,21 @@ sso:
       - *actual_signin_script
       - "off"
       warnings:
-      - "The first person to sign in through Authentik becomes the Actual server owner and administrator, and the owner cannot be changed afterwards. Sign in yourself first. Later people get an ordinary account, named from their Authentik username; Actual takes no role from Authentik groups, and who may sign in is decided by the app's Authentik groups."
-      - "Actual signs in by the Authentik username. If the server already had a password, budgets owned by the password account move to the first OpenID person."
+      - "You, the appliance owner, are the Actual server owner and administrator under your Authentik username, set when the app is installed; the owner cannot be changed afterwards. People get an ordinary account, named from their Authentik username, the first time they sign in; Actual takes no role from Authentik groups, and who may sign in is decided by the app's Authentik groups."
+      - "Actual signs in by the Authentik username. Budgets made while signed in with a server password belong to the password account; when no named person existed yet they move to the owner, otherwise they stay with the password account (Actual's own rule)."
       - "Sign-in makes OpenID Actual's active login method. Actual keeps its server password only if one was set before; the login page then offers it as a second choice. With no password set, losing Authentik means losing the sign-in: turn sign-in off here, which removes the OpenID setting from Actual's account database so Actual asks for a new server password."
       - Actual stores the OpenID client secret in its own account database (data/server-files/account.sqlite), which is part of the app's backups. Homestead hands it to Actual as a file, never in Compose, argv or logs.
-      - Sign-in completes at the address Actual was opened at, so the address in the plan is the only one that signs in; plan sign-in again after the address changes.
+      - "Actual accepts one address for sign-in (the address in the plan: the public name once the app is published). Opened at any other name, for example the local .lan name, its login page answers 'Invalid redirect URL' after Authentik; open the address in the plan to sign in. Plan sign-in again after the address changes."
+# Homestead seeds the appliance owner as Actual's server owner in its
+# account database before anyone can sign in (S447, internal/firstrun/
+# actualbudget.go): Actual otherwise gives the owner role to whoever signs
+# in through OpenID first. The routine needs the owner's Authentik
+# username, so it does nothing until that is known and runs again when
+# sign-in is applied. No account or password: the owner signs in through
+# Authentik.
+firstrun:
+  routine: actual-budget
+  service: actual-budget
 secrets:
 - name: oidc_client_secret
   # Authentik's client secret for Actual; Homestead generates it, hands
