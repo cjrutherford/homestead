@@ -97,3 +97,6 @@ local (§2). An app with a name of its own keeps §1 unchanged. Path apps'
 Authentik sign-in therefore needs the internet even on the LAN (§4). Applied
 apps move through the existing re-plan (sign-in status asks for it) and the
 tunnel setup's issuer move (ADR-048 §6).
+
+## Amended by ADR-060
+A published app that signs in on only one origin has its LAN and .local names redirect to its public name (ADR-060).

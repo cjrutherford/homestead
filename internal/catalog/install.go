@@ -230,6 +230,7 @@ func planRoutes(plan *InstallPlan, req InstallRequest, recommendations []RouteRe
 		if err != nil {
 			return fmt.Errorf("catalog: route %q: %w", recommendation.Endpoint, err)
 		}
+		route.SingleOrigin = req.Manifest.SingleOriginSignIn && !req.Manifest.ServedByPath()
 		if req.Manifest.ServedByPath() {
 			// The record keeps the app's install name as its key; the
 			// edge serves it only at its path (ADR-044).

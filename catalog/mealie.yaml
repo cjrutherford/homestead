@@ -9,6 +9,7 @@
 # The only declared secret is the Authentik client secret (S403); the
 # image's own entrypoint runs unchanged, Mealie reads the secret from a
 # file (OIDC_CLIENT_SECRET_FILE).
+single_origin_sign_in: true  # ADR-060: published, the LAN names redirect to the public name
 name: mealie
 version: 3.29.0
 title: Mealie

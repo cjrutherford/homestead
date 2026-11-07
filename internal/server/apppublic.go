@@ -442,6 +442,9 @@ func (p *appPublic) buildPlanState(ctx context.Context, name string, req appPubl
 			return appPublicPlan{}, refusePlan(http.StatusUnprocessableEntity, "%s is already on the tunnel and its base URL already uses it", hostname)
 		}
 	}
+	if !path && f.manifest.SingleOriginSignIn && len(f.routes) > 0 && plan.Action != "refresh" {
+		plan.Warnings = append(plan.Warnings, singleOriginWarning(f.routes[0], plan))
+	}
 	if f.signIn && plan.Action != "refresh" {
 		if anticipateSignIn && p.s.appSignIn != nil && p.s.appSignIn.tokenKept() {
 			// The install applies sign-in with the public name already in its
@@ -1312,4 +1315,20 @@ func appPublicPathDefinition(st *store.Store, plan appPublicPlan) operation.Defi
 		typ, steps = "app.public.remove", []operation.StepDef{edge, hosts}
 	}
 	return operation.Definition{Type: typ, Steps: steps}
+}
+
+// singleOriginWarning previews the edge redirect of a single-origin app
+// (ADR-060): its local names redirect to the public name while it is
+// published, and stop when it is not.
+func singleOriginWarning(r docker.Route, plan appPublicPlan) string {
+	names := make([]string, 0, len(r.Names()))
+	for _, n := range r.Names() {
+		names = append(names, string(n))
+	}
+	local := strings.Join(names, " and ")
+	if plan.Action == "remove" {
+		return "Edge change: " + local + " stop redirecting to " + plan.Hostname + " (ADR-060); the app is served on its local names again."
+	}
+	return "Edge change: " + local + " redirect (307, path and query kept) to https://" + plan.Hostname +
+		", because this app can only sign in on one address (ADR-060). Local clients then reach it through the tunnel and the internet, and cannot use it if either is down; unpublish it to bring the local names back."
 }

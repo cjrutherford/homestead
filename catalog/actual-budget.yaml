@@ -9,6 +9,7 @@
 # ACTUAL_OPENID_* from its environment and, when a discovery URL is set,
 # switches itself to OpenID (forced bootstrap, app.ts run()). The client
 # secret comes from ACTUAL_OPENID_CLIENT_SECRET_FILE (load-config.js).
+single_origin_sign_in: true  # ADR-060: published, the LAN names redirect to the public name
 name: actual-budget
 version: 26.10.0
 title: Actual Budget
@@ -158,7 +159,6 @@ sso:
       - "Actual signs in by the Authentik username. Budgets made while signed in with a server password belong to the password account; when no named person existed yet they move to the owner, otherwise they stay with the password account (Actual's own rule)."
       - "Sign-in makes OpenID Actual's active login method. Actual keeps its server password only if one was set before; the login page then offers it as a second choice. With no password set, losing Authentik means losing the sign-in: turn sign-in off here, which removes the OpenID setting from Actual's account database so Actual asks for a new server password."
       - Actual stores the OpenID client secret in its own account database (data/server-files/account.sqlite), which is part of the app's backups. Homestead hands it to Actual as a file, never in Compose, argv or logs.
-      - "Actual accepts one address for sign-in (the address in the plan: the public name once the app is published). Opened at any other name, for example the local .lan name, its login page answers 'Invalid redirect URL' after Authentik; open the address in the plan to sign in. Plan sign-in again after the address changes."
 # Homestead seeds the appliance owner as Actual's server owner in its
 # account database before anyone can sign in (S447, internal/firstrun/
 # actualbudget.go): Actual otherwise gives the owner role to whoever signs

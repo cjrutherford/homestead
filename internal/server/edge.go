@@ -289,6 +289,7 @@ func startEdgeReconcile(ctx context.Context, runner *operation.Runner, st *store
 	routes = preserveDashboardRoute(st, routes)
 	routes = preserveTunnelNames(st, routes)
 	routes = preserveGates(st, routes)
+	stampSingleOrigin(catalogDir, routes)
 	if err := requireLocalDashboardNames(routes); err != nil {
 		return 0, http.StatusUnprocessableEntity, err
 	}

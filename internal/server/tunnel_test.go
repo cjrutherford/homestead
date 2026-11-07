@@ -795,9 +795,17 @@ func TestTunnelAdopt(t *testing.T) {
 		string(token) != "TUNNEL_TOKEN=adopted-run-token\n" {
 		t.Fatalf("config = %s token = %s", config, token)
 	}
+	// The audit entry is written by a goroutine that waits for the
+	// operation, so it can land just after the operation reads as done.
 	var audited int
-	if err := st.DB().QueryRow(`SELECT COUNT(*) FROM audit_entries WHERE action = 'tunnel.adopt'`).Scan(&audited); err != nil || audited != 1 {
-		t.Fatalf("adopt audit = %d, %v", audited, err)
+	var auditErr error
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if auditErr = st.DB().QueryRow(`SELECT COUNT(*) FROM audit_entries WHERE action = 'tunnel.adopt'`).Scan(&audited); auditErr != nil || audited != 0 {
+			break
+		}
+	}
+	if auditErr != nil || audited != 1 {
+		t.Fatalf("adopt audit = %d, %v", audited, auditErr)
 	}
 	// One tunnel at a time: a second adoption is refused.
 	refused("already manages a tunnel")

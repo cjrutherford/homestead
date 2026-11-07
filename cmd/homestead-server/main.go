@@ -179,6 +179,11 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, dashboardSocket, 
 		server.RunCraftMigration(ctx, st, catalogDir, 5*time.Minute, func(err error) {
 			fmt.Fprintln(os.Stderr, "homestead-server: craft apps not moved to their paths yet, will retry:", err)
 		})
+		// Published single-origin apps redirect their LAN names to the
+		// public name (ADR-060); apps installed earlier take it here.
+		server.RunSingleOriginMigration(ctx, st, catalogDir, 5*time.Minute, func(err error) {
+			fmt.Fprintln(os.Stderr, "homestead-server: single-origin redirects not applied yet, will retry:", err)
+		})
 	}()
 	// Bring local leaves in line with the routes once now (S295): a new
 	// `.local` name is then served after an upgrade, not hours later at

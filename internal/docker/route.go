@@ -183,6 +183,11 @@ type Route struct {
 	// Gate, when set, puts the route behind Authentik forward-auth
 	// (S418, ADR-055). Set and cleared only by the app sign-in operation.
 	Gate *Gate `json:",omitempty"`
+	// SingleOrigin marks an app whose sign-in completes on only one origin
+	// (ADR-060). While the route has a public name its local names answer
+	// with a 307 to it. Stamped from the installed manifest on every edge
+	// re-render, never set by a client.
+	SingleOrigin bool `json:",omitempty"`
 	// paths are the path routes the dashboard route carries when it is
 	// rendered (render time only, never stored).
 	paths []Route

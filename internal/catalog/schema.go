@@ -774,6 +774,10 @@ type Manifest struct {
 	// StripPrefix removes Path before the request reaches the app: for
 	// apps whose base-path setting only rewrites the links they generate.
 	StripPrefix bool `yaml:"strip_prefix"`
+	// SingleOriginSignIn marks an app whose sign-in completes on only one
+	// origin (ADR-060): while it is published, its LAN and .local names
+	// redirect to the public name. Set only for apps that need it.
+	SingleOriginSignIn bool `yaml:"single_origin_sign_in"`
 	// Redirects send fixed /.well-known/ paths on the appliance's names
 	// into the app's path (Nextcloud's CalDAV and CardDAV discovery).
 	Redirects []docker.PathRedirect

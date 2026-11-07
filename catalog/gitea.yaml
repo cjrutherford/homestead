@@ -7,6 +7,7 @@
 # live on the backed-up data volume, so no secret is declared for the
 # app itself; the two secrets at the end exist only for Authentik
 # sign-in (S416).
+single_origin_sign_in: true  # ADR-060: published, the LAN names redirect to the public name
 name: gitea
 version: 28.2.0
 title: Gitea
@@ -179,7 +180,7 @@ sso:
       - "off"
       warnings:
       - Gitea keeps its sign-in source in its own database, which Homestead edits directly; this is re-checked on every Gitea update and stops with a clear message if the database or the version is not the one it was verified against. Run this after the app has started once, and with Authentik reachable, because Gitea contacts it when it restarts.
-      - Sign-in completes only at the address Gitea is set up for (its ROOT_URL, the app's own address); other addresses for the same app cannot complete sign-in. After the address changes, plan sign-in again so Authentik's redirect list follows.
+      - "Gitea signs in only at the address it is set up for (its ROOT_URL). Once the app is published, its local names redirect to the public name (ADR-060), so sign-in finishes there. Git over HTTP follows the redirect; after the address changes, plan sign-in again so Authentik's redirect list follows."
       - A person whose Authentik username equals an existing Gitea user is asked, at first sign-in, to confirm with that account's local password before the two are linked (no silent takeover); other people get a new account with their Authentik username and email.
       - Members of the app's Homestead admin group become administrators at every sign-in, and everyone else who signs in through Authentik is made a non-administrator at that sign-in, unless they are the last administrator. A local administrator who never signs in through Authentik keeps the role.
       - The local login form stays open and local registration is closed; denying a person (none) is not enforced by Gitea and local accounts with passwords keep working.

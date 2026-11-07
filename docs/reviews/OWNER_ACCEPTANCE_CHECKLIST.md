@@ -267,7 +267,7 @@ _Known: bank-sync providers are not configured (DEFERRED S358)._
   - Result: ____  Notes: ____
 
 - [ ] **SRV-ACTUAL-BUDGET-3 — Owner sign-in**
-  - Action: Sign in with the Authentik/OpenID button on the app's login page as the owner. Actual's login page offers OpenID (Authentik); env-oidc adapter, set by environment variables. Once the app is published, start from its public name: Actual accepts one sign-in address, and the .lan name shows "Invalid redirect URL" (DEFERRED S447).
+  - Action: Sign in with the Authentik/OpenID button on the app's login page as the owner. Actual's login page offers OpenID (Authentik); env-oidc adapter, set by environment variables. Once the app is published, its .lan and .local names redirect to the public name (ADR-060), so you finish signed in there.
   - Expected: Owner is signed in and named correctly.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -616,7 +616,7 @@ _Re-verify after every Gitea update (pin test). Per-person `none` is NOT enforce
   - Result: ____  Notes: ____
 
 - [ ] **SRV-GITEA-3 — Owner sign-in**
-  - Action: Open the app, use the Authentik/OpenID sign-in option as the owner. Login page offers 'Sign in with authentik' (OAuth2 source). Once Gitea is published, start from its public name (its ROOT_URL): starting from the LAN name ends with 'could not find a matching session'; DB-write sign-in (login_source row; Gitea 28.2.0 pinned). The first-run administrator is `homestead-admin`; owner (Homestead admin group) becomes a Gitea administrator at sign-in.
+  - Action: Open the app, use the Authentik/OpenID sign-in option as the owner. Login page offers 'Sign in with authentik' (OAuth2 source). Once Gitea is published, once published, its .lan and .local names redirect to the public name (ADR-060), so you finish signed in there; DB-write sign-in (login_source row; Gitea 28.2.0 pinned). The first-run administrator is `homestead-admin`; owner (Homestead admin group) becomes a Gitea administrator at sign-in.
   - Expected: Owner is signed in and named correctly.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____

@@ -116,3 +116,4 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-057 | Everything apps as catalog packages | Accepted |
 | ADR-058 | Everything SDK: sharing, read links, net and events | Accepted |
 | ADR-059 | No manual first run for any catalog app | Accepted |
+| ADR-060 | Single-origin apps redirect their LAN names to the public name | Accepted |

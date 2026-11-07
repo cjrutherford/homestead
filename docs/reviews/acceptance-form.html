@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "b3f39c3557a229ac",
+ "hash": "033e4c271555f8a6",
  "sections": [
   {
    "title": "Platform",
@@ -410,7 +410,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-ACTUAL-BUDGET-3",
        "title": "Owner sign-in",
-       "action": "Sign in with the Authentik/OpenID button on the app's login page as the owner. Actual's login page offers OpenID (Authentik); env-oidc adapter, set by environment variables. Once the app is published, start from its public name: Actual accepts one sign-in address, and the .lan name shows \"Invalid redirect URL\" (DEFERRED S447).",
+       "action": "Sign in with the Authentik/OpenID button on the app's login page as the owner. Actual's login page offers OpenID (Authentik); env-oidc adapter, set by environment variables. Once the app is published, its .lan and .local names redirect to the public name (ADR-060), so you finish signed in there.",
        "expected": "Owner is signed in and named correctly.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -818,7 +818,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-GITEA-3",
        "title": "Owner sign-in",
-       "action": "Open the app, use the Authentik/OpenID sign-in option as the owner. Login page offers 'Sign in with authentik' (OAuth2 source). Once Gitea is published, start from its public name (its ROOT_URL): starting from the LAN name ends with 'could not find a matching session'; DB-write sign-in (login_source row; Gitea 28.2.0 pinned). The first-run administrator is `homestead-admin`; owner (Homestead admin group) becomes a Gitea administrator at sign-in.",
+       "action": "Open the app, use the Authentik/OpenID sign-in option as the owner. Login page offers 'Sign in with authentik' (OAuth2 source). Once Gitea is published, once published, its .lan and .local names redirect to the public name (ADR-060), so you finish signed in there; DB-write sign-in (login_source row; Gitea 28.2.0 pinned). The first-run administrator is `homestead-admin`; owner (Homestead admin group) becomes a Gitea administrator at sign-in.",
        "expected": "Owner is signed in and named correctly.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
