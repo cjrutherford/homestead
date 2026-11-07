@@ -113,3 +113,15 @@ func TestDiscoverStorageLive(t *testing.T) {
 	}
 	t.Logf("mounts=%d accessible=%d root-free=%d", len(got.Mounts), access, root.FreeBytes)
 }
+
+func TestDedupeMountpointsKeepsVisibleMount(t *testing.T) {
+	in := []Mount{
+		{Mountpoint: "/mnt/app", Device: "/dev/vdc"},
+		{Mountpoint: "/mnt/bulk", Device: "/dev/vdd"},
+		{Mountpoint: "/mnt/app", Device: "/dev/vdc2"},
+	}
+	out := dedupeMountpoints(in)
+	if len(out) != 2 || out[0].Mountpoint != "/mnt/bulk" || out[1].Device != "/dev/vdc2" {
+		t.Fatalf("dedupe = %+v, want bulk then the later app mount", out)
+	}
+}

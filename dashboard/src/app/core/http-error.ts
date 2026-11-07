@@ -58,6 +58,14 @@ export function httpErrorMessage(
       return 'Your session is not valid. Log in and try again.';
     case 403:
       return 'The appliance refused the request.';
+    case 409:
+    case 422:
+      // The server's reason is the useful part (a refused domain, a name
+      // already taken); fall through to the generic text when it sent none.
+      if (serverMessage(err)) {
+        return `${subject} failed: ${serverMessage(err)}`;
+      }
+      break;
     case 429: {
       const seconds = retryAfterSeconds(err);
       return seconds === null

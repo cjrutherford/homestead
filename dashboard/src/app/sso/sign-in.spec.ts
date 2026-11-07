@@ -163,6 +163,18 @@ describe('SignIn', () => {
     http.expectOne('/api/v1/sso').flush({ ...NONE, configured: true, spec: SPEC });
   });
 
+  it('does not ask for the token again when one was typed, even if Authentik was not read', async () => {
+    await open();
+    status(NONE);
+    type('#sso-token', 'ak-token-123');
+    button('Review plan').click();
+    http.expectOne('/api/v1/sso/plan').flush({ ...PLAN, inspected: false });
+    fixture.detectChanges();
+    expect(el().querySelector('#sso-approve-token')).toBeNull();
+    button('Approve and set up sign-in').click();
+    expect(http.expectOne('/api/v1/sso/approve').request.body.api_token).toBe('ak-token-123');
+  });
+
   it('forgets the token when the review is cancelled', async () => {
     await open();
     status(NONE);

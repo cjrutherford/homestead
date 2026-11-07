@@ -87,7 +87,7 @@
           @for (line of p.warnings; track line) {
             <app-state-message kind="warning" [headline]="line" />
           }
-          @if (p.inspected && apiToken.trim()) {
+          @if (apiToken.trim()) {
             <p class="hint">Approving uses the Authentik API token you entered above; it is not stored by the browser.</p>
           } @else {
             <div class="field">

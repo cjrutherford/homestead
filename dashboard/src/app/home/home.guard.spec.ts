@@ -40,7 +40,16 @@ describe('home and owner guards (S339)', () => {
   }
 
   it('sends a signed-out visitor at the root to sign-in', async () => {
-    expect(url(await run(homeGuard, {}))).toBe('/login');
+    expect(url(await run(homeGuard, { '/api/v1/identity': { state: 'CLAIMED', version: 't' } }))).toBe('/login');
+  });
+
+  it('sends a visitor to an unclaimed appliance to claim, not sign-in', async () => {
+    expect(url(await run(homeGuard, { '/api/v1/identity': { state: 'UNCLAIMED', version: 't' } }))).toBe('/claim');
+  });
+
+  it('sends a visitor to a claimed appliance with no administrator yet to claim', async () => {
+    const body = { state: 'CLAIMED', version: 't', setup_pending: true };
+    expect(url(await run(homeGuard, { '/api/v1/identity': body }))).toBe('/claim');
   });
 
   it('lets a person onto the apps page without asking the walkthrough', async () => {

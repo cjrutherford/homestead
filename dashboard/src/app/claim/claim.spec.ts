@@ -131,6 +131,15 @@ describe('Claim', () => {
     expect(text()).toContain('Step 2 of 3');
   });
 
+  it('resumes at the account step when claimed with no administrator yet (reload)', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/identity').flush({ state: 'CLAIMED', version: 'test', setup_pending: true });
+    fixture.detectChanges();
+    http.expectNone('/api/v1/wizards/claim');
+    expect(text()).toContain('Create the first administrator');
+    expect(text()).not.toContain('already set up');
+  });
+
   it('reports an invalid token', () => {
     fixture.detectChanges();
     answerIdentity('UNCLAIMED');

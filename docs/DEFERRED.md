@@ -1811,3 +1811,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
   - Events streaming through Caddy and the Cloudflare tunnel without buffering (S430; step 8).
   - A successful `net.fetch` to a real public host and a TLS handshake, the refusals in `net-log`, and the user-script behaviour in API Client (S435, S436; step 9 and the S436 step 8 record).
   - Limits at their real values: net per minute, share attempts per hour, response and body sizes, read-link expiry (step 10).
+
+- Release trust (S443, from the platform run; PLAT-UPDATE-3, PLAT-DOCTOR-1): the release signing key is still a placeholder, so Doctor shows release-trust amber and Verify has nothing real to verify. Replace with the real key when the owner signs the first release.
+
+- Curated install copy (found in S443): the dashboard spec `curated-copy.spec.ts` fails at HEAD because 17 catalog packages have no entry in `curated-copy.ts` (actual-budget, api-client, bookstack, circuits, contacts, expense, inventory, memos, notes, parametric, projects, records, solitaire, sudoku, tasks, three-d, time-tracking, vikunja). Pre-existing, not touched by S443; with ADR-059 most need only a "nothing to do on first run" line.

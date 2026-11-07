@@ -33,8 +33,8 @@ The form is generated from this file by `python3 -I scripts/review/make_acceptan
 ### Starting point
 
 - [ ] **PLAT-DEPLOY-1 — Confirm the starting point**
-  - Action: On the VM (SSH): `systemctl is-active homestead-server docker`; `curl -s localhost:8080/api/v1/claim/status`; `sudo docker ps --format '{{.Names}}'`; `findmnt /mnt/app /mnt/bulk /mnt/backup`; `ls -A /mnt/app /mnt/bulk /mnt/backup`; `ls /opt/homestead/stacks`; `homesteadctl version` and `cat ~/homestead/.deployed-commit` (the commit Claude deployed). In a browser open `https://homestead.local/` (continue past the certificate warning for now).
-  - Expected: The daemon is `active`; claim status says the appliance is not claimed, and the dashboard shows the Status page as **Unclaimed** with a **Claim this appliance** option (no login screen, no setup wizard). `docker ps` lists only `homestead-caddy` (the edge proxy the daemon starts; no Authentik and no app containers). The three mounts are mounted and empty (only `lost+found` may exist); `/opt/homestead/stacks` is empty. The Status page version and `homesteadctl version` show `0.0.1` (the release version; the build commit is in `~/homestead/.deployed-commit`, expected `ad89b28`). Write the commit in the form's run info.
+  - Action: On the VM (SSH): `systemctl is-active homestead-server docker`; `curl -s localhost:8080/api/v1/identity`; `sudo docker ps --format '{{.Names}}'`; `findmnt /mnt/app /mnt/bulk /mnt/backup`; `ls -A /mnt/app /mnt/bulk /mnt/backup`; `ls /opt/homestead/stacks`; `homesteadctl version` and `cat ~/homestead/.deployed-commit` (the commit Claude deployed). In a browser open `https://homestead.local/` (continue past the certificate warning for now).
+  - Expected: The daemon is `active`; identity says `UNCLAIMED`, and opening the dashboard takes you to the claim page (S443; the Status page also reads **Unclaimed** with a **Claim this appliance** option); no login screen and no setup wizard. `docker ps` lists only `homestead-caddy` (the edge proxy the daemon starts; no Authentik and no app containers). The three mounts are mounted and empty (only `lost+found` may exist); `/opt/homestead/stacks` holds only the `caddy` edge directory. The Status page version and `homesteadctl version` show `0.0.1` (the release version; the build commit is in `~/homestead/.deployed-commit`, expected `ad89b28`). Write the commit in the form's run info.
   - If it fails: INSTALL Part B and Part F; `journalctl -u homestead-server -n 100`. If anything is installed or claimed, stop and tell Claude: the reset did not complete.
   - Result: ____  Notes: ____
 
@@ -53,7 +53,7 @@ The form is generated from this file by `python3 -I scripts/review/make_acceptan
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-DEPLOY-2 — Catalog shows all packages**
-  - Action: Sign in as the owner on the CLI (`homesteadctl login`), then `homesteadctl catalog list`, and open the dashboard Catalog page.
+  - Action: Sign in as the owner on the CLI (`homesteadctl login`), then `homesteadctl apps list`, and open the dashboard Catalog page.
   - Expected: 46 packages (18 server, 14 Everything, 13 craft, plus Authentik). Counts match on both.
   - If it fails: Catalog page and CLI disagree: record both counts.
   - Result: ____  Notes: ____
@@ -67,7 +67,7 @@ The form is generated from this file by `python3 -I scripts/review/make_acceptan
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-SETUP-2 — Wizard step 2, Storage**
-  - Action: On the Storage step (Storage page) register each mount with a short label (`app` = `/mnt/app`, `bulk` = `/mnt/bulk`, `backup` = `/mnt/backup`) and assign classes: `application` and `database` to `/mnt/app`, `bulk` to `/mnt/bulk`, `backup` to `/mnt/backup`. Compare `homesteadctl storage list`.
+  - Action: On the Storage step (Storage page) register each mount with a short label (`app` = `/mnt/app`, `bulk` = `/mnt/bulk`, `backup` = `/mnt/backup`) and assign classes: `application` and `database` to `/mnt/app`, `bulk` to `/mnt/bulk`, `backup` to `/mnt/backup`. Compare `homesteadctl storage mounts`, `storage registrations` and `storage assignments`.
   - Expected: All three mounts are listed with free space; no partition or format action exists anywhere; the step is done once `application` is assigned; CLI and page agree.
   - If it fails: INSTALL D2.
   - Result: ____  Notes: ____
@@ -105,7 +105,7 @@ The form is generated from this file by `python3 -I scripts/review/make_acceptan
 ### People A, B and C
 
 - [ ] **PLAT-PEOPLE-1 — Add people A, B and C**
-  - Action: People page (or `homesteadctl people add`): add A, B and C, each with a one-time link, generated password or chosen password (shown once; store it in your password manager). Do not grant any app yet.
+  - Action: `homesteadctl people add` (the People page is not offered until the setup wizard finishes; add them by CLI, or return to the People page afterwards): add A, B and C, each with a one-time link, generated password or chosen password (shown once; store it in your password manager). Do not grant any app yet.
   - Expected: Each appears in People and in Authentik (`homestead-` groups only); none has app access.
   - If it fails: docs/INSTALL.md People section; ADR-043/049. If a one-time link is not offered, record the dialog text.
   - Result: ____  Notes: ____
@@ -125,7 +125,7 @@ The form is generated from this file by `python3 -I scripts/review/make_acceptan
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-TUNNEL-1 — Tunnel plan preview**
-  - Action: Open the **Tunnel** page (or `homesteadctl tunnel plan`). Name a **new** tunnel (for example `homestead-vm2`); the form proposes `homestead.<public-domain>` for the dashboard and `auth.<public-domain>` for Authentik (keep both). Choose **Review plan** and read it.
+  - Action: Open the **Tunnel** page (or `homesteadctl tunnel plan`). Name a **new** tunnel (for example `homestead-vm2`); the form proposes `homestead.<public-domain>` for the dashboard and `homestead.<public-domain>/apps/auth/` for Authentik (the same name as the dashboard; keep it). Choose **Review plan** and read it.
   - Expected: Plan lists the tunnel to create, each CNAME (none exists yet), the Let's Encrypt certificate, the public dashboard sign-in change and each affected app; certificate lamps for each name; nothing changes before approval.
   - If it fails: Doctor Tunnel and Certificates sections; ADR-046/047/048.
   - Result: ____  Notes: ____
@@ -138,7 +138,7 @@ The form is generated from this file by `python3 -I scripts/review/make_acceptan
 
 - [ ] **PLAT-TUNNEL-3 — Public dashboard sign-in**
   - Action: From a phone off the LAN open `https://homestead.<public-domain>/` and sign in as the owner.
-  - Expected: You are sent to Authentik's public sign-in at `https://auth.<public-domain>/` (the tunnel default; locally Authentik stays at `https://<server>/apps/auth/`); a password login on the Homestead name is refused; after sign-in the apps page shows.
+  - Expected: You are sent to Authentik's public sign-in at `https://homestead.<public-domain>/apps/auth/` (the public name; locally Authentik stays at `https://<server>/apps/auth/`); a password login on the Homestead name is refused; after sign-in the apps page shows.
   - If it fails: Doctor Tunnel and Certificates sections; ADR-046/047/048.
   - Result: ____  Notes: ____
 
@@ -155,8 +155,8 @@ The form is generated from this file by `python3 -I scripts/review/make_acceptan
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-PEOPLE-5 — Public step-up**
-  - Action: On the public name open People as the owner.
-  - Expected: Authentik asks for a fresh sign-in (step-up, ADR-049).
+  - Action: On the public name open People as the owner (the page itself loads), then take an action there: reset a password or MFA, or remove a person.
+  - Expected: Opening People does not prompt; the action makes Authentik ask for a fresh sign-in (step-up on the action, by design, ADR-049).
   - If it fails: docs/INSTALL.md People section; ADR-043/049.
   - Result: ____  Notes: ____
 
@@ -217,7 +217,7 @@ The form is generated from this file by `python3 -I scripts/review/make_acceptan
   - Result: ____  Notes: ____
 
 - [ ] **PLAT-BACKUP-1 — Backup policy visible**
-  - Action: Open Backups / `homesteadctl backups ...`.
+  - Action: Open Backups / `homesteadctl backup schedules` (and `backup destination`).
   - Expected: Nightly 02:00, keep 7, target mount shown.
   - If it fails: docs/architecture/BACKUP_RESTORE_RUNBOOK.md.
   - Result: ____  Notes: ____
@@ -249,7 +249,7 @@ The form is generated from this file by `python3 -I scripts/review/make_acceptan
 _Known: the dashboard curated first-login copy test for Actual Budget fails (see Known failures). Bank-sync providers are not configured (DEFERRED S358)._
 
 - [ ] **SRV-ACTUAL-BUDGET-1 — Install: plan preview, then approve**
-  - Action: Catalog > Actual Budget > Install. Read the plan, then approve (or `homesteadctl catalog plan actual-budget` then approve).
+  - Action: Catalog > Actual Budget > Install. Read the plan, then approve (or `homesteadctl apps plan actual-budget -f FILE`, then `homesteadctl apps install actual-budget -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -314,7 +314,7 @@ _Known: the dashboard curated first-login copy test for Actual Budget fails (see
 _DB-write sign-in: re-verify after EVERY Audiobookshelf update (pin test TestAudiobookshelfSignInPinnedToVerifiedVersion). Client secret is stored in plaintext in absdatabase.sqlite (accepted). Browser token exchange has not been recorded live._
 
 - [ ] **SRV-AUDIOBOOKSHELF-1 — Install: plan preview, then approve**
-  - Action: Catalog > Audiobookshelf > Install. Read the plan, then approve (or `homesteadctl catalog plan audiobookshelf` then approve).
+  - Action: Catalog > Audiobookshelf > Install. Read the plan, then approve (or `homesteadctl apps plan audiobookshelf -f FILE`, then `homesteadctl apps install audiobookshelf -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -385,7 +385,7 @@ _DB-write sign-in: re-verify after EVERY Audiobookshelf update (pin test TestAud
 _Browser sign-ins have not been recorded yet._
 
 - [ ] **SRV-BOOKSTACK-1 — Install: plan preview, then approve**
-  - Action: Catalog > BookStack > Install. Read the plan, then approve (or `homesteadctl catalog plan bookstack` then approve).
+  - Action: Catalog > BookStack > Install. Read the plan, then approve (or `homesteadctl apps plan bookstack -f FILE`, then `homesteadctl apps install bookstack -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -450,7 +450,7 @@ _Browser sign-ins have not been recorded yet._
 _Re-verify the sign-in script after every CWA update (pin test). app.db holds the client secret in plaintext (mode 644 inside the container). An address change (public refresh or move) needs sign-in planned and applied again (DEFERRED S415)._
 
 - [ ] **SRV-CALIBRE-WEB-AUTOMATED-1 — Install: plan preview, then approve**
-  - Action: Catalog > Calibre-Web Automated > Install. Read the plan, then approve (or `homesteadctl catalog plan calibre-web-automated` then approve).
+  - Action: Catalog > Calibre-Web Automated > Install. Read the plan, then approve (or `homesteadctl apps plan calibre-web-automated -f FILE`, then `homesteadctl apps install calibre-web-automated -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -521,7 +521,7 @@ _Re-verify the sign-in script after every CWA update (pin test). app.db holds th
 _First sign-in needs the FreshRSS web installer finished first (SRV-FRESHRSS-1a). First install on this appliance; source/unit/contract tests only (DEFERRED S412: return URL behind the edge, auto-registration, off restoring the form login unproven)._
 
 - [ ] **SRV-FRESHRSS-1 — Install: plan preview, then approve**
-  - Action: Catalog > FreshRSS > Install. Read the plan, then approve (or `homesteadctl catalog plan freshrss` then approve).
+  - Action: Catalog > FreshRSS > Install. Read the plan, then approve (or `homesteadctl apps plan freshrss -f FILE`, then `homesteadctl apps install freshrss -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -592,7 +592,7 @@ _First sign-in needs the FreshRSS web installer finished first (SRV-FRESHRSS-1a)
 _Re-verify after every Gitea update (pin test). Per-person `none` is NOT enforced for local registration: registration stays open and local passwords work (DEFERRED S416). No local admin exists until someone registers (SRV-GITEA-1a). Client secret in plaintext in gitea.db._
 
 - [ ] **SRV-GITEA-1 — Install: plan preview, then approve**
-  - Action: Catalog > Gitea > Install. Read the plan, then approve (or `homesteadctl catalog plan gitea` then approve).
+  - Action: Catalog > Gitea > Install. Read the plan, then approve (or `homesteadctl apps plan gitea -f FILE`, then `homesteadctl apps install gitea -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -669,7 +669,7 @@ _Re-verify after every Gitea update (pin test). Per-person `none` is NOT enforce
 _Immich 3.3.0. S318 first-run admin fix is live-unverified after reset; S298 live check showed the sign-in redirect to Authentik with PKCE. Public name is one label deep under the zone (ADR-044)._
 
 - [ ] **SRV-IMMICH-1 — Install: plan preview, then approve**
-  - Action: Catalog > Immich > Install. Read the plan, then approve (or `homesteadctl catalog plan immich` then approve).
+  - Action: Catalog > Immich > Install. Read the plan, then approve (or `homesteadctl apps plan immich -f FILE`, then `homesteadctl apps install immich -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -740,7 +740,7 @@ _Immich 3.3.0. S318 first-run admin fix is live-unverified after reset; S298 liv
 _An earlier live check saw the SSO start 302 to the public Authentik; a real browser login to completion has not been recorded. Jellyfin sets itself up at install (S319)._
 
 - [ ] **SRV-JELLYFIN-1 — Install: plan preview, then approve**
-  - Action: Catalog > Jellyfin > Install. Read the plan, then approve (or `homesteadctl catalog plan jellyfin` then approve).
+  - Action: Catalog > Jellyfin > Install. Read the plan, then approve (or `homesteadctl apps plan jellyfin -f FILE`, then `homesteadctl apps install jellyfin -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -811,7 +811,7 @@ _An earlier live check saw the SSO start 302 to the public Authentik; a real bro
 _First install on this appliance; sign-in confirmed from source only (DEFERRED S411). Every Authentik person becomes an ordinary user; no group mapping._
 
 - [ ] **SRV-KOMGA-1 — Install: plan preview, then approve**
-  - Action: Catalog > Komga > Install. Read the plan, then approve (or `homesteadctl catalog plan komga` then approve).
+  - Action: Catalog > Komga > Install. Read the plan, then approve (or `homesteadctl apps plan komga -f FILE`, then `homesteadctl apps install komga -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -870,7 +870,7 @@ _First install on this appliance; sign-in confirmed from source only (DEFERRED S
 _First install on this appliance (S409/S410 unit and contract tests only). No group claim: Authentik people are ordinary users; accounts match by email._
 
 - [ ] **SRV-LINKDING-1 — Install: plan preview, then approve**
-  - Action: Catalog > Linkding > Install. Read the plan, then approve (or `homesteadctl catalog plan linkding` then approve).
+  - Action: Catalog > Linkding > Install. Read the plan, then approve (or `homesteadctl apps plan linkding -f FILE`, then `homesteadctl apps install linkding -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -929,7 +929,7 @@ _First install on this appliance (S409/S410 unit and contract tests only). No gr
 _An earlier live check saw Authentik accept the Mealie redirect URI; a browser login to completion has not been recorded._
 
 - [ ] **SRV-MEALIE-1 — Install: plan preview, then approve**
-  - Action: Catalog > Mealie > Install. Read the plan, then approve (or `homesteadctl catalog plan mealie` then approve).
+  - Action: Catalog > Mealie > Install. Read the plan, then approve (or `homesteadctl apps plan mealie -f FILE`, then `homesteadctl apps install mealie -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -988,7 +988,7 @@ _An earlier live check saw Authentik accept the Mealie redirect URI; a browser l
 _Browser sign-in has not been recorded yet._
 
 - [ ] **SRV-MEMOS-1 — Install: plan preview, then approve**
-  - Action: Catalog > Memos > Install. Read the plan, then approve (or `homesteadctl catalog plan memos` then approve).
+  - Action: Catalog > Memos > Install. Read the plan, then approve (or `homesteadctl apps plan memos -f FILE`, then `homesteadctl apps install memos -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1053,7 +1053,7 @@ _Browser sign-in has not been recorded yet._
 _Install refuses if no Navidrome admin exists or a username collides with a Homestead person, so create the Navidrome admin first (SRV-NAVIDROME-1a). Keep its password in your password manager, not in this file. Owner browser sign-in has not been recorded yet._
 
 - [ ] **SRV-NAVIDROME-1 — Install: plan preview, then approve**
-  - Action: Catalog > Navidrome > Install. Read the plan, then approve (or `homesteadctl catalog plan navidrome` then approve).
+  - Action: Catalog > Navidrome > Install. Read the plan, then approve (or `homesteadctl apps plan navidrome -f FILE`, then `homesteadctl apps install navidrome -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1130,7 +1130,7 @@ _Install refuses if no Navidrome admin exists or a username collides with a Home
 _Nextcloud 35.0.1; sign-in verified live (S298, S408); public base URL for path apps is not rewritten (DEFERRED S407)._
 
 - [ ] **SRV-NEXTCLOUD-1 — Install: plan preview, then approve**
-  - Action: Catalog > Nextcloud > Install. Read the plan, then approve (or `homesteadctl catalog plan nextcloud` then approve).
+  - Action: Catalog > Nextcloud > Install. Read the plan, then approve (or `homesteadctl apps plan nextcloud -f FILE`, then `homesteadctl apps install nextcloud -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1201,7 +1201,7 @@ _Nextcloud 35.0.1; sign-in verified live (S298, S408); public base URL for path 
 _First install on this appliance; sign-in confirmed from docs and source only (DEFERRED S413). Admin rights and group sync are not wired._
 
 - [ ] **SRV-PAPERLESS-NGX-1 — Install: plan preview, then approve**
-  - Action: Catalog > Paperless-ngx > Install. Read the plan, then approve (or `homesteadctl catalog plan paperless-ngx` then approve).
+  - Action: Catalog > Paperless-ngx > Install. Read the plan, then approve (or `homesteadctl apps plan paperless-ngx -f FILE`, then `homesteadctl apps install paperless-ngx -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1260,7 +1260,7 @@ _First install on this appliance; sign-in confirmed from docs and source only (D
 _Kuma's first-run setup screen is behind the Authentik gate; owner browser sign-in has not been recorded yet. NOTE: an earlier memory says Kuma login stays on; S422 later turned it off. The host firewall gate table (S421) must be active (PLAT-FIREWALL-3)._
 
 - [ ] **SRV-UPTIME-KUMA-1 — Install: plan preview, then approve**
-  - Action: Catalog > Uptime Kuma > Install. Read the plan, then approve (or `homesteadctl catalog plan uptime-kuma` then approve).
+  - Action: Catalog > Uptime Kuma > Install. Read the plan, then approve (or `homesteadctl apps plan uptime-kuma -f FILE`, then `homesteadctl apps install uptime-kuma -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1337,7 +1337,7 @@ _Kuma's first-run setup screen is behind the Authentik gate; owner browser sign-
 _Public authorize redirect was verified live earlier; NO real browser login done yet; existing-account email match and email_verified claim unproven (DEFERRED S414)._
 
 - [ ] **SRV-VAULTWARDEN-1 — Install: plan preview, then approve**
-  - Action: Catalog > Vaultwarden > Install. Read the plan, then approve (or `homesteadctl catalog plan vaultwarden` then approve).
+  - Action: Catalog > Vaultwarden > Install. Read the plan, then approve (or `homesteadctl apps plan vaultwarden -f FILE`, then `homesteadctl apps install vaultwarden -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1402,7 +1402,7 @@ _Public authorize redirect was verified live earlier; NO real browser login done
 _Browser sign-in has not been recorded yet. Create the first Vaultwarden account yourself (SRV-VAULTWARDEN-1a)._
 
 - [ ] **SRV-VIKUNJA-1 — Install: plan preview, then approve**
-  - Action: Catalog > Vikunja > Install. Read the plan, then approve (or `homesteadctl catalog plan vikunja` then approve).
+  - Action: Catalog > Vikunja > Install. Read the plan, then approve (or `homesteadctl apps plan vikunja -f FILE`, then `homesteadctl apps install vikunja -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1554,7 +1554,7 @@ The 14 Everything apps share one bridge (ADR-053/057): the first install of each
 _Review plan section: S368 and S437. Automated: tests/test_s368_tasks_package.py; gate: browser-check.mjs, browser-check-tasks-sharing.mjs; bridge-gate.test.js._
 
 - [ ] **EV-TASKS-1 — Install: plan preview, then approve**
-  - Action: Catalog > Tasks > Install. Read the plan, then approve (or `homesteadctl catalog plan tasks` then approve).
+  - Action: Catalog > Tasks > Install. Read the plan, then approve (or `homesteadctl apps plan tasks -f FILE`, then `homesteadctl apps install tasks -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1655,7 +1655,7 @@ _Review plan section: S368 and S437. Automated: tests/test_s368_tasks_package.py
 _Review plan section: S369. Automated: tests/test_s369_projects_package.py; gate: browser-check-projects.mjs._
 
 - [ ] **EV-PROJECTS-1 — Install: plan preview, then approve**
-  - Action: Catalog > Projects > Install. Read the plan, then approve (or `homesteadctl catalog plan projects` then approve).
+  - Action: Catalog > Projects > Install. Read the plan, then approve (or `homesteadctl apps plan projects -f FILE`, then `homesteadctl apps install projects -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1738,7 +1738,7 @@ _Review plan section: S369. Automated: tests/test_s369_projects_package.py; gate
 _Review plan section: S370. Automated: tests/test_s370_records_package.py; gate: browser-check-records.mjs; upstream 445/445._
 
 - [ ] **EV-RECORDS-1 — Install: plan preview, then approve**
-  - Action: Catalog > Records > Install. Read the plan, then approve (or `homesteadctl catalog plan records` then approve).
+  - Action: Catalog > Records > Install. Read the plan, then approve (or `homesteadctl apps plan records -f FILE`, then `homesteadctl apps install records -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1827,7 +1827,7 @@ _Review plan section: S370. Automated: tests/test_s370_records_package.py; gate:
 _Review plan section: S371, S423, S438. Automated: tests/test_s371_notes_package.py, tests/test_everything_source.py, tests/test_s423_source_offer.py; gate: browser-check-notes.mjs, browser-check-notes-sharing.mjs, browser-check-viewer.mjs, browser-check-source-offer.mjs; upstream 275/275._
 
 - [ ] **EV-NOTES-1 — Install: plan preview, then approve**
-  - Action: Catalog > Notes > Install. Read the plan, then approve (or `homesteadctl catalog plan notes` then approve).
+  - Action: Catalog > Notes > Install. Read the plan, then approve (or `homesteadctl apps plan notes -f FILE`, then `homesteadctl apps install notes -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1916,7 +1916,7 @@ _Review plan section: S371, S423, S438. Automated: tests/test_s371_notes_package
 _Review plan section: S372. Automated: tests/test_s372_contacts_package.py; gate: browser-check-contacts.mjs; upstream 313/313 (mock bridge)._
 
 - [ ] **EV-CONTACTS-1 — Install: plan preview, then approve**
-  - Action: Catalog > Contacts > Install. Read the plan, then approve (or `homesteadctl catalog plan contacts` then approve).
+  - Action: Catalog > Contacts > Install. Read the plan, then approve (or `homesteadctl apps plan contacts -f FILE`, then `homesteadctl apps install contacts -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1993,7 +1993,7 @@ _Review plan section: S372. Automated: tests/test_s372_contacts_package.py; gate
 _Review plan section: S373. Automated: tests/test_s373_inventory_package.py; gate: browser-check-inventory.mjs; upstream 722/722 (mock bridge)._
 
 - [ ] **EV-INVENTORY-1 — Install: plan preview, then approve**
-  - Action: Catalog > Inventory > Install. Read the plan, then approve (or `homesteadctl catalog plan inventory` then approve).
+  - Action: Catalog > Inventory > Install. Read the plan, then approve (or `homesteadctl apps plan inventory -f FILE`, then `homesteadctl apps install inventory -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -2076,7 +2076,7 @@ _Review plan section: S373. Automated: tests/test_s373_inventory_package.py; gat
 _Review plan section: S374. Automated: tests/test_s374_time_tracking_package.py; gate: browser-check-time-tracking.mjs; upstream 205/205 (mock bridge)._
 
 - [ ] **EV-TIME-TRACKING-1 — Install: plan preview, then approve**
-  - Action: Catalog > Time tracking > Install. Read the plan, then approve (or `homesteadctl catalog plan time-tracking` then approve).
+  - Action: Catalog > Time tracking > Install. Read the plan, then approve (or `homesteadctl apps plan time-tracking -f FILE`, then `homesteadctl apps install time-tracking -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -2153,7 +2153,7 @@ _Review plan section: S374. Automated: tests/test_s374_time_tracking_package.py;
 _Review plan section: S375 and S439. Automated: tests/test_s375_circuits_package.py; gate: browser-check-circuits.mjs, browser-check-circuits-sharing.mjs; upstream vitest 206/207 on the patched tree._
 
 - [ ] **EV-CIRCUITS-1 — Install: plan preview, then approve**
-  - Action: Catalog > Circuits > Install. Read the plan, then approve (or `homesteadctl catalog plan circuits` then approve).
+  - Action: Catalog > Circuits > Install. Read the plan, then approve (or `homesteadctl apps plan circuits -f FILE`, then `homesteadctl apps install circuits -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -2236,7 +2236,7 @@ _Review plan section: S375 and S439. Automated: tests/test_s375_circuits_package
 _Review plan section: S376, S423 and S440. Automated: tests/test_s376_parametric_package.py; gate: browser-check-parametric.mjs, browser-check-parametric-sharing.mjs; upstream 104/104._
 
 - [ ] **EV-PARAMETRIC-1 — Install: plan preview, then approve**
-  - Action: Catalog > Parametric > Install. Read the plan, then approve (or `homesteadctl catalog plan parametric` then approve).
+  - Action: Catalog > Parametric > Install. Read the plan, then approve (or `homesteadctl apps plan parametric -f FILE`, then `homesteadctl apps install parametric -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -2325,7 +2325,7 @@ _Review plan section: S376, S423 and S440. Automated: tests/test_s376_parametric
 _Review plan section: S377 and S423. Automated: tests/test_s377_three_d_package.py; gate: browser-check-three-d.mjs; upstream 3,018 passed._
 
 - [ ] **EV-THREE-D-1 — Install: plan preview, then approve**
-  - Action: Catalog > 3D > Install. Read the plan, then approve (or `homesteadctl catalog plan three-d` then approve).
+  - Action: Catalog > 3D > Install. Read the plan, then approve (or `homesteadctl apps plan three-d -f FILE`, then `homesteadctl apps install three-d -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -2402,7 +2402,7 @@ _Review plan section: S377 and S423. Automated: tests/test_s377_three_d_package.
 _Review plan section: S378. Automated: tests/test_s378_solitaire_package.py; gate: browser-check-solitaire.mjs; upstream 209._
 
 - [ ] **EV-SOLITAIRE-1 — Install: plan preview, then approve**
-  - Action: Catalog > Solitaire > Install. Read the plan, then approve (or `homesteadctl catalog plan solitaire` then approve).
+  - Action: Catalog > Solitaire > Install. Read the plan, then approve (or `homesteadctl apps plan solitaire -f FILE`, then `homesteadctl apps install solitaire -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -2467,7 +2467,7 @@ _Review plan section: S378. Automated: tests/test_s378_solitaire_package.py; gat
 _Review plan section: S379. Automated: tests/test_s379_sudoku_package.py; gate: browser-check-sudoku.mjs; upstream 333._
 
 - [ ] **EV-SUDOKU-1 — Install: plan preview, then approve**
-  - Action: Catalog > Sudoku > Install. Read the plan, then approve (or `homesteadctl catalog plan sudoku` then approve).
+  - Action: Catalog > Sudoku > Install. Read the plan, then approve (or `homesteadctl apps plan sudoku -f FILE`, then `homesteadctl apps install sudoku -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -2532,7 +2532,7 @@ _Review plan section: S379. Automated: tests/test_s379_sudoku_package.py; gate: 
 _Review plan section: S380. Automated: tests/test_s380_expense_package.py; gate: browser-check-expense.mjs; upstream 79._
 
 - [ ] **EV-EXPENSE-1 — Install: plan preview, then approve**
-  - Action: Catalog > Expenses > Install. Read the plan, then approve (or `homesteadctl catalog plan expense` then approve).
+  - Action: Catalog > Expenses > Install. Read the plan, then approve (or `homesteadctl apps plan expense -f FILE`, then `homesteadctl apps install expense -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -2603,7 +2603,7 @@ _Review plan section: S380. Automated: tests/test_s380_expense_package.py; gate:
 _Review plan section: S436 (net: S434, S435). Automated: tests/test_s436_api_client_package.py; gate: browser-check-api-client.mjs, scripts/everything/test_api_client_net.mjs; upstream 679 passed._
 
 - [ ] **EV-API-CLIENT-1 — Install: plan preview, then approve**
-  - Action: Catalog > API Client > Install. Read the plan, then approve (or `homesteadctl catalog plan api-client` then approve).
+  - Action: Catalog > API Client > Install. Read the plan, then approve (or `homesteadctl apps plan api-client -f FILE`, then `homesteadctl apps install api-client -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____

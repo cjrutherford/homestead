@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "2a62f0d06e41345c",
+ "hash": "70a707226c572ccf",
  "sections": [
   {
    "title": "Platform",
@@ -116,8 +116,8 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "PLAT-DEPLOY-1",
        "title": "Confirm the starting point",
-       "action": "On the VM (SSH): `systemctl is-active homestead-server docker`; `curl -s localhost:8080/api/v1/claim/status`; `sudo docker ps --format '{{.Names}}'`; `findmnt /mnt/app /mnt/bulk /mnt/backup`; `ls -A /mnt/app /mnt/bulk /mnt/backup`; `ls /opt/homestead/stacks`; `homesteadctl version` and `cat ~/homestead/.deployed-commit` (the commit Claude deployed). In a browser open `https://homestead.local/` (continue past the certificate warning for now).",
-       "expected": "The daemon is `active`; claim status says the appliance is not claimed, and the dashboard shows the Status page as **Unclaimed** with a **Claim this appliance** option (no login screen, no setup wizard). `docker ps` lists only `homestead-caddy` (the edge proxy the daemon starts; no Authentik and no app containers). The three mounts are mounted and empty (only `lost+found` may exist); `/opt/homestead/stacks` is empty. The Status page version and `homesteadctl version` show `0.0.1` (the release version; the build commit is in `~/homestead/.deployed-commit`, expected `ad89b28`). Write the commit in the form's run info.",
+       "action": "On the VM (SSH): `systemctl is-active homestead-server docker`; `curl -s localhost:8080/api/v1/identity`; `sudo docker ps --format '{{.Names}}'`; `findmnt /mnt/app /mnt/bulk /mnt/backup`; `ls -A /mnt/app /mnt/bulk /mnt/backup`; `ls /opt/homestead/stacks`; `homesteadctl version` and `cat ~/homestead/.deployed-commit` (the commit Claude deployed). In a browser open `https://homestead.local/` (continue past the certificate warning for now).",
+       "expected": "The daemon is `active`; identity says `UNCLAIMED`, and opening the dashboard takes you to the claim page (S443; the Status page also reads **Unclaimed** with a **Claim this appliance** option); no login screen and no setup wizard. `docker ps` lists only `homestead-caddy` (the edge proxy the daemon starts; no Authentik and no app containers). The three mounts are mounted and empty (only `lost+found` may exist); `/opt/homestead/stacks` holds only the `caddy` edge directory. The Status page version and `homesteadctl version` show `0.0.1` (the release version; the build commit is in `~/homestead/.deployed-commit`, expected `ad89b28`). Write the commit in the form's run info.",
        "fail": "INSTALL Part B and Part F; `journalctl -u homestead-server -n 100`. If anything is installed or claimed, stop and tell Claude: the reset did not complete."
       }
      ]
@@ -143,7 +143,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "PLAT-DEPLOY-2",
        "title": "Catalog shows all packages",
-       "action": "Sign in as the owner on the CLI (`homesteadctl login`), then `homesteadctl catalog list`, and open the dashboard Catalog page.",
+       "action": "Sign in as the owner on the CLI (`homesteadctl login`), then `homesteadctl apps list`, and open the dashboard Catalog page.",
        "expected": "46 packages (18 server, 14 Everything, 13 craft, plus Authentik). Counts match on both.",
        "fail": "Catalog page and CLI disagree: record both counts."
       }
@@ -163,7 +163,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "PLAT-SETUP-2",
        "title": "Wizard step 2, Storage",
-       "action": "On the Storage step (Storage page) register each mount with a short label (`app` = `/mnt/app`, `bulk` = `/mnt/bulk`, `backup` = `/mnt/backup`) and assign classes: `application` and `database` to `/mnt/app`, `bulk` to `/mnt/bulk`, `backup` to `/mnt/backup`. Compare `homesteadctl storage list`.",
+       "action": "On the Storage step (Storage page) register each mount with a short label (`app` = `/mnt/app`, `bulk` = `/mnt/bulk`, `backup` = `/mnt/backup`) and assign classes: `application` and `database` to `/mnt/app`, `bulk` to `/mnt/bulk`, `backup` to `/mnt/backup`. Compare `homesteadctl storage mounts`, `storage registrations` and `storage assignments`.",
        "expected": "All three mounts are listed with free space; no partition or format action exists anywhere; the step is done once `application` is assigned; CLI and page agree.",
        "fail": "INSTALL D2."
       },
@@ -211,7 +211,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "PLAT-PEOPLE-1",
        "title": "Add people A, B and C",
-       "action": "People page (or `homesteadctl people add`): add A, B and C, each with a one-time link, generated password or chosen password (shown once; store it in your password manager). Do not grant any app yet.",
+       "action": "`homesteadctl people add` (the People page is not offered until the setup wizard finishes; add them by CLI, or return to the People page afterwards): add A, B and C, each with a one-time link, generated password or chosen password (shown once; store it in your password manager). Do not grant any app yet.",
        "expected": "Each appears in People and in Authentik (`homestead-` groups only); none has app access.",
        "fail": "docs/INSTALL.md People section; ADR-043/049. If a one-time link is not offered, record the dialog text."
       },
@@ -238,7 +238,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "PLAT-TUNNEL-1",
        "title": "Tunnel plan preview",
-       "action": "Open the **Tunnel** page (or `homesteadctl tunnel plan`). Name a **new** tunnel (for example `homestead-vm2`); the form proposes `homestead.\u003cpublic-domain\u003e` for the dashboard and `auth.\u003cpublic-domain\u003e` for Authentik (keep both). Choose **Review plan** and read it.",
+       "action": "Open the **Tunnel** page (or `homesteadctl tunnel plan`). Name a **new** tunnel (for example `homestead-vm2`); the form proposes `homestead.\u003cpublic-domain\u003e` for the dashboard and `homestead.\u003cpublic-domain\u003e/apps/auth/` for Authentik (the same name as the dashboard; keep it). Choose **Review plan** and read it.",
        "expected": "Plan lists the tunnel to create, each CNAME (none exists yet), the Let's Encrypt certificate, the public dashboard sign-in change and each affected app; certificate lamps for each name; nothing changes before approval.",
        "fail": "Doctor Tunnel and Certificates sections; ADR-046/047/048."
       },
@@ -253,7 +253,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "id": "PLAT-TUNNEL-3",
        "title": "Public dashboard sign-in",
        "action": "From a phone off the LAN open `https://homestead.\u003cpublic-domain\u003e/` and sign in as the owner.",
-       "expected": "You are sent to Authentik's public sign-in at `https://auth.\u003cpublic-domain\u003e/` (the tunnel default; locally Authentik stays at `https://\u003cserver\u003e/apps/auth/`); a password login on the Homestead name is refused; after sign-in the apps page shows.",
+       "expected": "You are sent to Authentik's public sign-in at `https://homestead.\u003cpublic-domain\u003e/apps/auth/` (the public name; locally Authentik stays at `https://\u003cserver\u003e/apps/auth/`); a password login on the Homestead name is refused; after sign-in the apps page shows.",
        "fail": "Doctor Tunnel and Certificates sections; ADR-046/047/048."
       },
       {
@@ -273,8 +273,8 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "PLAT-PEOPLE-5",
        "title": "Public step-up",
-       "action": "On the public name open People as the owner.",
-       "expected": "Authentik asks for a fresh sign-in (step-up, ADR-049).",
+       "action": "On the public name open People as the owner (the page itself loads), then take an action there: reset a password or MFA, or remove a person.",
+       "expected": "Opening People does not prompt; the action makes Authentik ask for a fresh sign-in (step-up on the action, by design, ADR-049).",
        "fail": "docs/INSTALL.md People section; ADR-043/049."
       },
       {
@@ -349,7 +349,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "PLAT-BACKUP-1",
        "title": "Backup policy visible",
-       "action": "Open Backups / `homesteadctl backups ...`.",
+       "action": "Open Backups / `homesteadctl backup schedules` (and `backup destination`).",
        "expected": "Nightly 02:00, keep 7, target mount shown.",
        "fail": "docs/architecture/BACKUP_RESTORE_RUNBOOK.md."
       },
@@ -389,7 +389,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-ACTUAL-BUDGET-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Actual Budget \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan actual-budget` then approve).",
+       "action": "Catalog \u003e Actual Budget \u003e Install. Read the plan, then approve (or `homesteadctl apps plan actual-budget -f FILE`, then `homesteadctl apps install actual-budget -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -465,7 +465,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-AUDIOBOOKSHELF-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Audiobookshelf \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan audiobookshelf` then approve).",
+       "action": "Catalog \u003e Audiobookshelf \u003e Install. Read the plan, then approve (or `homesteadctl apps plan audiobookshelf -f FILE`, then `homesteadctl apps install audiobookshelf -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -548,7 +548,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-BOOKSTACK-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e BookStack \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan bookstack` then approve).",
+       "action": "Catalog \u003e BookStack \u003e Install. Read the plan, then approve (or `homesteadctl apps plan bookstack -f FILE`, then `homesteadctl apps install bookstack -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -624,7 +624,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-CALIBRE-WEB-AUTOMATED-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Calibre-Web Automated \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan calibre-web-automated` then approve).",
+       "action": "Catalog \u003e Calibre-Web Automated \u003e Install. Read the plan, then approve (or `homesteadctl apps plan calibre-web-automated -f FILE`, then `homesteadctl apps install calibre-web-automated -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -707,7 +707,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-FRESHRSS-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e FreshRSS \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan freshrss` then approve).",
+       "action": "Catalog \u003e FreshRSS \u003e Install. Read the plan, then approve (or `homesteadctl apps plan freshrss -f FILE`, then `homesteadctl apps install freshrss -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -790,7 +790,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-GITEA-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Gitea \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan gitea` then approve).",
+       "action": "Catalog \u003e Gitea \u003e Install. Read the plan, then approve (or `homesteadctl apps plan gitea -f FILE`, then `homesteadctl apps install gitea -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -880,7 +880,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-IMMICH-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Immich \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan immich` then approve).",
+       "action": "Catalog \u003e Immich \u003e Install. Read the plan, then approve (or `homesteadctl apps plan immich -f FILE`, then `homesteadctl apps install immich -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -963,7 +963,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-JELLYFIN-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Jellyfin \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan jellyfin` then approve).",
+       "action": "Catalog \u003e Jellyfin \u003e Install. Read the plan, then approve (or `homesteadctl apps plan jellyfin -f FILE`, then `homesteadctl apps install jellyfin -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1046,7 +1046,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-KOMGA-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Komga \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan komga` then approve).",
+       "action": "Catalog \u003e Komga \u003e Install. Read the plan, then approve (or `homesteadctl apps plan komga -f FILE`, then `homesteadctl apps install komga -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1115,7 +1115,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-LINKDING-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Linkding \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan linkding` then approve).",
+       "action": "Catalog \u003e Linkding \u003e Install. Read the plan, then approve (or `homesteadctl apps plan linkding -f FILE`, then `homesteadctl apps install linkding -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1184,7 +1184,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-MEALIE-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Mealie \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan mealie` then approve).",
+       "action": "Catalog \u003e Mealie \u003e Install. Read the plan, then approve (or `homesteadctl apps plan mealie -f FILE`, then `homesteadctl apps install mealie -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1253,7 +1253,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-MEMOS-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Memos \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan memos` then approve).",
+       "action": "Catalog \u003e Memos \u003e Install. Read the plan, then approve (or `homesteadctl apps plan memos -f FILE`, then `homesteadctl apps install memos -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1329,7 +1329,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-NAVIDROME-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Navidrome \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan navidrome` then approve).",
+       "action": "Catalog \u003e Navidrome \u003e Install. Read the plan, then approve (or `homesteadctl apps plan navidrome -f FILE`, then `homesteadctl apps install navidrome -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1419,7 +1419,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-NEXTCLOUD-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Nextcloud \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan nextcloud` then approve).",
+       "action": "Catalog \u003e Nextcloud \u003e Install. Read the plan, then approve (or `homesteadctl apps plan nextcloud -f FILE`, then `homesteadctl apps install nextcloud -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1502,7 +1502,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-PAPERLESS-NGX-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Paperless-ngx \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan paperless-ngx` then approve).",
+       "action": "Catalog \u003e Paperless-ngx \u003e Install. Read the plan, then approve (or `homesteadctl apps plan paperless-ngx -f FILE`, then `homesteadctl apps install paperless-ngx -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1571,7 +1571,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-UPTIME-KUMA-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Uptime Kuma \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan uptime-kuma` then approve).",
+       "action": "Catalog \u003e Uptime Kuma \u003e Install. Read the plan, then approve (or `homesteadctl apps plan uptime-kuma -f FILE`, then `homesteadctl apps install uptime-kuma -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1661,7 +1661,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-VAULTWARDEN-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Vaultwarden \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan vaultwarden` then approve).",
+       "action": "Catalog \u003e Vaultwarden \u003e Install. Read the plan, then approve (or `homesteadctl apps plan vaultwarden -f FILE`, then `homesteadctl apps install vaultwarden -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1737,7 +1737,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-VIKUNJA-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Vikunja \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan vikunja` then approve).",
+       "action": "Catalog \u003e Vikunja \u003e Install. Read the plan, then approve (or `homesteadctl apps plan vikunja -f FILE`, then `homesteadctl apps install vikunja -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1927,7 +1927,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "EV-TASKS-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Tasks \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan tasks` then approve).",
+       "action": "Catalog \u003e Tasks \u003e Install. Read the plan, then approve (or `homesteadctl apps plan tasks -f FILE`, then `homesteadctl apps install tasks -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -2045,7 +2045,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "EV-PROJECTS-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Projects \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan projects` then approve).",
+       "action": "Catalog \u003e Projects \u003e Install. Read the plan, then approve (or `homesteadctl apps plan projects -f FILE`, then `homesteadctl apps install projects -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -2142,7 +2142,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "EV-RECORDS-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Records \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan records` then approve).",
+       "action": "Catalog \u003e Records \u003e Install. Read the plan, then approve (or `homesteadctl apps plan records -f FILE`, then `homesteadctl apps install records -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -2246,7 +2246,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "EV-NOTES-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Notes \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan notes` then approve).",
+       "action": "Catalog \u003e Notes \u003e Install. Read the plan, then approve (or `homesteadctl apps plan notes -f FILE`, then `homesteadctl apps install notes -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -2350,7 +2350,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "EV-CONTACTS-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Contacts \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan contacts` then approve).",
+       "action": "Catalog \u003e Contacts \u003e Install. Read the plan, then approve (or `homesteadctl apps plan contacts -f FILE`, then `homesteadctl apps install contacts -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -2440,7 +2440,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "EV-INVENTORY-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Inventory \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan inventory` then approve).",
+       "action": "Catalog \u003e Inventory \u003e Install. Read the plan, then approve (or `homesteadctl apps plan inventory -f FILE`, then `homesteadctl apps install inventory -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -2537,7 +2537,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "EV-TIME-TRACKING-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Time tracking \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan time-tracking` then approve).",
+       "action": "Catalog \u003e Time tracking \u003e Install. Read the plan, then approve (or `homesteadctl apps plan time-tracking -f FILE`, then `homesteadctl apps install time-tracking -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -2627,7 +2627,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "EV-CIRCUITS-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Circuits \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan circuits` then approve).",
+       "action": "Catalog \u003e Circuits \u003e Install. Read the plan, then approve (or `homesteadctl apps plan circuits -f FILE`, then `homesteadctl apps install circuits -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -2724,7 +2724,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "EV-PARAMETRIC-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Parametric \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan parametric` then approve).",
+       "action": "Catalog \u003e Parametric \u003e Install. Read the plan, then approve (or `homesteadctl apps plan parametric -f FILE`, then `homesteadctl apps install parametric -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -2828,7 +2828,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "EV-THREE-D-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e 3D \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan three-d` then approve).",
+       "action": "Catalog \u003e 3D \u003e Install. Read the plan, then approve (or `homesteadctl apps plan three-d -f FILE`, then `homesteadctl apps install three-d -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -2918,7 +2918,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "EV-SOLITAIRE-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Solitaire \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan solitaire` then approve).",
+       "action": "Catalog \u003e Solitaire \u003e Install. Read the plan, then approve (or `homesteadctl apps plan solitaire -f FILE`, then `homesteadctl apps install solitaire -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -2994,7 +2994,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "EV-SUDOKU-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Sudoku \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan sudoku` then approve).",
+       "action": "Catalog \u003e Sudoku \u003e Install. Read the plan, then approve (or `homesteadctl apps plan sudoku -f FILE`, then `homesteadctl apps install sudoku -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -3070,7 +3070,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "EV-EXPENSE-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e Expenses \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan expense` then approve).",
+       "action": "Catalog \u003e Expenses \u003e Install. Read the plan, then approve (or `homesteadctl apps plan expense -f FILE`, then `homesteadctl apps install expense -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -3153,7 +3153,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "EV-API-CLIENT-1",
        "title": "Install: plan preview, then approve",
-       "action": "Catalog \u003e API Client \u003e Install. Read the plan, then approve (or `homesteadctl catalog plan api-client` then approve).",
+       "action": "Catalog \u003e API Client \u003e Install. Read the plan, then approve (or `homesteadctl apps plan api-client -f FILE`, then `homesteadctl apps install api-client -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },

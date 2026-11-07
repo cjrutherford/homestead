@@ -50,6 +50,9 @@ type versionResponse struct {
 // API plus a Unix-socket mux for root-only endpoints (S021).
 type Server struct {
 	addr string
+	// hasAdmin reports whether a first administrator exists; set by MountAuth
+	// so identity can say a claimed appliance is still waiting for one.
+	hasAdmin func() (bool, error)
 	// doctorProbes and doctorBudget are the live Doctor probes (S316).
 	doctorProbes func() []doctor.Probe
 	doctorBudget time.Duration

@@ -13,6 +13,8 @@ export interface Health {
 export interface Identity {
   state: string;
   version: string;
+  /** Claimed but no administrator yet: the account step is still owed. */
+  setup_pending?: boolean;
 }
 
 /** GET /api/v1/doctor — diagnostic report check entry. */

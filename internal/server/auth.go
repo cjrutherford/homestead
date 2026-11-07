@@ -34,6 +34,7 @@ import (
 // rejects them without a valid session and hands the verified session to
 // the handler through the request context.
 func (s *Server) MountAuth(svc *auth.Service, auditSvc *audit.Service) {
+	s.hasAdmin = svc.HasAdmin
 	s.mux.HandleFunc("POST /api/v1/admins/setup", s.handleAdminSetup(svc, auditSvc))
 	s.mux.HandleFunc("POST /api/v1/sessions", s.handleLogin(svc, auditSvc))
 	s.mux.HandleFunc("DELETE /api/v1/sessions", s.handleLogout(svc, auditSvc))
