@@ -230,6 +230,7 @@ Every package slice (S345-S351, S353-S366, S368-S381) closes only when:
 | ADR-052 | S342 | Secret delivery may export a 0600 file into the app environment at start, under supervision. Amends ADR-021. |
 | ADR-056 | S360 | Community image trust: accepted publishers, multi-arch, pinned tags, provenance. |
 | ADR-058 | S424 | Everything SDK sharing, read links, net and events replace ADR-057's refused rows (Accepted 2026-11-03). Slices S425-S441, all implemented. |
+| ADR-059 | S442 | No manual first run for any catalog app, Authentik excluded; Vaultwarden master password is the one personal step (Accepted 2026-11-07). Implemented by the slices after S442. |
 | ADR-053 | S367 | Independent bridge and customer-owned per-person app data; no fork or hosted SDK. ADR-036 is the setup-wizard decision. |
 
 ## 7. Unscheduled — no ID

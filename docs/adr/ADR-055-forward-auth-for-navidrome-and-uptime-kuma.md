@@ -488,6 +488,9 @@ for turning off says so. For Kuma the order differs (§6): Kuma's login is resto
 gate, then the Authentik objects. A re-plan finds an interrupted off and
 finishes it.
 
+## Amended by ADR-059
+See `ADR-059-no-manual-first-run.md`.
+
 ## Consequences
 - A new proxy-provider and outpost layer is the only new Authentik surface; it
   is used by two apps. The gate costs one Caddy round trip per request.
