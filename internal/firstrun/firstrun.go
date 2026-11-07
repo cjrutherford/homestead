@@ -103,6 +103,12 @@ func RunAs(ctx context.Context, m catalog.Manifest, secrets Secrets, owner strin
 	if f.Routine == catalog.FirstRunCWA {
 		return cwaFirstRun(ctx, m, secrets)
 	}
+	if f.Routine == catalog.FirstRunNavidrome {
+		return navidromeFirstRun(ctx, m, secrets)
+	}
+	if f.Routine == catalog.FirstRunUptimeKuma {
+		return uptimeKumaFirstRun(ctx, m, secrets)
+	}
 	password, err := Password(m, secrets)
 	if err != nil {
 		return "", err

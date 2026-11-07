@@ -826,7 +826,7 @@ func (p *appPublic) planAdd(ctx context.Context, client *router.TunnelClient, to
 	plan.CertificateState = fingerprint
 	plan.Warnings = append(plan.Warnings, warnings...)
 	plan.Warnings = append(plan.Warnings,
-		"Anyone on the internet can reach "+f.manifest.Title+" at https://"+hostname+". Homestead puts no Authentik check in front of it: the app's own sign-in is what protects it.")
+		openToInternetWarning(f.manifest, f.signIn, "https://"+hostname))
 	if !f.signIn && f.manifest.SSO.OIDC != nil {
 		plan.Warnings = append(plan.Warnings, "App sign-in through Authentik is off. Turning it on first is recommended.")
 	}
@@ -876,7 +876,7 @@ func (p *appPublic) planPathAdd(ctx context.Context, client *router.TunnelClient
 	plan.Warnings = append(plan.Warnings, warnings...)
 	plan.Warnings = append(plan.Warnings,
 		"No DNS record changes: "+f.manifest.Title+" answers at "+plan.URL+", under the dashboard's public name the tunnel already carries.",
-		"Anyone on the internet can reach "+f.manifest.Title+" at "+plan.URL+". Homestead puts no Authentik check in front of it: the app's own sign-in is what protects it.",
+		openToInternetWarning(f.manifest, f.signIn, plan.URL),
 		"It shares one web origin with the dashboard and the other published apps (ADR-044): a flaw in one of them can reach the others in the same browser.")
 	if !f.signIn && f.manifest.SSO.OIDC != nil {
 		plan.Warnings = append(plan.Warnings, "App sign-in through Authentik is off. Turning it on first is recommended.")
@@ -1331,4 +1331,17 @@ func singleOriginWarning(r docker.Route, plan appPublicPlan) string {
 	}
 	return "Edge change: " + local + " redirect (307, path and query kept) to https://" + plan.Hostname +
 		", because this app can only sign in on one address (ADR-060). Local clients then reach it through the tunnel and the internet, and cannot use it if either is down; unpublish it to bring the local names back."
+}
+
+// openToInternetWarning says who stands in front of a published app. An app
+// gated by Authentik forward-auth (ADR-055) is planned with its gate in the
+// same install (S450), so the warning says when the gate arrives.
+func openToInternetWarning(m catalog.Manifest, signIn bool, url string) string {
+	if m.SSO.ForwardAuth != nil && !signIn {
+		return "Anyone on the internet can reach " + m.Title + " at " + url + ". Until the Authentik gate is on, only " + m.Title + "'s own login protects it; the gate is planned with its install, and the app's login is never left open."
+	}
+	if m.SSO.ForwardAuth != nil {
+		return "Anyone on the internet can reach " + m.Title + " at " + url + ", but every request is checked with Authentik first."
+	}
+	return "Anyone on the internet can reach " + m.Title + " at " + url + ". Homestead puts no Authentik check in front of it: the app's own sign-in is what protects it."
 }

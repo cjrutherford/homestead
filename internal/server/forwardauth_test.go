@@ -226,3 +226,39 @@ func TestSetGateFailsWithoutTheHostBlockOnlyWhenRequired(t *testing.T) {
 		t.Fatalf("a requiring app must fail: %v", err)
 	}
 }
+
+// The install review plans a gated app before it exists (S450): the plan
+// it approves must be the one the apply plans again once the first run has
+// made the administrator, or the setup stops for a new approval.
+func TestInstallPreviewOfAGatedAppMatchesTheLivePlan(t *testing.T) {
+	a := navidromeRig(t)
+	entries, err := catalog.Load(filepath.Join("..", "..", "catalog"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := entries.Get("navidrome")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appsso.ReadAccounts = func(context.Context, catalog.Manifest) appsso.AppAccounts {
+		return appsso.AppAccounts{Names: []string{"homestead-admin"}, Admins: 1}
+	}
+	route := docker.Route{Host: "navidrome.lan", Target: docker.Target{Host: "navidrome", Port: 4533}, Exposure: docker.ExposureLocal, TLS: docker.TLSInternal}
+	pv := a.srv.appSignIn.preview(m, catalog.InstallPlan{Routes: []docker.Route{route}}, "")
+	if pv == nil || !pv.Offered || pv.Plan == nil {
+		t.Fatalf("preview = %+v", pv)
+	}
+	rec := a.req("POST", "/api/v1/catalog/navidrome/sign-in/plan", `{"enabled":true}`, a.owner.token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("plan: %d %s", rec.Code, rec.Body)
+	}
+	live := decodeAs[appsso.Plan](t, rec.Body.Bytes())
+	if pv.Plan.Digest != live.Digest {
+		t.Fatalf("anticipated digest %s differs from the live plan %s", pv.Plan.Digest, live.Digest)
+	}
+	// An app with no first-run administrator cannot be planned ahead.
+	m.FirstRun = nil
+	if pv := a.srv.appSignIn.preview(m, catalog.InstallPlan{Routes: []docker.Route{route}}, ""); pv == nil || pv.Offered {
+		t.Fatalf("preview without an administrator = %+v", pv)
+	}
+}

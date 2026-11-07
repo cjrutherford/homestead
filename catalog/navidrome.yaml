@@ -1,7 +1,10 @@
 # Navidrome music server (S354): the second Wave 2 package.
 # Curated first-party manifest — versions pin here, updates bump this file.
 # One Docker Hub container. Navidrome has no OIDC/SAML/LDAP; local accounts
-# are the documented exception, and the first visit creates the admin user.
+# are the documented exception. Homestead creates the administrator
+# (homestead-admin, a generated sealed revealable password) during install
+# (S450, ADR-059), so the first-visit account screen is never open to a
+# stranger.
 # Navidrome's proxy (external) auth reads a username header from a trusted
 # source. S418 (ADR-055) turns that on: `apps sign-in apply navidrome` gates
 # the site behind Authentik forward-auth at the edge, sets
@@ -9,10 +12,11 @@
 # the edge network (ND_EXTAUTH_TRUSTEDSOURCES). /rest/* (Subsonic clients)
 # and /share/* (share links) bypass the gate and keep Navidrome's own
 # credentials or links. Navidrome admins stay a Navidrome setting: only the
-# first proxy user becomes admin, so the plan refuses until an admin exists.
+# first proxy user becomes admin, so the plan refuses until an admin exists;
+# the install's first run provides it.
 # The JWT secrets are generated into the SQLite database on first start and
-# backed up with it, so no secret is declared and the entrypoint is
-# unchanged.
+# backed up with it; the only declared secret is the administrator's
+# password, held by Homestead alone, and the entrypoint is unchanged.
 name: navidrome
 version: 0.64.2
 title: Navidrome
@@ -96,9 +100,19 @@ sso:
     admin: local
     accountsfrom: navidrome-sqlite
     warnings:
-    - Navidrome's administrator is chosen inside Navidrome, not from Authentik. Create the administrator in Navidrome first; people who sign in through Authentik get ordinary accounts.
+    - Navidrome's administrator is the local account homestead-admin that Homestead created at install (its password is under Reveal), not an Authentik person. People who sign in through Authentik get ordinary accounts.
     - Subsonic apps (phones, desktop players) sign in with a Navidrome username and an app password set inside Navidrome. They do not use Authentik.
 integrations:
 - kind: library
   target: jellyfin
   note: Mount the same bulk music directory into Navidrome and Jellyfin; Navidrome reads it.
+firstrun:
+  routine: navidrome
+  service: navidrome
+  account: homestead-admin
+  secret: admin_password
+secrets:
+- name: admin_password
+  immutable: true
+  reveal: true
+  note: Password for homestead-admin, the local administrator Homestead created at install. Everyday sign-in is through Authentik; Subsonic apps use a Navidrome username and app password.

@@ -1587,7 +1587,6 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S418 Live check on VM 2 pending (see the slice file's "Verify live").
 - S420 Sign-in status gives "the app's names changed" as the re-plan reason when only the edge address moved; it should name the trust change.
 - S419 Kuma's own login stays on behind the gate (two sign-ins). The route back to a single login is a host firewall rule restricting non-root access to Kuma's port (the host reaches containers through the bridge gateway, including `--internal` networks on Docker 26); then `disableAuth` could be reconsidered.
-- S419 Kuma's Trust Proxy setting (client addresses in Kuma) is a manual step and is not set.
 - S419 MariaDB-backed Kuma and Prometheus scraping of `/metrics` through the gate are not handled.
 - S419 ADR-054 install review does not yet show Kuma's admin-only gate.
 - S419 Live check on VM 2 pending (see the slice file's "Verify live").

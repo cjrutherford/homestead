@@ -402,7 +402,7 @@ func (a *appSetup) prepare(manifest catalog.Manifest, plan catalog.InstallPlan, 
 		if strings.TrimSpace(si.Digest) == "" {
 			return rec, errors.New("an approved sign-in names its digest")
 		}
-		if manifest.SSO.OIDC == nil {
+		if manifest.SSO.OIDC == nil && manifest.SSO.ForwardAuth == nil {
 			return rec, fmt.Errorf("%s has no sign-in with Authentik", manifest.Title)
 		}
 		step := setupStep{Name: setupSignIn, State: stepWaiting, Digest: si.Digest}

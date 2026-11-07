@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"homestead/internal/appsso"
+	"homestead/internal/catalog"
 	"homestead/internal/people"
 	"homestead/internal/sso"
 )
@@ -50,6 +51,14 @@ func (s *Server) mountPeople(c SSOConfig, m *sso.Manager, client func() *http.Cl
 			return &sso.API{Base: spec.AuthentikURL, Token: token, Client: client}, nil
 		},
 		Apps: func() ([]string, error) { return (appsso.Records{DB: c.Store.DB()}).Packages() },
+		AdminOnly: func(app string) bool {
+			entries, err := catalog.Load(c.CatalogDir)
+			if err != nil {
+				return false
+			}
+			m, err := entries.Get(app)
+			return err == nil && m.SSO.ForwardAuth != nil && m.SSO.ForwardAuth.Access == catalog.AccessAdminOnly
+		},
 		PublicAuthentik: func() string {
 			if spec, ok, err := m.Config(); err == nil && ok {
 				return spec.PublicAuthentikURL

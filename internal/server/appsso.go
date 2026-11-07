@@ -439,7 +439,7 @@ type signInPreview struct {
 // the install (S313) is on the first of them, as the wizard publishes it
 // before sign-in.
 func (a *appSignIn) preview(manifest catalog.Manifest, install catalog.InstallPlan, public string) *signInPreview {
-	if manifest.SSO.OIDC == nil {
+	if manifest.SSO.OIDC == nil && manifest.SSO.ForwardAuth == nil {
 		return nil
 	}
 	in, err := appSignInInputs(a.cfg.Store, a.m, manifest)
@@ -475,6 +475,15 @@ func (a *appSignIn) preview(manifest catalog.Manifest, install catalog.InstallPl
 		}
 	}
 	in.Installed, in.Routes = true, docker.ServedRoutes(table, appsso.AppRoutes(manifest, table))
+	if manifest.SSO.ForwardAuth != nil {
+		// A gated app is planned before it exists (S450, ADR-059): the
+		// edge, host block and people are read now, and its accounts are
+		// the administrator its first run creates.
+		if err := addForwardInputs(a.cfg.Store, &in, manifest); err != nil {
+			return &signInPreview{Reason: "The sign-in state could not be read."}
+		}
+		in.Accounts, in.AccountsFn = anticipatedAccounts(manifest), nil
+	}
 	if ok, reason := in.Offered(); !ok {
 		return &signInPreview{Reason: reason}
 	}

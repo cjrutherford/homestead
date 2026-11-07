@@ -52,9 +52,9 @@ export const CURATED_COPY: Record<string, CuratedCopy> = {
   'memos': { firstLogin: ['Open Memos and choose Continue with Authentik; Homestead already created its administrator (homestead-admin), so there is no first-account screen. Its password is under Secrets in the app card Manage panel (Reveal); sign in with it at /auth/admin to administer Memos. People who sign in with Authentik are ordinary users.'] },
   'linkding': { firstLogin: ['Open Linkding and sign in or follow its setup instructions.'] },
   'mealie': { firstLogin: ['Open Mealie and choose Login with Authentik. Homestead already replaced the well-known administrator login (changeme@example.com / MyPassword) with homestead-admin@homestead.lan, so there is no first-login wizard; its password is under Secrets in the app card Manage panel (Reveal), for emergencies only. Add ?direct=1 to the login address to use it.'] },
-  'navidrome': { firstLogin: ['Open Navidrome and sign in or follow its setup instructions.'] },
+  'navidrome': { firstLogin: ['Open Navidrome; with sign-in on, Authentik asks you to sign in and you are in. Homestead already created its administrator (homestead-admin), so there is no first-account screen; its password is under Secrets in the app card Manage panel (Reveal), for Subsonic apps and emergencies. Subsonic apps use a Navidrome username and app password, not Authentik.'] },
   'paperless-ngx': { firstLogin: ['Open Paperless-ngx and sign in or follow its setup instructions.'] },
-  'uptime-kuma': { firstLogin: ['Open Uptime Kuma and sign in or follow its setup instructions.'] },
+  'uptime-kuma': { firstLogin: ['Open Uptime Kuma; with sign-in on, Authentik asks you to sign in once and Kuma opens, with its own login off. Homestead already created its administrator (homestead-admin), so there is no setup screen; its password is under Secrets in the app card Manage panel (Reveal), for emergencies.'] },
   'vaultwarden': { firstLogin: ['Open Vaultwarden and sign in or follow its setup instructions.'] },
   nextcloud: {
     containerPort: '80',

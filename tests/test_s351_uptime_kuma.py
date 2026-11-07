@@ -40,9 +40,9 @@ class TestUptimeKumaContract(unittest.TestCase):
         self.assertIn("backuppaths:", self.text)
 
     def test_no_secret_or_entrypoint_override(self):
-        # The administrator account is created in the app on first visit;
-        # the image entrypoint runs unchanged.
-        self.assertNotIn("\nsecrets:", self.text)
+        # S450: Homestead creates the administrator at install (one
+        # generated secret); the image entrypoint runs unchanged.
+        self.assertEqual(self.text.count("\n- name: admin_password"), 1)
         self.assertNotIn("entrypoint:", self.text)
 
     def test_no_latest_tag(self):

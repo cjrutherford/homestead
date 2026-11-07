@@ -44,6 +44,9 @@ export class People implements OnInit {
   protected readonly dialog = signal<PeopleDialog | null>(null);
 
   protected readonly apps = computed(() => this.view()?.apps ?? []);
+  protected adminOnly(app: string): boolean {
+    return (this.view()?.admin_only ?? []).includes(app);
+  }
   protected readonly people = computed(() => this.view()?.people ?? []);
   protected readonly unmanaged = computed(() => this.view()?.unmanaged ?? []);
   protected readonly canAct = computed(() => this.view()?.token_kept === true);

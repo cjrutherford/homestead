@@ -844,8 +844,8 @@ func TestCuratedUptimeKuma(t *testing.T) {
 		t.Fatalf("services = %+v", manifest.Services)
 	}
 	service := manifest.Services[0]
-	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 0 {
-		t.Fatalf("uptime-kuma needs no supervisor; secrets = %+v", manifest.Secrets)
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 1 || manifest.Secrets[0].Name != "admin_password" || !manifest.Secrets[0].Reveal {
+		t.Fatalf("uptime-kuma needs no supervisor and only the revealable administrator password; secrets = %+v", manifest.Secrets)
 	}
 	if len(service.Data) != 1 || service.Data[0].Target != "/app/data" ||
 		service.Data[0].Class != storage.ClassApplication || service.Data[0].Subpath != "data" {
@@ -1010,8 +1010,8 @@ func TestCuratedNavidrome(t *testing.T) {
 	if len(service.Environment) != 1 || service.Environment["ND_CACHEFOLDER"] != "/cache" {
 		t.Fatalf("environment = %v, want only the bulk cache folder", service.Environment)
 	}
-	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 0 {
-		t.Fatalf("navidrome generates its JWT secrets into the database; secrets = %+v", manifest.Secrets)
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 1 || manifest.Secrets[0].Name != "admin_password" || !manifest.Secrets[0].Reveal {
+		t.Fatalf("navidrome generates its JWT secrets into the database; the only secret is the revealable administrator password = %+v", manifest.Secrets)
 	}
 	wantData := []struct {
 		target  string

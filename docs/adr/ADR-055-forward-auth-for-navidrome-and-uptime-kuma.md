@@ -372,8 +372,8 @@ anonymous sets.)
     table for a row; the plan reads it the same way). The owner creates the
     account first, the same precondition as Navidrome's admin (§3). The
     refusal text says so. **Spike** confirms what Kuma does with no user.
-  - **Trust Proxy** (client addresses in Kuma) is still a manual step and
-    DEFERRED.
+  - **Trust Proxy** is set by the same script when sign-in is turned on
+    (S450); it is no longer a manual step.
   - Break-glass: turn sign-in off with the normal plan, which restores the login
     first. If Authentik and the daemon are both unavailable, the documented
     manual step is the `disableAuth` row set back to `false` in

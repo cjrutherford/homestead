@@ -186,7 +186,7 @@
                 <span>{{ app }}</span>
                 <select [attr.aria-label]="'Access to ' + app" [value]="formAccess[app] ?? 'none'" (change)="formAccess[app] = $any($event.target).value">
                   <option value="none">No access</option>
-                  <option value="user">Can open</option>
+                  <option value="user" [disabled]="adminOnly(app)" [hidden]="adminOnly(app)">Can open</option>
                   <option value="admin">App admin</option>
                 </select>
               </div>
@@ -237,7 +237,7 @@
               <span>{{ app }}</span>
               <select [attr.aria-label]="'Access to ' + app" [value]="formAccess[app] ?? 'none'" (change)="formAccess[app] = $any($event.target).value">
                 <option value="none">No access</option>
-                <option value="user">Can open</option>
+                <option value="user" [disabled]="adminOnly(app)" [hidden]="adminOnly(app)">Can open</option>
                 <option value="admin">App admin</option>
               </select>
             </div>

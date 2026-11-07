@@ -50,8 +50,8 @@ func TestKumaOwnLoginOffPinnedToVerifiedVersion(t *testing.T) {
 	if o == nil || !fa.RequiresHostBlock || fa.Access != catalog.AccessAdminOnly {
 		t.Fatalf("forwardauth = %+v", fa)
 	}
-	for name, argv := range map[string][]string{"prepare": o.Prepare, "onapply": o.OnApply, "onoff": o.OnOff} {
-		if len(argv) != 4 || argv[0] != "node" || argv[1] != "-e" || !strings.Contains(argv[2], `const VERIFIED = '`+kumaSignInVerified+`'`) || argv[3] != map[string]string{"prepare": "prepare", "onapply": "on", "onoff": "off"}[name] {
+	for name, argv := range map[string][]string{"prepare": o.Prepare, "account": o.Account, "onapply": o.OnApply, "onoff": o.OnOff} {
+		if len(argv) != 4 || argv[0] != "node" || argv[1] != "-e" || !strings.Contains(argv[2], `const VERIFIED = '`+kumaSignInVerified+`'`) || argv[3] != map[string]string{"prepare": "prepare", "account": "account", "onapply": "on", "onoff": "off"}[name] {
 			t.Fatalf("%s argv shape: %v", name, describeArgv(argv))
 		}
 	}
@@ -217,6 +217,18 @@ if(/^select/i.test(q)){console.log(JSON.stringify(d.prepare(q).all()))}else{d.ex
 	if sql("SELECT COUNT(*) AS n FROM user") != `[{"n":0}]` {
 		t.Fatal("a user was created from bad stdin")
 	}
+	// account (S451): the install's first run creates the account only, with
+	// the login left on and no restart; a second run changes nothing.
+	if out, err := run("account", stdin); err != nil || wantsRestart(out) || !strings.Contains(out, "account created") || strings.Contains(out, hash) {
+		t.Fatalf("account: %v %s", err, out)
+	}
+	if sql("SELECT COUNT(*) AS n FROM setting") != `[{"n":0}]` {
+		t.Fatal("account touched the login switch")
+	}
+	if out, err := run("account", stdin); err != nil || !strings.Contains(out, "account exists") {
+		t.Fatalf("second account: %v %s", err, out)
+	}
+	sql("DELETE FROM user")
 	out, err := run("on", stdin)
 	if err != nil || !wantsRestart(out) || strings.Contains(out, hash) {
 		t.Fatalf("on: %v %s", err, out)
@@ -224,7 +236,7 @@ if(/^select/i.test(q)){console.log(JSON.stringify(d.prepare(q).all()))}else{d.ex
 	if got := sql("SELECT username, password FROM user"); got != `[{"username":"chris","password":"`+hash+`"}]` {
 		t.Fatalf("user = %s", got)
 	}
-	if got := sql("SELECT key, value FROM setting"); got != `[{"key":"disableAuth","value":"true"}]` {
+	if got := sql("SELECT key, value FROM setting"); got != `[{"key":"disableAuth","value":"true"},{"key":"trustProxy","value":"true"}]` {
 		t.Fatalf("setting = %s", got)
 	}
 	if out, err := run("on", stdin); err != nil || wantsRestart(out) || !strings.Contains(out, "already on") {

@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "033e4c271555f8a6",
+ "hash": "96873823cf855a8d",
  "sections": [
   {
    "title": "Platform",
@@ -1338,7 +1338,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
     },
     {
      "title": "SRV-NAVIDROME: Navidrome",
-     "note": "Install refuses if no Navidrome admin exists or a username collides with a Homestead person, so create the Navidrome admin first (SRV-NAVIDROME-1a). Keep its password in your password manager, not in this file. Owner browser sign-in has not been recorded yet.",
+     "note": "Install creates the Navidrome admin (local account homestead-admin, password under Secrets) and plans the Authentik gate with it; no first-account screen is ever shown. A username that collides with a Homestead person is refused. Keep the password in your password manager, not in this file.",
      "steps": [
       {
        "id": "SRV-NAVIDROME-1",
@@ -1349,9 +1349,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "SRV-NAVIDROME-1a",
-       "title": "Create the Navidrome admin",
-       "action": "If install or the sign-in step says no Navidrome admin exists, open https://navidrome.\u003clan-suffix\u003e/ and create the admin account when Navidrome asks, then retry the step (Apply sign-in again). Keep the password in your password manager.",
-       "expected": "The admin exists; the install or sign-in step then goes through; a username that collides with a Homestead person is refused with a clear message.",
+       "title": "Nothing to create by hand",
+       "action": "After install, open the direct LAN port and the app name before signing in.",
+       "expected": "No create-admin screen anywhere; the direct port is blocked or gated; the admin password is revealable under Secrets.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -1580,7 +1580,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
     },
     {
      "title": "SRV-UPTIME-KUMA: Uptime Kuma",
-     "note": "Kuma's first-run setup screen is behind the Authentik gate; owner browser sign-in has not been recorded yet. NOTE: an earlier memory says Kuma login stays on; S422 later turned it off. The host firewall gate table (S421) must be active (PLAT-FIREWALL-3).",
+     "note": "Install creates Kuma's administrator (homestead-admin, password under Secrets) and plans the gate with it; Kuma's own login is turned off once the gate is applied, and Trust Proxy is set automatically. The host firewall gate table (S421) must be active (PLAT-FIREWALL-3), otherwise the install says so and the app is not left open.",
      "steps": [
       {
        "id": "SRV-UPTIME-KUMA-1",

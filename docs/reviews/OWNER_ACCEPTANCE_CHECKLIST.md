@@ -1062,7 +1062,7 @@ _Browser sign-in has not been recorded yet._
 
 ### SRV-NAVIDROME: Navidrome
 
-_Install refuses if no Navidrome admin exists or a username collides with a Homestead person, so create the Navidrome admin first (SRV-NAVIDROME-1a). Keep its password in your password manager, not in this file. Owner browser sign-in has not been recorded yet._
+_Install creates the Navidrome admin (local account homestead-admin, password under Secrets) and plans the Authentik gate with it; no first-account screen is ever shown. A username that collides with a Homestead person is refused. Keep the password in your password manager, not in this file._
 
 - [ ] **SRV-NAVIDROME-1 — Install: plan preview, then approve**
   - Action: Catalog > Navidrome > Install. Read the plan, then approve (or `homesteadctl apps plan navidrome -f FILE`, then `homesteadctl apps install navidrome -f FILE`).
@@ -1070,9 +1070,9 @@ _Install refuses if no Navidrome admin exists or a username collides with a Home
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **SRV-NAVIDROME-1a — Create the Navidrome admin**
-  - Action: If install or the sign-in step says no Navidrome admin exists, open https://navidrome.<lan-suffix>/ and create the admin account when Navidrome asks, then retry the step (Apply sign-in again). Keep the password in your password manager.
-  - Expected: The admin exists; the install or sign-in step then goes through; a username that collides with a Homestead person is refused with a clear message.
+- [ ] **SRV-NAVIDROME-1a — Nothing to create by hand**
+  - Action: After install, open the direct LAN port and the app name before signing in.
+  - Expected: No create-admin screen anywhere; the direct port is blocked or gated; the admin password is revealable under Secrets.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -1269,7 +1269,7 @@ _First install on this appliance; sign-in confirmed from docs and source only (D
 
 ### SRV-UPTIME-KUMA: Uptime Kuma
 
-_Kuma's first-run setup screen is behind the Authentik gate; owner browser sign-in has not been recorded yet. NOTE: an earlier memory says Kuma login stays on; S422 later turned it off. The host firewall gate table (S421) must be active (PLAT-FIREWALL-3)._
+_Install creates Kuma's administrator (homestead-admin, password under Secrets) and plans the gate with it; Kuma's own login is turned off once the gate is applied, and Trust Proxy is set automatically. The host firewall gate table (S421) must be active (PLAT-FIREWALL-3), otherwise the install says so and the app is not left open._
 
 - [ ] **SRV-UPTIME-KUMA-1 — Install: plan preview, then approve**
   - Action: Catalog > Uptime Kuma > Install. Read the plan, then approve (or `homesteadctl apps plan uptime-kuma -f FILE`, then `homesteadctl apps install uptime-kuma -f FILE`).

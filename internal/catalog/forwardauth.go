@@ -64,9 +64,13 @@ type ForwardAuth struct {
 // secret never crosses argv) and prints the marker if it changed
 // anything; OnOff switches the login back on. All three are required.
 type ForwardOwnLoginOff struct {
-	Prepare  []string `yaml:"prepare" json:"prepare"`
-	OnApply  []string `yaml:"onapply" json:"onapply"`
-	OnOff    []string `yaml:"onoff" json:"onoff"`
+	Prepare []string `yaml:"prepare" json:"prepare"`
+	OnApply []string `yaml:"onapply" json:"onapply"`
+	OnOff   []string `yaml:"onoff" json:"onoff"`
+	// Account (S451, ADR-059) is the optional command that creates the
+	// account from the same stdin line without touching the login switch;
+	// the install's first run uses it, so no setup screen is ever open.
+	Account  []string `yaml:"account,omitempty" json:"account,omitempty"`
 	ExecUser string   `yaml:"execuser,omitempty" json:"execuser,omitempty"`
 }
 
@@ -162,8 +166,8 @@ func (f ForwardAuth) validate(m Manifest, services map[string]Service) error {
 		if !f.RequiresHostBlock || f.Access != AccessAdminOnly {
 			return fmt.Errorf("catalog: forward-auth ownloginoff needs requireshostblock and access %s: an app with no login of its own must be reachable only through the edge, by administrators", AccessAdminOnly)
 		}
-		for _, argv := range [][]string{o.Prepare, o.OnApply, o.OnOff} {
-			if len(argv) == 0 {
+		for i, argv := range [][]string{o.Prepare, o.OnApply, o.OnOff, o.Account} {
+			if len(argv) == 0 && i < 3 {
 				return fmt.Errorf("catalog: forward-auth ownloginoff needs prepare, onapply and onoff")
 			}
 			for _, arg := range argv {

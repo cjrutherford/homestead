@@ -66,6 +66,8 @@ export interface PeopleView {
   people: Person[] | null;
   unmanaged: UnmanagedUser[] | null;
   apps: string[] | null;
+  /** Apps that can be granted only as App admin (forward-auth, admin-only). */
+  admin_only?: string[] | null;
   /** Everything sharing not yet purged for a removed person (S427). */
   purges?: PendingPurge[] | null;
   read_error?: string;

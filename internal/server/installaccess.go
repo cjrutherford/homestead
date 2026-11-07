@@ -98,6 +98,11 @@ func selfManagedNotice(m catalog.Manifest) string {
 	if title == "" {
 		title = m.Name
 	}
+	if m.SSO.ForwardAuth != nil && m.FirstRun != nil {
+		// A gated app (ADR-055, ADR-059): the install makes the
+		// administrator, so nothing waits in the app for a first visitor.
+		return title + " keeps its own accounts. Homestead creates its administrator, " + m.FirstRun.Account + ", during install (its password is under Secrets once installed), so no setup screen is ever open. With Authentik sign-in approved, the gate is set up with the install; who can pass it is chosen on the People page."
+	}
 	return title + " keeps its own accounts. Homestead does not control who can sign in to it; create accounts in the app itself."
 }
 

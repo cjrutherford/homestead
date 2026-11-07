@@ -64,6 +64,10 @@ type Service struct {
 	// Apps lists the packages that sign in with Authentik (the apps that
 	// can be granted).
 	Apps func() ([]string, error)
+	// AdminOnly says whether an app is reachable only by administrators
+	// (forward-auth access admin-only); such an app has no users group, so
+	// it can be granted only as app admin. Nil means none are.
+	AdminOnly func(app string) bool
 	// OwnerSub is the linked owner's Authentik subject; that user is the
 	// owner, never a person, and is not listed.
 	OwnerSub func() string
@@ -189,6 +193,8 @@ type View struct {
 	People    []Person    `json:"people"`
 	Unmanaged []Unmanaged `json:"unmanaged"`
 	Apps      []string    `json:"apps"`
+	// AdminOnly lists the apps that can be granted only as app admin.
+	AdminOnly []string `json:"admin_only"`
 	// Purges are removals whose Everything sharing could not be purged yet
 	// (the app was stopped); they are retried (S427).
 	Purges []purge.Pending `json:"purges"`
@@ -413,13 +419,18 @@ func roleWord(r string) string {
 // List returns the page. Without the kept token it still lists the record,
 // unchecked, and says so.
 func (s *Service) List(ctx context.Context) (View, error) {
-	v := View{People: []Person{}, Unmanaged: []Unmanaged{}, Purges: []purge.Pending{}}
+	v := View{People: []Person{}, Unmanaged: []Unmanaged{}, Purges: []purge.Pending{}, AdminOnly: []string{}}
 	var err error
 	if v.Purges, err = s.Purge.List(); err != nil {
 		return v, err
 	}
 	if v.Apps, err = s.apps(); err != nil {
 		return v, err
+	}
+	for _, a := range v.Apps {
+		if s.adminOnly(a) {
+			v.AdminOnly = append(v.AdminOnly, a)
+		}
 	}
 	if v.People, err = s.records(); err != nil {
 		return v, err
@@ -591,7 +602,7 @@ func (s *Service) Add(ctx context.Context, actor string, req AddRequest) (AddRes
 		return AddResult{}, err
 	}
 	for _, g := range req.Grants {
-		if err := checkGrant(g, apps); err != nil {
+		if err := s.checkGrant(g, apps); err != nil {
 			return AddResult{}, err
 		}
 	}
@@ -652,6 +663,34 @@ func (s *Service) Add(ctx context.Context, actor string, req AddRequest) (AddRes
 		}
 	}
 	return out, nil
+}
+
+func (s *Service) adminOnly(app string) bool {
+	return s.AdminOnly != nil && s.AdminOnly(app)
+}
+
+// without drops an admin-only app's users group, which does not exist.
+func (s *Service) without(app, users string, groups []string) []string {
+	if !s.adminOnly(app) {
+		return groups
+	}
+	out := make([]string, 0, len(groups))
+	for _, g := range groups {
+		if g != users {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+func (s *Service) checkGrant(g Grant, apps []string) error {
+	if err := checkGrant(g, apps); err != nil {
+		return err
+	}
+	if g.Role == RoleUser && s.adminOnly(g.App) {
+		return invalid("%s is for administrators only: grant it as App admin, or give no access", g.App)
+	}
+	return nil
 }
 
 func checkGrant(g Grant, apps []string) error {
@@ -893,7 +932,7 @@ func (s *Service) Grant(ctx context.Context, actor string, id int64, g Grant) (P
 	if err != nil {
 		return p, err
 	}
-	if err := checkGrant(g, apps); err != nil {
+	if err := s.checkGrant(g, apps); err != nil {
 		return p, err
 	}
 	api, err := s.client()
@@ -920,9 +959,11 @@ func (s *Service) Grant(ctx context.Context, actor string, id int64, g Grant) (P
 
 func (s *Service) applyGrant(ctx context.Context, api *sso.API, actor string, id int64, pk int, g Grant) error {
 	users, admins := sso.AppGroups(g.App)
-	if err := api.AddToGroup(ctx, users, pk); err != nil {
-		s.audit(actor, "people.grant", "error", fmt.Sprintf("person %d: %s", id, g.App))
-		return groupError(g.App, err)
+	if !s.adminOnly(g.App) {
+		if err := api.AddToGroup(ctx, users, pk); err != nil {
+			s.audit(actor, "people.grant", "error", fmt.Sprintf("person %d: %s", id, g.App))
+			return groupError(g.App, err)
+		}
 	}
 	if g.Role == RoleAdmin {
 		if err := api.AddToGroup(ctx, admins, pk); err != nil {
@@ -967,7 +1008,7 @@ func (s *Service) Revoke(ctx context.Context, actor string, id int64, app string
 		return p, err
 	}
 	users, admins := sso.AppGroups(app)
-	for _, g := range []string{admins, users} {
+	for _, g := range s.without(app, users, []string{admins, users}) {
 		if err := api.RemoveFromGroup(ctx, g, p.pk); err != nil {
 			s.audit(actor, "people.revoke", "error", fmt.Sprintf("person %d: %s", id, app))
 			return p, groupError(app, err)
@@ -1135,8 +1176,10 @@ func (s *Service) recreate(ctx context.Context, api *sso.API, p Person, method s
 	}
 	for _, g := range p.Grants {
 		users, admins := sso.AppGroups(g.App)
-		if err := api.AddToGroup(ctx, users, acct.PK); err != nil {
-			return nil, groupError(g.App, err)
+		if !s.adminOnly(g.App) {
+			if err := api.AddToGroup(ctx, users, acct.PK); err != nil {
+				return nil, groupError(g.App, err)
+			}
 		}
 		if g.Role == RoleAdmin {
 			if err := api.AddToGroup(ctx, admins, acct.PK); err != nil {
@@ -1181,7 +1224,7 @@ func (s *Service) putBack(ctx context.Context, api *sso.API, p Person, acct sso.
 		}
 		switch role {
 		case "":
-			for _, g := range []string{admins, users} {
+			for _, g := range s.without(app, users, []string{admins, users}) {
 				if err := api.RemoveFromGroup(ctx, g, p.pk); err != nil {
 					return groupError(app, err)
 				}
@@ -1194,7 +1237,7 @@ func (s *Service) putBack(ctx context.Context, api *sso.API, p Person, acct sso.
 				return groupError(app, err)
 			}
 		case RoleAdmin:
-			for _, g := range []string{users, admins} {
+			for _, g := range s.without(app, users, []string{users, admins}) {
 				if err := api.AddToGroup(ctx, g, p.pk); err != nil {
 					return groupError(app, err)
 				}

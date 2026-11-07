@@ -102,6 +102,17 @@ func addForwardInputs(st *store.Store, in *appsso.Inputs, manifest catalog.Manif
 	return rows.Err()
 }
 
+// anticipatedAccounts is what the app's accounts will be once its install
+// has run its first routine: the one administrator it creates. The apply
+// plans again from the real accounts and its digest must match this plan's,
+// so a fresh install with anything else in it stops for a new approval.
+func anticipatedAccounts(m catalog.Manifest) *appsso.AppAccounts {
+	if m.FirstRun == nil || m.FirstRun.Account == "" {
+		return &appsso.AppAccounts{Err: "the app is not installed yet and creates no administrator of its own"}
+	}
+	return &appsso.AppAccounts{Names: []string{strings.ToLower(m.FirstRun.Account)}, Admins: 1}
+}
+
 // setGate puts the gate on the app's edge routes (nil takes it off), then
 // reconciles the edge and, with a gate on, checks the outpost answers. It
 // is the appsso.Runtime.SetGate of the sign-in operation.

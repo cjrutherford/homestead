@@ -6,11 +6,12 @@
 # its SQLite database by the pinned ownloginoff script), so the owner
 # signs in once. It is the one package that is not allowed to
 # widen: it holds monitor credentials and probes LAN addresses, so it
-# recommends local and refuses public exposure outright. Without sign-in
-# the owner creates the administrator account in the app on first visit;
-# with it Homestead creates one with a random password nobody knows (the
-# way back is Kuma's reset-password command). No secret is declared and
-# the image entrypoint sits before the Node process.
+# recommends local and refuses public exposure outright. Homestead creates
+# the administrator account (homestead-admin, a generated sealed revealable
+# password) during install (S450, ADR-059), so Kuma's first-visit setup
+# screen is never open; the sign-in step keeps that account and turns Kuma's
+# own login off behind the gate. The image entrypoint sits before the Node
+# process.
 name: uptime-kuma
 version: 2.5.7
 title: Uptime Kuma
@@ -29,8 +30,8 @@ services:
   exposes: web
   containerport: 3001
   # No environment overrides: the image sets UPTIME_KUMA_IS_CONTAINER and
-  # listens on 3001. The administrator account is created on first visit
-  # (the application's own setup screen), so nothing is generated here.
+  # listens on 3001. The administrator account is created by the install's
+  # first run (the firstrun block below), never on the setup screen.
   # No image VOLUME. /app/data holds the SQLite database, uploaded
   # status-page assets, and monitor history; the image runs as root.
   data:
@@ -92,7 +93,7 @@ sso:
           process.exit(1)
         }
         const mode = process.argv[1]
-        if (!['prepare', 'on', 'off'].includes(mode)) die('expected the argument prepare, on or off')
+        if (!['prepare', 'account', 'on', 'off'].includes(mode)) die('expected the argument prepare, account, on or off')
         const CFG = path.join(DIR, 'db-config.json')
         const DB = path.join(DIR, 'kuma.db')
         if (mode !== 'off') {
@@ -118,7 +119,7 @@ sso:
           die('the database is not there yet (the server is still starting)')
         }
         let who = null
-        if (mode === 'on') {
+        if (mode === 'on' || mode === 'account') {
           try { who = JSON.parse(fs.readFileSync(0, 'utf8')) } catch { die('expected the account as JSON on stdin') }
           if (!who || typeof who.username !== 'string' || who.username.length < 1 || who.username.length > 255 || typeof who.hash !== 'string' || !/^\$2[aby]\$10\$[./A-Za-z0-9]{53}$/.test(who.hash)) die('the account on stdin is not a username and a bcrypt hash')
         }
@@ -140,7 +141,11 @@ sso:
             const row = (await all("SELECT value FROM setting WHERE key = 'disableAuth'"))[0]
             const now = row && row.value === 'true'
             let changed = false
-            if (mode === 'on') {
+            if (mode === 'account') {
+              const users = (await all('SELECT COUNT(*) AS n FROM user'))[0].n
+              if (users === 0) await run('INSERT INTO user (username, password, active) VALUES (?, ?, 1)', [who.username, who.hash])
+              console.log(users === 0 ? 'uptime-kuma account created' : 'uptime-kuma account exists')
+            } else if (mode === 'on') {
               const users = (await all('SELECT COUNT(*) AS n FROM user'))[0].n
               if (users === 0) {
                 await run('INSERT INTO user (username, password, active) VALUES (?, ?, 1)', [who.username, who.hash])
@@ -148,6 +153,12 @@ sso:
               }
               if (!row) { await run("INSERT INTO setting (key, value, type) VALUES ('disableAuth', 'true', 'general')"); changed = true }
               else if (!now) { await run("UPDATE setting SET value = 'true' WHERE key = 'disableAuth'"); changed = true }
+              // Kuma sits behind the edge only: trust its forwarded-host and
+              // forwarded-proto headers (Settings, Reverse Proxy, Trust Proxy),
+              // read at start, so the restart below applies it.
+              const tp = (await all("SELECT value FROM setting WHERE key = 'trustProxy'"))[0]
+              if (!tp) { await run("INSERT INTO setting (key, value, type) VALUES ('trustProxy', 'true', 'general')"); changed = true }
+              else if (tp.value !== 'true') { await run("UPDATE setting SET value = 'true' WHERE key = 'trustProxy'"); changed = true }
               console.log(changed ? 'uptime-kuma sign-in on' : 'uptime-kuma sign-in on (already on)')
             } else if (now) {
               await run("UPDATE setting SET value = 'false' WHERE key = 'disableAuth'")
@@ -167,6 +178,11 @@ sso:
         }
         main()
       - prepare
+      account:
+      - node
+      - -e
+      - *kuma_signin_script
+      - account
       onapply:
       - node
       - -e
@@ -180,6 +196,17 @@ sso:
     requireshostblock: true
     warnings:
     - Uptime Kuma's own login is turned off behind the Authentik gate, so you sign in once, to Authentik. Only administrators and the owner pass the gate, and Homestead keeps every other account on the host and every other container off Uptime Kuma's port. Turning sign-in off puts Kuma's own login back first.
-    - Homestead creates one Kuma account named after you, with a random password nobody knows. To use Kuma's own login after sign-in is off, set a password with docker exec -it uptime-kuma-uptime-kuma npm run reset-password.
+    - Homestead created the Kuma account homestead-admin at install; its password is under Reveal on the app's page. To use Kuma's own login after sign-in is off, use that password, or set a new one with docker exec -it uptime-kuma-uptime-kuma npm run reset-password.
+    - Turning sign-in on also sets Kuma's Trust Proxy setting, because only the edge can reach it.
     - Status pages, badges and push URLs stay open to the local network without Authentik. Uptime Kuma can never be published, so they are never open to the internet.
     - /metrics, /dashboard, /status-page and the live socket stay behind the gate.
+firstrun:
+  routine: uptime-kuma
+  service: uptime-kuma
+  account: homestead-admin
+  secret: admin_password
+secrets:
+- name: admin_password
+  immutable: true
+  reveal: true
+  note: Password for homestead-admin, the Uptime Kuma administrator Homestead created at install. With Authentik sign-in on, Kuma's own login is off and you sign in once, to Authentik.

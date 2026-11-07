@@ -45,7 +45,8 @@ class TestNavidromeContract(unittest.TestCase):
 
     def test_documented_local_auth_exception(self):
         self.assertIn("class: unsupported", self.text)
-        self.assertNotIn("\nsecrets:", self.text)
+        # S450: the only secret is the administrator password Homestead generates.
+        self.assertEqual(self.text.count("\n- name: admin_password"), 1)
 
     def test_shared_library_integration(self):
         self.assertIn("kind: library", self.text)
