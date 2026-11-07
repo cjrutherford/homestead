@@ -97,6 +97,12 @@ func RunAs(ctx context.Context, m catalog.Manifest, secrets Secrets, owner strin
 	if f.Routine == catalog.FirstRunBookStack {
 		return bookstackFirstRun(ctx, m, secrets)
 	}
+	if f.Routine == catalog.FirstRunMealie {
+		return mealieFirstRun(ctx, m, secrets)
+	}
+	if f.Routine == catalog.FirstRunCWA {
+		return cwaFirstRun(ctx, m, secrets)
+	}
 	password, err := Password(m, secrets)
 	if err != nil {
 		return "", err

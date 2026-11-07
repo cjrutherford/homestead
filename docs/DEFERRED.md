@@ -1438,11 +1438,9 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
   app or with the image's `manage.py changepassword`. A general "this secret
   must be supplied by the owner" declaration, or an install-time prompt
   that requires one, is not in the secret schema.
-- Mealie's seeded administrator: S350 ships the upstream default
-  credentials (`changeme@example.com` / `MyPassword`) because the image
-  creates that account itself, and the owner changes them at first
-  sign-in. Driving Mealie's user store from Homestead (seeding a chosen
-  password or disabling the default account) is not surfaced.
+- Mealie's seeded administrator: closed by S448. The first-run routine
+  replaces the seeded password and identity with a generated, revealable
+  password for homestead-admin@homestead.lan.
 - Uptime Kuma's monitor bootstrap: S351 installs the board with no
   monitors; the owner adds checks in the app. Pre-seeding one monitor per
   installed app and route (the "all local apps" intent) needs Homestead to
@@ -1823,3 +1821,5 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S447: Actual Budget's owner is seeded in its account database (users table) at install; verified against 26.10.0, re-verify on every bump (pin test `TestActualBudgetRoutinePinnedToVerifiedVersion`). Budgets made under the password login while sign-in is off belong to Actual's password account and are not moved to the owner when sign-in is turned on later (Actual moves them only when no named user exists).
 - S447: once Actual Budget is published, Authentik sign-in started from its LAN name fails with Actual's "Invalid redirect URL" (Actual checks the return address against the single OPENID server hostname, which is the public name). Documented in the plan warning and checklist; not fixable without a second Actual setting.
 - S447: the dashboard curated first-login copy for 16 other packages (api-client, bookstack, circuits, contacts, expense, inventory, notes, parametric, projects, records, solitaire, sudoku, tasks, three-d, time-tracking, vikunja) is the generic "sign in or follow its setup instructions" line, true but not specific; write real copy in each app's own acceptance slice.
+- S448: Calibre-Web Automated redirects a LAN visit to `/` to the public name's `/login` once the app is published (its stored redirect host, S415), so a LAN-only visitor lands on a name they may not reach; opening `/login` on the LAN name works and sign-in completes there. Mealie, like the other single-origin published apps, cannot finish Authentik sign-in from its `.lan` name (state cookie is on the LAN origin, the redirect goes to BASE_URL). Both are the known published single-origin defect, fixed separately.
+- S448: Authentik 2026.8 sends `email_verified=false` for every user. Mealie's check is turned off in its package; other apps that require a verified email (Komga S411, Vaultwarden S414) have not been re-checked against it.

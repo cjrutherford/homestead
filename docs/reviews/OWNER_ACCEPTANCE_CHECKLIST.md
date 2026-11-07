@@ -467,6 +467,12 @@ _Re-verify the sign-in script after every CWA update (pin test). app.db holds th
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
+- [ ] **SRV-CALIBRE-WEB-AUTOMATED-3a — The well-known admin login is gone (S448)**
+  - Action: On the login page try admin / admin123, then reveal homestead-admin's password in the app card Manage panel (Secrets, Reveal) and sign in as homestead-admin.
+  - Expected: admin / admin123 is refused; homestead-admin with the revealed password signs in as an administrator. No setup screen is shown.
+  - If it fails: Container log, Doctor page, audit log; the install's first-run step reports what it could not do.
+  - Result: ____  Notes: ____
+
 - [ ] **SRV-CALIBRE-WEB-AUTOMATED-4 — Person A (with access) can sign in**
   - Action: Grant A in People for this app. In a separate browser sign in as A.
   - Expected: A reaches the app as A (a separate account/data from the owner).
@@ -486,7 +492,7 @@ _Re-verify the sign-in script after every CWA update (pin test). app.db holds th
   - Result: ____  Notes: ____
 
 - [ ] **SRV-CALIBRE-WEB-AUTOMATED-7 — Name collision warning**
-  - Action: Note whether signing in as an Authentik user named like an existing CWA user (including the default admin) takes over that account, as the sign-in review warns.
+  - Action: Note whether signing in as an Authentik user named like an existing CWA user (including homestead-admin, the renamed seeded administrator) takes over that account, as the sign-in review warns; a user named admin is a new account.
   - Expected: Matches the warning shown at install; record what you saw.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -941,9 +947,15 @@ _An earlier live check saw Authentik accept the Mealie redirect URI; a browser l
   - Result: ____  Notes: ____
 
 - [ ] **SRV-MEALIE-3 — Owner sign-in**
-  - Action: Sign in with the Authentik/OpenID button on the app's login page as the owner. Login page offers 'Login with OAuth' (OIDC env); BASE_URL follows the public name once published.
+  - Action: Sign in with the Authentik/OpenID button on the app's login page as the owner. Login page offers 'Login with Authentik' (OIDC env); BASE_URL follows the public name once published, and sign-in completes only there (a published app cannot finish sign-in from its .lan name).
   - Expected: Owner is signed in and named correctly.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
+  - Result: ____  Notes: ____
+
+- [ ] **SRV-MEALIE-3a — The well-known administrator login is gone (S448)**
+  - Action: On the login page add `?direct=1`, try changeme@example.com / MyPassword, then reveal the password in the app card Manage panel (Secrets, Reveal) and sign in as homestead-admin@homestead.lan.
+  - Expected: The login page shows no "first time logging in" credentials banner; changeme@example.com / MyPassword is refused; the revealed password signs in as an administrator without a setup wizard.
+  - If it fails: Container log, Doctor page, audit log; the install's first-run step reports what it could not do.
   - Result: ____  Notes: ____
 
 - [ ] **SRV-MEALIE-4 — Person A (with access) can sign in**
@@ -3537,14 +3549,14 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | SRV-ACTUAL-BUDGET | SRV-ACTUAL-BUDGET-1 to SRV-ACTUAL-BUDGET-9 (10) |  |  |  |  |
 | SRV-AUDIOBOOKSHELF | SRV-AUDIOBOOKSHELF-1 to SRV-AUDIOBOOKSHELF-11 (11) |  |  |  |  |
 | SRV-BOOKSTACK | SRV-BOOKSTACK-1 to SRV-BOOKSTACK-10 (10) |  |  |  |  |
-| SRV-CALIBRE-WEB-AUTOMATED | SRV-CALIBRE-WEB-AUTOMATED-1 to SRV-CALIBRE-WEB-AUTOMATED-11 (11) |  |  |  |  |
+| SRV-CALIBRE-WEB-AUTOMATED | SRV-CALIBRE-WEB-AUTOMATED-1 to SRV-CALIBRE-WEB-AUTOMATED-11 (12) |  |  |  |  |
 | SRV-FRESHRSS | SRV-FRESHRSS-1 to SRV-FRESHRSS-10 (11) |  |  |  |  |
 | SRV-GITEA | SRV-GITEA-1 to SRV-GITEA-11 (12) |  |  |  |  |
 | SRV-IMMICH | SRV-IMMICH-1 to SRV-IMMICH-11 (11) |  |  |  |  |
 | SRV-JELLYFIN | SRV-JELLYFIN-1 to SRV-JELLYFIN-11 (11) |  |  |  |  |
 | SRV-KOMGA | SRV-KOMGA-1 to SRV-KOMGA-9 (9) |  |  |  |  |
 | SRV-LINKDING | SRV-LINKDING-1 to SRV-LINKDING-9 (9) |  |  |  |  |
-| SRV-MEALIE | SRV-MEALIE-1 to SRV-MEALIE-9 (9) |  |  |  |  |
+| SRV-MEALIE | SRV-MEALIE-1 to SRV-MEALIE-9 (10) |  |  |  |  |
 | SRV-MEMOS | SRV-MEMOS-1 to SRV-MEMOS-9 (10) |  |  |  |  |
 | SRV-NAVIDROME | SRV-NAVIDROME-1 to SRV-NAVIDROME-11 (12) |  |  |  |  |
 | SRV-NEXTCLOUD | SRV-NEXTCLOUD-1 to SRV-NEXTCLOUD-10 (11) |  |  |  |  |
@@ -3589,4 +3601,4 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | END-AUDIT | END-AUDIT-1 to END-AUDIT-1 (1) |  |  |  |  |
 | END-PARITY | END-PARITY-1 to END-PARITY-1 (1) |  |  |  |  |
 | END-UNINSTALL | END-UNINSTALL-1 to END-UNINSTALL-6 (6) |  |  |  |  |
-| **Total** | 541 steps |  |  |  |  |
+| **Total** | 543 steps |  |  |  |  |

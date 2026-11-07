@@ -118,7 +118,7 @@ func TestCWAPlanRedirectWarningsAndScript(t *testing.T) {
 	}
 	all := strings.Join(plan.Warnings, "\n")
 	for _, w := range []string{"own database", "re-checked on every Calibre-Web Automated update", "Run this after the app has started once",
-		"only at the address", "takes over that account", "default admin", "groups claim is empty", "plaintext", "app.db", "local login form stays"} {
+		"only at the address", "takes over that account", "homestead-admin", "groups claim is empty", "plaintext", "app.db", "local login form stays"} {
 		if !strings.Contains(all, w) {
 			t.Errorf("warnings lack %q:\n%s", w, all)
 		}

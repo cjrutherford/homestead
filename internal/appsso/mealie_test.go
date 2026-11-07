@@ -41,7 +41,7 @@ func realMealie(t *testing.T) catalog.Manifest {
 func oldMealieStack(t *testing.T, dir string, m catalog.Manifest) string {
 	t.Helper()
 	old := m
-	old.Secrets = nil
+	old.Secrets, old.FirstRun = nil, nil
 	old.SSO.OIDC = nil
 	files, err := catalog.Generate(old, catalog.Generation{
 		Services: []catalog.ServiceGeneration{{Service: "mealie"}}, RouteHosts: map[string]string{"mealie": "mealie.lan"}})

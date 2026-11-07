@@ -778,7 +778,8 @@ func TestCuratedMealie(t *testing.T) {
 	}
 	// Only the Authentik client secret (S403), handed over as a file: no
 	// supervisor and no exported value.
-	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 1 ||
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 2 ||
+		manifest.Secrets[1].Name != "admin_password" || !manifest.HeldSecret("admin_password") || manifest.FirstRun == nil || manifest.FirstRun.Routine != FirstRunMealie ||
 		manifest.Secrets[0].Name != "oidc_client_secret" ||
 		len(manifest.Secrets[0].Consumers) != 1 || manifest.Secrets[0].Consumers[0].Export ||
 		manifest.Secrets[0].Consumers[0].Env != "OIDC_CLIENT_SECRET_FILE" {
@@ -1213,7 +1214,7 @@ func TestCuratedCalibreWebAutomated(t *testing.T) {
 	service := manifest.Services[0]
 	// S415: the two sign-in secrets are files for the sign-in script, not
 	// exported variables, so the image keeps its own entrypoint.
-	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 2 {
+	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 3 || !manifest.HeldSecret("admin_password") || manifest.FirstRun == nil || manifest.FirstRun.Routine != FirstRunCWA {
 		t.Fatalf("calibre-web-automated keeps the image entrypoint; secrets = %+v", manifest.Secrets)
 	}
 	for _, secret := range manifest.Secrets {

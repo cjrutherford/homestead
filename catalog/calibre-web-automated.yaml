@@ -205,7 +205,7 @@ sso:
       warnings:
       - Calibre-Web Automated keeps its sign-in in its own database, which Homestead edits directly; this is re-checked on every Calibre-Web Automated update and stops with a clear message if the database or the version is not the one it was verified against. Run this after the app has started once.
       - Sign-in completes only at the address Calibre-Web Automated is set up for (the app's own address, stored in its settings); other addresses for the same app cannot complete sign-in. After the address changes, plan sign-in again.
-      - An Authentik username (preferred_username) equal to an existing Calibre-Web Automated user, including the default admin, signs in to and takes over that account; other people get a new account with the default role at first sign-in.
+      - An Authentik username (preferred_username) equal to an existing Calibre-Web Automated user signs in to and takes over that account, including homestead-admin (the seeded administrator, renamed at install so a person called admin cannot take it); other people get a new account with the default role at first sign-in.
       - Members of the app's Homestead admin group become administrators at every sign-in, and everyone else keeps their role. A person whose groups claim is empty is not changed, so an existing administrator stays one.
       - The client secret is stored in plaintext in the app's database (app.db), on application storage and in backups.
       - The local login form stays.
@@ -230,6 +230,19 @@ secrets:
   consumers:
   - service: calibre-web-automated
     env: CWA_SIGNIN_FILE
+- name: admin_password
+  # The seeded administrator's password, set at install in place of the
+  # well-known one (admin123), and the account renamed homestead-admin.
+  # Only applied while that account still has the seeded password; an
+  # administrator you changed is never touched.
+  immutable: true
+  reveal: true
+  note: Password for homestead-admin, the local administrator Homestead set up at install. Sign in with Authentik for everyday use.
+firstrun:
+  routine: calibre-web-automated
+  service: calibre-web-automated
+  account: admin
+  secret: admin_password
 integrations:
 - kind: identity
   target: authentik

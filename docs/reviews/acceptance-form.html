@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "0fc737b62331007e",
+ "hash": "b3f39c3557a229ac",
  "sections": [
   {
    "title": "Platform",
@@ -643,6 +643,13 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
+       "id": "SRV-CALIBRE-WEB-AUTOMATED-3a",
+       "title": "The well-known admin login is gone (S448)",
+       "action": "On the login page try admin / admin123, then reveal homestead-admin's password in the app card Manage panel (Secrets, Reveal) and sign in as homestead-admin.",
+       "expected": "admin / admin123 is refused; homestead-admin with the revealed password signs in as an administrator. No setup screen is shown.",
+       "fail": "Container log, Doctor page, audit log; the install's first-run step reports what it could not do."
+      },
+      {
        "id": "SRV-CALIBRE-WEB-AUTOMATED-4",
        "title": "Person A (with access) can sign in",
        "action": "Grant A in People for this app. In a separate browser sign in as A.",
@@ -666,7 +673,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-CALIBRE-WEB-AUTOMATED-7",
        "title": "Name collision warning",
-       "action": "Note whether signing in as an Authentik user named like an existing CWA user (including the default admin) takes over that account, as the sign-in review warns.",
+       "action": "Note whether signing in as an Authentik user named like an existing CWA user (including homestead-admin, the renamed seeded administrator) takes over that account, as the sign-in review warns; a user named admin is a new account.",
        "expected": "Matches the warning shown at install; record what you saw.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1198,9 +1205,16 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-MEALIE-3",
        "title": "Owner sign-in",
-       "action": "Sign in with the Authentik/OpenID button on the app's login page as the owner. Login page offers 'Login with OAuth' (OIDC env); BASE_URL follows the public name once published.",
+       "action": "Sign in with the Authentik/OpenID button on the app's login page as the owner. Login page offers 'Login with Authentik' (OIDC env); BASE_URL follows the public name once published, and sign-in completes only there (a published app cannot finish sign-in from its .lan name).",
        "expected": "Owner is signed in and named correctly.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
+      },
+      {
+       "id": "SRV-MEALIE-3a",
+       "title": "The well-known administrator login is gone (S448)",
+       "action": "On the login page add `?direct=1`, try changeme@example.com / MyPassword, then reveal the password in the app card Manage panel (Secrets, Reveal) and sign in as homestead-admin@homestead.lan.",
+       "expected": "The login page shows no \"first time logging in\" credentials banner; changeme@example.com / MyPassword is refused; the revealed password signs in as an administrator without a setup wizard.",
+       "fail": "Container log, Doctor page, audit log; the install's first-run step reports what it could not do."
       },
       {
        "id": "SRV-MEALIE-4",

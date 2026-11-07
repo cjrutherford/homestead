@@ -2226,9 +2226,11 @@ path.
 The Mealie package (S350) in `catalog/` is the GHCR recipe manager: one
 container with SQLite on `/app/data`, `BASE_URL` following the routed
 HTTPS host, and signups closed. Mealie seeds the upstream-documented
-administrator (`changeme@example.com`), so the owner signs in once,
-changes the credentials, and creates household accounts. Since S403 people
-also sign in through Authentik (the `env-oidc` adapter): the only declared
+administrator (`changeme@example.com`); the first-run routine (S448)
+replaces its password and identity at install with a generated, revealable
+password for `homestead-admin@homestead.lan`, and the owner creates
+household accounts. Since S403 people
+also sign in through Authentik (the `env-oidc` adapter): the Authentik client secret and the administrator password are the declared
 secret is the Authentik client secret, read from `OIDC_CLIENT_SECRET_FILE`,
 and the image entrypoint runs unchanged. An install from before that adds
 just the secret's wiring to its `compose.yaml` when sign-in is applied.
