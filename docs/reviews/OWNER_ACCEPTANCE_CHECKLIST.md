@@ -518,7 +518,7 @@ _Re-verify the sign-in script after every CWA update (pin test). app.db holds th
 
 ### SRV-FRESHRSS: FreshRSS
 
-_First sign-in needs the FreshRSS web installer finished first (SRV-FRESHRSS-1a). First install on this appliance; source/unit/contract tests only (DEFERRED S412: return URL behind the edge, auto-registration, off restoring the form login unproven)._
+_FreshRSS is installed by Homestead (no web installer, ADR-059; SRV-FRESHRSS-1a). First install on this appliance; source/unit/contract tests only (DEFERRED S412: return URL behind the edge, auto-registration, off restoring the form login unproven)._
 
 - [ ] **SRV-FRESHRSS-1 — Install: plan preview, then approve**
   - Action: Catalog > FreshRSS > Install. Read the plan, then approve (or `homesteadctl apps plan freshrss -f FILE`, then `homesteadctl apps install freshrss -f FILE`).
@@ -526,9 +526,9 @@ _First sign-in needs the FreshRSS web installer finished first (SRV-FRESHRSS-1a)
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **SRV-FRESHRSS-1a — Finish the web installer**
-  - Action: Open https://freshrss.<lan-suffix>/ and finish FreshRSS's web installer (database: SQLite; create the default administrator with the same username as your Authentik owner). Then apply sign-in again from the app card if it was waiting.
-  - Expected: Installer completes; the Authentik person whose username equals the default user becomes the administrator.
+- [ ] **SRV-FRESHRSS-1a — No web installer**
+  - Action: After install, open https://freshrss.<lan-suffix>/ before signing in. FreshRSS's default user is your Authentik username; its password is under Secrets in Manage (Reveal).
+  - Expected: FreshRSS shows its sign-in, never the web installer ("installation" page); the default user matches the Authentik owner's username.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 

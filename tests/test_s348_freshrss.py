@@ -2,8 +2,8 @@
 
 Guardrails for the Debian-based feed reader: the OIDC-capable image (not
 the alpine variant), scheduled background refresh, both writable
-directories on application storage as www-data, a web-installer setup
-that declares no secret, and a local-first exposure default. Behavior is
+directories on application storage as www-data, a first-run install (S445)
+with a sealed administrator password, and a local-first exposure default. Behavior is
 covered by Go tests in internal/catalog loading the shipped directory.
 """
 
@@ -48,7 +48,7 @@ class TestFreshRSSContract(unittest.TestCase):
         # OIDC client secret and crypto key added by S412, never an
         # installer account.
         self.assertNotIn("FRESHRSS_INSTALL:", self.text)
-        self.assertNotIn("admin_password", self.text)
+        self.assertIn("routine: freshrss", self.text)
         self.assertNotIn("FRESHRSS_USER:", self.text)
 
     def test_no_latest_tag(self):

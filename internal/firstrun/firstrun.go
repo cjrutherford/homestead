@@ -65,6 +65,13 @@ var execIn = func(ctx context.Context, container, stdin string, args ...string) 
 // Run finishes m's first-run setup, waiting (bounded) for the app to
 // answer. A manifest without a first-run routine returns Ready.
 func Run(ctx context.Context, m catalog.Manifest, secrets Secrets) (Result, error) {
+	return RunAs(ctx, m, secrets, "")
+}
+
+// RunAs is Run for a routine that sets the app up for the appliance
+// owner (FreshRSS, S445): owner is the owner's Authentik username, or
+// empty when it is not known.
+func RunAs(ctx context.Context, m catalog.Manifest, secrets Secrets, owner string) (Result, error) {
 	f := m.FirstRun
 	if f == nil {
 		return Ready, nil
@@ -77,6 +84,9 @@ func Run(ctx context.Context, m catalog.Manifest, secrets Secrets) (Result, erro
 	}
 	if f.Routine == catalog.FirstRunGitea {
 		return giteaFirstRun(ctx, m, secrets)
+	}
+	if f.Routine == catalog.FirstRunFreshRSS {
+		return freshrssFirstRun(ctx, m, secrets, owner)
 	}
 	if f.Routine == catalog.FirstRunBookStack {
 		return bookstackFirstRun(ctx, m, secrets)
@@ -121,15 +131,23 @@ func Password(m catalog.Manifest, secrets Secrets) (string, error) {
 	if err != nil && !errors.Is(err, secret.ErrNotFound) {
 		return "", fmt.Errorf("firstrun: read %s: %w", name, err)
 	}
-	b := make([]byte, 24)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("firstrun: entropy: %w", err)
+	v, err = generatePassword()
+	if err != nil {
+		return "", err
 	}
-	v = base64.RawURLEncoding.EncodeToString(b)
 	if err := secrets.SetApp(name, v); err != nil {
 		return "", fmt.Errorf("firstrun: seal %s: %w", name, err)
 	}
 	return v, nil
+}
+
+// generatePassword is 24 random bytes, URL-safe.
+func generatePassword() (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("firstrun: entropy: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 // waitFor retries step while the app does not answer yet.

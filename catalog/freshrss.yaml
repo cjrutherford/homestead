@@ -2,9 +2,12 @@
 # Curated first-party manifest — versions pin here, updates bump this file.
 # The plain tag is the Debian image, which is the variant that ships
 # mod_auth_openidc; the -alpine variant has no OIDC, so it is not used.
-# The owner completes the web installer on first visit, which creates the
-# administrator account and the SQLite database inside the data volume;
-# no credential is generated or declared for the app itself.
+# Homestead installs it with the image's own CLI at install (S445,
+# ADR-059): SQLite database, and the default user (the administrator)
+# named for the owner's Authentik username so sign-in makes the owner the
+# administrator. That user's generated password is sealed and revealable,
+# for the form login that works while sign-in is off. The web installer
+# is never shown.
 #
 # Sign-in with Authentik (S412) is exclusive by the owner's decision
 # (2026-10-31, ADR-052 amendment): with OIDC on, the image puts the whole
@@ -104,9 +107,8 @@ sso:
       onoff: [php, cli/reconfigure.php, --auth-type, form]
       exclusive: true
       warnings:
-      - "FreshRSS signs in through Authentik only while this is on. Its own login form stops working: the Authentik person whose username (preferred_username) equals FreshRSS's default user (the administrator created in its web installer) becomes the administrator, and everyone else gets an ordinary account at first sign-in. Create or rename that person in Authentik before applying, or nobody will administer FreshRSS."
+      - "FreshRSS signs in through Authentik only while this is on. Its own login form stops working: the Authentik person whose username (preferred_username) equals FreshRSS's default user (the administrator Homestead created at install, named for the owner's Authentik username) becomes the administrator, and everyone else gets an ordinary account at first sign-in. Create or rename that person in Authentik before applying, or nobody will administer FreshRSS."
       - "If Authentik is unreachable, FreshRSS's web interface is unreachable too (the feed API at /api/ keeps its own API passwords). To get back in, turn sign-in off from Homestead; that restores FreshRSS's login form. This is an explicit exception to keeping each app's local login (ADR-052 amendment, S412)."
-      - "Finish FreshRSS's web installer first; the sign-in step runs inside the installed app."
       set:
         OIDC_ENABLED: "1"
         OIDC_PROVIDER_METADATA_URL: "{{issuer}}.well-known/openid-configuration"
@@ -114,7 +116,16 @@ sso:
         OIDC_REMOTE_USER_CLAIM: preferred_username
         OIDC_SCOPES: openid email profile
         OIDC_X_FORWARDED_HEADERS: X-Forwarded-Host X-Forwarded-Proto
+firstrun:
+  routine: freshrss
+  service: freshrss
+  account: admin
+  secret: admin_password
 secrets:
+- name: admin_password
+  immutable: true
+  reveal: true
+  note: Password for FreshRSS's administrator user (named for the owner's Authentik username when known, else admin). It works on FreshRSS's own login form only while sign-in with Authentik is off.
 - name: oidc_client_secret
   # Authentik's client secret for FreshRSS; Homestead generates it, hands
   # it to Authentik, and the supervisor exports OIDC_CLIENT_SECRET.

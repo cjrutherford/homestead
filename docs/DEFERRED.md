@@ -1548,7 +1548,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S411: the Java trust store is built from the appliance host's system CA bundle at sign-in apply only, so host CA updates reach Komga on the next re-apply.
 - S411: the Komga sign-in button and local-login coexistence are confirmed from source, not yet from a live VM.
 - S412: the sign-in plan states the FreshRSS admin rule but does not read the default user from the app; a plan could show the actual username once the app exposes it cheaply.
-- S412: the FreshRSS sign-in step needs the web installer finished; an unfinished install fails the in-app command with guidance rather than waiting like Nextcloud's set-up wait.
+- S412 (resolved by S445): FreshRSS is installed by Homestead, so sign-in no longer waits for a web installer.
 - S412: the combined CA bundle laid over FreshRSS's system CAs is built at sign-in apply only, so host CA updates reach it on the next re-apply.
 - S412: FreshRSS sign-in is confirmed from source, not yet from a live VM (mod_auth_openidc return URL behind the edge, auto-registration, off restoring the form login).
 - S413: Paperless-ngx sign-in gives everyone an ordinary account with no permissions; admin rights and group sync (`PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS`, needs matching Paperless groups created first) are not wired.
@@ -1816,3 +1816,4 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 
 - S444: after Gitea is published, Authentik sign-in started from its LAN address fails with "could not find a matching session" (ROOT_URL is the public name, so the callback lands on another host). Documented in the plan warning; a per-address ROOT_URL is not possible in Gitea.
 - S444: the Gitea administrator's one-time password is read from `gitea admin user create --random-password` output because the command has no stdin/file password option; re-check on every Gitea bump.
+- S445: turning FreshRSS sign-in off then on deletes the Authentik app groups, so people granted before show as drifted (Homestead has user, Authentik none) until `people resolve put-back`; applying sign-in again could restore recorded grants itself.

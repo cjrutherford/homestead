@@ -33,6 +33,33 @@ type appSignIn struct {
 	audit  func(actor, action, outcome, detail string)
 }
 
+// firstRunOwner is the linked owner's Authentik username for a first run
+// that sets the app up for the owner (FreshRSS, S445); empty for every
+// other app, and when Authentik or the link is not available.
+func (a *appSignIn) firstRunOwner(ctx context.Context, m catalog.Manifest) string {
+	if a == nil || a.m == nil || m.FirstRun == nil || m.FirstRun.Routine != catalog.FirstRunFreshRSS {
+		return ""
+	}
+	status, err := a.m.Status()
+	if err != nil || !status.Offered || status.Subject == "" {
+		return ""
+	}
+	spec, ok, err := a.m.Config()
+	if err != nil || !ok || a.cfg.Secrets == nil {
+		return ""
+	}
+	token, _ := a.cfg.Secrets.Get(sso.APITokenName)
+	if token == "" {
+		return ""
+	}
+	api := &sso.API{Base: spec.AuthentikURL, Token: token, Client: a.client}
+	u, err := api.OwnerUser(ctx, status.Subject)
+	if err != nil || u == nil {
+		return ""
+	}
+	return u.Username
+}
+
 // inputs gathers the appliance state a plan is built from.
 func (a *appSignIn) inputs(name string) (appsso.Inputs, error) {
 	entries, err := catalog.Load(a.cfg.CatalogDir)
@@ -262,7 +289,7 @@ func (a *appSignIn) startWithInputs(ctx context.Context, in appsso.Inputs, enabl
 		},
 		Fingerprint: func(pkg, dir string) error { return catalog.RecordFingerprints(a.cfg.Store, pkg, dir) },
 		FirstRun: func(ctx context.Context, m catalog.Manifest) error {
-			_, err := firstrun.Run(ctx, m, a.cfg.Secrets)
+			_, err := firstrun.RunAs(ctx, m, a.cfg.Secrets, a.firstRunOwner(ctx, m))
 			return err
 		},
 		SetGate: a.setGate,

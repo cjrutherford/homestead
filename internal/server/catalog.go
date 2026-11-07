@@ -658,7 +658,8 @@ func handleCatalogInstall(s *Server, st *store.Store, catalogDir string, runner 
 			if req.Manifest.FirstRun.Routine == catalog.FirstRunKomga {
 				def.Steps = append([]operation.StepDef{freshKomgaDataStep(plan)}, def.Steps...)
 			}
-			def.Steps = append(def.Steps, firstRunStep(req.Manifest, secrets))
+			owner := func(ctx context.Context) string { return s.appSignIn.firstRunOwner(ctx, req.Manifest) }
+			def.Steps = append(def.Steps, firstRunStep(req.Manifest, secrets, owner))
 		}
 		setup := s.appSetup
 		if setup != nil {

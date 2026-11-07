@@ -147,6 +147,7 @@ func TestFreshRSSPlanApplyAndLifecycle(t *testing.T) {
 	old := m
 	old.SSO.OIDC = nil
 	old.Secrets = nil
+	old.FirstRun = nil
 	old.Services = append([]catalog.Service(nil), old.Services...)
 	old.Services[0].Entrypoint = nil
 	files, err := catalog.Generate(old, catalog.Generation{

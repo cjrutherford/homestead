@@ -110,6 +110,7 @@ type RemoteGroup struct {
 type RemoteUser struct {
 	PK       int    `json:"pk"`
 	UID      string `json:"uid"`
+	Username string `json:"username"`
 	IsActive *bool  `json:"is_active"`
 }
 

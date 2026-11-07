@@ -2209,8 +2209,9 @@ The FreshRSS package (S348) in `catalog/` is the feed reader: the plain
 Debian `freshrss/freshrss` tag because the alpine variant has no
 `mod_auth_openidc`, so the optional OIDC declaration holds. `CRON_MIN`
 installs the image's refresh job and `LISTEN` pins Apache to
-`0.0.0.0:80`; the owner completes the recommended web installer on first
-visit, which creates the administrator account and the SQLite database.
+`0.0.0.0:80`; Homestead installs it at install (S445) with the image's CLI: the
+SQLite database and a default user named for the owner's Authentik
+username; no web installer is shown.
 Both writable directories (`data`, `extensions`) are declared on
 application storage as `www-data` (uid/gid 33), and only `data` is a
 backup path.
