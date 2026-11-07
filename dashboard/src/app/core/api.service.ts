@@ -293,6 +293,8 @@ export interface CatalogManifest {
   Secrets?: { Name: string; Immutable: boolean }[];
   /** S315 (ADR-044): 'path' serves the app under the appliance's names at Path; empty or 'host' on a name of its own. */
   Serve?: string;
+  /** S451: never published; the wizard and app page offer no public address. */
+  NeverPublish?: boolean;
   /** The app's path when served by path; empty means /apps/<name>/. */
   Path?: string;
   /** S326: a path app sees its requests without its path (every craft app). */
@@ -1385,6 +1387,8 @@ export interface AppPublicStatus {
   app: string;
   available: boolean;
   reason?: string;
+  /** S451: the manifest says never_publish; no name can be added, an existing one can be removed. */
+  never_publish?: boolean;
   tunnel_id?: string;
   tunnel?: string;
   /** `path` and `url` are set for an app served by path (S315, ADR-044). */

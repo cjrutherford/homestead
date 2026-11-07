@@ -1094,6 +1094,15 @@ describe('InstallWizard', () => {
       expect(c().publish()).toBe(false);
     });
 
+    it('offers no publish toggle for a never-publish app even with a tunnel (S451)', () => {
+      start({ ...CRAFT, NeverPublish: true }, { publicStatus: TUNNEL });
+      to('address');
+      expect(el().querySelector('[data-never-publish]')?.textContent).toContain('never published');
+      expect(el().querySelector('input[name="publish"]')).toBeNull();
+      expect(el().querySelector('input[name="public-name"]')).toBeNull();
+      expect(c().publish()).toBe(false);
+    });
+
     it('starts publishing off, with the warning, when the install sets up no sign-in', () => {
       start(CRAFT, { publicStatus: TUNNEL });
       to('address');

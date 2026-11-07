@@ -272,6 +272,7 @@ export class InstallWizard implements OnInit {
     () =>
       this.tunnelReady() &&
       this.name() !== 'authentik' &&
+      !this.manifest()?.NeverPublish &&
       this.endpoints().length > 0 &&
       !this.installed() &&
       !this.pathNeedsServer(),

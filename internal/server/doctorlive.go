@@ -72,6 +72,7 @@ func doctorLiveProbes(c DoctorLiveConfig) func() []doctor.Probe {
 			{Name: "tunnel-connector", Group: doctor.GroupTunnel, Run: func(ctx context.Context) []doctor.Check { return probeTunnelConnector(ctx, c) }},
 			{Name: "tunnel-exists", Group: doctor.GroupTunnel, Timeout: 8 * time.Second, Run: func(ctx context.Context) []doctor.Check { return probeTunnelExists(ctx, c) }},
 			{Name: "tunnel-dns", Group: doctor.GroupTunnel, Timeout: 10 * time.Second, Run: func(ctx context.Context) []doctor.Check { return probeTunnelDNS(ctx, c) }},
+			{Name: "never-publish", Group: doctor.GroupTunnel, Run: func(ctx context.Context) []doctor.Check { return neverPublishChecks(c) }},
 			{Name: "edge-certificate", Group: doctor.GroupCertificates, Timeout: 10 * time.Second, Run: func(ctx context.Context) []doctor.Check { return probeEdgeCertificates(ctx, c) }},
 			{Name: "authentik", Group: doctor.GroupSignIn, Run: func(ctx context.Context) []doctor.Check { return probeAuthentik(ctx, c) }},
 			{Name: "authentik-outpost", Group: doctor.GroupSignIn, Timeout: 12 * time.Second, Run: func(ctx context.Context) []doctor.Check { return gatedAppChecks(ctx, c) }},
@@ -320,6 +321,39 @@ func firstCNAME(records []router.DNSRecord) *router.DNSRecord {
 		}
 	}
 	return nil
+}
+
+// neverPublishChecks warns when an app whose manifest says never_publish
+// holds a public name (S451): drift from the rule, with the removal as the
+// fix. Local state only.
+func neverPublishChecks(c DoctorLiveConfig) []doctor.Check {
+	const name = "never-publish"
+	entries, err := catalog.Load(c.CatalogDir)
+	if err != nil {
+		return []doctor.Check{unknownCheck(name, "the catalog could not be read")}
+	}
+	set, err := loadEdgeRoutes(c.Store)
+	if err != nil {
+		return []doctor.Check{unknownCheck(name, "the edge routes could not be read: "+err.Error())}
+	}
+	var out []doctor.Check
+	for _, n := range entries.Names() {
+		m, err := entries.Get(n)
+		if err != nil || !m.NeverPublish {
+			continue
+		}
+		for _, r := range appsso.AppRoutes(m, set.Routes) {
+			for _, host := range r.Tunnel {
+				out = append(out, doctor.Check{Name: name + ":" + string(host), Status: doctor.StatusFail,
+					Detail: m.Title + " is published at " + string(host) + " but its manifest says it is never published",
+					Fix:    liveFix("Remove the public name on the app's page (Public address, Remove), or run the command.", "/admin/catalog", "homesteadctl apps public plan "+m.Name+" --off")})
+			}
+		}
+	}
+	if len(out) == 0 {
+		return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "no never-publish app has a public name"}}
+	}
+	return out
 }
 
 func probeEdgeCertificates(ctx context.Context, c DoctorLiveConfig) []doctor.Check {

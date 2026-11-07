@@ -1273,7 +1273,7 @@ _Install creates Kuma's administrator (homestead-admin, password under Secrets) 
 
 - [ ] **SRV-UPTIME-KUMA-1 — Install: plan preview, then approve**
   - Action: Catalog > Uptime Kuma > Install. Read the plan, then approve (or `homesteadctl apps plan uptime-kuma -f FILE`, then `homesteadctl apps install uptime-kuma -f FILE`).
-  - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
+  - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean. The review offers no public address: Uptime Kuma is never published (S451), and a public-address plan for it is refused.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 

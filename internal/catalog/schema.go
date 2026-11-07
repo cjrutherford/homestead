@@ -778,6 +778,11 @@ type Manifest struct {
 	// origin (ADR-060): while it is published, its LAN and .local names
 	// redirect to the public name. Set only for apps that need it.
 	SingleOriginSignIn bool `yaml:"single_origin_sign_in"`
+	// NeverPublish marks an app that must never get a public name or path
+	// (S451): its open paths (status pages, badges, push URLs) are not
+	// behind Authentik. Every public-address, install and tunnel path
+	// refuses it; removing a public name it somehow holds stays allowed.
+	NeverPublish bool `yaml:"never_publish"`
 	// Redirects send fixed /.well-known/ paths on the appliance's names
 	// into the app's path (Nextcloud's CalDAV and CardDAV discovery).
 	Redirects []docker.PathRedirect
@@ -963,6 +968,15 @@ const (
 
 // ServedByPath reports a package served under the appliance's names.
 func (m Manifest) ServedByPath() bool { return m.Serve == ServePath }
+
+// PublicRefusal is the sentence refusing a public name for an app that
+// declares never_publish, or "" when the manifest allows publishing.
+func (m Manifest) PublicRefusal() string {
+	if !m.NeverPublish {
+		return ""
+	}
+	return m.Title + " is never published: its status pages, badges and push URLs are open without Authentik, so it stays on your network."
+}
 
 // AppPath is the package's path when served by path: Path, or
 // /apps/<name>/ by default. Empty for host packages.

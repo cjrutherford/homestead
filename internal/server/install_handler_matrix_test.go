@@ -15,6 +15,9 @@ import (
 	"homestead/internal/store"
 )
 
+// installRigMealieExtra is appended to the rig's Mealie manifest (S451).
+var installRigMealieExtra string
+
 // installHandlerRig uses the production route mount and Authentik test world.
 // Its small OIDC manifest keeps the planner independent of host capacity.
 func installHandlerRig(t *testing.T) *ssoApp {
@@ -67,7 +70,7 @@ integrations:
 	if err := os.WriteFile(filepath.Join(cat, "immich.yaml"), []byte(manifest), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cat, "mealie.yaml"), []byte(selfManagedManifest), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(cat, "mealie.yaml"), []byte(selfManagedManifest+installRigMealieExtra), 0644); err != nil {
 		t.Fatal(err)
 	}
 	provider, err := os.ReadFile(filepath.Join("..", "..", "catalog", "authentik.yaml"))

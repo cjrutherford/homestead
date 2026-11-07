@@ -45,13 +45,16 @@ type appPublic struct {
 }
 
 type appPublicStatus struct {
-	App       string           `json:"app"`
-	Available bool             `json:"available"`
-	Reason    string           `json:"reason,omitempty"`
-	TunnelID  string           `json:"tunnel_id,omitempty"`
-	Tunnel    string           `json:"tunnel,omitempty"`
-	Routes    []appPublicRoute `json:"routes"`
-	Proposed  string           `json:"proposed,omitempty"`
+	App       string `json:"app"`
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
+	// NeverPublish is the manifest's never_publish (S451): adding a name
+	// is refused and not offered; an existing name can still be removed.
+	NeverPublish bool             `json:"never_publish,omitempty"`
+	TunnelID     string           `json:"tunnel_id,omitempty"`
+	Tunnel       string           `json:"tunnel,omitempty"`
+	Routes       []appPublicRoute `json:"routes"`
+	Proposed     string           `json:"proposed,omitempty"`
 	// ProposedURL is the public address of a path app (ADR-044).
 	ProposedURL string `json:"proposed_url,omitempty"`
 	SignIn      bool   `json:"sign_in"`
@@ -192,6 +195,13 @@ func (p *appPublic) status(w http.ResponseWriter, r *http.Request) {
 		names = append(names, route.Public...)
 	}
 	out.Coverage = statusCoverage(r.Context(), p.secrets, names)
+	if refusal := f.manifest.PublicRefusal(); refusal != "" {
+		out.NeverPublish = true
+		out.Reason = refusal
+		out.Available = len(names) > 0
+		writeJSON(w, out)
+		return
+	}
 	// Before the install the name is proposed too, so the install wizard
 	// can offer it (S313); planning it needs before_install.
 	beforeInstall := !f.installed && f.tunnelID != "" && f.manifest.Name != authentikPackage
@@ -365,6 +375,9 @@ func (p *appPublic) buildPlanState(ctx context.Context, name string, req appPubl
 	f, err := p.facts(name)
 	if err != nil {
 		return appPublicPlan{}, err
+	}
+	if refusal := f.manifest.PublicRefusal(); refusal != "" && req.Enabled != nil && *req.Enabled {
+		return appPublicPlan{}, refusePlan(http.StatusUnprocessableEntity, "%s", refusal)
 	}
 	if anticipateSignIn {
 		if !req.BeforeInstall || f.installed || f.signIn || f.manifest.SSO.OIDC == nil {

@@ -548,6 +548,11 @@ func handleCatalogInstall(s *Server, st *store.Store, catalogDir string, runner 
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if refusal := req.Manifest.PublicRefusal(); refusal != "" &&
+			(strings.TrimSpace(body.PublicName) != "" || (body.Setup != nil && body.Setup.Public != nil)) {
+			http.Error(w, refusal, http.StatusUnprocessableEntity)
+			return
+		}
 		plan, status, err := planChecked(st, req)
 		if err != nil {
 			http.Error(w, err.Error(), status)
