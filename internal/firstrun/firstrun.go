@@ -85,6 +85,9 @@ func RunAs(ctx context.Context, m catalog.Manifest, secrets Secrets, owner strin
 	if f.Routine == catalog.FirstRunGitea {
 		return giteaFirstRun(ctx, m, secrets)
 	}
+	if f.Routine == catalog.FirstRunMemos {
+		return memosFirstRun(ctx, m, secrets)
+	}
 	if f.Routine == catalog.FirstRunFreshRSS {
 		return freshrssFirstRun(ctx, m, secrets, owner)
 	}

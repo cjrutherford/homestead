@@ -32,6 +32,7 @@ export const CURATED_COPY: Record<string, CuratedCopy> = {
   'freshrss': { firstLogin: ['Open FreshRSS and choose to sign in with Authentik; Homestead already installed it, so there is no web installer. Your Authentik username is FreshRSS\'s administrator. Its own password is under Secrets in the app card Manage panel (Reveal) and works only while sign-in is off.'] },
   'gitea': { firstLogin: ['Open Gitea and choose Sign in with authentik. Homestead already created its administrator (homestead-admin); its password is under Secrets in the app card Manage panel (Reveal), for emergencies only.'] },
   'komga': { firstLogin: ['Open Komga and sign in or follow its setup instructions.'] },
+  'memos': { firstLogin: ['Open Memos and choose Continue with Authentik; Homestead already created its administrator (homestead-admin), so there is no first-account screen. Its password is under Secrets in the app card Manage panel (Reveal); sign in with it at /auth/admin to administer Memos. People who sign in with Authentik are ordinary users.'] },
   'linkding': { firstLogin: ['Open Linkding and sign in or follow its setup instructions.'] },
   'mealie': { firstLogin: ['Open Mealie and sign in or follow its setup instructions.'] },
   'navidrome': { firstLogin: ['Open Navidrome and sign in or follow its setup instructions.'] },

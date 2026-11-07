@@ -20,7 +20,7 @@ import (
 // users only while registration is allowed.
 const memosSignInVerified = "26.10.0"
 
-const memosRemoveDoc = `{"removed":[{"resource":"identity-providers/authentik","destroy":true}]}`
+const memosRemoveDoc = `{"removed":[{"resource":"identity-providers/authentik","destroy":true}],"instanceSettings":[{"name":"instance/settings/GENERAL","generalSetting":{"disallowUserRegistration":true}}]}`
 
 func realMemos(t *testing.T) catalog.Manifest {
 	t.Helper()
@@ -97,9 +97,11 @@ func TestMemosConfigFileIsEscapedProviderJSON(t *testing.T) {
 	if fm["identifier"] != "preferred_username" || fm["email"] != "email" {
 		t.Fatalf("fieldMapping = %v", fm)
 	}
-	// Only the provider is declared: instance settings stay the owner's.
-	if _, has := raw["instanceSettings"]; has || strings.Contains(value, "disallow") {
-		t.Fatalf("the file manages instance settings: %s", value)
+	// While sign-in is on, password sign-up is off (nobody can register a
+	// password account) but registration stays open for Authentik's first
+	// sign-in (S446).
+	if !strings.Contains(value, `"disallowPasswordAuth":true`) || strings.Contains(value, "disallowUserRegistration") {
+		t.Fatalf("instance settings: %s", value)
 	}
 	if env := a.Env(Settings{Issuer: "https://x/application/o/s/"}); len(env) != 1 || env["HOMESTEAD_OIDC_ISSUER"] == "" {
 		t.Fatalf("env = %v", env)
@@ -117,7 +119,7 @@ func TestMemosPlanRedirectAndWarnings(t *testing.T) {
 	if plan.RedirectURIs[0] != "https://memos.lan/auth/callback" || plan.SignInURL != "https://memos.lan/auth" {
 		t.Fatalf("redirects %v sign in %s", plan.RedirectURIs, plan.SignInURL)
 	}
-	if all := strings.Join(plan.Warnings, "\n"); !strings.Contains(all, "administrator is the first account") {
+	if all := strings.Join(plan.Warnings, "\n"); !strings.Contains(all, "administrator is homestead-admin") {
 		t.Fatalf("warnings = %s", all)
 	}
 }

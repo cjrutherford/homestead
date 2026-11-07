@@ -42,9 +42,8 @@ class TestMemosContract(unittest.TestCase):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, self.text)
 
-    def test_no_script_no_db_write_and_local_login_kept(self):
-        for symbol in ("onapply:", "onoff:", "sqlite3", "exclusive:",
-                       "disallowPasswordAuth", "disallowUserRegistration"):
+    def test_no_script_no_db_write(self):
+        for symbol in ("onapply:", "onoff:", "sqlite3", "exclusive:"):
             with self.subTest(symbol=symbol):
                 self.assertNotIn(symbol, self.text)
 

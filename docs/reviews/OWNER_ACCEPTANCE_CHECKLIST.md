@@ -993,9 +993,9 @@ _Browser sign-in has not been recorded yet._
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **SRV-MEMOS-1a — Create the first Memos account**
-  - Action: If Memos asks for a first account, create it (the first account is the administrator). Keep its password in your password manager.
-  - Expected: An administrator exists; Authentik sign-in creates ordinary accounts.
+- [ ] **SRV-MEMOS-1a — No first-account screen; administrator already exists**
+  - Action: Open the app's address. Confirm there is no first-account (setup) screen and no password sign-up. Reveal the `homestead-admin` password in the app card Manage panel, Secrets (or `homesteadctl apps secrets reveal memos admin_password`) only if you need it, and sign in with it at /auth/admin.
+  - Expected: The sign-in page appears at once offering Authentik; the revealed password opens `homestead-admin` as administrator (Settings available). Authentik sign-in creates ordinary accounts.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -1006,7 +1006,7 @@ _Browser sign-in has not been recorded yet._
   - Result: ____  Notes: ____
 
 - [ ] **SRV-MEMOS-3 — Owner sign-in**
-  - Action: Sign in with the Authentik/OpenID button on the app's login page as the owner. Login page offers the Authentik SSO button (provider written via a Memos config file); new SSO users get the USER role.
+  - Action: Sign in with the Authentik/OpenID button on the app's login page as the owner. Login page offers the Authentik SSO button (provider written via a Memos config file); new SSO users get the USER role. Password sign-in and sign-up are off while sign-in is on; the administrator is `homestead-admin`.
   - Expected: Owner is signed in and named correctly.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____

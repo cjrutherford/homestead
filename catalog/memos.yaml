@@ -12,8 +12,9 @@ description: Memos is a lightweight, self-hosted note and microblog app. You
   write short notes in Markdown, tag and search them, attach files, and
   share a note by link when you choose to. It runs as one container with
   SQLite on application storage, so there is no database server to
-  maintain. It complements Nextcloud Notes rather than replacing it. The
-  first account created in the app is the administrator.
+  maintain. It complements Nextcloud Notes rather than replacing it.
+  Homestead creates the administrator account (homestead-admin) at install,
+  so there is no first-account screen for anyone to claim.
 category: notes
 icon: mdi:notebook-edit-outline
 services:
@@ -101,16 +102,16 @@ sso:
       secret: oidc_client_secret
       secretfile:
         secret: memos_config
-        template: '{"identityProviders":[{"name":"identity-providers/authentik","type":"OAUTH2","title":"Authentik","identifierFilter":"","config":{"oauth2Config":{"clientId":"{{client_id}}","clientSecret":"{{client_secret}}","authUrl":"{{authentik_base}}/application/o/authorize/","tokenUrl":"{{authentik_base}}/application/o/token/","userInfoUrl":"{{authentik_base}}/application/o/userinfo/","scopes":["openid","profile","email"],"fieldMapping":{"identifier":"preferred_username","displayName":"name","email":"email","avatarUrl":"picture"}}}}]}'
+        template: '{"identityProviders":[{"name":"identity-providers/authentik","type":"OAUTH2","title":"Authentik","identifierFilter":"","config":{"oauth2Config":{"clientId":"{{client_id}}","clientSecret":"{{client_secret}}","authUrl":"{{authentik_base}}/application/o/authorize/","tokenUrl":"{{authentik_base}}/application/o/token/","userInfoUrl":"{{authentik_base}}/application/o/userinfo/","scopes":["openid","profile","email"],"fieldMapping":{"identifier":"preferred_username","displayName":"name","email":"email","avatarUrl":"picture"}}}}],"instanceSettings":[{"name":"instance/settings/GENERAL","generalSetting":{"disallowPasswordAuth":true}}]}'
       # Go reads SSL_CERT_FILE as its whole trust store; the combined
       # bundle keeps public HTTPS fetches working (S410).
       trust: SSL_CERT_FILE
       trustbundle: combined
       warnings:
-      - "Memos takes no role from Authentik groups: everyone who signs in through Authentik gets an ordinary account named from their Authentik username (a generated name if that is taken), never an administrator. The administrator is the first account created in Memos itself with a password; create it before anyone signs in through Authentik. Who may sign in is decided by the app's Authentik groups."
-      - "Memos never links an Authentik sign-in to an existing account by name or email. To use your own administrator account with Authentik, sign in to Memos with its password and link the Authentik identity from the account settings."
-      - "People are created at their first Authentik sign-in only while Memos allows user registration. If you turn off \"disallow user registration\" in Memos settings, new people can no longer sign in through Authentik for the first time."
-      - "Memos's own password sign-in stays open and is not changed. Before turning sign-in off here, make sure password sign-in is not disabled in Memos settings: Memos refuses to start without any sign-in method."
+      - "Memos takes no role from Authentik groups: everyone who signs in through Authentik gets an ordinary account named from their Authentik username (a generated name if that is taken), never an administrator. The administrator is homestead-admin, which Homestead created at install with a generated password (revealable under Secrets in the app's Manage panel). Who may sign in is decided by the app's Authentik groups."
+      - "Memos never links an Authentik sign-in to an existing account by name or email. To use your own administrator account with Authentik, sign in to Memos as homestead-admin with its password (at /auth/admin) and link the Authentik identity from the account settings."
+      - "People are created at their first Authentik sign-in only while Memos allows user registration, so Homestead leaves it open while sign-in is on; password sign-up stays off."
+      - "While sign-in is on, Homestead turns password sign-in and password sign-up off in Memos (otherwise anyone who can reach the app could register an account with a password) and keeps registration open, which Authentik's first sign-in needs. The administrator homestead-admin signs in with its password at the app's /auth/admin address. Turning sign-in off restores password sign-in and closes registration. Homestead manages these two settings: changes to them in Memos are undone at the next restart."
       - "The provider is managed by this configuration: it shows as managed in Memos and cannot be edited there. Turning sign-in off deletes it; people created through Authentik keep their accounts but have no password until you set one."
       - The client secret is stored in plaintext in a private file next to the app's other secrets (part of encrypted backups of Homestead's secrets) and in Memos's own database (data/memos_prod.db), which is part of the app's backups.
       set:
@@ -118,6 +119,11 @@ sso:
         # change with sign-in so Compose recreates the container, since
         # Memos reads its configuration files only at startup.
         HOMESTEAD_OIDC_ISSUER: "{{issuer}}"
+firstrun:
+  routine: memos
+  service: memos
+  account: homestead-admin
+  secret: admin_password
 secrets:
 - name: oidc_client_secret
   # Authentik's client secret for Memos; Homestead generates it and hands
@@ -126,12 +132,18 @@ secrets:
 - name: memos_config
   # The declarative configuration file. Before sign-in is on (and after
   # it is turned off) it only asks Memos to delete the Authentik provider,
-  # which is a no-op while Memos manages no such provider.
-  initial: '{"removed":[{"resource":"identity-providers/authentik","destroy":true}]}'
+  # which is a no-op while Memos manages no such provider, and closes
+  # registration (nobody can sign up for a password account; the
+  # administrator Homestead created adds accounts in the app).
+  initial: '{"removed":[{"resource":"identity-providers/authentik","destroy":true}],"instanceSettings":[{"name":"instance/settings/GENERAL","generalSetting":{"disallowUserRegistration":true}}]}'
   immutable: true
   consumers:
   - service: memos
     path: /etc/memos/config/homestead.json
+- name: admin_password
+  immutable: true
+  reveal: true
+  note: Password for homestead-admin, the local administrator Homestead created at install (Memos gives the role only to the first account). Sign in with Authentik for everyday use.
 integrations:
 - kind: identity
   target: authentik

@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "949950ea9386ccac",
+ "hash": "0df13da1ceccbc12",
  "sections": [
   {
    "title": "Platform",
@@ -1259,9 +1259,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "SRV-MEMOS-1a",
-       "title": "Create the first Memos account",
-       "action": "If Memos asks for a first account, create it (the first account is the administrator). Keep its password in your password manager.",
-       "expected": "An administrator exists; Authentik sign-in creates ordinary accounts.",
+       "title": "No first-account screen; administrator already exists",
+       "action": "Open the app's address. Confirm there is no first-account (setup) screen and no password sign-up. Reveal the `homestead-admin` password in the app card Manage panel, Secrets (or `homesteadctl apps secrets reveal memos admin_password`) only if you need it, and sign in with it at /auth/admin.",
+       "expected": "The sign-in page appears at once offering Authentik; the revealed password opens `homestead-admin` as administrator (Settings available). Authentik sign-in creates ordinary accounts.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -1274,7 +1274,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-MEMOS-3",
        "title": "Owner sign-in",
-       "action": "Sign in with the Authentik/OpenID button on the app's login page as the owner. Login page offers the Authentik SSO button (provider written via a Memos config file); new SSO users get the USER role.",
+       "action": "Sign in with the Authentik/OpenID button on the app's login page as the owner. Login page offers the Authentik SSO button (provider written via a Memos config file); new SSO users get the USER role. Password sign-in and sign-up are off while sign-in is on; the administrator is `homestead-admin`.",
        "expected": "Owner is signed in and named correctly.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
