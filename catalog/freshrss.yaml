@@ -16,7 +16,7 @@
 # until sign-in is turned off.
 name: freshrss
 publish: host  # ADR-061
-publish_reason: no_subpath
+publish_reason: no_subpath  # S477: the image's Apache config hard-codes OIDCRedirectURI /i/oidc/ and mod_auth_openidc ignores X-Forwarded-Prefix
 version: 1.30.4
 title: FreshRSS
 blurb: The feeds you chose, on your own schedule.

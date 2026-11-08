@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "5429b9fec99ee2c5",
+ "hash": "28a94329a8f49952",
  "sections": [
   {
    "title": "Platform",
@@ -728,7 +728,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-FRESHRSS-2",
        "title": "Opens at the right path or name",
-       "action": "Open https://freshrss.\u003clan-suffix\u003e/ (own name).",
+       "action": "Open https://freshrss.\u003clan-suffix\u003e/ (own name) (S477: checked for a move to /apps/freshrss/ and kept on its own name: the image's Apache OIDC layer hard-codes the redirect path /i/oidc/ and ignores a forwarded prefix; ADR-061 `no_subpath`).",
        "expected": "The app's own page loads (no 404, no certificate surprise beyond the documented one).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },

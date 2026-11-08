@@ -266,3 +266,10 @@ func TestFreshRSSPlanApplyAndLifecycle(t *testing.T) {
 		t.Fatalf("CA dir remains after off: %v", err)
 	}
 }
+
+func TestFreshRSSStaysOnItsOwnName(t *testing.T) {
+	m := realFreshRSS(t)
+	if m.Publish != catalog.PublishHost || m.PublishReason != catalog.ReasonNoSubpath || m.ServedByPath() {
+		t.Fatalf("freshrss publish %q reason %q serve %q: it must keep its own name (S477)", m.Publish, m.PublishReason, m.Serve)
+	}
+}

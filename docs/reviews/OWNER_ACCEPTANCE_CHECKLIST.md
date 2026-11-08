@@ -539,7 +539,7 @@ _FreshRSS is installed by Homestead (no web installer, ADR-059; SRV-FRESHRSS-1a)
   - Result: ____  Notes: ____
 
 - [ ] **SRV-FRESHRSS-2 — Opens at the right path or name**
-  - Action: Open https://freshrss.<lan-suffix>/ (own name).
+  - Action: Open https://freshrss.<lan-suffix>/ (own name) (S477: checked for a move to /apps/freshrss/ and kept on its own name: the image's Apache OIDC layer hard-codes the redirect path /i/oidc/ and ignores a forwarded prefix; ADR-061 `no_subpath`).
   - Expected: The app's own page loads (no 404, no certificate surprise beyond the documented one).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
