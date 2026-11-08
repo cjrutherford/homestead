@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "5ac71f2b8eab509e",
+ "hash": "ba7917b342da98a3",
  "sections": [
   {
    "title": "Platform",
@@ -4321,6 +4321,13 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "action": "On Configuration, choose the file you just exported. Read the review. Enter the secret values in the password fields (or use a file with none), then press Confirm import. Also try a garbage file and `homesteadctl config import --dry-run -f FILE`.",
        "expected": "The review says \"No settings would change\" for a fresh export. A bad file shows the daemon's message and no confirm button. Nothing is applied until Confirm import, the result counts appear, the password fields are empty afterwards, and the Audit page has a `config.import` entry without secret values.",
        "fail": "Config page; the audit log (`config.import`); docs/slices/S483-config-export-import-dashboard.md."
+      },
+      {
+       "id": "END-PARITY-4",
+       "title": "TLS approvals and local certificates on the Certificates page (S484)",
+       "action": "Open Certificates (`/admin/tls`). Read \"Recorded approvals\" and \"Local certificates\". Compare with `homesteadctl tls issuance approvals` and `homesteadctl tls local leaves`.",
+       "expected": "Each list matches the CLI output (approver, digest, authority; host, status, expiry). With none recorded the page says \"No issuance approvals recorded.\" and \"No local-only HTTPS routes use the internal CA.\" The local certificates link to the Trust page for re-issue.",
+       "fail": "Certificates page; docs/slices/S484-tls-read-surfaces.md."
       },
       {
        "id": "PLAT-TUNNEL-8",

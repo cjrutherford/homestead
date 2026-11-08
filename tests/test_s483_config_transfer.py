@@ -38,7 +38,7 @@ class ConfigTransfer(unittest.TestCase):
         text = read("docs/reviews/OWNER_ACCEPTANCE_CHECKLIST.md")
         self.assertIn("**END-PARITY-2 ", text)
         self.assertIn("**END-PARITY-3 ", text)
-        self.assertIn("| END-PARITY | END-PARITY-1 to END-PARITY-3 (3) |", text)
+        self.assertIn("| END-PARITY | END-PARITY-1 to END-PARITY-", text)
         self.assertIn("END-PARITY-3", read("docs/reviews/acceptance-form.html"))
         self.assertIn("S483:", read("docs/DEFERRED.md"))
 

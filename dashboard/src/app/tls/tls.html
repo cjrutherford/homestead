@@ -188,5 +188,51 @@
       }
     </ul>
   </section>
+  <section class="field-panel" aria-labelledby="tls-approvals-h">
+    <h2 id="tls-approvals-h">Recorded approvals</h2>
+    @if (approvalsError()) {
+      <app-state-message kind="error" headline="Could not load the approvals." [detail]="approvalsError()!" />
+    } @else if (recordedApprovals().length === 0) {
+      <p>No issuance approvals recorded.</p>
+    } @else {
+      <table aria-label="Issuance approvals">
+        <thead><tr><th>Certificate</th><th>Approved by</th><th>When</th><th>Plan digest</th><th>Certificate authority</th></tr></thead>
+        <tbody>
+          @for (a of recordedApprovals(); track a.certificate + a.digest) {
+            <tr>
+              <td>{{ a.certificate }}</td>
+              <td>{{ a.actor }}</td>
+              <td>{{ when(a.approved_at, 'unknown') }}</td>
+              <td><code>{{ a.digest }}</code></td>
+              <td>{{ a.plan.directory }} ({{ a.plan.directory_class }})</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </section>
+
+  <section class="field-panel" aria-labelledby="tls-leaves-h">
+    <h2 id="tls-leaves-h">Local certificates</h2>
+    @if (leavesError()) {
+      <app-state-message kind="error" headline="Could not load the local certificates." [detail]="leavesError()!" />
+    } @else if (leaves().length === 0) {
+      <p>No local-only HTTPS routes use the internal CA.</p>
+    } @else {
+      <table aria-label="Local CA leaf certificates">
+        <thead><tr><th>Host</th><th>Status</th><th>Expires</th><th></th></tr></thead>
+        <tbody>
+          @for (leaf of leaves(); track leaf.host) {
+            <tr>
+              <td>{{ leaf.host }}</td>
+              <td>{{ leaf.status }}@if (leaf.detail) { <br /><small>{{ leaf.detail }}</small> }</td>
+              <td>{{ when(leaf.not_after, '-') }}</td>
+              <td><a routerLink="/admin/trust">Re-issue on the Trust page</a></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </section>
   </app-loading>
 </section>

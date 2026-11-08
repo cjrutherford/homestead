@@ -7,9 +7,12 @@ import {
   ApiService,
   OperationState,
   TlsIssuancePlan,
+  TlsIssuanceApproval,
+  LocalLeaf,
   TlsAccountTerms,
   TlsRenewalStatus,
 } from '../core/api.service';
+import { formatWhen } from '../core/format-time';
 import { isNotSetUp } from '../core/http-error';
 import { IssuerMoves } from '../ui/issuer-moves';
 import { StateMessage } from '../state/state-message';
@@ -48,6 +51,13 @@ export class Tls implements OnInit, OnDestroy {
   protected readonly plans = signal<TlsIssuancePlan[]>([]);
   /** Renewal status per certificate (S272): failures and owner actions. */
   protected readonly renewals = signal<TlsRenewalStatus[]>([]);
+  /** Recorded issuance approvals (S484), matching `tls issuance approvals`. */
+  protected readonly recordedApprovals = signal<TlsIssuanceApproval[]>([]);
+  protected readonly approvalsError = signal<string | null>(null);
+  /** Local CA leaf certificates (S484), matching `tls local leaves`. */
+  protected readonly leaves = signal<LocalLeaf[]>([]);
+  protected readonly leavesError = signal<string | null>(null);
+  protected readonly when = formatWhen;
   protected readonly loading = signal(true);
   protected readonly loadError = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
@@ -94,6 +104,26 @@ export class Tls implements OnInit, OnDestroy {
         }
       },
       error: () => this.renewals.set([]),
+    });
+    this.api.tlsIssuanceApprovals().subscribe({
+      next: ({ approvals }) => {
+        this.recordedApprovals.set(approvals ?? []);
+        this.approvalsError.set(null);
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.recordedApprovals.set([]);
+        this.approvalsError.set(this.describe(failure));
+      },
+    });
+    this.api.localCaLeaves().subscribe({
+      next: ({ leaves }) => {
+        this.leaves.set(leaves ?? []);
+        this.leavesError.set(null);
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.leaves.set([]);
+        this.leavesError.set(this.describe(failure));
+      },
     });
     this.loading.set(true);
     this.loadError.set(null);
