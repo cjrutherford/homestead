@@ -111,10 +111,11 @@ type PersonResult struct {
 	SignInFailed bool `json:"sign_in_failed,omitempty"`
 }
 
-// SecondFactorReset says which devices were removed and which were left.
+// SecondFactorReset counts the devices removed and the devices left
+// (the daemon answers counts, not names).
 type SecondFactorReset struct {
-	Removed []string `json:"removed"`
-	Skipped []string `json:"skipped"`
+	Removed int `json:"removed"`
+	Skipped int `json:"skipped"`
 }
 
 // People reads the People page.

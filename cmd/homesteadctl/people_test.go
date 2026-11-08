@@ -47,7 +47,7 @@ func newPeopleStub(t *testing.T, tokenKept bool) *peopleStub {
 		case strings.HasSuffix(r.URL.Path, "/password-reset"):
 			_, _ = w.Write([]byte(`{"revealed":{"kind":"link","value":"https://x/recover/abc"}}`))
 		case strings.HasSuffix(r.URL.Path, "/mfa-reset"):
-			_, _ = w.Write([]byte(`{"removed":["totp"],"skipped":["webauthn"]}`))
+			_, _ = w.Write([]byte(`{"removed":1,"skipped":0}`))
 		case strings.HasSuffix(r.URL.Path, "/resolve"):
 			_, _ = w.Write([]byte(`{"revealed":null}`))
 		case strings.Contains(r.URL.Path, "/apps/") || r.Method == "PATCH" || strings.HasSuffix(r.URL.Path, "/adopt"):
@@ -226,5 +226,14 @@ func TestPeopleAddSuggestsAGeneratedPasswordWhenSignInFailed(t *testing.T) {
 	}
 	if !strings.Contains(errOut, "no recovery flow") || !strings.Contains(errOut, "homesteadctl people reset-password cy --generate") {
 		t.Fatalf("err %q", errOut)
+	}
+}
+
+// S461: the daemon answers device counts, so reset-mfa must decode numbers.
+func TestResetMFAReadsDeviceCounts(t *testing.T) {
+	s := newPeopleStub(t, true)
+	code, out, errOut := invoke(t, []string{"--server", s.url, "people", "reset-mfa", "4"})
+	if code != exitOK || !strings.Contains(out, "1 removed") {
+		t.Errorf("exit %d out %q err %q", code, out, errOut)
 	}
 }

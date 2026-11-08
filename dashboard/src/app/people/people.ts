@@ -304,7 +304,7 @@ export class People implements OnInit {
     switch (action) {
       case 'mfa':
         this.run(this.service.resetSecondFactor(person.id), (r) =>
-          this.finished(`Second factor reset for ${name}: ${r.removed?.length ?? 0} removed${r.skipped?.length ? `, ${r.skipped.length} left` : ''}`),
+          this.finished(`Second factor reset for ${name}: ${r.removed ?? 0} removed${r.skipped ? `, ${r.skipped} left` : ''}`),
         );
         break;
       case 'disable':

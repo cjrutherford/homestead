@@ -1505,7 +1505,7 @@ Do these after the server apps above are installed. Steps that use an app say wh
 
 - [ ] **PLAT-PEOPLE-4 — Reset password and MFA**
   - Action: `homesteadctl people reset-password A`, `homesteadctl people reset-mfa A`.
-  - Expected: A can sign in again after the reset flow.
+  - Expected: A can sign in again after the reset flow. `reset-mfa` prints how many devices it removed (S461).
   - If it fails: docs/INSTALL.md People section; ADR-043/049.
   - Result: ____  Notes: ____
 

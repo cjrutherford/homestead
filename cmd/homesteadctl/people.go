@@ -379,9 +379,9 @@ func runPeopleSimple(ctx context.Context, client *apiclient.Client, args []strin
 		if err != nil {
 			return peopleFail(stderr, err)
 		}
-		fmt.Fprintf(stdout, "Second factor reset for %s: %d removed", p.Username, len(res.Removed))
-		if len(res.Skipped) > 0 {
-			fmt.Fprintf(stdout, ", %d left (%s)", len(res.Skipped), strings.Join(res.Skipped, ", "))
+		fmt.Fprintf(stdout, "Second factor reset for %s: %d removed", p.Username, res.Removed)
+		if res.Skipped > 0 {
+			fmt.Fprintf(stdout, ", %d left", res.Skipped)
 		}
 		fmt.Fprintln(stdout)
 	case "disable", "enable":

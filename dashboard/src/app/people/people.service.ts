@@ -150,8 +150,8 @@ export class PeopleService {
     return this.http.post<{ revealed: Revealed | null }>(`/api/v1/people/${id}/password-reset`, { method, password, confirm: true });
   }
 
-  resetSecondFactor(id: number): Observable<{ removed: string[]; skipped: string[] }> {
-    return this.http.post<{ removed: string[]; skipped: string[] }>(`/api/v1/people/${id}/mfa-reset`, { confirm: true });
+  resetSecondFactor(id: number): Observable<{ removed: number; skipped: number }> {
+    return this.http.post<{ removed: number; skipped: number }>(`/api/v1/people/${id}/mfa-reset`, { confirm: true });
   }
 
   disablePerson(id: number): Observable<unknown> {
