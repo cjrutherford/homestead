@@ -344,7 +344,36 @@ routes) which have no CLI counterpart to match.
 | S483 | Config export and import | G1, G2 | `/config` | Export button downloads the portable YAML (same bytes as `config export`). Import takes a file, shows the validation result first, asks for per-call secret values in a password-typed form (never stored in the browser, never logged), requires an explicit confirm, then restores and reports the result. Errors show the daemon's message. Component tests plus an API-service test; a CLI-export-to-dashboard-import round-trip check; `docs/PARITY.md` rows name the new symbols; `docs/DEVELOPMENT.md` sentence about "later slices" removed. |
 | S484 | TLS read surfaces | G3, G4 | `/tls` | The TLS page lists recorded issuance approvals (who, when, plan digest) and the local CA's leaf certificates (host, expiry, reissue link to the existing action). Empty states match the CLI wording. Component tests; PARITY rows updated. |
 | S485 | Version on the dashboard | G5 | `/status` and the app shell footer | The status page shows the daemon version from `GET /version` (shared with `homesteadctl version`). Test with a stubbed response; PARITY row names the symbol. |
-| S486 | Tighten the parity test | all | none (tests and docs) | `tests/test_s037_parity.py` stops accepting a dashboard symbol found only in specs or in an unused wrapper: a non-`n/a` dashboard cell must have a non-spec call site, and for an API wrapper a caller outside `api.service.ts`. After S483-S485, every row has a dashboard cell except: `admins/recover`, and the browser-protocol or dashboard-only rows whose CLI cell is `n/a`. `claim token` and `login --print-token` are not routes, so they get a short "CLI only (owner 2026-11-08)" note in the PARITY header rather than rows. A new test fails the build on any row with a CLI token and a dashboard `n/a` other than `admins/recover`, and the README for the matrix is updated. Do this slice last. |
+| S487 | Craft signature and version fields | G6, G7 | `/admin/updates` (craft images and update rows) | Craft images page: optional `Version` input on verify and build (CLI `craft plan|build --version`). Update rows: optional `Craft signature file` next to the manifest and artifact inputs (CLI `updates apply --craft-signature`). Both sent in the existing request bodies; blank means today's behaviour. Component tests; PARITY notes updated. |
+| S488 | Choose the edge route when publishing an app | G8 | app card public-name panel | When an app has more than one edge route the publish form shows a route select (default the first, as the CLI does for `apps public plan --route`); the choice is passed on plan and apply. Single-route apps show no change. Component test with two routes. |
+| S489 | Recreate a missing person with a generated password | G9 | `/admin/people` | The missing-person drift card offers the same recreate choice as the CLI (`people resolve recreate --link` or `--generate`): one-time link (default) or generated password, shown once like add and reset. Component test; PARITY note. |
+| S486 | Tighten the parity test | all | none (tests and docs) | `tests/test_s037_parity.py` stops accepting a dashboard symbol found only in specs or in an unused wrapper: a non-`n/a` dashboard cell must have a non-spec call site, and for an API wrapper a caller outside `api.service.ts`. After S483-S485, every row has a dashboard cell except: `admins/recover`, and the browser-protocol or dashboard-only rows whose CLI cell is `n/a`. `claim token` and `login --print-token` are not routes, so they get a short "CLI only (owner 2026-11-08)" note in the PARITY header rather than rows. A new test fails the build on any row with a CLI token and a dashboard `n/a` other than `admins/recover`, and the README for the matrix is updated. Do this slice last, after S487-S489. Flag extension (S487 audit): add `docs/PARITY_FLAGS.md`, a table of every `homesteadctl` flag that changes an API request (flag, command, request field, dashboard field or `n/a` with a reason). A test parses the flag names out of `cmd/homesteadctl/*.go` (`flag.NewFlagSet` calls and the hand-rolled `args[i] == "--x"` cases) and fails on any flag missing from the table; for every non-`n/a` row it checks that the named dashboard field (an input `name`, a request key sent by a non-spec file) exists. Flags that only shape output or process (`--follow`, `--json`, `--server`, `--ca-file`, `-f`, `--out`, `--stdout`, `--format`, `--digest` when the page carries it by the reviewed plan) are listed as `n/a` with that reason. |
+
+
+Flag audit (S487 plan, 2026-11-08, owner: every API-backed CLI flag has a
+dashboard field). Method: every flag in `cmd/homesteadctl/*.go` (about 140
+`flag.NewFlagSet` definitions plus the hand-rolled `--x` cases in apps, tunnel,
+tls, updates, platform, craft, data, names, exposure and edge) was traced to
+its request field, then to a non-spec dashboard input or request key. Flags
+that shape only output or process (`--follow`, `--json`, `--server`,
+`--ca-file`, `-f`, `--out`, `--stdout`, `--format`, `--actor` where the
+dashboard takes the signed-in owner, `--digest` carried by the reviewed plan)
+are not gaps. Every dangerous flag already has a dashboard control
+(`--force`, `--skip-verify`, `--allow-insecure-http`, `--acknowledge-no-backup`,
+`--acknowledge-impact`, `--confirm-production`, `--allow-older`, `--abandon-volumes`,
+`--remove-data`, `--leave-sign-in`); none is missing.
+
+Flag gaps (4):
+
+| Gap | CLI flag | Request field | Dashboard today |
+|---|---|---|---|
+| G6 | `craft plan|build --version` | `version` | craft images page has app, manifest, signature, artifact, allow-older but no version |
+| G7 | `updates apply --craft-signature` | `craft.signature` | update row has craft manifest, artifact, allow-older but no signature |
+| G8 | `apps public plan|apply --route` | `route` | publish form sends hostname only; the plan's first route is always used |
+| G9 | `people resolve recreate --generate` | recreate method | Recreate button always sends a one-time link |
+
+Slices S487-S489 close G6-G9 (S487 G6+G7, S488 G8, S489 G9). S486 runs last and
+adds the flag table and test described in its row.
 
 Open questions for the owner are listed in the planning report (S483 import
 carries secrets through the browser).
