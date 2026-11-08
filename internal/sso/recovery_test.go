@@ -157,3 +157,64 @@ func TestRecoveryFlowChangesTheDigest(t *testing.T) {
 		t.Fatal("the recovery flow must be covered by the digest")
 	}
 }
+
+func recoveryPolicyBindings(ak *fakeAuthentik) []map[string]any {
+	return ak.policyBinds
+}
+
+// S466: Authentik 2026.8 shows "Forgot password?" from the brand's
+// recovery flow, so the flow refuses anyone without a one-time link.
+func TestRecoveryFlowRefusesVisitorsWithoutAOneTimeLink(t *testing.T) {
+	h, ak := planHarness(t)
+	planApply(t, h)
+	p := ak.policies[recoveryPolicyName(RecoveryFlowSlug)]
+	if p == nil || p["expression"] != recoveryPolicyExpression {
+		t.Fatalf("policy = %v", p)
+	}
+	for _, want := range []string{"is_restored", "pending_user", "ak_message", "Ask the owner", "return False"} {
+		if !strings.Contains(recoveryPolicyExpression, want) {
+			t.Fatalf("expression lacks %q", want)
+		}
+	}
+	bs := recoveryPolicyBindings(ak)
+	if len(bs) != 1 || bs[0]["policy"] != p["pk"] || bs[0]["target"] != "pbm-"+RecoveryFlowSlug || bs[0]["negate"] != false || bs[0]["failure_result"] != false {
+		t.Fatalf("bindings = %v", bs)
+	}
+}
+
+func TestRecoveryPolicyIsAddedToAnExistingFlowAndIsIdempotent(t *testing.T) {
+	h, ak := planHarness(t)
+	planApply(t, h)
+	// An appliance set up before S466: flow and brand exist, no policy.
+	delete(ak.policies, recoveryPolicyName(RecoveryFlowSlug))
+	ak.policyBinds = nil
+	plan := planApply(t, h)
+	if o := recoveryObject(t, plan.Objects); o.Action != ActionUpdate || !strings.Contains(strings.Join(o.Changes, " "), "Forgot password") {
+		t.Fatalf("recovery object = %+v", o)
+	}
+	if len(recoveryPolicyBindings(ak)) != 1 || ak.policies[recoveryPolicyName(RecoveryFlowSlug)] == nil {
+		t.Fatalf("policy not restored: %v %v", ak.policies, ak.policyBinds)
+	}
+	plan = planApply(t, h)
+	if o := recoveryObject(t, plan.Objects); o.Action != ActionUnchanged {
+		t.Fatalf("re-plan = %+v", o)
+	}
+	if len(recoveryPolicyBindings(ak)) != 1 {
+		t.Fatalf("bindings = %v", ak.policyBinds)
+	}
+	// A hand-edited expression is put back.
+	ak.policies[recoveryPolicyName(RecoveryFlowSlug)]["expression"] = "return True"
+	planApply(t, h)
+	if ak.policies[recoveryPolicyName(RecoveryFlowSlug)]["expression"] != recoveryPolicyExpression || ak.policyPatches != 1 {
+		t.Fatalf("expression not corrected, patches=%d", ak.policyPatches)
+	}
+}
+
+func TestRecoveryPolicyLeavesTheOwnersBrandFlowAlone(t *testing.T) {
+	h, ak := planHarness(t)
+	ak.recovery = "flow-owners-own"
+	planApply(t, h)
+	if len(ak.policies) != 0 || len(ak.policyBinds) != 0 {
+		t.Fatalf("touched the owner's flow: %v %v", ak.policies, ak.policyBinds)
+	}
+}

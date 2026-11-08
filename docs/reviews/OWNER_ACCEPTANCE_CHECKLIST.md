@@ -162,7 +162,7 @@ The form is generated from this file by `python3 -I scripts/review/make_acceptan
 
 - [ ] **PLAT-PEOPLE-6 — Forgot password**
   - Action: As A on the public sign-in page click forgot password.
-  - Expected: A page tells A to ask the owner (flow title hint); no email recovery.
+  - Expected: The sign-in card tells A to ask the owner (flow title hint). Authentik's "Forgot password?" link opens a denied page saying to ask the owner, not a reset form; no email recovery. Owner-issued one-time links still work.
   - If it fails: docs/INSTALL.md People section; ADR-043/049.
   - Result: ____  Notes: ____
 

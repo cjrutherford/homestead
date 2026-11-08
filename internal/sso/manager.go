@@ -387,7 +387,7 @@ func (m *Manager) Plan(ctx context.Context, req PlanRequest, actor string) (Plan
 		Spec: spec, Digest: digestOf(spec), ExpiresAt: m.now().Add(PlanTTL),
 		Untouched: []string{
 			"users (other than finding the linked owner) and groups without the " + GroupPrefix + " prefix", "flows and stages other than Homestead's own recovery flow (the two stock flows named here are only referenced)",
-			"policies and bindings other than the application's own", "every other application and provider",
+			"policies and bindings other than the application's own and the recovery flow's owner-links-only policy", "every other application and provider",
 			"Authentik's own settings, except that the default brand gets the recovery flow when it has none",
 		},
 	}

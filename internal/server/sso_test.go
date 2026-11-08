@@ -139,7 +139,7 @@ func (w *ssoWorld) admin(rw http.ResponseWriter, r *http.Request, enc *json.Enco
 	case p == "/api/v3/core/brands/b1/":
 		w.recovery, _ = body["flow_recovery"].(string)
 		_ = enc.Encode(body)
-	case strings.HasPrefix(p, "/api/v3/stages/") || p == "/api/v3/flows/bindings/":
+	case strings.HasPrefix(p, "/api/v3/stages/") || p == "/api/v3/flows/bindings/" || p == "/api/v3/policies/expression/":
 		if r.Method == http.MethodPost {
 			body["pk"] = "s-" + fmt.Sprint(body["name"])
 			_ = enc.Encode(body)
@@ -190,6 +190,9 @@ func (w *ssoWorld) admin(rw http.ResponseWriter, r *http.Request, enc *json.Enco
 			out = append(out, b)
 		}
 		res(out...)
+	case p == "/api/v3/policies/bindings/" && r.Method == http.MethodPost && body["policy"] != nil:
+		rw.WriteHeader(http.StatusCreated)
+		_ = enc.Encode(body)
 	case p == "/api/v3/policies/bindings/" && r.Method == http.MethodPost:
 		w.bindings = append(w.bindings, body)
 		rw.WriteHeader(http.StatusCreated)

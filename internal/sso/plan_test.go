@@ -44,6 +44,10 @@ type fakeAuthentik struct {
 	named         map[string]map[string]any // path+name -> stage or prompt
 	flowBindings  []map[string]any
 	recoveryPosts int
+	// owner-links-only policy (S466): expression policies by name.
+	policies      map[string]map[string]any
+	policyPatches int
+	policyBinds   []map[string]any
 	brandPatches  int
 	// login hint state (S336): the default authentication flow's title.
 	authTitle   string
@@ -101,6 +105,7 @@ func (f *fakeAuthentik) serve(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/v3/flows/instances/" && r.Method == http.MethodPost:
 		slug := body["slug"].(string)
 		body["pk"] = "flow-" + slug
+		body["policybindingmodel_ptr_id"] = "pbm-" + slug
 		f.flows[slug] = body
 		f.recoveryPosts++
 		_ = enc.Encode(body)
@@ -150,6 +155,27 @@ func (f *fakeAuthentik) serve(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/v3/flows/bindings/" && r.Method == http.MethodPost:
 		f.flowBindings = append(f.flowBindings, body)
 		f.recoveryPosts++
+		_ = enc.Encode(body)
+	case r.URL.Path == "/api/v3/policies/expression/" && r.Method == http.MethodGet:
+		if o, ok := f.policies[r.URL.Query().Get("name")]; ok {
+			_ = enc.Encode(list(o))
+			return
+		}
+		_ = enc.Encode(list())
+	case r.URL.Path == "/api/v3/policies/expression/" && r.Method == http.MethodPost:
+		if f.policies == nil {
+			f.policies = map[string]map[string]any{}
+		}
+		body["pk"] = "policy-" + body["name"].(string)
+		f.policies[body["name"].(string)] = body
+		_ = enc.Encode(body)
+	case strings.HasPrefix(r.URL.Path, "/api/v3/policies/expression/") && r.Method == http.MethodPatch:
+		for _, o := range f.policies {
+			if "/api/v3/policies/expression/"+o["pk"].(string)+"/" == r.URL.Path {
+				o["expression"] = body["expression"]
+				f.policyPatches++
+			}
+		}
 		_ = enc.Encode(body)
 	case strings.HasPrefix(r.URL.Path, "/api/v3/stages/") && r.Method == http.MethodGet:
 		if o, ok := f.named[r.URL.Path+r.URL.Query().Get("name")]; ok {
@@ -246,12 +272,16 @@ func (f *fakeAuthentik) serve(w http.ResponseWriter, r *http.Request) {
 		_ = enc.Encode(map[string]any{"results": out, "pagination": map[string]any{"next": 0}})
 	case r.URL.Path == "/api/v3/policies/bindings/" && r.Method == http.MethodGet:
 		var out []any
-		for _, b := range f.bindings {
+		for _, b := range append(append([]map[string]any{}, f.bindings...), f.policyBinds...) {
 			if b["target"] == r.URL.Query().Get("target") {
 				out = append(out, b)
 			}
 		}
 		_ = enc.Encode(map[string]any{"results": out, "pagination": map[string]any{"next": 0}})
+	case r.URL.Path == "/api/v3/policies/bindings/" && r.Method == http.MethodPost && body["policy"] != nil:
+		f.policyBinds = append(f.policyBinds, body)
+		w.WriteHeader(http.StatusCreated)
+		_ = enc.Encode(body)
 	case r.URL.Path == "/api/v3/policies/bindings/" && r.Method == http.MethodPost:
 		f.posts++
 		body["pk"] = fmt.Sprintf("b-%d", len(f.bindings))
