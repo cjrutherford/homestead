@@ -823,7 +823,7 @@ _First install on this appliance; sign-in confirmed from source only (DEFERRED S
   - Result: ____  Notes: ____
 
 - [ ] **SRV-KOMGA-2 — Opens at the right path or name**
-  - Action: Open https://komga.<lan-suffix>/ (own name).
+  - Action: Open https://<server>/apps/komga/ (S474: served under the path; the Spring context path is set by the package, so the UI, its assets and the sign-in redirect follow it). An install made before S474 moves with `homesteadctl apps move plan komga` then `apply`; moves only go forward.
   - Expected: The app's own page loads (no 404, no certificate surprise beyond the documented one).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -865,7 +865,7 @@ _First install on this appliance; sign-in confirmed from source only (DEFERRED S
   - Result: ____  Notes: ____
 
 - [ ] **SRV-KOMGA-9 — Uninstall leaves no orphan route (END pass)**
-  - Action: Done in END-UNINSTALL-*: uninstall Komga, then open https://komga.<lan-suffix>/ (own name) and check the Caddy/route list.
+  - Action: Done in END-UNINSTALL-*: uninstall Komga, then open https://<server>/apps/komga/ and check the Caddy/route list.
   - Expected: The URL no longer answers; app disappears from the apps page and Doctor; no leftover route or container.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____

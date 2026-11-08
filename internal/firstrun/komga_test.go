@@ -172,3 +172,29 @@ func TestKomgaInterruptedSetupResumesWithRecoveryAdminAndIsIdempotent(t *testing
 		}
 	}
 }
+
+// TestKomgaFirstRunUsesTheContextPath (S474): the package serves under
+// /apps/komga, so the claim probe goes there first and an install made
+// before the move (answering at the root) is found by the fallback.
+func TestKomgaFirstRunUsesTheContextPath(t *testing.T) {
+	old, tries, pause := execIn, Tries, Pause
+	defer func() { execIn, Tries, Pause = old, tries, pause }()
+	Tries, Pause = 2, time.Millisecond
+	m := komgaManifest()
+	m.Serve, m.Path = catalog.ServePath, "/apps/komga/"
+	var urls []string
+	execIn = func(_ context.Context, _, input string, _ ...string) (string, error) {
+		urls = append(urls, strings.SplitN(input, "\n", 2)[0])
+		if strings.Contains(urls[len(urls)-1], "127.0.0.1:25600/api/") {
+			return "{\"isClaimed\":true}\n200", nil // root-served install
+		}
+		if strings.Contains(input, "user =") {
+			return "[{\"name\":\"Comics\"}]\n200", nil
+		}
+		return "\n404", nil
+	}
+	_, _ = komgaFirstRun(context.Background(), m, memSecrets{})
+	if len(urls) < 3 || !strings.Contains(urls[0], "25600/apps/komga/api/v1/claim") || !strings.Contains(urls[1], "25600/api/v1/claim") {
+		t.Fatalf("urls = %v", urls)
+	}
+}

@@ -9,8 +9,7 @@
 # heap is capped because the default maximum is a quarter of host RAM, which
 # would let the server crowd the appliance.
 name: komga
-publish: host  # ADR-061
-publish_reason: no_subpath
+publish: path  # ADR-061
 version: 1.29.1
 title: Komga
 blurb: Your comics and manga, on every screen.
@@ -45,6 +44,9 @@ services:
     # keeps Komga within its declared 1 GiB while leaving room for
     # metaspace, the native image libraries, and the Lucene index.
     JAVA_TOOL_OPTIONS: -Xmx768m
+    # Komga serves under this prefix itself (S474: the web UI, its assets and
+    # the OAuth2 redirect all follow the Spring context path).
+    SERVER_SERVLET_CONTEXT_PATH: "{{route_path}}"
   # Image VOLUME: /config (verified from the Docker Hub image config for
   # 1.29.1: root user, 25600/tcp, KOMGA_CONFIGDIR=/config). /config holds
   # database.sqlite, tasks.sqlite, sessions.sqlite (all WAL), the Lucene
@@ -69,6 +71,8 @@ requirements:
     minbytes: 10737418240
   # Komga listens on 25600; routes proxy to it and no host port is
   # published by default.
+serve: path
+path: /apps/komga/
 exposure:
   package: komga
   endpoints:

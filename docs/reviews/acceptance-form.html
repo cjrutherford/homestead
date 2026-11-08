@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "cc9924f5ba2ed808",
+ "hash": "95091109c58e5f39",
  "sections": [
   {
    "title": "Platform",
@@ -1060,7 +1060,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-KOMGA-2",
        "title": "Opens at the right path or name",
-       "action": "Open https://komga.\u003clan-suffix\u003e/ (own name).",
+       "action": "Open https://\u003cserver\u003e/apps/komga/ (S474: served under the path; the Spring context path is set by the package, so the UI, its assets and the sign-in redirect follow it). An install made before S474 moves with `homesteadctl apps move plan komga` then `apply`; moves only go forward.",
        "expected": "The app's own page loads (no 404, no certificate surprise beyond the documented one).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1109,7 +1109,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-KOMGA-9",
        "title": "Uninstall leaves no orphan route (END pass)",
-       "action": "Done in END-UNINSTALL-*: uninstall Komga, then open https://komga.\u003clan-suffix\u003e/ (own name) and check the Caddy/route list.",
+       "action": "Done in END-UNINSTALL-*: uninstall Komga, then open https://\u003cserver\u003e/apps/komga/ and check the Caddy/route list.",
        "expected": "The URL no longer answers; app disappears from the apps page and Doctor; no leftover route or container.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       }

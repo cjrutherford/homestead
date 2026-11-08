@@ -20,8 +20,18 @@ func komgaFirstRun(ctx context.Context, m catalog.Manifest, secrets Secrets) (Re
 		return "", errors.New("Komga recovery account configuration is unsupported")
 	}
 	container := m.Name + "-" + f.Service
+	// Komga serves under its context path (S474); an install made before the
+	// move still answers at the root, so the claim probe tries both.
+	base := &komgaBase{bases: []string{strings.TrimSuffix(m.AppPath(), "/")}}
+	if base.bases[0] != "" {
+		base.bases = append(base.bases, "")
+	}
+	ctx = context.WithValue(ctx, komgaBaseKey{}, base)
 	status, err := waitFor(ctx, m.Title, func() (Result, bool, error) {
 		code, body, err := komgaHTTP(ctx, container, "GET", "/api/v1/claim", "", "", "")
+		for code == 404 && err == nil && base.next() {
+			code, body, err = komgaHTTP(ctx, container, "GET", "/api/v1/claim", "", "", "")
+		}
 		if err != nil {
 			return "", false, errors.New("Komga is starting")
 		}
@@ -135,6 +145,25 @@ func komgaLibraries(ctx context.Context, container, account, password string, li
 	return nil
 }
 
+type komgaBaseKey struct{}
+
+// komgaBase is the URL prefix Komga answers on, found by the claim probe.
+type komgaBase struct {
+	bases []string
+	i     int
+}
+
+func (b *komgaBase) current() string { return b.bases[b.i] }
+
+// next moves to the next candidate prefix, reporting whether there was one.
+func (b *komgaBase) next() bool {
+	if b.i+1 >= len(b.bases) {
+		return false
+	}
+	b.i++
+	return true
+}
+
 // curl is in the pinned Komga image. Its config (including the password)
 // travels over docker exec stdin, never through argv or environment. Only
 // fixed endpoints and the manifest's fixed recovery address are accepted.
@@ -150,7 +179,11 @@ func komgaHTTP(ctx context.Context, container, method, path, email, password, js
 			return 0, "", errors.New("invalid Komga recovery credentials")
 		}
 	}
-	config := "url = \"http://127.0.0.1:25600" + path + "\"\n"
+	prefix := ""
+	if b, ok := ctx.Value(komgaBaseKey{}).(*komgaBase); ok {
+		prefix = b.current()
+	}
+	config := "url = \"http://127.0.0.1:25600" + prefix + path + "\"\n"
 	if method == "POST" && path == "/api/v1/libraries" {
 		if email == "" || strings.ContainsAny(jsonBody, "\r\n") {
 			return 0, "", errors.New("invalid Komga library request")

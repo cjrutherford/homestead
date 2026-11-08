@@ -50,8 +50,8 @@ class MoveToSubpath(unittest.TestCase):
         self.assertTrue((REPO / "docs/slices/S471-move-plan-subdomain-to-subpath.md").exists())
 
     def test_no_app_moved(self):
-        # S472 moved Navidrome; S473 to S477 move the rest; this slice changes no package serving.
-        for name in ("audiobookshelf", "komga", "paperless-ngx", "linkding", "freshrss"):
+        # S472 moved Navidrome, S474 Komga; S473 to S477 move the rest; this slice changes no package serving.
+        for name in ("audiobookshelf", "paperless-ngx", "linkding", "freshrss"):
             self.assertNotRegex(read("catalog/%s.yaml" % name), r"(?m)^serve: path")
 
 

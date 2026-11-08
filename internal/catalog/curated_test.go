@@ -1097,8 +1097,9 @@ func TestCuratedKomga(t *testing.T) {
 		t.Fatalf("services = %+v", manifest.Services)
 	}
 	service := manifest.Services[0]
-	if len(service.Environment) != 1 || service.Environment["JAVA_TOOL_OPTIONS"] != "-Xmx768m" {
-		t.Fatalf("environment = %v, want only the JVM heap cap", service.Environment)
+	if len(service.Environment) != 2 || service.Environment["JAVA_TOOL_OPTIONS"] != "-Xmx768m" ||
+		service.Environment["SERVER_SERVLET_CONTEXT_PATH"] != "{{route_path}}" {
+		t.Fatalf("environment = %v, want the JVM heap cap and the context path (S474)", service.Environment)
 	}
 	// S411: the supervisor execs the image's own java command.
 	if len(service.Entrypoint) != 3 || service.Entrypoint[0] != "sh" || !strings.Contains(service.Entrypoint[2], "exec java ") || !strings.Contains(service.Entrypoint[2], "unset SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_CLIENTSECRET;") ||
