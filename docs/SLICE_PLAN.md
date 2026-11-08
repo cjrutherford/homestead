@@ -308,3 +308,43 @@ only. S478 (live acceptance of the subpath work) is absorbed into S482.
 | S481 | The 13 craft apps go from `publish: never` to `publish: path`; a published craft route is rendered behind the shared gate on the tunnel entry (LAN stays open, ADR-062 section 6); the publish plan says so; the fact table and craft tests follow. | S480 |
 | S482 | Live acceptance of the subpath work on VM 2 (absorbs S478): a moved app from a subdomain, a published craft app behind the gate, old names gone, Doctor clean; docs. | S481, S478 |
 
+
+## 11. Dashboard parity (owner 2026-11-08)
+
+Status: planned. Strictly sequential; one slice, one commit. Owner decision:
+every `homesteadctl` action that goes through the API gets a real dashboard
+page or control, including config export and import. Only three stay CLI-only:
+`claim token`, `login --print-token`, and the root-socket `admins/recover`.
+
+Audit method (S483 plan, 2026-11-08): all 178 routes in `docs/PARITY.md`, every
+`cmd/homesteadctl` command, and every non-spec call site in `dashboard/src`.
+A route counts as covered only when a non-spec dashboard file issues that
+method and path, and the api-service wrapper has a caller outside
+`api.service.ts`. A symbol that exists only in a spec or an unused wrapper does
+not count. The audit is at route level; flag-level differences (a CLI flag with
+no form field) were not enumerated and are checked inside each slice.
+
+Gaps (5):
+
+| Gap | Route | CLI | Dashboard today |
+|---|---|---|---|
+| G1 | `GET /api/v1/config/export` | `config export` | none (PARITY says `n/a`) |
+| G2 | `POST /api/v1/config/import` | `config import` | none (PARITY says `n/a`) |
+| G3 | `GET /api/v1/tls/issuance/approvals` | `tls approvals` | `tlsIssuanceApprovals` wrapper has no caller; the page can approve but not list |
+| G4 | `GET /api/v1/tls/local-ca/leaves` | `tls local-ca leaves` | `localCaLeaves` wrapper has no caller |
+| G5 | `GET /version` | `version` | dashboard never fetches it (PARITY says `n/a`) |
+
+Not gaps: `admins/recover` (allowed), `claim` and `login` (the dashboard has the
+claim and login pages; only the claim-token print and `--print-token` stay
+CLI-only), and dashboard-only rows (schema, identity, wizards, SSO browser
+routes) which have no CLI counterpart to match.
+
+| Slice | Title | Gaps | Page touched | Acceptance |
+|---|---|---|---|---|
+| S483 | Config export and import | G1, G2 | `/config` | Export button downloads the portable YAML (same bytes as `config export`). Import takes a file, shows the validation result first, asks for per-call secret values in a password-typed form (never stored in the browser, never logged), requires an explicit confirm, then restores and reports the result. Errors show the daemon's message. Component tests plus an API-service test; a CLI-export-to-dashboard-import round-trip check; `docs/PARITY.md` rows name the new symbols; `docs/DEVELOPMENT.md` sentence about "later slices" removed. |
+| S484 | TLS read surfaces | G3, G4 | `/tls` | The TLS page lists recorded issuance approvals (who, when, plan digest) and the local CA's leaf certificates (host, expiry, reissue link to the existing action). Empty states match the CLI wording. Component tests; PARITY rows updated. |
+| S485 | Version on the dashboard | G5 | `/status` and the app shell footer | The status page shows the daemon version from `GET /version` (shared with `homesteadctl version`). Test with a stubbed response; PARITY row names the symbol. |
+| S486 | Tighten the parity test | all | none (tests and docs) | `tests/test_s037_parity.py` stops accepting a dashboard symbol found only in specs or in an unused wrapper: a non-`n/a` dashboard cell must have a non-spec call site, and for an API wrapper a caller outside `api.service.ts`. After S483-S485, every row has a dashboard cell except: `admins/recover`, and the browser-protocol or dashboard-only rows whose CLI cell is `n/a`. `claim token` and `login --print-token` are not routes, so they get a short "CLI only (owner 2026-11-08)" note in the PARITY header rather than rows. A new test fails the build on any row with a CLI token and a dashboard `n/a` other than `admins/recover`, and the README for the matrix is updated. Do this slice last. |
+
+Open questions for the owner are listed in the planning report (S483 import
+carries secrets through the browser).
