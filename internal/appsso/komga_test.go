@@ -173,7 +173,7 @@ func TestKomgaPlanApplyAndLifecycle(t *testing.T) {
 	sup, _ := os.ReadFile(filepath.Join(dir, catalog.EntrypointFile("komga")))
 	override, _ := os.ReadFile(filepath.Join(dir, catalog.OverrideFileName))
 	for _, w := range []string{"SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_CLIENTSECRET_FILE: /run/secrets/komga_oidc_client_secret",
-		"entrypoint:\n      - /homestead/secret-entrypoint.sh", "- -jar", "- application.jar", "source: ./" + catalog.EntrypointFile("komga"),
+		"entrypoint:\n      - /homestead/secret-entrypoint.sh", "- sh", "exec java ", "-jar application.jar", "source: ./" + catalog.EntrypointFile("komga"),
 		"JAVA_TOOL_OPTIONS: -Xmx768m"} {
 		if !strings.Contains(string(compose), w) {
 			t.Fatalf("compose lacks %q:\n%s", w, compose)

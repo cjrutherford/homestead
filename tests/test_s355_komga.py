@@ -36,11 +36,10 @@ class TestKomgaContract(unittest.TestCase):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, self.text)
 
-    def test_comics_library_is_an_owner_volume(self):
-        # The library is a bulk owner volume: declaring /data would put
-        # the collection under <bulk>/komga and copy it into every backup.
-        self.assertNotIn("target: /data", self.text)
-        self.assertIn("owner volume", self.text)
+    def test_comics_library_is_a_bulk_declaration(self):
+        # S452: /library is a bulk declaration (backups skip bulk) and the
+        # first run adds a Comics library over it.
+        self.assertIn("target: /library\n    class: bulk", self.text)
 
     def test_sqlite_export(self):
         self.assertIn("kind: sqlite", self.text)

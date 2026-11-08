@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "f4e520cf7d2c70df",
+ "hash": "4ba4e9ceb23663ea",
  "sections": [
   {
    "title": "Platform",
@@ -500,7 +500,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-AUDIOBOOKSHELF-6",
        "title": "Add a library and play",
-       "action": "Create a library over a folder on bulk storage (the install asks for the media directory), put one short audio file in it, scan, open the item and press play.",
+       "action": "Open Library: the Audiobooks and Podcasts libraries already exist (S452) over `\u003cbulk\u003e/audiobookshelf/audiobooks` and `/podcasts`. Put one short audio file in a folder under audiobooks, scan if it does not appear, open the item and press play.",
        "expected": "The item appears after the scan and audio plays; progress is saved when you stop.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1088,7 +1088,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-KOMGA-6",
        "title": "Read a comic",
-       "action": "Put one CBZ/PDF into the Komga library folder, scan, open and page through it.",
+       "action": "The Comics library already exists (S452) over `\u003cbulk\u003e/komga/library`. Put one CBZ/PDF in it (a scan runs at startup and hourly; restart the container or use the recovery administrator to scan now), open and page through it.",
        "expected": "It appears with a cover and the reader pages forward; progress saved.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },

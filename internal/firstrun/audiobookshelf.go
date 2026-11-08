@@ -34,6 +34,53 @@ const options = { signal: AbortSignal.timeout(5000) };
 })().catch(() => out('waiting'));
 `
 
+// The libraries step signs in as Homestead's own recovery administrator
+// (pinned 2.37.1: /login with x-return-tokens answers an accessToken) and
+// adds each declared library the server lacks, matched by name. Audiobookshelf
+// scans a new library at once, and a library is open to every user unless
+// restricted. A sign-in that fails means the administrator is the owner's
+// own: nothing is touched. Tokens are never printed.
+const audiobookshelfLibrariesScript = `
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+const out = (state) => console.log(JSON.stringify({state}));
+const base = 'http://127.0.0.1:80';
+const options = (extra) => ({ signal: AbortSignal.timeout(8000), ...extra });
+const json = {'Content-Type':'application/json'};
+(async () => {
+  const login = await fetch(base + '/login', options({ method: 'POST', headers: {...json, 'x-return-tokens':'true'}, body: JSON.stringify({username:input.account,password:input.password}) }));
+  if (!login.ok) return out('skipped');
+  const token = ((await login.json()).user || {}).accessToken;
+  if (!token) return out('failed');
+  const auth = {...json, Authorization: 'Bearer ' + token};
+  const list = await fetch(base + '/api/libraries', options({ headers: auth }));
+  if (!list.ok) return out('failed');
+  const have = new Set(((await list.json()).libraries || []).map((l) => l.name));
+  for (const lib of input.libraries) {
+    if (have.has(lib.name)) continue;
+    const body = {name: lib.name, folders: [{fullPath: lib.path}], mediaType: lib.kind === 'podcasts' ? 'podcast' : 'book', icon: lib.kind === 'podcasts' ? 'podcast' : 'audiobookshelf', provider: lib.kind === 'podcasts' ? 'itunes' : 'audible'};
+    const made = await fetch(base + '/api/libraries', options({ method: 'POST', headers: auth, body: JSON.stringify(body) }));
+    if (!made.ok) return out('failed');
+  }
+  return out('ok');
+})().catch(() => out('failed'));
+`
+
+func audiobookshelfLibraries(ctx context.Context, container, account, password string, libs []catalog.Library) error {
+	if len(libs) == 0 {
+		return nil
+	}
+	input, _ := json.Marshal(map[string]any{"account": account, "password": password, "libraries": libs})
+	raw, err := execIn(ctx, container, string(input), "node", "-e", audiobookshelfLibrariesScript)
+	if err != nil {
+		return errors.New("Audiobookshelf could not add its libraries: " + strings.ReplaceAll(err.Error(), password, "[redacted]"))
+	}
+	var reply struct{ State string }
+	if json.Unmarshal([]byte(lastLine(raw)), &reply) != nil || (reply.State != "ok" && reply.State != "skipped") {
+		return errors.New("Audiobookshelf could not add its libraries; sign in as its administrator and add them, or try again")
+	}
+	return nil
+}
+
 func audiobookshelfStep(ctx context.Context, container, account, password string, initialize bool) (Result, bool, error) {
 	input, _ := json.Marshal(map[string]any{"account": account, "password": password, "initialize": initialize})
 	raw, err := execIn(ctx, container, string(input), "node", "-e", audiobookshelfScript)
@@ -80,12 +127,30 @@ func audiobookshelfFirstRun(ctx context.Context, m catalog.Manifest, secrets Sec
 	f := m.FirstRun
 	container := m.Name + "-" + f.Service
 	status, err := waitFor(ctx, m.Title, func() (Result, bool, error) { return audiobookshelfStep(ctx, container, f.Account, "", false) })
-	if err != nil || status == Ready {
+	if err != nil {
 		return status, err
+	}
+	if status == Ready {
+		// An administrator exists. Finish the libraries only when it is
+		// Homestead's own (its sealed password signs in); never generate
+		// a password for someone else's server.
+		if v, gerr := secrets.Get(catalog.SecretStoreName(m.Name, f.Secret)); gerr == nil && v != "" {
+			if err := audiobookshelfLibraries(ctx, container, f.Account, v, f.Libraries); err != nil {
+				return "", err
+			}
+		}
+		return Ready, nil
 	}
 	password, err := Password(m, secrets)
 	if err != nil {
 		return "", err
 	}
-	return waitFor(ctx, m.Title, func() (Result, bool, error) { return audiobookshelfStep(ctx, container, f.Account, password, true) })
+	res, err := waitFor(ctx, m.Title, func() (Result, bool, error) { return audiobookshelfStep(ctx, container, f.Account, password, true) })
+	if err != nil {
+		return res, err
+	}
+	if err := audiobookshelfLibraries(ctx, container, f.Account, password, f.Libraries); err != nil {
+		return "", err
+	}
+	return res, nil
 }

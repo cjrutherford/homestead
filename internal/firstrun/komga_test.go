@@ -65,11 +65,15 @@ func TestKomgaClaimedDatabaseIsUntouched(t *testing.T) {
 	requests := 0
 	execIn = func(_ context.Context, _, _ string, _ ...string) (string, error) {
 		requests++
+		if requests == 2 {
+			return "\n401", nil
+		}
 		return "{\"isClaimed\":true}\n200", nil
 	}
 	secrets := memSecrets{}
 	_, err := Run(context.Background(), komgaManifest(), secrets)
-	if err == nil || !strings.Contains(err.Error(), "already has accounts") || requests != 1 || len(secrets) != 0 {
+	// The claim status, then one recovery login that must fail: nothing else is sent.
+	if err == nil || !strings.Contains(err.Error(), "already has accounts") || requests != 2 {
 		t.Fatalf("requests=%d secrets=%v err=%v", requests, secrets, err)
 	}
 }
@@ -101,5 +105,70 @@ func TestKomgaClaimFailureAndWrongRecoveryAccountAreRefused(t *testing.T) {
 				t.Fatalf("requests=%d err=%v", requests, err)
 			}
 		})
+	}
+}
+
+func komgaLibraryManifest() catalog.Manifest {
+	m := komgaManifest()
+	m.FirstRun.Libraries = []catalog.Library{{Name: "Comics", Kind: "comics", Path: "/library"}}
+	return m
+}
+
+func TestKomgaFreshClaimAddsTheComicsLibrary(t *testing.T) {
+	old := execIn
+	defer func() { execIn = old }()
+	var posted string
+	requests := 0
+	execIn = func(_ context.Context, _, input string, args ...string) (string, error) {
+		requests++
+		switch requests {
+		case 1:
+			return "{\"isClaimed\":false}\n200", nil
+		case 2:
+			return "{}\n200", nil
+		case 3:
+			return "{\"email\":\"homestead-recovery@localhost.invalid\",\"roles\":[\"ADMIN\"]}\n200", nil
+		case 4:
+			return "[]\n200", nil
+		case 5:
+			posted = input
+			return "{}\n200", nil
+		}
+		t.Fatal("extra request")
+		return "", nil
+	}
+	res, err := Run(context.Background(), komgaLibraryManifest(), memSecrets{})
+	if err != nil || res != Created || !strings.Contains(posted, `data = "{\"name\":\"Comics\",\"root\":\"/library\",\"scanInterval\":\"HOURLY\",\"scanOnStartup\":true}"`) {
+		t.Fatalf("res=%q err=%v posted=%q", res, err, posted)
+	}
+}
+
+func TestKomgaInterruptedSetupResumesWithRecoveryAdminAndIsIdempotent(t *testing.T) {
+	old := execIn
+	defer func() { execIn = old }()
+	for _, have := range []string{"[]", `[{"name":"Comics"}]`} {
+		posts := 0
+		requests := 0
+		execIn = func(_ context.Context, _, input string, _ ...string) (string, error) {
+			requests++
+			switch requests {
+			case 1:
+				return "{\"isClaimed\":true}\n200", nil
+			case 2:
+				return "{\"email\":\"homestead-recovery@localhost.invalid\",\"roles\":[\"ADMIN\"]}\n200", nil
+			case 3:
+				return have + "\n200", nil
+			}
+			posts++
+			return "{}\n200", nil
+		}
+		res, err := Run(context.Background(), komgaLibraryManifest(), memSecrets{})
+		want := 0
+		if have == "[]" {
+			want = 1
+		}
+		if err != nil || res != Ready || posts != want {
+			t.Fatalf("have=%s res=%q posts=%d err=%v", have, res, posts, err)
+		}
 	}
 }

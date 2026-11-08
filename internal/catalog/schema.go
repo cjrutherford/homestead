@@ -820,7 +820,12 @@ const (
 )
 
 // Library kinds a first run may create (Jellyfin's collection types).
-var libraryKinds = map[string]bool{"movies": true, "tvshows": true, "music": true}
+// libraryKinds are the library kinds each routine can create.
+var libraryKinds = map[string]map[string]bool{
+	FirstRunJellyfin:       {"movies": true, "tvshows": true, "music": true},
+	FirstRunKomga:          {"comics": true},
+	FirstRunAudiobookshelf: {"audiobooks": true, "podcasts": true},
+}
 
 // FirstRun declares the app's first-run routine: the service it talks
 // to, the administrator account it creates and the declared secret
@@ -831,8 +836,8 @@ type FirstRun struct {
 	Service string `yaml:"service" json:"service"`
 	Account string `yaml:"account" json:"account"`
 	Secret  string `yaml:"secret" json:"secret"`
-	// Libraries are the media libraries the first run creates (S319,
-	// Jellyfin only), each on one of the service's declared data paths.
+	// Libraries are the media libraries the first run creates (S319 Jellyfin,
+	// S452 Komga and Audiobookshelf), each on one of the service's declared data paths.
 	Libraries []Library `yaml:"libraries,omitempty" json:"libraries,omitempty"`
 }
 
@@ -853,7 +858,7 @@ func (f FirstRun) validate(m Manifest, services map[string]bool) error {
 	if !services[f.Service] {
 		return fmt.Errorf("catalog: first-run service %q unknown", f.Service)
 	}
-	if len(f.Libraries) > 0 && f.Routine != FirstRunJellyfin {
+	if len(f.Libraries) > 0 && libraryKinds[f.Routine] == nil {
 		return fmt.Errorf("catalog: first-run %q creates no libraries", f.Routine)
 	}
 	targets := map[string]bool{}
@@ -872,7 +877,7 @@ func (f FirstRun) validate(m Manifest, services map[string]bool) error {
 			return fmt.Errorf("catalog: first-run library name %q missing or repeated", lib.Name)
 		}
 		names[lib.Name] = true
-		if !libraryKinds[lib.Kind] {
+		if !libraryKinds[f.Routine][lib.Kind] {
 			return fmt.Errorf("catalog: first-run library %q kind %q unknown", lib.Name, lib.Kind)
 		}
 		if !targets[lib.Path] {

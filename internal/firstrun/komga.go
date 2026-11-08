@@ -21,7 +21,7 @@ func komgaFirstRun(ctx context.Context, m catalog.Manifest, secrets Secrets) (Re
 	}
 	container := m.Name + "-" + f.Service
 	status, err := waitFor(ctx, m.Title, func() (Result, bool, error) {
-		code, body, err := komgaHTTP(ctx, container, "GET", "/api/v1/claim", "", "")
+		code, body, err := komgaHTTP(ctx, container, "GET", "/api/v1/claim", "", "", "")
 		if err != nil {
 			return "", false, errors.New("Komga is starting")
 		}
@@ -35,54 +35,114 @@ func komgaFirstRun(ctx context.Context, m catalog.Manifest, secrets Secrets) (Re
 			return "", true, errors.New("Komga returned an unexpected claim status")
 		}
 		if *state.IsClaimed {
-			return "", true, errors.New("Komga already has accounts; Homestead refuses to claim or link an existing database")
+			return Result("claimed"), true, nil
 		}
 		return Ready, true, nil
 	})
 	if err != nil {
 		return "", err
 	}
-	if status != Ready {
+	if status != Ready && status != Result("claimed") {
 		return "", errors.New("Komga returned an unexpected first-run state")
 	}
 	password, err := Password(m, secrets)
 	if err != nil {
 		return "", err
 	}
-	code, _, err := komgaHTTP(ctx, container, "POST", "/api/v1/claim", f.Account, password)
+	if status == Result("claimed") {
+		// Only Homestead's own recovery account may be used to finish an
+		// interrupted setup (a claim whose library step failed). Any
+		// other database is refused untouched.
+		if err := komgaVerifyRecovery(ctx, container, f.Account, password); err != nil {
+			return "", errors.New("Komga already has accounts; Homestead refuses to claim or link an existing database")
+		}
+		if err := komgaLibraries(ctx, container, f.Account, password, f.Libraries); err != nil {
+			return "", err
+		}
+		return Ready, nil
+	}
+	code, _, err := komgaHTTP(ctx, container, "POST", "/api/v1/claim", f.Account, password, "")
 	if err != nil {
 		return "", errors.New("Komga claim request failed; inspect the local recovery account before retrying")
 	}
 	if code != 200 && code != 201 {
 		return "", fmt.Errorf("Komga refused the fresh claim (HTTP %d); inspect existing accounts before retrying", code)
 	}
-	code, body, err := komgaHTTP(ctx, container, "GET", "/api/v2/users/me", f.Account, password)
+	if err := komgaVerifyRecovery(ctx, container, f.Account, password); err != nil {
+		return "", err
+	}
+	if err := komgaLibraries(ctx, container, f.Account, password, f.Libraries); err != nil {
+		return "", err
+	}
+	return Created, nil
+}
+
+// komgaVerifyRecovery proves the recovery account logs in and is an
+// administrator.
+func komgaVerifyRecovery(ctx context.Context, container, account, password string) error {
+	code, body, err := komgaHTTP(ctx, container, "GET", "/api/v2/users/me", account, password, "")
 	if err != nil || code != 200 {
-		return "", errors.New("Komga created an account but recovery login could not be verified; inspect it before retrying")
+		return errors.New("Komga created an account but recovery login could not be verified; inspect it before retrying")
 	}
 	var me struct {
 		Email string   `json:"email"`
 		Roles []string `json:"roles"`
 	}
-	if json.Unmarshal([]byte(body), &me) != nil || !strings.EqualFold(me.Email, f.Account) {
-		return "", errors.New("Komga recovery login returned an unexpected account")
+	if json.Unmarshal([]byte(body), &me) != nil || !strings.EqualFold(me.Email, account) {
+		return errors.New("Komga recovery login returned an unexpected account")
 	}
 	for _, role := range me.Roles {
 		if role == "ADMIN" {
-			return Created, nil
+			return nil
 		}
 	}
-	return "", errors.New("Komga recovery account does not have administrator access")
+	return errors.New("Komga recovery account does not have administrator access")
+}
+
+// komgaLibraries adds each declared library the server lacks (matched by
+// name). Komga scans a new library at once, and its default is every
+// user, so people who sign in later see it. Files the owner adds later are
+// found by a scan at startup and every hour (S452: the file watcher does
+// not see changes on the bind mount, and an ordinary owner cannot scan).
+func komgaLibraries(ctx context.Context, container, account, password string, libs []catalog.Library) error {
+	if len(libs) == 0 {
+		return nil
+	}
+	code, body, err := komgaHTTP(ctx, container, "GET", "/api/v1/libraries", account, password, "")
+	if err != nil || code != 200 {
+		return errors.New("Komga could not list its libraries")
+	}
+	var have []struct {
+		Name string `json:"name"`
+	}
+	if json.Unmarshal([]byte(body), &have) != nil {
+		return errors.New("Komga returned an unexpected library list")
+	}
+	names := map[string]bool{}
+	for _, h := range have {
+		names[h.Name] = true
+	}
+	for _, lib := range libs {
+		if names[lib.Name] {
+			continue
+		}
+		payload, _ := json.Marshal(map[string]any{"name": lib.Name, "root": lib.Path, "scanOnStartup": true, "scanInterval": "HOURLY"})
+		code, _, err := komgaHTTP(ctx, container, "POST", "/api/v1/libraries", account, password, string(payload))
+		if err != nil || code != 200 && code != 201 {
+			return fmt.Errorf("Komga could not add the %s library", lib.Name)
+		}
+	}
+	return nil
 }
 
 // curl is in the pinned Komga image. Its config (including the password)
 // travels over docker exec stdin, never through argv or environment. Only
 // fixed endpoints and the manifest's fixed recovery address are accepted.
-func komgaHTTP(ctx context.Context, container, method, path, email, password string) (int, string, error) {
+func komgaHTTP(ctx context.Context, container, method, path, email, password, jsonBody string) (int, string, error) {
 	if method != "GET" && method != "POST" {
 		return 0, "", errors.New("unsupported Komga method")
 	}
-	if path != "/api/v1/claim" && path != "/api/v2/users/me" {
+	if path != "/api/v1/claim" && path != "/api/v2/users/me" && path != "/api/v1/libraries" {
 		return 0, "", errors.New("unsupported Komga endpoint")
 	}
 	if email != "" {
@@ -91,7 +151,13 @@ func komgaHTTP(ctx context.Context, container, method, path, email, password str
 		}
 	}
 	config := "url = \"http://127.0.0.1:25600" + path + "\"\n"
-	if method == "POST" {
+	if method == "POST" && path == "/api/v1/libraries" {
+		if email == "" || strings.ContainsAny(jsonBody, "\r\n") {
+			return 0, "", errors.New("invalid Komga library request")
+		}
+		escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(jsonBody)
+		config += "request = \"POST\"\nheader = \"Content-Type: application/json\"\ndata = \"" + escaped + "\"\nuser = \"" + email + ":" + password + "\"\n"
+	} else if method == "POST" {
 		config += "request = \"POST\"\nheader = \"X-Komga-Email: " + email + "\"\nheader = \"X-Komga-Password: " + password + "\"\n"
 	} else if email != "" {
 		config += "user = \"" + email + ":" + password + "\"\n"

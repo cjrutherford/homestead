@@ -152,3 +152,34 @@ func TestAudiobookshelfExistingAdminDoesNotGeneratePassword(t *testing.T) {
 		t.Fatalf("result %q calls %d secrets %d err %v", result, calls, len(secrets), err)
 	}
 }
+
+func TestAudiobookshelfLibrariesStepPassesPasswordOnStdinAndTolerates(t *testing.T) {
+	old := execIn
+	defer func() { execIn = old }()
+	libs := []catalog.Library{{Name: "Audiobooks", Kind: "audiobooks", Path: "/audiobooks"}, {Name: "Podcasts", Kind: "podcasts", Path: "/podcasts"}}
+	var stdin string
+	execIn = func(_ context.Context, _, input string, args ...string) (string, error) {
+		stdin = input
+		for _, a := range args {
+			if strings.Contains(a, "secret-pw") {
+				t.Fatal("secret in argv")
+			}
+		}
+		return `{"state":"ok"}`, nil
+	}
+	if err := audiobookshelfLibraries(context.Background(), "audiobookshelf-audiobookshelf", "homestead-admin", "secret-pw", libs); err != nil ||
+		!strings.Contains(stdin, `"path":"/podcasts"`) || !strings.Contains(stdin, "secret-pw") {
+		t.Fatalf("err=%v stdin=%s", err, stdin)
+	}
+	execIn = func(context.Context, string, string, ...string) (string, error) { return `{"state":"skipped"}`, nil }
+	if err := audiobookshelfLibraries(context.Background(), "c", "a", "p", libs); err != nil {
+		t.Fatalf("an administrator that is not Homestead's own is left alone: %v", err)
+	}
+	execIn = func(context.Context, string, string, ...string) (string, error) { return `{"state":"failed"}`, nil }
+	if err := audiobookshelfLibraries(context.Background(), "c", "a", "p", libs); err == nil {
+		t.Fatal("a failed library step must be reported")
+	}
+	if err := audiobookshelfLibraries(context.Background(), "c", "a", "p", nil); err != nil {
+		t.Fatal(err)
+	}
+}

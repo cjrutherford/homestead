@@ -344,7 +344,7 @@ _DB-write sign-in: re-verify after EVERY Audiobookshelf update (pin test TestAud
   - Result: ____  Notes: ____
 
 - [ ] **SRV-AUDIOBOOKSHELF-6 — Add a library and play**
-  - Action: Create a library over a folder on bulk storage (the install asks for the media directory), put one short audio file in it, scan, open the item and press play.
+  - Action: Open Library: the Audiobooks and Podcasts libraries already exist (S452) over `<bulk>/audiobookshelf/audiobooks` and `/podcasts`. Put one short audio file in a folder under audiobooks, scan if it does not appear, open the item and press play.
   - Expected: The item appears after the scan and audio plays; progress is saved when you stop.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -847,7 +847,7 @@ _First install on this appliance; sign-in confirmed from source only (DEFERRED S
   - Result: ____  Notes: ____
 
 - [ ] **SRV-KOMGA-6 — Read a comic**
-  - Action: Put one CBZ/PDF into the Komga library folder, scan, open and page through it.
+  - Action: The Comics library already exists (S452) over `<bulk>/komga/library`. Put one CBZ/PDF in it (a scan runs at startup and hourly; restart the container or use the recovery administrator to scan now), open and page through it.
   - Expected: It appears with a cover and the reader pages forward; progress saved.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____

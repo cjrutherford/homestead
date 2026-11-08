@@ -13,9 +13,10 @@ title: Audiobookshelf
 blurb: Your audiobooks and podcasts, on every device.
 description: Audiobookshelf streams your audiobook and podcast libraries to
   phones and browsers, keeping every listener's place in sync. It scans the
-  folders you already keep, fetches covers and descriptions, and stores its
-  catalog in SQLite on application storage. Media folders stay owner
-  volumes, so a large library never rides in a backup.
+  folders you keep, fetches covers and descriptions, and stores its catalog
+  in SQLite on application storage. Audiobooks and Podcasts libraries are
+  already set up over folders on bulk storage, so a large library never
+  rides in a backup.
 category: audio
 icon: mdi:headphones
 services:
@@ -28,8 +29,8 @@ services:
   # config for 2.37.1); /config and /metadata are Homestead declarations.
   # /metadata/streams is the playback transcode scratch directory, so it
   # goes on bulk storage instead of the backed-up application volume.
-  # Media libraries (/audiobooks, /podcasts) are owner volumes: a shared
-  # bulk directory added at install, never a declaration.
+  # The media libraries (/audiobooks, /podcasts) are bulk declarations
+  # (S452), which backups skip; the first run adds a library over each.
   data:
   - target: /config
     class: application
@@ -40,6 +41,12 @@ services:
   - target: /metadata/streams
     class: bulk
     subpath: streams
+  - target: /audiobooks
+    class: bulk
+    subpath: audiobooks
+  - target: /podcasts
+    class: bulk
+    subpath: podcasts
 requirements:
   memorymb: 512
   cpucount: 1
@@ -234,6 +241,13 @@ firstrun:
   service: audiobookshelf
   account: homestead-admin
   secret: admin_password
+  libraries:
+  - name: Audiobooks
+    kind: audiobooks
+    path: /audiobooks
+  - name: Podcasts
+    kind: podcasts
+    path: /podcasts
 integrations:
 - kind: identity
   target: authentik

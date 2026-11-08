@@ -38,13 +38,11 @@ class TestAudiobookshelfContract(unittest.TestCase):
         self.assertIn("kind: sqlite", self.text)
         self.assertIn("path: config/absdatabase.sqlite", self.text)
 
-    def test_media_libraries_stay_owner_volumes(self):
-        # The bulk library is an owner volume: declaring /audiobooks or
-        # /podcasts would put the media inside the package directory and
-        # copy it into every backup.
-        self.assertNotIn("target: /audiobooks", self.text)
-        self.assertNotIn("target: /podcasts", self.text)
-        self.assertIn("owner volumes", self.text)
+    def test_media_libraries_are_bulk_declarations(self):
+        # S452: the libraries are bulk declarations (backups skip bulk) and
+        # the first run adds a library over each.
+        self.assertIn("target: /audiobooks\n    class: bulk", self.text)
+        self.assertIn("target: /podcasts\n    class: bulk", self.text)
 
     def test_optional_oidc_through_the_settings_database(self):
         # S417: sign-in is written into the app's own settings database;

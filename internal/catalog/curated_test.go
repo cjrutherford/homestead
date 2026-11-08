@@ -928,6 +928,8 @@ func TestCuratedAudiobookshelf(t *testing.T) {
 		{"/config", storage.ClassApplication, "config"},
 		{"/metadata", storage.ClassApplication, "metadata"},
 		{"/metadata/streams", storage.ClassBulk, "streams"},
+		{"/audiobooks", storage.ClassBulk, "audiobooks"},
+		{"/podcasts", storage.ClassBulk, "podcasts"},
 	}
 	if len(service.Data) != len(wantData) {
 		t.Fatalf("data = %+v", service.Data)
@@ -1099,7 +1101,7 @@ func TestCuratedKomga(t *testing.T) {
 		t.Fatalf("environment = %v, want only the JVM heap cap", service.Environment)
 	}
 	// S411: the supervisor execs the image's own java command.
-	if len(service.Entrypoint) != 6 || service.Entrypoint[0] != "java" || service.Entrypoint[4] != "application.jar" ||
+	if len(service.Entrypoint) != 3 || service.Entrypoint[0] != "sh" || !strings.Contains(service.Entrypoint[2], "exec java ") || !strings.Contains(service.Entrypoint[2], "unset SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_CLIENTSECRET;") ||
 		len(manifest.Secrets) != 2 || manifest.Secrets[1].Name != "oidc_client_secret" ||
 		len(manifest.Secrets[1].Consumers) != 1 || !manifest.Secrets[1].Consumers[0].Export ||
 		manifest.Secrets[1].Consumers[0].Env != "SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_CLIENTSECRET_FILE" {
@@ -1133,6 +1135,7 @@ func TestCuratedKomga(t *testing.T) {
 		subpath string
 	}{
 		{"/config", storage.ClassApplication, "config"},
+		{"/library", storage.ClassBulk, "library"},
 	}
 	if len(service.Data) != len(wantData) {
 		t.Fatalf("data = %+v", service.Data)
