@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "a1b1314acb1f824b",
+ "hash": "5ac71f2b8eab509e",
  "sections": [
   {
    "title": "Platform",
@@ -4307,6 +4307,20 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "action": "Pick five actions (grant, install plan, backup list, tunnel plan, updates list) and do each on both sides.",
        "expected": "Same result either way.",
        "fail": "docs/PARITY.md."
+      },
+      {
+       "id": "END-PARITY-2",
+       "title": "Export the configuration from the Config page (S483)",
+       "action": "Open Configuration, press Export configuration. Compare with `homesteadctl config export -f out.yaml`.",
+       "expected": "A YAML file downloads with no password prompt. It has the same fields as the CLI file and lists secrets by name only; no secret value appears.",
+       "fail": "Config page; docs/slices/S483-config-export-import-dashboard.md."
+      },
+      {
+       "id": "END-PARITY-3",
+       "title": "Import preview and confirm (S483)",
+       "action": "On Configuration, choose the file you just exported. Read the review. Enter the secret values in the password fields (or use a file with none), then press Confirm import. Also try a garbage file and `homesteadctl config import --dry-run -f FILE`.",
+       "expected": "The review says \"No settings would change\" for a fresh export. A bad file shows the daemon's message and no confirm button. Nothing is applied until Confirm import, the result counts appear, the password fields are empty afterwards, and the Audit page has a `config.import` entry without secret values.",
+       "fail": "Config page; the audit log (`config.import`); docs/slices/S483-config-export-import-dashboard.md."
       },
       {
        "id": "PLAT-TUNNEL-8",

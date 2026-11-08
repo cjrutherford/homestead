@@ -120,6 +120,39 @@ export interface PlanResult {
   errors?: FieldError[];
 }
 
+/** One settings key an import would add, change or remove (S483). */
+export interface ImportChange {
+  key: string;
+  before?: unknown;
+  after?: unknown;
+}
+
+/** The portable document the daemon exports (names only, never secret values). */
+export interface ConfigDocument {
+  version: number;
+  exported_at: string;
+  homestead: string;
+  store_schema: number;
+  desired_version: number;
+  settings?: Record<string, unknown>;
+  secrets?: string[];
+}
+
+/** POST /api/v1/config/import/preview: what an import would do; writes nothing (S483). */
+export interface ImportPreview {
+  valid: boolean;
+  error?: string;
+  changes: ImportChange[];
+  secrets: string[];
+  document?: ConfigDocument;
+}
+
+/** POST /api/v1/config/import: counts restored. */
+export interface ImportResult {
+  settings: number;
+  secrets: number;
+}
+
 /** One catalog bundle member and whether the catalog carries it yet. */
 export interface BundleMember {
   Name: string;
@@ -2372,6 +2405,27 @@ export class ApiService {
 
   applyConfig(settings: Record<string, unknown>): Observable<ConfigState> {
     return this.http.put<ConfigState>('/api/v1/config', { settings });
+  }
+
+  /** The portable YAML, the same bytes `config export -f` writes (S483). Names only, no values. */
+  configExportYaml(): Observable<string> {
+    return this.http.get('/api/v1/config/export', {
+      params: { format: 'yaml' },
+      responseType: 'text',
+    });
+  }
+
+  /** Validates uploaded document text and shows what would change. Writes nothing (S483). */
+  previewConfigImport(text: string): Observable<ImportPreview> {
+    return this.http.post<ImportPreview>('/api/v1/config/import/preview', { text });
+  }
+
+  /** Restores a previewed document. Secret values travel in this one request only (S483). */
+  importConfig(
+    document: ConfigDocument,
+    secrets: Record<string, string>,
+  ): Observable<ImportResult> {
+    return this.http.post<ImportResult>('/api/v1/config/import', { document, secrets });
   }
 
   wizardState(id: string): Observable<WizardState> {

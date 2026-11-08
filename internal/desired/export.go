@@ -81,14 +81,9 @@ func WriteExport(path string, export Export) error {
 	if err := export.Validate(); err != nil {
 		return err
 	}
-	var body bytes.Buffer
-	encoder := yaml.NewEncoder(&body)
-	encoder.SetIndent(2)
-	if err := encoder.Encode(export); err != nil {
-		return fmt.Errorf("desired: render export: %w", err)
-	}
-	if err := encoder.Close(); err != nil {
-		return fmt.Errorf("desired: render export: %w", err)
+	body, err := MarshalExportYAML(export)
+	if err != nil {
+		return err
 	}
 	tmp, err := os.CreateTemp("", "homestead-export-*.yaml")
 	if err != nil {
@@ -96,7 +91,7 @@ func WriteExport(path string, export Export) error {
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
-	if _, err := tmp.Write(body.Bytes()); err != nil {
+	if _, err := tmp.Write(body); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("desired: write export: %w", err)
 	}
@@ -128,6 +123,36 @@ func ReadExport(path string) (Export, error) {
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&export); err != nil {
 		return Export{}, fmt.Errorf("desired: parse %s: %w", path, err)
+	}
+	if err := export.Validate(); err != nil {
+		return Export{}, err
+	}
+	return export, nil
+}
+
+// MarshalExportYAML renders the portable YAML form: what `config
+// export -f` writes and the dashboard downloads (S483).
+func MarshalExportYAML(export Export) ([]byte, error) {
+	var body bytes.Buffer
+	encoder := yaml.NewEncoder(&body)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(export); err != nil {
+		return nil, fmt.Errorf("desired: render export: %w", err)
+	}
+	if err := encoder.Close(); err != nil {
+		return nil, fmt.Errorf("desired: render export: %w", err)
+	}
+	return body.Bytes(), nil
+}
+
+// ParseExport strictly parses an export document from YAML or JSON
+// text (JSON is YAML). Unknown fields are rejected.
+func ParseExport(data []byte) (Export, error) {
+	var export Export
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&export); err != nil {
+		return Export{}, fmt.Errorf("desired: parse export: %w", err)
 	}
 	if err := export.Validate(); err != nil {
 		return Export{}, err

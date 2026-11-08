@@ -213,6 +213,7 @@ var routeClasses = map[string]RouteClass{
 	"PUT /api/v1/config":                                 ClassSession,
 	"GET /api/v1/config/export":                          ClassSession,
 	"POST /api/v1/config/import":                         ClassSession,
+	"POST /api/v1/config/import/preview":                 ClassSession,
 	"GET /api/v1/docker/health":                          ClassSession,
 	"GET /api/v1/dockge":                                 ClassSession,
 	"GET /api/v1/doctor":                                 ClassSession,

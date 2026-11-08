@@ -40,17 +40,8 @@ func ImportExport(export Export, desiredPath string, secrets *secret.Store, valu
 	if secrets == nil {
 		return ImportSummary{}, fmt.Errorf("desired: import needs a secret store")
 	}
-	if err := export.Validate(); err != nil {
+	if err := ValidateImport(export); err != nil {
 		return ImportSummary{}, err
-	}
-	if export.StoreSchema > store.CurrentVersion {
-		return ImportSummary{}, fmt.Errorf("desired: export needs store schema %d, this Homestead supports %d (upgrade homestead)", export.StoreSchema, store.CurrentVersion)
-	}
-	if export.DesiredVersion > CurrentVersion {
-		return ImportSummary{}, fmt.Errorf("desired: export needs desired version %d, this Homestead supports %d (upgrade homestead)", export.DesiredVersion, CurrentVersion)
-	}
-	if export.DesiredVersion <= 0 {
-		return ImportSummary{}, fmt.Errorf("desired: export desired version missing")
 	}
 	var missing []string
 	for _, name := range export.Secrets {
@@ -81,4 +72,22 @@ func ImportExport(export Export, desiredPath string, secrets *secret.Store, valu
 		return ImportSummary{}, err
 	}
 	return ImportSummary{Settings: len(state.Settings), Secrets: len(export.Secrets)}, nil
+}
+
+// ValidateImport applies every compatibility rule an import needs
+// before any secret is looked at: version bounds and schema levels.
+func ValidateImport(export Export) error {
+	if err := export.Validate(); err != nil {
+		return err
+	}
+	if export.StoreSchema > store.CurrentVersion {
+		return fmt.Errorf("desired: export needs store schema %d, this Homestead supports %d (upgrade homestead)", export.StoreSchema, store.CurrentVersion)
+	}
+	if export.DesiredVersion > CurrentVersion {
+		return fmt.Errorf("desired: export needs desired version %d, this Homestead supports %d (upgrade homestead)", export.DesiredVersion, CurrentVersion)
+	}
+	if export.DesiredVersion <= 0 {
+		return fmt.Errorf("desired: export desired version missing")
+	}
+	return nil
 }
