@@ -1009,8 +1009,8 @@ func TestCuratedNavidrome(t *testing.T) {
 		t.Fatalf("services = %+v", manifest.Services)
 	}
 	service := manifest.Services[0]
-	if len(service.Environment) != 1 || service.Environment["ND_CACHEFOLDER"] != "/cache" {
-		t.Fatalf("environment = %v, want only the bulk cache folder", service.Environment)
+	if len(service.Environment) != 2 || service.Environment["ND_CACHEFOLDER"] != "/cache" || service.Environment["ND_BASEURL"] != "{{route_path}}" {
+		t.Fatalf("environment = %v, want the bulk cache folder and the base URL (S472)", service.Environment)
 	}
 	if len(service.Entrypoint) != 0 || len(manifest.Secrets) != 1 || manifest.Secrets[0].Name != "admin_password" || !manifest.Secrets[0].Reveal {
 		t.Fatalf("navidrome generates its JWT secrets into the database; the only secret is the revealable administrator password = %+v", manifest.Secrets)

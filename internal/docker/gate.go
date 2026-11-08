@@ -85,20 +85,37 @@ func (r Route) validateGate() error {
 	switch {
 	case r.Dashboard:
 		return fmt.Errorf("route.gate: the dashboard keeps its own sign-in and is never gated")
-	case r.IsPath():
-		return fmt.Errorf("route.gate: only an app on names of its own is gated")
 	case r.CraftApp != "":
 		return fmt.Errorf("route.gate: a craft app route is not gated")
+	case r.IsPath() && r.StripPrefix:
+		return fmt.Errorf("route.gate: an app at a path that the edge strips is not gated; it must serve under its path itself")
 	}
-	if err := g.Canonical.Validate(); err != nil {
-		return fmt.Errorf("route.gate.canonical: %w", err)
-	}
-	found := false
-	for _, n := range r.AllNames() {
-		found = found || n == g.Canonical
-	}
-	if !found {
-		return fmt.Errorf("route.gate.canonical: %q is not one of the route's names", g.Canonical)
+	if r.IsPath() {
+		// A path app is gated inside the dashboard site (ADR-061); the name
+		// it answers on is worked out from the dashboard route when it is
+		// rendered, so Canonical is only a record of it. Bypass paths carry
+		// the app's prefix.
+		if g.Canonical != "" {
+			if err := g.Canonical.Validate(); err != nil {
+				return fmt.Errorf("route.gate.canonical: %w", err)
+			}
+		}
+		for _, b := range g.Bypass {
+			if !strings.HasPrefix(b, "^"+r.Path) {
+				return fmt.Errorf("route.gate.bypass: %q must start with ^%s for an app at a path", b, r.Path)
+			}
+		}
+	} else {
+		if err := g.Canonical.Validate(); err != nil {
+			return fmt.Errorf("route.gate.canonical: %w", err)
+		}
+		found := false
+		for _, n := range r.AllNames() {
+			found = found || n == g.Canonical
+		}
+		if !found {
+			return fmt.Errorf("route.gate.canonical: %q is not one of the route's names", g.Canonical)
+		}
 	}
 	for _, h := range g.CopyHeaders {
 		if !validGateHeader.MatchString(h) {
@@ -258,7 +275,7 @@ func renderGatedSites(r Route, tlsLine, proxy, tunnelBody string) string {
 // shows (S418).
 func HealGates(routes []Route) {
 	for i, r := range routes {
-		if r.Gate == nil {
+		if r.Gate == nil || r.IsPath() {
 			continue
 		}
 		present := false
@@ -275,4 +292,99 @@ func HealGates(routes []Route) {
 		}
 		routes[i].Gate = &g
 	}
+}
+
+// PathBypass is a bypass regex of a package, written for the app's own
+// root (^/rest/.*), as it must be matched at the app's path (ADR-061):
+// ^/apps/navidrome/rest/.*. Authentik matches the same regex against the
+// request path, so the plan and the edge use this one form.
+func PathBypass(path, re string) string {
+	return "^" + strings.TrimSuffix(path, "/") + strings.TrimPrefix(re, "^")
+}
+
+// PathGateCanonical is the one name a gated app at a path answers on: the
+// dashboard's public name once the path is published, else the dashboard's
+// own name. Authentik matches a request to the app's provider by one
+// external host, so every other name redirects to it.
+func PathGateCanonical(p, dash Route) Hostname {
+	if p.Published && len(dash.Tunnel) > 0 {
+		return dash.Tunnel[0]
+	}
+	return dash.Host
+}
+
+// renderOutpostHandle is the dashboard site's handle for Authentik's
+// embedded outpost, which the gate's sign-in redirect and callback need on
+// the name the app answers on (ADR-061; public too, because the gate runs
+// for public visitors). On the tunnel entry the scheme the outpost builds
+// its redirects from is https, because Cloudflare terminated TLS.
+func renderOutpostHandle(tunnel bool) string {
+	if tunnel {
+		return fmt.Sprintf("\thandle %s* {\n\t\treverse_proxy %s {\n\t\t\theader_up X-Forwarded-Proto https\n\t\t}\n\t}\n", OutpostPrefix, OutpostUpstream)
+	}
+	return fmt.Sprintf("\thandle %s* {\n\t\treverse_proxy %s\n\t}\n", OutpostPrefix, OutpostUpstream)
+}
+
+// renderGatedPath renders one gated app's handle inside the dashboard
+// site, and reports whether this site must carry the outpost handle (it
+// does where the app answers; the other names redirect to the canonical
+// one). Order inside the route holds as for a site of its own: identity
+// headers stripped, bypass handles, then forward-auth in front of the app.
+// The reserved cookies are removed from the request only after the
+// forward-auth subrequest, so the outpost still sees Authentik's cookie
+// (ADR-061 section 3).
+func renderGatedPath(p, dash Route, tunnel bool) (string, bool) {
+	g := p.Gate
+	canonical := PathGateCanonical(p, dash)
+	bare := strings.TrimSuffix(p.Path, "/")
+	label := strings.ReplaceAll(strings.Trim(bare, "/"), "/", "_")
+	var b strings.Builder
+	b.WriteString("\t# Authentik forward-auth gate at the app's path (ADR-061, ADR-055). Identity headers come only from the outpost.\n")
+	fmt.Fprintf(&b, "\thandle %s* {\n", p.Path)
+	if !tunnel && !isHostIn(canonical, dash.Names()) {
+		// Published: the local names send the visitor to the public one.
+		fmt.Fprintf(&b, "\t\tredir https://%s{uri} 308\n\t}\n", canonical)
+		return b.String(), false
+	}
+	if !tunnel && len(dash.Names()) > 1 {
+		fmt.Fprintf(&b, "\t\t@gate_%s_other {\n\t\t\tnot host %s\n\t\t}\n\t\tredir @gate_%s_other https://%s{uri} 308\n", label, canonical, label, canonical)
+	}
+	b.WriteString(sharedOriginResponseHeaders())
+	cookie := ""
+	if p.Path != SignInPath {
+		cookie = "\t\t\t\trequest_header Cookie \"(?i)(^|;)[ ]*(" + reservedCookieAlt + ")=[^;]*\" \"\"\n"
+	}
+	proxy := pathUpstream(p, tunnel)
+	b.WriteString("\t\troute {\n")
+	for _, h := range g.stripped() {
+		fmt.Fprintf(&b, "\t\t\trequest_header -%s\n", h)
+	}
+	for i, re := range g.Bypass {
+		fmt.Fprintf(&b, "\t\t\t@gate_%s_bypass%d path_regexp %s\n\t\t\thandle @gate_%s_bypass%d {\n", label, i, re, label, i)
+		b.WriteString(cookie)
+		b.WriteString(indentBy(proxy, 4))
+		b.WriteString("\t\t\t}\n")
+	}
+	b.WriteString("\t\t\thandle {\n")
+	fmt.Fprintf(&b, "\t\t\t\tforward_auth %s {\n\t\t\t\t\turi %s\n", OutpostUpstream, OutpostAuthURI)
+	if len(g.CopyHeaders) > 0 {
+		fmt.Fprintf(&b, "\t\t\t\t\tcopy_headers %s\n", strings.Join(g.CopyHeaders, " "))
+	}
+	if tunnel {
+		b.WriteString("\t\t\t\t\theader_up X-Forwarded-Proto https\n")
+	}
+	b.WriteString("\t\t\t\t}\n")
+	b.WriteString(cookie)
+	b.WriteString(indentBy(proxy, 4))
+	b.WriteString("\t\t\t}\n\t\t}\n\t}\n")
+	return b.String(), true
+}
+
+func isHostIn(h Hostname, names []Hostname) bool {
+	for _, n := range names {
+		if n == h {
+			return true
+		}
+	}
+	return false
 }

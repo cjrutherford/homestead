@@ -19,7 +19,7 @@ var adr061Facts = func() map[string][2]string {
 		"memos": {PublishHost, ReasonNoSubpath}, "bookstack": {PublishHost, ReasonNoSubpath},
 		"vikunja": {PublishHost, ReasonNoSubpath}, "uptime-kuma": {PublishNever, ""},
 		// Subpath candidates: host until their own slice verifies them.
-		"navidrome": {PublishHost, ReasonNoSubpath}, "audiobookshelf": {PublishHost, ReasonNoSubpath},
+		"navidrome": {PublishPath, ""}, "audiobookshelf": {PublishHost, ReasonNoSubpath},
 		"komga": {PublishHost, ReasonNoSubpath}, "paperless-ngx": {PublishHost, ReasonNoSubpath},
 		"linkding": {PublishHost, ReasonNoSubpath}, "freshrss": {PublishHost, ReasonNoSubpath},
 	}

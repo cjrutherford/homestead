@@ -44,9 +44,11 @@ type GatePlan struct {
 
 // canonicalRoute is the route the gate protects and the one name it
 // answers on: the public name when published, otherwise the route's host.
+// A path route (ADR-061; routes resolved with docker.ServedRoutes) is
+// served on the dashboard's names, so its host and tunnel names are those.
 func canonicalRoute(routes []docker.Route) (docker.Route, docker.Hostname, bool) {
 	for _, r := range routes {
-		if r.Dashboard || r.IsPath() {
+		if r.Dashboard {
 			continue
 		}
 		if len(r.Tunnel) > 0 {
@@ -60,7 +62,7 @@ func canonicalRoute(routes []docker.Route) (docker.Route, docker.Hostname, bool)
 func countNamed(routes []docker.Route) int {
 	n := 0
 	for _, r := range routes {
-		if !r.Dashboard && !r.IsPath() {
+		if !r.Dashboard {
 			n++
 		}
 	}
@@ -93,10 +95,10 @@ func removeForwardAccess(pkg string) sso.Access {
 	return sso.Access{Groups: []string{g.Users, g.Admins}, OwnerOf: []string{}, Bindings: []string{}}
 }
 
-func forwardRevision(fa *catalog.ForwardAuth, canonical string, redirects []string, env map[string]string) string {
+func forwardRevision(fa *catalog.ForwardAuth, bypass []catalog.ForwardBypass, canonical string, redirects []string, env map[string]string) string {
 	h := sha256.New()
 	fmt.Fprintf(h, "%s|%s|%v|", canonical, strings.Join(redirects, ","), fa.CopyHeaders)
-	for _, b := range fa.Bypass {
+	for _, b := range bypass {
 		fmt.Fprintf(h, "%s|", b.Path)
 	}
 	keys := make([]string, 0, len(env))
@@ -187,9 +189,6 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 	if ok, why := offeredForward(in); !ok {
 		return Plan{}, unavailable("%s", why)
 	}
-	if m.ServedByPath() {
-		return Plan{}, unavailable("%s is served under a path; the gate needs a name of its own", m.Title)
-	}
 	if in.OwnerSub == "" {
 		return Plan{}, unavailable("Link the appliance owner's Authentik account before gating %s, so the owner is not locked out.", m.Title)
 	}
@@ -259,6 +258,15 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 	}
 	p.RedirectURIs = []string{"https://" + strings.ToLower(string(canonical))}
 	p.SignInURL = p.RedirectURIs[0] + "/"
+	bypass := append([]catalog.ForwardBypass{}, fa.Bypass...)
+	if route.IsPath() {
+		// The app answers at its path on the dashboard's name (ADR-061):
+		// sign-in starts there and every bypass is matched with the prefix.
+		p.SignInURL = p.RedirectURIs[0] + route.Path
+		for i := range bypass {
+			bypass[i].Path = docker.PathBypass(route.Path, bypass[i].Path)
+		}
+	}
 	redirects := []string{}
 	for _, n := range route.AllNames() {
 		if n != canonical {
@@ -275,9 +283,9 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 	}
 	g := &GatePlan{
 		Canonical: strings.ToLower(string(canonical)), Redirects: redirects,
-		Bypass: append([]catalog.ForwardBypass{}, fa.Bypass...), CopyHeaders: append([]string{}, fa.CopyHeaders...),
+		Bypass: bypass, CopyHeaders: append([]string{}, fa.CopyHeaders...),
 		AuthentikHost: base + "/", ExistingUsers: existing,
-		Env: env, Revision: forwardRevision(fa, string(canonical), redirects, env),
+		Env: env, Revision: forwardRevision(fa, bypass, string(canonical), redirects, env),
 	}
 	p.Gate = g
 	access := forwardAccess(fa, m.Name, in.OwnerSub)

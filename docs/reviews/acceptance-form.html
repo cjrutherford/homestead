@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "346904a599ac252b",
+ "hash": "b24f750ca0418a6c",
  "sections": [
   {
    "title": "Platform",
@@ -1364,9 +1364,16 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-NAVIDROME-2",
        "title": "Opens at the right path or name",
-       "action": "Open https://navidrome.\u003clan-suffix\u003e/ (own name; one canonical name: public if published, else .lan; other names redirect).",
+       "action": "Open https://homestead.\u003cdomain\u003e/apps/navidrome/ (public) and https://homestead.lan/apps/navidrome/ (LAN; redirects to the public name when the app is published).",
        "expected": "The app's own page loads (no 404, no certificate surprise beyond the documented one).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
+      },
+      {
+       "id": "SRV-NAVIDROME-2a",
+       "title": "Move from its own name to the subpath",
+       "action": "On an install that still has https://navidrome.\u003cdomain\u003e/, run `homesteadctl apps move plan navidrome`, read the preview, then `apps move apply` with its digest (or the app page \u003e Move).",
+       "expected": "Navidrome answers at `/apps/navidrome/` behind sign-in; the old name, its CNAME and tunnel entry are gone and nothing redirects from it; Doctor has no failures.",
+       "fail": "The move stops and keeps the old name; `apps move status navidrome` says unfinished, and plan/apply again finishes it. Doctor page, audit log."
       },
       {
        "id": "SRV-NAVIDROME-3",
@@ -1399,7 +1406,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-NAVIDROME-7",
        "title": "Subsonic client bypass",
-       "action": "From a Subsonic client (for example a phone app) or `curl 'https://navidrome.\u003clan-suffix\u003e/rest/ping.view?...'` with Navidrome credentials, call `/rest/ping`.",
+       "action": "From a Subsonic client (for example a phone app) or `curl 'https://homestead.\u003cdomain\u003e/apps/navidrome/rest/ping.view?...'` with Navidrome credentials, call `/rest/ping`.",
        "expected": "Answers without an Authentik redirect (the bypass), but needs Navidrome credentials.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1427,7 +1434,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-NAVIDROME-11",
        "title": "Uninstall leaves no orphan route (END pass)",
-       "action": "Done in END-UNINSTALL-*: uninstall Navidrome, then open https://navidrome.\u003clan-suffix\u003e/ (own name; one canonical name: public if published, else .lan; other names redirect) and check the Caddy/route list.",
+       "action": "Done in END-UNINSTALL-*: uninstall Navidrome, then open https://homestead.\u003cdomain\u003e/apps/navidrome/ and check the Caddy/route list.",
        "expected": "The URL no longer answers; app disappears from the apps page and Doctor; no leftover route or container.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       }

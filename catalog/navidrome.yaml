@@ -11,15 +11,17 @@
 # ND_EXTAUTH_USERHEADER to the header the outpost supplies, and trusts only
 # the edge network (ND_EXTAUTH_TRUSTEDSOURCES). /rest/* (Subsonic clients)
 # and /share/* (share links) bypass the gate and keep Navidrome's own
-# credentials or links. Navidrome admins stay a Navidrome setting: only the
+# credentials or links. Served at <server>/apps/navidrome/ (S472, ADR-061):
+# ND_BASEURL makes Navidrome serve under the prefix itself, so the edge keeps
+# it, the gate is a handle inside the dashboard site, and the bypass regexes
+# below are written for the app's root and matched with the prefix. Navidrome admins stay a Navidrome setting: only the
 # first proxy user becomes admin, so the plan refuses until an admin exists;
 # the install's first run provides it.
 # The JWT secrets are generated into the SQLite database on first start and
 # backed up with it; the only declared secret is the administrator's
 # password, held by Homestead alone, and the entrypoint is unchanged.
 name: navidrome
-publish: host  # ADR-061
-publish_reason: no_subpath
+publish: path  # ADR-061
 version: 0.64.2
 title: Navidrome
 blurb: Your music library, streamed anywhere.
@@ -41,6 +43,8 @@ services:
     # library, so they live on bulk storage instead of the backed-up data
     # volume. The music and data folders keep the image defaults.
     ND_CACHEFOLDER: /cache
+    # Navidrome serves under this prefix itself (no trailing slash).
+    ND_BASEURL: "{{route_path}}"
   # Image VOLUMEs: /data and /music. /data (SQLite database, playlists,
   # play counts) is application storage; /cache is the artwork and
   # transcode cache on bulk. /music is an owner volume: the read-only bulk
@@ -64,6 +68,8 @@ requirements:
     minbytes: 10737418240
   # Navidrome listens on 4533; routes proxy to it and no host port is
   # published by default.
+serve: path
+path: /apps/navidrome/
 exposure:
   package: navidrome
   endpoints:

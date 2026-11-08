@@ -1083,9 +1083,15 @@ _Install creates the Navidrome admin (local account homestead-admin, password un
   - Result: ____  Notes: ____
 
 - [ ] **SRV-NAVIDROME-2 — Opens at the right path or name**
-  - Action: Open https://navidrome.<lan-suffix>/ (own name; one canonical name: public if published, else .lan; other names redirect).
+  - Action: Open https://homestead.<domain>/apps/navidrome/ (public) and https://homestead.lan/apps/navidrome/ (LAN; redirects to the public name when the app is published).
   - Expected: The app's own page loads (no 404, no certificate surprise beyond the documented one).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
+  - Result: ____  Notes: ____
+
+- [ ] **SRV-NAVIDROME-2a — Move from its own name to the subpath**
+  - Action: On an install that still has https://navidrome.<domain>/, run `homesteadctl apps move plan navidrome`, read the preview, then `apps move apply` with its digest (or the app page > Move).
+  - Expected: Navidrome answers at `/apps/navidrome/` behind sign-in; the old name, its CNAME and tunnel entry are gone and nothing redirects from it; Doctor has no failures.
+  - If it fails: The move stops and keeps the old name; `apps move status navidrome` says unfinished, and plan/apply again finishes it. Doctor page, audit log.
   - Result: ____  Notes: ____
 
 - [ ] **SRV-NAVIDROME-3 — Owner sign-in**
@@ -1113,7 +1119,7 @@ _Install creates the Navidrome admin (local account homestead-admin, password un
   - Result: ____  Notes: ____
 
 - [ ] **SRV-NAVIDROME-7 — Subsonic client bypass**
-  - Action: From a Subsonic client (for example a phone app) or `curl 'https://navidrome.<lan-suffix>/rest/ping.view?...'` with Navidrome credentials, call `/rest/ping`.
+  - Action: From a Subsonic client (for example a phone app) or `curl 'https://homestead.<domain>/apps/navidrome/rest/ping.view?...'` with Navidrome credentials, call `/rest/ping`.
   - Expected: Answers without an Authentik redirect (the bypass), but needs Navidrome credentials.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1137,7 +1143,7 @@ _Install creates the Navidrome admin (local account homestead-admin, password un
   - Result: ____  Notes: ____
 
 - [ ] **SRV-NAVIDROME-11 — Uninstall leaves no orphan route (END pass)**
-  - Action: Done in END-UNINSTALL-*: uninstall Navidrome, then open https://navidrome.<lan-suffix>/ (own name; one canonical name: public if published, else .lan; other names redirect) and check the Caddy/route list.
+  - Action: Done in END-UNINSTALL-*: uninstall Navidrome, then open https://homestead.<domain>/apps/navidrome/ and check the Caddy/route list.
   - Expected: The URL no longer answers; app disappears from the apps page and Doctor; no leftover route or container.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -3582,7 +3588,7 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | SRV-LINKDING | SRV-LINKDING-1 to SRV-LINKDING-9 (10) |  |  |  |  |
 | SRV-MEALIE | SRV-MEALIE-1 to SRV-MEALIE-9 (10) |  |  |  |  |
 | SRV-MEMOS | SRV-MEMOS-1 to SRV-MEMOS-9 (10) |  |  |  |  |
-| SRV-NAVIDROME | SRV-NAVIDROME-1 to SRV-NAVIDROME-11 (12) |  |  |  |  |
+| SRV-NAVIDROME | SRV-NAVIDROME-1 to SRV-NAVIDROME-11 (13) |  |  |  |  |
 | SRV-NEXTCLOUD | SRV-NEXTCLOUD-1 to SRV-NEXTCLOUD-10 (11) |  |  |  |  |
 | SRV-PAPERLESS-NGX | SRV-PAPERLESS-NGX-1 to SRV-PAPERLESS-NGX-9 (9) |  |  |  |  |
 | SRV-UPTIME-KUMA | SRV-UPTIME-KUMA-1 to SRV-UPTIME-KUMA-12 (12) |  |  |  |  |
@@ -3625,4 +3631,4 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | END-AUDIT | END-AUDIT-1 to END-AUDIT-1 (1) |  |  |  |  |
 | END-PARITY | END-PARITY-1 to END-PARITY-1 (1) |  |  |  |  |
 | END-UNINSTALL | END-UNINSTALL-1 to END-UNINSTALL-6 (6) |  |  |  |  |
-| **Total** | 547 steps |  |  |  |  |
+| **Total** | 548 steps |  |  |  |  |

@@ -53,7 +53,7 @@ func renderSignInSite(r Route, cert *PlacedCert) string {
 }
 `, r.Tunnel[0], caddyRoutesDir, certsDirName, cert.Name, certChainFile,
 		caddyRoutesDir, certsDirName, cert.Name, certKeyFile,
-		strings.TrimSuffix(renderPathHandles([]Route{p}, false), "\n")+"\n")
+		strings.TrimSuffix(renderPathHandles([]Route{p}, false, r), "\n")+"\n")
 }
 
 // SignInSiteServed reports the dashboard's public name when the edge

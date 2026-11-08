@@ -124,7 +124,7 @@ func (a *appSignIn) setGate(ctx context.Context, m catalog.Manifest, gate *docke
 	routes := append([]docker.Route(nil), set.Routes...)
 	changed := 0
 	for i, r := range routes {
-		if r.Dashboard || r.IsPath() {
+		if r.Dashboard {
 			continue
 		}
 		mine := false

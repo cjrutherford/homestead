@@ -551,6 +551,24 @@ func appMoveDefinition(st *store.Store, secrets *secret.Store, plan appMovePlan)
 				// Authentik stays published when a fresh tunnel plan would
 				// publish its path (S395).
 				set.Routes[i].Published = publish
+				if g := set.Routes[i].Gate; g != nil {
+					// A gated app (ADR-055) moves its gate inside the
+					// dashboard site (ADR-061): bypass regexes take the
+					// path prefix, and the gate answers on the dashboard's
+					// name. The sign-in re-plan brings Authentik along.
+					moved := *g
+					moved.Bypass = nil
+					for _, b := range g.Bypass {
+						if !strings.HasPrefix(b, "^"+plan.Path) {
+							b = docker.PathBypass(plan.Path, b)
+						}
+						moved.Bypass = append(moved.Bypass, b)
+					}
+					if dash, ok := set.DashboardRoute(); ok {
+						moved.Canonical = docker.PathGateCanonical(set.Routes[i], dash)
+					}
+					set.Routes[i].Gate = &moved
+				}
 				if err := set.Routes[i].Validate(); err != nil {
 					return err
 				}
@@ -668,7 +686,7 @@ func movePublicRemoveSteps(st *store.Store, apiToken string, plan appMovePlan) [
 // the Authentik API token is not kept.
 func (m *appMove) planSignIn(f moveFacts, plan *appMovePlan) bool {
 	a := m.s.appSignIn
-	if a == nil || f.manifest.SSO.OIDC == nil || !a.tokenKept() {
+	if a == nil || (f.manifest.SSO.OIDC == nil && f.manifest.SSO.ForwardAuth == nil) || !a.tokenKept() {
 		return false
 	}
 	set, err := loadEdgeRoutes(m.st)

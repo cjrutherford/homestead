@@ -78,7 +78,7 @@ func renderRoute(r Route, cert, signIn *PlacedCert) (string, error) {
 		if len(r.paths) > 0 {
 			dash := proxy.String()
 			proxy.Reset()
-			proxy.WriteString(renderPathHandles(r.paths, false) + wrapHandle(dash))
+			proxy.WriteString(renderPathHandles(r.paths, false, r) + wrapHandle(dash))
 		}
 	} else if r.Health.Path == "" {
 		fmt.Fprintf(&proxy, "\treverse_proxy %s\n", upstream)
@@ -142,7 +142,7 @@ func renderTunnelEntry(r Route, upstream string) string {
 	if len(r.paths) > 0 {
 		// Only published app paths answer on the public names; every
 		// other /apps/ path answers 404 there (ADR-044 §3).
-		body = renderPathHandles(r.paths, true) + wrapHandle(body)
+		body = renderPathHandles(r.paths, true, r) + wrapHandle(body)
 	}
 	return fmt.Sprintf(`
 # Tunnel entry (ADR-037): public names the connector delivers on loopback.
@@ -190,8 +190,9 @@ func wrapHandle(body string) string {
 // the dashboard never answers for an app that is not there. On the
 // tunnel entry only published paths are rendered; the client address
 // is the one Cloudflare saw and the scheme is https.
-func renderPathHandles(paths []Route, tunnel bool) string {
+func renderPathHandles(paths []Route, tunnel bool, dash Route) string {
 	var b strings.Builder
+	outpost := false
 	b.WriteString("\t# Apps under the appliance's names (ADR-044).\n")
 	for _, p := range paths {
 		if tunnel && !p.Published {
@@ -202,6 +203,14 @@ func renderPathHandles(paths []Route, tunnel bool) string {
 		}
 		bare := strings.TrimSuffix(p.Path, "/")
 		fmt.Fprintf(&b, "\tredir %s %s 308\n", bare, p.Path)
+		if p.Gate != nil {
+			// A gated app at a path (ADR-061, ADR-055): inside the dashboard
+			// site, behind Authentik forward-auth.
+			text, full := renderGatedPath(p, dash, tunnel)
+			b.WriteString(text)
+			outpost = outpost || full
+			continue
+		}
 		for _, rd := range p.Redirects {
 			fmt.Fprintf(&b, "\tredir %s %s%s 301\n", rd.From, p.Path, rd.To)
 		}
@@ -226,6 +235,9 @@ func renderPathHandles(paths []Route, tunnel bool) string {
 			b.WriteString(indent(wrapHandle(up)))
 		}
 		b.WriteString("\t}\n")
+	}
+	if outpost {
+		b.WriteString(renderOutpostHandle(tunnel))
 	}
 	fmt.Fprintf(&b, "\thandle %s* {\n\t\trespond 404\n\t}\n", AppsPrefix)
 	return b.String()
@@ -252,12 +264,19 @@ var reservedCookieAlt = strings.Join(ReservedCookieNames, "|")
 // Caddyfile token; there are no braces. Authentik itself at /apps/auth/
 // owns authentik_session and authentik_csrf, so it keeps its cookies.
 func sharedOriginHeaders(p Route) string {
-	out := "\t\theader ?Content-Security-Policy \"frame-ancestors 'self'\"\n" +
-		"\t\theader ?Referrer-Policy same-origin\n"
+	out := sharedOriginResponseHeaders()
 	if p.Path != SignInPath {
 		out += "\t\trequest_header Cookie \"(?i)(^|;)[ ]*(" + reservedCookieAlt + ")=[^;]*\" \"\"\n"
 	}
 	return out
+}
+
+// sharedOriginResponseHeaders are the two response header defaults of a
+// path handle. A gated app keeps its request cookie strip inside the gate's
+// route, after the forward-auth subrequest.
+func sharedOriginResponseHeaders() string {
+	return "\t\theader ?Content-Security-Policy \"frame-ancestors 'self'\"\n" +
+		"\t\theader ?Referrer-Policy same-origin\n"
 }
 
 // ReadLinkPaths are the only two paths below an app's path that the
