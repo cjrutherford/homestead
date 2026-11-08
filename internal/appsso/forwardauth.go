@@ -37,6 +37,19 @@ type GatePlan struct {
 	ExistingUsers []string `json:"existing_users"`
 	// Env are the trust settings written to the app (not secret).
 	Env map[string]string `json:"env"`
+	// Shared is set for an app at a path (ADR-062): it sits behind the one
+	// proxy provider every such app shares, and the edge, not Authentik,
+	// decides who may open it, by Groups.
+	Shared bool `json:"shared,omitempty"`
+	// Groups are the Authentik groups the edge admits to the app (exact
+	// match against the outpost's groups header). Only with Shared.
+	Groups []string `json:"groups,omitempty"`
+	// ProviderBypass are the shared provider's unauthenticated paths: this
+	// app's and those of every other app behind the gate.
+	ProviderBypass []string `json:"provider_bypass,omitempty"`
+	// OtherApps are the paths of the other apps behind the shared gate.
+	// The provider is deleted only when turning this one off leaves none.
+	OtherApps []string `json:"other_apps,omitempty"`
 	// Revision changes when the gate's rules change (bypass, env, names),
 	// so a manifest bump shows as a re-plan.
 	Revision string `json:"revision"`
@@ -95,9 +108,12 @@ func removeForwardAccess(pkg string) sso.Access {
 	return sso.Access{Groups: []string{g.Users, g.Admins}, OwnerOf: []string{}, Bindings: []string{}}
 }
 
-func forwardRevision(fa *catalog.ForwardAuth, bypass []catalog.ForwardBypass, canonical string, redirects []string, env map[string]string) string {
+func forwardRevision(fa *catalog.ForwardAuth, bypass []catalog.ForwardBypass, canonical string, redirects []string, env map[string]string, groups []string) string {
 	h := sha256.New()
 	fmt.Fprintf(h, "%s|%s|%v|", canonical, strings.Join(redirects, ","), fa.CopyHeaders)
+	if len(groups) > 0 {
+		fmt.Fprintf(h, "shared:%s|", strings.Join(groups, ","))
+	}
 	for _, b := range bypass {
 		fmt.Fprintf(h, "%s|", b.Path)
 	}
@@ -118,7 +134,53 @@ func (g GatePlan) gate() *docker.Gate {
 	for _, b := range g.Bypass {
 		paths = append(paths, b.Path)
 	}
-	return &docker.Gate{Canonical: docker.Hostname(g.Canonical), CopyHeaders: append([]string(nil), g.CopyHeaders...), Bypass: paths}
+	return &docker.Gate{Canonical: docker.Hostname(g.Canonical), CopyHeaders: append([]string(nil), g.CopyHeaders...), Bypass: paths,
+		Groups: append([]string(nil), g.Groups...)}
+}
+
+// The one Authentik proxy provider, application and slug that every app at
+// a path shares (ADR-062). Authentik matches a request to a provider by
+// one external host, and every such app answers on the dashboard's.
+const (
+	SharedGateProvider = "Homestead: apps gate"
+	SharedGateApp      = "Homestead apps gate (homestead-apps-gate)"
+	SharedGateSlug     = "homestead-apps-gate"
+)
+
+// OtherGate is another app behind the shared gate: its path and the
+// bypass regexes it keeps written with that path.
+type OtherGate struct {
+	Path   string   `json:"path"`
+	Bypass []string `json:"bypass"`
+}
+
+// providerBypass is the shared provider's unauthenticated paths: mine and
+// every other app's, each once, sorted.
+func providerBypass(mine []string, others []OtherGate, myPath string) ([]string, []string) {
+	seen := map[string]bool{}
+	var out, apps []string
+	add := func(list []string) {
+		for _, b := range list {
+			if !seen[b] {
+				seen[b] = true
+				out = append(out, b)
+			}
+		}
+	}
+	add(mine)
+	for _, o := range others {
+		if o.Path == myPath {
+			continue
+		}
+		apps = append(apps, o.Path)
+		add(o.Bypass)
+	}
+	sort.Strings(out)
+	sort.Strings(apps)
+	if out == nil {
+		out = []string{}
+	}
+	return out, apps
 }
 
 func (g GatePlan) bypassPaths() []string {
@@ -163,6 +225,13 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 			canonical = hostOf(p.RedirectURIs[0])
 		}
 		p.Gate = &GatePlan{Canonical: canonical, Redirects: []string{}, Bypass: []catalog.ForwardBypass{}, CopyHeaders: []string{}, ExistingUsers: []string{}, Env: map[string]string{}}
+		if route, _, ok := canonicalRoute(in.Routes); ok && route.IsPath() {
+			// ADR-062: the provider is shared; it is deleted only with the
+			// last app behind it, otherwise this app leaves its paths.
+			p.Gate.Shared = true
+			p.Gate.ProviderBypass, p.Gate.OtherApps = providerBypass(nil, in.OtherGates, route.Path)
+			p.Provider, p.Application = SharedGateProvider, SharedGateApp
+		}
 		for _, k := range sortedKeys(fa.Env) {
 			if v, ok := in.OwnerEnv[k]; ok {
 				p.Gate.Env[k] = v
@@ -175,9 +244,13 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 		if len(fa.Env) > 0 {
 			p.Changes = append(p.Changes, fmt.Sprintf("Take the trust settings out of %s first, so it ignores identity headers again.", m.Title))
 		}
+		removal := fmt.Sprintf("Remove the provider from the embedded outpost, delete the application %s and the provider %q from Authentik.", p.Application, p.Provider)
+		if p.Gate.Shared && len(p.Gate.OtherApps) > 0 {
+			removal = fmt.Sprintf("Take %s's open paths out of the shared Authentik gate. The gate stays for %s.", m.Title, strings.Join(p.Gate.OtherApps, ", "))
+		}
 		p.Changes = append(p.Changes,
 			fmt.Sprintf("Remove the Authentik gate from the edge: %s returns to a plain reverse proxy and the other names stop redirecting.", m.Title),
-			fmt.Sprintf("Remove the provider from the embedded outpost, delete the application %s and the provider %q from Authentik.", p.Application, p.Provider),
+			removal,
 			fmt.Sprintf("Delete the Authentik groups %s and %s. The shared group %s stays.", x.Groups[0], x.Groups[1], sso.OwnerGroup),
 			fmt.Sprintf("Anyone who can reach %s's address can open its own login again, as before the gate. People's %s accounts stay.", m.Title, m.Title))
 		if canonical != "" && !docker.IsPrivateName(docker.Hostname(canonical)) {
@@ -274,6 +347,17 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 		}
 	}
 	sort.Strings(redirects)
+	var groups []string
+	if route.IsPath() {
+		// ADR-062: every app at a path shares one Authentik gate on the
+		// dashboard's name; the edge admits the app's groups only.
+		gn := groupNames(m.Name)
+		groups = []string{gn.Users, gn.Admins, gn.Owner}
+		if fa.Access == catalog.AccessAdminOnly {
+			groups = []string{gn.Admins, gn.Owner}
+		}
+		p.Provider, p.Application = SharedGateProvider, SharedGateApp
+	}
 	env := forwardEnv(fa, in.EdgeSource)
 	for _, k := range sortedKeys(env) {
 		p.AppSettings = append(p.AppSettings, fmt.Sprintf("%s=%s", k, env[k]))
@@ -285,21 +369,42 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 		Canonical: strings.ToLower(string(canonical)), Redirects: redirects,
 		Bypass: bypass, CopyHeaders: append([]string{}, fa.CopyHeaders...),
 		AuthentikHost: base + "/", ExistingUsers: existing,
-		Env: env, Revision: forwardRevision(fa, bypass, string(canonical), redirects, env),
+		Env: env, Revision: forwardRevision(fa, bypass, string(canonical), redirects, env, groups),
+	}
+	if route.IsPath() {
+		g.Shared, g.Groups = true, groups
+		paths := make([]string, 0, len(bypass))
+		for _, b := range bypass {
+			paths = append(paths, b.Path)
+		}
+		g.ProviderBypass, g.OtherApps = providerBypass(paths, in.OtherGates, route.Path)
 	}
 	p.Gate = g
 	access := forwardAccess(fa, m.Name, in.OwnerSub)
+	if g.Shared {
+		// Authentik binds nobody to the shared application: it signs in
+		// anyone with an account, and the edge decides by group.
+		access.Bindings = []string{}
+	}
 	p.Access = &access
 	p.AdminRoles = fmt.Sprintf("Who is an administrator inside %s is chosen in %s itself; the gate only decides who can reach it.", m.Title, m.Title)
+	sharedLine := fmt.Sprintf("Use the one shared proxy provider %q (single application, external host %s), creating it with the application %s if it is missing, and add it to the embedded outpost (its other providers stay). If %s has a provider of its own from before (ADR-055), it is deleted first and the shared one takes its place; its groups and their members stay.", p.Provider, p.RedirectURIs[0], p.Application, m.Title)
 	switch {
 	case in.Applied == nil:
+		create := fmt.Sprintf("Create the proxy provider %q (single application, external host %s) and the application %s in Authentik, and add the provider to the embedded outpost (its other providers stay).", p.Provider, p.RedirectURIs[0], p.Application)
+		if g.Shared {
+			create = sharedLine
+		}
 		p.Changes = append(p.Changes,
-			fmt.Sprintf("Create the proxy provider %q (single application, external host %s) and the application %s in Authentik, and add the provider to the embedded outpost (its other providers stay).", p.Provider, p.RedirectURIs[0], p.Application),
+			create,
 			fmt.Sprintf("Gate %s at the edge: every request is checked with Authentik first. Client-sent identity headers are deleted before anything else, and the gate fails closed if Authentik does not answer.", g.Canonical))
 	case sameList(in.Applied.RedirectURIs, p.RedirectURIs) && in.Applied.Issuer == p.Issuer && in.Applied.PluginVersion == g.Revision && sameAccess(in.Applied.Access, p.Access):
 		p.Changes = append(p.Changes, "Nothing changes: the Authentik gate is on and matches the app's names. Applying checks Authentik, the edge and the app again.")
 	default:
 		p.Changes = append(p.Changes, "Update the gate to match the app's current names and rules.")
+		if g.Shared {
+			p.Changes = append(p.Changes, sharedLine)
+		}
 		if p.ReplacedIssuer != "" {
 			p.Changes = append(p.Changes, fmt.Sprintf("People sign in at %s: it replaces %s.", base, p.ReplacedIssuer))
 		}
@@ -326,7 +431,9 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 			fmt.Sprintf("Use %s's built-in SQLite database (chosen now if it has not been set up), create one %s account named after you with a random password nobody knows if it has none, and restart %s. An existing account and its password are kept.", m.Title, m.Title, m.Title),
 			fmt.Sprintf("Running a command inside %s (pinned to version %s; it refuses any other) changes its own database: %s.", m.Title, m.Version, describeArgv(fa.OwnLoginOff.OnApply)))
 	}
-	if fa.Access == catalog.AccessAdminOnly {
+	if g.Shared {
+		p.Changes = append(p.Changes, fmt.Sprintf("Who can reach it: Authentik signs the person in, then the edge admits only members of %s (an exact match on the group name) and answers 403 to everyone else. Client-sent X-Authentik-* headers are deleted first.", strings.Join(g.Groups, ", ")))
+	} else if fa.Access == catalog.AccessAdminOnly {
 		p.Changes = append(p.Changes, fmt.Sprintf("Who can reach it: the owner and members of the admins group only. No users group is created; a person with the user role is refused at Authentik."))
 	} else {
 		p.Changes = append(p.Changes, "Who can reach it: the owner, and members of the app's two groups (admins are also users).")
@@ -359,6 +466,12 @@ type ProxyAuthentik interface {
 	RemoveProxy(ctx context.Context, spec sso.ProxySpec, step func(string)) error
 }
 
+// AccessRemover deletes an app's own Authentik groups. Turning one app off
+// while others stay behind the shared gate (ADR-062) removes only these.
+type AccessRemover interface {
+	RemoveAccess(ctx context.Context, x sso.Access, step func(string)) error
+}
+
 func (p Plan) proxySpec(dashboard sso.Spec) sso.ProxySpec {
 	spec := sso.ProxySpec{
 		ProviderName: p.Provider, AppName: p.Provider, AppSlug: p.ClientID,
@@ -369,6 +482,10 @@ func (p Plan) proxySpec(dashboard sso.Spec) sso.ProxySpec {
 	}
 	if p.Gate != nil {
 		spec.Bypass, spec.AuthentikHost = p.Gate.bypassPaths(), p.Gate.AuthentikHost
+		if p.Gate.Shared {
+			spec.ProviderName, spec.AppName, spec.AppSlug = SharedGateProvider, "Homestead apps gate", SharedGateSlug
+			spec.Bypass = append([]string{}, p.Gate.ProviderBypass...)
+		}
 	}
 	return spec
 }
@@ -456,7 +573,23 @@ func forwardDefinition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.
 			}},
 			{Name: "remove-from-authentik", Run: func(ctx context.Context) error {
 				var steps []string
-				if err := proxy.RemoveProxy(ctx, spec, func(s string) { steps = append(steps, s) }); err != nil {
+				note := func(s string) { steps = append(steps, s) }
+				if plan.Gate.Shared && len(plan.Gate.OtherApps) > 0 {
+					// Other apps stay behind the shared gate: only this
+					// app's open paths and groups go.
+					keep := spec
+					keep.Access = nil
+					if err := proxy.ReconcileProxy(ctx, keep, note); err != nil {
+						return failed("update the shared gate in Authentik", err)
+					}
+					rm, ok := api.(AccessRemover)
+					if !ok {
+						return failed("remove the app's groups", fmt.Errorf("this Authentik client cannot remove groups"))
+					}
+					if err := rm.RemoveAccess(ctx, *spec.Access, note); err != nil {
+						return failed("remove the app's groups from Authentik", err)
+					}
+				} else if err := proxy.RemoveProxy(ctx, spec, note); err != nil {
 					return failed("remove from Authentik", err)
 				}
 				rt.audit(actor, "app.sign-in.authentik", "ok", m.Name+": "+strings.Join(steps, "; "))
@@ -477,8 +610,23 @@ func forwardDefinition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.
 	// On: Authentik first (so the outpost knows the provider), then the
 	// gate (reloaded and probed), and only then the trust settings, so
 	// the app never trusts a header the edge is not yet stripping.
-	def.Steps = []operation.StepDef{
-		reach,
+	var retire []operation.StepDef
+	if plan.Gate.Shared {
+		// An app that had a provider of its own (ADR-055) leaves it first:
+		// two providers on one external host would be ambiguous. The gate
+		// fails closed for the moment between the two steps.
+		legacy := sso.ProxySpec{ProviderName: ProviderName(m.Title), AppName: m.Title, AppSlug: plan.ClientID}
+		retire = []operation.StepDef{{Name: "retire-own-provider", Run: func(ctx context.Context) error {
+			var steps []string
+			if err := proxy.RemoveProxy(ctx, legacy, func(s string) { steps = append(steps, s) }); err != nil {
+				return failed("retire the app's own Authentik provider", err)
+			}
+			rt.audit(actor, "app.sign-in.authentik", "ok", m.Name+": "+strings.Join(steps, "; "))
+			return nil
+		}}}
+	}
+	def.Steps = append([]operation.StepDef{reach}, retire...)
+	def.Steps = append(def.Steps, []operation.StepDef{
 		{Name: "configure-authentik", Run: func(ctx context.Context) error {
 			var steps []string
 			if err := proxy.ReconcileProxy(ctx, spec, func(s string) { steps = append(steps, s) }); err != nil {
@@ -510,7 +658,7 @@ func forwardDefinition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.
 			rt.audit(actor, "app.sign-in.on", "ok", fmt.Sprintf("%s: Authentik gate on at %s; %d open paths", m.Name, plan.Gate.Canonical, len(plan.Gate.Bypass)))
 			return nil
 		}},
-	}
+	}...)
 	def.Steps = withoutEmptyWiring(def.Steps, len(fa.Env) == 0)
 	def.Steps = withoutOwnLogin(def.Steps, fa.OwnLoginOff == nil)
 	return def, nil

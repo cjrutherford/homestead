@@ -231,6 +231,9 @@ type Inputs struct {
 	// that is not planning never opens the app's database.
 	AccountsFn      func() *AppAccounts
 	PeopleUsernames []string
+	// OtherGates are the other apps at a path behind the shared Authentik
+	// gate (ADR-062), read from the edge table.
+	OtherGates []OtherGate
 }
 
 // published reports an app with a public name: its own tunnel names, or

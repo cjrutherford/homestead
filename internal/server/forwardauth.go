@@ -79,6 +79,15 @@ func addForwardInputs(st *store.Store, in *appsso.Inputs, manifest catalog.Manif
 	if addr, err := edgeSourceAddr(ctx); err == nil {
 		in.EdgeSource = addr
 	}
+	if set, err := loadEdgeRoutes(st); err == nil {
+		// Other apps at a path behind the shared gate (ADR-062).
+		for _, r := range set.Routes {
+			if r.Dashboard || !r.IsPath() || r.Gate == nil {
+				continue
+			}
+			in.OtherGates = append(in.OtherGates, appsso.OtherGate{Path: r.Path, Bypass: append([]string(nil), r.Gate.Bypass...)})
+		}
+	}
 	if fa.RequiresHostBlock {
 		in.HostBlockRequired = true
 		in.HostBlockProblem = hostBlockProblem()

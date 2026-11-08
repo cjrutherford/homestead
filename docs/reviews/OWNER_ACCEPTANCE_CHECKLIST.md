@@ -1095,7 +1095,7 @@ _Install creates the Navidrome admin (local account homestead-admin, password un
   - Result: ____  Notes: ____
 
 - [ ] **SRV-NAVIDROME-3 — Owner sign-in**
-  - Action: Open the app; Authentik asks for sign-in at the edge, then you are in. Authentik forward-auth at the edge (ADR-055): the edge asks Authentik first; Navidrome trusts the X-Authentik-Username header from the edge (/32 pin). `/rest/*` and `/share/*` bypass the gate for native clients and share links. Navidrome admin is chosen inside Navidrome.
+  - Action: Open the app; Authentik asks for sign-in at the edge, then you are in. Authentik forward-auth at the edge (ADR-055) through the one shared gate on the dashboard's name (ADR-062): the edge asks Authentik first, then admits only members of Navidrome's groups; Navidrome trusts the X-Authentik-Username header from the edge (/32 pin). `/rest/*` and `/share/*` bypass the gate for native clients and share links. Navidrome admin is chosen inside Navidrome.
   - Expected: Owner is signed in and named correctly.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1108,7 +1108,7 @@ _Install creates the Navidrome admin (local account homestead-admin, password un
 
 - [ ] **SRV-NAVIDROME-5 — Person C (no access) is refused**
   - Action: In another browser sign in as C and open the app.
-  - Expected: C is refused or sees the closed-by-default message; no app data visible.
+  - Expected: C signs in to Authentik and the edge answers 403 ("You do not have access to this app."); no app data visible. A forged `X-Authentik-Groups` header sent by a client changes nothing (ADR-062).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 

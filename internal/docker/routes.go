@@ -206,7 +206,7 @@ func renderPathHandles(paths []Route, tunnel bool, dash Route) string {
 		if p.Gate != nil {
 			// A gated app at a path (ADR-061, ADR-055): inside the dashboard
 			// site, behind Authentik forward-auth.
-			text, full := renderGatedPath(p, dash, tunnel)
+			text, full := renderGatedPath(p, dash, SharedGateCanonical(paths, dash), tunnel)
 			b.WriteString(text)
 			outpost = outpost || full
 			continue

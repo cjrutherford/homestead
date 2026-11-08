@@ -565,7 +565,7 @@ func appMoveDefinition(st *store.Store, secrets *secret.Store, plan appMovePlan)
 						moved.Bypass = append(moved.Bypass, b)
 					}
 					if dash, ok := set.DashboardRoute(); ok {
-						moved.Canonical = docker.PathGateCanonical(set.Routes[i], dash)
+						moved.Canonical = docker.SharedGateCanonical(set.Routes, dash)
 					}
 					set.Routes[i].Gate = &moved
 				}

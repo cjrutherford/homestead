@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"homestead/internal/docker"
+	"homestead/internal/sso"
 )
 
 // pathInputs is Navidrome served at its path on the dashboard's names
@@ -57,5 +58,50 @@ func TestForwardPlanAtPathPublishedUsesTheDashboardName(t *testing.T) {
 	host, _ := BuildPlan(faInputs(t), true)
 	if host.Gate.Revision == p.Gate.Revision {
 		t.Fatal("the gate revision ignores the path prefix")
+	}
+}
+
+func TestForwardPlanAtPathUsesTheSharedGate(t *testing.T) {
+	in := pathInputs(t, true)
+	in.PublicAuthentikURL = "https://homestead.example.com/apps/auth"
+	in.OtherGates = []OtherGate{{Path: "/apps/wordcraft/", Bypass: []string{"^/apps/wordcraft/open/.*"}}, {Path: "/apps/navidrome/", Bypass: []string{"^/apps/navidrome/x/.*"}}}
+	p, err := BuildPlan(in, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := p.Gate
+	if !g.Shared || p.Provider != SharedGateProvider {
+		t.Fatalf("not on the shared gate: %+v", p)
+	}
+	want := []string{"homestead-navidrome-users", "homestead-navidrome-admins", "homestead-owner"}
+	if strings.Join(g.Groups, ",") != strings.Join(want, ",") || strings.Join(g.gate().Groups, ",") != strings.Join(want, ",") {
+		t.Fatalf("groups = %v", g.Groups)
+	}
+	// The provider's open paths: this app's and the other app's, never the
+	// stale entry of this app's own path.
+	pb := strings.Join(g.ProviderBypass, " ")
+	if !strings.Contains(pb, "^/apps/wordcraft/open/.*") || !strings.Contains(pb, "^/apps/navidrome/rest/.*") || strings.Contains(pb, "navidrome/x/") {
+		t.Fatalf("provider bypass = %v", g.ProviderBypass)
+	}
+	if strings.Join(g.OtherApps, ",") != "/apps/wordcraft/" {
+		t.Fatalf("others = %v", g.OtherApps)
+	}
+	if len(p.Access.Bindings) != 0 || len(p.Access.Groups) != 3 {
+		t.Fatalf("the shared application binds nobody; the app keeps its groups: %+v", p.Access)
+	}
+	spec := p.proxySpec(sso.Spec{})
+	if spec.ProviderName != SharedGateProvider || spec.AppSlug != SharedGateSlug || spec.ExternalHost != "https://homestead.example.com" {
+		t.Fatalf("spec: %+v", spec)
+	}
+	off, err := BuildPlan(func() Inputs {
+		i := in
+		i.Applied = &Record{Package: "navidrome", Issuer: p.Issuer, RedirectURIs: p.RedirectURIs, Access: p.Access}
+		return i
+	}(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !off.Gate.Shared || len(off.Gate.OtherApps) != 1 || !strings.Contains(strings.Join(off.Changes, " "), "The gate stays for /apps/wordcraft/") {
+		t.Fatalf("off plan must keep the gate for the other app: %+v", off)
 	}
 }

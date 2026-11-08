@@ -283,3 +283,10 @@ func (a *API) OutpostHost(ctx context.Context) (string, error) {
 	h, _ := o.Config["authentik_host"].(string)
 	return h, nil
 }
+
+// RemoveAccess deletes an app's own groups and claim mapping, leaving the
+// provider and application alone: one app leaves the shared gate while the
+// others stay (ADR-062).
+func (a *API) RemoveAccess(ctx context.Context, x Access, step func(string)) error {
+	return a.removeAccess(ctx, x, step)
+}

@@ -91,3 +91,71 @@ func TestPathBypass(t *testing.T) {
 		}
 	}
 }
+
+// sharedGateSet is the dashboard with two apps behind the shared gate
+// (ADR-062); the second one stands in for a later craft app.
+func sharedGateSet() RouteSet {
+	set := gatedPathSet(true)
+	set.Routes[1].Gate.Groups = []string{"homestead-navidrome-users", "homestead-navidrome-admins", "homestead-owner"}
+	set.Routes = append(set.Routes, Route{Host: "wordcraft.lan", Target: Target{Host: "wordcraft-wordcraft", Port: 80}, Exposure: ExposureLocal, TLS: TLSInternal,
+		Path: "/apps/wordcraft/", Published: true,
+		Gate: &Gate{Canonical: "homestead.lan", Groups: []string{"homestead-wordcraft-users", "homestead-owner"}}})
+	return set
+}
+
+func TestSharedGateGroupCheckOrderAndExactMatch(t *testing.T) {
+	_, tunnel := renderDashboard(t, sharedGateSet())
+	// Order: strip client identity headers, forward_auth, group check, the
+	// groups header removed before the app, then the app.
+	strip := idx(t, tunnel, "request_header -X-Authentik-*")
+	fa := idx(t, tunnel, "forward_auth authentik-server:9000 {")
+	deny := idx(t, tunnel, "not header_regexp X-Authentik-Groups")
+	respond := idx(t, tunnel, "respond @gate_apps_navidrome_denied")
+	drop := idx(t, tunnel, "request_header -X-Authentik-Groups")
+	app := strings.LastIndex(tunnel, "reverse_proxy navidrome-navidrome:4533")
+	if !(strip < fa && fa < deny && deny < respond && respond < drop && drop < app) {
+		t.Fatalf("shared gate order wrong:\n%s", tunnel)
+	}
+	idx(t, tunnel, "copy_headers X-Authentik-Username X-Authentik-Groups")
+	// Exact, whole-entry match of the "a|b|c" header: bounded by the
+	// start, a pipe or the end, never a substring.
+	idx(t, tunnel, `header_regexp X-Authentik-Groups (^|\|)(homestead-navidrome-users|homestead-navidrome-admins|homestead-owner)(\||$)`)
+	idx(t, tunnel, `header_regexp X-Authentik-Groups (^|\|)(homestead-wordcraft-users|homestead-owner)(\||$)`)
+	idx(t, tunnel, `" 403`)
+	// Both apps answer on the one outpost handle of the dashboard site.
+	if n := strings.Count(tunnel, "handle /outpost.goauthentik.io/* {"); n != 1 {
+		t.Fatalf("want one outpost handle, got %d:\n%s", n, tunnel)
+	}
+	// A bypass keeps no identity: the strip comes before every bypass.
+	if b := idx(t, tunnel, "path_regexp ^/apps/navidrome/rest/.*"); b < strip {
+		t.Fatalf("bypass before the header strip:\n%s", tunnel)
+	}
+}
+
+func TestSharedGateCanonicalFollowsPublishedApps(t *testing.T) {
+	set := gatedPathSet(false)
+	dash := set.Routes[0]
+	if got := SharedGateCanonical(set.Routes, dash); got != "homestead.lan" {
+		t.Fatalf("nothing published: %s", got)
+	}
+	set.Routes[1].Published = true
+	if got := SharedGateCanonical(set.Routes, dash); got != "homestead.example.com" {
+		t.Fatalf("published: %s", got)
+	}
+}
+
+func TestGateGroupsValidation(t *testing.T) {
+	set := sharedGateSet()
+	set.Routes[1].Gate.Groups = []string{"a|b"}
+	if err := set.Validate(); err == nil {
+		t.Fatal("a group with a pipe must be refused")
+	}
+	r := gatedRoute()
+	r.Gate.Groups = []string{"homestead-x-users"}
+	if err := r.Validate(); err == nil {
+		t.Fatal("a gate of an app's own site takes no groups")
+	}
+	if re := groupMatch([]string{"a.b"}); !strings.Contains(re, `a\.b`) {
+		t.Fatalf("group names must be quoted: %s", re)
+	}
+}

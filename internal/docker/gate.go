@@ -40,6 +40,32 @@ type Gate struct {
 	// app's own authentication. The identity headers are stripped there
 	// too, so a bypass can only authenticate with the app's credentials.
 	Bypass []string `json:",omitempty"`
+	// Groups are the Authentik groups allowed through an app at a path
+	// behind the shared gate (ADR-062). Authentik only says who the person
+	// is; the edge then lets a request through only when the outpost's
+	// X-Authentik-Groups names one of these exactly, and answers 403 to
+	// everyone else. Empty means the gate admits every person Authentik
+	// accepts (a gate of an app's own, ADR-055).
+	Groups []string `json:",omitempty"`
+}
+
+// GroupsHeader is the outpost's answer header that lists the person's
+// groups, separated by "|". It is copied from the outpost's answer only,
+// checked at the edge, and removed before the app is reached.
+const GroupsHeader = "X-Authentik-Groups"
+
+var validGateGroup = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+
+// groupMatch is the regex that matches the groups header only when one of
+// groups is a whole entry of it: the header is "a|b|c", so an entry is
+// bounded by the start, "|" and the end. A group that merely contains or
+// extends another ("homestead-x-users-old") never matches.
+func groupMatch(groups []string) string {
+	alts := make([]string, 0, len(groups))
+	for _, g := range groups {
+		alts = append(alts, regexp.QuoteMeta(g))
+	}
+	return `(^|\|)(` + strings.Join(alts, "|") + `)(\||$)`
 }
 
 var (
@@ -115,6 +141,14 @@ func (r Route) validateGate() error {
 		}
 		if !found {
 			return fmt.Errorf("route.gate.canonical: %q is not one of the route's names", g.Canonical)
+		}
+	}
+	if len(g.Groups) > 0 && !r.IsPath() {
+		return fmt.Errorf("route.gate.groups: only an app at a path shares the gate (ADR-062)")
+	}
+	for _, grp := range g.Groups {
+		if !validGateGroup.MatchString(grp) {
+			return fmt.Errorf("route.gate.groups: %q is not a plain group name", grp)
 		}
 	}
 	for _, h := range g.CopyHeaders {
@@ -313,6 +347,22 @@ func PathGateCanonical(p, dash Route) Hostname {
 	return dash.Host
 }
 
+// SharedGateCanonical is the one name every app behind the shared gate
+// answers on (ADR-062): Authentik's proxy provider matches one external
+// host, so all gated apps at a path share the dashboard's. It is the
+// dashboard's public name once any gated app at a path is published, else
+// the dashboard's own name. routes is the whole edge table.
+func SharedGateCanonical(routes []Route, dash Route) Hostname {
+	if len(dash.Tunnel) > 0 {
+		for _, r := range routes {
+			if r.IsPath() && r.Gate != nil && r.Published {
+				return dash.Tunnel[0]
+			}
+		}
+	}
+	return dash.Host
+}
+
 // renderOutpostHandle is the dashboard site's handle for Authentik's
 // embedded outpost, which the gate's sign-in redirect and callback need on
 // the name the app answers on (ADR-061; public too, because the gate runs
@@ -333,9 +383,8 @@ func renderOutpostHandle(tunnel bool) string {
 // The reserved cookies are removed from the request only after the
 // forward-auth subrequest, so the outpost still sees Authentik's cookie
 // (ADR-061 section 3).
-func renderGatedPath(p, dash Route, tunnel bool) (string, bool) {
+func renderGatedPath(p, dash Route, canonical Hostname, tunnel bool) (string, bool) {
 	g := p.Gate
-	canonical := PathGateCanonical(p, dash)
 	bare := strings.TrimSuffix(p.Path, "/")
 	label := strings.ReplaceAll(strings.Trim(bare, "/"), "/", "_")
 	var b strings.Builder
@@ -365,19 +414,44 @@ func renderGatedPath(p, dash Route, tunnel bool) (string, bool) {
 		b.WriteString(indentBy(proxy, 4))
 		b.WriteString("\t\t\t}\n")
 	}
-	b.WriteString("\t\t\thandle {\n")
-	fmt.Fprintf(&b, "\t\t\t\tforward_auth %s {\n\t\t\t\t\turi %s\n", OutpostUpstream, OutpostAuthURI)
-	if len(g.CopyHeaders) > 0 {
-		fmt.Fprintf(&b, "\t\t\t\t\tcopy_headers %s\n", strings.Join(g.CopyHeaders, " "))
+	// The last handle is a route of its own, so the order is the one
+	// written: forward-auth first, then the group check, then the headers
+	// and cookies the app must not see, then the app.
+	b.WriteString("\t\t\thandle {\n\t\t\t\troute {\n")
+	fmt.Fprintf(&b, "\t\t\t\t\tforward_auth %s {\n\t\t\t\t\t\turi %s\n", OutpostUpstream, OutpostAuthURI)
+	copied := append([]string(nil), g.CopyHeaders...)
+	if len(g.Groups) > 0 && !hasFold(copied, GroupsHeader) {
+		copied = append(copied, GroupsHeader)
+	}
+	if len(copied) > 0 {
+		fmt.Fprintf(&b, "\t\t\t\t\t\tcopy_headers %s\n", strings.Join(copied, " "))
 	}
 	if tunnel {
-		b.WriteString("\t\t\t\t\theader_up X-Forwarded-Proto https\n")
+		b.WriteString("\t\t\t\t\t\theader_up X-Forwarded-Proto https\n")
 	}
-	b.WriteString("\t\t\t\t}\n")
-	b.WriteString(cookie)
-	b.WriteString(indentBy(proxy, 4))
-	b.WriteString("\t\t\t}\n\t\t}\n\t}\n")
+	b.WriteString("\t\t\t\t\t}\n")
+	if len(g.Groups) > 0 {
+		// ADR-062: Authentik said who this is; only members of the app's
+		// groups pass. An absent header matches nothing, so it fails closed.
+		fmt.Fprintf(&b, "\t\t\t\t\t@gate_%s_denied {\n\t\t\t\t\t\tnot header_regexp %s %s\n\t\t\t\t\t}\n", label, GroupsHeader, groupMatch(g.Groups))
+		fmt.Fprintf(&b, "\t\t\t\t\trespond @gate_%s_denied \"You do not have access to this app.\" 403\n", label)
+		if !hasFold(g.CopyHeaders, GroupsHeader) {
+			fmt.Fprintf(&b, "\t\t\t\t\trequest_header -%s\n", GroupsHeader)
+		}
+	}
+	b.WriteString(strings.Replace(cookie, "\t\t\t\t", "\t\t\t\t\t", 1))
+	b.WriteString(indentBy(proxy, 5))
+	b.WriteString("\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n")
 	return b.String(), true
+}
+
+func hasFold(list []string, s string) bool {
+	for _, x := range list {
+		if strings.EqualFold(x, s) {
+			return true
+		}
+	}
+	return false
 }
 
 func isHostIn(h Hostname, names []Hostname) bool {
