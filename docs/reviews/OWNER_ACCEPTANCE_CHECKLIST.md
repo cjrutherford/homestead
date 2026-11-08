@@ -1346,7 +1346,7 @@ _Install creates Kuma's administrator (homestead-admin, password under Secrets) 
 
 ### SRV-VAULTWARDEN: Vaultwarden
 
-_Public authorize redirect was verified live earlier; NO real browser login done yet; existing-account email match and email_verified claim unproven (DEFERRED S414)._
+_Verified live on VM 2 (S454): sign-in by Authentik for the owner and person A, person C refused, local registration closed. The only personal step is each person choosing their own master password (ADR-059 exception)._
 
 - [ ] **SRV-VAULTWARDEN-1 — Install: plan preview, then approve**
   - Action: Catalog > Vaultwarden > Install. Read the plan, then approve (or `homesteadctl apps plan vaultwarden -f FILE`, then `homesteadctl apps install vaultwarden -f FILE`).
@@ -1354,9 +1354,9 @@ _Public authorize redirect was verified live earlier; NO real browser login done
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **SRV-VAULTWARDEN-1a — Create the first Vaultwarden account**
-  - Action: Open the app and create your own account (signup is how the first account is made; the admin page is off by design). Use a strong master password and store it safely; it cannot be recovered.
-  - Expected: Account created; the Authentik sign-in option is offered.
+- [ ] **SRV-VAULTWARDEN-1a — Nothing to set up by hand; registration is closed**
+  - Action: Open the app's login page; do not create an account. Try Create account with an unknown email, or POST /identity/accounts/register/send-verification-email.
+  - Expected: Registration is refused ("Registration not allowed"); the only way in is Use single sign-on. No admin page (no ADMIN_TOKEN).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -1367,14 +1367,14 @@ _Public authorize redirect was verified live earlier; NO real browser login done
   - Result: ____  Notes: ____
 
 - [ ] **SRV-VAULTWARDEN-3 — Owner sign-in**
-  - Action: Sign in with the Authentik/OpenID button on the app's login page as the owner. Login page offers 'Enterprise single sign-on' (Authentik, SSO by environment, Vaultwarden 1.37.4); the master password still unlocks the vault after SSO. Sign-in completes only at the address named by DOMAIN.
-  - Expected: Owner is signed in and named correctly.
+  - Action: On the login page enter the owner's email and choose Use single sign-on (Authentik, SSO by environment, Vaultwarden 1.37.4). The first time Vaultwarden asks the owner to choose a master password; the master password unlocks the vault after SSO. Sign-in completes only at the address named by DOMAIN.
+  - Expected: Owner is signed in; the vault opens after choosing a master password.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
 - [ ] **SRV-VAULTWARDEN-4 — Person A (with access) can sign in**
-  - Action: Grant A in People for this app. In a separate browser sign in as A.
-  - Expected: A reaches the app as A (a separate account/data from the owner).
+  - Action: Grant A in People for this app. In a separate browser sign in as A with single sign-on and choose a master password.
+  - Expected: A reaches an empty vault of their own (a separate account from the owner).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -1385,7 +1385,7 @@ _Public authorize redirect was verified live earlier; NO real browser login done
   - Result: ____  Notes: ____
 
 - [ ] **SRV-VAULTWARDEN-6 — Save an entry**
-  - Action: Create an account (or SSO in and set a master password), add a Login item with a username and password, lock, unlock.
+  - Action: SSO in (set a master password the first time), add a Login item with a username and password, lock, unlock.
   - Expected: The entry reappears after unlock and reload; the browser extension/app can sync if you have one.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1411,7 +1411,7 @@ _Public authorize redirect was verified live earlier; NO real browser login done
 
 ### SRV-VIKUNJA: Vikunja
 
-_Browser sign-in has not been recorded yet. Create the first Vaultwarden account yourself (SRV-VAULTWARDEN-1a)._
+_Browser sign-in has not been recorded yet._
 
 - [ ] **SRV-VIKUNJA-1 — Install: plan preview, then approve**
   - Action: Catalog > Vikunja > Install. Read the plan, then approve (or `homesteadctl apps plan vikunja -f FILE`, then `homesteadctl apps install vikunja -f FILE`).

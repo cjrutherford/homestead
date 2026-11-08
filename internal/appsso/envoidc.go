@@ -82,6 +82,15 @@ func (a envOIDC) uses(name string) bool {
 }
 
 func (a envOIDC) Roles(g GroupNames) RoleMapping {
+	rm := a.roles(g)
+	if a.cfg.VerifiedEmail {
+		rm.Claims = map[string]string{"email_verified": "True"}
+		rm.Note += " The groups claim also carries email_verified=true, because the app refuses an unverified email and Authentik sends false; only people the app's groups admit can reach it."
+	}
+	return rm
+}
+
+func (a envOIDC) roles(g GroupNames) RoleMapping {
 	if a.cfg.AdminValue != "" {
 		return RoleMapping{Mapped: true, AdminAlias: a.cfg.AdminValue, UserAlias: a.cfg.UserValue,
 			Note: fmt.Sprintf("The groups claim carries the role %q for members of %s and %q for everyone else in %s, which the app reads as administrator and user.", a.cfg.AdminValue, g.Admins, a.cfg.UserValue, g.Users)}

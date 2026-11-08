@@ -1424,7 +1424,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
   endpoint and API-token configuration, the API route and CLI command
   that activate or deactivate one package's client, and the dashboard
   control come with the slice that turns SSO on for an installed app.
-  Vaultwarden (S345) ships local-login-first with optional OIDC declared,
+  Vaultwarden (S345, closed to local signup since S454) ships with optional OIDC declared,
   so the missing surface blocks nothing today.
 - Vaultwarden's admin page: S345 installs with it off and no
   `ADMIN_TOKEN`, because a generated token would enable an administrative
@@ -1826,3 +1826,4 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S452: Komga's library administration (scan, add library) needs its recovery administrator; people who sign in are ordinary users and Komga has no admin group claim.
 - S453: Paperless-ngx documents are private to the uploader (object permissions); there is no shared household library by default. Sharing is done in Paperless (owner/permissions on a document or share links). Public sign-in on a published Paperless-ngx name was not tested live.
 - S453: the install wizard (i1 flow) ticks "Also publish" by default for Paperless-ngx's address; check that default matches the checklist's local-first recommendation.
+- S454: Vaultwarden's login page still shows "Create account" (the web vault does not hide it); the server refuses registration. The public name sign-in and backups/uninstall checks were not run. Authentik's email_verified is overridden per app by the groups claim only where a manifest sets `verifiedemail`; Komga and Mealie keep their own app-side switches.

@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "b36540decb28e5db",
+ "hash": "30616e4e60966dc4",
  "sections": [
   {
    "title": "Platform",
@@ -1670,7 +1670,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
     },
     {
      "title": "SRV-VAULTWARDEN: Vaultwarden",
-     "note": "Public authorize redirect was verified live earlier; NO real browser login done yet; existing-account email match and email_verified claim unproven (DEFERRED S414).",
+     "note": "Verified live on VM 2 (S454): sign-in by Authentik for the owner and person A, person C refused, local registration closed. The only personal step is each person choosing their own master password (ADR-059 exception).",
      "steps": [
       {
        "id": "SRV-VAULTWARDEN-1",
@@ -1681,9 +1681,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "SRV-VAULTWARDEN-1a",
-       "title": "Create the first Vaultwarden account",
-       "action": "Open the app and create your own account (signup is how the first account is made; the admin page is off by design). Use a strong master password and store it safely; it cannot be recovered.",
-       "expected": "Account created; the Authentik sign-in option is offered.",
+       "title": "Nothing to set up by hand; registration is closed",
+       "action": "Open the app's login page; do not create an account. Try Create account with an unknown email, or POST /identity/accounts/register/send-verification-email.",
+       "expected": "Registration is refused (\"Registration not allowed\"); the only way in is Use single sign-on. No admin page (no ADMIN_TOKEN).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -1696,15 +1696,15 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-VAULTWARDEN-3",
        "title": "Owner sign-in",
-       "action": "Sign in with the Authentik/OpenID button on the app's login page as the owner. Login page offers 'Enterprise single sign-on' (Authentik, SSO by environment, Vaultwarden 1.37.4); the master password still unlocks the vault after SSO. Sign-in completes only at the address named by DOMAIN.",
-       "expected": "Owner is signed in and named correctly.",
+       "action": "On the login page enter the owner's email and choose Use single sign-on (Authentik, SSO by environment, Vaultwarden 1.37.4). The first time Vaultwarden asks the owner to choose a master password; the master password unlocks the vault after SSO. Sign-in completes only at the address named by DOMAIN.",
+       "expected": "Owner is signed in; the vault opens after choosing a master password.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
        "id": "SRV-VAULTWARDEN-4",
        "title": "Person A (with access) can sign in",
-       "action": "Grant A in People for this app. In a separate browser sign in as A.",
-       "expected": "A reaches the app as A (a separate account/data from the owner).",
+       "action": "Grant A in People for this app. In a separate browser sign in as A with single sign-on and choose a master password.",
+       "expected": "A reaches an empty vault of their own (a separate account from the owner).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -1717,7 +1717,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-VAULTWARDEN-6",
        "title": "Save an entry",
-       "action": "Create an account (or SSO in and set a master password), add a Login item with a username and password, lock, unlock.",
+       "action": "SSO in (set a master password the first time), add a Login item with a username and password, lock, unlock.",
        "expected": "The entry reappears after unlock and reload; the browser extension/app can sync if you have one.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1746,7 +1746,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
     },
     {
      "title": "SRV-VIKUNJA: Vikunja",
-     "note": "Browser sign-in has not been recorded yet. Create the first Vaultwarden account yourself (SRV-VAULTWARDEN-1a).",
+     "note": "Browser sign-in has not been recorded yet.",
      "steps": [
       {
        "id": "SRV-VIKUNJA-1",

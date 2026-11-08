@@ -24,9 +24,9 @@ class TestVaultwardenContract(unittest.TestCase):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, text)
 
-    def test_owner_signup_without_admin_surface(self):
+    def test_closed_signup_without_admin_surface(self):
         text = (REPO / "catalog" / "vaultwarden.yaml").read_text(encoding="utf-8")
-        self.assertIn('SIGNUPS_ALLOWED: "true"', text)
+        self.assertIn('SIGNUPS_ALLOWED: "false"', text)
         self.assertNotIn("ADMIN_TOKEN:", text,
                          "the admin page must stay off by default")
 

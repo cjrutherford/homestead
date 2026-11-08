@@ -244,8 +244,8 @@ func TestCuratedVaultwarden(t *testing.T) {
 		t.Fatalf("services = %+v", manifest.Services)
 	}
 	service := manifest.Services[0]
-	if service.Environment["SIGNUPS_ALLOWED"] != "true" {
-		t.Fatalf("signups = %q, want owner signup open", service.Environment["SIGNUPS_ALLOWED"])
+	if service.Environment["SIGNUPS_ALLOWED"] != "false" {
+		t.Fatalf("signups = %q, want local registration closed (S454)", service.Environment["SIGNUPS_ALLOWED"])
 	}
 	if _, enabled := service.Environment["ADMIN_TOKEN"]; enabled {
 		t.Fatal("the admin page must stay off by default")

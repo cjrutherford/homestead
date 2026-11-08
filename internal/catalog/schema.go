@@ -335,6 +335,12 @@ type EnvOIDC struct {
 	// neither.
 	AdminValue string `yaml:"adminvalue,omitempty" json:"adminvalue,omitempty"`
 	UserValue  string `yaml:"uservalue,omitempty" json:"uservalue,omitempty"`
+	// VerifiedEmail (S454) makes the app's groups claim carry
+	// email_verified=true, for apps that refuse an unverified email
+	// (Vaultwarden) while Authentik 2026.8 sends false for everyone. The
+	// app must ask for the groups scope. Only people already allowed in
+	// by the app's Authentik groups ever reach the claim.
+	VerifiedEmail bool `yaml:"verifiedemail,omitempty" json:"verifiedemail,omitempty"`
 	// Warnings are shown in every sign-in plan for the app.
 	Warnings []string          `yaml:"warnings,omitempty" json:"warnings,omitempty"`
 	Set      map[string]string `yaml:"set" json:"set"`

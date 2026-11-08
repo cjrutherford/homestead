@@ -55,7 +55,7 @@ export const CURATED_COPY: Record<string, CuratedCopy> = {
   'navidrome': { firstLogin: ['Open Navidrome; with sign-in on, Authentik asks you to sign in and you are in. Homestead already created its administrator (homestead-admin), so there is no first-account screen; its password is under Secrets in the app card Manage panel (Reveal), for Subsonic apps and emergencies. Subsonic apps use a Navidrome username and app password, not Authentik.'] },
   'paperless-ngx': { firstLogin: ['Open Paperless-ngx and choose Authentik on the login page. Homestead already made the Homestead people group, so everyone who signs in can upload, view and edit their own documents with nothing to grant; people given the Admin role for this app (you included) become Paperless administrators. A local admin account also exists; its password is under Secrets in the app card Manage panel (Reveal), for emergencies only.'] },
   'uptime-kuma': { firstLogin: ['Open Uptime Kuma; with sign-in on, Authentik asks you to sign in once and Kuma opens, with its own login off. Homestead already created its administrator (homestead-admin), so there is no setup screen; its password is under Secrets in the app card Manage panel (Reveal), for emergencies.'] },
-  'vaultwarden': { firstLogin: ['Open Vaultwarden and sign in or follow its setup instructions.'] },
+  'vaultwarden': { firstLogin: ['Open Vaultwarden, enter your email, choose Use single sign-on and sign in with Authentik. The first time, Vaultwarden asks you to choose your own master password: Homestead never holds it and it cannot be recovered. Local registration is closed, so only people you granted access can create a vault.'] },
   nextcloud: {
     containerPort: '80',
     firstLogin: [

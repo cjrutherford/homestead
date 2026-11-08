@@ -146,3 +146,26 @@ func TestVaultwardenTrustFollowsIssuer(t *testing.T) {
 		t.Fatalf("public issuer trust = %v, want none", got)
 	}
 }
+
+// TestVaultwardenGroupsClaimVerifiesEmail (S454): Authentik 2026.8 sends
+// email_verified=false and Vaultwarden refuses it, so the app's groups
+// claim says true, and the app asks for the groups scope.
+func TestVaultwardenGroupsClaimVerifiesEmail(t *testing.T) {
+	m := realVaultwarden(t)
+	cfg := m.SSO.OIDC.Env
+	if cfg == nil || !cfg.VerifiedEmail {
+		t.Fatal("manifest does not set verifiedemail")
+	}
+	if !strings.Contains(cfg.Set["SSO_SCOPES"], "groups") {
+		t.Fatalf("SSO_SCOPES = %q, want the groups scope", cfg.Set["SSO_SCOPES"])
+	}
+	g := groupNames("vaultwarden")
+	rm := envOIDC{cfg: *cfg}.Roles(g)
+	if !strings.Contains(claimExpression(g, rm), `claims["email_verified"] = True`) {
+		t.Fatalf("claim expression lacks email_verified:\n%s", claimExpression(g, rm))
+	}
+	other := catalog.EnvOIDC{}
+	if strings.Contains(claimExpression(g, envOIDC{cfg: other}.Roles(g)), "email_verified") {
+		t.Fatal("email_verified leaks into apps that did not ask")
+	}
+}
