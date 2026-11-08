@@ -147,3 +147,64 @@ func TestPolicyAllowsWebAssemblyForScriptThatInstantiatesAnInlineModule(t *testi
 		}
 	}
 }
+
+// S464: eval is allowed only for a worker script of an app that asks for it;
+// the page never gets it.
+func TestWorkerEvalOnlyForWorkerScriptsOfAppsThatAsk(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{"index.html": cspIndex, "worker.js": "//"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, on := range []bool{false, true} {
+		if on {
+			t.Setenv(WorkerEvalEnv, "1")
+		}
+		mux := http.NewServeMux()
+		registerApp(mux, "/apps/p", dir, fixedSession{ok: true})
+		for _, c := range []struct{ path, dest string }{
+			{"/apps/p/", "document"}, {"/apps/p/worker.js", "script"}, {"/apps/p/worker.js", "worker"}, {"/apps/p/worker.js", ""},
+		} {
+			req := httptest.NewRequest("GET", c.path, nil)
+			req.Header.Set("Sec-Fetch-Dest", c.dest)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			scripts := strings.Split(rec.Header().Get("Content-Security-Policy"), "style-src")[0]
+			if want := on && c.dest == "worker"; strings.Contains(scripts, "'unsafe-eval'") != want {
+				t.Errorf("env=%v %s dest=%q: %s", on, c.path, c.dest, scripts)
+			}
+		}
+	}
+}
+
+// S464: the sandbox page has its own policy (eval and blob workers, no
+// network); the app page gains frame-src 'self' and nothing looser.
+func TestSandboxPageHasItsOwnPolicy(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{"index.html": cspIndex, "sandbox.html": "<html></html>", "other.html": "<html></html>"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(SandboxPageEnv, "sandbox.html")
+	mux := http.NewServeMux()
+	registerApp(mux, "/apps/a", dir, fixedSession{ok: true})
+	get := func(path string) string {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		return rec.Header().Get("Content-Security-Policy")
+	}
+	box := get("/apps/a/sandbox.html")
+	for _, want := range []string{"script-src 'self' 'unsafe-eval' blob:", "worker-src blob:", "connect-src 'none'", "frame-ancestors 'self'"} {
+		if !strings.Contains(box, want) {
+			t.Errorf("sandbox policy lacks %q: %s", want, box)
+		}
+	}
+	for _, path := range []string{"/apps/a/", "/apps/a/other.html"} {
+		got := get(path)
+		if !strings.Contains(got, "frame-src 'self'") || strings.Contains(got, "eval") || strings.Contains(got, "blob:'") {
+			t.Errorf("%s: %s", path, got)
+		}
+	}
+}

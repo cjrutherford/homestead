@@ -44,6 +44,10 @@ services:
     HOMESTEAD_EVERYTHING_AWAIT_SIGNIN: "1"
     # puter.net.fetch (ADR-058 section 5): the fenced, limited, logged way out.
     HOMESTEAD_EVERYTHING_NET: "1"
+    # The script sandbox page (S464): pre-request scripts run in a sandboxed
+    # frame on this page, which has its own policy (eval and Blob workers, no
+    # network). The app page itself still refuses eval.
+    HOMESTEAD_EVERYTHING_SANDBOX_PAGE: "homestead-sandbox.html"
     # Per-person and whole-app storage limits, in bytes.
     HOMESTEAD_EVERYTHING_QUOTA_PERSON_BYTES: "268435456"
     HOMESTEAD_EVERYTHING_QUOTA_APP_BYTES: "2147483648"

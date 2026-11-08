@@ -138,12 +138,35 @@ func inlineWasm(path string) bool {
 	return false
 }
 
+// WorkerEvalEnv (S464) lets an app's dedicated Worker script use eval and
+// new Function. Parametric's geometry engine (emscripten embind) builds its
+// call stubs that way. Only the response for a worker script carries it
+// (Sec-Fetch-Dest: worker); the page keeps refusing eval.
+const WorkerEvalEnv = "HOMESTEAD_EVERYTHING_WORKER_EVAL"
+
+// SandboxPageEnv (S464) names one file of the built app, relative to the
+// base path, that is a script sandbox page. API Client runs the person's
+// pre-request scripts in a sandboxed (opaque origin) iframe on this page; a
+// srcdoc frame would inherit the app page's policy, so the page is its own
+// response with its own policy: scripts and blob workers may use eval, and
+// nothing may connect anywhere. The app page only gains frame-src 'self'.
+const SandboxPageEnv = "HOMESTEAD_EVERYTHING_SANDBOX_PAGE"
+
+// sandboxPolicy is the policy of the sandbox page and of the Blob workers
+// it creates (they inherit it). The frame is cut off from the network, the
+// app's DOM, storage and cookies; eval is the whole point of the page.
+const sandboxPolicy = "default-src 'none'; script-src 'self' 'unsafe-eval' blob:; worker-src blob:; " +
+	"child-src blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; " +
+	"form-action 'none'; frame-ancestors 'self'"
+
 type appServer struct {
-	wasm      bool
-	base, dir string
-	src       SessionSource
-	files     http.Handler
-	offer     *sourceOffer // nil unless the image carries a source offer (S423)
+	workerEval  bool
+	sandboxPage string // "/<file>" under the base, or ""
+	wasm        bool
+	base, dir   string
+	src         SessionSource
+	files       http.Handler
+	offer       *sourceOffer // nil unless the image carries a source offer (S423)
 }
 
 func registerApp(mux *http.ServeMux, base, dir string, src SessionSource) {
@@ -152,6 +175,10 @@ func registerApp(mux *http.ServeMux, base, dir string, src SessionSource) {
 		srcDir = DefaultSourceDir
 	}
 	a := &appServer{base: base, dir: dir, src: src, wasm: hasWasm(dir), offer: loadSourceOffer(srcDir)}
+	a.workerEval = os.Getenv(WorkerEvalEnv) == "1"
+	if f := strings.Trim(os.Getenv(SandboxPageEnv), "/"); f != "" && !strings.Contains(f, "..") {
+		a.sandboxPage = "/" + f
+	}
 	a.files = http.FileServer(noListingFS{http.Dir(dir)})
 	if base != "" {
 		a.files = http.StripPrefix(base, a.files)
@@ -159,9 +186,31 @@ func registerApp(mux *http.ServeMux, base, dir string, src SessionSource) {
 	mux.HandleFunc(base+"/", a.serve)
 }
 
+// policy is the page policy for this app, with frame-src 'self' when the
+// app has a sandbox page to frame.
+func (a *appServer) policy(index []byte) string {
+	p := contentSecurityPolicy(index, a.wasm)
+	if a.sandboxPage != "" {
+		p += "; frame-src 'self'"
+	}
+	return p
+}
+
+// withEval adds 'unsafe-eval' to the script-src of policy.
+func withEval(policy string) string {
+	return strings.Replace(policy, "script-src ", "script-src 'unsafe-eval' ", 1)
+}
+
 func (a *appServer) serve(w http.ResponseWriter, r *http.Request) {
 	p := strings.TrimPrefix(r.URL.Path, a.base)
-	w.Header().Set("Content-Security-Policy", contentSecurityPolicy(nil, a.wasm))
+	policy := a.policy(nil)
+	switch {
+	case a.sandboxPage != "" && p == a.sandboxPage:
+		policy = sandboxPolicy
+	case a.workerEval && (r.Header.Get("Sec-Fetch-Dest") == "worker" || r.Header.Get("Sec-Fetch-Dest") == "sharedworker"):
+		policy = withEval(policy)
+	}
+	w.Header().Set("Content-Security-Policy", policy)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	switch {
 	case p == SourcePath || strings.HasPrefix(p, SourcePath+"/"):
@@ -207,7 +256,7 @@ func (a *appServer) index(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Security-Policy", contentSecurityPolicy(page, a.wasm))
+	w.Header().Set("Content-Security-Policy", a.policy(page))
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	_, _ = io.Copy(w, bytes.NewReader(out))

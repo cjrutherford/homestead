@@ -73,7 +73,7 @@ class ApiClientPackageTest(unittest.TestCase):
     def test_preparation_routes_network_through_net_fetch_and_removes_the_rest(self):
         generic = load('prepare_app')
         d = generic.load_definition('api-client')
-        self.assertEqual(len(d['patches']), 60)
+        self.assertEqual(len(d['patches']), 61)  # S464 adds the sandbox page patch
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             (base / 'bridge.js').write_text('// bridge')

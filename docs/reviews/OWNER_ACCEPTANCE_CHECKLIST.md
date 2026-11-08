@@ -2291,7 +2291,7 @@ _Review plan section: S376, S423 and S440. Automated: tests/test_s376_parametric
 
 - [ ] **EV-PARAMETRIC-6 — Sketch and extrude**
   - Action: Wait for the kernel to load, create a sketch and Extrude, Save; rename the part; reload.
-  - Expected: The part saves, appears in Open and reopens with its features. Record whether a 'Geometry engine failed to start' toast appears (an unexplained one-off, see Known issues).
+  - Expected: The part saves, appears in Open and reopens with its features. No 'Geometry engine failed to start' toast appears and the part shows in the viewport (S464 lets only the engine's worker script use eval).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 

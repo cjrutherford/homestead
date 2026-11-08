@@ -19,7 +19,8 @@
     "src/api-client/src/core/send.js",
     "src/api-client/src/core/websocket.js",
     "src/api-client/src/data/sync.js",
-    "src/api-client/public/manifest.json"
+    "src/api-client/public/manifest.json",
+    "src/api-client/src/core/scripts/sandbox.js"
   ],
   "index": "src/api-client/index.html",
   "sdk_tag": "<script src=\"https://js.puter.com/v2/\" defer></script>",
@@ -384,6 +385,12 @@
       "old": "    h('div.callout', { dataset: { kind: 'info' } }, icon('info', 16), h('div', \"Cookies are stored on this device and sent with requests that go through the Puter relay. Browser requests use the browser's own cookie rules and cannot read or send these.\")),",
       "new": "    h('div.callout', { dataset: { kind: 'info' } }, icon('info', 16), h('div', \"Homestead does not pass cookies on, so these are kept only for the app's own use.\")),",
       "why": "No Puter wording."
+    },
+    {
+      "file": "src/api-client/src/core/scripts/sandbox.js",
+      "old": "    iframe.srcdoc = SRCDOC;",
+      "new": "    iframe.src = new URL('homestead-sandbox.html', document.baseURI).href;",
+      "why": "Load the sandbox as its own page: a srcdoc frame inherits the app page's CSP, which refuses its loader, Blob workers and eval (S464)."
     }
   ],
   "sdk_surface": {
@@ -428,6 +435,14 @@
     {
       "target": "src/api-client/src/core/homestead-net.js",
       "source": "api-client-net.js"
+    },
+    {
+      "target": "src/api-client/public/homestead-sandbox.html",
+      "source": "api-client-sandbox.html"
+    },
+    {
+      "target": "src/api-client/public/homestead-sandbox.js",
+      "source": "api-client-sandbox-loader.js"
     }
   ]
 }

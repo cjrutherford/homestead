@@ -80,7 +80,8 @@ class ThreeDPackageTest(unittest.TestCase):
     def test_the_inline_wasm_rule_is_reused_and_unsafe_eval_stays_refused(self):
         go = (ROOT / 'internal/everything/static.go').read_text()
         self.assertEqual(go.count("scripts += \" 'wasm-unsafe-eval'\""), 1)  # one rule, not a second copy
-        self.assertNotIn("'unsafe-eval'", go.replace("'wasm-unsafe-eval'", ''))
+        page = go[go.index('func contentSecurityPolicy'):go.index('// hashedAsset')]  # S464: eval only per worker/sandbox page
+        self.assertNotIn("'unsafe-eval'", page.replace("'wasm-unsafe-eval'", ''))
         self.assertIn('WebAssembly.instantiate', go)
 
     def test_preparation_applies_patches_and_new_generic_features(self):

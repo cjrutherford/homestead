@@ -47,6 +47,10 @@ services:
     # ADR-058). Only people granted this app can be named; nothing becomes
     # public.
     HOMESTEAD_EVERYTHING_SHARING: "1"
+    # The geometry engine worker (emscripten embind) builds its call stubs
+    # with new Function; only that worker script may use eval (S464). The
+    # page itself still refuses it.
+    HOMESTEAD_EVERYTHING_WORKER_EVAL: "1"
     # Per-person and whole-app storage limits, in bytes.
     HOMESTEAD_EVERYTHING_QUOTA_PERSON_BYTES: "268435456"
     HOMESTEAD_EVERYTHING_QUOTA_APP_BYTES: "2147483648"

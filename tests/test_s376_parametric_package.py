@@ -115,7 +115,8 @@ class ParametricPackageTest(unittest.TestCase):
     def test_the_kernel_wasm_is_shipped_so_the_policy_allows_it(self):
         go = (ROOT / 'internal/everything/static.go').read_text()
         self.assertIn("'wasm-unsafe-eval'", go)  # reused from S375, not duplicated
-        self.assertNotIn("'unsafe-eval'", go)
+        page = go[go.index('func contentSecurityPolicy'):go.index('// hashedAsset')]  # S464: eval only per worker script
+        self.assertNotIn("'unsafe-eval'", page)
 
     def test_preparation_applies_patches(self):
         generic = load('prepare_app')

@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "85ea07894d7f67d5",
+ "hash": "ec30efb8ed4c5e7f",
  "sections": [
   {
    "title": "Platform",
@@ -2788,7 +2788,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "id": "EV-PARAMETRIC-6",
        "title": "Sketch and extrude",
        "action": "Wait for the kernel to load, create a sketch and Extrude, Save; rename the part; reload.",
-       "expected": "The part saves, appears in Open and reopens with its features. Record whether a 'Geometry engine failed to start' toast appears (an unexplained one-off, see Known issues).",
+       "expected": "The part saves, appears in Open and reopens with its features. No 'Geometry engine failed to start' toast appears and the part shows in the viewport (S464 lets only the engine's worker script use eval).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
