@@ -11,8 +11,7 @@
 # created; register one before install if you want to choose it, or
 # reset it later with `manage.py changepassword`.
 name: paperless-ngx
-publish: host  # ADR-061
-publish_reason: no_subpath
+publish: path  # ADR-061
 version: 3.3.4
 title: Paperless-ngx
 blurb: Scan, search, and keep the household paper trail.
@@ -36,6 +35,11 @@ services:
   entrypoint: ["/init"]
   environment:
     PAPERLESS_URL: "https://{{route_host}}"
+    # Subpath (S475): Django's script name and the static URL carry the
+    # prefix; the Angular client reads its base href from the page. PAPERLESS_URL
+    # stays scheme and host only.
+    PAPERLESS_FORCE_SCRIPT_NAME: "{{route_path}}"
+    PAPERLESS_STATIC_URL: "{{route_path}}/static/"
     PAPERLESS_DBENGINE: postgresql
     PAPERLESS_DBHOST: db
     PAPERLESS_DBNAME: paperless
@@ -124,6 +128,8 @@ requirements:
     minbytes: 10737418240
   # Granian (inside s6) listens on 8000; routes proxy to it and no host
   # port is published by default.
+serve: path
+path: /apps/paperless-ngx/
 exposure:
   package: paperless-ngx
   endpoints:

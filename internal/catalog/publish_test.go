@@ -20,7 +20,7 @@ var adr061Facts = func() map[string][2]string {
 		"vikunja": {PublishHost, ReasonNoSubpath}, "uptime-kuma": {PublishNever, ""},
 		// Subpath candidates: host until their own slice verifies them.
 		"navidrome": {PublishPath, ""}, "audiobookshelf": {PublishHost, ReasonNoSubpath},
-		"komga": {PublishPath, ""}, "paperless-ngx": {PublishHost, ReasonNoSubpath},
+		"komga": {PublishPath, ""}, "paperless-ngx": {PublishPath, ""},
 		"linkding": {PublishHost, ReasonNoSubpath}, "freshrss": {PublishHost, ReasonNoSubpath},
 	}
 	for _, name := range []string{"api-client", "circuits", "contacts", "expense", "inventory", "notes", "parametric",

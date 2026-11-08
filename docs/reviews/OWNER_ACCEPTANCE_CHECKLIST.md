@@ -1231,7 +1231,7 @@ _Single sign-in confirmed live (S413, S453). Homestead makes the Homestead peopl
   - Result: ____  Notes: ____
 
 - [ ] **SRV-PAPERLESS-NGX-2 — Opens at the right path or name**
-  - Action: Open https://paperless-ngx.<lan-suffix>/ (own name).
+  - Action: Open https://<server>/apps/paperless-ngx/ (S475: served under the path; the package sets the script name and static URL, so the UI, its assets and the sign-in redirect follow it). An install made before S475 moves with `homesteadctl apps move plan paperless-ngx` then `apply`; moves only go forward.
   - Expected: The app's own page loads (no 404, no certificate surprise beyond the documented one).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1273,7 +1273,7 @@ _Single sign-in confirmed live (S413, S453). Homestead makes the Homestead peopl
   - Result: ____  Notes: ____
 
 - [ ] **SRV-PAPERLESS-NGX-9 — Uninstall leaves no orphan route (END pass)**
-  - Action: Done in END-UNINSTALL-*: uninstall Paperless-ngx, then open https://paperless-ngx.<lan-suffix>/ (own name) and check the Caddy/route list.
+  - Action: Done in END-UNINSTALL-*: uninstall Paperless-ngx, then open https://<server>/apps/paperless-ngx/ and check the Caddy/route list.
   - Expected: The URL no longer answers; app disappears from the apps page and Doctor; no leftover route or container.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____

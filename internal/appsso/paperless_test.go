@@ -129,6 +129,24 @@ func TestPaperlessPlanRedirectAndGroups(t *testing.T) {
 	}
 }
 
+// TestPaperlessPlanAtSubpath checks the redirect URI and sign-in URL carry
+// the path (S475).
+func TestPaperlessPlanAtSubpath(t *testing.T) {
+	m := realPaperless(t)
+	r := route("homestead.lan", "webserver")
+	r.Path = "/apps/paperless-ngx/"
+	in := Inputs{Manifest: m, Installed: true, AuthentikInstalled: true, Dashboard: dashboard, DashboardOK: true,
+		Routes: []docker.Route{r}}
+	plan, err := BuildPlan(in, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RedirectURIs[0] != "https://homestead.lan/apps/paperless-ngx/accounts/oidc/authentik/login/callback/" ||
+		plan.SignInURL != "https://homestead.lan/apps/paperless-ngx/accounts/login/" {
+		t.Fatalf("redirects %v sign in %s", plan.RedirectURIs, plan.SignInURL)
+	}
+}
+
 // TestPaperlessApplyKeepsSecretOutOfTheStack applies, re-applies and
 // turns sign-in off on an install made before the manifest declared the
 // sign-in secrets.

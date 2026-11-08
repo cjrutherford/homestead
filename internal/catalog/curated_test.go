@@ -329,6 +329,12 @@ func TestCuratedPaperless(t *testing.T) {
 		t.Fatalf("internal services = %d, want 2", internals)
 	}
 	web := manifest.Services[0]
+	// S475: served under /apps/paperless-ngx/ by Django's script name.
+	if manifest.Serve != "path" || manifest.Path != "/apps/paperless-ngx/" ||
+		web.Environment["PAPERLESS_FORCE_SCRIPT_NAME"] != "{{route_path}}" ||
+		web.Environment["PAPERLESS_STATIC_URL"] != "{{route_path}}/static/" {
+		t.Fatalf("subpath settings: serve=%q path=%q env=%v", manifest.Serve, manifest.Path, web.Environment)
+	}
 	if web.Image != "ghcr.io/paperless-ngx/paperless-ngx:3.3.4" {
 		t.Fatalf("web image = %q", web.Image)
 	}
