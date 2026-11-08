@@ -3582,6 +3582,12 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Updates page; docs/slices/S487-craft-version-signature.md.
   - Result: ____  Notes: ____
 
+- [ ] **END-PARITY-7 — Recreate a missing person with a generated password (S489)**
+  - Action: With a person deleted in Authentik (People shows them as missing), open People. Choose "Recreate with a generated password" (CLI `homesteadctl people resolve PERSON recreate --generate`). Then repeat on another missing person with plain "Recreate" (CLI `--link`).
+  - Expected: The generated choice shows the password once in a dialog; closing it removes it and it appears nowhere else (not in the audit log or the daemon log). Plain Recreate shows a one-time sign-in link as before. The person signs in with the password or link.
+  - If it fails: People page; docs/slices/S489-recreate-generated-password.md.
+  - Result: ____  Notes: ____
+
 - [ ] **PLAT-TUNNEL-8 — Move an app from its own public name to its subpath (S471, ADR-061)**
   - Action: For an installed app whose package is served by path and is still published at its own name (Doctor shows "move available"), open its page, Review the move (or `homesteadctl apps move plan <pkg>`). Read the preview, then approve it (`apps move apply <pkg> --digest D --follow`). A package that keeps its own name (Immich, Vaultwarden) and Uptime Kuma show no move.
   - Expected: The preview names the old public address, says old bookmarks and links on it stop working and that nothing redirects, lists the CNAME and tunnel entry that go away, and says no DNS record is needed for the new address under the dashboard's public name. After approval the app answers at `https://<dashboard public name>/apps/<app>/`, the old name no longer resolves or answers, its sign-in works at the new address, and Doctor's subpath-publish check is clean. An app known to set Path=/ cookies carries a warning.
@@ -3708,6 +3714,6 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | END-DOCTOR | END-DOCTOR-1 to END-DOCTOR-1 (1) |  |  |  |  |
 | END-SUBPATH | END-SUBPATH-1 to END-SUBPATH-8 (8) |  |  |  |  |
 | END-AUDIT | END-AUDIT-1 to END-AUDIT-1 (1) |  |  |  |  |
-| END-PARITY | END-PARITY-1 to END-PARITY-6 (6) |  |  |  |  |
+| END-PARITY | END-PARITY-1 to END-PARITY-7 (7) |  |  |  |  |
 | END-UNINSTALL | END-UNINSTALL-1 to END-UNINSTALL-6 (6) |  |  |  |  |
-| **Total** | 561 steps |  |  |  |  |
+| **Total** | 562 steps |  |  |  |  |

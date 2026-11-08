@@ -27,7 +27,7 @@ class CraftVersionSignature(unittest.TestCase):
         self.assertIn("--version", read("docs/PARITY.md"))
         text = read("docs/reviews/OWNER_ACCEPTANCE_CHECKLIST.md")
         self.assertIn("**END-PARITY-6 ", text)
-        self.assertIn("| END-PARITY | END-PARITY-1 to END-PARITY-6 (6) |", text)
+        self.assertIn("| END-PARITY | END-PARITY-1 to END-PARITY-7 (7) |", text)
         self.assertIn("END-PARITY-6", read("docs/reviews/acceptance-form.html"))
 
 

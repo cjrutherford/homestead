@@ -254,6 +254,21 @@ describe('People', () => {
     http.expectOne('/api/v1/people').flush(VIEW);
   });
 
+  it('recreates a missing person with a generated password shown once', () => {
+    start();
+    expect(button('Recreate with a generated password')).toBeDefined();
+    button('Recreate with a generated password')!.click();
+    const recreate = http.expectOne('/api/v1/people/6/resolve');
+    expect(recreate.request.body).toMatchObject({ action: 'recreate', method: 'generated' });
+    recreate.flush({ revealed: { kind: 'password', value: 'Gen-Pass-Value-1' } });
+    http.expectOne('/api/v1/people').flush(VIEW);
+    fixture.detectChanges();
+    expect(text()).toContain('Gen-Pass-Value-1');
+    button('I have it')!.click();
+    fixture.detectChanges();
+    expect(text()).not.toContain('Gen-Pass-Value-1');
+  });
+
   it('asks before removing and says app data stays', () => {
     start();
     (Array.from(el().querySelectorAll('.person[data-status="ok"] button')).find((b) => b.textContent?.trim() === 'Remove') as HTMLButtonElement).click();

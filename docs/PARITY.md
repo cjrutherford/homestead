@@ -202,7 +202,7 @@ unchanged.
 | PUT | /api/v1/people/{id}/apps/{app} | `"people"` | `grantApp` | Let a person open an app (the app's `-users` group). `people grant`. `confirm: true`. Session class |
 | PUT | /api/v1/people/{id}/apps/{app}/admin | `"people"` | `grantApp` | Make a person an app admin (also the `-admins` group); never a Homestead administrator. `people grant --admin`. Step-up for oidc sessions |
 | POST | /api/v1/people/{id}/apps/{app}/revoke | `"people"` | `revokeApp` | Take an app away. `people revoke`. `confirm: true`. Session class |
-| POST | /api/v1/people/{id}/resolve | `"people"` | `resolveDrift` | Settle drift only when asked: `put-back` (recommended), `keep`, and for a person gone from Authentik `recreate` or `forget`. `people resolve`. Step-up for oidc sessions |
+| POST | /api/v1/people/{id}/resolve | `"people"` | `resolveDrift` | Settle drift only when asked: `put-back` (recommended), `keep`, and for a person gone from Authentik `recreate` or `forget`. `people resolve PERSON ... [--link or --generate]`; the People page's Recreate and Recreate with a generated password buttons send `method` `link` or `generated`, the password shown once in the reveal dialog and never logged (S489). Step-up for oidc sessions |
 
 CLI-only local commands and flags (S288). These have no API route, so they
 carry no table row; each is local by design (ADR-015, ADR-033) and the

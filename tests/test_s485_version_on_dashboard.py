@@ -27,7 +27,7 @@ class VersionOnDashboard(unittest.TestCase):
     def test_checklist(self):
         text = read("docs/reviews/OWNER_ACCEPTANCE_CHECKLIST.md")
         self.assertIn("**END-PARITY-5 ", text)
-        self.assertIn("| END-PARITY | END-PARITY-1 to END-PARITY-6 (6) |", text)
+        self.assertIn("| END-PARITY | END-PARITY-1 to END-PARITY-7 (7) |", text)
         self.assertIn("END-PARITY-5", read("docs/reviews/acceptance-form.html"))
 
 

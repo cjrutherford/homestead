@@ -110,9 +110,10 @@
                     </div>
                   } @else if (person.status === 'missing') {
                     <div class="person-drift" role="group" [attr.aria-label]="'Missing: ' + person.display_name">
-                      <p>{{ person.username }} was deleted in Authentik. Recreate them with the access Homestead recorded (they get a new one-time sign-in link), or remove them from Homestead.</p>
+                      <p>{{ person.username }} was deleted in Authentik. Recreate them with the access Homestead recorded (a new one-time sign-in link by default, or a generated password shown once), or remove them from Homestead.</p>
                       <p class="person-actions">
                         <button type="button" class="primary" [disabled]="busy()" (click)="resolve(person, 'recreate')">Recreate</button>
+                        <button type="button" [disabled]="busy()" (click)="resolve(person, 'recreate', 'generated')">Recreate with a generated password</button>
                         <button type="button" class="danger" [disabled]="busy()" (click)="openConfirm(person, 'forget')">Remove from Homestead</button>
                       </p>
                     </div>
