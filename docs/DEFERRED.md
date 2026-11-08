@@ -1048,7 +1048,9 @@
 - Adapter admin mapping is unverified live: Nextcloud (`user_oidc`
   `--group-provisioning` / `--mapping-groups` and the `admin` alias group),
   Jellyfin (SSO plugin `AdminRoles`/`Roles`/`RoleClaim`) and Immich
-  (`roleClaim` `immich_role`). The owner's VM 2 check covers them.
+  (`roleClaim` `immich_role`; checked live on VM 2 in S460: the owner becomes
+  an Immich administrator and person A stays an ordinary user). The owner's
+  VM 2 check covers the others.
 - Turning sign-in off removes the app's two groups, but an uninstall with
   `leave_sign_in` leaves them (the refusal text says so); Homestead cannot
   delete them then.
@@ -1828,6 +1830,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 - S455: Vikunja's own login form still exists for local accounts (none can be created; it stays so a recovery account is possible); no group-to-team mapping. Public name sign-in, backups and uninstall checks were not run.
 - S456: restoring grants runs when sign-in is applied; a person added to Authentik by hand to a group Homestead has no grant for is still untouched (drift shows it).
 - S457: uninstall removes the app's edge routes but not the per-host TLS leaf the appliance issued for its names; it stays until the next leaf cleanup.
-- S458-S459 acceptance (Immich): every person who signs in to Immich for the first time lands on Immich's own per-person welcome tour (`/auth/onboarding`, Theme first); it cannot be preset because each account only exists after its first sign-in, and it is skipped by opening the photos page. Immich's owner (akadmin) arrives as an ordinary Immich user: only the local `admin@homestead.lan` is an administrator, because no role claim (`immich_role`) is mapped from Authentik's admin group yet.
+- S458-S459 acceptance (Immich): every person who signs in to Immich for the first time lands on Immich's own per-person welcome tour (`/auth/onboarding`, Theme first); it cannot be preset because each account only exists after its first sign-in, and it is skipped by opening the photos page. Immich's owner (akadmin) admin role was recorded here as missing, but the `immich_role` claim was already mapped; S460 re-verified it live (see below).
 - S458-S459 acceptance (Jellyfin): `<bulk>/jellyfin/media/*` is root-owned mode 0750, so the checklist's "copy a video in" needs sudo on the host. BookStack's local login form is absent (AUTH_METHOD=oidc), so its generated administrator password cannot be used to sign in; the Editor role cannot create shelves (Admin only).
 - Acceptance run, public names for Nextcloud, Immich, Jellyfin, BookStack and Linkding were not published, so public-name sign-in was not tested for them; day-2 backup steps are not yet due.
+- S460 (Immich welcome tour, evidence): Immich 3.3.0 has no setting that skips the per-person `/auth/onboarding` tour. The only switch is the per-user metadata row `onboarding {isOnboarded: true}`, which the server writes only from `PUT /users/me/onboarding` (the person's own session) and from a one-off 2025 migration for accounts that already existed. Neither the OAuth auto-register path (`auth.service.js` creates the user with no metadata) nor the admin create-user API sets it, and the admin API cannot write another user's metadata. The remaining routes are a Postgres insert trigger on Immich's user table or a poller, both unsupported schema changes in Immich's database that its migrations do not know about; they are not shipped. Re-check on each Immich bump (the pin test names the version).

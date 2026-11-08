@@ -688,13 +688,13 @@ _Immich 3.3.0. S318 first-run admin fix is live-unverified after reset; S298 liv
 
 - [ ] **SRV-IMMICH-3 — Owner sign-in**
   - Action: Open the app, choose Login with Authentik as the owner. Login page offers 'Login with OAuth'/Authentik; Immich adapter configures it through the app API. First-run admin is created by Homestead (generated secret).
-  - Expected: Owner is signed in and named correctly.
+  - Expected: Owner is signed in, named correctly and is an Immich administrator (the Administration pages open at `/admin`), through the `immich_role` claim; the role is re-read at every sign-in. Immich's own welcome tour (`/auth/onboarding`) shows once per person: it cannot be preset (docs/DEFERRED.md) and is skipped by opening the photos page.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
 - [ ] **SRV-IMMICH-4 — Person A (with access) can sign in**
   - Action: Grant A in People for this app. In a separate browser sign in as A.
-  - Expected: A reaches the app as A (a separate account/data from the owner).
+  - Expected: A reaches the app as A (a separate account/data from the owner), as an ordinary user: `/admin` sends A back to the photos page.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 

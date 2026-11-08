@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "cca28a54e48e33ef",
+ "hash": "2aa83c8e95804104",
  "sections": [
   {
    "title": "Platform",
@@ -902,14 +902,14 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "id": "SRV-IMMICH-3",
        "title": "Owner sign-in",
        "action": "Open the app, choose Login with Authentik as the owner. Login page offers 'Login with OAuth'/Authentik; Immich adapter configures it through the app API. First-run admin is created by Homestead (generated secret).",
-       "expected": "Owner is signed in and named correctly.",
+       "expected": "Owner is signed in, named correctly and is an Immich administrator (the Administration pages open at `/admin`), through the `immich_role` claim; the role is re-read at every sign-in. Immich's own welcome tour (`/auth/onboarding`) shows once per person: it cannot be preset (docs/DEFERRED.md) and is skipped by opening the photos page.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
        "id": "SRV-IMMICH-4",
        "title": "Person A (with access) can sign in",
        "action": "Grant A in People for this app. In a separate browser sign in as A.",
-       "expected": "A reaches the app as A (a separate account/data from the owner).",
+       "expected": "A reaches the app as A (a separate account/data from the owner), as an ordinary user: `/admin` sends A back to the photos page.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
