@@ -294,3 +294,17 @@ and the finding goes to `docs/DEFERRED.md` (the ID is not reused).
 | S476 | Linkding at a subpath. | S475 |
 | S477 | FreshRSS at a subpath (Apache mod_auth_openidc layer). | S476 |
 | S478 | Live acceptance on a test appliance: move one app from a subdomain, confirm the old CNAME and ingress are gone, sign-in works, Doctor is clean; docs. | S472 and the package slices that landed |
+
+## 10. One shared gate for apps at a subpath (ADR-062, Accepted 2026-11-08)
+
+Status: S480 in progress. Strictly sequential; one slice, one commit. ADR-062
+puts every forward-auth-gated app at a path behind one Authentik proxy
+provider on the dashboard's name, with the edge admitting each app's groups
+only. S478 (live acceptance of the subpath work) is absorbed into S482.
+
+| Slice | Scope | Depends on |
+|---|---|---|
+| S480 | The shared gate: one Authentik provider and application for every gated app at a path, the union of their bypass paths, the edge group check (exact match, 403, client identity headers deleted, groups header removed before the app), and Navidrome moved onto it by re-planning its sign-in. Live on VM 2: owner and A in, C 403, Subsonic bypass, forged headers ignored, Doctor green. | S472, ADR-062 |
+| S481 | The 13 craft apps go from `publish: never` to `publish: path`; a published craft route is rendered behind the shared gate on the tunnel entry (LAN stays open, ADR-062 section 6); the publish plan says so; the fact table and craft tests follow. | S480 |
+| S482 | Live acceptance of the subpath work on VM 2 (absorbs S478): a moved app from a subdomain, a published craft app behind the gate, old names gone, Doctor clean; docs. | S481, S478 |
+
