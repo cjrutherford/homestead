@@ -271,3 +271,25 @@ design), `collabora`/`onlyoffice` (Nextcloud app management), `immich-kiosk`
   app needs a readiness gate.
 - **F1 cannot deliver supervised export.** Then Wave 1 reverts to
   owner-supplied credentials and S342's scope changes, not its ID.
+
+## 9. Public apps at a subpath (ADR-061, Proposed 2026-11-08)
+
+Status: planned, not scheduled. ADR-061 is Accepted (owner, 2026-11-08). Strictly sequential; one slice, one commit. S469 to S472 are
+platform; S473 to S477 are one package each, each with its Authentik or
+forward-auth sign-in in the same slice. Each package slice first proves the
+app's base-path setting works at the subpath on the LAN and public; if it
+fails the check, the slice is withdrawn, the package stays on its own name,
+and the finding goes to `docs/DEFERRED.md` (the ID is not reused).
+
+| Slice | Scope | Depends on |
+|---|---|---|
+| S469 | Manifest field `publish` (`path`, `host` with reason, `never`), derived for all 46 packages and validated (`single_origin_sign_in` implies host; `allowwider: false` implies never; `path` implies `serve: path`). A test fixture holds the ADR-061 fact table. | ADR-061 |
+| S470 | Shared-origin hardening on public path routes: `__Host-` dashboard session and CSRF cookie names, edge strips dashboard and Authentik cookies from app requests (after any forward-auth subrequest) and reserved `Set-Cookie` names from app responses, `frame-ancestors 'self'` and `Referrer-Policy: same-origin` headers, plan warning text. | S469 |
+| S471 | Move plan from `<app>.<zone>` to `/apps/<app>/`: one digest-bound operation (path route, public path, `app_url`, sign-in re-plan, read links, then removal of ingress, edge route and CNAME last); clean removal with no redirect, and a preview that says old bookmarks and links stop working; Doctor "move available" check; API, CLI, dashboard, `docs/PARITY.md`. | S469, S470 |
+| S472 | Navidrome `serve: path` (`ND_BASEURL`), forward-auth `handle` inside the dashboard site, public outpost path, bypass regexes with the prefix; `canonicalRoute` and `countNamed` handle path routes; move offer for existing installs. | S471 |
+| S473 | Audiobookshelf at a subpath (verify, manifest, OIDC redirect URIs in its database, move). | S471 |
+| S474 | Komga at a subpath (same shape). | S473 |
+| S475 | paperless-ngx at a subpath. | S474 |
+| S476 | Linkding at a subpath. | S475 |
+| S477 | FreshRSS at a subpath (Apache mod_auth_openidc layer). | S476 |
+| S478 | Live acceptance on a test appliance: move one app from a subdomain, confirm the old CNAME and ingress are gone, sign-in works, Doctor is clean; docs. | S472 and the package slices that landed |
