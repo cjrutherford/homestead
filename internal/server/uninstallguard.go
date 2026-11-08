@@ -10,6 +10,7 @@ import (
 	"homestead/internal/appsso"
 	"homestead/internal/audit"
 	"homestead/internal/catalog"
+	"homestead/internal/docker"
 	"homestead/internal/operation"
 	"homestead/internal/store"
 )
@@ -92,4 +93,39 @@ func (s *Server) forgetSignInStep(st *store.Store, name, actor string) operation
 		})
 		return nil
 	}}
+}
+
+// removeAppRoutes (S457) takes the app's routes out of the recorded edge
+// table and reconciles the edge, so an uninstalled app leaves no .lan,
+// .local or path route behind and a reinstall can publish again. Public
+// names were already refused at the guard, so none is dropped here. It
+// returns how many routes it removed.
+func removeAppRoutes(ctx context.Context, st *store.Store, m catalog.Manifest) (int, error) {
+	set, err := loadEdgeRoutes(st)
+	if err != nil {
+		return 0, err
+	}
+	drop := map[docker.Hostname]bool{}
+	for _, r := range appsso.AppRoutes(m, set.Routes) {
+		drop[r.Host] = true
+	}
+	if len(drop) == 0 {
+		return 0, nil
+	}
+	kept := make([]docker.Route, 0, len(set.Routes))
+	for _, r := range set.Routes {
+		if !r.Dashboard && drop[r.Host] {
+			continue
+		}
+		kept = append(kept, r)
+	}
+	removed := len(set.Routes) - len(kept)
+	if removed == 0 {
+		return 0, nil
+	}
+	set.Routes = kept
+	if err := reconcileEdgeSet(ctx, st, set); err != nil {
+		return 0, fmt.Errorf("remove the app's edge routes: %w", err)
+	}
+	return removed, nil
 }

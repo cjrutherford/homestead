@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"homestead/internal/appsso"
+	"homestead/internal/catalog"
 	"homestead/internal/docker"
 	"homestead/internal/operation"
 	"homestead/internal/store"
@@ -100,5 +102,42 @@ func TestUninstallSignInNeedsTurningOffOrLeaving(t *testing.T) {
 	if err := st.DB().QueryRow(`SELECT detail FROM audit_entries WHERE action = 'app.uninstall.leave-sign-in'`).Scan(&detail); err != nil ||
 		!strings.Contains(detail, "homestead-demo") {
 		t.Fatalf("audit: %q %v", detail, err)
+	}
+}
+
+// S457: uninstall takes the app's routes out of the edge table (and
+// reconciles the edge); other apps' routes and the dashboard stay.
+func TestRemoveAppRoutesLeavesOthers(t *testing.T) {
+	_, st, catalogDir := uninstallGuardServer(t)
+	entries, err := catalog.Load(catalogDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := entries.Get("demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine := docker.Route{Host: "demo.lan", Target: docker.Target{Host: "web", Port: 8080}, Exposure: docker.ExposureLocal}
+	other := docker.Route{Host: "other.lan", Target: docker.Target{Host: "web", Port: 8080}, Exposure: docker.ExposureLocal}
+	if err := saveEdgeRoutes(st, docker.RouteSet{Routes: []docker.Route{mine, other}}); err != nil {
+		t.Fatal(err)
+	}
+	var reconciled docker.RouteSet
+	old := reconcileEdgeSet
+	reconcileEdgeSet = func(_ context.Context, st *store.Store, set docker.RouteSet) error {
+		reconciled = set
+		return saveEdgeRoutes(st, set)
+	}
+	t.Cleanup(func() { reconcileEdgeSet = old })
+	n, err := removeAppRoutes(context.Background(), st, m)
+	if err != nil || n != 1 {
+		t.Fatalf("removed %d: %v", n, err)
+	}
+	set, _ := loadEdgeRoutes(st)
+	if len(set.Routes) != 1 || set.Routes[0].Host != "other.lan" || len(reconciled.Routes) != 1 {
+		t.Fatalf("routes after: %+v", set.Routes)
+	}
+	if n, err := removeAppRoutes(context.Background(), st, m); err != nil || n != 0 {
+		t.Fatalf("second removal: %d %v", n, err)
 	}
 }

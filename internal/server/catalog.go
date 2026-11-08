@@ -832,6 +832,15 @@ func handleCatalogUninstall(s *Server, st *store.Store, catalogDir string, runne
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
+		uninstallActor := operatorActor(r)
+		def.Steps = append(def.Steps, operation.StepDef{Name: "remove-edge-routes", Run: func(ctx context.Context) error {
+			n, err := removeAppRoutes(ctx, st, manifest)
+			if err == nil && n > 0 {
+				_, _ = audit.New(st).Record(audit.Entry{Actor: uninstallActor, Action: "app.uninstall.routes", Outcome: audit.OutcomeOK,
+					Detail: fmt.Sprintf("%s: removed %d edge route(s)", name, n)})
+			}
+			return err
+		}})
 		if body.LeaveSignIn {
 			def.Steps = append(def.Steps, s.forgetSignInStep(st, name, operatorActor(r)))
 		}
