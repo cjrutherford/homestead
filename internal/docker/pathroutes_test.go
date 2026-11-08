@@ -159,11 +159,33 @@ func TestCraftPathRoute(t *testing.T) {
 	if strings.Contains(tunnel, "gridcraft") {
 		t.Fatalf("unpublished craft app on the public name:\n%s", tunnel)
 	}
+	// Published without its Authentik gate a craft app answers nothing on
+	// the public name: it has no sign-in of its own (ADR-062 section 6).
 	set.Routes[len(set.Routes)-1].Published = true
 	_, tunnel = renderDashboard(t, set)
-	if !strings.Contains(tunnel, strings.ReplaceAll(craft, "\n\t\t", "\n\t")[1:]) ||
-		!strings.Contains(tunnel, "\t\t\t\theader_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}") {
-		t.Fatalf("tunnel entry lacks the craft handle:\n%s", tunnel)
+	if strings.Contains(tunnel, "gridcraft") {
+		t.Fatalf("published craft app without a gate is on the public name:\n%s", tunnel)
+	}
+	// Gated (tunnel only): the local names are exactly as before and the
+	// public name is behind the gate, with the craft handles after it.
+	set.Routes[len(set.Routes)-1].Gate = &Gate{Groups: []string{"homestead-gridcraft-users", "homestead-gridcraft-admins", "homestead-owner"}, TunnelOnly: true}
+	if err := set.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	local2, tunnel := renderDashboard(t, set)
+	if local2 != local {
+		t.Fatalf("a tunnel-only gate changed the local site:\n%s", local2)
+	}
+	gate := strings.Index(tunnel, "forward_auth")
+	deny := strings.Index(tunnel, "respond @gate_apps_gridcraft_denied \"You do not have access to this app.\" 403")
+	strip := strings.Index(tunnel, "uri strip_prefix /apps/gridcraft")
+	wrapper := strings.Index(tunnel, "reverse_proxy unix/"+CraftSocketPath)
+	app := strings.Index(tunnel, "reverse_proxy gridcraft:8080")
+	if gate < 0 || !(gate < deny && deny < strip && strip < wrapper && wrapper < app) {
+		t.Fatalf("gate %d deny %d strip %d wrapper %d app %d:\n%s", gate, deny, strip, wrapper, app, tunnel)
+	}
+	if !strings.Contains(tunnel, "/outpost.goauthentik.io/*") || !strings.Contains(tunnel, "(^|\\|)(homestead-gridcraft-users|homestead-gridcraft-admins|homestead-owner)(\\||$)") {
+		t.Fatalf("outpost handle or exact group match missing:\n%s", tunnel)
 	}
 	// A craft route on a name of its own still takes no tunnel names.
 	host := Route{Host: "gridcraft.lan", Target: Target{Host: "gridcraft", Port: 8080}, Exposure: ExposureLocal,

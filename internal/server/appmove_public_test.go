@@ -175,18 +175,18 @@ func TestAppMovePublicRefusals(t *testing.T) {
 		t.Fatalf("kuma = %+v", s)
 	}
 	// A never package that holds a public name is not moved with it.
-	installHostApp(t, st, "wordcraft", "wordcraft", 8080)
+	installHostApp(t, st, "uptime-kuma", "uptime-kuma", 3001)
 	set, _ := loadEdgeRoutes(st)
 	for i := range set.Routes {
-		if set.Routes[i].Host == "wordcraft.lan" {
-			set.Routes[i].Tunnel = []docker.Hostname{"wordcraft.example.com"}
+		if set.Routes[i].Host == "uptime-kuma.lan" {
+			set.Routes[i].Tunnel = []docker.Hostname{"uptime-kuma.example.com"}
 		}
 	}
 	if err := saveEdgeRoutes(st, set); err != nil {
 		t.Fatal(err)
 	}
-	if s := moveStatus(t, srv, "wordcraft"); s.Offered || !strings.Contains(s.Reason, "never published") {
-		t.Fatalf("wordcraft = %+v", s)
+	if s := moveStatus(t, srv, "uptime-kuma"); s.Offered || !strings.Contains(s.Reason, "never published") {
+		t.Fatalf("kuma with a name = %+v", s)
 	}
 	// No public name on the dashboard: nowhere to move to.
 	set, _ = loadEdgeRoutes(st)

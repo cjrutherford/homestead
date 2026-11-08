@@ -200,19 +200,19 @@ produces now.
 | tasks | yes | yes | subpath | subpath | Everything app |
 | three-d | yes | yes | subpath | subpath | Everything app |
 | time-tracking | yes | yes | subpath | subpath | Everything app |
-| cadcraft | yes | no (allowwider false) | none | never published | craft app stores nothing on the appliance; manifest refuses |
-| deckcraft | yes | no | none | never published | same |
-| designcraft | yes | no | none | never published | same |
-| effectcraft | yes | no | none | never published | same |
-| figcraft | yes | no | none | never published | same |
-| filmcraft | yes | no | none | never published | same |
-| gridcraft | yes | no | none | never published | same |
-| lightcraft | yes | no | none | never published | same |
-| pdfcraft | yes | no | none | never published | same |
-| photocraft | yes | no | none | never published | same |
-| soundcraft | yes | no | none | never published | same |
-| vectorcraft | yes | no | none | never published | same |
-| wordcraft | yes | no | none | never published | same |
+| cadcraft | yes | yes (S481) | none | subpath (S481, ADR-062: tunnel-only gate) | craft app: LAN open, public path behind the shared gate |
+| deckcraft | yes | yes (S481) | none | subpath (S481, ADR-062: tunnel-only gate) | craft app: LAN open, public path behind the shared gate |
+| designcraft | yes | yes (S481) | none | subpath (S481, ADR-062: tunnel-only gate) | craft app: LAN open, public path behind the shared gate |
+| effectcraft | yes | yes (S481) | none | subpath (S481, ADR-062: tunnel-only gate) | craft app: LAN open, public path behind the shared gate |
+| figcraft | yes | yes (S481) | none | subpath (S481, ADR-062: tunnel-only gate) | craft app: LAN open, public path behind the shared gate |
+| filmcraft | yes | yes (S481) | none | subpath (S481, ADR-062: tunnel-only gate) | craft app: LAN open, public path behind the shared gate |
+| gridcraft | yes | yes (S481) | none | subpath (S481, ADR-062: tunnel-only gate) | craft app: LAN open, public path behind the shared gate |
+| lightcraft | yes | yes (S481) | none | subpath (S481, ADR-062: tunnel-only gate) | craft app: LAN open, public path behind the shared gate |
+| pdfcraft | yes | yes (S481) | none | subpath (S481, ADR-062: tunnel-only gate) | craft app: LAN open, public path behind the shared gate |
+| photocraft | yes | yes (S481) | none | subpath (S481, ADR-062: tunnel-only gate) | craft app: LAN open, public path behind the shared gate |
+| soundcraft | yes | yes (S481) | none | subpath (S481, ADR-062: tunnel-only gate) | craft app: LAN open, public path behind the shared gate |
+| vectorcraft | yes | yes (S481) | none | subpath (S481, ADR-062: tunnel-only gate) | craft app: LAN open, public path behind the shared gate |
+| wordcraft | yes | yes (S481) | none | subpath (S481, ADR-062: tunnel-only gate) | craft app: LAN open, public path behind the shared gate |
 | immich | no (`serve: host`) | yes | own name | own name | cannot run under a path (ADR-044) |
 | gitea | no | yes | own name | own name | `single_origin_sign_in` (ADR-060) |
 | actual-budget | no | yes | own name | own name | cannot run under a path; single-origin (ADR-060) |

@@ -201,9 +201,15 @@ func renderPathHandles(paths []Route, tunnel bool, dash Route) string {
 			}
 			continue
 		}
+		if tunnel && p.CraftApp != "" && p.Gate == nil {
+			// A craft app has no sign-in of its own: published without its
+			// Authentik gate it answers 404 on the tunnel (fail closed,
+			// ADR-062 section 6).
+			continue
+		}
 		bare := strings.TrimSuffix(p.Path, "/")
 		fmt.Fprintf(&b, "\tredir %s %s 308\n", bare, p.Path)
-		if p.Gate != nil {
+		if p.Gate != nil && !(p.Gate.TunnelOnly && !tunnel) {
 			// A gated app at a path (ADR-061, ADR-055): inside the dashboard
 			// site, behind Authentik forward-auth.
 			text, full := renderGatedPath(p, dash, SharedGateCanonical(paths, dash), tunnel)
@@ -240,6 +246,20 @@ func renderPathHandles(paths []Route, tunnel bool, dash Route) string {
 		b.WriteString(renderOutpostHandle(tunnel))
 	}
 	fmt.Fprintf(&b, "\thandle %s* {\n\t\trespond 404\n\t}\n", AppsPrefix)
+	return b.String()
+}
+
+// craftUpstream is a craft app's upstream block under a gate (ADR-045,
+// ADR-062): the prefix stripped, the wrapper page and file path to the
+// daemon's socket with the edge's own headers, everything else to up. It is
+// indented one tab, as pathUpstream is.
+func craftUpstream(p Route, up string) string {
+	bare := strings.TrimSuffix(p.Path, "/")
+	var b strings.Builder
+	fmt.Fprintf(&b, "\turi strip_prefix %s\n", bare)
+	fmt.Fprintf(&b, "\thandle %s* {\n\t\treverse_proxy unix/%s {\n\t\t\theader_up %s %s\n\t\t\theader_up %s {http.request.host}\n\t\t\theader_up %s %s\n\t\t\theader_up X-Forwarded-Proto https\n\t\t}\n\t}\n",
+		CraftWrapperPrefix, CraftSocketPath, CraftAppHeader, p.CraftApp, CraftHostHeader, CraftPrefixHeader, bare)
+	b.WriteString(wrapHandle(up))
 	return b.String()
 }
 

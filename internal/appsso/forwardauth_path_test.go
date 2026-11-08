@@ -105,3 +105,41 @@ func TestForwardPlanAtPathUsesTheSharedGate(t *testing.T) {
 		t.Fatalf("off plan must keep the gate for the other app: %+v", off)
 	}
 }
+
+// A craft app (S481, ADR-062 section 6) is gated on its public path only:
+// not offered until published, then a tunnel-only gate with the app's
+// groups, no redirects and the LAN left open.
+func TestForwardPlanCraftIsTunnelOnly(t *testing.T) {
+	build := func(published bool) (Plan, error) {
+		m := manifest(t, "figcraft")
+		r := route("figcraft.lan", "figcraft")
+		r.Path, r.Published, r.StripPrefix, r.CraftApp = "/apps/figcraft/", published, true, "figcraft"
+		dash := docker.Route{Host: "homestead.lan", Dashboard: true, Aliases: []docker.Hostname{"homestead.local"}, Tunnel: []docker.Hostname{"homestead.example.com"}}
+		table := []docker.Route{dash, r, route("authentik.lan", "server")}
+		in := faInputs(t)
+		in.Manifest = m
+		in.Routes = docker.ServedRoutes(table, AppRoutes(m, table))
+		in.PublicAuthentikURL = "https://homestead.example.com/apps/auth"
+		return BuildPlan(in, true)
+	}
+	if _, err := build(false); err == nil || !strings.Contains(err.Error(), "not published") {
+		t.Fatalf("unpublished craft plan: %v", err)
+	}
+	p, err := build(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := p.Gate
+	if !g.Shared || !g.TunnelOnly || len(g.Redirects) != 0 || len(g.Bypass) != 0 || g.Canonical != "homestead.example.com" {
+		t.Fatalf("gate: %+v", g)
+	}
+	if got := strings.Join(g.Groups, ","); got != "homestead-figcraft-users,homestead-figcraft-admins,homestead-owner" {
+		t.Fatalf("groups = %q", got)
+	}
+	if dg := g.gate(); !dg.TunnelOnly || len(dg.Groups) != 3 {
+		t.Fatalf("docker gate: %+v", dg)
+	}
+	if !strings.Contains(strings.Join(p.Changes, "\n"), "local address stays open") {
+		t.Fatalf("changes: %v", p.Changes)
+	}
+}

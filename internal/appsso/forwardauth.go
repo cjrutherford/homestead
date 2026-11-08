@@ -44,6 +44,9 @@ type GatePlan struct {
 	// Groups are the Authentik groups the edge admits to the app (exact
 	// match against the outpost's groups header). Only with Shared.
 	Groups []string `json:"groups,omitempty"`
+	// TunnelOnly is set for a craft app (ADR-062 section 6): the gate
+	// covers its public path only and the local names stay open.
+	TunnelOnly bool `json:"tunnel_only,omitempty"`
 	// ProviderBypass are the shared provider's unauthenticated paths: this
 	// app's and those of every other app behind the gate.
 	ProviderBypass []string `json:"provider_bypass,omitempty"`
@@ -135,7 +138,7 @@ func (g GatePlan) gate() *docker.Gate {
 		paths = append(paths, b.Path)
 	}
 	return &docker.Gate{Canonical: docker.Hostname(g.Canonical), CopyHeaders: append([]string(nil), g.CopyHeaders...), Bypass: paths,
-		Groups: append([]string(nil), g.Groups...)}
+		Groups: append([]string(nil), g.Groups...), TunnelOnly: g.TunnelOnly}
 }
 
 // The one Authentik proxy provider, application and slug that every app at
@@ -269,6 +272,11 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 	if !ok {
 		return Plan{}, unavailable("%s has no address of its own on the edge yet.", m.Title)
 	}
+	craft := route.CraftApp != "" && route.IsPath()
+	if craft && docker.IsPrivateName(canonical) {
+		// ADR-062 section 6: a craft app is gated only where it is public.
+		return Plan{}, unavailable("%s is gated on its public path only, and it is not published. Publish it first (it answers 404 on the internet until this gate is on); its local address stays open.", m.Title)
+	}
 	if n := countNamed(in.Routes); n > 1 {
 		return Plan{}, unavailable("%s has %d addresses on the edge; the gate protects one. Remove the extra routes, then plan again.", m.Title, n)
 	}
@@ -342,7 +350,7 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 	}
 	redirects := []string{}
 	for _, n := range route.AllNames() {
-		if n != canonical {
+		if n != canonical && !craft {
 			redirects = append(redirects, strings.ToLower(string(n)))
 		}
 	}
@@ -373,6 +381,7 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 	}
 	if route.IsPath() {
 		g.Shared, g.Groups = true, groups
+		g.TunnelOnly = craft
 		paths := make([]string, 0, len(bypass))
 		for _, b := range bypass {
 			paths = append(paths, b.Path)
@@ -430,6 +439,9 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 			fmt.Sprintf("Turn %s's own login off, so you sign in once, to Authentik. This runs after the gate is on and is safe because only administrators and the owner pass the gate, and Homestead keeps every other host user and container off its port (the host block); sign-in is refused if the block cannot be kept.", m.Title),
 			fmt.Sprintf("Use %s's built-in SQLite database (chosen now if it has not been set up), create one %s account named after you with a random password nobody knows if it has none, and restart %s. An existing account and its password are kept.", m.Title, m.Title, m.Title),
 			fmt.Sprintf("Running a command inside %s (pinned to version %s; it refuses any other) changes its own database: %s.", m.Title, m.Version, describeArgv(fa.OwnLoginOff.OnApply)))
+	}
+	if g.TunnelOnly {
+		p.Changes = append(p.Changes, fmt.Sprintf("%s's local address stays open as before (no sign-in on your network); the gate covers its public path only.", m.Title))
 	}
 	if g.Shared {
 		p.Changes = append(p.Changes, fmt.Sprintf("Who can reach it: Authentik signs the person in, then the edge admits only members of %s (an exact match on the group name) and answers 403 to everyone else. Client-sent X-Authentik-* headers are deleted first.", strings.Join(g.Groups, ", ")))

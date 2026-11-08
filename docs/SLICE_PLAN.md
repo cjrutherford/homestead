@@ -297,7 +297,7 @@ and the finding goes to `docs/DEFERRED.md` (the ID is not reused).
 
 ## 10. One shared gate for apps at a subpath (ADR-062, Accepted 2026-11-08)
 
-Status: S480 in progress. Strictly sequential; one slice, one commit. ADR-062
+Status: S480, S481 done. Strictly sequential; one slice, one commit. ADR-062
 puts every forward-auth-gated app at a path behind one Authentik proxy
 provider on the dashboard's name, with the edge admitting each app's groups
 only. S478 (live acceptance of the subpath work) is absorbed into S482.

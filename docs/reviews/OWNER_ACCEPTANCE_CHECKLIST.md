@@ -2789,7 +2789,7 @@ Prerequisites: Tasks, Notes, Circuits, Parametric and API Client installed with 
 
 ## Craft apps
 
-Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed manifest, served at `https://<server>/apps/<app>/`, have no sign-in (local only; not exposed publicly) and are stateless. Hooked apps open/save through Nextcloud (needs an operator session); the rest are browser-local.
+Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed manifest, served at `https://<server>/apps/<app>/`, have no sign-in of their own and are stateless. On your network they stay open. Published, the public path is behind the shared Authentik gate (ADR-062): only people granted the app, and the owner, open it. Hooked apps open/save through Nextcloud (needs an operator session); the rest are browser-local.
 
 - [ ] **CRAFT-PLAT-1 — Craft plan and build**
   - Action: `homesteadctl craft plan wordcraft` then `craft build wordcraft` (or the Craft page).
@@ -2824,9 +2824,9 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **CRAFT-WORDCRAFT-3 — Not reachable publicly**
-  - Action: From mobile data open the same path on the public name.
-  - Expected: Refused or not routed (local only).
+- [ ] **CRAFT-WORDCRAFT-3 — Public path is behind the Authentik gate**
+  - Action: Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.
+  - Expected: Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \"You do not have access to this app.\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -2875,9 +2875,9 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **CRAFT-GRIDCRAFT-3 — Not reachable publicly**
-  - Action: From mobile data open the same path on the public name.
-  - Expected: Refused or not routed (local only).
+- [ ] **CRAFT-GRIDCRAFT-3 — Public path is behind the Authentik gate**
+  - Action: Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.
+  - Expected: Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \"You do not have access to this app.\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -2926,9 +2926,9 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **CRAFT-PDFCRAFT-3 — Not reachable publicly**
-  - Action: From mobile data open the same path on the public name.
-  - Expected: Refused or not routed (local only).
+- [ ] **CRAFT-PDFCRAFT-3 — Public path is behind the Authentik gate**
+  - Action: Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.
+  - Expected: Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \"You do not have access to this app.\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -2977,9 +2977,9 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **CRAFT-DECKCRAFT-3 — Not reachable publicly**
-  - Action: From mobile data open the same path on the public name.
-  - Expected: Refused or not routed (local only).
+- [ ] **CRAFT-DECKCRAFT-3 — Public path is behind the Authentik gate**
+  - Action: Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.
+  - Expected: Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \"You do not have access to this app.\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -3028,9 +3028,9 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **CRAFT-VECTORCRAFT-3 — Not reachable publicly**
-  - Action: From mobile data open the same path on the public name.
-  - Expected: Refused or not routed (local only).
+- [ ] **CRAFT-VECTORCRAFT-3 — Public path is behind the Authentik gate**
+  - Action: Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.
+  - Expected: Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \"You do not have access to this app.\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -3079,9 +3079,9 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **CRAFT-PHOTOCRAFT-3 — Not reachable publicly**
-  - Action: From mobile data open the same path on the public name.
-  - Expected: Refused or not routed (local only).
+- [ ] **CRAFT-PHOTOCRAFT-3 — Public path is behind the Authentik gate**
+  - Action: Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.
+  - Expected: Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \"You do not have access to this app.\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -3130,9 +3130,9 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **CRAFT-LIGHTCRAFT-3 — Not reachable publicly**
-  - Action: From mobile data open the same path on the public name.
-  - Expected: Refused or not routed (local only).
+- [ ] **CRAFT-LIGHTCRAFT-3 — Public path is behind the Authentik gate**
+  - Action: Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.
+  - Expected: Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \"You do not have access to this app.\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -3181,9 +3181,9 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **CRAFT-FIGCRAFT-3 — Not reachable publicly**
-  - Action: From mobile data open the same path on the public name.
-  - Expected: Refused or not routed (local only).
+- [ ] **CRAFT-FIGCRAFT-3 — Public path is behind the Authentik gate**
+  - Action: Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.
+  - Expected: Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \"You do not have access to this app.\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -3232,9 +3232,9 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **CRAFT-FILMCRAFT-3 — Not reachable publicly**
-  - Action: From mobile data open the same path on the public name.
-  - Expected: Refused or not routed (local only).
+- [ ] **CRAFT-FILMCRAFT-3 — Public path is behind the Authentik gate**
+  - Action: Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.
+  - Expected: Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \"You do not have access to this app.\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -3283,9 +3283,9 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **CRAFT-EFFECTCRAFT-3 — Not reachable publicly**
-  - Action: From mobile data open the same path on the public name.
-  - Expected: Refused or not routed (local only).
+- [ ] **CRAFT-EFFECTCRAFT-3 — Public path is behind the Authentik gate**
+  - Action: Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.
+  - Expected: Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \"You do not have access to this app.\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -3334,9 +3334,9 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **CRAFT-SOUNDCRAFT-3 — Not reachable publicly**
-  - Action: From mobile data open the same path on the public name.
-  - Expected: Refused or not routed (local only).
+- [ ] **CRAFT-SOUNDCRAFT-3 — Public path is behind the Authentik gate**
+  - Action: Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.
+  - Expected: Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \"You do not have access to this app.\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -3385,9 +3385,9 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **CRAFT-DESIGNCRAFT-3 — Not reachable publicly**
-  - Action: From mobile data open the same path on the public name.
-  - Expected: Refused or not routed (local only).
+- [ ] **CRAFT-DESIGNCRAFT-3 — Public path is behind the Authentik gate**
+  - Action: Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.
+  - Expected: Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \"You do not have access to this app.\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -3436,9 +3436,9 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
-- [ ] **CRAFT-CADCRAFT-3 — Not reachable publicly**
-  - Action: From mobile data open the same path on the public name.
-  - Expected: Refused or not routed (local only).
+- [ ] **CRAFT-CADCRAFT-3 — Public path is behind the Authentik gate**
+  - Action: Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.
+  - Expected: Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \"You do not have access to this app.\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 

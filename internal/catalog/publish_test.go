@@ -29,7 +29,7 @@ var adr061Facts = func() map[string][2]string {
 	}
 	for _, name := range []string{"cadcraft", "deckcraft", "designcraft", "effectcraft", "figcraft", "filmcraft",
 		"gridcraft", "lightcraft", "pdfcraft", "photocraft", "soundcraft", "vectorcraft", "wordcraft"} {
-		facts[name] = [2]string{PublishNever, ""}
+		facts[name] = [2]string{PublishPath, ""}
 	}
 	return facts
 }()

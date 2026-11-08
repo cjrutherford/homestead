@@ -1353,6 +1353,13 @@ func singleOriginWarning(r docker.Route, plan appPublicPlan) string {
 // gated by Authentik forward-auth (ADR-055) is planned with its gate in the
 // same install (S450), so the warning says when the gate arrives.
 func openToInternetWarning(m catalog.Manifest, signIn bool, url string) string {
+	if accountlessInstallApps[m.Name] {
+		// A craft app has no sign-in of its own (ADR-062 section 6).
+		if !signIn {
+			return m.Title + " has no sign-in of its own, so " + url + " answers nothing on the internet until its Authentik gate is on (plan it next: homesteadctl apps sign-in plan " + m.Name + "). Your local address stays open."
+		}
+		return "Anyone on the internet who signs in to Authentik and belongs to " + m.Title + "'s group (or is the owner) can reach " + m.Title + " at " + url + "; everyone else gets 403. Your local address stays open."
+	}
 	if m.SSO.ForwardAuth != nil && !signIn {
 		return "Anyone on the internet can reach " + m.Title + " at " + url + ". Until the Authentik gate is on, only " + m.Title + "'s own login protects it; the gate is planned with its install, and the app's login is never left open."
 	}

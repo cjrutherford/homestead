@@ -47,6 +47,10 @@ type Gate struct {
 	// everyone else. Empty means the gate admits every person Authentik
 	// accepts (a gate of an app's own, ADR-055).
 	Groups []string `json:",omitempty"`
+	// TunnelOnly (S481, ADR-062 section 6) keeps the gate to the tunnel
+	// entry: the local names serve the app as they did before, with no
+	// sign-in. Set only for a craft app, whose LAN access stays open.
+	TunnelOnly bool `json:",omitempty"`
 }
 
 // GroupsHeader is the outpost's answer header that lists the person's
@@ -111,10 +115,12 @@ func (r Route) validateGate() error {
 	switch {
 	case r.Dashboard:
 		return fmt.Errorf("route.gate: the dashboard keeps its own sign-in and is never gated")
-	case r.CraftApp != "":
-		return fmt.Errorf("route.gate: a craft app route is not gated")
-	case r.IsPath() && r.StripPrefix:
+	case r.CraftApp != "" && !r.IsPath():
+		return fmt.Errorf("route.gate: a craft app is gated only at its path")
+	case r.IsPath() && r.StripPrefix && r.CraftApp == "":
 		return fmt.Errorf("route.gate: an app at a path that the edge strips is not gated; it must serve under its path itself")
+	case g.TunnelOnly && r.CraftApp == "":
+		return fmt.Errorf("route.gate.tunnelonly: only a craft app keeps its LAN open")
 	}
 	if r.IsPath() {
 		// A path app is gated inside the dashboard site (ADR-061); the name
@@ -404,6 +410,11 @@ func renderGatedPath(p, dash Route, canonical Hostname, tunnel bool) (string, bo
 		cookie = "\t\t\t\trequest_header Cookie \"(?i)(^|;)[ ]*(" + reservedCookieAlt + ")=[^;]*\" \"\"\n"
 	}
 	proxy := pathUpstream(p, tunnel)
+	if p.CraftApp != "" {
+		// A craft app (ADR-045): the daemon answers the wrapper page and
+		// file path, the app the rest; the edge strips the prefix first.
+		proxy = craftUpstream(p, proxy)
+	}
 	b.WriteString("\t\troute {\n")
 	for _, h := range g.stripped() {
 		fmt.Fprintf(&b, "\t\t\trequest_header -%s\n", h)

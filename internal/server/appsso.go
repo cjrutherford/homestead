@@ -448,6 +448,12 @@ func (a *appSignIn) preview(manifest catalog.Manifest, install catalog.InstallPl
 	if manifest.SSO.OIDC == nil && manifest.SSO.ForwardAuth == nil {
 		return nil
 	}
+	if accountlessInstallApps[manifest.Name] {
+		// A craft app installs open on the LAN (ADR-045); its Authentik
+		// gate belongs to its public path and is planned once it is
+		// published (ADR-062 section 6), not with the install.
+		return nil
+	}
 	in, err := appSignInInputs(a.cfg.Store, a.m, manifest)
 	if err != nil {
 		return &signInPreview{Reason: "The sign-in state could not be read."}

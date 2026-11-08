@@ -5,7 +5,7 @@
 # The version below is the vendored storytold release and must equal the
 # image tag and the version in catalog/craft/craft-manifest.yaml.
 name: figcraft
-publish: never  # ADR-061
+publish: path  # ADR-062: public path behind the shared Authentik gate; the LAN stays open
 version: 0.6.0
 title: FigCraft
 blurb: Interface design tool that runs in your browser.
@@ -38,8 +38,14 @@ exposure:
   endpoints:
   - endpoint: web
     recommended: local
-    allowwider: false
+    allowwider: true
     warnings:
     - FigCraft stores nothing on the appliance, so widening exposure would offer a public design tool whose designs never reach your storage; it has no Nextcloud file hook, so documents stay in each visitor's browser. Keep it local.
+    - If you publish it, its public path sits behind the Authentik gate, so only people granted this app and the owner can open it. Your local address stays open (ADR-062).
 sso:
   class: unsupported
+  # ADR-062: the app has no sign-in of its own. Published, its path is behind
+  # the shared Authentik gate on the tunnel entry only; the local names stay
+  # open (ADR-045). No identity header is passed on and nothing bypasses.
+  forwardauth:
+    service: figcraft

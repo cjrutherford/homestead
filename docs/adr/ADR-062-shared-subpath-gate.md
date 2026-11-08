@@ -108,8 +108,12 @@ request reaches the daemon's craft socket or the app.
 **LAN access to craft apps stays open, as ADR-045 and S320 left it.** The
 owner's decision covers publishing; it did not say that LAN visitors now sign
 in to a craft app, and that would change behaviour for every installed craft
-app. This ADR keeps the LAN as it is and lists it as an open question for the
-owner (Consequences).
+app. This ADR keeps the LAN as it is. **Owner decision, 2026-11-08 (S481): keep
+the LAN open.** The gate of a craft app is tunnel-only (`Gate.TunnelOnly`):
+the local names render as before, the public name renders the gate. A published
+craft route without its gate answers 404 on the tunnel, so publishing first and
+gating second never opens the app. The gate is planned only once the app is
+published, because the shared provider's external host is the public name.
 
 ### 7. Plan preview and audit
 Publishing and gating stay planned, previewed, approved and audited
@@ -132,10 +136,9 @@ says that the app is behind the Authentik gate and who is admitted.
   means no access.
 - Authentik group names reach the edge in a header. A group renamed in
   Authentik by hand stops matching until the sign-in is planned again.
-- **Open question for the owner:** should a craft app also require sign-in
-  on the LAN? Today it is open there. Gating it needs the gate's name to
-  cover the LAN host as well, and with it every craft app's LAN link
-  becomes a sign-in. This ADR does not do it.
+- A craft app stays open on the LAN (owner decision, S481); only its public
+  path is gated. If the owner later wants a LAN sign-in, the gate's name would
+  have to cover the LAN host and every craft LAN link would become a sign-in.
 
 ## Slices
 S480 shared gate and Navidrome moved onto it; S481 craft `publish: path`

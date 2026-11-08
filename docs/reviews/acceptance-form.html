@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "52f52e34662cb13f",
+ "hash": "6574d842b13b8b2b",
  "sections": [
   {
    "title": "Platform",
@@ -3372,7 +3372,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
   },
   {
    "title": "Craft apps",
-   "intro": "Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed manifest, served at `https://\u003cserver\u003e/apps/\u003capp\u003e/`, have no sign-in (local only; not exposed publicly) and are stateless. Hooked apps open/save through Nextcloud (needs an operator session); the rest are browser-local.",
+   "intro": "Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed manifest, served at `https://\u003cserver\u003e/apps/\u003capp\u003e/`, have no sign-in of their own and are stateless. On your network they stay open. Published, the public path is behind the shared Authentik gate (ADR-062): only people granted the app, and the owner, open it. Hooked apps open/save through Nextcloud (needs an operator session); the rest are browser-local.",
    "groups": [
     {
      "title": "Craft apps",
@@ -3421,9 +3421,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "CRAFT-WORDCRAFT-3",
-       "title": "Not reachable publicly",
-       "action": "From mobile data open the same path on the public name.",
-       "expected": "Refused or not routed (local only).",
+       "title": "Public path is behind the Authentik gate",
+       "action": "Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.",
+       "expected": "Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \\\"You do not have access to this app.\\\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -3483,9 +3483,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "CRAFT-GRIDCRAFT-3",
-       "title": "Not reachable publicly",
-       "action": "From mobile data open the same path on the public name.",
-       "expected": "Refused or not routed (local only).",
+       "title": "Public path is behind the Authentik gate",
+       "action": "Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.",
+       "expected": "Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \\\"You do not have access to this app.\\\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -3545,9 +3545,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "CRAFT-PDFCRAFT-3",
-       "title": "Not reachable publicly",
-       "action": "From mobile data open the same path on the public name.",
-       "expected": "Refused or not routed (local only).",
+       "title": "Public path is behind the Authentik gate",
+       "action": "Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.",
+       "expected": "Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \\\"You do not have access to this app.\\\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -3607,9 +3607,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "CRAFT-DECKCRAFT-3",
-       "title": "Not reachable publicly",
-       "action": "From mobile data open the same path on the public name.",
-       "expected": "Refused or not routed (local only).",
+       "title": "Public path is behind the Authentik gate",
+       "action": "Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.",
+       "expected": "Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \\\"You do not have access to this app.\\\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -3669,9 +3669,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "CRAFT-VECTORCRAFT-3",
-       "title": "Not reachable publicly",
-       "action": "From mobile data open the same path on the public name.",
-       "expected": "Refused or not routed (local only).",
+       "title": "Public path is behind the Authentik gate",
+       "action": "Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.",
+       "expected": "Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \\\"You do not have access to this app.\\\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -3731,9 +3731,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "CRAFT-PHOTOCRAFT-3",
-       "title": "Not reachable publicly",
-       "action": "From mobile data open the same path on the public name.",
-       "expected": "Refused or not routed (local only).",
+       "title": "Public path is behind the Authentik gate",
+       "action": "Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.",
+       "expected": "Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \\\"You do not have access to this app.\\\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -3793,9 +3793,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "CRAFT-LIGHTCRAFT-3",
-       "title": "Not reachable publicly",
-       "action": "From mobile data open the same path on the public name.",
-       "expected": "Refused or not routed (local only).",
+       "title": "Public path is behind the Authentik gate",
+       "action": "Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.",
+       "expected": "Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \\\"You do not have access to this app.\\\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -3855,9 +3855,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "CRAFT-FIGCRAFT-3",
-       "title": "Not reachable publicly",
-       "action": "From mobile data open the same path on the public name.",
-       "expected": "Refused or not routed (local only).",
+       "title": "Public path is behind the Authentik gate",
+       "action": "Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.",
+       "expected": "Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \\\"You do not have access to this app.\\\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -3917,9 +3917,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "CRAFT-FILMCRAFT-3",
-       "title": "Not reachable publicly",
-       "action": "From mobile data open the same path on the public name.",
-       "expected": "Refused or not routed (local only).",
+       "title": "Public path is behind the Authentik gate",
+       "action": "Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.",
+       "expected": "Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \\\"You do not have access to this app.\\\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -3979,9 +3979,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "CRAFT-EFFECTCRAFT-3",
-       "title": "Not reachable publicly",
-       "action": "From mobile data open the same path on the public name.",
-       "expected": "Refused or not routed (local only).",
+       "title": "Public path is behind the Authentik gate",
+       "action": "Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.",
+       "expected": "Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \\\"You do not have access to this app.\\\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -4041,9 +4041,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "CRAFT-SOUNDCRAFT-3",
-       "title": "Not reachable publicly",
-       "action": "From mobile data open the same path on the public name.",
-       "expected": "Refused or not routed (local only).",
+       "title": "Public path is behind the Authentik gate",
+       "action": "Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.",
+       "expected": "Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \\\"You do not have access to this app.\\\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -4103,9 +4103,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "CRAFT-DESIGNCRAFT-3",
-       "title": "Not reachable publicly",
-       "action": "From mobile data open the same path on the public name.",
-       "expected": "Refused or not routed (local only).",
+       "title": "Public path is behind the Authentik gate",
+       "action": "Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.",
+       "expected": "Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \\\"You do not have access to this app.\\\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -4165,9 +4165,9 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       },
       {
        "id": "CRAFT-CADCRAFT-3",
-       "title": "Not reachable publicly",
-       "action": "From mobile data open the same path on the public name.",
-       "expected": "Refused or not routed (local only).",
+       "title": "Public path is behind the Authentik gate",
+       "action": "Publish the app (`homesteadctl apps public plan|apply`), then plan and apply its sign-in (`apps sign-in plan|apply`). From mobile data open the same path on the public name: signed out, then as a person with the app, then as a person without it. Your local address stays open.",
+       "expected": "Unpublished or before the gate is on, the public path answers 404. Signed out you are sent to Authentik; a person with the app (or the owner) opens it; a person without it gets 403 \\\"You do not have access to this app.\\\"; a forged `X-Authentik-Groups` header changes nothing (ADR-062). The local address opens with no sign-in.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
