@@ -11,6 +11,13 @@ const ASSETS = __ASSETS__;
 const NEVER = (relative) => relative === './' || relative === './index.html' ||
   relative.startsWith('./_homestead/');
 const PRECACHE = ASSETS.filter((url) => !NEVER(url));
+// S468: with the app container stopped the edge (Caddy) still answers, with a
+// 502/503/504 instead of a network error. For a page navigation that counts as
+// offline too, so the person sees the offline page, not a bare gateway error.
+const edgeDown = (res) => {
+  if (res.status === 502 || res.status === 503 || res.status === 504) throw new Error('edge unavailable');
+  return res;
+};
 const OFFLINE_PAGE = '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
   '<meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline</title></head>' +
   '<body><h1>You are offline</h1><p>Tasks could not reach your Homestead. ' +
@@ -50,7 +57,7 @@ self.addEventListener('fetch', (event) => {
   if (req.mode === 'navigate' || relative === './' || relative === './index.html') {
     // Network-only. The response (page, sign-in redirect, error) is passed
     // through and never stored.
-    event.respondWith(fetch(req).catch(() => new Response(OFFLINE_PAGE, {
+    event.respondWith(fetch(req).then(edgeDown).catch(() => new Response(OFFLINE_PAGE, {
       status: 503,
       headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
     })));
