@@ -269,7 +269,9 @@ homesteadctl logout                          # revokes it and deletes the stored
 One session store (ADR-004), two transports (ADR-020):
 
 - `POST /api/v1/sessions` returns `{token, csrf_token, expires_at}` and
-  sets two cookies: `homestead_session` (the same token; `HttpOnly`,
+  sets two cookies: `homestead_session` (the same token; over TLS the names
+  are `__Host-homestead_session` and `__Host-homestead_csrf`, S470, and the
+  daemon reads only the names that fit the request's scheme; `HttpOnly`,
   `SameSite=Strict`, `Path=/`, `Secure` when the request arrived over TLS
   or via a proxy sending `X-Forwarded-Proto: https`) and `homestead_csrf`
   (the per-session CSRF token; same attributes but readable by script).

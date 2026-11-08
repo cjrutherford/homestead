@@ -6,8 +6,16 @@ import {
   HttpTestingController,
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
-import { authInterceptor, isOwnerOnly, readCookie } from './auth.interceptor';
+import { authInterceptor, isOwnerOnly, readCookie, readCsrf } from './auth.interceptor';
 import { SESSION_STORAGE_KEY, SessionService } from '../auth/session.service';
+
+describe('readCsrf', () => {
+  it('prefers the __Host- name and falls back to the plain one', () => {
+    expect(readCsrf('a=1; __Host-homestead_csrf=host; homestead_csrf=plain')).toBe('host');
+    expect(readCsrf('homestead_csrf=plain')).toBe('plain');
+    expect(readCsrf('other=1')).toBeNull();
+  });
+});
 
 describe('authInterceptor', () => {
   let http: HttpClient;

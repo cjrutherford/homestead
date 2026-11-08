@@ -419,7 +419,9 @@ func (a *ssoApp) ssoSession(t *testing.T) (token, csrf string) {
 
 func cookieAuth(token, csrf string) func(*http.Request) {
 	return func(r *http.Request) {
+		// Both names: the daemon reads only the one that fits the scheme (S470).
 		r.AddCookie(&http.Cookie{Name: "homestead_session", Value: token})
+		r.AddCookie(&http.Cookie{Name: "__Host-homestead_session", Value: token})
 		if csrf != "" {
 			r.Header.Set(CSRFHeader, csrf)
 		}

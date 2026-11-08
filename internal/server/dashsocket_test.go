@@ -152,6 +152,9 @@ func TestDashboardSocketRouteClasses(t *testing.T) {
 		return func(r *http.Request) {
 			if cookie != nil {
 				r.AddCookie(cookie)
+				host := *cookie
+				host.Name = HostSessionCookieName
+				r.AddCookie(&host)
 			}
 			if origin != "" {
 				r.Header.Set("Origin", origin)
@@ -529,5 +532,18 @@ func TestPublicDashboardNameRefusesLocalSignIn(t *testing.T) {
 	}
 	if rec := a.publicDo(dashPublic, "POST", "/api/v1//sessions", nil); rec.Header().Get("X-Homestead-Error") != ErrorCodePublicHost && rec.Code < 300 {
 		t.Errorf("path variant served: %d", rec.Code)
+	}
+}
+
+// S470: dashboard responses cannot be framed, by an app page on the same
+// origin or anyone else.
+func TestDashboardFrontForbidsFraming(t *testing.T) {
+	a := newEnforcedApp(t)
+	rec := a.socketDo("GET", "/api/v1/health", "", nil)
+	if got := rec.Header().Get("Content-Security-Policy"); got != "frame-ancestors 'none'" {
+		t.Fatalf("CSP = %q", got)
+	}
+	if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Fatalf("X-Frame-Options = %q", got)
 	}
 }

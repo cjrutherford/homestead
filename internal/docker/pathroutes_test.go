@@ -3,6 +3,7 @@ package docker
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -20,6 +21,11 @@ func pathSet() RouteSet {
 			Path: "/apps/jellyfin/"},
 		{Host: "immich.lan", Target: Target{Host: "immich-server", Port: 2283}, Exposure: ExposureLocal, TLS: TLSInternal},
 	}}
+}
+
+// indentTest adds one tab to each line.
+func indentTest(s string) string {
+	return indent(s)
 }
 
 func renderDashboard(t *testing.T, set RouteSet) (local, tunnel string) {
@@ -49,10 +55,11 @@ func TestPathRoutesRenderInsideDashboardSite(t *testing.T) {
 	for _, want := range []string{
 		"homestead.lan, homestead.local {",
 		"\t\tredir /apps/nextcloud /apps/nextcloud/ 308\n",
-		"\t\thandle /apps/nextcloud/* {\n\t\t\turi strip_prefix /apps/nextcloud\n\t\t\treverse_proxy nextcloud:80 {",
-		"\t\thandle /apps/auth/* {\n\t\t\treverse_proxy server:9000 {",
+		"\t\thandle /apps/nextcloud/* {\n" + indentTest(sharedOriginHeaders(Route{Path: "/apps/nextcloud/"})) + "\t\t\turi strip_prefix /apps/nextcloud\n\t\t\treverse_proxy nextcloud:80 {",
+		// Authentik keeps its own cookies (S470): no request_header strip.
+		"\t\thandle /apps/auth/* {\n" + indentTest(sharedOriginHeaders(Route{Path: SignInPath})) + "\t\t\treverse_proxy server:9000 {",
 		// Each handle uses the same directive, so Caddy sorts them by path.
-		"\t\thandle /apps/jellyfin/* {\n\t\t\treverse_proxy jellyfin:8096 {",
+		"\t\thandle /apps/jellyfin/* {\n" + indentTest(sharedOriginHeaders(Route{Path: "/apps/jellyfin/"})) + "\t\t\treverse_proxy jellyfin:8096 {",
 		"\t\tredir /.well-known/caldav /apps/nextcloud/remote.php/dav/ 301\n",
 		"\t\tredir /.well-known/carddav /apps/nextcloud/remote.php/dav/ 301\n",
 		"\t\thandle /apps/* {\n\t\t\trespond 404\n\t\t}\n",
@@ -102,7 +109,7 @@ func TestPathRoutesPublicHostOnlyPublished(t *testing.T) {
 		t.Fatalf("tunnel entry:\n%s", tunnel)
 	}
 	for _, want := range []string{
-		"\thandle /apps/nextcloud/* {\n\t\turi strip_prefix /apps/nextcloud\n",
+		"\thandle /apps/nextcloud/* {\n" + sharedOriginHeaders(Route{Path: "/apps/nextcloud/"}) + "\t\turi strip_prefix /apps/nextcloud\n",
 		"\thandle /apps/auth/* {",
 		"\t\t\theader_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}\n\t\t\theader_up X-Forwarded-Proto https\n",
 		"\tredir /.well-known/caldav /apps/nextcloud/remote.php/dav/ 301\n",
@@ -138,7 +145,7 @@ func TestCraftPathRoute(t *testing.T) {
 	if !set.HasCraftRoutes() {
 		t.Fatal("craft path route does not mount the craft socket")
 	}
-	craft := "\t\thandle /apps/gridcraft/* {\n\t\t\turi strip_prefix /apps/gridcraft\n" +
+	craft := "\t\thandle /apps/gridcraft/* {\n" + indentTest(sharedOriginHeaders(Route{Path: "/apps/gridcraft/"})) + "\t\t\turi strip_prefix /apps/gridcraft\n" +
 		"\t\t\thandle /_homestead/* {\n\t\t\t\treverse_proxy unix/" + CraftSocketPath + " {\n" +
 		"\t\t\t\t\theader_up X-Homestead-Craft-App gridcraft\n" +
 		"\t\t\t\t\theader_up X-Homestead-Craft-Host {http.request.host}\n" +
@@ -268,4 +275,58 @@ func TestEdgeNeverForwardsAClientSentAddress(t *testing.T) {
 	if strings.Contains(tunnel, "{http.request.header.X-Forwarded-For}") || strings.Contains(local, "{http.request.header.X-Forwarded-For}") {
 		t.Fatal("an edge route copies a client-sent X-Forwarded-For")
 	}
+}
+
+// S470 (ADR-061 §4): every app path on the shared origin loses the
+// dashboard and Authentik cookies on the way in and cannot set them on the
+// way out, and gets framing and referrer defaults; Authentik at its own
+// path keeps its cookies; the read-link handle strips too.
+func TestSharedOriginHardening(t *testing.T) {
+	local, tunnel := renderDashboard(t, withPublished(pathSet()))
+	for name, out := range map[string]string{"local": local, "tunnel": tunnel} {
+		for _, want := range []string{
+			"header ?Content-Security-Policy \"frame-ancestors 'self'\"",
+			"header ?Referrer-Policy same-origin",
+			"request_header Cookie \"(?i)(^|;)[ ]*(__Host-homestead_session|__Host-homestead_csrf|homestead_session|homestead_csrf|authentik_session|authentik_csrf)=[^;]*\" \"\"",
+			"header_down Set-Cookie \"(?i)^(__Host-homestead_session|__Host-homestead_csrf|homestead_session|homestead_csrf|authentik_session|authentik_csrf)=.*\" \"\"",
+		} {
+			if !strings.Contains(out, want) {
+				t.Fatalf("%s entry lacks %q:\n%s", name, want, out)
+			}
+		}
+		// Authentik's handle is the only one without the strip.
+		i := strings.Index(out, "handle /apps/auth/* {")
+		j := strings.Index(out[i:], "reverse_proxy")
+		if strings.Contains(out[i:i+j], "request_header Cookie") {
+			t.Fatalf("%s: Authentik loses its own cookies:\n%s", name, out[i:i+j])
+		}
+		if k := strings.Index(out[i:], "}\n"); strings.Contains(out[i:i+k], "header_down Set-Cookie") {
+			t.Fatalf("%s: Authentik's Set-Cookie is blanked", name)
+		}
+	}
+	// The pattern removes one cookie and keeps the others.
+	re := regexp.MustCompile(`(?i)(^|;)[ ]*(` + reservedCookieAlt + `)=[^;]*`)
+	got := re.ReplaceAllString("a=1; __Host-homestead_session=x; b=2; authentik_session=y", "")
+	if got != "a=1; b=2" {
+		t.Fatalf("cookie strip = %q", got)
+	}
+	if re.MatchString("homestead_sessionx=1; my_authentik_session=2") {
+		t.Fatalf("pattern matches look-alike names")
+	}
+}
+
+func TestReadLinkHandleStripsReservedCookies(t *testing.T) {
+	out := renderReadLinkHandle(Route{Host: "x.lan", Target: Target{Host: "nextcloud", Port: 80}, Path: "/apps/nextcloud/"})
+	if !strings.Contains(out, "request_header Cookie") || !strings.Contains(out, "header_down Set-Cookie") {
+		t.Fatalf("read-link handle:\n%s", out)
+	}
+}
+
+func withPublished(set RouteSet) RouteSet {
+	for i := range set.Routes {
+		if set.Routes[i].Path != "" {
+			set.Routes[i].Published = true
+		}
+	}
+	return set
 }

@@ -209,6 +209,7 @@ func renderPathHandles(paths []Route, tunnel bool) string {
 		// path length and runs exactly one; handle_path would sort apart
 		// from the /apps/ catch-all.
 		fmt.Fprintf(&b, "\thandle %s* {\n", p.Path)
+		b.WriteString(sharedOriginHeaders(p))
 		if p.StripPrefix {
 			fmt.Fprintf(&b, "\t\turi strip_prefix %s\n", bare)
 		}
@@ -228,6 +229,35 @@ func renderPathHandles(paths []Route, tunnel bool) string {
 	}
 	fmt.Fprintf(&b, "\thandle %s* {\n\t\trespond 404\n\t}\n", AppsPrefix)
 	return b.String()
+}
+
+// ReservedCookieNames are the cookies of the appliance's own sign-in on
+// the shared origin (ADR-061 §4, S470): the dashboard session and CSRF
+// cookies under both names, and Authentik's session and CSRF cookies. The
+// edge never lets an app at a subpath see them, and never lets an app set
+// them (cookie tossing).
+var ReservedCookieNames = []string{
+	"__Host-homestead_session", "__Host-homestead_csrf",
+	"homestead_session", "homestead_csrf",
+	"authentik_session", "authentik_csrf",
+}
+
+var reservedCookieAlt = strings.Join(ReservedCookieNames, "|")
+
+// sharedOriginHeaders opens every app path handle on the shared origin.
+// request_header removes the reserved cookies from the request after any
+// forward-auth subrequest (it runs inside the app's handle); the matching
+// header_down is in pathUpstream. The two header defaults use ? so an app
+// package's own stricter value stays (S464). Quotes keep the pattern one
+// Caddyfile token; there are no braces. Authentik itself at /apps/auth/
+// owns authentik_session and authentik_csrf, so it keeps its cookies.
+func sharedOriginHeaders(p Route) string {
+	out := "\t\theader ?Content-Security-Policy \"frame-ancestors 'self'\"\n" +
+		"\t\theader ?Referrer-Policy same-origin\n"
+	if p.Path != SignInPath {
+		out += "\t\trequest_header Cookie \"(?i)(^|;)[ ]*(" + reservedCookieAlt + ")=[^;]*\" \"\"\n"
+	}
+	return out
 }
 
 // ReadLinkPaths are the only two paths below an app's path that the
@@ -254,6 +284,7 @@ func renderReadLinkHandle(p Route) string {
 	fmt.Fprintf(&b, "\thandle %s_homestead/* {\n", p.Path)
 	fmt.Fprintf(&b, "\t\t@readlink {\n\t\t\tmethod GET HEAD\n\t\t\tpath_regexp ^%s_homestead/(read|view)/%s$\n\t\t}\n", regexp.QuoteMeta(p.Path), ReadLinkTokenPattern)
 	b.WriteString("\t\thandle @readlink {\n")
+	b.WriteString(indent(sharedOriginHeaders(p)))
 	b.WriteString(indent(indent(pathUpstream(p, true))))
 	b.WriteString("\t\t}\n\t\thandle {\n\t\t\trespond 404\n\t\t}\n\t}\n")
 	return b.String()
@@ -272,7 +303,11 @@ func pathUpstream(p Route, tunnel bool) string {
 	if tunnel {
 		up.WriteString("\t\theader_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}\n\t\theader_up X-Forwarded-Proto https\n")
 	}
-	up.WriteString("\t\theader_up X-Forwarded-Host {http.request.host}\n\t}\n")
+	up.WriteString("\t\theader_up X-Forwarded-Host {http.request.host}\n")
+	if p.Path != SignInPath {
+		fmt.Fprintf(&up, "\t\theader_down Set-Cookie \"(?i)^(%s)=.*\" \"\"\n", reservedCookieAlt)
+	}
+	up.WriteString("\t}\n")
 	return up.String()
 }
 
