@@ -3570,6 +3570,12 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Certificates page; docs/slices/S484-tls-read-surfaces.md.
   - Result: ____  Notes: ____
 
+- [ ] **END-PARITY-5 — Daemon version on the Status page (S485)**
+  - Action: Open Status (`/admin/status`) and read Version in the Appliance panel. Compare with `homesteadctl version`.
+  - Expected: The two versions are identical.
+  - If it fails: Status page; docs/slices/S485-version-on-dashboard.md.
+  - Result: ____  Notes: ____
+
 - [ ] **PLAT-TUNNEL-8 — Move an app from its own public name to its subpath (S471, ADR-061)**
   - Action: For an installed app whose package is served by path and is still published at its own name (Doctor shows "move available"), open its page, Review the move (or `homesteadctl apps move plan <pkg>`). Read the preview, then approve it (`apps move apply <pkg> --digest D --follow`). A package that keeps its own name (Immich, Vaultwarden) and Uptime Kuma show no move.
   - Expected: The preview names the old public address, says old bookmarks and links on it stop working and that nothing redirects, lists the CNAME and tunnel entry that go away, and says no DNS record is needed for the new address under the dashboard's public name. After approval the app answers at `https://<dashboard public name>/apps/<app>/`, the old name no longer resolves or answers, its sign-in works at the new address, and Doctor's subpath-publish check is clean. An app known to set Path=/ cookies carries a warning.
@@ -3696,6 +3702,6 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | END-DOCTOR | END-DOCTOR-1 to END-DOCTOR-1 (1) |  |  |  |  |
 | END-SUBPATH | END-SUBPATH-1 to END-SUBPATH-8 (8) |  |  |  |  |
 | END-AUDIT | END-AUDIT-1 to END-AUDIT-1 (1) |  |  |  |  |
-| END-PARITY | END-PARITY-1 to END-PARITY-4 (4) |  |  |  |  |
+| END-PARITY | END-PARITY-1 to END-PARITY-5 (5) |  |  |  |  |
 | END-UNINSTALL | END-UNINSTALL-1 to END-UNINSTALL-6 (6) |  |  |  |  |
-| **Total** | 559 steps |  |  |  |  |
+| **Total** | 560 steps |  |  |  |  |

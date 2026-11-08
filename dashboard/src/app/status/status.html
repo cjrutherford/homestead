@@ -64,7 +64,7 @@
           </div>
           <div>
             <dt>Version</dt>
-            <dd class="mono">{{ health()?.version ?? identity()?.version }}</dd>
+            <dd class="mono">{{ daemonVersion() ?? health()?.version ?? identity()?.version }}</dd>
           </div>
         </dl>
       </app-loading>

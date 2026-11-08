@@ -23,7 +23,7 @@ unchanged.
 | Method | Path | CLI | Dashboard | Notes |
 |--------|------|-----|-----------|-------|
 | GET | /healthz | `"status"` | `health` |  |
-| GET | /version | `"version"` | n/a | Dashboard shows the version via health/identity without fetching it |
+| GET | /version | `"version"` | `daemonVersion` | Status page Appliance panel shows it (S485); health and identity carry the same value as a fallback |
 | GET | /api/v1/config | `"get"` | `config` |  |
 | GET | /api/v1/config/schema | n/a | `configSchema` | CLI takes typed files; schema-driven UI is dashboard-only |
 | POST | /api/v1/config/plan | `"plan"` | `planConfig` |  |

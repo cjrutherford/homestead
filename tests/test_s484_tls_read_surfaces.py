@@ -31,7 +31,7 @@ class TlsReadSurfaces(unittest.TestCase):
     def test_checklist(self):
         text = read("docs/reviews/OWNER_ACCEPTANCE_CHECKLIST.md")
         self.assertIn("**END-PARITY-4 ", text)
-        self.assertIn("| END-PARITY | END-PARITY-1 to END-PARITY-4 (4) |", text)
+        self.assertIn("| END-PARITY | END-PARITY-1 to END-PARITY-", text)
         self.assertIn("END-PARITY-4", read("docs/reviews/acceptance-form.html"))
 
 

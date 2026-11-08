@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "ba7917b342da98a3",
+ "hash": "746a447eabaa1cd0",
  "sections": [
   {
    "title": "Platform",
@@ -4328,6 +4328,13 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "action": "Open Certificates (`/admin/tls`). Read \"Recorded approvals\" and \"Local certificates\". Compare with `homesteadctl tls issuance approvals` and `homesteadctl tls local leaves`.",
        "expected": "Each list matches the CLI output (approver, digest, authority; host, status, expiry). With none recorded the page says \"No issuance approvals recorded.\" and \"No local-only HTTPS routes use the internal CA.\" The local certificates link to the Trust page for re-issue.",
        "fail": "Certificates page; docs/slices/S484-tls-read-surfaces.md."
+      },
+      {
+       "id": "END-PARITY-5",
+       "title": "Daemon version on the Status page (S485)",
+       "action": "Open Status (`/admin/status`) and read Version in the Appliance panel. Compare with `homesteadctl version`.",
+       "expected": "The two versions are identical.",
+       "fail": "Status page; docs/slices/S485-version-on-dashboard.md."
       },
       {
        "id": "PLAT-TUNNEL-8",

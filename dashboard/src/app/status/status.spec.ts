@@ -30,6 +30,8 @@ describe('Status', () => {
     for (const req of pending) {
       if (req.request.url === '/healthz') {
         req.flush({ status: 'ok', version: '0.0.0-s002' });
+      } else if (req.request.url === '/version') {
+        req.flush({ version: '0.0.0-s002' });
       } else if (req.request.url === '/api/v1/doctor') {
         req.flush({
           overall: 'warn',
@@ -41,6 +43,24 @@ describe('Status', () => {
     }
     fixture.detectChanges();
   }
+
+  it('shows the version from GET /version, not from health (S485)', () => {
+    fixture.detectChanges();
+    for (const req of http.match(() => true)) {
+      if (req.request.url === '/version') {
+        req.flush({ version: '9.9.9-from-version' });
+      } else if (req.request.url === '/healthz') {
+        req.flush({ status: 'ok', version: '0.0.0-old' });
+      } else if (req.request.url === '/api/v1/doctor') {
+        req.flush({ overall: 'ok', checks: [] });
+      } else {
+        req.flush({ state: 'CLAIMED', version: '0.0.0-old' });
+      }
+    }
+    fixture.detectChanges();
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('9.9.9-from-version');
+  });
 
   it('renders daemon health and claim state', () => {
     fixture.detectChanges();

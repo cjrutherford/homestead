@@ -1636,6 +1636,11 @@ export class ApiService {
     return this.http.get<Health>('/healthz');
   }
 
+  /** GET /version — the daemon version, the same answer `homesteadctl version` prints (S485). */
+  daemonVersion(): Observable<{ version: string }> {
+    return this.http.get<{ version: string }>('/version');
+  }
+
   identity(): Observable<Identity> {
     return this.http.get<Identity>('/api/v1/identity');
   }
