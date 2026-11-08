@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "f095cdb2330056d7",
+ "hash": "85ea07894d7f67d5",
  "sections": [
   {
    "title": "Platform",
@@ -1883,7 +1883,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "id": "PLAT-DOCTOR-2",
        "title": "Doctor finds a deliberate fault",
        "action": "Stop one app container (`docker stop \u003cpackage\u003e-\u003cservice\u003e`), reload Doctor.",
-       "expected": "Doctor reports it with guidance and does not restart it. Start it again.",
+       "expected": "Doctor reports it (the app's containers check fails with \"\u003cservice\u003e is exited\", plus the reachability checks; S462) with guidance and does not restart it. Start it again.",
        "fail": ""
       }
      ]

@@ -559,8 +559,8 @@ func probeAppContainers(ctx context.Context, l *lazyContainers, m catalog.Manife
 			raise(doctor.StatusWarn)
 		case found.State == "running":
 			notes = append(notes, svc.Name)
-		case strings.HasPrefix(found.Status, "Exited (0)"):
-			// A one-shot job that finished is not a fault.
+		// Every generated service restarts unless stopped (ADR-021), so
+		// even a clean exit 0 means someone stopped it (S462).
 		default:
 			problems = append(problems, fmt.Sprintf("%s is %s", svc.Name, found.State))
 			raise(doctor.StatusFail)

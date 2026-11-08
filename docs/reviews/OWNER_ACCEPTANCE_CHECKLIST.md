@@ -1523,7 +1523,7 @@ Do these after the server apps above are installed. Steps that use an app say wh
 
 - [ ] **PLAT-DOCTOR-2 — Doctor finds a deliberate fault**
   - Action: Stop one app container (`docker stop <package>-<service>`), reload Doctor.
-  - Expected: Doctor reports it with guidance and does not restart it. Start it again.
+  - Expected: Doctor reports it (the app's containers check fails with "<service> is exited", plus the reachability checks; S462) with guidance and does not restart it. Start it again.
   - If it fails: 
   - Result: ____  Notes: ____
 

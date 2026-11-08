@@ -306,3 +306,4 @@ S458 makes Linkding's local administrator password revealable (it was generated 
 S459 turns Nextcloud's first-run welcome video off when sign-in is applied, so nobody dismisses it on their first page. Slice file `docs/slices/S459-nextcloud-no-welcome-wizard.md`.
 S460 verifies and pins Immich's admin role through the `immich_role` claim (owner is an Immich administrator, people are users) and records why the per-person welcome tour cannot be skipped. Slice file `docs/slices/S460-immich-admin-role-onboarding.md`.
 S461 fixes `homesteadctl people reset-mfa` (and the dashboard message), which failed to decode the daemon's device counts. Slice file `docs/slices/S461-people-reset-mfa-counts.md`.
+S462 makes Doctor report an app container that was stopped by hand (it exits 0, which the probe used to excuse as a finished job). Slice file `docs/slices/S462-doctor-stopped-container.md`.
