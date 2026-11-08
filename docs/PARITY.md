@@ -9,6 +9,15 @@ Cell syntax (machine-checked): comma-separated `` `tokens` `` naming the
 CLI subcommand (`"status"`) or dashboard symbol (`health`); exactly `n/a`
 for an intentional gap. The Notes column is free text.
 
+Owner rule (2026-11-08, S486): every `homesteadctl` action that goes through
+the API has a real dashboard control. The only CLI-only surfaces are
+`homesteadctl claim token`, `homesteadctl login --print-token` (neither is a
+route) and the root-socket `admins/recover` row. The test requires every
+dashboard symbol below to have a non-spec call site (an API wrapper needs a
+caller outside `api.service.ts`) and fails on any row with a CLI token and a
+dashboard `n/a` other than `admins/recover`. Flag-level parity is in
+`docs/PARITY_FLAGS.md`, checked by `tests/test_s486_parity_flags.py`.
+
 Session requirement (ADR-020, S256): the CLI sends `Authorization: Bearer`
 from the session `homesteadctl login` stores (`~/.config/homestead/session`),
 and the dashboard uses the HttpOnly session cookie plus `X-CSRF-Token` on

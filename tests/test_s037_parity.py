@@ -66,7 +66,12 @@ def ctl_sources():
 
 
 def dashboard_sources():
-    return "\n".join(p.read_text(encoding="utf-8") for p in APP.rglob("*") if p.is_file())
+    # S486: specs no longer count as proof that a dashboard symbol exists.
+    return "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in APP.rglob("*")
+        if p.is_file() and ".spec." not in p.name
+    )
 
 
 class TestParityMatrix(unittest.TestCase):
