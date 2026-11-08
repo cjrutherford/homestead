@@ -1167,7 +1167,7 @@ _Nextcloud 35.0.1; sign-in verified live (S298, S408); public base URL for path 
 
 - [ ] **SRV-NEXTCLOUD-3 — Owner sign-in**
   - Action: Choose Log in with Authentik as the owner. Login page shows 'Log in with Authentik' (user_oidc app configured with occ); admin account `admin` created at first run (generated secret).
-  - Expected: Owner is signed in and named correctly.
+  - Expected: Owner is signed in and named correctly; no "Introducing the new Nextcloud" welcome video opens over the dashboard (S459 turns the first-run wizard app off).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 

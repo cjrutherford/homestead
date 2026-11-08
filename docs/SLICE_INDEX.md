@@ -303,3 +303,4 @@ S455 closes Vikunja local registration (VIKUNJA_SERVICE_ENABLEREGISTRATION=false
 S456 makes turning an app's sign-in back on restore people's access: the sign-in apply adds every person with a recorded grant to the app's freshly made Authentik groups, so nobody shows as drifted. Slice file `docs/slices/S456-signin-restores-grants.md`.
 S457 makes uninstall remove the app's edge routes (LAN, .local, path) and reconcile the edge, so a reinstall can publish again and no route is left behind. Slice file `docs/slices/S457-uninstall-removes-routes.md`.
 S458 makes Linkding's local administrator password revealable (it was generated and sealed but 403 on reveal). Slice file `docs/slices/S458-linkding-admin-revealable.md`.
+S459 turns Nextcloud's first-run welcome video off when sign-in is applied, so nobody dismisses it on their first page. Slice file `docs/slices/S459-nextcloud-no-welcome-wizard.md`.

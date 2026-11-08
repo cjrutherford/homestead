@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "573be8cabf353ebf",
+ "hash": "cca28a54e48e33ef",
  "sections": [
   {
    "title": "Platform",
@@ -1462,7 +1462,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "id": "SRV-NEXTCLOUD-3",
        "title": "Owner sign-in",
        "action": "Choose Log in with Authentik as the owner. Login page shows 'Log in with Authentik' (user_oidc app configured with occ); admin account `admin` created at first run (generated secret).",
-       "expected": "Owner is signed in and named correctly.",
+       "expected": "Owner is signed in and named correctly; no \"Introducing the new Nextcloud\" welcome video opens over the dashboard (S459 turns the first-run wizard app off).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {

@@ -441,6 +441,11 @@ func (a nextcloud) Enable(ctx context.Context, t Target, s Settings) error {
 		{"config:app:set", "user_oidc", "allow_multiple_user_backends", "--value=1"},
 		{"config:system:set", "allow_local_remote_servers", "--value=true", "--type=boolean"},
 		{"config:system:set", "overwriteprotocol", "--value=https"},
+		// The Nextcloud Hub introduction video opens over every person's
+		// first page (S459, ADR-059). It is a per-person welcome screen,
+		// not setup, but nobody should have to dismiss it; the app
+		// answers success when it is already off or absent.
+		{"app:disable", "firstrunwizard"},
 	}
 	for _, args := range steps {
 		if _, err := a.occ(ctx, t, "", args...); err != nil {

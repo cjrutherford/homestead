@@ -261,11 +261,14 @@ func TestNextcloudAdapterUsesOccAndStdinForTheSecret(t *testing.T) {
 			}
 		}
 	}
-	if strings.Join(verbs, ",") != "status,app:enable,app:install,security:certificates:import,config:app:set,config:system:set,config:system:set,provider" {
+	if strings.Join(verbs, ",") != "status,app:enable,app:install,security:certificates:import,config:app:set,config:system:set,config:system:set,app:disable,provider" {
 		t.Fatalf("verbs: %v", verbs)
 	}
 	if f.argvHolds(clientSecret) {
 		t.Fatal("secret in argv")
+	}
+	if !strings.Contains(fmt.Sprint(f.calls), "app:disable firstrunwizard") {
+		t.Fatalf("welcome wizard stays on: %+v", f.calls)
 	}
 	if !strings.Contains(fmt.Sprint(f.calls), "overwriteprotocol --value=https") {
 		t.Fatalf("overwriteprotocol: %+v", f.calls)
