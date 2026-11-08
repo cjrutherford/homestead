@@ -1846,3 +1846,9 @@ Found on VM 2 in the browser run; not fixed in this pass.
 
 - **Public name refusal message (low, EV-API-CLIENT-7):** the appliance's own public name resolves to IPv6 Cloudflare addresses and is refused with the generic "could not be reached" text.
 - **Low:** API Client empty state says "save, share and run them together" though there is no sharing; Solitaire, Sudoku and Expense container-stopped reload shows the Caddy 502 (same as EV-NOTES-10); 3D drops an unsaved UV sphere across reload (S377 startup race); Expense welcome dialog and a stray "false" text; Expense CSV content not inspected in headless; EV-ADR058-8 (events over the public name), the 61st share in an hour, an expired read link and the day-2 backup check were not run.
+
+### Craft run 2 (figcraft, soundcraft, designcraft) found on VM 2
+
+- **Medium (CRAFT-FIGCRAFT-5, CRAFT-SOUNDCRAFT-5, CRAFT-DESIGNCRAFT-5): FigCraft, SoundCraft and DesignCraft keep no work in the browser.** After drawing, trimming or laying out a document and pressing Ctrl+S, a reload shows an empty or demo document; no file picker or download fires and localStorage/IndexedDB hold nothing. The checklist expects "kept only in this browser". The web builds ship no save/restore path (upstream); the fix is an upstream web save path or a Homestead glue shim.
+- **Medium (CRAFT-FIGCRAFT-4): FigCraft export produces no file.** The Export dialog (PNG..PDF) closes without a download, blob URL, anchor click or file-picker call; the shipped web glue has no download path. Same cause as above (upstream web build).
+- Test notes: SoundCraft Bounce Mix, DesignCraft Export Page as PNG, CADCraft DXF save and FilmCraft/EffectCraft open all work.
