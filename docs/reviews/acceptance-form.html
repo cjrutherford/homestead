@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "746a447eabaa1cd0",
+ "hash": "9c99cfd55c0e1776",
  "sections": [
   {
    "title": "Platform",
@@ -4335,6 +4335,13 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "action": "Open Status (`/admin/status`) and read Version in the Appliance panel. Compare with `homesteadctl version`.",
        "expected": "The two versions are identical.",
        "fail": "Status page; docs/slices/S485-version-on-dashboard.md."
+      },
+      {
+       "id": "END-PARITY-6",
+       "title": "Version and signature fields on craft images and updates (S487)",
+       "action": "Open Updates (`/admin/updates`). In Craft images, Verify and build has a Version field (CLI `craft plan|build --version`). On an update row that moves a craft image, open \"Craft image options\" and find \"Craft signature file\" (CLI `updates apply --craft-signature`).",
+       "expected": "Both fields are present and blank by default. A Version typed into Verify is sent with the request and the verdict names that version; with a signature path set on an update row the apply verifies against that file instead of the app list path plus .minisig.",
+       "fail": "Updates page; docs/slices/S487-craft-version-signature.md."
       },
       {
        "id": "PLAT-TUNNEL-8",

@@ -68,6 +68,13 @@
                   />
                 </label>
                 <label>
+                  Craft signature file (blank: the app list path plus .minisig)
+                  <input
+                    [name]="'craft-signature-' + row.package"
+                    (input)="setCraft(row.package, 'signature', $any($event.target).value)"
+                  />
+                </label>
+                <label>
                   Craft local artifact file (blank: fetch from the signed URL)
                   <input
                     [name]="'craft-artifact-' + row.package"

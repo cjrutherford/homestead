@@ -34,7 +34,7 @@ export class Updates implements OnInit {
   protected readonly dbPasswords = signal<Record<string, string>>({});
   /** Per-package craft inputs for updates that rebuild a craft image (S279). */
   protected readonly craftInputs = signal<
-    Record<string, { manifest?: string; artifact?: string; allow_older?: boolean }>
+    Record<string, { manifest?: string; signature?: string; artifact?: string; allow_older?: boolean }>
   >({});
 
   ngOnInit(): void {
@@ -64,7 +64,7 @@ export class Updates implements OnInit {
     this.dbPasswords.update((passwords) => ({ ...passwords, [name]: value }));
   }
 
-  setCraft(name: string, field: 'manifest' | 'artifact', value: string): void {
+  setCraft(name: string, field: 'manifest' | 'signature' | 'artifact', value: string): void {
     this.craftInputs.update((all) => ({
       ...all,
       [name]: { ...all[name], [field]: value || undefined },
