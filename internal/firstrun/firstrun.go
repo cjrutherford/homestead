@@ -109,6 +109,9 @@ func RunAs(ctx context.Context, m catalog.Manifest, secrets Secrets, owner strin
 	if f.Routine == catalog.FirstRunUptimeKuma {
 		return uptimeKumaFirstRun(ctx, m, secrets)
 	}
+	if f.Routine == catalog.FirstRunPaperless {
+		return paperlessFirstRun(ctx, m)
+	}
 	password, err := Password(m, secrets)
 	if err != nil {
 		return "", err

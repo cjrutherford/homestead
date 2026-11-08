@@ -817,6 +817,7 @@ const (
 	FirstRunCWA            = "calibre-web-automated"
 	FirstRunNavidrome      = "navidrome"
 	FirstRunUptimeKuma     = "uptime-kuma"
+	FirstRunPaperless      = "paperless-ngx"
 )
 
 // Library kinds a first run may create (Jellyfin's collection types).
@@ -851,7 +852,7 @@ type Library struct {
 
 func (f FirstRun) validate(m Manifest, services map[string]bool) error {
 	switch f.Routine {
-	case FirstRunImmich, FirstRunJellyfin, FirstRunAudiobookshelf, FirstRunKomga, FirstRunBookStack, FirstRunGitea, FirstRunFreshRSS, FirstRunMemos, FirstRunActualBudget, FirstRunMealie, FirstRunCWA, FirstRunNavidrome, FirstRunUptimeKuma:
+	case FirstRunImmich, FirstRunJellyfin, FirstRunAudiobookshelf, FirstRunKomga, FirstRunBookStack, FirstRunGitea, FirstRunFreshRSS, FirstRunMemos, FirstRunActualBudget, FirstRunMealie, FirstRunCWA, FirstRunNavidrome, FirstRunUptimeKuma, FirstRunPaperless:
 	default:
 		return fmt.Errorf("catalog: unknown first-run routine %q", f.Routine)
 	}

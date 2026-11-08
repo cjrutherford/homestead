@@ -47,6 +47,14 @@ services:
     # superuser is created once, with the password from the secret store.
     PAPERLESS_ADMIN_USER: admin
     PAPERLESS_ADMIN_MAIL: admin@homestead.local
+    # Sign-in (S453): local sign-up stays closed (Paperless's default,
+    # stated here so it is pinned) and every account that Authentik
+    # creates joins the group the first run makes, which carries the
+    # permissions Paperless's own screens need. Without it a new account
+    # has no permissions and its page shows "Error loading settings".
+    PAPERLESS_ACCOUNT_ALLOW_SIGNUPS: "false"
+    PAPERLESS_SOCIAL_ACCOUNT_DEFAULT_GROUPS: Homestead people
+    PAPERLESS_ACCOUNT_DEFAULT_GROUPS: Homestead people
   # Image VOLUMEs: data, media, consume, export. Everything runs as the
   # paperless user (uid/gid 1000).
   data:
@@ -135,9 +143,9 @@ sso:
   # supervisor exports; the stack's environment never holds it. Paperless's
   # own login form stays (PAPERLESS_DISABLE_REGULAR_LOGIN is not set), so
   # the local admin keeps working. The sign-in button is on the login page.
-  # Groups: Paperless can sync groups from the groups claim only into
-  # groups that already exist in Paperless by the same name, and never
-  # grants staff or superuser from them, so no role mapping is wired.
+  # Groups (S453): the provider asks for the groups scope and Paperless
+  # 3.3.4 makes a person a superuser when the claim holds the app's
+  # Authentik admin group. Group sync into Paperless groups is not used.
   oidc:
     adapter: env-oidc
     service: webserver
@@ -147,16 +155,23 @@ sso:
       secret: oidc_client_secret
       secretfile:
         secret: oidc_providers
-        template: '{"openid_connect":{"APPS":[{"provider_id":"authentik","name":"Authentik","client_id":"{{client_id}}","secret":"{{client_secret}}","settings":{"server_url":"{{issuer}}.well-known/openid-configuration"}}]}}'
+        template: '{"openid_connect":{"APPS":[{"provider_id":"authentik","name":"Authentik","client_id":"{{client_id}}","secret":"{{client_secret}}","settings":{"scope":["openid","profile","email","groups"],"server_url":"{{issuer}}.well-known/openid-configuration"}}]}}'
       # allauth fetches discovery and tokens with requests; the combined
       # bundle keeps its other HTTPS fetches working (S410).
       trust: REQUESTS_CA_BUNDLE
       trustbundle: combined
       warnings:
-      - "Paperless-ngx keeps its own login form. People who sign in through Authentik get an ordinary Paperless account created at first sign-in (username from their Authentik username); they have no permissions until a Paperless administrator grants them. Group membership and admin rights are not taken from Authentik. An existing Paperless account is not linked automatically: sign in to it, then link Authentik under My Profile."
+      - "Paperless-ngx keeps its own login form. People who sign in through Authentik get an ordinary Paperless account created at first sign-in (username from their Authentik username); they join the Homestead people group, made at install, which lets them upload, view and edit their own documents (each person sees their own documents unless one is shared with them). People with the Admin role for this app (the owner included) become Paperless administrators at sign-in; the local admin account (password under Secrets) also stays. An existing Paperless account is not linked automatically: sign in to it, then link Authentik under My Profile."
       set:
         PAPERLESS_APPS: allauth.socialaccount.providers.openid_connect
         PAPERLESS_SOCIAL_AUTO_SIGNUP: "true"
+        # Admin rights (S453): Paperless makes a person a superuser at
+        # each sign-in when the groups claim holds this Authentik group,
+        # the app's admin group Homestead keeps (the owner and anyone
+        # given the Admin role). Groups are not synced otherwise, so the
+        # default group above is never cleared.
+        PAPERLESS_SOCIAL_ACCOUNT_SYNC_SUPERUSER_GROUP: homestead-paperless-ngx-admins
+        PAPERLESS_SOCIAL_ACCOUNT_SYNC_STAFF_GROUP: homestead-paperless-ngx-admins
 database:
   service: db
   kind: postgres
@@ -194,12 +209,19 @@ secrets:
 - name: admin_password
   # Only read when the first superuser is created; changing it later does
   # not reset an existing account (reset inside the app or with
-  # manage.py changepassword).
+  # manage.py changepassword). Revealable (S453): it is the owner's way
+  # to manage Paperless users and groups.
   immutable: true
+  reveal: true
   consumers:
   - service: webserver
     env: PAPERLESS_ADMIN_PASSWORD_FILE
     export: true
+firstrun:
+  routine: paperless-ngx
+  service: webserver
+  account: admin
+  secret: admin_password
 integrations:
 - kind: identity
   target: authentik

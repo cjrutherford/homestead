@@ -124,7 +124,7 @@ func TestPaperlessPlanRedirectAndGroups(t *testing.T) {
 		t.Fatalf("redirects %v sign in %s", plan.RedirectURIs, plan.SignInURL)
 	}
 	all := strings.Join(plan.Warnings, "\n")
-	if !strings.Contains(all, "not taken from Authentik") && !strings.Contains(all, "admin rights are not taken from Authentik") {
+	if !strings.Contains(all, "Homestead people group") || !strings.Contains(all, "become Paperless administrators") {
 		t.Fatalf("warnings = %s", all)
 	}
 }
@@ -141,6 +141,7 @@ func TestPaperlessApplyKeepsSecretOutOfTheStack(t *testing.T) {
 	old := m
 	old.SSO.OIDC = nil
 	old.Secrets = nil
+	old.FirstRun = nil
 	old.Database = nil
 	old.Services = append([]catalog.Service(nil), old.Services...)
 	old.Services[0].Entrypoint = nil

@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "4ba4e9ceb23663ea",
+ "hash": "b36540decb28e5db",
  "sections": [
   {
    "title": "Platform",
@@ -1511,7 +1511,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
     },
     {
      "title": "SRV-PAPERLESS-NGX: Paperless-ngx",
-     "note": "First install on this appliance; sign-in confirmed from docs and source only (DEFERRED S413). Admin rights and group sync are not wired.",
+     "note": "Single sign-in confirmed live (S413, S453). Homestead makes the Homestead people group at install, so nobody has anything to grant by hand; Admin-role people become Paperless administrators at sign-in.",
      "steps": [
       {
        "id": "SRV-PAPERLESS-NGX-1",
@@ -1530,15 +1530,15 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-PAPERLESS-NGX-3",
        "title": "Owner sign-in",
-       "action": "Sign in with the Authentik/OpenID button on the app's login page as the owner. Login page keeps the local form and offers Authentik (allauth openid_connect provider JSON in a derived secret file). New people get an ordinary account with NO permissions until you grant them in Paperless.",
+       "action": "Sign in with the Authentik/OpenID button on the app's login page as the owner. Login page keeps the local form and offers Authentik (allauth openid_connect provider JSON in a derived secret file). The owner arrives as a Paperless administrator (Users \u0026 Groups, Workflows and Mail in the menu); there is no setup or permission step.",
        "expected": "Owner is signed in and named correctly.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
        "id": "SRV-PAPERLESS-NGX-4",
        "title": "Person A (with access) can sign in",
-       "action": "Grant A in People for this app. In a separate browser sign in as A.",
-       "expected": "A reaches the app as A (a separate account/data from the owner).",
+       "action": "Grant A in People for this app. In a separate browser sign in as A, then upload a PDF.",
+       "expected": "A reaches the app as A with no \"Error loading settings\", an ordinary (non-administrator) menu, and can upload and see their own documents (not the owner's).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {

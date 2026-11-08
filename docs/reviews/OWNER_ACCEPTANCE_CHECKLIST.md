@@ -1210,7 +1210,7 @@ _Nextcloud 35.0.1; sign-in verified live (S298, S408); public base URL for path 
 
 ### SRV-PAPERLESS-NGX: Paperless-ngx
 
-_First install on this appliance; sign-in confirmed from docs and source only (DEFERRED S413). Admin rights and group sync are not wired._
+_Single sign-in confirmed live (S413, S453). Homestead makes the Homestead people group at install, so nobody has anything to grant by hand; Admin-role people become Paperless administrators at sign-in._
 
 - [ ] **SRV-PAPERLESS-NGX-1 — Install: plan preview, then approve**
   - Action: Catalog > Paperless-ngx > Install. Read the plan, then approve (or `homesteadctl apps plan paperless-ngx -f FILE`, then `homesteadctl apps install paperless-ngx -f FILE`).
@@ -1225,14 +1225,14 @@ _First install on this appliance; sign-in confirmed from docs and source only (D
   - Result: ____  Notes: ____
 
 - [ ] **SRV-PAPERLESS-NGX-3 — Owner sign-in**
-  - Action: Sign in with the Authentik/OpenID button on the app's login page as the owner. Login page keeps the local form and offers Authentik (allauth openid_connect provider JSON in a derived secret file). New people get an ordinary account with NO permissions until you grant them in Paperless.
+  - Action: Sign in with the Authentik/OpenID button on the app's login page as the owner. Login page keeps the local form and offers Authentik (allauth openid_connect provider JSON in a derived secret file). The owner arrives as a Paperless administrator (Users & Groups, Workflows and Mail in the menu); there is no setup or permission step.
   - Expected: Owner is signed in and named correctly.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
 - [ ] **SRV-PAPERLESS-NGX-4 — Person A (with access) can sign in**
-  - Action: Grant A in People for this app. In a separate browser sign in as A.
-  - Expected: A reaches the app as A (a separate account/data from the owner).
+  - Action: Grant A in People for this app. In a separate browser sign in as A, then upload a PDF.
+  - Expected: A reaches the app as A with no "Error loading settings", an ordinary (non-administrator) menu, and can upload and see their own documents (not the owner's).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
