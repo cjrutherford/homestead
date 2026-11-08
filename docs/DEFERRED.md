@@ -1844,6 +1844,5 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 
 Found on VM 2 in the browser run; not fixed in this pass.
 
-- **Public read-link origin (medium, EV-ADR058-6):** the bridge mints a link on the request Origin, and an app that is not published cannot be reached on the public name, so after `apps read-links approve` links made in the app stay `https://<lan name>/...`. The owner has no way to get a public-origin link from the UI (swapping the host by hand works). Decide: mint from the approved public origin when the owner asks, or offer a copy-public-link action.
 - **Public name refusal message (low, EV-API-CLIENT-7):** the appliance's own public name resolves to IPv6 Cloudflare addresses and is refused with the generic "could not be reached" text.
 - **Low:** API Client empty state says "save, share and run them together" though there is no sharing; Solitaire, Sudoku and Expense container-stopped reload shows the Caddy 502 (same as EV-NOTES-10); 3D drops an unsaved UV sphere across reload (S377 startup race); Expense welcome dialog and a stray "false" text; Expense CSV content not inspected in headless; EV-ADR058-8 (events over the public name), the 61st share in an hour, an expired read link and the day-2 backup check were not run.

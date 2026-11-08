@@ -626,3 +626,33 @@ func TestReadRouteIsRegisteredUnderTheBasePath(t *testing.T) {
 		}
 	}
 }
+
+// S465: once read-link exposure is approved, links are minted on the approved
+// public origin even when the caller is on a local name; without approval
+// they stay on the caller's own origin.
+func TestGetReadURLUsesTheApprovedPublicOrigin(t *testing.T) {
+	e := newLinkEnv(t)
+	lnkPut(t, e.store, gAlice, "f.txt", "x")
+	link := func() string {
+		st, out := e.mint(`{"operation":"fs.getReadURL","key":"f.txt"}`)
+		if st != 200 {
+			t.Fatalf("mint %d %v", st, out)
+		}
+		return out["url"].(string)
+	}
+	if u := link(); !strings.HasPrefix(u, lnkOrigin+"/apps/tasks"+ReadPrefix) {
+		t.Fatalf("unapproved link %q", u)
+	}
+	if err := e.store.SetPublicReadOrigin("https://homestead.example.org"); err != nil {
+		t.Fatal(err)
+	}
+	if u := link(); !strings.HasPrefix(u, "https://homestead.example.org/apps/tasks"+ReadPrefix) {
+		t.Fatalf("approved link %q", u)
+	}
+	if err := e.store.SetPublicReadOrigin(""); err != nil {
+		t.Fatal(err)
+	}
+	if u := link(); !strings.HasPrefix(u, lnkOrigin) {
+		t.Fatalf("link after approval removed %q", u)
+	}
+}

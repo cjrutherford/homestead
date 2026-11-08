@@ -63,8 +63,9 @@ func TestPublicOriginMintsOnlyWhenExposed(t *testing.T) {
 			t.Errorf("%s from the public origin: %d %s", body, st, out)
 		}
 	}
-	// The local origin is unchanged and still gets its own origin back.
-	if st, out := e.post(lnkOrigin, mint); st != 200 || !strings.Contains(out, lnkOrigin+"/apps/tasks"+ReadPrefix) {
+	// The local origin still works, and since S465 the link it mints is on the
+	// approved public origin so it opens for outsiders.
+	if st, out := e.post(lnkOrigin, mint); st != 200 || !strings.Contains(out, pubOrigin+"/apps/tasks"+ReadPrefix) {
 		t.Fatalf("local: %d %s", st, out)
 	}
 	// Removal (empty value on restart) closes it again.

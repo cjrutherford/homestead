@@ -307,9 +307,11 @@ func (h *handler) logf(format string, args ...any) {
 }
 
 // handleReadURL serves fs.getReadURL: mint a link to one of the caller's own
-// files, on the origin the caller is using. That origin already passed the
-// exact allowlist check (the only configured origin; a public name is not an
-// origin the bridge accepts until the exposure plan, S433).
+// files. The link is minted on the approved public origin once the owner
+// approved read-link exposure (S433, S465), whatever name the caller is on:
+// a person on the .lan name still gets a link that works for outsiders. With
+// no approval it is minted on the origin the caller is using, which already
+// passed the exact allowlist check (a local or overlay name).
 func (h *handler) handleReadURL(w http.ResponseWriter, r *http.Request, scope Scope, body request) {
 	if body.TTL < 0 || body.TTL > 10*365*24*3600 {
 		shareErr(w, http.StatusBadRequest, "invalid_argument")
@@ -318,7 +320,11 @@ func (h *handler) handleReadURL(w http.ResponseWriter, r *http.Request, scope Sc
 	token, link, err := h.store.CreateReadLink(r.Context(), scope, body.Key, time.Duration(body.TTL)*time.Second, h.now())
 	switch {
 	case err == nil:
-		url := r.Header.Get("Origin") + h.base + ReadPrefix + token
+		origin := r.Header.Get("Origin")
+		if h.store.publicRead != "" {
+			origin = h.store.publicRead
+		}
+		url := origin + h.base + ReadPrefix + token
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"url": url, "id": link.ID, "expires": link.ExpiresAt})
 	case errors.Is(err, ErrNotFound):
