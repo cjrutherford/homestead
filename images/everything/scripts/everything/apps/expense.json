@@ -244,6 +244,12 @@
       "old": "const who = store.user?.username ? `, ${store.user.username}` : '';",
       "new": "const who = store.user ? ', Homestead user' : '';",
       "why": "The greeting shows \"Homestead user\", never the opaque subject."
+    },
+    {
+      "file": "src/expense/src/ui/onboarding.js",
+      "old": "export function shouldOnboard(s = store) {\n",
+      "new": "export function shouldOnboard(s = store) {\n  return false; // Homestead (S467, ADR-059): no first-run dialog\n",
+      "why": "No first-run dialog (ADR-059): the welcome dialog is never opened; the person lands in the app. Its Puter wording would also be wrong here."
     }
   ],
   "sdk_surface": {

@@ -79,7 +79,7 @@ class ExpensePackageTest(unittest.TestCase):
     def test_preparation_applies_patches_and_the_entry_point(self):
         generic = load('prepare_app')
         d = generic.load_definition('expense')
-        self.assertEqual(len(d['patches']), 36)
+        self.assertEqual(len(d['patches']), 37)
         AI = 'AI is not available on Homestead. Nothing you write is sent anywhere.'
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)

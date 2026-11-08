@@ -34,6 +34,19 @@ def load_definition(app: str) -> dict:
     return d
 
 
+WORDING = json.loads((HERE / 'wording.json').read_text())
+
+
+def reword(name: str, content: bytes) -> bytes:
+    """Apply the shared Puter-wording rules (wording.json, S467) to an app source file."""
+    path = '/' + name
+    if not name.endswith(tuple(WORDING['extensions'])) or any(s in path for s in WORDING['skip']):
+        return content
+    for old, new in WORDING['rules']:
+        content = content.replace(old.encode(), new.encode())
+    return content
+
+
 def prepare_app(definition: dict, archive_path: Path, bridge_path: Path, output: Path, expected_sha256: str = '') -> None:
     d = definition
     sub = d['subtree'].rstrip('/') + '/'
@@ -113,6 +126,7 @@ def prepare_app(definition: dict, archive_path: Path, bridge_path: Path, output:
                 content = worker
             for old, new in patches.get(member.name, []):
                 content = content.replace(old, new)
+            content = reword(member.name, content)
             destination.write_bytes(content)
         # "add_files" (3D, S377): small Homestead-owned source files added to
         # the tree (a storage layer the patches wire in). The source lives in

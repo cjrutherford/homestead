@@ -1620,8 +1620,8 @@ _Review plan section: S368 and S437. Automated: tests/test_s368_tasks_package.py
   - Result: ____  Notes: ____
 
 - [ ] **EV-TASKS-8 — No Puter wording**
-  - Action: Look through the UI for Puter wording or links.
-  - Expected: None. Share and the calendar-feed setting exist only because ADR-058 (S437) re-enabled them; test them in EV-TASKS sharing steps.
+  - Action: Look through the UI for Puter wording or links; note whether a Welcome dialog appears on a first visit.
+  - Expected: None, and no Welcome dialog (S467). Share and the calendar-feed setting exist only because ADR-058 (S437) re-enabled them; test them in EV-TASKS sharing steps.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -2380,7 +2380,7 @@ _Review plan section: S377 and S423. Automated: tests/test_s377_three_d_package.
 
 - [ ] **EV-THREE-D-6 — Editor basics**
   - Action: The editor opens with a cube; change the theme and reload; add an object, wait 3 seconds, reload.
-  - Expected: The preference is kept; the object is recovered (known startup race, see Known issues).
+  - Expected: No splash screen or Quick Setup dialog appears (S467). The preference is kept; the object is recovered (known startup race, see Known issues).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 

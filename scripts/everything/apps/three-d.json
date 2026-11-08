@@ -162,6 +162,24 @@
       "old": "    return { ok: false, error: `SyntaxError: ${msg}`, line: syntaxErrorLine(code, msg) };",
       "new": "    return { ok: false, error: `${msg.includes('eval') ? \"Scripts and the console cannot run on Homestead: the page's security policy does not allow running code typed into the app.\" : `SyntaxError: ${msg}`}`, line: msg.includes('eval') ? undefined : syntaxErrorLine(code, msg) };",
       "why": "Run Script builds a function from the script text, which the page policy refuses; say so instead of reporting a syntax error."
+    },
+    {
+      "file": "src/3d/src/ui/quicksetup.ts",
+      "old": "  try {\n    return localStorage.getItem(SETUP_KEY) !== '1';\n  } catch {\n    return false;\n  }\n",
+      "new": "  // Homestead (S467, ADR-059): no first-run Quick Setup page; the defaults apply.\n  return false;\n",
+      "why": "No first-run dialog (ADR-059): the Quick Setup page is never shown."
+    },
+    {
+      "file": "src/3d/src/app/prefs.ts",
+      "old": "  show_splash: true,",
+      "new": "  show_splash: false,",
+      "why": "No startup splash by default (ADR-059): the app opens straight to the viewport; the person can turn it on in Preferences."
+    },
+    {
+      "file": "src/3d/src/ui/topbar.ts",
+      "old": "  if (fresh && (prefs.show_splash || quickSetupPending())) showSplash({ startup: true });",
+      "new": "  // Homestead (S467, ADR-059): no startup splash, whatever an earlier visit saved.\n  void fresh;\n  void quickSetupPending;",
+      "why": "No first-run dialog (ADR-059): a person who saved 'Show at startup' before this change would still get the splash on every load; it is never opened at startup."
     }
   ],
   "source_offer": {

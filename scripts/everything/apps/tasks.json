@@ -83,6 +83,12 @@
       "old": "expect(shared.link).toContain('#/shared?u=');",
       "new": "expect(shared.link).toBe(shared.url); // the mock URL has no /_homestead/read/ part to turn into a viewer link",
       "why": "Keeps the upstream test in step with the viewer link (the link is the bridge viewer URL)."
+    },
+    {
+      "file": "src/tasks/src/ui/onboarding.js",
+      "old": "export function shouldOnboard(store) {\n",
+      "new": "export function shouldOnboard(store) {\n  return false; // Homestead (S467, ADR-059): no first-run dialog\n",
+      "why": "No first-run dialog (ADR-059): the welcome dialog is never opened; the person lands in the app. Its Puter wording would also be wrong here."
     }
   ],
   "sdk_surface": {

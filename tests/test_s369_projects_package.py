@@ -93,7 +93,8 @@ class ProjectsPackageTest(unittest.TestCase):
     def test_preparation_replaces_sdk_and_worker_and_needs_no_patch(self):
         generic = load('prepare_app')
         d = generic.load_definition('projects')
-        self.assertEqual(d['patches'], [])
+        # S467: the only patch switches the first-run welcome dialog off (ADR-059).
+        self.assertEqual([p['file'] for p in d['patches']], ['src/projects/src/ui/onboarding.js'])
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             (base / 'bridge.js').write_text('// bridge')

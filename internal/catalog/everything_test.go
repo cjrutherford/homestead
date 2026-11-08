@@ -134,7 +134,7 @@ func TestEverythingContextIsInSync(t *testing.T) {
 			pairs[dir[0]+"/"+e.Name()] = dir[1] + "/" + e.Name()
 		}
 	}
-	for _, f := range []string{"prepare_app.py", "make_source_offer.py", "puter-bridge.js", "tasks-sw.template.js", "projects-sw.template.js", "contacts-sw.template.js", "inventory-sw.template.js", "time-tracking-sw.template.js", "solitaire-sw.template.js", "expense-sw.template.js"} {
+	for _, f := range []string{"prepare_app.py", "make_source_offer.py", "puter-bridge.js", "wording.json", "tasks-sw.template.js", "projects-sw.template.js", "contacts-sw.template.js", "inventory-sw.template.js", "time-tracking-sw.template.js", "solitaire-sw.template.js", "expense-sw.template.js"} {
 		pairs["scripts/everything/"+f] = "../../scripts/everything/" + f
 	}
 	for dst, src := range pairs {

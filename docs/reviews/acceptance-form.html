@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "4bc811f46643e553",
+ "hash": "2450440fafdd0ac2",
  "sections": [
   {
    "title": "Platform",
@@ -2004,8 +2004,8 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "EV-TASKS-8",
        "title": "No Puter wording",
-       "action": "Look through the UI for Puter wording or links.",
-       "expected": "None. Share and the calendar-feed setting exist only because ADR-058 (S437) re-enabled them; test them in EV-TASKS sharing steps.",
+       "action": "Look through the UI for Puter wording or links; note whether a Welcome dialog appears on a first visit.",
+       "expected": "None, and no Welcome dialog (S467). Share and the calendar-feed setting exist only because ADR-058 (S437) re-enabled them; test them in EV-TASKS sharing steps.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -2892,7 +2892,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "id": "EV-THREE-D-6",
        "title": "Editor basics",
        "action": "The editor opens with a cube; change the theme and reload; add an object, wait 3 seconds, reload.",
-       "expected": "The preference is kept; the object is recovered (known startup race, see Known issues).",
+       "expected": "No splash screen or Quick Setup dialog appears (S467). The preference is kept; the object is recovered (known startup race, see Known issues).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {

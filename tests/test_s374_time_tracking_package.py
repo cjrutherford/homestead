@@ -102,7 +102,7 @@ class TimeTrackingPackageTest(unittest.TestCase):
         generic = load('prepare_app')
         d = generic.load_definition('time-tracking')
         self.assertEqual(d['service_worker']['mode'], 'runtime')
-        self.assertEqual(len(d['patches']), 13)
+        self.assertEqual(len(d['patches']), 14)
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             (base / 'bridge.js').write_text('// bridge')

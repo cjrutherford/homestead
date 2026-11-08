@@ -96,6 +96,12 @@
       "old": "talking to your Puter cloud.",
       "new": "talking to your Homestead.",
       "why": "Say Homestead, not Puter."
+    },
+    {
+      "file": "src/inventory/src/ui/onboarding.js",
+      "old": "export function shouldOnboard(store) {\n",
+      "new": "export function shouldOnboard(store) {\n  return false; // Homestead (S467, ADR-059): no first-run dialog\n",
+      "why": "No first-run dialog (ADR-059): the welcome dialog is never opened; the person lands in the app. Its Puter wording would also be wrong here."
     }
   ],
   "sdk_surface": {

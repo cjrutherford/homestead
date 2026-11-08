@@ -89,7 +89,7 @@ class ThreeDPackageTest(unittest.TestCase):
         d = generic.load_definition('three-d')
         self.assertIsNone(d['service_worker'])
         self.assertIsNone(d['sdk_tag'])
-        self.assertEqual(len(d['patches']), 17)
+        self.assertEqual(len(d['patches']), 20)
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             (base / 'bridge.js').write_text('// bridge')

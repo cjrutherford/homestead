@@ -37,6 +37,8 @@ What is here
   scripts/everything/apps/{app}.json
       The patch list: every edit Homestead makes to the upstream source,
       as exact old/new text.
+  scripts/everything/wording.json
+      Shared wording rules: exact phrases reworded for Homestead.
   scripts/everything/files/
       Source files Homestead adds to the tree (if the app needs any).
   scripts/everything/puter-bridge.js
@@ -68,6 +70,7 @@ def build_tarball(app: str, d: dict, archive: Path, dockerfile: Path, out: Path)
         f'artifact/{d["archive"]}': archive.read_bytes(),
         f'scripts/everything/apps/{app}.json': (HERE / 'apps' / (app + '.json')).read_bytes(),
         'scripts/everything/puter-bridge.js': (HERE / 'puter-bridge.js').read_bytes(),
+        'scripts/everything/wording.json': (HERE / 'wording.json').read_bytes(),
         'scripts/everything/prepare_app.py': (HERE / 'prepare_app.py').read_bytes(),
         'Dockerfile': dockerfile.read_bytes(),
     }
