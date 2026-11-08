@@ -522,3 +522,33 @@ func TestGrantAgainCancelsPendingPurge(t *testing.T) {
 		t.Fatal("access is back: the stored purge must be dropped")
 	}
 }
+
+// S456: sign-in off then on recreates the app's groups empty; applying it
+// restores the recorded grants, so nobody shows as drifted.
+func TestRestoreAppRepopulatesGroupsFromGrants(t *testing.T) {
+	r := newRig(t)
+	u, _ := r.add("ada", Grant{"nextcloud", RoleUser})
+	a, _ := r.add("bob", Grant{"nextcloud", RoleAdmin})
+	r.f.groups["homestead-nextcloud-users"] = nil
+	r.f.groups["homestead-nextcloud-admins"] = nil
+	if v, _ := r.svc.List(bg); v.People[0].Status != StatusDrifted {
+		t.Fatalf("expected drift: %+v", v.People)
+	}
+	n, err := r.svc.RestoreApp(bg, "nextcloud")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 || !r.f.member("homestead-nextcloud-users", u.pk) || r.f.member("homestead-nextcloud-admins", u.pk) ||
+		!r.f.member("homestead-nextcloud-users", a.pk) || !r.f.member("homestead-nextcloud-admins", a.pk) {
+		t.Fatalf("n=%d groups=%v", n, r.f.groups)
+	}
+	v, _ := r.svc.List(bg)
+	for _, p := range v.People {
+		if p.Status != StatusOK {
+			t.Fatalf("%s still drifted: %+v", p.Username, p.Drift)
+		}
+	}
+	if n, err := r.svc.RestoreApp(bg, "immich"); err != nil || n != 0 {
+		t.Fatalf("an app nobody holds: %d %v", n, err)
+	}
+}

@@ -45,6 +45,10 @@ type Runtime struct {
 	// it off with nil (S418), then reloads and probes the edge. Nil
 	// refuses forward-auth apps.
 	SetGate func(ctx context.Context, m catalog.Manifest, gate *docker.Gate) error
+	// RestoreAccess (S456) puts people's recorded grants back into the
+	// app's freshly made Authentik groups and returns how many memberships
+	// it restored; nil skips it.
+	RestoreAccess func(ctx context.Context, app string) (int, error)
 }
 
 func (rt Runtime) audit(actor, action, outcome, detail string) {
@@ -511,6 +515,7 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 			rt.audit(actor, "app.sign-in.authentik", "ok", m.Name+": "+strings.Join(steps, "; "))
 			return nil
 		}},
+		restorePeople(rt, m, plan, actor, failed),
 		{Name: "wire", Run: func(ctx context.Context) error {
 			if err := writeDerivedSecret(rt, m, dir, adapter, Settings{Issuer: plan.Issuer, ClientID: plan.ClientID, ClientSecret: secret, Groups: groupNames(m.Name)}, true); err != nil {
 				return failed("write the app's provider setting", err)
@@ -538,4 +543,22 @@ func Definition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.Spec, a
 		}},
 	}...)
 	return def, nil
+}
+
+// restorePeople is the step that puts recorded grants back into the app's
+// Authentik groups after sign-in is applied (S456).
+func restorePeople(rt Runtime, m catalog.Manifest, plan Plan, actor string, failed func(string, error) error) operation.StepDef {
+	return operation.StepDef{Name: "restore-people", Run: func(ctx context.Context) error {
+		if rt.RestoreAccess == nil || plan.Access == nil {
+			return nil
+		}
+		n, err := rt.RestoreAccess(ctx, m.Name)
+		if err != nil {
+			return failed("put people's recorded access back into Authentik", err)
+		}
+		if n > 0 {
+			rt.audit(actor, "app.sign-in.people", "ok", fmt.Sprintf("%s: restored %d group memberships from recorded grants", m.Name, n))
+		}
+		return nil
+	}}
 }

@@ -720,3 +720,66 @@ func TestJellyfinSignInURLCarriesItsPath(t *testing.T) {
 		t.Errorf("nextcloud: %s", got)
 	}
 }
+
+// S456: applying sign-in puts people's recorded grants back into the app's
+// Authentik groups; turning it off does not.
+func TestApplyRestoresPeoplesAccess(t *testing.T) {
+	stubDocker(t)
+	st, err := store.Open(filepath.Join(t.TempDir(), "homestead.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, catalog.OverrideFileName), []byte("services:\n  server:\n    environment:\n      TZ: UTC\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var restored []string
+	var order []string
+	failRestore := false
+	rt := Runtime{Records: Records{DB: st.DB()}, Secrets: &memSecrets{m: map[string]string{}}, StackDir: func(string) string { return dir },
+		RootPEM: func() ([]byte, error) {
+			return []byte("-----BEGIN CERTIFICATE-----\nroot\n-----END CERTIFICATE-----\n"), nil
+		},
+		RestoreAccess: func(_ context.Context, app string) (int, error) {
+			order = append(order, "restore")
+			if failRestore {
+				return 0, errors.New("authentik refused")
+			}
+			restored = append(restored, app)
+			return 2, nil
+		}}
+	in := inputs(t, "immich")
+	run := func(on bool) error {
+		plan, _ := BuildPlan(in, on)
+		def, err := Definition(rt, plan, in.Manifest, dashboard, &fakeAuthentik{}, "owner")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, step := range def.Steps {
+			if err := step.Run(context.Background()); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := run(true); err != nil {
+		t.Fatal(err)
+	}
+	if len(restored) != 1 || restored[0] != "immich" {
+		t.Fatalf("restored = %v", restored)
+	}
+	rec, _, _ := Records{DB: st.DB()}.Get("immich")
+	in.Applied = &rec
+	if err := run(false); err != nil {
+		t.Fatal(err)
+	}
+	if len(order) != 1 {
+		t.Fatalf("turning off restored people: %v", order)
+	}
+	failRestore = true
+	in.Applied = nil
+	if err := run(true); err == nil || !strings.Contains(err.Error(), "refused") {
+		t.Fatalf("a failed restore must fail the apply: %v", err)
+	}
+}

@@ -570,7 +570,7 @@ _FreshRSS is installed by Homestead (no web installer, ADR-059; SRV-FRESHRSS-1a)
 
 - [ ] **SRV-FRESHRSS-7 — Sign-in off restores the form**
   - Action: Only if you have time: turn sign-in off (Manage > Sign-in) and check the local form login works again; turn it back on.
-  - Expected: Form login returns when off.
+  - Expected: Form login returns when off. After turning it back on, people granted before still have their access (People shows no drift, the same person signs in, an ungranted person is refused).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 

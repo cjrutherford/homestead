@@ -293,6 +293,12 @@ func (a *appSignIn) startWithInputs(ctx context.Context, in appsso.Inputs, enabl
 			return err
 		},
 		SetGate: a.setGate,
+		RestoreAccess: func(ctx context.Context, app string) (int, error) {
+			if a.s.people == nil {
+				return 0, nil
+			}
+			return a.s.people.RestoreApp(ctx, app)
+		},
 	}
 	api := &sso.API{Base: dashboard.AuthentikURL, Token: token, Client: a.client}
 	def, err := appsso.Definition(rt, plan, in.Manifest, dashboard, api, actor)

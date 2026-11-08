@@ -479,6 +479,7 @@ func forwardDefinition(rt Runtime, plan Plan, m catalog.Manifest, dashboard sso.
 			rt.audit(actor, "app.sign-in.authentik", "ok", m.Name+": "+strings.Join(steps, "; "))
 			return nil
 		}},
+		restorePeople(rt, m, plan, actor, failed),
 		{Name: "gate", Run: func(ctx context.Context) error {
 			if err := rt.SetGate(ctx, m, plan.Gate.gate()); err != nil {
 				return failed("gate the app at the edge", err)

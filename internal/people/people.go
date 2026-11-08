@@ -1190,6 +1190,59 @@ func (s *Service) recreate(ctx context.Context, api *sso.API, p Person, method s
 	return s.credential(ctx, api, acct.PK, method, "")
 }
 
+// RestoreApp (S456) repopulates one app's Authentik groups from Homestead's
+// recorded grants. Turning an app's sign-in off deletes its groups; turning
+// it on makes them empty, so every grant would read as drift. It only adds
+// members (the owner and members Authentik holds are left alone) and returns
+// how many memberships it restored.
+func (s *Service) RestoreApp(ctx context.Context, app string) (int, error) {
+	rows, err := s.DB.Query(`SELECT p.authentik_pk, g.role FROM people_grants g JOIN people p ON p.id = g.person_id WHERE g.app = ? ORDER BY p.id`, app)
+	if err != nil {
+		return 0, err
+	}
+	type member struct {
+		pk   int
+		role string
+	}
+	var members []member
+	for rows.Next() {
+		var m member
+		if err := rows.Scan(&m.pk, &m.role); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		members = append(members, m)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if len(members) == 0 {
+		return 0, nil
+	}
+	api, err := s.client()
+	if err != nil {
+		return 0, err
+	}
+	users, admins := sso.AppGroups(app)
+	n := 0
+	for _, m := range members {
+		if !s.adminOnly(app) {
+			if err := api.AddToGroup(ctx, users, m.pk); err != nil {
+				return n, groupError(app, err)
+			}
+			n++
+		}
+		if m.role == RoleAdmin {
+			if err := api.AddToGroup(ctx, admins, m.pk); err != nil {
+				return n, groupError(app, err)
+			}
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (s *Service) putBack(ctx context.Context, api *sso.API, p Person, acct sso.RemoteAccount, apps []string) error {
 	fields := map[string]any{"username": p.Username, "name": p.DisplayName, "email": p.Email, "is_active": p.State == StateActive}
 	if err := api.PatchAccount(ctx, p.pk, fields); err != nil {
