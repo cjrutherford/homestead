@@ -104,8 +104,12 @@ secrets:
 - name: superuser_password
   # The initial superuser is created once from this value; rotating it
   # later does not reset an existing account (use the app or
-  # `manage.py changepassword` inside the container).
+  # `manage.py changepassword` inside the container). Revealable (S458):
+  # the owner needs it to reach the local administrator account, which
+  # manages users and the site's settings; Authentik people are ordinary
+  # users and cannot.
   immutable: true
+  reveal: true
   consumers:
   - service: linkding
     env: LD_SUPERUSER_PASSWORD_FILE

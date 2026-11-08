@@ -893,6 +893,12 @@ _First install on this appliance (S409/S410 unit and contract tests only). No gr
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
+- [ ] **SRV-LINKDING-3a — The administrator password is revealable (S458)**
+  - Action: In the app card Manage panel open Secrets and Reveal the superuser password, then sign in on the login form as admin with it.
+  - Expected: The password is shown after confirming; the local form signs in as the administrator and /admin/ opens the Django administration site, with nothing set up by hand.
+  - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
+  - Result: ____  Notes: ____
+
 - [ ] **SRV-LINKDING-4 — Person A (with access) can sign in**
   - Action: Grant A in People for this app. In a separate browser sign in as A.
   - Expected: A reaches the app as A (a separate account/data from the owner).
@@ -3561,7 +3567,7 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | SRV-IMMICH | SRV-IMMICH-1 to SRV-IMMICH-11 (11) |  |  |  |  |
 | SRV-JELLYFIN | SRV-JELLYFIN-1 to SRV-JELLYFIN-11 (11) |  |  |  |  |
 | SRV-KOMGA | SRV-KOMGA-1 to SRV-KOMGA-9 (9) |  |  |  |  |
-| SRV-LINKDING | SRV-LINKDING-1 to SRV-LINKDING-9 (9) |  |  |  |  |
+| SRV-LINKDING | SRV-LINKDING-1 to SRV-LINKDING-9 (10) |  |  |  |  |
 | SRV-MEALIE | SRV-MEALIE-1 to SRV-MEALIE-9 (10) |  |  |  |  |
 | SRV-MEMOS | SRV-MEMOS-1 to SRV-MEMOS-9 (10) |  |  |  |  |
 | SRV-NAVIDROME | SRV-NAVIDROME-1 to SRV-NAVIDROME-11 (12) |  |  |  |  |
@@ -3607,4 +3613,4 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | END-AUDIT | END-AUDIT-1 to END-AUDIT-1 (1) |  |  |  |  |
 | END-PARITY | END-PARITY-1 to END-PARITY-1 (1) |  |  |  |  |
 | END-UNINSTALL | END-UNINSTALL-1 to END-UNINSTALL-6 (6) |  |  |  |  |
-| **Total** | 544 steps |  |  |  |  |
+| **Total** | 545 steps |  |  |  |  |

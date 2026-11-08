@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "e88da8f3a2cb94e1",
+ "hash": "573be8cabf353ebf",
  "sections": [
   {
    "title": "Platform",
@@ -1138,6 +1138,13 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "title": "Owner sign-in",
        "action": "Sign in with the Authentik/OpenID button on the app's login page as the owner. Login page offers the OIDC button (mozilla-django-oidc); endpoints derived from the Authentik base; combined CA trust bundle (S410).",
        "expected": "Owner is signed in and named correctly.",
+       "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
+      },
+      {
+       "id": "SRV-LINKDING-3a",
+       "title": "The administrator password is revealable (S458)",
+       "action": "In the app card Manage panel open Secrets and Reveal the superuser password, then sign in on the login form as admin with it.",
+       "expected": "The password is shown after confirming; the local form signs in as the administrator and /admin/ opens the Django administration site, with nothing set up by hand.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
