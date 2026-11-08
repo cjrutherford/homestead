@@ -34,7 +34,9 @@ func MoveEnv(m Manifest, names []string) []ConfigChange {
 		for key, value := range svc.Environment {
 			switch {
 			case strings.Contains(value, RoutePathToken) || strings.Contains(value, RouteURLToken) ||
-				strings.Contains(value, RouteHostToken) || strings.Contains(value, RouteNamesToken):
+				strings.Contains(value, RouteHostToken) || strings.Contains(value, RouteNamesToken) ||
+				strings.Contains(value, AppURLToken):
+				value = strings.ReplaceAll(value, AppURLToken, "https://"+names[0]+bare)
 				value = strings.ReplaceAll(value, RouteURLToken, "https://"+names[0]+bare)
 				value = strings.ReplaceAll(value, RoutePathToken, bare)
 				value = strings.ReplaceAll(value, RouteHostToken, names[0])

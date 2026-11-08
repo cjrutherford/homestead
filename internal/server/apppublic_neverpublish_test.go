@@ -12,7 +12,7 @@ import (
 	"homestead/internal/docker"
 )
 
-// S451: a manifest with never_publish is refused a public name on every
+// S451: a manifest with publish: never is refused a public name on every
 // path, is not offered one, and an existing name can still be removed.
 
 func installKumaStack(t *testing.T, srv *Server) {
@@ -102,8 +102,8 @@ func TestNeverPublishDoctorCleanWithoutName(t *testing.T) {
 	}
 }
 
-// The only manifest that says it is never published is the one with the
-// field, and no manifest prose claims "never published" without it.
+// No manifest prose claims "never published" unless its publish form is
+// never (ADR-061; the S451 never_publish field is gone).
 func TestNeverPublishFieldMatchesProse(t *testing.T) {
 	entries, err := catalog.Load(filepath.Join("..", "..", "catalog"))
 	if err != nil {
@@ -113,12 +113,12 @@ func TestNeverPublishFieldMatchesProse(t *testing.T) {
 		m, _ := entries.Get(name)
 		text := strings.ToLower(m.Description + " " + strings.Join(m.Exposure.Endpoints[0].Warnings, " "))
 		claims := strings.Contains(text, "never published") || strings.Contains(text, "can never be published") || strings.Contains(text, "refused by design")
-		if claims != m.NeverPublish {
-			t.Errorf("%s: prose claims never-published=%v, never_publish=%v", name, claims, m.NeverPublish)
+		if claims && m.PublishForm() != catalog.PublishNever {
+			t.Errorf("%s: prose claims never-published but publish is %s", name, m.PublishForm())
 		}
 	}
 	m, _ := entries.Get("uptime-kuma")
-	if !m.NeverPublish || m.PublicRefusal() == "" {
+	if m.PublishForm() != catalog.PublishNever || m.PublicRefusal() == "" {
 		t.Error("uptime-kuma must be never_publish")
 	}
 }
@@ -126,7 +126,7 @@ func TestNeverPublishFieldMatchesProse(t *testing.T) {
 // The install itself refuses a public name for a never-publish app, both
 // the wizard's setup.public and the bare public_name.
 func TestNeverPublishInstallRefusesPublicName(t *testing.T) {
-	installRigMealieExtra = "never_publish: true\n"
+	installRigMealieExtra = "publish: never\n"
 	t.Cleanup(func() { installRigMealieExtra = "" })
 	a := installHandlerRig(t)
 	post := func(body map[string]any) (int, string) {

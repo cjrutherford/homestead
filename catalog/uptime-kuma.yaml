@@ -23,7 +23,6 @@ description: Uptime Kuma checks web apps, containers, and addresses on a
   so it stays on the local network and is never published as a public
   status page.
 category: monitoring
-never_publish: true
 icon: mdi:monitor-eye
 services:
 - name: uptime-kuma

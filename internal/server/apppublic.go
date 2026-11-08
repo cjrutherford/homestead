@@ -48,7 +48,7 @@ type appPublicStatus struct {
 	App       string `json:"app"`
 	Available bool   `json:"available"`
 	Reason    string `json:"reason,omitempty"`
-	// NeverPublish is the manifest's never_publish (S451): adding a name
+	// NeverPublish is the manifest's publish: never (S451, ADR-061): adding a name
 	// is refused and not offered; an existing name can still be removed.
 	NeverPublish bool             `json:"never_publish,omitempty"`
 	TunnelID     string           `json:"tunnel_id,omitempty"`
@@ -891,6 +891,9 @@ func (p *appPublic) planPathAdd(ctx context.Context, client *router.TunnelClient
 		"No DNS record changes: "+f.manifest.Title+" answers at "+plan.URL+", under the dashboard's public name the tunnel already carries.",
 		openToInternetWarning(f.manifest, f.signIn, plan.URL),
 		"It shares one web origin with the dashboard and the other published apps (ADR-044): a flaw in one of them can reach the others in the same browser.")
+	if w := cookiePathWarning(f.manifest); w != "" {
+		plan.Warnings = append(plan.Warnings, w)
+	}
 	if !f.signIn && f.manifest.SSO.OIDC != nil {
 		plan.Warnings = append(plan.Warnings, "App sign-in through Authentik is off. Turning it on first is recommended.")
 	}

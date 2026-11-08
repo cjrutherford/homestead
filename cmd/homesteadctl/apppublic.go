@@ -185,6 +185,9 @@ func runAppsMove(ctx context.Context, client *apiclient.Client, args []string, s
 			return exitOK
 		}
 		fmt.Fprintf(stdout, "move: offered from %s to %s\n", s.From, strings.Join(s.To, ", "))
+		if s.PublicFrom != "" {
+			fmt.Fprintf(stdout, "public: %s is removed and the app is published at %s (no redirect)\n", s.PublicFrom, s.PublicTo)
+		}
 		fmt.Fprintf(stdout, "review: homesteadctl apps move plan %s\n", pkg)
 		return exitOK
 	case "plan":
@@ -226,6 +229,15 @@ func printAppMovePlan(w io.Writer, p apiclient.AppMovePlan) {
 	fmt.Fprintf(w, "path prefix: %s\n", strip)
 	for _, r := range p.Redirects {
 		fmt.Fprintf(w, "redirect: %s\n", r)
+	}
+	if p.PublicFrom != "" {
+		fmt.Fprintf(w, "public address: %s is removed; the app answers publicly at %s\n", p.PublicFrom, p.PublicTo)
+	}
+	for _, s := range p.Removes {
+		fmt.Fprintf(w, "removed: %s\n", s)
+	}
+	for _, s := range p.Stops {
+		fmt.Fprintf(w, "stops working (no redirect): %s\n", s)
 	}
 	for _, s := range p.AppSettings {
 		fmt.Fprintf(w, "app setting: %s\n", s)

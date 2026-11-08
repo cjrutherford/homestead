@@ -3498,6 +3498,12 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: docs/PARITY.md.
   - Result: ____  Notes: ____
 
+- [ ] **PLAT-TUNNEL-8 — Move an app from its own public name to its subpath (S471, ADR-061)**
+  - Action: For an installed app whose package is served by path and is still published at its own name (Doctor shows "move available"), open its page, Review the move (or `homesteadctl apps move plan <pkg>`). Read the preview, then approve it (`apps move apply <pkg> --digest D --follow`). A package that keeps its own name (Immich, Vaultwarden) and Uptime Kuma show no move.
+  - Expected: The preview names the old public address, says old bookmarks and links on it stop working and that nothing redirects, lists the CNAME and tunnel entry that go away, and says no DNS record is needed for the new address under the dashboard's public name. After approval the app answers at `https://<dashboard public name>/apps/<app>/`, the old name no longer resolves or answers, its sign-in works at the new address, and Doctor's subpath-publish check is clean. An app known to set Path=/ cookies carries a warning.
+  - If it fails: Doctor Tunnel section (subpath-publish), the audit log (`app.move`), ADR-061.
+  - Result: ____  Notes: ____
+
 - [ ] **PLAT-TUNNEL-7 — Remove the tunnel plan**
   - Action: Do this last of the tunnel work. Plan removal of the tunnel on the Tunnel page, approve.
   - Expected: Public names stop answering; local names still work.
@@ -3551,7 +3557,7 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | PLAT-AUTH | PLAT-AUTH-1 to PLAT-AUTH-1 (1) |  |  |  |  |
 | PLAT-OWNER | PLAT-OWNER-1 to PLAT-OWNER-2 (2) |  |  |  |  |
 | PLAT-PEOPLE | PLAT-PEOPLE-1 to PLAT-PEOPLE-8 (8) |  |  |  |  |
-| PLAT-TUNNEL | PLAT-TUNNEL-1 to PLAT-TUNNEL-7 (7) |  |  |  |  |
+| PLAT-TUNNEL | PLAT-TUNNEL-1 to PLAT-TUNNEL-8 (8) |  |  |  |  |
 | PLAT-DASH | PLAT-DASH-1 to PLAT-DASH-2 (2) |  |  |  |  |
 | PLAT-DOCTOR | PLAT-DOCTOR-1 to PLAT-DOCTOR-2 (2) |  |  |  |  |
 | PLAT-NAMES | PLAT-NAMES-1 to PLAT-NAMES-1 (1) |  |  |  |  |
@@ -3613,4 +3619,4 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | END-AUDIT | END-AUDIT-1 to END-AUDIT-1 (1) |  |  |  |  |
 | END-PARITY | END-PARITY-1 to END-PARITY-1 (1) |  |  |  |  |
 | END-UNINSTALL | END-UNINSTALL-1 to END-UNINSTALL-6 (6) |  |  |  |  |
-| **Total** | 545 steps |  |  |  |  |
+| **Total** | 546 steps |  |  |  |  |

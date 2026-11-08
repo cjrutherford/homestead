@@ -293,8 +293,8 @@ export interface CatalogManifest {
   Secrets?: { Name: string; Immutable: boolean }[];
   /** S315 (ADR-044): 'path' serves the app under the appliance's names at Path; empty or 'host' on a name of its own. */
   Serve?: string;
-  /** S451: never published; the wizard and app page offer no public address. */
-  NeverPublish?: boolean;
+  /** ADR-061: the package's public form; 'never' means the wizard and app page offer no public address (S451). */
+  Publish?: 'path' | 'host' | 'never';
   /** The app's path when served by path; empty means /apps/<name>/. */
   Path?: string;
   /** S326: a path app sees its requests without its path (every craft app). */
@@ -1469,6 +1469,9 @@ export interface AppMoveStatus {
   from?: string;
   path?: string;
   to: string[];
+  /** ADR-061: set when the app is published at a name of its own and the move replaces it with a path. */
+  public_from?: string;
+  public_to?: string;
 }
 
 /** The reviewed move of an app to its path; nothing moves without its digest. */
@@ -1482,6 +1485,11 @@ export interface AppMovePlan {
   redirects: string[];
   app_settings: string[];
   sign_in: string[];
+  /** ADR-061: the old public name's DNS, tunnel and edge removals; absent when it has no public name of its own. */
+  public_from?: string;
+  public_to?: string;
+  removes?: string[];
+  stops?: string[];
   warnings: string[];
   digest: string;
 }

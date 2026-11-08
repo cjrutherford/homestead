@@ -793,11 +793,11 @@ type Manifest struct {
 	Publish string `yaml:"publish"`
 	// PublishReason says why a PublishHost package keeps its own name.
 	PublishReason string `yaml:"publish_reason"`
-	// NeverPublish marks an app that must never get a public name or path
-	// (S451): its open paths (status pages, badges, push URLs) are not
-	// behind Authentik. Every public-address, install and tunnel path
-	// refuses it; removing a public name it somehow holds stays allowed.
-	NeverPublish bool `yaml:"never_publish"`
+	// CookiePathRoot marks an app known to set cookies with Path=/ even
+	// when served under a path (ADR-061 section 4): such a cookie reaches
+	// every app and the dashboard on the shared origin, so the move and
+	// path-publish plans warn. Set only after the app was checked.
+	CookiePathRoot bool `yaml:"cookie_path_root"`
 	// Redirects send fixed /.well-known/ paths on the appliance's names
 	// into the app's path (Nextcloud's CalDAV and CardDAV discovery).
 	Redirects []docker.PathRedirect
@@ -1082,13 +1082,30 @@ func (m Manifest) validatePublish() error {
 // ServedByPath reports a package served under the appliance's names.
 func (m Manifest) ServedByPath() bool { return m.Serve == ServePath }
 
-// PublicRefusal is the sentence refusing a public name for an app that
-// declares never_publish, or "" when the manifest allows publishing.
+// PublicRefusal is the sentence refusing a public name or path for an app
+// whose public form is never (ADR-061: publish never, which allowwider
+// false implies), or "" when the manifest allows publishing.
 func (m Manifest) PublicRefusal() string {
-	if !m.NeverPublish {
+	if m.PublishForm() != PublishNever {
 		return ""
 	}
-	return m.Title + " is never published: its status pages, badges and push URLs are open without Authentik, so it stays on your network."
+	return m.Title + " is never published: it stays on your network, so it gets no public name and no public path."
+}
+
+// PublicFormReason is a plain-language statement of why a host package
+// keeps a public name of its own, for plan refusals (ADR-061).
+func (m Manifest) PublicFormReason() string {
+	switch m.PublishReason {
+	case ReasonNoSubpath:
+		return "it cannot run under a path"
+	case ReasonOwnNameADR044:
+		return "it cannot run under a path (ADR-044)"
+	case ReasonSingleOrigin:
+		return "its sign-in works on one origin only (ADR-060)"
+	case ReasonOwnerChoice:
+		return "you chose to keep it on its own origin"
+	}
+	return "its package keeps it on a name of its own"
 }
 
 // AppPath is the package's path when served by path: Path, or

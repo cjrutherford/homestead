@@ -478,10 +478,11 @@ func planAppPublicFor(t *testing.T, srv *Server, app string, body map[string]any
 // after it moves to its path, and the panel says so instead of asking for
 // a name. A name with a path, or the dashboard's own public name, is
 // refused with the way to publish under the dashboard's name.
+// (Jellyfin stands in for a craft app here: the craft packages are publish: never since ADR-061.)
 func TestAppPublicPointsToTheMove(t *testing.T) {
 	srv, st, _, _ := appPublicRig(t)
-	installApp(t, st, "cadcraft", docker.Route{Host: "cadcraft.lan", Target: docker.Target{Host: "cadcraft", Port: 8080},
-		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal, CraftApp: "cadcraft"})
+	installApp(t, st, "jellyfin", docker.Route{Host: "jellyfin.lan", Target: docker.Target{Host: "jellyfin", Port: 8080},
+		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal, CraftApp: "jellyfin"})
 	installHostApp(t, st, "nextcloud", "nextcloud", 80)
 	set, _ := loadEdgeRoutes(st)
 	for i := range set.Routes {
@@ -492,12 +493,12 @@ func TestAppPublicPointsToTheMove(t *testing.T) {
 	if err := saveEdgeRoutes(st, set); err != nil {
 		t.Fatal(err)
 	}
-	rec := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/cadcraft/public", nil)
+	rec := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/jellyfin/public", nil)
 	var status appPublicStatus
 	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
 		t.Fatal(err)
 	}
-	if status.Available || !strings.Contains(status.Reason, "Move it to /apps/cadcraft/ first") || status.Proposed != "" {
+	if status.Available || !strings.Contains(status.Reason, "Move it to /apps/jellyfin/ first") || status.Proposed != "" {
 		t.Fatalf("status = %+v", status)
 	}
 	for _, c := range []struct {
@@ -506,7 +507,7 @@ func TestAppPublicPointsToTheMove(t *testing.T) {
 		code int
 		want string
 	}{
-		{"cadcraft", map[string]any{"enabled": true, "hostname": "homestead.example.com"}, http.StatusUnprocessableEntity, "Move it to /apps/cadcraft/ first"},
+		{"jellyfin", map[string]any{"enabled": true, "hostname": "homestead.example.com"}, http.StatusUnprocessableEntity, "Move it to /apps/jellyfin/ first"},
 		{"nextcloud", map[string]any{"enabled": true, "hostname": "homestead.example.com/apps/nextcloud"}, http.StatusBadRequest,
 			"is not a public name: a public name is a host name only"},
 		{"nextcloud", map[string]any{"enabled": true, "hostname": "homestead.example.com/apps/nextcloud"}, http.StatusBadRequest,

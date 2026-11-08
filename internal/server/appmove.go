@@ -15,6 +15,7 @@ import (
 	"homestead/internal/cert"
 	"homestead/internal/docker"
 	"homestead/internal/operation"
+	"homestead/internal/router"
 	"homestead/internal/secret"
 	"homestead/internal/store"
 )
@@ -57,6 +58,11 @@ type appMoveStatus struct {
 	From string   `json:"from,omitempty"`
 	Path string   `json:"path,omitempty"`
 	To   []string `json:"to"`
+	// PublicFrom and PublicTo are set when the app is published at a name
+	// of its own: the move takes that name away and publishes the path
+	// under the dashboard's public name (ADR-061).
+	PublicFrom string `json:"public_from,omitempty"`
+	PublicTo   string `json:"public_to,omitempty"`
 }
 
 type appMovePlan struct {
@@ -76,9 +82,19 @@ type appMovePlan struct {
 	SignInDigest string `json:"sign_in_digest,omitempty"`
 	// Links are other setup that follows the app's address: the craft
 	// files link when Nextcloud moves.
-	Links    []string `json:"links"`
-	Warnings []string `json:"warnings"`
-	Digest   string   `json:"digest"`
+	Links []string `json:"links"`
+	// PublicFrom is the app's own public address when it is published at
+	// a name of its own; the move takes it off the tunnel (ADR-061).
+	// PublicTo is where the app answers publicly afterwards, under the
+	// dashboard's public name; no DNS record is created for it. Removes
+	// lists everything that goes away with the old name, and Stops the
+	// URLs that stop working with no redirect.
+	PublicFrom string   `json:"public_from,omitempty"`
+	PublicTo   string   `json:"public_to,omitempty"`
+	Removes    []string `json:"removes"`
+	Stops      []string `json:"stops"`
+	Warnings   []string `json:"warnings"`
+	Digest     string   `json:"digest"`
 
 	manifest catalog.Manifest
 	names    []string
@@ -86,6 +102,10 @@ type appMovePlan struct {
 	seeds    []catalog.MoveSeed
 	// publish keeps the moved path published on the dashboard's tunnel.
 	publish bool
+	// publicHost and tunnelID name the public name the move removes and
+	// the tunnel it was on; empty when the app has no public name of its
+	// own.
+	publicHost, tunnelID string
 	// filesFrom and filesTo are the craft files link's old and new base
 	// URLs; empty unless the link moves with Nextcloud.
 	filesFrom, filesTo string
@@ -103,7 +123,8 @@ func (p appMovePlan) digest() string {
 		Seeds   []catalog.MoveSeed
 		Publish bool
 		Files   [2]string
-	}{p.names, p.env, p.seeds, p.publish, [2]string{p.filesFrom, p.filesTo}})
+		Public  [2]string
+	}{p.names, p.env, p.seeds, p.publish, [2]string{p.filesFrom, p.filesTo}, [2]string{p.publicHost, p.tunnelID}})
 	h.Write(hidden)
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -135,6 +156,12 @@ type moveFacts struct {
 	names    []string
 	signIn   bool
 	reason   string
+	// publicHost is the public name of its own the app holds, and server
+	// the dashboard's public name it moves to (ADR-061); tunnelID is the
+	// tunnel they are on.
+	publicHost string
+	server     docker.Hostname
+	tunnelID   string
 }
 
 func (m *appMove) facts(name string) (moveFacts, error) {
@@ -147,8 +174,12 @@ func (m *appMove) facts(name string) (moveFacts, error) {
 		return moveFacts{}, errUnknownApp
 	}
 	f := moveFacts{manifest: manifest}
-	if !manifest.ServedByPath() {
-		f.reason = fmt.Sprintf("%s keeps a name of its own.", manifest.Title)
+	switch {
+	case !manifest.ServedByPath() && manifest.PublishForm() == catalog.PublishNever:
+		f.reason = manifest.PublicRefusal()
+		return f, nil
+	case manifest.PublishForm() == catalog.PublishHost || !manifest.ServedByPath():
+		f.reason = fmt.Sprintf("%s keeps a name of its own: %s.", manifest.Title, manifest.PublicFormReason())
 		return f, nil
 	}
 	installed, err := catalog.Installed(m.st, manifest.Name, stackDirFor(manifest.Name))
@@ -179,11 +210,33 @@ func (m *appMove) facts(name string) (moveFacts, error) {
 	}
 	f.names = applianceNames(m.st)
 	if len(f.route.Tunnel) > 0 {
-		f.reason = fmt.Sprintf("%s has a public name. Take its public name off first, then move it.", manifest.Title)
-		if manifest.Name == authentikPackage {
+		switch {
+		case manifest.Name == authentikPackage:
 			f.reason = "Authentik has a public name on the tunnel. Tear down the tunnel, move Authentik, then set the tunnel up again."
+		case manifest.PublishForm() == catalog.PublishNever:
+			f.reason = manifest.PublicRefusal() + " Take its public name off first, then move it."
+		case len(f.route.Tunnel) > 1:
+			f.reason = fmt.Sprintf("%s has several public names. Take all but one off first, then move it.", manifest.Title)
+		default:
+			// ADR-061: the move publishes the path on the dashboard's
+			// public name and removes the app's own name, in one change.
+			f.server = docker.PublicServerName(set.Routes)
+			var err error
+			if f.tunnelID, _, err = router.RecordedTunnel(m.st); err != nil {
+				return f, err
+			}
+			switch {
+			case f.server == "":
+				f.reason = fmt.Sprintf("%s has a public name, and the dashboard has none to move it to. Publish the dashboard on the Tunnel page first.", manifest.Title)
+			case f.tunnelID == "":
+				f.reason = "No tunnel is recorded, so the public name cannot be moved. Set one up, or adopt yours, on the Tunnel page."
+			default:
+				f.publicHost = string(f.route.Tunnel[0])
+			}
 		}
-		return f, nil
+		if f.reason != "" {
+			return f, nil
+		}
 	}
 	if _, ok, err := (appsso.Records{DB: m.st.DB()}).Get(manifest.Name); err != nil {
 		return f, err
@@ -191,6 +244,15 @@ func (m *appMove) facts(name string) (moveFacts, error) {
 		f.signIn = ok
 	}
 	return f, nil
+}
+
+// publicFromTo are the app's public address before and after the move, or
+// empty when it has no public name of its own.
+func (f moveFacts) publicFromTo() (string, string) {
+	if f.publicHost == "" {
+		return "", ""
+	}
+	return "https://" + f.publicHost + "/", docker.PathURL(f.server, f.manifest.AppPath())
 }
 
 func (f moveFacts) toURLs() []string {
@@ -211,6 +273,7 @@ func (m *appMove) status(w http.ResponseWriter, r *http.Request) {
 	if f.manifest.ServedByPath() {
 		out.Path = f.manifest.AppPath()
 	}
+	out.PublicFrom, out.PublicTo = f.publicFromTo()
 	if f.route.Host != "" && !f.route.IsPath() {
 		out.From = "https://" + string(f.route.Host) + "/"
 		out.To = f.toURLs()
@@ -232,7 +295,16 @@ func (m *appMove) buildPlan(name string) (appMovePlan, error) {
 		App: mf.Name, Route: string(f.route.Host), From: "https://" + string(f.route.Host) + "/",
 		Path: mf.AppPath(), To: f.toURLs(), StripPrefix: mf.StripPrefix,
 		Redirects: []string{}, AppSettings: []string{}, SignIn: []string{}, Links: []string{}, Warnings: []string{},
-		manifest: mf, names: f.names,
+		Removes: []string{}, Stops: []string{}, manifest: mf, names: f.names,
+	}
+	plan.PublicFrom, plan.PublicTo = f.publicFromTo()
+	if f.publicHost != "" {
+		if err := m.planPublicRemoval(f, &plan); err != nil {
+			return appMovePlan{}, err
+		}
+	}
+	if w := cookiePathWarning(mf); w != "" {
+		plan.Warnings = append(plan.Warnings, w)
 	}
 	for _, rd := range mf.Redirects {
 		plan.Redirects = append(plan.Redirects, fmt.Sprintf("%s -> %s", rd.From, rd.To))
@@ -342,14 +414,24 @@ func (m *appMove) apply(w http.ResponseWriter, r *http.Request) {
 	if plan.SignInDigest != "" {
 		def.Steps = append(def.Steps, m.signInStep(plan, operatorActor(r)))
 	}
+	detail := fmt.Sprintf("%s: %s -> %s", plan.App, plan.From, strings.Join(plan.To, ", "))
+	if plan.publicHost != "" {
+		// The old public name goes last, once the path answers (ADR-061).
+		token, err := tunnelToken(m.secrets)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		def.Steps = append(def.Steps, movePublicRemoveSteps(m.st, token, plan)...)
+		detail += fmt.Sprintf("; public %s -> %s; %s removed from tunnel %s, no redirect", plan.PublicFrom, plan.PublicTo, plan.publicHost, plan.tunnelID)
+	}
 	runner := operation.NewRunner(m.st)
 	op, err := runner.Start(r.Context(), def, "")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	m.s.auditOperation(m.st, runner, op.ID, operatorActor(r), "app.move",
-		fmt.Sprintf("operation %d: %s: %s -> %s", op.ID, plan.App, plan.From, strings.Join(plan.To, ", ")))
+	m.s.auditOperation(m.st, runner, op.ID, operatorActor(r), "app.move", fmt.Sprintf("operation %d: %s", op.ID, detail))
 	writeJSON(w, map[string]any{"id": op.ID})
 }
 
@@ -397,8 +479,14 @@ func appMoveDefinition(st *store.Store, secrets *secret.Store, plan appMovePlan)
 	}
 	names, publish := plan.names, plan.publish
 	address := strings.TrimSuffix(docker.PathURL(docker.Hostname(names[0]), plan.Path), "/")
+	trustAdd, trustRemove := append([]string(nil), names...), []string(nil)
+	if plan.publicHost != "" {
+		// The app's host allow-list follows the public name (ADR-061).
+		trustAdd = append(trustAdd, strings.TrimSuffix(strings.TrimPrefix(plan.PublicTo, "https://"), plan.Path))
+		trustRemove = []string{plan.publicHost}
+	}
 	def.Steps = append(def.Steps, operation.StepDef{Name: "app-hosts", Run: func(ctx context.Context) error {
-		return trustAppHosts(ctx, mf, address, names, nil)
+		return trustAppHosts(ctx, mf, address, trustAdd, trustRemove)
 	}})
 	def.Steps = append(def.Steps, operation.StepDef{Name: "edge", Run: func(ctx context.Context) error {
 		set, err := loadEdgeRoutes(st)
@@ -427,6 +515,101 @@ func appMoveDefinition(st *store.Store, secrets *secret.Store, plan appMovePlan)
 		return reconcileEdgeSet(ctx, st, set)
 	}})
 	return def, nil
+}
+
+// cookiePathWarning warns for an app known to set cookies with Path=/ (the
+// manifest's cookie_path_root, ADR-061 section 4): on the shared origin the
+// cookie reaches the dashboard and every other app. Empty otherwise.
+func cookiePathWarning(m catalog.Manifest) string {
+	if !m.CookiePathRoot || !m.ServedByPath() {
+		return ""
+	}
+	return fmt.Sprintf("%s is known to set cookies with Path=/, so under %s they are sent to the dashboard and every other app on this origin, and a script in another app could read the ones script can read. The edge removes only Homestead's and Authentik's own cookies from requests, so these stay exposed.",
+		m.Title, m.AppPath())
+}
+
+// moveOldNameStops is the plain statement every public-name move preview
+// carries (ADR-061 section 5): no redirect is left behind.
+func moveOldNameStops(title, from, to string) string {
+	return fmt.Sprintf("Old bookmarks and links on %s stop working. The name is removed and nothing redirects from it to %s. Phone and desktop clients with %s saved as the server address must be changed by hand to %s.",
+		from, to, title, to)
+}
+
+// planPublicRemoval puts the removal of the app's own public name in the
+// plan (ADR-061): the new public address needs no DNS record because it is
+// under the dashboard's public name, and the old name's DNS record, tunnel
+// entry and edge route go away last.
+func (m *appMove) planPublicRemoval(f moveFacts, plan *appMovePlan) error {
+	host := f.publicHost
+	if _, err := tunnelToken(m.secrets); err != nil {
+		return refusePlan(http.StatusUnprocessableEntity, "%v", err)
+	}
+	plan.publish = true
+	plan.publicHost, plan.tunnelID = host, f.tunnelID
+	oldURL := "https://" + host + "/"
+	plan.Stops = append(plan.Stops, oldURL)
+	owned, err := router.OwnedRecords(m.st, f.tunnelID)
+	if err != nil {
+		return err
+	}
+	ours := false
+	for _, record := range owned {
+		if record.Hostname == host {
+			ours = true
+		}
+	}
+	if ours {
+		plan.Removes = append(plan.Removes, fmt.Sprintf("DNS: the proxied CNAME %s to the tunnel is deleted (only while it still points at the tunnel)", host))
+	} else {
+		plan.Warnings = append(plan.Warnings, "Homestead did not create the DNS record for "+host+", so it is left in Cloudflare and answers 404 until you remove it there.")
+	}
+	plan.Removes = append(plan.Removes,
+		fmt.Sprintf("Tunnel: the ingress entry for %s is removed from the connector", host),
+		fmt.Sprintf("Edge: %s stops answering through the tunnel and %s answers at %s", host, f.manifest.Title, plan.PublicTo))
+	plan.Warnings = append(plan.Warnings,
+		moveOldNameStops(f.manifest.Title, oldURL, plan.PublicTo),
+		"No DNS record changes are needed for "+plan.PublicTo+": it is under the dashboard's public name the tunnel already carries.",
+		openToInternetWarning(f.manifest, f.signIn, plan.PublicTo),
+		"It shares one web origin with the dashboard and the other published apps (ADR-044): a flaw in one of them can reach the others in the same browser.",
+		"Order: the path is published and the app's settings and sign-in follow it first; the old name's connector entry and DNS record are removed last. If a step fails the run stops and says so, and the old name is not removed.")
+	return nil
+}
+
+// movePublicRemoveSteps remove the old public name after everything else
+// in the move succeeded (ADR-061): a check that the path is published and
+// the name is off the edge route, then the connector entry, the CNAME (only
+// while it still points at the tunnel) and any record it replaced. The edge
+// step of the move already stopped routing the name.
+func movePublicRemoveSteps(st *store.Store, apiToken string, plan appMovePlan) []operation.StepDef {
+	return []operation.StepDef{
+		{Name: "verify-path", Run: func(context.Context) error {
+			set, err := loadEdgeRoutes(st)
+			if err != nil {
+				return err
+			}
+			for _, r := range set.Routes {
+				if strings.EqualFold(string(r.Host), plan.Route) {
+					if r.Path == plan.Path && r.Published && len(r.Tunnel) == 0 {
+						return nil
+					}
+					return fmt.Errorf("%s is not published at %s, so %s was not removed", plan.App, plan.PublicTo, plan.publicHost)
+				}
+			}
+			return fmt.Errorf("%s's route %s is gone from the edge, so %s was not removed", plan.App, plan.Route, plan.publicHost)
+		}},
+		{Name: "connector", Run: func(context.Context) error {
+			if err := router.DeleteRoute(st, plan.publicHost); err != nil {
+				return err
+			}
+			return syncConnector(st, plan.tunnelID)
+		}},
+		{Name: "delete-dns", Run: func(ctx context.Context) error {
+			return deleteOwnedRecordsAt(ctx, st, apiToken, plan.tunnelID, plan.publicHost)
+		}},
+		{Name: "restore-dns", Run: func(ctx context.Context) error {
+			return restoreReplacedRecordsAt(ctx, st, apiToken, plan.tunnelID, plan.publicHost)
+		}},
+	}
 }
 
 // planSignIn projects the app's sign-in after the move and puts what

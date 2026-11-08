@@ -8,10 +8,11 @@ def read(path):
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_manifest_field_only_on_kuma():
-    flagged = [p.stem for p in sorted((ROOT / "catalog").glob("*.yaml"))
-               if "\nnever_publish: true" in "\n" + read(f"catalog/{p.name}")]
-    assert flagged == ["uptime-kuma"]
+def test_manifest_field_is_publish_never():
+    # S471 folded never_publish into publish: never (ADR-061).
+    assert not [p.stem for p in (ROOT / "catalog").glob("*.yaml")
+                if "\nnever_publish:" in "\n" + read(f"catalog/{p.name}")]
+    assert "\npublish: never" in "\n" + read("catalog/uptime-kuma.yaml")
 
 
 def test_prose_claims_have_the_field():
@@ -23,7 +24,7 @@ def test_prose_claims_have_the_field():
 
 def test_server_enforces_on_plan_and_install():
     ap = read("internal/server/apppublic.go")
-    assert "PublicRefusal()" in ap and "NeverPublish" in ap
+    assert "PublicRefusal()" in ap and "NeverPublish" in ap  # the status field
     assert "PublicRefusal()" in read("internal/server/catalog.go")
     assert "never-publish" in read("internal/server/doctorlive.go")
 

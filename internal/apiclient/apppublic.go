@@ -122,6 +122,10 @@ type AppMoveStatus struct {
 	From    string   `json:"from,omitempty"`
 	Path    string   `json:"path,omitempty"`
 	To      []string `json:"to"`
+	// PublicFrom and PublicTo are set when the app holds a public name of
+	// its own that the move replaces with a path (ADR-061).
+	PublicFrom string `json:"public_from,omitempty"`
+	PublicTo   string `json:"public_to,omitempty"`
 }
 
 // AppMovePlan is the reviewed move of an app to its path.
@@ -135,6 +139,10 @@ type AppMovePlan struct {
 	Redirects   []string `json:"redirects"`
 	AppSettings []string `json:"app_settings"`
 	SignIn      []string `json:"sign_in"`
+	PublicFrom  string   `json:"public_from,omitempty"`
+	PublicTo    string   `json:"public_to,omitempty"`
+	Removes     []string `json:"removes"`
+	Stops       []string `json:"stops"`
 	Warnings    []string `json:"warnings"`
 	Digest      string   `json:"digest"`
 }

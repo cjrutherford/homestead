@@ -50,6 +50,24 @@ describe('AppMove (S315)', () => {
     fixture.detectChanges();
   }
 
+  it('previews the removal of the old public name with no redirect (S471, ADR-061)', () => {
+    load({ ...OFFERED, public_from: 'https://nextcloud.example.com/', public_to: 'https://homestead.example.com/apps/nextcloud/' });
+    expect(text()).toContain('Old bookmarks and links to it stop working; nothing redirects.');
+    button('Review the move')!.click();
+    http.expectOne('/api/v1/catalog/nextcloud/move/plan').flush({
+      ...PLAN,
+      public_from: 'https://nextcloud.example.com/', public_to: 'https://homestead.example.com/apps/nextcloud/',
+      removes: ['DNS: the proxied CNAME nextcloud.example.com to the tunnel is deleted'], stops: ['https://nextcloud.example.com/'],
+      warnings: ['Old bookmarks and links on https://nextcloud.example.com/ stop working.'],
+    });
+    fixture.detectChanges();
+    const preview = text();
+    expect(preview).toContain('https://nextcloud.example.com/ is removed');
+    expect(preview).toContain('the proxied CNAME nextcloud.example.com to the tunnel is deleted');
+    expect(preview).toContain('Stops working, with no redirect: https://nextcloud.example.com/');
+    expect(preview).toContain('Old bookmarks and links on https://nextcloud.example.com/ stop working.');
+  });
+
   it('shows nothing when the move is not offered', () => {
     load({ app: 'nextcloud', offered: false, reason: 'Nextcloud is already at /apps/nextcloud/.', to: [] });
     expect(el().querySelector('.app-move')).toBeNull();

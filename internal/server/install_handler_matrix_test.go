@@ -70,7 +70,7 @@ integrations:
 	if err := os.WriteFile(filepath.Join(cat, "immich.yaml"), []byte(manifest), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cat, "mealie.yaml"), []byte(selfManagedManifest+installRigMealieExtra), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(cat, "mealie.yaml"), []byte(mealieRigManifest()), 0644); err != nil {
 		t.Fatal(err)
 	}
 	provider, err := os.ReadFile(filepath.Join("..", "..", "catalog", "authentik.yaml"))
@@ -609,4 +609,14 @@ func TestManagedInstallHandlerChecksOriginalPublicApprovalBeforeOperation(t *tes
 type httpResponse struct {
 	code            int
 	body, errorCode string
+}
+
+// mealieRigManifest is the rig's Mealie manifest with installRigMealieExtra
+// appended; a publish: never extra also closes the endpoint (ADR-061).
+func mealieRigManifest() string {
+	body := selfManagedManifest
+	if strings.Contains(installRigMealieExtra, "publish: never") {
+		body = strings.ReplaceAll(body, "allowwider: true", "allowwider: false")
+	}
+	return body + installRigMealieExtra
 }

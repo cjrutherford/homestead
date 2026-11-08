@@ -73,6 +73,7 @@ func doctorLiveProbes(c DoctorLiveConfig) func() []doctor.Probe {
 			{Name: "tunnel-exists", Group: doctor.GroupTunnel, Timeout: 8 * time.Second, Run: func(ctx context.Context) []doctor.Check { return probeTunnelExists(ctx, c) }},
 			{Name: "tunnel-dns", Group: doctor.GroupTunnel, Timeout: 10 * time.Second, Run: func(ctx context.Context) []doctor.Check { return probeTunnelDNS(ctx, c) }},
 			{Name: "never-publish", Group: doctor.GroupTunnel, Run: func(ctx context.Context) []doctor.Check { return neverPublishChecks(c) }},
+			{Name: "subpath-publish", Group: doctor.GroupTunnel, Run: func(ctx context.Context) []doctor.Check { return subpathPublishChecks(c) }},
 			{Name: "edge-certificate", Group: doctor.GroupCertificates, Timeout: 10 * time.Second, Run: func(ctx context.Context) []doctor.Check { return probeEdgeCertificates(ctx, c) }},
 			{Name: "authentik", Group: doctor.GroupSignIn, Run: func(ctx context.Context) []doctor.Check { return probeAuthentik(ctx, c) }},
 			{Name: "authentik-outpost", Group: doctor.GroupSignIn, Timeout: 12 * time.Second, Run: func(ctx context.Context) []doctor.Check { return gatedAppChecks(ctx, c) }},
@@ -323,7 +324,7 @@ func firstCNAME(records []router.DNSRecord) *router.DNSRecord {
 	return nil
 }
 
-// neverPublishChecks warns when an app whose manifest says never_publish
+// neverPublishChecks warns when an app whose manifest says publish: never
 // holds a public name (S451): drift from the rule, with the removal as the
 // fix. Local state only.
 func neverPublishChecks(c DoctorLiveConfig) []doctor.Check {
@@ -339,10 +340,15 @@ func neverPublishChecks(c DoctorLiveConfig) []doctor.Check {
 	var out []doctor.Check
 	for _, n := range entries.Names() {
 		m, err := entries.Get(n)
-		if err != nil || !m.NeverPublish {
+		if err != nil || m.PublishForm() != catalog.PublishNever {
 			continue
 		}
 		for _, r := range appsso.AppRoutes(m, set.Routes) {
+			if r.IsPath() && r.Published {
+				out = append(out, doctor.Check{Name: name + ":" + string(r.Host), Status: doctor.StatusFail,
+					Detail: m.Title + " is published at " + r.Path + " on the dashboard's public name but its manifest says it is never published",
+					Fix:    liveFix("Take it off the public name on the app's page (Public address, Remove), or run the command.", "/admin/catalog", "homesteadctl apps public plan "+m.Name+" --off")})
+			}
 			for _, host := range r.Tunnel {
 				out = append(out, doctor.Check{Name: name + ":" + string(host), Status: doctor.StatusFail,
 					Detail: m.Title + " is published at " + string(host) + " but its manifest says it is never published",
@@ -352,6 +358,49 @@ func neverPublishChecks(c DoctorLiveConfig) []doctor.Check {
 	}
 	if len(out) == 0 {
 		return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "no never-publish app has a public name"}}
+	}
+	return out
+}
+
+// subpathPublishChecks reports ADR-061's public-form drift (S471): an
+// installed app whose package is served by path but still holds a public
+// name of its own ("move available", a warning with the move as the fix),
+// and an app published at its path on a dashboard that has no public name.
+// Local state only.
+func subpathPublishChecks(c DoctorLiveConfig) []doctor.Check {
+	const name = "subpath-publish"
+	entries, err := catalog.Load(c.CatalogDir)
+	if err != nil {
+		return []doctor.Check{unknownCheck(name, "the catalog could not be read")}
+	}
+	set, err := loadEdgeRoutes(c.Store)
+	if err != nil {
+		return []doctor.Check{unknownCheck(name, "the edge routes could not be read: "+err.Error())}
+	}
+	server := docker.PublicServerName(set.Routes)
+	var out []doctor.Check
+	for _, n := range entries.Names() {
+		m, err := entries.Get(n)
+		if err != nil || m.PublishForm() != catalog.PublishPath || m.Name == authentikPackage {
+			continue
+		}
+		for _, r := range appsso.AppRoutes(m, set.Routes) {
+			if !r.IsPath() {
+				for _, host := range r.Tunnel {
+					out = append(out, doctor.Check{Name: name + ":" + m.Name, Status: doctor.StatusWarn,
+						Detail: m.Title + " is published at its own name " + string(host) + ", but its package is served at " + m.AppPath() + " under the dashboard's public name: move available",
+						Fix: liveFix("Review the move on the app's page: it publishes the path and removes the old name, and old links to the old name stop working.", "/admin/catalog",
+							"homesteadctl apps move plan "+m.Name)})
+				}
+			} else if r.Published && server == "" {
+				out = append(out, doctor.Check{Name: name + ":" + m.Name, Status: doctor.StatusWarn,
+					Detail: m.Title + " is published at " + r.Path + " but the dashboard has no public name for it to answer on",
+					Fix:    liveFix("Publish the dashboard on the Tunnel page.", "/admin/tunnel", "homesteadctl tunnel status")})
+			}
+		}
+	}
+	if len(out) == 0 {
+		return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "no app is on a public name its package no longer uses"}}
 	}
 	return out
 }

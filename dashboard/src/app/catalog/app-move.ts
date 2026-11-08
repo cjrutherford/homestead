@@ -34,6 +34,13 @@ function moveError(failure: HttpErrorResponse): string {
             appliance's name, at <span class="mono">{{ s.path }}</span>. Moving is your choice; nothing changes until
             you approve the plan.
           </p>
+          @if (s.public_from; as publicFrom) {
+            <p data-move-public>
+              {{ title() }} is also public at <span class="mono">{{ publicFrom }}</span>. The move publishes it at
+              <span class="mono">{{ s.public_to }}</span> and removes that name. Old bookmarks and links to it stop
+              working; nothing redirects.
+            </p>
+          }
           @if (!plan() && !approved()) {
             <p>
               <button type="button" (click)="review()" [disabled]="busy()">Review the move</button>
@@ -61,6 +68,25 @@ function moveError(failure: HttpErrorResponse): string {
             <dd>{{ p.redirects.join('; ') }}</dd>
           }
         </dl>
+        @if (p.public_from) {
+          <dl data-move-public>
+            <dt>Public address</dt>
+            <dd>
+              <span class="mono">{{ p.public_from }}</span> is removed. {{ title() }} answers publicly at
+              <span class="mono">{{ p.public_to }}</span>.
+            </dd>
+          </dl>
+          @if (p.removes?.length) {
+            <ul aria-label="Removed with the old public name">
+              @for (removed of p.removes; track removed) {
+                <li>{{ removed }}</li>
+              }
+            </ul>
+          }
+          @if (p.stops?.length) {
+            <p class="hint" data-move-stops>Stops working, with no redirect: <span class="mono">{{ p.stops?.join(', ') }}</span></p>
+          }
+        }
         @if (p.app_settings.length) {
           <ul aria-label="App settings">
             @for (setting of p.app_settings; track setting) {

@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "2450440fafdd0ac2",
+ "hash": "a0c928f0b0a13447",
  "sections": [
   {
    "title": "Platform",
@@ -4244,6 +4244,13 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "action": "Pick five actions (grant, install plan, backup list, tunnel plan, updates list) and do each on both sides.",
        "expected": "Same result either way.",
        "fail": "docs/PARITY.md."
+      },
+      {
+       "id": "PLAT-TUNNEL-8",
+       "title": "Move an app from its own public name to its subpath (S471, ADR-061)",
+       "action": "For an installed app whose package is served by path and is still published at its own name (Doctor shows \"move available\"), open its page, Review the move (or `homesteadctl apps move plan \u003cpkg\u003e`). Read the preview, then approve it (`apps move apply \u003cpkg\u003e --digest D --follow`). A package that keeps its own name (Immich, Vaultwarden) and Uptime Kuma show no move.",
+       "expected": "The preview names the old public address, says old bookmarks and links on it stop working and that nothing redirects, lists the CNAME and tunnel entry that go away, and says no DNS record is needed for the new address under the dashboard's public name. After approval the app answers at `https://\u003cdashboard public name\u003e/apps/\u003capp\u003e/`, the old name no longer resolves or answers, its sign-in works at the new address, and Doctor's subpath-publish check is clean. An app known to set Path=/ cookies carries a warning.",
+       "fail": "Doctor Tunnel section (subpath-publish), the audit log (`app.move`), ADR-061."
       },
       {
        "id": "PLAT-TUNNEL-7",

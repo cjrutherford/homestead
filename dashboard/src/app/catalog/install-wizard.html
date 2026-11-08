@@ -401,8 +401,8 @@
 
             @if (endpoints().length > 0) {
               <h3>On the internet</h3>
-              @if (manifest()?.NeverPublish) {
-                <p data-never-publish>{{ m.Title }} is never published: its status pages and other open paths are not behind Authentik, so it stays on your network.</p>
+              @if (manifest()?.Publish === 'never') {
+                <p data-never-publish>{{ m.Title }} is never published: it stays on your network, so it gets no public name and no public path.</p>
               } @else if (publicStatus() === null) {
                 <p class="hint">Could not tell whether a tunnel is set up. You can publish {{ m.Title }} later under Manage.</p>
               } @else if (!tunnelReady()) {

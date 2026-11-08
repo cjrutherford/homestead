@@ -1095,7 +1095,7 @@ describe('InstallWizard', () => {
     });
 
     it('offers no publish toggle for a never-publish app even with a tunnel (S451)', () => {
-      start({ ...CRAFT, NeverPublish: true }, { publicStatus: TUNNEL });
+      start({ ...CRAFT, Publish: 'never' }, { publicStatus: TUNNEL });
       to('address');
       expect(el().querySelector('[data-never-publish]')?.textContent).toContain('never published');
       expect(el().querySelector('input[name="publish"]')).toBeNull();

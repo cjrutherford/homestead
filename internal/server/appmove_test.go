@@ -34,9 +34,15 @@ type appMoveView struct {
 // moveRig is appPublicRig with the move mounted and its stack seams
 // recorded: configuration changes, stops and seed writes.
 func moveRig(t *testing.T) (*Server, *store.Store, *[]string, *[][]string) {
+	srv, st, steps, trusted, _ := moveRigCF(t)
+	return srv, st, steps, trusted
+}
+
+// moveRigCF is moveRig with the fake Cloudflare the public rig runs.
+func moveRigCF(t *testing.T) (*Server, *store.Store, *[]string, *[][]string, *fakeCloudflare) {
 	t.Helper()
-	srv, st, _, _ := appPublicRig(t)
-	srv.MountAppMove(st, nil, filepath.Join("..", "..", "catalog"))
+	srv, st, cf, _ := appPublicRig(t)
+	srv.MountAppMove(st, srv.appPublic.secrets, filepath.Join("..", "..", "catalog"))
 	steps := &[]string{}
 	prevConf, prevStop, prevStart, prevSeeds, prevApply := moveConfigure, moveStop, moveStart, moveSeeds, moveApplySeed
 	moveConfigure = func(plan catalog.ConfigPlan, dir, project string, _ *store.Store, _ catalog.SecretStore) (operation.Definition, error) {
@@ -76,7 +82,7 @@ func moveRig(t *testing.T) (*Server, *store.Store, *[]string, *[][]string) {
 		return nil
 	}
 	t.Cleanup(func() { trustAppHosts = prevTrust })
-	return srv, st, steps, trusted
+	return srv, st, steps, trusted, cf
 }
 
 func moveStatus(t *testing.T, srv *Server, app string) appMoveView {
@@ -218,7 +224,7 @@ func TestAppMoveRefusals(t *testing.T) {
 	if err := saveEdgeRoutes(st, set); err != nil {
 		t.Fatal(err)
 	}
-	if s := moveStatus(t, srv, "jellyfin"); s.Offered || !strings.Contains(s.Reason, "public name off first") {
+	if s := moveStatus(t, srv, "jellyfin"); s.Offered || !strings.Contains(s.Reason, "the dashboard has none") {
 		t.Fatalf("jellyfin = %+v", s)
 	}
 	if rec := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/jellyfin/move/plan", nil); rec.Code != http.StatusUnprocessableEntity {
