@@ -16,6 +16,7 @@ func TestMoveEnvPerPackage(t *testing.T) {
 	for name, want := range map[string]string{
 		"nextcloud": "[{nextcloud map[NEXTCLOUD_TRUSTED_DOMAINS:homestead.lan homestead.local OVERWRITECLIURL:https://homestead.lan/apps/nextcloud OVERWRITEWEBROOT:/apps/nextcloud] []}]",
 		"authentik": "[{server map[AUTHENTIK_WEB__PATH:/apps/auth/] []} {worker map[AUTHENTIK_WEB__PATH:/apps/auth/] []}]",
+		"linkding":  "[{linkding map[LD_CONTEXT_PATH:apps/linkding/ LD_CSRF_TRUSTED_ORIGINS:https://homestead.lan/apps/linkding,https://homestead.lan/apps/linkding] []}]",
 		"jellyfin":  "[]",
 		"immich":    "[]",
 	} {

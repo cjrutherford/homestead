@@ -42,7 +42,9 @@ func MoveEnv(m Manifest, names []string) []ConfigChange {
 				value = strings.ReplaceAll(value, RouteHostToken, names[0])
 				value = strings.ReplaceAll(value, RouteNamesToken, strings.Join(names, " "))
 				set[key] = value
-			case value == path || value == bare:
+			// The path itself: with or without its leading slash (Linkding's
+			// LD_CONTEXT_PATH wants "apps/linkding/", S476).
+			case value == path || value == bare || value == strings.TrimPrefix(path, "/"):
 				set[key] = value
 			}
 		}

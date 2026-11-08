@@ -882,7 +882,7 @@ _First install on this appliance (S409/S410 unit and contract tests only). No gr
   - Result: ____  Notes: ____
 
 - [ ] **SRV-LINKDING-2 — Opens at the right path or name**
-  - Action: Open https://linkding.<lan-suffix>/ (own name).
+  - Action: Open https://<server>/apps/linkding/ (S476: served under the path by LD_CONTEXT_PATH; the UI, its assets and the sign-in redirect follow it). An install made before S476 moves with `homesteadctl apps move plan linkding` then `apply`; moves only go forward.
   - Expected: The app's own page loads (no 404, no certificate surprise beyond the documented one).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -930,7 +930,7 @@ _First install on this appliance (S409/S410 unit and contract tests only). No gr
   - Result: ____  Notes: ____
 
 - [ ] **SRV-LINKDING-9 — Uninstall leaves no orphan route (END pass)**
-  - Action: Done in END-UNINSTALL-*: uninstall Linkding, then open https://linkding.<lan-suffix>/ (own name) and check the Caddy/route list.
+  - Action: Done in END-UNINSTALL-*: uninstall Linkding, then open https://<server>/apps/linkding/ and check the Caddy/route list.
   - Expected: The URL no longer answers; app disappears from the apps page and Doctor; no leftover route or container.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____

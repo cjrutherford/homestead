@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "138b3693e91f4371",
+ "hash": "5429b9fec99ee2c5",
  "sections": [
   {
    "title": "Platform",
@@ -1129,7 +1129,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-LINKDING-2",
        "title": "Opens at the right path or name",
-       "action": "Open https://linkding.\u003clan-suffix\u003e/ (own name).",
+       "action": "Open https://\u003cserver\u003e/apps/linkding/ (S476: served under the path by LD_CONTEXT_PATH; the UI, its assets and the sign-in redirect follow it). An install made before S476 moves with `homesteadctl apps move plan linkding` then `apply`; moves only go forward.",
        "expected": "The app's own page loads (no 404, no certificate surprise beyond the documented one).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1185,7 +1185,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-LINKDING-9",
        "title": "Uninstall leaves no orphan route (END pass)",
-       "action": "Done in END-UNINSTALL-*: uninstall Linkding, then open https://linkding.\u003clan-suffix\u003e/ (own name) and check the Caddy/route list.",
+       "action": "Done in END-UNINSTALL-*: uninstall Linkding, then open https://\u003cserver\u003e/apps/linkding/ and check the Caddy/route list.",
        "expected": "The URL no longer answers; app disappears from the apps page and Doctor; no leftover route or container.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       }

@@ -332,3 +332,21 @@ func TestEnvOIDCTrustBundleValidation(t *testing.T) {
 		t.Fatal("trustbundle without a trust variable validated")
 	}
 }
+
+// TestLinkdingPlanAtSubpath checks the redirect URI and sign-in URL carry
+// the path (S476).
+func TestLinkdingPlanAtSubpath(t *testing.T) {
+	m := realLinkding(t)
+	r := route("homestead.lan", "linkding")
+	r.Path = "/apps/linkding/"
+	in := Inputs{Manifest: m, Installed: true, AuthentikInstalled: true, Dashboard: dashboard, DashboardOK: true,
+		Routes: []docker.Route{r}}
+	plan, err := BuildPlan(in, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RedirectURIs[0] != "https://homestead.lan/apps/linkding/oidc/callback/" ||
+		plan.SignInURL != "https://homestead.lan/apps/linkding/oidc/authenticate/" {
+		t.Fatalf("redirects %v sign in %s", plan.RedirectURIs, plan.SignInURL)
+	}
+}

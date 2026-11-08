@@ -9,8 +9,7 @@
 # reads OIDC_RP_CLIENT_SECRET only as plaintext, so the supervisor exports
 # it from a 0600 file and it never reaches Compose, argv, or logs.
 name: linkding
-publish: host  # ADR-061
-publish_reason: no_subpath
+publish: path  # ADR-061
 version: 1.47.0
 title: Linkding
 blurb: Your bookmarks, searchable and yours.
@@ -41,6 +40,8 @@ services:
     # Creates the first superuser once. The password comes from the
     # secret store through the supervisor, never from this block.
     LD_SUPERUSER_NAME: admin
+    # Subpath (S476): LD_CONTEXT_PATH takes a trailing slash and no leading one.
+    LD_CONTEXT_PATH: apps/linkding/
   # No image VOLUME. The data directory holds the SQLite database, the
   # generated secret key, favicons, previews, and page archives; the
   # image's bootstrap script hands it to www-data (uid/gid 33).
@@ -59,6 +60,8 @@ requirements:
     minbytes: 1073741824
   # Linkding listens on 9090; routes proxy to it and no host port is
   # published by default.
+serve: path
+path: /apps/linkding/
 exposure:
   package: linkding
   endpoints:

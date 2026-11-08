@@ -649,6 +649,11 @@ func TestCuratedLinkding(t *testing.T) {
 	if origins := service.Environment["LD_CSRF_TRUSTED_ORIGINS"]; origins != RouteURLToken+","+AppURLToken {
 		t.Fatalf("LD_CSRF_TRUSTED_ORIGINS = %q, want the local and published origins", origins)
 	}
+	// S476: served under /apps/linkding/ (trailing slash, no leading one).
+	if manifest.Serve != "path" || manifest.Path != "/apps/linkding/" ||
+		service.Environment["LD_CONTEXT_PATH"] != "apps/linkding/" {
+		t.Fatalf("subpath settings: serve=%q path=%q context=%q", manifest.Serve, manifest.Path, service.Environment["LD_CONTEXT_PATH"])
+	}
 	if service.Environment["LD_SUPERUSER_NAME"] != "admin" {
 		t.Fatalf("superuser name = %q", service.Environment["LD_SUPERUSER_NAME"])
 	}
