@@ -3492,6 +3492,54 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: 
   - Result: ____  Notes: ____
 
+- [ ] **END-SUBPATH-1 — Subpath apps load and sign in**
+  - Action: Open `https://homestead.<domain>/apps/<app>/` for Navidrome and the 13 craft apps (and, if published, Komga, Paperless-ngx, Linkding) signed out, then as a person with the app and as the owner.
+  - Expected: Signed out you are sent to Authentik; a person with the app (and the owner) opens it with single sign-on.
+  - If it fails: `docs/slices/S482-subpath-live-acceptance.md`; edge route file `/opt/homestead/stacks/caddy/routes/homestead.lan.caddy`.
+  - Result: ____  Notes: ____
+
+- [ ] **END-SUBPATH-2 — Person without the app is refused**
+  - Action: Open the same paths as Casey (no apps) and as Alex for an app Alex was not granted.
+  - Expected: 403 \"You do not have access to this app.\" or Authentik \"Permission denied\".
+  - If it fails: Sign-in page of the app; `homesteadctl people apps <person>`.
+  - Result: ____  Notes: ____
+
+- [ ] **END-SUBPATH-3 — Old subdomains are gone**
+  - Action: Read the Cloudflare DNS records and the tunnel ingress (read only) and resolve `navidrome.<domain>`, `komga.<domain>`, `<craft>.<domain>`, `auth.<domain>`.
+  - Expected: No CNAME, no ingress and no DNS answer for a name that moved to a path.
+  - If it fails: S471 move steps; `homesteadctl apps move status <pkg>`.
+  - Result: ____  Notes: ____
+
+- [ ] **END-SUBPATH-4 — Apps with their own name still work**
+  - Action: Open Immich, Gitea, Actual, Mealie, Calibre-Web-Automated, Audiobookshelf, FreshRSS, Vaultwarden, Memos, BookStack and Vikunja on their own names and sign in with Authentik.
+  - Expected: Each loads and signs in, public where it is published and on its `.lan` name otherwise.
+  - If it fails: Doctor app reach rows; ADR-061 `no_subpath`.
+  - Result: ____  Notes: ____
+
+- [ ] **END-SUBPATH-5 — Cookie isolation**
+  - Action: In the browser's storage view, check the dashboard cookies; open the dashboard response headers; read the edge route file.
+  - Expected: The dashboard cookies are `__Host-homestead_session` and `__Host-homestead_csrf` (Secure, HttpOnly, Strict); every app path strips the reserved cookies from the request and from `Set-Cookie`; the dashboard sends `frame-ancestors 'none'`.
+  - If it fails: S470, ADR-061 section 4.
+  - Result: ____  Notes: ____
+
+- [ ] **END-SUBPATH-6 — No pending moves**
+  - Action: `homesteadctl apps move status <pkg>` for each app.
+  - Expected: Every path app says it is already at its path; none offers a finish.
+  - If it fails: S479 `app_move_pending`.
+  - Result: ____  Notes: ____
+
+- [ ] **END-SUBPATH-7 — Doctor live is clean**
+  - Action: `homesteadctl doctor --live`.
+  - Expected: 0 fails; `public-name-plan` is ok.
+  - If it fails: Doctor page; S479.
+  - Result: ____  Notes: ____
+
+- [ ] **END-SUBPATH-8 — Apps page links**
+  - Action: Sign in as the owner and as Alex at `https://homestead.<domain>/` and read the link targets.
+  - Expected: Each published path app links to `https://homestead.<domain>/apps/<app>/`; own-name apps keep their own link.
+  - If it fails: Apps page; ADR-050.
+  - Result: ____  Notes: ____
+
 - [ ] **END-AUDIT-1 — Audit entries**
   - Action: Audit page / `homesteadctl audit list`.
   - Expected: Entries exist for installs, grants, tunnel, readlinks, people.purge, backups; no secrets or tokens in any entry.
@@ -3628,7 +3676,8 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | END-PURGE | END-PURGE-1 to END-PURGE-1 (1) |  |  |  |  |
 | END-BACKUP | END-BACKUP-1 to END-BACKUP-1 (1) |  |  |  |  |
 | END-DOCTOR | END-DOCTOR-1 to END-DOCTOR-1 (1) |  |  |  |  |
+| END-SUBPATH | END-SUBPATH-1 to END-SUBPATH-8 (8) |  |  |  |  |
 | END-AUDIT | END-AUDIT-1 to END-AUDIT-1 (1) |  |  |  |  |
 | END-PARITY | END-PARITY-1 to END-PARITY-1 (1) |  |  |  |  |
 | END-UNINSTALL | END-UNINSTALL-1 to END-UNINSTALL-6 (6) |  |  |  |  |
-| **Total** | 548 steps |  |  |  |  |
+| **Total** | 556 steps |  |  |  |  |

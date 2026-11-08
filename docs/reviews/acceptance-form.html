@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "6574d842b13b8b2b",
+ "hash": "a1b1314acb1f824b",
  "sections": [
   {
    "title": "Platform",
@@ -4237,6 +4237,62 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "action": "Doctor page and `homesteadctl doctor --live` with everything installed.",
        "expected": "No red items; amber items have guidance. Record each.",
        "fail": ""
+      },
+      {
+       "id": "END-SUBPATH-1",
+       "title": "Subpath apps load and sign in",
+       "action": "Open `https://homestead.\u003cdomain\u003e/apps/\u003capp\u003e/` for Navidrome and the 13 craft apps (and, if published, Komga, Paperless-ngx, Linkding) signed out, then as a person with the app and as the owner.",
+       "expected": "Signed out you are sent to Authentik; a person with the app (and the owner) opens it with single sign-on.",
+       "fail": "`docs/slices/S482-subpath-live-acceptance.md`; edge route file `/opt/homestead/stacks/caddy/routes/homestead.lan.caddy`."
+      },
+      {
+       "id": "END-SUBPATH-2",
+       "title": "Person without the app is refused",
+       "action": "Open the same paths as Casey (no apps) and as Alex for an app Alex was not granted.",
+       "expected": "403 \\\"You do not have access to this app.\\\" or Authentik \\\"Permission denied\\\".",
+       "fail": "Sign-in page of the app; `homesteadctl people apps \u003cperson\u003e`."
+      },
+      {
+       "id": "END-SUBPATH-3",
+       "title": "Old subdomains are gone",
+       "action": "Read the Cloudflare DNS records and the tunnel ingress (read only) and resolve `navidrome.\u003cdomain\u003e`, `komga.\u003cdomain\u003e`, `\u003ccraft\u003e.\u003cdomain\u003e`, `auth.\u003cdomain\u003e`.",
+       "expected": "No CNAME, no ingress and no DNS answer for a name that moved to a path.",
+       "fail": "S471 move steps; `homesteadctl apps move status \u003cpkg\u003e`."
+      },
+      {
+       "id": "END-SUBPATH-4",
+       "title": "Apps with their own name still work",
+       "action": "Open Immich, Gitea, Actual, Mealie, Calibre-Web-Automated, Audiobookshelf, FreshRSS, Vaultwarden, Memos, BookStack and Vikunja on their own names and sign in with Authentik.",
+       "expected": "Each loads and signs in, public where it is published and on its `.lan` name otherwise.",
+       "fail": "Doctor app reach rows; ADR-061 `no_subpath`."
+      },
+      {
+       "id": "END-SUBPATH-5",
+       "title": "Cookie isolation",
+       "action": "In the browser's storage view, check the dashboard cookies; open the dashboard response headers; read the edge route file.",
+       "expected": "The dashboard cookies are `__Host-homestead_session` and `__Host-homestead_csrf` (Secure, HttpOnly, Strict); every app path strips the reserved cookies from the request and from `Set-Cookie`; the dashboard sends `frame-ancestors 'none'`.",
+       "fail": "S470, ADR-061 section 4."
+      },
+      {
+       "id": "END-SUBPATH-6",
+       "title": "No pending moves",
+       "action": "`homesteadctl apps move status \u003cpkg\u003e` for each app.",
+       "expected": "Every path app says it is already at its path; none offers a finish.",
+       "fail": "S479 `app_move_pending`."
+      },
+      {
+       "id": "END-SUBPATH-7",
+       "title": "Doctor live is clean",
+       "action": "`homesteadctl doctor --live`.",
+       "expected": "0 fails; `public-name-plan` is ok.",
+       "fail": "Doctor page; S479."
+      },
+      {
+       "id": "END-SUBPATH-8",
+       "title": "Apps page links",
+       "action": "Sign in as the owner and as Alex at `https://homestead.\u003cdomain\u003e/` and read the link targets.",
+       "expected": "Each published path app links to `https://homestead.\u003cdomain\u003e/apps/\u003capp\u003e/`; own-name apps keep their own link.",
+       "fail": "Apps page; ADR-050."
       },
       {
        "id": "END-AUDIT-1",
