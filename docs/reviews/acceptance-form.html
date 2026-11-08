@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "30616e4e60966dc4",
+ "hash": "1395eeb5b5bdd7c1",
  "sections": [
   {
    "title": "Platform",
@@ -1262,7 +1262,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
     },
     {
      "title": "SRV-MEMOS: Memos",
-     "note": "Browser sign-in has not been recorded yet.",
+     "note": "Verified live on VM 2 (S455): sign-in by Authentik for the owner and person A, person C refused, local registration closed.",
      "steps": [
       {
        "id": "SRV-MEMOS-1",
@@ -1746,13 +1746,20 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
     },
     {
      "title": "SRV-VIKUNJA: Vikunja",
-     "note": "Browser sign-in has not been recorded yet.",
+     "note": "Verified live on VM 2 (S455): sign-in by Authentik for the owner and person A, person C refused, local registration closed.",
      "steps": [
       {
        "id": "SRV-VIKUNJA-1",
        "title": "Install: plan preview, then approve",
        "action": "Catalog \u003e Vikunja \u003e Install. Read the plan, then approve (or `homesteadctl apps plan vikunja -f FILE`, then `homesteadctl apps install vikunja -f FILE`).",
        "expected": "Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.",
+       "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
+      },
+      {
+       "id": "SRV-VIKUNJA-1a",
+       "title": "Registration is closed",
+       "action": "Open the sign-in page and look for Register; POST /api/v1/register.",
+       "expected": "No registration route (404); accounts exist only for people signing in through Authentik. Nothing to set up by hand.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {

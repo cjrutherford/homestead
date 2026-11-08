@@ -194,3 +194,13 @@ func TestVikunjaApplyMountsConfigWithoutLeakingSecret(t *testing.T) {
 		t.Fatalf("off keeps wiring:\n%s", override)
 	}
 }
+
+// TestVikunjaRegistrationClosed (S455): local registration is closed in the
+// package; the owner and granted people are created by Authentik sign-in,
+// which Vikunja does not gate on that setting (verified on 2.7.1).
+func TestVikunjaRegistrationClosed(t *testing.T) {
+	m := realVikunja(t)
+	if got := m.Services[0].Environment["VIKUNJA_SERVICE_ENABLEREGISTRATION"]; got != "false" {
+		t.Fatalf("VIKUNJA_SERVICE_ENABLEREGISTRATION = %q, want false", got)
+	}
+}

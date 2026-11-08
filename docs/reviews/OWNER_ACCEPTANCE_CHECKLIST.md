@@ -997,7 +997,7 @@ _An earlier live check saw Authentik accept the Mealie redirect URI; a browser l
 
 ### SRV-MEMOS: Memos
 
-_Browser sign-in has not been recorded yet._
+_Verified live on VM 2 (S455): sign-in by Authentik for the owner and person A, person C refused, local registration closed._
 
 - [ ] **SRV-MEMOS-1 — Install: plan preview, then approve**
   - Action: Catalog > Memos > Install. Read the plan, then approve (or `homesteadctl apps plan memos -f FILE`, then `homesteadctl apps install memos -f FILE`).
@@ -1411,11 +1411,17 @@ _Verified live on VM 2 (S454): sign-in by Authentik for the owner and person A, 
 
 ### SRV-VIKUNJA: Vikunja
 
-_Browser sign-in has not been recorded yet._
+_Verified live on VM 2 (S455): sign-in by Authentik for the owner and person A, person C refused, local registration closed._
 
 - [ ] **SRV-VIKUNJA-1 — Install: plan preview, then approve**
   - Action: Catalog > Vikunja > Install. Read the plan, then approve (or `homesteadctl apps plan vikunja -f FILE`, then `homesteadctl apps install vikunja -f FILE`).
   - Expected: Plan shows name/path, ports, volumes and sign-in; after approval the app card shows running and Doctor Apps is clean.
+  - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
+  - Result: ____  Notes: ____
+
+- [ ] **SRV-VIKUNJA-1a — Registration is closed**
+  - Action: Open the sign-in page and look for Register; POST /api/v1/register.
+  - Expected: No registration route (404); accounts exist only for people signing in through Authentik. Nothing to set up by hand.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -3563,7 +3569,7 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | SRV-PAPERLESS-NGX | SRV-PAPERLESS-NGX-1 to SRV-PAPERLESS-NGX-9 (9) |  |  |  |  |
 | SRV-UPTIME-KUMA | SRV-UPTIME-KUMA-1 to SRV-UPTIME-KUMA-12 (12) |  |  |  |  |
 | SRV-VAULTWARDEN | SRV-VAULTWARDEN-1 to SRV-VAULTWARDEN-9 (10) |  |  |  |  |
-| SRV-VIKUNJA | SRV-VIKUNJA-1 to SRV-VIKUNJA-9 (9) |  |  |  |  |
+| SRV-VIKUNJA | SRV-VIKUNJA-1 to SRV-VIKUNJA-9 (10) |  |  |  |  |
 | PLAT-FIREWALL | PLAT-FIREWALL-1a to PLAT-FIREWALL-3 (4) |  |  |  |  |
 | EV-TASKS | EV-TASKS-1 to EV-TASKS-16 (16) |  |  |  |  |
 | EV-PROJECTS | EV-PROJECTS-1 to EV-PROJECTS-13 (13) |  |  |  |  |
@@ -3601,4 +3607,4 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | END-AUDIT | END-AUDIT-1 to END-AUDIT-1 (1) |  |  |  |  |
 | END-PARITY | END-PARITY-1 to END-PARITY-1 (1) |  |  |  |  |
 | END-UNINSTALL | END-UNINSTALL-1 to END-UNINSTALL-6 (6) |  |  |  |  |
-| **Total** | 543 steps |  |  |  |  |
+| **Total** | 544 steps |  |  |  |  |
