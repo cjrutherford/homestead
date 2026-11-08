@@ -1472,6 +1472,8 @@ export interface AppMoveStatus {
   /** ADR-061: set when the app is published at a name of its own and the move replaces it with a path. */
   public_from?: string;
   public_to?: string;
+  /** S479: an earlier move stopped before its old public name was removed; approving finishes it. */
+  finish?: boolean;
 }
 
 /** The reviewed move of an app to its path; nothing moves without its digest. */
@@ -1490,6 +1492,7 @@ export interface AppMovePlan {
   public_to?: string;
   removes?: string[];
   stops?: string[];
+  finish?: boolean;
   warnings: string[];
   digest: string;
 }

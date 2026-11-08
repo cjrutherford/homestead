@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -221,5 +222,128 @@ func TestSubpathPublishDoctor(t *testing.T) {
 	if len(checks) != 1 || checks[0].Status != "warn" || !strings.Contains(checks[0].Detail, "move available") ||
 		!strings.Contains(checks[0].Detail, moveOldName) || checks[0].Fix == nil || !strings.Contains(checks[0].Fix.Command, "apps move plan jellyfin") {
 		t.Fatalf("checks = %+v", checks)
+	}
+}
+
+// S479: the new address must answer before the old name goes. A failed
+// probe stops the run with the connector entry and the CNAME intact, and
+// the half-done move shows as a finishable leftover.
+func TestAppMoveProbeFailureKeepsOldName(t *testing.T) {
+	srv, st, steps, _, cf, record := publicMoveRig(t)
+	tries := 0
+	movePathProbe = func(_ context.Context, url string) error {
+		tries++
+		if url != "https://homestead.example.com/apps/jellyfin/" {
+			t.Errorf("probed %q", url)
+		}
+		return errors.New("answered 404 through the public edge")
+	}
+	plan := movePublicPlan(t, srv)
+	rec := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/jellyfin/move/apply", map[string]any{"digest": plan.Digest})
+	op := waitOperation(t, st, rec.Body.Bytes())
+	if op.Status != operation.StatusFailed || !strings.Contains(op.Error, "was not removed") {
+		t.Fatalf("operation = %+v", op)
+	}
+	if tries != 2 {
+		t.Errorf("probe tries = %d", tries)
+	}
+	if cf.records[record] == nil {
+		t.Error("the CNAME was deleted although the new address did not answer")
+	}
+	if ingress, _ := recordedIngress(st, "tid"); len(ingress) == 0 {
+		t.Error("the ingress entry was removed although the new address did not answer")
+	}
+	_ = steps
+
+	// The state shows: a finish is offered, naming the old and new address.
+	status := moveStatus(t, srv, "jellyfin")
+	if !status.Offered {
+		t.Fatalf("finish not offered: %+v", status)
+	}
+	var raw map[string]any
+	r := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/jellyfin/move", nil)
+	_ = json.Unmarshal(r.Body.Bytes(), &raw)
+	if raw["finish"] != true || raw["public_from"] != "https://"+moveOldName+"/" {
+		t.Fatalf("status = %v", raw)
+	}
+	checks := publicNamePlanChecks(DoctorLiveConfig{Store: st})
+	if len(checks) != 1 || checks[0].Status != "warn" || !strings.Contains(checks[0].Detail, "a move of jellyfin stopped") ||
+		checks[0].Fix == nil || !strings.Contains(checks[0].Fix.Command, "apps move plan jellyfin") {
+		t.Fatalf("doctor = %+v", checks)
+	}
+
+	// Finish: reviewed plan, digest, then the same removal steps.
+	finish := movePublicPlan(t, srv)
+	var fv struct {
+		Finish bool `json:"finish"`
+	}
+	fr := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/jellyfin/move/plan", nil)
+	_ = json.Unmarshal(fr.Body.Bytes(), &fv)
+	if !fv.Finish || len(finish.AppSettings) != 0 || len(finish.Stops) != 1 {
+		t.Fatalf("finish plan = %+v finish=%v", finish, fv.Finish)
+	}
+	if stale := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/jellyfin/move/apply", map[string]any{"digest": plan.Digest}); stale.Code != http.StatusConflict {
+		t.Fatalf("a digest from another plan was accepted: %d", stale.Code)
+	}
+	// Still failing: still nothing removed.
+	rec = serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/jellyfin/move/apply", map[string]any{"digest": finish.Digest})
+	if op := waitOperation(t, st, rec.Body.Bytes()); op.Status != operation.StatusFailed || cf.records[record] == nil {
+		t.Fatalf("second failure: %+v", op)
+	}
+	movePathProbe = func(context.Context, string) error { return nil }
+	rec = serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/jellyfin/move/apply", map[string]any{"digest": finish.Digest})
+	if op := waitOperation(t, st, rec.Body.Bytes()); op.Status != operation.StatusSucceeded {
+		t.Fatalf("finish: %+v", op)
+	}
+	if cf.records[record] != nil {
+		t.Error("the CNAME is still in Cloudflare after the finish")
+	}
+	if ingress, _ := recordedIngress(st, "tid"); len(ingress) != 1 {
+		t.Errorf("ingress after finish = %+v", ingress)
+	}
+	if got := moveStatus(t, srv, "jellyfin"); got.Offered {
+		t.Errorf("finish still offered: %+v", got)
+	}
+	if checks := publicNamePlanChecks(DoctorLiveConfig{Store: st}); len(checks) != 1 || checks[0].Status != "ok" {
+		t.Fatalf("doctor after finish = %+v", checks)
+	}
+	srv.waitAudits()
+}
+
+// A probe that answers lets the move remove the old name, and the probe
+// treats 404 and 5xx as not answering but a sign-in redirect as answering.
+func TestProbePublicPathStatuses(t *testing.T) {
+	for code, ok := range map[int]bool{200: true, 302: true, 401: true, 403: true, 404: false, 502: false, 503: false} {
+		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if code == 302 {
+				w.Header().Set("Location", "/elsewhere")
+			}
+			w.WriteHeader(code)
+		}))
+		prev := http.DefaultTransport
+		http.DefaultTransport = server.Client().Transport
+		err := probePublicPath(context.Background(), server.URL+"/apps/x/")
+		http.DefaultTransport = prev
+		server.Close()
+		if (err == nil) != ok {
+			t.Errorf("status %d: err = %v", code, err)
+		}
+	}
+}
+
+// A public name no route carries is flagged; carried names are green.
+func TestPublicNamePlanDoctor(t *testing.T) {
+	_, st, _, _, _, _ := publicMoveRig(t)
+	checks := publicNamePlanChecks(DoctorLiveConfig{Store: st})
+	if len(checks) != 1 || checks[0].Status != "ok" {
+		t.Fatalf("carried names: %+v", checks)
+	}
+	if err := router.RecordRoute(st, router.TunnelRoute{Hostname: "stray.example.com", TunnelID: "tid", Service: tunnelEntryService}, "homestead"); err != nil {
+		t.Fatal(err)
+	}
+	checks = publicNamePlanChecks(DoctorLiveConfig{Store: st})
+	if len(checks) != 1 || checks[0].Status != "warn" || !strings.Contains(checks[0].Detail, "stray.example.com") ||
+		!strings.Contains(checks[0].Detail, "no approved plan") || !strings.Contains(checks[0].Fix.Command, "tunnel plan") {
+		t.Fatalf("stray: %+v", checks)
 	}
 }

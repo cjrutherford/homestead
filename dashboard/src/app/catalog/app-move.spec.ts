@@ -68,6 +68,15 @@ describe('AppMove (S315)', () => {
     expect(preview).toContain('Old bookmarks and links on https://nextcloud.example.com/ stop working.');
   });
 
+  it('offers to finish a move that stopped before the old name was removed (S479)', () => {
+    load({ app: 'nextcloud', offered: true, to: [], finish: true,
+      public_from: 'https://nextcloud.example.com/', public_to: 'https://homestead.example.com/apps/nextcloud/' });
+    expect(text()).toContain('Finish the move');
+    expect(text()).toContain('removes the old name only if it answers');
+    expect(button('Review finishing the move')).toBeDefined();
+    expect(button('Review the move')).toBeUndefined();
+  });
+
   it('shows nothing when the move is not offered', () => {
     load({ app: 'nextcloud', offered: false, reason: 'Nextcloud is already at /apps/nextcloud/.', to: [] });
     expect(el().querySelector('.app-move')).toBeNull();

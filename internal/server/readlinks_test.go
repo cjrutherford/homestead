@@ -202,6 +202,7 @@ func TestReadLinksExposeAndRemove(t *testing.T) {
 	if rig.route(t).ReadLinks || strings.Contains(rig.publicSite(t), "tasks") || strings.Contains(rig.override(t), ReadLinksOriginEnv) {
 		t.Fatalf("not removed: route %+v site\n%s\noverride %q", rig.route(t), rig.publicSite(t), rig.override(t))
 	}
+	rig.srv.waitAudits()
 	var actions []string
 	entries, _ := audit.New(rig.st).List(50)
 	for _, e := range entries {

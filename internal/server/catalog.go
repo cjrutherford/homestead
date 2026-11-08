@@ -880,7 +880,9 @@ func operatorActor(r *http.Request) string {
 func (s *Server) auditOperation(st *store.Store, runner *operation.Runner, id int64, actor, action, detail string) {
 	svc := audit.New(st)
 	_, _ = svc.Record(audit.Entry{Actor: actor, Action: action + ".start", Outcome: audit.OutcomeOK, Detail: detail})
+	s.audits.Add(1)
 	go func() {
+		defer s.audits.Done()
 		done, err := runner.Wait(s.bg, id)
 		if err != nil {
 			return
@@ -895,6 +897,11 @@ func (s *Server) auditOperation(st *store.Store, runner *operation.Runner, id in
 		}
 	}()
 }
+
+// waitAudits blocks until every audit waiter started so far has recorded
+// its completion entry. The operation finishing does not imply the entry
+// exists: the waiter runs on its own goroutine.
+func (s *Server) waitAudits() { s.audits.Wait() }
 
 // uninstallDataStatus reports the S277 placement verdict for one
 // package, so uninstall can refuse to orphan volume-held data.

@@ -126,6 +126,9 @@ type AppMoveStatus struct {
 	// its own that the move replaces with a path (ADR-061).
 	PublicFrom string `json:"public_from,omitempty"`
 	PublicTo   string `json:"public_to,omitempty"`
+	// Finish: an earlier move stopped before its old public name was
+	// removed (S479); approving the plan finishes it.
+	Finish bool `json:"finish,omitempty"`
 }
 
 // AppMovePlan is the reviewed move of an app to its path.
@@ -143,6 +146,7 @@ type AppMovePlan struct {
 	PublicTo    string   `json:"public_to,omitempty"`
 	Removes     []string `json:"removes"`
 	Stops       []string `json:"stops"`
+	Finish      bool     `json:"finish,omitempty"`
 	Warnings    []string `json:"warnings"`
 	Digest      string   `json:"digest"`
 }

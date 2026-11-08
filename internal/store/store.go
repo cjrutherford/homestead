@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 57
+const CurrentVersion = 58
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -1079,6 +1079,20 @@ ALTER TABLE people ADD COLUMN authentik_uid TEXT NOT NULL DEFAULT '';`,
 	attempts INTEGER NOT NULL DEFAULT 0,
 	last_error TEXT NOT NULL DEFAULT '',
 	PRIMARY KEY (app, username, subject)
+);`,
+	},
+	{
+		// S479 (ADR-061): the old public name an app move is removing. The
+		// row is written when the move starts and deleted when the name is
+		// gone, so a move that stopped halfway can be finished and Doctor
+		// can say which app the leftover name belonged to.
+		version: 58,
+		name:    "app move pending public name",
+		sql: `CREATE TABLE IF NOT EXISTS app_move_pending (
+	app TEXT PRIMARY KEY,
+	hostname TEXT NOT NULL,
+	tunnel_id TEXT NOT NULL,
+	started_at TEXT NOT NULL
 );`,
 	},
 }

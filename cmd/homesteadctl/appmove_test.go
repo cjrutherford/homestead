@@ -106,3 +106,30 @@ func TestAppsMovePublicNamePlan(t *testing.T) {
 		}
 	}
 }
+
+// S479: a move that stopped before the old public name was removed shows
+// as unfinished, and its plan says nothing of the app changes.
+func TestAppsMoveFinishStatusAndPlan(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/catalog/navidrome/move":
+			_, _ = w.Write([]byte(`{"app":"navidrome","offered":true,"to":[],"finish":true,
+				"public_from":"https://navidrome.example.com/","public_to":"https://homestead.example.com/apps/navidrome/"}`))
+		case "POST /api/v1/catalog/navidrome/move/plan":
+			_, _ = w.Write([]byte(`{"app":"navidrome","route":"navidrome.lan","from":"https://navidrome.example.com/","path":"/apps/navidrome/","to":[],
+				"finish":true,"public_from":"https://navidrome.example.com/","public_to":"https://homestead.example.com/apps/navidrome/","digest":"f1"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(ts.Close)
+	_, stdout, _ := invoke(t, []string{"--server", ts.URL, "apps", "move", "status", "navidrome"})
+	if !strings.Contains(stdout, "move: unfinished; the old public name https://navidrome.example.com/ is still held") {
+		t.Fatalf("status: %s", stdout)
+	}
+	_, stdout, _ = invoke(t, []string{"--server", ts.URL, "apps", "move", "plan", "navidrome"})
+	if !strings.Contains(stdout, "finish: an earlier move stopped before https://navidrome.example.com/ was removed; nothing of the app changes") {
+		t.Fatalf("plan: %s", stdout)
+	}
+}

@@ -3504,6 +3504,12 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - If it fails: Doctor Tunnel section (subpath-publish), the audit log (`app.move`), ADR-061.
   - Result: ____  Notes: ____
 
+- [ ] **PLAT-TUNNEL-9 — Doctor flags public names no plan carries; an unfinished move can be finished (S479)**
+  - Action: Open Doctor (`homesteadctl doctor --live`) and read the Tunnel group. If a move stopped before its old public name was removed, open the app's page (or `homesteadctl apps move status <pkg>`): it says the move is unfinished. Review and approve the finish plan (`apps move plan <pkg>`, `apps move apply <pkg> --digest D --follow`).
+  - Expected: `public-name-plan` is green when every tunnel entry and Homestead-created DNS record is carried by an edge route, and warns for any that is not (naming the app when a move left it). The finish plan changes nothing of the app, checks the new address through the public edge, and removes the old name only if it answers; if it does not, the run fails and the old name stays.
+  - If it fails: Doctor Tunnel section (public-name-plan), the audit log (`app.move`), ADR-061.
+  - Result: ____  Notes: ____
+
 - [ ] **PLAT-TUNNEL-7 — Remove the tunnel plan**
   - Action: Do this last of the tunnel work. Plan removal of the tunnel on the Tunnel page, approve.
   - Expected: Public names stop answering; local names still work.
@@ -3557,7 +3563,7 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | PLAT-AUTH | PLAT-AUTH-1 to PLAT-AUTH-1 (1) |  |  |  |  |
 | PLAT-OWNER | PLAT-OWNER-1 to PLAT-OWNER-2 (2) |  |  |  |  |
 | PLAT-PEOPLE | PLAT-PEOPLE-1 to PLAT-PEOPLE-8 (8) |  |  |  |  |
-| PLAT-TUNNEL | PLAT-TUNNEL-1 to PLAT-TUNNEL-8 (8) |  |  |  |  |
+| PLAT-TUNNEL | PLAT-TUNNEL-1 to PLAT-TUNNEL-9 (9) |  |  |  |  |
 | PLAT-DASH | PLAT-DASH-1 to PLAT-DASH-2 (2) |  |  |  |  |
 | PLAT-DOCTOR | PLAT-DOCTOR-1 to PLAT-DOCTOR-2 (2) |  |  |  |  |
 | PLAT-NAMES | PLAT-NAMES-1 to PLAT-NAMES-1 (1) |  |  |  |  |
@@ -3619,4 +3625,4 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | END-AUDIT | END-AUDIT-1 to END-AUDIT-1 (1) |  |  |  |  |
 | END-PARITY | END-PARITY-1 to END-PARITY-1 (1) |  |  |  |  |
 | END-UNINSTALL | END-UNINSTALL-1 to END-UNINSTALL-6 (6) |  |  |  |  |
-| **Total** | 546 steps |  |  |  |  |
+| **Total** | 547 steps |  |  |  |  |

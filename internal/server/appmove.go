@@ -63,6 +63,9 @@ type appMoveStatus struct {
 	// under the dashboard's public name (ADR-061).
 	PublicFrom string `json:"public_from,omitempty"`
 	PublicTo   string `json:"public_to,omitempty"`
+	// Finish is set when an earlier move stopped before its old public
+	// name was removed: approving finishes that removal.
+	Finish bool `json:"finish,omitempty"`
 }
 
 type appMovePlan struct {
@@ -93,8 +96,12 @@ type appMovePlan struct {
 	PublicTo   string   `json:"public_to,omitempty"`
 	Removes    []string `json:"removes"`
 	Stops      []string `json:"stops"`
-	Warnings   []string `json:"warnings"`
-	Digest     string   `json:"digest"`
+	// Finish marks the plan that completes a move which stopped before
+	// the old public name was removed (S479): nothing of the app changes,
+	// the new address is checked, then the name goes.
+	Finish   bool     `json:"finish,omitempty"`
+	Warnings []string `json:"warnings"`
+	Digest   string   `json:"digest"`
 
 	manifest catalog.Manifest
 	names    []string
@@ -162,6 +169,9 @@ type moveFacts struct {
 	publicHost string
 	server     docker.Hostname
 	tunnelID   string
+	// leftover is set when an earlier move stopped before its old public
+	// name was removed: the offer is then to finish that removal.
+	leftover bool
 }
 
 func (m *appMove) facts(name string) (moveFacts, error) {
@@ -201,7 +211,32 @@ func (m *appMove) facts(name string) (moveFacts, error) {
 	}
 	f.route = routes[0]
 	if f.route.IsPath() {
-		f.reason = fmt.Sprintf("%s is already at %s.", manifest.Title, f.route.Path)
+		pending, ok, err := getMovePending(m.st, manifest.Name)
+		if err != nil {
+			return f, err
+		}
+		if ok {
+			// Only while something of the old name is still held: a stale
+			// row for a name that is gone offers nothing.
+			left, err := leftoverPublicNames(m.st, set.Routes)
+			if err != nil {
+				return f, err
+			}
+			ok = false
+			for _, l := range left {
+				ok = ok || strings.EqualFold(l.Host, pending.Host)
+			}
+		}
+		if !ok {
+			f.reason = fmt.Sprintf("%s is already at %s.", manifest.Title, f.route.Path)
+			return f, nil
+		}
+		f.names = applianceNames(m.st)
+		f.publicHost, f.tunnelID, f.leftover = pending.Host, pending.TunnelID, true
+		f.server = docker.PublicServerName(set.Routes)
+		if f.server == "" {
+			f.reason = fmt.Sprintf("%s's old public name %s is still on the tunnel, and the dashboard has no public name for %s to answer on. Publish the dashboard on the Tunnel page first.", manifest.Title, pending.Host, manifest.Title)
+		}
 		return f, nil
 	}
 	if _, ok := set.DashboardRoute(); !ok {
@@ -274,6 +309,7 @@ func (m *appMove) status(w http.ResponseWriter, r *http.Request) {
 		out.Path = f.manifest.AppPath()
 	}
 	out.PublicFrom, out.PublicTo = f.publicFromTo()
+	out.Finish = f.leftover
 	if f.route.Host != "" && !f.route.IsPath() {
 		out.From = "https://" + string(f.route.Host) + "/"
 		out.To = f.toURLs()
@@ -291,6 +327,9 @@ func (m *appMove) buildPlan(name string) (appMovePlan, error) {
 		return appMovePlan{}, refusePlan(http.StatusUnprocessableEntity, "%s", f.reason)
 	}
 	mf := f.manifest
+	if f.leftover {
+		return m.buildFinishPlan(f)
+	}
 	plan := appMovePlan{
 		App: mf.Name, Route: string(f.route.Host), From: "https://" + string(f.route.Host) + "/",
 		Path: mf.AppPath(), To: f.toURLs(), StripPrefix: mf.StripPrefix,
@@ -403,8 +442,10 @@ func (m *appMove) apply(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the plan changed since it was reviewed; review it again", http.StatusConflict)
 		return
 	}
-	def, err := appMoveDefinition(m.st, m.secrets, plan)
-	if err != nil {
+	var def operation.Definition
+	if plan.Finish {
+		def = operation.Definition{Type: "app.move"}
+	} else if def, err = appMoveDefinition(m.st, m.secrets, plan); err != nil {
 		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
@@ -422,7 +463,14 @@ func (m *appMove) apply(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
+		if err := setMovePending(m.st, movePending{App: plan.App, Host: plan.publicHost, TunnelID: plan.tunnelID}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		def.Steps = append(def.Steps, movePublicRemoveSteps(m.st, token, plan)...)
+		if plan.Finish {
+			detail = fmt.Sprintf("%s: finish removing %s; %s answers at %s", plan.App, plan.publicHost, plan.App, plan.PublicTo)
+		}
 		detail += fmt.Sprintf("; public %s -> %s; %s removed from tunnel %s, no redirect", plan.PublicFrom, plan.PublicTo, plan.publicHost, plan.tunnelID)
 	}
 	runner := operation.NewRunner(m.st)
@@ -571,7 +619,7 @@ func (m *appMove) planPublicRemoval(f moveFacts, plan *appMovePlan) error {
 		"No DNS record changes are needed for "+plan.PublicTo+": it is under the dashboard's public name the tunnel already carries.",
 		openToInternetWarning(f.manifest, f.signIn, plan.PublicTo),
 		"It shares one web origin with the dashboard and the other published apps (ADR-044): a flaw in one of them can reach the others in the same browser.",
-		"Order: the path is published and the app's settings and sign-in follow it first; the old name's connector entry and DNS record are removed last. If a step fails the run stops and says so, and the old name is not removed.")
+		"Order: the path is published and the app's settings and sign-in follow it first; the new address is then checked through the public edge, and only if it answers are the old name's connector entry and DNS record removed. If a step or the check fails the run stops and says so, the old name stays, and the move can be finished from the same plan once the address answers.")
 	return nil
 }
 
@@ -597,6 +645,7 @@ func movePublicRemoveSteps(st *store.Store, apiToken string, plan appMovePlan) [
 			}
 			return fmt.Errorf("%s's route %s is gone from the edge, so %s was not removed", plan.App, plan.Route, plan.publicHost)
 		}},
+		probeStep(plan),
 		{Name: "connector", Run: func(context.Context) error {
 			if err := router.DeleteRoute(st, plan.publicHost); err != nil {
 				return err
@@ -609,6 +658,7 @@ func movePublicRemoveSteps(st *store.Store, apiToken string, plan appMovePlan) [
 		{Name: "restore-dns", Run: func(ctx context.Context) error {
 			return restoreReplacedRecordsAt(ctx, st, apiToken, plan.tunnelID, plan.publicHost)
 		}},
+		{Name: "pending-clear", Run: func(context.Context) error { return clearMovePending(st, plan.App) }},
 	}
 }
 

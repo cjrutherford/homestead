@@ -82,6 +82,13 @@ func moveRigCF(t *testing.T) (*Server, *store.Store, *[]string, *[][]string, *fa
 		return nil
 	}
 	t.Cleanup(func() { trustAppHosts = prevTrust })
+	prevProbe, prevTries, prevWait := movePathProbe, movePathProbeTries, movePathProbeWait
+	movePathProbe = func(_ context.Context, url string) error {
+		*steps = append(*steps, "probe "+url)
+		return nil
+	}
+	movePathProbeTries, movePathProbeWait = 2, 0
+	t.Cleanup(func() { movePathProbe, movePathProbeTries, movePathProbeWait = prevProbe, prevTries, prevWait })
 	return srv, st, steps, trusted, cf
 }
 

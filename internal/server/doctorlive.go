@@ -74,6 +74,7 @@ func doctorLiveProbes(c DoctorLiveConfig) func() []doctor.Probe {
 			{Name: "tunnel-dns", Group: doctor.GroupTunnel, Timeout: 10 * time.Second, Run: func(ctx context.Context) []doctor.Check { return probeTunnelDNS(ctx, c) }},
 			{Name: "never-publish", Group: doctor.GroupTunnel, Run: func(ctx context.Context) []doctor.Check { return neverPublishChecks(c) }},
 			{Name: "subpath-publish", Group: doctor.GroupTunnel, Run: func(ctx context.Context) []doctor.Check { return subpathPublishChecks(c) }},
+			{Name: "public-name-plan", Group: doctor.GroupTunnel, Run: func(ctx context.Context) []doctor.Check { return publicNamePlanChecks(c) }},
 			{Name: "edge-certificate", Group: doctor.GroupCertificates, Timeout: 10 * time.Second, Run: func(ctx context.Context) []doctor.Check { return probeEdgeCertificates(ctx, c) }},
 			{Name: "authentik", Group: doctor.GroupSignIn, Run: func(ctx context.Context) []doctor.Check { return probeAuthentik(ctx, c) }},
 			{Name: "authentik-outpost", Group: doctor.GroupSignIn, Timeout: 12 * time.Second, Run: func(ctx context.Context) []doctor.Check { return gatedAppChecks(ctx, c) }},
@@ -401,6 +402,54 @@ func subpathPublishChecks(c DoctorLiveConfig) []doctor.Check {
 	}
 	if len(out) == 0 {
 		return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "no app is on a public name its package no longer uses"}}
+	}
+	return out
+}
+
+// publicNamePlanChecks flags a public name Homestead holds (a tunnel
+// connector entry or a DNS record it created) that no approved plan
+// carries: no edge route lists it. That is what a move leaves when it stops
+// before the old name's removal (S479), or what a hand edit leaves. Local
+// state only.
+func publicNamePlanChecks(c DoctorLiveConfig) []doctor.Check {
+	const name = "public-name-plan"
+	set, err := loadEdgeRoutes(c.Store)
+	if err != nil {
+		return []doctor.Check{unknownCheck(name, "the edge routes could not be read: "+err.Error())}
+	}
+	left, err := leftoverPublicNames(c.Store, set.Routes)
+	if err != nil {
+		return []doctor.Check{unknownCheck(name, "the tunnel names could not be read: "+err.Error())}
+	}
+	if len(left) == 0 {
+		return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "every public name has an approved plan behind it"}}
+	}
+	pending, _ := listMovePending(c.Store)
+	var out []doctor.Check
+	for _, l := range left {
+		held := "a tunnel entry"
+		switch {
+		case l.Connector && l.DNS:
+			held = "a tunnel entry and a DNS record"
+		case l.DNS:
+			held = "a DNS record"
+		}
+		check := doctor.Check{Name: name + ":" + l.Host, Status: doctor.StatusWarn,
+			Detail: l.Host + " has " + held + " but no approved plan carries it"}
+		app := ""
+		for _, p := range pending {
+			if strings.EqualFold(p.Host, l.Host) {
+				app = p.App
+			}
+		}
+		if app != "" {
+			check.Detail += ": a move of " + app + " stopped before its old name was removed"
+			check.Fix = liveFix("Review and approve finishing the move; it checks the new address first, then removes the old name.", "/admin/catalog",
+				"homesteadctl apps move plan "+app)
+		} else {
+			check.Fix = liveFix("Plan the tunnel again to see what would change; nothing is removed until you approve.", "/admin/tunnel", "homesteadctl tunnel plan")
+		}
+		out = append(out, check)
 	}
 	return out
 }

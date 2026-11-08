@@ -217,6 +217,7 @@ func TestAppPublicAddRemove(t *testing.T) {
 	if len(routes) != 1 {
 		t.Fatalf("routes = %v", routes)
 	}
+	srv.waitAudits()
 	for _, action := range []string{"app.public.add", "app.public.remove"} {
 		var n int
 		if err := st.DB().QueryRow(`SELECT COUNT(*) FROM audit_entries WHERE action = ?`, action).Scan(&n); err != nil || n != 1 {
