@@ -1844,7 +1844,6 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
 
 Found on VM 2 in the browser run; not fixed in this pass.
 
-- **Docker address pool (medium, capacity):** installs failed with "could not find an available, non-overlapping IPv4 address pool" at about 31 compose networks (EV-THREE-D-1). Homestead does not configure `default-address-pools`. VM workaround: `/etc/docker/daemon.json` pool 10.200.0.0/16 size 24 and a Docker restart. Needs a product answer (compose network sizing, doctor check or documented install step).
 - **Parametric geometry engine (high, EV-PARAMETRIC-6/7):** the engine worker uses emscripten embind `Function(...)`, which the app CSP blocks (no `unsafe-eval`), so "Geometry engine failed to start" on every load and the viewport stays blank. Fix needs a per-app CSP decision (allow `unsafe-eval` for Parametric or ship a build without it).
 - **Public read-link origin (medium, EV-ADR058-6):** the bridge mints a link on the request Origin, and an app that is not published cannot be reached on the public name, so after `apps read-links approve` links made in the app stay `https://<lan name>/...`. The owner has no way to get a public-origin link from the UI (swapping the host by hand works). Decide: mint from the approved public origin when the owner asks, or offer a copy-public-link action.
 - **Public name refusal message (low, EV-API-CLIENT-7):** the appliance's own public name resolves to IPv6 Cloudflare addresses and is refused with the generic "could not be reached" text.

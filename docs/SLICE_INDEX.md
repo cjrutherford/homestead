@@ -307,3 +307,4 @@ S459 turns Nextcloud's first-run welcome video off when sign-in is applied, so n
 S460 verifies and pins Immich's admin role through the `immich_role` claim (owner is an Immich administrator, people are users) and records why the per-person welcome tour cannot be skipped. Slice file `docs/slices/S460-immich-admin-role-onboarding.md`.
 S461 fixes `homesteadctl people reset-mfa` (and the dashboard message), which failed to decode the daemon's device counts. Slice file `docs/slices/S461-people-reset-mfa-counts.md`.
 S462 makes Doctor report an app container that was stopped by hand (it exits 0, which the probe used to excuse as a finished job). Slice file `docs/slices/S462-doctor-stopped-container.md`.
+S463 sizes Docker's default address pools for a full 46-app catalog: the installer merges a small-subnet pool into daemon.json (restarting Docker only on change) and Doctor warns when it is missing. Slice file `docs/slices/S463-docker-address-pools.md`.

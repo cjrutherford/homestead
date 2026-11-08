@@ -65,6 +65,20 @@ install -m 0644 "$REPO/systemd/homestead-apply.service" /etc/systemd/system/home
 # a tunnel exists (S246). Installing the file needs privilege; enabling
 # stays an explicit setup-time act, never a side effect of install.
 install -m 0644 "$REPO/systemd/homestead-tunnel.service" /etc/systemd/system/homestead-tunnel.service
+# Docker's built-in address pool runs dry at about 31 compose networks, and
+# the catalog has 46 apps (S463). Merge one small-subnet pool into
+# daemon.json (other keys and any pools the owner set stay) and restart
+# Docker only when the file changed; running apps come back by policy.
+if command -v docker >/dev/null && systemctl cat docker.service >/dev/null 2>&1; then
+	pools_result="$("$BIN_DST" docker-pools)" || {
+		echo "warning: could not size docker's address pools (see above); continuing" >&2
+		pools_result=""
+	}
+	if [ "$pools_result" = "changed" ]; then
+		echo "docker: default-address-pools added to /etc/docker/daemon.json; restarting docker"
+		systemctl restart docker.service
+	fi
+fi
 systemctl daemon-reload
 # A running connector picks up a changed unit only when restarted (S300);
 # try-restart leaves a stopped or never-enabled connector alone.

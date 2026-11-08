@@ -1,6 +1,8 @@
 package doctor
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -164,4 +166,24 @@ func TestLiveReportStructure(t *testing.T) {
 		}
 	}
 	t.Logf("overall=%s checks=%d", report.Overall, len(report.Checks))
+}
+
+func TestCheckDockerPools(t *testing.T) {
+	dir := t.TempDir()
+	write := func(body string) string {
+		p := filepath.Join(dir, "daemon.json")
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	if c := checkDockerPools(filepath.Join(dir, "missing.json")); c.Status != StatusWarn {
+		t.Errorf("missing file: %+v", c)
+	}
+	if c := checkDockerPools(write(`{"default-address-pools":[{"base":"10.200.0.0/16","size":24}]}`)); c.Status != StatusOK {
+		t.Errorf("roomy pool: %+v", c)
+	}
+	if c := checkDockerPools(write(`{"default-address-pools":[{"base":"10.200.0.0/24","size":24}]}`)); c.Status != StatusWarn {
+		t.Errorf("small pool: %+v", c)
+	}
 }

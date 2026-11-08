@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"homestead/internal/discover"
+	"homestead/internal/dockerpools"
 	"homestead/internal/layout"
 )
 
@@ -108,6 +109,7 @@ func Run() Report {
 		checks = append(checks, checkStaleMounts(storage))
 	}
 	checks = append(checks, checkStateDirs())
+	checks = append(checks, checkDockerPools(dockerDaemonConfig))
 	Annotate(checks)
 	return Report{Overall: overall(checks), Checks: checks}
 }
@@ -261,4 +263,29 @@ func checkStateDirs() Check {
 			Detail: fmt.Sprintf("missing %s; provision with the installer (sudo make install)", strings.Join(missing, ", "))}
 	}
 	return Check{Name: "state-dirs", Status: StatusOK, Detail: "layout directories present"}
+}
+
+// dockerDaemonConfig is read by the Doctor; tests point it elsewhere.
+var dockerDaemonConfig = dockerpools.DefaultPath
+
+// checkDockerPools warns when Docker's address pools cannot hold a full
+// catalog (S463): the built-in pool runs dry at about 31 compose networks.
+func checkDockerPools(path string) Check {
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return Check{Name: "docker-address-pools", Status: StatusUnknown,
+			Detail: fmt.Sprintf("could not read %s: %v", path, err)}
+	}
+	n, present, err := dockerpools.Capacity(data)
+	switch {
+	case err != nil:
+		return Check{Name: "docker-address-pools", Status: StatusWarn, Detail: err.Error()}
+	case !present:
+		return Check{Name: "docker-address-pools", Status: StatusWarn,
+			Detail: "Docker uses its built-in address pool, which holds about 31 networks; installs fail past that. Re-run the installer (sudo make install) to add a roomier pool"}
+	case n < dockerpools.MinNetworks:
+		return Check{Name: "docker-address-pools", Status: StatusWarn,
+			Detail: fmt.Sprintf("Docker's configured pools hold %d networks; a full catalog needs about %d", n, dockerpools.MinNetworks)}
+	}
+	return Check{Name: "docker-address-pools", Status: StatusOK, Detail: fmt.Sprintf("Docker can hand out %d networks", n)}
 }

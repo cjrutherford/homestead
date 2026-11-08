@@ -41,6 +41,14 @@ func main() {
 		}
 		return
 	}
+	// The installer runs this as root to size Docker's address pools (S463).
+	if len(os.Args) > 1 && os.Args[1] == "docker-pools" {
+		if err := runDockerPools(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "docker-pools:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	listen := flag.String("listen", server.DefaultAddr, "address to bind (loopback by default; see ADR-006)")
 	configPath := flag.String("config", desired.DefaultPath(), "desired-state file (S014)")
 	dataDir := flag.String("data-dir", layout.LibDir.Path, "operational state directory (S012)")
