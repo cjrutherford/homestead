@@ -9,7 +9,7 @@
 # runs unchanged.
 name: audiobookshelf
 publish: host  # ADR-061
-publish_reason: no_subpath
+publish_reason: no_subpath  # S473: ROUTER_BASE_PATH is not enough; the client bakes /audiobookshelf into its asset URLs
 version: 2.37.1
 title: Audiobookshelf
 blurb: Your audiobooks and podcasts, on every device.

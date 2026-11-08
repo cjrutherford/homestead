@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "b24f750ca0418a6c",
+ "hash": "cc9924f5ba2ed808",
  "sections": [
   {
    "title": "Platform",
@@ -472,7 +472,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-AUDIOBOOKSHELF-2",
        "title": "Opens at the right path or name",
-       "action": "Open https://audiobookshelf.\u003clan-suffix\u003e/ (own name; the web UI lives under /audiobookshelf inside the app).",
+       "action": "Open https://audiobookshelf.\u003clan-suffix\u003e/ (own name; the web UI lives under /audiobookshelf inside the app) (S473: checked for a move to /apps/audiobookshelf/ and kept on its own name: the web client has /audiobookshelf compiled into its asset URLs, so it cannot load under another prefix; ADR-061 `no_subpath`).",
        "expected": "The app's own page loads (no 404, no certificate surprise beyond the documented one).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },

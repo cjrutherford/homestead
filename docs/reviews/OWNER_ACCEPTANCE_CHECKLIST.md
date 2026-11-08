@@ -320,7 +320,7 @@ _DB-write sign-in: re-verify after EVERY Audiobookshelf update (pin test TestAud
   - Result: ____  Notes: ____
 
 - [ ] **SRV-AUDIOBOOKSHELF-2 — Opens at the right path or name**
-  - Action: Open https://audiobookshelf.<lan-suffix>/ (own name; the web UI lives under /audiobookshelf inside the app).
+  - Action: Open https://audiobookshelf.<lan-suffix>/ (own name; the web UI lives under /audiobookshelf inside the app) (S473: checked for a move to /apps/audiobookshelf/ and kept on its own name: the web client has /audiobookshelf compiled into its asset URLs, so it cannot load under another prefix; ADR-061 `no_subpath`).
   - Expected: The app's own page loads (no 404, no certificate surprise beyond the documented one).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____

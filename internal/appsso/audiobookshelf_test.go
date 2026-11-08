@@ -344,3 +344,18 @@ func TestAudiobookshelfApplyKeepsSecretInTheFile(t *testing.T) {
 		t.Fatalf("off keeps wiring:\n%s", override)
 	}
 }
+
+// S473 (ADR-061): Audiobookshelf 2.37.1 cannot be served at /apps/<app>/.
+// ROUTER_BASE_PATH moves the API and socket paths, but the web client is
+// built with /audiobookshelf baked into every asset URL (index.html and the
+// _nuxt bundles), so under any other prefix the page never loads. The
+// package therefore keeps its own name. Re-verify on a version bump.
+func TestAudiobookshelfStaysOnItsOwnName(t *testing.T) {
+	m := realAudiobookshelf(t)
+	if m.Publish != catalog.PublishHost || m.PublishReason != catalog.ReasonNoSubpath || m.ServedByPath() {
+		t.Fatalf("audiobookshelf publish %q reason %q serve %q: it must keep its own name (S473)", m.Publish, m.PublishReason, m.Serve)
+	}
+	if _, set := m.Services[0].Environment["ROUTER_BASE_PATH"]; set {
+		t.Fatal("ROUTER_BASE_PATH must stay unset: the client assets only load under /audiobookshelf")
+	}
+}
