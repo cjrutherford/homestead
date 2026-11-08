@@ -6,6 +6,7 @@
 # reports and receipts are stored on the bridge, private to each person. Nothing
 # online: no links to other sites.
 name: expense
+publish: path  # ADR-061
 version: 0.1.0
 title: Expenses
 blurb: Expenses, receipts and reports from your own server, private to each person.

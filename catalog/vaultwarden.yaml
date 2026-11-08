@@ -8,6 +8,8 @@
 # because a generated token would turn an administrative surface on by
 # default; enabling it is a separate owner decision (docs/DEFERRED.md).
 name: vaultwarden
+publish: host  # ADR-061
+publish_reason: owner_choice
 version: 1.37.4
 title: Vaultwarden
 blurb: Passwords and passkeys you control.

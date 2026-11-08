@@ -12,6 +12,7 @@
 # no catalog digest. The version below is the package version and must equal
 # the image tag.
 name: three-d
+publish: path  # ADR-061
 version: 0.1.0
 title: 3D
 blurb: Model, sculpt, animate and render 3D scenes from your own server.

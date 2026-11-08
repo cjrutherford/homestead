@@ -9,6 +9,7 @@
 # and no catalog digest. The version below is the package version and must
 # equal the image tag and the version in catalog/craft/craft-manifest.yaml.
 name: projects
+publish: path  # ADR-061
 version: 0.1.0
 title: Projects
 blurb: Boards, timelines and milestones on your own server.

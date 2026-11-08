@@ -10,6 +10,8 @@
 # owner mount is needed.
 single_origin_sign_in: true  # ADR-060: published, the LAN names redirect to the public name
 name: calibre-web-automated
+publish: host  # ADR-061
+publish_reason: single_origin
 version: 4.0.8
 title: Calibre-Web Automated
 blurb: E-books that file themselves.

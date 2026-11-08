@@ -5,6 +5,7 @@
 # The version below is the vendored storytold release and must equal the
 # image tag and the version in catalog/craft/craft-manifest.yaml.
 name: deckcraft
+publish: never  # ADR-061
 version: 0.7.0
 title: DeckCraft
 blurb: Presentation editor that runs in your browser.

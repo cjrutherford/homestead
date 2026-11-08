@@ -5,6 +5,7 @@
 # browser is separated by person. Nothing online: no sharing, leaderboards or
 # links to other sites.
 name: solitaire
+publish: path  # ADR-061
 version: 0.1.0
 title: Solitaire
 blurb: Klondike solitaire from your own server, with your games and statistics kept private to you.

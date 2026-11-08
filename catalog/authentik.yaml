@@ -8,6 +8,7 @@
 # as 0600 files through Compose secrets (ADR-021), never environment values.
 # Authentik reads file:// URIs for its settings; postgres reads *_FILE.
 name: authentik
+publish: path  # ADR-061
 version: 2026.8.3
 title: Authentik
 blurb: Single sign-on for your services.

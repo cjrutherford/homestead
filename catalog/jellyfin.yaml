@@ -1,6 +1,7 @@
 # Jellyfin media server (S160): the first complete Homestead app package.
 # Curated first-party manifest — versions pin here, updates bump this file.
 name: jellyfin
+publish: path  # ADR-061
 version: 12.2
 title: Jellyfin
 blurb: Media server you control.

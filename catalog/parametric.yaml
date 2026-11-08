@@ -10,6 +10,7 @@
 # no catalog digest. The version below is the package version and must equal
 # the image tag.
 name: parametric
+publish: path  # ADR-061
 version: 0.1.0
 title: Parametric
 blurb: Design 3D parts with sketches and features from your own server.

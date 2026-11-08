@@ -13,6 +13,7 @@
 # own login off behind the gate. The image entrypoint sits before the Node
 # process.
 name: uptime-kuma
+publish: never  # ADR-061
 version: 2.5.7
 title: Uptime Kuma
 blurb: A quiet board that says whether everything is up.

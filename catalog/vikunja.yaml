@@ -9,6 +9,8 @@
 # file (VIKUNJA_SERVICE_SECRET_FILE). Authentik sign-in (below) needs the one
 # thing Vikunja only reads from a config file: the OpenID provider list.
 name: vikunja
+publish: host  # ADR-061
+publish_reason: no_subpath
 version: 2.7.1
 title: Vikunja
 blurb: Shared to-do lists and projects for the household.

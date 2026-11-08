@@ -5,6 +5,7 @@
 # progress sync to the bridge's per-person storage; the copy kept in the
 # browser is separated by person. Nothing online: no links to other sites.
 name: sudoku
+publish: path  # ADR-061
 version: 0.1.0
 title: Sudoku
 blurb: Sudoku from your own server, with your puzzles and records kept private to you.

@@ -784,6 +784,15 @@ type Manifest struct {
 	// origin (ADR-060): while it is published, its LAN and .local names
 	// redirect to the public name. Set only for apps that need it.
 	SingleOriginSignIn bool `yaml:"single_origin_sign_in"`
+	// Publish states the package's public form (ADR-061): PublishPath
+	// (under the dashboard's public name, needs serve: path),
+	// PublishHost (a name of its own, with PublishReason) or
+	// PublishNever (no public name or path, allowwider false). Empty is
+	// derived from the other fields by DerivedPublish; every shipped
+	// package declares it.
+	Publish string `yaml:"publish"`
+	// PublishReason says why a PublishHost package keeps its own name.
+	PublishReason string `yaml:"publish_reason"`
 	// NeverPublish marks an app that must never get a public name or path
 	// (S451): its open paths (status pages, badges, push URLs) are not
 	// behind Authentik. Every public-address, install and tunnel path
@@ -978,6 +987,98 @@ const (
 	ServePath = "path"
 )
 
+// Public forms and reasons (ADR-061).
+const (
+	PublishPath  = "path"
+	PublishHost  = "host"
+	PublishNever = "never"
+
+	ReasonNoSubpath     = "no_subpath"
+	ReasonOwnNameADR044 = "own_name_adr044"
+	ReasonSingleOrigin  = "single_origin"
+	ReasonOwnerChoice   = "owner_choice"
+)
+
+// anyEndpointWider reports whether some endpoint may be exposed wider than
+// the local network.
+func (m Manifest) anyEndpointWider() bool {
+	for _, endpoint := range m.Exposure.Endpoints {
+		if endpoint.AllowWider {
+			return true
+		}
+	}
+	return false
+}
+
+// DerivedPublish is the public form today's fields imply (ADR-061): never
+// when no endpoint allows wider exposure, path when served by path, host
+// otherwise.
+func (m Manifest) DerivedPublish() string {
+	switch {
+	case !m.anyEndpointWider():
+		return PublishNever
+	case m.ServedByPath():
+		return PublishPath
+	}
+	return PublishHost
+}
+
+// PublishForm is the declared public form, or the derived one when the
+// manifest does not declare it.
+func (m Manifest) PublishForm() string {
+	if m.Publish != "" {
+		return m.Publish
+	}
+	return m.DerivedPublish()
+}
+
+// validatePublish checks the public-form declaration (ADR-061).
+func (m Manifest) validatePublish() error {
+	switch m.Publish {
+	case "":
+		if m.PublishReason != "" {
+			return fmt.Errorf("catalog: publish_reason needs publish: host")
+		}
+		return nil
+	case PublishPath, PublishHost, PublishNever:
+	default:
+		return fmt.Errorf("catalog: publish must be path, host or never")
+	}
+	if m.Publish == PublishHost {
+		switch m.PublishReason {
+		case ReasonNoSubpath, ReasonOwnNameADR044, ReasonSingleOrigin, ReasonOwnerChoice:
+		case "":
+			return fmt.Errorf("catalog: publish: host needs a publish_reason")
+		default:
+			return fmt.Errorf("catalog: unknown publish_reason %q", m.PublishReason)
+		}
+	} else if m.PublishReason != "" {
+		return fmt.Errorf("catalog: publish_reason needs publish: host")
+	}
+	if m.Publish == PublishPath && !m.ServedByPath() {
+		return fmt.Errorf("catalog: publish: path needs serve: path")
+	}
+	if m.Publish == PublishHost && m.ServedByPath() {
+		return fmt.Errorf("catalog: publish: host conflicts with serve: path")
+	}
+	if m.SingleOriginSignIn && m.Publish != PublishHost {
+		return fmt.Errorf("catalog: single_origin_sign_in needs publish: host")
+	}
+	if m.SingleOriginSignIn && m.PublishReason != ReasonSingleOrigin {
+		return fmt.Errorf("catalog: single_origin_sign_in needs publish_reason: single_origin")
+	}
+	if m.PublishReason == ReasonSingleOrigin && !m.SingleOriginSignIn {
+		return fmt.Errorf("catalog: publish_reason: single_origin needs single_origin_sign_in")
+	}
+	if !m.anyEndpointWider() && m.Publish != PublishNever {
+		return fmt.Errorf("catalog: allowwider: false needs publish: never")
+	}
+	if m.Publish == PublishNever && m.anyEndpointWider() {
+		return fmt.Errorf("catalog: publish: never needs allowwider: false")
+	}
+	return nil
+}
+
 // ServedByPath reports a package served under the appliance's names.
 func (m Manifest) ServedByPath() bool { return m.Serve == ServePath }
 
@@ -1091,6 +1192,9 @@ func (m Manifest) Validate() error {
 		return err
 	}
 	if err := m.validateServe(); err != nil {
+		return err
+	}
+	if err := m.validatePublish(); err != nil {
 		return err
 	}
 	if err := m.validateSeeds(); err != nil {

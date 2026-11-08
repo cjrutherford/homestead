@@ -9,6 +9,7 @@
 # catalog digest. The version below is the package version and must equal the
 # image tag.
 name: time-tracking
+publish: path  # ADR-061
 version: 0.1.0
 title: Time tracking
 blurb: Track billable hours and invoice your clients from your own server.

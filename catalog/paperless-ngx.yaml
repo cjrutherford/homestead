@@ -11,6 +11,8 @@
 # created; register one before install if you want to choose it, or
 # reset it later with `manage.py changepassword`.
 name: paperless-ngx
+publish: host  # ADR-061
+publish_reason: no_subpath
 version: 3.3.4
 title: Paperless-ngx
 blurb: Scan, search, and keep the household paper trail.

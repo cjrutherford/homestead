@@ -7,6 +7,7 @@
 # never pulled, so there is no registry reference and no catalog digest. The
 # version below is the package version and must equal the image tag.
 name: contacts
+publish: path  # ADR-061
 version: 0.1.0
 title: Contacts
 blurb: A private address book with search and vCard import and export on your own server.

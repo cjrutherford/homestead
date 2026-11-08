@@ -8,6 +8,7 @@
 # and no catalog digest. The version below is the package version and must
 # equal the image tag and the version in catalog/craft/craft-manifest.yaml.
 name: records
+publish: path  # ADR-061
 version: 0.1.0
 title: Records
 blurb: Tables, views and forms for your data on your own server.

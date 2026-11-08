@@ -6,6 +6,7 @@
 # storytold release and must equal the image tag and the version in
 # catalog/craft/craft-manifest.yaml.
 name: wordcraft
+publish: never  # ADR-061
 version: 0.7.0
 title: WordCraft
 blurb: Word processor that runs in your browser.

@@ -8,6 +8,7 @@
 # person) and mirrored to the bridge's per-person storage. WebSocket, raw
 # sockets and sharing are not offered.
 name: api-client
+publish: path  # ADR-061
 version: 0.1.0
 title: API Client
 blurb: Build and send HTTP requests from your own server; collections and environments private to each person.

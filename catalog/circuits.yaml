@@ -9,6 +9,7 @@
 # no catalog digest. The version below is the package version and must equal
 # the image tag.
 name: circuits
+publish: path  # ADR-061
 version: 0.1.0
 title: Circuits
 blurb: Draw schematics and lay out circuit boards from your own server.

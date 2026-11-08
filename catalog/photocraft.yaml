@@ -5,6 +5,7 @@
 # The version below is the vendored storytold release and must equal the
 # image tag and the version in catalog/craft/craft-manifest.yaml.
 name: photocraft
+publish: never  # ADR-061
 version: 0.9.0
 title: PhotoCraft
 blurb: Photo editor that runs in your browser.

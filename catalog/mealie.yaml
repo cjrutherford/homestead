@@ -11,6 +11,8 @@
 # file (OIDC_CLIENT_SECRET_FILE).
 single_origin_sign_in: true  # ADR-060: published, the LAN names redirect to the public name
 name: mealie
+publish: host  # ADR-061
+publish_reason: single_origin
 version: 3.29.0
 title: Mealie
 blurb: Recipes, meal plans, and one shopping list.

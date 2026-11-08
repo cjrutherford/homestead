@@ -5,6 +5,8 @@
 # database and uploads on application storage. Memos cannot run under a
 # path, so it is served on a name of its own.
 name: memos
+publish: host  # ADR-061
+publish_reason: no_subpath
 version: 26.10.0
 title: Memos
 blurb: Fast private notes with tags, search and a simple API.

@@ -9,6 +9,8 @@
 # sign-in (S416).
 single_origin_sign_in: true  # ADR-060: published, the LAN names redirect to the public name
 name: gitea
+publish: host  # ADR-061
+publish_reason: single_origin
 version: 28.2.0
 title: Gitea
 blurb: A private Git forge for your own projects.

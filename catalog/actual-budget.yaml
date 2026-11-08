@@ -11,6 +11,8 @@
 # secret comes from ACTUAL_OPENID_CLIENT_SECRET_FILE (load-config.js).
 single_origin_sign_in: true  # ADR-060: published, the LAN names redirect to the public name
 name: actual-budget
+publish: host  # ADR-061
+publish_reason: single_origin
 version: 26.10.0
 title: Actual Budget
 blurb: Private household budgeting that syncs across devices.

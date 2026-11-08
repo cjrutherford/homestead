@@ -8,6 +8,8 @@
 # separately holds a first-run recovery password; the image entrypoint
 # runs unchanged.
 name: audiobookshelf
+publish: host  # ADR-061
+publish_reason: no_subpath
 version: 2.37.1
 title: Audiobookshelf
 blurb: Your audiobooks and podcasts, on every device.

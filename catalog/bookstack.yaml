@@ -17,6 +17,8 @@
 # generated one the owner can reveal, before and apart from Authentik
 # sign-in, so the well-known password never survives the first start.
 name: bookstack
+publish: host  # ADR-061
+publish_reason: no_subpath
 version: 26.09.2
 title: BookStack
 blurb: A structured wiki for household documentation.

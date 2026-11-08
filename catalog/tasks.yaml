@@ -7,6 +7,7 @@
 # and no catalog digest. The version below is the package version and must
 # equal the image tag and the version in catalog/craft/craft-manifest.yaml.
 name: tasks
+publish: path  # ADR-061
 version: 0.1.0
 title: Tasks
 blurb: Lists, due dates and reminders on your own server.

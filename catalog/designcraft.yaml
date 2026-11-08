@@ -5,6 +5,7 @@
 # The version below is the vendored storytold release and must equal the
 # image tag and the version in catalog/craft/craft-manifest.yaml.
 name: designcraft
+publish: never  # ADR-061
 version: 0.8.0
 title: DesignCraft
 blurb: Page layout and publishing tool that runs in your browser.

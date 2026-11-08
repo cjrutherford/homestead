@@ -18,6 +18,8 @@
 # backed up with it; the only declared secret is the administrator's
 # password, held by Homestead alone, and the entrypoint is unchanged.
 name: navidrome
+publish: host  # ADR-061
+publish_reason: no_subpath
 version: 0.64.2
 title: Navidrome
 blurb: Your music library, streamed anywhere.

@@ -15,6 +15,8 @@
 # FreshRSS must use http_auth, so the app's own form login stops working
 # until sign-in is turned off.
 name: freshrss
+publish: host  # ADR-061
+publish_reason: no_subpath
 version: 1.30.4
 title: FreshRSS
 blurb: The feeds you chose, on your own schedule.

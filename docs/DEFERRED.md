@@ -1854,3 +1854,4 @@ Found on VM 2 in the browser run; not fixed in this pass.
 
 - S467: Puter strings remain only in places a person does not reach on Homestead: sign-in-only screens, the hidden AI assistants (3D, Parametric, Contacts smart add), source comments, a few export-file headers, Records' upstream repo link, and the credit line "Built with Puter.js" (attribution kept on purpose). Add a phrase to `scripts/everything/wording.json` if one turns up in a live check.
 - S468: Notes, Circuits, Parametric, API Client, Records and 3D ship no service worker, so with the container stopped they still show Caddy's 502 (low). A fix would add a worker per app or an edge `handle_errors` page across the generated route shapes.
+- S469: `never_publish` (S451) and `publish: never` now overlap; nothing reads `publish` yet. Make the plan, install and Doctor code read `publish`, and drop `never_publish`, when S471 touches those paths.

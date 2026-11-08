@@ -9,6 +9,8 @@
 # heap is capped because the default maximum is a quarter of host RAM, which
 # would let the server crowd the appliance.
 name: komga
+publish: host  # ADR-061
+publish_reason: no_subpath
 version: 1.29.1
 title: Komga
 blurb: Your comics and manga, on every screen.

@@ -5,6 +5,7 @@
 # The version below is the vendored storytold release and must equal the
 # image tag and the version in catalog/craft/craft-manifest.yaml.
 name: figcraft
+publish: never  # ADR-061
 version: 0.6.0
 title: FigCraft
 blurb: Interface design tool that runs in your browser.

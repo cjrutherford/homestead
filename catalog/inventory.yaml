@@ -8,6 +8,7 @@
 # never pulled, so there is no registry reference and no catalog digest. The
 # version below is the package version and must equal the image tag.
 name: inventory
+publish: path  # ADR-061
 version: 0.1.0
 title: Inventory
 blurb: Know what you have, where it is and what to reorder, on your own server.

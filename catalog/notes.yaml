@@ -10,6 +10,7 @@
 # package version and must equal the image tag and the version in
 # catalog/craft/craft-manifest.yaml.
 name: notes
+publish: path  # ADR-061
 version: 0.1.0
 title: Notes
 blurb: Notebooks, sections and pages with ink, tags and search on your own server.

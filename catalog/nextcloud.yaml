@@ -3,6 +3,7 @@
 # SQLite carries the database by default (single-user scale); larger
 # deployments graduate to external databases in later slices.
 name: nextcloud
+publish: path  # ADR-061
 version: 35.0.1
 title: Nextcloud
 blurb: Files, calendar, and contacts you host.

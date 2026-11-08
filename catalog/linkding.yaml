@@ -9,6 +9,8 @@
 # reads OIDC_RP_CLIENT_SECRET only as plaintext, so the supervisor exports
 # it from a 0600 file and it never reaches Compose, argv, or logs.
 name: linkding
+publish: host  # ADR-061
+publish_reason: no_subpath
 version: 1.47.0
 title: Linkding
 blurb: Your bookmarks, searchable and yours.

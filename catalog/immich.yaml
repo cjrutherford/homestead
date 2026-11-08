@@ -9,6 +9,8 @@
 # hostnames and names are plain environment, so a fresh install starts
 # without manual configuration.
 name: immich
+publish: host  # ADR-061
+publish_reason: own_name_adr044
 version: 3.3.0
 title: Immich
 blurb: Photos and videos you host.
