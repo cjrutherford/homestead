@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "726f58013388d3a6",
+ "hash": "ddafa885a14745cc",
  "sections": [
   {
    "title": "Platform",
@@ -366,6 +366,13 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "action": "`homesteadctl updates list` and the Updates page (no apps yet; platform updates only).",
        "expected": "Same list in both; each item states whether a backup is made first.",
        "fail": ""
+      },
+      {
+       "id": "PLAT-UPDATE-4",
+       "title": "Rotate the release signing key",
+       "action": "Follow \"Release signing key\" in docs/RELEASING.md: run `scripts/release/keygen.sh --out \u003cpath outside the repo\u003e`, then on the Updates page (or `homesteadctl updates trust add --key-file \u003cpub\u003e`) trust the new key, confirm it is listed, then remove (retire) the old key.",
+       "expected": "Both keys are listed after adding; the old one is gone after removing; the key file is mode 600 and nothing secret was printed.",
+       "fail": "docs/architecture/RELEASE_VERIFICATION.md."
       },
       {
        "id": "PLAT-UPDATE-3",

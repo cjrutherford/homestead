@@ -234,6 +234,12 @@ The form is generated from this file by `python3 -I scripts/review/make_acceptan
   - If it fails: 
   - Result: ____  Notes: ____
 
+- [ ] **PLAT-UPDATE-4 — Rotate the release signing key**
+  - Action: Follow "Release signing key" in docs/RELEASING.md: run `scripts/release/keygen.sh --out <path outside the repo>`, then on the Updates page (or `homesteadctl updates trust add --key-file <pub>`) trust the new key, confirm it is listed, then remove (retire) the old key.
+  - Expected: Both keys are listed after adding; the old one is gone after removing; the key file is mode 600 and nothing secret was printed.
+  - If it fails: docs/architecture/RELEASE_VERIFICATION.md.
+  - Result: ____  Notes: ____
+
 - [ ] **PLAT-UPDATE-3 — Platform verify**
   - Action: Platform update verify (dashboard or CLI) without applying.
   - Expected: Verify reports OK or the reason; rollback option is shown.
@@ -3665,7 +3671,7 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | PLAT-NAMES | PLAT-NAMES-1 to PLAT-NAMES-1 (1) |  |  |  |  |
 | PLAT-CATALOG | PLAT-CATALOG-1 to PLAT-CATALOG-1 (1) |  |  |  |  |
 | PLAT-BACKUP | PLAT-BACKUP-1 to PLAT-BACKUP-4 (4) |  |  |  |  |
-| PLAT-UPDATE | PLAT-UPDATE-1 to PLAT-UPDATE-2 (3) |  |  |  |  |
+| PLAT-UPDATE | PLAT-UPDATE-1 to PLAT-UPDATE-2 (4) |  |  |  |  |
 | SRV-ACTUAL-BUDGET | SRV-ACTUAL-BUDGET-1 to SRV-ACTUAL-BUDGET-9 (10) |  |  |  |  |
 | SRV-AUDIOBOOKSHELF | SRV-AUDIOBOOKSHELF-1 to SRV-AUDIOBOOKSHELF-11 (11) |  |  |  |  |
 | SRV-BOOKSTACK | SRV-BOOKSTACK-1 to SRV-BOOKSTACK-10 (10) |  |  |  |  |
@@ -3722,4 +3728,4 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | END-AUDIT | END-AUDIT-1 to END-AUDIT-1 (1) |  |  |  |  |
 | END-PARITY | END-PARITY-1 to END-PARITY-7 (7) |  |  |  |  |
 | END-UNINSTALL | END-UNINSTALL-1 to END-UNINSTALL-6 (6) |  |  |  |  |
-| **Total** | 563 steps |  |  |  |  |
+| **Total** | 564 steps |  |  |  |  |

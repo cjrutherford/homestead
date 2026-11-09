@@ -66,6 +66,11 @@ check: lint build test
 VERSION := $(shell cat VERSION)
 RELEASE_COUNTER ?= 1
 RELEASE_DIR := dist/release
+# Production release public key (S493): the .pub file from
+# scripts/release/keygen.sh. Defaults to release/release.pub when that file
+# exists; empty keeps the placeholder key.
+RELEASE_PUBLIC_KEY_FILE ?= $(wildcard release/release.pub)
+RELEASE_PUBLIC_KEY := $(if $(RELEASE_PUBLIC_KEY_FILE),$(shell tail -n 1 $(RELEASE_PUBLIC_KEY_FILE)))
 
 release: dashboard-build dashboard-embed
 	rm -rf $(RELEASE_DIR)
@@ -73,7 +78,7 @@ release: dashboard-build dashboard-embed
 	for arch in amd64 arm64; do \
 	  for bin in homestead-server homesteadctl; do \
 	    CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -tags embeddash -trimpath \
-	      -ldflags "-s -w -X homestead/internal/version.Version=$(VERSION)" \
+	      -ldflags "-s -w -X homestead/internal/version.Version=$(VERSION)$(if $(RELEASE_PUBLIC_KEY), -X homestead/internal/release.ReleasePublicKey=$(RELEASE_PUBLIC_KEY))" \
 	      -o $(RELEASE_DIR)/$$bin-linux-$$arch ./cmd/$$bin || exit 1; \
 	  done; \
 	done
