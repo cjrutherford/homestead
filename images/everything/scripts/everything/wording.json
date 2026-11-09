@@ -1,0 +1,240 @@
+{
+  "why": "S467: the apps were written for the hosted Puter cloud. On Homestead there is no Puter: these exact phrases are reworded wherever they occur in the app's own source (user-visible text, page metadata, calendar feeds), after the per-app patches. Tests, dev mocks, docs and marketing pages are not touched. Order matters: longer phrases first.",
+  "extensions": [
+    ".js",
+    ".ts",
+    ".html"
+  ],
+  "skip": [
+    "/tests/",
+    "/test/",
+    "/e2e/",
+    "/dev/",
+    "/tools/",
+    "/site/",
+    "/views/landing.html",
+    "/assistant/"
+  ],
+  "rules": [
+    [
+      "Your Puter storage",
+      "Your Homestead storage"
+    ],
+    [
+      "Your Puter plan",
+      "Your plan"
+    ],
+    [
+      "Powered by Tasks on Puter",
+      "Powered by Tasks"
+    ],
+    [
+      "Tasks on Puter",
+      "Tasks"
+    ],
+    [
+      "Powered by Puter",
+      "Runs on your Homestead"
+    ],
+    [
+      "Free Stock Management by Puter",
+      "Stock Management"
+    ],
+    [
+      "Free inventory management by Puter",
+      "Inventory management"
+    ],
+    [
+      "Powered by Puter.",
+      "Runs on your Homestead."
+    ],
+    [
+      "in your own Puter cloud",
+      "on your own Homestead"
+    ],
+    [
+      "in your Puter cloud",
+      "on your Homestead"
+    ],
+    [
+      "on your own Puter cloud",
+      "on your own Homestead"
+    ],
+    [
+      "to your Puter cloud",
+      "to your Homestead"
+    ],
+    [
+      "to your own Puter cloud",
+      "to your own Homestead"
+    ],
+    [
+      "your own Puter cloud",
+      "your own Homestead"
+    ],
+    [
+      "your Puter cloud",
+      "your Homestead"
+    ],
+    [
+      "Puter cloud",
+      "Homestead"
+    ],
+    [
+      "in your own Puter account",
+      "on your own Homestead"
+    ],
+    [
+      "in your Puter account",
+      "on your Homestead"
+    ],
+    [
+      "your own Puter account",
+      "your own Homestead"
+    ],
+    [
+      "your Puter account",
+      "your Homestead"
+    ],
+    [
+      "Puter account",
+      "Homestead account"
+    ],
+    [
+      "your Puter storage",
+      "your Homestead storage"
+    ],
+    [
+      "your Puter Drive",
+      "your Homestead storage"
+    ],
+    [
+      "your Puter files",
+      "your Homestead files"
+    ],
+    [
+      "Save .zip to Puter",
+      "Save .zip to Homestead"
+    ],
+    [
+      "Save to Puter",
+      "Save to Homestead"
+    ],
+    [
+      "saved to Puter",
+      "saved to Homestead"
+    ],
+    [
+      "Add from Puter",
+      "Add from Homestead"
+    ],
+    [
+      "Browse Puter...",
+      "Browse Homestead..."
+    ],
+    [
+      "Signed in with Puter",
+      "Signed in on Homestead"
+    ],
+    [
+      "Waiting for Puter",
+      "Waiting for Homestead"
+    ],
+    [
+      "Could not reach Puter",
+      "Could not reach Homestead"
+    ],
+    [
+      "Couldn't reach Puter",
+      "Couldn't reach Homestead"
+    ],
+    [
+      "Couldn’t connect to Puter",
+      "Couldn’t connect to Homestead"
+    ],
+    [
+      "could not reach Puter",
+      "could not reach Homestead"
+    ],
+    [
+      "reach Puter",
+      "reach Homestead"
+    ],
+    [
+      "needs Puter to store",
+      "needs Homestead to store"
+    ],
+    [
+      "Offline: Puter is unreachable",
+      "Offline: Homestead is unreachable"
+    ],
+    [
+      "The Puter SDK failed to load",
+      "The app failed to load"
+    ],
+    [
+      "Puter SDK not loaded",
+      "bridge not loaded"
+    ],
+    [
+      "Puter username",
+      "username"
+    ],
+    [
+      "Puter user",
+      "Homestead user"
+    ],
+    [
+      "Puter window",
+      "sign-in window"
+    ],
+    [
+      "Puter sign-in",
+      "sign-in"
+    ],
+    [
+      "//Puter//",
+      "//Homestead//"
+    ],
+    [
+      "on Puter",
+      "on Homestead"
+    ],
+    [
+      "Puter AI credits",
+      "AI credits"
+    ],
+    [
+      "signed in to Puter",
+      "signed in"
+    ],
+    [
+      "Sign in to Puter",
+      "Sign in"
+    ],
+    [
+      "powered by Puter",
+      "running on your Homestead"
+    ],
+    [
+      "Puter 3D",
+      "Homestead 3D"
+    ],
+    [
+      "Puter request",
+      "Homestead request"
+    ],
+    [
+      "your own Puter files",
+      "your own Homestead files"
+    ],
+    [
+      "Puter files",
+      "Homestead files"
+    ],
+    [
+      "Puter Drive",
+      "Homestead storage"
+    ]
+  ]
+}

@@ -1,10 +1,11 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { RouterLink } from '@angular/router';
 import { ApiService, PackageUpdate } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
 import { CraftImagesPanel } from './craft-images';
 import { PlatformUpdatesPanel } from './platform-updates';
+import { Loading } from '../ui/loading';
+import { OperationProgress } from '../ui/operation-progress';
 
 /**
  * Update review page (S193): per-package drift plans against running
@@ -14,7 +15,7 @@ import { PlatformUpdatesPanel } from './platform-updates';
  * out to operation detail for progress; this page never blocks.
  */
 @Component({
-  imports: [StateMessage, RouterLink, PlatformUpdatesPanel, CraftImagesPanel],
+  imports: [OperationProgress, Loading, StateMessage, PlatformUpdatesPanel, CraftImagesPanel],
   selector: 'app-updates',
   templateUrl: './updates.html',
 })
@@ -22,6 +23,8 @@ export class Updates implements OnInit {
   private readonly api = inject(ApiService);
 
   protected readonly rows = signal<PackageUpdate[]>([]);
+  protected readonly installedRows = computed(() => this.rows().filter((r) => r.installed));
+  protected readonly notInstalledRows = computed(() => this.rows().filter((r) => !r.installed));
   protected readonly operationId = signal<number | null>(null);
   protected readonly notice = signal<string | null>(null);
   protected readonly busy = signal(false);
@@ -31,7 +34,7 @@ export class Updates implements OnInit {
   protected readonly dbPasswords = signal<Record<string, string>>({});
   /** Per-package craft inputs for updates that rebuild a craft image (S279). */
   protected readonly craftInputs = signal<
-    Record<string, { manifest?: string; artifact?: string; allow_older?: boolean }>
+    Record<string, { manifest?: string; signature?: string; artifact?: string; allow_older?: boolean }>
   >({});
 
   ngOnInit(): void {
@@ -61,7 +64,7 @@ export class Updates implements OnInit {
     this.dbPasswords.update((passwords) => ({ ...passwords, [name]: value }));
   }
 
-  setCraft(name: string, field: 'manifest' | 'artifact', value: string): void {
+  setCraft(name: string, field: 'manifest' | 'signature' | 'artifact', value: string): void {
     this.craftInputs.update((all) => ({
       ...all,
       [name]: { ...all[name], [field]: value || undefined },

@@ -1,13 +1,36 @@
-import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { ApplicationConfig, inject, provideAppInitializer, provideBrowserGlobalErrorListeners } from '@angular/core';
+import {
+  InMemoryScrollingOptions,
+  Router,
+  provideRouter,
+  withInMemoryScrolling,
+  withViewTransitions,
+} from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { authInterceptor } from './core/auth.interceptor';
+import { reauthInterceptor } from './core/reauth';
 import { routes } from './app.routes';
+import { setupRefreshInterceptor } from './setup/setup-refresh.interceptor';
+import { workOrderInterceptor } from './core/work-order.interceptor';
+import { viewTransitionOptions } from './core/view-transition';
+import { watchScrollRestore } from './core/scroll-restore';
+
+/**
+ * A new page starts at the top; back and forward restore the earlier
+ * position. Without this the document keeps its old scroll offset across
+ * route changes and a short-lived tall page leaves the next one scrolled to
+ * its bottom.
+ */
+export const SCROLL_OPTIONS: InMemoryScrollingOptions = {
+  scrollPositionRestoration: 'enabled',
+  anchorScrolling: 'enabled',
+};
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
-    provideRouter(routes),
-    provideHttpClient(withInterceptors([authInterceptor]))
+    provideRouter(routes, withInMemoryScrolling(SCROLL_OPTIONS), withViewTransitions(viewTransitionOptions)),
+    provideAppInitializer(() => watchScrollRestore(inject(Router))),
+    provideHttpClient(withInterceptors([reauthInterceptor, authInterceptor, workOrderInterceptor, setupRefreshInterceptor]))
   ]
 };

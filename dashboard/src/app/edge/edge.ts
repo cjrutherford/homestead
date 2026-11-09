@@ -1,3 +1,4 @@
+import { plural } from '../core/plural';
 import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
@@ -9,7 +10,9 @@ import {
   OperationState,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
-import { DialogFocus } from '../storage/dialog-focus';
+import { Dialog } from '../ui/dialog';
+import { Loading } from '../ui/loading';
+import { OperationProgress } from '../ui/operation-progress';
 
 export const EDGE_EXPOSURES = ['local', 'overlay', 'public'] as const;
 export const EDGE_TLS = ['off', 'internal', 'auto'] as const;
@@ -57,17 +60,13 @@ const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
  * and approved on the Exposure page (ADR-006), not here.
  */
 @Component({
-  imports: [StateMessage, DialogFocus, RouterLink],
+  imports: [OperationProgress, Loading, StateMessage, Dialog, RouterLink],
   selector: 'app-edge',
   templateUrl: './edge.html',
-  styles: [
-    'button, input, select, textarea { min-height: 44px; }',
-    'textarea { width: 100%; box-sizing: border-box; font-family: monospace; }',
-    'input, select { max-width: 100%; box-sizing: border-box; }',
-    '.edge-route { overflow-wrap: anywhere; }',
-  ],
+  styles: ['textarea { font-family: var(--font-mono); }'],
 })
 export class Edge implements OnInit, OnDestroy {
+  protected readonly plural = plural;
   private readonly api = inject(ApiService);
   private stream: Subscription | null = null;
 
@@ -110,7 +109,8 @@ export class Edge implements OnInit, OnDestroy {
       next: ({ routes }) => {
         this.loading.set(false);
         this.loaded.set(true);
-        this.drafts.set((routes ?? []).map((r) => this.toDraft(r)));
+        // The dashboard route is managed on the Trust page (S289); the daemon keeps it.
+        this.drafts.set((routes ?? []).filter((r) => !r.Dashboard).map((r) => this.toDraft(r)));
         this.problems.set([]);
       },
       error: (failure: HttpErrorResponse) => {
@@ -137,7 +137,7 @@ export class Edge implements OnInit, OnDestroy {
 
   protected describe(failure: HttpErrorResponse): string {
     if (failure.status === 0) {
-      return 'Cannot reach the Homestead daemon. Check that it is running and try again.';
+      return "Can't reach the appliance. Check that homestead-server is running.";
     }
     const body = failure.error;
     if (typeof body === 'string' && body.trim()) {
@@ -205,8 +205,8 @@ export class Edge implements OnInit, OnDestroy {
       this.error.set(bad);
       return;
     }
-    this.drafts.set((doc.routes as EdgeRoute[]).map((r) => this.toDraft(r)));
-    this.notice.set(`Loaded ${doc.routes.length} route(s). Review them, then reconcile.`);
+    this.drafts.set((doc.routes as EdgeRoute[]).filter((r) => !r.Dashboard).map((r) => this.toDraft(r)));
+    this.notice.set(`Loaded ${plural(doc.routes.length, 'route')}. Review them, then reconcile.`);
   }
 
   /** Shape check for one imported item; value rules run at submit. */
@@ -296,6 +296,14 @@ export class Edge implements OnInit, OnDestroy {
     return this.pending.filter((r) => r.Exposure === 'public').map((r) => r.Host);
   }
 
+  /** Public hosts in the table as it stands now, before validation (the preview beside the button). */
+  protected draftPublicHosts(): string[] {
+    return this.drafts()
+      .filter((row) => row.exposure === 'public')
+      .map((row) => row.host.trim())
+      .filter((host) => host !== '');
+  }
+
   protected pendingCount(): number {
     return this.pending.length;
   }
@@ -350,11 +358,6 @@ export class Edge implements OnInit, OnDestroy {
     call.subscribe({
       next: (started: OperationStarted) => {
         this.busy.set(false);
-        this.notice.set(
-          which === 'deploy'
-            ? 'Caddy deployment started.'
-            : `Route reconciliation started for ${this.pending.length} route(s).`,
-        );
         this.follow(started.id);
       },
       error: (failure: HttpErrorResponse) => {

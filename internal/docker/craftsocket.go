@@ -22,6 +22,11 @@ const (
 	// host to the daemon; the edge sets them with header_up.
 	CraftAppHeader  = "X-Homestead-Craft-App"
 	CraftHostHeader = "X-Homestead-Craft-Host"
+	// CraftWrapperPrefix is forwarded whole on a craft path route
+	// (ADR-045): the daemon serves the wrapper page and the file path,
+	// and CraftPrefixHeader carries the app's path, without its slash.
+	CraftWrapperPrefix = "/_homestead/"
+	CraftPrefixHeader  = "X-Homestead-Craft-Prefix"
 )
 
 // HasCraftRoutes reports whether any route forwards the craft file path.

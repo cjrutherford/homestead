@@ -1,4 +1,4 @@
-.PHONY: test test-py test-go build lint lint-scripts dashboard-install dashboard-build dashboard-test dashboard-embed install uninstall check
+.PHONY: guide-build release test test-py test-go build lint lint-scripts dashboard-install dashboard-build dashboard-test dashboard-embed install uninstall check
 
 test: test-py test-go
 
@@ -21,10 +21,12 @@ lint-scripts:
 	bash -n scripts/install-systemd.sh
 	bash -n scripts/recover-control-plane.sh
 	bash -n scripts/uninstall-systemd.sh
+	bash -n scripts/factory-reset.sh
 	bash -n scripts/provision-layout.sh
 	bash -n scripts/craft-manifest.sh
 	bash -n scripts/sign-craft-manifest.sh
 	bash -n scripts/craft-header-check.sh
+	bash -n scripts/everything/gate/run_compose_check.sh
 
 acceptance:
 	sudo ./scripts/acceptance.sh
@@ -50,6 +52,11 @@ dashboard-build:
 dashboard-test:
 	cd dashboard && pnpm exec ng test --watch=false
 
+# Owner guide (S494): docs/guide/*.md -> internal/guide/dist, embedded with
+# -tags embeddash. Stdlib-only Python; no network.
+guide-build:
+	python3 -I scripts/guide/build.py
+
 dashboard-embed:
 	test -d dashboard/dist/homestead-dashboard/browser || (echo "run make dashboard-build first" >&2; exit 1)
 	rm -rf internal/dashboard/dist
@@ -57,3 +64,30 @@ dashboard-embed:
 	cp -r dashboard/dist/homestead-dashboard/browser/. internal/dashboard/dist/
 
 check: lint build test
+
+# Release build (S332). VERSION is the single version source. Raise
+# RELEASE_COUNTER with every release (ADR-025 rollback protection).
+# Signing is offline and manual: this target never touches a key.
+VERSION := $(shell cat VERSION)
+RELEASE_COUNTER ?= 1
+RELEASE_DIR := dist/release
+# Production release public key (S493): the .pub file from
+# scripts/release/keygen.sh. Defaults to release/release.pub when that file
+# exists; empty keeps the placeholder key.
+RELEASE_PUBLIC_KEY_FILE ?= $(wildcard release/release.pub)
+RELEASE_PUBLIC_KEY := $(if $(RELEASE_PUBLIC_KEY_FILE),$(shell tail -n 1 $(RELEASE_PUBLIC_KEY_FILE)))
+
+release: dashboard-build dashboard-embed guide-build
+	rm -rf $(RELEASE_DIR)
+	mkdir -p $(RELEASE_DIR)
+	for arch in amd64 arm64; do \
+	  for bin in homestead-server homesteadctl; do \
+	    CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -tags embeddash -trimpath \
+	      -ldflags "-s -w -X homestead/internal/version.Version=$(VERSION)$(if $(RELEASE_PUBLIC_KEY), -X homestead/internal/release.ReleasePublicKey=$(RELEASE_PUBLIC_KEY))" \
+	      -o $(RELEASE_DIR)/$$bin-linux-$$arch ./cmd/$$bin || exit 1; \
+	  done; \
+	done
+	{ echo "version=$(VERSION)"; echo "counter=$(RELEASE_COUNTER)"; \
+	  cd $(RELEASE_DIR) && sha256sum homestead-server-linux-* homesteadctl-linux-*; } > $(RELEASE_DIR)/SHA256SUMS.tmp
+	mv $(RELEASE_DIR)/SHA256SUMS.tmp $(RELEASE_DIR)/SHA256SUMS
+

@@ -1,7 +1,6 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { KeyValuePipe } from '@angular/common';
-import { RouterLink } from '@angular/router';
 import {
   ApiService,
   PlatformRelease,
@@ -9,6 +8,8 @@ import {
   TrustKey,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { OperationProgress } from '../ui/operation-progress';
+import { Permit } from '../ui/permit';
 
 /** Stable daemon error code: refused only for lack of the older-release override. */
 const OLDER_RELEASE_CODE = 'older-release-needs-override';
@@ -21,7 +22,7 @@ const OLDER_RELEASE_CODE = 'older-release-needs-override';
  * override; authenticity failures offer none.
  */
 @Component({
-  imports: [StateMessage, RouterLink, KeyValuePipe],
+  imports: [OperationProgress, Permit, StateMessage, KeyValuePipe],
   selector: 'app-platform-updates',
   templateUrl: './platform-updates.html',
 })

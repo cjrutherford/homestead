@@ -1,0 +1,345 @@
+<section aria-label="People">
+  <header class="masthead">
+    <h1>People</h1>
+    <p class="masthead-fact">{{ lead() }}</p>
+    <p class="masthead-actions">
+      <button type="button" class="primary" (click)="openAdd()" [disabled]="!canAct() || loading()">Add a person</button>
+      <span class="checked-at">People only open apps. They are never Homestead administrators.</span>
+    </p>
+  </header>
+
+  @if (error()) {
+    <app-state-message kind="error" [headline]="error()" detail="Check that the appliance is on, then check the service with: systemctl status homestead-server" actionLabel="Try again" (action)="load()" />
+  } @else {
+    <app-loading [loading]="loading()" shape="fields">
+      @if (view(); as v) {
+        @if (!v.token_kept) {
+          <section class="field-panel" aria-labelledby="people-no-token" data-state="warn">
+            <h2 id="people-no-token">
+              {{ v.reason === 'no-sign-in' ? 'Sign-in with Authentik is not set up' : 'Homestead cannot manage people yet' }}
+            </h2>
+            <p>
+              @if (v.reason === 'no-sign-in') {
+                People sign in through Authentik, and Homestead has no connection to it yet.
+              } @else {
+                Homestead has no Authentik API token on file, so it cannot add people or give them apps.
+              }
+              Nothing here has changed, and the apps keep working for the people who can open them now.
+            </p>
+            <p class="why">{{ v.token_words }}</p>
+            <p>
+              You choose whether to keep one. It is sealed on this appliance, you can forget it at any time, and without it you can still manage people in Authentik itself.
+            </p>
+            <p>
+              <a class="button primary" routerLink="/sign-in">Open sign-in and keep a token</a>
+            </p>
+          </section>
+        } @else {
+          <section class="field-panel" aria-labelledby="people-list">
+            <h2 id="people-list">Who can open what</h2>
+            @if (v.read_error) {
+              <app-state-message kind="warning" headline="Authentik could not be read, so access below is as Homestead recorded it." [detail]="v.read_error" actionLabel="Check again" (action)="load()" />
+            }
+            @for (pp of v.purges ?? []; track pp.app + pp.username) {
+              <app-state-message kind="warning" headline="Sharing for {{ pp.username }} in {{ pp.app }} is not removed yet." detail="The app is not running. Homestead keeps trying and removes their shares and links once it runs." />
+            }
+            <ul class="people-list">
+              <li class="person person-owner">
+                <div class="person-who">
+                  <h3>{{ v.owner }} <span class="badge badge-ok">owner</span></h3>
+                  <p class="person-meta">You. The owner always has every app and the dashboard.</p>
+                </div>
+                <ul class="lamps" aria-label="Apps you can open">
+                  @for (app of apps(); track app) {
+                    <li class="lamp lamp-on"><span class="lamp-name">{{ app }}</span> <span class="lamp-role">owner</span></li>
+                  }
+                </ul>
+              </li>
+              @for (person of people(); track person.id) {
+                <li class="person" [attr.data-status]="person.status" [attr.data-state]="person.state">
+                  <div class="person-who">
+                    <h3>
+                      {{ person.display_name }}
+                      @if (person.state === 'disabled') {
+                        <span class="badge">disabled</span>
+                      }
+                      @if (person.status === 'drifted') {
+                        <span class="badge badge-warn">differs in Authentik</span>
+                      } @else if (person.status === 'missing') {
+                        <span class="badge badge-fail">missing in Authentik</span>
+                      }
+                    </h3>
+                    <p class="person-meta">{{ person.username }}@if (person.email) { · {{ person.email }} }</p>
+                  </div>
+                  <ul class="lamps" [attr.aria-label]="'Apps ' + person.display_name + ' can open'">
+                    @for (app of apps(); track app) {
+                      @let role = roleOf(person, app);
+                      <li class="lamp" [class.lamp-on]="role !== 'none'" [attr.data-role]="role">
+                        <span class="lamp-name">{{ app }}</span>
+                        <span class="lamp-role">{{ role === 'none' ? 'no access' : role === 'admin' ? 'app admin' : 'can open' }}</span>
+                      </li>
+                    }
+                  </ul>
+                  <p class="person-actions">
+                    <button type="button" (click)="openApps(person)" [disabled]="person.status === 'missing'">Apps</button>
+                    <button type="button" class="quiet" (click)="openEdit(person)" [disabled]="person.status === 'missing'">Edit</button>
+                    <button type="button" class="quiet" (click)="openReset(person)" [disabled]="person.status === 'missing'">Reset password</button>
+                    <button type="button" class="quiet" (click)="openConfirm(person, 'mfa')" [disabled]="person.status === 'missing'">Reset second factor</button>
+                    @if (person.state === 'disabled') {
+                      <button type="button" class="quiet" (click)="openConfirm(person, 'enable')" [disabled]="person.status === 'missing'">Enable</button>
+                    } @else {
+                      <button type="button" class="quiet" (click)="openConfirm(person, 'disable')" [disabled]="person.status === 'missing'">Disable</button>
+                    }
+                    <button type="button" class="danger" (click)="openConfirm(person, 'remove')" [disabled]="person.status === 'missing'">Remove</button>
+                  </p>
+                  @if (person.status === 'drifted') {
+                    <div class="person-drift" role="group" [attr.aria-label]="'Differences for ' + person.display_name">
+                      <p>Authentik no longer matches what Homestead recorded. Nothing has been changed.</p>
+                      <ul>
+                        @for (d of driftOf(person); track $index) {
+                          <li>
+                            <strong>{{ driftLabel(d) }}:</strong> Homestead has <q>{{ d.homestead }}</q>, Authentik has <q>{{ d.authentik }}</q>
+                          </li>
+                        }
+                      </ul>
+                      <p class="person-actions">
+                        <button type="button" class="primary" [disabled]="busy()" (click)="resolve(person, 'put-back')">Put back</button>
+                        <button type="button" [disabled]="busy()" (click)="resolve(person, 'keep')">Keep what Authentik has</button>
+                      </p>
+                      <p class="person-meta">Put back is recommended: Homestead's record is the one you set.</p>
+                    </div>
+                  } @else if (person.status === 'missing') {
+                    <div class="person-drift" role="group" [attr.aria-label]="'Missing: ' + person.display_name">
+                      <p>{{ person.username }} was deleted in Authentik. Recreate them with the access Homestead recorded (a new one-time sign-in link by default, or a generated password shown once), or remove them from Homestead.</p>
+                      <p class="person-actions">
+                        <button type="button" class="primary" [disabled]="busy()" (click)="resolve(person, 'recreate')">Recreate</button>
+                        <button type="button" [disabled]="busy()" (click)="resolve(person, 'recreate', 'generated')">Recreate with a generated password</button>
+                        <button type="button" class="danger" [disabled]="busy()" (click)="openConfirm(person, 'forget')">Remove from Homestead</button>
+                      </p>
+                    </div>
+                  }
+                </li>
+              }
+            </ul>
+            @if (people().length === 0) {
+              <p class="person-meta">No one else yet. Add someone and choose which apps they can open.</p>
+            }
+          </section>
+
+          @if (unmanaged().length) {
+            <section class="field-panel" aria-labelledby="people-unmanaged">
+              <h2 id="people-unmanaged">In Authentik, not managed here</h2>
+              <p>Homestead did not create these accounts and does not touch them. Adopt one to manage its app access here.</p>
+              <ul class="people-list">
+                @for (u of unmanaged(); track u.username) {
+                  <li class="person">
+                    <div class="person-who">
+                      <h3>{{ u.name || u.username }} @if (!u.active) { <span class="badge">disabled</span> }</h3>
+                      <p class="person-meta">{{ u.username }}@if (u.email) { · {{ u.email }} }</p>
+                    </div>
+                    <p class="person-actions"><button type="button" [disabled]="busy()" (click)="adopt(u.username)">Adopt</button></p>
+                  </li>
+                }
+              </ul>
+            </section>
+          }
+        }
+      }
+    </app-loading>
+  }
+
+  @if (problem() && !dialog()) {
+    <app-state-message kind="error" [headline]="problem()" />
+  }
+
+  @if (dialog(); as d) {
+    @switch (d.kind) {
+      @case ('add') {
+        <app-dialog heading="Add a person" (dismissed)="close()">
+          <div class="field">
+            <label for="p-name">Name</label>
+            <input id="p-name" name="name" autocomplete="off" [value]="formName" (input)="formName = $any($event.target).value" />
+          </div>
+          <div class="field">
+            <label for="p-user">Username</label>
+            <input id="p-user" name="username" autocomplete="off" autocapitalize="none" [value]="formUsername" (input)="formUsername = $any($event.target).value" />
+          </div>
+          <div class="field">
+            <label for="p-email">Email (optional)</label>
+            <input id="p-email" name="email" type="email" autocomplete="off" [value]="formEmail" (input)="formEmail = $any($event.target).value" />
+          </div>
+          <fieldset class="field">
+            <legend>How they first sign in</legend>
+            <label><input type="radio" name="how" [checked]="formHow === 'link'" (change)="formHow = 'link'" /> A one-time link I send them</label>
+            <label><input type="radio" name="how" [checked]="formHow === 'generated'" (change)="formHow = 'generated'" /> A generated password, shown once</label>
+            <label><input type="radio" name="how" [checked]="formHow === 'password'" (change)="formHow = 'password'" /> A password I choose</label>
+          </fieldset>
+          @if (formHow === 'password') {
+            <div class="field">
+              <label for="p-pass">Password</label>
+              <input id="p-pass" name="password" type="password" autocomplete="new-password" [value]="formPassword" (input)="formPassword = $any($event.target).value" />
+            </div>
+          }
+          <fieldset class="field">
+            <legend>Apps they can open</legend>
+            @for (app of apps(); track app) {
+              <div class="access-row">
+                <span>{{ app }}</span>
+                <select [attr.aria-label]="'Access to ' + app" [value]="formAccess[app] ?? 'none'" (change)="formAccess[app] = $any($event.target).value">
+                  <option value="none">No access</option>
+                  <option value="user" [disabled]="adminOnly(app)" [hidden]="adminOnly(app)">Can open</option>
+                  <option value="admin">App admin</option>
+                </select>
+              </div>
+            } @empty {
+              <p class="person-meta">No installed app signs in through Authentik yet.</p>
+            }
+          </fieldset>
+          @if (adminChosen()) {
+            <p class="hint">App admin lets them manage that app's own settings and users. It does not make them a Homestead administrator.</p>
+          }
+          @if (problem()) {
+            <app-state-message kind="error" [headline]="problem()" />
+          }
+          <div class="dialog-actions">
+            <button type="button" class="primary" [disabled]="busy() || !formName.trim() || !formUsername.trim()" (click)="submitAdd()">Add person</button>
+            <button type="button" class="quiet" (click)="close()">Cancel</button>
+          </div>
+        </app-dialog>
+      }
+      @case ('edit') {
+        <app-dialog [heading]="'Edit ' + d.person.display_name" (dismissed)="close()">
+          <div class="field">
+            <label for="e-name">Name</label>
+            <input id="e-name" name="name" autocomplete="off" [value]="formName" (input)="formName = $any($event.target).value" />
+          </div>
+          <div class="field">
+            <label for="e-user">Username</label>
+            <input id="e-user" name="username" autocomplete="off" autocapitalize="none" [value]="formUsername" (input)="formUsername = $any($event.target).value" />
+          </div>
+          <div class="field">
+            <label for="e-email">Email</label>
+            <input id="e-email" name="email" type="email" autocomplete="off" [value]="formEmail" (input)="formEmail = $any($event.target).value" />
+          </div>
+          @if (problem()) {
+            <app-state-message kind="error" [headline]="problem()" />
+          }
+          <div class="dialog-actions">
+            <button type="button" class="primary" [disabled]="busy() || !formName.trim() || !formUsername.trim()" (click)="submitEdit()">Save</button>
+            <button type="button" class="quiet" (click)="close()">Cancel</button>
+          </div>
+        </app-dialog>
+      }
+      @case ('apps') {
+        <app-dialog [heading]="'Apps for ' + d.person.display_name" (dismissed)="close()">
+          <p>Choose what {{ d.person.display_name }} can open. Changes apply when you save.</p>
+          @for (app of apps(); track app) {
+            <div class="access-row">
+              <span>{{ app }}</span>
+              <select [attr.aria-label]="'Access to ' + app" [value]="formAccess[app] ?? 'none'" (change)="formAccess[app] = $any($event.target).value">
+                <option value="none">No access</option>
+                <option value="user" [disabled]="adminOnly(app)" [hidden]="adminOnly(app)">Can open</option>
+                <option value="admin">App admin</option>
+              </select>
+            </div>
+          } @empty {
+            <p class="person-meta">No installed app signs in through Authentik yet.</p>
+          }
+          @if (adminChosen()) {
+            <p class="hint">App admin lets them manage that app's own settings and users. It does not make them a Homestead administrator.</p>
+          }
+          @if (problem()) {
+            <app-state-message kind="error" [headline]="problem()" />
+          }
+          <div class="dialog-actions">
+            <button type="button" class="primary" [disabled]="busy()" (click)="submitApps()">Save apps</button>
+            <button type="button" class="quiet" (click)="close()">Cancel</button>
+          </div>
+        </app-dialog>
+      }
+      @case ('reset') {
+        <app-dialog [heading]="'Reset password for ' + d.person.display_name" variant="danger" (dismissed)="close()">
+          <p>Their current password stops working. Choose how they sign in next.</p>
+          <fieldset class="field">
+            <legend>New sign-in</legend>
+            <label><input type="radio" name="reset-how" [checked]="formHow === 'link'" (change)="formHow = 'link'" /> A one-time link I send them</label>
+            <label><input type="radio" name="reset-how" [checked]="formHow === 'generated'" (change)="formHow = 'generated'" /> A generated password, shown once</label>
+            <label><input type="radio" name="reset-how" [checked]="formHow === 'password'" (change)="formHow = 'password'" /> A password I choose</label>
+          </fieldset>
+          @if (formHow === 'password') {
+            <div class="field">
+              <label for="r-pass">Password</label>
+              <input id="r-pass" name="password" type="password" autocomplete="new-password" [value]="formPassword" (input)="formPassword = $any($event.target).value" />
+            </div>
+          }
+          @if (problem()) {
+            <app-state-message kind="error" [headline]="problem()" />
+          }
+          <div class="dialog-actions">
+            <button type="button" class="danger" [disabled]="busy() || (formHow === 'password' && !formPassword)" (click)="submitReset()">Reset password</button>
+            <button type="button" class="quiet" (click)="close()">Cancel</button>
+          </div>
+        </app-dialog>
+      }
+      @case ('confirm') {
+        @let words = confirmWords(d.action);
+        <app-dialog [heading]="words.heading" [variant]="words.danger ? 'danger' : 'confirm'" (dismissed)="close()">
+          <p><strong>{{ d.person.display_name }}</strong> ({{ d.person.username }})</p>
+          <p>{{ words.body }}</p>
+          @if (problem()) {
+            <app-state-message kind="error" [headline]="problem()" />
+          }
+          <div class="dialog-actions">
+            <button type="button" [class.danger]="words.danger" [class.primary]="!words.danger" [disabled]="busy()" (click)="submitConfirm()">{{ words.button }}</button>
+            <button type="button" class="quiet" (click)="close()">Cancel</button>
+          </div>
+        </app-dialog>
+      }
+      @case ('added') {
+        <app-dialog [heading]="d.person.display_name + ' was added'" (dismissed)="close()">
+          <app-state-message kind="warning" headline="Their sign-in was not set up." [detail]="d.reason" />
+          <p>They are kept with the apps you chose, but they have no way to sign in yet. You can generate a password for them now; it is shown once.</p>
+          @if (problem()) {
+            <app-state-message kind="error" [headline]="problem()" />
+          }
+          <div class="dialog-actions">
+            <button type="button" class="primary" [disabled]="busy()" (click)="generateInstead()">Generate a password instead</button>
+            <button type="button" class="quiet" (click)="close()">Close</button>
+          </div>
+        </app-dialog>
+      }
+      @case ('reveal') {
+        <app-dialog [heading]="d.revealed.kind === 'link' ? 'One-time sign-in link' : 'Generated password'" (dismissed)="close()">
+          <p>
+            @if (d.revealed.kind === 'link') {
+              Send this link to {{ d.who }}. It works once and expires.
+            } @else {
+              Give this password to {{ d.who }}. Homestead does not keep it and cannot show it again.
+            }
+          </p>
+          @if (d.revealed.kind === 'link') {
+            <p><strong>On the local network</strong></p>
+          }
+          <p class="reveal">
+            <code class="reveal-value">{{ d.revealed.value }}</code>
+            <button type="button" class="quiet" (click)="copy(d.revealed.value)">{{ d.revealed.kind === 'link' ? 'Copy local link' : 'Copy' }}</button>
+          </p>
+          @if (d.revealed.kind === 'link') {
+            @if (d.revealed.public_value) {
+              <p><strong>Over the internet</strong></p>
+              <p class="reveal">
+                <code class="reveal-value">{{ d.revealed.public_value }}</code>
+                <button type="button" class="quiet" (click)="copy(d.revealed.public_value)">Copy public link</button>
+              </p>
+            } @else {
+              <p>There is no public link yet: it appears here once Authentik has a public address.</p>
+            }
+          }
+          <div class="dialog-actions">
+            <button type="button" class="primary" (click)="close()">I have it</button>
+          </div>
+        </app-dialog>
+      }
+    }
+  }
+</section>

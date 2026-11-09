@@ -1,42 +1,53 @@
 <section aria-label="Configuration">
-  <h2>Configuration</h2>
+  <header class="masthead">
+    <h1>Configuration</h1>
+    <p class="masthead-fact">The settings this appliance runs with.</p>
+  </header>
 
-  @if (loading()) {
-    <app-state-message kind="loading" headline="Loading…" />
-  } @else if (loadError()) {
+  <app-loading [loading]="loading()" shape="fields">
+    @if (loadError()) {
     <app-state-message kind="error" [headline]="loadError()" />
   } @else if (reviewing()) {
-    <h3>Review changes</h3>
-    @if (changes().length === 0) {
-      <app-state-message kind="empty" headline="No changes." />
-    } @else {
-      <ul>
-        @for (change of changes(); track change.key) {
-          <li>
-            <code>{{ change.key }}</code>:
-            <span>{{ change.before === undefined ? '(unset)' : (change.before | json) }}</span>
-            →
-            <span>{{ change.after === undefined ? '(unset)' : (change.after | json) }}</span>
-          </li>
-        }
-      </ul>
-    }
-    <button type="button" (click)="confirm()" [disabled]="busy()">Confirm apply</button>
-    <button type="button" (click)="back()">Back to editing</button>
+    <section class="field-panel" aria-labelledby="config-review">
+      <h2 id="config-review">Review changes</h2>
+      @if (changes().length === 0) {
+        <app-state-message kind="empty" headline="No changes." />
+      } @else {
+        <ul>
+          @for (change of changes(); track change.key) {
+            <li>
+              <code>{{ change.key }}</code>:
+              <span>{{ change.before === undefined ? '(unset)' : (change.before | json) }}</span>
+              →
+              <span>{{ change.after === undefined ? '(unset)' : (change.after | json) }}</span>
+            </li>
+          }
+        </ul>
+      }
+      <button type="button" (click)="confirm()" [disabled]="busy()">Confirm apply</button>
+      <button type="button" (click)="back()">Back to editing</button>
+    </section>
   } @else {
-    @if (notice()) {
-      <app-state-message kind="status" [headline]="notice()" />
-    }
-    @for (revision of [revision()]; track revision) {
-      <app-schema-form
-        [fields]="fields()"
-        [values]="values()"
-        [errors]="errors()"
-        (submitted)="review($event)"
-      />
-    }
-    <button type="button" (click)="revert()" [disabled]="busy()">
-      Revert to saved
-    </button>
+    <section class="field-panel" aria-label="Settings">
+      @if (notice()) {
+        <app-state-message kind="status" [headline]="notice()" />
+      }
+      @for (revision of [revision()]; track revision) {
+        <app-schema-form
+          [fields]="fields()"
+          [values]="values()"
+          [errors]="errors()"
+          (submitted)="review($event)"
+        />
+      }
+      <button type="button" (click)="revert()" [disabled]="busy()">
+        Revert to saved
+      </button>
+    </section>
   }
+  </app-loading>
+  <section class="field-panel" aria-labelledby="config-transfer">
+    <h2 id="config-transfer">Export and import</h2>
+    <app-config-transfer />
+  </section>
 </section>

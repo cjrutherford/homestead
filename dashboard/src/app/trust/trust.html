@@ -1,18 +1,17 @@
 <section aria-label="Trust this appliance">
-  <h2>Trust this appliance</h2>
+  <header class="masthead">
+    <h1>Trust this appliance</h1>
+    <p class="masthead-fact">Let this device trust the appliance's own certificates.</p>
+  </header>
   <p>
-    Local-only hosts are served over HTTPS from this appliance's own certificate
-    authority, so browser features that need a secure context (WebGPU, the
-    clipboard) work without a public certificate. Install the root certificate
-    on each device you want to trust it. Homestead never installs it for you.
+    Apps on your own network are served over HTTPS from this appliance's own certificate authority,
+    so browser features that need a secure connection (WebGPU, the clipboard) work without a public
+    certificate. Install the root certificate on each device you want to trust it. Homestead never
+    installs it for you.
   </p>
 
-  @if (loading()) {
-    <app-state-message kind="loading" headline="Loading the internal CA…" />
-  }
   @if (loadError()) {
-    <app-state-message kind="error" [headline]="loadError()" />
-    <button type="button" (click)="load()">Retry</button>
+    <app-state-message kind="error" [headline]="loadError()" actionLabel="Retry" (action)="load()" />
   }
   @if (error()) {
     <app-state-message kind="error" [headline]="error()" />
@@ -21,128 +20,210 @@
     <app-state-message kind="status" [headline]="notice()" />
   }
 
+  <app-loading [loading]="loading()" shape="panel">
   @if (report(); as r) {
     @if (!r.ca.present) {
-      <app-state-message
-        kind="empty"
-        headline="The internal CA has not been created yet. It is created automatically when the first local-only HTTPS route is applied, or you can create it now."
-      />
-      <button type="button" [disabled]="busy()" (click)="create()">Create the internal CA</button>
-    } @else {
-      <h3>Root certificate</h3>
-      @if (!r.ca.key_present) {
+      <section class="field-panel" aria-label="Internal certificate authority">
         <app-state-message
-          kind="error"
-          headline="The CA private key is missing from the secret store. Restore the secret key file, or rotate the root."
+          kind="empty"
+          headline="The internal CA has not been created yet. It is created automatically when the first local-only HTTPS route is applied, or you can create it now."
         />
-      }
-      <dl>
-        <dt>SHA-256 fingerprint</dt>
-        <dd><code class="fingerprint" data-testid="fingerprint">{{ r.ca.fingerprint_sha256 }}</code></dd>
-        <dt>Subject</dt>
-        <dd>{{ r.ca.subject }}</dd>
-        <dt>Serial</dt>
-        <dd><code>{{ r.ca.serial }}</code></dd>
-        <dt>Valid</dt>
-        <dd>{{ r.ca.not_before }} to {{ r.ca.not_after }}</dd>
-        <dt>Can vouch only for</dt>
-        <dd>{{ r.ca.permitted_dns?.join(', ') }}</dd>
-      </dl>
-      <p>
-        After downloading, check the file's fingerprint matches the one above:
-        <code>openssl x509 -in homestead-local-ca.pem -noout -fingerprint -sha256</code>.
-        The download below is served without sign-in so devices can fetch it;
-        this page, shown over your session, is your check against tampering.
-      </p>
-      <p>
-        <a class="button" [href]="api.localCaRootUrl('pem')" download="homestead-local-ca.pem">Download PEM</a>
-        <a class="button" [href]="api.localCaRootUrl('der')" download="homestead-local-ca.crt">Download .crt (DER)</a>
-      </p>
-      <p>
-        Trusting this root lets it vouch for any name under the suffixes above
-        on that device, and nothing else. Remove it from a device when you no
-        longer want that.
-      </p>
-    }
-
-    <h3>Install on a device</h3>
-    @for (guide of guides; track guide.id) {
-      <details>
-        <summary>{{ guide.title }}</summary>
-        <p>Use the {{ guide.file === 'pem' ? 'PEM' : '.crt (DER)' }} download.</p>
-        <ol>
-          @for (step of guide.steps; track step) {
-            <li>{{ step }}</li>
-          }
-        </ol>
-      </details>
-    }
-
-    <h3>Local certificates</h3>
-    @if (r.leaves.length === 0) {
-      <app-state-message
-        kind="empty"
-        headline="No local-only HTTPS routes use the internal CA yet. Add a route with the internal TLS mode on the Edge page."
-      />
+        <button type="button" [disabled]="busy()" (click)="create()">Create the internal CA</button>
+      </section>
     } @else {
-      <table>
-        <thead>
-          <tr><th>Host</th><th>Status</th><th>Expires</th><th></th></tr>
-        </thead>
-        <tbody>
-          @for (leaf of r.leaves; track leaf.host) {
-            <tr>
-              <td>{{ leaf.host }}</td>
-              <td>{{ leaf.status }}@if (leaf.detail) { - {{ leaf.detail }} }</td>
-              <td>{{ leaf.not_after }}</td>
-              <td>
-                <button type="button" [disabled]="busy()" (click)="reissue(leaf.host)">Re-issue</button>
-              </td>
-            </tr>
-          }
-        </tbody>
-      </table>
-      <button type="button" [disabled]="busy()" (click)="reissue()">Re-issue all</button>
-      <p>Leaves renew automatically; re-issuing is only needed after a problem.</p>
+      <section class="field-panel" aria-labelledby="trust-root">
+        <h2 id="trust-root">Root certificate</h2>
+        @if (!r.ca.key_present) {
+          <app-state-message
+            kind="error"
+            headline="The CA private key is missing from this appliance's saved secrets. Restore the secret key file, or rotate the root."
+          />
+        }
+        <dl>
+          <dt>SHA-256 fingerprint</dt>
+          <dd><code class="fingerprint" data-testid="fingerprint">{{ r.ca.fingerprint_sha256 }}</code></dd>
+          <dt>Subject</dt>
+          <dd>{{ r.ca.subject }}</dd>
+          <dt>Serial</dt>
+          <dd><code>{{ r.ca.serial }}</code></dd>
+          <dt>Valid</dt>
+          <dd>{{ r.ca.not_before | when }} to {{ r.ca.not_after | when }}</dd>
+          <dt>Can vouch only for</dt>
+          <dd>{{ r.ca.permitted_dns?.join(', ') }}</dd>
+        </dl>
+        <p>
+          After downloading, check that the file's fingerprint matches the one above.
+          The download is served without sign-in so devices can fetch it. This page, shown over your
+          session, is your check against tampering.
+        </p>
+        <p><app-copy-code text="openssl x509 -in homestead-local-ca.pem -noout -fingerprint -sha256" /></p>
+        <p>
+          <a class="button" [href]="api.localCaRootUrl('pem')" download="homestead-local-ca.pem">Download PEM</a>
+          <a class="button" [href]="api.localCaRootUrl('der')" download="homestead-local-ca.crt">Download .crt (DER)</a>
+        </p>
+        <p>
+          Trusting this root lets it vouch for any name under the suffixes above
+          on that device, and nothing else. Remove it from a device when you no
+          longer want that.
+        </p>
+      </section>
     }
+
+    <section class="field-panel" aria-labelledby="trust-address">
+      <h2 id="trust-address">Dashboard address on your network</h2>
+      @if (addressError()) {
+        <app-state-message kind="error" [headline]="addressError()" />
+      }
+      @if (address(); as a) {
+        <p>
+          Open this dashboard from another device on your network. The first address needs no setup;
+          the second needs a router DNS entry or a hosts entry. Both need the root certificate above
+          installed on that device. This is local or overlay only: the Cloudflare tunnel is the public path.
+        </p>
+        @if (a.configured) {
+          <ul data-testid="dashboard-urls">
+            @for (url of a.urls; track url) {
+              <li><code>{{ url }}</code></li>
+            }
+          </ul>
+        } @else {
+          <app-state-message
+            kind="empty"
+            headline="No dashboard address is set yet. Save a name to create it."
+          />
+        }
+        <form (ngSubmit)="saveAddress()">
+          <label>
+            Local name
+            <input name="dashboard-name" [ngModel]="addressName()" (ngModelChange)="addressName.set($event)" />
+          </label>
+          <label>
+            Reachable from
+            <select name="dashboard-exposure" [ngModel]="addressExposure()" (ngModelChange)="addressExposure.set($event)">
+              <option value="local">This network (local)</option>
+              <option value="overlay">Private overlay</option>
+            </select>
+          </label>
+          <button type="submit" [disabled]="busy() || !addressName().trim()">Save the name</button>
+        </form>
+        <p>
+          Point <code>{{ a.name }}</code> at this appliance in your router's DNS, or add a hosts entry on
+          the device: <code data-testid="hosts-line">{{ hostsLine(a) }}</code>. The
+          <code>{{ a.mdns_name }}</code> name works without either when mDNS reaches the device.
+        </p>
+      }
+    </section>
+
+    <section class="field-panel" aria-labelledby="trust-install">
+      <h2 id="trust-install">Install on a device</h2>
+      @for (guide of guides; track guide.id) {
+        <details>
+          <summary>{{ guide.title }}</summary>
+          <p>Use the {{ guide.file === 'pem' ? 'PEM' : '.crt (DER)' }} download.</p>
+          <ol>
+            @for (step of guide.steps; track step) {
+              <li>{{ step }}</li>
+            }
+          </ol>
+        </details>
+      }
+    </section>
+
+    <section class="field-panel" aria-labelledby="trust-leaves">
+      <h2 id="trust-leaves">Local certificates</h2>
+      @if (r.leaves.length === 0) {
+        <app-state-message
+          kind="empty"
+          headline="No local-only HTTPS routes use the internal CA yet. Add a route with the internal TLS mode on the Edge page."
+        />
+      } @else {
+        <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col" [attr.aria-sort]="ariaFor('host')"><button type="button" class="sort" [attr.data-dir]="dirFor('host')" (click)="sortBy('host')">Host</button></th>
+              <th scope="col" [attr.aria-sort]="ariaFor('status')"><button type="button" class="sort" [attr.data-dir]="dirFor('status')" (click)="sortBy('status')">Status</button></th>
+              <th scope="col" [attr.aria-sort]="ariaFor('expires')"><button type="button" class="sort" [attr.data-dir]="dirFor('expires')" (click)="sortBy('expires')">Expires</button></th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (leaf of sortedLeaves(); track leaf.host) {
+              <tr>
+                <th scope="row" class="mono">{{ leaf.host }}</th>
+                <td><span class="badge" [class]="leafBadge(leaf.status)">{{ leaf.status }}</span>@if (leaf.detail) { <br />{{ leaf.detail }} }</td>
+                <td>{{ leaf.not_after | when }}</td>
+                <td>
+                  <button type="button" [disabled]="busy()" (click)="reissue(leaf.host)">Re-issue</button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+        </div>
+        <p>Certificates renew on their own. Re-issue them only after a problem.</p>
+        <p><button type="button" [disabled]="busy()" (click)="askReissueAll()">Re-issue all</button></p>
+        @if (confirmingReissueAll()) {
+          <app-dialog heading="Re-issue every local certificate?" variant="danger" (dismissed)="cancelReissueAll()">
+            <p>
+              Homestead replaces the certificate for every app on this appliance with a new one signed by
+              the same local CA. Apps may drop connections for a moment while the edge reloads. Your
+              devices keep trusting the CA, so you do not need to reinstall it.
+            </p>
+            <div class="dialog-actions">
+              <button type="button" class="danger" (click)="confirmReissueAll()" [disabled]="busy()">Re-issue all</button>
+              <button type="button" class="quiet" (click)="cancelReissueAll()" [disabled]="busy()">Cancel</button>
+            </div>
+          </app-dialog>
+        }
+      }
+    </section>
 
     @if (operationId(); as id) {
-      <p>
-        Operation <a [routerLink]="['/operations', id]">#{{ id }}</a>
-        @if (operation(); as op) { : {{ op.status }} }
-      </p>
+      <app-operation-progress [id]="id" [operation]="operation()" />
     }
 
     @if (r.ca.present) {
-      <h3>Rotate the root</h3>
-      <p>
-        Rotation replaces the root and every leaf. Every device that trusts the
-        current root must then trust the new one.
-      </p>
-      <button type="button" [disabled]="busy()" (click)="previewRotation()">Preview rotation</button>
-      @if (plan(); as p) {
-        <section aria-label="Rotation plan">
-          <p>Current root <code>{{ p.current_fingerprint_sha256 }}</code> (generation {{ p.generation }}).</p>
-          <p>Leaves re-issued: {{ p.leaves_to_reissue.join(', ') || 'none' }}.</p>
-          <p>{{ p.devices_must_retrust }}</p>
-          <ul>
-            @for (step of p.steps; track step) {
-              <li>{{ step }}</li>
-            }
-          </ul>
-          <label>
-            <input
-              type="checkbox"
-              [checked]="confirmed()"
-              (change)="setConfirmed($any($event.target).checked)"
-            />
-            I understand every device must trust the new root.
-          </label>
-          <button type="button" [disabled]="busy() || !confirmed()" (click)="approveRotation()">
-            Approve rotation
-          </button>
-        </section>
-      }
+      <section class="field-panel" aria-labelledby="trust-rotate">
+        <h2 id="trust-rotate">Rotate the root</h2>
+        <p>
+          Rotation replaces the root and every certificate under it. Every device that trusts the
+          current root must then trust the new one.
+        </p>
+        <p><button type="button" [disabled]="busy()" (click)="previewRotation()">Preview rotation</button></p>
+        @if (plan(); as p) {
+          <app-permit heading="Rotate the root" [digest]="p.digest" [refusal]="refused()" label="Rotation plan">
+            <h4>What rotation changes</h4>
+            <p>Current root <code>{{ p.current_fingerprint_sha256 }}</code> (generation {{ p.generation }}).</p>
+            <p>Certificates re-issued: {{ p.leaves_to_reissue.join(', ') || 'none' }}.</p>
+            <p>{{ p.devices_must_retrust }}</p>
+            <ul>
+              @for (step of p.steps; track step) {
+                <li>{{ step }}</li>
+              }
+            </ul>
+            <label>
+              <input
+                type="checkbox"
+                [checked]="confirmed()"
+                (change)="setConfirmed($any($event.target).checked)"
+              />
+              I understand every device must trust the new root.
+            </label>
+            <p class="permit-actions">
+              <button type="button" class="danger" [disabled]="busy() || !confirmed()" (click)="approveRotation()">
+                Approve rotation
+              </button>
+            </p>
+          </app-permit>
+        }
+        @if (approved(); as a) {
+          <app-permit [heading]="a.heading" [digest]="a.digest" [approval]="a.approval">
+            <p>{{ a.summary }}</p>
+          </app-permit>
+        }
+      </section>
     }
   }
+  </app-loading>
 </section>

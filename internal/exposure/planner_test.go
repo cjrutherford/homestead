@@ -180,3 +180,11 @@ func TestPlanTLSMatrix(t *testing.T) {
 		t.Fatalf("tls = %+v", plan.TLS)
 	}
 }
+
+func TestPlanRefusesPublicDashboard(t *testing.T) {
+	req := planRequest()
+	req.Route = docker.Route{Host: "homestead.lan", Dashboard: true, Exposure: docker.ExposureLocal, TLS: docker.TLSInternal}
+	if _, err := PlanExposure(req); err == nil || !strings.Contains(err.Error(), "tunnel") {
+		t.Fatalf("err = %v", err)
+	}
+}

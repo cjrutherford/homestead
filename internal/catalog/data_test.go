@@ -14,9 +14,15 @@ import (
 	"homestead/internal/store"
 )
 
-// imageVolumes is one table row: the VOLUMEs an image declares.
+// imageVolumes is one table row: the VOLUMEs an image declares and the
+// ones the catalog intentionally leaves to owner volumes (media libraries).
 type imageVolumes struct {
 	Volumes []string
+	// OwnerMounts are image VOLUMEs the manifest does not declare: the
+	// install supplies an owner volume at that target (a shared media
+	// library), so a declaration would collide and pull the library into
+	// every backup.
+	OwnerMounts []string
 }
 
 // knownImageVolumes records each curated image's VOLUMEs (S276).
@@ -35,8 +41,64 @@ var knownImageVolumes = map[string]imageVolumes{
 	"ghcr.io/immich-app/immich-machine-learning:v3.3.0":              {},
 	"ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0": {Volumes: []string{"/var/lib/postgresql/data"}},
 	"valkey/valkey:9":                                                {},
-	"ghcr.io/goauthentik/server:2026.8.3":                            {},
-	"docker.io/library/postgres:16-alpine":                           {Volumes: []string{"/var/lib/postgresql/data"}},
+	// S346: paperless-ngx v3.3.4 declares all four library paths; the
+	// alpine Valkey build has no VOLUME like the plain tag.
+	"ghcr.io/paperless-ngx/paperless-ngx:3.3.4": {Volumes: []string{
+		"/usr/src/paperless/data", "/usr/src/paperless/media",
+		"/usr/src/paperless/consume", "/usr/src/paperless/export",
+	}},
+	"docker.io/library/postgres:18":    {Volumes: []string{"/var/lib/postgresql"}},
+	"docker.io/valkey/valkey:9-alpine": {},
+	"docker.io/gitea/gitea:28.2.0":     {Volumes: []string{"/data"}},
+	// S358: the sync-server Dockerfile declares no VOLUME and no USER (root);
+	// /data is a Homestead declaration.
+	"docker.io/actualbudget/actual-server:26.10.0": {},
+	// S359: the Memos Dockerfile declares VOLUME /var/opt/memos.
+	"docker.io/neosmemo/memos:26.10.0": {Volumes: []string{"/var/opt/memos"}},
+	"docker.io/vikunja/vikunja:2.7.1":  {}, // FROM scratch, no VOLUME; /db and files are declared data
+	// S348: the Debian FreshRSS image declares no VOLUME; both writable
+	// directories are Homestead declarations.
+	"docker.io/freshrss/freshrss:1.30.4": {},
+	// S349: linkding declares no VOLUME; /etc/linkding/data is a
+	// Homestead declaration.
+	"docker.io/sissbruecker/linkding:1.47.0": {},
+	// S350: the image's VOLUME is $MEALIE_HOME/data, i.e. /app/data.
+	"ghcr.io/mealie-recipes/mealie:v3.29.0": {Volumes: []string{"/app/data"}},
+	// S351: the release stage declares no VOLUME; /app/data is a
+	// Homestead declaration.
+	"docker.io/louislam/uptime-kuma:2.5.7": {},
+	// S353: verified from the GHCR image config for 2.37.1 on 2026-10-23:
+	// no Volumes, root user, 80/tcp; /config and /metadata are Homestead
+	// declarations and the media libraries are owner volumes.
+	"ghcr.io/advplyr/audiobookshelf:2.37.1": {},
+	// S366: verified from the registry image configs on 2026-11-01:
+	// BookStack (LinuxServer) VOLUME /config, root user, 80/tcp; MariaDB
+	// 11.8.9 VOLUME /var/lib/mysql, 3306/tcp.
+	"lscr.io/linuxserver/bookstack:26.09.2": {Volumes: []string{"/config"}},
+	"docker.io/library/mariadb:11.8.9":      {Volumes: []string{"/var/lib/mysql"}},
+	// S354: verified from the Docker Hub image config for 0.64.2 on
+	// 2026-10-23: /data and /music, root user, 4533/tcp. /music is the
+	// owner's shared music library, supplied at install, not declared.
+	"docker.io/navidrome/navidrome:0.64.2": {
+		Volumes:     []string{"/data", "/music"},
+		OwnerMounts: []string{"/music"},
+	},
+	// S355: verified from the Docker Hub image config for 1.29.1 on
+	// 2026-10-26: /config only, root user, 25600/tcp. The comics library
+	// is an owner volume and is not an image VOLUME.
+	"docker.io/gotson/komga:1.29.1": {Volumes: []string{"/config"}},
+	// S356: verified from the Docker Hub image config for v4.0.8 on
+	// 2026-10-26: /config, /calibre-library, /cwa-book-ingest, root user,
+	// 8083/tcp. All three are Homestead declarations.
+	"docker.io/crocodilestick/calibre-web-automated:v4.0.8": {
+		Volumes: []string{"/config", "/calibre-library", "/cwa-book-ingest"},
+	},
+	"ghcr.io/goauthentik/server:2026.8.3":  {},
+	"docker.io/library/postgres:16-alpine": {Volumes: []string{"/var/lib/postgresql/data"}},
+	// S345: Vaultwarden declares /data in its Dockerfile. Not yet inspected
+	// on the KVM appliance: re-verify with `docker image inspect` when the
+	// tag is next pulled there, and correct this row if the image differs.
+	"vaultwarden/server:1.37.4": {Volumes: []string{"/data"}},
 	// Craft images are built locally (S279), so this row is the locally
 	// built tag, not a pulled one. The shared craft Dockerfile declares no
 	// VOLUME (verified on the dev workstation 2026-10-17 with `docker image
@@ -45,6 +107,21 @@ var knownImageVolumes = map[string]imageVolumes{
 	// (sha256:e924534d0a86...) has Config.Volumes null and user nginx, and
 	// `docker diff` of the running container is empty with /tmp the tmpfs.
 	"homestead/craft-wordcraft:0.7.0": {},
+	// S368: the Everything bridge image declares VOLUME /data.
+	"homestead/everything-tasks:0.1.0":         {Volumes: []string{"/data"}},
+	"homestead/everything-projects:0.1.0":      {Volumes: []string{"/data"}},
+	"homestead/everything-records:0.1.0":       {Volumes: []string{"/data"}},
+	"homestead/everything-notes:0.1.0":         {Volumes: []string{"/data"}},
+	"homestead/everything-contacts:0.1.0":      {Volumes: []string{"/data"}},
+	"homestead/everything-inventory:0.1.0":     {Volumes: []string{"/data"}},
+	"homestead/everything-time-tracking:0.1.0": {Volumes: []string{"/data"}},
+	"homestead/everything-circuits:0.1.0":      {Volumes: []string{"/data"}},
+	"homestead/everything-parametric:0.1.0":    {Volumes: []string{"/data"}},
+	"homestead/everything-three-d:0.1.0":       {Volumes: []string{"/data"}},
+	"homestead/everything-solitaire:0.1.0":     {Volumes: []string{"/data"}},
+	"homestead/everything-sudoku:0.1.0":        {Volumes: []string{"/data"}},
+	"homestead/everything-expense:0.1.0":       {Volumes: []string{"/data"}},
+	"homestead/everything-api-client:0.1.0":    {Volumes: []string{"/data"}},
 	// S250 office craft images. Verified with `docker image inspect` on the
 	// KVM appliance 2026-10-17 (VM 2, images built by the daemon from a
 	// throwaway-signed manifest): Config.Volumes null and user nginx for
@@ -117,9 +194,31 @@ func TestCuratedImageVolumesCovered(t *testing.T) {
 			for _, data := range service.Data {
 				declared[data.Target] = true
 			}
+			owner := map[string]bool{}
+			for _, volume := range row.OwnerMounts {
+				owner[volume] = true
+			}
 			for _, volume := range volumes {
+				if owner[volume] {
+					if declared[volume] {
+						t.Errorf("%s/%s: image VOLUME %s is both owner-supplied and declared", name, service.Name, volume)
+					}
+					continue
+				}
 				if !declared[volume] {
 					t.Errorf("%s/%s: image VOLUME %s has no data declaration or ephemeral marker", name, service.Name, volume)
+				}
+			}
+			for _, volume := range row.OwnerMounts {
+				listed := false
+				for _, imageVolume := range volumes {
+					if imageVolume == volume {
+						listed = true
+						break
+					}
+				}
+				if !listed {
+					t.Errorf("%s/%s: owner mount %s is not an image VOLUME", name, service.Name, volume)
 				}
 			}
 		}
@@ -198,8 +297,16 @@ func TestCuratedPlansPlaceDataOnMountedStorage(t *testing.T) {
 			for _, volume := range doc.Services[service.Name].Volumes {
 				rendered[volume["target"].(string)] = volume
 			}
-			if len(rendered) != len(service.Data) {
-				t.Errorf("%s/%s: %d volumes rendered for %d declarations", name, service.Name, len(rendered), len(service.Data))
+			// A service that exports a secret also mounts its supervisor
+			// beside the declared paths (S342).
+			want := len(service.Data)
+			for _, script := range EntrypointScriptsFor(manifest) {
+				if script.Service == service.Name {
+					want++
+				}
+			}
+			if len(rendered) != want {
+				t.Errorf("%s/%s: %d volumes rendered for %d declarations", name, service.Name, len(rendered), want)
 			}
 			for _, data := range service.Data {
 				volume, ok := rendered[data.Target]

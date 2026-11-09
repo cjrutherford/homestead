@@ -54,6 +54,17 @@
   that the Caddy stack mounts, never on the TCP listener, behind a
   craft-scoped cookie bound to the operator session. See
   `docs/architecture/CRAFT_FILE_PROXY.md`.
+- Dashboard on the local network (S289, ADR-035): the daemon also serves the
+  same mux and ADR-020 boundary on a dedicated unix socket
+  (`/run/homestead-dashboard/dashboard.sock`, directory 0750, socket 0660,
+  group `homestead-dashboard`) that the Caddy stack mounts read-only. The one
+  dashboard edge route (`Route.Dashboard`, internal-CA TLS, local or overlay,
+  never public) answers `<hostname>.local` and the owner-set name. A front
+  wrapper on the socket requires exactly one non-loopback `X-Forwarded-For`,
+  checks Host (421) and Origin, and only there is the forwarded address used
+  for rate limits and audit; the TCP listener never reads it. API
+  `GET`/`PUT /api/v1/dashboard/address`, CLI `homesteadctl dashboard address`.
+  See `docs/architecture/LOCAL_DASHBOARD.md`.
 - YAML: customer-readable desired configuration and generated artifacts.
 - Docker Engine + Compose v2: application runtime.
 - Caddy: application reverse proxy / HTTP edge.
@@ -95,6 +106,24 @@ storage: `<class mount>/<package>/<subpath>`, declared per service in
 absolute host paths, so the stack stays usable without Homestead.
 Backups scan `<mount>/<package>` per assigned mount. Existing installs
 that predate this layout are migrated by S277.
+
+## Catalog integration metadata
+Manifests may declare how a package relates to another (`integrations:`,
+S341): `identity` (the provider that speaks for its SSO), `library`
+(shared bulk storage), `handoff` (one app calls another at runtime) and
+`companion` (useful together only). The level is derived from the kind —
+L2, L3, L4, L1 — never authored, so two packages cannot disagree about
+the same relationship. Declarations are advisory (ADR-051): nothing in
+install, update, start or backup reads them, and no code path configures
+another application's internals. The catalog refuses to load a
+declaration that names a package it does not ship, an identity target
+that is not a provider this build drives, a library pair that does not
+both place data on bulk storage, an identity declaration on a package
+whose SSO class is unsupported, or an SSO-capable package with no stated
+identity provider. `GET /api/v1/catalog/{name}` resolves
+levels and target titles under `Works`; `homesteadctl apps show` prints
+them; the dashboard package page shows them as "Works with". See
+`docs/CATALOG_INTEGRATION.md`.
 
 ## Secret-backed container variables
 Values the secret store holds that containers need (database passwords,

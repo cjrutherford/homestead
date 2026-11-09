@@ -447,7 +447,7 @@ func TestCraftSocketServesOnlyCraftPaths(t *testing.T) {
 		t.Fatalf("socket dir mode: %v %v", fi, err)
 	}
 	// The listener refuses everything that is not a craft file path.
-	for _, p := range []string{"/", "/healthz", "/version", "/api/v1/identity", "/api/v1/config", "/api/v1/admins/recover", "/api/v1/craft/files", "/_homestead/open.html"} {
+	for _, p := range []string{"/", "/healthz", "/version", "/api/v1/identity", "/api/v1/config", "/api/v1/admins/recover", "/api/v1/craft/files", "/_homestead/other.html"} {
 		if code, _ := get(p, true); code != 404 {
 			t.Errorf("GET %s on the craft socket = %d, want 404", p, code)
 		}

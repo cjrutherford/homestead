@@ -24,6 +24,7 @@ func (s *Server) MountAppSecrets(st *store.Store, catalogDir string, secrets *se
 	s.reconcileRotations(st, catalogDir, secrets)
 	s.mux.HandleFunc("GET /api/v1/catalog/{name}/secrets", handleAppSecretsList(st, catalogDir, secrets))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/secrets/{secret}", s.handleAppSecretRegister(catalogDir, secrets, auditSvc))
+	s.mux.HandleFunc("POST /api/v1/catalog/{name}/secrets/{secret}/reveal", s.handleAppSecretReveal(catalogDir, secrets, auditSvc))
 }
 
 // appSecretStatus describes one declared secret without its value.
@@ -39,6 +40,10 @@ type appSecretStatus struct {
 	// the stack predates S266 and can adopt its secrets.
 	Wired     bool `json:"wired"`
 	Installed bool `json:"installed"`
+	// Reveal marks an owner-facing credential the owner may read
+	// (S312); Note says what it is for.
+	Reveal bool   `json:"reveal"`
+	Note   string `json:"note,omitempty"`
 }
 
 func handleAppSecretsList(st *store.Store, catalogDir string, secrets *secret.Store) http.HandlerFunc {
@@ -60,7 +65,8 @@ func handleAppSecretsList(st *store.Store, catalogDir string, secrets *secret.St
 			entry := appSecretStatus{
 				Name: decl.Name, StoreName: store, Present: err == nil, Immutable: decl.Immutable,
 				Database: manifest.Database != nil && manifest.Database.PasswordSecret == decl.Name,
-				Wired:    wired, Installed: installed,
+				Wired:    wired, Installed: installed, Reveal: decl.Reveal, Note: decl.Note,
+				Services: []string{},
 			}
 			for _, c := range decl.Consumers {
 				entry.Services = append(entry.Services, c.Service)
@@ -177,4 +183,67 @@ func (s *Server) reconcileOnce(ctx context.Context, auditSvc *audit.Service, cat
 		}
 	}
 	return unresolved
+}
+
+// handleAppSecretReveal shows the owner a credential the package marks
+// reveal (S312), such as Nextcloud's generated admin password. The rules
+// are the recovery identity export's: an operator session, step-up for
+// sessions from Authentik (stepUpRoutes), an explicit confirm, and an
+// audit entry (names only) that must be written before the value is
+// returned. Every other secret stays presence-only.
+func (s *Server) handleAppSecretReveal(catalogDir string, secrets *secret.Store, auditSvc *audit.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		op, ok := requireOperator(w, r)
+		if !ok {
+			return
+		}
+		name, secretName := r.PathValue("name"), r.PathValue("secret")
+		manifest, ok := loadPackage(catalogDir, name, w)
+		if !ok {
+			return
+		}
+		var body struct {
+			Confirm bool `json:"confirm"`
+		}
+		if err := decodeBody(r, &body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if !body.Confirm {
+			http.Error(w, "revealing a secret requires \"confirm\": true", http.StatusBadRequest)
+			return
+		}
+		var decl *catalog.SecretDecl
+		for i := range manifest.Secrets {
+			if manifest.Secrets[i].Name == secretName {
+				decl = &manifest.Secrets[i]
+			}
+		}
+		if decl == nil {
+			http.Error(w, fmt.Sprintf("%s declares no secret %q", manifest.Title, secretName), http.StatusNotFound)
+			return
+		}
+		if !decl.Reveal {
+			http.Error(w, fmt.Sprintf("%s's secret %s is not shown: only credentials meant for you are", manifest.Title, secretName), http.StatusForbidden)
+			return
+		}
+		value, err := secrets.Get(catalog.SecretStoreName(manifest.Name, decl.Name))
+		if errors.Is(err, secret.ErrNotFound) {
+			http.Error(w, fmt.Sprintf("%s has no %s yet: it is created when %s is installed", manifest.Title, secretName, manifest.Title), http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			http.Error(w, "secret store unavailable", http.StatusInternalServerError)
+			return
+		}
+		actor := op.Session.Username
+		if _, err := auditSvc.Record(audit.Entry{Actor: actor, Action: "app.secret.reveal", Outcome: audit.OutcomeOK,
+			Detail: fmt.Sprintf("revealed secret %s of %s", secretName, name)}); err != nil {
+			s.log.Error("app secret reveal audit failed; value withheld", "package", name, "error", err)
+			http.Error(w, "the reveal could not be audited; value withheld", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, map[string]string{"name": secretName, "value": value, "note": decl.Note})
+	}
 }

@@ -1,0 +1,40 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must equal v + VERSION
+        run: test "${GITHUB_REF_NAME}" = "v$(cat VERSION)"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+      - run: make lint
+      - run: make lint-scripts
+      - run: make build
+      - run: make test
+      - run: make dashboard-install dashboard-test
+      - run: make release
+      - name: Draft prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="$(cat VERSION)"
+          awk -v v="## $version" '$0==v{f=1;next} /^## /{f=0} f' CHANGELOG.md > notes.md
+          test -s notes.md
+          gh release create "$GITHUB_REF_NAME" dist/release/* \
+            --draft --prerelease --title "Homestead $version" --notes-file notes.md

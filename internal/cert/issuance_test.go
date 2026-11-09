@@ -220,6 +220,21 @@ func TestPlanContentsAndNoCAContact(t *testing.T) {
 	}
 }
 
+// S328: without a Domain page zone the setup wizard's resolved zone is
+// used; a saved Domain page zone keeps precedence.
+func TestDomainZoneFallsBackToSetup(t *testing.T) {
+	rig := newIssuanceRig(t, issuanceDirectory)
+	rig.wizards.Delete("domain")
+	rig.issuing.SetupZone = func() (string, string) { return "script", "example.com" }
+	if p, z := rig.issuing.domainZone(); p != "script" || z != "example.com" {
+		t.Fatalf("fallback = %q %q", p, z)
+	}
+	rig.saveDomain("script", "saved.test")
+	if _, z := rig.issuing.domainZone(); z != "saved.test" {
+		t.Fatalf("saved zone lost precedence: %q", z)
+	}
+}
+
 func TestPlanBlockersAndEligibility(t *testing.T) {
 	rig := newIssuanceRig(t, issuanceDirectory)
 	rig.saveDomain("script", "other.test")
@@ -235,7 +250,7 @@ func TestPlanBlockersAndEligibility(t *testing.T) {
 	rig.saveDomain("script", "example.com")
 	rig.wizards.Delete("domain")
 	plan, _ = rig.issuing.Plan("www")
-	if plan.Ready || !strings.Contains(strings.Join(plan.Blockers, ";"), "no domain setup") {
+	if plan.Ready || !strings.Contains(strings.Join(plan.Blockers, ";"), "no DNS zone is known") {
 		t.Fatalf("blockers = %v", plan.Blockers)
 	}
 	if _, err := rig.issuing.Approve("www", plan.Digest, "owner", true, false); err == nil ||

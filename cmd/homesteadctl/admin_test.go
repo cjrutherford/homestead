@@ -66,7 +66,7 @@ func TestAdminSetupLoginLogout(t *testing.T) {
 		t.Fatalf("second setup exit = %d, want 1", code)
 	}
 
-	code, stdout, _ = invoke(t, append(serverArgs, "login", "--username", "owner", "--password-file", pass))
+	code, stdout, _ = invoke(t, append(serverArgs, "login", "--username", "owner", "--password-file", pass, "--print-token"))
 	if code != exitOK {
 		t.Fatalf("login exit = %d, want 0", code)
 	}
@@ -145,7 +145,7 @@ func TestAdminPasswd(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("setup exit = %d, want 0", code)
 	}
-	_, stdout, _ := invoke(t, append(serverArgs, "login", "--username", "owner", "--password-file", current))
+	_, stdout, _ := invoke(t, append(serverArgs, "login", "--username", "owner", "--password-file", current, "--print-token"))
 	var session struct {
 		Token string `json:"token"`
 	}
@@ -182,7 +182,7 @@ func TestAdminLockout(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("setup exit = %d, want 0", code)
 	}
-	_, stdout, _ := invoke(t, append(serverArgs, "login", "--username", "owner", "--password-file", current))
+	_, stdout, _ := invoke(t, append(serverArgs, "login", "--username", "owner", "--password-file", current, "--print-token"))
 	var session struct {
 		Token string `json:"token"`
 	}
@@ -194,5 +194,28 @@ func TestAdminLockout(t *testing.T) {
 	code, stdout, _ = invoke(t, append(serverArgs, "admin", "lockout"))
 	if code != exitOK || !strings.Contains(stdout, "unlocked") {
 		t.Fatalf("exit = %d, stdout = %q", code, stdout)
+	}
+}
+
+func TestLoginHidesTokenByDefault(t *testing.T) {
+	isolatedHome(t)
+	url := authDaemon(t)
+	serverArgs := []string{"--server", url}
+	pass := passwordFile(t, "long-enough-password")
+	invoke(t, append(serverArgs, "admin", "setup", "--username", "owner", "--password-file", pass))
+	code, stdout, _ := invoke(t, append(serverArgs, "login", "--username", "owner", "--password-file", pass))
+	if code != exitOK {
+		t.Fatalf("login exit = %d", code)
+	}
+	if strings.Contains(stdout, `"token"`) {
+		t.Fatalf("login printed the session token: %q", stdout)
+	}
+	stored := loadSession(url)
+	if stored == "" || strings.Contains(stdout, stored) {
+		t.Fatalf("session not stored or printed; stored=%q stdout=%q", stored, stdout)
+	}
+	_, printed, _ := invoke(t, append(serverArgs, "login", "--username", "owner", "--password-file", pass, "--print-token"))
+	if !strings.Contains(printed, `"token"`) {
+		t.Fatalf("--print-token did not print: %q", printed)
 	}
 }

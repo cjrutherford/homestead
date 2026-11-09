@@ -89,7 +89,7 @@ class TestFirewallWizard(unittest.TestCase):
 
     def test_route_and_nav(self):
         self.assertIn("path: 'firewall'", read_dash("src/app/app.routes.ts"))
-        self.assertIn('routerLink="/firewall"', read_dash("src/app/app.html"))
+        self.assertIn("path: '/admin/firewall'", read_dash("src/app/core/nav.ts"))
 
     def test_no_external_firewall_logic(self):
         """S057 owns external-firewall mode; ufw/firewalld stay out."""

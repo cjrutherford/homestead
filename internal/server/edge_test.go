@@ -155,3 +155,20 @@ func TestInferCraftApps(t *testing.T) {
 		t.Fatalf("inferred = %v", got)
 	}
 }
+
+func TestEdgeRoutesDashboardNeedsLocalSuffix(t *testing.T) {
+	srv := edgeTestServer(t)
+	route := map[string]any{
+		"Host": "dash.example.com", "Dashboard": true, "Exposure": "local", "TLS": "internal",
+	}
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/edge/routes", map[string]any{"routes": []any{route}})
+	if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), "dash.example.com") {
+		t.Fatalf("code = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+	route["Host"] = "homestead.lan"
+	route["Aliases"] = []string{"x.example.org"}
+	recorder = serveRequest(t, srv, http.MethodPost, "/api/v1/edge/routes", map[string]any{"routes": []any{route}})
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("alias code = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+}

@@ -254,6 +254,31 @@ func (s *RecipientStore) RecordExport(fingerprint, actor string) (IdentityExport
 	return IdentityExport{ID: id, Fingerprint: fingerprint, Actor: actor, ExportedAt: at}, nil
 }
 
+// ExportBudget returns ErrExportRateLimited when another export record
+// would be refused. Rotation checks it before it changes any key so the
+// new key is never withheld for want of a record.
+func (s *RecipientStore) ExportBudget() error {
+	rows, err := s.db.Query(`SELECT exported_at FROM backup_identity_exports ORDER BY id DESC LIMIT ?`, MaxExportsPerHour)
+	if err != nil {
+		return fmt.Errorf("backup: export budget: %w", err)
+	}
+	defer rows.Close()
+	recent := 0
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return err
+		}
+		if t, perr := time.Parse(time.RFC3339Nano, raw); perr == nil && s.now().UTC().Sub(t) < time.Hour {
+			recent++
+		}
+	}
+	if recent >= MaxExportsPerHour {
+		return ErrExportRateLimited
+	}
+	return rows.Err()
+}
+
 const exportColumns = `SELECT id, fingerprint, actor, exported_at, acknowledged_at FROM backup_identity_exports`
 
 func scanExport(row *sql.Row) (IdentityExport, bool, error) {

@@ -57,7 +57,7 @@ func TestTLSIssuanceFlow(t *testing.T) {
 			_, _ = w.Write([]byte(`{"certificate":"www","digest":"abc","actor":"local"}`))
 		case "POST /api/v1/tls/issuance/credentials":
 			_ = json.NewDecoder(r.Body).Decode(&credBody)
-			_, _ = w.Write([]byte(`{"provider":"cloudflare","stored":["api_token"]}`))
+			_, _ = w.Write([]byte(`{"provider":"cloudflare","stored":["api_token"],"warning":"no Cloudflare zone the stored token can see contains other.net"}`))
 		case "POST /api/v1/tls/issuance/apply":
 			_, _ = w.Write([]byte(`{"id":12}`))
 		default:
@@ -101,6 +101,9 @@ func TestTLSIssuanceFlow(t *testing.T) {
 	values, _ := credBody["values"].(map[string]any)
 	if code != exitOK || values["api_token"] != "s3cret-token" || strings.Contains(stdout+stderr, "s3cret-token") {
 		t.Fatalf("credentials = %d %q %q body %v", code, stdout, stderr, credBody)
+	}
+	if !strings.Contains(stderr, "warning: no Cloudflare zone") {
+		t.Fatalf("credentials warning missing: %q", stderr)
 	}
 	if code, _, stderr := run("credentials", "cloudflare", "api_token=s3cret-token"); code != exitUsage ||
 		!strings.Contains(stderr, "never the command line") || strings.Contains(stderr, "s3cret-token") {

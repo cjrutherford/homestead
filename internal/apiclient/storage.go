@@ -6,21 +6,33 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"homestead/internal/discover"
 	"homestead/internal/storage"
 )
 
+// StorageMount is one discovered mount as the daemon reports it: the
+// discovery facts plus whether it can be registered, its kind (data,
+// system or unusable) and the unassigned classes suggested for it (S293).
+type StorageMount struct {
+	discover.Mount
+	Registrable       bool            `json:"registrable"`
+	RegistrableReason string          `json:"registrable_reason"`
+	Kind              string          `json:"kind"`
+	Suggested         []storage.Class `json:"suggested"`
+}
+
 // StorageMounts lists discovered mounts (S235): candidates for
 // registration with accessibility and free bytes.
-func (c *Client) StorageMounts(ctx context.Context) ([]discover.Mount, error) {
-	var out []discover.Mount
+func (c *Client) StorageMounts(ctx context.Context) ([]StorageMount, error) {
+	var out []StorageMount
 	if err := c.get(ctx, "/api/v1/storage/mounts", &out); err != nil {
 		return nil, err
 	}
 	if out == nil {
-		out = []discover.Mount{}
+		out = []StorageMount{}
 	}
 	return out, nil
 }
@@ -37,7 +49,8 @@ func (c *Client) StorageRegistrations(ctx context.Context) ([]storage.Registrati
 	return out, nil
 }
 
-// StorageRegister approves a discovered mount under a label.
+// StorageRegister approves a discovered mount under a label. An empty
+// actor lets the daemon record the caller (S293).
 func (c *Client) StorageRegister(ctx context.Context, mountpoint, label, actor string) (storage.Registration, error) {
 	var out storage.Registration
 	body := map[string]any{"mountpoint": mountpoint, "label": label, "actor": actor}
@@ -100,4 +113,50 @@ func (c *Client) StorageAssign(ctx context.Context, class, mountpoint, actor str
 		return storage.Assignment{}, err
 	}
 	return out, nil
+}
+
+// StorageInUseError is the daemon's 409 refusal to unassign a class or
+// unregister a mount while installed apps (or classes) still use it.
+type StorageInUseError struct {
+	Message  string
+	Packages []string
+	Classes  []string
+}
+
+func (e *StorageInUseError) Error() string { return e.Message }
+
+func storageInUse(err error) error {
+	var status *StatusError
+	if errors.As(err, &status) && status.Status == http.StatusConflict {
+		var body struct {
+			Error    string   `json:"error"`
+			Packages []string `json:"affected_packages"`
+			Classes  []string `json:"classes"`
+		}
+		if json.Unmarshal([]byte(status.Body), &body) == nil && body.Error != "" {
+			return &StorageInUseError{Message: body.Error, Packages: body.Packages, Classes: body.Classes}
+		}
+	}
+	return err
+}
+
+// StorageUnassign drops a class binding (S288). It never touches data on
+// the disk; the daemon refuses with a *StorageInUseError while installed
+// apps still use the mount.
+func (c *Client) StorageUnassign(ctx context.Context, class string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.base+"/api/v1/storage/assignments/"+url.PathEscape(class), nil)
+	if err != nil {
+		return fmt.Errorf("api: %w", err)
+	}
+	return storageInUse(c.roundTrip(req, http.StatusNoContent, nil))
+}
+
+// StorageUnregister drops a mount's registration (S288); same refusal and
+// the same promise not to touch the disk.
+func (c *Client) StorageUnregister(ctx context.Context, mountpoint string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.base+"/api/v1/storage/registrations?mountpoint="+url.QueryEscape(mountpoint), nil)
+	if err != nil {
+		return fmt.Errorf("api: %w", err)
+	}
+	return storageInUse(c.roundTrip(req, http.StatusNoContent, nil))
 }

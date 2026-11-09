@@ -1,4 +1,6 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnInit, signal, input } from '@angular/core';
+import { SentencePipe } from '../core/format-time';
+import { isNotSetUp } from '../core/http-error';
 import { StateMessage } from '../state/state-message';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
@@ -8,6 +10,8 @@ import {
   ExposurePlan,
   TlsRenewalReport,
 } from '../core/api.service';
+import { OperationProgress } from '../ui/operation-progress';
+import { Approval, approvedNow, Permit } from '../ui/permit';
 
 /**
  * Exposure review page (S247): select a route and target, review the
@@ -18,11 +22,13 @@ import {
  * changes anything except through approve and apply.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [OperationProgress, Permit, StateMessage, RouterLink, SentencePipe],
   selector: 'app-exposure',
   templateUrl: './exposure.html',
 })
 export class Exposure implements OnInit {
+  /** Shown inside the setup wizard (S291): the page's own heading is left to the step. */
+  readonly embedded = input(false);
   private readonly api = inject(ApiService);
 
   protected readonly plan = signal<ExposurePlan | null>(null);
@@ -32,6 +38,13 @@ export class Exposure implements OnInit {
   protected readonly notice = signal<string | null>(null);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
+  /** The approval given here for the plan on screen, stamped on its permit (S309). */
+  protected readonly approved = signal<Approval | null>(null);
+  /** Why the appliance would not approve the plan on screen. */
+  protected readonly refused = signal<string | null>(null);
+
+  /** Inline messages for the selection and approval forms, keyed by field. */
+  protected readonly fieldErrors = signal<Record<string, string>>({});
 
   ngOnInit(): void {
     this.refresh();
@@ -53,7 +66,7 @@ export class Exposure implements OnInit {
       error: (failure: HttpErrorResponse) => {
         this.busy.set(false);
         this.plan.set(null);
-        if (failure.status !== 404) {
+        if (!isNotSetUp(failure)) {
           this.error.set(failure.error ?? failure.message);
         }
       },
@@ -74,14 +87,20 @@ export class Exposure implements OnInit {
     publicIp: string,
   ): void {
     const port = Number(targetPort);
-    if (!host || !targetHost || !Number.isInteger(port) || port < 1) {
-      this.error.set('Route host, target host, and target port are required.');
+    const missing: Record<string, string> = {};
+    if (!host) missing['host'] = 'Enter the route host, such as app.example.com.';
+    if (!targetHost) missing['target'] = 'Enter the host the route forwards to.';
+    if (!Number.isInteger(port) || port < 1) missing['port'] = 'Enter the port as a whole number, 1 or higher.';
+    this.fieldErrors.set(missing);
+    if (Object.keys(missing).length > 0) {
       return;
     }
     this.busy.set(true);
     this.error.set(null);
     this.notice.set(null);
     this.operationId.set(null);
+    this.approved.set(null);
+    this.refused.set(null);
     const payload = {
       route: {
         Host: host,
@@ -107,9 +126,10 @@ export class Exposure implements OnInit {
 
   approve(actor: string, networksRaw: string): void {
     if (!actor) {
-      this.error.set('Approval needs a named actor.');
+      this.fieldErrors.set({ actor: 'Enter your name. Approvals are recorded under it.' });
       return;
     }
+    this.fieldErrors.set({});
     const networks = networksRaw
       .split(',')
       .map((network) => network.trim())
@@ -118,9 +138,11 @@ export class Exposure implements OnInit {
     this.error.set(null);
     this.notice.set(null);
     this.operationId.set(null);
+    this.refused.set(null);
     this.api.exposureApprove(actor, networks).subscribe({
       next: (approval) => {
         this.busy.set(false);
+        this.approved.set(approvedNow(approval.actor));
         this.notice.set(
           `Approved ${approval.host} by ${approval.actor}.`,
         );
@@ -128,7 +150,8 @@ export class Exposure implements OnInit {
       },
       error: (failure: HttpErrorResponse) => {
         this.busy.set(false);
-        this.error.set(failure.error ?? failure.message);
+        // The plan stays on screen: the refusal goes on its permit.
+        this.refused.set(failure.error ?? failure.message);
       },
     });
   }

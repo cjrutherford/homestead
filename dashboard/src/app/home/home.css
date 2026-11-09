@@ -1,0 +1,169 @@
+:host {
+  display: block;
+}
+
+.home {
+  max-width: 72rem;
+  margin-inline: auto;
+  padding: var(--spacing-lg) var(--spacing-lg) var(--spacing-xxl);
+}
+
+.home-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-block-end: var(--spacing-xxl);
+}
+
+.home-mark {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-xxl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-display);
+  line-height: 1.05;
+}
+
+.home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+h1 {
+  margin: 0 0 var(--spacing-xl);
+  font-family: var(--font-display);
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  letter-spacing: var(--tracking-display);
+  overflow-wrap: anywhere;
+}
+
+.home-note {
+  max-width: var(--measure);
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: var(--font-size-lead);
+}
+
+/* The tile grid: a few large, calm plates, one focus ring each. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  gap: var(--spacing-lg);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tiles li {
+  margin: 0;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  min-height: 11rem;
+  padding: var(--spacing-lg) var(--spacing-md);
+  color: var(--foreground);
+  text-align: center;
+  text-decoration: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--elevation-plate);
+  transition:
+    transform var(--duration-base) var(--ease-standard),
+    background-color var(--duration-base) var(--ease-standard),
+    border-color var(--duration-base) var(--ease-standard);
+}
+
+.tile:hover,
+.tile:focus-within {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.tile-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--spacing-sm);
+}
+
+.tile-link {
+  padding: var(--spacing-xs) var(--spacing-md);
+  color: var(--foreground);
+  font-weight: 600;
+  text-decoration: none;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+}
+
+a.tile-link:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+a.tile-link:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.tile-link-off {
+  color: var(--foreground-muted, var(--foreground));
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.tile-icon {
+  display: grid;
+  place-items: center;
+  width: 5rem;
+  height: 5rem;
+  font-family: var(--font-display);
+  font-size: 2.5rem;
+  font-weight: 600;
+  color: var(--primary);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--elevation-well);
+}
+
+.tile-name {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  line-height: var(--line-height-tight);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 30rem) {
+  .home {
+    padding-inline: var(--spacing-md);
+  }
+
+  .home-bar {
+    margin-block-end: var(--spacing-xl);
+  }
+
+  h1 {
+    font-size: var(--font-size-xxl);
+  }
+
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-md);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile {
+    transition: none;
+  }
+}

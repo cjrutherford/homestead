@@ -10,13 +10,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"homestead/internal/people"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
+	"homestead/internal/cert"
 	"homestead/internal/craft"
+	"homestead/internal/doctor"
+	"homestead/internal/sso"
 	"homestead/internal/version"
 )
 
@@ -46,6 +51,12 @@ type versionResponse struct {
 // API plus a Unix-socket mux for root-only endpoints (S021).
 type Server struct {
 	addr string
+	// hasAdmin reports whether a first administrator exists; set by MountAuth
+	// so identity can say a claimed appliance is still waiting for one.
+	hasAdmin func() (bool, error)
+	// doctorProbes and doctorBudget are the live Doctor probes (S316).
+	doctorProbes func() []doctor.Probe
+	doctorBudget time.Duration
 	// SocketPath is the recovery socket the apply unit health-checks
 	// (ADR-027); main sets it from --socket.
 	SocketPath string
@@ -59,6 +70,12 @@ type Server struct {
 	// waiters); serve cancels it when the daemon shuts down.
 	bg       context.Context
 	bgCancel context.CancelFunc
+	// audits counts audit waiters still running, so a test can wait for
+	// the completion entry instead of racing the goroutine.
+	audits sync.WaitGroup
+	// catalogDir is the catalog MountCatalog serves; edge changes use it
+	// to keep apps' host allow-lists in step (S396).
+	catalogDir string
 	// craft is the verify-then-build pipeline (S279), set by MountCraft.
 	craft *craft.Pipeline
 	// files is the craft file proxy (S254), set by MountCraftFiles; the
@@ -66,6 +83,32 @@ type Server struct {
 	files     *CraftFiles
 	craftMux  *recordingMux
 	craftHTTP *http.Server
+	// dashNames lists the names the dashboard route answers on (S289).
+	dashNames func() []string
+	// dashPublicNames lists the dashboard's tunnel names (S296, ADR-037).
+	dashPublicNames func() []string
+	// domainZoneWarning checks the setup domain against the zones a newly
+	// stored Cloudflare token can see (S294), set by MountSetup.
+	domainZoneWarning func(ctx context.Context) string
+	// setupDomain and signInOffered feed the tunnel plan (S296).
+	setupDomain   func() string
+	signInOffered func() bool
+	// signInStatus and updateSignIn let tunnel setup carry the dashboard's
+	// sign-in change (ADR-046), set by MountSSO.
+	signInStatus func() (sso.Status, error)
+	updateSignIn func(ctx context.Context, actor, tunnelDigest string, want tunnelSignIn) error
+	// appSignIn serves app sign-in through Authentik (S298), set by
+	// MountSSO; the install plan reads it for its sign-in preview.
+	appSignIn *appSignIn
+	// certIssuing issues ACME certificates (S278), set by
+	// MountTLSIssuance; tunnel setup issues the public dashboard name's
+	// certificate through it (ADR-048 §5).
+	certIssuing *cert.Issuing
+	// appPublic, people and appSetup back the appliance-run app setup
+	// (ADR-048): set by MountAppPublic, MountSSO and MountAppSetup.
+	appPublic *appPublic
+	people    *people.Service
+	appSetup  *appSetup
 }
 
 // New returns a Server serving addr. Pass DefaultAddr for local-only binding.

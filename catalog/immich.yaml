@@ -9,6 +9,8 @@
 # hostnames and names are plain environment, so a fresh install starts
 # without manual configuration.
 name: immich
+publish: host  # ADR-061
+publish_reason: own_name_adr044
 version: 3.3.0
 title: Immich
 blurb: Photos and videos you host.
@@ -20,7 +22,9 @@ icon: mdi:image-multiple
 services:
 - name: server
   image: ghcr.io/immich-app/immich-server:v3.3.0
+  publisher: upstream
   exposes: web
+  containerport: 2283
   environment:
     DB_HOSTNAME: database
     DB_USERNAME: immich
@@ -35,6 +39,7 @@ services:
     subpath: library
 - name: machine-learning
   image: ghcr.io/immich-app/immich-machine-learning:v3.3.0
+  publisher: upstream
   exposes: ""
   # Downloaded models; persisted so restarts do not re-download. Runs
   # as root like the server image.
@@ -44,6 +49,7 @@ services:
     subpath: model-cache
 - name: database
   image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+  publisher: upstream
   exposes: ""
   environment:
     POSTGRES_USER: immich
@@ -60,6 +66,7 @@ services:
     gid: 999
 - name: cache
   image: valkey/valkey:9
+  publisher: upstream
   exposes: ""
   # No image VOLUME (verified by inspection); /data is the queue and cache dir. Immich rebuilds
   # both on start (the official compose persists nothing here).
@@ -68,6 +75,9 @@ services:
     ephemeral: true
     sizemb: 256
     reason: Queue and cache state Immich rebuilds on start; nothing to back up.
+# Immich cannot run under a path (ADR-044): it keeps a name of its own,
+# immich.lan and immich.local, and immich.<zone> when published.
+serve: host
 requirements:
   memorymb: 4096
   cpucount: 2
@@ -77,7 +87,6 @@ requirements:
     minbytes: 5368709120
   - class: bulk
     minbytes: 107374182400
-  ports: [2283]
 exposure:
   package: immich
   endpoints:
@@ -91,6 +100,10 @@ backuppaths:
 sso:
   class: optional
   protocols: [oidc]
+  # App sign-in through Authentik (S298): Immich's built-in OAuth.
+  oidc:
+    adapter: immich
+    service: server
 database:
   service: database
   kind: postgres
@@ -104,3 +117,25 @@ secrets:
     env: POSTGRES_PASSWORD_FILE
   - service: server
     env: DB_PASSWORD_FILE
+- name: admin_password
+  # The first-run administrator's password (S318). Homestead holds it and
+  # uses it once, to create the administrator; no container reads it.
+  # Immich keeps its own copy, so rotating it would leave the shown value
+  # wrong: change the password in Immich instead.
+  immutable: true
+  reveal: true
+  note: Password for the Immich administrator account "admin@homestead.lan", created by Homestead when Immich first started. People sign in with Authentik; this account is for emergencies.
+# Immich cannot set itself up from its environment, and until it has an
+# administrator its web app shows "create an administrator" to everyone,
+# even with sign-in through Authentik on. Homestead creates the
+# administrator through Immich's API at the end of install, and again
+# before sign-in is applied if that failed (S318).
+firstrun:
+  routine: immich
+  service: server
+  account: admin@homestead.lan
+  secret: admin_password
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in through Authentik; local accounts stay available for recovery.

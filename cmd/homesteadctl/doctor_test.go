@@ -50,3 +50,41 @@ func TestDoctorWarnExitsZero(t *testing.T) {
 		t.Fatalf("exit = %d, want 0", code)
 	}
 }
+
+func TestDoctorGroupedWithFix(t *testing.T) {
+	url := doctorStub(t, `{"overall":"fail","live":false,"checks":[
+{"name":"memory","status":"ok","detail":"8 GiB","group":"System"},
+{"name":"backup-identity","status":"fail","detail":"not saved","group":"Storage","why":"Without it backups cannot be restored.","fix":{"text":"Save the identity.","link":"/backups","command":"homesteadctl backup identity ack"}}]}`)
+	code, stdout, _ := invoke(t, []string{"--server", url, "doctor"})
+	if code != exitError {
+		t.Fatalf("exit = %d", code)
+	}
+	for _, want := range []string{"== System", "== Storage", "why: Without it", "fix: Save the identity.", "page: /backups",
+		"run: homesteadctl backup identity ack", "live checks not run: add --live", "overall: fail"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("missing %q in %q", want, stdout)
+		}
+	}
+	if strings.Index(stdout, "== System") > strings.Index(stdout, "== Storage") {
+		t.Errorf("groups out of order: %q", stdout)
+	}
+}
+
+func TestDoctorLiveFlag(t *testing.T) {
+	var query string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.RawQuery
+		_, _ = w.Write([]byte(`{"overall":"warn","live":true,"checks":[{"name":"tunnel-connector","status":"unknown","detail":"timed out","group":"Tunnel"}]}`))
+	}))
+	defer ts.Close()
+	code, stdout, _ := invoke(t, []string{"--server", ts.URL, "doctor", "--live"})
+	if code != exitOK || query != "live=1" {
+		t.Fatalf("exit %d query %q", code, query)
+	}
+	if !strings.Contains(stdout, "== Tunnel") || strings.Contains(stdout, "live checks not run") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	if _, _, _ = invoke(t, []string{"--server", ts.URL, "doctor"}); query != "" {
+		t.Fatalf("plain doctor sent %q", query)
+	}
+}

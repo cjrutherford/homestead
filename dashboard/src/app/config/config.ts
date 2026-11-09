@@ -7,6 +7,8 @@ import { ConfigField, FieldError, FieldValues } from '../schema/schema';
 import { SchemaForm } from '../schema/schema-form';
 import { httpErrorMessage } from '../core/http-error';
 import { StateMessage } from '../state/state-message';
+import { Loading } from '../ui/loading';
+import { ConfigTransfer } from './config-transfer';
 
 export interface Change {
   key: string;
@@ -21,7 +23,7 @@ export interface Change {
  * saved state; apply persists and refreshes it.
  */
 @Component({
-  imports: [StateMessage, SchemaForm, JsonPipe],
+  imports: [Loading, StateMessage, SchemaForm, JsonPipe, ConfigTransfer],
   selector: 'app-config',
   templateUrl: './config.html',
 })

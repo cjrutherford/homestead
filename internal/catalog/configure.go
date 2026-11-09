@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -158,6 +159,14 @@ type overrideDocument struct {
 
 type overrideService struct {
 	Environment map[string]string `yaml:"environment,omitempty"`
+	// ExtraHosts and Volumes carry app sign-in's wiring (S298): the
+	// Authentik name pointed at the appliance edge, and the appliance root.
+	ExtraHosts []string `yaml:"extra_hosts,omitempty"`
+	Volumes    []string `yaml:"volumes,omitempty"`
+}
+
+func (o overrideService) empty() bool {
+	return len(o.Environment) == 0 && len(o.ExtraHosts) == 0 && len(o.Volumes) == 0
 }
 
 // ApplyConfig merges changes into the stack override file, creating it
@@ -171,24 +180,9 @@ func ApplyConfig(dir string, plan ConfigPlan) error {
 		return err
 	}
 	path := filepath.Join(dir, OverrideFileName)
-	document := overrideDocument{Services: map[string]overrideService{}}
-	if raw, err := os.ReadFile(path); err == nil {
-		var existing overrideDocument
-		decoder := yaml.NewDecoder(bytes.NewReader(raw))
-		decoder.KnownFields(true)
-		if err := decoder.Decode(&existing); err != nil {
-			return fmt.Errorf("catalog: parse %s: %w", OverrideFileName, err)
-		}
-		if existing.Services != nil {
-			document.Services = existing.Services
-		}
-		for service := range document.Services {
-			if document.Services[service].Environment == nil {
-				document.Services[service] = overrideService{Environment: map[string]string{}}
-			}
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("catalog: read %s: %w", OverrideFileName, err)
+	document, err := readOverride(path)
+	if err != nil {
+		return err
 	}
 	for _, change := range plan.Changes {
 		entry := document.Services[change.Service]
@@ -201,12 +195,135 @@ func ApplyConfig(dir string, plan ConfigPlan) error {
 		for _, key := range change.Unset {
 			delete(entry.Environment, key)
 		}
-		if len(entry.Environment) == 0 {
+		if entry.empty() {
 			delete(document.Services, change.Service)
 		} else {
 			document.Services[change.Service] = entry
 		}
 	}
+	return writeOverride(path, document)
+}
+
+func readOverride(path string) (overrideDocument, error) {
+	document := overrideDocument{Services: map[string]overrideService{}}
+	raw, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return document, nil
+	}
+	if err != nil {
+		return document, fmt.Errorf("catalog: read %s: %w", OverrideFileName, err)
+	}
+	var existing overrideDocument
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&existing); err != nil {
+		return document, fmt.Errorf("catalog: parse %s: %w", OverrideFileName, err)
+	}
+	if existing.Services != nil {
+		document.Services = existing.Services
+	}
+	return document, nil
+}
+
+// SignInWiring is what app sign-in (S298, ADR-040) layers onto the
+// service that talks to Authentik: host entries, read-only mounts and
+// plain environment. None of it is secret.
+type SignInWiring struct {
+	Service    string
+	ExtraHosts []string
+	Volumes    []string
+	Env        map[string]string
+}
+
+// WiringNotes reports what ApplySignInWiring did to variables the owner
+// may have set: Kept were left in place on off because their value is
+// not the one sign-in set; Replaced held another value that sign-in's
+// own value now overrides on on.
+type WiringNotes struct {
+	Kept     []string
+	Replaced []string
+}
+
+// OverrideEnv returns the override file's environment for one service,
+// so a plan can see the owner's values before sign-in touches them.
+func OverrideEnv(dir, service string) (map[string]string, error) {
+	document, err := readOverride(filepath.Join(dir, OverrideFileName))
+	if err != nil {
+		return nil, err
+	}
+	return document.Services[service].Environment, nil
+}
+
+// ApplySignInWiring adds the wiring to the override file (on) or takes
+// exactly those entries out again (off), leaving every other entry,
+// including the owner's environment, as it was. A variable is removed on
+// off only while it still holds the value sign-in set; on on, sign-in's
+// value wins over a different one, and both cases are reported.
+func ApplySignInWiring(dir string, w SignInWiring, on bool) (WiringNotes, error) {
+	var notes WiringNotes
+	if !validServiceName.MatchString(w.Service) {
+		return notes, fmt.Errorf("catalog: invalid service %q", w.Service)
+	}
+	path := filepath.Join(dir, OverrideFileName)
+	document, err := readOverride(path)
+	if err != nil {
+		return notes, err
+	}
+	entry := document.Services[w.Service]
+	without := func(list, drop []string) []string {
+		out := []string{}
+		for _, item := range list {
+			keep := true
+			for _, d := range drop {
+				keep = keep && item != d
+			}
+			if keep {
+				out = append(out, item)
+			}
+		}
+		return out
+	}
+	entry.ExtraHosts = without(entry.ExtraHosts, w.ExtraHosts)
+	entry.Volumes = without(entry.Volumes, w.Volumes)
+	if entry.Environment == nil {
+		entry.Environment = map[string]string{}
+	}
+	keys := make([]string, 0, len(w.Env))
+	for key := range w.Env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := w.Env[key]
+		if !validEnvKey.MatchString(key) {
+			return notes, fmt.Errorf("catalog: invalid variable %q", key)
+		}
+		current, present := entry.Environment[key]
+		switch {
+		case on:
+			if present && current != value {
+				notes.Replaced = append(notes.Replaced, key)
+			}
+			entry.Environment[key] = value
+		case present && current == value:
+			delete(entry.Environment, key)
+		case present:
+			notes.Kept = append(notes.Kept, key)
+		}
+	}
+	if on {
+		entry.ExtraHosts = append(entry.ExtraHosts, w.ExtraHosts...)
+		entry.Volumes = append(entry.Volumes, w.Volumes...)
+	}
+	if entry.empty() {
+		delete(document.Services, w.Service)
+	} else {
+		document.Services[w.Service] = entry
+	}
+	return notes, writeOverride(path, document)
+}
+
+func writeOverride(path string, document overrideDocument) error {
 	if len(document.Services) == 0 {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("catalog: remove %s: %w", OverrideFileName, err)

@@ -61,8 +61,7 @@ describe('Secrets', () => {
     expect(req.request.body).toEqual({ confirm: true });
     req.flush({ id: 9 });
     fixture.detectChanges();
-    const link = fixture.nativeElement.querySelector('a');
-    expect(link.textContent).toContain('operation 9');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/9"]')).not.toBeNull();
   });
 
   it('surfaces a failed re-key through the state message', () => {

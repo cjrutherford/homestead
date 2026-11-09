@@ -58,6 +58,12 @@ func runUpdatesList(ctx context.Context, client *apiclient.Client, stdout, stder
 		for _, warning := range row.Plan.Warnings {
 			fmt.Fprintf(stdout, "  warning: %s\n", warning)
 		}
+		for _, gap := range row.Plan.Provenance {
+			if gap.Discovered || gap.Local {
+				continue
+			}
+			fmt.Fprintf(stdout, "  %s: no registry listing from %s (%s)\n", gap.Service, gap.Registry, gap.Reason)
+		}
 		for _, cu := range row.Craft {
 			state := "will be verified and built locally on apply"
 			if cu.Built {

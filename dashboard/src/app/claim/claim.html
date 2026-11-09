@@ -3,15 +3,18 @@
   [current]="stepIndex()"
   (back)="goBack()"
 >
-  <section aria-label="Claim appliance">
-    <h2>Claim this appliance</h2>
+  <section class="gate" aria-label="Claim appliance">
+    <header class="masthead">
+      <h1>Claim this appliance</h1>
+      <p class="masthead-fact">Prove you own this appliance with its claim token.</p>
+    </header>
 
     @if (error()) {
       <app-state-message kind="error" [headline]="error()" />
     }
 
     @if (step() === 'token') {
-      <p>Enter the single-use claim token shown on the appliance console.</p>
+      <p>Enter the single-use claim token. On the appliance, run <code>sudo homesteadctl claim token</code> to show it.</p>
       <form
         (submit)="submitToken(tokenInput.value); $event.preventDefault()"
         aria-label="Claim token"
@@ -66,7 +69,7 @@
           Appliance claimed and administrator created.
         }
         @if (sessions.isLoggedIn()) {
-          You are logged in. Continue to the <a routerLink="/status">dashboard</a>.
+          You are logged in. Continue to <a routerLink="/setup">setup</a>.
         } @else {
           Continue to <a routerLink="/login">log in</a>.
         }

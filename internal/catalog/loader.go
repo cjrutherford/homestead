@@ -58,6 +58,12 @@ func Load(dir string) (Catalog, error) {
 		}
 		catalog.entries[name] = manifest
 	}
+	// Cross-package gates run once every manifest is loaded: a target
+	// that names no shipped package, or an identity provider this build
+	// does not drive, fails the whole load rather than warning (S341).
+	if err := catalog.validateIntegrations(); err != nil {
+		return Catalog{}, err
+	}
 	return catalog, nil
 }
 

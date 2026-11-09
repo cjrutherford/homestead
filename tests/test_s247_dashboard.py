@@ -21,14 +21,14 @@ def read(rel: str) -> str:
 class TestDashboardExposureSurfaces(unittest.TestCase):
     def test_routes(self):
         src = read("dashboard/src/app/app.routes.ts")
-        for symbol in ("{ path: 'exposure', component: Exposure }",
-                       "{ path: 'tunnel', component: Tunnel }"):
+        for symbol in ("{ path: 'exposure', loadComponent: () => import('./exposure/exposure').then((m) => m.Exposure) }",
+                       "{ path: 'tunnel', loadComponent: () => import('./tunnel/tunnel').then((m) => m.Tunnel) }"):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, src)
 
     def test_nav(self):
-        src = read("dashboard/src/app/app.html")
-        for symbol in ('routerLink="/exposure"', 'routerLink="/tunnel"'):
+        src = read("dashboard/src/app/core/nav.ts")
+        for symbol in ("path: '/admin/exposure'", "path: '/admin/tunnel'"):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, src)
 

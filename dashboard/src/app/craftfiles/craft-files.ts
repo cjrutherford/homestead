@@ -3,6 +3,9 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { ApiService, CraftFilesPlan, CraftFilesStatus } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { SessionService } from '../auth/session.service';
+import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
+import { Loading } from '../ui/loading';
 
 /**
  * Craft files (S254, ADR-029): link the craft apps to the owner's
@@ -12,7 +15,7 @@ import { StateMessage } from '../state/state-message';
  * is never shown, stored in the browser, or returned by the daemon.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [Loading, Permit, StateMessage, RouterLink],
   selector: 'app-craft-files',
   templateUrl: './craft-files.html',
 })
@@ -21,6 +24,11 @@ export class CraftFiles implements OnInit {
 
   protected readonly status = signal<CraftFilesStatus | null>(null);
   protected readonly plan = signal<CraftFilesPlan | null>(null);
+  /** The plan approved here, kept as its stamped permit (S309). */
+  protected readonly approved = signal<ApprovedPlan | null>(null);
+  /** Why the appliance would not approve the plan on screen. */
+  protected readonly refused = signal<string | null>(null);
+  private readonly sessions = inject(SessionService);
   protected readonly error = signal<string | null>(null);
   protected readonly notice = signal<string | null>(null);
   protected readonly busy = signal(false);
@@ -63,10 +71,30 @@ export class CraftFiles implements OnInit {
       .subscribe({
         next: (plan) => {
           this.busy.set(false);
+          this.approved.set(null);
+          this.refused.set(null);
           this.plan.set(plan);
         },
         error: (failure: HttpErrorResponse) => this.fail(failure),
       });
+  }
+
+  /**
+   * S326: review linking this appliance's own Nextcloud. Homestead creates the
+   * app password with the administrator password it generated at the install,
+   * so nothing is typed. New craft installs make this link themselves.
+   */
+  reviewAppliance(): void {
+    this.begin();
+    this.api.craftFilesPlan({ action: 'link', appliance: true, root: this.root }).subscribe({
+      next: (plan) => {
+        this.busy.set(false);
+        this.approved.set(null);
+        this.refused.set(null);
+        this.plan.set(plan);
+      },
+      error: (failure: HttpErrorResponse) => this.fail(failure),
+    });
   }
 
   approve(): void {
@@ -75,17 +103,20 @@ export class CraftFiles implements OnInit {
       return;
     }
     this.begin();
-    const body = {
-      plan_id: plan.id,
-      app_password: this.createPassword ? undefined : this.appPassword || undefined,
-      account_password: this.createPassword ? this.accountPassword || undefined : undefined,
-    };
+    const body = plan.appliance
+      ? { plan_id: plan.id }
+      : {
+          plan_id: plan.id,
+          app_password: this.createPassword ? undefined : this.appPassword || undefined,
+          account_password: this.createPassword ? this.accountPassword || undefined : undefined,
+        };
     // The secrets leave the component before the reply arrives.
     this.appPassword = '';
     this.accountPassword = '';
     this.api.craftFilesApprove(body).subscribe({
       next: (status) => {
         this.busy.set(false);
+        this.approved.set(approvedPlan(this.planHeading(plan.action), '', plan.summary.join(' '), this.sessions.username()));
         this.plan.set(null);
         this.status.set(status);
         this.notice.set(
@@ -94,12 +125,23 @@ export class CraftFiles implements OnInit {
             : 'Nextcloud linked. The app password is sealed on the appliance.',
         );
       },
-      error: (failure: HttpErrorResponse) => this.fail(failure),
+      error: (failure: HttpErrorResponse) => {
+        this.fail(failure);
+        // The plan stays on screen: the refusal goes on its permit (S309).
+        this.refused.set(this.error());
+        this.error.set(null);
+      },
     });
+  }
+
+  /** The permit's title for a reviewed action. */
+  protected planHeading(action: CraftFilesPlan['action']): string {
+    return action === 'link' ? 'Link Nextcloud' : action === 'rotate' ? 'Rotate the app password' : 'Unlink Nextcloud';
   }
 
   cancel(): void {
     this.plan.set(null);
+    this.refused.set(null);
     this.appPassword = '';
     this.accountPassword = '';
   }

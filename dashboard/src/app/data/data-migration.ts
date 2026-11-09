@@ -1,12 +1,16 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { RouterLink } from '@angular/router';
 import {
   ApiService,
   DataMigrationPlan,
   DataMigrations,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { SessionService } from '../auth/session.service';
+import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
+import { Dialog } from '../ui/dialog';
+import { Loading } from '../ui/loading';
+import { OperationProgress } from '../ui/operation-progress';
 
 /**
  * App data placement and migration (S277): where each installed app's
@@ -16,16 +20,46 @@ import { StateMessage } from '../state/state-message';
  * this page without an approve click quoting the plan's digest.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [OperationProgress, Loading, Permit, StateMessage, Dialog],
   selector: 'app-data-migration',
   templateUrl: './data-migration.html',
 })
 export class DataMigration implements OnInit {
   private readonly api = inject(ApiService);
 
+  protected stateLabel(state: string): string {
+    switch (state) {
+      case 'placed':
+        return 'On mounted storage';
+      case 'needs-migration':
+        return 'Needs migrating';
+      case 'unknown':
+        return 'Placement unclear';
+      default:
+        return state;
+    }
+  }
+
+  protected stateBadge(state: string): string {
+    switch (state) {
+      case 'placed':
+        return 'badge-ok';
+      case 'needs-migration':
+      case 'unknown':
+        return 'badge-warn';
+      default:
+        return '';
+    }
+  }
+
   protected readonly data = signal<DataMigrations>({ apps: [], old_volumes: [] });
   protected readonly plan = signal<DataMigrationPlan | null>(null);
   protected readonly planFor = signal<string | null>(null);
+  /** The plan approved here, kept as its stamped permit (S309). */
+  protected readonly approved = signal<ApprovedPlan | null>(null);
+  /** Why the appliance would not approve the plan on screen. */
+  protected readonly refused = signal<string | null>(null);
+  private readonly sessions = inject(SessionService);
   protected readonly acknowledged = signal(false);
   protected readonly operationId = signal<number | null>(null);
   protected readonly busy = signal(false);
@@ -58,6 +92,8 @@ export class DataMigration implements OnInit {
     this.error.set(null);
     this.operationId.set(null);
     this.acknowledged.set(false);
+    this.approved.set(null);
+    this.refused.set(null);
     this.api.planDataMigration(name).subscribe({
       next: (plan) => {
         this.busy.set(false);
@@ -92,17 +128,46 @@ export class DataMigration implements OnInit {
       .subscribe({
         next: ({ id }) => {
           this.busy.set(false);
+          this.approved.set(
+            approvedPlan(
+              `Move the data of ${name}`,
+              plan.digest,
+              `Expected downtime: about ${plan.estimated_downtime_seconds} seconds.`,
+              this.sessions.username(),
+            ),
+          );
           this.operationId.set(id);
           this.plan.set(null);
           this.planFor.set(null);
         },
-        error: (failure: HttpErrorResponse) => this.fail(failure),
+        error: (failure: HttpErrorResponse) => {
+          this.busy.set(false);
+          // The plan stays on screen: the refusal goes on its permit (S309).
+          this.refused.set(failure.error ?? failure.message);
+        },
       });
   }
 
   cancelPlan(): void {
     this.plan.set(null);
+    this.refused.set(null);
     this.planFor.set(null);
+  }
+
+  protected readonly confirmingVolumes = signal<string | null>(null);
+
+  askRemoveVolumes(name: string): void {
+    this.confirmingVolumes.set(name);
+  }
+
+  cancelRemoveVolumes(): void {
+    this.confirmingVolumes.set(null);
+  }
+
+  confirmRemoveVolumes(): void {
+    const name = this.confirmingVolumes();
+    this.confirmingVolumes.set(null);
+    if (name) this.removeVolumes(name);
   }
 
   removeVolumes(name: string): void {

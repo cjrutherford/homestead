@@ -75,15 +75,18 @@ func (c *Client) TLSIssuanceApply(ctx context.Context, certificate string) (int6
 
 // TLSIssuanceCredentials stores a DNS provider's credential values in the
 // daemon's secret store (S278). Write-only: values are never read back.
-func (c *Client) TLSIssuanceCredentials(ctx context.Context, provider string, values map[string]string) ([]string, error) {
+// The warning is set when a stored Cloudflare token cannot see the setup
+// domain's zone (S294); the credentials are stored either way.
+func (c *Client) TLSIssuanceCredentials(ctx context.Context, provider string, values map[string]string) ([]string, string, error) {
 	var out struct {
-		Stored []string `json:"stored"`
+		Stored  []string `json:"stored"`
+		Warning string   `json:"warning"`
 	}
 	if err := c.postJSON(ctx, "/api/v1/tls/issuance/credentials",
 		map[string]any{"provider": provider, "values": values}, &out); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return out.Stored, nil
+	return out.Stored, out.Warning, nil
 }
 
 // TLSReregisterAccount re-registers the ACME account of a certificate's

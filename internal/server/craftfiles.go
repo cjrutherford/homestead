@@ -16,6 +16,7 @@ import (
 
 	"homestead/internal/audit"
 	"homestead/internal/auth"
+	"homestead/internal/catalog"
 	"homestead/internal/cert"
 	"homestead/internal/craftfiles"
 	"homestead/internal/docker"
@@ -54,6 +55,10 @@ func (a authOperator) Check(token string) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, craftfiles.ErrOperatorUnavailable
 	}
+	if v.Role == auth.RolePerson {
+		// Craft sessions belong to the owner (ADR-050 §2).
+		return time.Time{}, craftfiles.ErrOperatorInvalid
+	}
 	exp := v.ExpiresAt
 	if !v.IdleExpiresAt.IsZero() && v.IdleExpiresAt.Before(exp) {
 		exp = v.IdleExpiresAt
@@ -68,7 +73,9 @@ type CraftFilesConfig struct {
 	Auth     *auth.Service
 	Local    *cert.LocalTLS // optional: trust the internal CA for Nextcloud
 	YAMLPath string
-	Limits   craftfiles.Limits
+	// CatalogDir finds this appliance's own Nextcloud (S326).
+	CatalogDir string
+	Limits     craftfiles.Limits
 	// Settings supplies the desired-configuration limits per request.
 	Settings func() map[string]any
 	Now      func() time.Time
@@ -112,13 +119,32 @@ func (s *Server) MountCraftFiles(c CraftFilesConfig) *CraftFiles {
 				return nil, err
 			}
 			var out []craftfiles.CraftRoute
-			for _, r := range set.Routes {
-				if r.CraftApp != "" {
-					out = append(out, craftfiles.CraftRoute{App: r.CraftApp, Host: string(r.Host), TLS: r.TLS != docker.TLSOff})
+			// A path route answers on the dashboard's names (ADR-045).
+			for _, r := range docker.ServedRoutes(set.Routes, set.Routes) {
+				if r.CraftApp == "" {
+					continue
 				}
+				cr := craftfiles.CraftRoute{App: r.CraftApp, Host: string(r.Host), TLS: r.TLS != docker.TLSOff, Path: r.Path}
+				if r.IsPath() {
+					for _, n := range append(append([]docker.Hostname{r.Host}, r.Aliases...), r.Tunnel...) {
+						cr.Names = append(cr.Names, string(n))
+					}
+				}
+				out = append(out, cr)
 			}
 			return out, nil
 		},
+	}
+	if c.CatalogDir != "" {
+		mgr.Appliance = func() (craftfiles.Appliance, bool) {
+			base, account, ok := applianceNextcloud(c.Store, c.CatalogDir, true)
+			if !ok {
+				return craftfiles.Appliance{}, false
+			}
+			return craftfiles.Appliance{BaseURL: base, Account: account, Password: func() (string, error) {
+				return c.Secrets.Get(catalog.SecretStoreName(nextcloudPackage, nextcloudAdminSecret))
+			}}, true
+		}
 	}
 	_ = mgr.SyncYAML()
 	sessions := craftfiles.NewSessions(authOperator{c.Auth})
@@ -234,7 +260,11 @@ func (s *Server) MountCraftFiles(c CraftFilesConfig) *CraftFiles {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		res, err := mgr.Launch(sessions, op.Token, op.Session.Username, op.Session.ExpiresAt, req.App)
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		res, err := mgr.Launch(sessions, op.Token, op.Session.Username, op.Session.ExpiresAt, req.App, host)
 		if err != nil {
 			writeCraftFilesError(w, err)
 			return

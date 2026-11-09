@@ -141,6 +141,38 @@ func (f *rotationFixture) assertReverted(t *testing.T) {
 	}
 }
 
+func TestRotateRefusesMariaDBPassword(t *testing.T) {
+	f := newRotationFixture(t)
+	f.m.Database.Kind = DatabaseMariaDB
+	stubComposeFail(t, "", 0)
+	before := f.sec.values[f.store]
+	err := rotateSecret(context.Background(), f.m, f.dir, "authentik", "db_password", f.sec)
+	if err == nil || !strings.Contains(err.Error(), "not supported yet") {
+		t.Fatalf("err = %v", err)
+	}
+	if f.sec.values[f.store] != before {
+		t.Fatal("store changed for a rotation that cannot run")
+	}
+	if _, pending := f.sec.values[f.pendin]; pending {
+		t.Fatal("journaled a rotation that cannot run")
+	}
+}
+
+func TestDatabasePasswordEngineGuards(t *testing.T) {
+	for _, kind := range []DatabaseKind{DatabaseMariaDB, DatabaseMySQL} {
+		m := authentikManifest(t)
+		m.Database.Kind = kind
+		if err := VerifyDatabasePassword(context.Background(), m, "x"); err == nil ||
+			!strings.Contains(err.Error(), "not supported yet") {
+			t.Fatalf("%s verify: %v", kind, err)
+		}
+		if err := AlterDatabasePassword(context.Background(), m, "x"); err == nil ||
+			!strings.Contains(err.Error(), "not supported yet") {
+			t.Fatalf("%s alter: %v", kind, err)
+		}
+	}
+}
+
 func TestRotateJournalsBeforeAlterAndSettles(t *testing.T) {
 	f := newRotationFixture(t)
 	cmp := stubComposeFail(t, "", 0)

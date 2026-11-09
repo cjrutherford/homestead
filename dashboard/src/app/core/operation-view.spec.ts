@@ -1,0 +1,50 @@
+import { describe, expect, it } from 'vitest';
+import { OperationState, OperationStep } from './api.service';
+import { formatElapsed, progressOf, stepLabel } from './operation-view';
+
+function step(position: number, name: string, status: string): OperationStep {
+  return { id: position + 1, operation_id: 1, position, name, status, started_at: '', finished_at: '', error: '' };
+}
+function op(status: string, steps: OperationStep[]): OperationState {
+  return { id: 1, type: 'x.y', status, payload: '', result: '', error: '', created_at: '', updated_at: '', steps };
+}
+
+describe('progressOf', () => {
+  it('names the current step and counts', () => {
+    const p = progressOf(op('running', [step(0, 'pull', 'succeeded'), step(1, 'up', 'running'), step(2, 'check', 'pending')]));
+    expect(p.text).toBe('Step 2 of 3: Start the containers');
+    expect(p.done).toBe(1);
+    expect(p.fraction).toBeCloseTo(1 / 3);
+  });
+
+  it('reports results', () => {
+    expect(progressOf(op('succeeded', [step(0, 'a', 'succeeded')])).text).toBe('Done');
+    expect(progressOf(op('failed', [step(0, 'a', 'failed')])).text).toBe('Failed at A');
+    expect(progressOf(op('cancelled', [])).text).toBe('Cancelled');
+    expect(progressOf(null).text).toBe('Starting');
+  });
+});
+
+describe('formatElapsed', () => {
+  it('formats minutes and hours', () => {
+    expect(formatElapsed(5000)).toBe('0:05');
+    expect(formatElapsed(125000)).toBe('2:05');
+    expect(formatElapsed(3725000)).toBe('1:02:05');
+  });
+});
+
+describe('stepLabel', () => {
+  it('turns slugs into words and leaves readable names alone', () => {
+    expect(stepLabel('obtain-artifact')).toBe('Obtain artifact');
+    expect(stepLabel('verify_craft_images')).toBe('Verify craft images');
+    expect(stepLabel('Render Caddyfile')).toBe('Render Caddyfile');
+    expect(stepLabel('')).toBe('');
+  });
+
+  it('names the install and uninstall steps in plain words', () => {
+    expect(stepLabel('ensure-homestead-edge')).toBe('Create the edge network');
+    expect(stepLabel('up')).toBe('Start the containers');
+    expect(stepLabel('down')).toBe('Stop the containers');
+    expect(stepLabel('provision:jellyfin/config')).toBe('Prepare folder jellyfin/config');
+  });
+});

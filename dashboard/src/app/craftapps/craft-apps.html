@@ -1,43 +1,62 @@
 <section aria-label="Craft apps">
-  <h2>Craft apps</h2>
+  <header class="masthead">
+    <h1>Craft apps</h1>
+    <p class="masthead-fact">The craft apps on this appliance and where each one is served.</p>
+  </header>
   <p>
-    The craft apps installed on this appliance, with the local address each one
-    is served at. This list comes from your own catalog and edge routes; nothing
-    is fetched from the internet. Install or remove a craft app on the Catalog
-    page and it appears or disappears here on the next load.
+    The craft apps installed on this appliance and the local address each one is served at. The
+    list comes from your own catalog and edge routes; nothing is fetched from the internet. Install
+    or remove an app on the Catalog page and it shows here the next time you open this page.
   </p>
 
-  @if (loading()) {
-    <app-state-message kind="loading" headline="Loading craft apps…" />
-  }
   @if (error()) {
-    <app-state-message kind="error" [headline]="error()" />
-    <button type="button" (click)="load()">Retry</button>
+    <app-state-message kind="error" [headline]="error()" actionLabel="Try again" (action)="load()" />
   }
 
-  @if (!loading() && !error()) {
-    @if (apps().length === 0) {
-      <app-state-message
-        kind="empty"
-        headline="No craft apps are installed. Install one from the Catalog page, then add an edge route for it."
-      />
-    } @else {
-      <ul>
-        @for (app of apps(); track app.name) {
-          <li data-testid="craft-app">
-            <strong>{{ app.title }}</strong>
-            <span> version {{ app.version }}, {{ app.status }}</span>
-            @if (app.url) {
-              <a class="button" [href]="app.url" target="_blank" rel="noopener noreferrer">
-                Open {{ app.title }}
-              </a>
-              <code>{{ app.url }}</code>
-            } @else {
-              <p data-testid="no-url">No address yet. {{ app.url_reason }}</p>
-            }
-          </li>
-        }
-      </ul>
+  <section class="field-panel" aria-label="Installed craft apps">
+    <app-loading [loading]="loading()" shape="list">
+    @if (!loading() && !error()) {
+      @if (apps().length === 0) {
+        <app-state-message
+          kind="empty"
+          headline="No craft apps are installed."
+          detail="Install one from the Catalog, then add an edge route for it."
+          actionLabel="Browse the catalog"
+          actionLink="/admin/catalog"
+        />
+      } @else {
+        <ul class="catalog-list">
+          @for (app of apps(); track app.name) {
+            <li class="catalog-item" data-testid="craft-app">
+              <span class="app-icon" aria-hidden="true">{{ app.title.charAt(0) }}</span>
+              <div class="catalog-text">
+                <strong>{{ app.title }}</strong>
+                @if (app.blurb) {
+                  <span class="hint" data-testid="craft-blurb">{{ app.blurb }}</span>
+                }
+                <span class="hint">Version {{ app.version }}</span>
+                <span class="badge" [class]="badgeFor(app.status)">{{ app.status }}</span>
+                @if (app.url) {
+                  <p><code>{{ app.url }}</code></p>
+                } @else {
+                  <p data-testid="no-url">
+                    No address yet. {{ app.url_reason }}
+                    <a routerLink="/admin/edge">Add one on the Edge page</a>
+                  </p>
+                }
+              </div>
+              @if (app.url) {
+                <div class="catalog-actions">
+                  <a class="button primary" [href]="app.url" target="_blank" rel="noopener noreferrer">
+                    Open {{ app.title }}
+                  </a>
+                </div>
+              }
+            </li>
+          }
+        </ul>
+      }
     }
-  }
+    </app-loading>
+  </section>
 </section>

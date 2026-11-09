@@ -35,6 +35,9 @@ const (
 	// touchInterval throttles the idle-clock write so verification
 	// stays read-mostly.
 	touchInterval = time.Minute
+	// StepUpTTL is how long a fresh Authentik sign-in steps an oidc
+	// session up on the public dashboard name (ADR-049 §1).
+	StepUpTTL = 5 * time.Minute
 )
 
 // MinPasswordLength is the floor for administrator passwords.
@@ -98,16 +101,44 @@ type Session struct {
 	ExpiresAt time.Time
 }
 
+// Session methods (ADR-033): how the session was obtained. An oidc
+// session must re-enter the local password for the step-up routes.
+const (
+	MethodPassword = "password"
+	MethodOIDC     = "oidc"
+)
+
+// Session roles (ADR-050 §1). The role is stored with the session when it
+// is minted and never changes.
+const (
+	RoleOwner  = "owner"
+	RolePerson = "person"
+)
+
 // VerifiedSession is a proven session with its owner.
 type VerifiedSession struct {
+	// ID is the session row; it never leaves the daemon.
+	ID         int64
 	IdentityID int64
 	Username   string
+	// Method is MethodPassword or MethodOIDC.
+	Method string
+	// Role is RoleOwner or RolePerson. A person session has no identity
+	// (IdentityID 0, Username empty); PersonID and DisplayName name the
+	// People record, which must still be active for the session to verify.
+	Role           string
+	PersonID       int64
+	DisplayName    string
+	PersonUsername string
 	// ExpiresAt is the absolute expiry; IdleExpiresAt is when the
 	// session dies if unused.
 	ExpiresAt     time.Time
 	IdleExpiresAt time.Time
 	// CSRFHash is the stored SHA-256 of the session's CSRF token.
 	CSRFHash []byte
+	// SteppedUpUntil is when a fresh Authentik step-up of an oidc session
+	// ends (ADR-049); zero when it was never stepped up.
+	SteppedUpUntil time.Time
 }
 
 // CSRFMatches reports, in constant time, whether presented is this
@@ -236,6 +267,54 @@ func (s *Service) Login(username, password string) (Session, error) {
 	if err := s.clearFailures(username); err != nil {
 		return Session{}, err
 	}
+	return s.mintSession(id, MethodPassword)
+}
+
+// MintOIDCSession mints the standard session for an identity whose
+// Authentik sign-in the caller has already verified (ADR-033). It checks
+// no password and touches no lockout counter: a locked local account does
+// not block SSO and SSO success does not clear local failures.
+func (s *Service) MintOIDCSession(identityID int64) (Session, error) {
+	var found int64
+	if err := s.db.QueryRow(`SELECT id FROM identities WHERE id = ? AND username IS NOT NULL`, identityID).Scan(&found); err != nil {
+		if err == sql.ErrNoRows {
+			return Session{}, ErrInvalidCredentials
+		}
+		return Session{}, fmt.Errorf("auth: find admin: %w", err)
+	}
+	return s.mintSession(identityID, MethodOIDC)
+}
+
+// MintPersonSession mints a person session for an active People record
+// whose Authentik sign-in the caller has already verified (ADR-050 §1). The
+// session has the person role and no identity; the role cannot be raised.
+func (s *Service) MintPersonSession(personID int64) (Session, error) {
+	var state string
+	if err := s.db.QueryRow(`SELECT state FROM people WHERE id = ?`, personID).Scan(&state); err != nil || state != "active" {
+		return Session{}, ErrInvalidCredentials
+	}
+	return s.insertSession(sql.NullInt64{}, MethodOIDC, RolePerson, personID)
+}
+
+// RevokePersonSessions ends a person's sessions. personID 0 ends every
+// person session (unlinking or turning off sign-in with Authentik).
+func (s *Service) RevokePersonSessions(personID int64) error {
+	q, args := `DELETE FROM sessions WHERE role = ? AND person_id = ?`, []any{RolePerson, personID}
+	if personID == 0 {
+		q, args = `DELETE FROM sessions WHERE role = ?`, []any{RolePerson}
+	}
+	if _, err := s.db.Exec(q, args...); err != nil {
+		return fmt.Errorf("auth: revoke person sessions: %w", err)
+	}
+	return nil
+}
+
+// mintSession creates the session row with the given method.
+func (s *Service) mintSession(id int64, method string) (Session, error) {
+	return s.insertSession(sql.NullInt64{Int64: id, Valid: true}, method, RoleOwner, 0)
+}
+
+func (s *Service) insertSession(id sql.NullInt64, method, role string, personID int64) (Session, error) {
 	token, err := randomToken()
 	if err != nil {
 		return Session{}, err
@@ -254,13 +333,49 @@ func (s *Service) Login(username, password string) (Session, error) {
 		return Session{}, fmt.Errorf("auth: sweep sessions: %w", err)
 	}
 	if _, err := s.db.Exec(
-		`INSERT INTO sessions (identity_id, token_hash, csrf_hash, expires_at, last_used_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, sum[:], csrfSum[:], formatTime(expires), stamp, stamp, stamp,
+		`INSERT INTO sessions (identity_id, token_hash, csrf_hash, expires_at, last_used_at, created_at, updated_at, method, role, person_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, sum[:], csrfSum[:], formatTime(expires), stamp, stamp, stamp, method, role, personID,
 	); err != nil {
 		return Session{}, fmt.Errorf("auth: create session: %w", err)
 	}
 	return Session{Token: token, CSRFToken: csrf, ExpiresAt: expires}, nil
+}
+
+// RevokeMethodSessions destroys an identity's sessions of one method:
+// unlinking Authentik ends the owner's oidc sessions (ADR-033).
+func (s *Service) RevokeMethodSessions(identityID int64, method string) error {
+	if _, err := s.db.Exec(`DELETE FROM sessions WHERE identity_id = ? AND method = ?`, identityID, method); err != nil {
+		return fmt.Errorf("auth: revoke sessions: %w", err)
+	}
+	return nil
+}
+
+// VerifyPassword is fresh re-authentication (ADR-033): it checks the
+// local password of username inside the request, not the cached session.
+// Failures feed the same lockout as login, so re-auth is no way around
+// the throttle. It mints nothing and clears nothing on success (login
+// and password change are the only places that forgive failures).
+func (s *Service) VerifyPassword(username, password string) error {
+	locked, err := s.lockedOut(username)
+	if err != nil {
+		return err
+	}
+	if locked {
+		return ErrAccountLocked
+	}
+	var hash []byte
+	err = s.db.QueryRow(`SELECT password_hash FROM identities WHERE username = ?`, username).Scan(&hash)
+	if err == sql.ErrNoRows {
+		return s.recordFailure(username)
+	}
+	if err != nil {
+		return fmt.Errorf("auth: find admin: %w", err)
+	}
+	if err := bcrypt.CompareHashAndPassword(hash, []byte(password)); err != nil {
+		return s.recordFailure(username)
+	}
+	return nil
 }
 
 func randomToken() (string, error) {
@@ -491,17 +606,42 @@ func (s *Service) Verify(token string) (VerifiedSession, error) {
 		id                             int64
 		v                              VerifiedSession
 		expiresAt, createdAt, lastUsed string
+		steppedUp                      string
+		identity                       sql.NullInt64
+		username, pname, pstate, puser sql.NullString
 	)
 	err := s.db.QueryRow(
-		`SELECT s.id, s.identity_id, i.username, s.expires_at, s.created_at, s.last_used_at, s.csrf_hash
-		 FROM sessions s JOIN identities i ON i.id = s.identity_id
+		`SELECT s.id, s.identity_id, i.username, s.expires_at, s.created_at, s.last_used_at, s.csrf_hash, s.method, s.stepped_up_until,
+		        s.role, s.person_id, p.display_name, p.state, p.username
+		 FROM sessions s
+		 LEFT JOIN identities i ON i.id = s.identity_id
+		 LEFT JOIN people p ON p.id = s.person_id AND s.role = 'person'
 		 WHERE s.token_hash = ?`, sum[:],
-	).Scan(&id, &v.IdentityID, &v.Username, &expiresAt, &createdAt, &lastUsed, &v.CSRFHash)
+	).Scan(&id, &identity, &username, &expiresAt, &createdAt, &lastUsed, &v.CSRFHash, &v.Method, &steppedUp,
+		&v.Role, &v.PersonID, &pname, &pstate, &puser)
 	if err == sql.ErrNoRows {
 		return VerifiedSession{}, ErrInvalidSession
 	}
 	if err != nil {
 		return VerifiedSession{}, fmt.Errorf("auth: find session: %w", err)
+	}
+	switch v.Role {
+	case RoleOwner:
+		// An owner session needs its identity (the old inner join).
+		if !identity.Valid || !username.Valid {
+			return VerifiedSession{}, ErrInvalidSession
+		}
+		v.IdentityID, v.Username = identity.Int64, username.String
+	case RolePerson:
+		// A person session is only as good as an active People record,
+		// even if revocation was missed. It never carries an identity.
+		if v.PersonID == 0 || !pstate.Valid || pstate.String != "active" {
+			_, _ = s.db.Exec(`DELETE FROM sessions WHERE id = ?`, id)
+			return VerifiedSession{}, ErrInvalidSession
+		}
+		v.DisplayName, v.PersonUsername = pname.String, puser.String
+	default:
+		return VerifiedSession{}, ErrInvalidSession
 	}
 	expiry, err := time.Parse(time.RFC3339Nano, expiresAt)
 	if err != nil {
@@ -536,9 +676,31 @@ func (s *Service) Verify(token string) (VerifiedSession, error) {
 		}
 		idleExpiry = now.Add(IdleTTL)
 	}
+	v.ID = id
 	v.ExpiresAt = expiry
 	v.IdleExpiresAt = idleExpiry
+	if steppedUp != "" {
+		// An unreadable stamp is no step-up: fail closed.
+		v.SteppedUpUntil, _ = time.Parse(time.RFC3339Nano, steppedUp)
+	}
 	return v, nil
+}
+
+// MarkSteppedUp steps an oidc session up for StepUpTTL after a fresh
+// Authentik sign-in (ADR-049 §1). Only the identity's own oidc session
+// can be marked; any other session is ErrInvalidSession. No new session
+// is created.
+func (s *Service) MarkSteppedUp(sessionID, identityID int64) (time.Time, error) {
+	until := s.now().Add(StepUpTTL)
+	res, err := s.db.Exec(`UPDATE sessions SET stepped_up_until = ? WHERE id = ? AND identity_id = ? AND method = ?`,
+		formatTime(until), sessionID, identityID, MethodOIDC)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("auth: step up session: %w", err)
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		return time.Time{}, ErrInvalidSession
+	}
+	return until, nil
 }
 
 // Logout destroys the session for token. Unknown tokens fail.
@@ -559,4 +721,17 @@ func (s *Service) Logout(token string) error {
 		return ErrInvalidSession
 	}
 	return nil
+}
+
+// Username names an administrator identity (audit actors).
+func (s *Service) Username(identityID int64) (string, error) {
+	var name string
+	err := s.db.QueryRow(`SELECT username FROM identities WHERE id = ? AND username IS NOT NULL`, identityID).Scan(&name)
+	if err == sql.ErrNoRows {
+		return "", ErrInvalidCredentials
+	}
+	if err != nil {
+		return "", fmt.Errorf("auth: find admin: %w", err)
+	}
+	return name, nil
 }

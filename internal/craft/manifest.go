@@ -157,11 +157,24 @@ func (m Manifest) App(name string) (App, bool) {
 // registry-qualified.
 func Tag(app, version string) string { return "homestead/craft-" + app + ":" + version }
 
+// BridgeTag is the local image tag of an Everything bridge app (ADR-057).
+func BridgeTag(app, version string) string { return "homestead/everything-" + app + ":" + version }
+
+// IsBridgeRef reports whether image is an Everything bridge image reference.
+func IsBridgeRef(image string) bool {
+	_, _, ok := ParseRef(image)
+	return ok && strings.HasPrefix(image, "homestead/everything-")
+}
+
 // ParseRef recognizes a local craft image reference
-// (`homestead/craft-<app>:<version>`), the extension point catalog
+// (`homestead/craft-<app>:<version>`, or an Everything bridge image
+// `homestead/everything-<app>:<version>`), the extension point catalog
 // manifests use to name a locally built image (S249).
 func ParseRef(image string) (app, version string, ok bool) {
 	rest, found := strings.CutPrefix(image, "homestead/craft-")
+	if !found {
+		rest, found = strings.CutPrefix(image, "homestead/everything-")
+	}
 	if !found {
 		return "", "", false
 	}

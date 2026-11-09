@@ -39,7 +39,7 @@ func TestLoginStoresSessionAndLogoutDeletesIt(t *testing.T) {
 	pass := passwordFile(t, "long-enough-password")
 	invoke(t, append(serverArgs, "admin", "setup", "--username", "owner", "--password-file", pass))
 
-	code, stdout, _ := invoke(t, append(serverArgs, "login", "--username", "owner", "--password-file", pass))
+	code, stdout, _ := invoke(t, append(serverArgs, "login", "--username", "owner", "--password-file", pass, "--print-token"))
 	if code != exitOK {
 		t.Fatalf("login exit = %d", code)
 	}

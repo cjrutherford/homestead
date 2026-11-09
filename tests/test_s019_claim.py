@@ -85,7 +85,7 @@ class TestClaimSurface(unittest.TestCase):
     def test_daemon_mints_on_fresh_startup(self):
         main = read("cmd/homestead-server/main.go")
         self.assertIn("MountClaim", read("internal/server/mount.go"))
-        self.assertIn("MintToken", main)
+        self.assertIn("EnsureTokenFile", main)  # S288: file, not console
         self.assertIn('"data-dir"', main)
 
 

@@ -13,6 +13,8 @@ export interface Health {
 export interface Identity {
   state: string;
   version: string;
+  /** Claimed but no administrator yet: the account step is still owed. */
+  setup_pending?: boolean;
 }
 
 /** GET /api/v1/doctor — diagnostic report check entry. */
@@ -20,12 +22,30 @@ export interface DoctorCheck {
   name: string;
   status: string;
   detail: string;
+  /** S316: System, Storage, Network, Certificates, Tunnel, Sign-in or Apps. */
+  group?: string;
+  title?: string;
+  /** Why the check matters, in plain words. */
+  why?: string;
+  fix?: DoctorFix;
+  /** True for a check that comes from a live probe. */
+  live?: boolean;
+}
+
+/** What to do about a check: words, and optionally a page and a command. */
+export interface DoctorFix {
+  text: string;
+  link?: string;
+  command?: string;
 }
 
 /** GET /api/v1/doctor — diagnostic report. */
 export interface DoctorReport {
   overall: string;
   checks: DoctorCheck[];
+  /** True when the live probes ran for this report. */
+  live?: boolean;
+  checked_at?: string;
 }
 
 /** One operation step (GET /api/v1/operations/:id). */
@@ -100,6 +120,70 @@ export interface PlanResult {
   errors?: FieldError[];
 }
 
+/** One settings key an import would add, change or remove (S483). */
+export interface ImportChange {
+  key: string;
+  before?: unknown;
+  after?: unknown;
+}
+
+/** The portable document the daemon exports (names only, never secret values). */
+export interface ConfigDocument {
+  version: number;
+  exported_at: string;
+  homestead: string;
+  store_schema: number;
+  desired_version: number;
+  settings?: Record<string, unknown>;
+  secrets?: string[];
+}
+
+/** POST /api/v1/config/import/preview: what an import would do; writes nothing (S483). */
+export interface ImportPreview {
+  valid: boolean;
+  error?: string;
+  changes: ImportChange[];
+  secrets: string[];
+  document?: ConfigDocument;
+}
+
+/** POST /api/v1/config/import: counts restored. */
+export interface ImportResult {
+  settings: number;
+  secrets: number;
+}
+
+/** One catalog bundle member and whether the catalog carries it yet. */
+export interface BundleMember {
+  Name: string;
+  Available: boolean;
+  MemoryMB: number;
+}
+
+/** One storage class's combined demand across a bundle's members. */
+export interface BundleStorage {
+  Class: string;
+  Needed: number;
+  Free: number;
+  Known: boolean;
+  OK: boolean;
+}
+
+/** GET /api/v1/catalog/bundles — one profile graded against this host. */
+export interface BundleReport {
+  Bundle: string;
+  Title: string;
+  Blurb: string;
+  Members: BundleMember[];
+  Missing: string[];
+  Complete: boolean;
+  TotalMemory: number;
+  HostMemory: number;
+  Storage: BundleStorage[];
+  Passed: boolean;
+  Detail: string;
+}
+
 /** GET /api/v1/catalog — browsable package summaries. */
 export interface PackageSummary {
   name: string;
@@ -110,6 +194,77 @@ export interface PackageSummary {
   icon: string;
   /** True when a stack already exists; Install is refused (S276). */
   installed?: boolean;
+  /** S324: the setup approved with the install is running or stopped. */
+  setup?: 'running' | 'stopped';
+}
+
+/** S324 (ADR-048): the steps the owner approved with an install. */
+export interface InstallSetupApproval {
+  public?: { hostname?: string; route: string; digest: string };
+  sign_in?: { digest: string };
+  people?: number[];
+  /** S390: the explicit per-person access choices reviewed with the install. */
+  access?: { digest: string; choices: AppAccessChoice[] };
+  /** S326: the Nextcloud link for craft files the install review listed. */
+  files_link?: { digest: string };
+}
+
+export type AppAccessRole = 'none' | 'user' | 'admin';
+
+export interface AppAccessChoice {
+  person_id: number;
+  role: AppAccessRole;
+}
+
+export interface AppAccessPlan {
+  mode: 'managed' | 'open' | 'bootstrap' | 'self-managed' | 'unavailable';
+  people: { id: number; display_name: string; username: string; state: 'active' | 'disabled' }[];
+  admin_supported: boolean;
+  reason?: string;
+  /** self-managed: the app keeps its own accounts (S398). */
+  notice?: string;
+}
+
+export interface AppAccessPlanApproval {
+  digest: string;
+}
+
+export type AppSetupStepName = 'address' | 'publish' | 'sign-in' | 'people' | 'nextcloud-link';
+export type AppSetupStepState = 'waiting' | 'running' | 'done' | 'changed' | 'failed' | 'skipped';
+
+export interface AppSetupStep {
+  name: AppSetupStepName;
+  state: AppSetupStepState;
+  digest: string;
+  reason?: string;
+  operation?: number;
+}
+
+/** The stopped step's plan as it stands now; approving its digest resumes. */
+export interface AppSetupReview {
+  step: AppSetupStepName;
+  digest?: string;
+  problem?: string;
+  addresses?: string[];
+  public?: AppPublicPlan;
+  sign_in?: AppSignInPlan;
+  people?: string[];
+  token_kept?: boolean;
+  /** S326: the nextcloud-link step's plan as it stands now. */
+  files_link?: FilesLinkPlan;
+}
+
+/** GET /api/v1/catalog/:name/setup (S324). */
+export interface AppSetup {
+  app: string;
+  status: 'none' | 'waiting' | 'running' | 'stopped' | 'done' | 'skipped';
+  install_operation?: number;
+  operation?: number;
+  steps: AppSetupStep[];
+  reason?: string;
+  /** Resuming applies app-administrator grants and needs fresh authentication. */
+  admin_grants?: boolean;
+  review?: AppSetupReview;
 }
 
 /** GET /api/v1/catalog/:name — curated manifest detail. */
@@ -117,6 +272,27 @@ export interface CatalogService {
   Name: string;
   Image: string;
   Exposes: string;
+  /** Listening port inside this service container, not a host port. */
+  ContainerPort?: number;
+  /** Container paths the package keeps (S276); empty for stateless apps. */
+  Data?: CatalogDataPath[] | null;
+}
+
+/** One declared container path: persistent on a storage class, or ephemeral. */
+export interface CatalogDataPath {
+  Target: string;
+  Class: string;
+  Subpath: string;
+  Database?: boolean;
+  Ephemeral?: boolean;
+}
+
+/** How a package relates to single sign-on (S203). */
+export interface CatalogSSO {
+  Class: '' | 'unsupported' | 'optional' | 'recommended' | 'required';
+  Protocols?: string[] | null;
+  /** S298: the adapter Homestead signs the app in to Authentik through, absent when it has none. */
+  oidc?: { adapter: string; service: string; plugin?: PinnedPlugin } | null;
 }
 
 export interface CatalogManifest {
@@ -142,15 +318,42 @@ export interface CatalogManifest {
     }[];
   };
   BackupPaths: string[];
+  /** Single sign-on posture; an empty class reads as unsupported. */
+  SSO?: CatalogSSO | null;
   /** Advisory browser capabilities the app needs (S252). */
   Browser?: BrowserAdvisory[] | null;
   /** Secret-backed container variables the package declares (S266). */
   Secrets?: { Name: string; Immutable: boolean }[];
+  /** S315 (ADR-044): 'path' serves the app under the appliance's names at Path; empty or 'host' on a name of its own. */
+  Serve?: string;
+  /** ADR-061: the package's public form; 'never' means the wizard and app page offer no public address (S451). */
+  Publish?: 'path' | 'host' | 'never';
+  /** The app's path when served by path; empty means /apps/<name>/. */
+  Path?: string;
+  /** S326: a path app sees its requests without its path (every craft app). */
+  StripPrefix?: boolean;
+  /** S326: the package's path redirects, kept on its route. */
+  Redirects?: { From: string; To: string }[] | null;
+  /** Declared integrations resolved by the daemon (S341). */
+  Works?: WorksWith[];
+}
+
+/** One resolved package relationship: kind, derived level, target title. */
+export interface WorksWith {
+  Kind: string;
+  Level: string;
+  Target: string;
+  Title: string;
+  Note: string;
 }
 
 /** The catalog detail exactly as the API sends it: empty lists may be null. */
-export type RawCatalogManifest = Omit<CatalogManifest, 'Services' | 'Requirements'> & {
+export type RawCatalogManifest = Omit<
+  CatalogManifest,
+  'Services' | 'Requirements' | 'Works'
+> & {
   Services: CatalogService[] | null;
+  Works: WorksWith[] | null;
   Requirements: Omit<CatalogManifest['Requirements'], 'Storage' | 'Ports'> & {
     Storage: CatalogManifest['Requirements']['Storage'] | null;
     Ports: number[] | null;
@@ -175,23 +378,145 @@ export interface AppSecret {
   database_password: boolean;
   wired: boolean;
   installed: boolean;
+  /** A credential meant for the owner, readable with revealAppSecret (S312). */
+  reveal?: boolean;
+  note?: string;
+}
+
+/** POST /api/v1/catalog/:name/secrets/:secret/reveal — the value, audited (S312). */
+export interface RevealedSecret {
+  name: string;
+  value: string;
+  note?: string;
+}
+
+/** Whether Cloudflare's edge has a certificate for a public name (S312). */
+export interface NameCoverage {
+  hostname: string;
+  covered: boolean;
+  /** universal, certificate pack or total tls. */
+  by?: string;
+  /** False when the token could not read the zone's certificates. */
+  checked: boolean;
 }
 
 /** POST /api/v1/catalog/:name/plan — reviewed install change set. */
 export interface InstallPlan {
   Package: string;
   Requirements: { Passed: boolean };
-  Routes: { Host: string; Exposure: string }[];
+  Routes: { Host: string; Exposure: string; Path?: string }[];
   Compose: { ComposeYAML: string };
+  /** S315 (ADR-044): where a package served by path answers, such as /apps/nextcloud/. */
+  path?: string;
+  /** S315: the local addresses the install gives the app (its path under each appliance name, or its own names). */
+  addresses?: string[];
   /** Sections are arrays from the API, but null-safe reads stay cheap. */
   DNS?: { Name: string; Type: string; Value: string }[] | null;
   TLS?: { Host: string; Issuer: string }[] | null;
   Firewall?: { Service: { Name: string } }[] | null;
-  Directories?: { Mountpoint: string }[] | null;
+  Directories?: { Mountpoint: string; Directory?: { Path: string } }[] | null;
   Mounts?: PlannedMount[] | null;
   BrowserAdvisories?: BrowserAdvisory[] | null;
   Notes?: string[] | null;
   Actions: string[];
+  /** True when routed services join the shared edge network (install creates it). */
+  EdgeNetwork?: boolean;
+  /** S298: sign-in with Authentik offered for this install, absent when the app has no adapter. */
+  sign_in?: SignInPreview;
+  /** S313: binds the install to this plan; install with it answers 409 when the plan changed. */
+  digest?: string;
+  /** S326: the craft apps the install's setup links to Nextcloud for files. */
+  files_link?: FilesLinkPlan;
+  /** S390: access controls available for this installation. */
+  access?: AppAccessPlan;
+}
+
+/**
+ * S326 (ADR-048 §4): the nextcloud-link setup step. A craft app links itself;
+ * Nextcloud links the craft apps already installed. Approved with the install.
+ */
+export interface FilesLinkPlan {
+  apps: string[];
+  lines: string[];
+  base_url: string;
+  account: string;
+  root: string;
+  /** The step first links this appliance's Nextcloud (an app password Homestead creates). */
+  new_link: boolean;
+  digest: string;
+}
+
+/** The install plan's sign-in offer (S298). */
+export interface SignInPreview {
+  offered: boolean;
+  reason?: string;
+  plan?: AppSignInPlan;
+  /** Apply needs no API token in the request: dashboard sign-in kept one. */
+  token_kept: boolean;
+}
+
+/** The pinned third-party plugin an adapter installs (S298, Jellyfin only). */
+export interface PinnedPlugin {
+  name: string;
+  version: string;
+  url: string;
+  sha256: string;
+}
+
+/** One app's recorded sign-in with Authentik (S298); never a secret. */
+export interface AppSignInRecord {
+  package: string;
+  adapter: string;
+  client_id: string;
+  issuer: string;
+  redirect_uris: string[];
+  plugin_version?: string;
+  actor?: string;
+  updated_at: string;
+}
+
+/** GET /api/v1/catalog/:name/sign-in (S298). */
+export interface AppSignInStatus {
+  package: string;
+  offered: boolean;
+  reason?: string;
+  enabled: boolean;
+  applied?: AppSignInRecord;
+  replan: boolean;
+  adapter?: string;
+  plugin?: PinnedPlugin;
+  sign_in_url?: string;
+  token_kept: boolean;
+  /** A sign-in made before groups: every Authentik user can sign in (S314, ADR-043). */
+  open_to_all?: boolean;
+}
+
+/** A read-back of the groups and bindings Homestead made in Authentik (S314). */
+export interface AccessReport {
+  groups: { name: string; exists: boolean; members: number; owner_member: boolean }[];
+  bindings: { group: string; bound: boolean }[];
+  claim_mapping?: 'ok' | 'missing' | 'differs';
+  open: boolean;
+  drift: string[];
+}
+
+/** POST /api/v1/catalog/:name/sign-in/plan (S298): what approving does, with its digest. */
+export interface AppSignInPlan {
+  package: string;
+  title: string;
+  enabled: boolean;
+  adapter: string;
+  provider: string;
+  application: string;
+  client_id: string;
+  issuer: string;
+  redirect_uris: string[];
+  app_settings: string[];
+  plugin?: PinnedPlugin;
+  sign_in_url?: string;
+  changes: string[];
+  warnings: string[];
+  digest: string;
 }
 
 /** One resolved container mount in an install plan (S276). */
@@ -225,6 +550,29 @@ export interface EdgeRoute {
   Policy?: unknown;
   /** Craft app this host serves (S254); install plans carry it, pass it through. */
   CraftApp?: string;
+  /** The one dashboard route (S289); managed on the Trust page, not the Edge editor. */
+  Dashboard?: boolean;
+  /** Extra names the dashboard route answers on (the .local name). */
+  Aliases?: string[];
+  /** S315 (ADR-044): an app served at this path under the dashboard's names; Host is then only its record key. */
+  Path?: string;
+  StripPrefix?: boolean;
+  Redirects?: { From: string; To: string }[] | null;
+  /** A path route answers on the dashboard's public name too. */
+  Published?: boolean;
+}
+
+/** GET /api/v1/dashboard/address (S289, ADR-035): the dashboard's local network address. */
+export interface DashboardAddress {
+  name: string;
+  default: string;
+  configured: boolean;
+  exposure: 'local' | 'overlay';
+  mdns_name: string;
+  names: string[];
+  /** Full URLs, the .local one first (it needs no DNS setup). */
+  urls: string[];
+  root_path: string;
 }
 
 /** GET /api/v1/craft/files — Nextcloud link state (S254); never the app password. */
@@ -245,6 +593,8 @@ export interface CraftFilesStatus {
   credential_stored: boolean;
   daemon_created: boolean;
   apps: CraftFilesApp[];
+  /** S326: this appliance's own Nextcloud, linkable with no password. */
+  appliance_nextcloud?: { base_url: string; account: string };
 }
 
 export interface CraftFilesPlanRequest {
@@ -254,6 +604,8 @@ export interface CraftFilesPlanRequest {
   root?: string;
   create_app_password?: boolean;
   allow_insecure_http?: boolean;
+  /** S326: link this appliance's Nextcloud with the administrator password generated at its install. */
+  appliance?: boolean;
 }
 
 export interface CraftFilesPlan {
@@ -265,12 +617,22 @@ export interface CraftFilesPlan {
   summary: string[];
   warnings: string[];
   expires_at: string;
+  /** S326: a link to this appliance's Nextcloud; approving it needs no password. */
+  appliance?: boolean;
 }
 
 export interface CraftFilesLaunch {
   url: string;
   app: string;
   expires_at: string;
+}
+
+/** GET /api/v1/docker/health — the parts the install wizard reads. */
+export interface DockerHealth {
+  reachable: boolean;
+  version?: string;
+  containers?: { names: string[]; state: string }[] | null;
+  networks?: { name: string }[] | null;
 }
 
 /** POST /api/v1/catalog/:name/install — started operation. */
@@ -344,6 +706,19 @@ export interface ServiceUpdate {
   Source: string;
 }
 
+/**
+ * Where one service's update discovery came from: the registry asked,
+ * whether it answered, and why not when it did not.
+ */
+export interface ServiceProvenance {
+  Service: string;
+  Registry: string;
+  Repository: string;
+  Discovered: boolean;
+  Local: boolean;
+  Reason: string;
+}
+
 /** GET /api/v1/updates — reviewable change set for one package. */
 export interface UpdatePlan {
   Package: string;
@@ -352,6 +727,7 @@ export interface UpdatePlan {
   BackupWhy: string;
   Affected: string[];
   Warnings: string[];
+  Provenance?: ServiceProvenance[];
 }
 
 /** GET /api/v1/updates — one row of the review list. */
@@ -436,6 +812,8 @@ export interface PlatformVerifyBody {
 export interface CraftApp {
   name: string;
   title: string;
+  /** One-line purpose from the catalog manifest. */
+  blurb?: string;
   version: string;
   status: string;
   /** Empty when no edge route serves the app; url_reason says why. */
@@ -677,6 +1055,15 @@ export interface BackupIdentityExport {
   actor: string;
 }
 
+/** POST /api/v1/backups/identity/rotate: the new key (once) plus what happened to existing runs. */
+export interface BackupIdentityRotate extends BackupIdentityExport {
+  previous_fingerprint?: string;
+  rewrapped: number;
+  already_current: number;
+  failed: string[];
+  runs_note: string;
+}
+
 /**
  * GET /api/v1/storage/mounts — the Go structs carry no json tags, so
  * fields arrive PascalCase.
@@ -697,6 +1084,10 @@ export interface StorageMount {
   /** Added by S268; absent from older daemons. */
   registrable?: boolean;
   registrable_reason?: string;
+  /** Added by S293: data disk, system disk path, or never registrable. */
+  kind?: 'data' | 'system' | 'unusable';
+  /** Added by S293: unassigned classes the daemon proposes for this mount. */
+  suggested?: string[];
 }
 
 /** GET/POST /api/v1/storage/registrations (PascalCase). */
@@ -726,6 +1117,48 @@ export interface BackupSchedule {
   updated_at: string;
   /** True for a package that keeps no data: a no-op, never scheduled (ADR-028). */
   stateless?: boolean;
+}
+
+/** The nightly backup policy (S297, ADR-039 §2). */
+export interface BackupPolicy {
+  /** HH:MM, appliance local time. */
+  time_of_day: string;
+  retain: number;
+  enabled: boolean;
+  actor?: string;
+  updated_at?: string;
+}
+
+/** An installed app the nightly policy leaves out, and why. */
+export interface BackupPolicySkip {
+  package: string;
+  reason: string;
+}
+
+/** GET /api/v1/backups/policy. `policy` is absent until the first approval. */
+export interface BackupPolicyStatus {
+  policy?: BackupPolicy;
+  proposed: BackupPolicy;
+  covered: string[];
+  skipped: BackupPolicySkip[];
+  time_zone: string;
+  backup_storage: boolean;
+}
+
+/** POST /api/v1/backups/policy/plan: what approving would store. */
+export interface BackupPolicyPlan {
+  policy: BackupPolicy;
+  covered: string[];
+  skipped: BackupPolicySkip[];
+  time_zone: string;
+  changes: string[];
+  digest: string;
+}
+
+export interface BackupPolicyRequest {
+  time_of_day: string;
+  retain: number;
+  enabled: boolean;
 }
 
 /** GET /api/v1/scheduler/jobs — one declared job with its run state. */
@@ -830,10 +1263,50 @@ export interface TlsIssuancePlan {
   terms: string;
   placement: { directory: string; chain_file: string; key_file: string; key_mode: string };
   served_routes: string[];
+  /** S325 (ADR-048 §6): apps whose sign-in moves to Authentik's public address with this certificate. */
+  issuer_moves?: IssuerMovePlan;
   ready: boolean;
   blockers: string[];
   digest: string;
   approved: boolean;
+}
+
+/** One app whose sign-in issuer moves to Authentik's public address (S325, ADR-048 §6). */
+export interface IssuerMove {
+  app: string;
+  title: string;
+  from: string;
+  to: string;
+  host_entry: string;
+  replaced_host_entry?: string;
+  digest: string;
+}
+
+/** The apps a certificate moves; re-applied only with the kept Authentik token. */
+export interface IssuerMovePlan {
+  apps: IssuerMove[];
+  token_kept: boolean;
+  note: string;
+}
+
+/** A tunnel plan's certificate for the public dashboard name (S325, ADR-048 §5). */
+export interface TunnelCertificate {
+  name: string;
+  /** The operation issues it; approving needs agree_terms (and confirm_production). */
+  issue: boolean;
+  placed?: string;
+  certificate?: string;
+  adds_to_strategy?: boolean;
+  directory?: string;
+  directory_class?: string;
+  challenge?: string;
+  provider?: string;
+  zone?: string;
+  renewal?: string;
+  terms_url?: string;
+  note: string;
+  blockers?: string[];
+  digest?: string;
 }
 
 /** GET /api/v1/tls/issuance/account/terms — terms to agree to (S272). */
@@ -874,7 +1347,249 @@ export interface TunnelStatus {
   routes: { Hostname: string; TunnelID: string; Service: string }[];
   connector: { installed: boolean; active: boolean };
   accounts: number;
+  /** The names a tunnel plan would propose (S296); the owner may rename them. */
+  proposed: { dashboard_hostname: string; auth_hostname: string; sign_in_linked: boolean };
   discovery_error?: string;
+  /** The certificate lamp for each served name (S312). */
+  coverage?: NameCoverage[];
+}
+
+/** One DNS change in a tunnel plan (ADR-037). */
+export interface TunnelPlanChange {
+  name: string;
+  type: string;
+  content: string;
+  proxied: boolean;
+  /** create, or replace the listed records; keep (adoption), delete and restore (S290). */
+  action: 'create' | 'replace' | 'keep' | 'delete' | 'restore';
+  replaces: { type: string; name: string; content: string; proxied: boolean }[];
+}
+
+/** POST /api/v1/tunnel/plan — what setup would change; never the account or zone IDs. */
+export interface TunnelPlan {
+  name: string;
+  dashboard_hostname: string;
+  auth_hostname: string;
+  zone: string;
+  /** Every public name reaches the edge, which routes it (S296). */
+  ingress: { hostname: string; role: string; route: string; service: string }[];
+  dns: TunnelPlanChange[];
+  /** Names left out of this plan, each with the reason. */
+  omitted: { hostname: string; role: string; reason: string }[];
+  /** S315 (ADR-044): apps published under the dashboard's public name, with no DNS record of their own. */
+  paths?: TunnelPlanPath[];
+  /** What approving means for Sign-in, when the dashboard is published. */
+  sign_in?: string;
+  /** S322 (ADR-046): the sign-in change approving this plan also applies. */
+  sign_in_update?: { origin: string; redirect_uri: string; authentik_url: string };
+  /** Present when the plan adopts an existing tunnel (S290). */
+  adopt?: TunnelAdoption;
+  /** Whether Cloudflare has a certificate for each public name (S312). */
+  coverage?: NameCoverage[];
+  /** S325: the public dashboard name's certificate, and the apps moving with it. */
+  certificate?: TunnelCertificate;
+  issuer_moves?: IssuerMovePlan;
+  warnings: string[];
+  digest: string;
+}
+
+/** One app the tunnel publishes by path under the dashboard's name (S315, ADR-044). */
+export interface TunnelPlanPath {
+  role: string;
+  route: string;
+  path: string;
+  url: string;
+}
+
+/** Adopting a tunnel this appliance's connector already serves (S290, ADR-041 §3). */
+export interface TunnelAdoption {
+  id: string;
+  status: string;
+  connections: number;
+  /** Each entry the connector serves now, and whether it is kept or dropped. */
+  existing: { hostname: string; service: string; outcome: string }[];
+}
+
+/** The names a tunnel plan is asked for; empty names take the proposal. `adopt` replaces `name`. */
+export interface TunnelRequest {
+  name?: string;
+  adopt?: string;
+  dashboard_hostname?: string;
+  auth_hostname?: string;
+}
+
+/** The certificate approvals a tunnel setup carries (S325); they do not change the plan. */
+export interface TunnelApprovals {
+  agree_terms?: boolean;
+  confirm_production?: boolean;
+}
+
+/** GET /api/v1/catalog/{name}/public (S290, ADR-041 §1). */
+export interface AppPublicStatus {
+  app: string;
+  available: boolean;
+  reason?: string;
+  /** S451: the manifest says never_publish; no name can be added, an existing one can be removed. */
+  never_publish?: boolean;
+  tunnel_id?: string;
+  tunnel?: string;
+  /** `path` and `url` are set for an app served by path (S315, ADR-044). */
+  routes: { route: string; public: string[]; path?: string; url?: string }[];
+  proposed?: string;
+  /** S315: a path app's public address under the dashboard's name. */
+  proposed_url?: string;
+  sign_in: boolean;
+  /** The certificate lamp for each public name (S312). */
+  coverage?: NameCoverage[];
+}
+
+/** One public name added to or removed from an app. */
+export interface AppPublicPlan {
+  app: string;
+  action: 'add' | 'remove';
+  hostname: string;
+  route: string;
+  /** S315 (ADR-044): set for a path app, published on the dashboard's name with no DNS change. */
+  path?: string;
+  /** The public address the plan adds or removes. */
+  url?: string;
+  tunnel: string;
+  tunnel_id: string;
+  zone: string;
+  dns: TunnelPlanChange[];
+  connector_before: string[];
+  connector_after: string[];
+  sign_in?: string;
+  coverage?: NameCoverage[];
+  warnings: string[];
+  /** The app's own host settings the plan changes (S313), such as Nextcloud's trusted domains. */
+  app_settings?: string[];
+  digest: string;
+}
+
+export interface AppPublicRequest {
+  enabled: boolean;
+  hostname?: string;
+  route?: string;
+  /** S313: plan a name for the route the install creates; applied without it once installed. */
+  before_install?: boolean;
+  /** Preview publication after managed sign-in succeeds. */
+  anticipate_sign_in?: boolean;
+}
+
+/** GET /api/v1/catalog/{name}/move (S315, ADR-044 §5): whether the move to the app's path is offered. */
+export interface ReadLinksStatus {
+  app: string;
+  title: string;
+  available: boolean;
+  reason?: string;
+  exposed: boolean;
+  origin?: string;
+  patterns?: string[];
+  links: number;
+  sign_in: boolean;
+}
+
+export interface ReadLinksPlan {
+  app: string;
+  title: string;
+  action: 'expose' | 'unexpose';
+  origin: string;
+  route: string;
+  patterns: string[];
+  refused: string[];
+  links: number;
+  expiry_cap_days: number;
+  warnings: string[];
+  digest: string;
+}
+
+export interface AppMoveStatus {
+  app: string;
+  offered: boolean;
+  reason?: string;
+  from?: string;
+  path?: string;
+  to: string[];
+  /** ADR-061: set when the app is published at a name of its own and the move replaces it with a path. */
+  public_from?: string;
+  public_to?: string;
+  /** S479: an earlier move stopped before its old public name was removed; approving finishes it. */
+  finish?: boolean;
+}
+
+/** The reviewed move of an app to its path; nothing moves without its digest. */
+export interface AppMovePlan {
+  app: string;
+  route: string;
+  from: string;
+  path: string;
+  to: string[];
+  strip_prefix: boolean;
+  redirects: string[];
+  app_settings: string[];
+  sign_in: string[];
+  /** ADR-061: the old public name's DNS, tunnel and edge removals; absent when it has no public name of its own. */
+  public_from?: string;
+  public_to?: string;
+  removes?: string[];
+  stops?: string[];
+  finish?: boolean;
+  warnings: string[];
+  digest: string;
+}
+
+/** One address of an app and whether it answers from the appliance (S313). */
+export interface ReachAddress {
+  address: string;
+  host: string;
+  kind: 'local' | 'public';
+  answers: boolean;
+  reason?: string;
+  fix?: string;
+}
+
+/** GET /api/v1/catalog/{name}/reach: advisory, nothing changes. */
+export interface AppReach {
+  app: string;
+  resolver: boolean;
+  addresses: ReachAddress[];
+}
+
+/** One app route's local names (S295): `<app>.lan` and its `<app>.local`. */
+export interface AppNames {
+  host: string;
+  names: string[];
+  /** S315 (ADR-044): set for an app served by path; names are then `homestead.lan/apps/<name>/`. */
+  path?: string;
+}
+
+/** The optional `.lan` resolver (ADR-039). */
+export interface ResolverStatus {
+  enabled: boolean;
+  running: boolean;
+  listening: string[];
+  error?: string;
+  names: string[];
+  router_hint: string;
+}
+
+/** GET /api/v1/names — app names and the resolver. */
+export interface NamesStatus {
+  resolver: ResolverStatus;
+  apps: AppNames[];
+}
+
+/** POST /api/v1/names/resolver/plan — what turning the resolver on or off changes. */
+export interface ResolverPlan {
+  enabled: boolean;
+  changes: string[];
+  listen: string[];
+  names: string[];
+  firewall: { name: string; detail: string }[];
+  warnings: string[];
+  router_hint: string;
+  digest: string;
 }
 
 /** GET /api/v1/wizards/:id — saved wizard progress. */
@@ -930,12 +1645,18 @@ export class ApiService {
     return this.http.get<Health>('/healthz');
   }
 
+  /** GET /version — the daemon version, the same answer `homesteadctl version` prints (S485). */
+  daemonVersion(): Observable<{ version: string }> {
+    return this.http.get<{ version: string }>('/version');
+  }
+
   identity(): Observable<Identity> {
     return this.http.get<Identity>('/api/v1/identity');
   }
 
-  doctor(): Observable<DoctorReport> {
-    return this.http.get<DoctorReport>('/api/v1/doctor');
+  /** The checks; live=true also runs the live probes (tunnel, Authentik, apps). */
+  doctor(live = false): Observable<DoctorReport> {
+    return this.http.get<DoctorReport>(live ? '/api/v1/doctor?live=1' : '/api/v1/doctor');
   }
 
   firewallStatus(): Observable<FirewallStatus> {
@@ -954,6 +1675,14 @@ export class ApiService {
     return this.http.get<PackageSummary[]>('/api/v1/catalog');
   }
 
+  /**
+   * Curated catalog profiles with combined memory and storage verdicts
+   * (S344). Graded by the daemon against live host facts.
+   */
+  catalogBundles(): Observable<BundleReport[]> {
+    return this.http.get<BundleReport[]>('/api/v1/catalog/bundles');
+  }
+
   catalogPackage(name: string): Observable<CatalogManifest> {
     return this.http.get<RawCatalogManifest>(`/api/v1/catalog/${name}`).pipe(
       // The manifest is serialised straight from Go, so empty lists arrive
@@ -961,6 +1690,7 @@ export class ApiService {
       map((raw) => ({
         ...raw,
         Services: raw.Services ?? [],
+        Works: raw.Works ?? [],
         Requirements: {
           ...raw.Requirements,
           Storage: raw.Requirements.Storage ?? [],
@@ -985,6 +1715,34 @@ export class ApiService {
       `/api/v1/catalog/${name}/install`,
       body,
     );
+  }
+
+  /** S390: digest the explicit app access choices against current readiness. */
+  planCatalogAccess(name: string, body: Record<string, unknown>): Observable<AppAccessPlanApproval> {
+    return this.http.post<AppAccessPlanApproval>(`/api/v1/catalog/${name}/access-plan`, body);
+  }
+
+  /** S390: app administrator grants require a step-up session. */
+  installPackageAdmin(name: string, body: Record<string, unknown>): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(`/api/v1/catalog/${name}/install-admin`, body);
+  }
+
+  /** Removes the app; data stays unless remove_data names explicit roots. */
+  uninstallPackage(
+    name: string,
+    body: {
+      remove_data?: boolean;
+      abandon_volumes?: boolean;
+      leave_sign_in?: boolean;
+      data_dirs?: { mountpoint: string; path: string }[];
+    } = {},
+  ): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(`/api/v1/catalog/${name}/uninstall`, body);
+  }
+
+  /** Docker engine health and inventory; the install wizard reads edge readiness from it. */
+  dockerHealth(): Observable<DockerHealth> {
+    return this.http.get<DockerHealth>('/api/v1/docker/health');
   }
 
   configurePackage(
@@ -1024,6 +1782,13 @@ export class ApiService {
       `/api/v1/catalog/${name}/secrets/${secret}`,
       { value, skip_verify: skipVerify, force },
     );
+  }
+
+  /** Reads a credential the package marks readable (S312); audited. */
+  revealAppSecret(name: string, secret: string): Observable<RevealedSecret> {
+    return this.http.post<RevealedSecret>(`/api/v1/catalog/${name}/secrets/${secret}/reveal`, {
+      confirm: true,
+    });
   }
 
   dataMigrations(): Observable<DataMigrations> {
@@ -1308,6 +2073,108 @@ export class ApiService {
     return this.http.post<BackupSchedule>('/api/v1/backups/schedules', body);
   }
 
+  appPublic(name: string): Observable<AppPublicStatus> {
+    return this.http.get<AppPublicStatus>(`/api/v1/catalog/${encodeURIComponent(name)}/public`);
+  }
+
+  appPublicPlan(name: string, request: AppPublicRequest): Observable<AppPublicPlan> {
+    return this.http.post<AppPublicPlan>(`/api/v1/catalog/${encodeURIComponent(name)}/public/plan`, request);
+  }
+
+  appPublicApply(name: string, request: AppPublicRequest, digest: string): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(`/api/v1/catalog/${encodeURIComponent(name)}/public/apply`, { ...request, digest });
+  }
+
+  /** S433: whether an Everything app's read and view links are on the public name. */
+  readLinks(name: string): Observable<ReadLinksStatus> {
+    return this.http.get<ReadLinksStatus>(`/api/v1/apps/${encodeURIComponent(name)}/read-links`);
+  }
+
+  readLinksPlan(name: string, enabled: boolean): Observable<ReadLinksPlan> {
+    return this.http.post<ReadLinksPlan>(`/api/v1/apps/${encodeURIComponent(name)}/read-links/plan`, { enabled });
+  }
+
+  readLinksApprove(name: string, enabled: boolean, digest: string): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(`/api/v1/apps/${encodeURIComponent(name)}/read-links/approve`, { enabled, digest });
+  }
+
+  /** S315: whether moving the app to its path is offered. */
+  appMove(name: string): Observable<AppMoveStatus> {
+    return this.http.get<AppMoveStatus>(`/api/v1/catalog/${encodeURIComponent(name)}/move`);
+  }
+
+  /** S315: the move plan; read-only. */
+  appMovePlan(name: string): Observable<AppMovePlan> {
+    return this.http.post<AppMovePlan>(`/api/v1/catalog/${encodeURIComponent(name)}/move/plan`, {});
+  }
+
+  /** S315: starts the move the owner approved by digest. */
+  appMoveApply(name: string, digest: string): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>(`/api/v1/catalog/${encodeURIComponent(name)}/move/apply`, { digest });
+  }
+
+  /** Checks from the appliance whether each address of the app answers (S313). */
+  appReach(name: string): Observable<AppReach> {
+    return this.http.get<AppReach>(`/api/v1/catalog/${encodeURIComponent(name)}/reach`);
+  }
+
+  appSignIn(name: string): Observable<AppSignInStatus> {
+    return this.http.get<AppSignInStatus>(`/api/v1/catalog/${encodeURIComponent(name)}/sign-in`);
+  }
+
+  appSignInPlan(name: string, enabled: boolean): Observable<AppSignInPlan> {
+    return this.http.post<AppSignInPlan>(`/api/v1/catalog/${encodeURIComponent(name)}/sign-in/plan`, { enabled });
+  }
+
+  /** Starts the reviewed change. The token is for this apply only; leave it empty when one is kept. */
+  appSignInApply(name: string, enabled: boolean, digest: string, token = ''): Observable<OperationStarted> {
+    const body: { enabled: boolean; digest: string; token?: string } = { enabled, digest };
+    if (token) {
+      body.token = token;
+    }
+    return this.http.post<OperationStarted>(`/api/v1/catalog/${encodeURIComponent(name)}/sign-in/apply`, body);
+  }
+
+  /** S324: the setup approved with the app's install, and a stopped step's current plan. */
+  appSetup(name: string): Observable<AppSetup> {
+    return this.http.get<AppSetup>(`/api/v1/catalog/${encodeURIComponent(name)}/setup`);
+  }
+
+  /** S324: approves the stopped step's current plan and runs it and the rest. The token is for this run only. */
+  appSetupResume(name: string, digest: string, token = '', admin = false): Observable<OperationStarted> {
+    const body: { digest: string; token?: string } = { digest };
+    if (token) {
+      body.token = token;
+    }
+    const route = admin ? 'resume-admin' : 'resume';
+    return this.http.post<OperationStarted>(`/api/v1/catalog/${encodeURIComponent(name)}/setup/${route}`, body);
+  }
+
+  /** S324: ends a stopped setup. */
+  appSetupSkip(name: string): Observable<AppSetup> {
+    return this.http.post<AppSetup>(`/api/v1/catalog/${encodeURIComponent(name)}/setup/skip`, {});
+  }
+
+  /** Reads back, without changing anything, who can sign in to the app (S314). */
+  appSignInAccess(name: string, token = ''): Observable<AccessReport> {
+    return this.http.post<AccessReport>(
+      `/api/v1/catalog/${encodeURIComponent(name)}/sign-in/access`,
+      token ? { token } : {},
+    );
+  }
+
+  backupPolicy(): Observable<BackupPolicyStatus> {
+    return this.http.get<BackupPolicyStatus>('/api/v1/backups/policy');
+  }
+
+  backupPolicyPlan(request: BackupPolicyRequest): Observable<BackupPolicyPlan> {
+    return this.http.post<BackupPolicyPlan>('/api/v1/backups/policy/plan', request);
+  }
+
+  backupPolicyApply(request: BackupPolicyRequest, digest: string): Observable<BackupPolicyStatus> {
+    return this.http.post<BackupPolicyStatus>('/api/v1/backups/policy/apply', { ...request, digest });
+  }
+
   backupScheduleGet(name: string): Observable<BackupSchedule> {
     return this.http.get<BackupSchedule>(
       `/api/v1/backups/schedules/${encodeURIComponent(name)}`,
@@ -1344,6 +2211,13 @@ export class ApiService {
   backupIdentityExport(): Observable<BackupIdentityExport> {
     return this.http.post<BackupIdentityExport>(
       '/api/v1/backups/identity/export',
+      { confirm: true },
+    );
+  }
+
+  backupIdentityRotate(): Observable<BackupIdentityRotate> {
+    return this.http.post<BackupIdentityRotate>(
+      '/api/v1/backups/identity/rotate',
       { confirm: true },
     );
   }
@@ -1385,14 +2259,23 @@ export class ApiService {
   tlsIssuanceCredentials(
     provider: string,
     values: Record<string, string>,
-  ): Observable<{ provider: string; stored: string[] }> {
-    return this.http.post<{ provider: string; stored: string[] }>(
+  ): Observable<{ provider: string; stored: string[]; warning?: string }> {
+    return this.http.post<{ provider: string; stored: string[]; warning?: string }>(
       '/api/v1/tls/issuance/credentials',
       { provider, values },
     );
   }
 
   /** S280 (ADR-030): internal CA status with fingerprint and graded leaves. */
+  dashboardAddress(): Observable<DashboardAddress> {
+    return this.http.get<DashboardAddress>('/api/v1/dashboard/address');
+  }
+
+  /** Sets the local name; public exposure is refused by the daemon (the tunnel is the public path). */
+  setDashboardAddress(name: string, exposure: 'local' | 'overlay'): Observable<OperationStarted> {
+    return this.http.put<OperationStarted>('/api/v1/dashboard/address', { name, exposure });
+  }
+
   localCaStatus(): Observable<LocalCaReport> {
     return this.http.get<LocalCaReport>('/api/v1/tls/local-ca');
   }
@@ -1446,26 +2329,34 @@ export class ApiService {
     return this.http.get<TunnelStatus>('/api/v1/tunnel/status');
   }
 
-  tunnelSetup(
-    name: string,
-    hostname: string,
-    service: string,
-    apiToken: string,
-    accountId: string,
-  ): Observable<OperationStarted> {
-    return this.http.post<OperationStarted>('/api/v1/tunnel/setup', {
-      name,
-      hostname,
-      service,
-      api_token: apiToken,
-      account_id: accountId,
-    });
+  /** Reads Cloudflare and changes nothing (ADR-037). */
+  tunnelPlan(request: TunnelRequest): Observable<TunnelPlan> {
+    return this.http.post<TunnelPlan>('/api/v1/tunnel/plan', request);
   }
 
-  tunnelTeardown(id: string, accountId: string): Observable<OperationStarted> {
-    return this.http.delete<OperationStarted>(
-      `/api/v1/tunnel/tunnels/${encodeURIComponent(id)}?account_id=${encodeURIComponent(accountId)}`,
-    );
+  /** Approves a reviewed plan by its digest; 409 when the plan changed since. */
+  tunnelSetup(request: TunnelRequest, digest: string, approvals: TunnelApprovals = {}): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>('/api/v1/tunnel/setup', { ...request, ...approvals, digest });
+  }
+
+  /** The account is the one stored at setup: teardown never asks for it. */
+  tunnelTeardown(id: string): Observable<OperationStarted> {
+    return this.http.delete<OperationStarted>(`/api/v1/tunnel/tunnels/${encodeURIComponent(id)}`);
+  }
+
+  /** Each app's local names and the `.lan` resolver state (S295). */
+  names(): Observable<NamesStatus> {
+    return this.http.get<NamesStatus>('/api/v1/names');
+  }
+
+  /** Previews turning the resolver on or off; changes nothing. */
+  resolverPlan(enabled: boolean): Observable<ResolverPlan> {
+    return this.http.post<ResolverPlan>('/api/v1/names/resolver/plan', { enabled });
+  }
+
+  /** Approves a reviewed resolver plan by its digest; 409 when it changed. */
+  resolverApply(enabled: boolean, digest: string): Observable<NamesStatus> {
+    return this.http.post<NamesStatus>('/api/v1/names/resolver/apply', { enabled, digest });
   }
 
   operation(id: number): Observable<OperationState> {
@@ -1537,6 +2428,27 @@ export class ApiService {
     return this.http.put<ConfigState>('/api/v1/config', { settings });
   }
 
+  /** The portable YAML, the same bytes `config export -f` writes (S483). Names only, no values. */
+  configExportYaml(): Observable<string> {
+    return this.http.get('/api/v1/config/export', {
+      params: { format: 'yaml' },
+      responseType: 'text',
+    });
+  }
+
+  /** Validates uploaded document text and shows what would change. Writes nothing (S483). */
+  previewConfigImport(text: string): Observable<ImportPreview> {
+    return this.http.post<ImportPreview>('/api/v1/config/import/preview', { text });
+  }
+
+  /** Restores a previewed document. Secret values travel in this one request only (S483). */
+  importConfig(
+    document: ConfigDocument,
+    secrets: Record<string, string>,
+  ): Observable<ImportResult> {
+    return this.http.post<ImportResult>('/api/v1/config/import', { document, secrets });
+  }
+
   wizardState(id: string): Observable<WizardState> {
     return this.http.get<WizardState>(`/api/v1/wizards/${id}`);
   }
@@ -1571,6 +2483,16 @@ export class ApiService {
     });
   }
 
+  /**
+   * Whether the login page offers Authentik (S286, ADR-033). Public; answers
+   * 404 until sign-in is set up and linked, and `enabled: false` at an
+   * address the plan does not cover. `password: false` on the public
+   * dashboard name (S296), where only Authentik sign-in is offered.
+   */
+  ssoOptions(): Observable<{ enabled: boolean; password?: boolean }> {
+    return this.http.get<{ enabled: boolean; password?: boolean }>('/api/v1/sso/options');
+  }
+
   /** Own lockout status (S274). */
   lockoutStatus(): Observable<LockoutStatus> {
     return this.http.get<LockoutStatus>('/api/v1/admins/lockout');
@@ -1586,6 +2508,11 @@ export class ApiService {
       current_password: currentPassword,
       new_password: newPassword,
     });
+  }
+
+  /** Who is signed in (S338): the role and, for a person, their name. */
+  me(): Observable<MeView> {
+    return this.http.get<MeView>('/api/v1/me');
   }
 
   /** Revokes the cookie session (the cookie rides along same-origin). */
@@ -1606,7 +2533,8 @@ export class ApiService {
   storageRegister(body: {
     mountpoint: string;
     label: string;
-    actor: string;
+    /** Omit to record the signed-in caller (S293). */
+    actor?: string;
   }): Observable<StorageRegistration> {
     return this.http.post<StorageRegistration>(
       '/api/v1/storage/registrations',
@@ -1621,13 +2549,28 @@ export class ApiService {
   storageAssign(body: {
     class: string;
     mountpoint: string;
-    actor: string;
+    /** Omit to record the signed-in caller (S293). */
+    actor?: string;
     acknowledge_impact?: boolean;
   }): Observable<StorageAssignment> {
     return this.http.post<StorageAssignment>(
       '/api/v1/storage/assignments',
       body,
     );
+  }
+
+  /** Drops a class binding only; the daemon answers 409 naming apps that still use the mount (S288). */
+  storageUnassign(cls: string): Observable<void> {
+    return this.http.delete<void>(
+      `/api/v1/storage/assignments/${encodeURIComponent(cls)}`,
+    );
+  }
+
+  /** Drops a registration only; never touches the disk (S288). */
+  storageUnregister(mountpoint: string): Observable<void> {
+    return this.http.delete<void>('/api/v1/storage/registrations', {
+      params: { mountpoint },
+    });
   }
 
   edgeDeploy(): Observable<OperationStarted> {
@@ -1652,4 +2595,13 @@ export interface LockoutStatus {
   failures?: number;
   /** RFC 3339 unlock time; present only while locked. */
   locked_until?: string;
+}
+
+/** GET /api/v1/me (S338, ADR-050). */
+export interface MeView {
+  role?: 'owner' | 'person';
+  username?: string;
+  display_name?: string;
+  person_id?: number;
+  method?: string;
 }

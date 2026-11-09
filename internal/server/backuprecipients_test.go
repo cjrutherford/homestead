@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -335,5 +336,97 @@ func TestExportAndAckRejectCookieWithoutCSRF(t *testing.T) {
 	}).Code
 	if code == http.StatusForbidden || code == http.StatusUnauthorized {
 		t.Errorf("export with CSRF rejected = %d", code)
+	}
+}
+
+func TestIdentityRotateRewrapsAuditsAndRearmsTheDoctorWarning(t *testing.T) {
+	e := newRecipientEnv(t)
+	root := t.TempDir()
+	e.h.destination = func() (string, error) { return root, nil }
+	old, _ := backup.ApplianceIdentity(e.keys)
+	oldKey := old.String()
+	run := filepath.Join(root, "pkg", "run1", "data.age")
+	if err := os.MkdirAll(filepath.Dir(run), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	w, err := os.Create(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc, _ := age.Encrypt(w, old.Recipient())
+	_, _ = enc.Write([]byte("before the rotation"))
+	_ = enc.Close()
+	_ = w.Close()
+
+	if rec := opRequest(http.MethodPost, `{}`, e.h.rotate, ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("unconfirmed rotate = %d", rec.Code)
+	}
+	if stored, _ := e.keys.Get(backup.IdentitySecret); stored != oldKey {
+		t.Fatal("a refused rotation changed the key")
+	}
+	rec := opRequest(http.MethodPost, `{"confirm":true}`, e.h.rotate, "")
+	if rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("rotate = %d %s", rec.Code, rec.Body)
+	}
+	var out rotateResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := e.keys.Get(backup.IdentitySecret)
+	if out.Identity != stored || stored == oldKey || out.Rewrapped != 1 || len(out.Failed) != 0 ||
+		out.PreviousFingerprint != backup.Fingerprint(old.Recipient().String()) {
+		t.Fatalf("rotate = %+v", out)
+	}
+	// The run made before the rotation opens with the new key alone.
+	fresh, _ := age.ParseX25519Identity(out.Identity)
+	f, _ := os.Open(run)
+	defer f.Close()
+	r, err := age.Decrypt(f, fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := io.ReadAll(r); string(got) != "before the rotation" {
+		t.Fatalf("run = %q", got)
+	}
+	// Recorded as an export awaiting acknowledgement; audited without the key.
+	if c := backupEncryptionDoctorCheck(e.st)(); c[0].Status != doctor.StatusWarn {
+		t.Fatalf("doctor after rotation = %+v", c)
+	}
+	entries, _ := audit.New(e.st).List(100)
+	var joined string
+	for _, en := range entries {
+		joined += en.Action + " " + en.Detail + "\n"
+	}
+	if !strings.Contains(joined, "backup.identity.rotate") || strings.Contains(joined, "AGE-SECRET-KEY") || strings.Contains(joined, oldKey) {
+		t.Fatalf("audit = %s", joined)
+	}
+	if rec := opRequest(http.MethodPost, `{}`, e.h.acknowledge, ""); rec.Code != http.StatusOK {
+		t.Fatalf("ack = %d", rec.Code)
+	}
+}
+
+func TestIdentityRotateWithholdsTheKeyWhenAuditFails(t *testing.T) {
+	e := newRecipientEnv(t)
+	e.h.audit = failingAudit{}
+	rec := opRequest(http.MethodPost, `{"confirm":true}`, e.h.rotate, "")
+	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "AGE-SECRET-KEY") {
+		t.Fatalf("rotate with a failing audit = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestIdentityRotateIsRateLimitedBeforeAnyKeyChanges(t *testing.T) {
+	e := newRecipientEnv(t)
+	id, _ := backup.ApplianceIdentity(e.keys)
+	for i := 0; i < backup.MaxExportsPerHour; i++ {
+		if _, err := e.h.rec.RecordExport("fp", "owner"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := opRequest(http.MethodPost, `{"confirm":true}`, e.h.rotate, "")
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("rotate = %d", rec.Code)
+	}
+	if stored, _ := e.keys.Get(backup.IdentitySecret); stored != id.String() {
+		t.Fatal("a rate-limited rotation changed the key")
 	}
 }

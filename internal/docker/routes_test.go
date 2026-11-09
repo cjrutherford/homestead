@@ -27,7 +27,7 @@ func TestRenderModes(t *testing.T) {
 		t.Fatalf("internal: %v", err)
 	}
 	for _, want := range []string{
-		"app.lan {", "tls internal", "reverse_proxy app:8080 {",
+		"app.lan, app.local {", "tls internal", "reverse_proxy app:8080 {",
 		"health_uri /healthz", "health_interval 30s",
 		"# Exposure: local", "Do not edit",
 	} {
@@ -53,7 +53,7 @@ func TestRenderModes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("off: %v", err)
 	}
-	if !strings.Contains(plain, "http://plain.lan {") {
+	if !strings.Contains(plain, "http://plain.lan, http://plain.local {") {
 		t.Fatalf("off site missing:\n%s", plain)
 	}
 	if strings.Contains(plain, "health_uri") || strings.Contains(plain, "tls") {
@@ -181,7 +181,7 @@ func TestReconcileDefinitionFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("snippet: %v", err)
 	}
-	if !strings.Contains(string(snippet), "app.lan {") {
+	if !strings.Contains(string(snippet), "app.lan, app.local {") {
 		t.Fatalf("snippet wrong:\n%s", snippet)
 	}
 }
@@ -308,5 +308,73 @@ func TestReconcileRefusesPrivateAutoUpFront(t *testing.T) {
 	set := RouteSet{Routes: []Route{routeFor("app.lan", TLSAuto, ExposureLocal)}}
 	if _, err := ReconcileDefinition(stack, set, RouteState{}); err == nil {
 		t.Fatal("private auto accepted")
+	}
+}
+
+func TestRenderTunnelEntry(t *testing.T) {
+	dash := Route{Host: "homestead.lan", Dashboard: true, Aliases: []Hostname{"homestead.local"},
+		Exposure: ExposureLocal, TLS: TLSInternal, Tunnel: []Hostname{"homestead.example.com"}}
+	out, err := RenderRoute(dash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	main, entry, ok := strings.Cut(out, "# Tunnel entry")
+	if !ok {
+		t.Fatalf("no tunnel entry:\n%s", out)
+	}
+	if strings.Contains(main, "example.com") {
+		t.Fatalf("public name on the LAN listener:\n%s", main)
+	}
+	for _, want := range []string{
+		"http://homestead.example.com:8480 {",
+		"reverse_proxy unix/" + DashboardSocketPath,
+		"flush_interval -1",
+		"header_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}",
+		"header_up X-Forwarded-Proto https",
+	} {
+		if !strings.Contains(entry, want) {
+			t.Fatalf("entry lacks %q:\n%s", want, entry)
+		}
+	}
+	app := Route{Host: "authentik.lan", Target: Target{Host: "server", Port: 9000}, Exposure: ExposureLocal,
+		TLS: TLSInternal, Tunnel: []Hostname{"auth.example.com"}}
+	out, err = RenderRoute(app)
+	if err != nil || !strings.Contains(out, "http://auth.example.com:8480 {\n\treverse_proxy server:9000 {") {
+		t.Fatalf("app entry %v:\n%s", err, out)
+	}
+	if out, _ := RenderRoute(Route{Host: "immich.lan", Target: Target{Host: "server", Port: 2283}, Exposure: ExposureLocal, TLS: TLSInternal}); strings.Contains(out, "Tunnel entry") {
+		t.Fatalf("entry without tunnel names:\n%s", out)
+	}
+}
+
+func TestTunnelNamesValidate(t *testing.T) {
+	base := Route{Host: "authentik.lan", Target: Target{Host: "server", Port: 9000}, Exposure: ExposureLocal, TLS: TLSInternal}
+	for name, tunnel := range map[string][]Hostname{
+		"local name": {"auth.lan"},
+		"duplicate":  {"auth.example.com", "auth.example.com"},
+		"own host":   {"authentik.lan"},
+		"uppercase":  {"Auth.example.com"},
+	} {
+		r := base
+		r.Tunnel = tunnel
+		if err := r.Validate(); err == nil {
+			t.Errorf("%s: accepted %v", name, tunnel)
+		}
+	}
+	pub := base
+	pub.Exposure, pub.TLS, pub.Host = ExposurePublic, TLSAuto, "photos.example.com"
+	pub.Tunnel = []Hostname{"auth.example.com"}
+	if err := pub.Validate(); err == nil {
+		t.Error("public route with tunnel names accepted")
+	}
+	ok := base
+	ok.Tunnel = []Hostname{"auth.example.com"}
+	other := Route{Host: "immich.lan", Target: Target{Host: "server", Port: 2283}, Exposure: ExposureLocal, TLS: TLSInternal,
+		Tunnel: []Hostname{"auth.example.com"}}
+	if err := (RouteSet{Routes: []Route{ok, other}}).Validate(); err == nil {
+		t.Error("one tunnel name on two routes accepted")
+	}
+	if err := (RouteSet{Routes: []Route{ok}}).Validate(); err != nil {
+		t.Fatal(err)
 	}
 }

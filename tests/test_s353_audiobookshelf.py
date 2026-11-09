@@ -1,0 +1,73 @@
+"""S353 — Audiobookshelf catalog package conformance tests.
+
+Guardrails for the first Wave 2 package: a pinned multi-arch GHCR image,
+SQLite on application storage with a consistent export, item metadata on
+application storage, transcode streams on bulk, owner media libraries,
+optional in-app OIDC, and the shared-library declaration. Behavior is
+covered by Go tests in internal/catalog loading the shipped directory.
+"""
+
+import unittest
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+MANIFEST = REPO / "catalog" / "audiobookshelf.yaml"
+
+
+class TestAudiobookshelfContract(unittest.TestCase):
+    def setUp(self):
+        self.text = MANIFEST.read_text(encoding="utf-8")
+
+    def test_package_exists(self):
+        self.assertTrue(MANIFEST.is_file(), "catalog/audiobookshelf.yaml missing")
+        for symbol in ("name: audiobookshelf", "version: 2.37.1",
+                       "image: ghcr.io/advplyr/audiobookshelf:2.37.1",
+                       "exposes: web", "containerport: 80", "recommended: local"):
+            with self.subTest(symbol=symbol):
+                self.assertIn(symbol, self.text)
+
+    def test_data_and_backup_paths(self):
+        for symbol in ("target: /config", "target: /metadata",
+                       "target: /metadata/streams", "subpath: config",
+                       "subpath: metadata", "subpath: streams",
+                       "backuppaths:", "- config", "- metadata"):
+            with self.subTest(symbol=symbol):
+                self.assertIn(symbol, self.text)
+
+    def test_sqlite_export(self):
+        self.assertIn("kind: sqlite", self.text)
+        self.assertIn("path: config/absdatabase.sqlite", self.text)
+
+    def test_media_libraries_are_bulk_declarations(self):
+        # S452: the libraries are bulk declarations (backups skip bulk) and
+        # the first run adds a library over each.
+        self.assertIn("target: /audiobooks\n    class: bulk", self.text)
+        self.assertIn("target: /podcasts\n    class: bulk", self.text)
+
+    def test_optional_oidc_through_the_settings_database(self):
+        # S417: sign-in is written into the app's own settings database;
+        # the settings endpoint is never used (it logs the client secret).
+        self.assertIn("class: optional", self.text)
+        self.assertIn("protocols: [oidc]", self.text)
+        self.assertIn("adapter: env-oidc", self.text)
+        self.assertNotIn("auth-settings", self.text.split("onapply:")[1])
+
+    def test_identity_and_library_integrations(self):
+        self.assertIn("kind: identity", self.text)
+        self.assertIn("target: authentik", self.text)
+        self.assertIn("kind: library", self.text)
+        self.assertIn("target: nextcloud", self.text)
+
+    def test_first_run_secret_and_unchanged_entrypoint(self):
+        self.assertIn("routine: audiobookshelf", self.text)
+        self.assertIn("name: admin_password", self.text)
+        self.assertIn("immutable: true", self.text)
+        self.assertIn("reveal: true", self.text)
+        self.assertNotIn("entrypoint:", self.text)
+
+    def test_no_latest_tag(self):
+        self.assertNotIn(":latest", self.text)
+
+
+if __name__ == "__main__":
+    unittest.main()

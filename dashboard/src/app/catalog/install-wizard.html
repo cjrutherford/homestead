@@ -1,0 +1,1081 @@
+<section aria-label="Install wizard">
+  @if (loadError()) {
+    @if (!embedded()) {
+      <header class="masthead">
+        <h1>Install</h1>
+        <p class="masthead-fact">This package could not be opened.</p>
+      </header>
+    }
+    <app-state-message
+      kind="error"
+      [headline]="loadError()"
+      actionLabel="Back to the catalog"
+      actionLink="/admin/catalog"
+    />
+  }
+
+  <app-loading [loading]="loading()" shape="panel">
+    @if (!loading() && manifest(); as m) {
+      @if (!embedded()) {
+        <header class="masthead">
+          <h1>{{ current() === 'done' ? title() + ' installed' : 'Install ' + title() }}</h1>
+          <p class="masthead-fact">{{ fact() }}</p>
+        </header>
+      }
+      @if (fromSetup && !embedded()) {
+        <p><a routerLink="/setup">Back to setup</a></p>
+      }
+
+      <section class="field-panel" aria-label="Install progress">
+        @if (embedded()) {
+          <h3>{{ current() === 'done' ? title() + ' installed' : 'Install ' + title() }}</h3>
+        }
+        <ol class="wizard-steps" aria-label="Install steps">
+          @for (step of steps(); track step.id; let index = $index) {
+            <li
+              class="wizard-step"
+              [attr.data-state]="stepState(index)"
+              [attr.aria-current]="index === stepIndex() ? 'step' : null"
+            >
+              <span class="visually-hidden">Step {{ index + 1 }} of {{ steps().length }}: </span>
+              <span class="wizard-step-mark" aria-hidden="true">{{ index + 1 }}</span>
+              <span class="wizard-step-label">{{ step.label }}</span>
+            </li>
+          }
+        </ol>
+      </section>
+
+      <section class="field-panel wizard-body" aria-labelledby="wizard-heading">
+        <h2 id="wizard-heading" #stepHeading tabindex="-1">{{ headingText() }}</h2>
+        <p class="wizard-help">{{ help() }}</p>
+
+        @switch (current()) {
+          @case ('about') {
+            <p class="wizard-lead">{{ m.Blurb }}</p>
+            <p>{{ m.Description }}</p>
+            @if (curated().note; as note) {
+              <p class="plan-note">{{ sentence(note) }}</p>
+            }
+            <app-browser-advisories [advisories]="m.Browser" />
+          }
+
+          @case ('preflight') {
+            <h3>What {{ m.Title }} needs</h3>
+            <dl>
+              <div>
+                <dt>Memory</dt>
+                <dd>{{ memory(m.Requirements.MemoryMB) }}</dd>
+              </div>
+              @for (need of m.Requirements.Storage; track need.Class) {
+                <div>
+                  <dt>{{ classWord(need.Class) }}</dt>
+                  <dd>At least {{ size(need.MinBytes) }} free</dd>
+                </div>
+              }
+              @if (m.Requirements.Ports.length > 0) {
+                <div>
+                  <dt>Ports</dt>
+                  <dd>{{ m.Requirements.Ports.join(', ') }} must be free on the appliance</dd>
+                </div>
+              }
+              @if (m.Requirements.Storage.length === 0) {
+                <div>
+                  <dt>Storage</dt>
+                  <dd>None. {{ m.Title }} keeps nothing on the appliance.</dd>
+                </div>
+              }
+            </dl>
+
+            <h3>This appliance</h3>
+            <ul class="wizard-checks">
+              <li>
+                <span class="wizard-check-name">Docker</span>
+                @if (edge(); as e) {
+                  @if (e.dockerReachable) {
+                    <span class="badge badge-ok">Running</span>
+                    @if (e.dockerVersion) {
+                      <span class="hint">version {{ e.dockerVersion }}</span>
+                    }
+                  } @else {
+                    <span class="badge badge-fail">Not reachable</span>
+                    <span class="hint">Start Docker on the appliance, then check again.</span>
+                  }
+                } @else if (healthUnknown()) {
+                  <span class="badge">Unknown</span>
+                  <span class="hint">Could not read Docker's status. The install will say if it cannot run.</span>
+                } @else {
+                  <span class="badge badge-pending">Checking</span>
+                }
+              </li>
+              @if (edge(); as e) {
+                <li>
+                  <span class="wizard-check-name">Edge network</span>
+                  @if (e.networkExists) {
+                    <span class="badge badge-ok">Ready</span>
+                  } @else {
+                    <span class="badge badge-pending">Created on install</span>
+                    <span class="hint">The install adds the homestead-edge network. It does not deploy Caddy.</span>
+                  }
+                </li>
+                <li>
+                  <span class="wizard-check-name">Caddy edge proxy</span>
+                  @if (e.caddyRunning) {
+                    <span class="badge badge-ok">Running</span>
+                  } @else {
+                    <span class="badge badge-warn">Not running</span>
+                  }
+                </li>
+              }
+              @if (craft()) {
+                <li>
+                  <span class="wizard-check-name">Built on this appliance</span>
+                  @if (craftBuilt() === true) {
+                    <span class="badge badge-ok">Built</span>
+                  } @else if (craftBuilt() === false) {
+                    <span class="badge badge-pending">Not built yet</span>
+                    <span class="hint">You verify and build it before installing.</span>
+                  } @else {
+                    <span class="badge">Unknown</span>
+                  }
+                </li>
+              }
+            </ul>
+
+            @if (caddyMissing()) {
+              <div class="warning" role="group" aria-label="The edge is not set up">
+                <div>
+                  <p>
+                    The edge (Caddy, the proxy that serves apps by name) is not set up, so
+                    {{ m.Title }} will not be reachable until it is.
+                  </p>
+                  @if (edgeSetup() === 'running' || edgeSetup() === 'starting') {
+                    @if (edgeOperation(); as id) {
+                      <app-operation-progress [id]="id" [operation]="edgeOpState()" />
+                    }
+                  } @else {
+                    <p class="wizard-actions">
+                      <button type="button" class="primary" (click)="askEdgeSetup()">Set up the edge</button>
+                    </p>
+                    @if (edgeProblem(); as problem) {
+                      <p class="field-error" role="alert">{{ problem }}</p>
+                    }
+                    <label>
+                      <input
+                        type="checkbox"
+                        [checked]="acknowledgedEdge()"
+                        (change)="acknowledgedEdge.set($any($event.target).checked)"
+                      />
+                      Continue without it; I will set up the edge later
+                    </label>
+                  }
+                </div>
+              </div>
+            } @else if (edgeSetup() === 'done') {
+              <app-state-message kind="status" headline="The edge is set up." detail="Caddy is running, so apps you install can be reached by name." />
+            }
+            @if (edgeDialog()) {
+              <app-dialog heading="Set up the edge?" (dismissed)="cancelEdgeSetup()">
+                <p>
+                  This starts Caddy, a small proxy container, on this appliance. It listens on ports
+                  80 and 443 on your local network and serves your apps by name, such as
+                  {{ m.Name }}.lan, with certificates from your Homestead internal CA.
+                </p>
+                <p>
+                  It does not open anything to the internet. You can see and change what it serves on
+                  the Edge page.
+                </p>
+                <div class="dialog-actions">
+                  <button type="button" class="primary" [disabled]="edgeSetup() === 'starting'" (click)="confirmEdgeSetup()">Set up the edge</button>
+                  <button type="button" class="quiet" (click)="cancelEdgeSetup()">Not now</button>
+                </div>
+              </app-dialog>
+            }
+
+            <app-loading [loading]="planning()" shape="lines">
+              @if (planProblem(); as problem) {
+                <app-state-message
+                  kind="error"
+                  [headline]="problem.headline"
+                  [detail]="problem.fix"
+                  [actionLabel]="problem.installed ? 'Back to the catalog' : 'Check again'"
+                  [actionLink]="problem.installed ? '/admin/catalog' : null"
+                  (action)="checkAgain()"
+                />
+              } @else if (plan()) {
+                <app-state-message
+                  kind="status"
+                  headline="This appliance meets the requirements."
+                  detail="Memory, processor, ports and disk space were checked."
+                />
+              } @else if (planDeferred()) {
+                <app-state-message
+                  kind="notice"
+                  headline="Memory, processor, ports and disk space are checked once you choose storage."
+                />
+              }
+            </app-loading>
+          }
+
+          @case ('storage') {
+            @if (storageError()) {
+              <app-state-message kind="error" [headline]="storageError()" actionLabel="Open the Storage page" actionLink="/admin/storage" />
+            } @else if (mountOptions().length === 0) {
+              <app-state-message
+                kind="empty"
+                headline="No storage is registered yet."
+                detail="Mount a disk on the appliance, then register it on the Storage page. Homestead never formats or partitions."
+                actionLabel="Open the Storage page"
+                actionLink="/admin/storage"
+              />
+            }
+            @for (className of classes(); track className) {
+              <fieldset class="wizard-field">
+                <legend>{{ classWord(className) }}</legend>
+                <p class="hint">
+                  {{ classHelp(className) }}
+                  @if (need(className) > 0) {
+                    Needs at least {{ size(need(className)) }}.
+                  }
+                </p>
+                <label>
+                  Mount
+                  <select
+                    [name]="'mount-' + className"
+                    [attr.aria-invalid]="classError(className) ? 'true' : null"
+                    [attr.aria-describedby]="classError(className) ? 'mount-error-' + className : null"
+                    (change)="setMount(className, $any($event.target).value)"
+                  >
+                    <option value="" [selected]="!mountpoints()[className]">Choose a mount</option>
+                    @for (option of mountOptions(); track option.mountpoint) {
+                      <option [value]="option.mountpoint" [selected]="mountpoints()[className] === option.mountpoint">
+                        {{ option.mountpoint }}, {{ size(option.free) }} free
+                      </option>
+                    }
+                  </select>
+                </label>
+                @if (classError(className); as problem) {
+                  <p class="field-error" [id]="'mount-error-' + className">{{ problem }}</p>
+                }
+              </fieldset>
+            }
+
+            @if (dataLocations().length > 0) {
+              <h3>Where the files will be</h3>
+              <ul class="wizard-paths">
+                @for (row of dataLocations(); track row.path) {
+                  <li><code>{{ row.path }}</code></li>
+                }
+              </ul>
+            }
+
+            <details class="wizard-folders">
+              <summary>Add a folder you already have</summary>
+              <p class="hint">
+                Use this for a media library or other folder that already exists inside one of your
+                mounts. Homestead mounts it into the app and never changes it.
+              </p>
+              @for (row of folders(); track $index; let i = $index) {
+                <fieldset class="wizard-folder">
+                  <legend>Folder {{ i + 1 }}</legend>
+                  <label>
+                    Kind
+                    <select (change)="patchFolder(i, { kind: $any($event.target).value })">
+                      <option value="existing" [selected]="row.kind === 'existing'">A folder that already exists</option>
+                      <option value="new" [selected]="row.kind === 'new'">A new folder inside the app's storage</option>
+                    </select>
+                  </label>
+                  <label>
+                    Storage
+                    <select (change)="patchFolder(i, { class: $any($event.target).value })">
+                      @for (className of classes(); track className) {
+                        <option [value]="className" [selected]="row.class === className">{{ classWord(className) }}</option>
+                      }
+                    </select>
+                  </label>
+                  <label>
+                    {{ row.kind === 'existing' ? 'Folder on the appliance' : 'Name of the new folder' }}
+                    <input [value]="row.path" (input)="patchFolder(i, { path: $any($event.target).value })" />
+                  </label>
+                  <label>
+                    Where the app sees it
+                    <input [value]="row.target" (input)="patchFolder(i, { target: $any($event.target).value })" />
+                  </label>
+                  <label>
+                    <input type="checkbox" [checked]="row.readonly" (change)="patchFolder(i, { readonly: $any($event.target).checked })" />
+                    The app can only read it
+                  </label>
+                  <button type="button" class="quiet" (click)="removeFolder(i)">Remove folder {{ i + 1 }}</button>
+                </fieldset>
+              }
+              <button type="button" (click)="addFolder()">Add a folder</button>
+            </details>
+          }
+
+          @case ('address') {
+            @if (appPath(); as path) {
+              <p data-path-app>
+                {{ m.Title }} answers under the appliance's own name, at <code>{{ path }}</code>. It needs no
+                name or certificate of its own.
+              </p>
+            } @else {
+            <label class="wizard-field">
+              Domain
+              <input
+                name="domain"
+                [value]="domain()"
+                (input)="domain.set($any($event.target).value)"
+                [attr.aria-invalid]="domainError() ? 'true' : null"
+                [attr.aria-describedby]="domainError() ? 'domain-hint domain-error' : 'domain-hint'"
+              />
+            </label>
+            @if (domainError(); as problem) {
+              <p id="domain-error" class="field-error">{{ problem }}</p>
+            }
+            <p id="domain-hint" class="hint">The part after the dot, such as lan in {{ m.Name }}.lan.</p>
+
+            @for (endpoint of endpoints(); track endpoint.endpoint; let i = $index) {
+              <label class="wizard-field">
+                Name for {{ endpoints().length > 1 ? endpoint.endpoint : m.Title }}
+                <input
+                  [name]="'host-' + endpoint.endpoint"
+                  class="mono"
+                  [value]="hostnameFor(endpoint.endpoint, i)"
+                  (input)="setHostname(endpoint.endpoint, $any($event.target).value)"
+                />
+              </label>
+            }
+            }
+
+            @if (endpoints().length > 0 && appPath()) {
+              @let lanAddress = pathAddresses()[0] ?? '';
+              <h3>On your network</h3>
+              <ul class="address-list" aria-label="Local addresses">
+                @for (address of pathAddresses(); track address; let first = $first) {
+                  <li>
+                    <code>{{ address }}</code>
+                    @if (!first && address.includes('.local/')) {
+                      <span class="hint">works without setup on most computers and phones</span>
+                    }
+                  </li>
+                }
+              </ul>
+              @if (resolverOn() === false && lanAddress.includes('.lan/')) {
+                <p class="plan-note" data-resolver-off>
+                  Your devices find <code>{{ applianceNames()[0] }}</code> only through the appliance resolver or a DNS entry
+                  on your router, and the resolver is off. Turn it on on the <a routerLink="/admin/names">Names page</a>,
+                  or add the entry on your router.
+                  @if (pathAddresses()[1]; as other) {
+                    Until then, use <code>{{ other }}</code>.
+                  }
+                </p>
+              }
+              <p>
+                The install adds this path to the edge for you, under the dashboard's certificate from your
+                Homestead internal CA. Your devices need to trust the <a routerLink="/admin/trust">Homestead root</a>.
+              </p>
+            } @else if (endpoints().length > 0) {
+              @let host = hostnameFor(endpoints()[0].endpoint, 0);
+              @let alias = localAlias(host);
+              <h3>On your network</h3>
+              <ul class="address-list" aria-label="Local addresses">
+                <li><code>https://{{ host }}</code></li>
+                @if (alias) {
+                  <li><code>https://{{ alias }}</code> <span class="hint">works without setup on most computers and phones</span></li>
+                }
+              </ul>
+              @if (resolverOn() === false && host.endsWith('.lan')) {
+                <p class="plan-note" data-resolver-off>
+                  Your devices find <code>{{ host }}</code> only through the appliance resolver or a DNS entry
+                  on your router, and the resolver is off. Turn it on on the <a routerLink="/admin/names">Names page</a>,
+                  or add the entry on your router.
+                  @if (alias) {
+                    Until then, use <code>https://{{ alias }}</code>.
+                  }
+                </p>
+              }
+              <p>
+                The install adds this address to the edge for you, with a certificate from your Homestead
+                internal CA. Your devices need to trust the <a routerLink="/admin/trust">Homestead root</a>.
+              </p>
+            }
+
+            @if (endpoints().length > 0) {
+              <h3>On the internet</h3>
+              @if (manifest()?.Publish === 'never') {
+                <p data-never-publish>{{ m.Title }} is never published: it stays on your network, so it gets no public name and no public path.</p>
+              } @else if (publicStatus() === null) {
+                <p class="hint">Could not tell whether a tunnel is set up. You can publish {{ m.Title }} later under Manage.</p>
+              } @else if (!tunnelReady()) {
+                <p data-no-tunnel>
+                  No tunnel is set up, so {{ m.Title }} stays on your network. To publish it, set up a tunnel
+                  on the <a routerLink="/admin/tunnel">Tunnel page</a>, then publish it under Manage on the catalog page.
+                </p>
+              } @else if (pathNeedsServer()) {
+                <p data-path-needs-server>
+                  {{ m.Title }} would answer under the dashboard's public name, and the dashboard has none yet.
+                  Publish the dashboard on the <a routerLink="/admin/tunnel">Tunnel page</a> first, then publish
+                  {{ m.Title }} under Manage on the catalog page.
+                </p>
+              } @else if (!publishable()) {
+                <p>{{ publicStatus()?.reason }}</p>
+              } @else {
+                <label>
+                  <input type="checkbox" name="publish" [checked]="publish()" (change)="setPublish($any($event.target).checked)" />
+                  Also publish at
+                </label>
+                @if (managedAccess()) {
+                  <p data-managed-publish-deferred>Publication waits until Authentik sign-in and person access setup finish.</p>
+                }
+                @if (appPath()) {
+                  <p><code data-public-url>{{ publicStatus()?.proposed_url }}</code></p>
+                  <p class="hint">Under the dashboard's public name: no DNS record or name of its own.</p>
+                } @else {
+                <label class="wizard-field">
+                  Public name
+                  <input
+                    name="public-name"
+                    class="mono"
+                    autocomplete="off"
+                    [value]="publicHost()"
+                    [disabled]="!publish()"
+                    (input)="setPublicName($any($event.target).value)"
+                    (change)="checkPublicName()"
+                  />
+                </label>
+                }
+                @if (publish()) {
+                  @if (publicLamp(); as l) {
+                    <p>
+                      <span class="badge" [class]="l.ok ? 'badge-ok' : 'badge-warn'">{{ l.label }}</span>
+                      @if (!l.ok) {
+                        <span class="hint">{{ l.title }}</span>
+                      }
+                    </p>
+                  }
+                  @if (publicPlanProblem(); as problem) {
+                    <p class="field-error" role="alert">{{ problem }}</p>
+                  }
+                  <p class="hint">{{ coverageRule }}</p>
+                  @if (signInPreview()?.offered) {
+                    <p class="hint">
+                      The same install sets up sign-in with Authentik, so people sign in through Authentik.
+                      The review shows the public address plan for you to approve with the install.
+                    </p>
+                  } @else {
+                    <p class="plan-note">
+                      Anyone on the internet can reach {{ m.Title }}. Its own sign-in is what protects it.
+                    </p>
+                  }
+                } @else if (!signInPreview()?.offered) {
+                  <p class="hint">
+                    Off by default: anyone on the internet could reach {{ m.Title }}, and only its own sign-in
+                    would protect it. You can publish it later under Manage.
+                  </p>
+                }
+              }
+            }
+
+            <h3>Who can reach it</h3>
+            @for (item of m.Exposure.Endpoints; track item.Endpoint) {
+              <p>
+                @if (publish() && $first) {
+                  <span class="badge badge-warn" data-reach-public>Local network and the tunnel</span>
+                } @else {
+                  <span class="badge badge-ok">{{ exposureWords(item.Recommended) }}</span>
+                }
+                @if (!item.AllowWider) {
+                  <span class="hint">This app cannot be widened.</span>
+                }
+              </p>
+              @for (warning of item.Warnings; track warning) {
+                <p class="plan-note">{{ warning }}</p>
+              }
+            }
+            @if (publish()) {
+              <p>
+                Publishing goes through the tunnel only, once you approve its plan with the install on the
+                review. Nothing else is opened outside your network.
+              </p>
+            } @else {
+              <p>
+                Installing never opens {{ m.Title }} to anyone outside your network. To widen it later,
+                plan and approve it on the <a routerLink="/admin/exposure">Exposure page</a>.
+              </p>
+            }
+
+            <details>
+              <summary>Advanced</summary>
+              <p class="hint">Most apps need none of this.</p>
+              <p class="hint">Most apps need no change. Edit it only if the app listens on another port.</p>
+              @for (service of routedServices(); track service.Name) {
+                <label class="wizard-field">
+                  {{ service.Name }} container port
+                  <input
+                    [name]="'port-' + service.Name"
+                    [value]="containerPorts()[service.Name] ?? ''"
+                    [attr.aria-invalid]="portError(service.Name) ? 'true' : null"
+                    [attr.aria-describedby]="portError(service.Name) ? 'port-error-' + service.Name : null"
+                    (input)="setPort(service.Name, $any($event.target).value)"
+                  />
+                </label>
+                @if (portError(service.Name); as problem) {
+                  <p class="field-error" [id]="'port-error-' + service.Name">{{ problem }}</p>
+                }
+              }
+              <label class="wizard-field">
+                Extra networks
+                <input
+                  name="networks"
+                  [value]="extraNetworks()"
+                  (input)="extraNetworks.set($any($event.target).value)"
+                  aria-describedby="networks-hint"
+                />
+              </label>
+              <p id="networks-hint" class="hint">
+                Names of existing Docker networks to join as well, separated by commas.
+              </p>
+              <label class="wizard-field">
+                Zone for public address records
+                <input name="zone" [value]="zone()" (input)="zone.set($any($event.target).value)" />
+              </label>
+              <label class="wizard-field">
+                Public IP address
+                <input name="public-ip" [value]="publicIp()" (input)="publicIp.set($any($event.target).value)" />
+              </label>
+              <p class="hint">
+                The zone and address are only used to plan DNS records for a public route. They do not
+                expose anything.
+              </p>
+            </details>
+          }
+
+          @case ('sign-in') {
+            @if (secrets().length > 0) {
+              <h3>Passwords Homestead creates</h3>
+              <p>
+                You never type these. Homestead generates them, keeps them in its secret store and
+                gives the containers owner-only files. No value is shown or logged.
+              </p>
+              <ul>
+                @for (secret of secrets(); track secret.name) {
+                  <li>
+                    <code>{{ secret.name }}</code> is {{ secret.purpose }}.
+                    @if (secret.immutable) {
+                      It cannot be changed after install.
+                    }
+                  </li>
+                }
+              </ul>
+            }
+            <h3>Signing in</h3>
+            @if (curated().signIn; as signIn) {
+              <p>{{ signIn }}</p>
+            } @else if (sso() === 'unsupported') {
+              <p>{{ m.Title }} keeps its own accounts and does not sign in through a sign-in service.</p>
+            } @else if (sso() === 'required') {
+              <p>
+                {{ m.Title }} only signs people in through a sign-in service ({{ protocols() }}).
+              </p>
+            } @else {
+              <p>
+                {{ m.Title }} has its own accounts, and it can also sign people in through a sign-in
+                service such as Authentik ({{ protocols() }}). Where Homestead can connect it to this
+                appliance's Authentik, the review offers Sign in with Authentik as part of the install;
+                otherwise connect it after the install.
+              </p>
+              <p class="hint">
+                The owner always keeps full access. Choose managed-person roles in the install review; you can change them later on the
+                <a routerLink="/admin/people">People page</a>.
+              </p>
+            }
+          }
+
+          @case ('review') {
+            <app-loading [loading]="planning()" shape="panel">
+              @if (planProblem(); as problem) {
+                <app-state-message
+                  kind="error"
+                  [headline]="problem.headline"
+                  [detail]="problem.fix"
+                  [actionLabel]="problem.installed ? 'Back to the catalog' : 'Check again'"
+                  [actionLink]="problem.installed ? '/admin/catalog' : null"
+                  (action)="checkAgain()"
+                />
+              } @else if (summary(); as s) {
+                <app-permit [heading]="'Install ' + m.Title" label="Install plan" [digest]="plan()?.digest ?? ''">
+                  <h4>Homestead will create</h4>
+                  <ul>
+                    @for (line of s.created; track line) {
+                      <li>{{ line }}</li>
+                    }
+                    @for (secret of secrets(); track secret.name) {
+                      <li>A generated secret, {{ secret.name }}, if one is not stored yet</li>
+                    }
+                    <li>{{ m.Services.length === 1 ? '1 container' : m.Services.length + ' containers' }} in a Compose stack named {{ m.Name }}</li>
+                  </ul>
+                  @if (s.changed.length > 0) {
+                    <h4>Homestead will change</h4>
+                    <ul>
+                      @for (line of s.changed; track line) {
+                        <li>{{ line }}</li>
+                      }
+                    </ul>
+                  }
+                  @if (signInPreview(); as si) {
+                    @if (si.offered && si.plan) {
+                      <h4>Signing in</h4>
+                      <label>
+                        <input type="checkbox" name="sign-in-wanted" [checked]="managedSignInRequired() || signInWanted()" [disabled]="managedSignInRequired()" (change)="signInWanted.set($any($event.target).checked)" />
+                        Sign in with Authentik
+                      </label>
+                      @if ((managedSignInRequired() || signInWanted()) && si.plan; as sp) {
+                        <p>The owner keeps full access. Choose access for each managed person below.</p>
+                        <ul aria-label="What sign-in with Authentik creates">
+                          <li>An Authentik provider, {{ sp.provider }}, and application, {{ sp.application }}</li>
+                          @for (uri of sp.redirect_uris; track uri) {
+                            <li>Redirect address <code>{{ uri }}</code></li>
+                          }
+                          @for (line of sp.app_settings; track line) {
+                            <li>{{ line }}</li>
+                          }
+                        </ul>
+                        @for (warning of sp.warnings; track warning) {
+                          <p class="hint">{{ warning }}</p>
+                        }
+                        @if (!si.token_kept) {
+                          <p class="hint">
+                            Homestead keeps no Authentik API token, so the appliance cannot set sign-in up with the install.
+                            Set it up afterwards under Manage on the catalog page.
+                          </p>
+                        }
+                      }
+                    } @else if (si.reason) {
+                      <h4>Signing in</h4>
+                      <p>Sign in with Authentik is not offered yet: {{ si.reason }}</p>
+                    }
+                  }
+                  @if (accessPlan(); as access) {
+                    <h4>App access</h4>
+                    @if (managedSignInRequired() && !managedSignInReady()) {
+                      <app-state-message kind="error" headline="Managed sign-in is not ready." detail="Refresh the install plan before choosing access. Managed access cannot be installed without its reviewed sign-in setup." />
+                    }
+                    @switch (access.mode) {
+                      @case ('managed') {
+                        <p>Choose a role for every managed person. “No access” is an explicit choice. The owner always has full access.</p>
+                        @if (access.people.length > 0) {
+                          <fieldset aria-label="Access for managed people">
+                            <legend>Who can use {{ m.Title }}</legend>
+                            @for (person of access.people; track person.id) {
+                              <label>
+                                {{ person.display_name }} ({{ person.username }})
+                                <select [name]="'access-' + person.id" [value]="person.state === 'active' ? (accessRoles()[person.id] ?? '') : 'none'" [disabled]="person.state !== 'active'" (change)="setAccessRole(person.id, $any($event.target).value)">
+                                  <option value="" disabled>Choose a role</option>
+                                  <option value="none">No access</option>
+                                  <option value="user">User</option>
+                                  @if (access.admin_supported) {
+                                    <option value="admin">Admin</option>
+                                  }
+                                </select>
+                                @if (person.state !== 'active') { <span class="hint">Disabled; no access can be granted.</span> }
+                              </label>
+                            }
+                          </fieldset>
+                          @if (!accessSelectionComplete()) {
+                            <p class="hint" role="status">Choose a role, including “No access”, for each active person before installing.</p>
+                          }
+                        } @else {
+                          <p class="hint">There are no managed people yet. The owner will have full access.</p>
+                        }
+                      }
+                      @case ('open') {
+                        <p>This verified app is open and has no managed-person access choices. The owner retains Homestead management access.</p>
+                      }
+                      @case ('self-managed') {
+                        <p class="hint" role="status">{{ access.notice ?? 'This app keeps its own accounts. Homestead does not control who can sign in to it; create accounts in the app itself.' }}</p>
+                      }
+                      @case ('bootstrap') {
+                        <p>This app will start in its owner bootstrap mode. Managed-person access can be chosen after setup.</p>
+                      }
+                      @case ('unavailable') {
+                        <app-state-message kind="error" headline="Access cannot be enforced for this app." [detail]="access.reason ?? 'The installation is unavailable until an access integration is ready.'" />
+                      }
+                    }
+                  }
+                  @if (filesLink(); as fl) {
+                    <h4>Files in Nextcloud</h4>
+                    <ul aria-label="Nextcloud links for files">
+                      @for (line of fl.lines; track line) {
+                        <li>{{ line }}</li>
+                      }
+                    </ul>
+                    <p class="hint">
+                      Once {{ m.Title }} is set up, documents go to {{ fl.base_url }}, folder {{ fl.root }}@if (fl.new_link) {, as account {{ fl.account }} with an app password Homestead creates}.
+                      Re-link or unlink on the Craft files page.
+                    </p>
+                  }
+                  <h4>Homestead will leave alone</h4>
+                  <ul>
+                    @for (line of s.leftAlone; track line) {
+                      <li>{{ line }}</li>
+                    }
+                  </ul>
+                </app-permit>
+
+                @if (publish()) {
+                  @if (publicPlan(); as p) {
+                    <app-permit [heading]="'Publish ' + (p.path && p.url ? p.url : p.hostname)" [digest]="p.digest" [label]="'Public address plan for ' + m.Title">
+                      @if (p.path) {
+                        <p>
+                          Once {{ m.Title }} is installed, publish <span class="mono">{{ p.url }}</span> through the
+                          tunnel {{ p.tunnel }}, under the dashboard's public name. No DNS record changes.
+                        </p>
+                      } @else {
+                      <p>
+                        Once {{ m.Title }} is installed, publish <span class="mono">{{ p.hostname }}</span> to
+                        {{ p.route }} through the tunnel {{ p.tunnel }}.
+                      </p>
+                      }
+                      <ul aria-label="DNS changes">
+                        @for (change of p.dns; track change.name + change.action + change.content) {
+                          <li>
+                            {{ change.action }}: {{ change.type }} <span class="mono">{{ change.name }}</span> to
+                            <span class="mono">{{ change.content }}</span>
+                            @for (old of change.replaces; track old.content) {
+                              <br />deletes {{ old.type }} {{ old.content }}
+                            }
+                          </li>
+                        }
+                        @for (line of p.app_settings ?? []; track line) {
+                          <li>{{ line }}</li>
+                        }
+                      </ul>
+                      <dl>
+                        <dt>Tunnel names before</dt><dd>{{ p.connector_before.join(', ') || 'none' }}</dd>
+                        <dt>Tunnel names after</dt><dd>{{ p.connector_after.join(', ') || 'none' }}</dd>
+                      </dl>
+                      @for (warning of p.warnings; track warning) {
+                        <p class="hint">{{ warning }}</p>
+                      }
+                    </app-permit>
+                    <p class="hint">Installing approves both plans. The public address is applied by its digest once {{ m.Title }} is installed; if its plan changed by then, you are asked again.</p>
+                  } @else if (publicPlanning()) {
+                    <app-loading [loading]="true" shape="lines"><span></span></app-loading>
+                  } @else {
+                    <app-state-message
+                      kind="error"
+                      headline="The public address could not be planned."
+                      [detail]="(publicPlanProblem() ?? 'Go back to the Address step to check the public name.') + ' Turn off Also publish at on the Address step to install without it.'"
+                    />
+                  }
+                }
+
+                @if (plan()?.Mounts?.length) {
+                  <h3>Where its data goes</h3>
+                  <ul class="plan-mounts">
+                    @for (mount of plan()!.Mounts!; track mount.Service + mount.Target) {
+                      <li>
+                        {{ mount.Service }} sees <code>{{ mount.Target }}</code>
+                        @if (mount.Ephemeral) {
+                          as temporary memory that is not kept
+                        } @else {
+                          at <code>{{ mount.Source }}</code>
+                          @if (mount.ReadOnly) {
+                            (read-only)
+                          }
+                        }
+                      </li>
+                    }
+                  </ul>
+                }
+
+                <app-browser-advisories [advisories]="plan()?.BrowserAdvisories" />
+
+                @for (note of planNotes(); track note) {
+                  @if (!note.startsWith('browser capabilities')) {
+                    <p class="plan-note">{{ sentence(note) }}</p>
+                  }
+                }
+
+                <details>
+                  <summary>Raw plan</summary>
+                  <pre><code>{{ rawPlan() }}</code></pre>
+                </details>
+              }
+            </app-loading>
+            @if (craft() && craftBuilt() !== true && !planProblem() && !planning()) {
+              <p class="hint">
+                {{ m.Title }} is built on this appliance from a signed download, never pulled. Homestead
+                verifies the download first, builds it, then you install it.
+              </p>
+            }
+          }
+
+          @case ('install') {
+            @switch (phase()) {
+              @case ('building') {
+                <h3>Verifying and building {{ m.Title }}</h3>
+                <p>Homestead checks the signature and checksums of the signed download, then builds it here.</p>
+                @if (buildOperation(); as id) {
+                  <app-operation-progress [id]="id" [operation]="operation()" />
+                }
+              }
+              @case ('built') {
+                <app-state-message
+                  kind="status"
+                  [headline]="m.Title + ' is built'"
+                  detail="The download was verified and built on this appliance. Now install it."
+                />
+                <p>
+                  <button type="button" class="primary" [attr.aria-busy]="starting() ? 'true' : null" [disabled]="starting() || accessUnavailable() || !accessSelectionComplete() || !managedSignInReady()" (click)="startInstall()">
+                    Install {{ m.Title }}
+                  </button>
+                </p>
+              }
+              @case ('installing') {
+                @if (installStamp(); as a) {
+                  <app-permit [heading]="a.heading" [digest]="a.digest" [approval]="a.approval">
+                    <p>{{ a.summary }}</p>
+                  </app-permit>
+                }
+                @if (publicStamp(); as a) {
+                  <app-permit [heading]="a.heading" [digest]="a.digest" [approval]="a.approval">
+                    <p>{{ a.summary }}</p>
+                  </app-permit>
+                }
+                @if (installOperation(); as id) {
+                  <app-operation-progress [id]="id" [operation]="operation()" />
+                }
+              }
+              @case ('failed') {
+                @if (failure(); as problem) {
+                  <app-state-message kind="error" [headline]="problem.headline" [detail]="problem.fix" />
+                }
+                @if (buildRefusal(); as refusal) {
+                  @if (!installOperation()) {
+                    <p class="plan-note">{{ refusal }}</p>
+                  }
+                }
+                @if (installOperation() ?? buildOperation(); as id) {
+                  <app-operation-progress [id]="id" [operation]="operation()" />
+                }
+                <p class="wizard-actions">
+                  <button type="button" class="primary" (click)="retry()">Try again</button>
+                  @if (embedded()) {
+                    <button type="button" (click)="closed.emit()">{{ closeLabel() }}</button>
+                  } @else {
+                    <a class="button" routerLink="/admin/catalog">Back to the catalog</a>
+                  }
+                </p>
+              }
+              @default {
+                <app-state-message kind="notice" headline="Nothing has started yet." detail="Go back to the review and start from there." />
+                <button type="button" (click)="goToId('review')">Back to the review</button>
+              }
+            }
+          }
+
+          @case ('done') {
+            @if (edgeRoute(); as route) {
+              <p>
+                <a class="button primary" [href]="routeUrl(route)" target="_blank" rel="noopener noreferrer">Open {{ m.Title }}</a>
+                <a [href]="routeUrl(route)" target="_blank" rel="noopener noreferrer"><code>{{ routeUrl(route) }}</code></a>
+              </p>
+              @if (reach() === 'failed') {
+                <app-state-message
+                  kind="notice"
+                  headline="This device could not open that address securely."
+                  detail="Either the name does not resolve on this device, or this device does not trust the Homestead root yet. Install the root on the Trust page, then open the address again."
+                  actionLabel="Open the Trust page"
+                  actionLink="/admin/trust"
+                />
+              }
+            } @else {
+              @switch (routeState()) {
+                @case ('adding') {
+                  <h3>Giving {{ m.Title }} an address</h3>
+                  @if (routeOperation(); as id) {
+                    <app-operation-progress [id]="id" [operation]="routeOpState()" />
+                  }
+                }
+                @case ('failed') {
+                  <app-state-message
+                    kind="error"
+                    [headline]="m.Title + ' is installed but has no address yet.'"
+                    [detail]="routeProblem() ?? 'The edge refused the route.'"
+                    actionLabel="Try again"
+                    (action)="retryRoute()"
+                  />
+                  <p class="hint"><a routerLink="/admin/edge">Open the Edge page</a> to add it by hand.</p>
+                }
+                @case ('no-edge') {
+                  <app-state-message
+                    kind="notice"
+                    [headline]="m.Title + ' will not be reachable until the edge is set up.'"
+                    detail="The edge (Caddy) serves apps by name and it is not running. Set it up and Homestead adds the address for you."
+                  />
+                  <p class="wizard-actions">
+                    @if (edgeSetup() === 'running' || edgeSetup() === 'starting') {
+                      @if (edgeOperation(); as id) {
+                        <app-operation-progress [id]="id" [operation]="edgeOpState()" />
+                      }
+                    } @else {
+                      <button type="button" class="primary" (click)="askEdgeSetup()">Set up the edge</button>
+                      <a class="button" routerLink="/admin/edge">Open the Edge page</a>
+                    }
+                  </p>
+                  @if (edgeProblem(); as problem) {
+                    <p class="field-error" role="alert">{{ problem }}</p>
+                  }
+                  @if (edgeDialog()) {
+                    <app-dialog heading="Set up the edge?" (dismissed)="cancelEdgeSetup()">
+                      <p>
+                        This starts Caddy, a small proxy container, on this appliance. It listens on
+                        ports 80 and 443 on your local network and serves your apps by name, with
+                        certificates from your Homestead internal CA. It does not open anything to the
+                        internet.
+                      </p>
+                      <div class="dialog-actions">
+                        <button type="button" class="primary" [disabled]="edgeSetup() === 'starting'" (click)="confirmEdgeSetup()">Set up the edge</button>
+                        <button type="button" class="quiet" (click)="cancelEdgeSetup()">Not now</button>
+                      </div>
+                    </app-dialog>
+                  }
+                }
+                @case ('checking') {
+                  <app-loading [loading]="true" shape="lines"><span></span></app-loading>
+                }
+                @case ('setup') {
+                  @if (setupView()?.status === 'stopped') {
+                    <p class="hint">{{ m.Title }} has no address yet because its setup stopped first. Review the setup below.</p>
+                  } @else {
+                    <p class="hint">The appliance gives {{ m.Title }} its address as the first step of its setup, below.</p>
+                  }
+                }
+                @default {
+                  <app-state-message
+                    kind="notice"
+                    [headline]="m.Title + ' has no address yet.'"
+                    detail="Homestead can give it the usual local address, kept on your network only, or you can add one on the Edge page."
+                  />
+                  <p class="wizard-actions">
+                    <button type="button" class="primary" (click)="addMissingRoute()">Give {{ m.Title }} an address</button>
+                    <a class="button" routerLink="/admin/edge">Open the Edge page</a>
+                  </p>
+                }
+              }
+            }
+
+            @if (installed()) {
+              <app-app-setup [name]="m.Name" [title]="m.Title" (settled)="onSetupSettled($event)" />
+              @if (publicDone()) {
+                @if (publicStamp(); as a) {
+                  <app-permit [heading]="a.heading" [digest]="a.digest" [approval]="a.approval">
+                    <p>{{ a.summary }}</p>
+                  </app-permit>
+                }
+              }
+            }
+
+            @if (installed()) {
+              <h3>Does it answer?</h3>
+              <app-loading [loading]="reachChecking() && !reachStatus()" shape="lines">
+                @if (reachStatus(); as r) {
+                  <ul class="reach-list" aria-label="Addresses checked from the appliance">
+                    @for (a of r.addresses; track a.address) {
+                      <li [attr.data-answers]="a.answers">
+                        <span class="badge" [class]="a.answers ? 'badge-ok' : 'badge-warn'">{{ a.answers ? 'answers' : 'does not answer yet' }}</span>
+                        <code>{{ a.address }}</code>
+                        @if (a.reason) {
+                          <br /><span class="hint">{{ a.reason }}</span>
+                        }
+                        @if (a.fix) {
+                          <br /><span class="hint">{{ a.fix }}</span>
+                        }
+                      </li>
+                    }
+                  </ul>
+                } @else if (reachFailed()) {
+                  <p class="hint">The appliance could not check the addresses.</p>
+                }
+              </app-loading>
+              <p class="hint">
+                Checked from the appliance. A new address can take a minute to answer; this never changes the install.
+                <button type="button" class="quiet" [disabled]="reachChecking()" (click)="checkReach()">Check again</button>
+              </p>
+            }
+
+            <h3>First time you open it</h3>
+            <ol>
+              @for (line of curated().firstLogin; track line) {
+                <li>{{ line }}</li>
+              }
+            </ol>
+
+            <h3>Where its data lives</h3>
+            @if (classes().length === 0) {
+              <p>{{ m.Title }} keeps nothing on the appliance. Save your work from the app to your device.</p>
+            } @else {
+              <ul class="wizard-paths">
+                @for (row of dataLocations(); track row.path) {
+                  <li><code>{{ row.path }}</code></li>
+                } @empty {
+                  <li>On the storage you chose, in a folder named {{ m.Name }}.</li>
+                }
+              </ul>
+              <p>Set up a backup schedule for {{ m.Title }} on the <a routerLink="/admin/backups">Backups page</a>.</p>
+            }
+
+            <div class="wizard-actions">
+              @if (embedded()) {
+                <button type="button" class="primary" (click)="finish(); closed.emit()">{{ closeLabel() }}</button>
+              } @else {
+                <a class="button" routerLink="/admin/catalog" (click)="finish()">Back to the catalog</a>
+              }
+              @if (!embedded()) {
+                <!-- Not offered inside setup: the step just installed it (S292). -->
+                <app-uninstall-app [name]="m.Name" [title]="m.Title" (uninstalled)="onUninstalled()" />
+              }
+            </div>
+          }
+        }
+
+        @if (stepProblem(); as problem) {
+          <p class="field-error" role="alert">{{ problem }}</p>
+        }
+
+        @if (current() !== 'install' && current() !== 'done') {
+          <div class="wizard-actions">
+            @if (stepIndex() > 0) {
+              <button type="button" (click)="back()">Back</button>
+            }
+            @if (current() === 'review') {
+              @if (craft() && craftBuilt() !== true) {
+                <button
+                  type="button"
+                  class="primary"
+                  [attr.aria-busy]="starting() ? 'true' : null"
+                  [disabled]="starting() || planning() || planProblem() !== null || plan() === null"
+                  (click)="startBuild()"
+                >
+                  Verify and build {{ m.Title }}
+                </button>
+              } @else {
+                <button
+                  type="button"
+                  class="primary"
+                  [attr.aria-busy]="starting() ? 'true' : null"
+                  [disabled]="starting() || planning() || planProblem() !== null || plan() === null || accessUnavailable() || !accessSelectionComplete() || !managedSignInReady() || (publish() && (publicPlan() === null || publicPlanning()))"
+                  (click)="startInstall()"
+                >
+                  {{ publish() ? 'Approve both and install ' + m.Title : 'Install ' + m.Title }}
+                </button>
+              }
+            } @else {
+              <button type="button" class="primary" (click)="next()">Continue</button>
+            }
+          </div>
+        }
+      </section>
+    }
+  </app-loading>
+</section>

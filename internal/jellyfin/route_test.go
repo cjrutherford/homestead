@@ -54,7 +54,7 @@ func TestRouteFor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderRoute: %v", err)
 	}
-	for _, want := range []string{"jellyfin.lan {", "tls internal", "health_uri /System/Info/Public"} {
+	for _, want := range []string{"jellyfin.lan, jellyfin.local {", "tls internal", "health_uri /System/Info/Public"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q:\n%s", want, text)
 		}

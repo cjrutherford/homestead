@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
-import { httpErrorMessage, isUnreachable } from './http-error';
+import { isNotSetUp, httpErrorMessage, isUnreachable } from './http-error';
 
 function failure(status: number, error: unknown = null, headers?: HttpHeaders): HttpErrorResponse {
   return new HttpErrorResponse({ status, error, headers });
@@ -19,6 +19,13 @@ describe('httpErrorMessage', () => {
     expect(httpErrorMessage(failure(500), 'Login')).toBe(
       'Login failed on the appliance. The error has been recorded.',
     );
+  });
+
+  it('shows the server reason on 409 and 422, and the generic text without one', () => {
+    expect(httpErrorMessage(failure(422, 'domain must be a public name\n'), 'setup')).toBe(
+      'setup failed: domain must be a public name',
+    );
+    expect(httpErrorMessage(failure(422), 'setup')).toBe('setup failed (HTTP 422).');
   });
 
   it('shows the server message on 400', () => {
@@ -46,5 +53,11 @@ describe('httpErrorMessage', () => {
 
   it('falls back to the status for other codes', () => {
     expect(httpErrorMessage(failure(418), 'Setup')).toBe('Setup failed (HTTP 418).');
+  });
+
+  it('treats a 404 read as not set up yet, and nothing else', () => {
+    expect(isNotSetUp(failure(404))).toBe(true);
+    expect(isNotSetUp(failure(500))).toBe(false);
+    expect(isNotSetUp(failure(0))).toBe(false);
   });
 });

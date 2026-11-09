@@ -38,8 +38,8 @@ class TestConfigPage(unittest.TestCase):
     def test_route_and_nav(self):
         routes = read_dash("src/app/app.routes.ts")
         self.assertIn("path: 'config'", routes)
-        html = read_dash("src/app/app.html")
-        self.assertIn('routerLink="/config"', html)
+        html = read_dash("src/app/core/nav.ts")
+        self.assertIn("path: '/admin/config'", html)
 
     def test_client_plan_apply(self):
         src = read_dash("src/app/core/api.service.ts")

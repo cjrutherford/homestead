@@ -92,3 +92,20 @@ func TestCraftFilesCLIInsecureHTTPOptIn(t *testing.T) {
 		t.Fatalf("plan requests: %v", *seen)
 	}
 }
+
+// S326: link --appliance links this appliance's Nextcloud with no
+// password file.
+func TestCraftFilesCLILinkAppliance(t *testing.T) {
+	url, seen := craftFilesStub(t)
+	code, out, _ := invoke(t, []string{"--server", url, "craft", "files", "link", "--appliance", "--yes"})
+	if code != exitOK {
+		t.Fatalf("link --appliance: %d %s", code, out)
+	}
+	joined := strings.Join(*seen, "\n")
+	if !strings.Contains(joined, `"appliance":true`) || !strings.Contains(joined, `"root":"Homestead"`) || !strings.Contains(joined, `"app_password":"","account_password":""`) {
+		t.Fatalf("requests: %s", joined)
+	}
+	if code, _, _ = invoke(t, []string{"--server", url, "craft", "files", "link", "--appliance", "--url", "https://x.lan"}); code != exitUsage {
+		t.Fatal("--appliance with --url must be a usage error")
+	}
+}

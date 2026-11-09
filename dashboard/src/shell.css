@@ -1,0 +1,349 @@
+/* App shell (S282): grouped sidebar, mobile drawer, main column. */
+
+.shell {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+/*
+ * The land (S310): the masthead sits on a band at the top of the ground.
+ * The lamp's warm wash, and the contour lines lit top-left and fading across
+ * and down into the ground. The only texture in the product.
+ */
+.shell::before,
+.shell::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  inset-inline: var(--sidebar-width) 0;
+  height: var(--band-height);
+  pointer-events: none;
+}
+
+.shell::before {
+  background: var(--lamp-wash);
+}
+
+.shell::after {
+  background: var(--contour-ink);
+  -webkit-mask: var(--contour) 0 0 / 60rem auto no-repeat, var(--lamp-falloff);
+  -webkit-mask-composite: source-in;
+  mask: var(--contour) 0 0 / 60rem auto no-repeat intersect, var(--lamp-falloff);
+}
+
+/* The page stands on the band. */
+.shell-main {
+  position: relative;
+}
+
+.skip-link {
+  position: absolute;
+  top: var(--spacing-sm);
+  left: var(--spacing-sm);
+  z-index: calc(var(--z-index-modal) + 1);
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--primary-foreground);
+  background: var(--primary);
+  border-radius: var(--radius-control);
+  font-weight: 700;
+  transform: translateY(-300%);
+}
+
+.skip-link:focus {
+  transform: none;
+  color: var(--primary-foreground);
+}
+
+.shell-topbar,
+.drawer-backdrop,
+.drawer-close {
+  display: none;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-index-drawer);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  height: 100dvh;
+  padding: var(--spacing-md) 0 var(--spacing-md) var(--spacing-sm);
+  overflow: hidden;
+  color: var(--on-hedgerow);
+  background: var(--hedgerow);
+  /* The hedgerow is the deepest plane: the ground casts a shadow onto it. */
+  box-shadow: var(--edge-shadow);
+}
+
+/* The wordmark, in the display face (S309). */
+.brand {
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-family: var(--font-display);
+  font-size: var(--font-size-xxl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-display);
+  line-height: 1.05;
+}
+
+.sidebar a:focus-visible,
+.sidebar button:focus-visible,
+.shell-topbar button:focus-visible {
+  outline-color: var(--sidebar-focus);
+}
+
+/* The page list scrolls on its own so the user area stays in view. */
+.sidebar nav {
+  flex: 0 1 auto;
+  min-height: 6rem;
+  margin: 0 0 0 calc(-1 * var(--spacing-xs));
+  padding: var(--spacing-xs) 0 var(--spacing-xs) var(--spacing-xs);
+  overflow-y: auto;
+}
+
+.nav-group-toggle,
+.sidebar-slot,
+.sidebar-foot {
+  margin-inline-end: var(--spacing-sm);
+}
+
+.nav-group {
+  margin-bottom: var(--spacing-xs);
+}
+
+.nav-group-toggle {
+  display: flex;
+  width: calc(100% - var(--spacing-sm));
+  margin: 0;
+  justify-content: space-between;
+  color: var(--sidebar-muted);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  font-size: var(--font-size-sm);
+}
+
+.nav-group-toggle:hover,
+.nav-group-toggle:active {
+  color: var(--sidebar-foreground);
+  background: var(--sidebar-hover-bg);
+}
+
+.nav-group-toggle::after {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  border-inline-end: 2px solid currentcolor;
+  border-block-end: 2px solid currentcolor;
+  transform: rotate(45deg) translate(-0.1rem, -0.1rem);
+}
+
+.nav-group-toggle[aria-expanded='false']::after {
+  transform: rotate(-45deg);
+}
+
+.nav-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nav-list li {
+  margin: 0;
+}
+
+.nav-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-target);
+  margin-inline-end: var(--spacing-sm);
+  padding: 0 var(--spacing-md);
+  color: var(--sidebar-foreground);
+  text-decoration: none;
+  border-radius: 0.5rem;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+/* A mouse or trackpad hits a smaller target; touch keeps the full 44px. */
+@media (pointer: fine) {
+  .nav-link {
+    min-height: 2.5rem;
+  }
+}
+
+.nav-link:hover {
+  color: var(--sidebar-foreground);
+  background: var(--sidebar-hover-bg);
+}
+
+/*
+ * The current page is a lit tab (S310): a raised fill on the band, lit along
+ * its top, with a lamp bar on its inline-start edge. Bold text and
+ * aria-current mark it too, so the state never rests on light alone. High
+ * contrast keeps its yellow fill and drops the bar.
+ */
+.nav-link[aria-current='page'] {
+  color: var(--sidebar-active-foreground);
+  background: var(--sidebar-active-bg);
+  box-shadow:
+    inset var(--furrow) 0 0 var(--sidebar-lamp),
+    var(--elevation-control);
+  font-weight: 700;
+}
+
+[data-theme='high-contrast'] .nav-link[aria-current='page'] {
+  box-shadow: none;
+}
+
+/* Mount point of the work-orders rail (feedback.css). */
+.sidebar-slot {
+  flex: 0 0 auto;
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-sm) var(--spacing-xs);
+  border-top: 1px solid var(--sidebar-border);
+}
+
+.username {
+  padding: 0 var(--spacing-md);
+  color: var(--sidebar-muted);
+  overflow-wrap: anywhere;
+}
+
+.sidebar-foot .button,
+.sidebar-foot button {
+  width: 100%;
+  margin: 0;
+  justify-content: flex-start;
+  color: var(--sidebar-foreground);
+  background: transparent;
+  border-color: var(--sidebar-border);
+  box-shadow: none;
+}
+
+.sidebar-foot .button:hover,
+.sidebar-foot button:hover {
+  color: var(--sidebar-foreground);
+  background: var(--sidebar-hover-bg);
+}
+
+.shell-main {
+  width: 100%;
+  min-width: 0;
+  max-width: var(--content-width);
+  margin-inline: auto;
+  padding: var(--spacing-xl) var(--spacing-lg) var(--spacing-xxl);
+}
+
+.shell-main:focus {
+  outline: none;
+}
+
+/* Below md the sidebar is a drawer behind a menu button. */
+@media (max-width: 47.9375rem) {
+  /* The sticky top bar must not cover what scrolls or takes focus into view. */
+  html {
+    scroll-padding-top: 4.25rem;
+  }
+
+  .shell {
+    display: block;
+  }
+
+  .shell-topbar {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-index-dropdown);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-height: 3.5rem;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    color: var(--on-hedgerow);
+    background: var(--hedgerow);
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .shell-topbar .brand {
+    padding-block: 0;
+    font-size: var(--font-size-xl);
+  }
+
+  .shell-topbar button,
+  .drawer-close {
+    margin: 0;
+    color: var(--sidebar-foreground);
+    background: transparent;
+    border-color: var(--sidebar-border);
+    box-shadow: none;
+  }
+
+  .shell-topbar button:hover,
+  .drawer-close:hover {
+    color: var(--sidebar-foreground);
+    background: var(--sidebar-hover-bg);
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(var(--sidebar-width), 86vw);
+    visibility: hidden;
+    transform: translateX(-100%);
+    /* The drawer is lifted over the page. */
+    box-shadow: var(--elevation-lifted);
+  }
+
+  .drawer-open .sidebar {
+    visibility: visible;
+    transform: none;
+  }
+
+  .drawer-open .drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-index-drawer) - 1);
+    display: block;
+    background: var(--backdrop);
+  }
+
+  .drawer-close {
+    display: inline-flex;
+    align-self: flex-end;
+  }
+
+  .shell-main {
+    padding: var(--spacing-lg) var(--spacing-md) var(--spacing-xl);
+  }
+
+  .shell::before,
+  .shell::after {
+    inset-inline: 0;
+  }
+}
+
+@media (forced-colors: active) {
+  .shell::before,
+  .shell::after {
+    display: none;
+  }
+}
+
+/* The apps page and any person session: no sidebar, so the ground is one column. */
+.shell.bare {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.shell.bare::before,
+.shell.bare::after {
+  inset-inline: 0;
+}

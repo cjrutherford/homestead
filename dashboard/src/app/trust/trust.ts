@@ -1,14 +1,23 @@
-import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { WhenPipe } from '../core/format-time';
+import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
-import { RouterLink } from '@angular/router';
+import { FormsModule } from '@angular/forms';
 import {
   ApiService,
+  DashboardAddress,
   LocalCaReport,
   LocalCaRotationPlan,
   OperationState,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { CopyCode } from '../ui/copy-code';
+import { Dialog } from '../ui/dialog';
+import { ariaSort, nextSort, SortState, sortRows } from '../core/sort';
+import { Loading } from '../ui/loading';
+import { OperationProgress } from '../ui/operation-progress';
+import { SessionService } from '../auth/session.service';
+import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
 
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
 
@@ -112,13 +121,12 @@ export const TRUST_GUIDES: TrustGuide[] = [
  * arrives over your signed-in session. The private key is never shown.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [FormsModule, OperationProgress, Loading, Permit, StateMessage, CopyCode, WhenPipe, Dialog],
   selector: 'app-trust',
   templateUrl: './trust.html',
   styles: [
-    'button, a.button { min-height: 44px; }',
     'code, pre { overflow-wrap: anywhere; white-space: pre-wrap; }',
-    '.fingerprint { font-family: monospace; font-size: 1.1em; }',
+    '.fingerprint { font-family: var(--font-mono); }',
   ],
 })
 export class Trust implements OnInit, OnDestroy {
@@ -132,13 +140,85 @@ export class Trust implements OnInit, OnDestroy {
   protected readonly error = signal<string | null>(null);
   protected readonly notice = signal<string | null>(null);
   protected readonly plan = signal<LocalCaRotationPlan | null>(null);
+  /** The plan approved here, kept as its stamped permit (S309). */
+  protected readonly approved = signal<ApprovedPlan | null>(null);
+  /** Why the appliance would not approve the plan on screen. */
+  protected readonly refused = signal<string | null>(null);
+  private readonly sessions = inject(SessionService);
   protected readonly confirmed = signal(false);
   protected readonly operationId = signal<number | null>(null);
   protected readonly operation = signal<OperationState | null>(null);
   private stream?: Subscription;
 
+  protected readonly sort = signal<SortState | null>(null);
+  protected readonly sortedLeaves = computed(() =>
+    sortRows(this.report()?.leaves ?? [], this.sort(), (leaf, key) =>
+      key === 'status' ? leaf.status : key === 'expires' ? (leaf.not_after ?? '') : leaf.host,
+    ),
+  );
+
+  protected sortBy(key: string): void {
+    this.sort.set(nextSort(this.sort(), key));
+  }
+
+  protected ariaFor(key: string): 'ascending' | 'descending' | 'none' {
+    return ariaSort(this.sort(), key);
+  }
+
+  protected dirFor(key: string): string {
+    return this.sort()?.key === key ? this.sort()!.dir : '';
+  }
+
+  /** Badge for a leaf status: ok is fine, renewal-due is a heads-up, the rest need action. */
+  protected leafBadge(status: string): string {
+    if (status === 'ok') return 'badge-ok';
+    if (status === 'renewal-due') return 'badge-warn';
+    return 'badge-fail';
+  }
+
   ngOnInit(): void {
     this.load();
+    this.loadAddress();
+  }
+
+  // Dashboard address (S289, ADR-035): the names the dashboard answers on
+  // from other devices on the network. The .local name is listed first.
+  protected readonly address = signal<DashboardAddress | null>(null);
+  protected readonly addressName = signal('');
+  protected readonly addressExposure = signal<'local' | 'overlay'>('local');
+  protected readonly addressError = signal<string | null>(null);
+
+  /** The hosts-file line for a device without router DNS. */
+  protected hostsLine(a: DashboardAddress): string {
+    return `<appliance IP address>  ${a.name}`;
+  }
+
+  loadAddress(): void {
+    this.api.dashboardAddress().subscribe({
+      next: (a) => {
+        this.address.set(a);
+        this.addressName.set(a.name);
+        this.addressExposure.set(a.exposure);
+      },
+      error: (failure: HttpErrorResponse) => this.addressError.set(this.describe(failure)),
+    });
+  }
+
+  saveAddress(): void {
+    this.busy.set(true);
+    this.addressError.set(null);
+    this.api.setDashboardAddress(this.addressName().trim(), this.addressExposure()).subscribe({
+      next: (started) => {
+        this.busy.set(false);
+        this.notice.set(`Setting the dashboard address to ${this.addressName().trim()}.`);
+        this.follow(started.id);
+        this.loadAddress();
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.busy.set(false);
+        this.addressError.set(this.describe(failure));
+      },
+    });
   }
 
   ngOnDestroy(): void {
@@ -162,7 +242,7 @@ export class Trust implements OnInit, OnDestroy {
 
   protected describe(failure: HttpErrorResponse): string {
     if (failure.status === 0) {
-      return 'Cannot reach the Homestead daemon. Check that it is running and try again.';
+      return "Can't reach the appliance. Check that homestead-server is running.";
     }
     const body = failure.error;
     if (typeof body === 'string' && body.trim()) {
@@ -189,13 +269,28 @@ export class Trust implements OnInit, OnDestroy {
     });
   }
 
+  protected readonly confirmingReissueAll = signal(false);
+
+  askReissueAll(): void {
+    this.confirmingReissueAll.set(true);
+  }
+
+  cancelReissueAll(): void {
+    this.confirmingReissueAll.set(false);
+  }
+
+  confirmReissueAll(): void {
+    this.confirmingReissueAll.set(false);
+    this.reissue();
+  }
+
   reissue(host = ''): void {
     this.busy.set(true);
     this.error.set(null);
     this.api.localCaReissue(host).subscribe({
       next: (started) => {
         this.busy.set(false);
-        this.notice.set(host ? `Re-issuing the leaf for ${host}.` : 'Re-issuing every local leaf.');
+        this.notice.set(host ? `Re-issuing the certificate for ${host}.` : 'Re-issuing every local certificate.');
         this.follow(started.id);
       },
       error: (failure: HttpErrorResponse) => {
@@ -205,9 +300,13 @@ export class Trust implements OnInit, OnDestroy {
     });
   }
 
-  previewRotation(): void {
+  previewRotation(keepRefusal = false): void {
     this.error.set(null);
     this.confirmed.set(false);
+    this.approved.set(null);
+    if (!keepRefusal) {
+      this.refused.set(null);
+    }
     this.api.localCaRotationPlan().subscribe({
       next: (plan) => this.plan.set(plan),
       error: (failure: HttpErrorResponse) => this.error.set(this.describe(failure)),
@@ -228,14 +327,19 @@ export class Trust implements OnInit, OnDestroy {
     this.api.localCaRotate(plan.digest).subscribe({
       next: (started) => {
         this.busy.set(false);
+        this.refused.set(null);
+        this.approved.set(
+          approvedPlan('Rotate the root', plan.digest, plan.devices_must_retrust, this.sessions.username()),
+        );
         this.plan.set(null);
         this.notice.set('Root rotation started. Every device must trust the new root.');
         this.follow(started.id);
       },
       error: (failure: HttpErrorResponse) => {
         this.busy.set(false);
-        this.error.set(this.describe(failure));
-        this.previewRotation();
+        // A fresh preview replaces the plan; the refusal goes on its permit (S309).
+        this.refused.set(this.describe(failure));
+        this.previewRotation(true);
       },
     });
   }

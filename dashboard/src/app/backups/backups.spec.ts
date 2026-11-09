@@ -1,4 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { By } from '@angular/platform-browser';
+import { provideRouter } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import {
@@ -6,6 +8,7 @@ import {
   HttpTestingController,
 } from '@angular/common/http/testing';
 import { Backups } from './backups';
+import { RecoveryIdentity } from './recovery-identity';
 
 const SCHEDULE = {
   package: 'jellyfin',
@@ -38,6 +41,14 @@ const IDENTITY = {
   acknowledged: false,
 };
 
+const POLICY = {
+  proposed: { time_of_day: '02:00', retain: 7, enabled: true },
+  covered: ['jellyfin'],
+  skipped: [{ package: 'wordcraft', reason: 'Keeps no data on the appliance.' }],
+  time_zone: 'UTC',
+  backup_storage: true,
+};
+
 const JOB = {
   id: 'backup:jellyfin',
   interval_seconds: 86400,
@@ -59,7 +70,7 @@ describe('Backups', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [Backups],
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
     fixture = TestBed.createComponent(Backups);
     http = TestBed.inject(HttpTestingController);
@@ -82,6 +93,7 @@ describe('Backups', () => {
     http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
     http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush(schedules);
+    http.expectOne('/api/v1/backups/policy').flush(POLICY);
     fixture.detectChanges();
   }
 
@@ -89,7 +101,6 @@ describe('Backups', () => {
     http.expectOne('/api/v1/backups/destination').flush({ destination: '/b' });
     http.expectOne('/api/v1/scheduler/jobs').flush(jobs);
     http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
-    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush(schedules);
     fixture.detectChanges();
   }
@@ -106,6 +117,8 @@ describe('Backups', () => {
 
   it('shows destination and schedules', () => {
     load([SCHEDULE]);
+    expect(text()).toContain('Nightly backups');
+    expect(text()).toContain('Covers: jellyfin.');
     expect(text()).toContain('/mnt/backup');
     expect(text()).toContain('Encryption: age, format 2');
     expect(text()).toContain('jellyfin');
@@ -116,10 +129,10 @@ describe('Backups', () => {
   it('shows non-integer hours sensibly and unlimited retention', () => {
     load([{ ...SCHEDULE, interval_seconds: 5400, retain: 0 }]);
     expect(text()).toContain('every 1.5h');
-    expect(text()).toContain('retain all runs');
+    expect(text()).toContain('all runs');
   });
 
-  it('shows empty state and destination errors', () => {
+  it('shows empty state and a not-yet-assigned destination as a state', () => {
     fixture.detectChanges();
     http
       .expectOne('/api/v1/backups/destination')
@@ -128,9 +141,25 @@ describe('Backups', () => {
     http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
     http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush([]);
+    http.expectOne('/api/v1/backups/policy').flush({ ...POLICY, backup_storage: false });
     fixture.detectChanges();
     expect(text()).toContain('No backup schedules yet');
-    expect(text()).toContain('no backup storage assigned');
+    expect(text()).toContain('No backup destination yet.');
+    expect(fixture.nativeElement.querySelector('a[href="/admin/storage"]')).not.toBeNull();
+  });
+
+  it('still shows a destination failure that is not a missing assignment', () => {
+    fixture.detectChanges();
+    http
+      .expectOne('/api/v1/backups/destination')
+      .flush('disk unreadable', { status: 500, statusText: 'x' });
+    http.expectOne('/api/v1/scheduler/jobs').flush([]);
+    http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
+    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
+    http.expectOne('/api/v1/backups/schedules').flush([]);
+    http.expectOne('/api/v1/backups/policy').flush(POLICY);
+    fixture.detectChanges();
+    expect(text()).toContain('disk unreadable');
   });
 
   it('saves a schedule with hours converted to seconds and trimmed text', () => {
@@ -176,9 +205,9 @@ describe('Backups', () => {
     save('jellyfin', '1', ' 3x ', 'chris');
     expect(text()).toContain('Retain must be a whole number');
     save('jellyfin', '1', '7', '');
-    expect(text()).toContain('named actor');
+    expect(text()).toContain('name of the owner');
     save('jellyfin', '1', '7', '   ');
-    expect(text()).toContain('named actor');
+    expect(text()).toContain('name of the owner');
   });
 
   it('surfaces a server rejection on save', () => {
@@ -263,8 +292,8 @@ describe('Backups', () => {
     load([SCHEDULE], '/mnt/backup', [JOB]);
     expect(text()).toContain('Scheduled jobs');
     expect(text()).toContain('backup:jellyfin');
-    expect(text()).toContain('last run 2026-01-02T00:00:00Z');
-    expect(text()).toContain('next due 2026-01-03T00:00:00Z');
+    expect(text()).toContain('2 Jan 2026, 00:00 UTC');
+    expect(text()).toContain('3 Jan 2026, 00:00 UTC');
   });
 
   it('shows job errors, skips, and the empty and error states', () => {
@@ -277,7 +306,7 @@ describe('Backups', () => {
         last_skip_blocking: 9,
       },
     ]);
-    expect(text()).toContain('last run never');
+    expect(text()).toContain('never');
     expect(text()).toContain('Last error: catalog unavailable');
     expect(text()).toContain('operation 9 was still active');
 
@@ -285,7 +314,6 @@ describe('Backups', () => {
     http.expectOne('/api/v1/backups/destination').flush({ destination: '/b' });
     http.expectOne('/api/v1/scheduler/jobs').flush([]);
     http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
-    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush([]);
     fixture.detectChanges();
     expect(text()).toContain('No scheduled jobs.');
@@ -296,7 +324,6 @@ describe('Backups', () => {
       .expectOne('/api/v1/scheduler/jobs')
       .flush('scheduler down', { status: 500, statusText: 'x' });
     http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
-    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush([]);
     fixture.detectChanges();
     expect(text()).toContain('scheduler down');
@@ -322,83 +349,118 @@ describe('Backups', () => {
     http.expectOne('/api/v1/backups/destination').flush({ destination: '/b' });
     http.expectOne('/api/v1/scheduler/jobs').flush([]);
     http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
-    http.expectOne('/api/v1/backups/identity').flush(IDENTITY);
     http.expectOne('/api/v1/backups/schedules').flush([]);
     fixture.detectChanges();
     expect(text()).toContain('not re-encrypted');
   });
 
+  const identityPanel = () =>
+    fixture.debugElement.query(By.directive(RecoveryIdentity)).componentInstance as RecoveryIdentity & {
+      exported(): unknown;
+    };
+  const EXPORT = {
+    identity: 'AGE-SECRET-KEY-TEST',
+    recipient: 'age1appliance',
+    fingerprint: 'aa11',
+    exported_at: 'now',
+    actor: 'chris',
+  };
+
   it('exports the identity only after confirmation and shows it once', () => {
     load([]);
-    fixture.componentInstance.askExport();
+    identityPanel().askExport();
     fixture.detectChanges();
     expect(text()).toContain('audited');
     http.expectNone('/api/v1/backups/identity/export');
-    fixture.componentInstance.confirmExport();
+    identityPanel().confirmExport();
     const req = http.expectOne('/api/v1/backups/identity/export');
     expect(req.request.body).toEqual({ confirm: true });
-    req.flush({
-      identity: 'AGE-SECRET-KEY-TEST',
-      recipient: 'age1appliance',
-      fingerprint: 'aa11',
-      exported_at: 'now',
-      actor: 'chris',
-    });
-    http.expectOne('/api/v1/backups/destination').flush({ destination: '/b' });
-    http.expectOne('/api/v1/scheduler/jobs').flush([]);
-    http.expectOne('/api/v1/backups/recipients').flush(RECIPIENTS);
+    req.flush(EXPORT);
     http.expectOne('/api/v1/backups/identity').flush({ ...IDENTITY, exported: true });
-    http.expectOne('/api/v1/backups/schedules').flush([]);
     fixture.detectChanges();
     expect(text()).toContain('AGE-SECRET-KEY-TEST');
     expect(text()).toContain('Store this offline');
-    fixture.componentInstance.dismissExport();
+    identityPanel().dismissExport();
     fixture.detectChanges();
     expect(text()).not.toContain('AGE-SECRET-KEY-TEST');
+  });
+
+  const ROTATE = {
+    ...EXPORT,
+    identity: 'AGE-SECRET-KEY-ROTATED',
+    fingerprint: 'cc33',
+    previous_fingerprint: 'aa11',
+    rewrapped: 4,
+    already_current: 1,
+    failed: ['pkg/run/x.age'],
+    runs_note: 'runs under /mnt/backup were re-wrapped to the new key',
+  };
+
+  it('rotates the identity only after confirmation and shows the new key once', () => {
+    load([]);
+    identityPanel().askRotate();
+    fixture.detectChanges();
+    expect(text()).toContain('Nothing is deleted');
+    http.expectNone('/api/v1/backups/identity/rotate');
+    identityPanel().confirmRotate();
+    const req = http.expectOne('/api/v1/backups/identity/rotate');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ confirm: true });
+    req.flush(ROTATE);
+    http.expectOne('/api/v1/backups/identity').flush({ ...IDENTITY, exported: true });
+    fixture.detectChanges();
+    expect(text()).toContain('AGE-SECRET-KEY-ROTATED');
+    expect(text()).toContain('4 backup files were re-wrapped');
+    expect(text()).toContain('pkg/run/x.age');
+    identityPanel().acknowledgeExport();
+    http.expectOne('/api/v1/backups/identity/ack').flush({ ...IDENTITY, exported: true, acknowledged: true });
+    http.expectOne('/api/v1/backups/identity').flush({ ...IDENTITY, exported: true, acknowledged: true });
+    fixture.detectChanges();
+    expect(text()).not.toContain('AGE-SECRET-KEY-ROTATED');
+  });
+
+  it('shows a refused rotation as an error and keeps no key', () => {
+    load([]);
+    identityPanel().confirmRotate();
+    http.expectOne('/api/v1/backups/identity/rotate').flush('too many recovery identity exports this hour', {
+      status: 429,
+      statusText: 'Too Many Requests',
+    });
+    fixture.detectChanges();
+    expect(text()).toContain('too many');
+    expect(text()).not.toContain('AGE-SECRET-KEY');
   });
 
   it('keeps the exported key out of storage and drops it on ack or dismiss', () => {
     load([]);
     const setItem = vi.spyOn(Storage.prototype, 'setItem');
-    fixture.componentInstance.confirmExport();
-    http.expectOne('/api/v1/backups/identity/export').flush({
-      identity: 'AGE-SECRET-KEY-TEST',
-      recipient: 'age1appliance',
-      fingerprint: 'aa11',
-      exported_at: 'now',
-      actor: 'chris',
-    });
-    for (const [url, body] of [
-      ['/api/v1/backups/destination', { destination: '/b' }],
-      ['/api/v1/scheduler/jobs', []],
-      ['/api/v1/backups/recipients', RECIPIENTS],
-      ['/api/v1/backups/identity', { ...IDENTITY, exported: true }],
-      ['/api/v1/backups/schedules', []],
-    ] as const) {
-      http.expectOne(url).flush(body);
-    }
+    identityPanel().confirmExport();
+    http.expectOne('/api/v1/backups/identity/export').flush(EXPORT);
+    http.expectOne('/api/v1/backups/identity').flush({ ...IDENTITY, exported: true });
     fixture.detectChanges();
     expect(text()).toContain('AGE-SECRET-KEY-TEST');
-    fixture.componentInstance.acknowledgeExport();
+    identityPanel().acknowledgeExport();
     const ack = http.expectOne('/api/v1/backups/identity/ack');
     expect(ack.request.method).toBe('POST');
     ack.flush({ ...IDENTITY, exported: true, acknowledged: true });
-    for (const [url, body] of [
-      ['/api/v1/backups/destination', { destination: '/b' }],
-      ['/api/v1/scheduler/jobs', []],
-      ['/api/v1/backups/recipients', RECIPIENTS],
-      ['/api/v1/backups/identity', { ...IDENTITY, exported: true, acknowledged: true }],
-      ['/api/v1/backups/schedules', []],
-    ] as const) {
-      http.expectOne(url).flush(body);
-    }
+    http.expectOne('/api/v1/backups/identity').flush({ ...IDENTITY, exported: true, acknowledged: true });
     fixture.detectChanges();
     expect(text()).not.toContain('AGE-SECRET-KEY-TEST');
-    expect(
-      (fixture.componentInstance as unknown as { exported(): unknown }).exported(),
-    ).toBeNull();
+    expect(identityPanel().exported()).toBeNull();
     expect(setItem).not.toHaveBeenCalled();
     expect(JSON.stringify({ ...localStorage })).not.toContain('AGE-SECRET-KEY');
     setItem.mockRestore();
+  });
+
+  it('shows schedule problems next to each field', () => {
+    load([]);
+    save('', '0', 'x', '');
+    const el = fixture.nativeElement as HTMLElement;
+    const hours = el.querySelector('#sched-interval') as HTMLInputElement;
+    expect(hours.getAttribute('aria-invalid')).toBe('true');
+    expect(hours.getAttribute('aria-describedby')).toBe('sched-interval-error');
+    expect(el.querySelector('#sched-app-error')?.textContent).toContain('Enter the app');
+    expect(el.querySelector('#sched-retain-error')?.textContent).toContain('Retain must be');
+    expect(el.querySelectorAll('.field-error').length).toBe(4);
   });
 });

@@ -30,7 +30,7 @@ const STATUS = {
       volume: 'old1',
       package: 'jellyfin',
       service: 'jellyfin',
-      target: '/config',
+      target: '/admin/config',
       size_bytes: 5,
       state: 'pending-removal',
     },
@@ -89,8 +89,8 @@ describe('DataMigration', () => {
 
   it('shows placement states and pending old volumes', () => {
     load();
-    expect(text()).toContain('nextcloud: needs-migration');
-    expect(text()).toContain('jellyfin: placed');
+    expect(text()).toContain('nextcloud Needs migrating');
+    expect(text()).toContain('jellyfin On mounted storage');
     expect(text()).toContain('old1');
     expect(buttons('Review migration plan').length).toBe(1);
   });
@@ -118,12 +118,15 @@ describe('DataMigration', () => {
     });
     request.flush({ id: 9 });
     fixture.detectChanges();
-    expect(text()).toContain('operation 9');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/9"]')).not.toBeNull();
   });
 
   it('removes old volumes only on the explicit action', () => {
     load();
     buttons('Remove old volumes')[0].click();
+    fixture.detectChanges();
+    http.expectNone('/api/v1/data-migrations/jellyfin/remove-volumes');
+    buttons('Confirm remove volumes')[0].click();
     const request = http.expectOne('/api/v1/data-migrations/jellyfin/remove-volumes');
     expect(request.request.body).toEqual({ volumes: ['old1'] });
     request.flush({ id: 4 });

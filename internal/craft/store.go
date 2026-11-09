@@ -185,6 +185,25 @@ func scanImage(r scanner) (Image, error) {
 // audited override.
 var ErrBaselineLowered = errors.New("craft: a newer manifest was recorded meanwhile; the baseline would move backwards")
 
+// putBridgeImage records an Everything bridge image (ADR-057). It has no
+// manifest counter, so the craft baseline and high-water mark are untouched.
+func (s *Store) putBridgeImage(img Image) error {
+	at := img.BuiltAt
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	_, err := s.db.Exec(`INSERT INTO craft_images (app, version, tag, image_id, counter, key_id, artifact_sha256, context_digest, manifest_sha256, built_at)
+		VALUES (?, ?, ?, ?, 0, '', ?, ?, '', ?)
+		ON CONFLICT(app, version) DO UPDATE SET tag = excluded.tag, image_id = excluded.image_id, counter = 0, key_id = '',
+			artifact_sha256 = excluded.artifact_sha256, context_digest = excluded.context_digest, manifest_sha256 = '',
+			built_at = excluded.built_at`,
+		img.App, img.Version, img.Tag, img.ImageID, img.ArtifactSHA256, img.ContextDigest, at.Format(time.RFC3339Nano))
+	if err != nil {
+		return fmt.Errorf("craft: record image: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) putImage(img Image, override bool) error {
 	tx, err := s.db.Begin()
 	if err != nil {

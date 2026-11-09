@@ -1,10 +1,12 @@
 <section aria-label="App data placement">
-  <h2>App data</h2>
+  <header class="masthead">
+    <h1>App data</h1>
+    <p class="masthead-fact">Move app data out of Docker volumes onto mounted storage.</p>
+  </header>
   <p>
-    Apps installed before data placement keep their data in Docker volumes,
-    outside mounted storage and outside backups. Migrating copies it onto
-    mounted storage while the app is stopped; old volumes are kept until you
-    remove them.
+    Apps installed before data placement keep their data in Docker volumes, outside mounted storage
+    and outside backups. Migrating copies it onto mounted storage while the app is stopped. The old
+    volumes stay until you remove them.
   </p>
 
   @if (error()) {
@@ -12,101 +14,137 @@
   }
 
   @if (operationId(); as id) {
-    <p>
-      Started.
-      <a [routerLink]="['/operations', id]">Follow operation {{ id }}</a>
-    </p>
+    @if (approved(); as a) {
+      <app-permit [heading]="a.heading" [digest]="a.digest" [approval]="a.approval">
+        <p>{{ a.summary }}</p>
+      </app-permit>
+    }
+    <app-operation-progress [id]="id" />
   }
 
-  <button type="button" (click)="refresh()" [disabled]="busy()">Refresh</button>
+  <section class="field-panel" aria-label="App data placement list">
+    <button type="button" (click)="refresh()" [disabled]="busy()">Refresh</button>
 
-  @if (busy() && data().apps.length === 0) {
-    <app-state-message kind="loading" headline="Loading…" />
-  } @else {
-    <ul>
-      @for (app of data().apps; track app.package) {
-        <li>
-          <h3>{{ app.package }}: {{ app.state }}</h3>
-          @if (app.reason) {
-            <p>{{ app.reason }}</p>
-          }
-          <ul>
-            @for (finding of app.findings; track finding.service + finding.target) {
-              <li>
-                {{ finding.service }} {{ finding.target }}: {{ finding.state }}
-                ({{ finding.kind }}{{ finding.volume ? ' ' + finding.volume : '' }})
-              </li>
+    <app-loading [loading]="busy() && data().apps.length === 0" shape="list">
+      @if (!(busy() && data().apps.length === 0)) {
+        @for (app of data().apps; track app.package) {
+          <section class="field-panel" [attr.aria-labelledby]="'data-' + app.package">
+            <h2 [id]="'data-' + app.package">{{ app.package }}
+              <span class="badge" [class]="stateBadge(app.state)">{{ stateLabel(app.state) }}</span>
+            </h2>
+            @if (app.reason) {
+              <p>{{ app.reason }}</p>
             }
-          </ul>
-          @if (app.state === 'needs-migration') {
-            <button type="button" (click)="reviewPlan(app.package)" [disabled]="busy()">
-              Review migration plan
-            </button>
-          }
-          @if (pendingVolumes(app.package).length > 0) {
-            <h4>Old volumes pending removal</h4>
             <ul>
-              @for (volume of pendingVolumes(app.package); track volume.volume) {
-                <li>{{ volume.volume }} ({{ volume.target }}, {{ volume.size_bytes }} bytes)</li>
+              @for (finding of app.findings; track finding.service + finding.target) {
+                <li>
+                  {{ finding.service }} {{ finding.target }}: {{ finding.state }}
+                  ({{ finding.kind }}{{ finding.volume ? ' ' + finding.volume : '' }})
+                </li>
               }
             </ul>
-            <button type="button" (click)="removeVolumes(app.package)" [disabled]="busy()">
-              Remove old volumes
-            </button>
-          }
-          @if (plan(); as p) {
-            @if (planFor() === app.package) {
-              <div aria-label="Migration plan">
-                <h4>Migration plan</h4>
-                <ul>
-                  @for (item of p.items; track item.dest) {
-                    <li>
-                      {{ item.service }} {{ item.target }}: {{ item.source }} →
-                      {{ item.dest }} ({{ item.size_bytes }} bytes)
-                    </li>
-                  }
-                </ul>
-                @for (space of p.space; track space.mountpoint) {
-                  <p>
-                    {{ space.mountpoint }}: needs {{ space.needed_bytes }} bytes,
-                    {{ space.free_bytes }} free
-                  </p>
-                }
-                <p>Expected downtime: about {{ p.estimated_downtime_seconds }} seconds.</p>
-                @for (note of p.notes; track note) {
-                  <p>{{ note }}</p>
-                }
-                @if (p.backup.possible) {
-                  <p>A pre-migration backup will run to {{ p.backup.destination }}.</p>
-                } @else {
-                  <p class="warning">
-                    A pre-migration backup is not possible: {{ p.backup.reason }}
-                  </p>
-                  <label>
-                    <input
-                      type="checkbox"
-                      name="acknowledge-no-backup"
-                      [checked]="acknowledged()"
-                      (change)="setAcknowledged($any($event.target).checked)"
-                    />
-                    I understand and want to migrate without a backup
-                  </label>
-                }
-                <button
-                  type="button"
-                  (click)="approve()"
-                  [disabled]="busy() || (!p.backup.possible && !acknowledged())"
-                >
-                  Approve migration
-                </button>
-                <button type="button" (click)="cancelPlan()">Cancel</button>
+            @if (app.state === 'needs-migration') {
+              <button type="button" (click)="reviewPlan(app.package)" [disabled]="busy()">
+                Review migration plan
+              </button>
+            }
+            @if (pendingVolumes(app.package).length > 0) {
+              <div class="risky">
+                <h3>Old volumes pending removal</h3>
+                <div class="table-scroll">
+                  <table [attr.aria-label]="'Old volumes for ' + app.package">
+                    <thead>
+                      <tr><th scope="col">Volume</th><th scope="col">Used for</th><th scope="col" class="num">Size</th></tr>
+                    </thead>
+                    <tbody>
+                      @for (volume of pendingVolumes(app.package); track volume.volume) {
+                        <tr>
+                          <th scope="row" class="mono">{{ volume.volume }}</th>
+                          <td class="mono">{{ volume.target }}</td>
+                          <td class="num">{{ volume.size_bytes }} bytes</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+                <p class="risky-preview">
+                  What changes: these Docker volumes are deleted for good. The copy on mounted storage
+                  is not touched.
+                </p>
+                <div class="risky-actions">
+                  <button type="button" class="danger quiet" (click)="askRemoveVolumes(app.package)" [disabled]="busy()">
+                    Remove old volumes
+                  </button>
+                </div>
               </div>
             }
-          }
-        </li>
-      } @empty {
-        <li>No installed apps.</li>
+            @if (plan(); as p) {
+              @if (planFor() === app.package) {
+                <app-permit [heading]="'Move the data of ' + app.package" [digest]="p.digest" [refusal]="refused()" label="Migration plan">
+                  <h4>Will change</h4>
+                  <ul>
+                    @for (item of p.items; track item.dest) {
+                      <li>
+                        {{ item.service }} {{ item.target }}: from {{ item.source }} to
+                        {{ item.dest }} ({{ item.size_bytes }} bytes)
+                      </li>
+                    }
+                  </ul>
+                  @for (space of p.space; track space.mountpoint) {
+                    <p>
+                      {{ space.mountpoint }}: needs {{ space.needed_bytes }} bytes,
+                      {{ space.free_bytes }} free
+                    </p>
+                  }
+                  <p>Expected downtime: about {{ p.estimated_downtime_seconds }} seconds.</p>
+                  @for (note of p.notes; track note) {
+                    <p>{{ note }}</p>
+                  }
+                  @if (p.backup.possible) {
+                    <p>A pre-migration backup will run to {{ p.backup.destination }}.</p>
+                  } @else {
+                    <p class="warning">
+                      A pre-migration backup is not possible: {{ p.backup.reason }}
+                    </p>
+                    <label>
+                      <input
+                        type="checkbox"
+                        name="acknowledge-no-backup"
+                        [checked]="acknowledged()"
+                        (change)="setAcknowledged($any($event.target).checked)"
+                      />
+                      I understand and want to migrate without a backup
+                    </label>
+                  }
+                  <button
+                    type="button"
+                    (click)="approve()"
+                    [disabled]="busy() || (!p.backup.possible && !acknowledged())"
+                  >
+                    Approve migration
+                  </button>
+                  <button type="button" (click)="cancelPlan()">Cancel</button>
+                </app-permit>
+              }
+            }
+          </section>
+        } @empty {
+          <app-state-message kind="empty" headline="No installed apps." detail="Install an app from the catalog and its data placement shows here." actionLabel="Browse the catalog" actionLink="/admin/catalog" />
+        }
       }
-    </ul>
+    </app-loading>
+  </section>
+
+  @if (confirmingVolumes(); as name) {
+    <app-dialog heading="Remove old volumes?" variant="danger" (dismissed)="cancelRemoveVolumes()">
+      <p>
+        This deletes the old Docker volumes of {{ name }} for good. Make sure the copy on mounted
+        storage works before you continue.
+      </p>
+      <div class="dialog-actions">
+        <button type="button" class="danger" (click)="confirmRemoveVolumes()" [disabled]="busy()">Confirm remove volumes</button>
+        <button type="button" class="quiet" (click)="cancelRemoveVolumes()" [disabled]="busy()">Cancel</button>
+      </div>
+    </app-dialog>
   }
 </section>

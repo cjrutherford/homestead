@@ -1,0 +1,319 @@
+/* Base document styles (S282): type, links, focus, lists, code. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background: var(--background);
+  /*
+   * Back and forward put the page back at its exact earlier position (see
+   * core/scroll-restore.ts). Browser scroll anchoring would then move it again
+   * when a section above the viewport finishes loading (S284 KVM review:
+   * Updates came back 600px too far down).
+   */
+  overflow-anchor: none;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  font-family: var(--font-body);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-body);
+  color: var(--foreground);
+  background: var(--background);
+  overflow-wrap: break-word;
+}
+
+/* One h1 per page; the brand is the site name, not a heading. h1 and h2
+   are in the display face (S309): signage voice, sentence case. */
+h1,
+h2,
+h3,
+h4 {
+  margin: var(--spacing-lg) 0 var(--spacing-sm);
+  font-weight: 700;
+  line-height: var(--line-height-tight);
+  text-wrap: balance;
+}
+
+h1,
+h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: var(--tracking-display);
+}
+
+h1 {
+  margin-top: 0;
+  font-size: clamp(var(--font-size-xxl), 5vw + 1rem, var(--font-size-display));
+  line-height: var(--line-height-display);
+}
+
+h2 {
+  font-size: var(--font-size-xl);
+  line-height: 1.15;
+  margin-top: var(--spacing-xl);
+}
+
+h3 {
+  font-size: var(--font-size-lg);
+}
+
+h4 {
+  font-size: var(--font-size-base);
+}
+
+p {
+  margin: 0 0 var(--spacing-md);
+  max-width: var(--measure);
+}
+
+ul,
+ol {
+  margin: 0 0 var(--spacing-md);
+  padding-inline-start: var(--spacing-lg);
+}
+
+li {
+  margin-bottom: var(--spacing-xs);
+}
+
+a {
+  color: var(--link);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  color: var(--link-hover);
+  text-decoration-thickness: 0.14em;
+}
+
+strong {
+  font-weight: 700;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: var(--spacing-lg) 0;
+}
+
+/* Code-like values only: hostnames, fingerprints, commands, IDs. */
+code,
+kbd,
+samp,
+pre,
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.94em;
+}
+
+/* Code and logs are detail: cut into their plate as wells (S310). */
+code {
+  padding: 0.08em 0.35em;
+  background: var(--surface-sunken);
+  border-radius: var(--border-radius-sm);
+  overflow-wrap: anywhere;
+}
+
+pre {
+  margin: 0 0 var(--spacing-md);
+  padding: var(--spacing-md);
+  max-width: 100%;
+  overflow-x: auto;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  box-shadow: var(--elevation-well);
+}
+
+pre code {
+  padding: 0;
+  background: none;
+}
+
+.mono {
+  overflow-wrap: anywhere;
+}
+
+/* Focus: one visible ring in every theme, lit (S310): the outline plus a
+   soft halo of the ring's own colour. High contrast keeps the outline only. */
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  box-shadow: var(--glow-focus);
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Definition lists are ledgers (S309): small type, muted labels set
+   right against a hairline, ink values. They stack on narrow screens.
+   S310: a ledger is detail, so it sits in a well cut into its plate. */
+dl {
+  margin: 0 0 var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  background: var(--surface-sunken);
+  border-radius: var(--radius-control);
+  box-shadow: var(--elevation-well);
+}
+
+dl > div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 14rem) minmax(0, 1fr);
+  gap: var(--spacing-xs) var(--spacing-md);
+  padding: var(--spacing-xs) 0;
+}
+
+dt {
+  color: var(--muted);
+}
+
+dl > div > dt {
+  padding-inline-end: var(--spacing-md);
+  text-align: end;
+  border-inline-end: 1px solid var(--border);
+}
+
+dl > div + div {
+  border-top: 1px solid var(--border);
+}
+
+dd {
+  margin: 0;
+}
+
+details {
+  margin: 0 0 var(--spacing-md);
+}
+
+summary {
+  min-height: var(--touch-target);
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+/* Disclosures: a chevron so they read as controls. It turns when open; nothing animates. */
+.wizard-body summary-unused::before {
+  content: '';
+  flex: none;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-inline-end: var(--spacing-sm);
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+details[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Notes and callouts used by pages. */
+.hint,
+.stateless {
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+}
+
+.plan-note {
+  padding-inline-start: var(--spacing-md);
+  border-inline-start: 3px solid var(--border-strong);
+  color: var(--muted);
+}
+
+.warning {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: flex-start;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--warn-bg);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-inline-start: 4px solid var(--warn);
+  border-radius: var(--radius-control);
+}
+
+.warning::before {
+  content: '';
+  flex: none;
+  width: 1.1em;
+  height: 1.55em;
+  background: var(--warn);
+  mask: var(--glyph-warn) center / 1.1em no-repeat;
+  -webkit-mask: var(--glyph-warn) center / 1.1em no-repeat;
+}
+
+/* Audit entries read as ledger rows. */
+ul:has(> .audit-entry) {
+  padding: 0;
+  list-style: none;
+}
+
+.audit-entry {
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.audit-entry .badge {
+  margin-inline-end: var(--spacing-xs);
+}
+
+.audit-entry p {
+  margin: var(--spacing-xs) 0 0;
+}
+
+/* Fields wrapping a schema-driven input. */
+.field {
+  margin-bottom: var(--spacing-md);
+}
+
+.fingerprint {
+  font-size: 1.05em;
+}
+
+/* Motion respects the owner. Control state changes are the only
+   transitions today; S283 adds the rest through the motion tokens. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 39.9375rem) {
+  dl > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: var(--spacing-xs) 0;
+  }
+
+  dl > div > dt {
+    padding: 0;
+    text-align: start;
+    border: 0;
+  }
+}

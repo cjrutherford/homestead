@@ -37,6 +37,9 @@ var containerEnv = func(ctx context.Context, container, name string) (string, bo
 // plainEnvNames lists the plaintext variables a secret consumer
 // replaces: its own name and, for `*_FILE` forms, the plain variable.
 func plainEnvNames(c SecretConsumer) []string {
+	if c.Env == "" {
+		return nil
+	}
 	names := []string{c.Env}
 	if plain := strings.TrimSuffix(c.Env, "_FILE"); plain != c.Env {
 		names = append(names, plain)
@@ -149,13 +152,13 @@ func AdoptWiring(raw string, m Manifest) (string, error) {
 			if old := mapValue(node, "secrets"); old != nil && old.Kind == yaml.SequenceNode {
 				seq.Content = append(seq.Content, old.Content...)
 			}
-			for _, key := range secrets {
+			for _, ref := range secrets {
 				present := false
 				for _, e := range seq.Content {
-					present = present || e.Value == key
+					present = present || e.Value == ref.Key || secretRefSource(e) == ref.Key
 				}
 				if !present {
-					seq.Content = append(seq.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key})
+					seq.Content = append(seq.Content, ref.node())
 				}
 			}
 			setMapValue(node, "secrets", seq)
@@ -293,6 +296,13 @@ func adoptSteps(m Manifest, dir, project string, st *store.Store, src SecretStor
 		}},
 		{Name: "verify-secrets", Run: func(ctx context.Context) error {
 			if m.Database == nil || m.Database.PasswordSecret == "" {
+				return nil
+			}
+			// Password verification is Postgres-only for now. An
+			// adopted MariaDB/MySQL stack still proves itself by
+			// starting; refusing verification here would block every
+			// adoption of those engines.
+			if m.Database.Kind != DatabasePostgres {
 				return nil
 			}
 			pw, err := src.Get(SecretStoreName(m.Name, m.Database.PasswordSecret))

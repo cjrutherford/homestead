@@ -1,9 +1,11 @@
 <section aria-label="Backups">
-  <h2>Backups</h2>
+  <header class="masthead">
+    <h1>Backups</h1>
+    <p class="masthead-fact">Where backups land, when they run and who can read them.</p>
+  </header>
   <p>
-    Backups land on the storage you assigned the backup class. These
-    controls configure destination and schedules; they do not run a
-    backup.
+    Backups land on the storage you gave the backup class. These controls set schedules and who can
+    read backups. They do not run a backup.
   </p>
 
   @if (error()) {
@@ -13,254 +15,303 @@
     <app-state-message kind="status" [headline]="notice()" />
   }
 
-  <h3>Destination</h3>
-  @if (destination(); as root) {
-    <p>Backup root: <code class="backup-root">{{ root }}</code></p>
-    @if (encryption(); as scheme) {
-      <p>Encryption: <span class="backup-encryption">{{ scheme }}</span></p>
-    }
-  } @else if (destinationError()) {
-    <app-state-message kind="error" [headline]="destinationError()" />
-  } @else {
-    <app-state-message kind="loading" headline="Resolving destination…" />
-  }
-
-  <h3>Recipients and recovery</h3>
-  <p>
-    Every new backup run is encrypted to the appliance identity and to each
-    owner recipient below. Existing runs are not re-encrypted. The appliance
-    identity lives only on this appliance, so add a recipient whose private
-    key you hold, or export the recovery identity and store it offline.
-  </p>
-  @if (recipientsError()) {
-    <app-state-message kind="error" [headline]="recipientsError()" />
-  } @else if (recipients(); as view) {
-    @if (!view.owner_held) {
-      <app-state-message
-        kind="status"
-        headline="No owner-held recipient and no recorded export: if this appliance is lost, backups cannot be read."
-      />
-    }
-    <ul aria-label="Backup recipients">
-      @for (row of view.recipients; track row.fingerprint) {
-        <li>
-          <strong>{{ row.kind === 'appliance' ? 'Appliance identity' : (row.label || 'Owner recipient') }}</strong>
-          <code>{{ row.public_key }}</code> ({{ row.fingerprint }})
-          @if (row.kind === 'owner') {
-            @if (confirmingRecipient() === row.fingerprint) {
-              <span role="alertdialog" [attr.aria-label]="'Confirm removal of recipient ' + row.fingerprint">
-                Remove this recipient? Later runs will not be readable by it.
-                <button type="button" (click)="removeRecipient(row.fingerprint)" [disabled]="busy()">
-                  Confirm remove recipient
-                </button>
-                <button type="button" (click)="cancelRemoveRecipient()" [disabled]="busy()">Cancel</button>
-              </span>
-            } @else {
-              <button type="button" (click)="askRemoveRecipient(row.fingerprint)" [disabled]="busy()">
-                Remove recipient
-              </button>
-            }
-          }
-        </li>
+  <section class="field-panel" aria-labelledby="backups-destination">
+    <h2 id="backups-destination">Destination</h2>
+    <app-loading [loading]="!destination() && !destinationError() && !destinationUnset()" shape="lines">
+    @if (destination(); as root) {
+      <p>Backup root: <code class="backup-root">{{ root }}</code></p>
+      @if (encryption(); as scheme) {
+        <p>Encryption: <span class="backup-encryption">{{ scheme }}</span></p>
       }
-    </ul>
-  } @else {
-    <app-state-message kind="loading" headline="Loading recipients…" />
-  }
-  <form
-    (submit)="addRecipient(recipientKey.value, recipientLabel.value); $event.preventDefault()"
-  >
-    <label>
-      Recipient public key (age1…)
-      <input #recipientKey name="recipient-key" autocomplete="off" [disabled]="busy()" />
-    </label>
-    <label>
-      Label
-      <input #recipientLabel name="recipient-label" autocomplete="off" [disabled]="busy()" />
-    </label>
-    <button type="submit" [disabled]="busy()">Add recipient</button>
-  </form>
-
-  <h4>Recovery identity</h4>
-  @if (identity(); as status) {
-    @if (!status.created) {
-      <p>The appliance identity is created by the first backup or by the first export.</p>
+    } @else if (destinationUnset()) {
+      <app-state-message
+        kind="empty"
+        headline="No backup destination yet."
+        detail="Backups land on the storage you assign the backup class to. Assign it on the Storage page, then come back."
+        actionLabel="Go to Storage"
+        actionLink="/admin/storage"
+      />
+    } @else if (destinationError()) {
+      <app-state-message kind="error" [headline]="destinationError()" />
     }
+    </app-loading>
+  </section>
+
+  <section class="field-panel" aria-labelledby="backups-nightly">
+    <h2 id="backups-nightly">Nightly backups</h2>
     <p>
-      @if (status.exported) {
-        Exported by {{ status.exported_by }} at {{ status.exported_at }}.
-        @if (status.acknowledged) {
-          Confirmed stored offline at {{ status.acknowledged_at }}.
-        } @else {
-          Not yet confirmed stored offline: the warning stays until you export again and confirm.
-        }
-      } @else {
-        Never exported.
-      }
+      One policy backs up every installed app that keeps data, every night. Apps with their own schedule
+      below keep it instead.
     </p>
-  }
-  @if (exported(); as result) {
-    <div role="alert" aria-label="Exported recovery identity">
-      <app-state-message
-        kind="status"
-        headline="Store this offline, off this appliance. It is shown once and cannot be shown again here."
-      />
-      <pre class="backup-root">{{ result.identity }}</pre>
-      <button type="button" (click)="copyExport()">Copy</button>
-      <button type="button" (click)="downloadExport()">Download</button>
-      <button type="button" (click)="acknowledgeExport()" [disabled]="busy()">
-        I have stored this key offline
-      </button>
-      <button type="button" (click)="dismissExport()">Dismiss without confirming</button>
-    </div>
-  } @else if (confirmingExport()) {
-    <span role="alertdialog" aria-label="Confirm identity export">
-      This reveals the key that decrypts every backup, and the export is
-      audited. Continue?
-      <button type="button" (click)="confirmExport()" [disabled]="busy()">Confirm export</button>
-      <button type="button" (click)="cancelExport()" [disabled]="busy()">Cancel</button>
-    </span>
-  } @else {
-    <button type="button" (click)="askExport()" [disabled]="busy()">
-      Export recovery identity
-    </button>
-  }
+    <app-nightly-policy />
+  </section>
 
-  <h3>Schedules</h3>
-  <button type="button" (click)="refresh()" [disabled]="loading() || busy()">
-    Refresh
-  </button>
-  @if (loading() && schedules().length === 0) {
-    <app-state-message kind="loading" headline="Loading schedules…" />
-  } @else {
-    <ul>
-      @for (row of schedules(); track row.package) {
-        <li>
-          <strong>{{ row.package }}</strong>
-          @if (row.stateless) {
-            stateless (no-op: keeps nothing on the appliance, no job runs)
-          } @else {
-            every {{ hours(row.interval_seconds) }}, retain {{ row.retain === 0 ? 'all runs' : row.retain }},
-            {{ row.enabled ? 'enabled' : 'disabled' }}, by {{ row.actor }}
-          }
-          <button type="button" (click)="inspect(row.package)">Inspect</button>
-          @if (confirmingRemove() === row.package) {
-            <span role="alertdialog" [attr.aria-label]="'Confirm removal of ' + row.package">
-              Remove the schedule for {{ row.package }}?
-              <button type="button" (click)="remove(row.package)" [disabled]="busy()">
-                Confirm remove
-              </button>
-              <button type="button" (click)="cancelRemove()" [disabled]="busy()">
-                Cancel
-              </button>
-            </span>
-          } @else {
-            <button type="button" (click)="askRemove(row.package)" [disabled]="busy()">
-              Remove
-            </button>
-          }
-        </li>
-      } @empty {
-        <li>
-          <app-state-message kind="empty" headline="No backup schedules yet." />
-        </li>
+  <section class="field-panel" aria-labelledby="backups-recipients">
+    <h2 id="backups-recipients">Recipients and recovery</h2>
+    <p>
+      Every new backup run is encrypted to the appliance identity and to each
+      owner recipient below. Existing runs are not re-encrypted. The appliance
+      identity lives only on this appliance, so add a recipient whose private
+      key you hold, or export the recovery identity and store it offline.
+    </p>
+    <app-loading [loading]="!recipients() && !recipientsError()" shape="list">
+    @if (recipientsError()) {
+      <app-state-message kind="error" [headline]="recipientsError()" />
+    } @else if (recipients(); as view) {
+      @if (!view.owner_held) {
+        <app-state-message
+          kind="warning"
+          headline="No owner-held recipient and no recorded export: if this appliance is lost, backups cannot be read."
+        />
       }
-    </ul>
-  }
+      <ul aria-label="Backup recipients">
+        @for (row of view.recipients; track row.fingerprint) {
+          <li>
+            <strong>{{ row.kind === 'appliance' ? 'Appliance identity' : (row.label || 'Owner recipient') }}</strong>
+            <code>{{ row.public_key }}</code> ({{ row.fingerprint }})
+            @if (row.kind === 'owner') {
+              @if (confirmingRecipient() === row.fingerprint) {
+                <app-dialog heading="Remove this recipient?" variant="danger" (dismissed)="cancelRemoveRecipient()">
+                  <p>Later runs will not be readable by recipient <span class="mono">{{ row.fingerprint }}</span>.</p>
+                  <div class="dialog-actions">
+                    <button type="button" class="danger" (click)="removeRecipient(row.fingerprint)" [disabled]="busy()">
+                      Confirm remove recipient
+                    </button>
+                    <button type="button" class="quiet" (click)="cancelRemoveRecipient()" [disabled]="busy()">Cancel</button>
+                  </div>
+                </app-dialog>
+              } @else {
+                <button type="button" (click)="askRemoveRecipient(row.fingerprint)" [disabled]="busy()">
+                  Remove recipient
+                </button>
+              }
+            }
+          </li>
+        }
+      </ul>
+    }
+    </app-loading>
+    <form
+      (submit)="addRecipient(recipientKey.value, recipientLabel.value); $event.preventDefault()"
+    >
+      <label>
+        Recipient public key (age1…)
+        <input #recipientKey name="recipient-key" autocomplete="off" [disabled]="busy()" />
+      </label>
+      <label>
+        Label
+        <input #recipientLabel name="recipient-label" autocomplete="off" [disabled]="busy()" />
+      </label>
+      <button type="submit" [disabled]="busy()">Add recipient</button>
+    </form>
+
+    <app-recovery-identity />
+  </section>
+
+  <section class="field-panel" aria-labelledby="backups-schedules">
+    <h2 id="backups-schedules">Schedules</h2>
+    <button type="button" (click)="refresh()" [disabled]="loading() || busy()">
+      Refresh
+    </button>
+    <app-loading [loading]="loading() && schedules().length === 0" shape="list">
+      @if (schedules().length === 0) {
+        <app-state-message kind="empty" headline="No backup schedules yet." detail="A schedule backs up an installed app on a fixed interval. Install an app from the catalog first." actionLabel="Browse the catalog" actionLink="/admin/catalog" />
+      } @else {
+      <div class="table-scroll">
+        <table aria-label="Backup schedules">
+          <thead>
+            <tr>
+              <th scope="col">App</th>
+              <th scope="col">Interval</th>
+              <th scope="col">Keeps</th>
+              <th scope="col">State</th>
+              <th scope="col">Set by</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of schedules(); track row.package) {
+              <tr>
+                <th scope="row">{{ row.package }}</th>
+                @if (row.stateless) {
+                  <td colspan="4">stateless (no-op: keeps nothing on the appliance, no job runs)</td>
+                } @else {
+                  <td>every {{ hours(row.interval_seconds) }}</td>
+                  <td>{{ row.retain === 0 ? 'all runs' : row.retain + ' runs' }}</td>
+                  <td><span class="badge" [class]="row.enabled ? 'badge-ok' : ''">{{ row.enabled ? 'enabled' : 'disabled' }}</span></td>
+                  <td>{{ row.actor }}</td>
+                }
+                <td>
+                  <button type="button" (click)="inspect(row.package)">Inspect</button>
+                  @if (confirmingRemove() === row.package) {
+                    <app-dialog heading="Remove this schedule?" variant="danger" (dismissed)="cancelRemove()">
+                      <p>Remove the schedule for {{ row.package }}?</p>
+                      <div class="dialog-actions">
+                        <button type="button" class="danger" (click)="remove(row.package)" [disabled]="busy()">
+                          Confirm remove
+                        </button>
+                        <button type="button" class="quiet" (click)="cancelRemove()" [disabled]="busy()">
+                          Cancel
+                        </button>
+                      </div>
+                    </app-dialog>
+                  } @else {
+                    <button type="button" class="danger quiet" (click)="askRemove(row.package)" [disabled]="busy()">
+                      Remove
+                    </button>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      }
+    </app-loading>
+  </section>
 
   @if (inspected(); as one) {
-    <h3>Schedule detail: {{ one.package }}</h3>
-    @if (one.stateless) {
-      <p class="stateless">
-        Stateless: {{ one.package }} keeps nothing on the appliance, so there
-        is nothing to back up. No schedule can be set and no job runs; this is
-        a no-op, not a failure.
+    <section class="field-panel" aria-labelledby="backups-detail">
+      <h2 id="backups-detail">Schedule detail: {{ one.package }}</h2>
+      @if (one.stateless) {
+        <p class="stateless">
+          Stateless: {{ one.package }} keeps nothing on the appliance, so there
+          is nothing to back up. No schedule can be set and no job runs; this is
+          a no-op, not a failure.
+        </p>
+      } @else {
+      <p>
+        Every {{ hours(one.interval_seconds) }}, retain
+        {{ one.retain === 0 ? 'all runs' : one.retain }},
+        {{ one.enabled ? 'enabled' : 'disabled' }}. Last changed by
+        {{ one.actor }}; cadence window anchored at {{ one.updated_at | when }}.
       </p>
-    } @else {
-    <p>
-      Every {{ hours(one.interval_seconds) }}, retain
-      {{ one.retain === 0 ? 'all runs' : one.retain }},
-      {{ one.enabled ? 'enabled' : 'disabled' }}. Last changed by
-      {{ one.actor }}; cadence window anchored at {{ one.updated_at }}.
-    </p>
-    }
-  }
-
-  <h3>Scheduled jobs</h3>
-  <p>
-    Read-only state of the daemon scheduler: when each job last ran, when
-    it is next due, and the last error or skipped run.
-  </p>
-  @if (jobsError()) {
-    <app-state-message kind="error" [headline]="jobsError()" />
-  } @else if (jobsLoading() && jobs().length === 0) {
-    <app-state-message kind="loading" headline="Loading scheduled jobs…" />
-  } @else {
-    <ul aria-label="Scheduled jobs">
-      @for (job of jobs(); track job.id) {
-        <li>
-          <strong>{{ job.id }}</strong>
-          every {{ hours(job.interval_seconds) }},
-          {{ job.enabled ? 'enabled' : 'disabled' }}{{ job.running ? ', running' : '' }};
-          last run {{ when(job.last_run_at) }};
-          next due {{ job.enabled ? when(job.next_due, 'unknown') : 'not scheduled' }}
-          @if (job.last_error) {
-            <app-state-message kind="error" [headline]="'Last error: ' + job.last_error" />
-          }
-          @if (job.unavailable_attempts) {
-            <app-state-message
-              kind="status"
-              [headline]="'Waiting for inputs since ' + when(job.unavailable_since ?? '', 'unknown') + ' (attempt ' + job.unavailable_attempts + '); retrying with backoff.'"
-            />
-          }
-          @if (job.last_skip_blocking) {
-            <app-state-message
-              kind="status"
-              [headline]="'Run skipped at ' + when(job.last_skip_at) + ': operation ' + job.last_skip_blocking + ' was still active.'"
-            />
-          }
-        </li>
-      } @empty {
-        <li>
-          <app-state-message kind="empty" headline="No scheduled jobs." />
-        </li>
       }
-    </ul>
+    </section>
   }
 
-  <h3>Save schedule</h3>
-  <form
-    (submit)="
-      save(
-        packageInput.value,
-        hoursInput.value,
-        retainInput.value,
-        enabledInput.checked,
-        actorInput.value
-      );
-      $event.preventDefault()
-    "
-  >
-    <label>
-      Package
-      <input #packageInput name="package" autocomplete="off" [disabled]="busy()" />
-    </label>
-    <label>
-      Interval (hours)
-      <input #hoursInput name="interval" inputmode="numeric" [disabled]="busy()" />
-    </label>
-    <label>
-      Retain (runs to keep; 0 keeps every run)
-      <input #retainInput name="retain" inputmode="numeric" value="7" [disabled]="busy()" />
-    </label>
-    <label>
-      <input #enabledInput type="checkbox" name="enabled" checked [disabled]="busy()" />
-      Enabled
-    </label>
-    <label>
-      Acting owner
-      <input #actorInput name="actor" autocomplete="off" [disabled]="busy()" />
-    </label>
-    <button type="submit" [disabled]="busy()">Save schedule</button>
-  </form>
+  <section class="field-panel" aria-labelledby="backups-jobs">
+    <h2 id="backups-jobs">Scheduled jobs</h2>
+    <p>
+      What the scheduler is doing: when each job last ran, when it is next due, and the last error or
+      skipped run.
+    </p>
+    @if (jobsError()) {
+      <app-state-message kind="error" [headline]="jobsError()" />
+    } @else {
+      <app-loading [loading]="jobsLoading() && jobs().length === 0" shape="list">
+      @if (!(jobsLoading() && jobs().length === 0)) {
+      @if (jobs().length === 0) {
+        <app-state-message kind="empty" headline="No scheduled jobs." detail="Jobs appear here once a backup schedule is saved." />
+      } @else {
+      <div class="table-scroll">
+        <table aria-label="Scheduled jobs">
+          <thead>
+            <tr>
+              <th scope="col">Job</th>
+              <th scope="col">Interval</th>
+              <th scope="col">State</th>
+              <th scope="col">Last run</th>
+              <th scope="col">Next due</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (job of jobs(); track job.id) {
+              <tr>
+                <th scope="row">{{ job.id }}</th>
+                <td>every {{ hours(job.interval_seconds) }}</td>
+                <td>
+                  <span class="badge" [class]="job.running ? 'badge-running' : job.enabled ? 'badge-ok' : ''">{{ job.running ? 'running' : job.enabled ? 'enabled' : 'disabled' }}</span>
+                </td>
+                <td>{{ when(job.last_run_at) }}</td>
+                <td>{{ job.enabled ? when(job.next_due, 'unknown') : 'not scheduled' }}</td>
+              </tr>
+              @if (job.last_error || job.unavailable_attempts || job.last_skip_blocking) {
+                <tr>
+                  <td colspan="5">
+                    @if (job.last_error) {
+                      <app-state-message kind="error" [headline]="'Last error: ' + job.last_error" />
+                    }
+                    @if (job.unavailable_attempts) {
+                      <app-state-message
+                        kind="warning"
+                        [headline]="'Waiting for inputs since ' + when(job.unavailable_since ?? '', 'unknown') + ' (attempt ' + job.unavailable_attempts + '); retrying with backoff.'"
+                      />
+                    }
+                    @if (job.last_skip_blocking) {
+                      <app-state-message
+                        kind="warning"
+                        [headline]="'Run skipped at ' + when(job.last_skip_at) + ': operation ' + job.last_skip_blocking + ' was still active.'"
+                      />
+                    }
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+      }
+        }
+      </app-loading>
+    }
+  </section>
+
+  <section class="field-panel" aria-labelledby="backups-save">
+    <h2 id="backups-save">Save schedule</h2>
+    <form
+      (submit)="
+        save(
+          packageInput.value,
+          hoursInput.value,
+          retainInput.value,
+          enabledInput.checked,
+          actorInput.value
+        );
+        $event.preventDefault()
+      "
+    >
+      <div class="field">
+        <label for="sched-app">App</label>
+        <input id="sched-app" #packageInput name="package" autocomplete="off" [disabled]="busy()"
+          [attr.aria-invalid]="fieldErrors()['app'] ? 'true' : null"
+          [attr.aria-describedby]="fieldErrors()['app'] ? 'sched-app-error' : null" />
+        @if (fieldErrors()['app']; as message) {
+          <p class="field-error" id="sched-app-error">{{ message }}</p>
+        }
+      </div>
+      <div class="field">
+        <label for="sched-interval">Interval (hours)</label>
+        <input id="sched-interval" #hoursInput name="interval" inputmode="numeric" [disabled]="busy()"
+          [attr.aria-invalid]="fieldErrors()['interval'] ? 'true' : null"
+          [attr.aria-describedby]="fieldErrors()['interval'] ? 'sched-interval-error' : null" />
+        @if (fieldErrors()['interval']; as message) {
+          <p class="field-error" id="sched-interval-error">{{ message }}</p>
+        }
+      </div>
+      <div class="field">
+        <label for="sched-retain">Retain (runs to keep; 0 keeps every run)</label>
+        <input id="sched-retain" #retainInput name="retain" inputmode="numeric" value="7" [disabled]="busy()"
+          [attr.aria-invalid]="fieldErrors()['retain'] ? 'true' : null"
+          [attr.aria-describedby]="fieldErrors()['retain'] ? 'sched-retain-error' : null" />
+        @if (fieldErrors()['retain']; as message) {
+          <p class="field-error" id="sched-retain-error">{{ message }}</p>
+        }
+      </div>
+      <label>
+        <input #enabledInput type="checkbox" name="enabled" checked [disabled]="busy()" />
+        Enabled
+      </label>
+      <div class="field">
+        <label for="sched-actor">Acting owner</label>
+        <input id="sched-actor" #actorInput name="actor" autocomplete="off" [disabled]="busy()"
+          [attr.aria-invalid]="fieldErrors()['actor'] ? 'true' : null"
+          [attr.aria-describedby]="fieldErrors()['actor'] ? 'sched-actor-error' : null" />
+        @if (fieldErrors()['actor']; as message) {
+          <p class="field-error" id="sched-actor-error">{{ message }}</p>
+        }
+      </div>
+      <button type="submit" [disabled]="busy()">Save schedule</button>
+    </form>
+  </section>
 </section>

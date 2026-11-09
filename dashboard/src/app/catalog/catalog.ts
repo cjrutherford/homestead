@@ -1,28 +1,30 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
+import { forkJoin } from 'rxjs';
 import {
   ApiService,
   AppSecret,
+  BundleReport,
   CatalogManifest,
-  InstallPlan,
   PackageSummary,
+  RevealedSecret,
+  WorksWith,
 } from '../core/api.service';
+import { registerPackageTitles } from '../core/operation-labels';
 import { StateMessage } from '../state/state-message';
-import { BrowserAdvisories } from './browser-advisories';
-
-interface VolumeRow {
-  service: string;
-  class: string;
-  subpath: string;
-  target: string;
-  readonly: boolean;
-}
-
-interface NetworkRow {
-  name: string;
-  external: boolean;
-}
+import { AppIcon } from '../ui/app-icon';
+import { Dialog } from '../ui/dialog';
+import { Loading } from '../ui/loading';
+import { OperationProgress } from '../ui/operation-progress';
+import { appRoutes } from './app-routes';
+import { AppPublic } from './app-public';
+import { ReadLinks } from './read-links';
+import { AppMove } from './app-move';
+import { AppSignIn } from './app-sign-in';
+import { AppSetup } from './app-setup';
+import { InstallDrafts } from './install-drafts';
+import { UninstallApp } from './uninstall-app';
 
 interface ConfigRow {
   service: string;
@@ -31,35 +33,50 @@ interface ConfigRow {
 }
 
 /**
- * Catalog install/configure flow (S167): browse first-party packages,
- * review requirements, plan with owner inputs, install through the
- * operation engine, and configure services afterwards. Long executions
- * link out to operation detail for progress; this page never blocks.
+ * The catalog (S167, S285): browse first-party packages. A package that is
+ * not installed starts the install wizard; one that is installed can be
+ * managed here (variables and secrets) or uninstalled. Installing itself
+ * lives in the wizard (`install-wizard.ts`), not on this page.
  */
 @Component({
-  imports: [StateMessage, RouterLink, BrowserAdvisories],
+  imports: [OperationProgress, Loading, StateMessage, RouterLink, UninstallApp, AppSignIn, AppPublic, ReadLinks, AppMove, AppSetup, Dialog, AppIcon],
   selector: 'app-catalog',
   templateUrl: './catalog.html',
 })
 export class Catalog implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly drafts = inject(InstallDrafts);
+
+  /** The owner started an install here and has not finished with its wizard: the wizard picks it back up. */
+  protected settingUp(name: string): boolean {
+    return this.drafts.get(name)?.installOperation != null;
+  }
 
   protected readonly packages = signal<PackageSummary[]>([]);
+  protected readonly bundles = signal<BundleReport[]>([]);
   protected readonly selected = signal<CatalogManifest | null>(null);
-  protected readonly plan = signal<InstallPlan | null>(null);
+  /** Counts finished moves, so the Public address section reads the new route. */
+  protected readonly moves = signal(0);
+  /** The masthead sentence: how many apps are installed, from the list the page reads. */
+  protected readonly fact = computed(() => {
+    const all = this.packages();
+    if (!all.length) {
+      return 'Apps you can install on this appliance.';
+    }
+    const installed = all.filter((p) => p.installed);
+    const lead =
+      installed.length === 0
+        ? 'No apps are installed yet.'
+        : installed.length === 1
+          ? `${installed[0].title} is installed.`
+          : `${installed.length} apps are installed.`;
+    const left = all.length - installed.length;
+    return left ? `${lead} ${left === 1 ? '1 more is' : `${left} more are`} ready to install.` : lead;
+  });
   protected readonly operationId = signal<number | null>(null);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
 
-  protected readonly domain = signal('lan');
-  protected readonly containerPorts = signal<Record<string, string>>({});
-  protected readonly mountpoints = signal<Record<string, string>>({});
-  protected readonly volumes = signal<VolumeRow[]>([]);
-  protected readonly networks = signal<NetworkRow[]>([
-    { name: 'homestead-edge', external: true },
-  ]);
-  protected readonly zone = signal('');
-  protected readonly publicIp = signal('');
   protected readonly configRows = signal<ConfigRow[]>([]);
   protected readonly unsetRows = signal<ConfigRow[]>([]);
   protected readonly appSecrets = signal<AppSecret[]>([]);
@@ -67,59 +84,82 @@ export class Catalog implements OnInit {
   protected readonly skipVerify = signal(false);
   protected readonly force = signal(false);
   protected readonly secretNotice = signal<string | null>(null);
+  /** The secret whose reveal waits for the owner's confirmation (S312). */
+  protected readonly confirmingReveal = signal<string | null>(null);
+  /** A credential the owner chose to read; cleared when hidden or leaving the app. */
+  protected readonly revealed = signal<RevealedSecret | null>(null);
+  /** The managed app's local names (S295); empty until read or when it has none. */
+  protected readonly localNames = signal<string[]>([]);
 
-  /** Installed packages cannot be installed again (S276). */
-  protected isInstalled(): boolean {
-    const name = this.selected()?.Name;
-    return this.packages().some((pkg) => pkg.name === name && pkg.installed === true);
+  /**
+   * Groups resolved integrations by level in ADR-051 order (S341): the
+   * panel reads from co-installation inward, never in manifest order.
+   */
+  protected worksByLevel(works: WorksWith[] | undefined): { level: string; works: WorksWith[] }[] {
+    const groups: { level: string; works: WorksWith[] }[] = [];
+    for (const level of ['L1', 'L2', 'L3', 'L4']) {
+      const members = (works ?? []).filter((work) => work.Level === level);
+      if (members.length > 0) {
+        groups.push({ level, works: members });
+      }
+    }
+    return groups;
   }
 
   ngOnInit(): void {
+    this.reload();
+  }
+
+  protected reload(): void {
     this.busy.set(true);
     this.api.catalogPackages().subscribe({
       next: (packages) => {
         this.busy.set(false);
+        registerPackageTitles(packages);
         this.packages.set(packages);
       },
       error: (failure: HttpErrorResponse) => {
         this.busy.set(false);
-        this.error.set(failure.message);
+        this.error.set(
+          failure.status === 0
+            ? 'Cannot reach the appliance. Check that homestead-server is running, then reload.'
+            : failure.message,
+        );
       },
+    });
+    // Bundle capacity is advisory: a grading failure must not block the
+    // catalog list, so it stays silent here and the section stays empty.
+    this.api.catalogBundles().subscribe({
+      next: (bundles) => this.bundles.set(bundles),
+      error: () => this.bundles.set([]),
     });
   }
 
+  /** Opens the management panel for an installed package. */
   select(name: string): void {
     this.busy.set(true);
     this.error.set(null);
-    this.plan.set(null);
     this.operationId.set(null);
     this.api.catalogPackage(name).subscribe({
       next: (manifest) => {
         this.busy.set(false);
         this.selected.set(manifest);
-        const ports: Record<string, string> = {};
-        for (const service of manifest.Services) {
-          // Craft packages declare no host port (they publish none); their
-          // shared server listens on 8080 inside the container.
-          ports[service.Name] =
-            manifest.Requirements.Ports.length > 0
-              ? String(manifest.Requirements.Ports[0])
-              : service.Image.startsWith('homestead/craft-')
-                ? '8080'
-                : '';
-        }
-        this.containerPorts.set(ports);
-        const mounts: Record<string, string> = {};
-        for (const need of manifest.Requirements.Storage) {
-          mounts[need.Class] = '';
-        }
-        this.mountpoints.set(mounts);
-        this.volumes.set([]);
         this.configRows.set([{ service: manifest.Services[0]?.Name ?? '', key: '', value: '' }]);
         this.unsetRows.set([]);
         this.appSecrets.set([]);
         this.secretValues.set({});
+        this.revealed.set(null);
+        this.confirmingReveal.set(null);
         this.secretNotice.set(null);
+        this.localNames.set([]);
+        // Names are a convenience here: a failed read leaves them out.
+        forkJoin([this.api.edgeRoutes(), this.api.names()]).subscribe({
+          next: ([table, names]) => {
+            const hosts = new Set(appRoutes(manifest, table.routes ?? []).map((route) => route.Host));
+            this.localNames.set(names.apps.filter((app) => hosts.has(app.host)).flatMap((app) => app.names));
+          },
+          error: () => this.localNames.set([]),
+        });
         if ((manifest.Secrets ?? []).length > 0) {
           this.api.appSecrets(manifest.Name).subscribe({
             next: (secrets) => this.appSecrets.set(secrets),
@@ -134,129 +174,50 @@ export class Catalog implements OnInit {
     });
   }
 
-  private installBody(): Record<string, unknown> {
-    const ports: Record<string, number> = {};
-    for (const [service, text] of Object.entries(this.containerPorts())) {
-      if (text.trim() !== '') {
-        ports[service] = Number(text);
-      }
-    }
-    const storage: Record<string, string> = {};
-    for (const [className, mount] of Object.entries(this.mountpoints())) {
-      if (mount.trim() !== '') {
-        storage[className] = mount.trim();
-      }
-    }
-    return {
-      domain: this.domain().trim(),
-      hostnames: {},
-      container_ports: ports,
-      storage,
-      volumes: this.volumes().filter(
-        (row) => row.service.trim() !== '' && row.target.trim() !== '',
-      ),
-      networks: this.networks().filter((row) => row.name.trim() !== ''),
-      zone: this.zone().trim(),
-      public_ip: this.publicIp().trim(),
-    };
+  protected onMoved(name: string): void {
+    this.moves.update((n) => n + 1);
+    this.select(name);
   }
 
-  reviewPlan(): void {
-    const manifest = this.selected();
-    if (manifest === null) {
+  /** Opens a card's management panel, or closes it when it is open. */
+  protected toggle(name: string): void {
+    if (this.selected()?.Name === name) {
+      this.close();
       return;
     }
-    this.busy.set(true);
-    this.error.set(null);
-    this.api.planInstall(manifest.Name, this.installBody()).subscribe({
-      next: (plan) => {
-        this.busy.set(false);
-        this.plan.set(plan);
-      },
-      error: (failure: HttpErrorResponse) => {
-        this.busy.set(false);
-        this.error.set(failure.error ?? failure.message);
-      },
-    });
+    this.select(name);
   }
 
-  install(): void {
-    const manifest = this.selected();
-    if (manifest === null) {
-      return;
+  protected close(): void {
+    this.selected.set(null);
+    this.operationId.set(null);
+  }
+
+  /** S324: the setup the card follows stopped, finished or was skipped; a finished one leaves the card. */
+  protected onSetupSettled(name: string, status: string): void {
+    const setup = status === 'stopped' ? ('stopped' as const) : undefined;
+    this.packages.update((all) => all.map((p) => (p.name === name ? { ...p, setup } : p)));
+  }
+
+  protected onUninstalled(name: string): void {
+    if (this.selected()?.Name === name) {
+      this.selected.set(null);
     }
-    this.busy.set(true);
-    this.error.set(null);
-    this.api.installPackage(manifest.Name, this.installBody()).subscribe({
-      next: ({ id }) => {
-        this.busy.set(false);
-        this.operationId.set(id);
-      },
-      error: (failure: HttpErrorResponse) => {
-        this.busy.set(false);
-        this.error.set(failure.error ?? failure.message);
-      },
-    });
-  }
-
-  addVolumeRow(): void {
-    const manifest = this.selected();
-    this.volumes.update((rows) => [
-      ...rows,
-      {
-        service: manifest?.Services[0]?.Name ?? '',
-        class: manifest?.Requirements.Storage[0]?.Class ?? '',
-        subpath: '',
-        target: '',
-        readonly: false,
-      },
-    ]);
+    this.reload();
   }
 
   // Template bindings cannot carry arrow functions, so row edits go
   // through these patch methods with plain object literals.
-  setContainerPort(service: string, value: string): void {
-    this.containerPorts.update((ports) => ({ ...ports, [service]: value }));
-  }
-
-  setMountpoint(className: string, value: string): void {
-    this.mountpoints.update((mounts) => ({ ...mounts, [className]: value }));
-  }
-
-  patchVolume(index: number, patch: Partial<VolumeRow>): void {
-    this.volumes.update((rows) =>
-      rows.map((entry, position) =>
-        position === index ? { ...entry, ...patch } : entry,
-      ),
-    );
-  }
-
-  patchNetwork(index: number, patch: Partial<NetworkRow>): void {
-    this.networks.update((rows) =>
-      rows.map((entry, position) =>
-        position === index ? { ...entry, ...patch } : entry,
-      ),
-    );
-  }
-
   patchConfigRow(index: number, patch: Partial<ConfigRow>): void {
     this.configRows.update((rows) =>
-      rows.map((entry, position) =>
-        position === index ? { ...entry, ...patch } : entry,
-      ),
+      rows.map((entry, position) => (position === index ? { ...entry, ...patch } : entry)),
     );
   }
 
   patchUnsetRow(index: number, patch: Partial<ConfigRow>): void {
     this.unsetRows.update((rows) =>
-      rows.map((entry, position) =>
-        position === index ? { ...entry, ...patch } : entry,
-      ),
+      rows.map((entry, position) => (position === index ? { ...entry, ...patch } : entry)),
     );
-  }
-
-  addNetworkRow(): void {
-    this.networks.update((rows) => [...rows, { name: '', external: false }]);
   }
 
   addConfigRow(unset: boolean): void {
@@ -338,6 +299,43 @@ export class Catalog implements OnInit {
         this.error.set(failure.error ?? failure.message);
       },
     });
+  }
+
+  /** Asks before showing a credential meant for the owner (S312). */
+  askReveal(secret: string): void {
+    this.revealed.set(null);
+    this.confirmingReveal.set(secret);
+  }
+
+  cancelReveal(): void {
+    this.confirmingReveal.set(null);
+  }
+
+  /** Reads the credential; the appliance audits it and may ask for the password again. */
+  confirmReveal(): void {
+    const manifest = this.selected();
+    const secret = this.confirmingReveal();
+    if (manifest === null || secret === null) {
+      return;
+    }
+    this.busy.set(true);
+    this.error.set(null);
+    this.api.revealAppSecret(manifest.Name, secret).subscribe({
+      next: (shown) => {
+        this.busy.set(false);
+        this.confirmingReveal.set(null);
+        this.revealed.set(shown);
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.busy.set(false);
+        this.confirmingReveal.set(null);
+        this.error.set(failure.error ?? failure.message);
+      },
+    });
+  }
+
+  hideRevealed(): void {
+    this.revealed.set(null);
   }
 
   /** Rotates a generated secret through the configure operation. */

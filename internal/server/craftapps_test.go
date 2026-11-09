@@ -18,11 +18,12 @@ import (
 )
 
 // craftAppsCatalog copies shipped packages into a temp catalog: two craft
-// apps and one non-craft package.
+// apps, one non-craft package, and the packages its declarations name
+// (the S341 load gates resolve every target against the same catalog).
 func craftAppsCatalog(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	for _, name := range []string{"gridcraft", "pdfcraft", "nextcloud"} {
+	for _, name := range []string{"gridcraft", "pdfcraft", "nextcloud", "jellyfin", "authentik"} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "catalog", name+".yaml"))
 		if err != nil {
 			t.Fatal(err)
@@ -125,6 +126,12 @@ func TestCraftAppRouteClassification(t *testing.T) {
 			{Host: "secure.lan", Target: docker.Target{Host: "gridcraft", Port: 8080}, TLS: docker.TLSInternal, CraftApp: "gridcraft"},
 		}, "https://secure.lan/"},
 		{"other app's route ignored", []docker.Route{{Host: "p.lan", Target: docker.Target{Host: "pdfcraft", Port: 8080}, TLS: docker.TLSInternal, CraftApp: "pdfcraft"}}, ""},
+		// ADR-045: a path app answers at its path on the dashboard's name.
+		{"path app on the dashboard's name", []docker.Route{
+			{Host: "homestead.lan", Dashboard: true, TLS: docker.TLSInternal},
+			{Host: "gridcraft.lan", Target: docker.Target{Host: "gridcraft", Port: 8080}, TLS: docker.TLSInternal, CraftApp: "gridcraft",
+				Path: "/apps/gridcraft/", StripPrefix: true},
+		}, "https://homestead.lan/apps/gridcraft/"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -229,5 +236,12 @@ func TestCraftAppsSourceHasNoNetworkClient(t *testing.T) {
 		if strings.Contains(string(raw), banned) {
 			t.Errorf("craftapps.go must not use %s", banned)
 		}
+	}
+}
+
+func TestCraftAppCarriesManifestBlurb(t *testing.T) {
+	apps := getCraftApps(t, fakeCraftSource(t, map[string]bool{"gridcraft": true}, nil))
+	if len(apps) != 1 || apps[0].Blurb != "Spreadsheet that runs in your browser." {
+		t.Fatalf("apps = %+v", apps)
 	}
 }

@@ -130,13 +130,22 @@ func Recipients(store KeyStore) ([]age.Recipient, error) {
 	return []age.Recipient{identity.Recipient()}, nil
 }
 
-// Identities returns the identities restore decrypts with.
+// Identities returns the identities restore decrypts with: the current
+// appliance identity, then any retired by a rotation (S492).
 func Identities(store KeyStore) ([]age.Identity, error) {
 	identity, err := ApplianceIdentity(store)
 	if err != nil {
 		return nil, err
 	}
-	return []age.Identity{identity}, nil
+	out := []age.Identity{identity}
+	retired, err := RetiredIdentities(store)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range retired {
+		out = append(out, id)
+	}
+	return out, nil
 }
 
 // createEncrypted opens dst (0600, exclusive) and returns a writer

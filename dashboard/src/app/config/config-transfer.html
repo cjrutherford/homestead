@@ -1,0 +1,70 @@
+<div>
+  <p>
+    The export is the portable configuration document, the same one
+    <code>homesteadctl config export</code> writes. It lists the secrets by name
+    and never holds their values.
+  </p>
+  <button type="button" (click)="exportYaml()" [disabled]="busy()">Export configuration</button>
+
+  <h3>Import</h3>
+  <p>
+    Choose an exported file. You see what it would change first, and nothing is
+    applied until you confirm.
+  </p>
+  <label>
+    Configuration file
+    <input type="file" accept=".yaml,.yml,.json" (change)="choose($event)" [disabled]="busy()" />
+  </label>
+
+  @if (error()) {
+    <app-state-message kind="error" [headline]="error()" />
+  }
+  @if (notice()) {
+    <app-state-message kind="status" [headline]="notice()" />
+  }
+
+  @if (preview(); as p) {
+    @if (!p.valid) {
+      <app-state-message kind="error" [headline]="'This file cannot be imported: ' + p.error" />
+    } @else {
+      <section aria-labelledby="import-preview">
+        <h3 id="import-preview">Review import</h3>
+        @if (p.changes.length === 0) {
+          <p>No settings would change.</p>
+        } @else {
+          <ul>
+            @for (change of p.changes; track change.key) {
+              <li>
+                <code>{{ change.key }}</code>:
+                <span>{{ change.before === undefined ? '(unset)' : (change.before | json) }}</span>
+                →
+                <span>{{ change.after === undefined ? '(unset)' : (change.after | json) }}</span>
+              </li>
+            }
+          </ul>
+        }
+        @if (p.secrets.length > 0) {
+          <p>
+            This file names {{ p.secrets.length }} secret(s). Enter each value to restore it.
+            Values are sent once with the confirm and never stored.
+          </p>
+          @for (rev of [fieldsRevision()]; track rev) {
+            @for (name of p.secrets; track name) {
+              <label>
+                {{ name }}
+                <input
+                  type="password"
+                  autocomplete="off"
+                  [attr.data-secret]="name"
+                  (input)="typed(name, $event)"
+                />
+              </label>
+            }
+          }
+        }
+        <button type="button" (click)="confirm()" [disabled]="busy()">Confirm import</button>
+        <button type="button" (click)="cancel()">Cancel</button>
+      </section>
+    }
+  }
+</div>

@@ -13,10 +13,18 @@ import (
 // MountFirewall registers firewall setup endpoints (S056) for the daemon
 // port, plus external-mode handling (S057): the mode comes from the same
 // config service as everything else, so CLI, dashboard, and file agree.
-func (s *Server) MountFirewall(daemonPort int, configSvc *config.Service) {
+// The optional resolver reader adds the local DNS rules while the owner
+// has the appliance resolver on (S295).
+func (s *Server) MountFirewall(daemonPort int, configSvc *config.Service, resolver ...func() (bool, error)) {
+	extra := func() (bool, error) { return false, nil }
+	if len(resolver) > 0 && resolver[0] != nil {
+		extra = resolver[0]
+	}
+	mode := func() bool { m, err := firewallMode(configSvc); return err == nil && m == firewall.ModeExternal }
+	firewallExternal.Store(&mode)
 	s.mux.HandleFunc("GET /api/v1/firewall/status", handleFirewallStatus(daemonPort, configSvc))
-	s.mux.HandleFunc("GET /api/v1/firewall/plan", handleFirewallPlan(daemonPort, configSvc))
-	s.mux.HandleFunc("POST /api/v1/firewall/apply", handleFirewallApply(daemonPort, configSvc))
+	s.mux.HandleFunc("GET /api/v1/firewall/plan", handleFirewallPlan(daemonPort, configSvc, extra))
+	s.mux.HandleFunc("POST /api/v1/firewall/apply", handleFirewallApply(daemonPort, configSvc, extra))
 }
 
 // firewallMode reads the management mode, defaulting to managed. A
@@ -83,7 +91,7 @@ func nonNil(values []string) []string {
 	return values
 }
 
-func firewallDesired(daemonPort int) (firewall.RuleSet, discover.Network, error) {
+func firewallDesired(daemonPort int, resolver func() (bool, error)) (firewall.RuleSet, discover.Network, error) {
 	network, err := discover.DiscoverNetwork()
 	if err != nil {
 		return firewall.RuleSet{}, discover.Network{}, err
@@ -92,10 +100,19 @@ func firewallDesired(daemonPort int) (firewall.RuleSet, discover.Network, error)
 	if err != nil {
 		return firewall.RuleSet{}, discover.Network{}, err
 	}
+	on, err := resolver()
+	if err != nil {
+		return firewall.RuleSet{}, discover.Network{}, err
+	}
+	if on {
+		if desired, err = firewall.WithLocalResolver(desired, network); err != nil {
+			return firewall.RuleSet{}, discover.Network{}, err
+		}
+	}
 	return desired, network, nil
 }
 
-func handleFirewallPlan(daemonPort int, configSvc *config.Service) http.HandlerFunc {
+func handleFirewallPlan(daemonPort int, configSvc *config.Service, resolver func() (bool, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		mode, err := firewallMode(configSvc)
 		if err != nil {
@@ -107,7 +124,7 @@ func handleFirewallPlan(daemonPort int, configSvc *config.Service) http.HandlerF
 			http.Error(w, "nftables unavailable on this host", http.StatusServiceUnavailable)
 			return
 		}
-		desired, _, err := firewallDesired(daemonPort)
+		desired, _, err := firewallDesired(daemonPort, resolver)
 		if err != nil {
 			http.Error(w, "failed to build desired rules", http.StatusInternalServerError)
 			return
@@ -146,10 +163,20 @@ func handleFirewallPlan(daemonPort int, configSvc *config.Service) http.HandlerF
 	}
 }
 
+// edgeHTTPSPort is the port a LAN client reaches the dashboard on, through
+// the Caddy edge (published 443:443).
+const edgeHTTPSPort = 443
+
 // requestConnection derives the guard connection from the caller: TCP
-// remotes verify by source IP; Unix-socket callers are same-machine by
-// construction and verify as loopback.
+// remotes verify by source IP on the daemon port; recovery-socket callers are same-machine by
+// construction and verify as loopback; edge callers use the forwarded address.
 func requestConnection(r *http.Request, daemonPort int) firewall.Connection {
+	// A request through the edge is not the machine itself: the dashboard
+	// socket's front wrapper stored the validated client address (ADR-035).
+	if a, ok := edgeClientFrom(r.Context()); ok {
+		// A LAN client reaches the edge on HTTPS, not the daemon port.
+		return firewall.Connection{SourceIP: a, Protocol: firewall.ProtocolTCP, Port: edgeHTTPSPort}
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil || host == "" || host == "@" {
 		host = "127.0.0.1"
@@ -157,7 +184,7 @@ func requestConnection(r *http.Request, daemonPort int) firewall.Connection {
 	return firewall.Connection{SourceIP: host, Protocol: firewall.ProtocolTCP, Port: daemonPort}
 }
 
-func handleFirewallApply(daemonPort int, configSvc *config.Service) http.HandlerFunc {
+func handleFirewallApply(daemonPort int, configSvc *config.Service, resolver func() (bool, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		mode, err := firewallMode(configSvc)
 		if err != nil {
@@ -173,7 +200,7 @@ func handleFirewallApply(daemonPort int, configSvc *config.Service) http.Handler
 			http.Error(w, "nftables unavailable on this host", http.StatusServiceUnavailable)
 			return
 		}
-		desired, _, err := firewallDesired(daemonPort)
+		desired, _, err := firewallDesired(daemonPort, resolver)
 		if err != nil {
 			http.Error(w, "failed to build desired rules", http.StatusInternalServerError)
 			return

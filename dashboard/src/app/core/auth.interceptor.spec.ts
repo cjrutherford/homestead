@@ -6,8 +6,16 @@ import {
   HttpTestingController,
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
-import { authInterceptor, readCookie } from './auth.interceptor';
+import { authInterceptor, isOwnerOnly, readCookie, readCsrf } from './auth.interceptor';
 import { SESSION_STORAGE_KEY, SessionService } from '../auth/session.service';
+
+describe('readCsrf', () => {
+  it('prefers the __Host- name and falls back to the plain one', () => {
+    expect(readCsrf('a=1; __Host-homestead_csrf=host; homestead_csrf=plain')).toBe('host');
+    expect(readCsrf('homestead_csrf=plain')).toBe('plain');
+    expect(readCsrf('other=1')).toBeNull();
+  });
+});
 
 describe('authInterceptor', () => {
   let http: HttpClient;
@@ -102,5 +110,31 @@ describe('authInterceptor', () => {
   it('parses cookies', () => {
     expect(readCookie('b', 'a=1; b=two%20words; c=3')).toBe('two words');
     expect(readCookie('x', 'a=1')).toBeNull();
+  });
+});
+
+describe('owner-only answers (S338)', () => {
+  it('marks a person session without expiring it', () => {
+    localStorage.clear();
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        provideHttpClient(withInterceptors([authInterceptor])),
+        provideHttpClientTesting(),
+      ],
+    });
+    const http = TestBed.inject(HttpClient);
+    const ctrl = TestBed.inject(HttpTestingController);
+    const sessions = TestBed.inject(SessionService);
+    sessions.begin('Sam', '');
+    let failed: unknown;
+    http.get('/api/v1/config').subscribe({ error: (e) => (failed = e) });
+    ctrl
+      .expectOne('/api/v1/config')
+      .flush({}, { status: 403, statusText: 'Forbidden', headers: { 'X-Homestead-Error': 'owner-only' } });
+    expect(isOwnerOnly(failed)).toBe(true);
+    expect(sessions.isPerson()).toBe(true);
+    expect(sessions.isLoggedIn()).toBe(true);
+    ctrl.verify();
   });
 });

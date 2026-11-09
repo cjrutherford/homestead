@@ -1,0 +1,151 @@
+import { describe, expect, it, vi } from 'vitest';
+import { of, throwError } from 'rxjs';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ReauthRequest } from '../core/reauth';
+import { SsoService } from '../sso/sso.service';
+import { ReauthDialog } from './reauth-dialog';
+
+describe('ReauthDialog', () => {
+  async function open(invalid = false): Promise<{ fixture: ComponentFixture<ReauthDialog>; answers: (string | null)[] }> {
+    await TestBed.configureTestingModule({ imports: [ReauthDialog] }).compileComponents();
+    const answers: (string | null)[] = [];
+    const request: ReauthRequest = { invalid, answer: (p) => answers.push(p) };
+    const fixture = TestBed.createComponent(ReauthDialog);
+    fixture.componentRef.setInput('request', request);
+    document.body.appendChild(fixture.nativeElement);
+    fixture.detectChanges();
+    return { fixture, answers };
+  }
+
+  it('asks for the local password and explains why', async () => {
+    const { fixture } = await open();
+    const dialog = fixture.nativeElement.querySelector('dialog') as HTMLDialogElement;
+    expect(dialog.textContent).toContain('Confirm with your local password');
+    expect(dialog.textContent).toContain('sent once');
+    expect(dialog.querySelector('input[type="password"]')).not.toBeNull();
+    expect(dialog.textContent).not.toContain('not right');
+    fixture.nativeElement.remove();
+  });
+
+  it('says so when the last password was wrong', async () => {
+    const { fixture } = await open(true);
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('That password is not right');
+    fixture.nativeElement.remove();
+  });
+
+  it('answers with the typed password and ignores an empty one', async () => {
+    const { fixture, answers } = await open();
+    const el = fixture.nativeElement as HTMLElement;
+    const input = el.querySelector('input') as HTMLInputElement;
+    const confirm = el.querySelector('.dialog-actions button') as HTMLButtonElement;
+    confirm.click();
+    expect(answers).toEqual([]);
+    input.value = 'owner-password';
+    confirm.click();
+    expect(answers).toEqual(['owner-password']);
+    el.remove();
+  });
+
+  it('answers null on Cancel and on Escape', async () => {
+    const { fixture, answers } = await open();
+    const el = fixture.nativeElement as HTMLElement;
+    (el.querySelector('.dialog-actions .quiet') as HTMLButtonElement).click();
+    el.querySelector('dialog')?.dispatchEvent(new Event('cancel', { cancelable: true }));
+    expect(answers).toEqual([null, null]);
+    el.remove();
+  });
+
+  describe('step-up on the public address', () => {
+    async function openStepUp(ssoStepUp: () => unknown) {
+      await TestBed.configureTestingModule({
+        imports: [ReauthDialog],
+        providers: [{ provide: SsoService, useValue: { ssoStepUp } }],
+      }).compileComponents();
+      const answers: (string | null)[] = [];
+      const request: ReauthRequest = { invalid: false, stepUp: true, answer: (p) => answers.push(p) };
+      const fixture = TestBed.createComponent(ReauthDialog);
+      const assign = vi.fn();
+      (fixture.componentInstance as unknown as { assign: (u: string) => void }).assign = assign;
+      fixture.componentRef.setInput('request', request);
+      document.body.appendChild(fixture.nativeElement);
+      fixture.detectChanges();
+      return { fixture, answers, assign };
+    }
+
+    it('offers Authentik instead of a password field', async () => {
+      const { fixture } = await openStepUp(() => of({ url: 'x', expires_at: '' }));
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.textContent).toContain('Sign in with Authentik again');
+      expect(el.querySelector('input[type="password"]')).toBeNull();
+      expect(el.textContent).not.toContain('Confirm with your local password');
+      el.remove();
+    });
+
+    it('starts the step-up for the current path and goes to Authentik', async () => {
+      const ssoStepUp = vi.fn(() => of({ url: 'https://auth.example.com/authorize?x=1', expires_at: '' }));
+      const { fixture, assign } = await openStepUp(ssoStepUp);
+      const el = fixture.nativeElement as HTMLElement;
+      (el.querySelector('.dialog-actions button') as HTMLButtonElement).click();
+      expect(ssoStepUp).toHaveBeenCalledWith(window.location.pathname + window.location.search);
+      expect(assign).toHaveBeenCalledWith('https://auth.example.com/authorize?x=1');
+      el.remove();
+    });
+
+    it('says so and stays when the step-up cannot start', async () => {
+      const { fixture, assign } = await openStepUp(() => throwError(() => new Error('down')));
+      const el = fixture.nativeElement as HTMLElement;
+      (el.querySelector('.dialog-actions button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(assign).not.toHaveBeenCalled();
+      expect(el.textContent).toContain('Authentik could not be reached');
+      el.remove();
+    });
+
+    it('answers null on Cancel', async () => {
+      const { fixture, answers } = await openStepUp(() => of({ url: 'x', expires_at: '' }));
+      const el = fixture.nativeElement as HTMLElement;
+      (el.querySelector('.dialog-actions .quiet') as HTMLButtonElement).click();
+      expect(answers).toEqual([null]);
+      el.remove();
+    });
+  });
+
+  describe('an action that only works locally', () => {
+    async function openLocalOnly(ssoStatus: () => unknown) {
+      await TestBed.configureTestingModule({
+        imports: [ReauthDialog],
+        providers: [{ provide: SsoService, useValue: { ssoStatus } }],
+      }).compileComponents();
+      const answers: (string | null)[] = [];
+      const request: ReauthRequest = { invalid: false, localOnly: true, answer: (p) => answers.push(p) };
+      const fixture = TestBed.createComponent(ReauthDialog);
+      fixture.componentRef.setInput('request', request);
+      document.body.appendChild(fixture.nativeElement);
+      fixture.detectChanges();
+      return { fixture, answers };
+    }
+
+    it('names the local address and offers no password field or Authentik button', async () => {
+      const { fixture } = await openLocalOnly(() =>
+        of({ defaults: { origins: ['https://homestead.local', window.location.origin] }, spec: undefined }),
+      );
+      fixture.detectChanges();
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.textContent).toContain('only works from your home network or overlay');
+      expect(el.textContent).toContain('https://homestead.local');
+      expect(el.querySelector('input')).toBeNull();
+      expect(el.textContent).not.toContain('Sign in with Authentik again');
+      el.remove();
+    });
+
+    it('falls back to a plain phrase when the address is unknown', async () => {
+      const { fixture, answers } = await openLocalOnly(() => throwError(() => new Error('down')));
+      fixture.detectChanges();
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.textContent).toContain('your local or overlay address');
+      (el.querySelector('.dialog-actions button') as HTMLButtonElement).click();
+      expect(answers).toEqual([null]);
+      el.remove();
+    });
+  });
+});

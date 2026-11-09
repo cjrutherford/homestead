@@ -1,0 +1,49 @@
+# Everything Tasks bridge: ordinary Docker Compose, no Homestead daemon needed (S367, ADR-053).
+#
+#   bash scripts/everything/build-image.sh tasks homestead/everything-tasks:0.0.1
+#   cp images/everything/compose.env.example .env      # then edit
+#   install -d -m 0700 secrets && printf %s "<client secret>" > secrets/oidc_client_secret && chmod 0444 secrets/oidc_client_secret
+#   docker compose -f images/everything/compose.example.yaml --env-file .env up -d
+#
+# The container refuses to start without an issuer, client id, secret file,
+# redirect URL and exactly one trusted origin. It publishes no host port by
+# default. Reach it through your own reverse proxy on the compose network, or
+# (on a Homestead appliance) through the external "homestead-edge" network
+# (see the commented lines). People sign in with your Authentik; there is no
+# bridge password. If Authentik is down, recover data with the export tool
+# (docs/slices/S367-everything-bridge-and-build.md, "Recovery").
+name: ${COMPOSE_PROJECT_NAME:-everything-tasks}
+services:
+  tasks:
+    image: homestead/everything-tasks:${EVERYTHING_VERSION:-0.0.1}
+    restart: unless-stopped
+    read_only: true            # only /data is writable
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      HOMESTEAD_EVERYTHING_BASE_PATH: ${EVERYTHING_BASE_PATH:-/apps/tasks}
+      HOMESTEAD_EVERYTHING_ORIGIN: ${EVERYTHING_ORIGIN:?public origin, e.g. https://home.example}
+      HOMESTEAD_EVERYTHING_OIDC_ISSUER: ${EVERYTHING_OIDC_ISSUER:?Authentik issuer URL, exactly as in the iss claim}
+      HOMESTEAD_EVERYTHING_OIDC_CLIENT_ID: ${EVERYTHING_OIDC_CLIENT_ID:?client id}
+      HOMESTEAD_EVERYTHING_OIDC_REDIRECT_URL: ${EVERYTHING_OIDC_REDIRECT_URL:?origin + base path + /_homestead/callback}
+      HOMESTEAD_EVERYTHING_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
+      HOMESTEAD_EVERYTHING_QUOTA_PERSON_BYTES: ${EVERYTHING_QUOTA_PERSON_BYTES:-268435456}
+      HOMESTEAD_EVERYTHING_QUOTA_APP_BYTES: ${EVERYTHING_QUOTA_APP_BYTES:-4294967296}
+    secrets:
+      - oidc_client_secret
+    volumes:
+      # Declared data volume: /data/bridge.db is an ordinary SQLite file.
+      # To keep it on mounted storage instead, bind-mount a directory owned
+      # by uid 65532 (install -d -o 65532 -g 65532 -m 0700 DIR).
+      - data:/data
+    # ports:                    # normally none; for a local test only
+    #   - "127.0.0.1:8081:8081"
+    # networks: [homestead-edge]   # Homestead appliance only
+secrets:
+  oidc_client_secret:
+    file: ${EVERYTHING_SECRET_FILE:-./secrets/oidc_client_secret}
+volumes:
+  data: {}
+# networks:
+#   homestead-edge:
+#     external: true

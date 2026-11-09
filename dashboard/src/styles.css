@@ -1,113 +1,31 @@
-/* You can add global styles to this file, and also import other style files */
+/* Dashboard styles (S248, S282). Tokens first, then base, primitives, shell. */
 @import './tokens.css';
+@import './fonts.css';
+@import './glyphs.css';
+@import './base.css';
+@import './primitives.css';
+@import './shell.css';
+@import './feedback.css';
+@import './catalog.css';
+@import './pages.css';
+@import './permit.css';
 
-/* Base type: 16px minimum body, fluid display sizes. */
-body {
-  font-size: var(--font-size-base);
-}
-
-/* Touch targets: controls and nav links reach 44px. Inline text
-   links stay inline: only chrome carries the minimum. */
-button,
-input,
-select,
-textarea,
-nav a {
-  min-height: var(--touch-target);
-}
-
-button,
-input,
-select,
-textarea {
-  font-size: var(--font-size-base);
-  border-radius: var(--border-radius-md);
-}
-
-/* Narrow viewports: full-bleed content, wrapping chrome, no overflow. */
-.shell-main,
-table,
-pre,
-img,
-form {
-  max-width: 100%;
-}
-
-pre {
-  overflow-x: auto;
-}
-
-/* sm breakpoint: see tokens.css. */
-@media (max-width: 39.9375rem) {
-  .shell-main {
-    padding: var(--spacing-md);
-  }
-
-  .shell-header {
-    flex-wrap: wrap;
-    gap: var(--spacing-md);
-  }
-
-  .shell-header nav {
-    flex-wrap: wrap;
-  }
-
-  table {
-    display: block;
-    overflow-x: auto;
-  }
-
-  dialog,
-  [role='dialog'] {
-    width: 100vw;
-    max-width: 100vw;
-  }
-}
-
-/* Motion respects the owner. */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
-/* Shared state messages (S248). */
-.state-message {
-  margin: var(--spacing-sm) 0;
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-left: 0.25rem solid var(--border);
-  border-radius: var(--border-radius-md);
+/* Wizard progress (S036): the steps read as a row, the current one marked. */
+.wizard-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-md);
+  margin: 0 0 var(--spacing-lg);
+  padding: 0;
+  list-style: none;
   color: var(--muted);
 }
 
-.state-error {
-  border-left-color: var(--danger);
-  color: var(--danger);
+.wizard-steps li {
+  margin: 0;
 }
 
-.state-status {
-  border-left-color: var(--success);
-  color: var(--success);
-}
-
-.state-loading {
-  font-style: italic;
-}
-
-/* Cards: surfaces with token elevation. */
-.card {
-  padding: var(--spacing-md);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--border-radius-lg);
-  box-shadow: var(--shadow-sm);
-}
-
-/* Wrapping container for wide content. */
-.table-scroll {
-  max-width: 100%;
-  overflow-x: auto;
+.wizard-steps [aria-current='step'] {
+  color: var(--foreground);
+  font-weight: 700;
 }

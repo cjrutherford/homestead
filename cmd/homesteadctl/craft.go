@@ -90,6 +90,9 @@ func runCraftApps(ctx context.Context, client *apiclient.Client, stdout, stderr 
 			url = "(no URL) " + app.URLReason
 		}
 		fmt.Fprintf(stdout, "%s  %s  %s  %s  %s\n", app.Name, app.Title, app.Version, app.Status, url)
+		if app.Blurb != "" {
+			fmt.Fprintf(stdout, "    %s\n", app.Blurb)
+		}
 	}
 	return exitOK
 }

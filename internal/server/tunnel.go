@@ -2,16 +2,30 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 
+	"homestead/internal/audit"
+	"homestead/internal/cert"
+	"homestead/internal/docker"
+	"homestead/internal/domain"
 	"homestead/internal/operation"
 	"homestead/internal/router"
 	"homestead/internal/secret"
+	"homestead/internal/sso"
 	"homestead/internal/store"
 )
 
@@ -34,18 +48,41 @@ func runSystemctl(args ...string) error {
 	return command.Run()
 }
 
-// MountTunnel serves tunnel remote access (S246) over the API:
+// MountTunnel serves tunnel remote access (S246, planned in S294 per
+// ADR-037) over the API:
 //
-//	GET    /api/v1/tunnel/status      discovery, tunnels, connector
-//	POST   /api/v1/tunnel/setup       {"name","hostname","service","api_token","account_id"} -> operation
+//	GET    /api/v1/tunnel/status        discovery, tunnels, connector
+//	POST   /api/v1/tunnel/plan          {"name"|"adopt","dashboard_hostname","auth_hostname"} -> plan (read-only)
+//	POST   /api/v1/tunnel/setup         the same with "digest" -> operation
 //	DELETE /api/v1/tunnel/tunnels/{id}  teardown operation
 //
-// The API token seals into the secret store on setup and never reads
-// back out: status reports health, never credentials.
-func (s *Server) MountTunnel(st *store.Store, secrets *secret.Store) {
+// The tunnel reuses the Domain step's Cloudflare token and derives the
+// account from the hostname's zone: no route takes a token or an account
+// ID, and neither is ever returned.
+func (s *Server) MountTunnel(st *store.Store, secrets *secret.Store, port int) {
 	s.mux.HandleFunc("GET /api/v1/tunnel/status", s.handleTunnelStatus(st, secrets))
+	s.mux.HandleFunc("POST /api/v1/tunnel/plan", s.handleTunnelPlan(st, secrets))
 	s.mux.HandleFunc("POST /api/v1/tunnel/setup", s.handleTunnelSetup(st, secrets))
 	s.mux.HandleFunc("DELETE /api/v1/tunnel/tunnels/{id}", s.handleTunnelTeardown(st, secrets))
+}
+
+// tunnelAPIBase is the Cloudflare API root, swapped for a double in tests.
+var tunnelAPIBase = router.CloudflareAPIBase
+
+func tunnelClient() (*router.TunnelClient, error) {
+	return router.NewTunnelClient(tunnelAPIBase)
+}
+
+// tunnelToken returns the one Cloudflare token: the Domain step's, or the
+// pre-S294 tunnel token on appliances that still have only that.
+func tunnelToken(secrets *secret.Store) (string, error) {
+	if token, err := secrets.Get(domain.SecretName("cloudflare", "api_token")); err == nil && token != "" {
+		return token, nil
+	}
+	if token, err := secrets.Get(router.TunnelSecretName); err == nil && token != "" {
+		return token, nil
+	}
+	return "", errors.New("no Cloudflare API token on file: store one in the setup Domain step (Cloudflare)")
 }
 
 type tunnelStatusResponse struct {
@@ -57,7 +94,18 @@ type tunnelStatusResponse struct {
 	Routes    []router.TunnelRoute `json:"routes"`
 	Connector connectorStatus      `json:"connector"`
 	Accounts  int                  `json:"accounts"`
-	Discovery string               `json:"discovery_error,omitempty"`
+	// Proposed is the default plan request: public names from the setup
+	// domain and whether the dashboard would be published (ADR-037 §4).
+	Proposed  tunnelProposal `json:"proposed"`
+	Discovery string         `json:"discovery_error,omitempty"`
+	// Coverage is the edge certificate lamp for each served name (S312).
+	Coverage []publicNameCoverage `json:"coverage"`
+}
+
+type tunnelProposal struct {
+	DashboardHostname string `json:"dashboard_hostname"`
+	AuthHostname      string `json:"auth_hostname"`
+	SignInLinked      bool   `json:"sign_in_linked"`
 }
 
 type tunnelEntry struct {
@@ -72,40 +120,95 @@ type connectorStatus struct {
 	Active    bool `json:"active"`
 }
 
+// tunnelDiscovery is what the status read shows about the router.
+type tunnelDiscovery struct {
+	Preferred, Gateway, Interface, Note string
+	Protocols                           []string
+}
+
+// discoverGateway probes the router (UPnP and NAT-PMP/PCP, which wait for
+// answers that often never come); overridden in tests.
+var discoverGateway = func(ctx context.Context) tunnelDiscovery {
+	found := tunnelDiscovery{Preferred: "tunnel", Protocols: []string{}}
+	iface, gateway, err := router.DefaultRoute()
+	if err != nil {
+		found.Note = err.Error()
+		return found
+	}
+	found.Gateway, found.Interface = gateway, iface
+	info, err := router.DiscoverGateway(ctx, iface, gateway)
+	if err != nil {
+		found.Note = err.Error()
+		return found
+	}
+	for _, protocol := range info.Protocols {
+		found.Protocols = append(found.Protocols, string(protocol))
+	}
+	found.Preferred = router.PreferredProvider(info.Protocols)
+	return found
+}
+
+// tunnelDiscoveryTTL is how long a router discovery is reused: the router
+// rarely changes, and probing it costs seconds on every status read.
+const tunnelDiscoveryTTL = 5 * time.Minute
+
+var discoveryCache struct {
+	sync.Mutex
+	at    time.Time
+	found tunnelDiscovery
+}
+
+// WarmTunnelDiscovery probes the router once so the first tunnel status
+// read after start is served from the cache instead of waiting for UPnP
+// and NAT-PMP/PCP. The daemon runs it in the background at start.
+func WarmTunnelDiscovery(ctx context.Context) {
+	cachedDiscovery(ctx)
+}
+
+func cachedDiscovery(ctx context.Context) tunnelDiscovery {
+	discoveryCache.Lock()
+	defer discoveryCache.Unlock()
+	if !discoveryCache.at.IsZero() && time.Since(discoveryCache.at) < tunnelDiscoveryTTL {
+		return discoveryCache.found
+	}
+	found := discoverGateway(ctx)
+	if ctx.Err() == nil {
+		discoveryCache.at, discoveryCache.found = time.Now(), found
+	}
+	return found
+}
+
 func (s *Server) handleTunnelStatus(st *store.Store, secrets *secret.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		response := tunnelStatusResponse{Preferred: "tunnel", Protocols: []string{}}
-		iface, gateway, err := router.DefaultRoute()
-		if err != nil {
-			response.Discovery = err.Error()
-		} else {
-			response.Gateway = gateway
-			response.Interface = iface
-			info, err := router.DiscoverGateway(r.Context(), iface, gateway)
-			if err != nil {
-				response.Discovery = err.Error()
-			} else {
-				for _, protocol := range info.Protocols {
-					response.Protocols = append(response.Protocols, string(protocol))
-				}
-				response.Preferred = router.PreferredProvider(info.Protocols)
-			}
+		response := tunnelStatusResponse{}
+		facts := s.tunnelFacts()
+		response.Proposed.DashboardHostname, response.Proposed.AuthHostname = tunnelDefaults(facts.Domain)
+		if set, err := loadEdgeRoutes(st); err != nil || !legacyAuthentikHost(set.Routes) {
+			// Authentik is served at the dashboard's name, by path
+			// (ADR-044): it needs no name of its own.
+			response.Proposed.AuthHostname = ""
 		}
+		response.Proposed.SignInLinked = facts.SignInLinked
+		// The router probe runs alongside the Cloudflare reads below. The
+		// channel is buffered, so an early return never strands it.
+		discovered := make(chan tunnelDiscovery, 1)
+		go func() { discovered <- cachedDiscovery(r.Context()) }()
 		routes, err := router.ListRoutes(st)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		response.Routes = routes
-		token, tokenErr := secrets.Get(router.TunnelSecretName)
-		accountID := ""
-		if tokenErr == nil {
-			if client, err := router.NewTunnelClient(router.CloudflareAPIBase); err == nil {
-				if accounts, err := client.ListAccounts(r.Context(), token); err == nil {
-					response.Accounts = len(accounts)
-					if len(accounts) == 1 {
-						accountID = accounts[0]
-					}
+		token, tokenErr := tunnelToken(secrets)
+		client, clientErr := tunnelClient()
+		// The single visible account is the fallback for tunnels set up
+		// before S294 stored theirs.
+		fallbackAccount := ""
+		if tokenErr == nil && clientErr == nil {
+			if accounts, err := client.ListAccounts(r.Context(), token); err == nil {
+				response.Accounts = len(accounts)
+				if len(accounts) == 1 {
+					fallbackAccount = accounts[0]
 				}
 			}
 		}
@@ -116,16 +219,17 @@ func (s *Server) handleTunnelStatus(st *store.Store, secrets *secret.Store) http
 			}
 			seen[route.TunnelID] = true
 			entry := tunnelEntry{ID: route.TunnelID, Status: "unknown"}
-			if tokenErr == nil && accountID != "" {
-				client, err := router.NewTunnelClient(router.CloudflareAPIBase)
-				if err == nil {
-					if status, err := client.GetTunnel(r.Context(), token, accountID, route.TunnelID); err == nil {
-						entry.Name = status.Name
-						entry.Status = status.Status
-						entry.Connections = status.Connections
-					} else {
-						entry.Status = "unreachable"
-					}
+			accountID, err := router.TunnelAccount(st, route.TunnelID)
+			if err != nil || accountID == "" {
+				accountID = fallbackAccount
+			}
+			if tokenErr == nil && clientErr == nil && accountID != "" {
+				if status, err := client.GetTunnel(r.Context(), token, accountID, route.TunnelID); err == nil {
+					entry.Name = status.Name
+					entry.Status = status.Status
+					entry.Connections = status.Connections
+				} else {
+					entry.Status = "unreachable"
 				}
 			}
 			response.Tunnels = append(response.Tunnels, entry)
@@ -139,114 +243,957 @@ func (s *Server) handleTunnelStatus(st *store.Store, secrets *secret.Store) http
 				response.Connector.Active = true
 			}
 		}
+		names := []string{}
+		for _, route := range routes {
+			names = append(names, route.Hostname)
+		}
+		response.Coverage = statusCoverage(r.Context(), secrets, names)
+		found := <-discovered
+		response.Preferred, response.Gateway, response.Interface = found.Preferred, found.Gateway, found.Interface
+		response.Protocols, response.Discovery = found.Protocols, found.Note
 		writeJSON(w, response)
+	}
+}
+
+// tunnelPlan is what the owner reviews before approving a tunnel
+// (ADR-037 §4): the dashboard and Authentik public names, every
+// Cloudflare change, what is left out and why, and a digest that covers
+// them and the hidden zone, account and record IDs they act on.
+type tunnelPlan struct {
+	Name              string             `json:"name"`
+	DashboardHostname string             `json:"dashboard_hostname"`
+	AuthHostname      string             `json:"auth_hostname"`
+	Zone              string             `json:"zone"`
+	Ingress           []tunnelPlanRoute  `json:"ingress"`
+	DNS               []tunnelPlanChange `json:"dns"`
+	Omitted           []tunnelOmission   `json:"omitted"`
+	SignIn            string             `json:"sign_in,omitempty"`
+	// SignInUpdate is the sign-in change approving this plan also applies
+	// (ADR-046): set when sign-in is configured, the Authentik API token
+	// is kept, and sign-in does not yet cover the public dashboard name.
+	SignInUpdate *tunnelSignIn `json:"sign_in_update,omitempty"`
+	// Paths are the path apps the public dashboard name starts answering
+	// for (ADR-044): Authentik's sign-in at /apps/auth/. They add no
+	// DNS record and no ingress of their own.
+	Paths []tunnelPlanPath `json:"paths"`
+	// Adopt is set when the plan takes over an existing tunnel instead of
+	// creating one (S290, ADR-041 §3).
+	Adopt *tunnelAdoption `json:"adopt,omitempty"`
+	// Coverage says whether Cloudflare has a certificate for each public
+	// name (S312); an uncovered name is also a warning.
+	Coverage []publicNameCoverage `json:"coverage"`
+	// Certificate is the public dashboard name's certificate (ADR-048
+	// §5): already placed, or issued by the operation once the tunnel is
+	// up. IssuerMoves are the apps whose sign-in then moves to
+	// Authentik's public address (§6). Both are bound into the digest.
+	Certificate *tunnelCertificate `json:"certificate,omitempty"`
+	IssuerMoves *cert.MovePlan     `json:"issuer_moves,omitempty"`
+	Warnings    []string           `json:"warnings"`
+	Digest      string             `json:"digest"`
+
+	// Hidden: never serialized, but bound into the digest.
+	zoneID    string
+	accountID string
+	replaces  []router.DNSRecord
+	// keeps are existing CNAMEs already pointing at an adopted tunnel,
+	// recorded as Homestead's at approval.
+	keeps []router.DNSRecord
+	// addCert is the TLS strategy entry the certificate step adds; its
+	// content is bound into the digest through Certificate.Digest.
+	addCert *cert.Certificate
+}
+
+// tunnelAdoption is what adopting shows: the tunnel Cloudflare has, its
+// live connections, and what happens to each entry of the connector
+// config already on this appliance.
+type tunnelAdoption struct {
+	ID          string              `json:"id"`
+	Status      string              `json:"status"`
+	Connections int                 `json:"connections"`
+	Existing    []tunnelAdoptedName `json:"existing"`
+}
+
+// tunnelAdoptedName is one ingress entry of the config being adopted.
+type tunnelAdoptedName struct {
+	Hostname string `json:"hostname"`
+	Service  string `json:"service"`
+	Outcome  string `json:"outcome"`
+}
+
+// tunnelPlanRoute is one public name: the connector delivers it to the
+// edge's tunnel entry, which serves it from the local route Route.
+type tunnelPlanRoute struct {
+	Hostname string `json:"hostname"`
+	Role     string `json:"role"`
+	Route    string `json:"route"`
+	Service  string `json:"service"`
+}
+
+// tunnelPlanPath is one path app published on the public dashboard name.
+type tunnelPlanPath struct {
+	Role  string `json:"role"`
+	Route string `json:"route"`
+	Path  string `json:"path"`
+	URL   string `json:"url"`
+}
+
+// tunnelOmission is a proposed public name the plan leaves out.
+type tunnelOmission struct {
+	Hostname string `json:"hostname"`
+	Role     string `json:"role"`
+	Reason   string `json:"reason"`
+}
+
+type tunnelPlanChange struct {
+	Name     string             `json:"name"`
+	Type     string             `json:"type"`
+	Content  string             `json:"content"`
+	Proxied  bool               `json:"proxied"`
+	Action   string             `json:"action"`
+	Replaces []router.DNSRecord `json:"replaces"`
+}
+
+// Public name roles (ADR-037 §4).
+const (
+	tunnelRoleDashboard = "dashboard"
+	tunnelRoleAuth      = "authentik"
+)
+
+// tunnelEntryService is where the connector delivers every public name:
+// the edge's loopback-only tunnel entry, which routes by name (ADR-037).
+var tunnelEntryService = "http://127.0.0.1:" + strconv.Itoa(docker.TunnelEntryPort)
+
+// tunnelPendingTarget stands for the tunnel ID Cloudflare assigns at setup.
+const tunnelPendingTarget = "<new tunnel id>.cfargotunnel.com"
+
+// planRefusal is a plan that cannot be offered, with its HTTP status.
+type planRefusal struct {
+	status int
+	msg    string
+}
+
+func (e *planRefusal) Error() string { return e.msg }
+
+func refusePlan(status int, format string, args ...any) error {
+	return &planRefusal{status: status, msg: fmt.Sprintf(format, args...)}
+}
+
+func writePlanError(w http.ResponseWriter, err error) {
+	var refusal *planRefusal
+	if errors.As(err, &refusal) {
+		http.Error(w, refusal.msg, refusal.status)
+		return
+	}
+	var provider *router.TunnelError
+	if errors.As(err, &provider) {
+		http.Error(w, "Cloudflare refused: "+provider.Error(), http.StatusBadGateway)
+		return
+	}
+	http.Error(w, err.Error(), http.StatusBadGateway)
+}
+
+type tunnelRequest struct {
+	Name              string `json:"name"`
+	DashboardHostname string `json:"dashboard_hostname"`
+	AuthHostname      string `json:"auth_hostname"`
+	// Adopt names an existing tunnel to take over instead of creating one.
+	Adopt string `json:"adopt,omitempty"`
+	// AgreeTerms and ConfirmProduction approve the public dashboard
+	// name's certificate with the plan (ADR-048 §5); required on setup
+	// when the plan issues one. They do not change the plan.
+	AgreeTerms        bool `json:"agree_terms,omitempty"`
+	ConfirmProduction bool `json:"confirm_production,omitempty"`
+}
+
+// validTunnelID accepts the shape of a Cloudflare tunnel ID (a UUID).
+func validTunnelID(id string) bool {
+	if len(id) == 0 || len(id) > 64 {
+		return false
+	}
+	for _, c := range id {
+		if c != '-' && (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// tunnelFacts is what the plan reads outside Cloudflare and the store:
+// the setup domain, whether sign-in with Authentik is linked, the
+// configured sign-in and whether its API token is kept (ADR-046).
+type tunnelFacts struct {
+	Domain       string
+	SignInLinked bool
+	SignIn       *sso.Spec
+	TokenKept    bool
+	// PublicCert plans the public dashboard name's certificate on the
+	// projected edge table, and the apps moving with it (ADR-048 §5-§6);
+	// nil where certificate issuance is not mounted.
+	PublicCert func(st *store.Store, dashName string, projected docker.RouteSet) (*tunnelCertificate, *cert.MovePlan, *cert.Certificate, error)
+}
+
+// tunnelSignIn is the sign-in change a tunnel plan carries (ADR-046).
+type tunnelSignIn struct {
+	Origin       string `json:"origin"`
+	RedirectURI  string `json:"redirect_uri"`
+	AuthentikURL string `json:"authentik_url"`
+}
+
+func (s *Server) tunnelFacts() tunnelFacts {
+	var f tunnelFacts
+	if s.setupDomain != nil {
+		f.Domain = s.setupDomain()
+	}
+	if s.signInOffered != nil {
+		f.SignInLinked = s.signInOffered()
+	}
+	if s.signInStatus != nil {
+		if st, err := s.signInStatus(); err == nil && st.Configured {
+			f.SignIn, f.TokenKept = st.Spec, st.TokenKept
+		}
+	}
+	if s.certIssuing != nil {
+		f.PublicCert = s.planTunnelCertificate
+	}
+	return f
+}
+
+// tunnelDefaults proposes the public names from the setup domain. The
+// Authentik name is only for an Authentik installed under a name of its
+// own before ADR-044; callers drop it otherwise.
+func tunnelDefaults(domain string) (dashboard, auth string) {
+	if domain == "" {
+		return "", ""
+	}
+	return "homestead." + domain, "auth." + domain
+}
+
+// legacyAuthentikHost reports an Authentik installed under a name of its
+// own (ADR-037, before ADR-044), which keeps its own public name.
+func legacyAuthentikHost(routes []docker.Route) bool {
+	i := authentikRoute(routes)
+	return i >= 0 && !routes[i].IsPath()
+}
+
+// authentikRoute finds the Authentik server route among edge routes.
+func authentikRoute(routes []docker.Route) int {
+	for i, r := range routes {
+		host := strings.ToLower(string(r.Host))
+		if r.Target.Host == "server" &&
+			(strings.HasPrefix(host, authentikPackage+".") || strings.Contains(host, "-"+authentikPackage+".")) {
+			return i
+		}
+	}
+	return -1
+}
+
+// authentikPathPublished reports whether Authentik, served at a path of
+// the dashboard's name (ADR-044), is published with the dashboard: the
+// dashboard route and a path Authentik exist and sign-in is linked, since
+// the dashboard is published only behind Authentik (ADR-037 §4). A fresh
+// tunnel plan and a move of Authentik both ask this.
+func authentikPathPublished(routes []docker.Route, signInLinked bool) bool {
+	ak := authentikRoute(routes)
+	return signInLinked && dashboardRoute(routes) >= 0 && ak >= 0 && routes[ak].IsPath()
+}
+
+func dashboardRoute(routes []docker.Route) int {
+	for i, r := range routes {
+		if r.Dashboard {
+			return i
+		}
+	}
+	return -1
+}
+
+// buildTunnelPlan reads Cloudflare and the store and changes nothing.
+func buildTunnelPlan(ctx context.Context, st *store.Store, secrets *secret.Store, facts tunnelFacts, req tunnelRequest) (tunnelPlan, error) {
+	req.Adopt = strings.ToLower(strings.TrimSpace(req.Adopt))
+	if req.Adopt != "" {
+		if !validTunnelID(req.Adopt) {
+			return tunnelPlan{}, refusePlan(http.StatusBadRequest, "adopt takes a Cloudflare tunnel ID (a UUID)")
+		}
+	} else if err := router.ValidateTunnelName(req.Name); err != nil {
+		return tunnelPlan{}, refusePlan(http.StatusBadRequest, "%v", err)
+	}
+	set, err := loadEdgeRoutes(st)
+	if err != nil {
+		return tunnelPlan{}, err
+	}
+	// Only an Authentik installed under a name of its own (before
+	// ADR-044) takes a public name of its own; otherwise it answers at
+	// the dashboard's public name under /apps/auth/.
+	legacyAuth := legacyAuthentikHost(set.Routes)
+	dashName, authName := tunnelDefaults(facts.Domain)
+	if !legacyAuth {
+		authName = ""
+		if strings.TrimSpace(req.AuthHostname) != "" {
+			return tunnelPlan{}, refusePlan(http.StatusBadRequest,
+				"Authentik is served at the dashboard's public name under %s; it takes no public name of its own", docker.AppPathFor("auth"))
+		}
+	}
+	if req.DashboardHostname != "" {
+		dashName = req.DashboardHostname
+	}
+	if req.AuthHostname != "" {
+		authName = req.AuthHostname
+	}
+	dashName, authName = strings.ToLower(strings.TrimSpace(dashName)), strings.ToLower(strings.TrimSpace(authName))
+	if dashName == "" || (legacyAuth && authName == "") {
+		return tunnelPlan{}, refusePlan(http.StatusUnprocessableEntity,
+			"no domain is chosen in setup: choose one on the Domain step, or name dashboard_hostname")
+	}
+	if dashName == authName {
+		return tunnelPlan{}, refusePlan(http.StatusBadRequest, "the dashboard and Authentik need different public names")
+	}
+	ref := req.Name
+	if req.Adopt != "" {
+		ref = req.Adopt
+	}
+	publicNames := []string{dashName}
+	if authName != "" {
+		publicNames = append(publicNames, authName)
+	}
+	for _, name := range publicNames {
+		if err := (router.TunnelRoute{Hostname: name, TunnelID: ref, Service: tunnelEntryService}).Validate(); err != nil {
+			return tunnelPlan{}, refusePlan(http.StatusBadRequest, "%v", err)
+		}
+		if docker.IsPrivateName(docker.Hostname(name)) {
+			return tunnelPlan{}, refusePlan(http.StatusBadRequest, "%s is a local name; the tunnel carries public names", name)
+		}
+	}
+	routes, err := router.ListRoutes(st)
+	if err != nil {
+		return tunnelPlan{}, err
+	}
+	if len(routes) > 0 {
+		if req.Adopt != "" {
+			return tunnelPlan{}, refusePlan(http.StatusUnprocessableEntity, "Homestead already manages a tunnel; tear it down before adopting another")
+		}
+		return tunnelPlan{}, refusePlan(http.StatusUnprocessableEntity, "a tunnel is already set up; tear it down first")
+	}
+	var adopted router.ConnectorConfig
+	if req.Adopt != "" {
+		data, err := os.ReadFile(connectorConfigPath())
+		if err != nil {
+			return tunnelPlan{}, refusePlan(http.StatusUnprocessableEntity,
+				"this appliance has no connector config at %s, so its connector does not serve tunnel %s", connectorConfigPath(), req.Adopt)
+		}
+		if adopted, err = router.ParseConnectorConfig(data); err != nil {
+			return tunnelPlan{}, refusePlan(http.StatusUnprocessableEntity, "%v", err)
+		}
+		if !strings.EqualFold(adopted.Tunnel, req.Adopt) {
+			return tunnelPlan{}, refusePlan(http.StatusUnprocessableEntity,
+				"this appliance's connector serves a different tunnel, not %s", req.Adopt)
+		}
+	}
+	for _, r := range set.Routes {
+		for _, n := range r.AllNames() {
+			if string(n) == dashName || (authName != "" && string(n) == authName) {
+				return tunnelPlan{}, refusePlan(http.StatusUnprocessableEntity, "%s is already a name of the edge route %s", n, r.Host)
+			}
+		}
+	}
+	dash, ak := dashboardRoute(set.Routes), authentikRoute(set.Routes)
+	pathAuth := authentikPathPublished(set.Routes, facts.SignInLinked)
+	plan := tunnelPlan{
+		Name: req.Name, DashboardHostname: dashName, AuthHostname: authName,
+		Ingress: []tunnelPlanRoute{}, DNS: []tunnelPlanChange{}, Omitted: []tunnelOmission{}, Warnings: []string{},
+		Coverage: []publicNameCoverage{}, Paths: []tunnelPlanPath{},
+	}
+	authPath := dashName + docker.AppPathFor("auth")
+	switch {
+	case ak < 0:
+		plan.Omitted = append(plan.Omitted, tunnelOmission{Hostname: authPath, Role: tunnelRoleAuth,
+			Reason: "Authentik is not installed. Install it from the catalog: remote sign-in needs it."})
+	case !legacyAuth:
+		// Published with the dashboard's name below (ADR-044).
+	default:
+		plan.Ingress = append(plan.Ingress, tunnelPlanRoute{Hostname: authName, Role: tunnelRoleAuth,
+			Route: string(set.Routes[ak].Host), Service: tunnelEntryService})
+	}
+	// The dashboard is published only behind Authentik (ADR-037 §4).
+	switch {
+	case dash < 0:
+		plan.Omitted = append(plan.Omitted, tunnelOmission{Hostname: dashName, Role: tunnelRoleDashboard,
+			Reason: "The dashboard has no edge address yet."})
+	case !facts.SignInLinked:
+		plan.Omitted = append(plan.Omitted, tunnelOmission{Hostname: dashName, Role: tunnelRoleDashboard,
+			Reason: "Sign-in with Authentik is not linked yet. The dashboard is published only behind Authentik: link it on the Sign-in page, then plan the tunnel again."})
+	case ak < 0:
+		plan.Omitted = append(plan.Omitted, tunnelOmission{Hostname: dashName, Role: tunnelRoleDashboard,
+			Reason: "Authentik is not published, so remote sign-in could not finish."})
+	default:
+		plan.Ingress = append([]tunnelPlanRoute{{Hostname: dashName, Role: tunnelRoleDashboard,
+			Route: string(set.Routes[dash].Host), Service: tunnelEntryService}}, plan.Ingress...)
+		if pathAuth {
+			r := set.Routes[ak]
+			plan.Paths = append(plan.Paths, tunnelPlanPath{Role: tunnelRoleAuth, Route: string(r.Host), Path: r.Path,
+				URL: docker.PathURL(docker.Hostname(dashName), r.Path)})
+		}
+	}
+	if ak >= 0 && !legacyAuth && len(plan.Paths) == 0 {
+		plan.Omitted = append(plan.Omitted, tunnelOmission{Hostname: authPath, Role: tunnelRoleAuth,
+			Reason: "Authentik answers at the dashboard's public name, so it is published with the dashboard."})
+	}
+	if len(plan.Ingress) == 0 {
+		reasons := make([]string, 0, len(plan.Omitted))
+		for _, o := range plan.Omitted {
+			reasons = append(reasons, o.Hostname+": "+o.Reason)
+		}
+		return tunnelPlan{}, refusePlan(http.StatusUnprocessableEntity, "nothing to publish yet. %s", strings.Join(reasons, " "))
+	}
+	token, err := tunnelToken(secrets)
+	if err != nil {
+		return tunnelPlan{}, refusePlan(http.StatusUnprocessableEntity, "%v", err)
+	}
+	client, err := tunnelClient()
+	if err != nil {
+		return tunnelPlan{}, err
+	}
+	for _, in := range plan.Ingress {
+		zone, err := client.ZoneFor(ctx, token, in.Hostname)
+		if errors.Is(err, router.ErrNoZone) {
+			return tunnelPlan{}, refusePlan(http.StatusUnprocessableEntity,
+				"no Cloudflare zone the token can see contains %s: add the domain to Cloudflare, or give the token access to its zone", in.Hostname)
+		}
+		if err != nil {
+			return tunnelPlan{}, err
+		}
+		if zone.AccountID == "" {
+			return tunnelPlan{}, refusePlan(http.StatusUnprocessableEntity, "Cloudflare did not say which account owns zone %s", zone.Name)
+		}
+		if plan.zoneID == "" {
+			plan.Zone, plan.zoneID, plan.accountID = zone.Name, zone.ID, zone.AccountID
+		} else if zone.ID != plan.zoneID {
+			return tunnelPlan{}, refusePlan(http.StatusUnprocessableEntity,
+				"%s and %s are in different Cloudflare zones; pick names in one zone", plan.Ingress[0].Hostname, in.Hostname)
+		}
+		existing, err := client.RecordsAt(ctx, token, zone.ID, in.Hostname)
+		if err != nil {
+			return tunnelPlan{}, err
+		}
+		change := tunnelPlanChange{
+			Name: in.Hostname, Type: "CNAME", Content: tunnelPendingTarget, Proxied: true,
+			Action: "create", Replaces: []router.DNSRecord{},
+		}
+		if req.Adopt != "" {
+			change.Content = router.TunnelTarget(req.Adopt)
+		}
+		for _, record := range existing {
+			if req.Adopt != "" && record.Type == "CNAME" && strings.EqualFold(record.Content, change.Content) {
+				change.Action = "keep"
+				plan.keeps = append(plan.keeps, record)
+				continue
+			}
+			switch record.Type {
+			case "A", "AAAA", "CNAME":
+				change.Replaces = append(change.Replaces, record)
+			default:
+				return tunnelPlan{}, refusePlan(http.StatusUnprocessableEntity,
+					"%s already has a %s record, which a tunnel CNAME cannot sit next to; remove it in Cloudflare or pick another hostname",
+					in.Hostname, record.Type)
+			}
+		}
+		sort.Slice(change.Replaces, func(i, j int) bool { return change.Replaces[i].ID < change.Replaces[j].ID })
+		if len(change.Replaces) > 0 {
+			change.Action = "replace"
+			plan.Warnings = append(plan.Warnings,
+				"Existing records for "+in.Hostname+" are deleted now and put back when the tunnel is torn down, unless something else is at that name by then.")
+		}
+		plan.replaces = append(plan.replaces, change.Replaces...)
+		plan.DNS = append(plan.DNS, change)
+	}
+	names := make([]string, 0, len(plan.Ingress))
+	for _, in := range plan.Ingress {
+		names = append(names, in.Hostname)
+	}
+	if len(names) > 0 {
+		coverage, warnings, err := certificateCoverage(ctx, client, token,
+			router.Zone{ID: plan.zoneID, Name: plan.Zone, AccountID: plan.accountID}, names)
+		if err != nil {
+			return tunnelPlan{}, err
+		}
+		plan.Coverage = coverage
+		plan.Warnings = append(plan.Warnings, warnings...)
+	}
+	if req.Adopt != "" {
+		if err := planAdoption(ctx, client, token, &plan, req.Adopt, adopted); err != nil {
+			return tunnelPlan{}, err
+		}
+	}
+	for _, in := range plan.Ingress {
+		if in.Role == tunnelRoleDashboard {
+			signInAt := "https://" + authName
+			if !legacyAuth {
+				signInAt = docker.PathURL(docker.Hostname(dashName), set.Routes[ak].Path)
+			}
+			plan.SignIn, plan.SignInUpdate = tunnelSignInChange(facts, dashName, signInAt)
+		}
+	}
+	if facts.PublicCert != nil && dash >= 0 && !legacyAuth && len(plan.Paths) > 0 {
+		projected := docker.RouteSet{Routes: append([]docker.Route(nil), set.Routes...)}
+		setTunnelNames(projected.Routes, plan.edgeNames())
+		c, moves, add, err := facts.PublicCert(st, dashName, projected)
+		if err != nil {
+			return tunnelPlan{}, err
+		}
+		plan.Certificate, plan.IssuerMoves, plan.addCert = c, moves, add
+		if c != nil && !c.Issue && c.Placed == "" {
+			plan.Warnings = append(plan.Warnings, c.Note)
+		}
+	}
+	plan.Digest = plan.digest()
+	return plan, nil
+}
+
+// tunnelSignInChange says what publishing the dashboard at dashName
+// does to sign-in (ADR-046): nothing when sign-in already covers it, a
+// change this plan applies when the Authentik API token is kept, and
+// otherwise a note leading to the Sign-in re-plan.
+func tunnelSignInChange(facts tunnelFacts, dashName, signInAt string) (string, *tunnelSignIn) {
+	const local = " Password sign-in, claim, recovery and linking stay on the local and overlay addresses."
+	origin, err := sso.ValidateOrigin("https://" + dashName)
+	if err != nil {
+		origin = "https://" + strings.ToLower(dashName)
+	}
+	authentikURL := signInAt
+	if at, err := sso.ValidateAuthentikURL(signInAt); err == nil {
+		authentikURL = at
+	}
+	if spec := facts.SignIn; spec != nil && slices.Contains(spec.Origins, origin) &&
+		slices.Contains(spec.PublicOrigins, origin) && spec.PublicAuthentikURL == authentikURL {
+		return "Sign-in already covers " + origin + " and sends browsers there to " + signInAt + "." + local, nil
+	}
+	adds := " it adds " + origin + " and its redirect address, and sends browsers there to " + signInAt + "." + local
+	if facts.SignIn != nil && facts.TokenKept {
+		update := &tunnelSignIn{Origin: origin, RedirectURI: origin + sso.CallbackPath, AuthentikURL: authentikURL}
+		return "Approving also updates Sign-in with Authentik, using the API token you kept:" + adds, update
+	}
+	return "Homestead did not keep the Authentik API token, so it cannot update Sign-in itself. After setup, re-plan Sign-in and approve it:" + adds, nil
+}
+
+// planAdoption checks the tunnel being adopted with Cloudflare and lists
+// what happens to each entry of the connector config already here.
+func planAdoption(ctx context.Context, client *router.TunnelClient, token string, plan *tunnelPlan, id string, adopted router.ConnectorConfig) error {
+	details, err := client.GetTunnelDetails(ctx, token, plan.accountID, id)
+	var refusal *router.TunnelError
+	if errors.As(err, &refusal) || (err == nil && details.Deleted) {
+		return refusePlan(http.StatusUnprocessableEntity,
+			"Cloudflare has no tunnel %s in the account that holds %s", id, plan.Zone)
+	}
+	if err != nil {
+		return err
+	}
+	if details.RemoteConfig {
+		return refusePlan(http.StatusUnprocessableEntity,
+			"tunnel %s is configured from the Cloudflare dashboard; Homestead adopts only tunnels configured by the connector's local file", id)
+	}
+	plan.Name = details.Name
+	plan.Adopt = &tunnelAdoption{ID: id, Status: details.Status, Connections: len(details.Connections), Existing: []tunnelAdoptedName{}}
+	planned := map[string]bool{}
+	for _, in := range plan.Ingress {
+		planned[in.Hostname] = true
+	}
+	for _, in := range adopted.Ingress {
+		if in.Hostname == "" {
+			continue
+		}
+		entry := tunnelAdoptedName{Hostname: in.Hostname, Service: in.Service,
+			Outcome: "Kept, now through the edge to " + in.Hostname + "'s Homestead route."}
+		if !planned[in.Hostname] {
+			entry.Outcome = "Dropped from the connector. Its DNS record is left as it is and answers 404 until you remove it in Cloudflare or publish the name again."
+		}
+		plan.Adopt.Existing = append(plan.Adopt.Existing, entry)
+	}
+	if len(details.Connections) == 0 {
+		plan.Warnings = append(plan.Warnings, "The tunnel has no live connections right now; approving restarts this appliance's connector.")
+	}
+	return nil
+}
+
+// edgeNames maps each local edge route to the public names it gains.
+func (p tunnelPlan) edgeNames() map[docker.Hostname][]docker.Hostname {
+	names := map[docker.Hostname][]docker.Hostname{}
+	for _, in := range p.Ingress {
+		names[docker.Hostname(in.Route)] = append(names[docker.Hostname(in.Route)], docker.Hostname(in.Hostname))
+	}
+	// A path route is published on the dashboard's name (ADR-044).
+	for _, path := range p.Paths {
+		names[docker.Hostname(path.Route)] = []docker.Hostname{docker.Hostname(p.DashboardHostname)}
+	}
+	return names
+}
+
+// setTunnelNames gives each route exactly its names, keyed by host. A
+// path route answers on the dashboard's public name instead; any name
+// given for it publishes it, and none unpublishes it (ADR-044).
+func setTunnelNames(routes []docker.Route, names map[docker.Hostname][]docker.Hostname) {
+	for i := range routes {
+		if routes[i].IsPath() {
+			routes[i].Tunnel = nil
+			routes[i].Published = len(names[routes[i].Host]) > 0
+			continue
+		}
+		routes[i].Tunnel = names[routes[i].Host]
+	}
+}
+
+// applyTunnelNames gives each edge route exactly the tunnel names in
+// names, keyed by the route's host (every other route loses its tunnel
+// names), deploys the edge stack so it publishes the loopback tunnel
+// entry, and reconciles the routes. A var so tests skip Docker.
+var applyTunnelNames = func(ctx context.Context, st *store.Store, names map[docker.Hostname][]docker.Hostname) error {
+	set, err := loadEdgeRoutes(st)
+	if err != nil {
+		return err
+	}
+	setTunnelNames(set.Routes, names)
+	return reconcileEdgeSet(ctx, st, set)
+}
+
+// reconcileEdgeSet deploys the edge stack and reconciles it to set,
+// saving set as the route table. A var so tests skip Docker.
+var reconcileEdgeSet = func(ctx context.Context, st *store.Store, set docker.RouteSet) error {
+	docker.HealGates(set.Routes)
+	stampSingleOrigin(singleOriginCatalogDir(), set.Routes)
+	deploy, err := docker.DeployDefinition(docker.CaddyStack())
+	if err != nil {
+		return err
+	}
+	reconcile, err := docker.ReconcileDefinition(docker.CaddyStack(), set, docker.RouteState{
+		Load: func() (docker.RouteSet, error) { return loadEdgeRoutes(st) },
+		Save: func(set docker.RouteSet) error { return saveEdgeRoutes(st, set) },
+	})
+	if err != nil {
+		return err
+	}
+	for _, def := range []operation.Definition{deploy, reconcile} {
+		for _, step := range def.Steps {
+			if err := step.Run(ctx); err != nil {
+				return fmt.Errorf("edge %s: %w", step.Name, err)
+			}
+		}
+	}
+	// The edge network may have been recreated with a new subnet (S421).
+	// Best effort here; the periodic pass and the Doctor report a miss.
+	_ = reconcileGateBlock(ctx, st)
+	return nil
+}
+
+// digest binds the reviewed plan to the hidden IDs it acts on, so a
+// changed zone, account or replaced record invalidates the approval.
+func (p tunnelPlan) digest() string {
+	h := sha256.New()
+	visible := p
+	visible.Digest = ""
+	data, _ := json.Marshal(visible)
+	h.Write(data)
+	fmt.Fprintf(h, "\nzone=%s\naccount=%s", p.zoneID, p.accountID)
+	for _, record := range p.replaces {
+		fmt.Fprintf(h, "\nreplace=%s", record.ID)
+	}
+	for _, record := range p.keeps {
+		fmt.Fprintf(h, "\nkeep=%s", record.ID)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func decodeTunnelRequest(w http.ResponseWriter, r *http.Request, digest *string) (tunnelRequest, bool) {
+	var body struct {
+		tunnelRequest
+		Digest    *string `json:"digest"`
+		APIToken  *string `json:"api_token"`
+		AccountID *string `json:"account_id"`
+		Hostname  *string `json:"hostname"`
+		Service   *string `json:"service"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return tunnelRequest{}, false
+	}
+	if body.APIToken != nil || body.AccountID != nil {
+		http.Error(w, "the tunnel no longer takes api_token or account_id: it uses the Cloudflare token from the setup Domain step and finds the account from the hostname's zone", http.StatusBadRequest)
+		return tunnelRequest{}, false
+	}
+	if body.Hostname != nil || body.Service != nil {
+		http.Error(w, "the tunnel no longer takes hostname or service: it publishes the dashboard and Authentik through the edge, named by dashboard_hostname and auth_hostname (default homestead.<domain> and auth.<domain>)", http.StatusBadRequest)
+		return tunnelRequest{}, false
+	}
+	if digest == nil && body.Digest != nil {
+		http.Error(w, "a plan takes no digest", http.StatusBadRequest)
+		return tunnelRequest{}, false
+	}
+	if digest != nil {
+		if body.Digest == nil || *body.Digest == "" {
+			http.Error(w, "digest is required: review the plan, then approve it with its digest", http.StatusBadRequest)
+			return tunnelRequest{}, false
+		}
+		*digest = *body.Digest
+	}
+	return body.tunnelRequest, true
+}
+
+func (s *Server) handleTunnelPlan(st *store.Store, secrets *secret.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		req, ok := decodeTunnelRequest(w, r, nil)
+		if !ok {
+			return
+		}
+		plan, err := buildTunnelPlan(r.Context(), st, secrets, s.tunnelFacts(), req)
+		if err != nil {
+			writePlanError(w, err)
+			return
+		}
+		writeJSON(w, plan)
 	}
 }
 
 func (s *Server) handleTunnelSetup(st *store.Store, secrets *secret.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Name      string `json:"name"`
-			Hostname  string `json:"hostname"`
-			Service   string `json:"service"`
-			APIToken  string `json:"api_token"`
-			AccountID string `json:"account_id"`
-		}
-		if err := decodeBody(r, &body); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		var digest string
+		req, ok := decodeTunnelRequest(w, r, &digest)
+		if !ok {
 			return
 		}
-		route := router.TunnelRoute{Hostname: body.Hostname, TunnelID: body.Name, Service: body.Service}
-		if err := route.Validate(); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		plan, err := buildTunnelPlan(r.Context(), st, secrets, s.tunnelFacts(), req)
+		if err != nil {
+			writePlanError(w, err)
 			return
 		}
-		if err := router.ValidateTunnelName(body.Name); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if plan.Digest != digest {
+			http.Error(w, "the plan changed since it was reviewed; review it again", http.StatusConflict)
 			return
 		}
-		if body.APIToken == "" {
-			http.Error(w, "api_token must not be empty", http.StatusBadRequest)
-			return
-		}
-		if body.AccountID == "" {
-			http.Error(w, "account_id must not be empty", http.StatusBadRequest)
-			return
-		}
-		if routes, err := router.ListRoutes(st); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		} else {
-			for _, route := range routes {
-				if route.Hostname == body.Hostname {
-					http.Error(w, "hostname is already set up; tear down first", http.StatusUnprocessableEntity)
-					return
-				}
+		if c := plan.Certificate; c != nil && c.Issue {
+			if !req.AgreeTerms {
+				http.Error(w, "agree_terms is required: approving this plan issues a certificate for "+c.Name+" from "+c.Directory+
+					", which records your agreement to the CA's terms ("+c.TermsURL+")", http.StatusUnprocessableEntity)
+				return
+			}
+			if c.DirectoryClass == cert.DirectoryProduction && !req.ConfirmProduction {
+				http.Error(w, "confirm_production is required: the certificate for "+c.Name+" comes from a production CA", http.StatusUnprocessableEntity)
+				return
 			}
 		}
-		if err := secrets.Set(router.TunnelSecretName, body.APIToken); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		token, err := tunnelToken(secrets)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
-		def := tunnelSetupDefinition(st, body.Name, body.Hostname, body.Service, body.APIToken, body.AccountID)
 		runner := operation.NewRunner(st)
-		op, err := runner.Start(r.Context(), def, "")
+		actor := operatorActor(r)
+		signIn := func(ctx context.Context, want tunnelSignIn) error {
+			if s.updateSignIn == nil {
+				return errors.New("sign-in with Authentik is not available")
+			}
+			return s.updateSignIn(ctx, actor, plan.Digest, want)
+		}
+		after := tunnelAfter{SignIn: signIn,
+			Certificate: func(ctx context.Context) error {
+				return s.issueTunnelCertificate(ctx, actor, plan.Digest, *plan.Certificate, plan.addCert, req.ConfirmProduction)
+			},
+			MoveIssuers: func(ctx context.Context) error { return s.moveIssuers(ctx, actor, *plan.IssuerMoves) },
+		}
+		op, err := runner.Start(r.Context(), tunnelSetupDefinition(st, token, plan, after), "")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		published := make([]string, 0, len(plan.Ingress))
+		for _, in := range plan.Ingress {
+			published = append(published, in.Hostname+" -> "+in.Route)
+		}
+		action, verb := "tunnel.setup", "tunnel"
+		if plan.Adopt != nil {
+			action, verb = "tunnel.adopt", "adopt tunnel"
+		}
+		s.auditOperation(st, runner, op.ID, operatorActor(r), action,
+			fmt.Sprintf("operation %d: %s %s for %s", op.ID, verb, plan.Name, strings.Join(published, ", ")))
 		writeJSON(w, map[string]any{"id": op.ID})
 	}
 }
 
-// tunnelSetupDefinition builds the setup operation: create the tunnel,
-// fetch its run token, write connector files, enable the connector,
-// and record the route. Steps share locals; a later failure leaves
-// earlier effects for teardown to converge away.
-func tunnelSetupDefinition(st *store.Store, name, hostname, service, apiToken, accountID string) operation.Definition {
+// tunnelSetupDefinition builds the approved setup: create the tunnel,
+// point each public name at it (deleting the records the plan replaces,
+// which are remembered for teardown), give the edge routes their public
+// names, write and start the connector, record the routes, and, when the
+// plan carries it, update sign-in (ADR-046). A failure up to the routes
+// undoes what this run created and puts the replaced records back, so a
+// retry plans from scratch. A failed sign-in update leaves the working
+// tunnel up.
+func tunnelSetupDefinition(st *store.Store, apiToken string, plan tunnelPlan, after tunnelAfter) operation.Definition {
 	var tunnelID, runToken string
+	var recordIDs []string
+	adopting := plan.Adopt != nil
+	undoTunnel := func(ctx context.Context) {
+		// An adopted tunnel is the owner's: a failed adoption never deletes it.
+		if client, err := tunnelClient(); err == nil && tunnelID != "" && !adopting {
+			_ = client.DeleteTunnel(ctx, apiToken, plan.accountID, tunnelID)
+		}
+	}
+	undoRecords := func(ctx context.Context) {
+		client, err := tunnelClient()
+		if err != nil {
+			return
+		}
+		for _, id := range recordIDs {
+			if client.DeleteRecord(ctx, apiToken, plan.zoneID, id) == nil {
+				_ = router.ForgetOwned(st, id)
+			}
+		}
+	}
+	undoReplaced := func(ctx context.Context) {
+		if tunnelID != "" {
+			_ = restoreReplacedRecords(ctx, st, apiToken, tunnelID)
+		}
+	}
+	undoKeeps := func() {
+		for _, record := range plan.keeps {
+			_ = router.ForgetOwned(st, record.ID)
+		}
+	}
+	undoCloudflare := func(ctx context.Context) {
+		undoRecords(ctx)
+		undoKeeps()
+		undoReplaced(ctx)
+		undoTunnel(ctx)
+	}
 	def := operation.Definition{Type: "tunnel.setup"}
+	if adopting {
+		def.Type = "tunnel.adopt"
+		def.Steps = append(def.Steps, operation.StepDef{
+			Name: "adopt-tunnel",
+			Run: func(ctx context.Context) error {
+				client, err := tunnelClient()
+				if err != nil {
+					return err
+				}
+				token, err := client.TunnelRunToken(ctx, apiToken, plan.accountID, plan.Adopt.ID)
+				if err != nil {
+					return fmt.Errorf("tunnel: fetch the run token for %s: %w", plan.Adopt.ID, err)
+				}
+				tunnelID, runToken = plan.Adopt.ID, token
+				return nil
+			},
+		})
+	} else {
+		def.Steps = append(def.Steps, operation.StepDef{
+			Name: "create-tunnel",
+			Run: func(ctx context.Context) error {
+				client, err := tunnelClient()
+				if err != nil {
+					return err
+				}
+				tunnel, err := client.CreateTunnel(ctx, apiToken, plan.accountID, plan.Name)
+				if err != nil {
+					return err
+				}
+				tunnelID = tunnel.ID
+				runToken = tunnel.Token
+				return nil
+			},
+		})
+	}
 	def.Steps = append(def.Steps, operation.StepDef{
-		Name: "create-tunnel",
+		Name: "dns",
 		Run: func(ctx context.Context) error {
-			client, err := router.NewTunnelClient(router.CloudflareAPIBase)
+			client, err := tunnelClient()
 			if err != nil {
+				undoTunnel(ctx)
 				return err
 			}
-			tunnel, err := client.CreateTunnel(ctx, apiToken, accountID, name)
-			if err != nil {
+			for _, record := range plan.replaces {
+				// Remembered first, so a crash mid-step still leaves it restorable.
+				if err := router.RecordReplaced(st, router.ReplacedRecord{TunnelID: tunnelID, ZoneID: plan.zoneID, Record: record}); err != nil {
+					undoCloudflare(ctx)
+					return err
+				}
+				if err := client.DeleteRecord(ctx, apiToken, plan.zoneID, record.ID); err != nil {
+					_ = router.ForgetReplaced(st, tunnelID, record.ID)
+					undoCloudflare(ctx)
+					return fmt.Errorf("tunnel: delete %s record for %s: %w", record.Type, record.Name, err)
+				}
+			}
+			for _, record := range plan.keeps {
+				if err := router.RecordOwned(st, router.OwnedRecord{
+					RecordID: record.ID, ZoneID: plan.zoneID, Hostname: record.Name, TunnelID: tunnelID,
+				}); err != nil {
+					undoCloudflare(ctx)
+					return err
+				}
+			}
+			for _, in := range plan.Ingress {
+				if kept(plan, in.Hostname) {
+					continue
+				}
+				created, err := client.CreateTunnelCNAME(ctx, apiToken, plan.zoneID, in.Hostname, tunnelID)
+				if err != nil {
+					undoCloudflare(ctx)
+					return fmt.Errorf("tunnel: create DNS record for %s: %w", in.Hostname, err)
+				}
+				recordIDs = append(recordIDs, created.ID)
+				if err := router.RecordOwned(st, router.OwnedRecord{
+					RecordID: created.ID, ZoneID: plan.zoneID, Hostname: in.Hostname, TunnelID: tunnelID,
+				}); err != nil {
+					undoCloudflare(ctx)
+					return err
+				}
+			}
+			return nil
+		},
+	})
+	def.Steps = append(def.Steps, operation.StepDef{
+		Name: "edge",
+		Run: func(ctx context.Context) error {
+			if err := applyTunnelNames(ctx, st, plan.edgeNames()); err != nil {
+				_ = applyTunnelNames(ctx, st, nil)
+				undoCloudflare(ctx)
 				return err
 			}
-			tunnelID = tunnel.ID
-			runToken = tunnel.Token
 			return nil
 		},
 	})
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "connector",
 		Run: func(ctx context.Context) error {
+			fail := func(err error) error {
+				_ = applyTunnelNames(ctx, st, nil)
+				undoCloudflare(ctx)
+				return err
+			}
 			if _, err := tunnelLookPath("cloudflared"); err != nil {
-				return fmt.Errorf("tunnel: install cloudflared, then re-run setup")
+				return fail(fmt.Errorf("tunnel: install cloudflared, then re-run setup"))
 			}
-			configPath := filepath.Join(tunnelConnectorDir, "config.yml")
-			tokenPath := filepath.Join(tunnelConnectorDir, "token.env")
-			if err := os.MkdirAll(tunnelConnectorDir, 0o755); err != nil {
-				return fmt.Errorf("tunnel: connector dir: %w", err)
-			}
-			if err := os.WriteFile(configPath,
-				[]byte(router.RenderConnectorConfig(tunnelID, hostname, service)), 0o644); err != nil {
-				return fmt.Errorf("tunnel: connector config: %w", err)
-			}
-			if err := os.WriteFile(tokenPath,
-				[]byte("TUNNEL_TOKEN="+runToken+"\n"), 0o600); err != nil {
-				return fmt.Errorf("tunnel: connector token: %w", err)
-			}
-			if err := tunnelSystemctl("enable", "--now", tunnelUnitName); err != nil {
-				client, clientErr := router.NewTunnelClient(router.CloudflareAPIBase)
-				if clientErr == nil {
-					_ = client.DeleteTunnel(ctx, apiToken, accountID, tunnelID)
+			// An adopted connector's own files come back if this fails, so
+			// it keeps serving what it served before.
+			previousConfig, configErr := os.ReadFile(connectorConfigPath())
+			previousToken, tokenErr := os.ReadFile(connectorTokenPath())
+			restore := func() {
+				if !adopting {
+					return
 				}
-				return fmt.Errorf("tunnel: enable connector: %w (then run: sudo systemctl enable --now %s and re-run setup)", err, tunnelUnitName)
+				if configErr == nil {
+					_, _ = writeIfChanged(connectorConfigPath(), previousConfig, 0o644)
+				}
+				if tokenErr == nil {
+					_, _ = writeIfChanged(connectorTokenPath(), previousToken, 0o600)
+				}
+				_ = tunnelSystemctl("restart", tunnelUnitName)
+			}
+			ingress := make([]router.Ingress, 0, len(plan.Ingress))
+			for _, in := range plan.Ingress {
+				ingress = append(ingress, router.Ingress{Hostname: in.Hostname, Service: in.Service})
+			}
+			sort.Slice(ingress, func(i, j int) bool { return ingress[i].Hostname < ingress[j].Hostname })
+			changed, err := writeConnector(tunnelID, ingress, runToken)
+			if err != nil {
+				restore()
+				return fail(err)
+			}
+			if err := startConnector(changed); err != nil {
+				restore()
+				return fail(err)
 			}
 			return nil
 		},
@@ -254,12 +1201,58 @@ func tunnelSetupDefinition(st *store.Store, name, hostname, service, apiToken, a
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "record-route",
 		Run: func(ctx context.Context) error {
-			return router.RecordRoute(st, router.TunnelRoute{
-				Hostname: hostname, TunnelID: tunnelID, Service: service,
-			}, name)
+			for _, in := range plan.Ingress {
+				if err := router.RecordRoute(st, router.TunnelRoute{
+					Hostname: in.Hostname, TunnelID: tunnelID, Service: in.Service,
+				}, plan.Name); err != nil {
+					return err
+				}
+			}
+			return router.SetTunnelAccount(st, tunnelID, plan.accountID, plan.zoneID, plan.Zone)
 		},
 	})
+	if c := plan.Certificate; c != nil && c.Issue {
+		def.Steps = append(def.Steps, operation.StepDef{
+			Name: "certificate",
+			Run: func(ctx context.Context) error {
+				if err := after.Certificate(ctx); err != nil {
+					msg := fmt.Sprintf("the tunnel is up, but the certificate for %s was not issued: %v. Retry it from TLS: plan %s, approve it and issue it", c.Name, err, c.Certificate)
+					if plan.SignInUpdate != nil {
+						msg += "; then re-plan Sign-in and approve it"
+					}
+					if plan.IssuerMoves != nil && len(plan.IssuerMoves.Apps) > 0 {
+						msg += "; the apps waiting to move to Authentik's public address move with it"
+					}
+					return errors.New(msg)
+				}
+				return nil
+			},
+		})
+	}
+	if want := plan.SignInUpdate; want != nil {
+		def.Steps = append(def.Steps, operation.StepDef{
+			Name: "sign-in",
+			Run: func(ctx context.Context) error {
+				if err := after.SignIn(ctx, *want); err != nil {
+					return fmt.Errorf("the tunnel is up, but sign-in was not updated for %s: %w. Re-plan Sign-in and approve it", want.Origin, err)
+				}
+				return nil
+			},
+		})
+	}
+	if plan.IssuerMoves.Reapplies() {
+		def.Steps = append(def.Steps, operation.StepDef{Name: cert.MoveStep, Run: after.MoveIssuers})
+	}
 	return def
+}
+
+// tunnelAfter is what the tunnel operation runs once the tunnel is up:
+// the public certificate (ADR-048 §5), the sign-in update (ADR-046) and
+// the app sign-in moves (ADR-048 §6), each only when the plan has it.
+type tunnelAfter struct {
+	Certificate func(context.Context) error
+	SignIn      func(context.Context, tunnelSignIn) error
+	MoveIssuers func(context.Context) error
 }
 
 func (s *Server) handleTunnelTeardown(st *store.Store, secrets *secret.Store) http.HandlerFunc {
@@ -269,50 +1262,108 @@ func (s *Server) handleTunnelTeardown(st *store.Store, secrets *secret.Store) ht
 			http.Error(w, "tunnel id must not be empty", http.StatusBadRequest)
 			return
 		}
-		token, err := secrets.Get(router.TunnelSecretName)
+		if r.URL.Query().Has("account_id") {
+			http.Error(w, "teardown no longer takes account_id: the account is the one the tunnel was set up under", http.StatusBadRequest)
+			return
+		}
+		token, err := tunnelToken(secrets)
 		if err != nil {
-			http.Error(w, "no tunnel API token on file; set up first", http.StatusUnprocessableEntity)
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
-		accountID := r.URL.Query().Get("account_id")
-		if accountID == "" {
-			http.Error(w, "account_id query is required", http.StatusBadRequest)
+		accountID, err := tunnelTeardownAccount(r.Context(), st, token, id)
+		if err != nil {
+			writePlanError(w, err)
 			return
 		}
-		def := tunnelTeardownDefinition(st, token, accountID, id)
 		runner := operation.NewRunner(st)
-		op, err := runner.Start(r.Context(), def, "")
+		op, err := runner.Start(r.Context(), tunnelTeardownDefinition(st, token, accountID, id), "")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		s.auditOperation(st, runner, op.ID, operatorActor(r), "tunnel.teardown",
+			fmt.Sprintf("operation %d: tunnel %s", op.ID, id))
 		writeJSON(w, map[string]any{"id": op.ID})
 	}
 }
 
-// tunnelTeardownDefinition builds teardown: delete the provider
-// tunnel (missing reads as already gone), disable the connector and
-// remove setup-written files (the static unit file stays: it belongs
-// to provisioning, not setup), then forget recorded routes. Files go
-// before rows so a failure never leaves a live connector with no
+// tunnelTeardownAccount finds the account a tunnel lives in: the one
+// stored at setup, else the account of a recorded hostname's zone, else
+// the token's only account (tunnels set up before S294).
+func tunnelTeardownAccount(ctx context.Context, st *store.Store, token, tunnelID string) (string, error) {
+	if account, err := router.TunnelAccount(st, tunnelID); err != nil {
+		return "", err
+	} else if account != "" {
+		return account, nil
+	}
+	client, err := tunnelClient()
+	if err != nil {
+		return "", err
+	}
+	routes, err := router.ListRoutes(st)
+	if err != nil {
+		return "", err
+	}
+	for _, route := range routes {
+		if route.TunnelID != tunnelID {
+			continue
+		}
+		if zone, err := client.ZoneFor(ctx, token, route.Hostname); err == nil && zone.AccountID != "" {
+			return zone.AccountID, nil
+		}
+	}
+	accounts, err := client.ListAccounts(ctx, token)
+	if err != nil {
+		return "", err
+	}
+	if len(accounts) != 1 {
+		return "", refusePlan(http.StatusUnprocessableEntity,
+			"cannot tell which Cloudflare account holds this tunnel: the token sees %d accounts and no recorded hostname is in a visible zone", len(accounts))
+	}
+	return accounts[0], nil
+}
+
+// tunnelTeardownDefinition builds teardown: stop the connector, delete
+// the provider tunnel (missing reads as already gone), delete the DNS
+// records Homestead created that still point at it, put back the records
+// setup replaced (when their name is free), disable the
+// connector and remove setup-written files (the static unit file stays:
+// it belongs to provisioning, not setup), then forget recorded routes.
+// Files go before rows so a failure never leaves a live connector with no
 // record of it.
 func tunnelTeardownDefinition(st *store.Store, apiToken, accountID, tunnelID string) operation.Definition {
 	def := operation.Definition{Type: "tunnel.teardown"}
+	// The connector stops first: the provider refuses to delete a tunnel
+	// that still has live connections (error 1022). If the delete then
+	// fails the connector is started again so the tunnel keeps serving.
+	def.Steps = append(def.Steps, operation.StepDef{
+		Name: "stop-connector",
+		Run: func(ctx context.Context) error {
+			_ = tunnelSystemctl("stop", tunnelUnitName)
+			return nil
+		},
+	})
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "delete-tunnel",
 		Run: func(ctx context.Context) error {
-			client, err := router.NewTunnelClient(router.CloudflareAPIBase)
+			err := deleteProviderTunnel(ctx, apiToken, accountID, tunnelID)
 			if err != nil {
-				return err
+				_ = tunnelSystemctl("start", tunnelUnitName)
 			}
-			if _, err := client.GetTunnel(ctx, apiToken, accountID, tunnelID); err != nil {
-				var refusal *router.TunnelError
-				if errors.As(err, &refusal) {
-					return nil
-				}
-				return err
-			}
-			return client.DeleteTunnel(ctx, apiToken, accountID, tunnelID)
+			return err
+		},
+	})
+	def.Steps = append(def.Steps, operation.StepDef{
+		Name: "delete-dns",
+		Run: func(ctx context.Context) error {
+			return deleteOwnedRecords(ctx, st, apiToken, tunnelID)
+		},
+	})
+	def.Steps = append(def.Steps, operation.StepDef{
+		Name: "restore-dns",
+		Run: func(ctx context.Context) error {
+			return restoreReplacedRecords(ctx, st, apiToken, tunnelID)
 		},
 	})
 	def.Steps = append(def.Steps, operation.StepDef{
@@ -322,6 +1373,14 @@ func tunnelTeardownDefinition(st *store.Store, apiToken, accountID, tunnelID str
 			_ = os.Remove(filepath.Join(tunnelConnectorDir, "config.yml"))
 			_ = os.Remove(filepath.Join(tunnelConnectorDir, "token.env"))
 			return nil
+		},
+	})
+	// The edge drops the public names, so its loopback tunnel entry
+	// serves nothing.
+	def.Steps = append(def.Steps, operation.StepDef{
+		Name: "edge",
+		Run: func(ctx context.Context) error {
+			return applyTunnelNames(ctx, st, nil)
 		},
 	})
 	def.Steps = append(def.Steps, operation.StepDef{
@@ -342,4 +1401,147 @@ func tunnelTeardownDefinition(st *store.Store, apiToken, accountID, tunnelID str
 		},
 	})
 	return def
+}
+
+// deleteOwnedRecords deletes the records Homestead created for a tunnel,
+// only while they still point at it (ADR-037). A record the owner changed
+// is left alone and audited; a record already gone is forgotten.
+func deleteOwnedRecords(ctx context.Context, st *store.Store, apiToken, tunnelID string) error {
+	return deleteOwnedRecordsAt(ctx, st, apiToken, tunnelID, "")
+}
+
+// deleteOwnedRecordsAt is deleteOwnedRecords for one public name, or for
+// every name when hostname is empty.
+func deleteOwnedRecordsAt(ctx context.Context, st *store.Store, apiToken, tunnelID, hostname string) error {
+	all, err := router.OwnedRecords(st, tunnelID)
+	if err != nil {
+		return err
+	}
+	owned := all[:0:0]
+	for _, record := range all {
+		if hostname == "" || record.Hostname == hostname {
+			owned = append(owned, record)
+		}
+	}
+	if len(owned) == 0 {
+		return nil
+	}
+	client, err := tunnelClient()
+	if err != nil {
+		return err
+	}
+	for _, record := range owned {
+		current, err := client.GetRecord(ctx, apiToken, record.ZoneID, record.RecordID)
+		var refusal *router.TunnelError
+		switch {
+		case errors.As(err, &refusal):
+			// Gone already.
+		case err != nil:
+			return err
+		case current.Type == "CNAME" && current.Content == router.TunnelTarget(tunnelID):
+			if err := client.DeleteRecord(ctx, apiToken, record.ZoneID, record.RecordID); err != nil {
+				return fmt.Errorf("tunnel: delete DNS record for %s: %w", record.Hostname, err)
+			}
+		default:
+			_, _ = audit.New(st).Record(audit.Entry{
+				Actor: "homestead", Action: "tunnel.teardown.dns-kept", Outcome: audit.OutcomeOK,
+				Detail: fmt.Sprintf("%s no longer points at tunnel %s, so it was left in place", record.Hostname, tunnelID),
+			})
+		}
+		if err := router.ForgetOwned(st, record.RecordID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// restoreReplacedRecords puts back the records a tunnel's setup deleted.
+// A name that holds an address or CNAME record again (the owner's, or a
+// Homestead record kept because it was changed) is left alone and the
+// skip is audited; nothing is overwritten.
+func restoreReplacedRecords(ctx context.Context, st *store.Store, apiToken, tunnelID string) error {
+	return restoreReplacedRecordsAt(ctx, st, apiToken, tunnelID, "")
+}
+
+// restoreReplacedRecordsAt is restoreReplacedRecords for one public name,
+// or for every name when hostname is empty.
+func restoreReplacedRecordsAt(ctx context.Context, st *store.Store, apiToken, tunnelID, hostname string) error {
+	all, err := router.ReplacedRecords(st, tunnelID)
+	if err != nil {
+		return err
+	}
+	replaced := all[:0:0]
+	for _, r := range all {
+		if hostname == "" || r.Record.Name == hostname {
+			replaced = append(replaced, r)
+		}
+	}
+	if len(replaced) == 0 {
+		return nil
+	}
+	client, err := tunnelClient()
+	if err != nil {
+		return err
+	}
+	// Checked once per name before restoring any of it, so an A and an
+	// AAAA that were replaced together both come back.
+	occupied := map[string]bool{}
+	for _, r := range replaced {
+		key := r.ZoneID + "/" + r.Record.Name
+		if _, checked := occupied[key]; checked {
+			continue
+		}
+		current, err := client.RecordsAt(ctx, apiToken, r.ZoneID, r.Record.Name)
+		if err != nil {
+			return err
+		}
+		occupied[key] = false
+		for _, record := range current {
+			switch record.Type {
+			case "A", "AAAA", "CNAME":
+				occupied[key] = true
+			}
+		}
+	}
+	for _, r := range replaced {
+		if occupied[r.ZoneID+"/"+r.Record.Name] {
+			_, _ = audit.New(st).Record(audit.Entry{
+				Actor: "homestead", Action: "tunnel.teardown.dns-not-restored", Outcome: audit.OutcomeOK,
+				Detail: fmt.Sprintf("%s %s -> %s was not put back: the name has a record again", r.Record.Type, r.Record.Name, r.Record.Content),
+			})
+		} else if _, err := client.RestoreRecord(ctx, apiToken, r.ZoneID, r.Record); err != nil {
+			return fmt.Errorf("tunnel: restore %s record for %s: %w", r.Record.Type, r.Record.Name, err)
+		}
+		if err := router.ForgetReplaced(st, tunnelID, r.Record.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// deleteProviderTunnel deletes the provider tunnel; a tunnel the provider
+// no longer knows reads as already gone.
+func deleteProviderTunnel(ctx context.Context, apiToken, accountID, tunnelID string) error {
+	client, err := tunnelClient()
+	if err != nil {
+		return err
+	}
+	if _, err := client.GetTunnel(ctx, apiToken, accountID, tunnelID); err != nil {
+		var refusal *router.TunnelError
+		if errors.As(err, &refusal) {
+			return nil
+		}
+		return err
+	}
+	return client.DeleteTunnel(ctx, apiToken, accountID, tunnelID)
+}
+
+// kept says an adopted CNAME already points the name at the tunnel.
+func kept(plan tunnelPlan, hostname string) bool {
+	for _, record := range plan.keeps {
+		if record.Name == hostname {
+			return true
+		}
+	}
+	return false
 }

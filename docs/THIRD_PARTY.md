@@ -1045,3 +1045,301 @@ obligations arise from it. It was vendored only during S253 (artifact
 `artcraft-launcher-web-0.4.1.zip`, SHA-256
 `5768d88f6077375b926723cdf7ee56717997b57e99c2e419cbe89b527b497a27`) and the
 KVM validation of that slice.
+
+## Atkinson Hyperlegible Next and Mono (S282)
+Bundled dashboard typefaces: `AtkinsonHyperlegibleNext-Regular.woff2`,
+`AtkinsonHyperlegibleNext-Bold.woff2` and
+`AtkinsonHyperlegibleMono-Regular.woff2` in `dashboard/public/fonts/`,
+served by the daemon with the dashboard (no runtime fetch from any external
+host). Source: the Braille Institute's Atkinson Hyperlegible Next, published
+on GitHub by Google Fonts (`https://github.com/googlefonts/atkinson-hyperlegible-next`
+and `https://github.com/googlefonts/atkinson-hyperlegible-next-mono`,
+`fonts/webfonts/`, main branch, retrieved 2026-10-18). Licence: SIL Open
+Font License 1.1 (Copyright 2020-2024 The Atkinson Hyperlegible Next Project
+Authors and The Atkinson Hyperlegible Mono Project Authors); the OFL texts
+ship beside the fonts as `OFL-Atkinson-Hyperlegible-Next.txt` and
+`OFL-Atkinson-Hyperlegible-Mono.txt`. The files are unmodified.
+
+
+## Barlow Semi Condensed SemiBold (S309)
+Bundled dashboard display face: `BarlowSemiCondensed-SemiBold.woff2` in
+`dashboard/public/fonts/` (weight 600, normal, Latin subset), used only for
+headings, the wordmark, the permit title and the approval stamp. Served by
+the daemon with the dashboard (no runtime fetch from any external host).
+Source: the Barlow Project (`https://github.com/jpt/barlow`), taken from the
+npm package `@fontsource/barlow-semi-condensed` 5.3.0
+(`files/barlow-semi-condensed-latin-600-normal.woff2`, retrieved 2026-10-25,
+SHA-256 `f158417e9207b5362f9b71a2fe779ce5bb836ad972f38445c3163af39d2c998d`);
+no package scripts were run. Licence: SIL Open Font License 1.1 (Copyright
+2017 The Barlow Project Authors); the OFL text ships beside the font as
+`OFL-Barlow.txt`. The file is unmodified.
+
+## Everything image base images (S367, ADR-053)
+`images/everything/Dockerfile` (ADR-057) pins by index digest (recorded 2026-11-02):
+`python:3.13-alpine@sha256:7984cf56ceaddebe4fefeb75d64000b9f45d8b77b11a09b24524da6cdc3af0c8` (PSF licence),
+`node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85` (MIT),
+`golang:1.26-alpine@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308` (BSD-3-Clause),
+`alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f` (build-only), and the runtime
+`gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab` (Apache-2.0 with Debian package licences). Updating a digest is a reviewed change.
+
+## Projects source (S369, ADR-057)
+`third_party/everything/projects-source.tar.gz` is the `src/projects` subtree plus
+the root `LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU
+tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 137 entries). SHA-256
+`368795cb9e68e8e8fb70095459b2586b409c3a816bf5fb6cba1031881748b981`, recorded in
+`third_party/everything/pin.yaml`. Licence: MIT (see the `LICENSE` file inside the
+archive). The source is unmodified; only `npm ci --ignore-scripts` and the build run.
+
+## Records source (S370, ADR-057)
+`third_party/everything/records-source.tar.gz` is the `src/records` subtree plus
+the root `LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU
+tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 95 entries). SHA-256
+`8ed5aa77f9264b341ec8bf0e07b41ca053f7eb3ba4edd224cc6f1472c3c26aa2`, recorded in
+`third_party/everything/pin.yaml`. Licence: MIT (the root `LICENSE` inside the
+archive; `src/records` has no licence file of its own and its `package.json`
+declares MIT). It is not AGPL or copyleft. The only runtime dependency is
+`lucide` 1.55.0 (ISC, bundled icons); the dev dependencies (vite, vitest, jsdom,
+fake-indexeddb, axe-core) are build and test only. Upstream's own
+`tools/check-licenses.mjs` runs as the `prebuild` step and fails the build on any
+package outside its approved permissive list (73 packages passed). The source is
+changed only by three user-facing wording patches listed in
+`scripts/everything/apps/records.json`; only `npm ci --ignore-scripts` and the
+build run.
+
+## Notes source (S371, ADR-057) — AGPL-3.0-only
+`third_party/everything/notes-source.tar.gz` is the `src/notes` subtree plus the
+root `LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU
+tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 84 entries). SHA-256
+`035ec22bde035d8fe56cac74afdcee6126ae4d3a22c6139e1930b1964097d1d6`, recorded in
+`third_party/everything/pin.yaml`.
+
+**Licence: GNU Affero General Public License v3, AGPL-3.0-only.** This is not the
+MIT licence of the repository root and of the other Everything apps. It was
+checked in the app's own `LICENSE` (the full AGPL text, 661 lines), its
+`package.json` (`"license": "AGPL-3.0-only"`) and its README. The root `LICENSE`
+(MIT) is also in the archive. Third-party packages are permissive and compatible
+with the AGPL: `lucide` (ISC), `perfect-freehand` (MIT), `temml` (MIT) and
+`pdfjs-dist` (Apache-2.0); upstream's `check-licenses` step passed for all 118
+locked packages.
+
+What Homestead does to comply:
+- **Source.** The Corresponding Source of the Notes the appliance runs is the
+  pinned archive above plus the patch list in `scripts/everything/apps/notes.json`
+  (ten patches, each with a `why`) and the Homestead bridge shim
+  `scripts/everything/puter-bridge.js` that `prepare_app.py` adds. Those files are
+  in the Homestead repository, which the owner has. Nothing is minified from a
+  private source; the image is built on the appliance from them.
+- **Modification.** The patch list is the record of modifications. Patch targets
+  are pinned: preparation fails if upstream text changes, so the list cannot
+  silently drift from what is built.
+- **Network use (AGPL section 13).** Notes is modified, and people other than the
+  owner use it over the network, so those users are offered the source of the
+  version they are using (S423): a "Source" link in the served page opens
+  `<base>/_homestead/source`, which names the licence, the upstream repository and
+  pinned commit and links `notes-source.tar.gz`, built into the image: the pinned
+  archive byte for byte, the patch list, the shim, the preparation script, the
+  image recipe and a README with the rebuild command. The page and tarball are for
+  signed-in people (they are the people who use the app).
+- **Licence text and notices** are kept: `src/notes/LICENSE` and the copyright
+  lines stay in the archive and in the built source; no patch touches them.
+- **Scope.** The AGPL applies to the Notes app and to anything combined with it
+  into one program. The Go bridge and the Homestead daemon are separate programs
+  that talk to it over HTTP, and the shim file is served to the browser alongside
+  Notes; the shim is Homestead's own and is available at the same repository.
+  Homestead's own licensing position on the shim is not changed by this slice.
+
+## Contacts source (S372, ADR-057)
+`third_party/everything/contacts-source.tar.gz` is the `src/contacts` subtree plus
+the root `LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU
+tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 109 entries, 5,885,527
+bytes; it carries the app's store screenshots, which the build copies but the
+patched manifest no longer lists). SHA-256
+`1c833f87a8e839ea1664739936de202ca2bf2d8c43a450c3b75bb4b3ac0724fd`, recorded in
+`third_party/everything/pin.yaml`. The recipe was first run on the records subtree
+and reproduced the records digest. Licence: MIT. Both the repository root `LICENSE`
+and `src/contacts/LICENSE` are the MIT licence (Copyright (c) 2026 Puter
+Technologies Inc.); the app's `package.json` has no licence field. It is not AGPL
+or copyleft. The app has no runtime dependencies at all (only app code is
+bundled); the dev dependencies (vite, vitest, happy-dom, eslint) are build and test
+only. The source is changed only by the pinned patches listed in
+`scripts/everything/apps/contacts.json` (relative asset base, removal of the
+hosted-SDK preconnect, the Plausible analytics script, the Smart add button and
+its Puter AI call, service worker registration, manifest URLs); only
+`npm ci --ignore-scripts` and the build run.
+
+## Inventory source (S373, ADR-057)
+`third_party/everything/inventory-source.tar.gz` is the `src/inventory` subtree plus
+the root `LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU
+tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 203 entries, 6,365,897
+bytes; it carries the app's store screenshots and the other-app icons for its
+landing page, which the build copies). SHA-256
+`cd9c23d16cb5844db332719ee498644559e5b9a8cf46bd60a9e008d53c3a345b`, recorded in
+`third_party/everything/pin.yaml`. The recipe was first run on the records subtree
+and reproduced the records digest. Licence: MIT. The repository root `LICENSE` is
+MIT (Copyright (c) 2026 Puter Technologies Inc.); `src/inventory` has no licence
+file of its own, its `package.json` has no licence field and its README says the
+code is under the repository's MIT licence. It is not AGPL or copyleft. One
+runtime dependency is bundled into the app: `lucide` 1.28.0 (ISC, permissive; its
+licence text ships in the npm package, not in our archive). Build and test tools
+(vite, vitest, jsdom) are not shipped. The source is changed only by the pinned
+patches listed in `scripts/everything/apps/inventory.json` (Plausible analytics
+removed, the public handbook and landing page not built, Puter wording and
+outbound links removed, the opaque user id kept off screen); only
+`npm ci --ignore-scripts` and the build run.
+
+## Time tracking source (S374, ADR-057)
+`third_party/everything/time-tracking-source.tar.gz` is the `src/time-tracking` subtree
+(the app is called Hourly upstream) plus the root `LICENSE` and
+`dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU
+tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 75 entries, 1,914,107
+bytes). SHA-256 `fcb03e792bc2ca41c53f4a7d31c8838d71e66c03d1ccd570f5553c69d620c161`, recorded in
+`third_party/everything/pin.yaml`. The recipe was first re-run on the inventory
+subtree and reproduced the inventory digest. Licence: MIT. The repository root
+`LICENSE` is MIT (Copyright (c) 2026 Puter Technologies Inc.); `src/time-tracking`
+has no licence file of its own, its `package.json` has no licence field and its
+README says the code is under the repository's MIT licence. It is not AGPL or
+copyleft. One runtime dependency is bundled into the app: `lucide` 1.28.0 (ISC,
+permissive; its licence text ships in the npm package, not in our archive). Build
+and test tools (vite, vitest, jsdom) are not shipped. The source is changed only
+by the pinned patches listed in `scripts/everything/apps/time-tracking.json` (Puter
+wording and outbound links removed, the opaque user id kept off screen); only
+`npm ci --ignore-scripts` and the build run. The app has no analytics script.
+
+## Circuits source (S375, ADR-057)
+`third_party/everything/circuits-source.tar.gz` is the `src/circuits` subtree plus the
+root `LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU
+tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 138 entries, 2,952,550
+bytes). SHA-256 `a26240e8f85292e33b7b6980503edfa93b7652e47a4110e0a79e25d4dec4f685`, recorded in
+`third_party/everything/pin.yaml`. The recipe was first re-run on the inventory and
+time-tracking subtrees and reproduced both digests. Licence: MIT. The repository
+root `LICENSE` is MIT (Copyright (c) 2026 Puter Technologies Inc.); `src/circuits`
+has no licence file of its own and its `package.json` has no licence field. It is
+not AGPL or copyleft. The archive includes the Rust source of the geometry kernel
+(`wasm/kernel`, `license = "MIT"`, one dependency, `i_overlay` 9.0.1 and its `i_*`
+helper crates, MIT) and the prebuilt `src/kernel/kernel.wasm` built from it; the
+image build uses the committed `.wasm` and does not run Rust. Four runtime
+dependencies are bundled into the app: `earcut` 3.2.4 (ISC), `fflate` 0.8.3 (MIT),
+`lucide` 1.55.0 (ISC) and `rbush` 4.0.1 (MIT); the app's own `check:licenses` step
+(it runs before the build and fails on any licence outside a reviewed permissive
+set) passes. Build and test tools (vite, vitest, jsdom, axe-core) are not shipped.
+The source is changed only by the pinned patches listed in
+`scripts/everything/apps/circuits.json`; only `npm ci --ignore-scripts` and the
+build run. The app has no analytics script.
+
+## Parametric source (S376, ADR-057)
+`third_party/everything/parametric-source.tar.gz` is the `src/parametric` subtree plus the
+root `LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU
+tar, sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 138 entries, 3,163,907
+bytes). SHA-256 `4406f14a97a05131d5881739cb30d8886c1ae728e149b7d5d2c0968bcc90dfe4`, recorded in
+`third_party/everything/pin.yaml`. Licence of the app: MIT (repository root `LICENSE`,
+Copyright (c) 2026 Puter Technologies Inc.). Copyleft note: the app bundles the
+OpenCascade geometry kernel through the npm package `replicad-opencascadejs`
+(`.wasm`, about 23 MB), which is **LGPL-2.1-only**. It is fetched from npm by
+`npm ci --ignore-scripts` at image build time (not vendored in the archive, not
+rebuilt from C++ source) and shipped unmodified as a separate `.wasm` file loaded by
+a module worker; the licence text and the upstream notices are kept in the app's
+`public/licenses/` (`replicad-opencascadejs-LICENSE.txt`, `THIRD_PARTY_NOTICES.txt`)
+and are served with the app. Other bundled notices are in the same folder (replicad,
+flatbush, flatqueue, lucide, opentype.js, ps-parser, solid-diff). The source is
+changed only by the pinned patches in `scripts/everything/apps/parametric.json`.
+S423: the in-app page `<base>/_homestead/source` (signed-in people) lists the kernel
+with its licence, the upstream source at the bundled version
+(https://github.com/sgenoud/replicad, `packages/replicad-opencascadejs`, npm
+`replicad-opencascadejs` 1.1.0, built from Open CASCADE Technology) and links the
+licence text the app serves. The owner accepted linking to the upstream source;
+no relinking kit is shipped.
+The app has no analytics script.
+
+## 3D source (S377, ADR-057) — AGPL-3.0-only
+`third_party/everything/three-d-source.tar.gz` is the `src/3d` subtree plus the root
+`LICENSE` and `dev/puter-localhost.mjs` of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU tar,
+sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 1,898 entries, 11,576,110
+bytes). SHA-256 `1dccd506f1e94f01b29602ee7bd34370c343203e8ca97949550bdccbb06b8aed`,
+recorded in `third_party/everything/pin.yaml`. The package is named `three-d` because
+Homestead package names must start with a letter.
+
+**Licence: GNU Affero General Public License v3, AGPL-3.0-only** (the app's own
+`LICENSE`; the MIT repository root `LICENSE` is also in the archive). Compliance is the
+same as for Notes (S371): the Corresponding Source of the 3D the appliance runs is the
+pinned archive plus the patch list `scripts/everything/apps/three-d.json` (17 patches,
+each with a `why`), the entry point `scripts/everything/files/3d-person-storage.ts`
+and the bridge shim `scripts/everything/puter-bridge.js`, all in the Homestead
+repository; the image is built on the appliance from them. S423 offers exactly that
+source inside the app: a "Source" link opens `<base>/_homestead/source` and the
+`three-d-source.tar.gz` it links (pinned archive, patch list, added file, shim,
+preparation script, image recipe, README), for signed-in people.
+
+Bundled packages (from the app's `THIRD_PARTY_NOTICES.md`): three, three-mesh-bvh,
+three-gpu-pathtracer, three-bvh-csg, xatlas-web, fzstd, opentype.js (all MIT),
+`@dimforge/rapier3d-compat` (Apache-2.0, its WebAssembly is embedded as base64 in a
+script), `@fontsource/inter` and `@fontsource/jetbrains-mono` (SIL OFL 1.1, font files
+served from the app's own origin). All permissive and AGPL-compatible. Not shipped:
+Pyodide (MPL-2.0, loaded by upstream from a public CDN) is removed by patch, so the
+Python console and scripts are off.
+
+## Solitaire source (S378, ADR-057)
+
+Source of the Solitaire catalog package: `third_party/everything/solitaire-source.tar.gz`,
+the `src/solitaire` subtree of HeyPuter/everything at commit
+`e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU tar,
+sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 79 entries, 9,631,266 bytes; the
+recipe reproduced the Parametric digest first). SHA-256
+`1ca610831752eca35a833dce4a87a78bd9932dd96af8a487a57c83bbe34a25b2`, recorded in
+`third_party/everything/pin.yaml`.
+
+**Licence: MIT** (Puter Technologies Inc., the repository root `LICENSE`, which is in the
+archive; the app has no licence file of its own and its README says the repository
+licence applies). Nothing is shipped from npm: `package.json` has only build and test
+tools (vite, vitest; their dependency set includes MPL-2.0 lightningcss, used at build time
+and not part of the output). The one bundled third-party file is the vendored card deck
+`src/vendor/cardmeister.js`, The Unlicense (public domain), artwork derived from CC0
+cards. No non-permissive licence; no DEFERRED licence line.
+
+## Sudoku source (S379, ADR-057)
+
+Source of the Sudoku catalog package: `third_party/everything/sudoku-source.tar.gz`, the `src/sudoku` subtree of
+HeyPuter/everything at commit `e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU tar,
+sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 53 entries, 1,537,150 bytes; the recipe reproduced the
+Solitaire digest first). SHA-256 `18d0c4c6dc4d86b5ea7e52cffedf01e1f1339c6e8670dd64a5cd31d80f4cdb1b`, recorded in
+`third_party/everything/pin.yaml`.
+
+**Licence: MIT** (Puter Technologies Inc., the repository root `LICENSE`, which is in the archive; the app has no
+licence file of its own and its README says the repository licence applies). Bundled from npm and served from the
+app's own origin: `@fontsource/inter` (SIL OFL 1.1, Inter font files) and `lucide` (ISC). All permissive. Build-time
+only (not shipped): jsdom, vite, vitest and their dependency sets (including MPL-2.0 lightningcss). No
+non-permissive licence; no DEFERRED licence line.
+
+## Expenses source (S380, ADR-057)
+
+Source of the Expenses catalog package: `third_party/everything/expense-source.tar.gz`, the `src/expense` subtree of
+HeyPuter/everything at commit `e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU tar,
+sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 68 entries, 1,644,903 bytes; the recipe reproduced the
+Sudoku digest first). SHA-256 `4d4f6e81de6314872f69f3c57a87b0d9227ccda64011a395016d43ebd73f47f0`, recorded in
+`third_party/everything/pin.yaml`.
+
+**Licence: MIT** (Puter Technologies Inc., the repository root `LICENSE`, which is in the archive; the app has no
+licence file of its own and its `package.json` has no licence field, so the repository licence applies). The one
+runtime dependency bundled from npm and served from the app's own origin is `lucide` (ISC). Build-time only (not
+shipped): jsdom, vite, vitest and their dependency sets (including MPL-2.0 lightningcss). No non-permissive licence;
+no DEFERRED licence line. The upstream "AI OCR" receipt reading (Puter AI) is not shipped.
+
+## API Client source (S436, ADR-057, ADR-058)
+
+Source of the API Client catalog package: `third_party/everything/api-client-source.tar.gz`, the `src/api-client` subtree
+of HeyPuter/everything at commit `e7d07c48546ef0650a8f3ab94ae82b8b50d3646a`, built as a deterministic archive (GNU tar,
+sorted names, mode 0664, uid/gid 0, mtime 0, `gzip -n`; 133 entries, 506,505 bytes). SHA-256
+`35a33090e2a23e96cc633c086558b5a8d2f70dbb21d7d92e33950ba4d1c79146`, recorded in `third_party/everything/pin.yaml`.
+
+**Licence: MIT** (Puter Technologies Inc., the repository root `LICENSE`, which is in the archive; the app has no licence
+file of its own). Bundled from npm and served from the app's own origin: CodeMirror and Lezer packages (MIT), `yaml` (ISC)
+and `lucide` (ISC). Build-time only (not shipped): vite, vitest, jsdom and their dependency sets. No copyleft licence, so
+no source offer is needed and there is no DEFERRED licence line.

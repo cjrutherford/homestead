@@ -1,0 +1,12 @@
+# Owner guide navigation (S494). One "file.md: Title" per line; the first
+# entry must be index.md. Add a page here to give it a sidebar entry.
+index.md: Welcome
+getting-started.md: Getting started
+apps.md: Apps and the catalog
+people.md: People and sign-in
+exposure.md: Names, tunnel and public access
+storage-backups.md: Storage and backups
+updates.md: Updates and releases
+troubleshooting.md: Troubleshooting
+reference.md: Command and page reference
+how-this-guide-is-built.md: How this guide is built

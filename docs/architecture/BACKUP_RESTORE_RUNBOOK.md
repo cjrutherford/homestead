@@ -26,6 +26,17 @@ first). If a block fails, the
 temporary directory is left behind: shred and remove it yourself (it is
 the newest `tmp.*` directory under `${TMPDIR:-/tmp}`).
 
+## Where runs come from
+
+Runs are written by a per-app schedule or by the nightly policy (S297,
+ADR-039 §2). The policy backs up every installed app that keeps data and
+has no schedule of its own, each night at the approved time (appliance
+local time), and keeps the newest N runs of each app. A night missed
+while the appliance was off is run once when it starts. Both write the
+same run format to the backup class's disk, so this runbook applies to
+either. Check the policy with `homesteadctl backup policy` or on the
+Backups page.
+
 ## What you need
 
 - The backup run directory (on the backup-class mount, one directory per
@@ -201,10 +212,11 @@ Do not restore these into a directory that other users can read.
 ## 6. Restore databases
 
 Database exports are in the run next to the trees: `<database>.sql.age`
-(Postgres, plain SQL from `pg_dump`) or `<file>.db.age` (SQLite
-snapshot). Because the live database directory is not in the file copy,
-the restored directory is empty and the database engine starts a fresh
-cluster.
+(a server database: plain SQL from `pg_dump` for Postgres,
+`mariadb-dump` for MariaDB, or `mysqldump` for MySQL) or
+`<file>.db.age` (SQLite snapshot). Because the live database directory
+is not in the file copy, the restored directory is empty and the
+database engine starts a fresh cluster.
 
 ### Postgres
 
@@ -238,6 +250,37 @@ age -d -i "$IDENTITY" -o "$WORK/dump.sql" "$ARTIFACT"
 docker exec -i "$DBCONTAINER" psql -U "$DBUSER" -d "$DBNAME" -v ON_ERROR_STOP=1 < "$WORK/dump.sql"
 rm -rf "$WORK"
 ```
+
+### MariaDB and MySQL
+
+The dump is plain SQL, named `<database>.sql.age`. Both clients write
+`DROP TABLE IF EXISTS` before each table, so the load below replaces the
+tables the dump holds and leaves alone anything created after the run.
+If the database must hold exactly the run's contents, drop and recreate
+it first (the app user's `ALL` grant on its own database allows this).
+
+1. Start only the database service, so it initializes an empty cluster
+   from the restored secret and creates the application user again:
+
+```sh runbook mariadb-up
+docker compose --project-directory "$STACK" --project-name "$PACKAGE" up -d "$DBSERVICE"
+```
+
+2. Load the decrypted dump. `DBCLIENT` is `mariadb` for a MariaDB
+   container and `mysql` for a MySQL one. `DBPASS` is the password in the
+   restored secret file (`$STACK/secrets/<service>_db_password`); it
+   travels in the container environment for this one command, never in
+   the dump or on disk:
+
+```sh runbook mariadb-restore
+WORK=$(mktemp -d)
+age -d -i "$IDENTITY" -o "$WORK/dump.sql" "$ARTIFACT"
+docker exec -i -e MYSQL_PWD="$DBPASS" "$DBCONTAINER" "$DBCLIENT" --user="$DBUSER" --database="$DBNAME" < "$WORK/dump.sql"
+rm -rf "$WORK"
+```
+
+The same variables as Postgres apply (`ARTIFACT`, `DBCONTAINER`,
+`DBUSER`, `DBNAME`), plus `DBPASS` and `DBCLIENT`.
 
 ### SQLite
 

@@ -1,5 +1,8 @@
 <section aria-label="Application updates">
-  <h2>Updates</h2>
+  <header class="masthead">
+    <h1>Updates</h1>
+    <p class="masthead-fact">New versions of your apps, applied when you choose.</p>
+  </header>
 
   @if (error()) {
     <app-state-message kind="error" [headline]="error()" />
@@ -10,25 +13,19 @@
   }
 
   @if (operationId(); as id) {
-    <p>
-      Update started.
-      <a [routerLink]="['/operations', id]">Follow operation {{ id }}</a>
-    </p>
+    <app-operation-progress [id]="id" />
   }
 
-  @if (busy() && rows().length === 0) {
-    <app-state-message kind="loading" headline="Loading…" />
-  } @else {
-    <button type="button" (click)="refresh()" [disabled]="busy()">
-      Refresh plans
-    </button>
-    <ul>
-      @for (row of rows(); track row.package) {
-        <li>
-          <h3>{{ row.package }}</h3>
-          @if (!row.installed) {
-            <app-state-message kind="empty" headline="Not installed; nothing to update." />
-          } @else if ((row.plan.Services ?? []).length === 0) {
+  <app-loading [loading]="busy() && rows().length === 0" shape="list">
+    @if (!(busy() && rows().length === 0)) {
+    <section class="field-panel" aria-label="Update plans">
+      <button type="button" (click)="refresh()" [disabled]="busy()">
+        Refresh plans
+      </button>
+      @for (row of installedRows(); track row.package) {
+        <section class="field-panel" [attr.aria-labelledby]="'updates-' + row.package">
+          <h2 [id]="'updates-' + row.package">{{ row.package }}</h2>
+          @if ((row.plan.Services ?? []).length === 0) {
             <p>Already current.</p>
           } @else {
             <ul>
@@ -42,39 +39,57 @@
             @for (warning of (row.plan.Warnings ?? []); track warning) {
               <p class="warning">{{ warning }}</p>
             }
+            @for (gap of (row.plan.Provenance ?? []); track gap.Service) {
+              @if (!gap.Discovered && !gap.Local) {
+                <p>
+                  No registry listing for {{ gap.Service }} from {{ gap.Registry }}:
+                  {{ gap.Reason }}
+                </p>
+              }
+            }
             @if (row.plan.Backup) {
               <p>Backup required: {{ row.plan.BackupWhy }}</p>
             }
             @for (cu of (row.craft ?? []); track cu.tag) {
               <p>
                 Craft image {{ cu.tag }}:
-                {{ cu.built ? 'already built locally (apply verifies the manifest and rebuilds)' : 'built locally on apply after the manifest verifies' }}.
+                {{ cu.built ? 'already built locally (applying checks the signed craft app list and rebuilds)' : 'built locally on apply after the signed craft app list checks out' }}.
                 @if (cu.verdict) {
                   Last verdict: {{ cu.verdict.state }} {{ cu.verdict.detail }}
                 }
               </p>
-              <label>
-                Craft manifest file (blank: the shipped manifest)
-                <input
-                  [name]="'craft-manifest-' + row.package"
-                  (input)="setCraft(row.package, 'manifest', $any($event.target).value)"
-                />
-              </label>
-              <label>
-                Craft local artifact file (blank: fetch from the signed URL)
-                <input
-                  [name]="'craft-artifact-' + row.package"
-                  (input)="setCraft(row.package, 'artifact', $any($event.target).value)"
-                />
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  [name]="'craft-older-' + row.package"
-                  (change)="setCraftOlder(row.package, $any($event.target).checked)"
-                />
-                Allow an older craft manifest (audited)
-              </label>
+              <details>
+                <summary>Craft image options</summary>
+                <label>
+                  Craft app list file (blank: the one shipped with Homestead)
+                  <input
+                    [name]="'craft-manifest-' + row.package"
+                    (input)="setCraft(row.package, 'manifest', $any($event.target).value)"
+                  />
+                </label>
+                <label>
+                  Craft signature file (blank: the app list path plus .minisig)
+                  <input
+                    [name]="'craft-signature-' + row.package"
+                    (input)="setCraft(row.package, 'signature', $any($event.target).value)"
+                  />
+                </label>
+                <label>
+                  Craft local artifact file (blank: fetch from the signed URL)
+                  <input
+                    [name]="'craft-artifact-' + row.package"
+                    (input)="setCraft(row.package, 'artifact', $any($event.target).value)"
+                  />
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    [name]="'craft-older-' + row.package"
+                    (change)="setCraftOlder(row.package, $any($event.target).checked)"
+                  />
+                  Allow an older craft app list (audited)
+                </label>
+              </details>
             }
             <label>
               <input
@@ -103,12 +118,24 @@
               Apply update
             </button>
           }
-        </li>
+        </section>
       } @empty {
-        <li>No packages curated yet.</li>
+        <p>{{ rows().length === 0 ? 'No apps in the catalog yet.' : 'No installed apps to update. Install one from the Catalog.' }}</p>
       }
-    </ul>
+      @if (notInstalledRows().length) {
+        <details>
+          <summary>Not installed ({{ notInstalledRows().length }})</summary>
+          <p>These catalog apps have nothing to update until you install them.</p>
+          <ul>
+            @for (row of notInstalledRows(); track row.package) {
+              <li>{{ row.package }}</li>
+            }
+          </ul>
+        </details>
+      }
+    </section>
   }
+  </app-loading>
 </section>
 <app-platform-updates />
 

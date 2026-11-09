@@ -25,6 +25,9 @@ func recipientStub(t *testing.T, exports *int) string {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/backups/identity/export":
 			*exports++
 			_, _ = w.Write([]byte(`{"identity":"AGE-SECRET-KEY-TEST","recipient":"age1app","fingerprint":"aa"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/backups/identity/rotate":
+			*exports += 1000
+			_, _ = w.Write([]byte(`{"identity":"AGE-SECRET-KEY-NEW","recipient":"age1new","fingerprint":"cc","previous_fingerprint":"aa","rewrapped":3,"already_current":1,"failed":["p/run/x.age"],"runs_note":"runs under /mnt were re-wrapped"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/backups/identity/ack":
 			*exports += 100
 			_, _ = w.Write([]byte(`{"created":true,"exported":true,"acknowledged":true}`))
@@ -131,5 +134,33 @@ func TestBackupIdentityExportRefusesSymlinkTarget(t *testing.T) {
 	}
 	if code, _, _ := invoke(t, []string{"--server", url, "backup", "identity", "export", "--out", dangling}); code == exitOK || n != 0 {
 		t.Fatalf("dangling symlink accepted: code=%d", code)
+	}
+}
+
+func TestBackupIdentityRotateNeedsADestinationAndNeverPrintsTheKeyToAFile(t *testing.T) {
+	n := 0
+	url := recipientStub(t, &n)
+	if code, _, _ := invoke(t, []string{"--server", url, "backup", "identity", "rotate"}); code != exitUsage || n != 0 {
+		t.Fatalf("bare rotate code=%d n=%d", code, n)
+	}
+	file := filepath.Join(t.TempDir(), "new.txt")
+	code, out, stderr := invoke(t, []string{"--server", url, "backup", "identity", "rotate", "--out", file})
+	if code != exitOK || n != 1000 || strings.Contains(out, "AGE-SECRET-KEY") || strings.Contains(stderr, "AGE-SECRET-KEY") {
+		t.Fatalf("rotate code=%d n=%d out=%q err=%q", code, n, out, stderr)
+	}
+	for _, want := range []string{"rotated from aa to cc", "3 run files re-wrapped", "p/run/x.age", "old one"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q: %q", want, out)
+		}
+	}
+	info, err := os.Stat(file)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("file: %v %v", info, err)
+	}
+	if raw, _ := os.ReadFile(file); !strings.Contains(string(raw), "AGE-SECRET-KEY-NEW") {
+		t.Fatalf("file = %q", raw)
+	}
+	if code, _, _ := invoke(t, []string{"--server", url, "backup", "identity", "rotate", "--out", file}); code == exitOK || n != 1000 {
+		t.Fatalf("overwrite code=%d n=%d", code, n)
 	}
 }

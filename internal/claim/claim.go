@@ -18,6 +18,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"homestead/internal/store"
@@ -56,6 +57,14 @@ var (
 // Service mints and redeems claim tokens over the operational store.
 type Service struct {
 	db *sql.DB
+
+	mu      sync.Mutex
+	claimed []func()
+
+	// pending is a minted token whose file write has not succeeded yet;
+	// retries reuse it instead of dropping and re-minting rows (S288).
+	pending        string
+	pendingExpires time.Time
 }
 
 // New returns a Service over an open store (S013 migrations provide v2+).
@@ -209,5 +218,62 @@ func (s *Service) Claim(token string) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("claim: commit: %w", err)
 	}
+	s.mu.Lock()
+	hooks := append([]func(){}, s.claimed...)
+	s.mu.Unlock()
+	for _, hook := range hooks {
+		hook()
+	}
 	return nil
+}
+
+// OnClaimed registers fn to run after a successful Claim, so the token
+// file can go the moment the appliance is claimed.
+func (s *Service) OnClaimed(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.claimed = append(s.claimed, fn)
+}
+
+// Rotate leaves exactly one live token: every unused token is dropped
+// (expired rows are pruned with them) and a fresh one is minted. It
+// returns the plaintext and its expiry.
+func (s *Service) Rotate(ttl time.Duration) (string, time.Time, error) {
+	state, err := s.CurrentState()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if state == StateClaimed {
+		return "", time.Time{}, ErrAlreadyClaimed
+	}
+	if _, err := s.db.Exec(`DELETE FROM claim_tokens WHERE used_at IS NULL`); err != nil {
+		return "", time.Time{}, fmt.Errorf("claim: drop old tokens: %w", err)
+	}
+	expires := time.Now().Add(ttl)
+	token, err := s.MintToken(ttl)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return token, expires, nil
+}
+
+// LiveUntil reports whether token is an unused, unexpired claim token and
+// when it expires.
+func (s *Service) LiveUntil(token string) (time.Time, bool, error) {
+	sum := sha256.Sum256([]byte(token))
+	var expiresAt string
+	err := s.db.QueryRow(
+		`SELECT expires_at FROM claim_tokens WHERE token_hash = ? AND used_at IS NULL`, sum[:],
+	).Scan(&expiresAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("claim: look up token: %w", err)
+	}
+	expiry, err := time.Parse(time.RFC3339Nano, expiresAt)
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("claim: parse expiry: %w", err)
+	}
+	return expiry, expiry.After(time.Now()), nil
 }

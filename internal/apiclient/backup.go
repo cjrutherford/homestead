@@ -164,3 +164,22 @@ func (c *Client) BackupIdentityExport(ctx context.Context) (BackupIdentityExport
 	err := c.postJSON(ctx, "/api/v1/backups/identity/export", map[string]bool{"confirm": true}, &out)
 	return out, err
 }
+
+// BackupIdentityRotate is the rotation reply: the new key (shown once)
+// plus what happened to existing runs.
+type BackupIdentityRotate struct {
+	BackupIdentityExport
+	PreviousFingerprint string   `json:"previous_fingerprint"`
+	Rewrapped           int      `json:"rewrapped"`
+	AlreadyCurrent      int      `json:"already_current"`
+	Failed              []string `json:"failed"`
+	RunsNote            string   `json:"runs_note"`
+}
+
+// BackupIdentityRotate replaces the recovery identity (audited,
+// explicit, step-up) and re-wraps existing runs to the new key.
+func (c *Client) BackupIdentityRotate(ctx context.Context) (BackupIdentityRotate, error) {
+	var out BackupIdentityRotate
+	err := c.postJSON(ctx, "/api/v1/backups/identity/rotate", map[string]bool{"confirm": true}, &out)
+	return out, err
+}

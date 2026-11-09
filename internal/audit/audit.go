@@ -60,6 +60,35 @@ func New(s *store.Store) *Service {
 // Record validates and appends one entry. Overrides require a reason;
 // plans must be empty or JSON.
 func (s *Service) Record(entry Entry) (Entry, error) {
+	entry, err := prepare(entry)
+	if err != nil {
+		return Entry{}, err
+	}
+	id, _, err := insertEntry(s.db, entry)
+	if err != nil {
+		return Entry{}, err
+	}
+	return s.Get(id)
+}
+
+// RecordTx appends the entry inside tx, so a change and its audit record
+// commit or roll back together (S288). It returns the entry as recorded,
+// without reading it back: the row is not visible outside tx until commit.
+func (s *Service) RecordTx(tx *sql.Tx, entry Entry) (Entry, error) {
+	entry, err := prepare(entry)
+	if err != nil {
+		return Entry{}, err
+	}
+	id, now, err := insertEntry(tx, entry)
+	if err != nil {
+		return Entry{}, err
+	}
+	entry.ID = id
+	entry.CreatedAt, _ = time.Parse(time.RFC3339Nano, now)
+	return entry, nil
+}
+
+func prepare(entry Entry) (Entry, error) {
 	if entry.Actor == "" {
 		return Entry{}, fmt.Errorf("audit: actor must not be empty")
 	}
@@ -82,21 +111,29 @@ func (s *Service) Record(entry Entry) (Entry, error) {
 	entry.Detail = RedactText(entry.Detail)
 	entry.OverrideReason = RedactText(entry.OverrideReason)
 	entry.Plan = RedactPlan(entry.Plan)
+	return entry, nil
+}
+
+type execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+func insertEntry(db execer, entry Entry) (int64, string, error) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	res, err := s.db.Exec(
+	res, err := db.Exec(
 		`INSERT INTO audit_entries (actor, action, plan, outcome, detail, override, override_reason, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		entry.Actor, entry.Action, entry.Plan, entry.Outcome, entry.Detail,
 		entry.Override, entry.OverrideReason, now,
 	)
 	if err != nil {
-		return Entry{}, fmt.Errorf("audit: record: %w", err)
+		return 0, "", fmt.Errorf("audit: record: %w", err)
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return Entry{}, fmt.Errorf("audit: record: %w", err)
+		return 0, "", fmt.Errorf("audit: record: %w", err)
 	}
-	return s.Get(id)
+	return id, now, nil
 }
 
 // Get returns one entry by id.

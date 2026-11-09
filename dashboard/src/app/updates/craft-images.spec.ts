@@ -78,23 +78,24 @@ describe('CraftImagesPanel', () => {
     expect(text()).toContain('differs from the recorded digest (sha256:bbb)');
     expect(text()).toContain('(artifact-digest check)');
     expect(text()).toContain('CCCC (embedded)');
-    expect(text()).toContain('Placeholder: verifies no real manifest.');
+    expect(text()).toContain('Placeholder: verifies no real craft app list.');
   });
 
   it('plans a manifest and offers the override only after a counter refusal', () => {
     const panel = fixture.componentInstance as any;
-    expect(text()).not.toContain('I confirm building from an older manifest');
+    expect(text()).not.toContain('I confirm building from an older craft app list');
     panel.app = 'wordcraft';
+    panel.version = '1.2.0';
     panel.plan();
     const request = http.expectOne('/api/v1/craft/plan');
-    expect(request.request.body).toMatchObject({ app: 'wordcraft', allow_older: false });
+    expect(request.request.body).toMatchObject({ app: 'wordcraft', version: '1.2.0', allow_older: false });
     request.flush({
       plan: {},
       verdict: { app: 'wordcraft', state: 'failed', refusal: 'counter', detail: 'older' },
     });
     reload();
     fixture.detectChanges();
-    expect(text()).toContain('I confirm building from an older manifest');
+    expect(text()).toContain('I confirm building from an older craft app list');
   });
 
   it('offers no override for an artifact digest refusal', () => {
@@ -107,24 +108,26 @@ describe('CraftImagesPanel', () => {
     });
     reload();
     fixture.detectChanges();
-    expect(text()).not.toContain('I confirm building from an older manifest');
+    expect(text()).not.toContain('I confirm building from an older craft app list');
     expect(text()).toContain('Refused (artifact-digest check): bad');
   });
 
   it('starts a build and links the operation', () => {
     const panel = fixture.componentInstance as any;
     panel.app = 'wordcraft';
+    panel.version = '1.2.0';
     panel.artifact = '/srv/wordcraft.tar.gz';
     panel.build();
     const request = http.expectOne('/api/v1/craft/build');
     expect(request.request.body).toMatchObject({
       app: 'wordcraft',
+      version: '1.2.0',
       artifact: '/srv/wordcraft.tar.gz',
     });
     request.flush({ id: 9 });
     reload();
     fixture.detectChanges();
-    expect(text()).toContain('Follow operation 9');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/9"]')).not.toBeNull();
   });
 
   it('adds and removes craft keys through the craft routes', () => {

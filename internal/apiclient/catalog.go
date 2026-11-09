@@ -4,7 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
+
+	"homestead/internal/appsso"
+	"homestead/internal/docker"
 )
 
 // CatalogPackage is one browsable package summary.
@@ -17,11 +22,22 @@ type CatalogPackage struct {
 	Icon     string `json:"icon"`
 }
 
+// CatalogIntegration is one resolved package relationship (S341): the
+// declaration plus its derived level and the target's title.
+type CatalogIntegration struct {
+	Kind   string `json:"Kind"`
+	Level  string `json:"Level"`
+	Target string `json:"Target"`
+	Title  string `json:"Title"`
+	Note   string `json:"Note"`
+}
+
 // CatalogService is one manifest service as served.
 type CatalogService struct {
-	Name    string `json:"Name"`
-	Image   string `json:"Image"`
-	Exposes string `json:"Exposes"`
+	Name          string `json:"Name"`
+	Image         string `json:"Image"`
+	Exposes       string `json:"Exposes"`
+	ContainerPort int    `json:"ContainerPort"`
 }
 
 // CatalogManifest is the curated manifest detail the CLI reviews.
@@ -40,6 +56,8 @@ type CatalogManifest struct {
 	BackupPaths []string `json:"BackupPaths"`
 	// Browser lists advisory client capabilities (S252).
 	Browser []BrowserAdvisory `json:"Browser"`
+	// Works lists declared integrations resolved by the daemon (S341).
+	Works []CatalogIntegration `json:"Works"`
 }
 
 // BrowserAdvisory is one non-blocking browser capability warning with its
@@ -58,11 +76,14 @@ type InstallPlanReport struct {
 	Requirements struct {
 		Passed bool `json:"Passed"`
 	} `json:"Requirements"`
-	Routes []struct {
-		Host     string `json:"Host"`
-		Exposure string `json:"Exposure"`
-	} `json:"Routes"`
-	DNS []struct {
+	// Routes are the planned edge routes, whole, so the CLI can add them
+	// to the edge table after the install (S313).
+	Routes []docker.Route `json:"Routes"`
+	// Path and Addresses are where the app answers locally (ADR-044):
+	// its path under each of the appliance's names, or its own names.
+	Path      string   `json:"path,omitempty"`
+	Addresses []string `json:"addresses"`
+	DNS       []struct {
 		Name  string `json:"Name"`
 		Type  string `json:"Type"`
 		Value string `json:"Value"`
@@ -92,11 +113,94 @@ type InstallPlanReport struct {
 	BrowserAdvisories []BrowserAdvisory `json:"BrowserAdvisories"`
 	Notes             []string          `json:"Notes"`
 	Actions           []string          `json:"Actions"`
+	// Digest binds the install to this plan (S313); install with it in
+	// the body answers 409 when the plan changed.
+	Digest string `json:"digest"`
+	// FilesLink is the Nextcloud link for craft files the install's
+	// setup makes (S326); install with setup.files_link to approve it.
+	FilesLink *InstallFilesLink `json:"files_link,omitempty"`
+	SignIn    *InstallSignIn    `json:"sign_in,omitempty"`
+	Access    *InstallAccess    `json:"access,omitempty"`
+}
+
+type InstallAccessPerson struct {
+	ID          int64  `json:"id"`
+	DisplayName string `json:"display_name"`
+	Username    string `json:"username"`
+	State       string `json:"state"`
+}
+type InstallAccess struct {
+	Mode           string                `json:"mode"`
+	People         []InstallAccessPerson `json:"people"`
+	AdminSupported bool                  `json:"admin_supported"`
+	Reason         string                `json:"reason,omitempty"`
+	Notice         string                `json:"notice,omitempty"`
+}
+
+// InstallSignIn is the install-time Authentik offer and reviewed plan.
+type InstallSignIn struct {
+	Offered   bool         `json:"offered"`
+	Reason    string       `json:"reason,omitempty"`
+	TokenKept bool         `json:"token_kept"`
+	Plan      *appsso.Plan `json:"plan,omitempty"`
+}
+
+// InstallFilesLink is the nextcloud-link setup step an install brings:
+// a craft app linked to Nextcloud for its files, or, for Nextcloud, the
+// craft apps already installed (S326, ADR-048 §4).
+type InstallFilesLink struct {
+	Apps    []string `json:"apps"`
+	Lines   []string `json:"lines"`
+	BaseURL string   `json:"base_url"`
+	Account string   `json:"account"`
+	Root    string   `json:"root"`
+	NewLink bool     `json:"new_link"`
+	Digest  string   `json:"digest"`
 }
 
 // OperationStarted carries the started operation id.
 type OperationStarted struct {
 	ID int64 `json:"id"`
+}
+
+// BundleMember is one curated bundle member's availability (S344).
+type BundleMember struct {
+	Name      string `json:"Name"`
+	Available bool   `json:"Available"`
+	MemoryMB  uint64 `json:"MemoryMB"`
+}
+
+// BundleStorage is one storage class's combined demand (S344).
+type BundleStorage struct {
+	Class  string `json:"Class"`
+	Needed uint64 `json:"Needed"`
+	Free   uint64 `json:"Free"`
+	Known  bool   `json:"Known"`
+	OK     bool   `json:"OK"`
+}
+
+// BundleReport grades one curated bundle against the appliance (S344).
+type BundleReport struct {
+	Bundle      string          `json:"Bundle"`
+	Title       string          `json:"Title"`
+	Blurb       string          `json:"Blurb"`
+	Members     []BundleMember  `json:"Members"`
+	Missing     []string        `json:"Missing"`
+	Complete    bool            `json:"Complete"`
+	TotalMemory uint64          `json:"TotalMemory"`
+	HostMemory  uint64          `json:"HostMemory"`
+	Storage     []BundleStorage `json:"Storage"`
+	Passed      bool            `json:"Passed"`
+	Detail      string          `json:"Detail"`
+}
+
+// CatalogBundles grades the curated profiles against the appliance.
+func (c *Client) CatalogBundles(ctx context.Context) ([]BundleReport, error) {
+	var out []BundleReport
+	if err := c.get(ctx, "/api/v1/catalog/bundles", &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // CatalogPackages lists curated packages.
@@ -137,6 +241,44 @@ func (c *Client) PlanInstall(ctx context.Context, name string, body map[string]a
 		return InstallPlanReport{}, err
 	}
 	return out, nil
+}
+
+func (c *Client) PlanInstallAccess(ctx context.Context, name string, body map[string]any) (string, error) {
+	var out struct {
+		Digest string `json:"digest"`
+	}
+	if err := c.postJSON(ctx, "/api/v1/catalog/"+name+"/access-plan", body, &out); err != nil {
+		return "", err
+	}
+	return out.Digest, nil
+}
+
+func (c *Client) InstallPackageWithAdmins(ctx context.Context, name string, body map[string]any, password string) (int64, error) {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return 0, err
+	}
+	req, err := c.post(ctx, "/api/v1/catalog/"+name+"/install-admin", raw)
+	if err != nil {
+		return 0, err
+	}
+	if password != "" {
+		u, err := url.Parse(c.BaseURL())
+		if err != nil {
+			return 0, fmt.Errorf("cannot verify local reauthentication address")
+		}
+		host := u.Hostname()
+		ip := net.ParseIP(host)
+		if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+			return 0, fmt.Errorf("local password reauthentication requires a loopback daemon address")
+		}
+		req.Header.Set(ReauthHeader, password)
+	}
+	var out OperationStarted
+	if err := c.roundTrip(req, http.StatusOK, &out); err != nil {
+		return 0, err
+	}
+	return out.ID, nil
 }
 
 // InstallPackage executes an approved install body, returning the
@@ -192,6 +334,27 @@ type AppSecret struct {
 	Database  bool     `json:"database_password"`
 	Wired     bool     `json:"wired"`
 	Installed bool     `json:"installed"`
+	// Reveal marks a credential meant for the owner (S312), readable
+	// with RevealAppSecret; Note says what it is for.
+	Reveal bool   `json:"reveal"`
+	Note   string `json:"note,omitempty"`
+}
+
+// RevealedSecret is a credential the owner asked to read (S312).
+type RevealedSecret struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+	Note  string `json:"note,omitempty"`
+}
+
+// RevealAppSecret reads a secret the package marks reveal, such as
+// Nextcloud's generated admin password. The appliance audits it.
+func (c *Client) RevealAppSecret(ctx context.Context, name, secret string) (RevealedSecret, error) {
+	var out RevealedSecret
+	if err := c.postJSON(ctx, "/api/v1/catalog/"+name+"/secrets/"+secret+"/reveal", map[string]any{"confirm": true}, &out); err != nil {
+		return RevealedSecret{}, err
+	}
+	return out, nil
 }
 
 // AppSecrets lists a package's declared secret-backed variables.

@@ -423,10 +423,12 @@ func (r *migrationRun) verifyDatabase(ctx context.Context) error {
 }
 
 // databaseReady asks postgres images pg_isready. Only postgres is
-// verified: no catalog entry declares another server engine today
-// (Nextcloud's SQLite is a file inside the copied tree, covered by
-// verify-copy). A non-postgres database service merely has to be
-// running, and a new engine needs its own check added here.
+// verified today: no shipped catalog entry declares another server
+// engine (Nextcloud's SQLite is a file inside the copied tree, covered by
+// verify-copy). Before migrating a package that declares MariaDB or
+// MySQL, wait on `mariadb-admin ping`/`mysqladmin ping` with the app
+// password here. A non-postgres database service merely has to be
+// running.
 func (r *migrationRun) databaseReady(ctx context.Context, service, container string) error {
 	containers, err := projectContainers(ctx, r.projectName)
 	if err != nil {

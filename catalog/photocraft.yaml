@@ -5,6 +5,7 @@
 # The version below is the vendored storytold release and must equal the
 # image tag and the version in catalog/craft/craft-manifest.yaml.
 name: photocraft
+publish: path  # ADR-062: public path behind the shared Authentik gate; the LAN stays open
 version: 0.9.0
 title: PhotoCraft
 blurb: Photo editor that runs in your browser.
@@ -27,13 +28,24 @@ requirements:
   memorymb: 64
   cpucount: 1
   architectures: [amd64, arm64]
+# Served at /apps/photocraft/ under the appliance's own names (ADR-045). The
+# app loads its assets by relative paths, so the edge strips the path;
+# the wrapper page and file path under it come from the daemon.
+serve: path
+strip_prefix: true
 exposure:
   package: photocraft
   endpoints:
   - endpoint: web
     recommended: local
-    allowwider: false
+    allowwider: true
     warnings:
     - PhotoCraft stores nothing on the appliance, so widening exposure would offer a public photo editor whose images never reach your storage; it has no Nextcloud file hook, so documents stay in each visitor's browser. Keep it local.
+    - If you publish it, its public path sits behind the Authentik gate, so only people granted this app and the owner can open it. Your local address stays open (ADR-062).
 sso:
   class: unsupported
+  # ADR-062: the app has no sign-in of its own. Published, its path is behind
+  # the shared Authentik gate on the tunnel entry only; the local names stay
+  # open (ADR-045). No identity header is passed on and nothing bypasses.
+  forwardauth:
+    service: photocraft

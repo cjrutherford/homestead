@@ -271,4 +271,14 @@ describe('ApiService', () => {
     http.expectOne('/api/v1/admins/lockout').flush({ username: 'owner', locked: false });
     expect(String(error)).toContain('interrupted');
   });
+
+  it('reads and sets the dashboard address (S289)', () => {
+    service.dashboardAddress().subscribe((a) => expect(a.urls[0]).toBe('https://homestead.local'));
+    http.expectOne('/api/v1/dashboard/address').flush({ urls: ['https://homestead.local'] });
+    service.setDashboardAddress('box.lan', 'overlay').subscribe((o) => expect(o.id).toBe(3));
+    const put = http.expectOne('/api/v1/dashboard/address');
+    expect(put.request.method).toBe('PUT');
+    expect(put.request.body).toEqual({ name: 'box.lan', exposure: 'overlay' });
+    put.flush({ id: 3 });
+  });
 });

@@ -1,0 +1,166 @@
+# Komga comic and manga server (S355): the third Wave 2 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# One Docker Hub container. The image runs as root, declares /config as its
+# only VOLUME, and listens on 25600. /config holds three WAL SQLite
+# databases, the Lucene index, fonts, and logs; the main database gets a
+# consistent export. The comics library lives on bulk storage at
+# <bulk>/komga/library (S452), so a large collection never rides in a
+# backup; the first run creates a Comics library over it. The JVM
+# heap is capped because the default maximum is a quarter of host RAM, which
+# would let the server crowd the appliance.
+name: komga
+publish: path  # ADR-061
+version: 1.29.1
+title: Komga
+blurb: Your comics and manga, on every screen.
+description: Komga is a comic, manga, and PDF library with a browser reader,
+  OPDS feeds, and phone and tablet apps. It indexes the folders you already
+  keep, storing metadata, read progress, and thumbnails in SQLite on
+  application storage. A Comics library is already set up over a folder on
+  bulk storage, so a large collection never rides in a backup, and the JVM
+  heap is capped so the server cannot crowd the appliance.
+category: books
+icon: mdi:book-open-page-variant
+services:
+- name: komga
+  image: docker.io/gotson/komga:1.29.1
+  publisher: upstream
+  exposes: web
+  containerport: 25600
+  # The image's ENTRYPOINT (Dockerfile.tpl, 1.29.1) runs java directly in
+  # /app; the supervisor execs exactly that so it can export the OIDC
+  # client secret (S411). Spring builds an OAuth2 registration from any
+  # one property, so a client secret with no client id (an install before
+  # sign-in is applied) stops Komga starting ("Client id of registration
+  # must not be empty", seen live in S452). The shell wrapper (its $$ is compose's escape for a literal $) drops the
+  # secret until the client id is set, then execs the image's command.
+  entrypoint:
+  - sh
+  - -c
+  - 'if [ -z "$$SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_CLIENTID" ]; then unset SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_CLIENTSECRET; fi; exec java -Dspring.profiles.include=docker --enable-native-access=ALL-UNNAMED -jar application.jar --spring.config.additional-location=file:/config/'
+  environment:
+    # The image sets no heap cap, so the JVM defaults to a quarter of the
+    # host's RAM (several gigabytes on a typical appliance). A fixed cap
+    # keeps Komga within its declared 1 GiB while leaving room for
+    # metaspace, the native image libraries, and the Lucene index.
+    JAVA_TOOL_OPTIONS: -Xmx768m
+    # Komga serves under this prefix itself (S474: the web UI, its assets and
+    # the OAuth2 redirect all follow the Spring context path).
+    SERVER_SERVLET_CONTEXT_PATH: "{{route_path}}"
+  # Image VOLUME: /config (verified from the Docker Hub image config for
+  # 1.29.1: root user, 25600/tcp, KOMGA_CONFIGDIR=/config). /config holds
+  # database.sqlite, tasks.sqlite, sessions.sqlite (all WAL), the Lucene
+  # search index, fonts, and logs. /library is a bulk declaration
+  # (S452), which backups skip; the first run adds a Comics library
+  # over it so there is somewhere to put the first comic.
+  data:
+  - target: /config
+    class: application
+    subpath: config
+  - target: /library
+    class: bulk
+    subpath: library
+requirements:
+  memorymb: 1024
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 4294967296
+  - class: bulk
+    minbytes: 10737418240
+  # Komga listens on 25600; routes proxy to it and no host port is
+  # published by default.
+serve: path
+path: /apps/komga/
+exposure:
+  package: komga
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Comics, manga, and reading progress leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- config
+# The main database is exported consistently; the config tree is still
+# copied for the owner's application.yml, the Lucene index, and the
+# tasks/sessions databases (the latter two are regenerated if missing).
+database:
+  service: komga
+  kind: sqlite
+  path: config/database.sqlite
+sso:
+  class: optional
+  protocols: [oidc]
+  # App sign-in through Authentik (S411): Spring Security's OAuth2 client,
+  # set by environment alone. Komga's own login page keeps the password
+  # form and lists the Authentik button beside it, so the local recovery
+  # account stays a break-glass login. Endpoints are explicit (no
+  # issuer-uri) because the issuer is discovered at startup, and Komga
+  # must still boot when Authentik is down.
+  oidc:
+    adapter: env-oidc
+    service: komga
+    env:
+      redirectpaths: ["/login/oauth2/code/authentik"]
+      signinpath: /oauth2/authorization/authentik
+      secret: oidc_client_secret
+      # The JVM's trustStore property replaces the JDK's own CAs, so a
+      # private issuer gets a generated Java trust store holding the
+      # host's public CAs plus the appliance root.
+      trust: JDK_JAVA_OPTIONS
+      trustbundle: java
+      set:
+        SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_PROVIDER: authentik
+        SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_CLIENTID: "{{client_id}}"
+        SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_CLIENTNAME: Authentik
+        SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_SCOPE: openid,profile,email
+        SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_AUTHORIZATIONGRANTTYPE: authorization_code
+        # Spring wants a redirect URI and has no default for a custom
+        # provider (S452: "redirectUri cannot be empty"). The template is
+        # resolved per request, so every name the app is reached on works.
+        SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_REDIRECTURI: "{baseUrl}/login/oauth2/code/{registrationId}"
+        # Without this Spring refuses the sign-in with
+        # missing_user_name_attribute (S452, live); Komga itself matches
+        # people by the email attribute.
+        SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_AUTHENTIK_USERNAMEATTRIBUTE: sub
+        SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_AUTHENTIK_AUTHORIZATIONURI: "{{authentik_base}}/application/o/authorize/"
+        SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_AUTHENTIK_TOKENURI: "{{authentik_base}}/application/o/token/"
+        SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_AUTHENTIK_USERINFOURI: "{{authentik_base}}/application/o/userinfo/"
+        SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_AUTHENTIK_JWKSETURI: "{{issuer}}jwks/"
+        # Existing Komga users match by email; an Authentik person with
+        # no Komga user gets an ordinary (non-admin) account. Authentik
+        # access is closed by default (ADR-043), so only permitted people
+        # reach this.
+        KOMGA_OAUTH2ACCOUNTCREATION: "true"
+        # Authentik 2026.8 sends email_verified=false for every user, and
+        # Komga refuses the sign-in with ERR_1026 unless its own check is
+        # off (S452, live). Same trade as Mealie: people match by email.
+        KOMGA_OIDCEMAILVERIFICATION: "false"
+secrets:
+- name: recovery_password
+  immutable: true
+  reveal: true
+  note: Local recovery password only for a freshly claimed Komga; existing accounts are never changed.
+- name: oidc_client_secret
+  # Authentik's client secret for Komga; Homestead generates it, hands it
+  # to Authentik, and the supervisor exports it as the Spring property's
+  # environment form.
+  consumers:
+  - service: komga
+    env: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AUTHENTIK_CLIENTSECRET_FILE
+    export: true
+firstrun:
+  routine: komga
+  service: komga
+  account: homestead-recovery@localhost.invalid
+  secret: recovery_password
+  libraries:
+  - name: Comics
+    kind: comics
+    path: /library
+integrations:
+- kind: identity
+  target: authentik
+  note: People sign in with Authentik once sign-in is applied on the app's page; Komga matches existing users by email and creates an ordinary account for the rest. The local recovery account stays available.

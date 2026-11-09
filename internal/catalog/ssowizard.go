@@ -33,13 +33,13 @@ func ssoStepIndex(step string) int {
 	return -1
 }
 
-// Integration is one application's SSO intent: which provider speaks
+// SSOIntent is one application's SSO intent: which provider speaks
 // for it over which protocol. LocalFallback always holds —
 // Homestead administrator login and socket recovery stay local and
 // independent of the provider, so guiding app logins can never
 // strand appliance recovery — and the recovery note says so on every
 // reviewed and recorded plan.
-type Integration struct {
+type SSOIntent struct {
 	Package       string
 	Provider      string
 	Protocol      identity.Capability
@@ -164,16 +164,16 @@ func (w *Wizard) selection() (map[string]any, error) {
 // Plan returns the reviewable outcome: the validated integration as
 // it would record, without writing anything. The recovery note is
 // part of the plan, not commentary beside it.
-func (w *Wizard) Plan() (Integration, error) {
+func (w *Wizard) Plan() (SSOIntent, error) {
 	payload, err := w.selection()
 	if err != nil {
-		return Integration{}, err
+		return SSOIntent{}, err
 	}
 	manifest, provider, protocol, err := w.decodeSelection(payload)
 	if err != nil {
-		return Integration{}, err
+		return SSOIntent{}, err
 	}
-	return Integration{
+	return SSOIntent{
 		Package:       manifest.Name,
 		Provider:      provider,
 		Protocol:      protocol,
@@ -186,13 +186,13 @@ func (w *Wizard) Plan() (Integration, error) {
 // Apply records the saved integration under the acting owner,
 // replacing any earlier intent for the package: one app, one
 // provider, no fossilized pairings.
-func (w *Wizard) Apply(actor string) (Integration, error) {
+func (w *Wizard) Apply(actor string) (SSOIntent, error) {
 	if actor == "" {
-		return Integration{}, fmt.Errorf("catalog: actor must not be empty")
+		return SSOIntent{}, fmt.Errorf("catalog: actor must not be empty")
 	}
 	plan, err := w.Plan()
 	if err != nil {
-		return Integration{}, err
+		return SSOIntent{}, err
 	}
 	plan.Actor = actor
 	if _, err := w.db.Exec(
@@ -201,22 +201,22 @@ func (w *Wizard) Apply(actor string) (Integration, error) {
 		plan.Package, plan.Provider, string(plan.Protocol), actor,
 		time.Now().UTC().Format(time.RFC3339Nano),
 	); err != nil {
-		return Integration{}, fmt.Errorf("catalog: record integration: %w", err)
+		return SSOIntent{}, fmt.Errorf("catalog: record integration: %w", err)
 	}
 	return plan, nil
 }
 
 // Integrations lists recorded intents in package order: one row per
 // integrated application.
-func (w *Wizard) Integrations() ([]Integration, error) {
+func (w *Wizard) Integrations() ([]SSOIntent, error) {
 	rows, err := w.db.Query(`SELECT package, provider, protocol, actor FROM sso_integrations ORDER BY package`)
 	if err != nil {
 		return nil, fmt.Errorf("catalog: list integrations: %w", err)
 	}
 	defer rows.Close()
-	var out []Integration
+	var out []SSOIntent
 	for rows.Next() {
-		var record Integration
+		var record SSOIntent
 		var protocol string
 		if err := rows.Scan(&record.Package, &record.Provider, &protocol, &record.Actor); err != nil {
 			return nil, fmt.Errorf("catalog: scan integration: %w", err)

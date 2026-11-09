@@ -38,8 +38,8 @@ class TestAngularInstallContract(unittest.TestCase):
                 self.assertIn(symbol, service)
         routes = read("dashboard/src/app/app.routes.ts")
         self.assertIn("catalog", routes)
-        nav = read("dashboard/src/app/app.html")
-        self.assertIn('routerLink="/catalog"', nav)
+        nav = read("dashboard/src/app/core/nav.ts")
+        self.assertIn("path: '/admin/catalog'", nav)
 
     def test_parity_rows(self):
         parity = read("docs/PARITY.md")

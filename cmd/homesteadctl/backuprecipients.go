@@ -70,7 +70,7 @@ func runBackupRecipients(ctx context.Context, client *apiclient.Client, args []s
 	}
 }
 
-const identityUsage = "usage: homesteadctl backup identity <status|ack|export (--out FILE | --stdout) [--ack]>"
+const identityUsage = "usage: homesteadctl backup identity <status|ack|export (--out FILE | --stdout) [--ack]|rotate (--out FILE | --stdout) [--ack]>"
 
 // runBackupIdentity reports or exports the recovery identity. Export
 // never prints unless --stdout is given; --out writes a new 0600 file
@@ -116,9 +116,10 @@ func runBackupIdentity(ctx context.Context, client *apiclient.Client, args []str
 		}
 		fmt.Fprintln(stdout, "recorded: the recovery identity is stored offline")
 		return exitOK
-	case "export":
+	case "export", "rotate":
+		rotate := args[0] == "rotate"
 		if (*out == "") == !*toStdout {
-			fmt.Fprintln(stderr, "export needs exactly one of --out FILE or --stdout\n"+identityUsage)
+			fmt.Fprintln(stderr, args[0]+" needs exactly one of --out FILE or --stdout\n"+identityUsage)
 			return exitUsage
 		}
 		var file *os.File
@@ -130,7 +131,15 @@ func runBackupIdentity(ctx context.Context, client *apiclient.Client, args []str
 			}
 			file = f
 		}
-		res, err := client.BackupIdentityExport(ctx)
+		var res apiclient.BackupIdentityExport
+		var rotated apiclient.BackupIdentityRotate
+		var err error
+		if rotate {
+			rotated, err = client.BackupIdentityRotate(ctx)
+			res = rotated.BackupIdentityExport
+		} else {
+			res, err = client.BackupIdentityExport(ctx)
+		}
 		if err != nil {
 			if file != nil {
 				_ = file.Close()
@@ -154,6 +163,15 @@ func runBackupIdentity(ctx context.Context, client *apiclient.Client, args []str
 		} else {
 			fmt.Fprintln(stdout, res.Identity)
 			fmt.Fprintln(stderr, "recovery identity printed above; store it offline, off this appliance. This export is audited.")
+		}
+		if rotate {
+			fmt.Fprintf(stdout, "rotated from %s to %s: %d run files re-wrapped to the new key, %d already current, %d failed\n",
+				rotated.PreviousFingerprint, res.Fingerprint, rotated.Rewrapped, rotated.AlreadyCurrent, len(rotated.Failed))
+			fmt.Fprintln(stdout, rotated.RunsNote)
+			for _, f := range rotated.Failed {
+				fmt.Fprintf(stdout, "not re-wrapped (the appliance keeps the old key for it; rotate again to retry): %s\n", f)
+			}
+			fmt.Fprintln(stdout, "runs made before now stay readable with the new key and also with the old one; keep the old key until those runs are pruned")
 		}
 		if *ack {
 			if _, err := client.BackupIdentityAck(ctx); err != nil {

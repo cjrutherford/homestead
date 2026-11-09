@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -134,6 +133,7 @@ func runConfigImport(ctx context.Context, client *apiclient.Client, args []strin
 	set.SetOutput(stderr)
 	file := set.String("f", "", "export document file (JSON or YAML by extension)")
 	set.StringVar(file, "file", "", "export document file (JSON or YAML by extension)")
+	dryRun := set.Bool("dry-run", false, "validate and show what would change; write nothing")
 	secretsFile := set.String("secrets-file", "", "JSON object file mapping secret names to values")
 	if err := set.Parse(args); err != nil {
 		return exitUsage
@@ -141,6 +141,9 @@ func runConfigImport(ctx context.Context, client *apiclient.Client, args []strin
 	if *file == "" {
 		fmt.Fprintln(stderr, "config import requires -f FILE")
 		return exitUsage
+	}
+	if *dryRun {
+		return runConfigImportPreview(ctx, client, *file, stdout, stderr)
 	}
 	document, err := readExportFile(*file)
 	if err != nil {
@@ -171,16 +174,11 @@ func runConfigImport(ctx context.Context, client *apiclient.Client, args []strin
 // writeExportFile persists an export document as YAML: the portable,
 // inspectable form disaster recovery carries between machines.
 func writeExportFile(path string, export desired.Export) error {
-	var body bytes.Buffer
-	encoder := yaml.NewEncoder(&body)
-	encoder.SetIndent(2)
-	if err := encoder.Encode(export); err != nil {
+	body, err := desired.MarshalExportYAML(export)
+	if err != nil {
 		return fmt.Errorf("render %s: %w", path, err)
 	}
-	if err := encoder.Close(); err != nil {
-		return fmt.Errorf("render %s: %w", path, err)
-	}
-	if err := os.WriteFile(path, body.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(path, body, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
@@ -207,4 +205,30 @@ func readExportFile(path string) (desired.Export, error) {
 		return desired.Export{}, fmt.Errorf("unsupported extension %q (want .json, .yaml, .yml)", filepath.Ext(path))
 	}
 	return export, nil
+}
+
+// runConfigImportPreview is `config import --dry-run`: the daemon
+// validates the file and lists the settings it would change and the
+// secret names it would need. Nothing is written; values are not shown.
+func runConfigImportPreview(ctx context.Context, client *apiclient.Client, file string, stdout, stderr io.Writer) int {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return fail(stderr, fmt.Errorf("read %s: %w", file, err))
+	}
+	preview, err := client.PreviewImport(ctx, string(data))
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if !preview.Valid {
+		fmt.Fprintf(stderr, "not importable: %s\n", preview.Error)
+		return exitError
+	}
+	fmt.Fprintf(stdout, "valid: %d settings would change, %d secrets needed\n", len(preview.Changes), len(preview.Secrets))
+	for _, change := range preview.Changes {
+		fmt.Fprintf(stdout, "  setting %s\n", change.Key)
+	}
+	for _, name := range preview.Secrets {
+		fmt.Fprintf(stdout, "  secret %s\n", name)
+	}
+	return exitOK
 }

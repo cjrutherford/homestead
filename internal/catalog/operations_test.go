@@ -16,6 +16,54 @@ import (
 	"homestead/internal/store"
 )
 
+// No catalog test may reach a real Docker daemon: the edge network call
+// defaults to a no-op and tests that care install a spy.
+func init() {
+	ensureEdgeNetwork = func(context.Context) error { return nil }
+}
+
+// stubEdgeNetwork records ensureEdgeNetwork calls and the order they ran in.
+func stubEdgeNetwork(t *testing.T, order *[]string, fail error) *int {
+	t.Helper()
+	calls := 0
+	old := ensureEdgeNetwork
+	ensureEdgeNetwork = func(context.Context) error {
+		calls++
+		if order != nil {
+			*order = append(*order, "network")
+		}
+		return fail
+	}
+	t.Cleanup(func() { ensureEdgeNetwork = old })
+	return &calls
+}
+
+func stubComposeDown(t *testing.T) *[]string {
+	t.Helper()
+	var calls []string
+	old := composeDown
+	composeDown = func(_ context.Context, dir, project string) error {
+		calls = append(calls, project)
+		return nil
+	}
+	t.Cleanup(func() { composeDown = old })
+	return &calls
+}
+
+func runInstall(t *testing.T, def operation.Definition) operation.Operation {
+	t.Helper()
+	runner := openInstallRunner(t)
+	op, err := runner.Start(context.Background(), def, "")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	done, err := runner.Wait(context.Background(), op.ID)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	return done
+}
+
 func installRegistry(t *testing.T, mounts ...string) *storage.Registry {
 	t.Helper()
 	dir := t.TempDir()
@@ -99,10 +147,11 @@ func TestInstallFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InstallDefinition: %v", err)
 	}
-	if def.Type != "catalog.install" || len(def.Steps) != 4 ||
-		def.Steps[0].Name != "provision:jellyfin/config" ||
-		def.Steps[1].Name != "provision:jellyfin/media" ||
-		def.Steps[2].Name != "write-stack" || def.Steps[3].Name != "up" {
+	if def.Type != "catalog.install" || len(def.Steps) != 5 ||
+		def.Steps[0].Name != "ensure-homestead-edge" ||
+		def.Steps[1].Name != "provision:jellyfin/config" ||
+		def.Steps[2].Name != "provision:jellyfin/media" ||
+		def.Steps[3].Name != "write-stack" || def.Steps[4].Name != "up" {
 		t.Fatalf("def = %+v", def)
 	}
 	runner := openInstallRunner(t)
@@ -142,7 +191,7 @@ func TestInstallValidates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InstallDefinition: %v", err)
 	}
-	if len(def.Steps) != 4 {
+	if len(def.Steps) != 5 {
 		t.Fatalf("def = %+v", def)
 	}
 	if _, err := InstallDefinition(plan, nil, "", openDriftStore(t), nil); err == nil {
@@ -174,6 +223,124 @@ func TestInstallUpFailureAborts(t *testing.T) {
 	// Earlier steps still applied before the failed up.
 	if _, err := os.Stat(filepath.Join(base, "jellyfin", "config")); err != nil {
 		t.Fatalf("directory missing after abort: %v", err)
+	}
+}
+
+func TestInstallCreatesEdgeNetworkBeforeUp(t *testing.T) {
+	base := t.TempDir()
+	registry := installRegistry(t, base)
+	plan := installPlan(t, base)
+	if !plan.EdgeNetwork {
+		t.Fatal("routed plan does not flag the edge network")
+	}
+	joined := strings.Join(plan.Notes, "\n")
+	if !strings.Contains(joined, "creates the homestead-edge network") || !strings.Contains(joined, "does not deploy the edge proxy") {
+		t.Fatalf("plan does not say the network is created and the proxy is not deployed: %v", plan.Notes)
+	}
+	var order []string
+	calls := stubEdgeNetwork(t, &order, nil)
+	old := composeUp
+	composeUp = func(context.Context, string, string) error { order = append(order, "up"); return nil }
+	t.Cleanup(func() { composeUp = old })
+	def, err := InstallDefinition(plan, registry, t.TempDir(), openDriftStore(t), nil)
+	if err != nil {
+		t.Fatalf("InstallDefinition: %v", err)
+	}
+	if done := runInstall(t, def); done.Status != operation.StatusSucceeded {
+		t.Fatalf("status = %q", done.Status)
+	}
+	if *calls != 1 || strings.Join(order, ",") != "network,up" {
+		t.Fatalf("calls=%d order=%v, want network before up", *calls, order)
+	}
+}
+
+func TestInstallEdgeNetworkFailureLeavesNothing(t *testing.T) {
+	base := t.TempDir()
+	registry := installRegistry(t, base)
+	plan := installPlan(t, base)
+	stackDir := t.TempDir()
+	st := openDriftStore(t)
+	stubEdgeNetwork(t, nil, errors.New("docker unavailable"))
+	calls := stubComposeUp(t, false)
+	def, err := InstallDefinition(plan, registry, stackDir, st, nil)
+	if err != nil {
+		t.Fatalf("InstallDefinition: %v", err)
+	}
+	if done := runInstall(t, def); done.Status != operation.StatusFailed {
+		t.Fatalf("status = %q, want failed", done.Status)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("up ran after the network failed: %v", *calls)
+	}
+	if ok, _ := Installed(st, plan.Package, stackDir); ok {
+		t.Fatal("package recorded as installed")
+	}
+}
+
+func TestFailedInstallIsNotRecordedAndCanRetry(t *testing.T) {
+	base := t.TempDir()
+	registry := installRegistry(t, base)
+	plan := installPlan(t, base)
+	stackDir := t.TempDir()
+	st := openDriftStore(t)
+	downs := stubComposeDown(t)
+	stubComposeUp(t, true)
+	def, err := InstallDefinition(plan, registry, stackDir, st, nil)
+	if err != nil {
+		t.Fatalf("InstallDefinition: %v", err)
+	}
+	done := runInstall(t, def)
+	if done.Status != operation.StatusFailed {
+		t.Fatalf("status = %q, want failed", done.Status)
+	}
+	if ok, err := Installed(st, plan.Package, stackDir); err != nil || ok {
+		t.Fatalf("Installed = %v, %v after a failed install", ok, err)
+	}
+	if err := RefuseInstalled(st, plan.Package, stackDir, nil); err != nil {
+		t.Fatalf("retry refused: %v", err)
+	}
+	if len(*downs) != 1 || (*downs)[0] != plan.Package {
+		t.Fatalf("containers the failed up created were not stopped: %v", *downs)
+	}
+	// Data directories the install provisioned are never deleted.
+	if _, err := os.Stat(filepath.Join(base, "jellyfin", "config")); err != nil {
+		t.Fatalf("rollback removed a data directory: %v", err)
+	}
+	if !strings.Contains(done.Error, "rolled back") {
+		t.Fatalf("error does not say what happened: %q", done.Error)
+	}
+	// The retry succeeds and records the package.
+	stubComposeUp(t, false)
+	def, err = InstallDefinition(plan, registry, stackDir, st, nil)
+	if err != nil {
+		t.Fatalf("retry InstallDefinition: %v", err)
+	}
+	if done := runInstall(t, def); done.Status != operation.StatusSucceeded {
+		t.Fatalf("retry status = %q", done.Status)
+	}
+	if ok, _ := Installed(st, plan.Package, stackDir); !ok {
+		t.Fatal("retry did not record the install")
+	}
+}
+
+func TestRollbackKeepsSecretsAndReportsCleanupFailure(t *testing.T) {
+	st := openDriftStore(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("name: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordFingerprints(st, "x", dir); err != nil {
+		t.Fatal(err)
+	}
+	old := composeDown
+	composeDown = func(context.Context, string, string) error { return errors.New("daemon gone") }
+	t.Cleanup(func() { composeDown = old })
+	err := rollbackInstall(context.Background(), st, "x", dir, true, errors.New("up failed"))
+	if err == nil || !strings.Contains(err.Error(), "up failed") || !strings.Contains(err.Error(), "apps uninstall x") {
+		t.Fatalf("err = %v", err)
+	}
+	if ok, _ := Installed(st, "x", dir); ok {
+		t.Fatal("files and records should still clear when down fails")
 	}
 }
 

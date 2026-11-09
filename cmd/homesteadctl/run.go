@@ -34,6 +34,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	top := flag.NewFlagSet("homesteadctl", flag.ContinueOnError)
 	top.SetOutput(stderr)
 	server := top.String("server", serverURL(), "daemon base URL")
+	caFile := top.String("ca-file", os.Getenv("HOMESTEAD_CA_FILE"), "PEM root certificate to trust for an https server (the appliance root); certificates are always verified")
 	if err := top.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -52,12 +53,21 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "hint:", hint)
 		}
 	}
-	client := apiclient.New(*server, apiclient.WithToken(token))
+	opts := []apiclient.Option{apiclient.WithToken(token)}
+	if *caFile != "" {
+		pem, err := os.ReadFile(*caFile)
+		if err != nil {
+			fmt.Fprintf(stderr, "Error: --ca-file: %v\n", err)
+			return exitUsage
+		}
+		opts = append(opts, apiclient.WithRootCA(pem))
+	}
+	client := apiclient.New(*server, opts...)
 	switch rest[0] {
 	case "status":
 		return runStatus(ctx, client, stdout, stderr)
 	case "doctor":
-		return runDoctor(ctx, client, stdout, stderr)
+		return runDoctor(ctx, client, rest[1:], stdout, stderr)
 	case "docker":
 		return runDocker(ctx, client, rest[1:], stdout, stderr)
 	case "audit":
@@ -72,6 +82,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runExposure(ctx, client, rest[1:], stdout, stderr)
 	case "tunnel":
 		return runTunnel(ctx, client, rest[1:], stdout, stderr)
+	case "names":
+		return runNames(ctx, client, rest[1:], stdout, stderr)
 	case "drift":
 		return runDrift(ctx, client, rest[1:], stdout, stderr)
 	case "data":
@@ -80,6 +92,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runUpdates(ctx, client, rest[1:], stdout, stderr)
 	case "craft":
 		return runCraft(ctx, client, rest[1:], stdout, stderr)
+	case "setup":
+		return runSetup(ctx, client, rest[1:], stdout, stderr)
+	case "sso":
+		return runSSO(ctx, client, rest[1:], stdout, stderr)
+	case "people":
+		return runPeople(ctx, client, rest[1:], stdout, stderr)
 	case "secrets":
 		return runSecrets(ctx, client, rest[1:], stdout, stderr)
 	case "backup":
@@ -88,6 +106,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runTLS(ctx, client, rest[1:], stdout, stderr)
 	case "scheduler":
 		return runScheduler(ctx, client, rest[1:], stdout, stderr)
+	case "dashboard":
+		return runDashboard(ctx, client, rest[1:], stdout, stderr)
 	case "edge":
 		return runEdge(ctx, client, rest[1:], stdout, stderr)
 	case "storage":
@@ -121,29 +141,36 @@ func needsSession(command string) bool {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprintln(w, "usage: homesteadctl [--server URL] <command>")
+	fmt.Fprintln(w, "usage: homesteadctl [--server URL] [--ca-file ROOT.pem] <command>")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "commands:")
 	fmt.Fprintln(w, "  status                 daemon health and version")
-	fmt.Fprintln(w, "  doctor                 system diagnostics (S044)")
+	fmt.Fprintln(w, "  doctor [--live]        grouped diagnostics with fixes; --live adds tunnel, Authentik and app probes (S044, S316)")
 	fmt.Fprintln(w, "  docker health          Docker engine and inventory, read-only (S073)")
 	fmt.Fprintln(w, "  audit list             audit trail, newest first (S063)")
 	fmt.Fprintln(w, "  apps list              curated packages (S167)")
 	fmt.Fprintln(w, "  apps plan <pkg> -f FILE  review install plan (S168)")
 	fmt.Fprintln(w, "  apps install <pkg> -f FILE [--follow]  install package (S168)")
 	fmt.Fprintln(w, "  apps configure <pkg> --service NAME [--set K=V] [--unset K] [--rotate-secret NAME] | --adopt-secrets  configure service (S168, S266)")
+	fmt.Fprintln(w, "  apps names             each app's local names (S295)")
 	fmt.Fprintln(w, "  apps secrets <pkg>     list secret-backed variables (S266)")
 	fmt.Fprintln(w, "  apps secrets register <pkg> <secret> --value-file PATH|- [--skip-verify] [--force]  register an existing secret (S266)")
-	fmt.Fprintln(w, "  apps uninstall <pkg> [--remove-data --data-dir M:P]... [--abandon-volumes] [--follow]  uninstall package (S236)")
+	fmt.Fprintln(w, "  apps secrets reveal <pkg> <secret>  print a credential meant for you, such as Nextcloud's admin password (audited, S312)")
+	fmt.Fprintln(w, "  apps sign-in <status|plan|access|apply> <pkg> [--off] [--digest D] [--token-file F] [--follow]  app sign-in with Authentik (S298)")
+	fmt.Fprintln(w, "  apps uninstall <pkg> [--remove-data --data-dir M:P]... [--abandon-volumes] [--leave-sign-in] [--follow]  uninstall package (S236, S299)")
 	fmt.Fprintln(w, "  operations <get|list|follow>  inspect and follow operations (S062/S064)")
 	fmt.Fprintln(w, "  firewall <status|plan|apply>  host firewall setup (S056)")
 	fmt.Fprintln(w, "  exposure <review|approvals|approve|apply>  public exposure review and apply (S245)")
-	fmt.Fprintln(w, "  tunnel <status|setup|teardown>  tunnel remote access (S246)")
+	fmt.Fprintln(w, "  tunnel <status|plan|setup|teardown>  tunnel remote access, planned and approved (S246, S294)")
+	fmt.Fprintln(w, "  names [status] | names resolver <plan|apply> --on|--off [--digest D]  app .local/.lan names and the optional .lan resolver (S295)")
 	fmt.Fprintln(w, "  drift <review|accept|restore> <package> [--follow]  managed-state drift choices (S244)")
 	fmt.Fprintln(w, "  drift schedule [--interval 6h] [--enabled true|false]  periodic scan cadence and last result (S261)")
 	fmt.Fprintln(w, "  data <status|plan|approve|remove-volumes>  app data placement, migration off Docker volumes, and old-volume removal (S277)")
 	fmt.Fprintln(w, "  craft <status|plan|build|trust>  craft image verify-then-build and craft signing keys (S279)")
 	fmt.Fprintln(w, "  craft files <status|link|rotate|unlink|local-only|launch>  Nextcloud document storage for craft apps (S254)")
+	fmt.Fprintln(w, "  setup <status|step|skip|unskip>  post-claim setup walkthrough (S287)")
+	fmt.Fprintln(w, "  sso <status|plan|approve|apply|link|unlink|access|disable>  dashboard sign-in with Authentik (S286)")
+	fmt.Fprintln(w, "  people <list|add|edit|reset-password|reset-mfa|disable|enable|remove|adopt|grant|revoke|resolve>  who can open which apps (S317)")
 	fmt.Fprintln(w, "  updates <list|apply|platform|verify|trust>  application updates (S243); platform release verification and trusted keys (S264)")
 	fmt.Fprintln(w, "  secrets <status|rekey>  secret-store key version and confirmed re-key (S258)")
 	fmt.Fprintln(w, "  backup <destination|schedules|schedule|unschedule>  backup configuration (S238)")
@@ -151,6 +178,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  scheduler jobs scheduled jobs, last run and next due (S260)")
 	fmt.Fprintln(w, "  edge deploy [--follow]  deploy the Caddy edge proxy (S237)")
 	fmt.Fprintln(w, "  edge routes <get | set -f FILE [--follow]>  read or reconcile the proxy route table (S237, S270)")
+	fmt.Fprintln(w, "  dashboard address [get | set NAME [--exposure local|overlay] [--follow]]  the dashboard's local network name (S289)")
 	fmt.Fprintln(w, "  storage <mounts|register|registrations|assign|assignments>  mounted storage setup (S235)")
 	fmt.Fprintln(w, "  version                CLI and daemon versions")
 	fmt.Fprintln(w, "  config get             print current desired state")

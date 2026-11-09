@@ -1,6 +1,7 @@
 # Jellyfin media server (S160): the first complete Homestead app package.
 # Curated first-party manifest — versions pin here, updates bump this file.
 name: jellyfin
+publish: path  # ADR-061
 version: 12.2
 title: Jellyfin
 blurb: Media server you control.
@@ -8,15 +9,19 @@ description: Jellyfin streams your movies, shows, and music across the home
   and beyond, with no accounts, no tracking, and no fees. Libraries live on
   bulk storage; configuration stays small and backed up.
 category: media
-icon: mdi:plex
+icon: mdi:television-play
 services:
 - name: jellyfin
   image: jellyfin/jellyfin:12.2
+  publisher: upstream
   exposes: web
+  containerport: 8096
   # Image VOLUMEs: /config, /cache. The image runs as root by default
-  # (no USER in the image config), so ownership stays untouched. Media
-  # libraries are owner mounts (referenced, never provisioned), not
-  # declarations.
+  # (no USER in the image config), so ownership stays untouched.
+  #
+  # The media folders (S319) are provisioned on bulk storage at
+  # <bulk mount>/jellyfin/media/{movies,tv,music}; the first run makes
+  # each a library. Copy files into them and Jellyfin picks them up.
   data:
   - target: /config
     class: application
@@ -24,6 +29,31 @@ services:
   - target: /cache
     class: bulk
     subpath: cache
+  - target: /media/movies
+    class: bulk
+    subpath: media/movies
+  - target: /media/tv
+    class: bulk
+    subpath: media/tv
+  - target: /media/music
+    class: bulk
+    subpath: media/music
+# Served at <server>/apps/jellyfin/ (ADR-044). Jellyfin's Base URL
+# (network.xml BaseUrl) makes it serve under the prefix itself, so the
+# edge keeps it. Jellyfin has no environment for it: the package seeds
+# network.xml with only BaseUrl before the first start (Jellyfin fills
+# every other setting with its default and rewrites the file). An
+# existing network.xml is never touched.
+serve: path
+path: /apps/jellyfin/
+seeds:
+- service: jellyfin
+  target: /config/config/network.xml
+  content: |
+    <?xml version="1.0" encoding="utf-8"?>
+    <NetworkConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+      <BaseUrl>{{route_path}}</BaseUrl>
+    </NetworkConfiguration>
 requirements:
   memorymb: 2048
   cpucount: 2
@@ -33,7 +63,6 @@ requirements:
     minbytes: 1073741824
   - class: bulk
     minbytes: 21474836480
-  ports: [8096]
 exposure:
   package: jellyfin
   endpoints:
@@ -47,3 +76,49 @@ backuppaths:
 sso:
   class: optional
   protocols: [oidc, saml]
+  # App sign-in through Authentik (S298, ADR-039 §3): the third-party
+  # jellyfin-plugin-sso, pinned to this release and checksum. Any other
+  # build is refused; the pin moves only with a catalog update.
+  oidc:
+    adapter: jellyfin-sso-plugin
+    service: jellyfin
+    plugin:
+      name: SSO Authentication
+      version: 4.0.0.4
+      url: https://github.com/9p4/jellyfin-plugin-sso/releases/download/v4.0.0.4/sso-authentication_4.0.0.4.zip
+      sha256: c09f16ba31059a434ddd7f811e4f9608d4b4c4514cc80a5bf1ca33bee61e1107
+secrets:
+- name: admin_password
+  # The first-run administrator's password (S319). Homestead holds it and
+  # uses it once, to finish Jellyfin's startup wizard; no container reads
+  # it. Jellyfin keeps its own copy, so rotating it would leave the shown
+  # value wrong: change the password in Jellyfin instead.
+  immutable: true
+  reveal: true
+  note: Password for the Jellyfin administrator account "admin", created by Homestead when Jellyfin first started. People sign in with Authentik when sign-in is on; this account is for emergencies.
+# Jellyfin's startup wizard (server name, administrator, libraries) has no
+# environment settings, so Homestead completes it through Jellyfin's API
+# at the end of install, and again before sign-in is applied if that
+# failed (S319). A Jellyfin whose wizard is complete is never touched.
+firstrun:
+  routine: jellyfin
+  service: jellyfin
+  account: admin
+  secret: admin_password
+  libraries:
+  - name: Movies
+    kind: movies
+    path: /media/movies
+  - name: TV Shows
+    kind: tvshows
+    path: /media/tv
+  - name: Music
+    kind: music
+    path: /media/music
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in through Authentik; local accounts stay available for recovery.
+- kind: library
+  target: nextcloud
+  note: Mount the same bulk media directory into Jellyfin and Nextcloud external storage.

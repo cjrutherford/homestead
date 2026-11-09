@@ -273,7 +273,7 @@ func TestLaunch(t *testing.T) {
 	sessions := NewSessions(&fakeOperator{expires: map[string]time.Time{"op": e.clock.Now().Add(time.Hour)}})
 	sessions.Now = e.clock.Now
 	launch := func(app string) (LaunchResult, error) {
-		return e.m.Launch(sessions, "op", "owner", e.clock.Now().Add(time.Hour), app)
+		return e.m.Launch(sessions, "op", "owner", e.clock.Now().Add(time.Hour), app, "")
 	}
 	if _, err := launch("gridcraft"); !errors.Is(err, ErrNotLinked) {
 		t.Fatalf("unlinked launch: %v", err)

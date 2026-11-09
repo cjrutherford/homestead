@@ -32,14 +32,20 @@ func answerCount(t *testing.T, resp []byte) (int, int) {
 	return int(resp[6])<<8 | int(resp[7]), int(resp[10])<<8 | int(resp[11])
 }
 
+// link builds a LinkAddr from "ip/len" on iface.
+func link(cidr, iface string) LinkAddr {
+	p := netip.MustParsePrefix(cidr)
+	return LinkAddr{Addr: p.Addr(), Prefix: p.Masked(), Interface: iface}
+}
+
 func testConfig() Config {
 	return Config{
 		Hostname: "homestead",
 		Port:     8080,
 		Version:  "0.0.0-test",
 		State:    func() string { return "UNCLAIMED" },
-		Addresses: func() []netip.Addr {
-			return []netip.Addr{netip.MustParseAddr("192.168.1.10"), netip.MustParseAddr("192.168.1.11")}
+		Addresses: func() []LinkAddr {
+			return []LinkAddr{link("192.168.1.10/24", "eth0"), link("192.168.1.11/24", "eth0")}
 		},
 	}
 }
@@ -95,7 +101,7 @@ func TestParseQuestions(t *testing.T) {
 
 func TestAnswerA(t *testing.T) {
 	cfg := testConfig()
-	resp, unicast := respond(buildQuery(9, "homestead.local", typeA, false), cfg)
+	resp, unicast := respond(buildQuery(9, "homestead.local", typeA, false), cfg, netip.Addr{})
 	if resp == nil || unicast {
 		t.Fatal("no multicast answer")
 	}
@@ -118,7 +124,7 @@ func TestAnswerA(t *testing.T) {
 		}
 	}
 	// QU questions answer unicast.
-	resp, unicast = respond(buildQuery(9, "homestead.local", typeA, true), cfg)
+	resp, unicast = respond(buildQuery(9, "homestead.local", typeA, true), cfg, netip.Addr{})
 	if resp == nil || !unicast {
 		t.Fatal("no unicast answer")
 	}
@@ -126,7 +132,7 @@ func TestAnswerA(t *testing.T) {
 
 func TestAnswerService(t *testing.T) {
 	cfg := testConfig()
-	resp, _ := respond(buildQuery(3, "_homestead._tcp.local", typePTR, false), cfg)
+	resp, _ := respond(buildQuery(3, "_homestead._tcp.local", typePTR, false), cfg, netip.Addr{})
 	if resp == nil {
 		t.Fatal("no answer")
 	}
@@ -137,14 +143,14 @@ func TestAnswerService(t *testing.T) {
 	if !strings.Contains(string(resp), "_homestead") || !strings.Contains(string(resp), "homestead") {
 		t.Fatal("PTR target missing")
 	}
-	resp, _ = respond(buildQuery(3, "homestead._homestead._tcp.local", typeSRV, false), cfg)
+	resp, _ = respond(buildQuery(3, "homestead._homestead._tcp.local", typeSRV, false), cfg, netip.Addr{})
 	if resp == nil {
 		t.Fatal("no SRV answer")
 	}
 	if !strings.Contains(string(resp), "\x1f\x90") { // 8080
 		t.Fatal("SRV port missing")
 	}
-	resp, _ = respond(buildQuery(3, "homestead._homestead._tcp.local", typeTXT, false), cfg)
+	resp, _ = respond(buildQuery(3, "homestead._homestead._tcp.local", typeTXT, false), cfg, netip.Addr{})
 	if resp == nil {
 		t.Fatal("no TXT answer")
 	}
@@ -164,13 +170,13 @@ func TestAnswerSilent(t *testing.T) {
 		question := msg
 		if name == "empty service" {
 			empty := testConfig()
-			empty.Addresses = func() []netip.Addr { return nil }
-			if resp, _ := respond(question, empty); resp != nil {
+			empty.Addresses = func() []LinkAddr { return nil }
+			if resp, _ := respond(question, empty, netip.Addr{}); resp != nil {
 				t.Fatalf("%s answered without addresses", name)
 			}
 			continue
 		}
-		if resp, _ := respond(question, cfg); resp != nil {
+		if resp, _ := respond(question, cfg, netip.Addr{}); resp != nil {
 			t.Fatalf("%s answered", name)
 		}
 	}
@@ -185,7 +191,7 @@ func TestLANIPv4(t *testing.T) {
 		{Name: "lo", Up: true, Loopback: true, Addresses: []discover.Address{{IP: "127.0.0.1"}}},
 	}}
 	addrs := LANIPv4(network)
-	if len(addrs) != 1 || addrs[0] != netip.MustParseAddr("192.168.1.10") {
+	if len(addrs) != 1 || addrs[0].Addr != netip.MustParseAddr("192.168.1.10") || addrs[0].Interface != "eth0" {
 		t.Fatalf("addrs = %v", addrs)
 	}
 }
@@ -210,7 +216,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Skip("no loopback interface")
 	}
 	cfg := testConfig()
-	cfg.Addresses = func() []netip.Addr { return []netip.Addr{netip.MustParseAddr("192.168.1.10")} }
+	cfg.Addresses = func() []LinkAddr { return []LinkAddr{link("192.168.1.10/24", "lo")} }
 	groupAddr := &net.UDPAddr{IP: net.ParseIP("224.0.0.251"), Port: 5353}
 	conn, err := listenOn(*loopback, groupAddr)
 	if err != nil {
@@ -221,7 +227,7 @@ func TestRoundTrip(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		serve(ctx, cfg, []*net.UDPConn{conn}, groupAddr)
+		serve(ctx, cfg, []linkConn{{iface: loopback.Name, conn: conn}}, groupAddr)
 	}()
 	defer func() {
 		stop()
@@ -256,5 +262,115 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if !strings.Contains(string(resp), "\xc0\xa8\x01\x0a") {
 		t.Fatal("address missing from answer")
+	}
+}
+
+func TestLANIPv4ExcludesDockerBridges(t *testing.T) {
+	network := discover.Network{Interfaces: []discover.Interface{
+		{Name: "eth0", Up: true, Addresses: []discover.Address{{IP: "192.168.1.10", Network: "192.168.1.0/24"}}},
+		{Name: "docker0", Up: true, Addresses: []discover.Address{{IP: "172.17.0.1", Network: "172.17.0.0/16"}}},
+		{Name: "br-1a2b3c", Up: true, Addresses: []discover.Address{{IP: "172.18.0.1", Network: "172.18.0.0/16"}}},
+		{Name: "veth9f", Up: true, Addresses: []discover.Address{{IP: "172.19.0.1", Network: "172.19.0.0/16"}}},
+	}}
+	addrs := LANIPv4(network)
+	if len(addrs) != 1 || addrs[0].Interface != "eth0" || addrs[0].Prefix != netip.MustParsePrefix("192.168.1.0/24") {
+		t.Fatalf("addrs = %v", addrs)
+	}
+}
+
+func multiNIC() Config {
+	cfg := testConfig()
+	cfg.Addresses = func() []LinkAddr {
+		return []LinkAddr{link("10.0.2.15/24", "ens3"), link("192.168.1.158/24", "lan0")}
+	}
+	return cfg
+}
+
+func TestRespondOnlyOnQueryLink(t *testing.T) {
+	resp, _ := respond(buildQuery(1, "homestead.local", typeA, false), multiNIC(), netip.MustParseAddr("192.168.1.50"))
+	if resp == nil {
+		t.Fatal("no answer")
+	}
+	if n, _ := answerCount(t, resp); n != 1 {
+		t.Fatalf("answers = %d", n)
+	}
+	if !strings.Contains(string(resp), "\xc0\xa8\x01\x9e") || strings.Contains(string(resp), "\x0a\x00\x02\x0f") {
+		t.Fatalf("wrong address set: %x", resp)
+	}
+}
+
+func TestRespondUnmatchedSourceFallsBack(t *testing.T) {
+	for _, src := range []netip.Addr{netip.MustParseAddr("203.0.113.9"), {}} {
+		resp, _ := respond(buildQuery(1, "homestead.local", typeA, false), multiNIC(), src)
+		if resp == nil {
+			t.Fatal("no answer")
+		}
+		if n, _ := answerCount(t, resp); n != 2 {
+			t.Fatalf("src %v answers = %d", src, n)
+		}
+	}
+}
+
+func TestForInterface(t *testing.T) {
+	addrs := multiNIC().Addresses()
+	got := forInterface(addrs, "lan0")
+	if len(got) != 1 || got[0] != netip.MustParseAddr("192.168.1.158") {
+		t.Fatalf("lan0 = %v", got)
+	}
+	if got := forInterface(addrs, "wlan9"); len(got) != 0 || announce(multiNIC(), got) != nil {
+		t.Fatalf("empty interface announced: %v", got)
+	}
+}
+
+func TestAnswerAppNames(t *testing.T) {
+	cfg := testConfig()
+	cfg.Apps = func() []string { return []string{"immich", "Jellyfin", "homestead", "bad label", "immich"} }
+	if got := strings.Join(cfg.names(), ","); got != "homestead.local,immich.local,jellyfin.local" {
+		t.Fatalf("names = %s", got)
+	}
+	resp, _ := respond(buildQuery(3, "immich.local", typeA, false), cfg, netip.Addr{})
+	if resp == nil {
+		t.Fatal("app name not answered")
+	}
+	if answers, _ := answerCount(t, resp); answers != 2 {
+		t.Fatalf("answers = %d", answers)
+	}
+	if resp, _ := respond(buildQuery(3, "printer.local", typeA, false), cfg, netip.Addr{}); resp != nil {
+		t.Fatal("answered a name it does not own")
+	}
+	// The boot announcement glues every name; a later one only the new.
+	addrs := []netip.Addr{netip.MustParseAddr("192.168.1.10")}
+	if _, glued := answerCount(t, announce(cfg, addrs)); glued != 3 {
+		t.Fatalf("announce glued %d", glued)
+	}
+	msg := announceNames([]string{"paperless.local"}, addrs)
+	if got := answeredNames(msg); len(got) != 1 || got[0] != "paperless.local" {
+		t.Fatalf("announced %v", got)
+	}
+	if announceNames(nil, addrs) != nil {
+		t.Fatal("empty announcement")
+	}
+}
+
+func TestNoticeConflicts(t *testing.T) {
+	cfg := testConfig()
+	cfg.Apps = func() []string { return []string{"immich"} }
+	forgetConflicts(nil)
+	t.Cleanup(func() { forgetConflicts(nil) })
+	other := netip.MustParseAddr("192.168.1.99")
+	addrs := []netip.Addr{other}
+	// Our own echo is not a conflict.
+	noticeConflicts(announceNames([]string{"immich.local"}, addrs), cfg, netip.MustParseAddr("192.168.1.10"))
+	if got := CurrentState().Conflicts; len(got) != 0 {
+		t.Fatalf("own echo flagged: %v", got)
+	}
+	noticeConflicts(announceNames([]string{"immich.local", "printer.local"}, addrs), cfg, other)
+	if got := CurrentState().Conflicts; len(got) != 1 || got[0] != "immich.local (192.168.1.99)" {
+		t.Fatalf("conflicts %v", got)
+	}
+	// Once the app is gone, so is its conflict.
+	forgetConflicts(map[string]bool{"homestead.local": true})
+	if got := CurrentState().Conflicts; len(got) != 0 {
+		t.Fatalf("stale conflicts %v", got)
 	}
 }

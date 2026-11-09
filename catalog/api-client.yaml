@@ -1,0 +1,125 @@
+# API Client (S436, ADR-057, ADR-058): an Everything app. Build, send and test
+# HTTP requests, organise them in collections, switch environments. MIT
+# licence; lucide icons (ISC) and CodeMirror (MIT) are bundled and served from
+# the app's own origin. Requests are sent by your Homestead through
+# puter.net.fetch (ADR-058 section 5): public internet only, limited and
+# logged by the bridge; this is the one package that turns HOMESTEAD_EVERYTHING_NET
+# on. Collections, environments and history are kept in the browser (per
+# person) and mirrored to the bridge's per-person storage. WebSocket, raw
+# sockets and sharing are not offered.
+name: api-client
+publish: path  # ADR-061
+version: 0.1.0
+title: API Client
+blurb: Build and send HTTP requests from your own server; collections and environments private to each person.
+description: API Client builds, sends and tests HTTP requests. Organise them in
+  collections, switch environments with variables, and import from cURL,
+  OpenAPI, Insomnia or HAR. Requests are sent by your Homestead, not by your
+  browser, to public internet addresses only; your local network, this server
+  and link-local addresses are refused, redirects are always followed, cookies
+  are not passed on and only safe response headers are shown. Each person is
+  limited to 60 requests a minute, with request bodies up to 2 MB and responses
+  up to 8 MB. Every request is logged on the appliance (host, path and result,
+  never the query, headers or body). WebSocket connections and sharing are not
+  offered. Your collections, environments and history are private to each
+  person, stored in the browser and mirrored to your appliance. People sign in
+  through Authentik; until the owner sets up sign-in the app serves nothing.
+  It is served over your local network with a certificate from your Homestead
+  internal CA.
+category: development
+icon: mdi:cloud
+services:
+- name: api-client
+  image: homestead/everything-api-client:0.1.0
+  exposes: web
+  containerport: 8081
+  environment:
+    # The bridge knows its own base path (no prefix is stripped) and the
+    # origin its pages are served from, which it requires on every
+    # state-changing request.
+    HOMESTEAD_EVERYTHING_BASE_PATH: "{{route_path}}"
+    HOMESTEAD_EVERYTHING_ORIGIN: "https://{{route_host}}"
+    HOMESTEAD_EVERYTHING_OIDC_REDIRECT_URL: "{{route_url}}/_homestead/callback"
+    # Until sign-in is applied the bridge starts and answers only that
+    # sign-in is not set up (fail closed); it never serves data.
+    HOMESTEAD_EVERYTHING_AWAIT_SIGNIN: "1"
+    # puter.net.fetch (ADR-058 section 5): the fenced, limited, logged way out.
+    HOMESTEAD_EVERYTHING_NET: "1"
+    # The script sandbox page (S464): pre-request scripts run in a sandboxed
+    # frame on this page, which has its own policy (eval and Blob workers, no
+    # network). The app page itself still refuses eval.
+    HOMESTEAD_EVERYTHING_SANDBOX_PAGE: "homestead-sandbox.html"
+    # Per-person and whole-app storage limits, in bytes.
+    HOMESTEAD_EVERYTHING_QUOTA_PERSON_BYTES: "268435456"
+    HOMESTEAD_EVERYTHING_QUOTA_APP_BYTES: "2147483648"
+  # The image declares VOLUME /data (the bridge's SQLite database); the
+  # bridge runs as uid/gid 65532.
+  data:
+  - target: /data
+    class: application
+    subpath: data
+    uid: 65532
+    gid: 65532
+requirements:
+  memorymb: 128
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 1073741824
+# Served at <server>/apps/api-client/ (ADR-044). The bridge serves under the path
+# itself, so the edge keeps it.
+serve: path
+exposure:
+  package: api-client
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Your collections and the requests your Homestead sends leave the LAN when widened; expose only behind HTTPS with a certificate you trust, and only to people who have an Authentik account.
+backuppaths:
+- data
+database:
+  service: api-client
+  kind: sqlite
+  path: data/bridge.db
+sso:
+  class: recommended
+  protocols: [oidc]
+  # Sign-in through Authentik (S368, ADR-053, ADR-057). The bridge is its own
+  # OIDC client: it needs the issuer, its client id and a client secret file,
+  # all handed over by the normal sign-in plan. People who are not granted
+  # the app in Homestead cannot sign in (closed by default, ADR-043).
+  #
+  # The app is served by path, so the origins sign-in is planned for already
+  # end in /apps/api-client (ADR-044): the redirect and sign-in paths below are
+  # relative to the app, matching the bridge's own /_homestead/ routes.
+  oidc:
+    adapter: env-oidc
+    service: api-client
+    env:
+      redirectpaths: ["/_homestead/callback"]
+      signinpath: /_homestead/login
+      secret: oidc_client_secret
+      # The bridge has no password sign-in of its own: once sign-in is on it
+      # is the only way in.
+      exclusive: true
+      # The bridge trusts exactly the bundle it is given; the combined
+      # bundle keeps a public issuer (Let's Encrypt) working too.
+      trust: HOMESTEAD_EVERYTHING_OIDC_CA_FILE
+      trustbundle: combined
+      set:
+        HOMESTEAD_EVERYTHING_OIDC_ISSUER: "{{issuer}}"
+        HOMESTEAD_EVERYTHING_OIDC_CLIENT_ID: "{{client_id}}"
+secrets:
+- name: oidc_client_secret
+  # Authentik's client secret for API Client; Homestead generates it, hands it to
+  # Authentik, and gives the bridge the file (never an environment value).
+  consumers:
+  - service: api-client
+    env: HOMESTEAD_EVERYTHING_OIDC_CLIENT_SECRET_FILE
+integrations:
+- kind: identity
+  target: authentik
+  note: People sign in with Authentik once sign-in is applied on the app's page; the app serves nothing before that.

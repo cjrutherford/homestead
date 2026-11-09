@@ -1,7 +1,9 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService, CraftApp } from '../core/api.service';
+import { RouterLink } from '@angular/router';
 import { StateMessage } from '../state/state-message';
+import { Loading } from '../ui/loading';
 
 /**
  * Craft apps start page (S281, ADR-031): the installed craft apps with
@@ -11,10 +13,9 @@ import { StateMessage } from '../state/state-message';
  * an app shows on the next load.
  */
 @Component({
-  imports: [StateMessage],
+  imports: [Loading, StateMessage, RouterLink],
   selector: 'app-craft-apps',
   templateUrl: './craft-apps.html',
-  styles: ['a.button, button { min-height: 44px; }'],
 })
 export class CraftApps implements OnInit {
   private readonly api = inject(ApiService);
@@ -42,9 +43,13 @@ export class CraftApps implements OnInit {
     });
   }
 
+  protected badgeFor(status: string): string {
+    return status === 'installed' || status === 'running' ? 'badge-ok' : '';
+  }
+
   private describe(failure: HttpErrorResponse): string {
     if (failure.status === 0) {
-      return 'Cannot reach the Homestead daemon. Check that it is running and try again.';
+      return "Can't reach the appliance. Check that homestead-server is running.";
     }
     const body = failure.error;
     if (typeof body === 'string' && body.trim()) {

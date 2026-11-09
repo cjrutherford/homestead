@@ -38,6 +38,7 @@ func TestWriteStackArtifacts(t *testing.T) {
 		"unless-stopped",
 		`"80:80"`,
 		`"443:443"`,
+		`"127.0.0.1:8480:8480"`,
 		"./Caddyfile:/etc/caddy/Caddyfile:ro",
 		"./routes:/etc/caddy/routes:ro",
 		"./caddy-data:/data",

@@ -4,8 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
 	"sync"
+	"time"
 )
+
+// recheckEvery is how often the responder looks for new app names to
+// announce (ADR-039); a var so tests can shorten it.
+var recheckEvery = 30 * time.Second
 
 // mdnsPort is the shared multicast DNS port: taken on desktops by
 // Avahi and friends, which is why startup conflicts fail loudly
@@ -22,25 +28,30 @@ var mdnsGroup = net.ParseIP("224.0.0.251")
 // interfaces answering, others silent) would confuse more than help.
 func ListenAndServe(ctx context.Context, cfg Config) error {
 	if err := cfg.Validate(); err != nil {
+		setState(State{Known: true, Err: err.Error()})
 		return err
 	}
 	ifaces, err := multicastInterfaces()
 	if err != nil {
+		setState(State{Known: true, Err: err.Error()})
 		return err
 	}
 	groupAddr := &net.UDPAddr{IP: mdnsGroup, Port: mdnsPort}
-	var conns []*net.UDPConn
+	var conns []linkConn
 	for _, iface := range ifaces {
 		conn, err := listenOn(iface, groupAddr)
 		if err != nil {
 			for _, c := range conns {
-				_ = c.Close()
+				_ = c.conn.Close()
 			}
+			setState(State{Known: true, Err: err.Error()})
 			return err
 		}
-		conns = append(conns, conn)
+		conns = append(conns, linkConn{iface: iface.Name, conn: conn})
 	}
+	setState(State{Known: true, Running: true})
 	serve(ctx, cfg, conns, groupAddr)
+	setState(State{Known: true})
 	return nil
 }
 
@@ -54,20 +65,65 @@ func listenOn(iface net.Interface, groupAddr *net.UDPAddr) (*net.UDPConn, error)
 	return conn, nil
 }
 
+// linkConn is one multicast socket and the interface it listens on.
+type linkConn struct {
+	iface string
+	conn  *net.UDPConn
+}
+
 // serve announces once per connection, then answers queries on each
 // until ctx ends.
-func serve(ctx context.Context, cfg Config, conns []*net.UDPConn, groupAddr *net.UDPAddr) {
-	// One gratuitous advertisement per connection: newcomers learn us
-	// without asking first.
-	if advertisement := announce(cfg, cfg.Addresses()); advertisement != nil {
-		for _, conn := range conns {
-			_, _ = conn.WriteToUDP(advertisement, groupAddr)
+func serve(ctx context.Context, cfg Config, conns []linkConn, groupAddr *net.UDPAddr) {
+	// One gratuitous advertisement per connection, carrying only that
+	// interface's addresses: newcomers learn us without asking first.
+	addrs := cfg.Addresses()
+	for _, lc := range conns {
+		if advertisement := announce(cfg, forInterface(addrs, lc.iface)); advertisement != nil {
+			_, _ = lc.conn.WriteToUDP(advertisement, groupAddr)
 		}
 	}
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
 	var wg sync.WaitGroup
-	for _, conn := range conns {
+	// Names that appear later (an app installed) are announced once.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		known := map[string]bool{}
+		for _, n := range cfg.names() {
+			known[n] = true
+		}
+		ticker := time.NewTicker(recheckEvery)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			var fresh []string
+			current := map[string]bool{}
+			for _, n := range cfg.names() {
+				current[n] = true
+				if !known[n] {
+					fresh = append(fresh, n)
+				}
+			}
+			known = current
+			forgetConflicts(current)
+			if len(fresh) == 0 {
+				continue
+			}
+			addrs := cfg.Addresses()
+			for _, lc := range conns {
+				if msg := announceNames(fresh, forInterface(addrs, lc.iface)); msg != nil {
+					_, _ = lc.conn.WriteToUDP(msg, groupAddr)
+				}
+			}
+		}
+	}()
+	for _, lc := range conns {
+		conn := lc.conn
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -82,7 +138,8 @@ func serve(ctx context.Context, cfg Config, conns []*net.UDPConn, groupAddr *net
 				if err != nil {
 					return
 				}
-				resp, unicast := respond(buf[:n], cfg)
+				noticeConflicts(buf[:n], cfg, srcAddr(src))
+				resp, unicast := respond(buf[:n], cfg, srcAddr(src))
 				if resp == nil {
 					continue
 				}
@@ -96,4 +153,38 @@ func serve(ctx context.Context, cfg Config, conns []*net.UDPConn, groupAddr *net
 	}
 	<-ctx.Done()
 	wg.Wait()
+}
+
+// srcAddr extracts a query's source IP; nil yields the zero address.
+func srcAddr(src *net.UDPAddr) netip.Addr {
+	if src == nil {
+		return netip.Addr{}
+	}
+	addr, ok := netip.AddrFromSlice(src.IP)
+	if !ok {
+		return netip.Addr{}
+	}
+	return addr.Unmap()
+}
+
+// noticeConflicts records another device answering one of the
+// responder's names. The responder does not fight for the name (ADR-012,
+// ADR-039); the doctor reports it so the owner can rename one side.
+// Answers from the appliance's own or loopback addresses are its own
+// echoes.
+func noticeConflicts(msg []byte, cfg Config, src netip.Addr) {
+	names := answeredNames(msg)
+	if len(names) == 0 || !src.IsValid() || src.IsLoopback() {
+		return
+	}
+	for _, a := range cfg.Addresses() {
+		if a.Addr == src {
+			return
+		}
+	}
+	for _, name := range names {
+		if cfg.owns(name) {
+			noteConflict(name, src, time.Now())
+		}
+	}
 }

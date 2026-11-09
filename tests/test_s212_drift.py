@@ -36,7 +36,7 @@ class TestDriftDetection(unittest.TestCase):
                             ("internal/catalog/configure.go",
                              "RecordFingerprints(st, plan.Manifest.Name, dir)"),
                             ("internal/catalog/remove.go",
-                             "ClearFingerprints(st, removal.Package)")):
+                             "ClearFingerprints(st, pkg)")):
             with self.subTest(rel=rel):
                 self.assertIn(symbol, read(rel))
 

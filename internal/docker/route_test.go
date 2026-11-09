@@ -113,3 +113,43 @@ func TestRouteSet(t *testing.T) {
 		t.Fatal("accepted invalid member")
 	}
 }
+
+// App routes under .lan also answer <label>.local (ADR-039); the alias is
+// derived, never stored, and never given to the dashboard, public routes
+// or the reserved homestead label.
+func TestRouteLocalAlias(t *testing.T) {
+	app := Route{Host: "immich.lan", Target: Target{Host: "immich", Port: 2283}, Exposure: ExposureLocal, TLS: TLSInternal}
+	if alias, ok := app.LocalAlias(); !ok || alias != "immich.local" {
+		t.Fatalf("alias = %q %v", alias, ok)
+	}
+	off := app
+	off.TLS = TLSOff
+	rendered, err := RenderRoute(off)
+	if err != nil || !strings.Contains(rendered, "http://immich.lan, http://immich.local {") {
+		t.Fatalf("tls off render = %v\n%s", err, rendered)
+	}
+	for name, r := range map[string]Route{
+		"public":    {Host: "photos.example.com", Exposure: ExposurePublic, TLS: TLSAuto},
+		"dashboard": {Host: "nas.lan", Dashboard: true, Exposure: ExposureLocal, TLS: TLSInternal},
+		"nested":    {Host: "a.b.lan", Exposure: ExposureLocal, TLS: TLSInternal},
+		"reserved":  {Host: "homestead.lan", Exposure: ExposureLocal, TLS: TLSInternal},
+		"other":     {Host: "immich.home.arpa", Exposure: ExposureLocal, TLS: TLSInternal},
+	} {
+		if alias, ok := r.LocalAlias(); ok {
+			t.Errorf("%s: alias %q", name, alias)
+		}
+	}
+	set := RouteSet{Routes: []Route{app, {Host: "jellyfin.lan", Exposure: ExposureLocal, TLS: TLSInternal}, {Host: "photos.example.com", Exposure: ExposurePublic, TLS: TLSAuto}}}
+	if got := set.MDNSLabels(); strings.Join(got, ",") != "immich,jellyfin" {
+		t.Fatalf("labels = %v", got)
+	}
+	set.Routes = append(set.Routes, Route{Host: "homestead.lan", Dashboard: true, Aliases: []Hostname{"homestead.local"}, Exposure: ExposureLocal, TLS: TLSInternal})
+	if got := set.LANNames(); strings.Join(got, ",") != "homestead.lan,immich.lan,jellyfin.lan" {
+		t.Fatalf("lan names = %v", got)
+	}
+	// A stored route named like another's derived alias is a duplicate.
+	clash := RouteSet{Routes: []Route{app, {Host: "immich.local", Target: Target{Host: "x", Port: 1}, Exposure: ExposureLocal, TLS: TLSInternal}}}
+	if err := clash.Validate(); err == nil {
+		t.Fatal("duplicate .local accepted")
+	}
+}

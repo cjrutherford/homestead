@@ -159,15 +159,22 @@ homesteadctl admin recover --username owner --password-file ./new.pass  # root-o
 
 ```bash
 mkdir -p /tmp/hs-data   # dev only: production uses provisioned /var/lib/homestead
-go run ./cmd/homestead-server --data-dir /tmp/hs-data
-# ... logs the single-use console token (30min TTL) on fresh start
+go run ./cmd/homestead-server --data-dir /tmp/hs-data --claim-token-file /tmp/hs-data/claim-token
+# ... the journal/console says once that the appliance is UNCLAIMED; the token
+# itself (single use, 30min TTL) is only in the root-only token file
 curl localhost:8080/api/v1/identity              # {"state":"UNCLAIMED",...}
+go run ./cmd/homesteadctl claim token --file /tmp/hs-data/claim-token   # prints token + expiry
+# on an installed appliance: sudo homesteadctl claim token
 go run ./cmd/homesteadctl --server http://127.0.0.1:8080 claim <TOKEN>
 curl localhost:8080/api/v1/identity              # {"state":"CLAIMED",...}
 ```
 
-- Tokens are 24-byte crypto/rand, base64url on the console, SHA-256 hashes
-  in SQLite, constant-time compared, expired ones pruned on mint.
+- Tokens are 24-byte crypto/rand, base64url, SHA-256 hashes in SQLite,
+  constant-time compared, expired ones pruned on mint. Since S288 the daemon
+  never prints a token: it keeps one live token in `/run/homestead/claim-token`
+  (systemd RuntimeDirectory, tmpfs, mode 0600, replaced atomically, removed on
+  claim) and re-mints on a timer when it expires. Read it with
+  `sudo homesteadctl claim token`.
 - The daemon never creates the state directory: without provisioned
   `/var/lib/homestead` (or an existing `--data-dir`) it exits loudly.
 - Claim carries no credentials — the first administrator and sessions
@@ -262,7 +269,9 @@ homesteadctl logout                          # revokes it and deletes the stored
 One session store (ADR-004), two transports (ADR-020):
 
 - `POST /api/v1/sessions` returns `{token, csrf_token, expires_at}` and
-  sets two cookies: `homestead_session` (the same token; `HttpOnly`,
+  sets two cookies: `homestead_session` (the same token; over TLS the names
+  are `__Host-homestead_session` and `__Host-homestead_csrf`, S470, and the
+  daemon reads only the names that fit the request's scheme; `HttpOnly`,
   `SameSite=Strict`, `Path=/`, `Secure` when the request arrived over TLS
   or via a proxy sending `X-Forwarded-Proto: https`) and `homestead_csrf`
   (the per-session CSRF token; same attributes but readable by script).
@@ -336,7 +345,7 @@ sudo homesteadctl admin recover --username owner --password-file ./new.pass
 ## Account surfaces (S239)
 
 ```bash
-export HOMESTEAD_TOKEN="$(homesteadctl login --username owner --password-file ./owner.pass | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
+export HOMESTEAD_TOKEN="$(homesteadctl login --username owner --password-file ./owner.pass --print-token | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
 homesteadctl admin lockout
 homesteadctl admin passwd --current-password-file ./owner.pass --new-password-file ./new.pass
 ```
@@ -377,6 +386,50 @@ protocols upstream supports, Authentik itself unsupported.
   touches administrator identities or sessions, and every plan
   carries the boundary in the record — Homestead administrator
   login and socket recovery stay local, only app logins change.
+
+## Secret delivery to plaintext-variable images (S342)
+
+- ADR-021 delivers every secret as a 0600 file under the stack
+  directory. Images with no `*_FILE` input cannot read one, so a
+  manifest may mark a consumer `Export: true` (ADR-052): the `*_FILE`
+  variable keeps carrying the path, and a generated
+  `secret-entrypoint.<service>.sh` exports the value into the same name
+  without the suffix at start, unsets the path variable, and `exec`s
+  the image's declared `Entrypoint` plus `Command`.
+- Exporting requires a declared `Entrypoint`. Validation refuses a
+  missing entrypoint, a variable without the `_FILE` suffix, an export
+  target the manifest also sets plainly, a `URI` consumer, and two
+  secrets exporting the same variable on one service.
+- The script holds paths, never values, is written 0755 beside
+  `compose.yaml`, and is bind-mounted read-only at
+  `/homestead/secret-entrypoint.sh`. An unreadable file fails the start
+  with a named error instead of running the app unconfigured.
+- The value then exists in the container's own environment, which is the
+  ADR-052 trade. Every other guarantee holds: no value in Compose YAML,
+  generated scripts, secret listings, audit records, drift reports, or
+  exports. Prefer `_FILE` delivery wherever an image offers it.
+
+## OIDC client actuation (S342)
+
+- `internal/identity` gains `ClientSpec`, `Client`, and `ClientManager`
+  beside `Provider`: read-only metadata stays separate from live
+  writes. `Authentik` implements both over its own API — flow lookup by
+  slug, existing-application reuse with a redirect refresh, provider and
+  application creation, orphan cleanup, and repeatable deletion. Errors
+  carry method, path, and status only, never a response body. The API
+  token lives in the secret store under `identity_<provider>_token`.
+- `internal/catalog` declares what a package needs:
+  `sso.oidc` names redirect paths, optional scopes, an optional slug,
+  and the two secrets that receive the issued credentials. Validation
+  requires an SSO class that admits SSO, the `oidc` protocol, declared
+  credential secrets, and a web endpoint; redirect URIs resolve against
+  the package's route host and refuse an empty one.
+- `ActivateOIDC` creates or refreshes the client and stores the issued
+  id and secret as `app_<package>_<name>` rows, delivered through the
+  supervisor above. It is idempotent: reuse keeps the stored secret and
+  refuses when the provider holds a client whose secret was never
+  stored, rather than issuing a credential the app cannot read.
+  `DeactivateOIDC` removes both, repeatably.
 
 ## Bootstrap (S220)
 
@@ -504,7 +557,7 @@ avahi-browse -r _homestead._tcp   # or open http://homestead.local:8080
 ```bash
 sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
   HOMESTEAD_PASSWORD_FILE=/root/owner.pass \
-  HOMESTEAD_CLAIM_TOKEN=<console-token> ./scripts/acceptance.sh
+  HOMESTEAD_CLAIM_TOKEN=<from sudo homesteadctl claim token> ./scripts/acceptance.sh
 ```
 
 - `scripts/acceptance.sh` walks a fresh supported OS to the base
@@ -596,7 +649,7 @@ docker compose ps
 ```bash
 sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
   HOMESTEAD_PASSWORD_FILE=/root/owner.pass \
-  HOMESTEAD_CLAIM_TOKEN=<console-token> \
+  HOMESTEAD_CLAIM_TOKEN=<from sudo homesteadctl claim token> \
   HOMESTEAD_EXPORT_FILE=/root/homestead-export.yaml \
   HOMESTEAD_SECRETS_FILE=/root/homestead-secrets.json \
   ./scripts/acceptance.sh
@@ -618,8 +671,8 @@ sudo HOMESTEAD_APP_MOUNT=/mnt/app HOMESTEAD_BULK_MOUNT=/mnt/bulk \
 
 ```bash
 homesteadctl storage mounts
-homesteadctl storage register --mountpoint /mnt/app --label app --actor owner
-homesteadctl storage assign --class application --mountpoint /mnt/app --actor owner
+homesteadctl storage register --mountpoint /mnt/app --label app
+homesteadctl storage assign --class application --mountpoint /mnt/app
 ```
 
 - Mount registration and class assignment over the API and CLI:
@@ -1718,7 +1771,7 @@ no absolute URLs.
 
 ## Claim wizard (S032)
 
-`/claim`: token step (single-use console token, 401 invalid/expired, 409
+`/claim`: token step (single-use claim token from `sudo homesteadctl claim token`, 401 invalid/expired, 409
 skips ahead) then first-administrator step (username, ≥12 password with
 confirmation, 409 lands on done). The wizard reads identity on init so
 already-claimed appliances start at the admin step.
@@ -2099,15 +2152,158 @@ the first with SQLite as the default database. The Immich package (S171) in
 `catalog/` is the third curated application with official release
 pins across four services (internal ones carrying no endpoint),
 declared requirements, exposure, and backup paths. Services without
-endpoints serve nothing routable by construction. The base suite (S172), also in
+endpoints serve nothing routable by construction. Catalog integration metadata (S341) lives in
+`internal/catalog/integrations.go`: manifests declare `identity`,
+`library`, `handoff` and `companion` relationships, levels are derived
+from the kind (never authored), and the loader enforces cross-package
+gates — shipped targets, providers this build drives
+(`identity.Builtins`), bulk paths on both sides of a library pair, and no
+identity declaration on an SSO-unsupported package. The detail response
+resolves levels and target titles under `Works`, `homesteadctl apps show`
+prints them, and the dashboard package page renders "Works with". Plan
+notes flag declared handoff targets that are not installed. The contract
+is documented in `docs/CATALOG_INTEGRATION.md`; ADR-051 records that the
+metadata is advisory, never actuation. The base suite (S172), also in
 `internal/catalog`, resolves the curated bundle in install order with joint
 grading: per-package verdicts plus combined memory footprints and cross-member
-port collisions naming both owners. The Authentik package (S201) in
+port collisions naming both owners. Catalog bundles (S344) generalize that
+into four curated profiles — starter, family, media, full — where membership
+is curated intent, not a promise that every package ships today: a member the
+catalog does not yet carry is reported as missing instead of silently dropped.
+`CheckBundle` grades combined memory and summed per-class storage against one
+host and fails on missing host data rather than passing on it; per-package
+verdicts, ports and exposure stay install-time concerns, since container
+ports live on separate networks and routes never publish them. `GET /api/v1/catalog/bundles` serves the
+graded profiles, `homesteadctl apps bundles` prints them, and the dashboard
+catalog page lists them above the package list. The Authentik package (S201) in
 `catalog/` is the fourth curated application following the official
 compose pins (server, worker, postgres) with internal services
 carrying no endpoint: the first manifest declaring a Postgres
 database export for backup, with credentials wiring post-install
-through configuration. The backup contract (S180),
+through configuration. The Vaultwarden package (S345) in `catalog/` is the
+first Wave 1 application: one container on application storage with owner
+signup open, the administrative page deliberately off (no generated
+`ADMIN_TOKEN`), and `DOMAIN` following the routed host through
+`{{route_host}}` so passkeys and invitation links match the browser URL.
+Exposure recommends local with an explicit widened-access warning, and the
+manifest declares optional OIDC with an Authentik identity integration for
+the SSO wizard. The Paperless-ngx package (S346) in `catalog/` is the first
+three-service Wave 1 application: `webserver` on the pinned GHCR image,
+Postgres 18 for metadata, and Valkey 9 for the task queue. Its image reads
+only plaintext credentials, so the Django key, database password, and
+first-run admin password travel as 0600 files and the generated supervisor
+exports them before exec'ing the image's own `/init` (s6-overlay); the
+manifest therefore names `/init` as the entrypoint and adds no command.
+All four image volumes (data, media, consume, export) are declared, `data`
+and `media` are backup paths, the consumer inbox sits on bulk storage for
+Nextcloud external storage, OCR defaults to `eng` as a configure value, and
+`PAPERLESS_URL` follows the routed HTTPS host. The Gitea package (S347) in
+`catalog/` is the private forge: one container whose `GITEA__section__KEY`
+variables render `app.ini` at every start with the installer locked, so no
+file inside the container is edited. `ROOT_URL` follows the routed HTTPS
+host with a trailing slash, `DISABLE_SSH` and `START_SSH_SERVER` keep v1
+HTTPS-only, registration stays open until the owner creates the first
+(administrator) account, sign-in is required to view repositories, and a
+`sqlite` database export backs up `data/gitea/gitea.db` with `VACUUM INTO`
+instead of copying a live file. Gitea generates its signing keys into the
+data volume, so the manifest declares no secret and no supervisor.
+The FreshRSS package (S348) in `catalog/` is the feed reader: the plain
+Debian `freshrss/freshrss` tag because the alpine variant has no
+`mod_auth_openidc`, so the optional OIDC declaration holds. `CRON_MIN`
+installs the image's refresh job and `LISTEN` pins Apache to
+`0.0.0.0:80`; Homestead installs it at install (S445) with the image's CLI: the
+SQLite database and a default user named for the owner's Authentik
+username; no web installer is shown.
+Both writable directories (`data`, `extensions`) are declared on
+application storage as `www-data` (uid/gid 33), and only `data` is a
+backup path.
+The Linkding package (S349) in `catalog/` is the bookmark manager: the
+image declares no `ENTRYPOINT`, only `CMD ["./bootstrap.sh"]`, so the
+manifest names that script as the entrypoint and the supervisor execs it
+after exporting `LD_SUPERUSER_PASSWORD` from a 0600 file. The initial
+superuser (`admin`) is created once, `LD_CSRF_TRUSTED_ORIGINS` follows the
+routed HTTPS host, `/etc/linkding/data` holds the SQLite database and
+archives on application storage as `www-data`, and `data` is the backup
+path.
+The Mealie package (S350) in `catalog/` is the GHCR recipe manager: one
+container with SQLite on `/app/data`, `BASE_URL` following the routed
+HTTPS host, and signups closed. Mealie seeds the upstream-documented
+administrator (`changeme@example.com`); the first-run routine (S448)
+replaces its password and identity at install with a generated, revealable
+password for `homestead-admin@homestead.lan`, and the owner creates
+household accounts. Since S403 people
+also sign in through Authentik (the `env-oidc` adapter): the Authentik client secret and the administrator password are the declared
+secret is the Authentik client secret, read from `OIDC_CLIENT_SECRET_FILE`,
+and the image entrypoint runs unchanged. An install from before that adds
+just the secret's wiring to its `compose.yaml` when sign-in is applied.
+The Uptime Kuma package (S351) in `catalog/` closes Wave 1 with the
+documented monitoring exception: one container on `/app/data`, the
+administrator created in the app, `unsupported` SSO, and an exposure
+declaration that recommends local and sets `allowwider: false` so the
+monitor can never become a public status page. Its 1 GB memory floor is
+tested from both sides.
+The backup contract (S180) grew server engines (S352): `mariadb` and
+`mysql` join `postgres` as dump kinds, so BookStack and other PHP apps
+never copy a live database directory. Each engine's own client writes
+plain SQL to `<database>.sql` (or `.sql.age`): `mariadb-dump` for
+MariaDB, `mysqldump` with `--set-gtid-purged=OFF` for MySQL. Both take
+one InnoDB-consistent snapshot with `--single-transaction --quick`, skip
+table locks and tablespace lookups (`--skip-lock-tables`,
+`--no-tablespaces`), connect over 127.0.0.1 so the password is really
+checked, and read the password from stdin into `MYSQL_PWD` inside the
+container shell, never argv. `PasswordSecret` now resolves for every
+server engine, so scheduled backups work; verification and rotation stay
+Postgres-only and both refuse clearly for the new engines rather than
+writing a secret the database has not accepted.
+The Audiobookshelf package (S353) in `catalog/` opens Wave 2 with the
+pinned GHCR audiobook and podcast server. The image's own defaults
+(`CONFIG_PATH=/config`, `METADATA_PATH=/metadata`, port 80) need no
+environment override; `/config` (SQLite) and `/metadata` (covers, item
+metadata, logs) are application paths, and `/metadata/streams` is the
+transcode scratch directory on bulk storage. A `sqlite` export names
+`config/absdatabase.sqlite` for consistent snapshots. The audiobook and
+podcast libraries are owner volumes with a host path under the bulk
+mount, never declarations, so a large library is shared with Nextcloud
+external storage without entering every backup. OIDC stays an in-app
+setting (no `oidc:` client), and the JWT signing secret is generated into
+the backed-up database.
+The Navidrome package (S354) in `catalog/` adds the local-auth music
+server. It reads the same bulk music directory Jellyfin can mount as an
+owner volume, never a declaration; `/data` holds the SQLite database
+(users, playlists, play counts, generated JWT secrets) on application
+storage with a `sqlite` export, and `ND_CACHEFOLDER=/cache` moves the
+regenerable artwork and transcode cache to bulk. The first visit creates
+the administrator in the app, so no secret is declared; SSO is
+`unsupported` as the documented local-auth exception, and the reverse-
+proxy header path stays off until the edge injects a trusted identity
+header. The image declares `/music` as a volume, so `knownImageVolumes`
+marks it as an owner mount while still checking every other volume.
+The Komga package (S355) in `catalog/` adds the comic and manga server.
+`/config` holds three WAL SQLite databases (main, tasks, sessions), the
+Lucene index, fonts, logs, and any owner `application.yml`; it is
+application storage and the backup path, with a `sqlite` export of
+`config/database.sqlite` authoritative for the main database. The comics
+library is a bulk owner volume, never a declaration, so a large collection
+is referenced rather than copied. The image sets no maximum heap, so
+`JAVA_TOOL_OPTIONS=-Xmx768m` caps the JVM inside the declared 1 GiB; the
+first visit creates the administrator, and optional OIDC is a Spring
+client registration the owner puts in `application.yml`. Komga declares
+no `library` integration: that gate requires a bulk declaration, and its
+library is deliberately an owner volume.
+The Calibre-Web Automated package (S356) in `catalog/` adds the e-book
+library with an ingest and conversion service. All three image volumes are
+declarations: `/config` holds `app.db` (users, settings, OIDC) and
+`cwa.db` (ingest settings) plus `processed_books` on application storage,
+with a `sqlite` export of `config/app.db`; `/calibre-library` holds the
+Calibre database and the books on bulk storage and is a backup path;
+`/cwa-book-ingest` is the transient drop folder on bulk, declared so
+Nextcloud can mount the same directory through the `library` integration.
+The image is built on the LinuxServer base and drops from root to `abc`,
+so `PUID`/`PGID` are 1000 and every declared directory carries the same
+owner. The first visit uses the app's documented default administrator,
+optional OIDC is configured in the admin panel with discovery metadata,
+and `cwa.db`/`metadata.db` are copied live under the one-export limit.
+The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine
 fields refused, staged commands bounded and service-linked, and
@@ -2223,8 +2419,15 @@ manifest runs last with re-walked counts, and runner-backed
 execution fails fast. Image discovery (S190) in `internal/update`
 compares manifest pins against running images and filters Docker
 Hub listings to newer same-variant versions with numeric ordering;
-outages error instead of reading as current, and non-Hub images
-refuse loudly. Update planning (S191), also in `internal/update`,
+outages error instead of reading as current. GHCR discovery (S343)
+adds the token flow GitHub Container Registry requires: one anonymous
+pull token, then the tag listing with a bearer header, at most two
+pages. Registries Homestead does not support refuse by name, the plan
+records per-service provenance (registry, repository, whether it
+answered, and why not), and locally built craft images are marked as
+such, so a service with no registry update says why instead of reading
+as current. Version comparison tolerates the `v` prefix GHCR projects
+use. Update planning (S191), also in `internal/update`,
 reviews registry maxima against manifest pins with current
 services planning empty, flags backups with database-first reasons,
 lists affected services, and warns major version jumps with
@@ -4119,3 +4322,1134 @@ certificates pinned by SPKI.
   throwaway key used, temp Playwright directory removed. Left: Caddy running,
   orphan `.lan` leaves until the sweep, craft baseline for both apps at
   counter 8, `~/hs-s281` source tree.
+
+## S282: Dashboard visual foundation
+
+Built: tokens (palette, type, radius by hierarchy, elevation, motion) in
+`dashboard/src/tokens.css` for light, dark and high-contrast; bundled
+Atkinson Hyperlegible fonts; base, primitive and shell styles
+(`base.css`, `primitives.css`, `shell.css`, `glyphs.css`); grouped sidebar
+shell with a mobile drawer; `app-dialog` on the native `<dialog>` replacing
+every inline `alertdialog` (edge, storage, backups, secrets); `ThemeService`
+and the Account page theme choice; one `<h1>` per page; status badges; the
+updated validation board. Design reference:
+`docs/architecture/DASHBOARD_DESIGN.md`. No route, API or CLI change, so
+`docs/PARITY.md` is unchanged.
+
+Checks: `theme/tokens-contrast.spec.ts` computes WCAG contrast for every
+text and control token pair in all three themes (and that the system-dark
+block equals the dark theme). Specs cover the shell (nav groups, logged-out
+filtering, drawer, collapse persistence, skip link), dialog focus behaviour,
+theme persistence and the board. A local headless Chromium run against the
+built bundle with stubbed API data found no horizontal overflow on 26 routes
+at 375, 390, 768, 1024 and 1440 px; screenshots in `/tmp/hs-s282-local/`
+(not committed). The initial bundle is 514 kB (was 484 kB); fonts add 73 kB
+of assets fetched on demand. The initial budget warning moved to 560kB.
+
+KVM visual review (VM 2, 2026-10-18): **done.** Screenshots in
+`/tmp/hs-s282-kvm/` (not committed): every route at 1440x900 and 390x844 in
+light and dark, status/backups/storage in high contrast, the logged-out login
+and status pages, the mobile drawer, and focus rings in three themes. Run
+with Playwright through an ssh tunnel as `owner`, read only; logged out at the
+end. Horizontal overflow: none on 24 routes (including an operation detail)
+at 375, 390, 768, 1024 and 1440 px. No external requests were made.
+
+Found and fixed:
+- Sidebar: all five groups open made a 29-row nav that scrolled at 900px and
+  cut Certificates off in the drawer. Now only the current page's group is
+  open; owner choices persist (`homestead.nav.groups`); rows are 40px on fine
+  pointers, 44px on touch. Logged-in desktop nav went from about 1,400px of
+  links to 5 headers plus the current group.
+- Backups warning ("no owner-held recipient") rendered as a green success
+  callout. Added a `warning` kind to `app-state-message` and moved the
+  caution messages on backups, TLS and craft files to it. Messages and
+  `.warning` callouts now use ink text with a coloured start bar and glyph
+  instead of coloured text on a tint.
+- Empty-state messages inside lists showed a stray bullet; audit badges
+  touched the action text.
+- Theme flash: Angular inlined critical CSS without the `data-theme` blocks,
+  so a stored dark or high-contrast theme painted light first (4 of 5
+  reloads). Fixed with `public/theme-init.js` (same origin, no CSP needed;
+  the daemon sets no dashboard CSP) plus `inlineCritical: false`. Six
+  reloads now paint dark from the first frame.
+- The coloured top bar on the danger dialog is not present in the current
+  build (verified light, dark and 390px); the danger dialog is a brick border
+  only.
+
+Left for S283/S284: the Tunnel "Tear down" button is a primary submit
+(destructive styling belongs with the page restructure); Updates and Storage
+are long unbroken lists (grouping, tables); the Status diagnostics list reads
+as a wall of rows; the login heading sits tight to its form; Atkinson's
+slashed zero shows in IPs and versions (font design, left as is).
+
+## S283: Dashboard states, transitions and work orders
+
+Built (all under `dashboard/src`, no daemon, API or CLI change, so
+`docs/PARITY.md` is unchanged; the rail reads the existing
+`GET /api/v1/operations` and `/operations/{id}/events`):
+- `ui/loading.ts` (`app-loading`): delayed (150 ms), minimum-display (300 ms)
+  content-shaped skeletons. Replaced every "Loading…", "Working…" and bare
+  `…` on 24 pages (Config, Firewall, Catalog, Updates, Secrets, Drift,
+  Advanced, Data, Tunnel, Operations and detail, Edge, TLS, Trust, Account,
+  Audit, Backups, Storage, Craft apps, Craft files, Status).
+- `state/state-message`: revised with `detail`, one next action and a
+  `notice` kind; `loading` kind removed. Empty states on operations, backups,
+  craft apps, exposure and TLS now lead with an action.
+- `core/http-error.ts` `isNotSetUp`: TLS issuance and exposure review treat a
+  404 as "not set up yet" (an empty state with a link), not a red error.
+- Page transitions: `withViewTransitions` with only `<main>` crossfading,
+  skipped under reduced motion (`core/view-transition.ts`).
+- Feedback: `core/toast.service.ts` and `ui/toast-region.ts` (polite
+  aria-live region plus dismissible toasts).
+- Work orders: `core/work-orders.service.ts`, `core/work-order.interceptor.ts`,
+  `core/operation-labels.ts`, `core/operation-view.ts`, `ui/work-orders-rail`
+  (sidebar slot, bottom sheet below md), `ui/step-list`,
+  `ui/operation-progress`. Every operation started from the dashboard joins
+  the rail, running operations are re-read on load and on navigation, finished
+  orders settle after 8 seconds. Operation detail, Edge, TLS, Trust, Catalog,
+  Updates (package, platform, craft), Data, Drift, Secrets, Exposure and
+  Tunnel show the same step list; no "Operation N: running" text remains.
+- Dialogs: enter animation and a short exit (inert copy left behind), both off
+  under reduced motion.
+- Scroll fix (commit 2b6c9a3): the router had no scroll handling, so the
+  document kept its offset across route changes and a scrolled-down long page
+  left the next one at its bottom. `withInMemoryScrolling` restores the
+  position on back and forward and starts new pages at the top.
+- New tokens `--rail-*` (contrast-checked in all themes).
+
+Checks: dashboard 511 specs (skeleton timing under fake timers, reduced-motion
+view-transition and dialog exit, rail add/update/finish/reload, toast and
+aria-live output, interceptor, step list, labels). A local headless Chromium
+run against the built bundle with stubbed API data and screenshots in
+`/tmp/hs-s283-local/` (not committed) found and fixed one layout bug: the new
+toast host became a grid cell and pushed `<main>` under the sidebar. Removed
+the redundant "Caddy deployment started." notice, since the progress panel,
+the rail and the toast already say it.
+
+KVM visual review (VM 2, 2026-10-18): **done.** Screenshots in
+`/tmp/hs-s283-kvm/` (not committed). Playwright through an ssh tunnel as
+`owner`; logged out at the end; tunnel and settings untouched (public URL 200
+throughout). App used: GridCraft 0.7.0 (signed craft manifest, counter 8): a
+dashboard "Verify and build" (15 s the first time, 3 to 4 s cached) then a
+dashboard install, then a CLI uninstall (the dashboard has no uninstall).
+Passed: the rail followed the build across five sidebar navigations at
+0:00 to 0:15 and settled 8 s after Done; a reload mid-build re-read it (live
+text "started", step moved on); a CLI-started build joined the rail on the
+next navigation; the sheet at 390px (summary bar, open list, content clears
+it, no horizontal overflow); toast "Craft app built" and a polite
+`role=status aria-live` region carrying the step text and the result; skeleton
+absent at 0 and 80 ms API delay, on at 150 ms, held 300 ms (250 ms delay:
+254 to 555 ms), 1.2 s delay on until data; reduced motion gives 1e-5 s
+transitions and no dialog animation, normal motion fades the dialog in and out
+(about 0.2 s) and returns focus; new pages land at scrollY 0.
+Found and fixed (commit cfbe408):
+- Back did not restore scroll (0 instead of 187 and 385): pages load data
+  after the router restores, so the browser clamped to the top. A retry
+  (`core/scroll-restore.ts`) now waits up to 2.5 s for the page to grow and
+  yields to wheel, touch or keys. Back now gives 187 and 385/340.
+- Rail and step list showed raw step slugs ("obtain-artifact"); now words.
+- Operations list kept saying "Running" for a finished order; it refreshes
+  when an order starts or settles.
+- Orders found on load or started from the CLI got generic labels
+  ("Catalog remove"); added labels for install, remove, configure, restore,
+  migrate, reconcile, storage and Docker setup.
+- Backups destination on a fresh appliance (422) was a red error with daemon
+  text; now an empty state linking to Storage.
+- Skeleton bars were nearly invisible on the page background (added a border);
+  Escape now closes the mobile sheet.
+Left (DEFERRED.md): a craft install without the edge network fails at `up` and
+stays recorded as installed; no dashboard uninstall; the browser console still
+logs the 404/422 probe requests. Cleanup on VM 2: uninstalled, craft image,
+`craft_images`/`craft_baseline`/`craft_verdicts` rows, the test
+`homestead-edge` network and stack directory removed; only audit and
+operation history remain.
+
+### Post-S283 fix: install on a factory-fresh appliance
+
+Two KVM findings, one commit.
+- Root cause 1: S249 made `PlanInstall` join every routed stack to the external
+  `homestead-edge` network, but only the Caddy edge deploy created it, so a
+  first install failed at compose `up` with "network homestead-edge not found".
+  The install operation now runs an `ensure-homestead-edge` step first
+  (`docker.EnsureEdgeNetwork`, the same code the edge deploy uses, idempotent).
+  It creates the network only; it does not deploy Caddy. The plan sets
+  `EdgeNetwork` and its note says the network is created and that routes will
+  not serve until the proxy is set up on the Edge page.
+- Root cause 2: `write-stack` records fingerprints and writes `compose.yaml`
+  before `up`, and `Installed` counts either, so a failed `up` left the package
+  installed and the retry answered 409. Install records no failed state; the
+  failure now rolls back (`rollbackInstall`): compose `down` (never with
+  volumes), then the generated files and fingerprint records are removed. The
+  package reads as not installed and the route allows a retry. Kept on
+  purpose: provisioned data directories and bind data, generated secrets (a
+  partly started database may already have initialised with them), and the edge
+  network (shared, harmless). If cleanup itself fails, the error says so and
+  points at `apps uninstall`.
+
+## S285: Catalog install wizard
+
+Built (dashboard; one small daemon change, below):
+- `catalog/install-wizard.ts` and `.html`, route `/catalog/:name/install`
+  (loaded on demand, so the initial bundle stays at 559.6 kB under the 560 kB
+  budget). The old inline install panel is gone; the Catalog page (`catalog.ts`)
+  is now the list, with Install, Manage and Uninstall per app. Manage keeps the
+  variables and secrets forms (configure, register, rotate, adopt) unchanged.
+- Step model (`catalog/wizard-model.ts`): What it is, Requirements, Storage,
+  Address, Secrets and sign-in, Review, Install, Done; a step that does not
+  apply is left out. Stateless craft app: About, Requirements, Address, Review,
+  Install, Done (6). Storage adds Storage (Nextcloud, Jellyfin, Immich: 8 with
+  sign-in). Secrets and sign-in is shown when the manifest declares secrets or
+  its sso class is not `unsupported` (Authentik: secrets, so shown, with its own
+  "this is the sign-in service" paragraph). Design doc: Wizard pattern.
+- Calls: `GET /catalog/{name}`, `GET /catalog`, `GET /docker/health`, storage
+  registrations, mounts and assignments, `GET /craft`, `POST /catalog/{name}/plan`
+  then `POST /catalog/{name}/install`, `POST /craft/build` for craft apps. The
+  plan route is asked again on every entry to Requirements and Review and when
+  Storage continues, so the reviewed plan is the applied one. Plan and install
+  routes are unchanged.
+- Requirements reads edge readiness from Docker health: the `homestead-edge`
+  network ("created on install" since the post-S283 fix) and the
+  `homestead-caddy` container. Caddy missing is a warning with a link to the
+  Edge page that the owner acknowledges; Docker unreachable and a refused plan
+  are hard stops with the daemon's words and a fix. One daemon change:
+  `PlanInstall`'s "requirements unmet" error now names every failed check
+  ("memory: host offers 1024 MB for 4096 required"), which Requirements shows.
+- Craft verify-and-build: the Review button for a craft app whose image is not
+  built (`GET /craft` has no present, matching image of that version) is
+  "Verify and build GridCraft". It starts `POST /craft/build {app}` (the
+  daemon verifies signature, counter, artifact digest and context again), the
+  Install step follows it, and on success offers "Install GridCraft". A refused
+  build shows the verdict's reason and points at the craft keys on the Updates
+  page. Install is never offered before the image is built.
+- Done: Open the app when its edge route exists, otherwise a notice with the
+  host and upstream to add on the Edge page (install does not add the route);
+  curated first-login hints (`catalog/curated-copy.ts`, 17 packages: nextcloud,
+  jellyfin, immich, authentik and the 13 craft apps; a spec fails when a
+  catalog manifest has none); where the data lives; the backup page; Uninstall.
+- Uninstall (owner-approved scope addition, slice file Scope): `uninstall-app.ts`,
+  a danger dialog on the Catalog list and the done page. It says what is removed
+  and what is kept, lists every data root as `<mount>/<package>` from the
+  storage assignments before "Also delete its data", and offers the
+  abandon-volumes acknowledgement only after a 409 or 502. It uses
+  `POST /catalog/{name}/uninstall`, joins the rail ("Uninstall GridCraft",
+  "GridCraft uninstalled") and shows progress inline. PARITY: uninstall row now
+  `uninstallPackage`; docker health row now `dockerHealth`.
+- Also: `registerPackageTitles` so the rail says "Install GridCraft", not
+  "Install Gridcraft"; step names in words ("Start the containers");
+  `.danger.quiet` outlined destructive button; `scroll-padding-top` below md so
+  the sticky top bar does not cover focused elements.
+
+Checks: dashboard 581 specs (was 511): step sequencing per package shape,
+blocked and acknowledged preflight, Docker down, storage selection and free
+space, existing folder as a host path, back and next keeping entries, plan
+rendering, install start with rail entry, done, failure and retry, resume after
+leaving, craft build then install, build refused, uninstall (keep, delete with
+roots, refused, unknown roots, stateless), curated-copy coverage of every
+manifest. `ng build` clean, `make lint`, Python 611 tests, `go test ./...` all
+green. Local headless Chromium against the built bundle with stubbed API data
+(`/tmp/hs-s285-run/server.js` and `shots.js`, not committed) and screenshots in
+`/tmp/hs-s285-local/` (87 PNGs: light, dark and 390 px for each wizard step of a
+craft app, Nextcloud storage and sign-in, Authentik, done, failure, build, and
+the uninstall dialog). Critique and one iteration: duplicate error text on a
+failed install (message, progress panel and toast all said it) now says it once;
+the secrets list ran name and purpose together, now sentences; storage errors
+tied to their field; disclosures had no marker; the red filled Uninstall
+dominated rows, now outlined; plan notes started lowercase; install step help
+said "working" during a failure. Removed the "Generated Compose file"
+disclosure, which duplicated the raw plan.
+
+Address gap closed (bd7209a, dashboard only, existing edge routes API): after a
+successful install the wizard merges the reviewed plan's routes into the
+recorded table (same host replaced, every other route sent back untouched;
+public routes never added) and reconciles. Requirements offers "Set up the
+edge" (confirm dialog, then the Caddy deploy operation in the rail) or
+acknowledge and carry on; with no proxy, Done says the app is not reachable
+until the edge is set up and offers the same dialog. Done shows the address as
+a link and, when this device cannot open it, a Trust link. Uninstall removes
+the app's route. Initial bundle 555.7 kB (the Catalog page became lazy to make
+room).
+
+KVM review on VM 2 (2026-10-19, HEAD bd7209a then 8dbc557): **done.** Screenshots
+in `/tmp/hs-s285-kvm/` (not committed). Playwright through ssh tunnels as
+`owner`, `--host-resolver-rules` to guest 443 and the leaf pinned by SPKI; the
+tunnel and public URL (200) untouched throughout.
+- GridCraft on a fresh appliance (no Caddy, no image): Requirements showed the
+  edge warning; Set up the edge deployed Caddy (rail "Deploy Caddy"); Verify and
+  build, then install (about 1 s); the route was added by the wizard (rail
+  "Reconcile routes"); `https://gridcraft.lan` loaded the spreadsheet over
+  HTTPS. A browser without the pin showed the Trust note.
+- Nextcloud with storage (registered `/mnt/app` and `/mnt/bulk` on the Storage
+  page): installed; first-login hint shown; route added; `https://nextcloud.lan`
+  answered with Nextcloud. Leaving 0.3 s after Install and returning: the rail
+  tracked it, the Catalog row said "Setting up" with a Continue link, the wizard
+  resumed the same operation and finished on Done with the route added.
+- Uninstall: GridCraft keeping data, Nextcloud deleting data (dialog named
+  `/mnt/app/nextcloud` and `/mnt/bulk/nextcloud`, both gone afterwards). Both
+  routes removed, route table empty, only `homestead-caddy` left.
+Found and fixed (8dbc557): (1) port 80 blocked Nextcloud once Caddy held 80
+(`ports: [80]` is checked as a host port; Nextcloud now declares none). (2) A
+mount chosen in the wizard failed the plan with "no space data" unless the class
+was also assigned (the daemon read free space from assignments only; now also
+from discovery for the chosen mount, with a Go test); the wizard also assigns an
+unassigned class so uninstall can name data roots (before: "cannot tell which
+folders", no delete option). (3) Duplicate mounts in the Storage step. (4)
+Stale daemon notes ("does not deploy the proxy", "run craft build first").
+(5) An install left in flight was unreachable from the Catalog (row said
+Installed): it now shows "Setting up" with Continue. (6) An installed app with no
+route (tab closed mid-install, CLI install) now offers "Give X an address".
+Left (DEFERRED.md): Jellyfin/Immich/Authentik declare container ports as host
+ports; no API to unassign a class or unregister a mount; empty stack directory
+left by uninstall; Done after a later visit names data folders from assignments
+only; the Storage page lists a mount twice; the daemon-side install and route
+as one operation.
+Final VM 2 state: Caddy deployed and running (kept, set up through the wizard)
+and the `homestead-edge` network; no app containers or stacks; no routes;
+storage registrations and class assignments removed (database rows deleted, as
+there is no API); gridcraft and nextcloud images and `craft_images`/
+`craft_verdicts` rows removed; `/mnt/app` and `/mnt/bulk` empty; tunnel running.
+
+## S286: Dashboard sign-in with Authentik (ADR-033)
+- `internal/sso` (ID token validation, Authentik admin client, manager),
+  `internal/server/sso.go` routes, session `method` column (migration 43,
+  schema v43), `stepUpRoutes` in `boundary.go`, `homesteadctl sso ...`, and the
+  dashboard Sign-in page, Account link card, login button, SSO error codes and
+  re-authentication dialog. Design and operations: `docs/architecture/DASHBOARD_SSO.md`.
+- Tests: fake OIDC provider and fake Authentik admin API in `internal/sso` and
+  `internal/server`; Vitest specs for login, Sign-in, link card, error codes
+  and the re-auth dialog.
+- KVM review on VM 2 (2026-10-19, HEAD e43d9b0, then 4ae6e12): **done.**
+  Screenshots in `/tmp/hs-s286-kvm/` (not committed) with the driver scripts.
+  Deployed with `scripts/install-systemd.sh` (binary sha256 checked against a
+  root build of the same tree); Chromium (Playwright, `google-chrome`) on the
+  host through `ssh -L` to the daemon (origin `http://127.0.0.1:8080`, a planned
+  origin) and to Caddy 443 (`--host-resolver-rules` maps `authentik.lan`). No
+  Cloudflare DNS, route or tunnel was touched (public URL 200 throughout).
+  1. Install Authentik 2026.8.3 through `POST /catalog/authentik/plan` and
+     `/install` (storage `/mnt/app`, host `authentik.lan`) then the edge route:
+     PASS. 2. First-run setup through the flow executor, API token, two users
+     (alice, bob): PASS. 3. `sso plan`, `approve`, `apply --follow`: PASS after
+     fix 1; a re-plan with the token showed both objects "unchanged" and apply
+     audited "provider already matches; application already matches" (a bare
+     second `apply` answers 409 as the plan is spent; see DEFERRED). 4. Link
+     alice through the Account link card and the re-auth dialog: PASS after fix
+     2. 5. Login page button, Authentik sign-in, landed on `/status`; session
+     cookie HttpOnly/Strict, CSRF cookie; a bad CSRF token 403: PASS. 6. Audit
+     `sso.login ok method=oidc subject=...`: PASS. 7. `POST /sso/plan` in an
+     oidc session: 403 `reauth-required`, wrong password 403 `reauth-invalid`,
+     the dialog with the password then showed the plan: PASS. 8. bob refused:
+     `/login?sso_error=unlinked`, audit `refused: unlinked`, no session cookie,
+     one identity row (`owner`): PASS. 9. Authentik containers stopped: button
+     still shown, click returns `?sso_error=unavailable` "Authentik did not
+     answer. Use your local password.", local login works; restarted; then the
+     issuer set to a path Authentik does not serve (the stored config and link
+     edited in SQLite, restored after; the API cannot store a bad issuer because
+     apply verifies it): the same message and local login works: PASS. (With
+     only the config edited and not the link, the button disappears because the
+     link no longer matches the issuer: by design.) 10. Five failed local logins
+     (one was a wrong re-auth password: the counters are shared) locked the
+     account (429); Authentik sign-in still worked, step-up in that session
+     answered 429 `reauth-locked`, and the local login stayed 429 after the SSO
+     success: PASS (the lock rows were deleted from `login_attempts` to continue).
+     11. Unlink with the password file (CLI): the oidc session went from 200 to
+     401; `sso disable`: status "not set up", `/sso/options` 404: PASS.
+  Found and fixed (4ae6e12): (1) Authentik 2026.8 creates an OAuth2 provider
+  with no grant types and then rejects every authorize request ("Invalid
+  grant_type for provider", `invalid_request` at the callback, shown as
+  `denied`). Apply now sets `grant_types` to `authorization_code`; plan reports
+  "grant types" drift; tests cover create and repair. (2) `prompt=login` plus
+  `max_age=0` looped at Authentik's login forever (`prompt` stays on the
+  post-login redirect; `max_age=0` is ignored, `max_age=1` forces a prompt). The
+  link now sends `max_age=30` and no `prompt`; ADR-033 amended, docs updated.
+  Left (DEFERRED.md): `auth_time` not checked, bare second apply 409, the
+  `keep_token` audit redaction, `homesteadctl login` prints the token.
+  Final VM 2 state: Authentik installed and healthy (route `authentik.lan`,
+  `akadmin` kept with a random password on the guest; test users, the API token,
+  and the Homestead provider and application deleted in Authentik); SSO
+  disabled, no link, owner password unchanged, no lockout; Caddy running; tunnel
+  untouched. Not verified: absolute and idle session expiry of an oidc session
+  (same code path as password sessions, covered by tests), a real browser
+  reaching Authentik over the tunnel (deliberately not exposed), the
+  `https://<edge host>` origin for the dashboard.
+
+## S287: Post-claim setup walkthrough (ADR-034)
+- `internal/setup` (state, provider copy, access options), `internal/server/setup.go`
+  (`GET /api/v1/setup`, `PUT /api/v1/setup/steps/{name}`, session class), schema
+  migration 44 (legacy stamp, schema v44), `homesteadctl setup ...`, and the
+  dashboard Setup page (`/setup`, lazy), `setupGuard` and the Setup / Finish setup
+  navigation entry. Design and operations: `docs/architecture/SETUP_WALKTHROUGH.md`.
+- Tests: step derivation, resume, skip, review path, tunnel visibility, legacy
+  origin and the secrets-absent check in `internal/setup` and `internal/server`;
+  provider permission copy pinned to the adapters in
+  `internal/setup/permissions_test.go`; store migration test; CLI output test;
+  Vitest specs for the page, the guard, the exemptions and the legacy behaviour.
+- KVM review on VM 2 (2026-10-19, HEAD ce943c3, then 64b9838): **done.**
+  Screenshots (1440 and 390 px each) in `/tmp/hs-s287/shots/` (not committed),
+  driver scripts beside them; headless Chrome through `ssh -L` to the daemon
+  (origin `http://127.0.0.1:8080`) and Caddy (`authentik.lan` mapped to the
+  forward). Deployed with `scripts/install-systemd.sh`; the binary sha256
+  matched a guest rebuild of the same tree each time.
+  Factory reset: tunnel `9ccedf12-...` torn down through the API (first
+  attempt hit Cloudflare 1022, see fix 1; the retry deleted it, confirmed in
+  Cloudflare; the tunnels `homestead` and `media-tunnel` untouched), daemon
+  stopped, every stack `compose down -v`, `/opt/homestead/stacks`,
+  `/mnt/app/authentik`, `/var/lib/homestead`, `/etc/homestead` and the
+  tunnel unit removed, HEAD reinstalled, claimed, first admin `owner` with its
+  existing password.
+  1. Fresh: `setup status` origin fresh, gated, next account; `/status`,
+     `/catalog`, `/audit` redirect to `/setup`; `/backups` stays open after
+     fix 2; API and CLI ungated: PASS. 2. Step 1: export on Backups,
+     acknowledge, still to do until "Confirm my password", then done and CLI
+     agrees: PASS (after fix 2). 3. Step 2: Authentik installed through the
+     wizard (edge set up in the wizard, storage registered on the Storage page
+     after fix 3, defaults for host), akadmin first-run through the flow
+     executor, `sso plan`, `approve`, `apply --follow`, `owner` linked through
+     the Sign-in page and Authentik; step reads done: PASS. 4. Step 3: permission copy
+     for all four providers matches the doc; the tunnel option is disabled with
+     a reason for DigitalOcean, Route 53 and Manual; `setup step domain
+     --acknowledge` answered 422 naming `/tunnel`, then `/exposure`; Cloudflare
+     plus Cloudflare Tunnel, tunnel `homestead-vm2` set up from the Tunnel page
+     (new id `941037b6-692b-49ee-bd18-c1159c93fe36`), DNS CNAME `homestead`
+     repointed through the API (proxied), step read done by itself (a tunnel
+     route counts), public URL 200 and the login page; the token and account ID
+     are absent from the setup, wizard and credential responses, the database
+     files (including the WAL), the journals and the audit log: PASS. 5. Step
+     4: Jellyfin install started from the list, the rail showed "Install
+     Jellyfin", the step read done at once and the guard released
+     (`/status` opens): PASS. 6. CLI parity (on the fresh row): `skip account`
+     read Skipped on reload, `unskip account` To do, `step account
+     --acknowledge` Done: PASS. 7. Review path (row deleted): the domain step
+     opened as a review, "This looks right" added one `setup.step` audit entry
+     and changed nothing in `tunnel_routes`, the tunnel or DNS: PASS. 8. Legacy
+     row restored: not gated, nav entry "Finish setup": PASS; real state
+     restored by deleting the row and acknowledging account and domain.
+  Found and fixed (64b9838): (1) tunnel teardown deleted the Cloudflare
+  tunnel before stopping the connector (1022); it now stops first and restarts
+  it if the delete fails. (2) Step 1 pointed to the Account page for the
+  recovery export, which is on Backups, and `/backups` was gated. (3)
+  `/storage`, `/edge`, `/trust` were gated, so a fresh appliance could not
+  register storage from the install wizard. Left: see `docs/DEFERRED.md`.
+  Not verified: the "I have finished here" and "I am finished with apps"
+  buttons (state derived done first), skipping a pending domain or apps step in
+  the dashboard, the Exposure (router) plan path, a throwaway DNS credential
+  stored through the form (`GET` of sealed names not exposed by an API route),
+  absolute session expiry.
+  Final VM 2 state: freshly claimed, owner `owner` with its existing password,
+  setup complete, Authentik installed (akadmin password in `~/ak.admin.pass`,
+  owner's Authentik password in `~/ak.owner.pass`, 600, on the guest), SSO
+  configured and linked to the Authentik user `owner`, Jellyfin installed,
+  tunnel `941037b6-692b-49ee-bd18-c1159c93fe36` (`~/tunnel-id.txt`) serving
+  https://homestead.hopefulaspirationsindustries.com.
+
+
+## S284: Dashboard page passes
+
+Presentation and copy only. No route, API or CLI change; `docs/PARITY.md` is
+unchanged and the parity test stays green. Patterns are in
+`docs/architecture/DASHBOARD_DESIGN.md` (Page patterns).
+
+- Status: triage list, collapsed "All good", compact facts, copyable commands.
+- Catalog and Craft apps: list rows with icon, badge and actions.
+- Tables: Operations, Audit, Storage, Backups, Edge, Trust, Craft files,
+  Tunnel routes, Data migration volumes.
+- Risky actions: preview beside the button; new confirm dialogs for tunnel
+  teardown and old-volume removal.
+- Forms: Account, Tunnel and Exposure show inline field errors.
+- Copy: shared unreachable message, "Settings" for variables, "certificate"
+  for leaf, "Homestead" instead of "daemon" and "reconciler" in user text.
+- Review fixes: rarely visited pages load on demand (initial bundle 588 kB to
+  385.87 kB; the S283 baseline was 558.66 kB); jargon (manifest, package,
+  raw states) replaced in page copy; Updates craft controls collapsed and
+  Drift leads with problems; craft apps show the manifest blurb (API, CLI and
+  dashboard); inline validation on the Storage register and Backups schedule
+  forms; Account problems carry their field key; `.risky-preview` defined.
+- Dashboard tests: 66 files, 682 tests.
+
+KVM visual review (VM 2, headless Chrome, non-GET calls blocked or mocked):
+every route screenshotted at 1440 and 390 px, light and dark, plus the
+logged-out pages. Screenshots and driver scripts are in /tmp/hs-s284/ (not
+committed). Results:
+- Horizontal overflow: none at 375, 390, 768, 1024 and 1440 px on every route.
+- Lazy loading: View Transitions crossfade between lazy and eager pages; skeletons
+  appear without flash; the setup guard allows every route; the work-orders
+  rail shows after a tracked POST; back-navigation restores the scroll position
+  exactly on /updates (600 -> 600). No unexpected console errors.
+- Fixed: raw ISO timestamps (now `when` pipe), "(s)" plurals (now `plural`),
+  Status state casing, Exposure summary sentence case, Updates "Not installed"
+  list collapsed, Drift list heading and chips, audit pager, summary chevrons
+  shared globally, Tear down button styling, nowrap on dates and devices,
+  scroll restore shifted by browser scroll anchoring (`overflow-anchor: none`),
+  setup "1 app installed." copy.
+- Risky actions show "What changes" previews; confirm dialogs open and cancel.
+  Inline validation verified on Account, Tunnel, Storage register, Backups.
+- Not verified: firewall apply and later steps, Trust rotation preview, data
+  volume removal flow (all mutating).
+
+## S288: Open bug fixes from the S285-S287 reviews
+
+- Claim token, no log buildup. `internal/claim/tokenfile.go`: while unclaimed
+  the daemon keeps exactly one live token, written to `--claim-token-file`
+  (default `/run/homestead/claim-token`, inside the unit's `RuntimeDirectory`,
+  so it is writable under `ProtectSystem=strict` and on tmpfs; mode 0600 via a
+  temp file in the same directory plus rename). A restart reuses the file's
+  token while it is still live; a lost file (reboot) or an expired token is
+  replaced, and replacing drops every other unused row. The token is never
+  printed: the journal gets one line per start naming `sudo homesteadctl
+  claim token`. Re-minting uses a dedicated timer goroutine
+  (`MaintainTokenFile`) that sleeps until the current token's expiry, rather
+  than a scheduler job (scheduler jobs run through the audited operation runner
+  and persist run state; the token needs an exact-expiry wake and no record).
+  `Service.OnClaimed` removes the file the moment a claim succeeds and stops
+  the loop. `homesteadctl claim token [--file PATH]` is local (no API): it
+  reads the file, prints `token:` and `expires:`, says plainly when the file
+  is root-only, expired, the appliance is claimed (asks the identity route), or
+  the daemon is not running. Acceptance script reads the token that way.
+- Uninstall removes the stack directory with `os.Remove` (only when empty
+  after the stack files go; data folders keep it). A second uninstall answers
+  404 "X is not installed" (also cleans a pre-S288 empty leftover).
+- Storage: `DELETE /api/v1/storage/assignments/{class}` and `DELETE
+  /api/v1/storage/registrations?mountpoint=`; 409 body names
+  `affected_packages` (and `classes` for a mount still assigned); audited as
+  `storage.unassign` / `storage.unregister`; the disk is never touched. CLI
+  `storage unassign --class`, `storage unregister --mountpoint`. The Storage
+  page dedupes mounts and has both actions behind the danger dialog.
+- CLI: `tunnel teardown` and `tunnel setup` take `--account-id-file` and
+  `--api-token-file` (`-` is stdin); the argv forms warn. `login` no longer
+  prints the session token (`--print-token` does, for scripts).
+- Dashboard: Account "Unlink Authentik" and Trust "Re-issue all" open the
+  danger dialog first.
+- Fresh install on VM 2 (HEAD 6480457). Reset as in S287: tunnel
+  `941037b6-...` deleted in Cloudflare (stopped the connector first; direct
+  Cloudflare API call, not the CLI forms; `homestead` and `media-tunnel`
+  untouched), daemon stopped, every stack `compose down -v`, stack dirs,
+  `/mnt/app` data, `/var/lib/homestead`, `/etc/homestead`, old `ak.*.pass`
+  and tunnel-id removed; Docker, OS and disks kept; no snapshots. Dashboard
+  built, rsynced, `scripts/install-systemd.sh`. The installed binary matches a
+  root rebuild of the tree (a rebuild as `tester` differs; the build is not
+  reproducible across users). Unclaimed-boot checks: the journal has the
+  UNCLAIMED line naming `sudo homesteadctl claim token` and no token text
+  (`grep -cF` of the token over the journal: 0); `/run/homestead/claim-token`
+  is 0600 root; `sudo homesteadctl claim token` prints token and expiry.
+  Deviation: a tunnel cannot be created before claim, so tunnel
+  `homestead-vm2` (`85590208-fce0-4396-a8b1-62bf4b1abe0c`) was created through
+  the Cloudflare API and the connector installed by hand
+  (`/etc/homestead/tunnel/{config.yml,token.env}`, `homestead-tunnel.service`
+  enabled); the `homestead` CNAME was repointed, proxied. The public URL
+  returns 200 and `/claim` shows the Claim page. The appliance was left
+  UNCLAIMED for the owner. Tokens re-mint every 30 minutes; get a fresh one
+  with `sudo homesteadctl claim token` on the guest.
+- KVM on VM 2: PENDING (to be run by the owner; steps are in the S288 report:
+  unclaimed boot on a second daemon with its own state, `claim token` before
+  and after expiry, uninstall/reinstall a small app, unassign/unregister a
+  test mount, the two confirm dialogs).
+
+## S289: Dashboard on a local network address (ADR-035)
+
+- Dashboard socket: `internal/server/dashsocket.go` serves the TCP handler
+  (same mux, same ADR-020 boundary) on `/run/homestead-dashboard/dashboard.sock`
+  (dir 0750, socket 0660, group `homestead-dashboard`, created by
+  `scripts/install-systemd.sh`; `RuntimeDirectory` gains the directory). The
+  `--dashboard-socket` flag only accepts that path. The front wrapper requires
+  exactly one non-loopback, non-unspecified `X-Forwarded-For` (400), checks
+  Host against the dashboard route names (421), refuses cookie plus bearer,
+  checks Origin (https and a route name), and refuses a cookie mutation with no
+  Origin. A bearer without a cookie needs no Origin. On success it stores the
+  client address in the request context and sets `RemoteAddr`; `requestConnection`,
+  `clientHost`, login audit and the boundary report use it. TCP never reads
+  `X-Forwarded-For`.
+- Route model: `docker.Route.Dashboard` and `Aliases`. Validation refuses
+  public exposure, automatic TLS and non-internal TLS; one dashboard route per
+  table; names unique across hosts and aliases. Rendering: one site block with
+  both names, `reverse_proxy unix//run/homestead-dashboard/dashboard.sock`,
+  `header_up` for the client address, `trusted_proxies` unset. Caddy compose
+  mounts `/run/homestead-dashboard` read-only; reconcile verifies the mount
+  and says to redeploy the edge when it is missing. The planner and the
+  exposure approve path refuse a public dashboard.
+- Two names: `homestead.local` (mDNS, `internal/mdns`) and the owner-set name
+  (default `homestead.lan`) share one multi-SAN internal-CA leaf
+  (`cert.LocalTLS`), pass the Host check, are accepted Origins, and are added to
+  the SSO defaults as `https://<name>`. `ssoDefaults` no longer treats a
+  `host.docker.internal` target as a dashboard origin.
+- Owner-set name: `GET`/`PUT /api/v1/dashboard/address` (session class),
+  `homesteadctl dashboard address [get | set NAME [--exposure local|overlay]]`,
+  Trust page section. PUT runs an operation: ensure leaf, deploy the edge, then
+  reconcile. The server keeps the dashboard route when a client replaces the
+  route table without it; the Edge editor hides it. The daemon records the
+  default route and deploys the edge at startup (retry), before claim.
+- CLI: `--ca-file` / `HOMESTEAD_CA_FILE` adds the appliance root to the trusted
+  roots (`apiclient.WithRootCA`); verification is never skipped.
+- Doctor: `edge-dashboard-socket` (route recorded, socket present, edge mount)
+  and `dashboard-mdns-name` (mDNS responder bound; Avahi or systemd-resolved
+  holding UDP 5353 is named).
+- Docs: `docs/architecture/LOCAL_DASHBOARD.md`, PARITY rows, ARCHITECTURE note.
+- KVM on VM 2: PENDING (run by the coordinator).
+
+### S289 follow-up: mDNS answers per link
+
+- Symptom: on a multi-NIC VM, `homestead.local` resolved to both the LAN
+  address (192.168.1.158) and the QEMU NAT address (10.0.2.15). Browsers that
+  picked the unreachable one hung, so the dashboard looked frozen.
+- Cause: `internal/mdns` answered and announced every up, non-loopback IPv4,
+  including NAT and Docker bridge addresses.
+- Fix: addresses carry their subnet and interface (`mdns.LinkAddr`). A query is
+  answered with the addresses whose subnet contains the query source (RFC 6762
+  section 6.2); an unknown or off-subnet source falls back to all addresses.
+  The startup announcement goes out per interface with only that interface's
+  addresses. `docker0`, `br-*` and `veth*` are never advertised or joined.
+
+## S291: Step-by-step setup wizard (ADR-036)
+
+- Daemon: `internal/setup` gains the `storage` step (second, derived from the
+  application storage assignment) and `Facts.StorageAppAssigned`; stored state
+  carries `version` 2 and a one-time migration skips storage for appliances
+  whose other steps were already settled, so none is re-gated. `PUT
+  /api/v1/setup/steps/storage` accepts skip and unskip only. `homesteadctl
+  setup` knows the step. Guard behaviour and exemptions are unchanged.
+- Dashboard: `/setup` is a linear wizard (`setup/setup.ts`, steps under
+  `setup/steps/`). Steps embed the existing pages (`embedded` input on Storage,
+  Sign-in, Tunnel, Exposure, Install wizard) and the extracted `PasswordForm`
+  and `RecoveryIdentity` components. `setupRefreshInterceptor` makes the wizard
+  re-read status after a successful write elsewhere.
+- Docs: `SETUP_WALKTHROUGH.md` rewritten; PARITY rows updated; deferred items
+  added.
+- KVM on the test VM: PENDING (run by the coordinator).
+
+## S292: Setup walkthrough fixes
+
+- Found walking setup from scratch on the KVM VM (Authentik 2026.8.3).
+- Daemon:
+  - `sso.Defaults` has JSON tags, so the Sign-in form is prefilled.
+  - `cert.PendingRenewals` treats a missing TLS strategy as nothing due, so
+    `cert.renewal-check` no longer fails on a fresh appliance.
+  - The setup `Domain` source receives the provider chosen in the step, and
+    `credentials_sealed` checks it first.
+- Dashboard:
+  - The Status page points an unclaimed appliance to Claim.
+  - Creating the administrator records the password confirmation and opens
+    `/setup`.
+  - The Authentik link callback returns to `/setup` while setup is not
+    complete.
+  - The approve step reuses the token typed for the review.
+  - The Sign-in step and the Authentik "first time" copy use the root
+    address and the real token UI.
+  - The embedded install wizard takes a `closeLabel`, hides Uninstall and
+    dedupes data folders.
+- Out-of-scope findings were added to `DEFERRED.md` for S293 to S295.
+- KVM on VM 2 (2026-10-20, deployed over the existing appliance, no reset):
+  - `GET /api/v1/sso` returns `defaults.authentik_url` and `origins`.
+  - The Sign-in step lists the new outside tasks with `https://authentik.lan/`.
+  - `facts.domain.credentials_sealed` is true for the Cloudflare token stored
+    earlier in the step; before S292 it read false.
+  - Not re-run live, covered by specs only:
+    - claim to setup, F1/F2/F3 (the VM is claimed);
+    - the Authentik link return (already linked);
+    - the next daily `cert.renewal-check`. The failed run from before the
+      fix is operation 1.
+
+## S293: Storage step UX
+
+- Daemon:
+  - `storage.MountKind` classes each discovered mount as data, system or
+    unusable.
+  - `storage.Suggest` proposes classes for unassigned classes on data disks,
+    from name hints, then sizes.
+  - `GET /api/v1/storage/mounts` returns `kind` and `suggested`.
+  - Register and assign default the actor to the caller (`operatorActor`).
+- CLI: `storage mounts` lists data disks first with `kind=` and
+  `suggested=`; `--actor` is optional.
+- Dashboard:
+  - The Storage page shows data disks first and folds the rest into "Other
+    mounts".
+  - It explains the classes and names the unassigned ones.
+  - "Use the suggested layout" registers, then assigns, one call at a time.
+  - The "Acting owner" fields are gone.
+- The Storage step copy says bulk and backup can wait for the install that
+  needs them.
+
+- KVM on VM 2 (2026-10-20, deployed over the existing appliance, no reset):
+  - `GET /api/v1/storage/mounts`: `/mnt/app`, `/mnt/backup` and `/mnt/bulk`
+    are `data`; the other 52 paths are `system` or `unusable`.
+  - The Discovered mounts table lists only the three disks. "Other mounts
+    (52)" is folded away, and no "Acting owner" field remains.
+  - Every class was already assigned there, so `suggested` was empty and the
+    Suggested layout panel did not show, as intended. Applying a layout is
+    covered by specs only; unassigning the owner's classes to show it was
+    not done.
+
+## S294: Domain and tunnel plan (ADR-037)
+
+- Setup: the `domain` choice (`NormalizeDomain`) on
+  `PUT /api/v1/setup/steps/domain`, `setup step domain --domain` and the
+  Domain step's "Your domain" form; local-only suffixes and dotless names are
+  422.
+- Daemon:
+  - `router` gains zone lookup (`ZoneFor`, longest suffix first), DNS record
+    read, create and delete, and the owned-record table.
+  - Migration 45 adds `account_id` and `zone_id` to `tunnel_routes` and the
+    `tunnel_dns_records` table.
+  - `POST /api/v1/tunnel/plan` is read-only: zone, ingress, the proxied
+    CNAME (create, or replace with the records listed), warnings and a
+    digest. Refusals: 400 validation, 422 no token, no zone, no account,
+    hostname already routed or a non-address record at the name; 502 a
+    Cloudflare error.
+  - `POST /api/v1/tunnel/setup` plans again (409 on a digest change), audits
+    `tunnel.setup`, and runs create-tunnel, dns, connector and record-route,
+    undoing the record and the tunnel when a later step fails.
+  - Teardown takes no account ID, audits `tunnel.teardown`, and deletes only
+    owned CNAMEs that still point at the tunnel (a changed record is kept and
+    audited as `tunnel.teardown.dns-kept`).
+  - The token is the Domain step's `dns_cloudflare_api_token`, else the
+    legacy `router_tunnel_api_token`; bodies carrying `api_token` or
+    `account_id` are 400.
+- CLI: `tunnel plan`, `tunnel setup --digest`, `tunnel teardown <id>`; the
+  old credential flags are a usage error.
+- Dashboard: the Tunnel form has name, hostname (suggested under the setup
+  domain) and service, then a review panel with "Public hostnames", "DNS
+  changes", warnings and "Approve and set up"; a 409 asks for a new review.
+- Tests: a Cloudflare double covers plan refusals, plan, setup and teardown,
+  a changed record kept at teardown, and the permission copy maps every
+  client call to a listed grant.
+
+### S294 fixes (owner review, 2026-10-20)
+
+- Domain: refused names (local-only, dotless, bad labels) are 422
+  (`setup.ErrRefused`), as the slice specifies; with Cloudflare chosen and
+  its token stored, a domain outside every visible zone is 422 too.
+- Replaced records (ADR-038, migration 46 `tunnel_replaced_records`): setup
+  records each one before deleting it and puts them back when it fails;
+  teardown's `restore-dns` step puts them back unless the name holds an
+  A, AAAA or CNAME record again (audited `tunnel.teardown.dns-not-restored`).
+- Status speed: `router.DiscoverGateway` runs UPnP and NAT-PMP/PCP probes
+  together, and the tunnel status reuses a discovery for 5 minutes while
+  the Cloudflare reads run alongside it. Tests stub the probe.
+- Dashboard: `app-operation-progress` keeps the last state it saw for its
+  operation, so it reads "Done" after the rail drops the order instead of
+  "Starting"; the Tunnel page re-reads status when setup or teardown ends.
+- `tests/test_s235_storage.py` looks for the `actor` flag name, which S293
+  moved into a helper.
+
+### S294 gaps closed (2026-10-20)
+
+- Storing Cloudflare credentials (`POST /api/v1/tls/issuance/credentials`)
+  checks the setup domain against the token's zones through a hook
+  `MountSetup` sets (`Server.domainZoneWarning`). The token is stored either
+  way; the response carries `warning`, which the Domain step shows and
+  `homesteadctl tls issuance credentials` prints to stderr.
+- `server.WarmTunnelDiscovery` probes the router once at daemon start (from
+  `main`, never from a mount, so tests never probe the network).
+- Migration 47 adds `comment` to `tunnel_replaced_records`; teardown puts
+  the record's own comment back and marks only uncommented records.
+
+## S295: App names (ADR-039 §1)
+
+- Routes: `Route.LocalAlias` derives `<label>.local` for a non-dashboard,
+  non-public, non-automatic-TLS route named `<label>.lan` (single label, not
+  `homestead`). It is computed, not stored: `ServedAliases` adds it to the
+  rendered site address and `cert.LocalTLS` adds it to the leaf, so an
+  existing leaf mismatches once. The daemon runs one local TLS reconcile at
+  start, so after an upgrade the leaf is reissued and the edge reloaded
+  straight away rather than at the next 6 h `localtls` pass.
+  `RouteSet.MDNSLabels` and `RouteSet.LANNames` feed the responder and the
+  resolver.
+- mDNS: `Config.Apps` adds app labels to the answered names; a 30 s recheck
+  announces new names and drops conflicts for removed ones. An A answer for
+  one of our names from another (non-loopback) address is kept for 15
+  minutes as `State.Conflicts`, which the doctor reports as
+  `mdns-name-conflict`.
+- Resolver: `internal/localdns` answers A for owned `.lan` names (the
+  address on the asker's subnet, else all), NODATA for other types,
+  NXDOMAIN (authoritative) for other `.lan` names, REFUSED otherwise,
+  FORMERR for multi-question and NOTIMP for non-query messages, over UDP and
+  length-prefixed TCP. It never forwards. Binding is all or nothing.
+- Daemon: `server.LocalNames` caches the route table for 10 s, stores the
+  switch (migration 48 `local_resolver`), and runs the listener from `main`.
+  `GET /api/v1/names`, `POST /api/v1/names/resolver/plan` (probes port 53,
+  lists the firewall rules) and `.../apply` (digest, 409, audited
+  `names.resolver.enable`/`disable`). The firewall's desired set gains
+  `firewall.WithLocalResolver` (port 53 accepted from local subnets, dropped
+  from everywhere else) while the switch is on. The doctor's
+  `local-resolver` check warns when it is on but not answering.
+- CLI: `names`, `names resolver plan|apply --on|--off [--digest]`,
+  `apps names`.
+- Live check (VM 2, 2026-10-20): `immich.local` and `authentik.local`
+  answer QU mDNS queries from the host with the VM's address, and the edge
+  serves them with a leaf covering both names. The responder sends
+  ordinary (QM) answers to the group, so `dig -p 5353` unicast gets none;
+  test with avahi or a QU query.
+- Dashboard: the Names page (`/names`, Network) and "Local names" in the
+  catalog Manage panel.
+
+## S296: Public dashboard behind Authentik (ADR-037 §4)
+
+- Edge: `Route.Tunnel` holds a route's public names. `Route.AllNames` (its
+  names plus the tunnel names) feeds conflicts, the exposure refusal, the
+  dashboard Host check and the SSO origins. The edge serves the tunnel names
+  as `http://<name>:8480` sites (`docker.TunnelEntryPort`), published only on
+  `127.0.0.1:8480`, with `X-Forwarded-For` from `Cf-Connecting-Ip`,
+  `X-Forwarded-Proto https` and `X-Forwarded-Host`. A route edit keeps the
+  route's tunnel names.
+- Tunnel plan: the request is `{name, dashboard_hostname, auth_hostname}`
+  (defaults `homestead.<domain>` and `auth.<domain>`); `hostname` and
+  `service` are refused with 400. Every ingress points at
+  `http://127.0.0.1:8480` and the connector config ends with a 404
+  fallback. Authentik is left out when it is not installed. The dashboard
+  is left out, with the reason, when it has no edge address, when sign-in
+  is not linked, or when Authentik is not published. A plan with nothing
+  left is 422. Setup gains an `edge` step (sets the tunnel names, deploys
+  and reconciles the edge); teardown clears them.
+- Public host: requests whose Host is a dashboard tunnel name refuse claim,
+  `POST sessions`, `admins/setup|password|recover`, the wizard state
+  routes, `sso/link` and every step-up (`X-Homestead-Reauth`) request with
+  403 and `X-Homestead-Error: public-host`. `GET /api/v1/sso/options`
+  answers `password:false` there, and the login page shows only Authentik.
+- Sign-in: `sso.Defaults` gains `public_origins` and `public_authentik_url`
+  (from the Authentik route's first tunnel name). A plan that includes a
+  public origin records both. A login started at a public origin sends the
+  browser to the public Authentik address; the token exchange and the
+  userinfo call stay on the local Authentik address. `GET /api/v1/sso`
+  reports `replan` and `replan_reason` while the configured setup misses a
+  public name: `sso status` prints it, and the Sign-in page has a Re-plan
+  button that adds the public origin to the form.
+
+- Live check (VM 2, 2026-10-20): deployed; the local login still offers the
+  password (`{"enabled":true,"password":true}`). The tunnel setup and the
+  public sign-in round trip wait for the owner's session and approval of
+  the Cloudflare changes.
+
+## S297: Nightly backups in setup (ADR-039 §2)
+
+- Policy: migration 49 adds `backup_policy` (one row: `time_of_day`,
+  `retain`, `enabled`, actor, `updated_at`). `backup.Policies` keeps it;
+  `updated_at` moves only when the time changes or the policy is switched
+  on, so a retention edit never delays a run. Defaults: 02:00 local, keep
+  7, on; retention 1 to 366.
+- Coverage: every installed catalog app that keeps data and has no
+  per-app schedule. Stateless apps and apps with their own schedule (on or
+  off) are listed as left out, with the reason. Later installs are covered
+  without another approval.
+- Scheduler: `scheduler.Job.At` (`scheduler.Daily`) makes a wall-clock job:
+  it is due at the first policy time after its last run (or after the
+  policy's anchor, or the app's install, whichever is later). A time missed
+  while the appliance was off runs once at the next tick. Policy jobs come
+  from their own source (`backup-policy`), share the `backup:<app>` job ID
+  with per-app schedules, and use the policy's retention.
+- API: `GET /api/v1/backups/policy`, `POST .../policy/plan` (read-only,
+  digest), `POST .../policy/apply` (digest must match, 409 otherwise;
+  audited `backup.policy.set`). Enabling without backup storage is 422.
+- CLI: `homesteadctl backup policy [status|plan|apply]` with `--time`,
+  `--retain`, `--off`, and `--digest` for apply.
+- Dashboard: a Nightly backups section on the Backups page and a sixth
+  setup step, both the shared `app-nightly-policy` component.
+- Setup: step `backups` ("Nightly backups") after apps. Done when a policy
+  is approved (on or off); skippable; `{"state":"done"}` is 400. Without
+  backup storage the detail and the step explain it and link to Storage.
+  The stored record is version 3; an appliance whose older steps were all
+  done or skipped has every newer step waived (the storage rule,
+  generalized).
+- Live check (VM 2, 2026-10-21): the setup step's proposed policy (02:00,
+  keep 7, Authentik and Immich) was approved and setup read complete. The
+  time was moved to two minutes ahead: both `backup.job` operations ran on
+  time and succeeded. The policy was then set back to 02:00.
+
+## S298: App sign-in through Authentik (ADR-039 §3, ADR-040)
+
+- Manifest: `sso.oidc` declares the adapter (`immich`,
+  `nextcloud-user-oidc`, `jellyfin-sso-plugin`), the service that talks to
+  Authentik and, for Jellyfin, the pinned plugin (name, version, URL,
+  sha256). Validation refuses unknown adapters, a plugin on the wrong
+  adapter and a plugin without a 64-hex checksum.
+- Package `internal/appsso`: `BuildPlan` (on or off, digest over the
+  provider, application, client ID `homestead-<app>`, issuer, redirect URIs
+  and app settings), `BuildStatus` (on, offered or why not, and `replan`
+  when the app's names no longer match the applied redirect URIs), the
+  three adapters and `Definition`, the `app.sign-in` operation.
+- Apply: create or update the Authentik OAuth2 provider and application,
+  seal the client secret as `sys_sso_app_<app>_secret` (ADR-021), write the
+  service's `extra_hosts` and the read-only CA mount into the generated
+  compose (`catalog.ApplySignInWiring`, own entries only), bring the stack
+  up, then configure the app: Immich's system config, Nextcloud's
+  `user_oidc` provider through `occ`, Jellyfin's plugin (downloaded,
+  checksum-verified, unpacked with zip-slip refusal) and its
+  configuration. Secrets reach containers only on stdin. Off reverses
+  each step and deletes the Authentik objects. Migration 50 adds
+  `app_sign_in` (package, adapter, client ID, issuer, redirect URIs, plugin
+  version, actor, `updated_at`).
+- API: `GET /api/v1/catalog/{name}/sign-in`, `POST .../sign-in/plan`
+  (read-only), `POST .../sign-in/apply` (digest, 409 when stale; token in
+  the body unless the dashboard sign-in kept one; returns an operation).
+  All session class. The install plan carries `sign_in` (offered, reason,
+  the plan, `token_kept`). Audit: `app.sign-in.operation`,
+  `app.sign-in.authentik`, `app.sign-in.on`, `app.sign-in.off`, never a
+  secret.
+- CLI: `homesteadctl apps sign-in <status|plan|apply> <app>` with `--off`,
+  `--digest`, `--token-file`, `--follow`.
+- Dashboard: the install wizard offers "Sign in with Authentik" (checked)
+  in the review and applies the previewed plan once the route lands; the
+  catalog Manage panel has a Sign-in with Authentik section
+  (`app-app-sign-in`) to review, approve, re-plan or turn it off.
+- Live check (VM 2, 2026-10-21), Immich only (Jellyfin and Nextcloud are
+  not installed there): the plan and apply ran with a short-lived Authentik
+  token, and every operation step succeeded. Immich then showed "Sign in with
+  Authentik", and `POST /api/oauth/authorize` fetched discovery through the
+  back channel (`authentik.lan` via host-gateway, appliance CA trusted). It
+  returned a PKCE authorize URL that Authentik accepted for
+  `homestead-immich`.
+- Live check, Jellyfin and Nextcloud (VM 2, 2026-10-21): both installed from
+  the catalog (ops 23, 24; `lan` domain) and routed through `edge routes`
+  (op 25). Each apply used a short-lived Authentik token, deleted afterwards.
+  The check found two adapter faults, both fixed here:
+  - Jellyfin: the pinned plugin SSO Authentication 4.0.0.4 (targetAbi
+    10.11) loads on `jellyfin:12.2` and shows Active. But the first
+    `/sso/OID/start/authentik` answered 400 "Provider does not exist", and
+    the settings file was back to empty. The plugin's `OidConfig` carries
+    `[XmlRoot("PluginConfiguration")]`; the adapter wrote `<OidConfig>`, the
+    XML failed to deserialize, and Jellyfin silently saved default settings
+    over it. The adapter now writes `<PluginConfiguration>`. After
+    re-applying (op 27), the start URL redirects 302 to Authentik with PKCE
+    and the settings survive a restart. ADR-040 stands: no adapter
+    withdrawal and no image downgrade.
+  - Nextcloud: an apply before Nextcloud's first-run setup failed in
+    `configure-app` with occ's "no commands in the app namespace" (op 28,
+    after the Authentik provider was created). The adapter now refuses with
+    a plain "finish first-run setup" message. After setup (SQLite through
+    `autoconfig.php`), op 29 succeeded, but `/apps/user_oidc/login/1`
+    answered "You must access Nextcloud with HTTPS to use OpenID Connect".
+    Nextcloud saw plain http from the edge. The adapter now also sets
+    `overwriteprotocol https`. After re-applying (op 30), "Login with
+    authentik" redirects 303 to Authentik (PKCE, https redirect URI), and
+    Authentik answers with its login flow.
+  - Not covered: a full browser login with an Authentik user for any of the
+    three apps (account creation at first sign-in).
+
+## S290: Public app names and tunnel adoption (ADR-041)
+
+- The slice text predates ADR-037: the tunnel DNS route actuation it names
+  was closed by S294. S290 adds per-app public names, a connector that
+  follows the recorded routes, and adoption of an existing tunnel.
+- API: `GET /api/v1/catalog/{name}/public`, `POST .../public/plan`
+  (read-only, `enabled`, `hostname`, `route`) and `POST .../public/apply`
+  (digest, 409 when stale; returns an `app.public.add` or
+  `app.public.remove` operation). All session class. A plan refuses a local
+  name, a name outside the tunnel's zone, a name already on an edge route or
+  the tunnel, an app that is not installed, a missing tunnel and Authentik
+  (its name belongs to the tunnel plan). DNS outcome is create, keep (a
+  CNAME already pointing at the tunnel) or replace (A, AAAA, other CNAME;
+  the old record is stored and restored on removal). The plan warns that
+  no Authentik check sits in front of the app and recommends app sign-in
+  when the app has an adapter.
+- Apply: DNS, recorded route, edge tunnel name, then the connector's
+  `config.yml` rewritten from the recorded routes; the connector restarts
+  only when its files changed. Each step undoes the earlier ones on
+  failure. Removal reverses them and restores replaced records.
+- Adoption: `POST /api/v1/tunnel/plan` and `/setup` take `adopt` (a tunnel
+  ID) instead of `name`. It needs the local connector config to name that
+  tunnel, Cloudflare to report it as locally configured, and no recorded
+  tunnel. The plan lists existing ingress entries as kept or dropped; setup
+  fetches the run token with the stored Domain-step token, keeps the
+  tunnel on failure, restores the previous connector files, and audits
+  `tunnel.adopt`.
+- CLI: `homesteadctl apps public <status|plan|apply> <app>` with
+  `--hostname`, `--route`, `--off`, `--digest`, `--follow`;
+  `homesteadctl tunnel plan|setup --adopt ID`.
+- Dashboard: the catalog Manage panel has a Public address section
+  (`app-app-public`); the Tunnel page has an adopt field and an "Approve
+  and adopt" button.
+- Live check (VM 2, 2026-10-21, main at 75cca1e deployed over the claimed
+  appliance). This replaces the slice's original live steps:
+  - the connector files left from a hand-made setup were restored, then
+    `tunnel plan` with `adopt` listed the existing entry as kept, kept the
+    existing dashboard CNAME and created the Authentik one; setup fetched
+    the run token, rewrote the config through the edge, started the
+    connector (healthy, four connections) and audited `tunnel.adopt`; the
+    Domain setup step then read done;
+  - the public dashboard answered 200, and Authentik's public name sent the
+    browser to its login flow;
+  - `immich.<domain>` was added (create), served `/api/server/ping` publicly,
+    then removed: the CNAME was gone from the zone and the connector config
+    dropped it; both operations were audited;
+  - not covered live: replacing and restoring an existing A record (Jellyfin
+    is not installed on VM 2, and the zone has no spare record); the unit
+    tests cover it;
+  - found: the status has no proposed name when the Domain step has no
+    domain recorded (adoption sets up the tunnel without one), and the
+    remove plan shows an empty zone. Both are cosmetic; recorded in
+    DEFERRED.
+
+## S299: Uninstall leftovers
+
+- Public names (S290) and sign-in (S298) are removed by plans that need the
+  app installed, so `POST /api/v1/catalog/{name}/uninstall` now refuses
+  with 409 before anything changes:
+  - `public-names`: the app's edge routes carry tunnel names; the message
+    lists them and the `apps public plan <app> --off --hostname NAME` step.
+    No override;
+  - `sign-in`: sign-in is recorded; the message names
+    `apps sign-in plan <app> --off`. `leave_sign_in: true` uninstalls
+    anyway; a final `forget-sign-in` step deletes the sealed client secret
+    and the record and audits `app.uninstall.leave-sign-in` with the client
+    id (never a secret);
+  - `sign-in-dependents`: uninstalling Authentik while apps have sign-in
+    recorded; the message lists them. No override.
+- The refusal kind is sent as `X-Homestead-Refusal` (the volume refusals
+  send `volumes`), so the dashboard offers only the matching
+  acknowledgement: abandon volumes, or "Uninstall anyway and leave its
+  sign-in in Authentik".
+- CLI: `homesteadctl apps uninstall <app> --leave-sign-in`.
+- Tests: `internal/server/uninstallguard_test.go` (each refusal, the
+  acknowledgement, record and audit), `cmd/homesteadctl/apps_test.go`,
+  `dashboard/src/app/catalog/uninstall-app.spec.ts`.
+
+
+## S300: Tunnel connector token off the command line
+
+- `homestead-tunnel.service` no longer passes `--token ${TUNNEL_TOKEN}`:
+  cloudflared reads `TUNNEL_TOKEN` from the environment, loaded from the
+  root-only `/etc/homestead/tunnel/token.env`. The command line is
+  world-readable in `/proc`; the environment is root-only.
+- `scripts/install-systemd.sh` runs `systemctl try-restart
+  homestead-tunnel.service` after `daemon-reload`, so an upgrade applies the
+  unit to a running connector and leaves a stopped one alone.
+- Tests: `tests/test_s300_connector_token.py`.
+
+## S301: Claim first, then the tunnel
+
+- Documentation only (owner decision 2026-10-24): a tunnel is not set up
+  before claim. `docs/architecture/LOCAL_DASHBOARD.md` now says to claim on the
+  local network, or for a remote box through `ssh -L 8080:127.0.0.1:8080`
+  (the loopback listener serves the Claim page; checked on VM 2), and gives a
+  hand-laid tunnel, adopted after claim, as the last resort.
+
+## S302: Adopted tunnel zone
+
+- Migration 51 adds `tunnel_routes.zone_name`; `router.SetTunnelAccount`
+  takes it (empty keeps the stored name) and `router.TunnelZoneName` reads it.
+- App public status and the add plan propose `<app>.<domain>` from the setup
+  domain, else the tunnel's zone name; the remove plan names the zone from the
+  store, else from Cloudflare (`appPublic.removeZone`).
+- Tests: `TestAppPublicAdoptedTunnelZone`, the tunnel setup test, and the store
+  upgrade tests (which now drop `zone_name` too).
+
+## S303: Tunnel plan refusal in view
+
+- `Tunnel.review` sets `reviewError`, shown under Review plan in the setup
+  form; the page-level `error` stays for status, approve and teardown.
+- The adopt hint says a new or reset appliance has no connector config.
+- Test: `tunnel.spec.ts` "shows a refused plan under Review plan".
+
+## S304: Setup names a needed sign-in re-plan
+
+- `setup.SSOFacts.Replan` is `replanReason(spec, ssoDefaults(...)) != ""`
+  for a configured sign-in; `SetupConfig.Port` feeds the default origins.
+- The Sign-in step stays done and its detail warns; the Domain step's detail
+  after a tunnel says the same. Neither re-gates setup.
+- Tests: `internal/setup` sign-in states and the existing-tunnel review path.
+
+## S305: Walkthrough wording (install sign-in, policy review)
+
+- `install-wizard.html` sign-in step: the review offers Sign in with
+  Authentik where it can be connected (S298).
+- `NightlyPolicy` review renders the plan's `covered` and `skipped`, which
+  the plan's first line ("every app below") refers to.
+- The time label drops "24-hour"; the native time picker follows the locale.
+
+## S306: Factory reset (preparing a new appliance)
+
+```bash
+# from a checkout of the release to ship, on the appliance:
+sudo ./scripts/factory-reset.sh --yes \
+  --wipe-mount /mnt/app --wipe-mount /mnt/bulk --wipe-mount /mnt/backup \
+  --reinstall
+sudo homesteadctl claim token          # the new owner's claim token
+```
+
+- Removes only Homestead's units, binaries, stacks (with volumes), edge
+  container and network, layout dirs and groups; other Compose projects,
+  volumes and images stay.
+- `--wipe-mount` is the only way storage is touched: each path must be an
+  absolute mount point outside system paths; contents go, `lost+found`
+  stays. Leave it off to keep the owner's media.
+- A previous owner's Cloudflare tunnel and DNS records are in their own
+  account; the reset does not remove them.
+- Tests: `tests/test_s306_factory_reset.py`.
+
+## S307: Install guide (bare metal to public apps)
+
+- `docs/INSTALL.md` is the owner and fulfilment guide; `README.md` links it.
+- It names the prerequisites Homestead does not install: Docker (A3),
+  cloudflared (A4) and the dashboard build (B2); see `docs/DEFERRED.md`.
+- Tests: `tests/test_s307_install_guide.py` checks that the scripts, doc paths
+  and `homesteadctl` commands it names exist.
+
+## S308: Bootstrap installs Docker and cloudflared (ADR-042)
+
+- `bootstrap.sh` installs Docker (with the Compose plugin) and cloudflared from
+  the vendors' apt repositories after `fetch_key` matches the pinned
+  fingerprint; `HOMESTEAD_DOCKER_KEY_FPR` / `HOMESTEAD_CLOUDFLARE_KEY_FPR`
+  override for one run after a vendor key rotation.
+- Existing Docker with Compose v2 and an existing cloudflared are kept;
+  `--no-docker` and `--no-cloudflared` skip them. No cloudflared service is
+  enabled; `homestead-tunnel` runs it after an approved plan.
+- To try it without a VM, run the script in a `debian:trixie` container with
+  `systemctl`, `go` and `install-systemd.sh` stubbed on PATH.
+- Tests: `tests/test_s308_bootstrap_vendor_packages.py`.
+
+## S309: Dashboard design language (the permit and the field)
+
+- Display face: Barlow Semi Condensed SemiBold in `dashboard/public/fonts/`
+  (OFL, `docs/THIRD_PARTY.md`), for `h1`, `h2`, the wordmark, the permit
+  title and the stamp only.
+- Every page opens with `<header class="masthead">`: the `h1` and one true
+  sentence (`masthead-fact`), computed from data the page already loads or a
+  one-line purpose.
+- `.field-panel` with `data-state="warn|fail|ok"` draws a state furrow; the
+  `.needs-you` field leads Status and Setup when anything needs the owner.
+- Plan reviews use `<app-permit>` (`dashboard/src/app/ui/permit.ts`,
+  `src/permit.css`). Pass `digest` for the seal, `approval` once approved
+  (`approvedPlan(...)` keeps a stamped record) and `refusal` when the
+  appliance would not approve the plan on screen.
+- New colour tokens are in all three themes in `tokens.css`, and every new
+  text or border pair is in `theme/tokens-contrast.spec.ts`; the high
+  contrast permit tokens are scoped under `[data-theme='high-contrast'] .permit`.
+- The validation board (`/validation`) shows fields, a ledger and the three
+  permit states. See `docs/architecture/DASHBOARD_DESIGN.md`.
+
+## S310: Lamplight, depth and dark by default
+
+- Dark is the default: no stored theme means `:root` dark with no
+  `data-theme`. `ThemeService` (`DEFAULT_THEME`) clears the key when the
+  owner picks Dark; `public/theme-init.js` applies only light, system and
+  high contrast before first paint.
+- Depth is tokens only: `--elevation-well|plate|lifted|control|pressed`,
+  `--highlight-top`, `--edge-shadow`, and `--elevation-paper` (a `filter`,
+  because the permit's perforation mask clips `box-shadow`). Never write a
+  raw shadow in a component.
+- Attention light: `--glow-attention`, `--glow-furrow`, `--glow-focus`,
+  `--halo-warn`, `--halo-fail`. Halos are background images behind the
+  glyph, since filters on masked glyphs are clipped.
+- The land: `--contour` (an SVG data URI), `--contour-ink`, `--lamp-falloff`,
+  `--lamp-wash`, `--horizon`, `--band-height`, drawn by `.shell::before` and
+  `::after` and the masthead `::after`.
+- High contrast sets every elevation, glow, halo, wash and falloff to
+  `none`; `tokens-contrast.spec.ts` checks it, the depth luminance order,
+  and that the system-light block matches light. Token names in that file
+  must not contain digits, and values must not contain `;` or `}`.
+- The validation board shows the four depths and the lamps.
+
+## S311: Lamplight on every page
+
+- Every page section is `<section class="field-panel" aria-labelledby="…">`
+  with its `h2` as the first child; a page without h2s puts its content in
+  one field. The catalog's Manage panel (`.catalog-manage`, S321) opens
+  inside its app's card and its `h2` counts as opening a field. Add `data-state="warn|fail|ok"` for a furrow and `needs-you`
+  only for a section that needs the owner now.
+- On the ground, below the masthead, only fields, `app-permit`, dialogs,
+  `app-operation-progress`, page-level `app-state-message`s and a line of
+  prose. `kind="empty"` messages are wells and belong inside a field.
+- Claim and login use `<section class="gate">`, a centred lifted plate.
+- `src/app/theme/lamplight.spec.ts` enforces this for every route in
+  `app.routes.ts` (its `PAGES` map must list each route and template), and
+  rejects colour literals and raw shadows in every stylesheet except
+  `tokens.css` and `fonts.css`, including component `styles`.
+
+### Audiobookshelf first-run (S384)
+
+The pinned Audiobookshelf image is probed on its container loopback. When it has no root user, Homestead creates `homestead-admin` with a sealed, revealable recovery password through the app’s initialization API and checks that local login succeeds. An existing root is left untouched; no new password is generated for it. This prerequisite does not itself enable Authentik sign-in.

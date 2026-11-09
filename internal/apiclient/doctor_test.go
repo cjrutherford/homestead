@@ -2,6 +2,7 @@ package apiclient
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -22,5 +23,18 @@ func TestDoctorRoundTrip(t *testing.T) {
 	}
 	if report.Overall == "" {
 		t.Fatal("empty overall")
+	}
+}
+
+func TestDoctorLiveSendsFlag(t *testing.T) {
+	var query string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.RawQuery
+		_, _ = w.Write([]byte(`{"overall":"ok","live":true,"checked_at":"2026-01-01T00:00:00Z","checks":[]}`))
+	}))
+	defer ts.Close()
+	report, err := New(ts.URL).DoctorLive(context.Background())
+	if err != nil || query != "live=1" || !report.Live || report.CheckedAt == "" {
+		t.Fatalf("%v %q %+v", err, query, report)
 	}
 }

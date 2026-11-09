@@ -46,8 +46,8 @@ class TestWizard(unittest.TestCase):
     def test_route_and_nav(self):
         routes = read_dash("src/app/app.routes.ts")
         self.assertIn("path: 'claim'", routes)
-        html = read_dash("src/app/app.html")
-        self.assertIn('routerLink="/claim"', html)
+        html = read_dash("src/app/core/nav.ts")
+        self.assertIn("path: '/claim'", html)
 
 
 if __name__ == "__main__":

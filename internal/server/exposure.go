@@ -19,6 +19,7 @@ import (
 // instead of blocking.
 func (s *Server) MountExposure(st *store.Store, daemonPort int) {
 	wiz := exposure.NewWizard(wizard.New(st))
+	wiz.SetRoutes(func() (docker.RouteSet, error) { return loadEdgeRoutes(st) })
 	s.mux.HandleFunc("GET /api/v1/exposure/review", handleExposureReview(wiz))
 	s.mux.HandleFunc("GET /api/v1/exposure/approvals", handleExposureApprovals(st))
 	s.mux.HandleFunc("POST /api/v1/exposure/approvals", handleExposureApprove(st, wiz))
@@ -77,6 +78,18 @@ func handleExposureApprove(st *store.Store, wiz *exposure.Wizard) http.HandlerFu
 			}
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
+		}
+		if plan.To == docker.ExposurePublic {
+			if set, lerr := loadEdgeRoutes(st); lerr == nil {
+				if dash, ok := set.DashboardRoute(); ok {
+					for _, n := range dash.AllNames() {
+						if n == plan.Host {
+							http.Error(w, "exposure: "+docker.ErrDashboardPublic, http.StatusUnprocessableEntity)
+							return
+						}
+					}
+				}
+			}
 		}
 		approval, err := exposure.Approve(plan, body.Actor, body.Networks)
 		if err != nil {

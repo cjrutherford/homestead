@@ -1,5 +1,8 @@
 <section aria-label="Platform release verification">
-  <h2>Platform releases</h2>
+  <header class="masthead">
+    <h1>Platform releases</h1>
+    <p class="masthead-fact">Homestead releases for this appliance, installed when you approve.</p>
+  </header>
 
   @if (error()) {
     <app-state-message kind="error" [headline]="error()" />
@@ -9,205 +12,225 @@
   }
 
   @if (view()?.running; as running) {
-    <h3>Running versions</h3>
-    <ul>
-      @for (entry of running | keyvalue; track entry.key) {
-        <li>{{ entry.key }}: {{ entry.value }}</li>
-      }
-    </ul>
+    <section class="field-panel" aria-labelledby="platform-running">
+      <h2 id="platform-running">Running versions</h2>
+      <ul>
+        @for (entry of running | keyvalue; track entry.key) {
+          <li>{{ entry.key }}: {{ entry.value }}</li>
+        }
+      </ul>
+    </section>
   }
 
-  <h3>Verification state</h3>
-  <ul>
-    @for (release of view()?.releases ?? []; track release.component) {
-      <li>
-        {{ release.component }} {{ release.version || '-' }}
-        (counter {{ release.counter }}):
-        <strong>{{ release.state }}</strong>
-        @if (release.state !== 'verified' && release.detail) {
-          <span> {{ release.detail }}</span>
-        }
-        @if (release.override) {
-          <span> Older release allowed by owner override (audited).</span>
-        }
-        @if (release.plan_error && release.state === 'verified') {
-          <span> Not planned: {{ release.plan_error }}</span>
-        }
-      </li>
-    } @empty {
-      <li>No platform releases verified yet.</li>
-    }
-  </ul>
-  @if ((view()?.refused ?? []).length > 0) {
-    <h3>Refused (never planned)</h3>
+  <section class="field-panel" aria-labelledby="platform-state">
+    <h2 id="platform-state">Verification state</h2>
     <ul>
-      @for (release of view()?.refused ?? []; track release.component) {
-        <li>{{ release.component }} {{ release.version || '-' }}: {{ release.plan_error }}</li>
+      @for (release of view()?.releases ?? []; track release.component) {
+        <li>
+          {{ release.component }} {{ release.version || '-' }}
+          (counter {{ release.counter }}):
+          <strong>{{ release.state }}</strong>
+          @if (release.state !== 'verified' && release.detail) {
+            <span> {{ release.detail }}</span>
+          }
+          @if (release.override) {
+            <span> Older release allowed by owner override (audited).</span>
+          }
+          @if (release.plan_error && release.state === 'verified') {
+            <span> Not planned: {{ release.plan_error }}</span>
+          }
+        </li>
+      } @empty {
+        <li>No platform releases verified yet.</li>
       }
     </ul>
+  </section>
+  @if ((view()?.refused ?? []).length > 0) {
+    <section class="field-panel" aria-labelledby="platform-refused">
+      <h2 id="platform-refused">Refused (never planned)</h2>
+      <ul>
+        @for (release of view()?.refused ?? []; track release.component) {
+          <li>{{ release.component }} {{ release.version || '-' }}: {{ release.plan_error }}</li>
+        }
+      </ul>
+    </section>
   }
-  @for (move of view()?.plan?.Components ?? []; track move.Component) {
-    <p>
-      Plan: {{ move.Component }} {{ move.Current }} → {{ move.Target }}
-      ({{ move.Verification }})
-    </p>
-  }
-  @for (warning of view()?.plan?.Warnings ?? []; track warning) {
-    <p class="warning">{{ warning }}</p>
+  @if (view()?.plan; as plan) {
+    @if (plan.Components.length > 0) {
+      <app-permit heading="Update the platform" [level]="2" label="Platform update plan">
+        <h4>Will change</h4>
+        <ul>
+          @for (move of plan.Components; track move.Component) {
+            <li>{{ move.Component }} from {{ move.Current }} to {{ move.Target }} ({{ move.Verification }})</li>
+          }
+        </ul>
+        @for (warning of plan.Warnings; track warning) {
+          <p class="warning">{{ warning }}</p>
+        }
+        <p class="hint">Apply each release below. Nothing changes until you confirm and apply it.</p>
+      </app-permit>
+    } @else {
+      @for (warning of plan.Warnings; track warning) {
+        <p class="warning">{{ warning }}</p>
+      }
+    }
   }
 
   @if (view()?.pending; as pending) {
     <p class="warning">
-      Platform update {{ pending.component }} {{ pending.from_version }} →
+      Platform update {{ pending.component }} {{ pending.from_version }} to
       {{ pending.to_version }} is being applied by the privileged apply unit (operation {{ pending.op_id }}). If the apply unit died, clear
       it.
       <button type="button" (click)="clearApply()" [disabled]="busy()">Clear stale apply</button>
     </p>
   }
   @if (applyOperation(); as id) {
-    <p>
-      Platform update started. The daemon restarts to finish, so this page
-      pauses briefly.
-      <a [routerLink]="['/operations', id]">Follow operation {{ id }}</a>
-    </p>
+    <p>Homestead restarts to finish this update, so the page pauses briefly.</p>
+    <app-operation-progress [id]="id" />
   }
 
-  <h3>Apply a verified release</h3>
-  <p>
-    Applies the files named under Artifact, Checksums file and Signature file
-    below: they are verified again and staged, and a separate privileged unit
-    verifies the staged copies once more before replacing anything. The previous binary is kept; a failed health check restores it automatically, and you can roll back manually below.
-  </p>
-  @for (release of view()?.releases ?? []; track release.component) {
-    @if (release.state === 'verified' && release.version) {
-      <div>
-        <p>Apply {{ release.component }} {{ release.version }} (counter {{ release.counter }})</p>
-        <label>
-          <input
-            type="checkbox"
-            [name]="'apply-confirm-' + release.component"
-            (change)="applyConfirmed = $any($event.target).checked"
-          />
-          I confirm applying this platform update
-          @if (release.component === 'homestead-server') {
-            (the daemon restarts; the API and dashboard pause briefly)
-          }
-        </label>
-        @if (needsOlder(release)) {
+  <section class="field-panel" aria-labelledby="platform-apply">
+    <h2 id="platform-apply">Apply a verified release</h2>
+    <p>
+      Applies the files named under Artifact, Checksums file and Signature file
+      below: they are verified again and staged, and a separate privileged unit
+      verifies the staged copies once more before replacing anything. The previous binary is kept; a failed health check restores it automatically, and you can roll back manually below.
+    </p>
+    @for (release of view()?.releases ?? []; track release.component) {
+      @if (release.state === 'verified' && release.version) {
+        <div>
+          <p>Apply {{ release.component }} {{ release.version }} (counter {{ release.counter }})</p>
           <label>
             <input
               type="checkbox"
-              [name]="'apply-older-' + release.component"
-              (change)="applyOlderConfirmed = $any($event.target).checked"
+              [name]="'apply-confirm-' + release.component"
+              (change)="applyConfirmed = $any($event.target).checked"
             />
-            I confirm applying an older release (recorded in the audit trail)
+            I confirm applying this platform update
+            @if (release.component === 'homestead-server') {
+              (Homestead restarts; the API and dashboard pause briefly)
+            }
+          </label>
+          @if (needsOlder(release)) {
+            <label>
+              <input
+                type="checkbox"
+                [name]="'apply-older-' + release.component"
+                (change)="applyOlderConfirmed = $any($event.target).checked"
+              />
+              I confirm applying an older release (recorded in the audit trail)
+            </label>
+          }
+          <button type="button" (click)="apply(release)" [disabled]="busy() || !artifact || !checksums || !signature || !applyConfirmed">
+            Apply {{ release.component }} {{ release.version }}
+          </button>
+        </div>
+      }
+    }
+    @for (entry of view()?.previous | keyvalue; track entry.key) {
+      <div>
+        <p>
+          Previous {{ entry.key }} kept: {{ entry.value.version }} at
+          {{ entry.value.path }} (sha256 {{ entry.value.sha256 }})
+        </p>
+        <label>
+          <input
+            type="checkbox"
+            [name]="'rollback-confirm-' + entry.key"
+            (change)="rollbackConfirmed = $any($event.target).checked"
+          />
+          I confirm rolling {{ entry.key }} back to {{ entry.value.version }}
+          @if (entry.key === 'homestead-server') {
+            (Homestead restarts; the API and dashboard pause briefly)
+          }
+        </label>
+        @if (rollbackOlderRefused()) {
+          <label>
+            <input
+              type="checkbox"
+              [name]="'rollback-older-' + entry.key"
+              (change)="rollbackOlderConfirmed = $any($event.target).checked"
+            />
+            I confirm rolling back to an older release (recorded in the audit trail with both versions)
           </label>
         }
-        <button type="button" (click)="apply(release)" [disabled]="busy() || !artifact || !checksums || !signature || !applyConfirmed">
-          Apply {{ release.component }} {{ release.version }}
+        <button type="button" (click)="rollback(entry.key)" [disabled]="busy() || !rollbackConfirmed">
+          Roll back {{ entry.key }} to {{ entry.value.version }}
         </button>
       </div>
     }
-  }
-  @for (entry of view()?.previous | keyvalue; track entry.key) {
-    <div>
-      <p>
-        Previous {{ entry.key }} kept: {{ entry.value.version }} at
-        {{ entry.value.path }} (sha256 {{ entry.value.sha256 }})
-      </p>
-      <label>
-        <input
-          type="checkbox"
-          [name]="'rollback-confirm-' + entry.key"
-          (change)="rollbackConfirmed = $any($event.target).checked"
-        />
-        I confirm rolling {{ entry.key }} back to {{ entry.value.version }}
-        @if (entry.key === 'homestead-server') {
-          (the daemon restarts; the API and dashboard pause briefly)
-        }
-      </label>
-      @if (rollbackOlderRefused()) {
-        <label>
-          <input
-            type="checkbox"
-            [name]="'rollback-older-' + entry.key"
-            (change)="rollbackOlderConfirmed = $any($event.target).checked"
-          />
-          I confirm rolling back to an older release (recorded in the audit trail with both versions)
-        </label>
-      }
-      <button type="button" (click)="rollback(entry.key)" [disabled]="busy() || !rollbackConfirmed">
-        Roll back {{ entry.key }} to {{ entry.value.version }}
-      </button>
-    </div>
-  }
+  </section>
 
-  <h3>Verify local release files</h3>
-  <p>Absolute paths to files already on the appliance; nothing is downloaded.</p>
-  <label>
-    Component
-    <select name="component" (change)="component = $any($event.target).value">
-      <option value="homestead-server">homestead-server</option>
-      <option value="homesteadctl">homesteadctl</option>
-    </select>
-  </label>
-  <label>
-    Artifact
-    <input name="artifact" (input)="artifact = $any($event.target).value" />
-  </label>
-  <label>
-    Checksums file
-    <input name="checksums" (input)="checksums = $any($event.target).value" />
-  </label>
-  <label>
-    Signature file (.minisig)
-    <input name="signature" (input)="signature = $any($event.target).value" />
-  </label>
-  @if (last(); as result) {
-    @if (result.state === 'verified') {
-      <p>Verified {{ result.version }} (counter {{ result.counter }}).</p>
-    } @else {
-      <app-state-message kind="error" [headline]="'Verification failed: ' + result.detail" />
-      @if (result.refusal === 'rollback') {
-        <label>
-          <input
-            type="checkbox"
-            name="allow-older"
-            (change)="allowOlder = $any($event.target).checked"
-          />
-          I confirm installing an older release (recorded in the audit trail)
-        </label>
+  <section class="field-panel" aria-labelledby="platform-verify">
+    <h2 id="platform-verify">Verify local release files</h2>
+    <p>Absolute paths to files already on the appliance; nothing is downloaded.</p>
+    <label>
+      Component
+      <select name="component" (change)="component = $any($event.target).value">
+        <option value="homestead-server">homestead-server</option>
+        <option value="homesteadctl">homesteadctl</option>
+      </select>
+    </label>
+    <label>
+      Artifact
+      <input name="artifact" (input)="artifact = $any($event.target).value" />
+    </label>
+    <label>
+      Checksums file
+      <input name="checksums" (input)="checksums = $any($event.target).value" />
+    </label>
+    <label>
+      Signature file (.minisig)
+      <input name="signature" (input)="signature = $any($event.target).value" />
+    </label>
+    @if (last(); as result) {
+      @if (result.state === 'verified') {
+        <p>Verified {{ result.version }} (counter {{ result.counter }}).</p>
+      } @else {
+        <app-state-message kind="error" [headline]="'Verification failed: ' + result.detail" />
+        @if (result.refusal === 'rollback') {
+          <label>
+            <input
+              type="checkbox"
+              name="allow-older"
+              (change)="allowOlder = $any($event.target).checked"
+            />
+            I confirm installing an older release (recorded in the audit trail)
+          </label>
+        }
       }
     }
-  }
-  <button type="button" (click)="verify()" [disabled]="busy()">Verify</button>
+    <button type="button" (click)="verify()" [disabled]="busy()">Verify</button>
+  </section>
 
-  <h3>Trusted keys</h3>
-  <ul>
-    @for (key of keys(); track key.key_id) {
-      <li>
-        {{ key.key_id }} ({{ key.source }}) {{ key.label }}
-        @if (key.placeholder) {
-          <strong> Placeholder: verifies no real release.</strong>
-        }
-        <button type="button" (click)="replaceKey(key.key_id)" [disabled]="busy() || !newKey">
-          Replace with new key
-        </button>
-        <button type="button" (click)="removeKey(key.key_id)" [disabled]="busy()">
-          Remove
-        </button>
-      </li>
-    } @empty {
-      <li>No trusted keys; every release will fail verification.</li>
-    }
-  </ul>
-  <label>
-    Minisign public key
-    <textarea name="new-key" rows="3" (input)="newKey = $any($event.target).value"></textarea>
-  </label>
-  <label>
-    Label
-    <input name="new-label" (input)="newLabel = $any($event.target).value" />
-  </label>
-  <button type="button" (click)="addKey()" [disabled]="busy() || !newKey">Add trusted key</button>
+  <section class="field-panel" aria-labelledby="platform-keys">
+    <h2 id="platform-keys">Trusted keys</h2>
+    <ul>
+      @for (key of keys(); track key.key_id) {
+        <li>
+          {{ key.key_id }} ({{ key.source }}) {{ key.label }}
+          @if (key.placeholder) {
+            <strong> Placeholder: verifies no real release.</strong>
+          }
+          <button type="button" (click)="replaceKey(key.key_id)" [disabled]="busy() || !newKey">
+            Replace with new key
+          </button>
+          <button type="button" (click)="removeKey(key.key_id)" [disabled]="busy()">
+            Remove
+          </button>
+        </li>
+      } @empty {
+        <li>No trusted keys; every release will fail verification.</li>
+      }
+    </ul>
+    <label>
+      Minisign public key
+      <textarea name="new-key" rows="3" (input)="newKey = $any($event.target).value"></textarea>
+    </label>
+    <label>
+      Label
+      <input name="new-label" (input)="newLabel = $any($event.target).value" />
+    </label>
+    <button type="button" (click)="addKey()" [disabled]="busy() || !newKey">Add trusted key</button>
+  </section>
 </section>

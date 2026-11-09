@@ -54,6 +54,8 @@ describe('Tls', () => {
   afterEach(() => {
     // Renewal status loads with the plans; tests that do not care leave it unanswered.
     http.match('/api/v1/tls/renewal').forEach((r) => r.flush({ recorded_issuances: 0, summary: '', certificates: [] }));
+    http.match('/api/v1/tls/issuance/approvals').filter((r) => r.request.method === 'GET').forEach((r) => r.flush({ approvals: [] }));
+    http.match('/api/v1/tls/local-ca/leaves').forEach((r) => r.flush({ leaves: [] }));
     http.verify();
   });
 
@@ -75,6 +77,45 @@ describe('Tls', () => {
     fixture.detectChanges();
   };
 
+  it('lists recorded approvals and local leaf certificates, with the CLI empty wording', () => {
+    load([]);
+    fixture.detectChanges();
+    http.match('/api/v1/tls/issuance/approvals').filter((r) => r.request.method === 'GET').forEach((r) => r.flush({ approvals: [] }));
+    http.expectOne('/api/v1/tls/local-ca/leaves').flush({ leaves: [] });
+    fixture.detectChanges();
+    expect(text()).toContain('No issuance approvals recorded.');
+    expect(text()).toContain('No local-only HTTPS routes use the internal CA.');
+  });
+
+  it('shows approvals and leaves in tables', () => {
+    load([]);
+    http.match('/api/v1/tls/issuance/approvals').filter((r) => r.request.method === 'GET').forEach((r) =>
+      r.flush({
+        approvals: [
+          {
+            certificate: 'www',
+            digest: 'abc123',
+            actor: 'owner',
+            agreed_terms: true,
+            confirmed_production: false,
+            approved_at: '2026-10-19T19:18:00Z',
+            plan: plan(),
+          },
+        ],
+      }),
+    );
+    http.expectOne('/api/v1/tls/local-ca/leaves').flush({
+      leaves: [{ host: 'app.lan', cert_name: 'c', status: 'valid', not_after: '2027-01-02T03:04:00Z' }],
+    });
+    fixture.detectChanges();
+    expect(text()).toContain('owner');
+    expect(text()).toContain('19 Oct 2026, 19:18 UTC');
+    expect(text()).toContain('abc123');
+    expect(text()).toContain('app.lan');
+    expect(text()).toContain('2 Jan 2027, 03:04 UTC');
+    expect(fixture.nativeElement.querySelector('a[href="/admin/trust"]')).not.toBeNull();
+  });
+
   it('shows the plan preview with placement and the key mode', () => {
     load([plan()]);
     expect(text()).toContain('www.example.com');
@@ -91,6 +132,9 @@ describe('Tls', () => {
       .flush('no strategy', { status: 404, statusText: 'Not Found' });
     fixture.detectChanges();
     expect(text()).toContain('No TLS strategy is saved yet');
+    // A state with a next action, not a red error.
+    expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('a[href="/admin/config"]')).not.toBeNull();
   });
 
   it('approval needs the terms and posts the shown digest', () => {
@@ -99,7 +143,7 @@ describe('Tls', () => {
     check('terms of service');
     expect(button('Approve plan').disabled).toBe(false);
     button('Approve plan').click();
-    const req = http.expectOne('/api/v1/tls/issuance/approvals');
+    const req = http.expectOne((r) => r.method === 'POST' && r.url === '/api/v1/tls/issuance/approvals');
     expect(req.request.body).toEqual({
       certificate: 'www',
       digest: 'abc123',
@@ -122,7 +166,7 @@ describe('Tls', () => {
     check('production certificate authority');
     expect(button('Approve plan').disabled).toBe(false);
     button('Approve plan').click();
-    const req = http.expectOne('/api/v1/tls/issuance/approvals');
+    const req = http.expectOne((r) => r.method === 'POST' && r.url === '/api/v1/tls/issuance/approvals');
     expect(req.request.body.confirm_production).toBe(true);
     req.flush({});
     http.expectOne('/api/v1/tls/issuance/plans').flush({ plans: [] });
@@ -142,10 +186,11 @@ describe('Tls', () => {
     expect(req.request.body).toEqual({ certificate: 'www' });
     req.flush({ id: 9 });
     fixture.detectChanges();
-    expect(text()).toContain('Operation 9');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/9"]')).not.toBeNull();
     events.next({ id: 9, status: 'running', error: '', steps: [{ id: 1, name: 'issue-and-place', status: 'running' }] } as unknown as OperationState);
     fixture.detectChanges();
-    expect(text()).toContain('issue-and-place: running');
+    expect(text()).toContain('Issue and place');
+    expect(text()).toContain('Running');
     events.next({ id: 9, status: 'failed', error: 'ca said no', steps: [] } as unknown as OperationState);
     fixture.detectChanges();
     expect(text()).toContain('ca said no');
@@ -203,7 +248,7 @@ describe('Tls', () => {
       }],
     });
     fixture.detectChanges();
-    expect(text()).toContain('Unattended re-issue failed 3 time(s): rate limited');
+    expect(text()).toContain('Unattended re-issue failed 3 times: rate limited');
     expect(text()).toContain('2026-10-15T04:00:00Z');
     expect(button('Re-register ACME account')).toBeUndefined();
   });
@@ -260,9 +305,39 @@ describe('Tls', () => {
     check('terms of service');
     check('I will renew this certificate myself');
     button('Approve plan').click();
-    const req = http.expectOne('/api/v1/tls/issuance/approvals');
+    const req = http.expectOne((r) => r.method === 'POST' && r.url === '/api/v1/tls/issuance/approvals');
     expect(req.request.body.renewal).toBe('manual');
     req.flush({});
     http.expectOne('/api/v1/tls/issuance/plans').flush({ plans: [] });
+  });
+  it('lists the apps whose sign-in moves with a certificate for the public dashboard name (ADR-048 §6)', () => {
+    load([
+      plan({
+        certificate: 'dash',
+        names: ['homestead.example.com'],
+        issuer_moves: {
+          apps: [
+            {
+              app: 'immich',
+              title: 'Immich',
+              from: 'https://homestead.lan/apps/auth/application/o/homestead-immich/',
+              to: 'https://homestead.example.com/apps/auth/application/o/homestead-immich/',
+              host_entry: 'homestead.example.com:host-gateway',
+              digest: 'm1',
+            },
+          ],
+          token_kept: true,
+          note: 'Once the certificate is placed, each app\'s sign-in is applied again with the Authentik API token you kept.',
+        },
+      }),
+    ]);
+    const moves = fixture.nativeElement.querySelector(
+      'section[aria-label="Apps moving to Authentik\'s public address"]',
+    ) as HTMLElement;
+    expect(moves.textContent).toContain('applied again');
+    expect(moves.textContent).toContain('Immich');
+    expect(moves.textContent).toContain('homestead.example.com:host-gateway');
+    // With the kept token the move is applied, so there is no re-plan link.
+    expect(moves.querySelector('a')).toBeNull();
   });
 });

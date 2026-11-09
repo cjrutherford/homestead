@@ -232,8 +232,8 @@ func (j Job) Validate() error {
 		if j.Container == "" {
 			return fmt.Errorf("backup: database export needs a container")
 		}
-		if j.Manifest.Database.Kind == catalog.DatabasePostgres && j.Password == "" {
-			return fmt.Errorf("backup: postgres export needs a password")
+		if j.Manifest.Database.Kind.Server() && j.Password == "" {
+			return fmt.Errorf("backup: %s export needs a password", j.Manifest.Database.Kind)
 		}
 		if j.SrcRoot == "" {
 			return fmt.Errorf("backup: database export needs a source root")

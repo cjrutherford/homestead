@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { provideRouter } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
@@ -21,7 +22,7 @@ describe('CraftApps', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [CraftApps],
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
     fixture = TestBed.createComponent(CraftApps);
     http = TestBed.inject(HttpTestingController);
@@ -36,7 +37,7 @@ describe('CraftApps', () => {
   };
 
   it('shows a loading state first', () => {
-    expect(text()).toContain('Loading craft apps');
+    expect(fixture.nativeElement.querySelector('app-loading[aria-busy="true"]')).not.toBeNull();
     load([]);
   });
 
@@ -57,12 +58,13 @@ describe('CraftApps', () => {
       expect(a.getAttribute('target')).toBe('_blank');
       expect(a.getAttribute('rel')).toContain('noopener');
     }
-    expect(text()).toContain('version 0.7.0');
+    expect(text()).toContain('Version 0.7.0');
   });
 
   it('lists an app without a route with no link and the reason', () => {
     load([app({ url: '', url_reason: 'No edge route serves this app yet.' })]);
-    expect(fixture.nativeElement.querySelectorAll('a').length).toBe(0);
+    const links = Array.from(fixture.nativeElement.querySelectorAll('a')) as HTMLAnchorElement[];
+    expect(links.some((a) => a.getAttribute('target') === '_blank')).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="no-url"]').textContent).toContain(
       'No edge route serves this app yet.',
     );
@@ -75,5 +77,12 @@ describe('CraftApps', () => {
     (fixture.nativeElement.querySelector('button') as HTMLButtonElement).click();
     load([app()]);
     expect(text()).toContain('GridCraft');
+  });
+
+  it('shows the one-line purpose under the title when the API returns one', () => {
+    load([app({ blurb: 'Spreadsheet that runs in your browser.' }), app({ name: 'pdfcraft', title: 'PdfCraft' })]);
+    const blurbs = fixture.nativeElement.querySelectorAll('[data-testid="craft-blurb"]');
+    expect(blurbs.length).toBe(1);
+    expect(blurbs[0].textContent).toContain('Spreadsheet that runs in your browser.');
   });
 });

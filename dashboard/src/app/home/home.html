@@ -1,0 +1,47 @@
+<div class="home">
+  <header class="home-bar">
+    <p class="home-mark">Homestead</p>
+    <nav class="home-actions" aria-label="Account">
+      <a class="button guide-link" href="/guide/">Guide</a>
+      @if (isOwner()) {
+        <a class="button" routerLink="/admin">Administration</a>
+      }
+      <button type="button" class="button" (click)="signOut()">Sign out</button>
+    </nav>
+  </header>
+
+  <section class="home-body" aria-labelledby="home-title">
+    <app-loading [loading]="loading()" shape="list">
+      @if (failed()) {
+        <h1 id="home-title">Your apps</h1>
+        <p class="home-note" role="alert">Homestead could not load your apps. Reload the page to try again.</p>
+      } @else {
+        <h1 id="home-title">Hello, {{ name() }}</h1>
+        @if (apps().length === 0) {
+          <p class="home-note">
+            No apps are shared with you yet. Ask the owner of this Homestead to give you access.
+          </p>
+        } @else {
+          <ul class="tiles" aria-label="Your apps">
+            @for (app of apps(); track app.name) {
+              <li>
+                <div class="tile" [attr.data-icon]="app.icon">
+                  <hs-app-icon class="tile-icon" [icon]="app.icon" [title]="app.title || app.name" />
+                  <span class="tile-name">{{ app.title }}</span>
+                  <span class="tile-links">
+                    <a class="tile-link" [href]="app.local_url" [attr.aria-label]="'Open ' + app.title + ' on the local network'">Local</a>
+                    @if (app.public_url) {
+                      <a class="tile-link" [href]="app.public_url" [attr.aria-label]="'Open ' + app.title + ' from anywhere'">Public</a>
+                    } @else {
+                      <span class="tile-link tile-link-off" [attr.title]="app.title + ' is not published on a public address yet'">Not public</span>
+                    }
+                  </span>
+                </div>
+              </li>
+            }
+          </ul>
+        }
+      }
+    </app-loading>
+  </section>
+</div>

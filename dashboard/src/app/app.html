@@ -1,84 +1,96 @@
-<header class="shell-header">
-  <p class="brand">Homestead</p>
-  <nav aria-label="Primary">
-    <a routerLink="/status" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Status
-    </a>
-    <a routerLink="/claim" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Claim
-    </a>
-    @if (sessions.isLoggedIn()) {
-      <span class="username">{{ sessions.username() }}</span>
-      <button type="button" (click)="logout()">Log out</button>
-    } @else {
-      <a routerLink="/login" routerLinkActive="active" ariaCurrentWhenActive="page">
-        Log in
-      </a>
-    }
-    <a routerLink="/config" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Configuration
-    </a>
-    <a routerLink="/firewall" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Firewall
-    </a>
-    <a routerLink="/operations" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Operations
-    </a>
-    <a routerLink="/catalog" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Catalog
-    </a>
-    <a routerLink="/updates" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Updates
-    </a>
-    <a routerLink="/data" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Data
-    </a>
-    <a routerLink="/advanced" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Advanced
-    </a>
-    <a routerLink="/drift" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Drift
-    </a>
-    <a routerLink="/exposure" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Exposure
-    </a>
-    <a routerLink="/tunnel" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Tunnel
-    </a>
-    <a routerLink="/edge" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Edge
-    </a>
-    <a routerLink="/tls" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Certificates
-    </a>
-    <a routerLink="/trust" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Trust
-    </a>
-    <a routerLink="/craft-apps" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Craft apps
-    </a>
-    <a routerLink="/craft-files" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Craft files
-    </a>
-    <a routerLink="/storage" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Storage
-    </a>
-    <a routerLink="/backups" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Backups
-    </a>
-    <a routerLink="/secrets" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Secrets
-    </a>
-    <a routerLink="/audit" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Audit
-    </a>
-    <a routerLink="/account" routerLinkActive="active" ariaCurrentWhenActive="page">
-      Account
-    </a>
-    <!-- Later slices add their nav links here. -->
-  </nav>
-</header>
+<div
+  class="shell"
+  [class.bare]="!adminChrome()"
+  [class.drawer-open]="adminChrome() && drawerOpen()"
+  [class.has-sheet]="adminChrome() && !desktop() && sheetShown()"
+>
+  <a class="skip-link" href="#main" (click)="skipToMain($event)">Skip to content</a>
 
-<main class="shell-main">
-  <router-outlet />
-</main>
+  @if (adminChrome()) {
+    <header class="shell-topbar" [attr.inert]="adminChrome() && drawerOpen() ? '' : null">
+      <button
+        #menuButton
+        type="button"
+        class="menu-button"
+        aria-controls="sidebar"
+        [attr.aria-expanded]="drawerOpen()"
+        (click)="openDrawer()"
+      >
+        Menu
+      </button>
+      <p class="brand">Homestead</p>
+    </header>
+
+    <div class="drawer-backdrop" aria-hidden="true" (click)="close()"></div>
+
+    <aside id="sidebar" #sidebar class="sidebar" (keydown.tab)="trapFocus($event)" (keydown.shift.tab)="trapFocus($event)">
+      <button #closeButton type="button" class="drawer-close" (click)="close()">Close menu</button>
+      <p class="brand">Homestead</p>
+
+      <nav aria-label="Primary">
+        @if (sessions.isLoggedIn()) {
+          <a class="nav-link" routerLink="/">Apps dashboard</a>
+        }
+        @for (group of groups(); track group.id) {
+          <div class="nav-group">
+            <button
+              type="button"
+              class="nav-group-toggle"
+              [attr.aria-expanded]="isOpen(group)"
+              [attr.aria-controls]="'nav-' + group.id"
+              (click)="toggleGroup(group)"
+            >
+              {{ group.label }}
+            </button>
+            <ul class="nav-list" [id]="'nav-' + group.id" [hidden]="!isOpen(group)">
+              @for (item of group.items; track item.path) {
+                <li>
+                  <a
+                    class="nav-link"
+                    [routerLink]="item.path"
+                    routerLinkActive="active"
+                    ariaCurrentWhenActive="page"
+                  >
+                    {{ item.label }}
+                  </a>
+                </li>
+              }
+            </ul>
+          </div>
+        }
+      </nav>
+
+      <div class="sidebar-slot" data-slot="work-orders">
+        @if (desktop()) {
+          <app-work-orders-rail variant="rail" />
+        }
+      </div>
+
+      <div class="sidebar-foot">
+        @if (sessions.isLoggedIn()) {
+          <a class="guide-link" href="/guide/">Guide</a>
+          <span class="username">{{ sessions.username() }}</span>
+          <button type="button" (click)="logout()">Log out</button>
+        } @else {
+          <a class="button" routerLink="/login" routerLinkActive="active" ariaCurrentWhenActive="page">
+            Log in
+          </a>
+        }
+      </div>
+    </aside>
+
+    @if (!desktop()) {
+      <app-work-orders-rail variant="sheet" />
+    }
+  }
+
+  <app-toast-region />
+
+  @if (reauth.dialog(); as dialog) {
+    <ng-container *ngComponentOutlet="dialog; inputs: { request: reauth.request() }" />
+  }
+
+  <main id="main" #main class="shell-main" tabindex="-1" [attr.inert]="adminChrome() && drawerOpen() ? '' : null">
+    <router-outlet />
+  </main>
+</div>

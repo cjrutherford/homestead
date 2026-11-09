@@ -125,3 +125,30 @@ func TestExposureWizardRejects(t *testing.T) {
 		t.Fatal("planned without selection")
 	}
 }
+
+func TestWizardMarksDashboardFromRecordedRoutes(t *testing.T) {
+	w := openExposureWizard(t)
+	w.SetRoutes(func() (docker.RouteSet, error) {
+		return docker.RouteSet{Routes: []docker.Route{{
+			Host: "homestead.lan", Aliases: []docker.Hostname{"homestead.local"},
+			Exposure: docker.ExposureLocal, TLS: docker.TLSInternal, Dashboard: true,
+		}}}, nil
+	})
+	// The payload omits the dashboard flag.
+	route := wizardRoute()
+	route.Host = "homestead.local"
+	payload := wizardPayload(t, route, nil)
+	var err error
+	for _, step := range ExposureSteps {
+		if err = w.Save(step, payload); err != nil {
+			break
+		}
+	}
+	if err == nil || !strings.Contains(err.Error(), "tunnel") {
+		t.Fatalf("public dashboard via omitted flag: err = %v", err)
+	}
+	// Other hosts still plan.
+	if err := w.Save("target", wizardPayload(t, wizardRoute(), nil)); err != nil {
+		t.Fatalf("non-dashboard: %v", err)
+	}
+}

@@ -3,7 +3,9 @@ package cert
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"homestead/internal/dns"
@@ -244,4 +246,57 @@ func (w *Wizard) ValidateIssued(observed map[string][]byte, now time.Time) ([]St
 		return nil, err
 	}
 	return Check(set, observed, now)
+}
+
+// AddToStrategy adds c to the saved TLS strategy (creating the strategy
+// when none is saved), keeping the wizard's step and every other
+// certificate. Adding a certificate already there unchanged is a no-op.
+// Tunnel setup adds the public dashboard name's certificate this way
+// (ADR-048 §5), so TLS shows, renews and retries it like any other.
+func AddToStrategy(wizards *wizard.Service, c Certificate) error {
+	step := TLSSteps[0]
+	payload := map[string]any{}
+	var set Set
+	state, err := wizards.Get(TLSWizardID)
+	switch {
+	case errors.Is(err, wizard.ErrNotFound):
+	case err != nil:
+		return err
+	default:
+		step, payload = state.Step, state.Payload
+		if payload == nil {
+			payload = map[string]any{}
+		}
+		if _, ok := payload["certificates"]; ok {
+			if set, err = decodeCertificates(payload); err != nil {
+				return err
+			}
+		}
+	}
+	for _, have := range set.Certificates {
+		if have.Name == c.Name {
+			if reflect.DeepEqual(have.DNSNames, c.DNSNames) && have.Issuer == c.Issuer {
+				return nil
+			}
+			return fmt.Errorf("cert: the TLS strategy already has a different certificate named %q", c.Name)
+		}
+	}
+	set.Certificates = append(set.Certificates, c)
+	if err := set.Validate(); err != nil {
+		return err
+	}
+	if err := strategyCoherence(set); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(set.Certificates)
+	if err != nil {
+		return err
+	}
+	var certificates []any
+	if err := json.Unmarshal(raw, &certificates); err != nil {
+		return err
+	}
+	payload["certificates"] = certificates
+	_, err = wizards.Put(TLSWizardID, step, payload)
+	return err
 }

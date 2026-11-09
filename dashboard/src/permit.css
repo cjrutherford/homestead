@@ -1,0 +1,322 @@
+/*
+ * The permit (S309): every plan review is a paper document. Manila paper, a
+ * perforated top edge, the title in the display face, the digest as a seal
+ * in the corner, ruled sections, and the stamp that presses on approval.
+ * This is the dashboard's one bold element. Tokens only.
+ *
+ * S310: paper under the lamp. The permit is the highest surface with the
+ * deepest shadow. The perforation is a mask, which would cut a box-shadow
+ * off, so the host carries the shadow as a filter that follows the paper's
+ * edge, holes included. The fill falls off from the lamp: lighter top-left,
+ * warmer down. In dark it is lit but never bright.
+ */
+app-permit {
+  display: block;
+  filter: var(--elevation-paper);
+}
+
+.permit {
+  position: relative;
+  max-width: 52rem;
+  margin: var(--spacing-lg) 0;
+  padding: calc(var(--spacing-lg) + var(--spacing-sm)) var(--spacing-lg) var(--spacing-lg);
+  color: var(--on-manila);
+  background-color: var(--manila);
+  background-image: var(--paper-falloff);
+  border: 1px solid var(--manila-rule);
+  border-radius: 0 0 var(--radius-control) var(--radius-control);
+  /*
+   * Perforation: half-round bites along the top edge, cut with a mask so the
+   * page or panel behind shows through. Mask colours are alpha only.
+   */
+  -webkit-mask:
+    radial-gradient(circle at 50% 0, transparent 0.3rem, black calc(0.3rem + 0.5px)) 0 0 / 1rem 0.75rem repeat-x,
+    linear-gradient(black, black) 0 0.75rem / 100% calc(100% - 0.75rem) no-repeat;
+  mask:
+    radial-gradient(circle at 50% 0, transparent 0.3rem, black calc(0.3rem + 0.5px)) 0 0 / 1rem 0.75rem repeat-x,
+    linear-gradient(black, black) 0 0.75rem / 100% calc(100% - 0.75rem) no-repeat;
+}
+
+[data-theme='high-contrast'] .permit {
+  border-width: 2px;
+}
+
+.permit-head {
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-bottom: var(--spacing-md);
+  border-bottom: var(--rule-heavy) solid var(--manila-rule);
+}
+
+.permit-heading {
+  min-width: 0;
+}
+
+.permit-kind {
+  margin: 0 0 var(--spacing-xs);
+  color: var(--on-manila-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.permit .permit-title {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-xxl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-display);
+  line-height: 1.1;
+  /* A path address (ADR-044) is one long word; let it wrap on a phone. */
+  overflow-wrap: anywhere;
+}
+
+/* The seal: the first eight characters of the digest in a double ring. */
+.permit-seal {
+  flex: none;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.1rem;
+  width: var(--seal-size);
+  height: var(--seal-size);
+  color: var(--on-manila);
+  border: var(--rule-heavy) solid var(--manila-rule);
+  border-radius: 50%;
+  outline: 1px solid var(--manila-rule);
+  outline-offset: calc(-1 * var(--spacing-sm));
+  /* Embossed: raised from the paper, lit along its top (S310). */
+  box-shadow: var(--emboss);
+  text-align: center;
+}
+
+.permit-seal-label {
+  color: var(--on-manila-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.permit-seal-code {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: 1.1;
+}
+
+/* Body: the review content reads as printed on the paper. */
+.permit-body {
+  padding-top: var(--spacing-md);
+}
+
+.permit-body > :last-child {
+  margin-bottom: 0;
+}
+
+.permit-body h3,
+.permit-body h4,
+.permit-section-title {
+  margin: var(--spacing-md) 0 var(--spacing-xs);
+  padding-top: var(--spacing-sm);
+  color: var(--on-manila);
+  font-size: var(--font-size-base);
+  border-top: 1px solid var(--manila-rule);
+}
+
+/* Ruled sections: Will change, Leaves alone, Refused. */
+.permit-section {
+  margin: var(--spacing-md) 0 0;
+}
+
+.permit-section > :first-child {
+  margin-top: 0;
+}
+
+.permit .hint,
+.permit dt {
+  color: var(--on-manila-muted);
+}
+
+.permit dl > div > dt {
+  border-inline-end-color: var(--manila-rule);
+}
+
+/* Printed on the paper: no wells, no plates inside the permit. */
+.permit .table-scroll,
+.permit dl {
+  background: transparent;
+  border-color: var(--manila-rule);
+  box-shadow: none;
+}
+
+.permit dl {
+  padding-inline: 0;
+}
+
+.permit dl > div + div {
+  border-top-color: var(--manila-rule);
+}
+
+.permit thead th {
+  color: var(--on-manila-muted);
+  background: var(--manila);
+  border-bottom-color: var(--manila-rule);
+}
+
+/* A warning on the permit spans its full content width. */
+.permit .state-message,
+.permit .warning {
+  max-width: none;
+}
+
+.permit th,
+.permit td {
+  border-bottom-color: var(--manila-rule);
+}
+
+.permit .risky-preview {
+  padding: 0;
+  border: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 400;
+}
+
+.permit pre,
+.permit code {
+  background: transparent;
+  border-color: var(--manila-rule);
+  box-shadow: none;
+}
+
+/* The signature line: the actions sit under a dashed rule. */
+.permit .risky-actions,
+.permit .permit-actions {
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-md);
+  border-top: 1px dashed var(--manila-rule);
+}
+
+.permit .risky-actions button,
+.permit .permit-actions button {
+  margin-bottom: 0;
+}
+
+/*
+ * The stamp. Approved: Pine, double rule, rotated, pressed on with one scale
+ * and fade (the only motion that follows from the approval). Not approved:
+ * Brick, square to the page, the reason beside it.
+ */
+.permit-stamp {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin: var(--spacing-lg) 0 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--stamp);
+  border: 0.3rem double var(--stamp);
+  border-radius: var(--radius-control);
+  line-height: 1;
+}
+
+.permit-stamp-word {
+  font-family: var(--font-display);
+  font-size: var(--font-size-xxl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-display);
+}
+
+.permit-stamp-meta {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.permit-stamp[data-kind='approved'] {
+  transform: rotate(var(--stamp-angle));
+  transform-origin: left center;
+  animation: stamp-press var(--duration-slow) var(--ease-enter) both;
+}
+
+@keyframes stamp-press {
+  from {
+    opacity: 0;
+    transform: rotate(var(--stamp-angle)) scale(1.25);
+  }
+
+  to {
+    opacity: 1;
+    transform: rotate(var(--stamp-angle)) scale(1);
+  }
+}
+
+.permit-refusal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-md);
+  align-items: center;
+  margin-top: var(--spacing-lg);
+}
+
+.permit-refusal .permit-stamp {
+  margin: 0;
+  color: var(--stamp-refused);
+  border-color: var(--stamp-refused);
+}
+
+.permit-reason {
+  flex: 1 1 14rem;
+  margin: 0;
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .permit-stamp[data-kind='approved'] {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .permit,
+  .permit-stamp,
+  .permit-seal {
+    border-color: CanvasText;
+  }
+
+  app-permit {
+    filter: none;
+  }
+
+  .permit {
+    background-image: none;
+  }
+}
+
+/* Narrow screens: the seal moves under the title. */
+@media (max-width: 29.9375rem) {
+  .permit {
+    padding-inline: var(--spacing-md);
+  }
+
+  .permit-head {
+    flex-direction: column;
+  }
+
+  .permit-seal {
+    width: auto;
+    height: auto;
+    display: inline-flex;
+    gap: var(--spacing-sm);
+    align-items: baseline;
+    padding: var(--spacing-xs) var(--spacing-md);
+    border-radius: var(--radius-pill);
+    outline: 0;
+  }
+}
+
+/* A list of permits (S311) is a stack of papers, not bullet points. */
+ul:has(> li > app-permit) {
+  padding: 0;
+  list-style: none;
+}

@@ -65,9 +65,9 @@ describe('Exposure', () => {
     http.expectOne('/api/v1/exposure/approvals').flush([]);
     http.expectOne('/api/v1/tls/renewal').flush(NO_RENEWALS);
     fixture.detectChanges();
-    expect(text()).toContain('app.example.com: local → public');
+    expect(text()).toContain('app.example.com: from local to public');
     expect(text()).toContain('Wide source needs CIDRs.');
-    expect(text()).toContain('A app → 203.0.113.7');
+    expect(text()).toContain('A app: 203.0.113.7');
     expect(text()).toContain('tcp/443');
   });
 
@@ -77,7 +77,7 @@ describe('Exposure', () => {
     http.expectOne('/api/v1/exposure/approvals').flush([]);
     http.expectOne('/api/v1/tls/renewal').flush(NO_RENEWALS);
     fixture.detectChanges();
-    expect(text()).toContain('no recorded issuances');
+    expect(text()).toContain('No recorded issuances');
   });
 
   it('shows certificate renewal status', () => {
@@ -110,7 +110,22 @@ describe('Exposure', () => {
     http.expectOne('/api/v1/exposure/approvals').flush([]);
     http.expectOne('/api/v1/tls/renewal').flush(NO_RENEWALS);
     fixture.detectChanges();
-    expect(text()).toContain('No reviewed selection yet');
+    expect(text()).toContain('No reviewed plan yet');
+  });
+
+  it('shows missing selection fields next to each field', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/exposure/review').flush(PLAN);
+    http.expectOne('/api/v1/exposure/approvals').flush([]);
+    http.expectOne('/api/v1/tls/renewal').flush(NO_RENEWALS);
+    fixture.detectChanges();
+    fixture.componentInstance['save']('', '', '0', 'public', '', '');
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('#exposure-host')?.getAttribute('aria-invalid')).toBe('true');
+    expect(el.querySelector('#exposure-host-error')?.textContent).toContain('route host');
+    expect(el.querySelector('#exposure-port-error')?.textContent).toContain('whole number');
+    http.expectNone('/api/v1/wizard/exposure');
   });
 
   it('approves under a named actor and applies', () => {
@@ -132,11 +147,14 @@ describe('Exposure', () => {
       .flush([{ host: 'app.example.com', actor: 'owner' }]);
     fixture.detectChanges();
     expect(text()).toContain('Approved app.example.com by owner.');
+    const permit = fixture.nativeElement.querySelector('.permit') as HTMLElement;
+    expect(permit.dataset['state']).toBe('approved');
+    expect(permit.querySelector('.permit-stamp-meta')?.textContent).toContain('by owner');
     fixture.componentInstance['apply']('app.example.com');
     const apply = http.expectOne('/api/v1/exposure/apply');
     expect(apply.request.body).toMatchObject({ host: 'app.example.com' });
     apply.flush({ id: 17 });
     fixture.detectChanges();
-    expect(text()).toContain('Follow operation 17');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/17"]')).not.toBeNull();
   });
 });

@@ -31,6 +31,22 @@ type UpdatePlan struct {
 	BackupWhy string
 	Affected  []string
 	Warnings  []string
+	// Provenance records, per service, which registry discovery asked
+	// and whether it answered (S343). It explains a service that shows
+	// no registry update instead of letting silence read as current.
+	Provenance []ServiceProvenance
+}
+
+// ServiceProvenance is one service's registry story: the registry and
+// repository discovery asked, whether it answered, and why not when it
+// did not. A locally built image has no registry and says so.
+type ServiceProvenance struct {
+	Service    string
+	Registry   string
+	Repository string
+	Discovered bool
+	Local      bool
+	Reason     string
 }
 
 // PlanUpdate produces the update plan from a manifest, running image
@@ -41,6 +57,60 @@ type UpdatePlan struct {
 // updated services. Empty moves plan cleanly — nothing to do reads as
 // nothing, never as failure.
 func PlanUpdate(manifest catalog.Manifest, running map[string]string, registry map[string][]string) (UpdatePlan, error) {
+	discoveries := map[string]Discovery{}
+	for service, tags := range registry {
+		discoveries[service] = Discovery{Service: service, Registry: RegistryUnknown, Tags: tags}
+	}
+	return PlanUpdateFromDiscoveries(manifest, running, discoveries)
+}
+
+// PlanUpdateFromDiscoveries is PlanUpdate over full registry results: the
+// same plan, plus per-service provenance recording which registry
+// answered. Callers that only hold tags keep using PlanUpdate.
+func PlanUpdateFromDiscoveries(manifest catalog.Manifest, running map[string]string, discoveries map[string]Discovery) (UpdatePlan, error) {
+	registry := map[string][]string{}
+	for service, discovery := range discoveries {
+		if discovery.Err == nil {
+			registry[service] = discovery.Tags
+		}
+	}
+	plan, err := planUpdate(manifest, running, registry)
+	if err != nil {
+		return UpdatePlan{}, err
+	}
+	plan.Provenance = provenanceOf(manifest, discoveries)
+	return plan, nil
+}
+
+// provenanceOf lists discovery provenance sorted by service, matching
+// the plan's move order, and names the reason a registry gave nothing.
+func provenanceOf(manifest catalog.Manifest, discoveries map[string]Discovery) []ServiceProvenance {
+	var out []ServiceProvenance
+	for _, service := range manifest.Services {
+		discovery, ok := discoveries[service.Name]
+		if !ok {
+			continue
+		}
+		entry := ServiceProvenance{
+			Service:    service.Name,
+			Registry:   discovery.Registry,
+			Repository: discovery.Repository,
+			Local:      discovery.Local,
+			Discovered: discovery.Err == nil && !discovery.Local,
+		}
+		switch {
+		case discovery.Local:
+			entry.Reason = "locally built image"
+		case discovery.Err != nil:
+			entry.Reason = discovery.Err.Error()
+		}
+		out = append(out, entry)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Service < out[j].Service })
+	return out
+}
+
+func planUpdate(manifest catalog.Manifest, running map[string]string, registry map[string][]string) (UpdatePlan, error) {
 	if err := manifest.Validate(); err != nil {
 		return UpdatePlan{}, err
 	}

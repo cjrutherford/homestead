@@ -57,10 +57,45 @@ describe('Account', () => {
     fixture.detectChanges();
   };
 
+  it('offers the Authentik link with a heading, loaded on demand', async () => {
+    start();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('app-sso-link')).not.toBeNull();
+    });
+    expect(text()).toContain('Sign in with Authentik');
+    http.expectOne('/api/v1/sso').flush({
+      state: 'none', configured: false, linked: false, dormant: false, offered: false,
+      client_secret_sealed: false, api_token_kept: false, authentik_installed: false,
+      defaults: { authentik_url: '', origins: [] }, session_method: 'password',
+    });
+    fixture.detectChanges();
+    expect(text()).toContain('Sign-in with Authentik is not set up');
+  });
+
+  it('offers a theme choice with the stored preference selected and persists changes', () => {
+    start();
+    const radios = Array.from(
+      fixture.nativeElement.querySelectorAll('input[name="theme"]'),
+    ) as HTMLInputElement[];
+    expect(radios.map((r) => r.value)).toEqual(['dark', 'light', 'system', 'high-contrast']);
+    expect(radios.find((r) => r.checked)?.value).toBe('dark');
+    const light = radios.find((r) => r.value === 'light') as HTMLInputElement;
+    light.checked = true;
+    light.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    expect(localStorage.getItem('homestead.theme')).toBe('light');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    radios[0].checked = true;
+    radios[0].dispatchEvent(new Event('change'));
+    expect(localStorage.getItem('homestead.theme')).toBeNull();
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+  });
+
   it('shows loading, then an unlocked account', () => {
     fixture = TestBed.createComponent(Account);
     fixture.detectChanges();
-    expect(text()).toContain('Loading lockout status');
+    expect(fixture.nativeElement.querySelector('app-loading[aria-busy="true"]')).not.toBeNull();
     http.expectOne('/api/v1/admins/lockout').flush({ username: 'owner', locked: false });
     fixture.detectChanges();
     expect(text()).toContain('owner');
@@ -77,8 +112,8 @@ describe('Account', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/admins/lockout').error(new ProgressEvent('error'));
     fixture.detectChanges();
-    expect(text()).toContain('Cannot reach the Homestead daemon');
-    expect(text()).toContain('Retry');
+    expect(text()).toContain("Can't reach the appliance");
+    expect(text()).toContain('Try again');
   });
 
   it('shows empty state for a null body', () => {
@@ -92,6 +127,11 @@ describe('Account', () => {
     expect(text()).toContain('Enter your current password.');
     expect(text()).toContain('at least 12 bytes');
     expect(text()).toContain('do not match');
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('#account-current')?.getAttribute('aria-invalid')).toBe('true');
+    expect(el.querySelector('#account-current-error')?.textContent).toContain('current password');
+    expect(el.querySelector('#account-new-error')?.textContent).toContain('at least 12 bytes');
+    expect(el.querySelector('#account-confirm-error')?.textContent).toContain('do not match');
   });
 
   it('changes the password, clears the form and explains other sessions', () => {

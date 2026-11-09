@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"homestead/internal/operation"
@@ -144,6 +145,52 @@ func TestSecretValidation(t *testing.T) {
 			m.Services = services
 			db := *m.Database
 			m.Database = &db
+			mutate(&m)
+			if err := m.Validate(); err == nil {
+				t.Fatal("want validation error")
+			}
+		})
+	}
+}
+
+// S318: a secret with no consumer is valid only as the first-run
+// account's password, which must be immutable and revealable.
+func TestFirstRunValidation(t *testing.T) {
+	base := func() Manifest {
+		m := authentikManifest(t)
+		m.Secrets = append(append([]SecretDecl(nil), m.Secrets...),
+			SecretDecl{Name: "admin_password", Immutable: true, Reveal: true})
+		m.FirstRun = &FirstRun{Routine: FirstRunImmich, Service: m.Services[0].Name, Account: "admin@homestead.lan", Secret: "admin_password"}
+		return m
+	}
+	if m := base(); m.Validate() != nil {
+		t.Fatalf("valid first run refused: %v", m.Validate())
+	}
+	cases := map[string]func(*Manifest){
+		"no first run":      func(m *Manifest) { m.FirstRun = nil },
+		"unknown routine":   func(m *Manifest) { m.FirstRun.Routine = "wordpress" },
+		"unknown service":   func(m *Manifest) { m.FirstRun.Service = "nope" },
+		"no account":        func(m *Manifest) { m.FirstRun.Account = " " },
+		"undeclared secret": func(m *Manifest) { m.FirstRun.Secret = "ghost" },
+		"not revealable":    func(m *Manifest) { m.Secrets[len(m.Secrets)-1].Reveal = false },
+		"rotatable":         func(m *Manifest) { m.Secrets[len(m.Secrets)-1].Immutable = false },
+		"immich libraries": func(m *Manifest) {
+			m.FirstRun.Libraries = []Library{{Name: "Movies", Kind: "movies", Path: m.Services[0].Data[0].Target}}
+		},
+		"library kind": func(m *Manifest) {
+			m.FirstRun.Routine = FirstRunJellyfin
+			m.FirstRun.Libraries = []Library{{Name: "Films", Kind: "films", Path: m.Services[0].Data[0].Target}}
+		},
+		"library path": func(m *Manifest) {
+			m.FirstRun.Routine = FirstRunJellyfin
+			m.FirstRun.Libraries = []Library{{Name: "Movies", Kind: "movies", Path: "/nowhere"}}
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := base()
+			fr := *m.FirstRun
+			m.FirstRun = &fr
 			mutate(&m)
 			if err := m.Validate(); err == nil {
 				t.Fatal("want validation error")
@@ -382,5 +429,90 @@ func TestSecretStoreNamesNeverEnterSystemNamespace(t *testing.T) {
 				t.Fatalf("SecretStoreName(%q,%q) = %q", pkg, name, got)
 			}
 		}
+	}
+}
+
+// Nextcloud installs itself on first start (S312): an admin user, the
+// generated admin password as a Compose secret file, and a database name.
+func TestNextcloudGeneratesAdminSecretAndEnvironment(t *testing.T) {
+	m, err := repoCatalog(t).Get("nextcloud")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := Generate(m, Generation{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"NEXTCLOUD_ADMIN_USER: admin", "SQLITE_DATABASE: nextcloud",
+		"NEXTCLOUD_ADMIN_PASSWORD_FILE: /run/secrets/nextcloud_admin_password",
+		"file: ./secrets/nextcloud_admin_password"} {
+		if !strings.Contains(files.ComposeYAML, want) {
+			t.Fatalf("nextcloud compose missing %q:\n%s", want, files.ComposeYAML)
+		}
+	}
+	if strings.Contains(files.ComposeYAML, "NEXTCLOUD_ADMIN_PASSWORD:") {
+		t.Fatal("the admin password is an environment value")
+	}
+	if len(m.Secrets) != 1 || m.Secrets[0].Name != "admin_password" || !m.Secrets[0].Reveal || !m.Secrets[0].Immutable || m.Secrets[0].Note == "" {
+		t.Fatalf("secrets = %+v", m.Secrets)
+	}
+	sec := newMemSecrets(t)
+	if err := EnsureSecrets(sec, m); err != nil {
+		t.Fatal(err)
+	}
+	if v := sec.values[SecretStoreName("nextcloud", "admin_password")]; len(v) < 32 {
+		t.Fatalf("generated admin password is %d characters", len(v))
+	}
+	secretFiles := SecretFilesFor(m)
+	if len(secretFiles) != 1 || secretFiles[0].UID == nil || *secretFiles[0].UID != 33 {
+		t.Fatalf("secret files = %+v", secretFiles)
+	}
+}
+
+// TestLaravelKeyEncodingAndBookStackSecrets (S366): BookStack's APP_KEY
+// must be "base64:" and 32 random bytes; other generated secrets stay hex.
+// The DB password, key and client secret reach the app only as files.
+func TestLaravelKeyEncodingAndBookStackSecrets(t *testing.T) {
+	m, err := repoCatalog(t).Get("bookstack")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sec := newMemSecrets(t)
+	if err := EnsureSecrets(sec, m); err != nil {
+		t.Fatal(err)
+	}
+	key := sec.values[SecretStoreName("bookstack", "app_key")]
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(key, "base64:"))
+	if !strings.HasPrefix(key, "base64:") || err != nil || len(raw) != 32 {
+		t.Fatalf("app_key = %q (%v)", key, err)
+	}
+	if len(sec.values[SecretStoreName("bookstack", "db_password")]) != 64 {
+		t.Fatal("db_password is not 64 hex characters")
+	}
+	again := sec.values[SecretStoreName("bookstack", "app_key")]
+	if err := EnsureSecrets(sec, m); err != nil || sec.values[SecretStoreName("bookstack", "app_key")] != again {
+		t.Fatal("app_key regenerated")
+	}
+	files, err := Generate(m, Generation{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(files.ComposeYAML, key) || strings.Contains(files.ComposeYAML, "PASSWORD=") {
+		t.Fatalf("a secret value or plaintext password is in compose:\n%s", files.ComposeYAML)
+	}
+	for _, want := range []string{"FILE__APP_KEY", "FILE__DB_PASSWORD", "FILE__OIDC_CLIENT_SECRET", "MARIADB_PASSWORD_FILE"} {
+		if !strings.Contains(files.ComposeYAML, want) {
+			t.Errorf("compose lacks %s", want)
+		}
+	}
+	bad := m
+	bad.Secrets = append([]SecretDecl(nil), m.Secrets...)
+	for i := range bad.Secrets {
+		if bad.Secrets[i].Name == "app_key" {
+			bad.Secrets[i].Encoding = "rot13"
+		}
+	}
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "encoding") {
+		t.Fatalf("unknown encoding err = %v", err)
 	}
 }

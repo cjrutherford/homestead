@@ -35,7 +35,7 @@ func configIODaemon(t *testing.T) string {
 		t.Fatalf("Save: %v", err)
 	}
 	srv := server.New("127.0.0.1:0")
-	srv.MountConfigIO(desiredPath, secrets)
+	srv.MountConfigIO(desiredPath, secrets, nil)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return ts.URL
@@ -96,5 +96,20 @@ func TestConfigImportFile(t *testing.T) {
 	code, _, _ = invoke(t, append(serverArgs, "config", "import"))
 	if code != exitUsage {
 		t.Fatalf("exit = %d, want usage", code)
+	}
+}
+
+func TestConfigImportDryRun(t *testing.T) {
+	serverArgs := []string{"--server", configIODaemon(t)}
+	out := filepath.Join(t.TempDir(), "export.yaml")
+	if code, _, stderr := invoke(t, append(serverArgs, "config", "export", "-f", out)); code != exitOK {
+		t.Fatalf("export: %d %q", code, stderr)
+	}
+	code, stdout, stderr := invoke(t, append(serverArgs, "config", "import", "--dry-run", "-f", out))
+	if code != exitOK || !strings.Contains(stdout, "0 settings would change, 1 secrets needed") {
+		t.Fatalf("dry-run: %d %q %q", code, stdout, stderr)
+	}
+	if strings.Contains(stdout, "token-value") {
+		t.Fatalf("dry run leaked a value")
 	}
 }

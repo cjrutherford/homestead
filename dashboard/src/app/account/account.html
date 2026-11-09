@@ -1,79 +1,66 @@
 <section aria-label="Account">
-  <h2>Account</h2>
+  <header class="masthead">
+    <h1>Account</h1>
+    <p class="masthead-fact">Your owner account and how the dashboard looks.</p>
+  </header>
 
-  <h3>Lockout status</h3>
-  @if (loading()) {
-    <app-state-message kind="loading" headline="Loading lockout status…" />
-  }
-  @if (loadError()) {
-    <app-state-message kind="error" [headline]="loadError()" />
-    <button type="button" (click)="loadLockout()">Retry</button>
-  }
-  @if (lockout(); as l) {
-    <p>
-      Signed in as <strong>{{ l.username }}</strong>.
-      @if (l.locked) {
-        This account is temporarily locked after repeated failed sign-ins.
-        @if (l.locked_until) {
-          It unlocks {{ relativeUntil(l.locked_until) }}.
+  <section class="field-panel" aria-labelledby="account-appearance">
+    <h2 id="account-appearance">Appearance</h2>
+    <fieldset>
+      <legend>Theme</legend>
+      @for (option of themeOptions; track option.value) {
+        <label>
+          <input
+            type="radio"
+            name="theme"
+            [value]="option.value"
+            [checked]="theme.preference() === option.value"
+            (change)="chooseTheme(option.value)"
+          />
+          {{ option.label }}
+        </label>
+      }
+    </fieldset>
+  </section>
+
+  <section class="field-panel" aria-labelledby="account-lockout">
+    <h2 id="account-lockout">Sign-in lockout</h2>
+    @if (loadError()) {
+      <app-state-message kind="error" [headline]="loadError()" actionLabel="Try again" (action)="loadLockout()" />
+    }
+    <app-loading [loading]="loading()" shape="lines">
+    @if (lockout(); as l) {
+      <p>
+        Signed in as <strong>{{ l.username }}</strong>.
+        @if (l.locked) {
+          This account is temporarily locked after repeated failed sign-ins.
+          @if (l.locked_until) {
+            It unlocks {{ relativeUntil(l.locked_until) }}.
+          } @else {
+            Lockouts clear on their own after a short wait.
+          }
         } @else {
-          Lockouts clear on their own after a short wait.
+          This account is not locked.
         }
-      } @else {
-        This account is not locked.
-      }
-      @if (l.failures) {
-        Recent failed attempts: {{ l.failures }}.
-      }
-    </p>
-  } @else if (!loading() && !loadError()) {
-    <app-state-message kind="empty" headline="No lockout information available." />
-  }
+        @if (l.failures) {
+          Recent failed attempts: {{ l.failures }}.
+        }
+      </p>
+    } @else if (!loading() && !loadError()) {
+      <app-state-message kind="empty" headline="No lockout information available." />
+    }
+    </app-loading>
+  </section>
 
-  <h3>Change password</h3>
-  <p>
-    Changing your password signs out all your other sessions. This session
-    stays signed in.
-  </p>
-  @if (error()) {
-    <app-state-message kind="error" [headline]="error()" />
-  }
-  @if (notice()) {
-    <app-state-message kind="status" [headline]="notice()" />
-  }
-  @if (problems().length > 0) {
-    <ul aria-label="Problems" role="alert">
-      @for (p of problems(); track p) {
-        <li>{{ p }}</li>
-      }
-    </ul>
-  }
-    <form #f (submit)="$event.preventDefault(); submit(cur.value, nw.value, cf.value); f.reset()">
-      <input
-        class="visually-hidden"
-        type="text"
-        name="username"
-        autocomplete="username"
-        readonly
-        tabindex="-1"
-        aria-hidden="true"
-        [value]="sessions.username() ?? ''"
-      />
-      <p>
-        <label for="account-current">Current password</label><br />
-        <input id="account-current" #cur type="password" autocomplete="current-password" [disabled]="busy()" />
-      </p>
-      <p>
-        <label for="account-new">New password ({{ minLength }} to {{ maxLength }} bytes)</label><br />
-        <input id="account-new" #nw type="password" autocomplete="new-password" [disabled]="busy()" />
-      </p>
-      <p>
-        <label for="account-confirm">Confirm new password</label><br />
-        <input id="account-confirm" #cf type="password" autocomplete="new-password" [disabled]="busy()" />
-      </p>
-      <button type="submit" [disabled]="busy()">Change password</button>
-    </form>
-  @if (busy()) {
-    <app-state-message kind="loading" headline="Changing password…" />
-  }
+  <section class="field-panel" aria-labelledby="account-sso">
+    <h2 id="account-sso">Sign in with Authentik</h2>
+    @if (ssoCard(); as card) {
+      <ng-container *ngComponentOutlet="card" />
+    }
+  </section>
+
+  <section class="field-panel" aria-labelledby="account-password">
+    <h2 id="account-password">Change password</h2>
+    <app-password-form (attempted)="loadLockout()" />
+  </section>
 </section>

@@ -1,3 +1,4 @@
+import { plural } from '../core/plural';
 import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
@@ -6,10 +7,22 @@ import {
   ApiService,
   OperationState,
   TlsIssuancePlan,
+  TlsIssuanceApproval,
+  LocalLeaf,
   TlsAccountTerms,
   TlsRenewalStatus,
 } from '../core/api.service';
+import { formatWhen } from '../core/format-time';
+import { isNotSetUp } from '../core/http-error';
+import { IssuerMoves } from '../ui/issuer-moves';
 import { StateMessage } from '../state/state-message';
+import { Loading } from '../ui/loading';
+import { OperationProgress } from '../ui/operation-progress';
+import { SessionService } from '../auth/session.service';
+import { Approval, approvedNow, Permit } from '../ui/permit';
+
+/** A plan the appliance reports as approved, without who or when. */
+const UNKNOWN_APPROVER: Approval = {};
 
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
 
@@ -23,21 +36,28 @@ const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
  * shown: the plan names where they are placed, nothing more.
  */
 @Component({
-  imports: [StateMessage, RouterLink],
+  imports: [OperationProgress, Loading, Permit, StateMessage, RouterLink, IssuerMoves],
   selector: 'app-tls',
   templateUrl: './tls.html',
   styles: [
-    'button, input { min-height: 44px; }',
     '.tls-plan { overflow-wrap: anywhere; }',
   ],
 })
 export class Tls implements OnInit, OnDestroy {
+  protected readonly plural = plural;
   private readonly api = inject(ApiService);
   private stream: Subscription | null = null;
 
   protected readonly plans = signal<TlsIssuancePlan[]>([]);
   /** Renewal status per certificate (S272): failures and owner actions. */
   protected readonly renewals = signal<TlsRenewalStatus[]>([]);
+  /** Recorded issuance approvals (S484), matching `tls issuance approvals`. */
+  protected readonly recordedApprovals = signal<TlsIssuanceApproval[]>([]);
+  protected readonly approvalsError = signal<string | null>(null);
+  /** Local CA leaf certificates (S484), matching `tls local leaves`. */
+  protected readonly leaves = signal<LocalLeaf[]>([]);
+  protected readonly leavesError = signal<string | null>(null);
+  protected readonly when = formatWhen;
   protected readonly loading = signal(true);
   protected readonly loadError = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
@@ -59,6 +79,7 @@ export class Tls implements OnInit, OnDestroy {
     const op = this.operation();
     return this.operationId() !== null && !this.streamError() && !(op && TERMINAL.has(op.status));
   });
+  protected readonly notSetUp = signal(false);
   protected readonly locked = computed(() => this.busy() || this.running());
 
   ngOnInit(): void {
@@ -84,8 +105,29 @@ export class Tls implements OnInit, OnDestroy {
       },
       error: () => this.renewals.set([]),
     });
+    this.api.tlsIssuanceApprovals().subscribe({
+      next: ({ approvals }) => {
+        this.recordedApprovals.set(approvals ?? []);
+        this.approvalsError.set(null);
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.recordedApprovals.set([]);
+        this.approvalsError.set(this.describe(failure));
+      },
+    });
+    this.api.localCaLeaves().subscribe({
+      next: ({ leaves }) => {
+        this.leaves.set(leaves ?? []);
+        this.leavesError.set(null);
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.leaves.set([]);
+        this.leavesError.set(this.describe(failure));
+      },
+    });
     this.loading.set(true);
     this.loadError.set(null);
+    this.notSetUp.set(false);
     this.api.tlsIssuancePlans().subscribe({
       next: ({ plans }) => {
         this.loading.set(false);
@@ -94,18 +136,18 @@ export class Tls implements OnInit, OnDestroy {
       error: (failure: HttpErrorResponse) => {
         this.loading.set(false);
         this.plans.set([]);
-        this.loadError.set(
-          failure.status === 404
-            ? 'No TLS strategy is saved yet. Save one in the TLS setup wizard, then come back to review issuance.'
-            : this.describe(failure),
-        );
+        if (isNotSetUp(failure)) {
+          this.notSetUp.set(true);
+          return;
+        }
+        this.loadError.set(this.describe(failure));
       },
     });
   }
 
   protected describe(failure: HttpErrorResponse): string {
     if (failure.status === 0) {
-      return 'Cannot reach the Homestead daemon. Check that it is running and try again.';
+      return "Can't reach the appliance. Check that homestead-server is running.";
     }
     const body = failure.error;
     if (typeof body === 'string' && body.trim()) {
@@ -186,6 +228,15 @@ export class Tls implements OnInit, OnDestroy {
     return plan.directory_class !== 'production' || !!this.production()[plan.certificate];
   }
 
+  /** Approvals given on this page, by certificate, for their stamps (S309). */
+  protected readonly approvals = signal<Record<string, Approval>>({});
+  private readonly sessions = inject(SessionService);
+
+  /** The stamp for an approved plan: who and when if it was approved here. */
+  protected approvalOf(plan: TlsIssuancePlan): Approval | null {
+    return plan.approved ? (this.approvals()[plan.certificate] ?? UNKNOWN_APPROVER) : null;
+  }
+
   approve(plan: TlsIssuancePlan): void {
     if (!this.canApprove(plan)) {
       return;
@@ -204,6 +255,7 @@ export class Tls implements OnInit, OnDestroy {
       .subscribe({
         next: () => {
           this.busy.set(false);
+          this.approvals.update((all) => ({ ...all, [plan.certificate]: approvedNow(this.sessions.username()) }));
           this.notice.set(`Approved the plan for ${plan.certificate}. Nothing has been issued yet.`);
           this.load();
         },

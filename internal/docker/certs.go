@@ -466,17 +466,25 @@ func RouteServesCert(stackDir string, host Hostname, certName string) bool {
 // under stackDir serves that certificate (`tls <chain> <key>`) instead
 // of leaving issuance to Caddy. Other modes are rendered unchanged.
 func RenderRouteIn(stackDir string, r Route) (string, error) {
+	var cert, signIn *PlacedCert
 	if r.usesPlacedCert() && stackDir != "" {
-		if cert, ok := servingCertFor(stackDir, r); ok {
-			return renderRoute(r, &cert)
+		if c, ok := servingCertFor(stackDir, r); ok {
+			cert = &c
 		}
 	}
-	return renderRoute(r, nil)
+	if c, ok := signInSiteCert(stackDir, r); ok {
+		signIn = &c
+	}
+	return renderRoute(r, cert, signIn)
 }
 
 // WouldServe reports whether a route using automatic TLS would serve a
 // certificate covering names, before anything is placed (plan preview).
 func WouldServe(names []string, r Route) bool {
+	if r.Dashboard && len(r.Tunnel) > 0 && certNamesCover(names, string(r.Tunnel[0])) {
+		// The dashboard's sign-in site (ADR-047).
+		return true
+	}
 	return r.usesPlacedCert() && certNamesCover(names, string(r.Host))
 }
 
@@ -515,12 +523,17 @@ func RefreshCertRoutes(stackDir string, routes []Route, hosts []string) (undo fu
 		approved[Hostname(h)] = true
 	}
 	seen := map[Hostname]bool{}
-	for _, r := range routes {
+	for _, r := range withPaths(routes) {
+		if r.IsPath() {
+			continue
+		}
 		if !approved[r.Host] || seen[r.Host] || !r.usesPlacedCert() || !RouteSnippetExists(stackDir, r.Host) {
 			continue
 		}
 		seen[r.Host] = true
-		if _, ok := servingCertFor(stackDir, r); !ok {
+		_, served := servingCertFor(stackDir, r)
+		_, signIn := signInSiteCert(stackDir, r)
+		if !served && !signIn {
 			continue
 		}
 		content, err := RenderRouteIn(stackDir, r)

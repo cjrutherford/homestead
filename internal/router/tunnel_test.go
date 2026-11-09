@@ -144,3 +144,17 @@ func TestRenderConnector(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderConnectorIngress(t *testing.T) {
+	got := RenderConnectorIngress("tid", []Ingress{
+		{Hostname: "homestead.example.com", Service: "http://127.0.0.1:8480"},
+		{Hostname: "auth.example.com", Service: "http://127.0.0.1:8480"},
+	})
+	want := "tunnel: tid\ningress:\n" +
+		"  - hostname: homestead.example.com\n    service: http://127.0.0.1:8480\n" +
+		"  - hostname: auth.example.com\n    service: http://127.0.0.1:8480\n" +
+		"  - service: http_status:404\n"
+	if got != want {
+		t.Fatalf("got\n%s\nwant\n%s", got, want)
+	}
+}

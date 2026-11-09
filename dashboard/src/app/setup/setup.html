@@ -1,0 +1,166 @@
+<section aria-label="Setup">
+  <header class="masthead">
+    <h1>{{ status()?.legacy ? 'Finish setup' : 'Set up your appliance' }}</h1>
+    <p class="masthead-fact">{{ fact() }}</p>
+  </header>
+  <p>
+    Each step explains what it does and what you do outside Homestead, and does its work right
+    here. You can skip any step and come back later.
+  </p>
+
+  @if (error() && !failed()) {
+    <app-state-message kind="error" [headline]="error()" />
+  }
+  @if (setup.error()) {
+    <app-state-message kind="error" [headline]="setup.error()" />
+  }
+
+  <app-loading [loading]="loading()" shape="list">
+    @if (failed()) {
+      <app-state-message
+        kind="error"
+        headline="Setup status could not be read."
+        [detail]="error() || 'The rest of the dashboard still works.'"
+        actionLabel="Try again"
+        (action)="refresh()"
+      />
+    } @else if (status(); as s) {
+      @if (s.legacy) {
+        <app-state-message
+          kind="notice"
+          headline="This appliance was set up before the wizard existed."
+          detail="Nothing here is required. Use it to check the things a new appliance is asked to do."
+        />
+      }
+
+      @if (needsYou().length) {
+        <section class="field-panel needs-you" data-state="warn" aria-labelledby="setup-needs-you">
+          <h2 id="setup-needs-you">Needs you ({{ needsYou().length }})</h2>
+          <ul class="needs-you-list">
+            @for (st of needsYou(); track st.name) {
+              <li>
+                <div class="needs-you-text">
+                  <h3>{{ st.title }}</h3>
+                  <p>{{ st.detail }}</p>
+                </div>
+                <div class="needs-you-action">
+                  <button type="button" (click)="goTo(st.name)">Go to {{ st.title }}</button>
+                </div>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+
+      <section class="field-panel" aria-label="Steps">
+        <ol class="step-list" aria-label="Setup progress">
+          @for (st of s.steps; track st.name; let i = $index) {
+            <li class="step" [attr.data-status]="glyph(st)" [attr.aria-current]="i === index() ? 'step' : null">
+              <span class="step-glyph" aria-hidden="true"></span>
+              <span class="visually-hidden">Step {{ i + 1 }} of {{ s.steps.length }}: </span>
+              <span class="step-name">{{ st.title }}</span>
+              <span class="step-status">{{ word(st) }}</span>
+            </li>
+          }
+        </ol>
+      </section>
+
+      @if (onSummary()) {
+        <section class="field-panel" [attr.data-state]="s.complete ? 'ok' : null" aria-labelledby="setup-summary">
+          <h2 id="setup-summary" #stepHeading tabindex="-1">Summary</h2>
+          @if (s.complete) {
+            <app-state-message
+              kind="status"
+              headline="Setup is complete."
+              detail="Every step is done or skipped. Skipped steps can be finished any time."
+            />
+          } @else {
+            <app-state-message
+              kind="notice"
+              headline="Some steps are still to do."
+              detail="Finish them, or skip them, to complete setup."
+            />
+          }
+          <ul aria-label="Outcome of each step">
+            @for (st of s.steps; track st.name) {
+              <li>
+                <strong>{{ st.title }}</strong>: {{ word(st) }}. {{ st.detail }}
+                @if (st.state !== 'done') {
+                  <button type="button" (click)="goTo(st.name)">
+                    {{ st.state === 'skipped' ? 'Finish this step' : 'Go to this step' }}
+                  </button>
+                }
+              </li>
+            }
+          </ul>
+          <p class="wizard-actions">
+            <button type="button" (click)="back()">Back</button>
+            <a class="button primary" routerLink="/admin/status">Go to status</a>
+          </p>
+        </section>
+      } @else if (step(); as st) {
+        <section class="field-panel" [attr.aria-labelledby]="'step-' + st.name">
+          <h2 [id]="'step-' + st.name" #stepHeading tabindex="-1">
+            Step {{ (index() ?? 0) + 1 }} of {{ s.steps.length }}: {{ st.title }}
+          </h2>
+          <p>
+            <strong>{{ word(st) }}.</strong> {{ st.detail }}
+          </p>
+
+          @switch (st.name) {
+            @case ('account') {
+              <app-setup-account-step [status]="s" />
+            }
+            @case ('storage') {
+              <app-setup-storage-step />
+            }
+            @case ('sign-in') {
+              <app-setup-sign-in-step [status]="s" />
+            }
+            @case ('domain') {
+              <app-setup-domain-step [status]="s" />
+            }
+            @case ('apps') {
+              <app-setup-apps-step [status]="s" />
+            }
+            @case ('backups') {
+              <app-setup-backups-step />
+            }
+          }
+
+          @if (st.state === 'pending') {
+            <p>
+              <button type="button" [disabled]="setup.busy()" (click)="skip(st.name)">Skip this step</button>
+            </p>
+          }
+          @if (st.waived && st.state === 'skipped') {
+            <p class="hint">
+              @if (st.name === 'backups') {
+                Not required: setup was finished before this step existed. Set a nightly policy on the
+                <a routerLink="/admin/backups">Backups page</a> when you want one.
+              } @else {
+                Not required: setup was finished before this step existed. Assign storage on the
+                <a routerLink="/admin/storage">Storage page</a> when you need it.
+              }
+            </p>
+          }
+          @if (st.skipped && st.state === 'skipped') {
+            <p>
+              <button type="button" [disabled]="setup.busy()" (click)="unskip(st.name)">Undo skip</button>
+            </p>
+          }
+
+          <p class="wizard-actions">
+            <button type="button" [disabled]="index() === 0" (click)="back()">Back</button>
+            <button type="button" class="primary" [disabled]="!canNext()" (click)="next()">
+              {{ index() === s.steps.length - 1 ? 'Next: summary' : 'Next' }}
+            </button>
+          </p>
+          @if (!canNext()) {
+            <p class="hint">Next unlocks when this step is done, or when you skip it.</p>
+          }
+        </section>
+      }
+    }
+  </app-loading>
+</section>

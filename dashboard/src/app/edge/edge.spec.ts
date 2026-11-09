@@ -70,7 +70,7 @@ describe('Edge', () => {
 
   it('shows the empty table state and links to exposure', () => {
     expect(text()).toContain('No routes in the table');
-    expect(fixture.nativeElement.querySelector('a[href="/exposure"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('a[href="/admin/exposure"]')).toBeTruthy();
   });
 
   it('confirms before deploying and then streams progress', () => {
@@ -82,15 +82,14 @@ describe('Edge', () => {
     expect(req.request.method).toBe('POST');
     req.flush({ id: 7 });
     fixture.detectChanges();
-    expect(text()).toContain('Operation 7');
-    expect(text()).toContain('Working');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/7"]')).not.toBeNull();
+    expect(text()).toContain('Starting');
     events.next(state('running', ['pull']));
     fixture.detectChanges();
-    expect(text()).toContain('pull: done');
+    expect(text()).toContain('Pull');
     events.next(state('succeeded', ['pull', 'up']));
     settleReload();
-    expect(text()).toContain('Operation succeeded.');
-    expect(text()).not.toContain('Working');
+    expect(text()).not.toContain('Starting');
   });
 
   it('cancelling the deploy confirmation sends nothing', () => {
@@ -113,7 +112,7 @@ describe('Edge', () => {
     click('Confirm deploy');
     http.expectOne('/api/v1/edge/deploy').error(new ProgressEvent('error'));
     fixture.detectChanges();
-    expect(text()).toContain('Cannot reach the Homestead daemon');
+    expect(text()).toContain("Can't reach the appliance");
   });
 
   it('reports a lost progress stream', () => {
@@ -169,7 +168,7 @@ describe('Edge', () => {
     });
     req.flush({ id: 9 });
     fixture.detectChanges();
-    expect(text()).toContain('Operation 9');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/9"]')).not.toBeNull();
   });
 
   it('warns about public routes and about emptying the table', () => {
@@ -230,7 +229,7 @@ describe('Edge', () => {
     const reconcile = () =>
       (Array.from(again.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
         .find((b) => b.textContent?.trim() === 'Reconcile routes'))!;
-    expect(again.nativeElement.textContent).toContain('Loading the route table');
+    expect(again.nativeElement.querySelector('app-loading[aria-busy="true"]')).not.toBeNull();
     expect(reconcile().disabled).toBe(true);
     http.expectOne('/api/v1/edge/routes').flush('boom', { status: 500, statusText: 'x' });
     again.detectChanges();
@@ -238,7 +237,7 @@ describe('Edge', () => {
     expect(reconcile().disabled).toBe(true);
     // Retry succeeds.
     (Array.from(again.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
-      .find((b) => b.textContent?.trim() === 'Retry loading routes'))!.click();
+      .find((b) => b.textContent?.trim() === 'Try loading routes again'))!.click();
     http.expectOne('/api/v1/edge/routes').flush({ routes: [] });
     again.detectChanges();
     expect(reconcile().disabled).toBe(false);
@@ -312,5 +311,17 @@ describe('Edge', () => {
     c().importJson('{"routes":[{"Host":"a.lan","Target":{"Host":"a","Port":80},"Exposure":"world","TLS":"off"}]}');
     fixture.detectChanges();
     expect(text()).toContain('Exposure must be local, overlay or public');
+  });
+
+  it('leaves the dashboard route to the Trust page (S289)', () => {
+    c().loadRoutes();
+    http.expectOne('/api/v1/edge/routes').flush({
+      routes: [
+        { Host: 'homestead.lan', Dashboard: true, Aliases: ['homestead.local'], Exposure: 'local', TLS: 'internal' },
+        { Host: 'app.lan', Target: { Host: 'app', Port: 8080 }, Exposure: 'local', TLS: 'internal', Health: { Path: '', IntervalSeconds: 0 } },
+      ],
+    });
+    fixture.detectChanges();
+    expect(c().drafts().map((d: { host: string }) => d.host)).toEqual(['app.lan']);
   });
 });

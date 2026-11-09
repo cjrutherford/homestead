@@ -3,6 +3,7 @@
 # SQLite carries the database by default (single-user scale); larger
 # deployments graduate to external databases in later slices.
 name: nextcloud
+publish: path  # ADR-061
 version: 35.0.1
 title: Nextcloud
 blurb: Files, calendar, and contacts you host.
@@ -15,14 +16,41 @@ icon: mdi:cloud
 services:
 - name: nextcloud
   image: nextcloud:35.0.1-apache
+  publisher: upstream
   exposes: web
-  # The edge route hostname is a trusted domain from the first install
-  # (S254): the daemon's craft file link and every browser reach
-  # Nextcloud through it, and Nextcloud refuses an unlisted Host. The
-  # image applies this once, when it first installs; an existing install
-  # adds the name with occ (docs/architecture/CRAFT_FILE_PROXY.md).
+  # The edge route's local names are trusted domains from the first
+  # install (S254, S313): <app>.lan and its mDNS name <app>.local. The
+  # daemon's craft file link and every browser reach Nextcloud through
+  # them, and Nextcloud refuses an unlisted Host. The image applies this
+  # once, when it first installs; a public name added or removed later
+  # (S290) is added to or taken from trusted_domains with occ by the
+  # app.public operation (docs/architecture/CRAFT_FILE_PROXY.md).
+  #
+  # The edge ends TLS for every name, local and tunnel, and reaches
+  # Nextcloud over plain http, so Nextcloud is told to build https links
+  # (OVERWRITEPROTOCOL) and its command-line URL is the local address
+  # (OVERWRITECLIURL). The image reads both at every request. No
+  # OVERWRITEHOST: it would pin every link to one of the names.
+  #
+  # Nextcloud is served under the appliance's names at /apps/nextcloud/
+  # (ADR-044, S315): the trusted domains are homestead.lan and
+  # homestead.local, the edge strips the prefix (strip_prefix) and
+  # Nextcloud builds its links under it from OVERWRITEWEBROOT, which the
+  # image's reverse-proxy config reads at every request.
+  #
+  # Nextcloud installs itself on first start (S312): with an admin user,
+  # its password file and a database name, the image runs
+  # `occ maintenance:install` instead of the web installer. The image
+  # does this only on an empty install, so an existing Nextcloud is
+  # untouched. The admin password is the generated package secret
+  # admin_password (Compose secret, never an environment value).
   environment:
-    NEXTCLOUD_TRUSTED_DOMAINS: "{{route_host}}"
+    NEXTCLOUD_TRUSTED_DOMAINS: "{{route_names}}"
+    OVERWRITEPROTOCOL: https
+    OVERWRITECLIURL: "{{route_url}}"
+    OVERWRITEWEBROOT: "{{route_path}}"
+    NEXTCLOUD_ADMIN_USER: admin
+    SQLITE_DATABASE: nextcloud
   # Image VOLUME: /var/www/html (code, config, apps). User files and
   # the default SQLite database live in its data/ directory, mounted
   # nested on bulk storage (not flagged `database`: it is mostly user
@@ -39,6 +67,18 @@ services:
     subpath: data
     uid: 33
     gid: 33
+# Served at <server>/apps/nextcloud/ (ADR-044). The edge strips the
+# prefix: overwritewebroot only rewrites the links Nextcloud generates,
+# and the app itself answers at its document root. CalDAV and CardDAV
+# discovery at the host root redirect into the path.
+serve: path
+path: /apps/nextcloud/
+strip_prefix: true
+redirects:
+- from: /.well-known/caldav
+  to: remote.php/dav/
+- from: /.well-known/carddav
+  to: remote.php/dav/
 requirements:
   memorymb: 1024
   cpucount: 2
@@ -48,7 +88,10 @@ requirements:
     minbytes: 2147483648
   - class: bulk
     minbytes: 53687091200
-  ports: [80]
+  # No host port: the container publishes none (the edge serves it), so
+  # declaring its port 80 refused every install once Caddy held 80. The
+  # container port is entered in the install request (the dashboard
+  # defaults it to 80).
 exposure:
   package: nextcloud
   endpoints:
@@ -59,6 +102,28 @@ exposure:
     - Files leave the LAN when widened; share deliberately.
 backuppaths:
 - config
+secrets:
+- name: admin_password
+  # The first-run admin account's password. Nextcloud reads it only when
+  # it installs itself, so rotating it would leave the shown value wrong:
+  # change the password in Nextcloud instead.
+  immutable: true
+  reveal: true
+  note: Password for the Nextcloud administrator account "admin", set when Nextcloud installed itself.
+  consumers:
+  - service: nextcloud
+    env: NEXTCLOUD_ADMIN_PASSWORD_FILE
 sso:
   class: optional
   protocols: [oidc, saml, ldap]
+  # App sign-in through Authentik (S298): the user_oidc app, set up with occ.
+  oidc:
+    adapter: nextcloud-user-oidc
+    service: nextcloud
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in through Authentik; local accounts stay available for recovery.
+- kind: library
+  target: jellyfin
+  note: Mount the same bulk media directory into Nextcloud external storage and Jellyfin.

@@ -30,7 +30,7 @@ def read(rel: str) -> str:
 
 class TestParityAcceptanceContract(unittest.TestCase):
     def test_body_keys_match(self):
-        dashboard = read("dashboard/src/app/catalog/catalog.ts")
+        dashboard = read("dashboard/src/app/catalog/install-wizard.ts")
         server = read("internal/server/catalog.go")
         for key in KEYS:
             with self.subTest(key=key):
@@ -45,7 +45,7 @@ class TestParityAcceptanceContract(unittest.TestCase):
         rows = [line for line in parity.splitlines()
                 if "/api/v1/catalog" in line
                 and "/drift" not in line and "/uninstall" not in line]
-        self.assertEqual(len(rows), 7)  # S266 added two secrets rows
+        self.assertEqual(len(rows), 26)  # S390 adds access-plan, install-admin and setup/resume-admin.
         for row in rows:
             with self.subTest(row=row):
                 cells = [cell.strip() for cell in row.strip("|").split("|")]

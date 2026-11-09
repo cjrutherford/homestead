@@ -14,12 +14,24 @@ type ServiceUpdate struct {
 
 // UpdatePlan is the reviewable change set for one package.
 type UpdatePlan struct {
-	Package   string          `json:"Package"`
-	Services  []ServiceUpdate `json:"Services"`
-	Backup    bool            `json:"Backup"`
-	BackupWhy string          `json:"BackupWhy"`
-	Affected  []string        `json:"Affected"`
-	Warnings  []string        `json:"Warnings"`
+	Package    string              `json:"Package"`
+	Services   []ServiceUpdate     `json:"Services"`
+	Backup     bool                `json:"Backup"`
+	BackupWhy  string              `json:"BackupWhy"`
+	Affected   []string            `json:"Affected"`
+	Warnings   []string            `json:"Warnings"`
+	Provenance []ServiceProvenance `json:"Provenance"`
+}
+
+// ServiceProvenance records where one service's update discovery came
+// from and whether the registry answered (S343).
+type ServiceProvenance struct {
+	Service    string `json:"Service"`
+	Registry   string `json:"Registry"`
+	Repository string `json:"Repository"`
+	Discovered bool   `json:"Discovered"`
+	Local      bool   `json:"Local"`
+	Reason     string `json:"Reason"`
 }
 
 // CraftUpdate is the build state of one craft move in an update plan.

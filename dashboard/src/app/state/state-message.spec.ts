@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { StateMessage } from './state-message';
 
 describe('StateMessage', () => {
@@ -8,6 +9,7 @@ describe('StateMessage', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [StateMessage],
+      providers: [provideRouter([])],
     }).compileComponents();
     fixture = TestBed.createComponent(StateMessage);
   });
@@ -35,14 +37,6 @@ describe('StateMessage', () => {
     ).not.toBeNull();
   });
 
-  it('renders empty and loading states without roles', () => {
-    fixture.componentRef.setInput('kind', 'loading');
-    fixture.componentRef.setInput('headline', 'Loading…');
-    fixture.detectChanges();
-    expect(text()).toContain('Loading…');
-    expect(fixture.nativeElement.querySelector('[role]')).toBeNull();
-  });
-
   it('renders empty states without roles', () => {
     fixture.componentRef.setInput('kind', 'empty');
     fixture.componentRef.setInput('headline', 'Nothing yet.');
@@ -52,13 +46,53 @@ describe('StateMessage', () => {
     expect(fixture.nativeElement.querySelector('[role]')).toBeNull();
   });
 
+  it('renders warnings as announced, warning-styled messages', () => {
+    fixture.componentRef.setInput('kind', 'warning');
+    fixture.componentRef.setInput('headline', 'Backups cannot be read if this appliance is lost.');
+    fixture.detectChanges();
+    const el = fixture.nativeElement.querySelector('.state-warning');
+    expect(el?.getAttribute('role')).toBe('status');
+    expect(fixture.nativeElement.querySelector('.state-status')).toBeNull();
+  });
+
+  it('announces notices politely with a neutral style', () => {
+    fixture.componentRef.setInput('kind', 'notice');
+    fixture.componentRef.setInput('headline', 'Nothing is running.');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.state-notice[role="status"]')).not.toBeNull();
+  });
+
+  it('shows a detail line and a button action that emits', () => {
+    let clicks = 0;
+    fixture.componentInstance.action.subscribe(() => clicks++);
+    fixture.componentRef.setInput('kind', 'error');
+    fixture.componentRef.setInput('headline', 'Could not load routes.');
+    fixture.componentRef.setInput('detail', 'Check that homestead-server is running.');
+    fixture.componentRef.setInput('actionLabel', 'Try again');
+    fixture.detectChanges();
+    expect(text()).toContain('Check that homestead-server is running.');
+    fixture.nativeElement.querySelector('button.state-action').click();
+    expect(clicks).toBe(1);
+  });
+
+  it('renders the action as a link when given a route', () => {
+    fixture.componentRef.setInput('kind', 'empty');
+    fixture.componentRef.setInput('headline', 'No apps installed yet.');
+    fixture.componentRef.setInput('actionLabel', 'Browse the catalog');
+    fixture.componentRef.setInput('actionLink', '/admin/catalog');
+    fixture.detectChanges();
+    const link = fixture.nativeElement.querySelector('a.state-action');
+    expect(link?.textContent).toContain('Browse the catalog');
+    expect(fixture.nativeElement.querySelector('button')).toBeNull();
+  });
+
   it('renders nothing for a null or empty headline', () => {
     fixture.componentRef.setInput('kind', 'error');
     fixture.componentRef.setInput('headline', null);
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('p')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.state-message')).toBeNull();
     fixture.componentRef.setInput('headline', '');
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('p')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.state-message')).toBeNull();
   });
 });

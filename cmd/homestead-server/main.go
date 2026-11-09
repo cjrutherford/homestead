@@ -7,13 +7,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net"
-	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 
 	"homestead/internal/audit"
 	"homestead/internal/claim"
@@ -21,6 +22,7 @@ import (
 	"homestead/internal/desired"
 	"homestead/internal/discover"
 	"homestead/internal/docker"
+	"homestead/internal/guide"
 	"homestead/internal/layout"
 	"homestead/internal/mdns"
 	"homestead/internal/operation"
@@ -40,26 +42,39 @@ func main() {
 		}
 		return
 	}
+	// The installer runs this as root to size Docker's address pools (S463).
+	if len(os.Args) > 1 && os.Args[1] == "docker-pools" {
+		if err := runDockerPools(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "docker-pools:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	listen := flag.String("listen", server.DefaultAddr, "address to bind (loopback by default; see ADR-006)")
 	configPath := flag.String("config", desired.DefaultPath(), "desired-state file (S014)")
 	dataDir := flag.String("data-dir", layout.LibDir.Path, "operational state directory (S012)")
 	socketPath := flag.String("socket", server.DefaultSocketPath, "root-only recovery socket (S021)")
+	dashboardSocket := flag.String("dashboard-socket", docker.DashboardSocketPath, "dashboard socket the edge forwards to (S289, ADR-035)")
 	craftSocket := flag.String("craft-socket", docker.CraftSocketPath, "craft file socket the edge forwards to (S254, ADR-032)")
 	catalogDir := flag.String("catalog-dir", "catalog", "curated package directory (S160; packaging installs it)")
+	claimTokenFile := flag.String("claim-token-file", claim.DefaultTokenPath, "root-only file holding the live claim token while unclaimed (S288)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version.Version)
 		return
 	}
-	if err := run(*listen, *configPath, *dataDir, *socketPath, *craftSocket, *catalogDir); err != nil {
+	if err := run(*listen, *configPath, *dataDir, *socketPath, *craftSocket, *dashboardSocket, *catalogDir, *claimTokenFile); err != nil {
 		fmt.Fprintln(os.Stderr, "homestead-server:", err)
 		os.Exit(1)
 	}
 }
 
-func run(listen, configPath, dataDir, socketPath, craftSocket, catalogDir string) error {
+func run(listen, configPath, dataDir, socketPath, craftSocket, dashboardSocket, catalogDir, claimTokenFile string) error {
 	if err := server.ValidateCraftSocketPath(craftSocket); err != nil {
+		return err
+	}
+	if err := server.ValidateDashboardSocketPath(dashboardSocket); err != nil {
 		return err
 	}
 	// The state directory is provisioned by S012 and never created here:
@@ -103,6 +118,9 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, catalogDir string
 	} else {
 		fmt.Fprintln(os.Stderr, "homestead-server: dashboard UI not embedded (make dashboard-embed, build with -tags embeddash)")
 	}
+	if files, ok := guide.Embedded(); ok {
+		app.Guide = guide.New(files)
+	}
 	svcs, err := server.MountApp(srv, app)
 	if err != nil {
 		return err
@@ -111,16 +129,21 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, catalogDir string
 	// Session boundary (ADR-020, S255): classifies every TCP request;
 	// enforcing since S257. The Unix socket is not wrapped.
 	srv.MountSessionBoundary(svcs.Auth, claimSvc, audit.New(st))
-	if err := ensureClaimToken(claimSvc); err != nil {
-		return err
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if err := startClaimToken(ctx, claimSvc, claimTokenFile, os.Stdout, os.Stderr); err != nil {
+		return err
+	}
 	// First-run local discovery (S221): answer homestead.local plus
 	// the service advertisement on the LAN, with live claim state so
 	// owners spot unclaimed boxes. Discovery is convenience, never
 	// boot-critical: failures only warn.
-	startLocalDiscovery(ctx, claimSvc, listen)
+	startLocalDiscovery(ctx, claimSvc, listen, svcs.Names.MDNSLabels)
+	// The optional `.lan` resolver (S295) runs only when the owner
+	// turned it on; a taken port 53 warns and shows in the doctor.
+	go svcs.Names.Run(ctx, func(err error) {
+		fmt.Fprintln(os.Stderr, "homestead-server: .lan resolver off:", err)
+	})
 	// Both listeners share ctx and drain together. A socket failure is
 	// fatal: silent loss of the recovery channel is worse than no start.
 	// Daemon scheduler (S260, ADR-023): enqueues due work through the
@@ -146,11 +169,56 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, catalogDir string
 			fmt.Fprintln(os.Stderr, "homestead-server: craft file socket off:", err)
 		}
 	}()
+	// The dashboard socket (ADR-035) is not boot-critical either: without
+	// it only the local network address stops working.
+	dashDone := make(chan struct{})
+	go func() {
+		defer close(dashDone)
+		if err := srv.RunDashboardSocket(ctx, dashboardSocket); err != nil {
+			fmt.Fprintln(os.Stderr, "homestead-server: dashboard socket off:", err)
+		}
+	}()
+	// A fresh appliance gets the default dashboard route and a deployed
+	// edge before claim (ADR-035); Docker may arrive later, so retry.
+	ensureDone := make(chan struct{})
+	go func() {
+		defer close(ensureDone)
+		svcs.DashboardAddress.RunEnsure(ctx, 5*time.Minute, func(err error) {
+			fmt.Fprintln(os.Stderr, "homestead-server: dashboard address not ready, will retry:", err)
+		})
+		// Craft apps installed on names of their own move to their
+		// paths once the edge is up (ADR-045 §5).
+		server.RunCraftMigration(ctx, st, catalogDir, 5*time.Minute, func(err error) {
+			fmt.Fprintln(os.Stderr, "homestead-server: craft apps not moved to their paths yet, will retry:", err)
+		})
+		// Published single-origin apps redirect their LAN names to the
+		// public name (ADR-060); apps installed earlier take it here.
+		server.RunSingleOriginMigration(ctx, st, catalogDir, 5*time.Minute, func(err error) {
+			fmt.Fprintln(os.Stderr, "homestead-server: single-origin redirects not applied yet, will retry:", err)
+		})
+	}()
+	// Bring local leaves in line with the routes once now (S295): a new
+	// `.local` name is then served after an upgrade, not hours later at
+	// the next renewal pass. Failures only warn; the pass retries.
+	go func() {
+		if _, err := svcs.LocalTLS.Reconcile(ctx, "system", "", false); err != nil {
+			fmt.Fprintln(os.Stderr, "homestead-server: local TLS reconcile at start:", err)
+		}
+	}()
+	// Keep the gated-app host block in line with the gates and the edge
+	// network's subnet (S421); nft rules do not survive a reboot.
+	go server.RunGateBlock(ctx, st, 5*time.Minute, func(err error) {
+		fmt.Fprintln(os.Stderr, "homestead-server: gated-app host block:", err)
+	})
+	// Probe the router once now so the Tunnel page opens without the wait.
+	go server.WarmTunnelDiscovery(ctx)
 	if err := srv.Run(ctx); err != nil {
 		return err
 	}
 	<-schedDone
 	<-craftDone
+	<-dashDone
+	<-ensureDone
 	return <-unixErr
 }
 
@@ -159,16 +227,17 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, catalogDir string
 // live claim state and LAN addresses. A bad listen address or a
 // taken mDNS port only warns on stderr — discovery must never fail
 // the boot it ornaments.
-func startLocalDiscovery(ctx context.Context, claimSvc *claim.Service, listen string) {
+func startLocalDiscovery(ctx context.Context, claimSvc *claim.Service, listen string, apps func() []string) {
 	port, err := daemonPort(listen)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "homestead-server: local discovery off:", err)
 		return
 	}
 	cfg := mdns.Config{
-		Hostname: "homestead",
+		Hostname: mdns.DefaultHostname,
 		Port:     port,
 		Version:  version.Version,
+		Apps:     apps,
 		State: func() string {
 			state, err := claimSvc.CurrentState()
 			if err != nil {
@@ -176,7 +245,7 @@ func startLocalDiscovery(ctx context.Context, claimSvc *claim.Service, listen st
 			}
 			return state.String()
 		},
-		Addresses: func() []netip.Addr {
+		Addresses: func() []mdns.LinkAddr {
 			network, err := discover.DiscoverNetwork()
 			if err != nil {
 				return nil
@@ -206,28 +275,30 @@ func daemonPort(listen string) (int, error) {
 	return n, nil
 }
 
-// ensureClaimToken mints the console token for a fresh appliance that has
-// none live. Plaintext appears here once, on the console (journal), and in
-// the owner's hands — never in storage.
-func ensureClaimToken(svc *claim.Service) error {
+// startClaimToken keeps one live claim token in a root-only file while the
+// appliance is unclaimed (S288; ADR-015 unchanged). The plaintext goes to
+// the file only: the journal gets one line per start naming the command
+// that shows it, so tokens no longer pile up in the system log. A
+// background timer mints a fresh token when the current one expires.
+func startClaimToken(ctx context.Context, svc *claim.Service, path string, stdout, stderr io.Writer) error {
 	state, err := svc.CurrentState()
 	if err != nil {
 		return err
 	}
 	if state == claim.StateClaimed {
-		return nil
+		return claim.RemoveTokenFile(path)
 	}
-	live, err := svc.LiveToken()
-	if err != nil {
+	// First mint is synchronous so a bad runtime directory fails the boot.
+	if _, err := svc.EnsureTokenFile(path, claim.TokenTTL); err != nil {
 		return err
 	}
-	if live {
-		return nil
-	}
-	token, err := svc.MintToken(claim.TokenTTL)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("homestead-server: UNCLAIMED — claim token (single use, expires in %v):\n%s\n", claim.TokenTTL, token)
+	fmt.Fprintln(stdout, "homestead-server: UNCLAIMED — run `sudo homesteadctl claim token` to show the claim token")
+	go svc.MaintainTokenFile(ctx, path, claim.TokenTTL, func(err error) {
+		if err == nil {
+			fmt.Fprintln(stderr, "homestead-server: claim token file written again")
+			return
+		}
+		fmt.Fprintln(stderr, "homestead-server: claim token:", err)
+	})
 	return nil
 }

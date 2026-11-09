@@ -79,6 +79,9 @@ func PlanExposure(req Request) (Plan, error) {
 	if req.To != docker.ExposureLocal && req.To != docker.ExposureOverlay && req.To != docker.ExposurePublic {
 		return Plan{}, fmt.Errorf("exposure: target must be local, overlay, or public")
 	}
+	if req.Route.Dashboard && req.To == docker.ExposurePublic {
+		return Plan{}, fmt.Errorf("exposure: %s", docker.ErrDashboardPublic)
+	}
 	if req.To == docker.ExposurePublic && docker.IsPrivateName(req.Route.Host) {
 		return Plan{}, fmt.Errorf("exposure: %q is private and cannot go public", req.Route.Host)
 	}

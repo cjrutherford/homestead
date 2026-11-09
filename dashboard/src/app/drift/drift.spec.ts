@@ -107,7 +107,7 @@ describe('Drift', () => {
     const refresh = http.expectOne('/api/v1/catalog/jellyfin/drift');
     refresh.flush([]);
     fixture.detectChanges();
-    expect(text()).toContain('Adopted 1 file(s)');
+    expect(text()).toContain('Adopted 1 file');
     expect(text()).toContain('No drift');
   });
 
@@ -125,7 +125,7 @@ describe('Drift', () => {
     expect(restore.request.body).toMatchObject({ action: 'restore' });
     restore.flush({ id: 11 });
     fixture.detectChanges();
-    expect(text()).toContain('Follow operation 11');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/11"]')).not.toBeNull();
   });
 
   it('shows the last scheduled scan and saves the cadence', () => {
@@ -133,8 +133,8 @@ describe('Drift', () => {
     http.expectOne('/api/v1/catalog').flush(PACKAGES);
     http.expectOne('/api/v1/drift/schedule').flush(SCHEDULE);
     fixture.detectChanges();
-    expect(text()).toContain('Scans every 24 hour(s)');
-    expect(text()).toContain('2026-10-11T12:00:00Z');
+    expect(text()).toContain('Scans every 24 hours');
+    expect(text()).toContain('11 Oct 2026, 12:00 UTC');
     expect(text()).toContain('compose.yaml (modified)');
     fixture.componentInstance['saveSchedule']('360', false);
     const save = http.expectOne('/api/v1/drift/schedule');
@@ -142,7 +142,7 @@ describe('Drift', () => {
     expect(save.request.body).toEqual({ interval_seconds: 21600, enabled: false });
     save.flush({ ...SCHEDULE, interval_seconds: 21600, enabled: false });
     fixture.detectChanges();
-    expect(text()).toContain('Scans every 6 hour(s)');
+    expect(text()).toContain('Scans every 6 hours');
     expect(text()).toContain('off');
   });
 
@@ -167,7 +167,7 @@ describe('Drift', () => {
     http.expectOne('/api/v1/catalog').flush(PACKAGES);
     http.expectOne('/api/v1/drift/schedule').flush({ ...SCHEDULE, interval_seconds: 300 });
     fixture.detectChanges();
-    expect(text()).toContain('Scans every 5 minute(s)');
+    expect(text()).toContain('Scans every 5 minutes');
   });
 
   it('shows running-container findings with their resolution path', () => {
@@ -257,5 +257,18 @@ describe('Drift', () => {
     fixture.detectChanges();
     expect(text()).toContain('Docker engine unreachable');
     expect(text()).not.toContain('Restore managed state');
+  });
+
+  it('leads with what needs attention and keeps the schedule collapsed', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/drift/schedule').flush(SCHEDULE);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('h2')?.textContent).toContain('Needs attention');
+    expect(el.querySelector('ul.triage .badge-warn')?.textContent).toContain('drifted');
+    const details = el.querySelector('details') as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(details.textContent).toContain('Save schedule');
   });
 });

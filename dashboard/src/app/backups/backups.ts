@@ -2,13 +2,16 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   ApiService,
-  BackupIdentityExport,
-  BackupIdentityStatus,
   BackupRecipients,
   BackupSchedule,
   SchedulerJob,
 } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { Dialog } from '../ui/dialog';
+import { NightlyPolicy } from './nightly-policy';
+import { RecoveryIdentity } from './recovery-identity';
+import { formatWhen, WhenPipe } from '../core/format-time';
+import { Loading } from '../ui/loading';
 
 /**
  * Backup surfaces (S267): resolved destination plus schedule records,
@@ -19,7 +22,7 @@ import { StateMessage } from '../state/state-message';
  * run (server semantics).
  */
 @Component({
-  imports: [StateMessage],
+  imports: [Loading, StateMessage, Dialog, NightlyPolicy, RecoveryIdentity, WhenPipe],
   selector: 'app-backups',
   templateUrl: './backups.html',
   styles: ['.backup-root { overflow-wrap: anywhere; }'],
@@ -27,9 +30,12 @@ import { StateMessage } from '../state/state-message';
 export class Backups implements OnInit {
   private readonly api = inject(ApiService);
 
+  protected readonly fieldErrors = signal<Record<string, string>>({});
   protected readonly destination = signal<string | null>(null);
   protected readonly encryption = signal<string | null>(null);
   protected readonly destinationError = signal<string | null>(null);
+  /** 422: no storage holds the backup class yet. A state, not a failure. */
+  protected readonly destinationUnset = signal(false);
   protected readonly schedules = signal<BackupSchedule[]>([]);
   protected readonly inspected = signal<BackupSchedule | null>(null);
   protected readonly jobs = signal<SchedulerJob[]>([]);
@@ -38,11 +44,7 @@ export class Backups implements OnInit {
   protected readonly confirmingRemove = signal<string | null>(null);
   protected readonly recipients = signal<BackupRecipients | null>(null);
   protected readonly recipientsError = signal<string | null>(null);
-  protected readonly identity = signal<BackupIdentityStatus | null>(null);
   protected readonly confirmingRecipient = signal<string | null>(null);
-  protected readonly confirmingExport = signal(false);
-  /** The exported key, held only until the owner dismisses it. */
-  protected readonly exported = signal<BackupIdentityExport | null>(null);
   protected readonly loading = signal(true);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -56,6 +58,7 @@ export class Backups implements OnInit {
     this.loading.set(true);
     this.error.set(null);
     this.destinationError.set(null);
+    this.destinationUnset.set(false);
     this.api.backupDestination().subscribe({
       next: ({ destination, encrypted, format_version }) => {
         this.destination.set(destination);
@@ -65,6 +68,10 @@ export class Backups implements OnInit {
       },
       error: (failure: HttpErrorResponse) => {
         this.destination.set(null);
+        if (failure.status === 422) {
+          this.destinationUnset.set(true);
+          return;
+        }
         this.destinationError.set(failure.error ?? failure.message);
       },
     });
@@ -73,10 +80,6 @@ export class Backups implements OnInit {
       next: (view) => this.recipients.set(view),
       error: (failure: HttpErrorResponse) =>
         this.recipientsError.set(failure.error ?? failure.message),
-    });
-    this.api.backupIdentity().subscribe({
-      next: (status) => this.identity.set(status),
-      error: () => this.identity.set(null),
     });
     this.jobsLoading.set(true);
     this.jobsError.set(null);
@@ -122,18 +125,23 @@ export class Backups implements OnInit {
     actor = actor.trim();
     hours = hours.trim();
     retain = retain.trim();
-    if (!name || !actor) {
-      this.error.set('A schedule needs a package and a named actor.');
-      return;
+    const problems: Record<string, string> = {};
+    if (!name) {
+      problems['app'] = 'Enter the app to back up.';
+    }
+    if (!actor) {
+      problems['actor'] = 'Enter the name of the owner making this change.';
     }
     const interval = /^\d+$/.test(hours) ? Number(hours) : NaN;
     if (!Number.isSafeInteger(interval) || interval < 1) {
-      this.error.set('Interval must be a whole number of hours, at least 1.');
-      return;
+      problems['interval'] = 'Interval must be a whole number of hours, at least 1.';
     }
     const keep = retain === '' ? 7 : /^\d+$/.test(retain) ? Number(retain) : NaN;
     if (!Number.isSafeInteger(keep)) {
-      this.error.set('Retain must be a whole number of runs, 0 or more.');
+      problems['retain'] = 'Retain must be a whole number of runs, 0 or more.';
+    }
+    this.fieldErrors.set(problems);
+    if (Object.keys(problems).length > 0) {
       return;
     }
     this.busy.set(true);
@@ -176,7 +184,7 @@ export class Backups implements OnInit {
 
   /** Go's zero time means the event never happened. */
   when(iso: string, empty = 'never'): string {
-    return !iso || iso.startsWith('0001-') ? empty : iso;
+    return formatWhen(iso, empty);
   }
 
   remove(name: string): void {
@@ -252,89 +260,5 @@ export class Backups implements OnInit {
         this.error.set(failure.error ?? failure.message);
       },
     });
-  }
-
-  askExport(): void {
-    this.confirmingExport.set(true);
-  }
-
-  cancelExport(): void {
-    this.confirmingExport.set(false);
-  }
-
-  /** Explicit, audited export; the key is shown once, then dropped. */
-  confirmExport(): void {
-    this.confirmingExport.set(false);
-    this.busy.set(true);
-    this.error.set(null);
-    this.notice.set(null);
-    this.api.backupIdentityExport().subscribe({
-      next: (result) => {
-        this.busy.set(false);
-        this.exported.set(result);
-        this.refresh();
-      },
-      error: (failure: HttpErrorResponse) => {
-        this.busy.set(false);
-        this.error.set(failure.error ?? failure.message);
-      },
-    });
-  }
-
-  copyExport(): void {
-    const key = this.exported()?.identity;
-    if (key && navigator.clipboard) {
-      void navigator.clipboard.writeText(key);
-      this.notice.set('Copied. Store it offline, then dismiss it here.');
-    }
-  }
-
-  downloadExport(): void {
-    const result = this.exported();
-    if (!result) {
-      return;
-    }
-    const url = URL.createObjectURL(
-      new Blob([result.identity + '\n'], { type: 'text/plain' }),
-    );
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'homestead-backup-identity.txt';
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
-  /**
-   * Dropping the signal is the only copy the page holds; the key is
-   * never written to storage. Dismissing without acknowledging leaves
-   * the doctor warning in place.
-   */
-  dismissExport(): void {
-    this.exported.set(null);
-    this.notice.set(null);
-  }
-
-  /** The owner confirms the key is stored offline; then it is dropped. */
-  acknowledgeExport(): void {
-    this.busy.set(true);
-    this.error.set(null);
-    this.api.backupIdentityAck().subscribe({
-      next: () => {
-        this.busy.set(false);
-        this.exported.set(null);
-        this.notice.set('Recorded: the recovery identity is stored offline.');
-        this.refresh();
-      },
-      error: (failure: HttpErrorResponse) => {
-        this.busy.set(false);
-        this.error.set(failure.error ?? failure.message);
-      },
-    });
-  }
-
-  /** Exported earlier but never confirmed stored. */
-  pendingAck(): boolean {
-    const status = this.identity();
-    return !!status && status.exported && !status.acknowledged;
   }
 }

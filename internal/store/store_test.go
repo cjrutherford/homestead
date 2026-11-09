@@ -202,7 +202,14 @@ func TestUpgradeFromV23PopulatedDatabase(t *testing.T) {
 		`ALTER TABLE cert_issuance_approvals DROP COLUMN renewal_mode`,
 		`ALTER TABLE cert_issuances DROP COLUMN directory`,
 		`ALTER TABLE craft_baseline DROP COLUMN artifact_sha256`,
+		`DROP INDEX sessions_person`, `ALTER TABLE sessions DROP COLUMN role`, `ALTER TABLE sessions DROP COLUMN person_id`, `ALTER TABLE people DROP COLUMN authentik_uid`, `ALTER TABLE sessions DROP COLUMN stepped_up_until`, `ALTER TABLE sso_state DROP COLUMN session_id`, `ALTER TABLE sso_state DROP COLUMN return_to`,
+		`ALTER TABLE sessions DROP COLUMN method`,
 		`ALTER TABLE craft_baseline DROP COLUMN context_digest`,
+		`ALTER TABLE tunnel_routes DROP COLUMN account_id`,
+		`ALTER TABLE tunnel_routes DROP COLUMN zone_id`, `ALTER TABLE tunnel_routes DROP COLUMN zone_name`,
+		`DROP TABLE tunnel_dns_records`,
+		`DROP TABLE tunnel_replaced_records`,
+		`DROP TABLE local_resolver`, `DROP TABLE backup_policy`, `DROP TABLE app_sign_in`, `DROP TABLE IF EXISTS people`, `DROP TABLE IF EXISTS people_grants`, `DROP TABLE IF EXISTS app_setup`, `DROP TABLE IF EXISTS everything_purges`,
 		`DELETE FROM schema_migrations WHERE version >= 24`,
 	} {
 		if _, err := s.DB().Exec(stmt); err != nil {
@@ -244,7 +251,14 @@ func TestUpgradeFromV30KeepsPopulatedBackupRecipients(t *testing.T) {
 		`ALTER TABLE cert_issuance_approvals DROP COLUMN renewal_mode`,
 		`ALTER TABLE cert_issuances DROP COLUMN directory`,
 		`ALTER TABLE craft_baseline DROP COLUMN artifact_sha256`,
+		`DROP INDEX sessions_person`, `ALTER TABLE sessions DROP COLUMN role`, `ALTER TABLE sessions DROP COLUMN person_id`, `ALTER TABLE people DROP COLUMN authentik_uid`, `ALTER TABLE sessions DROP COLUMN stepped_up_until`, `ALTER TABLE sso_state DROP COLUMN session_id`, `ALTER TABLE sso_state DROP COLUMN return_to`,
+		`ALTER TABLE sessions DROP COLUMN method`,
 		`ALTER TABLE craft_baseline DROP COLUMN context_digest`,
+		`ALTER TABLE tunnel_routes DROP COLUMN account_id`,
+		`ALTER TABLE tunnel_routes DROP COLUMN zone_id`, `ALTER TABLE tunnel_routes DROP COLUMN zone_name`,
+		`DROP TABLE tunnel_dns_records`,
+		`DROP TABLE tunnel_replaced_records`,
+		`DROP TABLE local_resolver`, `DROP TABLE backup_policy`, `DROP TABLE app_sign_in`, `DROP TABLE IF EXISTS people`, `DROP TABLE IF EXISTS people_grants`, `DROP TABLE IF EXISTS app_setup`, `DROP TABLE IF EXISTS everything_purges`,
 		`DELETE FROM schema_migrations WHERE version >= 31`,
 	} {
 		if _, err := s.DB().Exec(stmt); err != nil {
@@ -269,5 +283,75 @@ func TestUpgradeFromV30KeepsPopulatedBackupRecipients(t *testing.T) {
 	// A pre-upgrade export stays unacknowledged: the owner never confirmed it.
 	if err := up.DB().QueryRow(`SELECT acknowledged_at FROM backup_identity_exports WHERE fingerprint = 'fp'`).Scan(&ack); err != nil || ack != "" {
 		t.Fatalf("export ack = %q, %v", ack, err)
+	}
+}
+
+// S287: the setup walkthrough stamp (migration 44) marks an appliance that
+// was already claimed at upgrade time as legacy, and leaves an unclaimed one
+// alone so it is a fresh appliance.
+func TestSetupLegacyStampOnUpgrade(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		claimed bool
+		want    string
+	}{
+		{"claimed before upgrade is legacy", true, `{"origin":"legacy"}`},
+		{"unclaimed at upgrade is fresh", false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "test.db")
+			s, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			steps := []string{`DELETE FROM wizard_state WHERE wizard = 'setup'`,
+				`DROP INDEX sessions_person`, `ALTER TABLE sessions DROP COLUMN role`, `ALTER TABLE sessions DROP COLUMN person_id`, `ALTER TABLE people DROP COLUMN authentik_uid`, `ALTER TABLE sessions DROP COLUMN stepped_up_until`, `ALTER TABLE sso_state DROP COLUMN session_id`, `ALTER TABLE sso_state DROP COLUMN return_to`,
+				`ALTER TABLE tunnel_routes DROP COLUMN account_id`, `ALTER TABLE tunnel_routes DROP COLUMN zone_id`, `ALTER TABLE tunnel_routes DROP COLUMN zone_name`,
+				`DROP TABLE tunnel_dns_records`,
+				`DROP TABLE tunnel_replaced_records`, `DROP TABLE local_resolver`, `DROP TABLE backup_policy`, `DROP TABLE app_sign_in`, `DROP TABLE IF EXISTS people`, `DROP TABLE IF EXISTS people_grants`, `DROP TABLE IF EXISTS app_setup`, `DROP TABLE IF EXISTS everything_purges`, `DELETE FROM schema_migrations WHERE version >= 44`}
+			if tc.claimed {
+				steps = append([]string{`UPDATE appliance SET state = 'CLAIMED' WHERE id = 1`}, steps...)
+			}
+			for _, stmt := range steps {
+				if _, err := s.DB().Exec(stmt); err != nil {
+					t.Fatalf("%s: %v", stmt, err)
+				}
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			up, err := Open(path)
+			if err != nil {
+				t.Fatalf("upgrade: %v", err)
+			}
+			defer up.Close()
+			var payload string
+			err = up.DB().QueryRow(`SELECT payload FROM wizard_state WHERE wizard = 'setup'`).Scan(&payload)
+			if tc.want == "" {
+				if err == nil {
+					t.Fatalf("unclaimed appliance got a setup row: %s", payload)
+				}
+				return
+			}
+			if err != nil || payload != tc.want {
+				t.Fatalf("payload = %q, %v; want %q", payload, err, tc.want)
+			}
+			// A second open never replaces an owner-edited row.
+			if _, err := up.DB().Exec(`UPDATE wizard_state SET payload = '{"origin":"legacy","skipped":["sign-in"]}' WHERE wizard = 'setup'`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := up.DB().Exec(`DELETE FROM schema_migrations WHERE version = 44`); err != nil {
+				t.Fatal(err)
+			}
+			up.Close()
+			again, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer again.Close()
+			if err := again.DB().QueryRow(`SELECT payload FROM wizard_state WHERE wizard = 'setup'`).Scan(&payload); err != nil || payload == tc.want {
+				t.Fatalf("row replaced on re-run: %q, %v", payload, err)
+			}
+		})
 	}
 }

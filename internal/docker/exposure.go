@@ -83,3 +83,29 @@ func renderUpstream(policy *Policy, proxy string) string {
 		return proxy
 	}
 }
+
+// dashboardPolicy is the proxy-side source restriction the dashboard route
+// always carries (ADR-035, S116): local answers loopback, private and
+// link-local sources only; overlay adds the carrier-grade NAT range overlay
+// networks use. A route with an explicit policy keeps it.
+func dashboardPolicy(r Route) *Policy {
+	if r.Policy != nil || !r.Dashboard {
+		return r.Policy
+	}
+	cidrs := []string{
+		"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16",
+		"::1/128", "fc00::/7", "fe80::/10",
+	}
+	zone := firewall.ZoneLocal
+	name := "dashboard-local"
+	if r.Exposure == ExposureOverlay {
+		cidrs = append(cidrs, "100.64.0.0/10")
+		zone = firewall.ZoneOverlay
+		name = "dashboard-overlay"
+	}
+	p := &Policy{Name: name}
+	for _, c := range cidrs {
+		p.Sources = append(p.Sources, firewall.Source{Zone: zone, CIDR: c})
+	}
+	return p
+}

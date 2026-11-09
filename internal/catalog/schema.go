@@ -3,11 +3,13 @@ package catalog
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"unicode/utf8"
 
 	"homestead/internal/craft"
+	"homestead/internal/docker"
 	"homestead/internal/exposure"
 	"homestead/internal/identity"
 	"homestead/internal/storage"
@@ -19,6 +21,13 @@ var (
 	validServiceName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 )
 
+// Image publishers (S360, ADR-056).
+const (
+	PublisherUpstream    = "upstream"
+	PublisherLinuxServer = "linuxserver"
+	PublisherCommunity   = "community"
+)
+
 // Service is one container an app runs: a compose-safe name, a pinned
 // image (tags required, latest refused — reproducible installs only),
 // and the exposure endpoint key it serves. Internal services (database,
@@ -26,13 +35,31 @@ var (
 // posture to declare. Generation (S153) and recommendations (S154)
 // skip them for serving while still rendering their containers.
 type Service struct {
-	Name    string
-	Image   string
-	Exposes string
+	Name  string
+	Image string
+	// Publisher says who publishes Image (S360, ADR-056): upstream (the
+	// project itself, or a Docker official image of a dependency),
+	// linuxserver (LinuxServer.io, only the packages ADR-056 names) or
+	// community (a single-maintainer image, accepted case by case).
+	// Locally built craft images leave it empty. The curated catalog
+	// test requires it on every pulled service.
+	Publisher string `yaml:"publisher,omitempty"`
+	// Justification records why a community image is accepted. Required
+	// for Publisher community, refused for every other publisher.
+	Justification string `yaml:"justification,omitempty"`
+	Exposes       string
+	// ContainerPort is the app listener inside its container, not a host port.
+	ContainerPort int
 	// Command overrides the image entrypoint command (official
 	// images like Authentik require `server`/`worker` verbs):
 	// empty inherits the image default.
 	Command []string
+	// Entrypoint names the image's own entrypoint when Homestead has to
+	// supervise startup (S342). The generated stack replaces ENTRYPOINT
+	// with the secret-entrypoint supervisor and passes this list, plus
+	// Command, as the command it execs. Required for any service that
+	// exports a secret value into the environment.
+	Entrypoint []string
 	// Data declares every container path the image writes (S276):
 	// persistent paths placed on mounted storage, ephemeral ones
 	// explicitly marked.
@@ -46,6 +73,9 @@ type Service struct {
 
 // Validate checks service shape and endpoint linkage.
 func (s Service) Validate(endpoints map[string]bool) error {
+	if s.ContainerPort < 0 || s.ContainerPort > 65535 || (s.ContainerPort != 0 && s.Exposes == "") {
+		return fmt.Errorf("catalog: service %q has invalid container port %d", s.Name, s.ContainerPort)
+	}
 	if !validServiceName.MatchString(s.Name) {
 		return fmt.Errorf("catalog: invalid service name %q", s.Name)
 	}
@@ -54,9 +84,26 @@ func (s Service) Validate(endpoints map[string]bool) error {
 			return fmt.Errorf("catalog: service %q has an empty command argument", s.Name)
 		}
 	}
+	for _, arg := range s.Entrypoint {
+		if arg == "" {
+			return fmt.Errorf("catalog: service %q has an empty entrypoint argument", s.Name)
+		}
+	}
 	image, tag, found := strings.Cut(s.Image, ":")
 	if !found || image == "" || tag == "" || tag == "latest" {
 		return fmt.Errorf("catalog: image %q must pin a non-latest tag", s.Image)
+	}
+	switch s.Publisher {
+	case "", PublisherUpstream, PublisherLinuxServer:
+		if s.Justification != "" {
+			return fmt.Errorf("catalog: service %q: justification belongs only to community images", s.Name)
+		}
+	case PublisherCommunity:
+		if len(strings.TrimSpace(s.Justification)) < 40 {
+			return fmt.Errorf("catalog: service %q: a community image needs a recorded justification (ADR-056)", s.Name)
+		}
+	default:
+		return fmt.Errorf("catalog: service %q: unknown publisher %q", s.Name, s.Publisher)
 	}
 	for key, value := range s.Environment {
 		if !validEnvKey.MatchString(key) {
@@ -65,8 +112,10 @@ func (s Service) Validate(endpoints map[string]bool) error {
 		if len(value) > 4096 {
 			return fmt.Errorf("catalog: service %q variable %q exceeds 4096 characters", s.Name, key)
 		}
-		if strings.Contains(value, RouteHostToken) && s.Exposes == "" {
-			return fmt.Errorf("catalog: service %q variable %q uses %s but the service exposes no endpoint", s.Name, key, RouteHostToken)
+		for _, token := range routeTokens {
+			if strings.Contains(value, token) && s.Exposes == "" {
+				return fmt.Errorf("catalog: service %q variable %q uses %s but the service exposes no endpoint", s.Name, key, token)
+			}
 		}
 	}
 	if s.Exposes != "" && !endpoints[s.Exposes] {
@@ -190,6 +239,383 @@ func (c SSOClass) Effective() SSOClass {
 type SSODeclaration struct {
 	Class     SSOClass
 	Protocols []identity.Capability
+	// OIDC names the first-party adapter Homestead configures the app's
+	// OpenID Connect sign-in through (S298, ADR-039 §3); nil when the app
+	// cannot be signed in to through Authentik.
+	OIDC *OIDCAdapter `yaml:"oidc,omitempty" json:"oidc,omitempty"`
+	// ForwardAuth (S418, ADR-055) gates an app that has no OIDC behind
+	// Authentik at the edge; exclusive with OIDC.
+	ForwardAuth *ForwardAuth `yaml:"forwardauth,omitempty" json:"forwardauth,omitempty"`
+	// Client declares the client an OIDC provider must host for this
+	// package (S342). Present only when the class admits SSO and the
+	// protocols include oidc. It is separate from OIDC, which names the
+	// adapter that configures an existing app's side of the sign-in.
+	Client *OIDCClient `yaml:"client,omitempty" json:"client,omitempty"`
+}
+
+// OIDC adapters (S298): each is first-party Go code in internal/appsso.
+const (
+	AdapterImmich      = "immich"
+	AdapterNextcloud   = "nextcloud-user-oidc"
+	AdapterJellyfinSSO = "jellyfin-sso-plugin"
+	// AdapterEnvOIDC (S402) signs in an app that is configured by
+	// environment variables alone, through the generic adapter.
+	AdapterEnvOIDC = "env-oidc"
+)
+
+// OIDCAdapter declares how an app takes OpenID Connect sign-in: the
+// adapter, the service that talks to Authentik, and for Jellyfin the
+// third-party plugin pinned by release and checksum (ADR-039 §3).
+type OIDCAdapter struct {
+	Adapter string        `yaml:"adapter" json:"adapter"`
+	Service string        `yaml:"service" json:"service"`
+	Plugin  *PinnedPlugin `yaml:"plugin,omitempty" json:"plugin,omitempty"`
+	// Env is the environment an env-oidc app is configured with (S402).
+	Env *EnvOIDC `yaml:"env,omitempty" json:"env,omitempty"`
+}
+
+// EnvOIDC declares an env-configured app's sign-in (S402, ADR-052
+// amendment). Set maps environment variables to templates; the only
+// placeholders are {{issuer}}, {{authentik_base}} (Authentik's own
+// address, for apps that cannot discover endpoints, S409), {{client_id}},
+// {{admin_group}} and {{user_group}}. The client secret is never templated: it is the
+// declared package Secret, delivered to the app as a file.
+type EnvOIDC struct {
+	// RedirectPaths are the app paths Authentik may redirect back to.
+	RedirectPaths []string `yaml:"redirectpaths" json:"redirectpaths"`
+	// SignInPath is where a person starts signing in.
+	SignInPath string `yaml:"signinpath" json:"signinpath"`
+	// Secret names the declared package secret that is the client secret.
+	Secret string `yaml:"secret" json:"secret"`
+	// Trust, when set, is the variable that receives the path of the
+	// appliance root inside the container.
+	Trust string `yaml:"trust,omitempty" json:"trust,omitempty"`
+	// TrustBundle, when "combined" (S410), makes the trust variable point
+	// at a bundle of the host's public CA certificates plus the appliance
+	// root instead of the bare root. For apps whose variable replaces the
+	// whole trust store (Python requests), so their other HTTPS fetches
+	// keep working. "java" (S411) is the JVM form. Needs Trust; empty
+	// keeps the bare root.
+	TrustBundle string `yaml:"trustbundle,omitempty" json:"trustbundle,omitempty"`
+	// TrustPath (S412), with trustbundle "system", is the container path
+	// of the image's own CA bundle; the combined bundle is mounted
+	// read-only over it for the appliance's own issuer. For apps whose
+	// TLS library has no trust variable (Apache mod_auth_openidc).
+	TrustPath string `yaml:"trustpath,omitempty" json:"trustpath,omitempty"`
+	// ExtraSecrets (S412) are further declared secrets the app needs
+	// before sign-in works (a session crypto key), wired and generated
+	// with the client secret. Each is consumed by the same service.
+	ExtraSecrets []string `yaml:"extrasecrets,omitempty" json:"extrasecrets,omitempty"`
+	// OnApply and OnOff (S412) are static argv run inside the service's
+	// container after the stack is up with the sign-in environment (on)
+	// or before it is taken away (off), as ExecUser: for apps that also
+	// keep their login method in their own configuration. No
+	// placeholders and no shell; both or neither.
+	OnApply  []string `yaml:"onapply,omitempty" json:"onapply,omitempty"`
+	OnOff    []string `yaml:"onoff,omitempty" json:"onoff,omitempty"`
+	ExecUser string   `yaml:"execuser,omitempty" json:"execuser,omitempty"`
+	// Restart (S415) restarts the service's container once the OnApply
+	// or OnOff command has succeeded, for apps that read their sign-in
+	// setting only at startup. Needs OnApply and OnOff. An argument may
+	// span lines (an inline script); the plan shows it as a script, not
+	// its text. The script may be Python (S415) or an `sh -c` script
+	// driving an image's sqlite3 shell (S416, Gitea): either way the
+	// secret reaches it only through the secretfile, never as an argument.
+	Restart bool `yaml:"restart,omitempty" json:"restart,omitempty"`
+	// Exclusive (S412) says sign-in replaces the app's own login while
+	// it is on, so plans stop promising a working local login.
+	Exclusive bool `yaml:"exclusive,omitempty" json:"exclusive,omitempty"`
+	// SecretFile (S413) is for apps whose sign-in setting is one value
+	// that contains the client secret (Paperless-ngx's provider JSON).
+	SecretFile *EnvSecretFile `yaml:"secretfile,omitempty" json:"secretfile,omitempty"`
+	// AdminValue and UserValue (S417) are role names the app reads out
+	// of the groups claim itself (Audiobookshelf wants the values
+	// "admin" and "user"): the claim also lists "adminvalue" for members
+	// of the app's admin group and "uservalue" for everyone else. Both or
+	// neither.
+	AdminValue string `yaml:"adminvalue,omitempty" json:"adminvalue,omitempty"`
+	UserValue  string `yaml:"uservalue,omitempty" json:"uservalue,omitempty"`
+	// VerifiedEmail (S454) makes the app's groups claim carry
+	// email_verified=true, for apps that refuse an unverified email
+	// (Vaultwarden) while Authentik 2026.8 sends false for everyone. The
+	// app must ask for the groups scope. Only people already allowed in
+	// by the app's Authentik groups ever reach the claim.
+	VerifiedEmail bool `yaml:"verifiedemail,omitempty" json:"verifiedemail,omitempty"`
+	// Warnings are shown in every sign-in plan for the app.
+	Warnings []string          `yaml:"warnings,omitempty" json:"warnings,omitempty"`
+	Set      map[string]string `yaml:"set" json:"set"`
+}
+
+// EnvSecretFile is a declared secret whose value Homestead renders at
+// sign-in time from Template, with the usual placeholders and
+// {{client_secret}}, and delivers like any other secret (a 0600 file
+// owned by the consuming user, the supervisor exporting it). Off
+// restores the declaration's Initial value. {{client_secret}} is valid
+// only here, never in Set, so the secret never reaches Compose.
+type EnvSecretFile struct {
+	// Secret names a declared secret with an initial value, consumed by
+	// the service.
+	Secret string `yaml:"secret" json:"secret"`
+	// Template is the rendered value. Substituted values are escaped for
+	// a JSON string, so the template is JSON.
+	Template string `yaml:"template" json:"template"`
+}
+
+// TrustBundleCombined is the one EnvOIDC.TrustBundle value (S410).
+const TrustBundleCombined = "combined"
+
+// TrustBundleJava (S411) is for JVM apps: the trust variable carries
+// JDK_JAVA_OPTIONS naming a generated Java trust store (the host's public
+// CAs plus the appliance root), since javax.net.ssl.trustStore replaces
+// the JDK's own cacerts.
+const TrustBundleJava = "java"
+
+// TrustBundleSystem (S412) mounts the combined bundle over the image's
+// own CA bundle at TrustPath instead of setting a variable.
+const TrustBundleSystem = "system"
+
+// EnvPlaceholders are the only placeholders an env-oidc template may use.
+var EnvPlaceholders = []string{"issuer", "authentik_base", "client_id", "admin_group", "user_group"}
+
+// SecretFilePlaceholders are the placeholders a secretfile template may
+// use: the env ones and the client secret (S413).
+var SecretFilePlaceholders = append(append([]string{}, EnvPlaceholders...), "client_secret")
+
+var validRoleValue = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+
+var validExecUser = regexp.MustCompile(`^([a-z_][a-z0-9_-]*|[0-9]+)$`)
+
+var envPlaceholder = regexp.MustCompile(`\{\{\s*([^{}]*?)\s*\}\}`)
+
+// RenderEnvTemplate fills an env-oidc template's placeholders from vals,
+// the same way validation reads them: spaces inside the braces are
+// ignored. Names that vals lacks are left as written.
+func RenderEnvTemplate(tmpl string, vals map[string]string) string {
+	return envPlaceholder.ReplaceAllStringFunc(tmpl, func(m string) string {
+		name := envPlaceholder.FindStringSubmatch(m)[1]
+		if v, ok := vals[name]; ok {
+			return v
+		}
+		return m
+	})
+}
+
+// EnvTemplateUses reports whether the template names the placeholder.
+func EnvTemplateUses(tmpl, name string) bool {
+	for _, m := range envPlaceholder.FindAllStringSubmatch(tmpl, -1) {
+		if m[1] == name {
+			return true
+		}
+	}
+	return false
+}
+
+func secretConsumedBy(secrets []SecretDecl, name, service string) bool {
+	for _, d := range secrets {
+		if d.Name != name {
+			continue
+		}
+		for _, c := range d.Consumers {
+			if c.Service == service {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (e EnvOIDC) validate(service string, svc Service, secrets []SecretDecl) error {
+	if len(e.RedirectPaths) == 0 {
+		return fmt.Errorf("catalog: env-oidc needs at least one redirect path")
+	}
+	for _, p := range append([]string{e.SignInPath}, e.RedirectPaths...) {
+		if !strings.HasPrefix(p, "/") || strings.Contains(p, "..") || strings.ContainsAny(p, " \t\r\n") {
+			return fmt.Errorf("catalog: env-oidc path %q must be absolute", p)
+		}
+	}
+	found := false
+	for _, d := range secrets {
+		if d.Name != e.Secret {
+			continue
+		}
+		for _, c := range d.Consumers {
+			found = found || c.Service == service
+		}
+		// With a secretfile the client secret has no consumer of its own.
+		found = found || (e.SecretFile != nil && len(d.Consumers) == 0)
+	}
+	if !found {
+		return fmt.Errorf("catalog: env-oidc secret %q must be a declared secret consumed by service %q", e.Secret, service)
+	}
+	if e.Trust != "" && !validEnvKey.MatchString(e.Trust) {
+		return fmt.Errorf("catalog: env-oidc trust variable %q invalid", e.Trust)
+	}
+	switch e.TrustBundle {
+	case "", TrustBundleCombined, TrustBundleJava, TrustBundleSystem:
+	default:
+		return fmt.Errorf("catalog: env-oidc trustbundle %q must be %q, %q, %q or empty", e.TrustBundle, TrustBundleCombined, TrustBundleJava, TrustBundleSystem)
+	}
+	if e.TrustBundle == TrustBundleSystem {
+		if e.Trust != "" || !strings.HasPrefix(e.TrustPath, "/") || strings.Contains(e.TrustPath, "..") || strings.ContainsAny(e.TrustPath, " :\t\r\n") {
+			return fmt.Errorf("catalog: env-oidc trustbundle %q needs an absolute trustpath and no trust variable", TrustBundleSystem)
+		}
+	} else {
+		if e.TrustPath != "" {
+			return fmt.Errorf("catalog: env-oidc trustpath needs trustbundle %q", TrustBundleSystem)
+		}
+		if e.TrustBundle != "" && e.Trust == "" {
+			return fmt.Errorf("catalog: env-oidc trustbundle needs a trust variable")
+		}
+	}
+	for _, name := range e.ExtraSecrets {
+		if name == e.Secret || !secretConsumedBy(secrets, name, service) {
+			return fmt.Errorf("catalog: env-oidc extra secret %q must be a declared secret, other than the client secret, consumed by service %q", name, service)
+		}
+	}
+	if f := e.SecretFile; f != nil {
+		if f.Secret == e.Secret || containsName(e.ExtraSecrets, f.Secret) || !secretConsumedBy(secrets, f.Secret, service) {
+			return fmt.Errorf("catalog: env-oidc secretfile secret %q must be a declared secret of its own, consumed by service %q", f.Secret, service)
+		}
+		for _, d := range secrets {
+			if d.Name == f.Secret && d.Initial == "" {
+				return fmt.Errorf("catalog: env-oidc secretfile secret %q needs an initial value", f.Secret)
+			}
+		}
+		if !EnvTemplateUses(f.Template, "client_secret") {
+			return fmt.Errorf("catalog: env-oidc secretfile template must use {{client_secret}}")
+		}
+		if bad := unknownPlaceholders(f.Template, SecretFilePlaceholders); bad != "" {
+			return fmt.Errorf("catalog: env-oidc secretfile template uses unknown placeholder %q", bad)
+		}
+	}
+	if (len(e.OnApply) == 0) != (len(e.OnOff) == 0) {
+		return fmt.Errorf("catalog: env-oidc onapply and onoff come together")
+	}
+	if e.Restart && len(e.OnApply) == 0 {
+		return fmt.Errorf("catalog: env-oidc restart needs onapply and onoff")
+	}
+	for _, argv := range [][]string{e.OnApply, e.OnOff} {
+		for _, arg := range argv {
+			if arg == "" || strings.ContainsAny(arg, "\r\x00") || strings.Contains(arg, "{{") {
+				return fmt.Errorf("catalog: env-oidc in-app command arguments must be non-empty static text without placeholders")
+			}
+		}
+	}
+	if (e.AdminValue == "") != (e.UserValue == "") {
+		return fmt.Errorf("catalog: env-oidc adminvalue and uservalue come together")
+	}
+	for _, v := range []string{e.AdminValue, e.UserValue} {
+		if v != "" && !validRoleValue.MatchString(v) {
+			return fmt.Errorf("catalog: env-oidc role value %q invalid", v)
+		}
+	}
+	if e.AdminValue != "" && e.AdminValue == e.UserValue {
+		return fmt.Errorf("catalog: env-oidc adminvalue and uservalue must differ")
+	}
+	if e.ExecUser != "" && !validExecUser.MatchString(e.ExecUser) {
+		return fmt.Errorf("catalog: env-oidc execuser %q invalid", e.ExecUser)
+	}
+	if len(e.Set) == 0 {
+		return fmt.Errorf("catalog: env-oidc sets no variables")
+	}
+	for key, tmpl := range e.Set {
+		if !validEnvKey.MatchString(key) {
+			return fmt.Errorf("catalog: env-oidc variable %q invalid", key)
+		}
+		if key == e.Trust {
+			return fmt.Errorf("catalog: env-oidc variable %q is both set and trust", key)
+		}
+		if _, own := svc.Environment[key]; own {
+			return fmt.Errorf("catalog: env-oidc variable %q is already in the %s service's environment", key, service)
+		}
+		for _, d := range secrets {
+			for _, c := range d.Consumers {
+				if c.Service == service && c.Env == key {
+					return fmt.Errorf("catalog: env-oidc variable %q is the %s service's secret variable for %q", key, service, d.Name)
+				}
+			}
+		}
+		for _, m := range envPlaceholder.FindAllStringSubmatch(tmpl, -1) {
+			ok := false
+			for _, name := range EnvPlaceholders {
+				ok = ok || m[1] == name
+			}
+			if !ok {
+				return fmt.Errorf("catalog: env-oidc variable %q uses placeholder {{%s}}; only issuer, authentik_base, client_id, admin_group and user_group are allowed", key, m[1])
+			}
+		}
+		if strings.Contains(strings.ReplaceAll(envPlaceholder.ReplaceAllString(tmpl, ""), "}}", ""), "{{") {
+			return fmt.Errorf("catalog: env-oidc variable %q has a malformed placeholder", key)
+		}
+	}
+	return nil
+}
+
+// PinnedPlugin is one third-party plugin release: Homestead downloads
+// exactly URL and refuses it unless its SHA-256 matches.
+type PinnedPlugin struct {
+	Name    string `yaml:"name" json:"name"`
+	Version string `yaml:"version" json:"version"`
+	URL     string `yaml:"url" json:"url"`
+	SHA256  string `yaml:"sha256" json:"sha256"`
+}
+
+var (
+	pluginVersion = regexp.MustCompile(`^[0-9]+(\.[0-9]+){1,3}$`)
+	pluginSHA256  = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
+
+// validate checks the adapter against the manifest's services: a known
+// adapter, an existing service that serves an endpoint, OIDC among the
+// protocols, and a plugin pin exactly for the Jellyfin adapter.
+func (a OIDCAdapter) validate(protocols []identity.Capability, services map[string]Service, secrets []SecretDecl) error {
+	switch a.Adapter {
+	case AdapterImmich, AdapterNextcloud, AdapterJellyfinSSO, AdapterEnvOIDC:
+	default:
+		return fmt.Errorf("catalog: OIDC adapter %q unknown", a.Adapter)
+	}
+	oidc := false
+	for _, p := range protocols {
+		oidc = oidc || p == identity.CapabilityOIDC
+	}
+	if !oidc {
+		return fmt.Errorf("catalog: an OIDC adapter needs the oidc protocol")
+	}
+	service, ok := services[a.Service]
+	if !ok || service.Exposes == "" {
+		return fmt.Errorf("catalog: OIDC adapter service %q must be a service that serves an endpoint", a.Service)
+	}
+	if (a.Env != nil) != (a.Adapter == AdapterEnvOIDC) {
+		return fmt.Errorf("catalog: the %s adapter, and only it, takes env settings", AdapterEnvOIDC)
+	}
+	if a.Env != nil {
+		if a.Plugin != nil {
+			return fmt.Errorf("catalog: only the %s adapter pins a plugin", AdapterJellyfinSSO)
+		}
+		return a.Env.validate(a.Service, service, secrets)
+	}
+	if a.Adapter != AdapterJellyfinSSO {
+		if a.Plugin != nil {
+			return fmt.Errorf("catalog: only the %s adapter pins a plugin", AdapterJellyfinSSO)
+		}
+		return nil
+	}
+	p := a.Plugin
+	if p == nil {
+		return fmt.Errorf("catalog: the %s adapter must pin the plugin release and its checksum", AdapterJellyfinSSO)
+	}
+	u, err := url.Parse(p.URL)
+	switch {
+	case strings.TrimSpace(p.Name) == "":
+		return fmt.Errorf("catalog: the pinned plugin needs a name")
+	case !pluginVersion.MatchString(p.Version):
+		return fmt.Errorf("catalog: plugin version %q is not a release number", p.Version)
+	case err != nil || u.Scheme != "https" || u.Host == "" || !strings.HasSuffix(u.Path, ".zip") || !strings.Contains(u.Path, p.Version):
+		return fmt.Errorf("catalog: plugin url must be the https .zip of release %s", p.Version)
+	case !pluginSHA256.MatchString(p.SHA256):
+		return fmt.Errorf("catalog: plugin sha256 must be 64 lowercase hex digits")
+	}
+	return nil
 }
 
 // Validate checks the declaration: a known class, known unique
@@ -215,6 +641,20 @@ func (d SSODeclaration) Validate() error {
 	}
 	if d.Class.Effective() != SSOUnsupported && len(d.Protocols) == 0 {
 		return fmt.Errorf("catalog: %s SSO must name at least one protocol", d.Class)
+	}
+	if d.Client != nil {
+		if d.Class.Effective() == SSOUnsupported {
+			return fmt.Errorf("catalog: unsupported SSO takes no OIDC client")
+		}
+		ok := false
+		for _, protocol := range d.Protocols {
+			if protocol == identity.CapabilityOIDC {
+				ok = true
+			}
+		}
+		if !ok {
+			return fmt.Errorf("catalog: an OIDC client needs the oidc protocol")
+		}
 	}
 	return nil
 }
@@ -329,6 +769,385 @@ type Manifest struct {
 	// Secrets declares secret-backed container variables (S266,
 	// ADR-021): delivered as 0600 files via Compose `secrets:`.
 	Secrets []SecretDecl
+	// Serve says how the edge serves the app (ADR-044): ServePath under
+	// the appliance's own names at Path, or ServeHost on a name of its
+	// own. Empty is ServeHost, the serving every package had before.
+	Serve string
+	// Path is the app's path when served by path (default /apps/<name>/,
+	// under the reserved /apps/ prefix). It is the same on every name,
+	// because the app's base-path setting is global to the app.
+	Path string
+	// StripPrefix removes Path before the request reaches the app: for
+	// apps whose base-path setting only rewrites the links they generate.
+	StripPrefix bool `yaml:"strip_prefix"`
+	// SingleOriginSignIn marks an app whose sign-in completes on only one
+	// origin (ADR-060): while it is published, its LAN and .local names
+	// redirect to the public name. Set only for apps that need it.
+	SingleOriginSignIn bool `yaml:"single_origin_sign_in"`
+	// Publish states the package's public form (ADR-061): PublishPath
+	// (under the dashboard's public name, needs serve: path),
+	// PublishHost (a name of its own, with PublishReason) or
+	// PublishNever (no public name or path, allowwider false). Empty is
+	// derived from the other fields by DerivedPublish; every shipped
+	// package declares it.
+	Publish string `yaml:"publish"`
+	// PublishReason says why a PublishHost package keeps its own name.
+	PublishReason string `yaml:"publish_reason"`
+	// CookiePathRoot marks an app known to set cookies with Path=/ even
+	// when served under a path (ADR-061 section 4): such a cookie reaches
+	// every app and the dashboard on the shared origin, so the move and
+	// path-publish plans warn. Set only after the app was checked.
+	CookiePathRoot bool `yaml:"cookie_path_root"`
+	// Redirects send fixed /.well-known/ paths on the appliance's names
+	// into the app's path (Nextcloud's CalDAV and CardDAV discovery).
+	Redirects []docker.PathRedirect
+	// Seeds are first-start files a package writes into its own data
+	// before the app first starts (Jellyfin's network.xml carrying its
+	// Base URL). A file that exists is never overwritten.
+	Seeds []Seed
+	// FirstRun names the first-party routine that finishes the app's own
+	// first-run setup once it answers (S318), for apps that cannot set
+	// themselves up from their environment, as Nextcloud does.
+	FirstRun *FirstRun `yaml:"firstrun,omitempty" json:"firstrun,omitempty"`
+	// Integrations declares how this package relates to the rest of the
+	// appliance (S341, ADR-051). Advisory metadata: nothing in the
+	// install, update or start path reads it, and it never causes
+	// Homestead to configure another app.
+	Integrations []Integration `yaml:"integrations,omitempty"`
+}
+
+// First-run routines (S318): each is first-party Go code in
+// internal/firstrun; the manifest only names one.
+const (
+	FirstRunImmich         = "immich"
+	FirstRunJellyfin       = "jellyfin"
+	FirstRunAudiobookshelf = "audiobookshelf"
+	FirstRunKomga          = "komga"
+	FirstRunBookStack      = "bookstack"
+	FirstRunGitea          = "gitea"
+	FirstRunFreshRSS       = "freshrss"
+	FirstRunMemos          = "memos"
+	FirstRunActualBudget   = "actual-budget"
+	FirstRunMealie         = "mealie"
+	FirstRunCWA            = "calibre-web-automated"
+	FirstRunNavidrome      = "navidrome"
+	FirstRunUptimeKuma     = "uptime-kuma"
+	FirstRunPaperless      = "paperless-ngx"
+)
+
+// Library kinds a first run may create (Jellyfin's collection types).
+// libraryKinds are the library kinds each routine can create.
+var libraryKinds = map[string]map[string]bool{
+	FirstRunJellyfin:       {"movies": true, "tvshows": true, "music": true},
+	FirstRunKomga:          {"comics": true},
+	FirstRunAudiobookshelf: {"audiobooks": true, "podcasts": true},
+}
+
+// FirstRun declares the app's first-run routine: the service it talks
+// to, the administrator account it creates and the declared secret
+// holding that account's password. The secret is held by Homestead
+// alone (it needs no consumer) and is revealable like Nextcloud's.
+type FirstRun struct {
+	Routine string `yaml:"routine" json:"routine"`
+	Service string `yaml:"service" json:"service"`
+	Account string `yaml:"account" json:"account"`
+	Secret  string `yaml:"secret" json:"secret"`
+	// Libraries are the media libraries the first run creates (S319 Jellyfin,
+	// S452 Komga and Audiobookshelf), each on one of the service's declared data paths.
+	Libraries []Library `yaml:"libraries,omitempty" json:"libraries,omitempty"`
+}
+
+// Library is one media library: its name in the app, its kind and the
+// container path it reads.
+type Library struct {
+	Name string `yaml:"name" json:"name"`
+	Kind string `yaml:"kind" json:"kind"`
+	Path string `yaml:"path" json:"path"`
+}
+
+func (f FirstRun) validate(m Manifest, services map[string]bool) error {
+	switch f.Routine {
+	case FirstRunImmich, FirstRunJellyfin, FirstRunAudiobookshelf, FirstRunKomga, FirstRunBookStack, FirstRunGitea, FirstRunFreshRSS, FirstRunMemos, FirstRunActualBudget, FirstRunMealie, FirstRunCWA, FirstRunNavidrome, FirstRunUptimeKuma, FirstRunPaperless:
+	default:
+		return fmt.Errorf("catalog: unknown first-run routine %q", f.Routine)
+	}
+	if !services[f.Service] {
+		return fmt.Errorf("catalog: first-run service %q unknown", f.Service)
+	}
+	if len(f.Libraries) > 0 && libraryKinds[f.Routine] == nil {
+		return fmt.Errorf("catalog: first-run %q creates no libraries", f.Routine)
+	}
+	targets := map[string]bool{}
+	for _, svc := range m.Services {
+		if svc.Name == f.Service {
+			for _, d := range svc.Data {
+				if !d.Ephemeral {
+					targets[d.Target] = true
+				}
+			}
+		}
+	}
+	names := map[string]bool{}
+	for _, lib := range f.Libraries {
+		if strings.TrimSpace(lib.Name) == "" || names[lib.Name] {
+			return fmt.Errorf("catalog: first-run library name %q missing or repeated", lib.Name)
+		}
+		names[lib.Name] = true
+		if !libraryKinds[f.Routine][lib.Kind] {
+			return fmt.Errorf("catalog: first-run library %q kind %q unknown", lib.Name, lib.Kind)
+		}
+		if !targets[lib.Path] {
+			return fmt.Errorf("catalog: first-run library %q path %q is not a persistent data path of %s", lib.Name, lib.Path, f.Service)
+		}
+	}
+	if f.Routine == FirstRunActualBudget {
+		// Seeds the owner's own sign-in name: no account or password.
+		if f.Account != "" || f.Secret != "" {
+			return fmt.Errorf("catalog: first-run %q has no account or secret", f.Routine)
+		}
+		return nil
+	}
+	secrets := m.Secrets
+	if strings.TrimSpace(f.Account) == "" {
+		return fmt.Errorf("catalog: first-run %q needs an account", f.Routine)
+	}
+	for _, decl := range secrets {
+		if decl.Name == f.Secret {
+			if !decl.Reveal || !decl.Immutable {
+				return fmt.Errorf("catalog: first-run secret %q must be immutable and revealable", f.Secret)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("catalog: first-run secret %q is not declared", f.Secret)
+}
+
+// HeldSecret reports a declared secret Homestead holds for itself (the
+// first-run account's password): it has no consumer service.
+func (m Manifest) HeldSecret(name string) bool {
+	if m.FirstRun != nil && m.FirstRun.Secret == name {
+		return true
+	}
+	// The client secret of an app whose sign-in setting embeds it (S413)
+	// reaches the app only inside the derived secret file.
+	if m.SSO.OIDC != nil && m.SSO.OIDC.Env != nil && m.SSO.OIDC.Env.SecretFile != nil {
+		return m.SSO.OIDC.Env.Secret == name
+	}
+	return false
+}
+
+// Seed is one first-start file: Target is a container path inside one
+// of Service's persistent data paths. Content may use RoutePathToken.
+type Seed struct {
+	Service string
+	Target  string
+	Content string
+}
+
+// validateSeeds: each seed lands inside a persistent data path of its
+// service, at most once, with bounded content.
+func (m Manifest) validateSeeds() error {
+	seen := map[string]bool{}
+	for _, seed := range m.Seeds {
+		if len(seed.Content) == 0 || len(seed.Content) > 8192 {
+			return fmt.Errorf("catalog: seed %q content must be 1-8192 bytes", seed.Target)
+		}
+		if seen[seed.Service+"\x00"+seed.Target] {
+			return fmt.Errorf("catalog: duplicate seed %q", seed.Target)
+		}
+		seen[seed.Service+"\x00"+seed.Target] = true
+		if _, ok := seedMount(m, seed); !ok {
+			return fmt.Errorf("catalog: seed %q must sit inside a persistent data path of service %q", seed.Target, seed.Service)
+		}
+	}
+	return nil
+}
+
+// seedMount finds the persistent data path holding a seed.
+func seedMount(m Manifest, seed Seed) (DataPath, bool) {
+	if !strings.HasPrefix(seed.Target, "/") || strings.Contains(seed.Target, "..") || strings.HasSuffix(seed.Target, "/") {
+		return DataPath{}, false
+	}
+	for _, service := range m.Services {
+		if service.Name != seed.Service {
+			continue
+		}
+		for _, data := range service.Data {
+			if !data.Ephemeral && strings.HasPrefix(seed.Target, strings.TrimSuffix(data.Target, "/")+"/") {
+				return data, true
+			}
+		}
+	}
+	return DataPath{}, false
+}
+
+// Serving modes (ADR-044).
+const (
+	ServeHost = "host"
+	ServePath = "path"
+)
+
+// Public forms and reasons (ADR-061).
+const (
+	PublishPath  = "path"
+	PublishHost  = "host"
+	PublishNever = "never"
+
+	ReasonNoSubpath     = "no_subpath"
+	ReasonOwnNameADR044 = "own_name_adr044"
+	ReasonSingleOrigin  = "single_origin"
+	ReasonOwnerChoice   = "owner_choice"
+)
+
+// anyEndpointWider reports whether some endpoint may be exposed wider than
+// the local network.
+func (m Manifest) anyEndpointWider() bool {
+	for _, endpoint := range m.Exposure.Endpoints {
+		if endpoint.AllowWider {
+			return true
+		}
+	}
+	return false
+}
+
+// DerivedPublish is the public form today's fields imply (ADR-061): never
+// when no endpoint allows wider exposure, path when served by path, host
+// otherwise.
+func (m Manifest) DerivedPublish() string {
+	switch {
+	case !m.anyEndpointWider():
+		return PublishNever
+	case m.ServedByPath():
+		return PublishPath
+	}
+	return PublishHost
+}
+
+// PublishForm is the declared public form, or the derived one when the
+// manifest does not declare it.
+func (m Manifest) PublishForm() string {
+	if m.Publish != "" {
+		return m.Publish
+	}
+	return m.DerivedPublish()
+}
+
+// validatePublish checks the public-form declaration (ADR-061).
+func (m Manifest) validatePublish() error {
+	switch m.Publish {
+	case "":
+		if m.PublishReason != "" {
+			return fmt.Errorf("catalog: publish_reason needs publish: host")
+		}
+		return nil
+	case PublishPath, PublishHost, PublishNever:
+	default:
+		return fmt.Errorf("catalog: publish must be path, host or never")
+	}
+	if m.Publish == PublishHost {
+		switch m.PublishReason {
+		case ReasonNoSubpath, ReasonOwnNameADR044, ReasonSingleOrigin, ReasonOwnerChoice:
+		case "":
+			return fmt.Errorf("catalog: publish: host needs a publish_reason")
+		default:
+			return fmt.Errorf("catalog: unknown publish_reason %q", m.PublishReason)
+		}
+	} else if m.PublishReason != "" {
+		return fmt.Errorf("catalog: publish_reason needs publish: host")
+	}
+	if m.Publish == PublishPath && !m.ServedByPath() {
+		return fmt.Errorf("catalog: publish: path needs serve: path")
+	}
+	if m.Publish == PublishHost && m.ServedByPath() {
+		return fmt.Errorf("catalog: publish: host conflicts with serve: path")
+	}
+	if m.SingleOriginSignIn && m.Publish != PublishHost {
+		return fmt.Errorf("catalog: single_origin_sign_in needs publish: host")
+	}
+	if m.SingleOriginSignIn && m.PublishReason != ReasonSingleOrigin {
+		return fmt.Errorf("catalog: single_origin_sign_in needs publish_reason: single_origin")
+	}
+	if m.PublishReason == ReasonSingleOrigin && !m.SingleOriginSignIn {
+		return fmt.Errorf("catalog: publish_reason: single_origin needs single_origin_sign_in")
+	}
+	if !m.anyEndpointWider() && m.Publish != PublishNever {
+		return fmt.Errorf("catalog: allowwider: false needs publish: never")
+	}
+	if m.Publish == PublishNever && m.anyEndpointWider() {
+		return fmt.Errorf("catalog: publish: never needs allowwider: false")
+	}
+	return nil
+}
+
+// ServedByPath reports a package served under the appliance's names.
+func (m Manifest) ServedByPath() bool { return m.Serve == ServePath }
+
+// PublicRefusal is the sentence refusing a public name or path for an app
+// whose public form is never (ADR-061: publish never, which allowwider
+// false implies), or "" when the manifest allows publishing.
+func (m Manifest) PublicRefusal() string {
+	if m.PublishForm() != PublishNever {
+		return ""
+	}
+	return m.Title + " is never published: it stays on your network, so it gets no public name and no public path."
+}
+
+// PublicFormReason is a plain-language statement of why a host package
+// keeps a public name of its own, for plan refusals (ADR-061).
+func (m Manifest) PublicFormReason() string {
+	switch m.PublishReason {
+	case ReasonNoSubpath:
+		return "it cannot run under a path"
+	case ReasonOwnNameADR044:
+		return "it cannot run under a path (ADR-044)"
+	case ReasonSingleOrigin:
+		return "its sign-in works on one origin only (ADR-060)"
+	case ReasonOwnerChoice:
+		return "you chose to keep it on its own origin"
+	}
+	return "its package keeps it on a name of its own"
+}
+
+// AppPath is the package's path when served by path: Path, or
+// /apps/<name>/ by default. Empty for host packages.
+func (m Manifest) AppPath() string {
+	if !m.ServedByPath() {
+		return ""
+	}
+	if m.Path != "" {
+		return m.Path
+	}
+	return docker.AppPathFor(m.Name)
+}
+
+// validateServe checks the serving declaration (ADR-044).
+func (m Manifest) validateServe() error {
+	switch m.Serve {
+	case "", ServeHost:
+		if m.Path != "" || m.StripPrefix || len(m.Redirects) > 0 {
+			return fmt.Errorf("catalog: path, strip_prefix and redirects need serve: path")
+		}
+		return nil
+	case ServePath:
+	default:
+		return fmt.Errorf("catalog: serve must be path or host")
+	}
+	if len(m.Exposure.Endpoints) != 1 {
+		return fmt.Errorf("catalog: serve: path needs exactly one endpoint")
+	}
+	if len(m.CraftImages()) > 0 && !m.StripPrefix {
+		return fmt.Errorf("catalog: a craft app served by path strips its path (strip_prefix: true, ADR-045)")
+	}
+	if len(m.BridgeImages()) > 0 && m.StripPrefix {
+		return fmt.Errorf("catalog: an Everything app knows its base path and must not have it stripped (ADR-057)")
+	}
+	probe := docker.Route{Host: "probe.lan", Target: docker.Target{Host: "probe", Port: 80},
+		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal, Path: m.AppPath(),
+		StripPrefix: m.StripPrefix, Redirects: m.Redirects}
+	if err := probe.Validate(); err != nil {
+		return fmt.Errorf("catalog: %w", err)
+	}
+	return nil
 }
 
 // Validate checks the manifest end to end.
@@ -389,6 +1208,15 @@ func (m Manifest) Validate() error {
 	if err := validateCraftServices(m); err != nil {
 		return err
 	}
+	if err := m.validateServe(); err != nil {
+		return err
+	}
+	if err := m.validatePublish(); err != nil {
+		return err
+	}
+	if err := m.validateSeeds(); err != nil {
+		return err
+	}
 	if err := m.Requirements.Validate(); err != nil {
 		return err
 	}
@@ -408,10 +1236,39 @@ func (m Manifest) Validate() error {
 	if err := m.SSO.Validate(); err != nil {
 		return err
 	}
+	if m.SSO.OIDC != nil {
+		byName := map[string]Service{}
+		for _, service := range m.Services {
+			byName[service.Name] = service
+		}
+		if err := m.SSO.OIDC.validate(m.SSO.Protocols, byName, m.Secrets); err != nil {
+			return err
+		}
+	}
+	if m.SSO.ForwardAuth != nil {
+		byName := map[string]Service{}
+		for _, service := range m.Services {
+			byName[service.Name] = service
+		}
+		if err := m.SSO.ForwardAuth.validate(m, byName); err != nil {
+			return err
+		}
+	}
 	if err := validateBrowser(m.Browser); err != nil {
 		return err
 	}
+	if err := validateOIDC(m); err != nil {
+		return err
+	}
 	if err := validateSecrets(m, services); err != nil {
+		return err
+	}
+	if m.FirstRun != nil {
+		if err := m.FirstRun.validate(m, services); err != nil {
+			return err
+		}
+	}
+	if err := m.validateIntegrations(); err != nil {
 		return err
 	}
 	for i := range m.Hooks {
@@ -443,10 +1300,24 @@ func (m Manifest) Stateless() bool {
 
 // CraftImages returns the locally built craft images (S249) the manifest's
 // services run, in service order.
+// Everything bridge images (ADR-057) are not included: they are served by
+// their own bridge, not the shared craft file server.
 func (m Manifest) CraftImages() []string {
 	var out []string
 	for _, service := range m.Services {
-		if _, _, ok := craft.ParseRef(service.Image); ok {
+		if _, _, ok := craft.ParseRef(service.Image); ok && !craft.IsBridgeRef(service.Image) {
+			out = append(out, service.Image)
+		}
+	}
+	return out
+}
+
+// BridgeImages returns the locally built Everything bridge images
+// (`homestead/everything-<app>:<version>`, ADR-057) the manifest runs.
+func (m Manifest) BridgeImages() []string {
+	var out []string
+	for _, service := range m.Services {
+		if craft.IsBridgeRef(service.Image) {
 			out = append(out, service.Image)
 		}
 	}
@@ -461,12 +1332,12 @@ func (m Manifest) CraftImages() []string {
 // craft manifest move together.
 func validateCraftServices(m Manifest) error {
 	for _, service := range m.Services {
-		if !strings.Contains(service.Image, craftMarker) {
+		if !strings.Contains(service.Image, craftMarker) && !strings.Contains(service.Image, bridgeMarker) {
 			continue
 		}
 		app, version, ok := craft.ParseRef(service.Image)
 		if !ok {
-			return fmt.Errorf("catalog: service %q image %q: craft images use the local tag homestead/craft-<app>:<version> and are built on the appliance, never pulled from a registry", service.Name, service.Image)
+			return fmt.Errorf("catalog: service %q image %q: craft images use the local tag homestead/craft-<app>:<version> (or homestead/everything-<app>:<version>) and are built on the appliance, never pulled from a registry", service.Name, service.Image)
 		}
 		if app != m.Name {
 			return fmt.Errorf("catalog: service %q image %q must be the package's own craft app %q", service.Name, service.Image, m.Name)
@@ -491,4 +1362,27 @@ func ValidateCraftListing(m Manifest, listed func(app, version string) bool) err
 		}
 	}
 	return nil
+}
+
+func containsName(list []string, name string) bool {
+	for _, v := range list {
+		if v == name {
+			return true
+		}
+	}
+	return false
+}
+
+// unknownPlaceholders returns the first placeholder in tmpl that is not
+// allowed, or a malformed-brace marker; "" when the template is clean.
+func unknownPlaceholders(tmpl string, allowed []string) string {
+	for _, m := range envPlaceholder.FindAllStringSubmatch(tmpl, -1) {
+		if !containsName(allowed, m[1]) {
+			return m[1]
+		}
+	}
+	if strings.Contains(strings.ReplaceAll(envPlaceholder.ReplaceAllString(tmpl, ""), "}}", ""), "{{") {
+		return "{{"
+	}
+	return ""
 }

@@ -241,6 +241,29 @@ func TestTLSIssuanceCredentialsAreWriteOnly(t *testing.T) {
 	}
 }
 
+// A Cloudflare token is stored even when it cannot see the setup domain;
+// the response carries the warning instead (S294). Other providers are
+// not checked.
+func TestTLSIssuanceCredentialsWarnAboutDomainZone(t *testing.T) {
+	srv, _, issuing := issuanceServer(t)
+	registry := dns.NewRegistry()
+	_ = registry.Register(issuanceTokenDNS{})
+	_ = registry.Register(issuanceCloudflareDNS{})
+	issuing.Providers = registry
+	srv.domainZoneWarning = func(context.Context) string { return "no Cloudflare zone the stored token can see contains other.net" }
+	for provider, want := range map[string]bool{"cloudflare": true, "tokendns": false} {
+		rec := serveRequest(t, srv, http.MethodPost, "/api/v1/tls/issuance/credentials",
+			map[string]any{"provider": provider, "values": map[string]string{"api_token": "tok"}})
+		if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), `"warning"`) != want {
+			t.Fatalf("%s = %d %s", provider, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+type issuanceCloudflareDNS struct{ issuanceTokenDNS }
+
+func (issuanceCloudflareDNS) Name() string { return "cloudflare" }
+
 type issuanceTokenDNS struct{ issuanceFakeDNS }
 
 func (issuanceTokenDNS) Name() string { return "tokendns" }

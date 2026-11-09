@@ -2,14 +2,65 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 
 	"homestead/internal/operation"
 	"homestead/internal/store"
 )
+
+// ErrNotInstalled reports removal of a package with no installed stack.
+var ErrNotInstalled = errors.New("catalog: not installed")
+
+// StackInstalled reports whether dir holds an installed stack. It only
+// checks: it has no side effects, so a concurrent install can never lose
+// its new directory to a check.
+func StackInstalled(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, "compose.yaml"))
+	return err == nil
+}
+
+// stackDirMu serializes the stack directory's create-and-write (install)
+// against its empty-directory removal (uninstall), per directory.
+var stackDirMu sync.Map
+
+func lockStackDir(dir string) func() {
+	mu, _ := stackDirMu.LoadOrStore(dir, &sync.Mutex{})
+	m := mu.(*sync.Mutex)
+	m.Lock()
+	return m.Unlock
+}
+
+// RemoveEmptyStackDir removes dir when it is an empty directory with no
+// installed stack (a leftover from an uninstall before S288). It runs in
+// the uninstall path under the same lock install holds while writing the
+// stack, so a directory an install just created is never removed.
+func RemoveEmptyStackDir(dir string) error {
+	defer lockStackDir(dir)()
+	if StackInstalled(dir) {
+		return nil
+	}
+	return removeIfEmpty(dir)
+}
+
+// removeIfEmpty removes dir only when it is an empty directory. It never
+// recurses, so data folders and stray files are always safe.
+func removeIfEmpty(dir string) error {
+	err := os.Remove(dir)
+	if err == nil || os.IsNotExist(err) {
+		return nil
+	}
+	var pe *os.PathError
+	if errors.As(err, &pe) && (errors.Is(pe.Err, syscall.ENOTEMPTY) || errors.Is(pe.Err, syscall.EEXIST) || errors.Is(pe.Err, syscall.ENOTDIR)) {
+		return nil
+	}
+	return err
+}
 
 // DataDir names one persistent-data root for explicit removal: the
 // mountpoint plus the package-relative path beneath it. Removal
@@ -87,8 +138,9 @@ func RemoveDefinition(removal Removal, dir string, st *store.Store) (operation.D
 	if st == nil {
 		return operation.Definition{}, fmt.Errorf("catalog: removal needs a store")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "compose.yaml")); err != nil {
-		return operation.Definition{}, fmt.Errorf("catalog: %q is not installed: %w", removal.Package, err)
+	if !StackInstalled(dir) {
+		_ = RemoveEmptyStackDir(dir)
+		return operation.Definition{}, fmt.Errorf("%w: %q has no installed stack", ErrNotInstalled, removal.Package)
 	}
 	def := operation.Definition{Type: "catalog.remove"}
 	def.Steps = append(def.Steps, operation.StepDef{
@@ -100,26 +152,7 @@ func RemoveDefinition(removal Removal, dir string, st *store.Store) (operation.D
 	def.Steps = append(def.Steps, operation.StepDef{
 		Name: "remove-files",
 		Run: func(ctx context.Context) error {
-			// Records clear first: a failed clear leaves files (and
-			// their records) in place for retry, while files removed
-			// without clearing would report phantom drift.
-			if err := ClearFingerprints(st, removal.Package); err != nil {
-				return err
-			}
-			for _, name := range []string{"compose.yaml", OverrideFileName} {
-				path := filepath.Join(dir, name)
-				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-					return fmt.Errorf("catalog: remove %s: %w", name, err)
-				}
-			}
-			// Materialized secret files are plaintext: they go with the
-			// stack, data kept or not. The values stay in the secret
-			// store, so a reinstall re-materializes them. RemoveAll on a
-			// symlinked secrets directory removes the link, not its target.
-			if err := os.RemoveAll(filepath.Join(dir, SecretsDirName)); err != nil {
-				return fmt.Errorf("catalog: remove secret files: %w", err)
-			}
-			return nil
+			return removeStackFiles(st, removal.Package, dir)
 		},
 	})
 	if removal.RemoveData {
@@ -145,4 +178,37 @@ func RemoveDefinition(removal Removal, dir string, st *store.Store) (operation.D
 		})
 	}
 	return def, nil
+}
+
+// removeStackFiles clears the fingerprint records and deletes the
+// generated stack files: never data, never the secret store.
+func removeStackFiles(st *store.Store, pkg, dir string) error {
+	// Records clear first: a failed clear leaves files (and
+	// their records) in place for retry, while files removed
+	// without clearing would report phantom drift.
+	if err := ClearFingerprints(st, pkg); err != nil {
+		return err
+	}
+	for _, name := range []string{"compose.yaml", OverrideFileName} {
+		path := filepath.Join(dir, name)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("catalog: remove %s: %w", name, err)
+		}
+	}
+	// Materialized secret files are plaintext: they go with the
+	// stack, data kept or not. The values stay in the secret
+	// store, so a reinstall re-materializes them. RemoveAll on a
+	// symlinked secrets directory removes the link, not its target.
+	if err := os.RemoveAll(filepath.Join(dir, SecretsDirName)); err != nil {
+		return fmt.Errorf("catalog: remove secret files: %w", err)
+	}
+	// The now-empty stack directory goes too (S288). Remove, not RemoveAll:
+	// a directory still holding anything (data folders included) stays.
+	if err := func() error {
+		defer lockStackDir(dir)()
+		return removeIfEmpty(dir)
+	}(); err != nil {
+		return fmt.Errorf("catalog: remove stack directory: %w", err)
+	}
+	return nil
 }

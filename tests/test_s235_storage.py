@@ -34,7 +34,7 @@ class TestStorageSurfaces(unittest.TestCase):
         src = read("cmd/homesteadctl/storage.go")
         for symbol in ('"mounts"', '"register"', '"registrations"',
                        '"assign"', '"assignments"',
-                       "--mountpoint", "--actor", "--class"):
+                       "--mountpoint", '"actor"', "--class"):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, src)
 

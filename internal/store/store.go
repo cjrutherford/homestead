@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 42
+const CurrentVersion = 58
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -840,6 +840,259 @@ CREATE TABLE IF NOT EXISTS craft_file_link (
 CREATE TABLE IF NOT EXISTS craft_file_local_only (
 	app TEXT PRIMARY KEY,
 	created_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S286 (ADR-033): dashboard sign-in with Authentik. Sessions record
+		// their method (password or oidc). sso_config is the applied
+		// Authentik-side configuration (non-secret; the client secret and
+		// the optional API token are sealed secrets, ADR-021). sso_plan is
+		// the one pending plan and its digest-bound approval. sso_link is
+		// the single owner link keyed by (issuer, sub). sso_state holds the
+		// single-use state, nonce and PKCE verifier of in-flight flows.
+		version: 43,
+		name:    "dashboard sso",
+		sql: `
+ALTER TABLE sessions ADD COLUMN method TEXT NOT NULL DEFAULT 'password';
+CREATE TABLE IF NOT EXISTS sso_config (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	spec TEXT NOT NULL,
+	applied_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sso_plan (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	digest TEXT NOT NULL,
+	spec TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	approved_digest TEXT NOT NULL DEFAULT '',
+	approved_by TEXT NOT NULL DEFAULT '',
+	approved_at TEXT NOT NULL DEFAULT '',
+	keep_token INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS sso_link (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	issuer TEXT NOT NULL,
+	sub TEXT NOT NULL,
+	identity_id INTEGER NOT NULL,
+	linked_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sso_state (
+	state_hash BLOB PRIMARY KEY,
+	kind TEXT NOT NULL,
+	nonce TEXT NOT NULL,
+	verifier TEXT NOT NULL,
+	redirect_uri TEXT NOT NULL,
+	identity_id INTEGER NOT NULL DEFAULT 0,
+	actor TEXT NOT NULL DEFAULT '',
+	expires_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S287 post-claim setup walkthrough (ADR-034): an appliance that was
+		// already claimed when this migration runs is stamped legacy in the
+		// resumable wizard store (id setup, non-sensitive payload), so the
+		// dashboard never gates it behind the walkthrough. An appliance that
+		// is unclaimed at this point (every fresh install, every factory
+		// reset) gets no row and is a fresh one. Re-running is harmless:
+		// an existing row is never replaced.
+		version: 44,
+		name:    "setup walkthrough legacy stamp",
+		sql: `
+INSERT OR IGNORE INTO wizard_state (wizard, step, payload, updated_at)
+	SELECT 'setup', 'account', '{"origin":"legacy"}', strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+	WHERE EXISTS (SELECT 1 FROM appliance WHERE id = 1 AND state = 'CLAIMED');`,
+	},
+	{
+		// S294 planned tunnel (ADR-037): the Cloudflare account and zone a
+		// tunnel's routes were created under, derived from the hostname and
+		// never shown, and the DNS records Homestead created for a tunnel.
+		// Teardown deletes only those records.
+		version: 45,
+		name:    "tunnel account and owned dns records",
+		sql: `
+ALTER TABLE tunnel_routes ADD COLUMN account_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE tunnel_routes ADD COLUMN zone_id TEXT NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS tunnel_dns_records (
+	record_id TEXT PRIMARY KEY,
+	zone_id TEXT NOT NULL,
+	hostname TEXT NOT NULL,
+	tunnel_id TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);`,
+	},
+	{
+		version: 46,
+		name:    "tunnel replaced dns records",
+		sql: `
+CREATE TABLE IF NOT EXISTS tunnel_replaced_records (
+	record_id TEXT NOT NULL,
+	tunnel_id TEXT NOT NULL,
+	zone_id TEXT NOT NULL,
+	type TEXT NOT NULL,
+	name TEXT NOT NULL,
+	content TEXT NOT NULL,
+	proxied INTEGER NOT NULL DEFAULT 0,
+	ttl INTEGER NOT NULL DEFAULT 1,
+	created_at TEXT NOT NULL,
+	PRIMARY KEY (tunnel_id, record_id)
+);`,
+	},
+	{
+		version: 47,
+		name:    "tunnel replaced dns record comment",
+		sql:     `ALTER TABLE tunnel_replaced_records ADD COLUMN comment TEXT NOT NULL DEFAULT '';`,
+	},
+	{
+		// S295 (ADR-039): the optional appliance resolver for `.lan`
+		// names; off until the owner approves its plan.
+		version: 48,
+		name:    "local resolver",
+		sql: `CREATE TABLE local_resolver (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	enabled INTEGER NOT NULL DEFAULT 0,
+	actor TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S297 (ADR-039 §2): the one nightly backup policy for every
+		// stateful app. No row until the owner approves a plan.
+		version: 49,
+		name:    "backup policy",
+		sql: `CREATE TABLE backup_policy (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	time_of_day TEXT NOT NULL,
+	retain INTEGER NOT NULL,
+	enabled INTEGER NOT NULL,
+	actor TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		version: 50,
+		name:    "app sign-in",
+		// One row per app signed in through Authentik (S298): what was
+		// applied, so a changed app name shows as a re-plan. The client
+		// secret lives in the secret store, never here.
+		sql: `CREATE TABLE app_sign_in (
+	package TEXT PRIMARY KEY,
+	adapter TEXT NOT NULL,
+	client_id TEXT NOT NULL,
+	issuer TEXT NOT NULL,
+	redirect_uris TEXT NOT NULL,
+	plugin_version TEXT NOT NULL DEFAULT '',
+	actor TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		version: 51,
+		name:    "tunnel zone name",
+		// The zone's name beside its ID (S302), so an adopted tunnel
+		// without a setup domain still proposes app public names. Filled
+		// when a tunnel or public-name plan is applied.
+		sql: `ALTER TABLE tunnel_routes ADD COLUMN zone_name TEXT NOT NULL DEFAULT '';`,
+	},
+	{
+		version: 52,
+		name:    "app sign-in access",
+		// The groups and bindings the last app sign-in apply set up
+		// (S314, ADR-043). Empty on a sign-in from before: open to every
+		// Authentik user until a re-plan is approved.
+		sql: `ALTER TABLE app_sign_in ADD COLUMN access TEXT NOT NULL DEFAULT '';`,
+	},
+	{
+		version: 53,
+		name:    "people",
+		// The household's people and the apps each is granted (S317,
+		// ADR-043 section 4). authentik_pk is the Authentik user; origin is
+		// created (Homestead made the user) or adopted. Nothing secret.
+		sql: `CREATE TABLE people (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	display_name TEXT NOT NULL,
+	username TEXT NOT NULL,
+	email TEXT NOT NULL DEFAULT '',
+	authentik_pk INTEGER NOT NULL,
+	state TEXT NOT NULL DEFAULT 'active',
+	origin TEXT NOT NULL DEFAULT 'created',
+	created_by TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+CREATE TABLE people_grants (
+	person_id INTEGER NOT NULL,
+	app TEXT NOT NULL,
+	role TEXT NOT NULL,
+	PRIMARY KEY (person_id, app)
+);`,
+	},
+	{
+		version: 54,
+		name:    "app setup",
+		// The setup the owner approved with an app's install (S324,
+		// ADR-048): one row per app, its status, and a JSON record of the
+		// approved digests, the routes, the public request, the people to
+		// grant and each step's state. Never a token or secret.
+		sql: `CREATE TABLE app_setup (
+	app TEXT PRIMARY KEY,
+	status TEXT NOT NULL,
+	record TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`,
+	},
+	{
+		version: 55,
+		name:    "authentik step-up",
+		// S334 (ADR-049 §1): an oidc session stepped up by a fresh
+		// Authentik sign-in on the public dashboard name carries the
+		// expiry of that step-up. A step-up flow's state is bound to the
+		// session that started it and carries the dashboard path to
+		// return to.
+		sql: `ALTER TABLE sessions ADD COLUMN stepped_up_until TEXT NOT NULL DEFAULT '';
+ALTER TABLE sso_state ADD COLUMN session_id INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sso_state ADD COLUMN return_to TEXT NOT NULL DEFAULT '';`,
+	},
+	{
+		version: 56,
+		name:    "person sessions",
+		// S338 (ADR-050 §1): a session carries a role. "owner" is every
+		// session before this one; "person" is a People record's session
+		// and has person_id and no identity. A person's Authentik uid (the
+		// OIDC subject under hashed_user_id) is kept on the record, taken
+		// from Authentik when the person is created, adopted or read back.
+		sql: `ALTER TABLE sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'owner';
+ALTER TABLE sessions ADD COLUMN person_id INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS sessions_person ON sessions(person_id) WHERE person_id != 0;
+ALTER TABLE people ADD COLUMN authentik_uid TEXT NOT NULL DEFAULT '';`,
+	},
+	{
+		version: 57,
+		name:    "everything purges",
+		// S427 (ADR-058 section 1): a purge of a removed person's Everything
+		// sharing that has not succeeded yet (the app's container was
+		// stopped). Rows are deleted when the purge succeeds.
+		sql: `CREATE TABLE everything_purges (
+	app TEXT NOT NULL,
+	username TEXT NOT NULL,
+	subject TEXT NOT NULL,
+	requested_at TEXT NOT NULL,
+	attempts INTEGER NOT NULL DEFAULT 0,
+	last_error TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (app, username, subject)
+);`,
+	},
+	{
+		// S479 (ADR-061): the old public name an app move is removing. The
+		// row is written when the move starts and deleted when the name is
+		// gone, so a move that stopped halfway can be finished and Doctor
+		// can say which app the leftover name belonged to.
+		version: 58,
+		name:    "app move pending public name",
+		sql: `CREATE TABLE IF NOT EXISTS app_move_pending (
+	app TEXT PRIMARY KEY,
+	hostname TEXT NOT NULL,
+	tunnel_id TEXT NOT NULL,
+	started_at TEXT NOT NULL
 );`,
 	},
 }

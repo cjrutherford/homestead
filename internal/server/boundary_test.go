@@ -12,11 +12,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"homestead/internal/audit"
 	"homestead/internal/auth"
 	"homestead/internal/claim"
+	"homestead/internal/guide"
 	"homestead/internal/store"
 )
 
@@ -40,7 +42,7 @@ func fullServerApp(t *testing.T) (*Server, *store.Store, *AppServices) {
 	svcs, err := MountApp(srv, AppConfig{
 		Store: st, ConfigPath: filepath.Join(dir, "desired.yaml"), CatalogDir: "catalog",
 		SecretKeyPath: filepath.Join(dir, "key"), Port: 8080,
-		Dashboard: http.NotFoundHandler(),
+		Dashboard: http.NotFoundHandler(), Guide: guide.New(fstest.MapFS{"index.html": {Data: []byte("<h1>Guide</h1>")}}),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -82,16 +84,16 @@ func TestEveryRegisteredRouteIsClassified(t *testing.T) {
 			t.Errorf("craft route %q is class %s, want craft-session", p, c)
 		}
 	}
-	if len(craftRoutes) != 11 {
-		t.Errorf("craft route count = %d, want 11 (update deliberately with routeClasses)", len(craftRoutes))
+	if len(craftRoutes) != 14 {
+		t.Errorf("craft route count = %d, want 14 (update deliberately with routeClasses)", len(craftRoutes))
 	}
 	for p := range routeClasses {
 		if !registered[p] {
 			t.Errorf("routeClasses has stale entry %q (not registered)", p)
 		}
 	}
-	if len(routes) != 115 {
-		t.Errorf("TCP route count = %d, want 115 (update deliberately with routeClasses)", len(routes))
+	if len(routes) != 181 {
+		t.Errorf("TCP route count = %d, want 181 (update deliberately with routeClasses)", len(routes))
 	}
 	counts := map[RouteClass]int{}
 	for _, p := range routes {
@@ -100,8 +102,8 @@ func TestEveryRegisteredRouteIsClassified(t *testing.T) {
 	}
 	t.Logf("TCP routes: %d (public %d, claim-window %d, session %d)",
 		len(routes), counts[ClassPublic], counts[ClassClaimWindow], counts[ClassSession])
-	if counts[ClassPublic] != 9 {
-		t.Errorf("public allowlist size = %d, want 9 (ADR-020, ADR-030)", counts[ClassPublic])
+	if counts[ClassPublic] != 12 {
+		t.Errorf("public allowlist size = %d, want 12 (ADR-020, ADR-030)", counts[ClassPublic])
 	}
 	if counts[ClassClaimWindow] != 3 {
 		t.Errorf("claim-window routes = %d, want 3", counts[ClassClaimWindow])
@@ -115,7 +117,8 @@ func TestEveryRegisteredRouteIsClassified(t *testing.T) {
 	sort.Strings(public)
 	want := []string{"/", "GET /api/v1/identity", "GET /healthz", "GET /version",
 		"GET /api/v1/tls/local-ca/root.der", "GET /api/v1/tls/local-ca/root.pem",
-		"POST /api/v1/admins/setup", "POST /api/v1/claim", "POST /api/v1/sessions"}
+		"POST /api/v1/admins/setup", "POST /api/v1/claim", "POST /api/v1/sessions",
+		"GET /api/v1/sso/options", "GET /api/v1/sso/login", "GET /api/v1/sso/callback"}
 	sort.Strings(want)
 	if strings.Join(public, "|") != strings.Join(want, "|") {
 		t.Errorf("public allowlist = %v, want %v", public, want)

@@ -89,3 +89,33 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-030 | Internal CA Trust Distribution and Local TLS | Accepted |
 | ADR-031 | Craft Apps Start Page | Accepted |
 | ADR-032 | Craft File Proxy Reaches the Daemon over a Dedicated Unix Socket | Accepted |
+| ADR-033 | Dashboard SSO via Authentik with a Break-glass Owner | Accepted |
+| ADR-034 | Required Post-claim Setup Walkthrough | Superseded by ADR-036 |
+| ADR-035 | Dashboard on the Local Network through the Edge | Accepted |
+| ADR-036 | Step-by-step Setup Wizard | Accepted |
+| ADR-037 | Public Domain, Planned Tunnel, and the Public Dashboard behind Authentik | Accepted |
+| ADR-038 | Tunnel Teardown Restores the Records Its Setup Replaced | Accepted |
+| ADR-039 | App Names, App Sign-in, and Nightly Backups | Accepted |
+| ADR-040 | App Sign-in: Back Channel, Trust, and Adapters | Accepted |
+| ADR-041 | Public App Names on the Tunnel, and Tunnel Adoption | Accepted |
+| ADR-042 | Bootstrap Installs Docker and cloudflared | Accepted |
+| ADR-043 | People and App Access Through Authentik Groups | Accepted |
+| ADR-044 | Apps Under One Host, by Path | Accepted |
+| ADR-045 | Craft Apps Under One Host, by Path | Accepted |
+| ADR-046 | Tunnel Setup Updates the Dashboard's Sign-in | Accepted |
+| ADR-047 | Published Apps Sign In at Authentik's Public Address | Accepted |
+| ADR-048 | Approved App Setup Runs on the Appliance; Tunnel Setup Issues the Public Certificate | Accepted |
+| ADR-049 | People Administration on the Public Dashboard; Authentik Recovery Links | Accepted |
+| ADR-050 | An Apps Page for Everyone Who Signs In; Administration Moves to /admin | Accepted |
+| ADR-051 | Catalog Integration Metadata Is Advisory | Accepted |
+| ADR-052 | Secret Entrypoint Export and OIDC Client Actuation | Accepted |
+| ADR-053 | Everything Application Bridge | Accepted |
+| ADR-054 | Explicit app access decisions during installation | Accepted |
+| ADR-055 | Authentik forward-auth for Navidrome and Uptime Kuma | Accepted |
+| ADR-056 | Community container image trust policy | Accepted |
+| ADR-057 | Everything apps as catalog packages | Accepted |
+| ADR-058 | Everything SDK: sharing, read links, net and events | Accepted |
+| ADR-059 | No manual first run for any catalog app | Accepted |
+| ADR-060 | Single-origin apps redirect their LAN names to the public name | Accepted |
+| ADR-061 | Public apps at a subpath of the dashboard's name | Accepted |
+| ADR-062 | One Shared Authentik Gate for Apps at a Subpath | Accepted |

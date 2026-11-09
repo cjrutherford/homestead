@@ -1,15 +1,19 @@
-<section aria-label="Log in">
-  <h2>Log in</h2>
+<section class="gate" aria-label="Log in">
+  <header class="masthead">
+    <h1>Log in</h1>
+    <p class="masthead-fact">Sign in to manage this appliance.</p>
+  </header>
 
   @if (sessionsState.isLoggedIn()) {
     <p>
       Already logged in as {{ sessionsState.username() }}. Continue on the
-      <a routerLink="/status">status page</a>.
+      <a routerLink="/admin/status">status page</a>.
     </p>
   } @else {
     @if (error()) {
       <app-state-message kind="error" [headline]="error()" />
     }
+    @if (passwordOffered()) {
     <form
       (submit)="submit(nameInput.value, passwordInput.value); $event.preventDefault()"
       aria-label="Login"
@@ -30,5 +34,24 @@
       </label>
       <button type="submit" [disabled]="busy()">Log in</button>
     </form>
+    } @else {
+      <p>
+        This is the dashboard's public address, so only Authentik signs you in here. Your local
+        password works on your home network.
+      </p>
+      @if (!ssoEnabled()) {
+        <app-state-message
+          kind="notice"
+          headline="Sign-in with Authentik does not cover this address yet."
+          detail="On your home network, open the dashboard (homestead.lan), go to Sign-in, re-plan it and approve it. It then adds this address, and the Sign in with Authentik button appears here."
+        />
+      }
+    }
+    @if (ssoEnabled()) {
+      @if (passwordOffered()) {
+        <p>Or use the Authentik that runs on this appliance. Your local password keeps working either way.</p>
+      }
+      <p><a class="button" [href]="ssoLogin">Sign in with Authentik</a></p>
+    }
   }
 </section>

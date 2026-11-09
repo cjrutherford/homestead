@@ -1,0 +1,129 @@
+{
+  "app": "solitaire",
+  "version": "0.1.0",
+  "title": "Solitaire",
+  "archive": "solitaire-source.tar.gz",
+  "sha256": "1ca610831752eca35a833dce4a87a78bd9932dd96af8a487a57c83bbe34a25b2",
+  "size": 9631266,
+  "subtree": "src/solitaire",
+  "extra_files": [
+    "LICENSE",
+    "dev/puter-localhost.mjs"
+  ],
+  "required": [
+    "LICENSE",
+    "dev/puter-localhost.mjs",
+    "src/solitaire/index.html",
+    "src/solitaire/package-lock.json",
+    "src/solitaire/public/sw.js",
+    "src/solitaire/src/main.js",
+    "src/solitaire/public/robots.txt",
+    "src/solitaire/public/sitemap.xml"
+  ],
+  "index": "src/solitaire/index.html",
+  "sdk_tag": "<script src=\"https://js.puter.com/v2/\"></script>",
+  "service_worker": {
+    "template": "solitaire-sw.template.js",
+    "target": "src/solitaire/public/sw.js",
+    "mode": "runtime"
+  },
+  "patches": [
+    {
+      "file": "src/solitaire/index.html",
+      "old": "<link rel=\"canonical\" href=\"https://solitaire.puter.com/\" />\n",
+      "new": "",
+      "why": "Drop the canonical link to the hosted site."
+    },
+    {
+      "file": "src/solitaire/index.html",
+      "old": "<meta property=\"og:url\" content=\"https://solitaire.puter.com/\" />\n",
+      "new": "",
+      "why": "Drop the hosted-site page address."
+    },
+    {
+      "file": "src/solitaire/index.html",
+      "old": "<meta property=\"og:image\" content=\"https://solitaire.puter.com/og-image.png\" />",
+      "new": "<meta property=\"og:image\" content=\"og-image.png\" />",
+      "why": "Point the share image at the app's own file, not the hosted site."
+    },
+    {
+      "file": "src/solitaire/index.html",
+      "old": "<meta name=\"twitter:image\" content=\"https://solitaire.puter.com/og-image.png\" />",
+      "new": "<meta name=\"twitter:image\" content=\"og-image.png\" />",
+      "why": "Point the share image at the app's own file, not the hosted site."
+    },
+    {
+      "file": "src/solitaire/index.html",
+      "old": "    \"url\": \"https://solitaire.puter.com/\",\n",
+      "new": "",
+      "why": "Drop the hosted-site address from the structured data."
+    },
+    {
+      "file": "src/solitaire/index.html",
+      "old": "    \"image\": \"https://solitaire.puter.com/icon-512.png\",\n",
+      "new": "    \"image\": \"icon-512.png\",\n",
+      "why": "Point the structured-data image at the app's own file."
+    },
+    {
+      "file": "src/solitaire/index.html",
+      "old": "<footer class=\"credit\">\n  <a href=\"https://developer.puter.com\" target=\"_blank\" rel=\"noopener\">Powered by Puter</a>\n</footer>\n",
+      "new": "",
+      "why": "Remove the \"Powered by Puter\" link: no links to other sites."
+    },
+    {
+      "file": "src/solitaire/index.html",
+      "old": "<script type=\"module\" src=\"/src/main.js\"></script>",
+      "new": "<script type=\"module\" src=\"/src/homestead/boot.js\"></script>",
+      "why": "Start through the Homestead entry point, which separates browser storage by person, then starts the game."
+    },
+    {
+      "file": "src/solitaire/src/main.js",
+      "old": "  window.addEventListener('load', () => {\n    navigator.serviceWorker.register('./sw.js').catch(() => {});\n  });",
+      "new": "  navigator.serviceWorker.register('./sw.js').catch(() => {});",
+      "why": "Register the service worker at once: the entry point starts the game after the page has loaded, so a load handler would never run."
+    },
+    {
+      "file": "src/solitaire/public/robots.txt",
+      "old": "\nSitemap: https://solitaire.puter.com/sitemap.xml\n",
+      "new": "",
+      "why": "Drop the hosted-site sitemap address."
+    },
+    {
+      "file": "src/solitaire/public/sitemap.xml",
+      "old": "    <loc>https://solitaire.puter.com/</loc>",
+      "new": "    <loc>./</loc>",
+      "why": "Drop the hosted-site address from the sitemap."
+    }
+  ],
+  "sdk_surface": {
+    "supported": [
+      "kv.get",
+      "kv.set",
+      "kv.del",
+      "auth.isSignedIn",
+      "auth.getUser"
+    ],
+    "refused": [
+      "fs.getReadURL",
+      "kv.share",
+      "kv.unshare",
+      "kv.listShared",
+      "kv.listSharedByMe",
+      "perms.*",
+      "events.*",
+      "appID"
+    ],
+    "absent": [],
+    "disabled": {
+      "ai": "no AI backend",
+      "net": "no network bridge (S381 only)",
+      "sharing": "needs an exposure plan"
+    }
+  },
+  "add_files": [
+    {
+      "target": "src/solitaire/src/homestead/boot.js",
+      "source": "solitaire-person-storage.js"
+    }
+  ]
+}

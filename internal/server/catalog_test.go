@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"homestead/internal/catalog"
 	"homestead/internal/discover"
 	"homestead/internal/storage"
 	"homestead/internal/store"
@@ -53,7 +54,7 @@ requirements:
   storage:
   - class: application
     minbytes: 1048576
-  ports: [18080]
+  ports: []
 exposure:
   package: demo
   endpoints:
@@ -66,14 +67,16 @@ backuppaths: [data]
 		t.Fatalf("write: %v", err)
 	}
 	srv := New("127.0.0.1:0")
+	accountlessInstallApps["demo"] = true
+	t.Cleanup(func() { delete(accountlessInstallApps, "demo") })
 	srv.MountCatalog(s, catalogDir, nil)
 	// Planning verifies class mounts against live discovery; stub it
 	// so tests do not depend on the host mount table.
 	oldDiscover := discoverStorage
 	discoverStorage = func() (discover.Storage, error) {
 		return discover.Storage{Mounts: []discover.Mount{
-			{Mountpoint: "/", Accessible: true},
-			{Mountpoint: "/tmp", Accessible: true},
+			{Mountpoint: "/", Accessible: true, FreeBytes: 64 << 30},
+			{Mountpoint: "/tmp", Accessible: true, FreeBytes: 64 << 30},
 			{Mountpoint: "/ro", Accessible: true, ReadOnly: true},
 		}}, nil
 	}
@@ -309,11 +312,12 @@ func TestCatalogUninstall(t *testing.T) {
 	}
 	bare, _ := uninstallTestServer(t, false)
 	recorder = serveRequest(t, bare, http.MethodPost, "/api/v1/catalog/demo/uninstall", map[string]any{})
-	if recorder.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("code = %d", recorder.Code)
+	if recorder.Code != http.StatusNotFound || !strings.Contains(recorder.Body.String(), "not installed") {
+		t.Fatalf("code = %d (%s), want 404 not installed", recorder.Code, recorder.Body.String())
 	}
 	// Data removal without explicit roots refuses.
-	recorder = serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/demo/uninstall", map[string]any{"remove_data": true})
+	fresh, _ := uninstallTestServer(t, true)
+	recorder = serveRequest(t, fresh, http.MethodPost, "/api/v1/catalog/demo/uninstall", map[string]any{"remove_data": true})
 	if recorder.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("code = %d", recorder.Code)
 	}
@@ -351,5 +355,75 @@ func TestCatalogPlanRefusesUnmountedStorage(t *testing.T) {
 		if recorder.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("%s: code = %d (%s)", mount, recorder.Code, recorder.Body.String())
 		}
+	}
+}
+
+func TestApplyStorageOverridesReadsTheChosenMountsFreeSpace(t *testing.T) {
+	facts := catalog.HostFacts{FreeSpace: map[storage.Class]uint64{storage.ClassBulk: 1}}
+	mounts := []discover.Mount{
+		{Mountpoint: "/mnt/app", Accessible: true, FreeBytes: 20},
+		{Mountpoint: "/mnt/dead", Accessible: false, FreeBytes: 99},
+	}
+	applyStorageOverrides(&facts, map[storage.Class]string{
+		storage.ClassApplication: "/mnt/app",
+		storage.ClassBulk:        "/mnt/dead",
+		storage.ClassBackup:      "/mnt/missing",
+	}, mounts)
+	if facts.FreeSpace[storage.ClassApplication] != 20 {
+		t.Fatalf("application free = %d", facts.FreeSpace[storage.ClassApplication])
+	}
+	if _, ok := facts.FreeSpace[storage.ClassBulk]; ok {
+		t.Fatal("an inaccessible mount must not carry free space")
+	}
+	if _, ok := facts.FreeSpace[storage.ClassBackup]; ok {
+		t.Fatal("an unknown mount must not carry free space")
+	}
+}
+
+// S313: the install plan carries a digest over what the install changes;
+// install with a digest that no longer matches answers 409, and the
+// owner reviews again. Free space is not in it, so it holds still.
+func TestCatalogInstallDigest(t *testing.T) {
+	srv, _ := catalogTestServer(t)
+	digestOf := func(body map[string]any) string {
+		recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/demo/plan", body)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("plan: %d %s", recorder.Code, recorder.Body.String())
+		}
+		var plan struct {
+			Digest string `json:"digest"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &plan); err != nil {
+			t.Fatal(err)
+		}
+		return plan.Digest
+	}
+	first := digestOf(installTestBody())
+	for i := 0; i < 5; i++ {
+		if got := digestOf(installTestBody()); got != first || len(first) != 64 {
+			t.Fatalf("digest %d = %q, want %q", i, got, first)
+		}
+	}
+	other := installTestBody()
+	other["hostnames"] = map[string]string{"web": "elsewhere.lan"}
+	if digestOf(other) == first {
+		t.Fatal("a different address kept the digest")
+	}
+	// The public name reviewed with the install only shapes the sign-in preview.
+	withPublic := installTestBody()
+	withPublic["public_name"] = "demo.example.com"
+	if digestOf(withPublic) != first {
+		t.Fatal("the public name changed the install digest")
+	}
+	stale := installTestBody()
+	stale["digest"] = "stale"
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/demo/install", stale)
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "review it again") {
+		t.Fatalf("stale install: %d %s", recorder.Code, recorder.Body.String())
+	}
+	approved := installTestBody()
+	approved["digest"] = first
+	if recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/demo/install", approved); recorder.Code != http.StatusOK {
+		t.Fatalf("approved install: %d %s", recorder.Code, recorder.Body.String())
 	}
 }

@@ -164,6 +164,77 @@ func TestExportPostgres(t *testing.T) {
 	}
 }
 
+func TestExportMariaDBAndMySQL(t *testing.T) {
+	for _, tc := range []struct {
+		kind   catalog.DatabaseKind
+		client string
+		extra  []string
+	}{
+		{catalog.DatabaseMariaDB, "mariadb-dump", nil},
+		{catalog.DatabaseMySQL, "mysqldump", []string{"--set-gtid-purged=OFF"}},
+	} {
+		t.Run(string(tc.kind), func(t *testing.T) {
+			manifest := sqliteManifest()
+			var seenStdin string
+			var seenArgs []string
+			stubExec(t, func(_ string, stdin string, args []string) (string, error) {
+				seenStdin = stdin
+				seenArgs = args
+				return "-- " + string(tc.kind) + " dump\nCREATE TABLE items (id int);\n", nil
+			})
+			req := ExportRequest{
+				Manifest: manifest, Package: "photos",
+				Database:  catalog.DatabaseBackup{Service: "db", Kind: tc.kind, Database: "photos", Username: "photos"},
+				SrcRoot:   t.TempDir(),
+				DestDir:   t.TempDir(),
+				Container: "photos-db",
+				Password:  "secret",
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			out, err := ExportDatabase(ctx, req)
+			if err != nil {
+				t.Fatalf("ExportDatabase: %v", err)
+			}
+			if !strings.HasSuffix(out, "photos.sql") {
+				t.Fatalf("out = %q", out)
+			}
+			content, err := os.ReadFile(out)
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			if !strings.Contains(string(content), "CREATE TABLE items") {
+				t.Fatalf("dump = %q", content)
+			}
+			joined := strings.Join(seenArgs, " ")
+			want := []string{
+				tc.client, "--host=127.0.0.1", "--user=\"$user\"",
+				"--single-transaction", "--quick", "--skip-lock-tables",
+				"--no-tablespaces", "photos",
+			}
+			want = append(want, tc.extra...)
+			for _, fragment := range want {
+				if !strings.Contains(joined, fragment) {
+					t.Fatalf("args = %v, missing %q", seenArgs, fragment)
+				}
+			}
+			if seenStdin != "secret\n" {
+				t.Fatalf("stdin = %q, want the password", seenStdin)
+			}
+			if strings.Contains(joined, "secret") {
+				t.Fatal("password in argv")
+			}
+			info, err := os.Stat(out)
+			if err != nil {
+				t.Fatalf("stat: %v", err)
+			}
+			if info.Mode().Perm() != 0o600 {
+				t.Fatalf("mode = %o", info.Mode().Perm())
+			}
+		})
+	}
+}
+
 func TestExportValidation(t *testing.T) {
 	manifest := sqliteManifest()
 	good := ExportRequest{

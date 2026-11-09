@@ -82,7 +82,7 @@ describe('Advanced', () => {
 
   it('shows loading before the link arrives', () => {
     fixture.detectChanges();
-    expect(text()).toContain('Loading');
+    expect(fixture.nativeElement.querySelector('app-loading[aria-busy="true"]')).not.toBeNull();
     http.expectOne('/api/v1/dockge?domain=lan').flush(LINK);
   });
 
@@ -90,7 +90,7 @@ describe('Advanced', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/dockge?domain=lan').error(new ProgressEvent('error'));
     fixture.detectChanges();
-    expect(text()).toContain('Cannot reach the Homestead daemon');
+    expect(text()).toContain("Can't reach the appliance");
     expect(fixture.nativeElement.querySelector('a')).toBeNull();
   });
 

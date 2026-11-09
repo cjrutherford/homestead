@@ -1,0 +1,77 @@
+{
+  "app": "records",
+  "version": "0.1.0",
+  "title": "Records",
+  "archive": "records-source.tar.gz",
+  "sha256": "8ed5aa77f9264b341ec8bf0e07b41ca053f7eb3ba4edd224cc6f1472c3c26aa2",
+  "size": 1924675,
+  "subtree": "src/records",
+  "extra_files": [
+    "LICENSE",
+    "dev/puter-localhost.mjs"
+  ],
+  "required": [
+    "LICENSE",
+    "dev/puter-localhost.mjs",
+    "src/records/index.html",
+    "src/records/package-lock.json"
+  ],
+  "index": "src/records/index.html",
+  "sdk_tag": "<script src=\"https://js.puter.com/v2/\" defer></script>",
+  "service_worker": null,
+  "patches": [
+    {
+      "file": "src/records/src/ui/editors.js",
+      "old": "'Your Puter storage is full.'",
+      "new": "'Your storage on this server is full.'",
+      "why": "Wording only: storage is the appliance bridge, not a Puter cloud."
+    },
+    {
+      "file": "src/records/src/data/store.js",
+      "old": "'Your Puter storage is full. Free up space to keep saving.'",
+      "new": "'Your storage on this server is full. Free up space to keep saving.'",
+      "why": "Wording only: storage is the appliance bridge, not a Puter cloud."
+    },
+    {
+      "file": "src/records/src/ui/home.js",
+      "old": "deleted from your Puter cloud.",
+      "new": "deleted from this server.",
+      "why": "Wording only: bases are stored on the appliance."
+    }
+  ],
+  "sdk_surface": {
+    "supported": [
+      "kv.get",
+      "kv.set",
+      "fs.write",
+      "fs.read",
+      "fs.delete",
+      "fs.stat",
+      "auth.isSignedIn",
+      "auth.getUser",
+      "auth.signIn",
+      "auth.signOut",
+      "env"
+    ],
+    "refused": [
+      "fs.getReadURL",
+      "kv.share",
+      "kv.unshare",
+      "kv.listShared",
+      "kv.listSharedByMe",
+      "perms.*",
+      "events.*",
+      "appID"
+    ],
+    "absent": [
+      "fs.space",
+      "auth.getProfilePicture",
+      "ui.onLaunchedWithItems"
+    ],
+    "disabled": {
+      "ai": "no AI backend",
+      "net": "no network bridge (S381 only)",
+      "sharing": "needs an exposure plan"
+    }
+  }
+}

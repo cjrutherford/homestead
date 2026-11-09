@@ -4,10 +4,11 @@ import { ValidationBoard } from './validation-board';
 
 describe('ValidationBoard', () => {
   let el: HTMLElement;
+  let fixture: ComponentFixture<ValidationBoard>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({ imports: [ValidationBoard] }).compileComponents();
-    const fixture: ComponentFixture<ValidationBoard> = TestBed.createComponent(ValidationBoard);
+    fixture = TestBed.createComponent(ValidationBoard);
     fixture.detectChanges();
     el = fixture.nativeElement;
   });
@@ -16,17 +17,72 @@ describe('ValidationBoard', () => {
     const themes = Array.from(el.querySelectorAll('[data-board]')).map((n) =>
       n.getAttribute('data-theme'),
     );
-    expect(themes).toEqual(['light', 'dark', 'high-contrast']);
+    expect(themes).toEqual(['dark', 'light', 'high-contrast']);
   });
 
   it('renders every primitive under each theme', () => {
     el.querySelectorAll('[data-board]').forEach((board) => {
-      for (const selector of ['button', 'input', 'select', 'table', '.card', 'nav a', 'pre']) {
+      for (const selector of [
+        'button.primary',
+        'button:not([class])',
+        'button.danger',
+        'button.quiet',
+        'button:disabled',
+        'button[aria-busy="true"]',
+        'input[type="text"]',
+        'input[type="checkbox"]',
+        'select',
+        'textarea',
+        '.field-error',
+        '.badge-ok',
+        '.badge-warn',
+        '.badge-fail',
+        '.badge-pending',
+        '.badge-running',
+        '.table-scroll table',
+        '.card',
+        'nav a',
+        'pre',
+        '.mono',
+        '[data-depths] .depth-hedgerow',
+        '[data-depths] .depth-ground',
+        '[data-depths] .depth-plate',
+        '[data-depths] .depth-well',
+        '[data-depths] .depth-lifted',
+        '[data-lamps] .badge-ok',
+        '[data-lamps] .badge-warn',
+        '[data-lamps] .badge-fail',
+      ]) {
         expect(board.querySelector(selector), selector).not.toBeNull();
       }
-      expect(board.querySelectorAll('app-state-message').length).toBe(4);
+      expect(board.querySelectorAll('app-state-message').length).toBe(5);
+      // The permit in each state: pending, approved (stamp), refused (stamp and reason).
+      const permits = board.querySelectorAll('.permit');
+      expect(permits.length).toBe(3);
+      expect(Array.from(permits).map((p) => p.getAttribute('data-state'))).toEqual(['pending', 'approved', 'refused']);
+      expect(permits[0].querySelector('.permit-seal')?.getAttribute('aria-label')).toContain('sha256:9f2c4e1a');
+      expect(permits[0].querySelector('.permit-seal-code')?.textContent?.trim()).toBe('9f2c4e1a');
+      expect(permits[1].querySelector('.permit-stamp')?.textContent).toContain('Approved');
+      expect(permits[1].querySelector('.permit-stamp')?.textContent).toContain('by owner, 25 Oct 2026, 14:02 UTC');
+      expect(permits[2].querySelector('.permit-stamp')?.textContent).toContain('Not approved');
+      expect(permits[2].textContent).toContain('Review it again.');
       expect(board.querySelector('[role="alert"]')).not.toBeNull();
       expect(board.querySelector('[role="status"]')).not.toBeNull();
     });
+  });
+
+  it('opens a sample dialog under a theme and closes it with Cancel', () => {
+    const board = el.querySelector('[data-board="dark"]') as HTMLElement;
+    const open = Array.from(board.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Open dialog'),
+    ) as HTMLButtonElement;
+    open.click();
+    fixture.detectChanges();
+    const dialog = board.querySelector('dialog');
+    expect(dialog?.getAttribute('role')).toBe('alertdialog');
+    expect(dialog?.classList.contains('dialog-danger')).toBe(true);
+    (dialog?.querySelector('.quiet') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(board.querySelector('dialog')).toBeNull();
   });
 });

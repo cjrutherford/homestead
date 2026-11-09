@@ -141,4 +141,21 @@ describe('CraftFiles', () => {
     fixture.detectChanges();
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('base_url must be an http(s) URL');
   });
+
+  // S326: this appliance's Nextcloud links with no password typed.
+  it("links this appliance's Nextcloud with no password", () => {
+    const el = load({ ...UNLINKED, appliance_nextcloud: { base_url: 'https://homestead.lan/apps/nextcloud', account: 'admin' } });
+    expect(el.textContent).toContain('Nextcloud is installed on this appliance, at https://homestead.lan/apps/nextcloud');
+    const review = Array.from(el.querySelectorAll('button')).find((b) => b.textContent?.includes("this appliance's Nextcloud")) as HTMLButtonElement;
+    review.click();
+    const planReq = http.expectOne('/api/v1/craft/files/plan');
+    expect(planReq.request.body).toEqual({ action: 'link', appliance: true, root: 'Homestead' });
+    planReq.flush({ id: 'p3', action: 'link', appliance: true, summary: ['Link it.'], warnings: [] });
+    fixture.detectChanges();
+    const approve = Array.from(el.querySelectorAll('button')).find((b) => b.textContent?.includes('Approve')) as HTMLButtonElement;
+    approve.click();
+    const approveReq = http.expectOne('/api/v1/craft/files/approve');
+    expect(approveReq.request.body).toEqual({ plan_id: 'p3' });
+    approveReq.flush(LINKED);
+  });
 });

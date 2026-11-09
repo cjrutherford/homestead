@@ -8,6 +8,7 @@
 # as 0600 files through Compose secrets (ADR-021), never environment values.
 # Authentik reads file:// URIs for its settings; postgres reads *_FILE.
 name: authentik
+publish: path  # ADR-061
 version: 2026.8.3
 title: Authentik
 blurb: Single sign-on for your services.
@@ -20,12 +21,18 @@ icon: mdi:key
 services:
 - name: server
   image: ghcr.io/goauthentik/server:2026.8.3
+  publisher: upstream
   exposes: web
+  containerport: 9000
   command: [server]
   environment:
     AUTHENTIK_POSTGRESQL__HOST: postgresql
     AUTHENTIK_POSTGRESQL__USER: authentik
     AUTHENTIK_POSTGRESQL__NAME: authentik
+    # Served at <server>/apps/auth/ (ADR-044): Authentik serves every
+    # page, its API and the OIDC endpoints under this path. It needs the
+    # leading and the trailing slash.
+    AUTHENTIK_WEB__PATH: /apps/auth/
   # No image VOLUME; the official compose binds media and templates.
   # Authentik runs as uid 1000.
   data:
@@ -41,12 +48,14 @@ services:
     gid: 1000
 - name: worker
   image: ghcr.io/goauthentik/server:2026.8.3
+  publisher: upstream
   exposes: ""
   command: [worker]
   environment:
     AUTHENTIK_POSTGRESQL__HOST: postgresql
     AUTHENTIK_POSTGRESQL__USER: authentik
     AUTHENTIK_POSTGRESQL__NAME: authentik
+    AUTHENTIK_WEB__PATH: /apps/auth/
   data:
   - target: /media
     class: application
@@ -65,6 +74,7 @@ services:
     gid: 1000
 - name: postgresql
   image: docker.io/library/postgres:16-alpine
+  publisher: upstream
   exposes: ""
   environment:
     POSTGRES_USER: authentik
@@ -78,6 +88,10 @@ services:
     mode: "0700"
     uid: 70
     gid: 70
+# Served at <server>/apps/auth/ (ADR-044). Authentik serves under the
+# prefix itself (AUTHENTIK_WEB__PATH), so the edge keeps it.
+serve: path
+path: /apps/auth/
 requirements:
   memorymb: 2048
   cpucount: 2
@@ -85,7 +99,6 @@ requirements:
   storage:
   - class: application
     minbytes: 2147483648
-  ports: [9000]
 exposure:
   package: authentik
   endpoints:

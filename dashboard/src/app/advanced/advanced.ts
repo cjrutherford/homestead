@@ -2,6 +2,7 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService, DockgeLink } from '../core/api.service';
 import { StateMessage } from '../state/state-message';
+import { Loading } from '../ui/loading';
 
 /**
  * Advanced administration page (S211): the expert Compose interface
@@ -12,9 +13,9 @@ import { StateMessage } from '../state/state-message';
  */
 @Component({
   selector: 'app-advanced',
-  imports: [StateMessage],
+  imports: [Loading, StateMessage],
   templateUrl: './advanced.html',
-  styles: ['button, input { min-height: 44px; } .advanced-text { overflow-wrap: anywhere; }'],
+  styles: ['.advanced-text { overflow-wrap: anywhere; }'],
 })
 export class Advanced implements OnInit {
   private readonly api = inject(ApiService);
@@ -36,7 +37,7 @@ export class Advanced implements OnInit {
   /** Readable failure text; status 0 is a network failure. */
   protected describe(failure: HttpErrorResponse): string {
     if (failure.status === 0) {
-      return 'Cannot reach the Homestead daemon. Check that it is running and try again.';
+      return "Can't reach the appliance. Check that homestead-server is running.";
     }
     const body = failure.error;
     if (typeof body === 'string' && body.trim()) return body;

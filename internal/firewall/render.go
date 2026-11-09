@@ -150,6 +150,42 @@ func ManagementBaseline(daemonPort int, network discover.Network) (RuleSet, erro
 	return set, nil
 }
 
+// WithLocalResolver adds the appliance resolver's DNS rules (S295,
+// ADR-039): port 53 over UDP and TCP accepted from each local subnet and
+// dropped from everywhere else, so the resolver never answers the
+// internet even on a host with a public address.
+func WithLocalResolver(set RuleSet, network discover.Network) (RuleSet, error) {
+	out := RuleSet{Rules: append([]Rule(nil), set.Rules...)}
+	subnets := LocalSubnets(network)
+	for _, proto := range []string{ProtocolUDP, ProtocolTCP} {
+		service := Service{Name: "local-dns", Protocol: proto, Port: 53}
+		for i, cidr := range subnets {
+			name := fmt.Sprintf("local-dns-%s-local", proto)
+			if len(subnets) > 1 {
+				name = fmt.Sprintf("local-dns-%s-local-%d", proto, i+1)
+			}
+			out.Rules = append(out.Rules, Rule{
+				Name:     name,
+				Source:   Source{Zone: ZoneLocal, CIDR: cidr},
+				Service:  service,
+				Action:   ActionAccept,
+				Priority: 1000 + 10*i,
+			})
+		}
+		out.Rules = append(out.Rules, Rule{
+			Name:     fmt.Sprintf("local-dns-%s-public-drop", proto),
+			Source:   Source{Zone: ZonePublic},
+			Service:  service,
+			Action:   ActionDrop,
+			Priority: 1900,
+		})
+	}
+	if err := out.Validate(); err != nil {
+		return RuleSet{}, err
+	}
+	return out, nil
+}
+
 // Render produces the isolated nftables table for a validated ruleset.
 // The table holds one base input chain with policy accept: Homestead's
 // rules filter only what they match and change nothing else, so

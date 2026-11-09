@@ -108,23 +108,24 @@ func runningImages(client *docker.Client, r *http.Request, packageName string) (
 	return out, nil
 }
 
-// registryMaxima fetches newer tags per service image with a bounded
-// client, skipping failures service by service: registries sulk,
-// and pins cover silence (S190).
-func registryMaxima(images map[string]string) map[string][]string {
-	client := &http.Client{Timeout: 8 * time.Second}
-	out := map[string][]string{}
+// registryDiscoveries lists tags per service image with a bounded
+// client, skipping failures service by service: registries sulk, and
+// pins cover silence (S190). Docker Hub and GHCR both answer (S343);
+// every other registry records why it could not be asked instead of
+// querying the wrong endpoint.
+func registryDiscoveries(images map[string]string) map[string]update.Discovery {
+	registries := update.RegistryClient{HTTP: &http.Client{Timeout: 8 * time.Second}}
+	out := map[string]update.Discovery{}
 	for service, image := range images {
 		if _, _, local := craft.ParseRef(image); local {
-			continue // locally built (S279): there is no registry to ask
+			// Locally built (S279): there is no registry to ask.
+			out[service] = update.Discovery{
+				Service: service, Registry: update.RegistryLocal,
+				Repository: image, Local: true,
+			}
+			continue
 		}
-		tag := image
-		if index := strings.LastIndex(image, ":"); index >= 0 {
-			tag = image[index+1:]
-		}
-		if tags, err := update.RegistryUpdates(client, update.DockerHubAPI, image, tag); err == nil {
-			out[service] = tags
-		}
+		out[service] = registries.Discover(service, image)
 	}
 	return out
 }
@@ -148,7 +149,7 @@ func planPackage(catalogDir string, client *docker.Client, r *http.Request, name
 	for _, service := range manifest.Services {
 		images[service.Name] = service.Image
 	}
-	plan, err := update.PlanUpdate(manifest, running, registryMaxima(images))
+	plan, err := update.PlanUpdateFromDiscoveries(manifest, running, registryDiscoveries(images))
 	if err != nil {
 		return catalog.Manifest{}, update.UpdatePlan{}, false, err
 	}
@@ -298,11 +299,7 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 		// next tick; the scheduler retries instead of spending the window.
 		return backup.Job{}, classifyDestinationError(err)
 	}
-	retain := defaultBackupRetain
-	schedules := backup.NewSchedules(st)
-	if schedule, err := schedules.Get(manifest.Name); err == nil {
-		retain = schedule.Retain
-	}
+	retain := backupRetain(st, manifest.Name)
 	keys, err := backupKeyStore(secrets)
 	if err != nil {
 		return backup.Job{}, err
@@ -330,8 +327,8 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 			job.SrcRoot = filepath.Join(source.Mountpoint, source.Path)
 			break
 		}
-		if password == "" && manifest.Database.Kind == catalog.DatabasePostgres {
-			return backup.Job{}, fmt.Errorf("postgres backup needs a database password")
+		if password == "" && manifest.Database.Kind.Server() {
+			return backup.Job{}, fmt.Errorf("%s backup needs a database password", manifest.Database.Kind)
 		}
 	}
 	// S266 secret files live in the stack directory, outside the data
@@ -383,14 +380,14 @@ func stackSecretsSource(packageName string) (backup.Source, bool) {
 func databasePassword(secrets catalog.SecretStore, manifest catalog.Manifest) (string, error) {
 	name := catalog.SecretStoreName(manifest.Name, manifest.Database.PasswordSecret)
 	if secrets == nil {
-		return "", fmt.Errorf("postgres backup needs secret %q but no secret store is available", name)
+		return "", fmt.Errorf("database backup needs secret %q but no secret store is available", name)
 	}
 	value, err := secrets.Get(name)
 	if errors.Is(err, secret.ErrNotFound) || (err == nil && value == "") {
-		return "", fmt.Errorf("postgres backup needs secret %q, which is not in the secret store: register the existing database password (homesteadctl apps secrets register %s %s) or reinstall", name, manifest.Name, manifest.Database.PasswordSecret)
+		return "", fmt.Errorf("database backup needs secret %q, which is not in the secret store: register the existing database password (homesteadctl apps secrets register %s %s) or reinstall", name, manifest.Name, manifest.Database.PasswordSecret)
 	}
 	if err != nil {
-		return "", fmt.Errorf("postgres backup cannot read secret %q: %w", name, err)
+		return "", fmt.Errorf("database backup cannot read secret %q: %w", name, err)
 	}
 	return value, nil
 }
@@ -603,4 +600,16 @@ func orphanedDataHint(st *store.Store, packageName string) string {
 		return ""
 	}
 	return fmt.Sprintf(": its data exists on %s, which no storage class is assigned to any more (was a class re-assigned?); assign a class back to that mount or migrate the data", strings.Join(orphaned, ", "))
+}
+
+// backupRetain is how many runs of an app to keep: its own schedule's
+// count, else the nightly policy's (S297) while it is on, else the default.
+func backupRetain(st *store.Store, name string) int {
+	if schedule, err := backup.NewSchedules(st).Get(name); err == nil {
+		return schedule.Retain
+	}
+	if policy, ok, err := backup.NewPolicies(st).Get(); err == nil && ok && policy.Enabled {
+		return policy.Retain
+	}
+	return defaultBackupRetain
 }

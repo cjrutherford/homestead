@@ -284,7 +284,8 @@ func TestLocalLeafIssuedPlacedAndPresented(t *testing.T) {
 	if _, err := leaf.Verify(x509.VerifyOptions{DNSName: "craft.lan", Roots: pool, CurrentTime: e.clock.Add(time.Minute)}); err != nil {
 		t.Fatalf("leaf does not verify to the root: %v", err)
 	}
-	if len(leaf.DNSNames) != 1 || leaf.DNSNames[0] != "craft.lan" {
+	// The app's mDNS name rides on the same leaf (ADR-039).
+	if len(leaf.DNSNames) != 2 || leaf.DNSNames[0] != "craft.lan" || leaf.DNSNames[1] != "craft.local" {
 		t.Fatalf("SANs = %v", leaf.DNSNames)
 	}
 	report, _ := e.local.Report()
@@ -558,5 +559,32 @@ func TestLocalCAConcurrentApprovalsRotateOnce(t *testing.T) {
 	ca, _ := e.ca.Info()
 	if _, _, err := e.ca.Rotate("owner", "AA:BB"); !errors.Is(err, ErrRotationStale) || ca.Generation != 2 {
 		t.Fatalf("CAS guard: %v", err)
+	}
+}
+
+func TestLocalLeafCoversDashboardBothNames(t *testing.T) {
+	e := newLocalEnv(t)
+	dash := docker.Route{Host: "homestead.lan", Aliases: []docker.Hostname{"homestead.local"}, Dashboard: true,
+		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal}
+	e.applyRoutes(dash)
+	chain, key, err := readPlaced(e.stack, docker.LocalCertName("homestead.lan"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := docker.ValidateCertPair([]string{"homestead.lan", "homestead.local"}, chain, key); err != nil {
+		t.Fatal(err)
+	}
+	root, _ := e.ca.RootPEM()
+	rc, _ := parseCert(root)
+	leaf, _ := parseCert(chain)
+	pool := x509.NewCertPool()
+	pool.AddCert(rc)
+	for _, n := range []string{"homestead.lan", "homestead.local"} {
+		if _, err := leaf.Verify(x509.VerifyOptions{DNSName: n, Roots: pool, CurrentTime: e.clock.Add(time.Minute)}); err != nil {
+			t.Errorf("leaf does not verify for %s: %v", n, err)
+		}
+	}
+	if !strings.Contains(e.snippet("homestead.lan"), "homestead.lan, homestead.local {") {
+		t.Fatalf("snippet:\n%s", e.snippet("homestead.lan"))
 	}
 }

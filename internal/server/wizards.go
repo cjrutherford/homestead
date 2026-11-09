@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"homestead/internal/setup"
 	"homestead/internal/wizard"
 )
 
@@ -48,6 +49,10 @@ func (s *Server) handleWizardGet(svc *wizard.Service) http.HandlerFunc {
 
 func (s *Server) handleWizardPut(svc *wizard.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("id") == setup.WizardID {
+			http.Error(w, "the setup walkthrough is changed through /api/v1/setup", http.StatusForbidden)
+			return
+		}
 		var body struct {
 			Step    string         `json:"step"`
 			Payload map[string]any `json:"payload"`
@@ -76,6 +81,10 @@ func (s *Server) handleWizardPut(svc *wizard.Service) http.HandlerFunc {
 
 func (s *Server) handleWizardDelete(svc *wizard.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("id") == setup.WizardID {
+			http.Error(w, "the setup walkthrough is changed through /api/v1/setup", http.StatusForbidden)
+			return
+		}
 		if err := svc.Delete(r.PathValue("id")); err != nil {
 			if errors.Is(err, wizard.ErrBadID) {
 				http.Error(w, "invalid wizard id", http.StatusBadRequest)

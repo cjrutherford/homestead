@@ -7,6 +7,8 @@ import {
   HttpTestingController,
 } from '@angular/common/http/testing';
 import { Tunnel } from './tunnel';
+import { WorkOrders } from '../core/work-orders.service';
+import { OperationState } from '../core/api.service';
 
 const STATUS = {
   preferred: 'tunnel',
@@ -25,6 +27,7 @@ const STATUS = {
   ],
   connector: { installed: true, active: true },
   accounts: 1,
+  proposed: { dashboard_hostname: 'homestead.example.com', auth_hostname: 'auth.example.com', sign_in_linked: true },
 };
 
 describe('Tunnel', () => {
@@ -59,47 +62,440 @@ describe('Tunnel', () => {
     expect(text()).toContain('Preferred path: tunnel');
     expect(text()).toContain('Nothing on the router needs changing');
     expect(text()).toContain('homestead: healthy');
-    expect(text()).toContain('app.example.com → http://127.0.0.1:8080');
+    expect(text()).toContain('app.example.com');
+    expect(text()).toContain('http://127.0.0.1:8080');
   });
 
-  it('sets up through operations without echoing the token', () => {
+  const PLAN = {
+    name: 'homestead',
+    dashboard_hostname: 'homestead.example.com',
+    auth_hostname: 'auth.example.com',
+    zone: 'example.com',
+    ingress: [
+      { hostname: 'homestead.example.com', role: 'dashboard', route: 'homestead.lan', service: 'http://127.0.0.1:8480' },
+      { hostname: 'auth.example.com', role: 'authentik', route: 'authentik.lan', service: 'http://127.0.0.1:8480' },
+    ],
+    dns: [
+      {
+        name: 'homestead.example.com',
+        type: 'CNAME',
+        content: '<new tunnel id>.cfargotunnel.com',
+        proxied: true,
+        action: 'replace',
+        replaces: [{ type: 'A', name: 'homestead.example.com', content: '203.0.113.7', proxied: false }],
+      },
+      { name: 'auth.example.com', type: 'CNAME', content: '<new tunnel id>.cfargotunnel.com', proxied: true, action: 'create', replaces: [] },
+    ],
+    omitted: [],
+    sign_in: 'After setup, re-plan Sign-in and approve it: it adds https://homestead.example.com.',
+    warnings: ['Existing records for homestead.example.com are deleted and are not restored.'],
+    digest: 'd1g',
+  };
+
+  function reviewPlan(plan: object = PLAN): void {
     fixture.detectChanges();
     http.expectOne('/api/v1/tunnel/status').flush(STATUS);
     fixture.detectChanges();
-    fixture.componentInstance['setup'](
-      'homestead',
-      'app.example.com',
-      'http://127.0.0.1:8080',
-      'sealed-token',
-      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-    );
-    const setup = http.expectOne('/api/v1/tunnel/setup');
-    expect(setup.request.body).toMatchObject({
-      name: 'homestead',
-      api_token: 'sealed-token',
+    fixture.componentInstance['review']('homestead', '', 'login.example.com');
+    const req = http.expectOne('/api/v1/tunnel/plan');
+    expect(req.request.body).toEqual({ name: 'homestead', auth_hostname: 'login.example.com' });
+    req.flush(plan);
+    fixture.detectChanges();
+  }
+
+  it('never asks for a token or an account ID', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('input[type="password"]')).toBeNull();
+    expect(el.querySelector('input[name="account-id"]')).toBeNull();
+    expect(el.querySelector('#tunnel-service')).toBeNull();
+    expect(el.querySelector('#tunnel-hostname')).toBeNull();
+    expect(text()).toContain('Domain step');
+  });
+
+  it('proposes the daemon\'s names, and names under the setup domain before it answers', () => {
+    fixture.componentRef.setInput('domain', 'example.net');
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('#tunnel-dashboard')?.getAttribute('placeholder')).toBe('homestead.example.net');
+    expect(el.querySelector('#tunnel-auth')?.getAttribute('placeholder')).toBe('auth.example.net');
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+    fixture.detectChanges();
+    expect(el.querySelector('#tunnel-dashboard')?.getAttribute('placeholder')).toBe('homestead.example.com');
+    expect(el.querySelector('#tunnel-auth')?.getAttribute('placeholder')).toBe('auth.example.com');
+  });
+
+  it('shows each public name with its edge route and the sign-in step', () => {
+    reviewPlan();
+    const el = fixture.nativeElement as HTMLElement;
+    const names = el.querySelector('table[aria-label="Public hostnames"]')?.textContent ?? '';
+    expect(names).toContain('homestead.example.com');
+    expect(names).toContain('dashboard');
+    expect(names).toContain('homestead.lan');
+    expect(names).toContain('authentik.lan');
+    expect(text()).toContain('re-plan Sign-in');
+    expect(el.querySelector('a[href="/sign-in"]')).not.toBeNull();
+  });
+
+  it('lists the sign-in change the plan applies when the token is kept (ADR-046)', () => {
+    reviewPlan({
+      ...PLAN,
+      sign_in: 'Approving also updates Sign-in with Authentik, using the API token you kept.',
+      sign_in_update: {
+        origin: 'https://homestead.example.com',
+        redirect_uri: 'https://homestead.example.com/api/v1/sso/callback',
+        authentik_url: 'https://homestead.example.com/apps/auth',
+      },
     });
+    const el = fixture.nativeElement as HTMLElement;
+    const list = el.querySelector('ul[aria-label="Sign-in changes"]')?.textContent ?? '';
+    expect(text()).toContain('Approving also updates Sign-in');
+    expect(list).toContain('https://homestead.example.com/api/v1/sso/callback');
+    expect(list).toContain('https://homestead.example.com/apps/auth');
+    expect(el.querySelector('a[href="/sign-in"]')).toBeNull();
+  });
+
+  it('lamps each route and each planned name by its edge certificate (S312)', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush({
+      ...STATUS,
+      routes: [
+        ...STATUS.routes,
+        { Hostname: 'auth.homestead.example.com', TunnelID: 'tunnel-id', Service: 'http://127.0.0.1:8480' },
+      ],
+      coverage: [
+        { hostname: 'app.example.com', covered: true, by: 'universal', checked: true },
+        { hostname: 'auth.homestead.example.com', covered: false, checked: false },
+      ],
+    });
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const rows = Array.from(el.querySelectorAll('tbody tr')).map((r) => r.textContent ?? '');
+    expect(rows.find((r) => r.includes('app.example.com'))).toContain('certificate covers it');
+    expect(rows.find((r) => r.includes('auth.homestead.example.com'))).toContain('no certificate yet');
+    expect(text()).toContain('need Advanced Certificate Manager');
+    fixture.componentInstance['review']('homestead', '', 'login.example.com');
+    http.expectOne('/api/v1/tunnel/plan').flush({
+      ...PLAN,
+      coverage: [
+        { hostname: 'homestead.example.com', covered: true, by: 'universal', checked: true },
+        { hostname: 'auth.example.com', covered: true, by: 'universal', checked: true },
+      ],
+    });
+    fixture.detectChanges();
+    const names = el.querySelector('table[aria-label="Public hostnames"]')?.textContent ?? '';
+    expect(names).toContain('certificate covers it');
+  });
+
+  it('says why the dashboard is left out until sign-in is linked', () => {
+    reviewPlan({
+      ...PLAN,
+      ingress: [PLAN.ingress[1]],
+      dns: [PLAN.dns[1]],
+      omitted: [{ hostname: 'homestead.example.com', role: 'dashboard', reason: 'Sign-in with Authentik is not linked yet.' }],
+      sign_in: undefined,
+    });
+    expect(text()).toContain('Left out: homestead.example.com (dashboard)');
+    expect(text()).toContain('Sign-in with Authentik is not linked yet.');
+    expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/sign-in"]')).toBeNull();
+  });
+
+  it('shows the plan and changes nothing until approved', () => {
+    reviewPlan();
+    http.expectNone('/api/v1/tunnel/setup');
+    const el = fixture.nativeElement as HTMLElement;
+    const dns = el.querySelector('table[aria-label="DNS changes"]')?.textContent ?? '';
+    expect(dns).toContain('Replace');
+    expect(dns).toContain('CNAME homestead.example.com');
+    expect(dns).toContain('CNAME auth.example.com');
+    expect(dns).toContain('(proxied)');
+    expect(dns).toContain('Delete');
+    expect(dns).toContain('203.0.113.7');
+    expect(text()).toContain('not restored');
+    expect(text()).toContain('zone example.com');
+    // The plan is a permit sealed with its digest (S309).
+    expect(el.querySelector('[aria-label="Tunnel plan"] .permit-seal')?.getAttribute('aria-label')).toBe('Plan digest d1g');
+  });
+
+  it('approves the reviewed plan by its digest', () => {
+    reviewPlan();
+    const el = fixture.nativeElement as HTMLElement;
+    const approve = Array.from(el.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Approve and set up',
+    ) as HTMLButtonElement;
+    approve.click();
+    const setup = http.expectOne('/api/v1/tunnel/setup');
+    expect(setup.request.body).toEqual({ name: 'homestead', auth_hostname: 'login.example.com', digest: 'd1g' });
     setup.flush({ id: 23 });
     http.expectOne('/api/v1/tunnel/status').flush(STATUS);
     fixture.detectChanges();
-    expect(text()).toContain('Follow operation 23');
-    expect(text()).not.toContain('sealed-token');
+    expect(el.querySelector('app-operation-progress a[href="/admin/operations/23"]')).not.toBeNull();
+    expect(el.querySelector('table[aria-label="DNS changes"]')).toBeNull();
+    // The approved plan stays as its permit with the Approved stamp (S309).
+    expect(el.querySelector('.permit[data-state="approved"] .permit-stamp')?.textContent).toContain('Approved');
   });
 
-  it('tears down with an explicit account', () => {
+  it('re-reads the tunnels when setup ends and keeps saying Done after the rail drops it', () => {
+    reviewPlan();
+    fixture.componentInstance['approve']();
+    http.expectOne('/api/v1/tunnel/setup').flush({ id: 23 });
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+    const orders = TestBed.inject(WorkOrders);
+    const finished: OperationState = {
+      id: 23, type: 'tunnel.setup', status: 'succeeded', payload: '', result: '', error: '',
+      created_at: '', updated_at: '', steps: [],
+    };
+    orders.orders.set([{ id: 23, title: 'Set up tunnel', done: 'Tunnel set up', startedAt: 0, state: finished, lost: false, settled: true }]);
     fixture.detectChanges();
     http.expectOne('/api/v1/tunnel/status').flush(STATUS);
     fixture.detectChanges();
-    fixture.componentInstance['teardown'](
-      'tunnel-id',
-      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-    );
-    const teardown = http.expectOne(
-      '/api/v1/tunnel/tunnels/tunnel-id?account_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-    );
+    expect(text()).toContain('Done');
+    orders.orders.set([]);
+    fixture.detectChanges();
+    expect(text()).toContain('Done');
+    expect(text()).not.toContain('Starting');
+    http.expectNone('/api/v1/tunnel/status');
+  });
+
+  it('asks for a fresh review when the plan changed', () => {
+    reviewPlan();
+    fixture.componentInstance['approve']();
+    http
+      .expectOne('/api/v1/tunnel/setup')
+      .flush('the plan changed since it was reviewed', { status: 409, statusText: 'Conflict' });
+    fixture.detectChanges();
+    expect(text()).toContain('Review it again');
+    expect((fixture.nativeElement as HTMLElement).querySelector('table[aria-label="DNS changes"]')).toBeNull();
+  });
+
+  it('asks before tearing down and sends no account', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    (el.querySelector('.risky button.danger') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    http.expectNone((req) => req.method === 'DELETE');
+    const dialog = el.querySelector('app-dialog')?.textContent ?? '';
+    expect(dialog).toContain('Tear down this tunnel?');
+    expect(dialog).toContain('DNS records Homestead created');
+    const confirm = Array.from(el.querySelectorAll('app-dialog button')).find(
+      (b) => b.textContent?.trim() === 'Confirm tear down',
+    ) as HTMLButtonElement;
+    confirm.click();
+    const teardown = http.expectOne('/api/v1/tunnel/tunnels/tunnel-id');
     expect(teardown.request.method).toBe('DELETE');
     teardown.flush({ id: 24 });
     http.expectOne('/api/v1/tunnel/status').flush({ ...STATUS, tunnels: [] });
     fixture.detectChanges();
-    expect(text()).toContain('Follow operation 24');
+    expect(el.querySelector('app-operation-progress a[href="/admin/operations/24"]')).not.toBeNull();
+  });
+
+  it('shows missing setup fields next to the field', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const forms = el.querySelectorAll('form');
+    forms[forms.length - 1].dispatchEvent(new Event('submit'));
+    fixture.detectChanges();
+    const name = el.querySelector('#tunnel-name') as HTMLInputElement;
+    expect(name.getAttribute('aria-invalid')).toBe('true');
+    expect(el.querySelector('#tunnel-name-error')?.textContent).toContain('Enter a name');
+    expect(el.querySelectorAll('.field-error').length).toBe(1);
+    http.expectNone('/api/v1/tunnel/plan');
+  });
+  it('adopts an existing tunnel: lists what it serves now and approves by digest (S290)', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+    fixture.detectChanges();
+    fixture.componentInstance['review']('', '', '', '0A1B2C3D');
+    const req = http.expectOne('/api/v1/tunnel/plan');
+    expect(req.request.body).toEqual({ adopt: '0a1b2c3d' });
+    req.flush({
+      name: 'homestead-vm2', dashboard_hostname: 'homestead.example.com', auth_hostname: 'auth.example.com', zone: 'example.com',
+      ingress: [{ hostname: 'auth.example.com', role: 'authentik', route: 'authentik.lan', service: 'http://127.0.0.1:8480' }],
+      dns: [{ name: 'auth.example.com', type: 'CNAME', content: '0a1b2c3d.cfargotunnel.com', proxied: true, action: 'keep', replaces: [] }],
+      omitted: [], warnings: [], digest: 'a1g',
+      adopt: { id: '0a1b2c3d', status: 'healthy', connections: 2,
+        existing: [{ hostname: 'old.example.com', service: 'http://localhost:8096', outcome: 'Dropped from the connector.' }] },
+    });
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(text()).toContain('Adopt the existing tunnel homestead-vm2');
+    expect(el.querySelector('table[aria-label="What the connector serves now"]')?.textContent).toContain('Dropped from the connector.');
+    expect(el.querySelector('table[aria-label="DNS changes"]')?.textContent).toContain('Keep (already points here)');
+    const approve = Array.from(el.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Approve and adopt') as HTMLButtonElement;
+    approve.click();
+    const setup = http.expectOne('/api/v1/tunnel/setup');
+    expect(setup.request.body).toEqual({ adopt: '0a1b2c3d', digest: 'a1g' });
+    setup.flush({ id: 31 });
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+  });
+
+  it('shows a refused plan under Review plan, not at the top (S303)', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+    fixture.componentInstance['review']('', '', '', '0a1b2c3d');
+    http.expectOne('/api/v1/tunnel/plan').flush('this appliance has no connector config', { status: 422, statusText: 'Unprocessable' });
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const forms = el.querySelectorAll('form');
+    const form = forms[forms.length - 1];
+    expect(form.querySelector('[role="alert"]')?.textContent).toContain('no connector config');
+    expect(el.querySelectorAll('[role="alert"]').length).toBe(1);
+  });
+
+  it('refuses a new name and an adoption together', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+    fixture.componentInstance['review']('homestead', '', '', '0a1b2c3d');
+    fixture.detectChanges();
+    http.expectNone('/api/v1/tunnel/plan');
+    expect(text()).toContain('not both');
+  });
+
+  it('serves Authentik by path: no Authentik name asked, paths listed, shared origin stated once (S315)', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/tunnel/status').flush({
+      ...STATUS,
+      proposed: { dashboard_hostname: 'homestead.example.com', auth_hostname: '', sign_in_linked: true },
+    });
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('#tunnel-auth')).toBeNull();
+    expect(el.querySelector('[data-auth-path]')?.textContent).toContain('https://homestead.example.com/apps/auth/');
+    const notes = el.querySelectorAll('[data-shared-origin]');
+    expect(notes.length).toBe(1);
+    expect(notes[0].textContent).toContain('share one web address with the dashboard');
+    fixture.componentInstance['review']('homestead', '', fixture.componentInstance['authValue']());
+    const req = http.expectOne('/api/v1/tunnel/plan');
+    expect(req.request.body).toEqual({ name: 'homestead' });
+    req.flush({
+      ...PLAN,
+      auth_hostname: '',
+      ingress: [{ hostname: 'homestead.example.com', role: 'dashboard', route: 'homestead.lan', service: 'http://127.0.0.1:8480' }],
+      paths: [{ role: 'authentik', route: 'authentik.lan', path: '/apps/auth/', url: 'https://homestead.example.com/apps/auth/' }],
+    });
+    fixture.detectChanges();
+    const paths = el.querySelector('table[aria-label="Apps under the dashboard\'s public name"]')?.textContent ?? '';
+    expect(paths).toContain('https://homestead.example.com/apps/auth/');
+    expect(paths).toContain('authentik.lan');
+    expect(el.querySelectorAll('[data-shared-origin]').length).toBe(1);
+  });
+  const MOVES = {
+    apps: [
+      {
+        app: 'immich',
+        title: 'Immich',
+        from: 'https://homestead.lan/apps/auth/application/o/homestead-immich/',
+        to: 'https://homestead.example.com/apps/auth/application/o/homestead-immich/',
+        host_entry: 'homestead.example.com:host-gateway',
+        replaced_host_entry: 'homestead.lan:host-gateway',
+        digest: 'm1',
+      },
+    ],
+    token_kept: false,
+    note: 'Homestead did not keep the Authentik API token, so nothing changes in Authentik.',
+  };
+
+  const CERT_PLAN = {
+    ...PLAN,
+    certificate: {
+      name: 'homestead.example.com',
+      issue: true,
+      certificate: 'public-dashboard',
+      adds_to_strategy: true,
+      directory: 'https://acme-v02.api.letsencrypt.org/directory',
+      directory_class: 'production',
+      challenge: 'dns-01',
+      provider: 'cloudflare',
+      zone: 'example.com',
+      renewal: 'auto',
+      terms_url: 'https://letsencrypt.org/repository/',
+      note: 'Approving also approves a certificate for homestead.example.com.',
+      digest: 'c1',
+    },
+    issuer_moves: MOVES,
+  };
+
+  it('warns when the plan cannot issue the certificate (S328)', () => {
+    reviewPlan({
+      ...PLAN,
+      certificate: {
+        name: 'homestead.example.com',
+        issue: false,
+        note: 'The certificate for homestead.example.com is not issued by this plan.',
+        blockers: ['missing DNS credential "api_token"'],
+      },
+    });
+    const el = fixture.nativeElement as HTMLElement;
+    const section = el.querySelector('section[aria-label="Certificate for the public dashboard name"]') as HTMLElement;
+    expect(section.textContent).toContain('No certificate will be issued for homestead.example.com');
+    expect(section.textContent).toContain('missing DNS credential "api_token"');
+    expect(section.querySelector('input[type="checkbox"]')).toBeNull();
+  });
+
+  it('shows the public certificate and holds approval until its terms are agreed (ADR-048 §5)', () => {
+    reviewPlan(CERT_PLAN);
+    const el = fixture.nativeElement as HTMLElement;
+    const section = el.querySelector('section[aria-label="Certificate for the public dashboard name"]') as HTMLElement;
+    expect(section.textContent).toContain('public-dashboard (added to TLS)');
+    expect(section.textContent).toContain('https://acme-v02.api.letsencrypt.org/directory');
+    expect(section.textContent).toContain('DNS-01 through cloudflare in the zone example.com');
+    expect(section.textContent).toContain('Automatic');
+    expect(section.querySelector('a[href="https://letsencrypt.org/repository/"]')).not.toBeNull();
+    const approve = Array.from(el.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Approve and set up',
+    ) as HTMLButtonElement;
+    expect(approve.disabled).toBe(true);
+    const boxes = section.querySelectorAll('input[type="checkbox"]');
+    expect(boxes.length).toBe(2);
+    (boxes[0] as HTMLInputElement).click();
+    fixture.detectChanges();
+    expect(approve.disabled).toBe(true);
+    (boxes[1] as HTMLInputElement).click();
+    fixture.detectChanges();
+    expect(approve.disabled).toBe(false);
+    approve.click();
+    const setup = http.expectOne('/api/v1/tunnel/setup');
+    expect(setup.request.body).toEqual({
+      name: 'homestead',
+      auth_hostname: 'login.example.com',
+      agree_terms: true,
+      confirm_production: true,
+      digest: 'd1g',
+    });
+    setup.flush({ id: 23 });
+    http.expectOne('/api/v1/tunnel/status').flush(STATUS);
+  });
+
+  it('says a placed certificate is used and asks for no terms', () => {
+    reviewPlan({
+      ...PLAN,
+      certificate: { name: 'homestead.example.com', issue: false, placed: 'imported', note: 'A certificate is already placed (imported).' },
+    });
+    const el = fixture.nativeElement as HTMLElement;
+    const section = el.querySelector('section[aria-label="Certificate for the public dashboard name"]') as HTMLElement;
+    expect(section.textContent).toContain('already placed');
+    expect(section.querySelectorAll('input[type="checkbox"]').length).toBe(0);
+    const approve = Array.from(el.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Approve and set up',
+    ) as HTMLButtonElement;
+    expect(approve.disabled).toBe(false);
+  });
+
+  it('lists the apps whose sign-in moves, each linked to its re-plan without the token (ADR-048 §6)', () => {
+    reviewPlan(CERT_PLAN);
+    const el = fixture.nativeElement as HTMLElement;
+    const moves = el.querySelector('section[aria-label="Apps moving to Authentik\'s public address"]') as HTMLElement;
+    expect(moves.textContent).toContain('nothing changes in Authentik');
+    expect(moves.textContent).toContain('Immich');
+    expect(moves.textContent).toContain('https://homestead.example.com/apps/auth/application/o/homestead-immich/');
+    expect(moves.textContent).toContain('homestead.example.com:host-gateway');
+    expect(moves.textContent).toContain('homestead.lan:host-gateway');
+    expect(moves.querySelector('a[href="/admin/catalog#manage-immich"]')?.textContent).toContain('Re-plan Immich sign-in');
   });
 });

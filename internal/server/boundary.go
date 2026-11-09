@@ -72,6 +72,10 @@ const (
 	reasonCSRFMissing    = "csrf-missing"
 	reasonCSRFMismatch   = "csrf-mismatch"
 	reasonVerifyError    = "session-verify-error"
+	reasonReauth         = "reauth-required"
+	reasonStepUp         = "stepup-required"
+	reasonLocalOnly      = "local-only"
+	reasonOwnerOnly      = "owner-only"
 )
 
 // auditActionRejected is the audit action of aggregated rejection entries.
@@ -90,12 +94,22 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/admins/setup": ClassPublic,
 	"POST /api/v1/sessions":     ClassPublic,
 	"/":                         ClassPublic, // dashboard static catch-all
+	// S494: the owner guide is static docs for any signed-in dashboard
+	// user (owner or person), so it is session class, on the person
+	// allowlist below.
+	"GET /guide/": ClassSession,
 	// ADR-030: the one read-only unauthenticated exception beyond the
 	// above. A device fetching the root cannot have an operator session.
 	// Both serve ONLY the public root certificate; the fingerprint the
 	// authenticated dashboard and CLI show is the owner's check.
 	"GET /api/v1/tls/local-ca/root.pem": ClassPublic,
 	"GET /api/v1/tls/local-ca/root.der": ClassPublic,
+	// ADR-033: the three browser-protocol routes of sign-in with Authentik.
+	// Each answers 404 before claim and unless SSO is configured and linked.
+	// Every other SSO route below is session class.
+	"GET /api/v1/sso/options":  ClassPublic,
+	"GET /api/v1/sso/login":    ClassPublic,
+	"GET /api/v1/sso/callback": ClassPublic,
 
 	// Claim window: claim-wizard saves, pre-login.
 	"GET /api/v1/wizards/{id}":    ClassClaimWindow,
@@ -104,6 +118,9 @@ var routeClasses = map[string]RouteClass{
 
 	// Session required.
 	// Craft file proxy, on the dedicated craft socket only (ADR-032).
+	"GET /_homestead/open.html":              ClassCraftSession,
+	"GET /_homestead/open.js":                ClassCraftSession,
+	"GET /_homestead/open.css":               ClassCraftSession,
 	"POST /_homestead/files/session":         ClassCraftSession,
 	"GET /_homestead/files/session":          ClassCraftSession,
 	"DELETE /_homestead/files/session":       ClassCraftSession,
@@ -116,52 +133,82 @@ var routeClasses = map[string]RouteClass{
 	"COPY /_homestead/files/f/{path...}":     ClassCraftSession,
 	"HEAD /_homestead/files/f/{path...}":     ClassCraftSession,
 
-	"DELETE /api/v1/sessions":                            ClassSession,
-	"GET /api/v1/craft/apps":                             ClassSession,
-	"GET /api/v1/craft/files":                            ClassSession,
-	"POST /api/v1/craft/files/plan":                      ClassSession,
-	"POST /api/v1/craft/files/approve":                   ClassSession,
-	"POST /api/v1/craft/files/local-only":                ClassSession,
-	"POST /api/v1/craft/files/launch":                    ClassSession,
-	"POST /api/v1/admins/password":                       ClassSession,
-	"GET /api/v1/admins/lockout":                         ClassSession,
-	"GET /api/v1/audit":                                  ClassSession,
-	"GET /api/v1/scheduler/jobs":                         ClassSession,
-	"GET /api/v1/drift/schedule":                         ClassSession,
-	"POST /api/v1/drift/schedule":                        ClassSession,
-	"GET /api/v1/tls/renewal":                            ClassSession,
-	"GET /api/v1/tls/local-ca":                           ClassSession,
-	"POST /api/v1/tls/local-ca":                          ClassSession,
-	"GET /api/v1/tls/local-ca/leaves":                    ClassSession,
-	"POST /api/v1/tls/local-ca/leaves/reissue":           ClassSession,
-	"GET /api/v1/tls/local-ca/rotation":                  ClassSession,
-	"POST /api/v1/tls/local-ca/rotation":                 ClassSession,
-	"GET /api/v1/tls/issuance/plans":                     ClassSession,
-	"GET /api/v1/tls/issuance/approvals":                 ClassSession,
-	"POST /api/v1/tls/issuance/approvals":                ClassSession,
-	"POST /api/v1/tls/issuance/apply":                    ClassSession,
-	"POST /api/v1/tls/issuance/account/reregister":       ClassSession,
-	"GET /api/v1/tls/issuance/account/terms":             ClassSession,
-	"POST /api/v1/tls/issuance/credentials":              ClassSession,
-	"GET /api/v1/backups/destination":                    ClassSession,
-	"GET /api/v1/backups/schedules":                      ClassSession,
-	"POST /api/v1/backups/schedules":                     ClassSession,
-	"GET /api/v1/backups/schedules/{package}":            ClassSession,
-	"DELETE /api/v1/backups/schedules/{package}":         ClassSession,
-	"GET /api/v1/backups/recipients":                     ClassSession,
-	"POST /api/v1/backups/recipients":                    ClassSession,
-	"DELETE /api/v1/backups/recipients/{fingerprint}":    ClassSession,
-	"GET /api/v1/backups/identity":                       ClassSession,
-	"POST /api/v1/backups/identity/export":               ClassSession,
-	"POST /api/v1/backups/identity/ack":                  ClassSession,
-	"GET /api/v1/catalog":                                ClassSession,
-	"GET /api/v1/catalog/{name}":                         ClassSession,
-	"POST /api/v1/catalog/{name}/plan":                   ClassSession,
-	"POST /api/v1/catalog/{name}/install":                ClassSession,
-	"POST /api/v1/catalog/{name}/configure":              ClassSession,
-	"GET /api/v1/catalog/{name}/secrets":                 ClassSession,
-	"POST /api/v1/catalog/{name}/secrets/{secret}":       ClassSession,
-	"POST /api/v1/catalog/{name}/uninstall":              ClassSession,
+	"DELETE /api/v1/sessions":                             ClassSession,
+	"GET /api/v1/craft/apps":                              ClassSession,
+	"GET /api/v1/craft/files":                             ClassSession,
+	"POST /api/v1/craft/files/plan":                       ClassSession,
+	"POST /api/v1/craft/files/approve":                    ClassSession,
+	"POST /api/v1/craft/files/local-only":                 ClassSession,
+	"POST /api/v1/craft/files/launch":                     ClassSession,
+	"POST /api/v1/admins/password":                        ClassSession,
+	"GET /api/v1/admins/lockout":                          ClassSession,
+	"GET /api/v1/audit":                                   ClassSession,
+	"GET /api/v1/scheduler/jobs":                          ClassSession,
+	"GET /api/v1/drift/schedule":                          ClassSession,
+	"POST /api/v1/drift/schedule":                         ClassSession,
+	"GET /api/v1/tls/renewal":                             ClassSession,
+	"GET /api/v1/tls/local-ca":                            ClassSession,
+	"POST /api/v1/tls/local-ca":                           ClassSession,
+	"GET /api/v1/tls/local-ca/leaves":                     ClassSession,
+	"POST /api/v1/tls/local-ca/leaves/reissue":            ClassSession,
+	"GET /api/v1/tls/local-ca/rotation":                   ClassSession,
+	"POST /api/v1/tls/local-ca/rotation":                  ClassSession,
+	"GET /api/v1/tls/issuance/plans":                      ClassSession,
+	"GET /api/v1/tls/issuance/approvals":                  ClassSession,
+	"POST /api/v1/tls/issuance/approvals":                 ClassSession,
+	"POST /api/v1/tls/issuance/apply":                     ClassSession,
+	"POST /api/v1/tls/issuance/account/reregister":        ClassSession,
+	"GET /api/v1/tls/issuance/account/terms":              ClassSession,
+	"POST /api/v1/tls/issuance/credentials":               ClassSession,
+	"GET /api/v1/backups/destination":                     ClassSession,
+	"GET /api/v1/backups/schedules":                       ClassSession,
+	"POST /api/v1/backups/schedules":                      ClassSession,
+	"GET /api/v1/backups/schedules/{package}":             ClassSession,
+	"DELETE /api/v1/backups/schedules/{package}":          ClassSession,
+	"GET /api/v1/backups/policy":                          ClassSession,
+	"POST /api/v1/backups/policy/plan":                    ClassSession,
+	"POST /api/v1/backups/policy/apply":                   ClassSession,
+	"GET /api/v1/backups/recipients":                      ClassSession,
+	"POST /api/v1/backups/recipients":                     ClassSession,
+	"DELETE /api/v1/backups/recipients/{fingerprint}":     ClassSession,
+	"GET /api/v1/backups/identity":                        ClassSession,
+	"POST /api/v1/backups/identity/export":                ClassSession,
+	"POST /api/v1/backups/identity/ack":                   ClassSession,
+	"POST /api/v1/backups/identity/rotate":                ClassSession,
+	"GET /api/v1/catalog":                                 ClassSession,
+	"GET /api/v1/catalog/bundles":                         ClassSession,
+	"GET /api/v1/catalog/{name}":                          ClassSession,
+	"POST /api/v1/catalog/{name}/plan":                    ClassSession,
+	"POST /api/v1/catalog/{name}/access-plan":             ClassSession,
+	"POST /api/v1/catalog/{name}/install-admin":           ClassSession,
+	"POST /api/v1/catalog/{name}/install":                 ClassSession,
+	"POST /api/v1/catalog/{name}/configure":               ClassSession,
+	"GET /api/v1/catalog/{name}/secrets":                  ClassSession,
+	"POST /api/v1/catalog/{name}/secrets/{secret}":        ClassSession,
+	"POST /api/v1/catalog/{name}/secrets/{secret}/reveal": ClassSession,
+	"POST /api/v1/catalog/{name}/uninstall":               ClassSession,
+	"GET /api/v1/catalog/{name}/sign-in":                  ClassSession,
+	"POST /api/v1/catalog/{name}/sign-in/plan":            ClassSession,
+	"POST /api/v1/catalog/{name}/sign-in/apply":           ClassSession,
+	"POST /api/v1/catalog/{name}/sign-in/access":          ClassSession,
+	// S290 (ADR-041 §1): public app names on the tunnel.
+	"GET /api/v1/catalog/{name}/public":        ClassSession,
+	"GET /api/v1/catalog/{name}/reach":         ClassSession,
+	"POST /api/v1/catalog/{name}/public/plan":  ClassSession,
+	"POST /api/v1/catalog/{name}/public/apply": ClassSession,
+	// S433 (ADR-058): public exposure of Everything read links.
+	"GET /api/v1/apps/{name}/read-links":          ClassSession,
+	"POST /api/v1/apps/{name}/read-links/plan":    ClassSession,
+	"POST /api/v1/apps/{name}/read-links/approve": ClassSession,
+	// S324 (ADR-048 §3): the setup approved with an install.
+	"GET /api/v1/catalog/{name}/setup":               ClassSession,
+	"POST /api/v1/catalog/{name}/setup/resume":       ClassSession,
+	"POST /api/v1/catalog/{name}/setup/resume-admin": ClassSession,
+	"POST /api/v1/catalog/{name}/setup/skip":         ClassSession,
+	// S315 (ADR-044 §5): moving an installed app to its path.
+	"GET /api/v1/catalog/{name}/move":                    ClassSession,
+	"POST /api/v1/catalog/{name}/move/plan":              ClassSession,
+	"POST /api/v1/catalog/{name}/move/apply":             ClassSession,
 	"GET /api/v1/catalog/{name}/drift":                   ClassSession,
 	"GET /api/v1/catalog/{name}/drift/live":              ClassSession,
 	"POST /api/v1/catalog/{name}/drift":                  ClassSession,
@@ -171,6 +218,7 @@ var routeClasses = map[string]RouteClass{
 	"PUT /api/v1/config":                                 ClassSession,
 	"GET /api/v1/config/export":                          ClassSession,
 	"POST /api/v1/config/import":                         ClassSession,
+	"POST /api/v1/config/import/preview":                 ClassSession,
 	"GET /api/v1/docker/health":                          ClassSession,
 	"GET /api/v1/dockge":                                 ClassSession,
 	"GET /api/v1/doctor":                                 ClassSession,
@@ -194,7 +242,13 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/storage/registrations":                 ClassSession,
 	"GET /api/v1/storage/assignments":                    ClassSession,
 	"POST /api/v1/storage/assignments":                   ClassSession,
+	"DELETE /api/v1/storage/assignments/{class}":         ClassSession,
+	"DELETE /api/v1/storage/registrations":               ClassSession,
+	"GET /api/v1/names":                                  ClassSession,
+	"POST /api/v1/names/resolver/plan":                   ClassSession,
+	"POST /api/v1/names/resolver/apply":                  ClassSession,
 	"GET /api/v1/tunnel/status":                          ClassSession,
+	"POST /api/v1/tunnel/plan":                           ClassSession,
 	"POST /api/v1/tunnel/setup":                          ClassSession,
 	"DELETE /api/v1/tunnel/tunnels/{id}":                 ClassSession,
 	"GET /api/v1/updates":                                ClassSession,
@@ -219,6 +273,123 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/data-migrations/{name}/plan":           ClassSession,
 	"POST /api/v1/data-migrations/{name}/approve":        ClassSession,
 	"POST /api/v1/data-migrations/{name}/remove-volumes": ClassSession,
+	"GET /api/v1/setup":                                  ClassSession,
+	"PUT /api/v1/setup/steps/{name}":                     ClassSession,
+	"GET /api/v1/sso":                                    ClassSession,
+	"POST /api/v1/sso/plan":                              ClassSession,
+	"POST /api/v1/sso/access":                            ClassSession,
+	"POST /api/v1/sso/approve":                           ClassSession,
+	"POST /api/v1/sso/apply":                             ClassSession,
+	"POST /api/v1/sso/link":                              ClassSession,
+	"POST /api/v1/sso/step-up":                           ClassSession,
+	"DELETE /api/v1/sso/link":                            ClassSession,
+	"DELETE /api/v1/sso":                                 ClassSession,
+	"GET /api/v1/dashboard/address":                      ClassSession,
+	"PUT /api/v1/dashboard/address":                      ClassSession,
+	// The apps list (S337, ADR-050 §4); S338 adds the person allowlist.
+	"GET /api/v1/me":               ClassSession,
+	"GET /api/v1/me/apps":          ClassSession,
+	"GET /api/v1/people/{id}/apps": ClassSession,
+	// People (S317, ADR-043).
+	"GET /api/v1/people":                         ClassSession,
+	"POST /api/v1/people":                        ClassSession,
+	"POST /api/v1/people/adopt":                  ClassSession,
+	"PATCH /api/v1/people/{id}":                  ClassSession,
+	"POST /api/v1/people/{id}/password-reset":    ClassSession,
+	"POST /api/v1/people/{id}/mfa-reset":         ClassSession,
+	"POST /api/v1/people/{id}/disable":           ClassSession,
+	"POST /api/v1/people/{id}/enable":            ClassSession,
+	"POST /api/v1/people/{id}/remove":            ClassSession,
+	"PUT /api/v1/people/{id}/apps/{app}":         ClassSession,
+	"PUT /api/v1/people/{id}/apps/{app}/admin":   ClassSession,
+	"POST /api/v1/people/{id}/apps/{app}/revoke": ClassSession,
+	"POST /api/v1/people/{id}/resolve":           ClassSession,
+}
+
+// stepUpMode says who checks the fresh local password for a step-up route.
+type stepUpMode int
+
+const (
+	// stepUpBoundary: the boundary requires the password from an oidc
+	// session before the handler runs. Password sessions pass as before.
+	stepUpBoundary stepUpMode = iota + 1
+	// stepUpHandler: the handler requires a fresh password from every
+	// session (link and unlink do, ADR-033), so the boundary leaves it.
+	stepUpHandler
+)
+
+// stepUpRoutes is the code-declared step-up list (ADR-033): the most
+// damaging actions, where a session obtained through Authentik must present
+// the local password again. The password travels in the ReauthHeader of the
+// request. The list is tested against the registered routes.
+var stepUpRoutes = map[string]stepUpMode{
+	"POST /api/v1/sso/link":                               stepUpHandler,
+	"DELETE /api/v1/sso/link":                             stepUpHandler,
+	"POST /api/v1/sso/plan":                               stepUpBoundary,
+	"POST /api/v1/sso/approve":                            stepUpBoundary,
+	"POST /api/v1/sso/apply":                              stepUpBoundary,
+	"DELETE /api/v1/sso":                                  stepUpBoundary,
+	"POST /api/v1/secrets/rekey":                          stepUpBoundary,
+	"POST /api/v1/backups/identity/export":                stepUpBoundary,
+	"POST /api/v1/backups/identity/rotate":                stepUpBoundary,
+	"POST /api/v1/catalog/{name}/secrets/{secret}/reveal": stepUpBoundary,
+	// People (S317): admin grants, password and second-factor resets,
+	// removal, and settling drift (which can restore or accept an admin).
+	"PUT /api/v1/people/{id}/apps/{app}/admin":       stepUpBoundary,
+	"POST /api/v1/catalog/{name}/install-admin":      stepUpBoundary,
+	"POST /api/v1/catalog/{name}/setup/resume-admin": stepUpBoundary,
+	"POST /api/v1/people/{id}/password-reset":        stepUpBoundary,
+	"POST /api/v1/people/{id}/mfa-reset":             stepUpBoundary,
+	"POST /api/v1/people/{id}/remove":                stepUpBoundary,
+	"POST /api/v1/people/{id}/resolve":               stepUpBoundary,
+}
+
+// publicStepUpRoutes are the step-up routes a public dashboard name accepts
+// on a fresh Authentik step-up instead of the local password (ADR-049 §1).
+var publicStepUpRoutes = map[string]bool{
+	"POST /api/v1/catalog/{name}/install-admin":      true,
+	"POST /api/v1/catalog/{name}/setup/resume-admin": true,
+	"PUT /api/v1/people/{id}/apps/{app}/admin":       true,
+	"POST /api/v1/people/{id}/password-reset":        true,
+	"POST /api/v1/people/{id}/mfa-reset":             true,
+	"POST /api/v1/people/{id}/remove":                true,
+	"POST /api/v1/people/{id}/resolve":               true,
+}
+
+// ReauthHeader carries the local password for fresh re-authentication.
+const ReauthHeader = "X-Homestead-Reauth"
+
+// Re-authentication error codes (X-Homestead-Error). They ride on 403 and
+// 429, never 401, so the dashboard does not treat them as a dead session.
+const (
+	ErrorCodeReauthRequired = "reauth-required"
+	ErrorCodeReauthInvalid  = "reauth-invalid"
+	ErrorCodeReauthLocked   = "reauth-locked"
+	// ErrorCodePublicHost refuses a local-only action on a public
+	// dashboard name (ADR-037).
+	ErrorCodePublicHost = "public-host"
+	// ErrorCodeStepUpRequired: a People action on the public dashboard
+	// name needs a fresh Authentik sign-in (ADR-049 §1).
+	ErrorCodeStepUpRequired = "stepup-required"
+	// ErrorCodeLocalOnly: a step-up route that is not a People route, on a
+	// public dashboard name; it only works from the local or overlay
+	// address (S335).
+	ErrorCodeLocalOnly = "local-only"
+	// ErrorCodeOwnerOnly: a person session reached a route that is not on
+	// the person allowlist (ADR-050 §2).
+	ErrorCodeOwnerOnly = "owner-only"
+)
+
+// personRoutes is the whole of what a person session may reach (ADR-050
+// §2): who am I, the apps list, and sign-out. The static dashboard is
+// public and needs no session. Every other route, including every
+// step-up route, answers 403 owner-only. A new route is owner-only until
+// it is added here on purpose; a test enumerates every route.
+var personRoutes = map[string]bool{
+	"GET /api/v1/me":          true,
+	"GET /api/v1/me/apps":     true,
+	"GET /guide/":             true,
+	"DELETE /api/v1/sessions": true,
 }
 
 // Classify returns the class declared for a registered pattern.
@@ -233,6 +404,11 @@ type sessionVerifier interface {
 	Verify(token string) (auth.VerifiedSession, error)
 }
 
+// passwordVerifier is fresh re-authentication; auth.Service provides it.
+type passwordVerifier interface {
+	VerifyPassword(username, password string) error
+}
+
 type claimReader interface {
 	CurrentState() (claim.State, error)
 }
@@ -245,11 +421,19 @@ type auditRecorder interface {
 // reason per window, carrying the count.
 const reportWindow = time.Minute
 
-type reportKey struct{ pattern, reason string }
+type reportKey struct {
+	pattern, reason string
+	// edge: the request came through the dashboard socket (ADR-035).
+	edge bool
+}
+
+// maxReportClients bounds the addresses listed per audit entry.
+const maxReportClients = 5
 
 type reportBucket struct {
-	count int
-	first time.Time
+	count   int
+	first   time.Time
+	clients []string
 }
 
 // boundary is the enforcing session middleware state.
@@ -311,9 +495,12 @@ func (b *boundary) wrap(mux *recordingMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		op, v := b.check(mux, r)
 		if v.status != 0 {
-			b.report(v.pattern, v.reason)
+			b.reportFrom(r, v.pattern, v.reason)
 			if v.status == http.StatusUnauthorized {
 				w.Header().Set("WWW-Authenticate", "Bearer")
+			}
+			if v.code != "" {
+				w.Header().Set(ErrorCodeHeader, v.code)
 			}
 			http.Error(w, v.message, v.status)
 			return
@@ -331,6 +518,8 @@ type verdict struct {
 	status          int
 	message         string
 	pattern, reason string
+	// code, when set, is sent as X-Homestead-Error.
+	code string
 }
 
 func reject(status int, message, pattern, reason string) verdict {
@@ -402,10 +591,82 @@ func (b *boundary) check(mux *recordingMux, r *http.Request) (*operatorSession, 
 			return nil, reject(http.StatusForbidden, "CSRF token mismatch", pattern, reasonCSRFMismatch)
 		}
 	}
+	switch session.Role {
+	case "", auth.RoleOwner:
+	case auth.RolePerson:
+		if !personRoutes[pattern] || stepUpRoutes[pattern] != 0 {
+			v := reject(http.StatusForbidden, "this is for the owner of this Homestead", pattern, reasonOwnerOnly)
+			v.code = ErrorCodeOwnerOnly
+			return nil, v
+		}
+	default:
+		return nil, reject(http.StatusForbidden, "unknown session role", pattern, reasonInvalidSession)
+	}
+	if session.Role != auth.RolePerson && session.Method == auth.MethodOIDC && stepUpRoutes[pattern] == stepUpBoundary {
+		if onPublicHost(r) && publicStepUpRoutes[pattern] {
+			if v := b.publicStepUp(r, session, pattern); v.status != 0 {
+				return nil, v
+			}
+		} else if onPublicHost(r) {
+			// The other step-up routes need the local password, which a
+			// public name never takes: say where to go instead (S335).
+			v := reject(http.StatusForbidden, "this action only works from your home network or overlay address", pattern, reasonLocalOnly)
+			v.code = ErrorCodeLocalOnly
+			return nil, v
+		} else if v := b.stepUp(r, session.Username, pattern); v.status != 0 {
+			return nil, v
+		}
+	}
 	return &operatorSession{
 		Token: token, Session: session,
 		stillValid: func() bool { _, err := b.sessions.Verify(token); return err == nil },
 	}, verdict{}
+}
+
+// publicStepUp lets a People step-up route through on a public dashboard
+// name when the oidc session was stepped up by a fresh Authentik sign-in
+// that has not expired. The password is never used here. Each authorised
+// action leaves an audit entry saying so.
+func (b *boundary) publicStepUp(r *http.Request, session auth.VerifiedSession, pattern string) verdict {
+	if !session.SteppedUpUntil.After(b.now()) {
+		v := reject(http.StatusForbidden, "sign in with Authentik again to continue", pattern, reasonStepUp)
+		v.code = ErrorCodeStepUpRequired
+		return v
+	}
+	_, _ = b.audit.Record(audit.Entry{Actor: session.Username, Action: "session.step-up.authorised", Outcome: audit.OutcomeOK,
+		Detail: "authorised by Authentik step-up until " + session.SteppedUpUntil.UTC().Format(time.RFC3339) + " for " + r.Method + " " + r.URL.Path})
+	return verdict{}
+}
+
+// stepUp checks the fresh local password an oidc session must present for
+// the routes in stepUpRoutes. A missing or wrong password is refused with
+// a stable code; wrong guesses feed the same lockout as login.
+func (b *boundary) stepUp(r *http.Request, username, pattern string) verdict {
+	password := r.Header.Get(ReauthHeader)
+	if password == "" {
+		v := reject(http.StatusForbidden, "enter your local password to continue", pattern, reasonReauth)
+		v.code = ErrorCodeReauthRequired
+		return v
+	}
+	pv, ok := b.sessions.(passwordVerifier)
+	if !ok {
+		return reject(http.StatusForbidden, "re-authentication unavailable", pattern, reasonReauth)
+	}
+	switch err := pv.VerifyPassword(username, password); {
+	case err == nil:
+		return verdict{}
+	case errors.Is(err, auth.ErrAccountLocked):
+		v := reject(http.StatusTooManyRequests, "account temporarily locked after repeated failures", pattern, reasonReauth)
+		v.code = ErrorCodeReauthLocked
+		return v
+	case errors.Is(err, auth.ErrInvalidCredentials):
+		v := reject(http.StatusForbidden, "that password is not right", pattern, reasonReauth)
+		v.code = ErrorCodeReauthInvalid
+		return v
+	default:
+		b.log.Warn("session boundary: re-authentication failed", "error", err)
+		return reject(http.StatusServiceUnavailable, "re-authentication unavailable", pattern, reasonVerifyError)
+	}
 }
 
 func isMutating(method string) bool {
@@ -447,15 +708,34 @@ func (b *boundary) logClaimStateError(err error) {
 // per window, so a polling dashboard cannot flood audit and requests
 // never write audit.
 func (b *boundary) report(pattern, reason string) {
+	b.reportFrom(nil, pattern, reason)
+}
+
+// reportFrom is report for a request: edge requests are counted apart
+// and record the forwarded client addresses (bounded) in the audit entry.
+func (b *boundary) reportFrom(r *http.Request, pattern, reason string) {
 	now := b.now()
+	client, edge := "", false
+	if r != nil {
+		client, edge = edgeClientFrom(r.Context())
+	}
 	b.mu.Lock()
-	key := reportKey{pattern, reason}
+	key := reportKey{pattern: pattern, reason: reason, edge: edge}
 	bucket := b.pending[key]
 	if bucket == nil {
 		bucket = &reportBucket{first: now}
 		b.pending[key] = bucket
 	}
 	bucket.count++
+	if edge && len(bucket.clients) < maxReportClients {
+		known := false
+		for _, c := range bucket.clients {
+			known = known || c == client
+		}
+		if !known {
+			bucket.clients = append(bucket.clients, client)
+		}
+	}
 	b.mu.Unlock()
 }
 
@@ -467,13 +747,18 @@ type flushItem struct {
 func (b *boundary) drainLocked() []flushItem {
 	items := make([]flushItem, 0, len(b.pending))
 	for k, v := range b.pending {
-		items = append(items, flushItem{k, *v})
+		cp := *v
+		cp.clients = append([]string(nil), v.clients...)
+		items = append(items, flushItem{k, cp})
 	}
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].key.pattern != items[j].key.pattern {
 			return items[i].key.pattern < items[j].key.pattern
 		}
-		return items[i].key.reason < items[j].key.reason
+		if items[i].key.reason != items[j].key.reason {
+			return items[i].key.reason < items[j].key.reason
+		}
+		return !items[i].key.edge && items[j].key.edge
 	})
 	b.pending = map[reportKey]*reportBucket{}
 	return items
@@ -491,6 +776,9 @@ func (b *boundary) emit(items []flushItem) {
 	for _, it := range items {
 		detail := fmt.Sprintf("rejected %s (%s) x%d since %s",
 			it.key.pattern, it.key.reason, it.bucket.count, it.bucket.first.UTC().Format(time.RFC3339))
+		if it.key.edge {
+			detail += " via edge from " + strings.Join(it.bucket.clients, ", ")
+		}
 		b.log.Warn("session boundary rejected", "route", it.key.pattern,
 			"reason", it.key.reason, "count", it.bucket.count)
 		if _, err := b.audit.Record(audit.Entry{

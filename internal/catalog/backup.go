@@ -15,22 +15,33 @@ type DatabaseKind string
 const (
 	// DatabaseSQLite exports an embedded database file.
 	DatabaseSQLite DatabaseKind = "sqlite"
-	// DatabasePostgres dumps a server database.
+	// DatabasePostgres dumps a server database with pg_dump.
 	DatabasePostgres DatabaseKind = "postgres"
+	// DatabaseMariaDB dumps a server database with mariadb-dump.
+	DatabaseMariaDB DatabaseKind = "mariadb"
+	// DatabaseMySQL dumps a server database with mysqldump.
+	DatabaseMySQL DatabaseKind = "mysql"
 )
 
 // Valid reports a known database kind.
 func (k DatabaseKind) Valid() bool {
-	return k == DatabaseSQLite || k == DatabasePostgres
+	return k == DatabaseSQLite || k.Server()
+}
+
+// Server reports a database reached over the network and dumped with
+// the engine's own client tools rather than copied as a file.
+func (k DatabaseKind) Server() bool {
+	return k == DatabasePostgres || k == DatabaseMariaDB || k == DatabaseMySQL
 }
 
 var validDBIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // DatabaseBackup declares one database export: the owning service,
 // the engine, and the engine parameters. SQLite takes a relative
-// contained path to the file; Postgres takes database and username
-// with nothing else — cross-engine fields refuse rather than
-// silently ignoring what an author mistyped.
+// contained path to the file; server engines (Postgres, MariaDB,
+// MySQL) take database and username with nothing else — cross-engine
+// fields refuse rather than silently ignoring what an author
+// mistyped.
 type DatabaseBackup struct {
 	Service  string
 	Kind     DatabaseKind
@@ -38,7 +49,7 @@ type DatabaseBackup struct {
 	Database string
 	Username string
 	// PasswordSecret names the manifest secret (SecretDecl.Name)
-	// holding the Postgres password; backups resolve it from the
+	// holding a server database password; backups resolve it from the
 	// secret store (S266). Empty means the caller supplies one.
 	PasswordSecret string
 }
@@ -49,7 +60,7 @@ func (d DatabaseBackup) Validate(services map[string]bool) error {
 		return fmt.Errorf("catalog: database service %q unknown", d.Service)
 	}
 	if !d.Kind.Valid() {
-		return fmt.Errorf("catalog: database kind must be sqlite or postgres")
+		return fmt.Errorf("catalog: database kind must be sqlite, postgres, mariadb or mysql")
 	}
 	if d.Kind == DatabaseSQLite {
 		if d.Path == "" || d.Path[0] == '/' || d.Path == "." ||
@@ -62,13 +73,13 @@ func (d DatabaseBackup) Validate(services map[string]bool) error {
 		return nil
 	}
 	if !validDBIdentifier.MatchString(d.Database) {
-		return fmt.Errorf("catalog: postgres database must be a valid identifier")
+		return fmt.Errorf("catalog: %s database must be a valid identifier", d.Kind)
 	}
 	if !validDBIdentifier.MatchString(d.Username) {
-		return fmt.Errorf("catalog: postgres username must be a valid identifier")
+		return fmt.Errorf("catalog: %s username must be a valid identifier", d.Kind)
 	}
 	if d.Path != "" {
-		return fmt.Errorf("catalog: postgres takes no path")
+		return fmt.Errorf("catalog: %s takes no path", d.Kind)
 	}
 	return nil
 }

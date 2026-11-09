@@ -36,7 +36,7 @@ class TestUpdateUI(unittest.TestCase):
                 self.assertIn(symbol, component)
         template = read("dashboard/src/app/updates/updates.html")
         for symbol in ("Apply update", "Back up before updating",
-                       "operations"):
+                       "app-operation-progress"):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, template)
 

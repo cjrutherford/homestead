@@ -86,6 +86,16 @@ describe('Updates', () => {
     expect(text()).toContain('Not installed');
   });
 
+  it('groups apps that are not installed instead of repeating a row for each', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/updates').flush(ROWS);
+    fixture.detectChanges();
+    const notInstalled = ROWS.filter((r) => !r.installed).length;
+    expect(notInstalled).toBeGreaterThan(0);
+    expect(text()).toContain(`Not installed (${notInstalled})`);
+    expect(text()).not.toContain('nothing to update.');
+  });
+
   it('requires backup opt-in before applying guarded updates', () => {
     fixture.detectChanges();
     http.expectOne('/api/v1/updates').flush(ROWS);
@@ -104,7 +114,7 @@ describe('Updates', () => {
     expect(apply.request.body).toMatchObject({ backup: true });
     apply.flush({ id: 9 });
     fixture.detectChanges();
-    expect(text()).toContain('Follow operation 9');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/9"]')).not.toBeNull();
   });
 
   it('shows the skipped-backup note of a stateless package with its operation', () => {
@@ -117,7 +127,7 @@ describe('Updates', () => {
       .expectOne('/api/v1/updates/jellyfin/apply')
       .flush({ id: 11, detail: 'backup skipped: jellyfin is stateless' });
     fixture.detectChanges();
-    expect(text()).toContain('Follow operation 11');
+    expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/11"]')).not.toBeNull();
     expect(text()).toContain('backup skipped: jellyfin is stateless');
   });
 
@@ -147,11 +157,13 @@ describe('Updates craft inputs (S279)', () => {
     const http = TestBed.inject(HttpTestingController);
     const page = fixture.componentInstance as any;
     page.setCraft('wordcraft', 'manifest', '/srv/m.yaml');
+    page.setCraft('wordcraft', 'signature', '/srv/m.yaml.sig');
     page.setCraftOlder('wordcraft', true);
     page.apply('wordcraft');
     const request = http.expectOne('/api/v1/updates/wordcraft/apply');
     expect(request.request.body.craft).toEqual({
       manifest: '/srv/m.yaml',
+      signature: '/srv/m.yaml.sig',
       allow_older: true,
     });
     request.flush({ id: 3 });

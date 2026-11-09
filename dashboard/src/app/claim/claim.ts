@@ -1,11 +1,12 @@
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { SessionService } from '../auth/session.service';
 import { ApiService } from '../core/api.service';
 import { WizardService } from '../wizard/wizard.service';
 import { WizardShell } from '../wizard/wizard-shell';
 import { httpErrorMessage, isUnreachable } from '../core/http-error';
+import { SetupService } from '../setup/setup.service';
 import { StateMessage } from '../state/state-message';
 
 type WizardStep = 'token' | 'admin' | 'done';
@@ -31,6 +32,8 @@ export class Claim implements OnInit {
   private readonly api = inject(ApiService);
   private readonly wizards = inject(WizardService);
   protected readonly sessions = inject(SessionService);
+  private readonly router = inject(Router);
+  private readonly setup = inject(SetupService);
 
   protected readonly step = signal<WizardStep>('token');
   protected readonly busy = signal(false);
@@ -45,6 +48,12 @@ export class Claim implements OnInit {
     this.api.identity().subscribe({
       next: (identity) => {
         if (identity.state !== 'CLAIMED') {
+          return;
+        }
+        if (identity.setup_pending) {
+          // Token redeemed but no administrator yet (a reload or failure
+          // between the steps): carry on at the account step.
+          this.step.set('admin');
           return;
         }
         this.wizards.load(WIZARD_ID).subscribe({
@@ -85,7 +94,7 @@ export class Claim implements OnInit {
   protected submitToken(rawToken: string): void {
     const token = rawToken.trim();
     if (!token) {
-      this.error.set('Enter the claim token shown on the console.');
+      this.error.set('Enter the claim token from sudo homesteadctl claim token.');
       return;
     }
     this.busy.set(true);
@@ -130,7 +139,7 @@ export class Claim implements OnInit {
         // Setup logs the owner in (the response set the session cookie),
         // so the wizard save below carries a session (ADR-020, S257).
         this.sessions.begin(created.username, created.expires_at ?? '');
-        this.persist('done', () => this.step.set('done'));
+        this.persist('done', () => this.confirmAndContinue());
       },
       error: (err: HttpErrorResponse) => {
         this.busy.set(false);
@@ -147,6 +156,17 @@ export class Claim implements OnInit {
         );
       },
     });
+  }
+
+  /**
+   * The owner just chose this password, so setup's "confirm your password"
+   * is already answered: record it, then open the setup wizard (S292).
+   * Both are best-effort; the done step still links on if either fails.
+   */
+  private confirmAndContinue(): void {
+    this.step.set('done');
+    const next = () => void this.router.navigate(['/setup']);
+    this.setup.setupStep('account', { state: 'done' }).subscribe({ next, error: next });
   }
 
   private persist(step: WizardStep, done: () => void): void {
