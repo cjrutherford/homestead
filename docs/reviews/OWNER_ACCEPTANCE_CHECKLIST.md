@@ -204,6 +204,12 @@ The form is generated from this file by `python3 -I scripts/review/make_acceptan
   - If it fails: docs/slices/S494-owner-guide-site.md.
   - Result: ____  Notes: ____
 
+- [ ] **PLAT-DASH-4 — Owner guide content**
+  - Action: Open `/guide/` and read the Getting started, Apps, People, Names and tunnel, Storage and backups, Updates and Troubleshooting pages, and the Command and page reference. Run three `homesteadctl` commands the guide shows (for example `homesteadctl doctor --live`, `homesteadctl backup policy status`, `homesteadctl updates trust list`).
+  - Expected: Every page reads plainly, uses example.com and no real names or secrets, and its commands run as written; the reference lists each top-level command with its dashboard page.
+  - If it fails: docs/slices/S495-owner-guide-content.md.
+  - Result: ____  Notes: ____
+
 - [ ] **PLAT-DOCTOR-1 — Doctor page and live probes**
   - Action: Open Doctor and run `homesteadctl doctor --live` on the near-empty appliance.
   - Expected: Sections System, Storage, Network, Certificates, Tunnel, Sign-in, Apps; guidance only, nothing is changed; page and CLI match; no red items (record amber ones with their guidance).
@@ -3672,7 +3678,7 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | PLAT-OWNER | PLAT-OWNER-1 to PLAT-OWNER-2 (2) |  |  |  |  |
 | PLAT-PEOPLE | PLAT-PEOPLE-1 to PLAT-PEOPLE-8 (8) |  |  |  |  |
 | PLAT-TUNNEL | PLAT-TUNNEL-1 to PLAT-TUNNEL-9 (9) |  |  |  |  |
-| PLAT-DASH | PLAT-DASH-1 to PLAT-DASH-3 (3) |  |  |  |  |
+| PLAT-DASH | PLAT-DASH-1 to PLAT-DASH-4 (4) |  |  |  |  |
 | PLAT-DOCTOR | PLAT-DOCTOR-1 to PLAT-DOCTOR-2 (2) |  |  |  |  |
 | PLAT-NAMES | PLAT-NAMES-1 to PLAT-NAMES-1 (1) |  |  |  |  |
 | PLAT-CATALOG | PLAT-CATALOG-1 to PLAT-CATALOG-1 (1) |  |  |  |  |
@@ -3734,4 +3740,4 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | END-AUDIT | END-AUDIT-1 to END-AUDIT-1 (1) |  |  |  |  |
 | END-PARITY | END-PARITY-1 to END-PARITY-7 (7) |  |  |  |  |
 | END-UNINSTALL | END-UNINSTALL-1 to END-UNINSTALL-6 (6) |  |  |  |  |
-| **Total** | 565 steps |  |  |  |  |
+| **Total** | 566 steps |  |  |  |  |

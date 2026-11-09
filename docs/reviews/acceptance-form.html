@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "a7caad2f301b1df2",
+ "hash": "74637784b0058e1e",
  "sections": [
   {
    "title": "Platform",
@@ -331,6 +331,13 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "action": "Click Guide on the apps page (and in the administration sidebar foot). Browse to the Getting started page and back with the sidebar and the Next link. Repeat on the public name. Then sign out and open `/guide/` directly. As a person (Alex), open Guide from the apps page.",
        "expected": "The guide opens at `/guide/` on the local name and the public name, styled, with a sidebar and no console CSP errors; the footer shows this appliance's version; a person can read it; signed out, `/guide/` answers 401 \"session required\" and shows nothing.",
        "fail": "docs/slices/S494-owner-guide-site.md."
+      },
+      {
+       "id": "PLAT-DASH-4",
+       "title": "Owner guide content",
+       "action": "Open `/guide/` and read the Getting started, Apps, People, Names and tunnel, Storage and backups, Updates and Troubleshooting pages, and the Command and page reference. Run three `homesteadctl` commands the guide shows (for example `homesteadctl doctor --live`, `homesteadctl backup policy status`, `homesteadctl updates trust list`).",
+       "expected": "Every page reads plainly, uses example.com and no real names or secrets, and its commands run as written; the reference lists each top-level command with its dashboard page.",
+       "fail": "docs/slices/S495-owner-guide-content.md."
       },
       {
        "id": "PLAT-DOCTOR-1",
