@@ -32,10 +32,12 @@ class CraftSavesUpstream(unittest.TestCase):
 
     def test_checklist_notes_and_form(self):
         md = read("docs/reviews/OWNER_ACCEPTANCE_CHECKLIST.md")
-        for sid in ("CRAFT-FIGCRAFT-4", "CRAFT-FIGCRAFT-5", "CRAFT-SOUNDCRAFT-5", "CRAFT-DESIGNCRAFT-5"):
+        for sid in ("CRAFT-FIGCRAFT-4", "CRAFT-FIGCRAFT-5", "CRAFT-SOUNDCRAFT-5"):
             block = md.split(f"**{sid} ")[1].split("- [ ] **")[0]
             self.assertIn("Known upstream gap (S491)", block, sid)
-        self.assertEqual(md.count("Known upstream gap (S491)"), 4)
+        self.assertEqual(md.count("Known upstream gap (S491)"), 3)
+        block = md.split("**CRAFT-DESIGNCRAFT-5 ")[1].split("- [ ] **")[0]
+        self.assertIn("S491a", block)
         self.assertIn("Known upstream gap (S491)", read("docs/reviews/acceptance-form.html"))
 
 

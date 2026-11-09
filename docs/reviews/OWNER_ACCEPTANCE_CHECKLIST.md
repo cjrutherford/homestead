@@ -3398,8 +3398,8 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
   - Result: ____  Notes: ____
 
 - [ ] **CRAFT-DESIGNCRAFT-5 — Data stays in the browser**
-  - Action: Reload and close/reopen the browser tab.
-  - Expected: Work is kept only in this browser; there is no server copy (expected). Known upstream gap (S491): this app's web build has no working save/export; a failure here is not a Homestead failure (see `docs/upstream/`).
+  - Action: Draw something, press Ctrl+S (a `.designcraft` file downloads), reload, then File > Open (Ctrl+O) and choose that file.
+  - Expected: The browser keeps nothing between visits (no autosave); Save and Export are browser downloads and Open reads the saved `.designcraft` file back with the work intact. Checked on VM 2 (S491a), on the LAN and on the public path as owner. Note: in a test script, listen for the download event.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 

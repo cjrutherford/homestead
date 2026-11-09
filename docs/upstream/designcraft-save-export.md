@@ -1,8 +1,11 @@
 # DesignCraft: web save/export of the document (upstream request draft)
 
-Draft only; not filed (S491). Target: storytold/designcraft, web build 0.8.0.
+Status: save and export WORK in web build 0.8.0 (S491a re-check, VM 2, LAN and public path). The original problem below was a test-harness mistake (no download listener). Only the optional autosave request (option 2) remains; not filed. Target: storytold/designcraft.
 
-## Problem
+## Problem (withdrawn for save/export; see status)
+What works: Ctrl+S, Save, Save As download `Untitled-1.designcraft` (zip: mimetype, meta.json, document.json); Export Page as PNG, IDML, EPUB, interactive PDF, HTML, XML, Print Booklet download; Open reads the file back. Not autosaved: closing the tab loses unsaved work.
+
+Original text:
 Hosted on Homestead (one origin, no iframe sandbox), the DesignCraft web build keeps no work. After editing and pressing Ctrl+S, a reload shows a fresh or demo document, and localStorage and IndexedDB hold no document data. Export Page as PNG downloads, and HOSTING.md says Save and Export are browser downloads, but Ctrl+S produced no file and nothing is restored on reload (VM 2, 2026-11-08).
 
 ## Request

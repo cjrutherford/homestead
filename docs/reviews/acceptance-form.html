@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "f99c401b0db9f306",
+ "hash": "ea52fb981b2a2e02",
  "sections": [
   {
    "title": "Platform",
@@ -4118,8 +4118,8 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "CRAFT-DESIGNCRAFT-5",
        "title": "Data stays in the browser",
-       "action": "Reload and close/reopen the browser tab.",
-       "expected": "Work is kept only in this browser; there is no server copy (expected). Known upstream gap (S491): this app's web build has no working save/export; a failure here is not a Homestead failure (see `docs/upstream/`).",
+       "action": "Draw something, press Ctrl+S (a `.designcraft` file downloads), reload, then File \u003e Open (Ctrl+O) and choose that file.",
+       "expected": "The browser keeps nothing between visits (no autosave); Save and Export are browser downloads and Open reads the saved `.designcraft` file back with the work intact. Checked on VM 2 (S491a), on the LAN and on the public path as owner. Note: in a test script, listen for the download event.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
