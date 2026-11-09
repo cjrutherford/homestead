@@ -104,12 +104,13 @@
   replaced only as the last two `<binary>.rolledback-<stamp>` copies and
   does not make it the new "previous", so there is no one-step
   roll-forward.
-- Production release signing key (S493 added `scripts/release/keygen.sh` and the `ReleasePublicKey` build seam; still pending: the owner runs keygen offline and commits `release/release.pub`): the HAI public key embedded by S264
-  (`internal/release.EmbeddedPublicKey`) is a labelled placeholder
-  whose private half was discarded. The real key, signing ceremony,
-  and release tooling that publishes `version=`/`counter=` checksums
-  and `.minisig` files are pending; owners may import a key by
-  configuration meanwhile.
+- Production release signing key: the owner's public key (key ID
+  44D917EE2A0EA0C8) is committed as `release/release.pub` (2026-11-08),
+  and `make release` embeds it through the S493 `ReleasePublicKey` seam.
+  Still pending: plain `go build` and dev/VM deploys keep the labelled
+  placeholder (`internal/release.EmbeddedPublicKey`), so Doctor's
+  release-trust check stays amber there; the first signed release
+  (`.minisig` files, signing ceremony) is still to do.
 - Release automation follow-ups (S332): signing is manual, so CI cannot
   publish a signed release; `SHA256SUMS` lists per-platform file names and
   nothing renames them to the bare component names; no
@@ -1809,7 +1810,7 @@ The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
   - A successful `net.fetch` to a real public host and a TLS handshake, the refusals in `net-log`, and the user-script behaviour in API Client (S435, S436; step 9 and the S436 step 8 record).
   - Limits at their real values: net per minute, share attempts per hour, response and body sizes, read-link expiry (step 10).
 
-- Release trust (S443, from the platform run; PLAT-UPDATE-3, PLAT-DOCTOR-1): the release signing key is still a placeholder, so Doctor shows release-trust amber and Verify has nothing real to verify. Replace with the real key when the owner signs the first release.
+- Release trust (S443, from the platform run; PLAT-UPDATE-3, PLAT-DOCTOR-1): plain builds still embed the placeholder key, so Doctor shows release-trust amber on dev deploys; release builds embed the owner's key from `release/release.pub` (2026-11-08). Verify has nothing real to verify until the first signed release.
 
 - Curated install copy (found in S443): the dashboard spec `curated-copy.spec.ts` fails at HEAD because 17 catalog packages have no entry in `curated-copy.ts` (actual-budget, api-client, bookstack, circuits, contacts, expense, inventory, memos, notes, parametric, projects, records, solitaire, sudoku, tasks, three-d, time-tracking, vikunja). Pre-existing, not touched by S443; with ADR-059 most need only a "nothing to do on first run" line.
 
