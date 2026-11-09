@@ -75,8 +75,8 @@ backuppaths: [data]
 	oldDiscover := discoverStorage
 	discoverStorage = func() (discover.Storage, error) {
 		return discover.Storage{Mounts: []discover.Mount{
-			{Mountpoint: "/", Accessible: true},
-			{Mountpoint: "/tmp", Accessible: true},
+			{Mountpoint: "/", Accessible: true, FreeBytes: 64 << 30},
+			{Mountpoint: "/tmp", Accessible: true, FreeBytes: 64 << 30},
 			{Mountpoint: "/ro", Accessible: true, ReadOnly: true},
 		}}, nil
 	}

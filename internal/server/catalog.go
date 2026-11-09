@@ -258,7 +258,7 @@ func installRequest(st *store.Store, catalogDir, name string, body installBody) 
 		// A mount chosen in the request has no assignment, so its free
 		// space is read from live discovery instead of failing the floor
 		// check with "no space data".
-		discovered, err := discover.DiscoverStorage()
+		discovered, err := discoverStorage()
 		if err != nil {
 			return catalog.InstallRequest{}, fmt.Errorf("storage discovery: %w", err)
 		}
