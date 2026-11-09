@@ -341,6 +341,13 @@ type EnvOIDC struct {
 	// app must ask for the groups scope. Only people already allowed in
 	// by the app's Authentik groups ever reach the claim.
 	VerifiedEmail bool `yaml:"verifiedemail,omitempty" json:"verifiedemail,omitempty"`
+	// TrimGroups (S496) is for an app that signs people in through the
+	// profile scope and never asks for groups: Authentik's built-in profile
+	// lists every group the person holds, which for the owner is every app
+	// group and overflows the app's session store (FreshRSS's Apache module
+	// stores the whole token). With it the app's claim mapping answers to
+	// the profile scope and lists only the app's own groups.
+	TrimGroups bool `yaml:"trimgroups,omitempty" json:"trimgroups,omitempty"`
 	// Warnings are shown in every sign-in plan for the app.
 	Warnings []string          `yaml:"warnings,omitempty" json:"warnings,omitempty"`
 	Set      map[string]string `yaml:"set" json:"set"`

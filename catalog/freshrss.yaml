@@ -108,6 +108,10 @@ sso:
       onapply: [php, cli/reconfigure.php, --auth-type, http_auth]
       onoff: [php, cli/reconfigure.php, --auth-type, form]
       exclusive: true
+      # S496: the owner holds every app group; the built-in profile claim
+      # would put them all in the token and overflow mod_auth_openidc's
+      # 16400-byte shared-memory session entry (500 on /i/oidc/).
+      trimgroups: true
       warnings:
       - "FreshRSS signs in through Authentik only while this is on. Its own login form stops working: the Authentik person whose username (preferred_username) equals FreshRSS's default user (the administrator Homestead created at install, named for the owner's Authentik username) becomes the administrator, and everyone else gets an ordinary account at first sign-in. Create or rename that person in Authentik before applying, or nobody will administer FreshRSS."
       - "If Authentik is unreachable, FreshRSS's web interface is unreachable too (the feed API at /api/ keeps its own API passwords). To get back in, turn sign-in off from Homestead; that restores FreshRSS's login form. This is an explicit exception to keeping each app's local login (ADR-052 amendment, S412)."

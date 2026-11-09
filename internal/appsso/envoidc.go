@@ -83,6 +83,7 @@ func (a envOIDC) uses(name string) bool {
 
 func (a envOIDC) Roles(g GroupNames) RoleMapping {
 	rm := a.roles(g)
+	rm.TrimGroups = a.cfg.TrimGroups
 	if a.cfg.VerifiedEmail {
 		rm.Claims = map[string]string{"email_verified": "True"}
 		rm.Note += " The groups claim also carries email_verified=true, because the app refuses an unverified email and Authentik sends false; only people the app's groups admit can reach it."

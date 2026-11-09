@@ -46,6 +46,20 @@ type Access struct {
 	// expression. Empty for the dashboard, which reads no groups.
 	ClaimMapping    string `json:"claim_mapping,omitempty"`
 	ClaimExpression string `json:"claim_expression,omitempty"`
+	// ClaimScope (S496) is the scope the mapping answers to; empty means
+	// GroupsScope. An app that never asks for the groups scope but signs
+	// people in through its profile (FreshRSS) gets "profile", so its
+	// short groups claim replaces the built-in profile's list of every
+	// group the person holds.
+	ClaimScope string `json:"claim_scope,omitempty"`
+}
+
+// claimScope is the scope name the claim mapping answers to.
+func (x Access) claimScope() string {
+	if x.ClaimScope != "" {
+		return x.ClaimScope
+	}
+	return GroupsScope
 }
 
 // ownedGroup reports whether name is a group Homestead may touch.
@@ -93,7 +107,9 @@ func (x Access) Lines() []string {
 	for _, g := range x.Bindings {
 		out = append(out, "Bind the application to group "+g+" (nobody outside the bound groups can sign in).")
 	}
-	if x.ClaimMapping != "" {
+	if x.ClaimMapping != "" && x.ClaimScope == "profile" {
+		out = append(out, fmt.Sprintf("Scope mapping %q answers to the profile scope in place of the standard profile mapping and emits the profile claims with a groups claim listing only this app's groups, so the token stays small.", x.ClaimMapping))
+	} else if x.ClaimMapping != "" {
 		out = append(out, fmt.Sprintf("Scope mapping %q emits a groups claim listing only %s groups.", x.ClaimMapping, GroupPrefix+"*"))
 	}
 	return out
@@ -205,7 +221,7 @@ func (a *API) ensureClaimMapping(ctx context.Context, x Access, step func(string
 	if err != nil {
 		return "", err
 	}
-	body := map[string]any{"name": x.ClaimMapping, "scope_name": GroupsScope, "expression": x.ClaimExpression}
+	body := map[string]any{"name": x.ClaimMapping, "scope_name": x.claimScope(), "expression": x.ClaimExpression}
 	switch {
 	case have == nil:
 		var created remoteMapping
@@ -214,7 +230,7 @@ func (a *API) ensureClaimMapping(ctx context.Context, x Access, step func(string
 		}
 		step("created the groups claim mapping")
 		return created.PK, nil
-	case have.ScopeName != GroupsScope || have.Expression != x.ClaimExpression:
+	case have.ScopeName != x.claimScope() || have.Expression != x.ClaimExpression:
 		if err := a.do(ctx, http.MethodPatch, "/api/v3/propertymappings/provider/scope/"+url.PathEscape(have.PK)+"/", body, nil); err != nil {
 			return "", err
 		}
@@ -479,7 +495,7 @@ func (a *API) ReadAccess(ctx context.Context, x Access, appSlug string) (AccessR
 		case m == nil:
 			rep.ClaimMapping = "missing"
 			rep.Drift = append(rep.Drift, "the groups claim mapping is missing")
-		case m.Expression != x.ClaimExpression || m.ScopeName != GroupsScope:
+		case m.Expression != x.ClaimExpression || m.ScopeName != x.claimScope():
 			rep.ClaimMapping = "differs"
 			rep.Drift = append(rep.Drift, "the groups claim mapping was changed")
 		default:
@@ -556,7 +572,7 @@ func (a *API) inspectAccess(ctx context.Context, x Access, app *Application) ([]
 		o := Object{Kind: "Scope mapping", Name: x.ClaimMapping, Action: ActionCreate}
 		if m != nil {
 			o.Action = ActionUnchanged
-			if m.Expression != x.ClaimExpression || m.ScopeName != GroupsScope {
+			if m.Expression != x.ClaimExpression || m.ScopeName != x.claimScope() {
 				o.Action, o.Changes = ActionUpdate, []string{"expression"}
 			}
 		}

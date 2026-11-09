@@ -239,6 +239,7 @@ func (a *API) keyPK(ctx context.Context, name string) (string, error) {
 func (a *API) scopePKs(ctx context.Context, scopes []string) ([]string, error) {
 	var out listResult[struct {
 		PK    string `json:"pk"`
+		Name  string `json:"name"`
 		Scope string `json:"scope_name"`
 	}]
 	if err := a.do(ctx, http.MethodGet, "/api/v3/propertymappings/provider/scope/?page_size=200", nil, &out); err != nil {
@@ -246,6 +247,11 @@ func (a *API) scopePKs(ctx context.Context, scopes []string) ([]string, error) {
 	}
 	byScope := map[string]string{}
 	for _, m := range out.Results {
+		// Homestead's own claim mappings may answer to "profile" (S496);
+		// they are added per app, never the standard mapping.
+		if strings.HasPrefix(m.Name, "Homestead: ") {
+			continue
+		}
 		if _, seen := byScope[m.Scope]; !seen {
 			byScope[m.Scope] = m.PK
 		}
@@ -385,7 +391,7 @@ func (a *API) Inspect(ctx context.Context, spec Spec, secret string) ([]Object, 
 	if err != nil {
 		return nil, err
 	}
-	mappings, err := a.scopePKs(ctx, spec.Scopes)
+	mappings, err := a.scopePKs(ctx, spec.boundScopes())
 	if err != nil {
 		return nil, err
 	}
@@ -487,7 +493,7 @@ func (a *API) reconcileApp(ctx context.Context, spec Spec, secret string, step f
 	if err != nil {
 		return err
 	}
-	mappings, err := a.scopePKs(ctx, spec.Scopes)
+	mappings, err := a.scopePKs(ctx, spec.boundScopes())
 	if err != nil {
 		return err
 	}
@@ -620,4 +626,21 @@ func (a *API) Remove(ctx context.Context, spec Spec, step func(string)) error {
 		return a.removeAccess(ctx, *spec.Access, step)
 	}
 	return nil
+}
+
+// boundScopes are the standard scope mappings bound to the provider. An app
+// whose claim mapping answers to the profile scope (S496) carries the
+// profile claims itself, so the standard profile mapping, which lists every
+// group the person holds, is not bound.
+func (s Spec) boundScopes() []string {
+	if s.Access == nil || s.Access.ClaimScope != "profile" {
+		return s.Scopes
+	}
+	var out []string
+	for _, sc := range s.Scopes {
+		if sc != "profile" {
+			out = append(out, sc)
+		}
+	}
+	return out
 }

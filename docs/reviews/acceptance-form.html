@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "74637784b0058e1e",
+ "hash": "a92d048b4b7f7b23",
  "sections": [
   {
    "title": "Platform",
@@ -756,8 +756,8 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-FRESHRSS-3",
        "title": "Owner sign-in",
-       "action": "Open the app; the Authentik sign-in appears (no form login, by design). Authentik ONLY (Apache mod_auth_openidc); FreshRSS's own login form stops working while sign-in is on. The Authentik person whose username equals FreshRSS's default user becomes its administrator.",
-       "expected": "Owner is signed in and named correctly.",
+       "action": "Open the app; the Authentik sign-in appears (no form login, by design). Authentik ONLY (Apache mod_auth_openidc); FreshRSS's own login form stops working while sign-in is on. The Authentik person whose username equals FreshRSS's default user becomes its administrator. The owner belongs to every app group, so this checks the token stays small (S496: FreshRSS's claim mapping lists only its own groups); an error page on `/i/oidc/` is a FAIL.",
+       "expected": "Owner is signed in and named correctly (no 500 on `/i/oidc/`).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {

@@ -24,7 +24,8 @@ class SubpathAcceptance(unittest.TestCase):
         self.assertIn("END-SUBPATH-1", read("docs/reviews/acceptance-form.html"))
 
     def test_deferred(self):
-        self.assertTrue(re.search(r"S482: FreshRSS sign-in fails for the owner", read("docs/DEFERRED.md")))
+        # Resolved by S496: the entry is gone.
+        self.assertFalse(re.search(r"S482: FreshRSS sign-in fails for the owner", read("docs/DEFERRED.md")))
 
 
 if __name__ == "__main__":

@@ -29,6 +29,10 @@ type RoleMapping struct {
 	// Claims are extra claims, each a Python expression over `admin` (true
 	// for members of the admin group).
 	Claims map[string]string
+	// TrimGroups (S496) limits the groups claim to the app's own three
+	// groups and moves the mapping to the profile scope, for an app that
+	// never asks for groups.
+	TrimGroups bool
 }
 
 // GroupNames are the three groups an app is bound to.
@@ -48,9 +52,23 @@ func pyStr(s string) string {
 // homestead- groups, plus what the adapter adds for the admin role.
 func claimExpression(g GroupNames, rm RoleMapping) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "names = sorted(group.name for group in request.user.ak_groups.all() if group.name.startswith(%s))\n", pyStr(sso.GroupPrefix))
+	if rm.TrimGroups {
+		fmt.Fprintf(&b, "names = sorted(group.name for group in request.user.ak_groups.all() if group.name in (%s, %s, %s))\n", pyStr(g.Users), pyStr(g.Admins), pyStr(g.Owner))
+	} else {
+		fmt.Fprintf(&b, "names = sorted(group.name for group in request.user.ak_groups.all() if group.name.startswith(%s))\n", pyStr(sso.GroupPrefix))
+	}
 	fmt.Fprintf(&b, "admin = %s in names\n", pyStr(g.Admins))
-	b.WriteString("claims = {\"groups\": list(names)}\n")
+	if rm.TrimGroups {
+		// The standard profile mapping is not bound for this app (the
+		// order Authentik evaluates mappings in is not ours to rely on),
+		// so this mapping carries the profile claims itself, minus the
+		// built-in list of every group.
+		b.WriteString("avatar = request.user.avatar\n")
+		b.WriteString("claims = delete_none_values({\"name\": request.user.name, \"given_name\": ak_obj_attr(request.user, \"given_name\", \"name\"), \"family_name\": ak_obj_attr(request.user, \"family_name\"), \"preferred_username\": request.user.username, \"nickname\": request.user.username, \"picture\": avatar if avatar and not avatar.startswith(\"data:\") else None})\n")
+		b.WriteString("claims[\"groups\"] = list(names)\n")
+	} else {
+		b.WriteString("claims = {\"groups\": list(names)}\n")
+	}
 	if rm.AdminAlias != "" {
 		fmt.Fprintf(&b, "if admin:\n    claims[\"groups\"].append(%s)\n", pyStr(rm.AdminAlias))
 	}
@@ -75,10 +93,14 @@ func claimExpression(g GroupNames, rm RoleMapping) string {
 func buildAccess(pkg, title string, ownerSub string, rm RoleMapping) sso.Access {
 	g := groupNames(pkg)
 	all := []string{g.Users, g.Admins, g.Owner}
-	return sso.Access{
+	x := sso.Access{
 		Groups: all, OwnerSub: ownerSub, OwnerOf: append([]string(nil), all...), Bindings: append([]string(nil), all...),
 		ClaimMapping: ClaimMappingName(title), ClaimExpression: claimExpression(g, rm),
 	}
+	if rm.TrimGroups {
+		x.ClaimScope = "profile"
+	}
+	return x
 }
 
 // removeAccess names what turning sign-in off deletes: the app's two

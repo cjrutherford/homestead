@@ -563,8 +563,8 @@ _FreshRSS is installed by Homestead (no web installer, ADR-059; SRV-FRESHRSS-1a)
   - Result: ____  Notes: ____
 
 - [ ] **SRV-FRESHRSS-3 — Owner sign-in**
-  - Action: Open the app; the Authentik sign-in appears (no form login, by design). Authentik ONLY (Apache mod_auth_openidc); FreshRSS's own login form stops working while sign-in is on. The Authentik person whose username equals FreshRSS's default user becomes its administrator.
-  - Expected: Owner is signed in and named correctly.
+  - Action: Open the app; the Authentik sign-in appears (no form login, by design). Authentik ONLY (Apache mod_auth_openidc); FreshRSS's own login form stops working while sign-in is on. The Authentik person whose username equals FreshRSS's default user becomes its administrator. The owner belongs to every app group, so this checks the token stays small (S496: FreshRSS's claim mapping lists only its own groups); an error page on `/i/oidc/` is a FAIL.
+  - Expected: Owner is signed in and named correctly (no 500 on `/i/oidc/`).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 

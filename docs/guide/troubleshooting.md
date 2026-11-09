@@ -26,7 +26,7 @@ Doctor groups every check by area (System, Storage, Network, Certificates, Tunne
 
 ## Known limits
 
-- **FreshRSS sign-in fails for the owner.** The owner's Authentik token carries every app group, which makes FreshRSS's session too large to store, so the owner gets an error on `/i/oidc/`. People with fewer groups sign in normally. Until a fix lands, open FreshRSS with a person account that has few groups; this is recorded in `docs/DEFERRED.md`.
+- **FreshRSS sign-in fails for the owner with an error on `/i/oidc/`.** Fixed in S496: FreshRSS now gets a token with only its own groups. If you still see it after an update, plan and apply FreshRSS sign-in again (`homesteadctl apps sign-in plan freshrss`, then `apply`) so Authentik gets the new claim mapping.
 - **Craft apps do not keep your work.** See [Apps and the catalog](apps.md).
 - **The public Authentik login has no Forgot password link.** Ask the owner to reset it from People.
 
