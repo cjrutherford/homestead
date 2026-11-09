@@ -140,6 +140,30 @@ says that the app is behind the Authentik gate and who is admitted.
   path is gated. If the owner later wants a LAN sign-in, the gate's name would
   have to cover the LAN host and every craft LAN link would become a sign-in.
 
+## Amendment (S498, owner decision 2026-11-08): published path apps redirect the LAN
+Any app at a path (`publish: path`) that is published on the dashboard's public
+name has one canonical address, the public one. A request on the dashboard's
+local names (`homestead.lan`, `homestead.local`) for `/apps/<app>/...` answers
+`308` to `https://<public name>/apps/<app>/...`, path and query kept. The
+redirect comes from the route's `Published` state, not from the gate: Komga,
+Paperless-ngx, Linkding and the like get it, and Navidrome's S480 redirect is
+the same rule. Unpublishing removes it on the next edge reconcile; apps that
+are not published are served on the LAN as before.
+
+Exceptions: the craft apps keep the LAN open, as section 6 says; the Authentik
+sign-in path (`/apps/auth/`) stays on the local name, because the apps reach it
+there on their back channel (ADR-047).
+
+Loops: the tunnel entry is a site block of its own (the public name on the
+loopback port), separate from the local site that holds the redirect, so a
+request that arrives through the tunnel is never redirected.
+
+Consequence: a client on the LAN that does not follow a 308, such as an
+e-reader or phone app talking to Komga's OPDS or API, or a script, fails on the
+local address and must be given the public address instead. It then depends on
+the tunnel and the internet. Unpublish the app to bring the local address
+back. The publish plan says so before the owner approves it.
+
 ## Slices
 S480 shared gate and Navidrome moved onto it; S481 craft `publish: path`
 behind the gate; S482 live acceptance of the subpath work, absorbing S478.

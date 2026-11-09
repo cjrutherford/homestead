@@ -53,6 +53,10 @@ These apps cannot run at a path, so a published one gets its own name such as `a
 
 Uptime Kuma is never published.
 
+### Local requests redirect once an app is published
+
+When an app at a path is published, its local address (`https://homestead.lan/apps/<app>/`) answers a redirect (308) to the public address, keeping the path and query, so the app has one address. The Craft apps are the exception: they stay open on the local network. Apps that are not published keep being served locally. The plan tells you before you approve it. Apps and devices on your network that do not follow redirects, for example a reader app using Komga's OPDS feed, must be given the public address, or you can unpublish the app to bring the local address back.
+
 ### The shared gate
 
 The Craft apps have no sign-in of their own, and Navidrome relies on Authentik instead of an OpenID Connect login. When published at a path they sit behind one shared Authentik gate. Authentik says who the person is. The appliance's edge then checks that person's groups against the app's groups and answers 403 to anyone signed in who was not granted the app. The LAN stays open, as above.

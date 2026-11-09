@@ -208,6 +208,15 @@ func renderPathHandles(paths []Route, tunnel bool, dash Route) string {
 			continue
 		}
 		bare := strings.TrimSuffix(p.Path, "/")
+		if !tunnel && p.redirectsLANPath(dash) {
+			// A published app at a path has one canonical address, the public
+			// one (ADR-062 amendment, S498). This block serves only the local
+			// names (the tunnel entry is a site of its own, so a tunnelled
+			// request never reaches it and cannot loop).
+			fmt.Fprintf(&b, "\t# Published: the local names redirect to the public name (S498).\n\tredir %s https://%s%s 308\n\thandle %s* {\n\t\tredir https://%s{uri} 308\n\t}\n",
+				bare, dash.Tunnel[0], p.Path, p.Path, dash.Tunnel[0])
+			continue
+		}
 		fmt.Fprintf(&b, "\tredir %s %s 308\n", bare, p.Path)
 		if p.Gate != nil && !(p.Gate.TunnelOnly && !tunnel) {
 			// A gated app at a path (ADR-061, ADR-055): inside the dashboard
@@ -582,6 +591,16 @@ func ReconcileDefinition(stack Stack, set RouteSet, state RouteState) (operation
 // its local names redirect to its first public name while it has one.
 func (r Route) redirectsToPublic() bool {
 	return r.SingleOrigin && r.Gate == nil && !r.Dashboard && !r.IsPath() && len(r.Tunnel) > 0
+}
+
+// redirectsLANPath reports whether a published app at a path sends the
+// dashboard's local names to its public address (S498). Craft apps keep the
+// LAN open (ADR-062 section 6), a gated app redirects through its gate, and
+// the Authentik sign-in path stays on the local name because the apps reach
+// it there on their back channel (ADR-047).
+func (r Route) redirectsLANPath(dash Route) bool {
+	return r.IsPath() && r.Published && r.Gate == nil && r.CraftApp == "" &&
+		r.Path != SignInPath && len(dash.Tunnel) > 0
 }
 
 // LANRedirect is the public address a published single-origin route's local

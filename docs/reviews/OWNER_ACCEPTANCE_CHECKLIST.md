@@ -841,7 +841,7 @@ _First install on this appliance; sign-in confirmed from source only (DEFERRED S
   - Result: ____  Notes: ____
 
 - [ ] **SRV-KOMGA-2 — Opens at the right path or name**
-  - Action: Open https://<server>/apps/komga/ (S474: served under the path; the Spring context path is set by the package, so the UI, its assets and the sign-in redirect follow it). An install made before S474 moves with `homesteadctl apps move plan komga` then `apply`; moves only go forward.
+  - Action: Open https://<server>/apps/komga/ (S474: served under the path; the Spring context path is set by the package, so the UI, its assets and the sign-in redirect follow it). An install made before S474 moves with `homesteadctl apps move plan komga` then `apply`; moves only go forward. Once published (S498), open https://homestead.lan/apps/komga/x?y=1: it answers 308 to the same path and query on the public name, with no loop; unpublished, it is served on the local name.
   - Expected: The app's own page loads (no 404, no certificate surprise beyond the documented one).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -900,7 +900,7 @@ _First install on this appliance (S409/S410 unit and contract tests only). No gr
   - Result: ____  Notes: ____
 
 - [ ] **SRV-LINKDING-2 — Opens at the right path or name**
-  - Action: Open https://<server>/apps/linkding/ (S476: served under the path by LD_CONTEXT_PATH; the UI, its assets and the sign-in redirect follow it). An install made before S476 moves with `homesteadctl apps move plan linkding` then `apply`; moves only go forward.
+  - Action: Open https://<server>/apps/linkding/ (S476: served under the path by LD_CONTEXT_PATH; the UI, its assets and the sign-in redirect follow it). An install made before S476 moves with `homesteadctl apps move plan linkding` then `apply`; moves only go forward. Once published (S498), open https://homestead.lan/apps/linkding/x?y=1: it answers 308 to the same path and query on the public name, with no loop; unpublished, it is served on the local name.
   - Expected: The app's own page loads (no 404, no certificate surprise beyond the documented one).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
@@ -1249,7 +1249,7 @@ _Single sign-in confirmed live (S413, S453). Homestead makes the Homestead peopl
   - Result: ____  Notes: ____
 
 - [ ] **SRV-PAPERLESS-NGX-2 — Opens at the right path or name**
-  - Action: Open https://<server>/apps/paperless-ngx/ (S475: served under the path; the package sets the script name and static URL, so the UI, its assets and the sign-in redirect follow it). An install made before S475 moves with `homesteadctl apps move plan paperless-ngx` then `apply`; moves only go forward. Once published (S497), press "Authentik" on the sign-in page at the public path: a 403 "CSRF verification failed" is a FAIL.
+  - Action: Open https://<server>/apps/paperless-ngx/ (S475: served under the path; the package sets the script name and static URL, so the UI, its assets and the sign-in redirect follow it). An install made before S475 moves with `homesteadctl apps move plan paperless-ngx` then `apply`; moves only go forward. Once published (S497), press "Authentik" on the sign-in page at the public path: a 403 "CSRF verification failed" is a FAIL. Once published (S498), open https://homestead.lan/apps/paperless-ngx/x?y=1: it answers 308 to the same path and query on the public name, with no loop; unpublished, it is served on the local name.
   - Expected: The app's own page loads (no 404, no certificate surprise beyond the documented one).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____

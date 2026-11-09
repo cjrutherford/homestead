@@ -187,7 +187,8 @@ func TestAppPublicPathAppPublishUnpublish(t *testing.T) {
 		t.Fatalf("connector/coverage = %+v", plan)
 	}
 	warnings := strings.Join(plan.Warnings, " ")
-	if !strings.Contains(warnings, "No DNS record changes") || !strings.Contains(warnings, "one web origin") {
+	if !strings.Contains(warnings, "No DNS record changes") || !strings.Contains(warnings, "one web origin") ||
+		!strings.Contains(warnings, "are redirected (308, path and query kept) to https://homestead.example.com/apps/nextcloud/") {
 		t.Fatalf("warnings = %v", plan.Warnings)
 	}
 	// The digest is stable and bound: a changed request is a changed plan.
@@ -241,6 +242,9 @@ func TestAppPublicPathAppPublishUnpublish(t *testing.T) {
 	off := planPathPublic(t, srv, map[string]any{"enabled": false})
 	if off.Action != "remove" || off.URL != plan.URL || len(off.DNS) != 0 || off.Digest == "" || off.Digest == plan.Digest {
 		t.Fatalf("remove plan = %+v", off)
+	}
+	if w := strings.Join(off.Warnings, " "); !strings.Contains(w, "the redirect from the local address /apps/nextcloud/") {
+		t.Fatalf("remove warnings = %v", off.Warnings)
 	}
 	rec = serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/nextcloud/public/apply", map[string]any{"enabled": false, "digest": off.Digest})
 	if rec.Code != http.StatusOK {

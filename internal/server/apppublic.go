@@ -890,6 +890,7 @@ func (p *appPublic) planPathAdd(ctx context.Context, client *router.TunnelClient
 	plan.Warnings = append(plan.Warnings,
 		"No DNS record changes: "+f.manifest.Title+" answers at "+plan.URL+", under the dashboard's public name the tunnel already carries.",
 		openToInternetWarning(f.manifest, f.signIn, plan.URL),
+		lanPathRedirectWarning(f, *plan),
 		"It shares one web origin with the dashboard and the other published apps (ADR-044): a flaw in one of them can reach the others in the same browser.")
 	if w := cookiePathWarning(f.manifest); w != "" {
 		plan.Warnings = append(plan.Warnings, w)
@@ -918,7 +919,8 @@ func (p *appPublic) planPathRemove(f appPublicFacts, hostname string, plan *appP
 		return err
 	}
 	plan.Warnings = append(plan.Warnings,
-		"No DNS record changes: "+plan.URL+" answers 404 on the public name afterwards; the app stays on its local addresses.")
+		"No DNS record changes: "+plan.URL+" answers 404 on the public name afterwards; the app stays on its local addresses.",
+		lanPathRedirectWarning(f, *plan))
 	return nil
 }
 
@@ -1347,6 +1349,26 @@ func singleOriginWarning(r docker.Route, plan appPublicPlan) string {
 	}
 	return "Edge change: " + local + " redirect (307, path and query kept) to https://" + plan.Hostname +
 		", because this app can only sign in on one address (ADR-060). Local clients then reach it through the tunnel and the internet, and cannot use it if either is down; unpublish it to bring the local names back."
+}
+
+// lanPathRedirectWarning previews the edge change for a path app's local
+// names (S498, ADR-062 amendment): published, a request on
+// the local name answers 308 to the public address, path and query kept;
+// unpublished, the local names serve the app again. Craft apps keep the LAN
+// open, so for them the warning says nothing changes. An API client on the LAN
+// (Komga's OPDS, an app on a phone) that does not follow a 308 needs the
+// public address.
+func lanPathRedirectWarning(f appPublicFacts, plan appPublicPlan) string {
+	r := f.routes[0]
+	local := "the local address " + r.Path
+	if r.CraftApp != "" {
+		return "Your local address "+r.Path+" stays open: " + f.manifest.Title + " keeps no redirect on the local network (ADR-062)."
+	}
+	if plan.Action == "remove" {
+		return "Edge change: the redirect from " + local + " to " + plan.URL + " is removed; the app is served on its local address again."
+	}
+	return "Edge change: requests for " + local + " are redirected (308, path and query kept) to " + plan.URL +
+		". Local apps and API clients that do not follow redirects must use the public address; unpublish " + f.manifest.Title + " to serve the local address again (S498)."
 }
 
 // openToInternetWarning says who stands in front of a published app. An app

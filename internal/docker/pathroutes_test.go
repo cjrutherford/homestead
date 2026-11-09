@@ -51,7 +51,11 @@ func renderDashboard(t *testing.T, set RouteSet) (local, tunnel string) {
 }
 
 func TestPathRoutesRenderInsideDashboardSite(t *testing.T) {
-	local, _ := renderDashboard(t, pathSet())
+	// Nothing is published but the sign-in path, so the LAN serves the apps
+	// (a published app redirects, S498).
+	set := pathSet()
+	set.Routes[1].Published = false
+	local, _ := renderDashboard(t, set)
 	for _, want := range []string{
 		"homestead.lan, homestead.local {",
 		"\t\tredir /apps/nextcloud /apps/nextcloud/ 308\n",
@@ -304,7 +308,12 @@ func TestEdgeNeverForwardsAClientSentAddress(t *testing.T) {
 // way out, and gets framing and referrer defaults; Authentik at its own
 // path keeps its cookies; the read-link handle strips too.
 func TestSharedOriginHardening(t *testing.T) {
-	local, tunnel := renderDashboard(t, withPublished(pathSet()))
+	_, tunnel := renderDashboard(t, withPublished(pathSet()))
+	// Published apps redirect the LAN (S498), so the local entry is the one
+	// of a table where nothing but the sign-in path is published.
+	unpublished := pathSet()
+	unpublished.Routes[1].Published = false
+	local, _ := renderDashboard(t, unpublished)
 	for name, out := range map[string]string{"local": local, "tunnel": tunnel} {
 		for _, want := range []string{
 			"header ?Content-Security-Policy \"frame-ancestors 'self'\"",
