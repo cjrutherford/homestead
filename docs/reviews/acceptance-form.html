@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "8be91e9cdd89d723",
+ "hash": "f99c401b0db9f306",
  "sections": [
   {
    "title": "Platform",
@@ -3864,14 +3864,14 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "id": "CRAFT-FIGCRAFT-4",
        "title": "Core feature",
        "action": "Make a frame with a rectangle and text, duplicate it, export a PNG.",
-       "expected": "Both frames render and export.",
+       "expected": "Both frames render and export. Known upstream gap (S491): this app's web build has no working save/export; a failure here is not a Homestead failure (see `docs/upstream/`).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
        "id": "CRAFT-FIGCRAFT-5",
        "title": "Data stays in the browser",
        "action": "Reload and close/reopen the browser tab.",
-       "expected": "Work is kept only in this browser; there is no server copy (expected).",
+       "expected": "Work is kept only in this browser; there is no server copy (expected). Known upstream gap (S491): this app's web build has no working save/export; a failure here is not a Homestead failure (see `docs/upstream/`).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -4057,7 +4057,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "id": "CRAFT-SOUNDCRAFT-5",
        "title": "Data stays in the browser",
        "action": "Reload and close/reopen the browser tab.",
-       "expected": "Work is kept only in this browser; there is no server copy (expected).",
+       "expected": "Work is kept only in this browser; there is no server copy (expected). Known upstream gap (S491): this app's web build has no working save/export; a failure here is not a Homestead failure (see `docs/upstream/`).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {
@@ -4119,7 +4119,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "id": "CRAFT-DESIGNCRAFT-5",
        "title": "Data stays in the browser",
        "action": "Reload and close/reopen the browser tab.",
-       "expected": "Work is kept only in this browser; there is no server copy (expected).",
+       "expected": "Work is kept only in this browser; there is no server copy (expected). Known upstream gap (S491): this app's web build has no working save/export; a failure here is not a Homestead failure (see `docs/upstream/`).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {

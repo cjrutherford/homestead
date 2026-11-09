@@ -3189,13 +3189,13 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 
 - [ ] **CRAFT-FIGCRAFT-4 — Core feature**
   - Action: Make a frame with a rectangle and text, duplicate it, export a PNG.
-  - Expected: Both frames render and export.
+  - Expected: Both frames render and export. Known upstream gap (S491): this app's web build has no working save/export; a failure here is not a Homestead failure (see `docs/upstream/`).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
 - [ ] **CRAFT-FIGCRAFT-5 — Data stays in the browser**
   - Action: Reload and close/reopen the browser tab.
-  - Expected: Work is kept only in this browser; there is no server copy (expected).
+  - Expected: Work is kept only in this browser; there is no server copy (expected). Known upstream gap (S491): this app's web build has no working save/export; a failure here is not a Homestead failure (see `docs/upstream/`).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -3348,7 +3348,7 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 
 - [ ] **CRAFT-SOUNDCRAFT-5 — Data stays in the browser**
   - Action: Reload and close/reopen the browser tab.
-  - Expected: Work is kept only in this browser; there is no server copy (expected).
+  - Expected: Work is kept only in this browser; there is no server copy (expected). Known upstream gap (S491): this app's web build has no working save/export; a failure here is not a Homestead failure (see `docs/upstream/`).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
@@ -3399,7 +3399,7 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 
 - [ ] **CRAFT-DESIGNCRAFT-5 — Data stays in the browser**
   - Action: Reload and close/reopen the browser tab.
-  - Expected: Work is kept only in this browser; there is no server copy (expected).
+  - Expected: Work is kept only in this browser; there is no server copy (expected). Known upstream gap (S491): this app's web build has no working save/export; a failure here is not a Homestead failure (see `docs/upstream/`).
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
