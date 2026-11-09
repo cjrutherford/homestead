@@ -64,6 +64,13 @@ describe('Home (S339)', () => {
     expect(el.textContent).toContain('Sign out');
   });
 
+  it('links every signed-in user to the owner guide (S494)', async () => {
+    const el = await settled(open({ role: 'person', display_name: 'Sam Rivera', username: 'sam' }, APPS));
+    const link = el.querySelector('a.guide-link');
+    expect(link?.getAttribute('href')).toBe('/guide/');
+    expect(link?.textContent).toContain('Guide');
+  });
+
   it('gives the owner an Administration link to /admin', async () => {
     const el = await settled(open({ role: 'owner', username: 'owner' }, APPS));
     expect(el.querySelector('h1')?.textContent).toContain('Hello, owner');

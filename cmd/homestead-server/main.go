@@ -22,6 +22,7 @@ import (
 	"homestead/internal/desired"
 	"homestead/internal/discover"
 	"homestead/internal/docker"
+	"homestead/internal/guide"
 	"homestead/internal/layout"
 	"homestead/internal/mdns"
 	"homestead/internal/operation"
@@ -116,6 +117,9 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, dashboardSocket, 
 		app.Dashboard = dashboard.New(files)
 	} else {
 		fmt.Fprintln(os.Stderr, "homestead-server: dashboard UI not embedded (make dashboard-embed, build with -tags embeddash)")
+	}
+	if files, ok := guide.Embedded(); ok {
+		app.Guide = guide.New(files)
 	}
 	svcs, err := server.MountApp(srv, app)
 	if err != nil {

@@ -37,6 +37,9 @@ type AppConfig struct {
 	Port int
 	// Dashboard serves the static UI catch-all; nil leaves it unmounted.
 	Dashboard http.Handler
+	// Guide serves the built owner guide at /guide/ (S494); nil leaves the
+	// route off (plain builds without the embedded guide).
+	Guide http.Handler
 	// CraftLimits are the craft file proxy limits (S254); zero values
 	// take the defaults (512 MiB upload, 30 minute timeout, 8 per session).
 	CraftLimits craftfiles.Limits
@@ -170,6 +173,9 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	})
 	if c.Dashboard != nil {
 		srv.MountDashboard(c.Dashboard)
+	}
+	if c.Guide != nil {
+		srv.MountGuide(c.Guide)
 	}
 	return &AppServices{Claim: claimSvc, Auth: authSvc, Scheduler: sched, DashboardAddress: dashAddr, Names: names, LocalTLS: local}, nil
 }

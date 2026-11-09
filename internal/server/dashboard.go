@@ -11,3 +11,11 @@ import "net/http"
 func (s *Server) MountDashboard(h http.Handler) {
 	s.mux.Handle("/", h)
 }
+
+// MountGuide serves the built owner guide at /guide/ (S494). It needs a
+// signed-in session (owner or person, see routeClasses and personRoutes), so
+// it is registered as a GET pattern the boundary classifies; the handler
+// itself is read-only static files.
+func (s *Server) MountGuide(h http.Handler) {
+	s.mux.HandleFunc("GET /guide/", h.ServeHTTP)
+}

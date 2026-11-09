@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "ddafa885a14745cc",
+ "hash": "a7caad2f301b1df2",
  "sections": [
   {
    "title": "Platform",
@@ -324,6 +324,13 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "action": "Compare `homesteadctl apps list`, `people list`, `backups list`, `audit list` with the matching pages (nothing is installed yet; People and Audit have entries).",
        "expected": "Same data in both. Also check `docs/PARITY.md` lists any control you notice missing from one side.",
        "fail": "docs/PARITY.md."
+      },
+      {
+       "id": "PLAT-DASH-3",
+       "title": "Owner guide",
+       "action": "Click Guide on the apps page (and in the administration sidebar foot). Browse to the Getting started page and back with the sidebar and the Next link. Repeat on the public name. Then sign out and open `/guide/` directly. As a person (Alex), open Guide from the apps page.",
+       "expected": "The guide opens at `/guide/` on the local name and the public name, styled, with a sidebar and no console CSP errors; the footer shows this appliance's version; a person can read it; signed out, `/guide/` answers 401 \"session required\" and shows nothing.",
+       "fail": "docs/slices/S494-owner-guide-site.md."
       },
       {
        "id": "PLAT-DOCTOR-1",

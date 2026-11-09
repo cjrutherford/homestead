@@ -1,4 +1,4 @@
-.PHONY: release test test-py test-go build lint lint-scripts dashboard-install dashboard-build dashboard-test dashboard-embed install uninstall check
+.PHONY: guide-build release test test-py test-go build lint lint-scripts dashboard-install dashboard-build dashboard-test dashboard-embed install uninstall check
 
 test: test-py test-go
 
@@ -52,6 +52,11 @@ dashboard-build:
 dashboard-test:
 	cd dashboard && pnpm exec ng test --watch=false
 
+# Owner guide (S494): docs/guide/*.md -> internal/guide/dist, embedded with
+# -tags embeddash. Stdlib-only Python; no network.
+guide-build:
+	python3 -I scripts/guide/build.py
+
 dashboard-embed:
 	test -d dashboard/dist/homestead-dashboard/browser || (echo "run make dashboard-build first" >&2; exit 1)
 	rm -rf internal/dashboard/dist
@@ -72,7 +77,7 @@ RELEASE_DIR := dist/release
 RELEASE_PUBLIC_KEY_FILE ?= $(wildcard release/release.pub)
 RELEASE_PUBLIC_KEY := $(if $(RELEASE_PUBLIC_KEY_FILE),$(shell tail -n 1 $(RELEASE_PUBLIC_KEY_FILE)))
 
-release: dashboard-build dashboard-embed
+release: dashboard-build dashboard-embed guide-build
 	rm -rf $(RELEASE_DIR)
 	mkdir -p $(RELEASE_DIR)
 	for arch in amd64 arm64; do \

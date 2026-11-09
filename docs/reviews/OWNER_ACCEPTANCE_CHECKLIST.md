@@ -198,6 +198,12 @@ The form is generated from this file by `python3 -I scripts/review/make_acceptan
   - If it fails: docs/PARITY.md.
   - Result: ____  Notes: ____
 
+- [ ] **PLAT-DASH-3 — Owner guide**
+  - Action: Click Guide on the apps page (and in the administration sidebar foot). Browse to the Getting started page and back with the sidebar and the Next link. Repeat on the public name. Then sign out and open `/guide/` directly. As a person (Alex), open Guide from the apps page.
+  - Expected: The guide opens at `/guide/` on the local name and the public name, styled, with a sidebar and no console CSP errors; the footer shows this appliance's version; a person can read it; signed out, `/guide/` answers 401 "session required" and shows nothing.
+  - If it fails: docs/slices/S494-owner-guide-site.md.
+  - Result: ____  Notes: ____
+
 - [ ] **PLAT-DOCTOR-1 — Doctor page and live probes**
   - Action: Open Doctor and run `homesteadctl doctor --live` on the near-empty appliance.
   - Expected: Sections System, Storage, Network, Certificates, Tunnel, Sign-in, Apps; guidance only, nothing is changed; page and CLI match; no red items (record amber ones with their guidance).
@@ -3666,7 +3672,7 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | PLAT-OWNER | PLAT-OWNER-1 to PLAT-OWNER-2 (2) |  |  |  |  |
 | PLAT-PEOPLE | PLAT-PEOPLE-1 to PLAT-PEOPLE-8 (8) |  |  |  |  |
 | PLAT-TUNNEL | PLAT-TUNNEL-1 to PLAT-TUNNEL-9 (9) |  |  |  |  |
-| PLAT-DASH | PLAT-DASH-1 to PLAT-DASH-2 (2) |  |  |  |  |
+| PLAT-DASH | PLAT-DASH-1 to PLAT-DASH-3 (3) |  |  |  |  |
 | PLAT-DOCTOR | PLAT-DOCTOR-1 to PLAT-DOCTOR-2 (2) |  |  |  |  |
 | PLAT-NAMES | PLAT-NAMES-1 to PLAT-NAMES-1 (1) |  |  |  |  |
 | PLAT-CATALOG | PLAT-CATALOG-1 to PLAT-CATALOG-1 (1) |  |  |  |  |
@@ -3728,4 +3734,4 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | END-AUDIT | END-AUDIT-1 to END-AUDIT-1 (1) |  |  |  |  |
 | END-PARITY | END-PARITY-1 to END-PARITY-7 (7) |  |  |  |  |
 | END-UNINSTALL | END-UNINSTALL-1 to END-UNINSTALL-6 (6) |  |  |  |  |
-| **Total** | 564 steps |  |  |  |  |
+| **Total** | 565 steps |  |  |  |  |

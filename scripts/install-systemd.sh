@@ -25,6 +25,13 @@ cd "$REPO"
 getent group homestead-craft >/dev/null || groupadd --system homestead-craft
 # Group allowed on the dashboard socket besides root (S289, ADR-035).
 getent group homestead-dashboard >/dev/null || groupadd --system homestead-dashboard
+# The owner guide (S494) is built from docs/guide with the Python standard
+# library and embedded the same way; without python3 the guide route is off.
+if command -v python3 >/dev/null 2>&1; then
+	python3 -I "$REPO/scripts/guide/build.py" || echo "warning: owner guide build failed; /guide/ will be missing" >&2
+else
+	echo "warning: python3 not found; /guide/ will be missing" >&2
+fi
 # A built dashboard (make dashboard-build dashboard-embed) travels inside
 # the binary; without one the daemon stays API-only (S031).
 build_tags=()

@@ -68,6 +68,7 @@
 
       <div class="sidebar-foot">
         @if (sessions.isLoggedIn()) {
+          <a class="guide-link" href="/guide/">Guide</a>
           <span class="username">{{ sessions.username() }}</span>
           <button type="button" (click)="logout()">Log out</button>
         } @else {

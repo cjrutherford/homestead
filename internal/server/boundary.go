@@ -94,6 +94,10 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/admins/setup": ClassPublic,
 	"POST /api/v1/sessions":     ClassPublic,
 	"/":                         ClassPublic, // dashboard static catch-all
+	// S494: the owner guide is static docs for any signed-in dashboard
+	// user (owner or person), so it is session class, on the person
+	// allowlist below.
+	"GET /guide/": ClassSession,
 	// ADR-030: the one read-only unauthenticated exception beyond the
 	// above. A device fetching the root cannot have an operator session.
 	// Both serve ONLY the public root certificate; the fingerprint the
@@ -384,6 +388,7 @@ const (
 var personRoutes = map[string]bool{
 	"GET /api/v1/me":          true,
 	"GET /api/v1/me/apps":     true,
+	"GET /guide/":             true,
 	"DELETE /api/v1/sessions": true,
 }
 

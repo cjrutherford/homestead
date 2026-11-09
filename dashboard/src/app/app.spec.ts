@@ -190,6 +190,12 @@ describe('App logged in', () => {
     expect(foot.querySelector('button')?.textContent).toContain('Log out');
   });
 
+  it('links the owner guide from the foot when signed in (S494)', async () => {
+    const fixture = await setup('CLAIMED');
+    const link = fixture.nativeElement.querySelector('.sidebar-foot a.guide-link') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/guide/');
+  });
+
   it('groups every page under the five headings', async () => {
     const fixture = await setup('CLAIMED');
     const groups = Array.from(fixture.nativeElement.querySelectorAll('.nav-group')).map((g) => {
