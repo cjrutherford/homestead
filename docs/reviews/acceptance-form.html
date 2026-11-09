@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "a92d048b4b7f7b23",
+ "hash": "da113ff072512587",
  "sections": [
   {
    "title": "Platform",
@@ -1558,7 +1558,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-PAPERLESS-NGX-2",
        "title": "Opens at the right path or name",
-       "action": "Open https://\u003cserver\u003e/apps/paperless-ngx/ (S475: served under the path; the package sets the script name and static URL, so the UI, its assets and the sign-in redirect follow it). An install made before S475 moves with `homesteadctl apps move plan paperless-ngx` then `apply`; moves only go forward.",
+       "action": "Open https://\u003cserver\u003e/apps/paperless-ngx/ (S475: served under the path; the package sets the script name and static URL, so the UI, its assets and the sign-in redirect follow it). An install made before S475 moves with `homesteadctl apps move plan paperless-ngx` then `apply`; moves only go forward. Once published (S497), press \"Authentik\" on the sign-in page at the public path: a 403 \"CSRF verification failed\" is a FAIL.",
        "expected": "The app's own page loads (no 404, no certificate surprise beyond the documented one).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },

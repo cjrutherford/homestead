@@ -40,6 +40,13 @@ services:
     # stays scheme and host only.
     PAPERLESS_FORCE_SCRIPT_NAME: "{{route_path}}"
     PAPERLESS_STATIC_URL: "{{route_path}}/static/"
+    # S497: Django's CSRF same-origin rule compares the Origin header with
+    # the scheme and host it sees. Behind the edge it sees http unless it
+    # trusts the proxy's X-Forwarded-Proto, so a sign-in button POST from
+    # the public name (https://homestead.<zone>/apps/paperless-ngx/, which
+    # is not PAPERLESS_URL's host) was refused with 403. The edge sets the
+    # header on every proxied request and is the only way in.
+    PAPERLESS_PROXY_SSL_HEADER: '["HTTP_X_FORWARDED_PROTO", "https"]'
     PAPERLESS_DBENGINE: postgresql
     PAPERLESS_DBHOST: db
     PAPERLESS_DBNAME: paperless
