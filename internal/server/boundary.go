@@ -170,6 +170,7 @@ var routeClasses = map[string]RouteClass{
 	"GET /api/v1/backups/identity":                        ClassSession,
 	"POST /api/v1/backups/identity/export":                ClassSession,
 	"POST /api/v1/backups/identity/ack":                   ClassSession,
+	"POST /api/v1/backups/identity/rotate":                ClassSession,
 	"GET /api/v1/catalog":                                 ClassSession,
 	"GET /api/v1/catalog/bundles":                         ClassSession,
 	"GET /api/v1/catalog/{name}":                          ClassSession,
@@ -326,6 +327,7 @@ var stepUpRoutes = map[string]stepUpMode{
 	"DELETE /api/v1/sso":                                  stepUpBoundary,
 	"POST /api/v1/secrets/rekey":                          stepUpBoundary,
 	"POST /api/v1/backups/identity/export":                stepUpBoundary,
+	"POST /api/v1/backups/identity/rotate":                stepUpBoundary,
 	"POST /api/v1/catalog/{name}/secrets/{secret}/reveal": stepUpBoundary,
 	// People (S317): admin grants, password and second-factor resets,
 	// removal, and settling drift (which can restore or accept an admin).

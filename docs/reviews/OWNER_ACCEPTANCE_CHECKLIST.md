@@ -1567,6 +1567,12 @@ Do these after the server apps above are installed. Steps that use an app say wh
   - If it fails: docs/architecture/BACKUP_RESTORE_RUNBOOK.md.
   - Result: ____  Notes: ____
 
+- [ ] **PLAT-BACKUP-4 — Rotate the recovery identity**
+  - Action: On the Backups page choose **Rotate recovery identity** and confirm (sign in again if asked), or `homesteadctl backup identity rotate --out <new file>`. Store the new key off the appliance and acknowledge it.
+  - Expected: The new key is shown once (or written 0600), the page reports how many backup files were re-wrapped, and Doctor warns until you acknowledge. A run made before the rotation still decrypts with the new key (`age -d -i <new file>`); the old key still opens it too.
+  - If it fails: docs/architecture/BACKUP_RESTORE_RUNBOOK.md.
+  - Result: ____  Notes: ____
+
 - [ ] **PLAT-UPDATE-2 — Apply one app update with backup**
   - Action: `homesteadctl updates apply <pkg> --backup` for an app with an update (else SKIP).
   - Expected: A backup run appears, then the update; the app still works. For vaultwarden/CWA/Gitea/ABS re-check sign-in (see their SRV update step).
@@ -3658,7 +3664,7 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | PLAT-DOCTOR | PLAT-DOCTOR-1 to PLAT-DOCTOR-2 (2) |  |  |  |  |
 | PLAT-NAMES | PLAT-NAMES-1 to PLAT-NAMES-1 (1) |  |  |  |  |
 | PLAT-CATALOG | PLAT-CATALOG-1 to PLAT-CATALOG-1 (1) |  |  |  |  |
-| PLAT-BACKUP | PLAT-BACKUP-1 to PLAT-BACKUP-3 (3) |  |  |  |  |
+| PLAT-BACKUP | PLAT-BACKUP-1 to PLAT-BACKUP-4 (4) |  |  |  |  |
 | PLAT-UPDATE | PLAT-UPDATE-1 to PLAT-UPDATE-2 (3) |  |  |  |  |
 | SRV-ACTUAL-BUDGET | SRV-ACTUAL-BUDGET-1 to SRV-ACTUAL-BUDGET-9 (10) |  |  |  |  |
 | SRV-AUDIOBOOKSHELF | SRV-AUDIOBOOKSHELF-1 to SRV-AUDIOBOOKSHELF-11 (11) |  |  |  |  |
@@ -3716,4 +3722,4 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | END-AUDIT | END-AUDIT-1 to END-AUDIT-1 (1) |  |  |  |  |
 | END-PARITY | END-PARITY-1 to END-PARITY-7 (7) |  |  |  |  |
 | END-UNINSTALL | END-UNINSTALL-1 to END-UNINSTALL-6 (6) |  |  |  |  |
-| **Total** | 562 steps |  |  |  |  |
+| **Total** | 563 steps |  |  |  |  |

@@ -1055,6 +1055,15 @@ export interface BackupIdentityExport {
   actor: string;
 }
 
+/** POST /api/v1/backups/identity/rotate: the new key (once) plus what happened to existing runs. */
+export interface BackupIdentityRotate extends BackupIdentityExport {
+  previous_fingerprint?: string;
+  rewrapped: number;
+  already_current: number;
+  failed: string[];
+  runs_note: string;
+}
+
 /**
  * GET /api/v1/storage/mounts — the Go structs carry no json tags, so
  * fields arrive PascalCase.
@@ -2202,6 +2211,13 @@ export class ApiService {
   backupIdentityExport(): Observable<BackupIdentityExport> {
     return this.http.post<BackupIdentityExport>(
       '/api/v1/backups/identity/export',
+      { confirm: true },
+    );
+  }
+
+  backupIdentityRotate(): Observable<BackupIdentityRotate> {
+    return this.http.post<BackupIdentityRotate>(
+      '/api/v1/backups/identity/rotate',
       { confirm: true },
     );
   }

@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "ea52fb981b2a2e02",
+ "hash": "726f58013388d3a6",
  "sections": [
   {
    "title": "Platform",
@@ -1938,6 +1938,13 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "title": "A run exists after 02:00 (day 2)",
        "action": "Look at `\u003cbackup root\u003e/\u003cpackage\u003e/\u003cUTC timestamp\u003e/backup.json`.",
        "expected": "One run per backup-capable package, encrypted; old runs pruned beyond 7.",
+       "fail": "docs/architecture/BACKUP_RESTORE_RUNBOOK.md."
+      },
+      {
+       "id": "PLAT-BACKUP-4",
+       "title": "Rotate the recovery identity",
+       "action": "On the Backups page choose **Rotate recovery identity** and confirm (sign in again if asked), or `homesteadctl backup identity rotate --out \u003cnew file\u003e`. Store the new key off the appliance and acknowledge it.",
+       "expected": "The new key is shown once (or written 0600), the page reports how many backup files were re-wrapped, and Doctor warns until you acknowledge. A run made before the rotation still decrypts with the new key (`age -d -i \u003cnew file\u003e`); the old key still opens it too.",
        "fail": "docs/architecture/BACKUP_RESTORE_RUNBOOK.md."
       },
       {

@@ -385,6 +385,52 @@ describe('Backups', () => {
     expect(text()).not.toContain('AGE-SECRET-KEY-TEST');
   });
 
+  const ROTATE = {
+    ...EXPORT,
+    identity: 'AGE-SECRET-KEY-ROTATED',
+    fingerprint: 'cc33',
+    previous_fingerprint: 'aa11',
+    rewrapped: 4,
+    already_current: 1,
+    failed: ['pkg/run/x.age'],
+    runs_note: 'runs under /mnt/backup were re-wrapped to the new key',
+  };
+
+  it('rotates the identity only after confirmation and shows the new key once', () => {
+    load([]);
+    identityPanel().askRotate();
+    fixture.detectChanges();
+    expect(text()).toContain('Nothing is deleted');
+    http.expectNone('/api/v1/backups/identity/rotate');
+    identityPanel().confirmRotate();
+    const req = http.expectOne('/api/v1/backups/identity/rotate');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ confirm: true });
+    req.flush(ROTATE);
+    http.expectOne('/api/v1/backups/identity').flush({ ...IDENTITY, exported: true });
+    fixture.detectChanges();
+    expect(text()).toContain('AGE-SECRET-KEY-ROTATED');
+    expect(text()).toContain('4 backup files were re-wrapped');
+    expect(text()).toContain('pkg/run/x.age');
+    identityPanel().acknowledgeExport();
+    http.expectOne('/api/v1/backups/identity/ack').flush({ ...IDENTITY, exported: true, acknowledged: true });
+    http.expectOne('/api/v1/backups/identity').flush({ ...IDENTITY, exported: true, acknowledged: true });
+    fixture.detectChanges();
+    expect(text()).not.toContain('AGE-SECRET-KEY-ROTATED');
+  });
+
+  it('shows a refused rotation as an error and keeps no key', () => {
+    load([]);
+    identityPanel().confirmRotate();
+    http.expectOne('/api/v1/backups/identity/rotate').flush('too many recovery identity exports this hour', {
+      status: 429,
+      statusText: 'Too Many Requests',
+    });
+    fixture.detectChanges();
+    expect(text()).toContain('too many');
+    expect(text()).not.toContain('AGE-SECRET-KEY');
+  });
+
   it('keeps the exported key out of storage and drops it on ack or dismiss', () => {
     load([]);
     const setItem = vi.spyOn(Storage.prototype, 'setItem');

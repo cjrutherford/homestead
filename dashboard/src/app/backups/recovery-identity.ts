@@ -1,6 +1,11 @@
 import { Component, inject, OnInit, output, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ApiService, BackupIdentityExport, BackupIdentityStatus } from '../core/api.service';
+import {
+  ApiService,
+  BackupIdentityExport,
+  BackupIdentityRotate,
+  BackupIdentityStatus,
+} from '../core/api.service';
 import { WhenPipe } from '../core/format-time';
 import { StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
@@ -28,6 +33,9 @@ export class RecoveryIdentity implements OnInit {
   protected readonly confirmingExport = signal(false);
   /** The exported key, held only until the owner dismisses it. */
   protected readonly exported = signal<BackupIdentityExport | null>(null);
+  protected readonly confirmingRotate = signal(false);
+  /** What a rotation did to existing runs; shown with the new key, dropped with it. */
+  protected readonly rotation = signal<BackupIdentityRotate | null>(null);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly notice = signal<string | null>(null);
@@ -71,6 +79,39 @@ export class RecoveryIdentity implements OnInit {
     });
   }
 
+  askRotate(): void {
+    this.confirmingRotate.set(true);
+  }
+
+  cancelRotate(): void {
+    this.confirmingRotate.set(false);
+  }
+
+  /**
+   * Replaces the recovery identity (audited, fresh sign-in). The new key is
+   * shown once through the same reveal as an export; the owner then confirms
+   * it is stored offline.
+   */
+  confirmRotate(): void {
+    this.confirmingRotate.set(false);
+    this.busy.set(true);
+    this.error.set(null);
+    this.notice.set(null);
+    this.api.backupIdentityRotate().subscribe({
+      next: (result) => {
+        this.busy.set(false);
+        this.rotation.set(result);
+        this.exported.set(result);
+        this.load();
+        this.changed.emit();
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.busy.set(false);
+        this.error.set(failure.error ?? failure.message);
+      },
+    });
+  }
+
   copyExport(): void {
     const key = this.exported()?.identity;
     if (key && navigator.clipboard) {
@@ -101,6 +142,7 @@ export class RecoveryIdentity implements OnInit {
    */
   dismissExport(): void {
     this.exported.set(null);
+    this.rotation.set(null);
     this.notice.set(null);
   }
 
@@ -112,6 +154,7 @@ export class RecoveryIdentity implements OnInit {
       next: () => {
         this.busy.set(false);
         this.exported.set(null);
+        this.rotation.set(null);
         this.notice.set('Recorded: the recovery identity is stored offline.');
         this.load();
         this.changed.emit();

@@ -9,6 +9,8 @@ import (
 	"homestead/internal/audit"
 	"homestead/internal/backup"
 	"homestead/internal/catalog"
+	"homestead/internal/discover"
+	"homestead/internal/storage"
 	"homestead/internal/store"
 )
 
@@ -18,7 +20,14 @@ import (
 // explicit confirmed call, never stored or logged by the daemon.
 // recipientsYAML is where the inspectable configuration renders.
 func (s *Server) MountBackupRecipients(st *store.Store, secrets catalog.SecretStore, recipientsYAML string) {
-	h := &recipientHandlers{s: s, rec: backup.NewRecipientStore(st), audit: audit.New(st), secrets: secrets, yaml: recipientsYAML}
+	h := &recipientHandlers{s: s, rec: backup.NewRecipientStore(st), audit: audit.New(st), secrets: secrets, yaml: recipientsYAML,
+		destination: func() (string, error) {
+			discovered, err := discover.DiscoverStorage()
+			if err != nil {
+				return "", err
+			}
+			return backup.ResolveDestination(storage.NewAssignments(st), discovered)
+		}}
 	if recipientsYAML != "" {
 		if err := h.rec.RenderYAML(recipientsYAML); err != nil {
 			s.log.Warn("backup recipients yaml render failed", "error", err)
@@ -30,6 +39,7 @@ func (s *Server) MountBackupRecipients(st *store.Store, secrets catalog.SecretSt
 	s.mux.HandleFunc("GET /api/v1/backups/identity", h.identityStatus)
 	s.mux.HandleFunc("POST /api/v1/backups/identity/export", h.export)
 	s.mux.HandleFunc("POST /api/v1/backups/identity/ack", h.acknowledge)
+	s.mux.HandleFunc("POST /api/v1/backups/identity/rotate", h.rotate)
 }
 
 type recipientHandlers struct {
@@ -38,6 +48,9 @@ type recipientHandlers struct {
 	audit   auditRecorder
 	secrets catalog.SecretStore
 	yaml    string
+	// destination resolves the backup root whose runs a rotation
+	// re-wraps; nil or an error means there are no runs to re-wrap.
+	destination func() (string, error)
 }
 
 // record audits best-effort for routes that are already committed; the
@@ -332,4 +345,97 @@ func (h *recipientHandlers) acknowledge(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, out)
+}
+
+type rotateResult struct {
+	exportResult
+	PreviousFingerprint string   `json:"previous_fingerprint,omitempty"`
+	Rewrapped           int      `json:"rewrapped"`
+	AlreadyCurrent      int      `json:"already_current"`
+	Failed              []string `json:"failed"`
+	// RunsNote says where the re-wrap looked, or why it did not.
+	RunsNote string `json:"runs_note"`
+}
+
+// rotate replaces the appliance recovery identity (S492). It needs the
+// fresh password of an Authentik session (step-up) and an explicit
+// confirm. Existing runs are re-wrapped to the new key (header only, the
+// payload is untouched and nothing is deleted); the old identity is kept
+// on the appliance as a fallback for any run that could not be re-wrapped.
+// Like export it fails closed: the new key is returned only after the
+// export record and the audit entry are written, and it is shown once.
+// The owner must acknowledge it, which re-arms the doctor warning until
+// they do.
+func (h *recipientHandlers) rotate(w http.ResponseWriter, r *http.Request) {
+	op, ok := requireOperator(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Confirm bool `json:"confirm"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	actor := op.Session.Username
+	if !body.Confirm {
+		http.Error(w, "rotating the recovery identity requires \"confirm\": true", http.StatusBadRequest)
+		return
+	}
+	keys, err := backupKeyStore(h.secrets)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := h.rec.ExportBudget(); err != nil {
+		h.record(audit.Entry{Actor: actor, Action: "backup.identity.rotate", Outcome: audit.OutcomeError, Detail: "refused: " + err.Error()})
+		status := http.StatusInternalServerError
+		if errors.Is(err, backup.ErrExportRateLimited) {
+			status = http.StatusTooManyRequests
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	root, note := "", "no backup destination is available, so no runs were re-wrapped"
+	if h.destination != nil {
+		if dest, derr := h.destination(); derr == nil {
+			root, note = dest, "runs under "+dest+" were re-wrapped to the new key"
+		} else {
+			note = "no backup destination is available (" + derr.Error() + "), so no runs were re-wrapped; rotate again once it is mounted"
+		}
+	}
+	res, err := backup.RotateIdentity(keys, root)
+	if err != nil {
+		h.record(audit.Entry{Actor: actor, Action: "backup.identity.rotate", Outcome: audit.OutcomeError, Detail: err.Error()})
+		http.Error(w, "rotation failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	fp := backup.Fingerprint(res.New.Recipient().String())
+	e, err := h.rec.RecordExport(fp, actor)
+	if err != nil {
+		h.record(audit.Entry{Actor: actor, Action: "backup.identity.rotate", Outcome: audit.OutcomeError,
+			Detail: "rotated to " + fp + " but the export could not be recorded; the key is withheld, export it again: " + err.Error()})
+		http.Error(w, "the identity was rotated but could not be recorded; export the new key with the export command", http.StatusInternalServerError)
+		return
+	}
+	detail := fmt.Sprintf("recovery identity rotated from %s to %s (%s); %d run files re-wrapped, %d already current, %d failed",
+		res.OldFingerprint, fp, res.New.Recipient().String(), res.Rewrapped, res.AlreadyCurrent, len(res.Failed))
+	if err := h.audited(audit.Entry{Actor: actor, Action: "backup.identity.rotate", Outcome: audit.OutcomeOK, Detail: detail}); err != nil {
+		h.s.log.Error("backup identity rotation audit failed; identity withheld", "error", err)
+		http.Error(w, "rotation could not be audited; export the new key with the export command", http.StatusInternalServerError)
+		return
+	}
+	h.renderAfterCommit(actor, "backup.identity.rotate")
+	failed := res.Failed
+	if failed == nil {
+		failed = []string{}
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, rotateResult{
+		exportResult: exportResult{Identity: res.New.String(), Recipient: res.New.Recipient().String(),
+			Fingerprint: fp, ExportedAt: e.ExportedAt.Format(time.RFC3339), Actor: actor},
+		PreviousFingerprint: res.OldFingerprint, Rewrapped: res.Rewrapped, AlreadyCurrent: res.AlreadyCurrent,
+		Failed: failed, RunsNote: note,
+	})
 }

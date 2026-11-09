@@ -66,12 +66,12 @@ request field), `cli-only` (the owner's exceptions above).
 | `backuppolicy.go` | `--off` | backup policy | enabled | `enabled` |
 | `backuppolicy.go` | `--retain` | backup policy | retain | `retain` |
 | `backuppolicy.go` | `--time` | backup policy | time_of_day | `time_of_day` |
-| `backuprecipients.go` | `--ack` | backup recipients export | acknowledge | `ack` |
+| `backuprecipients.go` | `--ack` | backup identity export/rotate | acknowledge | `ack` |
 | `backuprecipients.go` | `--fingerprint` | backup recipients remove | fingerprint | `fingerprint` |
 | `backuprecipients.go` | `--key` | backup recipients add | key | `key` |
 | `backuprecipients.go` | `--label` | backup recipients add | label | `label` |
-| `backuprecipients.go` | `--out` | backup recipients export | (none) | n/a (`output`) |
-| `backuprecipients.go` | `--stdout` | backup recipients export | (none) | n/a (`output`) |
+| `backuprecipients.go` | `--out` | backup identity export/rotate | (none) | n/a (`output`) |
+| `backuprecipients.go` | `--stdout` | backup identity export/rotate | (none) | n/a (`output`) |
 | `claim.go` | `--file` | claim token | (none) | n/a (`cli-only`) |
 | `config.go` | `--dry-run` | config import | preview route | `previewConfigImport` |
 | `config.go` | `-f` | config | (none) | n/a (`output`) |

@@ -28,6 +28,19 @@
       kind="warning"
       headline="Store this offline, off this appliance. It is shown once and cannot be shown again here."
     />
+    @if (rotation(); as rot) {
+      <p>
+        Rotated from {{ rot.previous_fingerprint || 'no earlier identity' }} to {{ rot.fingerprint }}.
+        {{ rot.rewrapped }} backup files were re-wrapped to the new key, {{ rot.already_current }}
+        were already current, {{ rot.failed.length }} could not be re-wrapped.
+        {{ rot.runs_note }}.
+        Older backups stay readable with the new key and also with the old one: keep the old key
+        until those backups are pruned.
+      </p>
+      @for (file of rot.failed; track file) {
+        <p class="backup-root">Not re-wrapped (the appliance keeps the old key for it; rotate again to retry): {{ file }}</p>
+      }
+    }
     <pre class="backup-root">{{ result.identity }}</pre>
     <button type="button" (click)="copyExport()">Copy</button>
     <button type="button" (click)="downloadExport()">Download</button>
@@ -47,8 +60,24 @@
       <button type="button" class="quiet" (click)="cancelExport()" [disabled]="busy()">Cancel</button>
     </div>
   </app-dialog>
+} @else if (confirmingRotate()) {
+  <app-dialog heading="Rotate the recovery identity?" variant="danger" (dismissed)="cancelRotate()">
+    <p>
+      This creates a new key for backups and re-wraps the backups already made
+      so the new key opens them too. Nothing is deleted. The old key keeps
+      working on older backups. You must store the new key offline; it is
+      shown once and the rotation is audited. Continue?
+    </p>
+    <div class="dialog-actions">
+      <button type="button" class="danger" (click)="confirmRotate()" [disabled]="busy()">Confirm rotation</button>
+      <button type="button" class="quiet" (click)="cancelRotate()" [disabled]="busy()">Cancel</button>
+    </div>
+  </app-dialog>
 } @else {
   <button type="button" (click)="askExport()" [disabled]="busy()">
     Export recovery identity
+  </button>
+  <button type="button" (click)="askRotate()" [disabled]="busy() || !identity()?.created">
+    Rotate recovery identity
   </button>
 }
