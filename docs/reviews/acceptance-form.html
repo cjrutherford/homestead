@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "a5a3c434f9825895",
+ "hash": "86df1fa0b2e52628",
  "sections": [
   {
    "title": "Platform",
@@ -1102,8 +1102,8 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-KOMGA-5",
        "title": "Person C (no access) is refused",
-       "action": "In another browser sign in as C and open the app.",
-       "expected": "C is refused or sees the closed-by-default message; no app data visible.",
+       "action": "In another browser sign in as C and open the app. Komga's \"Sign in with Authentik\" opens Authentik in a popup window, so C's refusal appears in that popup, not on Komga's own login page. Look for the popup (it may sit behind the main window).",
+       "expected": "The popup shows Authentik's \"Permission denied\" page (\"Request has been denied\"); the Komga login page stays as it was and no app data is visible. A closed or never-opened popup is not the app's fault, but record it.",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
       {

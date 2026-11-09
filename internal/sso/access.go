@@ -572,8 +572,11 @@ func (a *API) inspectAccess(ctx context.Context, x Access, app *Application) ([]
 		o := Object{Kind: "Scope mapping", Name: x.ClaimMapping, Action: ActionCreate}
 		if m != nil {
 			o.Action = ActionUnchanged
-			if m.Expression != x.ClaimExpression || m.ScopeName != x.claimScope() {
-				o.Action, o.Changes = ActionUpdate, []string{"expression"}
+			if m.ScopeName != x.claimScope() {
+				o.Action, o.Changes = ActionUpdate, append(o.Changes, "scope ("+m.ScopeName+" to "+x.claimScope()+")")
+			}
+			if m.Expression != x.ClaimExpression {
+				o.Action, o.Changes = ActionUpdate, append(o.Changes, "expression")
 			}
 		}
 		out = append(out, o)

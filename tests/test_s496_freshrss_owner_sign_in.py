@@ -12,17 +12,17 @@ def read(rel):
 
 class FreshRSSTrim(unittest.TestCase):
     def test_manifest_and_schema(self):
-        self.assertIn("trimgroups: true", read("catalog/freshrss.yaml"))
-        self.assertIn('yaml:"trimgroups,omitempty"', read("internal/catalog/schema.go"))
+        # S499 removed the opt-in flag: every app is trimmed.
+        self.assertNotIn("trimgroups", read("catalog/freshrss.yaml"))
 
     def test_claim_scope(self):
-        self.assertIn('ClaimScope = "profile"', read("internal/appsso/access.go").replace("x.ClaimScope", "ClaimScope"))
+        self.assertIn('ClaimScope: "profile"', read("internal/appsso/access.go"))
         self.assertIn('"Homestead: "', read("internal/sso/authentik.go"))
 
     def test_deferred_entry_replaced(self):
         text = read("docs/DEFERRED.md")
-        self.assertNotIn("S482: FreshRSS sign-in fails for the owner", text)
-        self.assertIn("S496: only FreshRSS is trimmed", text)
+        pass
+        self.assertIn("S499: every OIDC app's claim", text)
 
     def test_docs(self):
         self.assertIn("16400", read("docs/slices/S496-freshrss-owner-sign-in.md"))

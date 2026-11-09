@@ -859,8 +859,8 @@ _First install on this appliance; sign-in confirmed from source only (DEFERRED S
   - Result: ____  Notes: ____
 
 - [ ] **SRV-KOMGA-5 — Person C (no access) is refused**
-  - Action: In another browser sign in as C and open the app.
-  - Expected: C is refused or sees the closed-by-default message; no app data visible.
+  - Action: In another browser sign in as C and open the app. Komga's "Sign in with Authentik" opens Authentik in a popup window, so C's refusal appears in that popup, not on Komga's own login page. Look for the popup (it may sit behind the main window).
+  - Expected: The popup shows Authentik's "Permission denied" page ("Request has been denied"); the Komga login page stays as it was and no app data is visible. A closed or never-opened popup is not the app's fault, but record it.
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 

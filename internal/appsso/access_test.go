@@ -28,7 +28,7 @@ func TestPlanListsGroupsMembershipBindingsAndClaimMapping(t *testing.T) {
 			t.Errorf("%s is not a group, a binding and an owner membership: %+v", want, a)
 		}
 	}
-	if a.ClaimMapping != "Homestead: Nextcloud groups" || !strings.Contains(a.ClaimExpression, `startswith("homestead-")`) {
+	if a.ClaimMapping != "Homestead: Nextcloud groups" || !strings.Contains(a.ClaimExpression, `in ("homestead-nextcloud-users"`) {
 		t.Fatalf("claim mapping: %+v", a)
 	}
 	text := strings.Join(p.Changes, "\n")
@@ -101,7 +101,7 @@ func TestAdaptersMapTheAdminGroup(t *testing.T) {
 		t.Fatalf("nextcloud: %+v", nc)
 	}
 	expr := claimExpression(g, nc)
-	if !strings.Contains(expr, `"homestead-x-admins" in names`) || !strings.Contains(expr, `append("admin")`) || !strings.Contains(expr, `startswith("homestead-")`) {
+	if !strings.Contains(expr, `"homestead-x-admins" in names`) || !strings.Contains(expr, `append("admin")`) || !strings.Contains(expr, `in ("homestead-x-users"`) {
 		t.Fatalf("expression:\n%s", expr)
 	}
 	if im := claimExpression(g, immich{}.Roles(g)); !strings.Contains(im, `claims["immich_role"] = "admin" if admin else "user"`) {

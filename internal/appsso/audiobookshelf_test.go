@@ -166,7 +166,7 @@ func TestAudiobookshelfGroupClaimCarriesTheRoleValues(t *testing.T) {
 		t.Fatalf("roles = %+v", rm)
 	}
 	expr := claimExpression(g, rm)
-	for _, want := range []string{`"homestead-audiobookshelf-admins" in names`, `startswith("homestead-")`,
+	for _, want := range []string{`"homestead-audiobookshelf-admins" in names`, `in ("homestead-audiobookshelf-users"`,
 		"if admin:\n    claims[\"groups\"].append(\"admin\")", "if not admin:\n    claims[\"groups\"].append(\"user\")"} {
 		if !strings.Contains(expr, want) {
 			t.Errorf("expression lacks %q:\n%s", want, expr)
