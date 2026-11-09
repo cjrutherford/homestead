@@ -1195,6 +1195,12 @@ _Nextcloud 35.0.1; sign-in verified live (S298, S408); public base URL for path 
   - If it fails: Container log (`docker logs <package>-<service>`), Doctor page, audit log.
   - Result: ____  Notes: ____
 
+- [ ] **SRV-NEXTCLOUD-3a — Owner and admins are Nextcloud administrators (S500)**
+  - Action: Plan and apply Nextcloud sign-in again (this installs the small `homestead_sso` app). Sign in with Authentik as the owner and open Administration settings (`/settings/admin`). Then sign in as A (no admin) and open the same URL. Then remove the owner-level person from Nextcloud's admins group in People and sign in again as them.
+  - Expected: The owner opens Administration settings. A is refused ("Access forbidden"). A person taken out of the Nextcloud admins group is no longer an administrator after their next sign-in. The local `admin` account stays an administrator.
+  - If it fails: `docker exec -u www-data nextcloud-nextcloud php occ app:list | grep homestead_sso`, `php occ group:list`, Nextcloud log, audit log.
+  - Result: ____  Notes: ____
+
 - [ ] **SRV-NEXTCLOUD-4 — Person A (with access) can sign in**
   - Action: Grant A in People for this app. In a separate browser sign in as A.
   - Expected: A reaches the app as A (a separate account/data from the owner).
@@ -3697,7 +3703,7 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | SRV-MEALIE | SRV-MEALIE-1 to SRV-MEALIE-9 (10) |  |  |  |  |
 | SRV-MEMOS | SRV-MEMOS-1 to SRV-MEMOS-9 (10) |  |  |  |  |
 | SRV-NAVIDROME | SRV-NAVIDROME-1 to SRV-NAVIDROME-11 (13) |  |  |  |  |
-| SRV-NEXTCLOUD | SRV-NEXTCLOUD-1 to SRV-NEXTCLOUD-10 (11) |  |  |  |  |
+| SRV-NEXTCLOUD | SRV-NEXTCLOUD-1 to SRV-NEXTCLOUD-10 (12) |  |  |  |  |
 | SRV-PAPERLESS-NGX | SRV-PAPERLESS-NGX-1 to SRV-PAPERLESS-NGX-9 (9) |  |  |  |  |
 | SRV-UPTIME-KUMA | SRV-UPTIME-KUMA-1 to SRV-UPTIME-KUMA-12 (12) |  |  |  |  |
 | SRV-VAULTWARDEN | SRV-VAULTWARDEN-1 to SRV-VAULTWARDEN-9 (10) |  |  |  |  |
@@ -3740,4 +3746,4 @@ Craft apps (ADR-028/029/045) are built on the appliance from the HAI-signed mani
 | END-AUDIT | END-AUDIT-1 to END-AUDIT-1 (1) |  |  |  |  |
 | END-PARITY | END-PARITY-1 to END-PARITY-7 (7) |  |  |  |  |
 | END-UNINSTALL | END-UNINSTALL-1 to END-UNINSTALL-6 (6) |  |  |  |  |
-| **Total** | 566 steps |  |  |  |  |
+| **Total** | 567 steps |  |  |  |  |

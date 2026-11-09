@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "86df1fa0b2e52628",
+ "hash": "35bb3526482eb0e6",
  "sections": [
   {
    "title": "Platform",
@@ -1492,6 +1492,13 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
        "action": "Choose Log in with Authentik as the owner. Login page shows 'Log in with Authentik' (user_oidc app configured with occ); admin account `admin` created at first run (generated secret).",
        "expected": "Owner is signed in and named correctly; no \"Introducing the new Nextcloud\" welcome video opens over the dashboard (S459 turns the first-run wizard app off).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
+      },
+      {
+       "id": "SRV-NEXTCLOUD-3a",
+       "title": "Owner and admins are Nextcloud administrators (S500)",
+       "action": "Plan and apply Nextcloud sign-in again (this installs the small `homestead_sso` app). Sign in with Authentik as the owner and open Administration settings (`/settings/admin`). Then sign in as A (no admin) and open the same URL. Then remove the owner-level person from Nextcloud's admins group in People and sign in again as them.",
+       "expected": "The owner opens Administration settings. A is refused (\"Access forbidden\"). A person taken out of the Nextcloud admins group is no longer an administrator after their next sign-in. The local `admin` account stays an administrator.",
+       "fail": "`docker exec -u www-data nextcloud-nextcloud php occ app:list | grep homestead_sso`, `php occ group:list`, Nextcloud log, audit log."
       },
       {
        "id": "SRV-NEXTCLOUD-4",

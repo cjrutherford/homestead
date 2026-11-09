@@ -238,7 +238,7 @@ func TestNextcloudAdapterUsesOccAndStdinForTheSecret(t *testing.T) {
 	a, _ := AdapterFor(*m.SSO.OIDC)
 	// user_oidc is not installed yet: enable fails, install runs.
 	f.fail = func(c call) (string, error) {
-		if len(c.args) > 4 && c.args[3] == "app:enable" {
+		if len(c.args) > 4 && c.args[3] == "app:enable" && c.args[4] == "user_oidc" {
 			return "user_oidc not found", errors.New("exit 1")
 		}
 		return "", nil
@@ -254,6 +254,8 @@ func TestNextcloudAdapterUsesOccAndStdinForTheSecret(t *testing.T) {
 		}
 		if c.args[0] == "php" {
 			verbs = append(verbs, c.args[3])
+		} else if strings.HasPrefix(c.args[len(c.args)-1], nextcloudAppDir+"/") {
+			verbs = append(verbs, "write")
 		} else {
 			verbs = append(verbs, "provider")
 			if c.stdin != clientSecret+"\n" || !strings.Contains(strings.Join(c.args, " "), "https://authentik.lan/application/o/homestead-nextcloud/.well-known/openid-configuration") {
@@ -261,11 +263,25 @@ func TestNextcloudAdapterUsesOccAndStdinForTheSecret(t *testing.T) {
 			}
 		}
 	}
-	if strings.Join(verbs, ",") != "status,app:enable,app:install,security:certificates:import,config:app:set,config:system:set,config:system:set,app:disable,provider" {
+	if strings.Join(verbs, ",") != "status,app:enable,app:install,write,write,write,app:enable,security:certificates:import,config:app:set,config:system:set,config:system:set,app:disable,provider" {
 		t.Fatalf("verbs: %v", verbs)
 	}
 	if f.argvHolds(clientSecret) {
 		t.Fatal("secret in argv")
+	}
+	// S500: the admin app is written whole and enabled; its listener keeps
+	// the real admin group in step with the claim's admin alias.
+	var written string
+	for _, c := range f.calls {
+		written += c.stdin
+	}
+	for _, want := range []string{"<id>homestead_sso</id>", "UserLoggedInEvent", "getBackendClassName() !== 'user_oidc'", "getDisplayName() === 'admin'", "removeUser"} {
+		if !strings.Contains(written, want) {
+			t.Fatalf("admin app lacks %q", want)
+		}
+	}
+	if !strings.Contains(fmt.Sprint(f.calls), "app:enable homestead_sso") {
+		t.Fatalf("admin app not enabled: %+v", f.calls)
 	}
 	if !strings.Contains(fmt.Sprint(f.calls), "app:disable firstrunwizard") {
 		t.Fatalf("welcome wizard stays on: %+v", f.calls)
