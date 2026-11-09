@@ -1362,7 +1362,7 @@ func lanPathRedirectWarning(f appPublicFacts, plan appPublicPlan) string {
 	r := f.routes[0]
 	local := "the local address " + r.Path
 	if r.CraftApp != "" {
-		return "Your local address "+r.Path+" stays open: " + f.manifest.Title + " keeps no redirect on the local network (ADR-062)."
+		return "Your local address " + r.Path + " stays open: " + f.manifest.Title + " keeps no redirect on the local network (ADR-062)."
 	}
 	if plan.Action == "remove" {
 		return "Edge change: the redirect from " + local + " to " + plan.URL + " is removed; the app is served on its local address again."
