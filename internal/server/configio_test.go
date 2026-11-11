@@ -34,7 +34,7 @@ func configIOTestServer(t *testing.T) (*Server, string) {
 		t.Fatalf("Save: %v", err)
 	}
 	srv := New("127.0.0.1:0")
-	srv.MountConfigIO(desiredPath, secrets, nil)
+	srv.MountConfigIO(desiredPath, secrets, nil, nil)
 	return srv, desiredPath
 }
 
@@ -71,7 +71,7 @@ func TestConfigExportMissing(t *testing.T) {
 		t.Fatalf("secret.New: %v", err)
 	}
 	srv := New("127.0.0.1:0")
-	srv.MountConfigIO(filepath.Join(dir, "missing.yaml"), secrets, nil)
+	srv.MountConfigIO(filepath.Join(dir, "missing.yaml"), secrets, nil, nil)
 	recorder := serveRequest(t, srv, http.MethodGet, "/api/v1/config/export", nil)
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("code = %d", recorder.Code)

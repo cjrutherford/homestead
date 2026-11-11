@@ -35,7 +35,7 @@ func configIODaemon(t *testing.T) string {
 		t.Fatalf("Save: %v", err)
 	}
 	srv := server.New("127.0.0.1:0")
-	srv.MountConfigIO(desiredPath, secrets, nil)
+	srv.MountConfigIO(desiredPath, secrets, nil, nil)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return ts.URL

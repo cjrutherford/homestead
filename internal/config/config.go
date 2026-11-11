@@ -13,6 +13,8 @@ package config
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 
 	"homestead/internal/desired"
 	"homestead/internal/schema"
@@ -62,6 +64,21 @@ func (s *Service) Plan(candidate map[string]any) Plan {
 		Effective: effective,
 		Errors:    errs,
 	}
+}
+
+// ValidateSettings runs Plan's validation and returns a refusal naming
+// every bad field, or nil. Config import uses it so an imported document
+// meets the same rules as `config apply`.
+func (s *Service) ValidateSettings(candidate map[string]any) error {
+	plan := s.Plan(candidate)
+	if plan.Valid {
+		return nil
+	}
+	parts := make([]string, 0, len(plan.Errors))
+	for _, e := range plan.Errors {
+		parts = append(parts, fmt.Sprintf("%s: %s", e.Field, e.Reason))
+	}
+	return fmt.Errorf("config: settings invalid: %s", strings.Join(parts, "; "))
 }
 
 // Apply validates like Plan and, only when valid, atomically persists the

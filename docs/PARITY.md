@@ -38,8 +38,8 @@ unchanged.
 | POST | /api/v1/config/plan | `"plan"` | `planConfig` |  |
 | PUT | /api/v1/config | `"apply"` | `applyConfig` |  |
 | GET | /api/v1/config/export | `"export"` | `configExportYaml` | Portable document for disaster recovery (S483): the CLI writes it with `config export -f`, the Config page downloads the same YAML (`?format=yaml`). Secret names only, never values, so no fresh sign-in applies |
-| POST | /api/v1/config/import/preview | `"import"` | `previewConfigImport` | Read-only check of document text (YAML or JSON): validity, settings diff and the secret names needed, nothing written (S483); `config import --dry-run -f FILE` and the Config page import review |
-| POST | /api/v1/config/import | `"import"` | `importConfig` | Validated restore with per-call secrets, audited as `config.import` (S483); `config import -f FILE [--secrets-file]` and the Config page import, confirmed after the preview. Secret values are typed into password fields, sent once and never stored |
+| POST | /api/v1/config/import/preview | `"import"` | `previewConfigImport` | Read-only check of document text (YAML or JSON): validity (settings checked against the config schema, S502), settings diff and the secret names needed, nothing written (S483); `config import --dry-run -f FILE` and the Config page import review |
+| POST | /api/v1/config/import | `"import"` | `importConfig` | Validated restore (settings checked against the config schema, rolled back on failure, needs step-up: S502) with per-call secrets, audited as `config.import` (S483); `config import -f FILE [--secrets-file]` and the Config page import, confirmed after the preview. Secret values are typed into password fields, sent once and never stored |
 | GET | /api/v1/identity | n/a | `identity` | CLI status reports health only |
 | POST | /api/v1/claim | `"claim"` | `claim` |  |
 | POST | /api/v1/admins/setup | `"setup"` | `setupAdmin` |  |

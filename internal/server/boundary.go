@@ -330,6 +330,7 @@ var stepUpRoutes = map[string]stepUpMode{
 	"POST /api/v1/sso/apply":                              stepUpBoundary,
 	"DELETE /api/v1/sso":                                  stepUpBoundary,
 	"POST /api/v1/secrets/rekey":                          stepUpBoundary,
+	"POST /api/v1/config/import":                          stepUpBoundary,
 	"POST /api/v1/backups/identity/export":                stepUpBoundary,
 	"POST /api/v1/backups/identity/rotate":                stepUpBoundary,
 	"POST /api/v1/catalog/{name}/secrets/{secret}/reveal": stepUpBoundary,
