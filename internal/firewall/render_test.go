@@ -1,6 +1,7 @@
 package firewall
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"homestead/internal/discover"
+	"homestead/internal/testtools"
 )
 
 func fixtureNetwork() discover.Network {
@@ -178,10 +180,7 @@ func TestRenderRejectsInvalid(t *testing.T) {
 }
 
 func TestRenderedTablePassesNFTCheck(t *testing.T) {
-	nft, err := exec.LookPath("nft")
-	if err != nil {
-		t.Skip("nft binary absent")
-	}
+	nft := testtools.SkipUnlessTool(t, "nft")
 	set, err := ManagementBaseline(8080, fixtureNetwork())
 	if err != nil {
 		t.Fatalf("baseline: %v", err)
@@ -196,6 +195,6 @@ func TestRenderedTablePassesNFTCheck(t *testing.T) {
 	}
 	out, err := exec.Command(nft, "--check", "--file", path).CombinedOutput()
 	if err != nil {
-		t.Skipf("nft --check unavailable here (%v: %s)", err, strings.TrimSpace(string(out)))
+		testtools.SkipOrFail(t, "nft", fmt.Sprintf("--check: %v: %s", err, strings.TrimSpace(string(out))))
 	}
 }

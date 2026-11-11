@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"homestead/internal/catalog"
+	"homestead/internal/testtools"
 )
 
 // kumaSignInVerified is the Uptime Kuma version the own-login-off script in
@@ -138,12 +139,9 @@ module.exports = { Database }
 // and node:sqlite (skipped when this host's node lacks it) against files
 // shaped like Uptime Kuma's.
 func TestKumaScriptAgainstARealDatabase(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("no node")
-	}
+	node := testtools.SkipUnlessTool(t, "node")
 	if out, err := exec.Command(node, "-e", "require('node:sqlite')").CombinedOutput(); err != nil {
-		t.Skipf("no node:sqlite: %s", out)
+		testtools.SkipOrFail(t, "node", "no node:sqlite: "+string(out))
 	}
 	o := *realKuma(t).SSO.ForwardAuth.OwnLoginOff
 	script := o.OnApply[2]

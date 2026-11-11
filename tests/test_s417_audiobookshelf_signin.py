@@ -9,6 +9,7 @@ container). Needs a node with node:sqlite (22.5+); skipped without one.
 import json
 import os
 import shutil
+from _tools import require_tool
 import sqlite3
 import subprocess
 import tempfile
@@ -50,7 +51,7 @@ def node_has_sqlite():
     return subprocess.run([node, "--no-warnings", "-e", "require('node:sqlite')"], capture_output=True).returncode == 0
 
 
-@unittest.skipUnless(node_has_sqlite(), "needs node with node:sqlite")
+@require_tool("node", node_has_sqlite())
 class TestAudiobookshelfSignInScript(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

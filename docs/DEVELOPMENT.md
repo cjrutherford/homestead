@@ -740,7 +740,8 @@ homesteadctl backup unschedule --package jellyfin
   without Homestead: `age -d -i identity.txt X.tar.age | tar -x`
   (database files: `age -d -i identity.txt X.sql.age > X.sql`). Tests:
   `go test ./internal/backup` runs a real `age` CLI check when `age` is
-  on PATH; set `HOMESTEAD_REQUIRE_AGE=1` to fail instead of skip when it
+  on PATH; set `HOMESTEAD_REQUIRE_AGE=1` (or list `age` in
+  `HOMESTEAD_REQUIRE_TOOLS`, S506) to fail instead of skip when it
   is missing. `scripts/acceptance.sh` (`make acceptance`) requires `age`
   (installed by `scripts/bootstrap.sh`) and runs that test with the
   variable set, so acceptance fails closed. SQLite exports use tmpfs
@@ -838,6 +839,10 @@ homesteadctl backup unschedule --package jellyfin
   executed literally by `internal/backup/runbook_test.go` (real `age` and
   `tar`, fake `docker`); the test skips without `age` and fails with
   `HOMESTEAD_REQUIRE_AGE=1`, which `scripts/acceptance.sh` sets.
+  `HOMESTEAD_REQUIRE_TOOLS` (a comma list or `all` of `node`, `minisign`,
+  `age`, `nft`, `caddy`, `php`) does the same for every tool-dependent test,
+  through `internal/testtools` and `tests/_tools.py`; CI sets it, and
+  `HOMESTEAD_REQUIRE_AGE` stays as an alias for `age`.
 
 - Wire format: schedule records are snake_case JSON (`package`,
   `interval_seconds`, `retain`, `enabled`, `actor`, `updated_at`),

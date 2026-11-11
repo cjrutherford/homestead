@@ -1,6 +1,7 @@
 """S468 - a stopped Everything container shows the offline page, not a bare 502."""
 
 import shutil
+from _tools import require_tool
 import subprocess
 import unittest
 from pathlib import Path
@@ -19,7 +20,7 @@ class TestEdgeDown(unittest.TestCase):
             self.assertIn("fetch(req).then(edgeDown).catch(", text, f.name)
             self.assertIn("You are offline", text, f.name)
 
-    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    @require_tool("node")
     def test_workers_behave(self):
         r = subprocess.run(["node", str(EV / "test_edge_down_sw.cjs")], capture_output=True, text=True, timeout=60)
         self.assertEqual(0, r.returncode, r.stderr[-800:])

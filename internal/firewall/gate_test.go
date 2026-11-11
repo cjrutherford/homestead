@@ -2,11 +2,14 @@ package firewall
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"homestead/internal/testtools"
 )
 
 func TestGateRulesRender(t *testing.T) {
@@ -42,16 +45,13 @@ func TestGateRulesRender(t *testing.T) {
 }
 
 func TestGateRulesPassNFTCheck(t *testing.T) {
-	nft, err := exec.LookPath("nft")
-	if err != nil {
-		t.Skip("nft binary absent")
-	}
+	nft := testtools.SkipUnlessTool(t, "nft")
 	path := filepath.Join(t.TempDir(), "gate.nft")
 	if err := os.WriteFile(path, []byte(GateRules()), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := exec.Command(nft, "--check", "--file", path).CombinedOutput(); err != nil {
-		t.Skipf("nft --check unavailable here (%v: %s)", err, strings.TrimSpace(string(out)))
+		testtools.SkipOrFail(t, "nft", fmt.Sprintf("--check: %v: %s", err, strings.TrimSpace(string(out))))
 	}
 }
 

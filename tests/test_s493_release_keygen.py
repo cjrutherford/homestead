@@ -2,6 +2,7 @@
 
 import os
 import shutil
+from _tools import require_tool
 import stat
 import subprocess
 import tempfile
@@ -72,7 +73,7 @@ class TestKeygen(unittest.TestCase):
         self.assertEqual(run(["--out", str(self.tmp / "nope" / "k")], self.bin).returncode, 2)
         self.assertEqual(run([], self.bin).returncode, 2)
 
-    @unittest.skipUnless(shutil.which("minisign"), "minisign not installed")
+    @require_tool("minisign")
     def test_real_minisign(self):
         out = self.keys / "real.key"
         r = run(["--out", str(out), "--insecure-no-passphrase"])

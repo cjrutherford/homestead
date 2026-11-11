@@ -14,6 +14,7 @@ import (
 	"filippo.io/age"
 
 	"homestead/internal/catalog"
+	"homestead/internal/testtools"
 )
 
 // The S275 runbook test: every command the runbook documents runs
@@ -53,12 +54,7 @@ func runbookBlocks(t *testing.T) map[string]string {
 
 func requireTool(t *testing.T, name string) {
 	t.Helper()
-	if _, err := exec.LookPath(name); err != nil {
-		if os.Getenv("HOMESTEAD_REQUIRE_AGE") != "" {
-			t.Fatalf("%s not on PATH and HOMESTEAD_REQUIRE_AGE is set", name)
-		}
-		t.Skipf("%s not installed; skipping the runbook test (acceptance installs it and sets HOMESTEAD_REQUIRE_AGE=1)", name)
-	}
+	testtools.SkipUnlessTool(t, name)
 }
 
 // dockerShim stands in for the docker binary, which the test cannot
