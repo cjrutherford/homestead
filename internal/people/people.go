@@ -83,6 +83,48 @@ type Service struct {
 	// Purge ends a removed person's sharing in the Everything apps (S427,
 	// ADR-058). Nil when there is nothing to purge.
 	Purge *purge.Service
+	// DropAppAdmin takes a person's administrator rights in an app away
+	// now, in the app itself (S507): Nextcloud admin rights otherwise
+	// change only at the next sign-in. Nil when no app needs it. A failure
+	// never fails the People action; it is audited and returned as a warning.
+	DropAppAdmin func(ctx context.Context, app, username, email string) error
+}
+
+type warningsKey struct{}
+
+// Warnings collects what a People action could not finish without failing
+// (S507); handlers put it in the response.
+type Warnings struct{ list []string }
+
+// WithWarnings returns a context whose Service calls report warnings to w.
+func WithWarnings(ctx context.Context, w *Warnings) context.Context {
+	return context.WithValue(ctx, warningsKey{}, w)
+}
+
+// List returns the warnings, in order.
+func (w *Warnings) List() []string {
+	if w == nil {
+		return nil
+	}
+	return w.list
+}
+
+// NextcloudApp is the package whose admin rights DropAppAdmin removes.
+const NextcloudApp = "nextcloud"
+
+// dropAdmin runs DropAppAdmin for p and records any failure.
+func (s *Service) dropAdmin(ctx context.Context, actor string, p Person, app string) {
+	if s.DropAppAdmin == nil {
+		return
+	}
+	if err := s.DropAppAdmin(ctx, app, p.Username, p.Email); err != nil {
+		s.audit(actor, "people.app-admin-drop", "error", fmt.Sprintf("%s (person %d): %s administrator rights were not removed now; they end at the next sign-in", p.Username, p.ID, app))
+		if w, ok := ctx.Value(warningsKey{}).(*Warnings); ok {
+			w.list = append(w.list, fmt.Sprintf("%s's %s administrator rights could not be removed now; they end at the next sign-in. See the audit log.", p.Username, app))
+		}
+		return
+	}
+	s.audit(actor, "people.app-admin-drop", "ok", fmt.Sprintf("%s (person %d): %s administrator rights removed", p.Username, p.ID, app))
 }
 
 // purgeNote runs the purge for a person who lost app (every Everything app
@@ -845,6 +887,7 @@ func (s *Service) SetActive(ctx context.Context, actor string, id int64, active 
 	}
 	if !active {
 		s.endSessions(id)
+		s.dropAdmin(ctx, actor, p, NextcloudApp)
 	}
 	s.audit(actor, action, "ok", fmt.Sprintf("%s (person %d)", p.Username, id))
 	if err := s.syncMember(ctx, api, p.pk, active); err != nil {
@@ -889,6 +932,7 @@ func (s *Service) Remove(ctx context.Context, actor string, id int64) error {
 	if err := s.forget(id); err != nil {
 		return err
 	}
+	s.dropAdmin(ctx, actor, p, NextcloudApp)
 	note := s.purgeNote(ctx, actor, p, "")
 	s.audit(actor, "people.remove", "ok", fmt.Sprintf("removed %s (person %d, %s)%s", p.Username, id, p.Origin, note))
 	return nil
@@ -954,6 +998,9 @@ func (s *Service) Grant(ctx context.Context, actor string, id int64, g Grant) (P
 	if err := s.applyGrant(ctx, api, actor, id, p.pk, g); err != nil {
 		return p, err
 	}
+	if g.App == NextcloudApp && g.Role != RoleAdmin {
+		s.dropAdmin(ctx, actor, p, g.App)
+	}
 	return s.person(id)
 }
 
@@ -1016,6 +1063,9 @@ func (s *Service) Revoke(ctx context.Context, actor string, id int64, app string
 	}
 	if err := s.dropGrant(id, app); err != nil {
 		return p, err
+	}
+	if app == NextcloudApp {
+		s.dropAdmin(ctx, actor, p, app)
 	}
 	note := s.purgeNote(ctx, actor, p, app)
 	s.audit(actor, "people.revoke", "ok", fmt.Sprintf("person %d: %s%s", id, app, note))

@@ -59,6 +59,23 @@ func (s *Server) mountPeople(c SSOConfig, m *sso.Manager, client func() *http.Cl
 			m, err := entries.Get(app)
 			return err == nil && m.SSO.ForwardAuth != nil && m.SSO.ForwardAuth.Access == catalog.AccessAdminOnly
 		},
+		DropAppAdmin: func(ctx context.Context, app, username, email string) error {
+			if app != people.NextcloudApp {
+				return nil
+			}
+			if _, on, err := (appsso.Records{DB: c.Store.DB()}).Get(app); err != nil || !on {
+				return err
+			}
+			entries, err := catalog.Load(c.CatalogDir)
+			if err != nil {
+				return err
+			}
+			m, err := entries.Get(app)
+			if err != nil || m.SSO.OIDC == nil {
+				return err
+			}
+			return appsso.RemoveNextcloudAdmin(ctx, m.Name+"-"+m.SSO.OIDC.Service, username, email)
+		},
 		PublicAuthentik: func() string {
 			if spec, ok, err := m.Config(); err == nil && ok {
 				return spec.PublicAuthentikURL
@@ -331,11 +348,12 @@ func (h *peopleHandlers) setActive(w http.ResponseWriter, r *http.Request, activ
 	}
 	ctx, cancel := h.ctx(r)
 	defer cancel()
-	if err := h.svc.SetActive(ctx, actor, id, active); err != nil {
+	var warn people.Warnings
+	if err := h.svc.SetActive(people.WithWarnings(ctx, &warn), actor, id, active); err != nil {
 		h.fail(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"ok": true})
+	writeJSON(w, map[string]any{"ok": true, "warnings": warn.List()})
 }
 
 func (h *peopleHandlers) disable(w http.ResponseWriter, r *http.Request) { h.setActive(w, r, false) }
@@ -353,11 +371,12 @@ func (h *peopleHandlers) remove(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := h.ctx(r)
 	defer cancel()
-	if err := h.svc.Remove(ctx, actor, id); err != nil {
+	var warn people.Warnings
+	if err := h.svc.Remove(people.WithWarnings(ctx, &warn), actor, id); err != nil {
 		h.fail(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"ok": true, "note": "App data stays in the apps."})
+	writeJSON(w, map[string]any{"ok": true, "note": "App data stays in the apps.", "warnings": warn.List()})
 }
 
 func (h *peopleHandlers) grant(w http.ResponseWriter, r *http.Request, role string) {
@@ -372,12 +391,13 @@ func (h *peopleHandlers) grant(w http.ResponseWriter, r *http.Request, role stri
 	}
 	ctx, cancel := h.ctx(r)
 	defer cancel()
-	p, err := h.svc.Grant(ctx, actor, id, people.Grant{App: r.PathValue("app"), Role: role})
+	var warn people.Warnings
+	p, err := h.svc.Grant(people.WithWarnings(ctx, &warn), actor, id, people.Grant{App: r.PathValue("app"), Role: role})
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"person": p})
+	writeJSON(w, map[string]any{"person": p, "warnings": warn.List()})
 }
 
 func (h *peopleHandlers) grantUser(w http.ResponseWriter, r *http.Request) {
@@ -400,12 +420,13 @@ func (h *peopleHandlers) revoke(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := h.ctx(r)
 	defer cancel()
-	p, err := h.svc.Revoke(ctx, actor, id, r.PathValue("app"))
+	var warn people.Warnings
+	p, err := h.svc.Revoke(people.WithWarnings(ctx, &warn), actor, id, r.PathValue("app"))
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"person": p})
+	writeJSON(w, map[string]any{"person": p, "warnings": warn.List()})
 }
 
 type resolveBody struct {

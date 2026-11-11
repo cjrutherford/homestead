@@ -2,7 +2,9 @@ package appsso
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // S500: Nextcloud administrators follow the claim's "admin" alias.
@@ -85,6 +87,7 @@ use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\IGroupManager;
 use OCP\User\Events\UserLoggedInEvent;
+use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 
 /** @template-implements IEventListener<UserLoggedInEvent> */
@@ -92,7 +95,30 @@ class LoginListener implements IEventListener {
 	public function __construct(
 		private IGroupManager $groups,
 		private LoggerInterface $logger,
+		private ContainerInterface $container,
 	) {
+	}
+
+	/**
+	 * The ids user_oidc gives the Homestead provider's admins group: the
+	 * hash of the provider's database id and of its identifier (both ways a
+	 * release may key it). Both are scoped to the Homestead provider.
+	 *
+	 * @return string[]
+	 */
+	private function adminGroupIds(): array {
+		$keys = ['authentik'];
+		try {
+			$mapper = $this->container->get('OCA\\UserOIDC\\Db\\ProviderMapper');
+			$keys[] = (string)$mapper->findProviderByIdentifier('authentik')->getId();
+		} catch (\Throwable $e) {
+			$this->logger->warning('homestead_sso: the Homestead provider was not found: ' . $e->getMessage());
+		}
+		$ids = [];
+		foreach ($keys as $key) {
+			$ids[] = hash('sha256', $key . '_0_admin');
+		}
+		return $ids;
 	}
 
 	public function handle(Event $event): void {
@@ -103,11 +129,14 @@ class LoginListener implements IEventListener {
 		if ($user->getBackendClassName() !== 'user_oidc') {
 			return;
 		}
-		// user_oidc hashes group ids; the claim's admin alias is the hashed
-		// group whose display name is "admin".
+		// user_oidc hashes group ids: sha256 of "<provider>_0_<name>". Admin
+		// is granted only for the exact id of the Homestead provider's
+		// admins group, never for another group whose display name is
+		// "admin" (S507).
 		$want = false;
-		foreach ($this->groups->search('admin') as $group) {
-			if ($group->getGID() !== 'admin' && $group->getDisplayName() === 'admin' && $group->inGroup($user)) {
+		foreach ($this->adminGroupIds() as $gid) {
+			$group = $this->groups->get($gid);
+			if ($group !== null && $group->getGID() !== 'admin' && $group->inGroup($user)) {
 				$want = true;
 				break;
 			}
@@ -140,6 +169,54 @@ func (a nextcloud) installAdminApp(ctx context.Context, t Target) error {
 	}
 	if _, err := a.occ(ctx, t, "", "app:enable", nextcloudAdminApp); err != nil {
 		return fmt.Errorf("appsso: enable the %s app: %w", nextcloudAdminApp, err)
+	}
+	return nil
+}
+
+// RemoveNextcloudAdmin takes a person out of Nextcloud's real admin group
+// now (S507), so a revoked, disabled or removed person does not keep
+// administrator rights until their next sign-in. The person is found among
+// the accounts user_oidc owns by email (or, when unique ids are off, by
+// uid); the local install admin and any other backend are never touched.
+// It returns nil when the person has no Nextcloud account or is not an
+// administrator. Callers must not let a failure block their own action.
+func RemoveNextcloudAdmin(ctx context.Context, container, username, email string) error {
+	nc := nextcloud{}
+	t := Target{Container: container}
+	out, err := nc.occ(ctx, t, "", "user:list", "--info", "--output=json", "--limit=-1")
+	if err != nil {
+		return fmt.Errorf("appsso: list Nextcloud accounts: %w", err)
+	}
+	var users map[string]struct {
+		UserID  string   `json:"user_id"`
+		Email   string   `json:"email"`
+		Backend string   `json:"backend"`
+		Groups  []string `json:"groups"`
+	}
+	if err := json.Unmarshal([]byte(out), &users); err != nil {
+		return fmt.Errorf("appsso: read the Nextcloud account list: %w", err)
+	}
+	for uid, u := range users {
+		if u.Backend != "user_oidc" || uid == "admin" {
+			continue
+		}
+		byMail := email != "" && strings.EqualFold(u.Email, email)
+		byUID := username != "" && strings.EqualFold(uid, username)
+		if !byMail && !byUID {
+			continue
+		}
+		admin := false
+		for _, g := range u.Groups {
+			if g == "admin" {
+				admin = true
+			}
+		}
+		if !admin {
+			continue
+		}
+		if _, err := nc.occ(ctx, t, "", "group:removeuser", "admin", uid); err != nil {
+			return fmt.Errorf("appsso: take %s out of Nextcloud's admin group: %w", uid, err)
+		}
 	}
 	return nil
 }

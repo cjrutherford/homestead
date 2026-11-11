@@ -275,7 +275,7 @@ func TestNextcloudAdapterUsesOccAndStdinForTheSecret(t *testing.T) {
 	for _, c := range f.calls {
 		written += c.stdin
 	}
-	for _, want := range []string{"<id>homestead_sso</id>", "UserLoggedInEvent", "getBackendClassName() !== 'user_oidc'", "getDisplayName() === 'admin'", "removeUser"} {
+	for _, want := range []string{"<id>homestead_sso</id>", "UserLoggedInEvent", "getBackendClassName() !== 'user_oidc'", "adminGroupIds", "removeUser"} {
 		if !strings.Contains(written, want) {
 			t.Fatalf("admin app lacks %q", want)
 		}
