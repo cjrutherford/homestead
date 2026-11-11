@@ -175,6 +175,7 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/backups/identity/export":                ClassSession,
 	"POST /api/v1/backups/identity/ack":                   ClassSession,
 	"POST /api/v1/backups/identity/rotate":                ClassSession,
+	"POST /api/v1/backups/identity/rewrap":                ClassSession,
 	"GET /api/v1/catalog":                                 ClassSession,
 	"GET /api/v1/catalog/bundles":                         ClassSession,
 	"GET /api/v1/catalog/{name}":                          ClassSession,

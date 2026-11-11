@@ -2,6 +2,7 @@ package backup
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -12,10 +13,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"filippo.io/age"
 	"golang.org/x/crypto/hkdf"
 
+	"homestead/internal/operation"
 	"homestead/internal/secret"
 )
 
@@ -24,8 +28,9 @@ import (
 // A backup file is "age header + payload". The header holds one stanza
 // per recipient, each wrapping the same random per-file key; the payload
 // is encrypted with that file key, not with the recovery key. Rotation
-// therefore generates a new appliance identity and re-wraps the file key
-// of every existing run to it by rewriting only the header (the stanzas
+// therefore generates a new appliance identity (RotateIdentity) and a
+// separate background operation (RewrapDefinition, S505) re-wraps the
+// file key of every existing run to it by rewriting only the header (the stanzas
 // already there are kept verbatim, so owner recipients and the old key
 // still work). The payload bytes are copied unchanged and the new file is
 // fully decrypted with the new identity before it replaces the old one,
@@ -33,32 +38,53 @@ import (
 
 // RetiredIdentitySecret holds earlier appliance identities, one per
 // line. They stay on the appliance so a run that could not be re-wrapped
-// remains readable; a later rotation retries those runs.
+// remains readable; a later re-wrap retries those runs.
 const RetiredIdentitySecret = IdentitySecret + "_retired"
 
 // maxHeaderBytes bounds how much of a file is scanned for its header.
 const maxHeaderBytes = 1 << 20
 
 // RotateResult reports a rotation. It carries no key material except
-// New, which the caller must reveal once and never log.
+// New, which the caller must reveal once and never log. Rotation only
+// mints (S505); re-wrapping existing runs is RewrapDefinition.
 type RotateResult struct {
 	New            *age.X25519Identity
 	OldFingerprint string // "" when there was no earlier identity
-	Rewrapped      int
-	AlreadyCurrent int
-	Failed         []string // file paths (relative to the root) that could not be re-wrapped
 }
 
-// RetiredIdentities returns the earlier appliance identities.
+var (
+	// ErrBackupRunning refuses a rotation while a backup-writing
+	// operation is in flight: it could finish encrypted to a key the
+	// rotation just retired from the recipient list (409).
+	ErrBackupRunning = errors.New("backup: a backup is running; rotate the recovery key when it has finished")
+	// ErrRewrapRunning refuses a second re-wrap, and a rotation, while one
+	// is running (409).
+	ErrRewrapRunning = errors.New("backup: a re-wrap of existing backups is already running")
+)
+
+// rewrapMu serializes re-wraps and the temp-file cleanup that precedes them.
+var rewrapMu sync.Mutex
+
+// RetiredIdentities returns the earlier appliance identities that can be
+// read. An unreadable line is skipped, never fatal: restore must keep
+// working with the identities that are readable (S505).
 func RetiredIdentities(store KeyStore) ([]*age.X25519Identity, error) {
+	ids, _, err := RetiredIdentityReport(store)
+	return ids, err
+}
+
+// RetiredIdentityReport returns the readable retired identities and how
+// many stored lines could not be parsed.
+func RetiredIdentityReport(store KeyStore) ([]*age.X25519Identity, int, error) {
 	value, err := store.Get(RetiredIdentitySecret)
 	if err != nil {
 		if errors.Is(err, secret.ErrNotFound) {
-			return nil, nil
+			return nil, 0, nil
 		}
-		return nil, fmt.Errorf("backup: read retired identities: %w", err)
+		return nil, 0, fmt.Errorf("backup: read retired identities: %w", err)
 	}
 	var out []*age.X25519Identity
+	unreadable := 0
 	for _, line := range strings.Split(value, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -66,92 +92,202 @@ func RetiredIdentities(store KeyStore) ([]*age.X25519Identity, error) {
 		}
 		id, perr := age.ParseX25519Identity(line)
 		if perr != nil {
-			return nil, errors.New("backup: stored retired identity is unreadable")
+			unreadable++
+			continue
 		}
 		out = append(out, id)
 	}
-	return out, nil
+	return out, unreadable, nil
 }
 
-// RotateIdentity replaces the appliance identity. The old one is kept as
-// a retired identity first, then the new one is stored, then the runs
-// under root (when not empty) are re-wrapped. The caller holds the
+// RotateIdentity mints a new appliance identity: the old one is appended
+// to the retired store (unreadable lines already there are preserved
+// verbatim), then the new one is stored. It does not touch backup files;
+// RewrapDefinition does that in the background. It refuses while a
+// backup-writing operation holds the run gate. The caller holds the
 // returned identity only until it has been revealed to the owner.
-func RotateIdentity(store KeyStore, root string) (RotateResult, error) {
+func RotateIdentity(store KeyStore) (RotateResult, error) {
 	if store == nil {
 		return RotateResult{}, errors.New("backup: rotation needs the secret store")
 	}
+	if !runGate.TryLock() {
+		return RotateResult{}, ErrBackupRunning
+	}
+	defer runGate.Unlock()
+	if rewrapMu.TryLock() {
+		rewrapMu.Unlock()
+	} else {
+		return RotateResult{}, ErrRewrapRunning
+	}
 	identityMu.Lock()
+	defer identityMu.Unlock()
 	var old *age.X25519Identity
 	if value, err := store.Get(IdentitySecret); err == nil {
 		id, perr := age.ParseX25519Identity(strings.TrimSpace(value))
 		if perr != nil {
-			identityMu.Unlock()
 			return RotateResult{}, errors.New("backup: stored backup identity is unreadable")
 		}
 		old = id
 	} else if !errors.Is(err, secret.ErrNotFound) {
-		identityMu.Unlock()
 		return RotateResult{}, fmt.Errorf("backup: read identity: %w", err)
 	}
-	retired, err := RetiredIdentities(store)
-	if err != nil {
-		identityMu.Unlock()
-		return RotateResult{}, err
+	raw := ""
+	if value, err := store.Get(RetiredIdentitySecret); err == nil {
+		raw = strings.TrimRight(value, "\n")
+	} else if !errors.Is(err, secret.ErrNotFound) {
+		return RotateResult{}, fmt.Errorf("backup: read retired identities: %w", err)
 	}
 	fresh, err := age.GenerateX25519Identity()
 	if err != nil {
-		identityMu.Unlock()
 		return RotateResult{}, fmt.Errorf("backup: generate identity: %w", err)
 	}
 	res := RotateResult{New: fresh}
 	if old != nil {
 		res.OldFingerprint = Fingerprint(old.Recipient().String())
-		retired = append(retired, old)
-		lines := make([]string, 0, len(retired))
-		for _, id := range retired {
-			lines = append(lines, id.String())
+		if raw != "" {
+			raw += "\n"
 		}
 		// Retire before replacing: a failure between the two writes leaves
 		// the old key in both places, never in neither.
-		if err := store.SetSystem(RetiredIdentitySecret, strings.Join(lines, "\n")); err != nil {
-			identityMu.Unlock()
+		if err := store.SetSystem(RetiredIdentitySecret, raw+old.String()); err != nil {
 			return RotateResult{}, fmt.Errorf("backup: retire identity: %w", err)
 		}
 	}
 	if err := store.SetSystem(IdentitySecret, fresh.String()); err != nil {
-		identityMu.Unlock()
 		return RotateResult{}, fmt.Errorf("backup: store identity: %w", err)
-	}
-	identityMu.Unlock()
-	if root != "" {
-		var unwrap []age.Identity
-		for _, id := range retired {
-			unwrap = append(unwrap, id)
-		}
-		RewrapRuns(root, fresh, unwrap, &res)
 	}
 	return res, nil
 }
 
-// RewrapRuns adds fresh's recipient to every encrypted file under root.
-func RewrapRuns(root string, fresh *age.X25519Identity, unwrap []age.Identity, res *RotateResult) {
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || !d.Type().IsRegular() || !strings.HasSuffix(path, FileSuffix) {
+// RewrapOperationType is the operation type of a background re-wrap.
+const RewrapOperationType = "backup.rewrap"
+
+// maxFailedListed bounds the failed paths kept in a summary.
+const maxFailedListed = 50
+
+// RewrapSummary is what a re-wrap leaves behind for the status, the
+// Doctor and the owner. It names files, never keys.
+type RewrapSummary struct {
+	OperationID    int64    `json:"operation_id,omitempty"`
+	Fingerprint    string   `json:"fingerprint"`
+	FinishedAt     string   `json:"finished_at,omitempty"`
+	Rewrapped      int      `json:"rewrapped"`
+	AlreadyCurrent int      `json:"already_current"`
+	Failed         []string `json:"failed"`
+	FailedCount    int      `json:"failed_count"`
+	Complete       bool     `json:"complete"`
+}
+
+// CleanRewrapTemps removes temp files an interrupted re-wrap left behind
+// (regular files named .rewrap-*) and returns how many it removed.
+// Callers hold the re-wrap lock.
+func CleanRewrapTemps(root string) (int, error) {
+	removed := 0
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || !d.Type().IsRegular() || !strings.HasPrefix(d.Name(), ".rewrap-") {
 			return nil
 		}
-		changed, rerr := RewrapFile(path, fresh, unwrap)
-		rel, _ := filepath.Rel(root, path)
-		switch {
-		case rerr != nil:
-			res.Failed = append(res.Failed, rel)
-		case changed:
-			res.Rewrapped++
-		default:
-			res.AlreadyCurrent++
+		if rerr := os.Remove(path); rerr == nil {
+			removed++
 		}
 		return nil
 	})
+	return removed, err
+}
+
+// RewrapDefinition plans a background re-wrap of every run under root to
+// the current appliance identity. It takes the re-wrap lock now (a second
+// start gets ErrRewrapRunning) and releases it when the operation ends on
+// any path. Keys are read inside the step; none is carried in the
+// definition. report, when set, receives the summary when the walk ends.
+func RewrapDefinition(keys KeyStore, root string, report func(RewrapSummary)) (operation.Definition, error) {
+	if keys == nil {
+		return operation.Definition{}, errors.New("backup: re-wrap needs the secret store")
+	}
+	if root == "" {
+		return operation.Definition{}, errors.New("backup: re-wrap needs a backup destination")
+	}
+	if !rewrapMu.TryLock() {
+		return operation.Definition{}, ErrRewrapRunning
+	}
+	release := sync.OnceFunc(rewrapMu.Unlock)
+	return operation.Definition{
+		Type:    RewrapOperationType,
+		Cleanup: release,
+		Steps: []operation.StepDef{
+			{Name: "clean", Run: func(ctx context.Context) error {
+				_, err := CleanRewrapTemps(root)
+				return err
+			}},
+			{Name: "rewrap", Run: func(ctx context.Context) error {
+				fresh, ok, err := PeekApplianceIdentity(keys)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return errors.New("backup: there is no recovery identity yet, so nothing to re-wrap to")
+				}
+				retired, _, err := RetiredIdentityReport(keys)
+				if err != nil {
+					return err
+				}
+				var unwrap []age.Identity
+				for _, id := range retired {
+					unwrap = append(unwrap, id)
+				}
+				sum := RewrapRuns(ctx, root, fresh, unwrap)
+				if report != nil {
+					report(sum)
+				}
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if sum.FailedCount > 0 {
+					return fmt.Errorf("%d files could not be re-wrapped", sum.FailedCount)
+				}
+				return nil
+			}},
+		},
+	}, nil
+}
+
+// RewrapRuns adds fresh's recipient to every encrypted file under root.
+// A directory that cannot be read counts as a failure. It stops between
+// files when ctx ends, leaving Complete false.
+func RewrapRuns(ctx context.Context, root string, fresh *age.X25519Identity, unwrap []age.Identity) RewrapSummary {
+	sum := RewrapSummary{Fingerprint: Fingerprint(fresh.Recipient().String()), Failed: []string{}}
+	fail := func(rel string) {
+		sum.FailedCount++
+		if len(sum.Failed) < maxFailedListed {
+			sum.Failed = append(sum.Failed, rel)
+		}
+	}
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		rel, _ := filepath.Rel(root, path)
+		if err != nil {
+			fail(rel)
+			return nil
+		}
+		if !d.Type().IsRegular() || !strings.HasSuffix(path, FileSuffix) {
+			return nil
+		}
+		changed, rerr := RewrapFile(path, fresh, unwrap)
+		switch {
+		case rerr != nil:
+			fail(rel)
+		case changed:
+			sum.Rewrapped++
+		default:
+			sum.AlreadyCurrent++
+		}
+		return nil
+	})
+	sum.Complete = ctx.Err() == nil && sum.FailedCount == 0
+	sum.FinishedAt = time.Now().UTC().Format(time.RFC3339)
+	return sum
 }
 
 // captureIdentity tries each identity and remembers the file key that

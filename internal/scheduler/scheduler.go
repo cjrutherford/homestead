@@ -456,6 +456,7 @@ func (s *Scheduler) fire(ctx context.Context, job Job, st state, due, now time.T
 		Due       string `json:"due"`
 	}{true, job.ID, format(due)})
 	if err != nil {
+		cleanupUnstarted(def)
 		return s.failed(job, now, fmt.Errorf("payload: %w", err))
 	}
 	// Pending marker: spend the window before enqueueing. If anything
@@ -463,10 +464,12 @@ func (s *Scheduler) fire(ctx context.Context, job Job, st state, due, now time.T
 	// window, and the payload scan in activeOp finds the live run next
 	// window. A failure here starts nothing.
 	if err := s.save(job.ID, "last_run_at = ?, last_operation_id = 0, last_error = ''", format(now)); err != nil {
+		cleanupUnstarted(def)
 		return err
 	}
 	op, err := s.runner.Start(ctx, def, string(raw))
 	if err != nil {
+		cleanupUnstarted(def)
 		return s.failed(job, now, fmt.Errorf("enqueue: %w", err))
 	}
 	if err := s.save(job.ID, "last_operation_id = ?", op.ID); err != nil {
@@ -477,6 +480,14 @@ func (s *Scheduler) fire(ctx context.Context, job Job, st state, due, now time.T
 		Detail: fmt.Sprintf("job %s due %s enqueued operation %d", job.ID, format(due), op.ID),
 	})
 	return err
+}
+
+// cleanupUnstarted runs the cleanup of a definition that never started,
+// so anything it holds (the backup run gate, S505) is released.
+func cleanupUnstarted(def operation.Definition) {
+	if def.Cleanup != nil {
+		def.Cleanup()
+	}
 }
 
 // failed records an attempt that could not start. The window is spent

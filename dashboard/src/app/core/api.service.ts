@@ -1044,6 +1044,21 @@ export interface BackupIdentityStatus {
   exported_by?: string;
   acknowledged: boolean;
   acknowledged_at?: string;
+  retired_count?: number;
+  retired_unreadable?: number;
+  rewrap?: BackupRewrapSummary;
+}
+
+/** The last re-wrap of existing backups to the current key; incomplete with no finish time is pending. */
+export interface BackupRewrapSummary {
+  operation_id?: number;
+  fingerprint: string;
+  finished_at?: string;
+  rewrapped: number;
+  already_current: number;
+  failed: string[];
+  failed_count: number;
+  complete: boolean;
 }
 
 /** POST /api/v1/backups/identity/export: the only response with the key. */
@@ -1055,12 +1070,10 @@ export interface BackupIdentityExport {
   actor: string;
 }
 
-/** POST /api/v1/backups/identity/rotate: the new key (once) plus what happened to existing runs. */
+/** POST /api/v1/backups/identity/rotate: the new key (once) plus the background re-wrap of existing runs. */
 export interface BackupIdentityRotate extends BackupIdentityExport {
   previous_fingerprint?: string;
-  rewrapped: number;
-  already_current: number;
-  failed: string[];
+  rewrap_operation_id?: number;
   runs_note: string;
 }
 
@@ -2220,6 +2233,11 @@ export class ApiService {
       '/api/v1/backups/identity/rotate',
       { confirm: true },
     );
+  }
+
+  /** Re-wraps existing backups to the current key without minting one; starts a background operation. */
+  backupIdentityRewrap(): Observable<OperationStarted> {
+    return this.http.post<OperationStarted>('/api/v1/backups/identity/rewrap', {});
   }
 
   backupIdentityAck(): Observable<BackupIdentityStatus> {

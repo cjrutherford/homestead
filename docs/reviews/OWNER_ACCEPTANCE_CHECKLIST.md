@@ -1593,7 +1593,7 @@ Do these after the server apps above are installed. Steps that use an app say wh
 
 - [ ] **PLAT-BACKUP-4 — Rotate the recovery identity**
   - Action: On the Backups page choose **Rotate recovery identity** and confirm (sign in again if asked), or `homesteadctl backup identity rotate --out <new file>`. Store the new key off the appliance and acknowledge it.
-  - Expected: The new key is shown once (or written 0600), the page reports how many backup files were re-wrapped, and Doctor warns until you acknowledge. A run made before the rotation still decrypts with the new key (`age -d -i <new file>`); the old key still opens it too.
+  - Expected: The new key is shown once (or written 0600), a background re-wrap operation reports its result (Re-wrap existing backups repeats it), and Doctor warns until you acknowledge. A run made before the rotation still decrypts with the new key (`age -d -i <new file>`); the old key still opens it too.
   - If it fails: docs/architecture/BACKUP_RESTORE_RUNBOOK.md.
   - Result: ____  Notes: ____
 

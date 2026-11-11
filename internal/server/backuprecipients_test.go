@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"filippo.io/age"
 
@@ -18,6 +20,7 @@ import (
 	"homestead/internal/auth"
 	"homestead/internal/backup"
 	"homestead/internal/doctor"
+	"homestead/internal/operation"
 	"homestead/internal/secret"
 	"homestead/internal/store"
 )
@@ -42,7 +45,7 @@ func newRecipientEnv(t *testing.T) *recipientEnv {
 		t.Fatal(err)
 	}
 	yaml := filepath.Join(dir, "backup-recipients.yaml")
-	h := &recipientHandlers{s: New("127.0.0.1:0"), rec: backup.NewRecipientStore(st), audit: audit.New(st), secrets: secrets, yaml: yaml}
+	h := &recipientHandlers{s: New("127.0.0.1:0"), rec: backup.NewRecipientStore(st), audit: audit.New(st), secrets: secrets, yaml: yaml, runner: operation.NewRunner(st)}
 	return &recipientEnv{h: h, st: st, keys: secrets, yaml: yaml}
 }
 
@@ -339,13 +342,10 @@ func TestExportAndAckRejectCookieWithoutCSRF(t *testing.T) {
 	}
 }
 
-func TestIdentityRotateRewrapsAuditsAndRearmsTheDoctorWarning(t *testing.T) {
-	e := newRecipientEnv(t)
-	root := t.TempDir()
-	e.h.destination = func() (string, error) { return root, nil }
-	old, _ := backup.ApplianceIdentity(e.keys)
-	oldKey := old.String()
-	run := filepath.Join(root, "pkg", "run1", "data.age")
+// writeRun makes an encrypted run file under root for the given recipient.
+func writeRun(t *testing.T, root, rel string, data string, to age.Recipient) string {
+	t.Helper()
+	run := filepath.Join(root, rel)
 	if err := os.MkdirAll(filepath.Dir(run), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -353,10 +353,58 @@ func TestIdentityRotateRewrapsAuditsAndRearmsTheDoctorWarning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	enc, _ := age.Encrypt(w, old.Recipient())
-	_, _ = enc.Write([]byte("before the rotation"))
+	enc, _ := age.Encrypt(w, to)
+	_, _ = enc.Write([]byte(data))
 	_ = enc.Close()
 	_ = w.Close()
+	return run
+}
+
+func opensWith(t *testing.T, run string, id age.Identity) string {
+	t.Helper()
+	f, err := os.Open(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	r, err := age.Decrypt(f, id)
+	if err != nil {
+		return ""
+	}
+	got, _ := io.ReadAll(r)
+	return string(got)
+}
+
+func waitOp(t *testing.T, e *recipientEnv, id int64) operation.Operation {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	done, err := e.h.runner.Wait(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return done
+}
+
+func auditText(e *recipientEnv) string {
+	entries, _ := audit.New(e.st).List(100)
+	var joined string
+	for _, en := range entries {
+		joined += en.Action + " " + en.Detail + "\n"
+	}
+	return joined
+}
+
+func TestIdentityRotateReturnsTheKeyWithoutWaitingAndRewrapsInTheBackground(t *testing.T) {
+	e := newRecipientEnv(t)
+	root := t.TempDir()
+	e.h.destination = func() (string, error) { return root, nil }
+	old, _ := backup.ApplianceIdentity(e.keys)
+	oldKey := old.String()
+	run := writeRun(t, root, "pkg/run1/data.age", "before the rotation", old.Recipient())
+	// The re-wrap holds at its end until released: the response must not wait for it.
+	release := make(chan struct{})
+	e.h.rewrapReported = func() { <-release }
 
 	if rec := opRequest(http.MethodPost, `{}`, e.h.rotate, ""); rec.Code != http.StatusBadRequest {
 		t.Fatalf("unconfirmed rotate = %d", rec.Code)
@@ -373,36 +421,227 @@ func TestIdentityRotateRewrapsAuditsAndRearmsTheDoctorWarning(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored, _ := e.keys.Get(backup.IdentitySecret)
-	if out.Identity != stored || stored == oldKey || out.Rewrapped != 1 || len(out.Failed) != 0 ||
+	if out.Identity != stored || stored == oldKey || out.RewrapOperationID == 0 ||
 		out.PreviousFingerprint != backup.Fingerprint(old.Recipient().String()) {
 		t.Fatalf("rotate = %+v", out)
 	}
-	// The run made before the rotation opens with the new key alone.
-	fresh, _ := age.ParseX25519Identity(out.Identity)
-	f, _ := os.Open(run)
-	defer f.Close()
-	r, err := age.Decrypt(f, fresh)
-	if err != nil {
-		t.Fatal(err)
+	op, err := operation.New(e.st).Get(out.RewrapOperationID)
+	if err != nil || op.Type != backup.RewrapOperationType || op.Status != operation.StatusRunning {
+		t.Fatalf("the re-wrap is not running in the background: %+v %v", op, err)
 	}
-	if got, _ := io.ReadAll(r); string(got) != "before the rotation" {
+	// The pending marker is recorded before the re-wrap finishes.
+	if sum, ok, _ := e.h.rec.RewrapLast(); !ok || sum.Complete || sum.Fingerprint != out.Fingerprint {
+		t.Fatalf("pending marker = %+v %v", sum, ok)
+	}
+	// A second re-wrap, and a second rotation, are refused while it runs.
+	if rec := opRequest(http.MethodPost, ``, e.h.rewrap, ""); rec.Code != http.StatusConflict {
+		t.Fatalf("rewrap during a rewrap = %d", rec.Code)
+	}
+	if rec := opRequest(http.MethodPost, `{"confirm":true}`, e.h.rotate, ""); rec.Code != http.StatusConflict {
+		t.Fatalf("rotate during a rewrap = %d %s", rec.Code, rec.Body)
+	}
+	close(release)
+	done := waitOp(t, e, out.RewrapOperationID)
+	if done.Status != operation.StatusSucceeded {
+		t.Fatalf("re-wrap = %+v", done)
+	}
+	fresh, _ := age.ParseX25519Identity(out.Identity)
+	if got := opensWith(t, run, fresh); got != "before the rotation" {
 		t.Fatalf("run = %q", got)
 	}
-	// Recorded as an export awaiting acknowledgement; audited without the key.
+	if sum, ok, _ := e.h.rec.RewrapLast(); !ok || !sum.Complete || sum.Rewrapped != 1 || sum.OperationID != out.RewrapOperationID {
+		t.Fatalf("summary = %+v", sum)
+	}
+	// No key material in the operation, the audit trail, or the doctor.
+	raw, _ := json.Marshal(done)
+	if strings.Contains(string(raw), "AGE-SECRET-KEY") || strings.Contains(string(raw), oldKey) || strings.Contains(string(raw), out.Identity) {
+		t.Fatalf("operation carries key material: %s", raw)
+	}
+	if joined := auditText(e); !strings.Contains(joined, "backup.identity.rotate") || strings.Contains(joined, "AGE-SECRET-KEY") || strings.Contains(joined, oldKey) || strings.Contains(joined, out.Identity) {
+		t.Fatalf("audit = %s", joined)
+	}
+	// Recorded as an export awaiting acknowledgement.
 	if c := backupEncryptionDoctorCheck(e.st)(); c[0].Status != doctor.StatusWarn {
 		t.Fatalf("doctor after rotation = %+v", c)
 	}
-	entries, _ := audit.New(e.st).List(100)
-	var joined string
-	for _, en := range entries {
-		joined += en.Action + " " + en.Detail + "\n"
-	}
-	if !strings.Contains(joined, "backup.identity.rotate") || strings.Contains(joined, "AGE-SECRET-KEY") || strings.Contains(joined, oldKey) {
-		t.Fatalf("audit = %s", joined)
+	if c := backupRewrapDoctorCheck(e.st, e.h.secrets)(); c[0].Status != doctor.StatusOK {
+		t.Fatalf("rewrap check after a clean re-wrap = %+v", c)
 	}
 	if rec := opRequest(http.MethodPost, `{}`, e.h.acknowledge, ""); rec.Code != http.StatusOK {
 		t.Fatalf("ack = %d", rec.Code)
 	}
+}
+
+func TestIdentityRotateIsRefusedWhileTheCurrentKeyIsUnacknowledged(t *testing.T) {
+	e := newRecipientEnv(t)
+	id, _ := backup.ApplianceIdentity(e.keys)
+	if rec := opRequest(http.MethodPost, `{"confirm":true}`, e.h.export, ""); rec.Code != http.StatusOK {
+		t.Fatalf("export = %d", rec.Code)
+	}
+	rec := opRequest(http.MethodPost, `{"confirm":true}`, e.h.rotate, "")
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "backup identity export") || strings.Contains(rec.Body.String(), "AGE-SECRET-KEY") {
+		t.Fatalf("rotate with an unacknowledged key = %d %s", rec.Code, rec.Body)
+	}
+	if stored, _ := e.keys.Get(backup.IdentitySecret); stored != id.String() {
+		t.Fatal("a refused rotation changed the key")
+	}
+	// Acknowledged (and within the export budget), the rotation passes.
+	if rec := opRequest(http.MethodPost, `{}`, e.h.acknowledge, ""); rec.Code != http.StatusOK {
+		t.Fatalf("ack = %d", rec.Code)
+	}
+	if rec := opRequest(http.MethodPost, `{"confirm":true}`, e.h.rotate, ""); rec.Code != http.StatusOK {
+		t.Fatalf("rotate after ack = %d %s", rec.Code, rec.Body)
+	}
+	// The rotation's own export is unacknowledged: a lost response must not mint a second key.
+	if rec := opRequest(http.MethodPost, `{"confirm":true}`, e.h.rotate, ""); rec.Code != http.StatusConflict {
+		t.Fatalf("second rotate = %d", rec.Code)
+	}
+	if !strings.Contains(auditText(e), "refused") {
+		t.Fatal("the refusal was not audited")
+	}
+}
+
+func TestIdentityRotateIsRefusedWhileABackupRuns(t *testing.T) {
+	e := newRecipientEnv(t)
+	id, _ := backup.ApplianceIdentity(e.keys)
+	_, release, err := backup.AcquireRecipients(e.keys, e.h.rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := opRequest(http.MethodPost, `{"confirm":true}`, e.h.rotate, "")
+	if rec.Code != http.StatusConflict || strings.Contains(rec.Body.String(), "AGE-SECRET-KEY") {
+		t.Fatalf("rotate during a backup = %d %s", rec.Code, rec.Body)
+	}
+	if stored, _ := e.keys.Get(backup.IdentitySecret); stored != id.String() {
+		t.Fatal("a refused rotation changed the key")
+	}
+	release()
+	if rec := opRequest(http.MethodPost, `{"confirm":true}`, e.h.rotate, ""); rec.Code != http.StatusOK {
+		t.Fatalf("rotate after the backup = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestIdentityRotateWithoutADestinationLeavesAPendingRewrapTheDoctorReports(t *testing.T) {
+	e := newRecipientEnv(t)
+	e.h.destination = func() (string, error) { return "", errors.New("not mounted") }
+	_, _ = backup.ApplianceIdentity(e.keys)
+	rec := opRequest(http.MethodPost, `{"confirm":true}`, e.h.rotate, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("rotate = %d %s", rec.Code, rec.Body)
+	}
+	var out rotateResult
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if out.RewrapOperationID != 0 || !strings.Contains(out.RunsNote, "backup identity rewrap") {
+		t.Fatalf("rotate = %+v", out)
+	}
+	sum, ok, _ := e.h.rec.RewrapLast()
+	if !ok || sum.Complete || sum.Fingerprint != out.Fingerprint {
+		t.Fatalf("summary = %+v %v", sum, ok)
+	}
+	c := backupRewrapDoctorCheck(e.st, e.h.secrets)()
+	if c[0].Name != "backup-rewrap" || c[0].Status != doctor.StatusWarn || !strings.Contains(c[0].Detail, "not been re-wrapped") {
+		t.Fatalf("doctor = %+v", c)
+	}
+	st, err := e.h.statusView()
+	if err != nil || st.Rewrap == nil || st.Rewrap.Complete || st.RetiredCount != 1 {
+		t.Fatalf("status = %+v %v", st, err)
+	}
+}
+
+func TestIdentityRewrapRouteStartsAuditedBackgroundWorkWithoutAKey(t *testing.T) {
+	e := newRecipientEnv(t)
+	// No identity yet: nothing to re-wrap to.
+	if rec := opRequest(http.MethodPost, ``, e.h.rewrap, ""); rec.Code != http.StatusConflict {
+		t.Fatalf("rewrap without an identity = %d", rec.Code)
+	}
+	if _, ok, _ := backup.PeekApplianceIdentity(e.keys); ok {
+		t.Fatal("the rewrap route created an identity")
+	}
+	old, _ := backup.ApplianceIdentity(e.keys)
+	// No destination: 409 with a clear message.
+	rec := opRequest(http.MethodPost, ``, e.h.rewrap, "")
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "no backup destination") {
+		t.Fatalf("rewrap without a destination = %d %s", rec.Code, rec.Body)
+	}
+	root := t.TempDir()
+	e.h.destination = func() (string, error) { return root, nil }
+	run := writeRun(t, root, "pkg/run1/data.age", "kept", old.Recipient())
+	// A retired key opens the run; the current one does not yet.
+	next, _ := age.GenerateX25519Identity()
+	e.keys.SetSystem(backup.RetiredIdentitySecret, old.String())
+	e.keys.SetSystem(backup.IdentitySecret, next.String())
+	rec = opRequest(http.MethodPost, ``, e.h.rewrap, "")
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "AGE-SECRET-KEY") {
+		t.Fatalf("rewrap = %d %s", rec.Code, rec.Body)
+	}
+	var out struct {
+		ID int64 `json:"id"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if done := waitOp(t, e, out.ID); done.Status != operation.StatusSucceeded {
+		t.Fatalf("re-wrap = %+v", done)
+	}
+	if got := opensWith(t, run, next); got != "kept" {
+		t.Fatalf("run = %q", got)
+	}
+	if joined := auditText(e); !strings.Contains(joined, "backup.identity.rewrap") || strings.Contains(joined, "AGE-SECRET-KEY") {
+		t.Fatalf("audit = %s", joined)
+	}
+}
+
+func TestDoctorRewrapCheckReportsUnreadableRetiredKeysAndFailedFiles(t *testing.T) {
+	e := newRecipientEnv(t)
+	check := backupRewrapDoctorCheck(e.st, e.h.secrets)
+	if c := check(); c[0].Status != doctor.StatusOK {
+		t.Fatalf("fresh = %+v", c)
+	}
+	if _, ok, _ := backup.PeekApplianceIdentity(e.keys); ok {
+		t.Fatal("the check created an identity")
+	}
+	id, _ := backup.ApplianceIdentity(e.keys)
+	e.keys.SetSystem(backup.RetiredIdentitySecret, "garbage")
+	if c := check(); c[0].Status != doctor.StatusWarn || !strings.Contains(c[0].Detail, "unreadable") {
+		t.Fatalf("unreadable retired = %+v", c)
+	}
+	spare, _ := age.GenerateX25519Identity()
+	e.keys.SetSystem(backup.RetiredIdentitySecret, spare.String())
+	fp := backup.Fingerprint(id.Recipient().String())
+	_ = e.h.rec.SetRewrapLast(backup.RewrapSummary{Fingerprint: fp, FinishedAt: "2026-11-11T00:00:00Z", Failed: []string{"a.age"}, FailedCount: 1})
+	if c := check(); c[0].Status != doctor.StatusWarn || !strings.Contains(c[0].Detail, "a.age") {
+		t.Fatalf("failed files = %+v", c)
+	}
+	// A summary for an older key is not this key's problem.
+	_ = e.h.rec.SetRewrapLast(backup.RewrapSummary{Fingerprint: "other", Failed: []string{}})
+	if c := check(); c[0].Status != doctor.StatusOK {
+		t.Fatalf("stale summary = %+v", c)
+	}
+	_ = e.h.rec.SetRewrapLast(backup.RewrapSummary{Fingerprint: fp, FinishedAt: "2026-11-11T00:00:00Z", Complete: true, Failed: []string{}})
+	if c := check(); c[0].Status != doctor.StatusOK {
+		t.Fatalf("complete = %+v", c)
+	}
+}
+
+func TestRewrapRunsOnlyOneAtATimeAcrossHandlers(t *testing.T) {
+	e := newRecipientEnv(t)
+	_, _ = backup.ApplianceIdentity(e.keys)
+	root := t.TempDir()
+	e.h.destination = func() (string, error) { return root, nil }
+	release := make(chan struct{})
+	var once sync.Once
+	e.h.rewrapReported = func() { <-release }
+	rec := opRequest(http.MethodPost, ``, e.h.rewrap, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("rewrap = %d %s", rec.Code, rec.Body)
+	}
+	var out struct {
+		ID int64 `json:"id"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if rec := opRequest(http.MethodPost, ``, e.h.rewrap, ""); rec.Code != http.StatusConflict {
+		t.Fatalf("second rewrap = %d", rec.Code)
+	}
+	once.Do(func() { close(release) })
+	waitOp(t, e, out.ID)
 }
 
 func TestIdentityRotateWithholdsTheKeyWhenAuditFails(t *testing.T) {

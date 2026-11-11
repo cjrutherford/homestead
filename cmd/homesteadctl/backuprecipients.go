@@ -70,7 +70,7 @@ func runBackupRecipients(ctx context.Context, client *apiclient.Client, args []s
 	}
 }
 
-const identityUsage = "usage: homesteadctl backup identity <status|ack|export (--out FILE | --stdout) [--ack]|rotate (--out FILE | --stdout) [--ack]>"
+const identityUsage = "usage: homesteadctl backup identity <status|ack|export (--out FILE | --stdout) [--ack]|rotate (--out FILE | --stdout) [--ack]|rewrap>"
 
 // runBackupIdentity reports or exports the recovery identity. Export
 // never prints unless --stdout is given; --out writes a new 0600 file
@@ -109,7 +109,30 @@ func runBackupIdentity(ctx context.Context, client *apiclient.Client, args []str
 		} else {
 			fmt.Fprintln(stdout, "recovery identity never exported")
 		}
+		if st.RetiredCount > 0 || st.RetiredUnreadable > 0 {
+			fmt.Fprintf(stdout, "retired keys kept to read older backups: %d readable, %d unreadable\n", st.RetiredCount, st.RetiredUnreadable)
+		}
+		if st.Rewrap != nil {
+			rw := st.Rewrap
+			switch {
+			case rw.FinishedAt == "":
+				fmt.Fprintln(stdout, "re-wrap of existing backups to the current key: not completed yet; run `homesteadctl backup identity rewrap`")
+			case rw.Complete:
+				fmt.Fprintf(stdout, "last re-wrap: %s, %d re-wrapped, %d already current\n", rw.FinishedAt, rw.Rewrapped, rw.AlreadyCurrent)
+			default:
+				fmt.Fprintf(stdout, "last re-wrap: %s, %d file(s) not re-wrapped; run `homesteadctl backup identity rewrap`\n", rw.FinishedAt, rw.FailedCount)
+				for _, f := range rw.Failed {
+					fmt.Fprintf(stdout, "  not re-wrapped: %s\n", f)
+				}
+			}
+		}
 		return exitOK
+	case "rewrap":
+		id, err := client.BackupIdentityRewrap(ctx)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		return followOperation(ctx, client, id, stdout, stderr)
 	case "ack":
 		if _, err := client.BackupIdentityAck(ctx); err != nil {
 			return fail(stderr, err)
@@ -145,6 +168,9 @@ func runBackupIdentity(ctx context.Context, client *apiclient.Client, args []str
 				_ = file.Close()
 				_ = os.Remove(*out)
 			}
+			if rotate {
+				fmt.Fprintln(stderr, "if the key was rotated, run `homesteadctl backup identity export`; do not rotate again")
+			}
 			return fail(stderr, err)
 		}
 		if file != nil {
@@ -165,13 +191,8 @@ func runBackupIdentity(ctx context.Context, client *apiclient.Client, args []str
 			fmt.Fprintln(stderr, "recovery identity printed above; store it offline, off this appliance. This export is audited.")
 		}
 		if rotate {
-			fmt.Fprintf(stdout, "rotated from %s to %s: %d run files re-wrapped to the new key, %d already current, %d failed\n",
-				rotated.PreviousFingerprint, res.Fingerprint, rotated.Rewrapped, rotated.AlreadyCurrent, len(rotated.Failed))
+			fmt.Fprintf(stdout, "rotated from %s to %s\n", rotated.PreviousFingerprint, res.Fingerprint)
 			fmt.Fprintln(stdout, rotated.RunsNote)
-			for _, f := range rotated.Failed {
-				fmt.Fprintf(stdout, "not re-wrapped (the appliance keeps the old key for it; rotate again to retry): %s\n", f)
-			}
-			fmt.Fprintln(stdout, "runs made before now stay readable with the new key and also with the old one; keep the old key until those runs are pruned")
 		}
 		if *ack {
 			if _, err := client.BackupIdentityAck(ctx); err != nil {
@@ -180,6 +201,10 @@ func runBackupIdentity(ctx context.Context, client *apiclient.Client, args []str
 			fmt.Fprintln(stdout, "recorded: the recovery identity is stored offline")
 		} else {
 			fmt.Fprintln(stderr, "the doctor warning stays until you confirm storage: run `homesteadctl backup identity ack`")
+		}
+		if rotate && rotated.RewrapOperationID != 0 {
+			fmt.Fprintln(stdout, "runs made before now stay readable with the new key and also with the old one; keep the old key until those runs are pruned")
+			return followOperation(ctx, client, rotated.RewrapOperationID, stdout, stderr)
 		}
 		return exitOK
 	default:

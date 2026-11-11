@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -407,6 +408,41 @@ func (s *RecipientStore) RenderYAML(path string) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// RewrapLast returns the summary of the last re-wrap (or the incomplete
+// marker a rotation left); ok is false when there never was one.
+func (s *RecipientStore) RewrapLast() (RewrapSummary, bool, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT summary FROM backup_rewrap_state WHERE id = 1`).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return RewrapSummary{}, false, nil
+	}
+	if err != nil {
+		return RewrapSummary{}, false, fmt.Errorf("backup: read re-wrap state: %w", err)
+	}
+	var sum RewrapSummary
+	if err := json.Unmarshal([]byte(raw), &sum); err != nil {
+		return RewrapSummary{}, false, fmt.Errorf("backup: re-wrap state is unreadable: %w", err)
+	}
+	return sum, true, nil
+}
+
+// SetRewrapLast records the summary of a re-wrap.
+func (s *RecipientStore) SetRewrapLast(sum RewrapSummary) error {
+	if sum.Failed == nil {
+		sum.Failed = []string{}
+	}
+	raw, err := json.Marshal(sum)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO backup_rewrap_state (id, summary) VALUES (1, ?)
+		ON CONFLICT(id) DO UPDATE SET summary = excluded.summary`, string(raw))
+	if err != nil {
+		return fmt.Errorf("backup: record re-wrap state: %w", err)
+	}
+	return nil
 }
 
 // RecipientsWithOwner returns the appliance recipient plus every owner

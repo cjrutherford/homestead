@@ -154,6 +154,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 		platformApplyDoctorCheck(st, time.Now),
 		migrationDoctorChecks(st, c.CatalogDir),
 		backupEncryptionDoctorCheck(st),
+		backupRewrapDoctorCheck(st, secrets),
 		localTLSDoctorChecks(local, time.Now),
 		craftFilesDoctorCheck(st, docker.CraftMountPresent, docker.CraftSocketPath),
 		edgeUpstreamDoctorCheck(st, docker.NewClient("").Containers),

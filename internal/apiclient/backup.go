@@ -132,6 +132,23 @@ type BackupIdentityStatus struct {
 	ExportedBy     string `json:"exported_by"`
 	Acknowledged   bool   `json:"acknowledged"`
 	AcknowledgedAt string `json:"acknowledged_at"`
+	// Retired keys kept to read older runs, and the last re-wrap (S505).
+	RetiredCount      int                  `json:"retired_count"`
+	RetiredUnreadable int                  `json:"retired_unreadable"`
+	Rewrap            *BackupRewrapSummary `json:"rewrap,omitempty"`
+}
+
+// BackupRewrapSummary is the last re-wrap of existing backups to the
+// current recovery key; an incomplete one with no finish time is pending.
+type BackupRewrapSummary struct {
+	OperationID    int64    `json:"operation_id"`
+	Fingerprint    string   `json:"fingerprint"`
+	FinishedAt     string   `json:"finished_at"`
+	Rewrapped      int      `json:"rewrapped"`
+	AlreadyCurrent int      `json:"already_current"`
+	Failed         []string `json:"failed"`
+	FailedCount    int      `json:"failed_count"`
+	Complete       bool     `json:"complete"`
 }
 
 // BackupIdentityAck confirms the exported recovery identity is stored
@@ -166,20 +183,29 @@ func (c *Client) BackupIdentityExport(ctx context.Context) (BackupIdentityExport
 }
 
 // BackupIdentityRotate is the rotation reply: the new key (shown once)
-// plus what happened to existing runs.
+// plus the background re-wrap of existing runs, when one started.
 type BackupIdentityRotate struct {
 	BackupIdentityExport
-	PreviousFingerprint string   `json:"previous_fingerprint"`
-	Rewrapped           int      `json:"rewrapped"`
-	AlreadyCurrent      int      `json:"already_current"`
-	Failed              []string `json:"failed"`
-	RunsNote            string   `json:"runs_note"`
+	PreviousFingerprint string `json:"previous_fingerprint"`
+	RewrapOperationID   int64  `json:"rewrap_operation_id"`
+	RunsNote            string `json:"runs_note"`
 }
 
 // BackupIdentityRotate replaces the recovery identity (audited,
-// explicit, step-up) and re-wraps existing runs to the new key.
+// explicit, step-up). Existing runs are re-wrapped by a background
+// operation (RewrapOperationID, 0 when none started).
 func (c *Client) BackupIdentityRotate(ctx context.Context) (BackupIdentityRotate, error) {
 	var out BackupIdentityRotate
 	err := c.postJSON(ctx, "/api/v1/backups/identity/rotate", map[string]bool{"confirm": true}, &out)
 	return out, err
+}
+
+// BackupIdentityRewrap starts the background re-wrap of existing runs to
+// the current recovery key without minting one, returning its operation id.
+func (c *Client) BackupIdentityRewrap(ctx context.Context) (int64, error) {
+	var out OperationStarted
+	if err := c.postJSON(ctx, "/api/v1/backups/identity/rewrap", map[string]any{}, &out); err != nil {
+		return 0, err
+	}
+	return out.ID, nil
 }
