@@ -97,6 +97,8 @@ is not published while the gate is on the public name has no valid LAN
 address; it must be published to be used. Craft apps do not meet this case
 in S481, which gates their public path only (section 6).
 
+_Amended by S503: redirects are 307 (temporary) so unpublishing takes effect in browsers._
+
 ### 6. Craft apps (S481)
 The 13 craft manifests change `publish: never` to `publish: path`. A craft
 route that is published is rendered behind the shared gate on the tunnel
@@ -149,6 +151,8 @@ redirect comes from the route's `Published` state, not from the gate: Komga,
 Paperless-ngx, Linkding and the like get it, and Navidrome's S480 redirect is
 the same rule. Unpublishing removes it on the next edge reconcile; apps that
 are not published are served on the LAN as before.
+
+_Amended by S503: redirects are 307 (temporary) so unpublishing takes effect in browsers._
 
 Exceptions: the craft apps keep the LAN open, as section 6 says; the Authentik
 sign-in path (`/apps/auth/`) stays on the local name, because the apps reach it

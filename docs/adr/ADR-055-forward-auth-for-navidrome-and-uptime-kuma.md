@@ -138,6 +138,7 @@ proxies the Authentik path app, so it should share that network).
   unpublishing, re-plans it (same rule as the issuer move, ADR-047/048 §6).
   Owner decision 2026-10-31: accepted. The canonical name is the public name if
   published, otherwise `<app>.lan`; every other name redirects (308) to it.
+  _Amended by S503: redirects are 307 (temporary) so unpublishing takes effect in browsers._
   **Spike:** whether one provider can carry several hosts is no longer needed
   to ship; it is recorded only if it turns out to be free.
 

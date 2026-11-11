@@ -19,7 +19,7 @@ class LANRedirect(unittest.TestCase):
 
     def test_adr_and_guide(self):
         self.assertIn("Amendment (S498", read("docs/adr/ADR-062-shared-subpath-gate.md"))
-        self.assertIn("308", read("docs/guide/exposure.md"))
+        self.assertIn("307", read("docs/guide/exposure.md"))
         self.assertIn("S498", read("docs/SLICE_INDEX.md"))
         self.assertIn("S498:", read("docs/DEFERRED.md"))
         self.assertIn("(S498)", read("docs/reviews/OWNER_ACCEPTANCE_CHECKLIST.md"))

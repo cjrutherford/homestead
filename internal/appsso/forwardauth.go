@@ -24,7 +24,7 @@ const ForwardAdapter = "forwardauth"
 // GatePlan is what the gate does, listed in the plan (ADR-055 §7).
 type GatePlan struct {
 	// Canonical is the one name the app answers on while gated; Redirects
-	// are the other names, which answer 308 to it.
+	// are the other names, which answer 307 to it.
 	Canonical string   `json:"canonical"`
 	Redirects []string `json:"redirects"`
 	// Bypass are the paths that skip the gate, each with why it is safe.

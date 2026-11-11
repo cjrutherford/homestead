@@ -59,7 +59,7 @@ func TestGatedRouteOrderAndFailClosed(t *testing.T) {
 	}
 	// The alias redirects to the canonical name.
 	idx(t, out, "navidrome.local {")
-	idx(t, out, "redir https://navidrome.lan{uri} 308")
+	idx(t, out, "redir https://navidrome.lan{uri} 307")
 }
 
 func TestGatedRouteTunnelCanonical(t *testing.T) {
@@ -72,7 +72,7 @@ func TestGatedRouteTunnelCanonical(t *testing.T) {
 	}
 	idx(t, out, "http://music.example.com:8480 {")
 	idx(t, out, "http://music2.example.com:8480 {")
-	idx(t, out, "redir https://music.example.com{uri} 308")
+	idx(t, out, "redir https://music.example.com{uri} 307")
 	// The LAN names redirect to the public name, never serve the app.
 	local := out[:idx(t, out, "# Tunnel entry")]
 	if strings.Contains(local, "reverse_proxy navidrome") || strings.Contains(local, "forward_auth") {
@@ -95,7 +95,7 @@ func TestGatedRouteLocalCanonicalRedirectsTunnel(t *testing.T) {
 	if strings.Contains(tunnel, "reverse_proxy") {
 		t.Fatalf("a stale tunnel name must redirect, not serve:\n%s", tunnel)
 	}
-	idx(t, tunnel, "redir https://navidrome.lan{uri} 308")
+	idx(t, tunnel, "redir https://navidrome.lan{uri} 307")
 }
 
 func TestPlainRouteUnchangedByGateCode(t *testing.T) {

@@ -55,7 +55,7 @@ Uptime Kuma is never published.
 
 ### Local requests redirect once an app is published
 
-When an app at a path is published, its local address (`https://homestead.lan/apps/<app>/`) answers a redirect (308) to the public address, keeping the path and query, so the app has one address. The Craft apps are the exception: they stay open on the local network. Apps that are not published keep being served locally. The plan tells you before you approve it. Apps and devices on your network that do not follow redirects, for example a reader app using Komga's OPDS feed, must be given the public address, or you can unpublish the app to bring the local address back.
+When an app at a path is published, its local address (`https://homestead.lan/apps/<app>/`) answers a redirect (307) to the public address, keeping the path and query, so the app has one address. The Craft apps are the exception: they stay open on the local network. Apps that are not published keep being served locally. The plan tells you before you approve it. Apps and devices on your network that do not follow redirects, for example a reader app using Komga's OPDS feed, must be given the public address, or you can unpublish the app to bring the local address back.
 
 ### The shared gate
 

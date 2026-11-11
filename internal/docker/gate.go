@@ -30,7 +30,7 @@ var stripHeaders = []string{"X-Authentik-*", "Remote-User", "X-Forwarded-User"}
 type Gate struct {
 	// Canonical is the one name that answers while the gate is on: the
 	// public name when published, otherwise the .lan name. Every other
-	// name of the route answers 308 to it (ADR-055 §2), because Authentik
+	// name of the route answers 307 to it (ADR-055 §2), because Authentik
 	// matches a request to a provider by one external host.
 	Canonical Hostname
 	// CopyHeaders are the only headers copied from the outpost's answer
@@ -223,9 +223,9 @@ func (g Gate) renderGatedBody(proxy string, tunnel bool) string {
 }
 
 // renderRedirect answers every request on the other names of a gated
-// route with a 308 to the same path on the canonical name.
+// route with a 307 to the same path on the canonical name.
 func (g Gate) renderRedirect() string {
-	return fmt.Sprintf("\tredir https://%s{uri} 308\n", g.Canonical)
+	return fmt.Sprintf("\tredir https://%s{uri} 307\n", g.Canonical)
 }
 
 // indentBy puts every line of body n tabs deeper than it is written
@@ -398,11 +398,11 @@ func renderGatedPath(p, dash Route, canonical Hostname, tunnel bool) (string, bo
 	fmt.Fprintf(&b, "\thandle %s* {\n", p.Path)
 	if !tunnel && !isHostIn(canonical, dash.Names()) {
 		// Published: the local names send the visitor to the public one.
-		fmt.Fprintf(&b, "\t\tredir https://%s{uri} 308\n\t}\n", canonical)
+		fmt.Fprintf(&b, "\t\tredir https://%s{uri} 307\n\t}\n", canonical)
 		return b.String(), false
 	}
 	if !tunnel && len(dash.Names()) > 1 {
-		fmt.Fprintf(&b, "\t\t@gate_%s_other {\n\t\t\tnot host %s\n\t\t}\n\t\tredir @gate_%s_other https://%s{uri} 308\n", label, canonical, label, canonical)
+		fmt.Fprintf(&b, "\t\t@gate_%s_other {\n\t\t\tnot host %s\n\t\t}\n\t\tredir @gate_%s_other https://%s{uri} 307\n", label, canonical, label, canonical)
 	}
 	b.WriteString(sharedOriginResponseHeaders())
 	cookie := ""

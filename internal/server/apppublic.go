@@ -1353,10 +1353,10 @@ func singleOriginWarning(r docker.Route, plan appPublicPlan) string {
 
 // lanPathRedirectWarning previews the edge change for a path app's local
 // names (S498, ADR-062 amendment): published, a request on
-// the local name answers 308 to the public address, path and query kept;
+// the local name answers 307 to the public address, path and query kept;
 // unpublished, the local names serve the app again. Craft apps keep the LAN
 // open, so for them the warning says nothing changes. An API client on the LAN
-// (Komga's OPDS, an app on a phone) that does not follow a 308 needs the
+// (Komga's OPDS, an app on a phone) that does not follow a 307 needs the
 // public address.
 func lanPathRedirectWarning(f appPublicFacts, plan appPublicPlan) string {
 	r := f.routes[0]
@@ -1367,7 +1367,7 @@ func lanPathRedirectWarning(f appPublicFacts, plan appPublicPlan) string {
 	if plan.Action == "remove" {
 		return "Edge change: the redirect from " + local + " to " + plan.URL + " is removed; the app is served on its local address again."
 	}
-	return "Edge change: requests for " + local + " are redirected (308, path and query kept) to " + plan.URL +
+	return "Edge change: requests for " + local + " are redirected (307, path and query kept) to " + plan.URL +
 		". Local apps and API clients that do not follow redirects must use the public address; unpublish " + f.manifest.Title + " to serve the local address again (S498)."
 }
 

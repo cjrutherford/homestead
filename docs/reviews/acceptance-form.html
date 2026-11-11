@@ -103,7 +103,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
  </main>
 </div>
 <script id="checklist-data" type="application/json">{
- "hash": "35bb3526482eb0e6",
+ "hash": "d9c65a12cabc7349",
  "sections": [
   {
    "title": "Platform",
@@ -1081,7 +1081,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-KOMGA-2",
        "title": "Opens at the right path or name",
-       "action": "Open https://\u003cserver\u003e/apps/komga/ (S474: served under the path; the Spring context path is set by the package, so the UI, its assets and the sign-in redirect follow it). An install made before S474 moves with `homesteadctl apps move plan komga` then `apply`; moves only go forward. Once published (S498), open https://homestead.lan/apps/komga/x?y=1: it answers 308 to the same path and query on the public name, with no loop; unpublished, it is served on the local name.",
+       "action": "Open https://\u003cserver\u003e/apps/komga/ (S474: served under the path; the Spring context path is set by the package, so the UI, its assets and the sign-in redirect follow it). An install made before S474 moves with `homesteadctl apps move plan komga` then `apply`; moves only go forward. Once published (S498), open https://homestead.lan/apps/komga/x?y=1: it answers 307 to the same path and query on the public name, with no loop; unpublished, it is served on the local name.",
        "expected": "The app's own page loads (no 404, no certificate surprise beyond the documented one).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1150,7 +1150,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-LINKDING-2",
        "title": "Opens at the right path or name",
-       "action": "Open https://\u003cserver\u003e/apps/linkding/ (S476: served under the path by LD_CONTEXT_PATH; the UI, its assets and the sign-in redirect follow it). An install made before S476 moves with `homesteadctl apps move plan linkding` then `apply`; moves only go forward. Once published (S498), open https://homestead.lan/apps/linkding/x?y=1: it answers 308 to the same path and query on the public name, with no loop; unpublished, it is served on the local name.",
+       "action": "Open https://\u003cserver\u003e/apps/linkding/ (S476: served under the path by LD_CONTEXT_PATH; the UI, its assets and the sign-in redirect follow it). An install made before S476 moves with `homesteadctl apps move plan linkding` then `apply`; moves only go forward. Once published (S498), open https://homestead.lan/apps/linkding/x?y=1: it answers 307 to the same path and query on the public name, with no loop; unpublished, it is served on the local name.",
        "expected": "The app's own page loads (no 404, no certificate surprise beyond the documented one).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },
@@ -1565,7 +1565,7 @@ dl.info code{font-family:ui-monospace,monospace;font-size:.92em;background:#f1f3
       {
        "id": "SRV-PAPERLESS-NGX-2",
        "title": "Opens at the right path or name",
-       "action": "Open https://\u003cserver\u003e/apps/paperless-ngx/ (S475: served under the path; the package sets the script name and static URL, so the UI, its assets and the sign-in redirect follow it). An install made before S475 moves with `homesteadctl apps move plan paperless-ngx` then `apply`; moves only go forward. Once published (S497), press \"Authentik\" on the sign-in page at the public path: a 403 \"CSRF verification failed\" is a FAIL. Once published (S498), open https://homestead.lan/apps/paperless-ngx/x?y=1: it answers 308 to the same path and query on the public name, with no loop; unpublished, it is served on the local name.",
+       "action": "Open https://\u003cserver\u003e/apps/paperless-ngx/ (S475: served under the path; the package sets the script name and static URL, so the UI, its assets and the sign-in redirect follow it). An install made before S475 moves with `homesteadctl apps move plan paperless-ngx` then `apply`; moves only go forward. Once published (S497), press \"Authentik\" on the sign-in page at the public path: a 403 \"CSRF verification failed\" is a FAIL. Once published (S498), open https://homestead.lan/apps/paperless-ngx/x?y=1: it answers 307 to the same path and query on the public name, with no loop; unpublished, it is served on the local name.",
        "expected": "The app's own page loads (no 404, no certificate surprise beyond the documented one).",
        "fail": "Container log (`docker logs \u003cpackage\u003e-\u003cservice\u003e`), Doctor page, audit log."
       },

@@ -32,7 +32,7 @@ func TestGatedPathLANOrderAndCookieAfterGate(t *testing.T) {
 	// The site-level outpost handle, and the other local name redirects.
 	idx(t, local, "handle /outpost.goauthentik.io/* {")
 	idx(t, local, "not host homestead.lan")
-	idx(t, local, "redir @gate_apps_navidrome_other https://homestead.lan{uri} 308")
+	idx(t, local, "redir @gate_apps_navidrome_other https://homestead.lan{uri} 307")
 	// Not published: nothing about it on the tunnel entry.
 	if strings.Contains(tunnel, "navidrome") || strings.Contains(tunnel, "outpost") {
 		t.Fatalf("an unpublished gated app is on the tunnel entry:\n%s", tunnel)
@@ -51,7 +51,7 @@ func TestGatedPathPublishedLANRedirectsAndTunnelGates(t *testing.T) {
 	if strings.Contains(local, "forward_auth") || strings.Contains(local, "reverse_proxy navidrome") || strings.Contains(local, "outpost.goauthentik.io/* {") {
 		t.Fatalf("a published gated app serves on the local names:\n%s", local)
 	}
-	idx(t, local, "redir https://homestead.example.com{uri} 308")
+	idx(t, local, "redir https://homestead.example.com{uri} 307")
 	idx(t, tunnel, "handle /outpost.goauthentik.io/* {")
 	idx(t, tunnel, "forward_auth authentik-server:9000 {")
 	idx(t, tunnel, "header_up X-Forwarded-Proto https")
