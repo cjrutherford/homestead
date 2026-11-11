@@ -58,7 +58,7 @@ func TestPathRoutesRenderInsideDashboardSite(t *testing.T) {
 	local, _ := renderDashboard(t, set)
 	for _, want := range []string{
 		"homestead.lan, homestead.local {",
-		"\t\tredir /apps/nextcloud /apps/nextcloud/ 308\n",
+		"\t\tredir /apps/nextcloud /apps/nextcloud/ 307\n",
 		"\t\thandle /apps/nextcloud/* {\n" + indentTest(sharedOriginHeaders(Route{Path: "/apps/nextcloud/"})) + "\t\t\turi strip_prefix /apps/nextcloud\n\t\t\treverse_proxy nextcloud:80 {",
 		// Authentik keeps its own cookies (S470): no request_header strip.
 		"\t\thandle /apps/auth/* {\n" + indentTest(sharedOriginHeaders(Route{Path: SignInPath})) + "\t\t\treverse_proxy server:9000 {",

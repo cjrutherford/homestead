@@ -18,6 +18,7 @@ import (
 	"homestead/internal/operation"
 	"homestead/internal/secret"
 	"homestead/internal/storage"
+	"homestead/internal/testtools"
 )
 
 type memKeys struct{ values map[string]string }
@@ -328,13 +329,7 @@ func TestIdentityNotInOperationRecords(t *testing.T) {
 // (library = encryptor, CLI = independent decryptor). S275 adds the
 // literal runbook test; HOMESTEAD_REQUIRE_AGE=1 makes absence fail.
 func TestRealAgeCLIDecryptsArchive(t *testing.T) {
-	bin, err := exec.LookPath("age")
-	if err != nil {
-		if os.Getenv("HOMESTEAD_REQUIRE_AGE") != "" {
-			t.Fatal("age CLI not on PATH and HOMESTEAD_REQUIRE_AGE is set")
-		}
-		t.Skip("age CLI not installed; skipping independent decryptor check (acceptance installs it)")
-	}
+	bin := testtools.SkipUnlessTool(t, "age")
 	keys := newKeys()
 	recipients, _ := Recipients(keys)
 	src, out := t.TempDir(), t.TempDir()

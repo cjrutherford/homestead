@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"homestead/internal/catalog"
+	"homestead/internal/testtools"
 )
 
 func absManifest() catalog.Manifest {
@@ -77,10 +78,7 @@ func TestAudiobookshelfExistingAdminRemainsUntouchedAndErrorsAreRedacted(t *test
 }
 
 func TestAudiobookshelfScriptAgainstHTTP(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node is required for the script integration test")
-	}
+	node := testtools.SkipUnlessTool(t, "node")
 	initialized := false
 	created := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

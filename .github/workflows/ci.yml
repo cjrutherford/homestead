@@ -12,10 +12,45 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+      # Node (node:sqlite) runs the app sign-in scripts and service workers.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      # S506: the tests that need these tools fail, not skip, when one is
+      # missing. Caddy is not in Ubuntu's archive, so the release matching
+      # docker.CaddyImage is downloaded and checked against its published
+      # checksums.
+      - name: Install test tools
+        env:
+          CADDY_VERSION: "2.11.7"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y minisign age nftables php-cli
+          base="https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}"
+          tarball="caddy_${CADDY_VERSION}_linux_amd64.tar.gz"
+          dir="$(mktemp -d)"
+          curl -fsSL -o "$dir/$tarball" "$base/$tarball"
+          curl -fsSL -o "$dir/checksums.txt" "$base/caddy_${CADDY_VERSION}_checksums.txt"
+          (cd "$dir" && grep " ${tarball}\$" checksums.txt | sha512sum -c -)
+          tar -xzf "$dir/$tarball" -C "$dir" caddy
+          sudo install -m 0755 "$dir/caddy" /usr/local/bin/caddy
+          for t in node minisign age nft caddy php; do command -v "$t"; done
       - run: make lint
       - run: make lint-scripts
       - run: make build
+      # nft is left out of this list: `nft --check` needs CAP_NET_ADMIN, so
+      # the nft tests run as root in the next step.
       - run: make test
+        env:
+          HOMESTEAD_REQUIRE_TOOLS: node,minisign,age,caddy,php
+      - name: nft tests as root
+        env:
+          HOMESTEAD_REQUIRE_TOOLS: nft
+        run: |
+          go test -c -o "$RUNNER_TEMP/firewall.test" ./internal/firewall
+          go test -c -o "$RUNNER_TEMP/server.test" ./internal/server
+          sudo --preserve-env=HOMESTEAD_REQUIRE_TOOLS "$RUNNER_TEMP/firewall.test" -test.run 'NFTCheck' -test.v
+          (cd internal/server && sudo --preserve-env=HOMESTEAD_REQUIRE_TOOLS "$RUNNER_TEMP/server.test" -test.run 'TestFirewallExternalPlanIsInstructions' -test.v)
 
   dashboard:
     runs-on: ubuntu-latest

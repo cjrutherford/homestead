@@ -5,6 +5,7 @@ import io
 import json
 import re
 import shutil
+from _tools import require_tool
 import subprocess
 import tarfile
 import tempfile
@@ -123,7 +124,7 @@ class ProjectsPackageTest(unittest.TestCase):
                 generic.prepare_app(d, ARCHIVE, base / 'bridge.js', base / 'out')
             self.assertFalse((base / 'out').exists())
 
-    @unittest.skipUnless(shutil.which('node'), 'node is not installed')
+    @require_tool('node')
     def test_service_worker_simulation(self):
         out = subprocess.run(['node', str(ROOT / 'scripts/everything/test_projects_sw.cjs')],
                              capture_output=True, text=True, timeout=60)

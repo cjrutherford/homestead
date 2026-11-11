@@ -20,9 +20,9 @@ func lanRedirectSet() RouteSet {
 func TestPublishedPathAppRedirectsLANToPublic(t *testing.T) {
 	local, tunnel := renderDashboard(t, lanRedirectSet())
 	for _, want := range []string{
-		"redir /apps/komga https://homestead.example.com/apps/komga/ 308\n",
-		"handle /apps/komga/* {\n\t\t\tredir https://homestead.example.com{uri} 308\n\t\t}\n",
-		"redir /apps/nextcloud https://homestead.example.com/apps/nextcloud/ 308\n",
+		"redir /apps/komga https://homestead.example.com/apps/komga/ 307\n",
+		"handle /apps/komga/* {\n\t\t\tredir https://homestead.example.com{uri} 307\n\t\t}\n",
+		"redir /apps/nextcloud https://homestead.example.com/apps/nextcloud/ 307\n",
 	} {
 		if !strings.Contains(local, want) {
 			t.Errorf("local lacks %q:\n%s", want, local)
@@ -57,5 +57,22 @@ func TestUnpublishedPathAppKeepsLAN(t *testing.T) {
 	}
 	if strings.Contains(tunnel, "komga") {
 		t.Errorf("unpublished komga on the tunnel:\n%s", tunnel)
+	}
+}
+
+// S503: every redirect Homestead renders for the gate and for published path
+// apps is temporary (307), so a browser that followed one does not keep
+// jumping to a public name after the app is unpublished. No 308 is kept: the
+// bare-path to trailing-slash redirect is 307 too, because it exists only
+// while the route does.
+func TestRenderedRedirectsAreTemporary(t *testing.T) {
+	sets := []RouteSet{lanRedirectSet(), gatedPathSet(true), gatedPathSet(false)}
+	for _, set := range sets {
+		local, tunnel := renderDashboard(t, set)
+		for _, out := range []string{local, tunnel} {
+			if strings.Contains(out, " 308") {
+				t.Errorf("rendered Caddy output has a permanent redirect:\n%s", out)
+			}
+		}
 	}
 }

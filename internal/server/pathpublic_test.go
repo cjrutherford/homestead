@@ -188,7 +188,7 @@ func TestAppPublicPathAppPublishUnpublish(t *testing.T) {
 	}
 	warnings := strings.Join(plan.Warnings, " ")
 	if !strings.Contains(warnings, "No DNS record changes") || !strings.Contains(warnings, "one web origin") ||
-		!strings.Contains(warnings, "are redirected (308, path and query kept) to https://homestead.example.com/apps/nextcloud/") {
+		!strings.Contains(warnings, "are redirected (307, path and query kept) to https://homestead.example.com/apps/nextcloud/") {
 		t.Fatalf("warnings = %v", plan.Warnings)
 	}
 	// The digest is stable and bound: a changed request is a changed plan.

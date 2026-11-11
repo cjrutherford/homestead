@@ -385,15 +385,19 @@ func runPeopleSimple(ctx context.Context, client *apiclient.Client, args []strin
 		}
 		fmt.Fprintln(stdout)
 	case "disable", "enable":
-		if err := client.SetPersonActive(ctx, p.ID, verb == "enable"); err != nil {
+		warnings, err := client.SetPersonActive(ctx, p.ID, verb == "enable")
+		if err != nil {
 			return peopleFail(stderr, err)
 		}
 		fmt.Fprintf(stdout, "%s: %sd\n", p.Username, verb)
+		printPeopleWarnings(stderr, warnings)
 	case "remove":
-		if err := client.RemovePerson(ctx, p.ID); err != nil {
+		warnings, err := client.RemovePerson(ctx, p.ID)
+		if err != nil {
 			return peopleFail(stderr, err)
 		}
 		fmt.Fprintf(stdout, "Removed %s. App data stays in the apps.\n", p.Username)
+		printPeopleWarnings(stderr, warnings)
 	}
 	return exitOK
 }
@@ -437,10 +441,11 @@ func runPeopleGrant(ctx context.Context, client *apiclient.Client, args []string
 	if err != nil {
 		return peopleFail(stderr, err)
 	}
+	var res apiclient.PersonResult
 	if revoke {
-		_, err = client.RevokePersonApp(ctx, p.ID, pos[1])
+		res, err = client.RevokePersonApp(ctx, p.ID, pos[1])
 	} else {
-		_, err = client.GrantPersonApp(ctx, p.ID, pos[1], *admin)
+		res, err = client.GrantPersonApp(ctx, p.ID, pos[1], *admin)
 	}
 	if err != nil {
 		return peopleFail(stderr, err)
@@ -453,7 +458,16 @@ func runPeopleGrant(ctx context.Context, client *apiclient.Client, args []string
 	default:
 		fmt.Fprintf(stdout, "%s can open %s\n", p.Username, pos[1])
 	}
+	printPeopleWarnings(stderr, res.Warnings)
 	return exitOK
+}
+
+// printPeopleWarnings writes each warning the daemon returned with a change
+// (S508); the exit code stays as it was.
+func printPeopleWarnings(stderr io.Writer, warnings []string) {
+	for _, w := range warnings {
+		fmt.Fprintf(stderr, "warning: %s\n", w)
+	}
 }
 
 func runPeopleResolve(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {

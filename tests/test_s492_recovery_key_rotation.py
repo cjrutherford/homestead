@@ -29,7 +29,7 @@ class TestRotation(unittest.TestCase):
         self.assertIn("os.Rename", go)
         self.assertIn("io.Discard", go)  # full decrypt before replacing
         t = read("internal/backup/rotate_test.go")
-        self.assertIn("TestRotateRewrapsExistingRunsForTheNewKey", t)
+        self.assertIn("TestRotateMintsWithoutTouchingFilesAndRewrapConvertsThem", t)
 
     def test_cli_and_dashboard(self):
         self.assertIn('"rotate"', read("cmd/homesteadctl/backuprecipients.go"))

@@ -7,6 +7,8 @@ import {
   BackupIdentityStatus,
 } from '../core/api.service';
 import { WhenPipe } from '../core/format-time';
+import { labelForType } from '../core/operation-labels';
+import { WorkOrders } from '../core/work-orders.service';
 import { StateMessage } from '../state/state-message';
 import { Dialog } from '../ui/dialog';
 
@@ -25,6 +27,7 @@ import { Dialog } from '../ui/dialog';
 })
 export class RecoveryIdentity implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly orders = inject(WorkOrders);
 
   /** Emitted after an export or a confirmation, so a host can re-read what depends on it. */
   readonly changed = output<void>();
@@ -102,8 +105,33 @@ export class RecoveryIdentity implements OnInit {
         this.busy.set(false);
         this.rotation.set(result);
         this.exported.set(result);
+        // The re-wrap runs in the background; the work-orders rail follows it.
+        if (result.rewrap_operation_id) {
+          this.orders.track(result.rewrap_operation_id, labelForType('backup.rewrap'));
+        }
         this.load();
         this.changed.emit();
+      },
+      error: (failure: HttpErrorResponse) => {
+        this.busy.set(false);
+        this.error.set(failure.error ?? failure.message);
+      },
+    });
+  }
+
+  /**
+   * Re-wraps existing backups to the current key without minting one. The
+   * request starts a background operation the rail follows.
+   */
+  rewrap(): void {
+    this.busy.set(true);
+    this.error.set(null);
+    this.notice.set(null);
+    this.api.backupIdentityRewrap().subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.notice.set('Re-wrapping existing backups in the background.');
+        this.load();
       },
       error: (failure: HttpErrorResponse) => {
         this.busy.set(false);

@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 58
+const CurrentVersion = 59
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -1093,6 +1093,18 @@ ALTER TABLE people ADD COLUMN authentik_uid TEXT NOT NULL DEFAULT '';`,
 	hostname TEXT NOT NULL,
 	tunnel_id TEXT NOT NULL,
 	started_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S505: the last background re-wrap of backups to the recovery key
+		// (one row, JSON summary of file counts and paths; never a key). A
+		// rotation writes it incomplete so a pending re-wrap survives a
+		// restart or an unmounted destination.
+		version: 59,
+		name:    "backup rewrap state",
+		sql: `CREATE TABLE IF NOT EXISTS backup_rewrap_state (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	summary TEXT NOT NULL
 );`,
 	},
 }

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"filippo.io/age"
+
 	"homestead/internal/audit"
 	"homestead/internal/backup"
 	"homestead/internal/catalog"
@@ -304,6 +306,8 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 	if err != nil {
 		return backup.Job{}, err
 	}
+	// Probe now so a missing or unreadable key fails the request early; the
+	// definition resolves the recipients again under the run gate (S505).
 	recipients, err := backup.RecipientsWithOwner(keys, backup.NewRecipientStore(st))
 	if err != nil {
 		return backup.Job{}, err
@@ -312,6 +316,9 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 		Manifest: manifest, Package: manifest.Name,
 		Sources: sources, DestRoot: dest, Retain: retain, Warnings: warnings,
 		Recipients: recipients,
+		RecipientSource: func() ([]age.Recipient, func(), error) {
+			return backup.AcquireRecipients(keys, backup.NewRecipientStore(st))
+		},
 	}
 	if manifest.Database != nil {
 		job.Container = manifest.Name + "-" + manifest.Database.Service
@@ -449,6 +456,7 @@ func handleUpdatesApply(st *store.Store, catalogDir string, client *docker.Clien
 				}
 				op, err := jobRunner.Start(ctx, def, "")
 				if err != nil {
+					def.Cleanup()
 					return err
 				}
 				done, err := jobRunner.Wait(ctx, op.ID)

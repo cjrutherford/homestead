@@ -30,7 +30,7 @@ var stripHeaders = []string{"X-Authentik-*", "Remote-User", "X-Forwarded-User"}
 type Gate struct {
 	// Canonical is the one name that answers while the gate is on: the
 	// public name when published, otherwise the .lan name. Every other
-	// name of the route answers 308 to it (ADR-055 §2), because Authentik
+	// name of the route answers 307 to it (ADR-055 §2), because Authentik
 	// matches a request to a provider by one external host.
 	Canonical Hostname
 	// CopyHeaders are the only headers copied from the outpost's answer
@@ -223,9 +223,9 @@ func (g Gate) renderGatedBody(proxy string, tunnel bool) string {
 }
 
 // renderRedirect answers every request on the other names of a gated
-// route with a 308 to the same path on the canonical name.
+// route with a 307 to the same path on the canonical name.
 func (g Gate) renderRedirect() string {
-	return fmt.Sprintf("\tredir https://%s{uri} 308\n", g.Canonical)
+	return fmt.Sprintf("\tredir https://%s{uri} 307\n", g.Canonical)
 }
 
 // indentBy puts every line of body n tabs deeper than it is written
@@ -369,6 +369,71 @@ func SharedGateCanonical(routes []Route, dash Route) Hostname {
 	return dash.Host
 }
 
+// GateMove is what a change to one path app does to the shared gate's
+// canonical name (S504): From and To are SharedGateCanonical before and
+// after, and Affected are the other gated apps at a path whose local
+// address changes with it. Authentik matches one external host, so while
+// the canonical is the public name every gated path app's local address
+// redirects there, and one that is not published answers 404 (ADR-062
+// section 5).
+type GateMove struct {
+	From, To Hostname
+	Affected []Route
+	Dash     Route
+}
+
+// Moved reports that the canonical name changes.
+func (m GateMove) Moved() bool { return m.From != m.To }
+
+// GateCanonicalMove computes SharedGateCanonical for the edge table as it
+// is and as it would be once change has been applied to the path route at
+// path, from the same inputs SharedGateCanonical reads. Affected is empty
+// when the canonical does not move. An app whose gate is tunnel-only (a
+// craft app) keeps its local address open and is never affected.
+func GateCanonicalMove(routes []Route, path string, change func(*Route)) GateMove {
+	var dash Route
+	for _, r := range routes {
+		if r.Dashboard {
+			dash = r
+			break
+		}
+	}
+	after := make([]Route, len(routes))
+	copy(after, routes)
+	for i := range after {
+		if after[i].IsPath() && after[i].Path == path {
+			change(&after[i])
+		}
+	}
+	m := GateMove{From: SharedGateCanonical(routes, dash), To: SharedGateCanonical(after, dash), Dash: dash}
+	if !m.Moved() {
+		return m
+	}
+	for _, r := range after {
+		if r.IsPath() && r.Path != path && r.Gate != nil && !r.Gate.TunnelOnly && !r.Published {
+			m.Affected = append(m.Affected, r)
+		}
+	}
+	return m
+}
+
+// Lines name each affected app and what happens to its local address, for
+// the plan the owner approves. title gives an app's display name from its
+// route.
+func (m GateMove) Lines(title func(Route) string) []string {
+	var out []string
+	for _, r := range m.Affected {
+		local := string(m.Dash.Host) + r.Path
+		name := title(r)
+		if m.To == m.Dash.Host {
+			out = append(out, fmt.Sprintf("%s is gated but not published: its local address %s stops redirecting to %s and answers on the local network again.", name, local, m.From))
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s is gated but not published: its local address %s will redirect to %s, where it is not published, so it will be unreachable until it is published or its sign-in gate is turned off.", name, local, m.To))
+	}
+	return out
+}
+
 // renderOutpostHandle is the dashboard site's handle for Authentik's
 // embedded outpost, which the gate's sign-in redirect and callback need on
 // the name the app answers on (ADR-061; public too, because the gate runs
@@ -398,11 +463,11 @@ func renderGatedPath(p, dash Route, canonical Hostname, tunnel bool) (string, bo
 	fmt.Fprintf(&b, "\thandle %s* {\n", p.Path)
 	if !tunnel && !isHostIn(canonical, dash.Names()) {
 		// Published: the local names send the visitor to the public one.
-		fmt.Fprintf(&b, "\t\tredir https://%s{uri} 308\n\t}\n", canonical)
+		fmt.Fprintf(&b, "\t\tredir https://%s{uri} 307\n\t}\n", canonical)
 		return b.String(), false
 	}
 	if !tunnel && len(dash.Names()) > 1 {
-		fmt.Fprintf(&b, "\t\t@gate_%s_other {\n\t\t\tnot host %s\n\t\t}\n\t\tredir @gate_%s_other https://%s{uri} 308\n", label, canonical, label, canonical)
+		fmt.Fprintf(&b, "\t\t@gate_%s_other {\n\t\t\tnot host %s\n\t\t}\n\t\tredir @gate_%s_other https://%s{uri} 307\n", label, canonical, label, canonical)
 	}
 	b.WriteString(sharedOriginResponseHeaders())
 	cookie := ""

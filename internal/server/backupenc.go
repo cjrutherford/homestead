@@ -1,7 +1,11 @@
 package server
 
 import (
+	"fmt"
+	"strings"
+
 	"homestead/internal/backup"
+	"homestead/internal/catalog"
 	"homestead/internal/doctor"
 	"homestead/internal/store"
 )
@@ -45,5 +49,45 @@ func backupEncryptionDoctorCheck(st *store.Store) func() []doctor.Check {
 			Detail: "backups are encrypted only to the appliance identity, which lives in this appliance's secret store: " +
 				"if the appliance is lost they cannot be read. Add an owner recipient (`homesteadctl backup recipients add`) " +
 				"or export the recovery identity (`homesteadctl backup identity export`), store it offline, and acknowledge it"}}
+	}
+}
+
+// backupRewrapDoctorCheck warns when backups may not all open with the
+// current recovery key (S505): a re-wrap after a rotation that has not
+// completed cleanly, or retired keys stored unreadably. Peek-style reads
+// only; it never creates an identity.
+func backupRewrapDoctorCheck(st *store.Store, secrets catalog.SecretStore) func() []doctor.Check {
+	return func() []doctor.Check {
+		const name = "backup-rewrap"
+		warn := func(detail string) []doctor.Check {
+			return []doctor.Check{{Name: name, Status: doctor.StatusWarn, Detail: detail}}
+		}
+		keys, err := backupKeyStore(secrets)
+		if err != nil {
+			return warn("the secret store is unavailable: " + err.Error())
+		}
+		var problems []string
+		if _, bad, rerr := backup.RetiredIdentityReport(keys); rerr != nil {
+			problems = append(problems, "the retired recovery keys cannot be read: "+rerr.Error())
+		} else if bad > 0 {
+			problems = append(problems, fmt.Sprintf("%d retired recovery key(s) are unreadable; older backups may not open with them (readable keys are still used)", bad))
+		}
+		sum, found, err := backup.NewRecipientStore(st).RewrapLast()
+		if err != nil {
+			problems = append(problems, "the last re-wrap record is unreadable: "+err.Error())
+		} else if found {
+			if cur, ok, perr := backup.PeekApplianceIdentity(keys); perr == nil && ok && sum.Fingerprint == backup.Fingerprint(cur.Recipient().String()) {
+				switch {
+				case sum.FailedCount > 0:
+					problems = append(problems, fmt.Sprintf("the last re-wrap left %d file(s) unconverted (%s)", sum.FailedCount, strings.Join(sum.Failed, ", ")))
+				case !sum.Complete:
+					problems = append(problems, "existing backups have not been re-wrapped to the current recovery key since it was created")
+				}
+			}
+		}
+		if len(problems) > 0 {
+			return warn(strings.Join(problems, "; ") + ". Run `homesteadctl backup identity rewrap` or use the Backups page")
+		}
+		return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "existing backups were re-wrapped to the current recovery key and no retired key is unreadable"}}
 	}
 }

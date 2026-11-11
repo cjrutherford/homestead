@@ -390,10 +390,8 @@ describe('Backups', () => {
     identity: 'AGE-SECRET-KEY-ROTATED',
     fingerprint: 'cc33',
     previous_fingerprint: 'aa11',
-    rewrapped: 4,
-    already_current: 1,
-    failed: ['pkg/run/x.age'],
-    runs_note: 'runs under /mnt/backup were re-wrapped to the new key',
+    rewrap_operation_id: 0,
+    runs_note: 'existing runs are being re-wrapped to the new key in the background',
   };
 
   it('rotates the identity only after confirmation and shows the new key once', () => {
@@ -410,13 +408,32 @@ describe('Backups', () => {
     http.expectOne('/api/v1/backups/identity').flush({ ...IDENTITY, exported: true });
     fixture.detectChanges();
     expect(text()).toContain('AGE-SECRET-KEY-ROTATED');
-    expect(text()).toContain('4 backup files were re-wrapped');
-    expect(text()).toContain('pkg/run/x.age');
+    expect(text()).toContain('re-wrapped to the new key in the background');
     identityPanel().acknowledgeExport();
     http.expectOne('/api/v1/backups/identity/ack').flush({ ...IDENTITY, exported: true, acknowledged: true });
     http.expectOne('/api/v1/backups/identity').flush({ ...IDENTITY, exported: true, acknowledged: true });
     fixture.detectChanges();
     expect(text()).not.toContain('AGE-SECRET-KEY-ROTATED');
+  });
+
+  it('re-wraps existing backups without minting a key and shows the last result', () => {
+    load([]);
+    identityPanel().rewrap();
+    const req = http.expectOne('/api/v1/backups/identity/rewrap');
+    expect(req.request.method).toBe('POST');
+    req.flush({ id: 0 });
+    http
+      .expectOne('/api/v1/backups/identity')
+      .flush({
+        ...IDENTITY,
+        retired_unreadable: 1,
+        rewrap: { fingerprint: 'cc33', finished_at: '2026-11-11T10:00:00Z', rewrapped: 2, already_current: 1, failed: ['pkg/run/x.age'], failed_count: 1, complete: false },
+      });
+    fixture.detectChanges();
+    expect(text()).toContain('1 file(s) could not be re-wrapped');
+    expect(text()).toContain('pkg/run/x.age');
+    expect(text()).toContain('1 retired recovery key(s)');
+    expect(text()).not.toContain('AGE-SECRET-KEY');
   });
 
   it('shows a refused rotation as an error and keeps no key', () => {

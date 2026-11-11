@@ -51,7 +51,7 @@ If the key may have leaked, or just on a schedule, rotate it from **Backups** (R
 homesteadctl backup identity rotate --out new-recovery.key --ack
 ```
 
-Rotation makes a new key, then re-wraps the header of every existing backup so the new key opens it. Nothing is deleted. Store the new key offline and acknowledge it.
+Rotation makes a new key at once, then re-wraps the header of every existing backup in the background so the new key opens it; the command follows progress, and the Backups page shows it in the work orders. Nothing is deleted. If a re-wrap fails or is interrupted, Doctor says so; run `homesteadctl backup identity rewrap` (or **Re-wrap existing backups**) to finish it. Rotation is refused until you have exported and acknowledged the current key. Store the new key offline and acknowledge it.
 
 **Keep the old key** until every run made before the rotation has been pruned by retention. The appliance keeps the old key as a fallback and never removes it by itself, and older runs on another disk may not have been re-wrapped. Rotation does not take access away from a leaked old key to backups that already exist; it protects new ones only. Rotating again re-wraps runs that were missed.
 

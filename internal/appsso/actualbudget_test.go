@@ -10,6 +10,7 @@ import (
 
 	"homestead/internal/catalog"
 	"homestead/internal/docker"
+	"homestead/internal/testtools"
 )
 
 // actualSignInVerified is the Actual Budget version the sign-in
@@ -137,12 +138,9 @@ func TestActualBudgetCommandsRunWithoutRestartOrSecret(t *testing.T) {
 // real node and node:sqlite (skipped when this host's node lacks it)
 // against an auth table shaped like Actual's.
 func TestActualBudgetScriptAgainstARealAuthTable(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("no node")
-	}
+	node := testtools.SkipUnlessTool(t, "node")
 	if out, err := exec.Command(node, "-e", "require('node:sqlite')").CombinedOutput(); err != nil {
-		t.Skipf("no node:sqlite: %s", out)
+		testtools.SkipOrFail(t, "node", "no node:sqlite: "+string(out))
 	}
 	script := realActual(t).SSO.OIDC.Env.OnApply[2]
 	dir := t.TempDir()

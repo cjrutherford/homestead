@@ -213,11 +213,11 @@ func renderPathHandles(paths []Route, tunnel bool, dash Route) string {
 			// one (ADR-062 amendment, S498). This block serves only the local
 			// names (the tunnel entry is a site of its own, so a tunnelled
 			// request never reaches it and cannot loop).
-			fmt.Fprintf(&b, "\t# Published: the local names redirect to the public name (S498).\n\tredir %s https://%s%s 308\n\thandle %s* {\n\t\tredir https://%s{uri} 308\n\t}\n",
+			fmt.Fprintf(&b, "\t# Published: the local names redirect to the public name (S498).\n\tredir %s https://%s%s 307\n\thandle %s* {\n\t\tredir https://%s{uri} 307\n\t}\n",
 				bare, dash.Tunnel[0], p.Path, p.Path, dash.Tunnel[0])
 			continue
 		}
-		fmt.Fprintf(&b, "\tredir %s %s 308\n", bare, p.Path)
+		fmt.Fprintf(&b, "\tredir %s %s 307\n", bare, p.Path)
 		if p.Gate != nil && !(p.Gate.TunnelOnly && !tunnel) {
 			// A gated app at a path (ADR-061, ADR-055): inside the dashboard
 			// site, behind Authentik forward-auth.

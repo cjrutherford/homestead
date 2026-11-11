@@ -94,6 +94,11 @@ export interface PersonAdded {
   sign_in_failed?: boolean;
 }
 
+/** Non-blocking problems the daemon reports with a change (S507), such as a Nextcloud admin right not dropped. */
+export interface PeopleChanged {
+  warnings?: string[];
+}
+
 export interface PersonAdd {
   display_name: string;
   username: string;
@@ -154,25 +159,25 @@ export class PeopleService {
     return this.http.post<{ removed: number; skipped: number }>(`/api/v1/people/${id}/mfa-reset`, { confirm: true });
   }
 
-  disablePerson(id: number): Observable<unknown> {
-    return this.http.post(`/api/v1/people/${id}/disable`, { confirm: true });
+  disablePerson(id: number): Observable<PeopleChanged> {
+    return this.http.post<PeopleChanged>(`/api/v1/people/${id}/disable`, { confirm: true });
   }
 
-  enablePerson(id: number): Observable<unknown> {
-    return this.http.post(`/api/v1/people/${id}/enable`, { confirm: true });
+  enablePerson(id: number): Observable<PeopleChanged> {
+    return this.http.post<PeopleChanged>(`/api/v1/people/${id}/enable`, { confirm: true });
   }
 
-  removePerson(id: number): Observable<unknown> {
-    return this.http.post(`/api/v1/people/${id}/remove`, { confirm: true });
+  removePerson(id: number): Observable<PeopleChanged> {
+    return this.http.post<PeopleChanged>(`/api/v1/people/${id}/remove`, { confirm: true });
   }
 
-  grantApp(id: number, app: string, admin: boolean): Observable<{ person: Person }> {
+  grantApp(id: number, app: string, admin: boolean): Observable<{ person: Person } & PeopleChanged> {
     const path = `/api/v1/people/${id}/apps/${encodeURIComponent(app)}${admin ? '/admin' : ''}`;
-    return this.http.put<{ person: Person }>(path, { confirm: true });
+    return this.http.put<{ person: Person } & PeopleChanged>(path, { confirm: true });
   }
 
-  revokeApp(id: number, app: string): Observable<{ person: Person }> {
-    return this.http.post<{ person: Person }>(`/api/v1/people/${id}/apps/${encodeURIComponent(app)}/revoke`, { confirm: true });
+  revokeApp(id: number, app: string): Observable<{ person: Person } & PeopleChanged> {
+    return this.http.post<{ person: Person } & PeopleChanged>(`/api/v1/people/${id}/apps/${encodeURIComponent(app)}/revoke`, { confirm: true });
   }
 
   resolveDrift(id: number, action: DriftAction, method: 'link' | 'generated' = 'link'): Observable<{ revealed: Revealed | null }> {

@@ -5,13 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"homestead/internal/config"
 	"homestead/internal/firewall"
+	"homestead/internal/testtools"
 )
 
 func firewallServer(t *testing.T) *Server {
@@ -52,9 +52,7 @@ func TestFirewallStatusShape(t *testing.T) {
 func TestFirewallExternalPlanIsInstructions(t *testing.T) {
 	// Needs the nftables client: foreign dev machines and
 	// PATH-limited shells lack it, and its absence skips.
-	if _, err := exec.LookPath("nft"); err != nil {
-		t.Skip("nft unavailable")
-	}
+	testtools.SkipUnlessTool(t, "nft")
 	srv := externalServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/firewall/plan", nil)
 	rec := httptest.NewRecorder()

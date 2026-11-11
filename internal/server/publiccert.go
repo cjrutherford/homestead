@@ -251,7 +251,7 @@ func (s *Server) issuerMoves(set docker.RouteSet, names []string) (*cert.MovePla
 		if err != nil {
 			continue
 		}
-		in, err := appSignInInputsFrom(a.cfg.Store, a.m, manifest, set)
+		in, err := appSignInInputsFrom(a.cfg.Store, a.m, manifest, set, a.cfg.CatalogDir)
 		if err != nil {
 			return nil, err
 		}

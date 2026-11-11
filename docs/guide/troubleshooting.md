@@ -21,6 +21,7 @@ Doctor groups every check by area (System, Storage, Network, Certificates, Tunne
 | Certificate warning on every visit | The device does not trust the appliance root | Download it from the **Trust** page and install it on that device. |
 | Public name gives a TLS handshake error | Cloudflare has no certificate for a name more than one level deep | Use a one-level name or order Advanced Certificate Manager. |
 | Public dashboard: Authentik refuses the redirect | Sign-in was not re-planned after the tunnel | Re-run the Sign-in plan and approve it. |
+| An app keeps jumping to a public name that no longer works | The browser cached a permanent redirect (308) from before S503 | Clear the site's cached data once, or use a private window; redirects are temporary now. |
 | An app asks for setup you did not expect | Its post-install setup stopped | Open the app's card, read why, then resume or skip. |
 | A drift notice on an app | Someone edited its Compose files by hand | Open **Drift** and accept or restore. |
 

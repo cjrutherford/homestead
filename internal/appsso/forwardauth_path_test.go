@@ -143,3 +143,54 @@ func TestForwardPlanCraftIsTunnelOnly(t *testing.T) {
 		t.Fatalf("changes: %v", p.Changes)
 	}
 }
+
+// S504: the plan the owner approves names the other gated apps whose local
+// address moves with the shared gate.
+func TestForwardPlanNamesAppsWhoseLocalAddressMoves(t *testing.T) {
+	in := pathInputs(t, true) // Navidrome published: the gate is on the public name
+	dash := docker.Route{Host: "homestead.lan", Dashboard: true, Tunnel: []docker.Hostname{"homestead.example.com"}}
+	kuma := route("kuma.lan", "kuma")
+	kuma.Path, kuma.Gate = "/apps/kuma/", &docker.Gate{}
+	nav := in.Routes[0]
+	in.PublicAuthentikURL = "https://home.example.com/apps/auth"
+	in.GateTitles = map[string]string{"/apps/kuma/": "Uptime Kuma"}
+	// Gating the published Navidrome moves the gate LAN to public.
+	in.EdgeRoutes = []docker.Route{dash, nav, kuma}
+	p, err := BuildPlan(in, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(p.Changes, "\n"); !strings.Contains(got, "Uptime Kuma is gated but not published: its local address homestead.lan/apps/kuma/ will redirect to homestead.example.com") {
+		t.Fatalf("changes:\n%s", got)
+	}
+	// The digest covers the line.
+	q := p
+	q.Changes = q.Changes[:len(q.Changes)-1]
+	if q.digest() == p.digest() {
+		t.Fatal("digest ignores the changes")
+	}
+	// Nothing to name when no other gated app exists.
+	in.EdgeRoutes = []docker.Route{dash, nav}
+	if p, err := BuildPlan(in, true); err != nil || strings.Contains(strings.Join(p.Changes, "\n"), "is gated but not published") {
+		t.Fatalf("%v %v", err, p.Changes)
+	}
+	// Turning the only published gate off moves public to LAN.
+	gated := nav
+	gated.Gate = &docker.Gate{}
+	in.EdgeRoutes = []docker.Route{dash, gated, kuma}
+	in.Applied = &Record{Issuer: "https://home.example.com/apps/auth", RedirectURIs: []string{"https://homestead.example.com"}}
+	off, err := BuildPlan(in, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(off.Changes, "\n"); !strings.Contains(got, "Uptime Kuma is gated but not published: its local address homestead.lan/apps/kuma/ stops redirecting to homestead.example.com") {
+		t.Fatalf("off changes:\n%s", got)
+	}
+	// Canonical unchanged (LAN to LAN): no line.
+	local := pathInputs(t, false)
+	local.EdgeRoutes = []docker.Route{dash, local.Routes[0], kuma}
+	local.GateTitles = in.GateTitles
+	if p, err := BuildPlan(local, true); err != nil || strings.Contains(strings.Join(p.Changes, "\n"), "is gated but not published") {
+		t.Fatalf("%v %v", err, p.Changes)
+	}
+}

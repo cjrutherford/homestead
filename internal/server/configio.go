@@ -15,11 +15,12 @@ import (
 // answers the portable document (secret names only, never values);
 // import validates it, demands every secret value, and restores
 // settings plus secrets. Values arrive per call and never persist
-// in the document.
-func (s *Server) MountConfigIO(desiredPath string, secrets *secret.Store, auditSvc *audit.Service) {
+// in the document. Settings are validated against the config schema
+// (the same rules as `config apply`); import needs a step-up (S502).
+func (s *Server) MountConfigIO(desiredPath string, secrets *secret.Store, auditSvc *audit.Service, validate desired.SettingsValidator) {
 	s.mux.HandleFunc("GET /api/v1/config/export", handleConfigExport(desiredPath, secrets))
-	s.mux.HandleFunc("POST /api/v1/config/import/preview", handleConfigImportPreview(desiredPath))
-	s.mux.HandleFunc("POST /api/v1/config/import", handleConfigImport(desiredPath, secrets, auditSvc))
+	s.mux.HandleFunc("POST /api/v1/config/import/preview", handleConfigImportPreview(desiredPath, validate))
+	s.mux.HandleFunc("POST /api/v1/config/import", handleConfigImport(desiredPath, secrets, auditSvc, validate))
 }
 
 // previewBody carries the document text (YAML or JSON) to check.
@@ -29,7 +30,7 @@ type previewBody struct {
 
 // handleConfigImportPreview validates an uploaded document and shows
 // the settings it would change, writing nothing (S483).
-func handleConfigImportPreview(desiredPath string) http.HandlerFunc {
+func handleConfigImportPreview(desiredPath string, validate desired.SettingsValidator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body previewBody
 		if err := decodeBody(r, &body); err != nil {
@@ -37,7 +38,7 @@ func handleConfigImportPreview(desiredPath string) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, desired.PreviewImport([]byte(body.Text), desiredPath))
+		writeJSON(w, desired.PreviewImport([]byte(body.Text), desiredPath, validate))
 	}
 }
 
@@ -78,7 +79,7 @@ func handleConfigExport(desiredPath string, secrets *secret.Store) http.HandlerF
 	}
 }
 
-func handleConfigImport(desiredPath string, secrets *secret.Store, auditSvc *audit.Service) http.HandlerFunc {
+func handleConfigImport(desiredPath string, secrets *secret.Store, auditSvc *audit.Service, validate desired.SettingsValidator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body importBody
 		if err := decodeBody(r, &body); err != nil {
@@ -92,7 +93,7 @@ func handleConfigImport(desiredPath string, secrets *secret.Store, auditSvc *aud
 		if op, ok := operatorFromContext(r.Context()); ok && op.Session.Username != "" {
 			actor = op.Session.Username
 		}
-		summary, err := desired.ImportExport(body.Document, desiredPath, secrets, body.Secrets)
+		summary, err := desired.ImportExport(body.Document, desiredPath, secrets, body.Secrets, validate)
 		if err != nil {
 			recordImportAudit(auditSvc, actor, audit.OutcomeError, "config import refused")
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)

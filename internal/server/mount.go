@@ -78,7 +78,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	if err != nil {
 		return nil, err
 	}
-	srv.MountConfigIO(c.ConfigPath, secrets, audit.New(st))
+	srv.MountConfigIO(c.ConfigPath, secrets, audit.New(st), configSvc.ValidateSettings)
 	srv.MountSecrets(st, secrets)
 	srv.MountClaim(claimSvc)
 	srv.MountAuth(authSvc, audit.New(st))
@@ -154,6 +154,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 		platformApplyDoctorCheck(st, time.Now),
 		migrationDoctorChecks(st, c.CatalogDir),
 		backupEncryptionDoctorCheck(st),
+		backupRewrapDoctorCheck(st, secrets),
 		localTLSDoctorChecks(local, time.Now),
 		craftFilesDoctorCheck(st, docker.CraftMountPresent, docker.CraftSocketPath),
 		edgeUpstreamDoctorCheck(st, docker.NewClient("").Containers),

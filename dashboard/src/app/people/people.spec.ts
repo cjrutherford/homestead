@@ -4,6 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { People } from './people';
+import { ToastService } from '../core/toast.service';
 
 const SAM = { id: 4, display_name: 'Sam Lee', username: 'sam', email: 'sam@example.com', state: 'active', origin: 'created', grants: [{ app: 'immich', role: 'user' }], status: 'ok', drift: null };
 const PAT = {
@@ -291,5 +292,16 @@ describe('People', () => {
     http.expectOne('/api/v1/people/4/disable').flush('Authentik could not do that: refused', { status: 502, statusText: 'Bad Gateway' });
     fixture.detectChanges();
     expect(text()).toContain('Authentik could not do that: refused');
+  });
+
+  it('shows the warnings a change returns as notices (S508)', () => {
+    start();
+    (Array.from(el().querySelectorAll('.person[data-status="ok"] button')).find((b) => b.textContent?.trim() === 'Remove') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (Array.from(el().querySelectorAll('dialog button')).find((b) => b.textContent?.trim() === 'Remove') as HTMLButtonElement).click();
+    http.expectOne('/api/v1/people/4/remove').flush({ ok: true, warnings: ['Nextcloud admin was not dropped (x)'] });
+    http.expectOne('/api/v1/people').flush(VIEW);
+    const notices = TestBed.inject(ToastService).toasts().filter((t) => t.kind === 'notice');
+    expect(notices.map((t) => t.message)).toEqual(['Warning: Nextcloud admin was not dropped (x)']);
   });
 });

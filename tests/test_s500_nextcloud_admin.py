@@ -16,6 +16,12 @@ class NextcloudAdmin(unittest.TestCase):
         for want in ("UserLoggedInEvent", "getBackendClassName() !== 'user_oidc'", "removeUser", "addUser"):
             self.assertIn(want, src)
 
+    def test_exact_group_not_display_name(self):
+        src = read("internal/appsso/nextcloud_admin.go")
+        self.assertIn("'_0_admin'", src)
+        self.assertNotIn("getDisplayName", src)
+        self.assertIn("RemoveNextcloudAdmin", src)
+
     def test_enable_installs_app(self):
         self.assertIn("installAdminApp", read("internal/appsso/adapters.go"))
 

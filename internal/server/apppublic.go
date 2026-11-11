@@ -622,7 +622,7 @@ func (p *appPublic) planSignIn(f appPublicFacts, path bool, plan *appPublicPlan)
 		routes[i] = r
 	}
 	set.Routes = routes
-	in, err := appSignInInputsFrom(p.st, a.m, f.manifest, set)
+	in, err := appSignInInputsFrom(p.st, a.m, f.manifest, set, p.catalogDir)
 	if err != nil || in.Applied == nil {
 		return false
 	}
@@ -839,7 +839,7 @@ func (p *appPublic) planAdd(ctx context.Context, client *router.TunnelClient, to
 	plan.CertificateState = fingerprint
 	plan.Warnings = append(plan.Warnings, warnings...)
 	plan.Warnings = append(plan.Warnings,
-		openToInternetWarning(f.manifest, f.signIn, "https://"+hostname))
+		openToInternetWarning(f.manifest, f.signIn, "https://"+hostname, ""))
 	if !f.signIn && f.manifest.SSO.OIDC != nil {
 		plan.Warnings = append(plan.Warnings, "App sign-in through Authentik is off. Turning it on first is recommended.")
 	}
@@ -889,7 +889,7 @@ func (p *appPublic) planPathAdd(ctx context.Context, client *router.TunnelClient
 	plan.Warnings = append(plan.Warnings, warnings...)
 	plan.Warnings = append(plan.Warnings,
 		"No DNS record changes: "+f.manifest.Title+" answers at "+plan.URL+", under the dashboard's public name the tunnel already carries.",
-		openToInternetWarning(f.manifest, f.signIn, plan.URL),
+		openToInternetWarning(f.manifest, f.signIn, plan.URL, r.Path),
 		lanPathRedirectWarning(f, *plan),
 		"It shares one web origin with the dashboard and the other published apps (ADR-044): a flaw in one of them can reach the others in the same browser.")
 	if w := cookiePathWarning(f.manifest); w != "" {
@@ -921,7 +921,27 @@ func (p *appPublic) planPathRemove(f appPublicFacts, hostname string, plan *appP
 	plan.Warnings = append(plan.Warnings,
 		"No DNS record changes: "+plan.URL+" answers 404 on the public name afterwards; the app stays on its local addresses.",
 		lanPathRedirectWarning(f, *plan))
+	plan.Warnings = append(plan.Warnings, p.gateMoveWarnings(f, false)...)
 	return nil
+}
+
+// gateMoveWarnings name the other gated apps whose local address moves
+// because publishing or unpublishing this one moves the shared gate's
+// canonical name (S504, ADR-062 section 5). The lines are part of the
+// plan, so the digest covers them.
+func (p *appPublic) gateMoveWarnings(f appPublicFacts, publish bool) []string {
+	r := f.routes[0]
+	move := docker.GateCanonicalMove(f.all, r.Path, func(x *docker.Route) { x.Published = publish })
+	if !move.Moved() {
+		return nil
+	}
+	titles := gateTitles(p.catalogDir, f.all)
+	return move.Lines(func(x docker.Route) string {
+		if t := titles[x.Path]; t != "" {
+			return t
+		}
+		return x.Path
+	})
 }
 
 // removeZone names the zone a removed name lives in: the stored one,
@@ -1353,10 +1373,10 @@ func singleOriginWarning(r docker.Route, plan appPublicPlan) string {
 
 // lanPathRedirectWarning previews the edge change for a path app's local
 // names (S498, ADR-062 amendment): published, a request on
-// the local name answers 308 to the public address, path and query kept;
+// the local name answers 307 to the public address, path and query kept;
 // unpublished, the local names serve the app again. Craft apps keep the LAN
 // open, so for them the warning says nothing changes. An API client on the LAN
-// (Komga's OPDS, an app on a phone) that does not follow a 308 needs the
+// (Komga's OPDS, an app on a phone) that does not follow a 307 needs the
 // public address.
 func lanPathRedirectWarning(f appPublicFacts, plan appPublicPlan) string {
 	r := f.routes[0]
@@ -1367,14 +1387,14 @@ func lanPathRedirectWarning(f appPublicFacts, plan appPublicPlan) string {
 	if plan.Action == "remove" {
 		return "Edge change: the redirect from " + local + " to " + plan.URL + " is removed; the app is served on its local address again."
 	}
-	return "Edge change: requests for " + local + " are redirected (308, path and query kept) to " + plan.URL +
+	return "Edge change: requests for " + local + " are redirected (307, path and query kept) to " + plan.URL +
 		". Local apps and API clients that do not follow redirects must use the public address; unpublish " + f.manifest.Title + " to serve the local address again (S498)."
 }
 
 // openToInternetWarning says who stands in front of a published app. An app
 // gated by Authentik forward-auth (ADR-055) is planned with its gate in the
 // same install (S450), so the warning says when the gate arrives.
-func openToInternetWarning(m catalog.Manifest, signIn bool, url string) string {
+func openToInternetWarning(m catalog.Manifest, signIn bool, url, path string) string {
 	if accountlessInstallApps[m.Name] {
 		// A craft app has no sign-in of its own (ADR-062 section 6).
 		if !signIn {
@@ -1386,7 +1406,21 @@ func openToInternetWarning(m catalog.Manifest, signIn bool, url string) string {
 		return "Anyone on the internet can reach " + m.Title + " at " + url + ". Until the Authentik gate is on, only " + m.Title + "'s own login protects it; the gate is planned with its install, and the app's login is never left open."
 	}
 	if m.SSO.ForwardAuth != nil {
-		return "Anyone on the internet can reach " + m.Title + " at " + url + ", but every request is checked with Authentik first."
+		msg := "Anyone on the internet can reach " + m.Title + " at " + url + ", but every request is checked with Authentik first"
+		if len(m.SSO.ForwardAuth.Bypass) == 0 {
+			return msg + "."
+		}
+		// The gate has paths it leaves open (S504); name them as the
+		// sign-in plan does.
+		var open []string
+		for _, b := range m.SSO.ForwardAuth.Bypass {
+			p := b.Path
+			if path != "" {
+				p = docker.PathBypass(path, p)
+			}
+			open = append(open, appsso.OpenWithoutGateLine(p, b.Reason))
+		}
+		return msg + ", except the paths it leaves open. " + strings.Join(open, "; ") + "."
 	}
 	return "Anyone on the internet can reach " + m.Title + " at " + url + ". Homestead puts no Authentik check in front of it: the app's own sign-in is what protects it."
 }

@@ -21,6 +21,27 @@
       Never exported.
     }
   </p>
+  @if (status.retired_unreadable) {
+    <p>
+      {{ status.retired_unreadable }} retired recovery key(s) are stored unreadably; older backups
+      may not open with them.
+    </p>
+  }
+  @if (status.rewrap; as rw) {
+    <p>
+      @if (!rw.finished_at) {
+        Existing backups have not been re-wrapped to the current key yet.
+      } @else if (rw.complete) {
+        Last re-wrap {{ rw.finished_at | when }}: {{ rw.rewrapped }} re-wrapped,
+        {{ rw.already_current }} already current.
+      } @else {
+        Last re-wrap {{ rw.finished_at | when }}: {{ rw.failed_count }} file(s) could not be re-wrapped.
+      }
+    </p>
+    @for (file of rw.failed; track file) {
+      <p class="backup-root">Not re-wrapped: {{ file }}</p>
+    }
+  }
 }
 @if (exported(); as result) {
   <div role="alert" aria-label="Exported recovery identity">
@@ -31,15 +52,10 @@
     @if (rotation(); as rot) {
       <p>
         Rotated from {{ rot.previous_fingerprint || 'no earlier identity' }} to {{ rot.fingerprint }}.
-        {{ rot.rewrapped }} backup files were re-wrapped to the new key, {{ rot.already_current }}
-        were already current, {{ rot.failed.length }} could not be re-wrapped.
         {{ rot.runs_note }}.
         Older backups stay readable with the new key and also with the old one: keep the old key
         until those backups are pruned.
       </p>
-      @for (file of rot.failed; track file) {
-        <p class="backup-root">Not re-wrapped (the appliance keeps the old key for it; rotate again to retry): {{ file }}</p>
-      }
     }
     <pre class="backup-root">{{ result.identity }}</pre>
     <button type="button" (click)="copyExport()">Copy</button>
@@ -63,8 +79,8 @@
 } @else if (confirmingRotate()) {
   <app-dialog heading="Rotate the recovery identity?" variant="danger" (dismissed)="cancelRotate()">
     <p>
-      This creates a new key for backups and re-wraps the backups already made
-      so the new key opens them too. Nothing is deleted. The old key keeps
+      This creates a new key for backups. The backups already made are then
+      re-wrapped in the background so the new key opens them too. Nothing is deleted. The old key keeps
       working on older backups. You must store the new key offline; it is
       shown once and the rotation is audited. Continue?
     </p>
@@ -79,5 +95,8 @@
   </button>
   <button type="button" (click)="askRotate()" [disabled]="busy() || !identity()?.created">
     Rotate recovery identity
+  </button>
+  <button type="button" (click)="rewrap()" [disabled]="busy() || !identity()?.created">
+    Re-wrap existing backups
   </button>
 }

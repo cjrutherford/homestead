@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -27,7 +29,17 @@ func recipientStub(t *testing.T, exports *int) string {
 			_, _ = w.Write([]byte(`{"identity":"AGE-SECRET-KEY-TEST","recipient":"age1app","fingerprint":"aa"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/backups/identity/rotate":
 			*exports += 1000
-			_, _ = w.Write([]byte(`{"identity":"AGE-SECRET-KEY-NEW","recipient":"age1new","fingerprint":"cc","previous_fingerprint":"aa","rewrapped":3,"already_current":1,"failed":["p/run/x.age"],"runs_note":"runs under /mnt were re-wrapped"}`))
+			_, _ = w.Write([]byte(`{"identity":"AGE-SECRET-KEY-NEW","recipient":"age1new","fingerprint":"cc","previous_fingerprint":"aa","rewrap_operation_id":7,"runs_note":"existing runs are being re-wrapped in the background"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/backups/identity/rewrap":
+			*exports += 10000
+			_, _ = w.Write([]byte(`{"id":7}`))
+		case r.URL.Path == "/api/v1/operations/7/events":
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, _ := w.(http.Flusher)
+			for _, status := range []string{"running", "succeeded"} {
+				fmt.Fprintf(w, "event: state\ndata: {\"id\":7,\"type\":\"backup.rewrap\",\"status\":%q,\"steps\":[]}\n\n", status)
+				flusher.Flush()
+			}
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/backups/identity/ack":
 			*exports += 100
 			_, _ = w.Write([]byte(`{"created":true,"exported":true,"acknowledged":true}`))
@@ -148,7 +160,7 @@ func TestBackupIdentityRotateNeedsADestinationAndNeverPrintsTheKeyToAFile(t *tes
 	if code != exitOK || n != 1000 || strings.Contains(out, "AGE-SECRET-KEY") || strings.Contains(stderr, "AGE-SECRET-KEY") {
 		t.Fatalf("rotate code=%d n=%d out=%q err=%q", code, n, out, stderr)
 	}
-	for _, want := range []string{"rotated from aa to cc", "3 run files re-wrapped", "p/run/x.age", "old one"} {
+	for _, want := range []string{"rotated from aa to cc", "re-wrapped in the background", "operation: 7", "succeeded", "old one"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q: %q", want, out)
 		}
@@ -162,5 +174,111 @@ func TestBackupIdentityRotateNeedsADestinationAndNeverPrintsTheKeyToAFile(t *tes
 	}
 	if code, _, _ := invoke(t, []string{"--server", url, "backup", "identity", "rotate", "--out", file}); code == exitOK || n != 1000 {
 		t.Fatalf("overwrite code=%d n=%d", code, n)
+	}
+}
+
+func TestBackupIdentityRewrapStartsAndFollows(t *testing.T) {
+	n := 0
+	url := recipientStub(t, &n)
+	code, out, _ := invoke(t, []string{"--server", url, "backup", "identity", "rewrap"})
+	if code != exitOK || n != 10000 || !strings.Contains(out, "operation: 7") || !strings.Contains(out, "succeeded") {
+		t.Fatalf("rewrap code=%d n=%d out=%q", code, n, out)
+	}
+}
+
+func TestBackupIdentityRewrapFailureExitsNonZero(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/backups/identity/rewrap":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":8}`))
+		case "/api/v1/operations/8/events":
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, _ := w.(http.Flusher)
+			fmt.Fprint(w, "event: state\ndata: {\"id\":8,\"type\":\"backup.rewrap\",\"status\":\"failed\",\"steps\":[]}\n\n")
+			flusher.Flush()
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(ts.Close)
+	if code, _, _ := invoke(t, []string{"--server", ts.URL, "backup", "identity", "rewrap"}); code != exitError {
+		t.Fatalf("failed re-wrap exit = %d", code)
+	}
+	conflict := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "a re-wrap of existing backups is already running", http.StatusConflict)
+	}))
+	t.Cleanup(conflict.Close)
+	if code, _, stderr := invoke(t, []string{"--server", conflict.URL, "backup", "identity", "rewrap"}); code == exitOK || !strings.Contains(stderr, "already running") {
+		t.Fatalf("conflict exit = %d %q", code, stderr)
+	}
+}
+
+// The key is on disk before the CLI starts following the re-wrap, so an
+// interrupted follow never loses the only copy.
+func TestBackupIdentityRotateWritesTheKeyFileBeforeFollowing(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "new.txt")
+	followed := make(chan struct{})
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/backups/identity/rotate":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"identity":"AGE-SECRET-KEY-NEW","recipient":"age1new","fingerprint":"cc","previous_fingerprint":"aa","rewrap_operation_id":9,"runs_note":"in the background"}`))
+		case "/api/v1/operations/9/events":
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, _ := w.(http.Flusher)
+			fmt.Fprint(w, "event: state\ndata: {\"id\":9,\"type\":\"backup.rewrap\",\"status\":\"running\",\"steps\":[]}\n\n")
+			flusher.Flush()
+			close(followed)
+			<-r.Context().Done() // never ends on its own
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(ts.Close)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-followed
+		cancel()
+	}()
+	var out, errOut strings.Builder
+	code := run(ctx, []string{"--server", ts.URL, "backup", "identity", "rotate", "--out", file}, &out, &errOut)
+	if code != exitOK {
+		t.Fatalf("code=%d err=%q", code, errOut.String())
+	}
+	if raw, _ := os.ReadFile(file); !strings.Contains(string(raw), "AGE-SECRET-KEY-NEW") {
+		t.Fatalf("key file = %q", raw)
+	}
+	if strings.Contains(out.String()+errOut.String(), "AGE-SECRET-KEY") {
+		t.Fatal("the key was printed")
+	}
+}
+
+func TestBackupIdentityRotateErrorSaysNotToRotateAgain(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	t.Cleanup(ts.Close)
+	file := filepath.Join(t.TempDir(), "k.txt")
+	code, _, stderr := invoke(t, []string{"--server", ts.URL, "backup", "identity", "rotate", "--out", file})
+	if code == exitOK || !strings.Contains(stderr, "do not rotate again") {
+		t.Fatalf("code=%d err=%q", code, stderr)
+	}
+	if _, err := os.Stat(file); err == nil {
+		t.Fatal("an empty key file was left behind")
+	}
+}
+
+func TestBackupIdentityStatusShowsRewrapAndRetired(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"created":true,"recipient":"age1x","fingerprint":"cc","exported":false,"retired_count":2,"retired_unreadable":1,"rewrap":{"fingerprint":"cc","finished_at":"2026-11-11T00:00:00Z","failed":["a.age"],"failed_count":1,"complete":false}}`))
+	}))
+	t.Cleanup(ts.Close)
+	code, out, _ := invoke(t, []string{"--server", ts.URL, "backup", "identity", "status"})
+	for _, want := range []string{"2 readable, 1 unreadable", "1 file(s) not re-wrapped", "a.age"} {
+		if code != exitOK || !strings.Contains(out, want) {
+			t.Errorf("status missing %q: %d %q", want, code, out)
+		}
 	}
 }

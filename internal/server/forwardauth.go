@@ -66,7 +66,7 @@ var outpostPing = func(ctx context.Context) error {
 }
 
 // addForwardInputs fills the inputs only a gated app needs.
-func addForwardInputs(st *store.Store, in *appsso.Inputs, manifest catalog.Manifest) error {
+func addForwardInputs(st *store.Store, in *appsso.Inputs, manifest catalog.Manifest, edge []docker.Route, catalogDir string) error {
 	fa := manifest.SSO.ForwardAuth
 	if fa == nil || !in.Installed {
 		return nil
@@ -80,6 +80,7 @@ func addForwardInputs(st *store.Store, in *appsso.Inputs, manifest catalog.Manif
 		in.EdgeSource = addr
 	}
 	if set, err := loadEdgeRoutes(st); err == nil {
+		in.EdgeRoutes, in.GateTitles = edge, gateTitles(catalogDir, edge)
 		// Other apps at a path behind the shared gate (ADR-062).
 		for _, r := range set.Routes {
 			if r.Dashboard || !r.IsPath() || r.Gate == nil {
@@ -227,13 +228,32 @@ func gatedTrustDrift(c DoctorLiveConfig) []doctor.Check {
 		if err != nil || m.SSO.ForwardAuth == nil {
 			continue
 		}
-		in, err := appSignInInputsFrom(c.Store, c.SSO, m, set)
+		in, err := appSignInInputsFrom(c.Store, c.SSO, m, set, c.CatalogDir)
 		if err != nil || in.Applied == nil || !appsso.BuildStatus(in, false).Replan {
 			continue
 		}
 		out = append(out, doctor.Check{Name: "authentik-gate-" + m.Name, Status: doctor.StatusWarn,
 			Detail: m.Title + " trusts an edge address that is out of date (the edge was recreated), so it shows its own login page until sign-in is re-applied.",
 			Fix:    liveFix("Re-plan and apply sign-in for "+m.Name+".", "/admin/catalog", "homesteadctl apps sign-in plan "+m.Name)})
+	}
+	return out
+}
+
+// gateTitles names each gated app at a path by its catalog title, keyed by
+// path, for the plan lines about local addresses that move (S504).
+func gateTitles(catalogDir string, routes []docker.Route) map[string]string {
+	out := map[string]string{}
+	entries, err := catalog.Load(catalogDir)
+	if err != nil {
+		return out
+	}
+	for _, r := range routes {
+		if !r.IsPath() || r.Gate == nil {
+			continue
+		}
+		if m, err := entries.Get(strings.Trim(strings.TrimPrefix(r.Path, docker.AppsPrefix), "/")); err == nil {
+			out[r.Path] = m.Title
+		}
 	}
 	return out
 }

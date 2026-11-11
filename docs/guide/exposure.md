@@ -55,11 +55,13 @@ Uptime Kuma is never published.
 
 ### Local requests redirect once an app is published
 
-When an app at a path is published, its local address (`https://homestead.lan/apps/<app>/`) answers a redirect (308) to the public address, keeping the path and query, so the app has one address. The Craft apps are the exception: they stay open on the local network. Apps that are not published keep being served locally. The plan tells you before you approve it. Apps and devices on your network that do not follow redirects, for example a reader app using Komga's OPDS feed, must be given the public address, or you can unpublish the app to bring the local address back.
+When an app at a path is published, its local address (`https://homestead.lan/apps/<app>/`) answers a redirect (307) to the public address, keeping the path and query, so the app has one address. The Craft apps are the exception: they stay open on the local network. Apps that are not published keep being served locally. The plan tells you before you approve it. Apps and devices on your network that do not follow redirects, for example a reader app using Komga's OPDS feed, must be given the public address, or you can unpublish the app to bring the local address back.
 
 ### The shared gate
 
 The Craft apps have no sign-in of their own, and Navidrome relies on Authentik instead of an OpenID Connect login. When published at a path they sit behind one shared Authentik gate. Authentik says who the person is. The appliance's edge then checks that person's groups against the app's groups and answers 403 to anyone signed in who was not granted the app. The LAN stays open, as above.
+
+The gate has one name. As soon as one gated app is published, every gated app's local address redirects to the public name, so a gated app that is not published (for example Navidrome while another gated app is published) cannot be reached on your network until it is published or its sign-in gate is turned off. The plan that causes this, publishing an app or turning its gate on, names each such app before you approve it; the plan that undoes it says they are reachable locally again. The publish plan also lists the paths of the app that skip the gate (for Navidrome, the streaming and sharing paths other apps need).
 
 ## Planned, approved, audited
 

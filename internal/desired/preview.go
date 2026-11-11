@@ -29,12 +29,17 @@ type ImportPreview struct {
 
 // PreviewImport parses and validates document text (YAML or JSON)
 // and diffs its settings against the current desired state at
-// desiredPath. Nothing is written.
-func PreviewImport(text []byte, desiredPath string) ImportPreview {
+// desiredPath. Settings are checked against the config schema so
+// the browser form shows the same errors an import would refuse
+// with. Nothing is written.
+func PreviewImport(text []byte, desiredPath string, validate SettingsValidator) ImportPreview {
 	out := ImportPreview{Changes: []ImportChange{}, Secrets: []string{}}
 	export, err := ParseExport(text)
 	if err == nil {
 		err = ValidateImport(export)
+	}
+	if err == nil && validate != nil {
+		err = validate(export.Settings)
 	}
 	if err != nil {
 		out.Error = err.Error()
