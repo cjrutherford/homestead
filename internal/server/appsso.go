@@ -70,22 +70,22 @@ func (a *appSignIn) inputs(name string) (appsso.Inputs, error) {
 	if err != nil {
 		return appsso.Inputs{}, errUnknownApp
 	}
-	return appSignInInputs(a.cfg.Store, a.m, manifest)
+	return appSignInInputs(a.cfg.Store, a.m, manifest, a.cfg.CatalogDir)
 }
 
 var errUnknownApp = errors.New("unknown app")
 
-func appSignInInputs(st *store.Store, m *sso.Manager, manifest catalog.Manifest) (appsso.Inputs, error) {
+func appSignInInputs(st *store.Store, m *sso.Manager, manifest catalog.Manifest, catalogDir string) (appsso.Inputs, error) {
 	set, err := loadEdgeRoutes(st)
 	if err != nil {
 		return appsso.Inputs{Manifest: manifest}, err
 	}
-	return appSignInInputsFrom(st, m, manifest, set)
+	return appSignInInputsFrom(st, m, manifest, set, catalogDir)
 }
 
 // appSignInInputsFrom is appSignInInputs over the edge table set: the
 // current one, or the one a tunnel plan leads to (ADR-048 §6).
-func appSignInInputsFrom(st *store.Store, m *sso.Manager, manifest catalog.Manifest, set docker.RouteSet) (appsso.Inputs, error) {
+func appSignInInputsFrom(st *store.Store, m *sso.Manager, manifest catalog.Manifest, set docker.RouteSet, catalogDir string) (appsso.Inputs, error) {
 	in := appsso.Inputs{Manifest: manifest, AuthentikInstalled: authentikInstalled(st)}
 	installed, err := catalog.Installed(st, manifest.Name, stackDirFor(manifest.Name))
 	if err != nil {
@@ -106,7 +106,7 @@ func appSignInInputsFrom(st *store.Store, m *sso.Manager, manifest catalog.Manif
 			in.OwnerEnv = env
 		}
 	}
-	if err := addForwardInputs(st, &in, manifest); err != nil {
+	if err := addForwardInputs(st, &in, manifest, set.Routes, catalogDir); err != nil {
 		return in, err
 	}
 	status, err := m.Status()
@@ -355,7 +355,7 @@ func (a *appSignIn) setupInputs(rec setupRecord) (appsso.Inputs, error) {
 	}
 	routes[selected] = r
 	set.Routes = routes
-	return appSignInInputsFrom(a.cfg.Store, a.m, manifest, set)
+	return appSignInInputsFrom(a.cfg.Store, a.m, manifest, set, a.cfg.CatalogDir)
 }
 
 // startSetup applies an approved sign-in plan against the anticipated route;
@@ -454,7 +454,7 @@ func (a *appSignIn) preview(manifest catalog.Manifest, install catalog.InstallPl
 		// published (ADR-062 section 6), not with the install.
 		return nil
 	}
-	in, err := appSignInInputs(a.cfg.Store, a.m, manifest)
+	in, err := appSignInInputs(a.cfg.Store, a.m, manifest, a.cfg.CatalogDir)
 	if err != nil {
 		return &signInPreview{Reason: "The sign-in state could not be read."}
 	}
@@ -491,7 +491,7 @@ func (a *appSignIn) preview(manifest catalog.Manifest, install catalog.InstallPl
 		// A gated app is planned before it exists (S450, ADR-059): the
 		// edge, host block and people are read now, and its accounts are
 		// the administrator its first run creates.
-		if err := addForwardInputs(a.cfg.Store, &in, manifest); err != nil {
+		if err := addForwardInputs(a.cfg.Store, &in, manifest, table, a.cfg.CatalogDir); err != nil {
 			return &signInPreview{Reason: "The sign-in state could not be read."}
 		}
 		in.Accounts, in.AccountsFn = anticipatedAccounts(manifest), nil

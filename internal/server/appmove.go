@@ -635,7 +635,7 @@ func (m *appMove) planPublicRemoval(f moveFacts, plan *appMovePlan) error {
 	plan.Warnings = append(plan.Warnings,
 		moveOldNameStops(f.manifest.Title, oldURL, plan.PublicTo),
 		"No DNS record changes are needed for "+plan.PublicTo+": it is under the dashboard's public name the tunnel already carries.",
-		openToInternetWarning(f.manifest, f.signIn, plan.PublicTo),
+		openToInternetWarning(f.manifest, f.signIn, plan.PublicTo, plan.Path),
 		"It shares one web origin with the dashboard and the other published apps (ADR-044): a flaw in one of them can reach the others in the same browser.",
 		"Order: the path is published and the app's settings and sign-in follow it first; the new address is then checked through the public edge, and only if it answers are the old name's connector entry and DNS record removed. If a step or the check fails the run stops and says so, the old name stays, and the move can be finished from the same plan once the address answers.")
 	return nil
@@ -701,7 +701,7 @@ func (m *appMove) planSignIn(f moveFacts, plan *appMovePlan) bool {
 		}
 	}
 	set.Routes = routes
-	in, err := appSignInInputsFrom(m.st, a.m, f.manifest, set)
+	in, err := appSignInInputsFrom(m.st, a.m, f.manifest, set, m.catalogDir)
 	if err != nil || in.Applied == nil {
 		return false
 	}

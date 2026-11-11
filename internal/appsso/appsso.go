@@ -234,6 +234,12 @@ type Inputs struct {
 	// OtherGates are the other apps at a path behind the shared Authentik
 	// gate (ADR-062), read from the edge table.
 	OtherGates []OtherGate
+	// EdgeRoutes is the whole edge table and GateTitles the display name
+	// of each gated app by its path: they let the plan say which other
+	// apps' local addresses move when this change moves the shared gate's
+	// canonical name (S504).
+	EdgeRoutes []docker.Route
+	GateTitles map[string]string
 }
 
 // published reports an app with a public name: its own tunnel names, or

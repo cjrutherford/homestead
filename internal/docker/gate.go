@@ -369,6 +369,71 @@ func SharedGateCanonical(routes []Route, dash Route) Hostname {
 	return dash.Host
 }
 
+// GateMove is what a change to one path app does to the shared gate's
+// canonical name (S504): From and To are SharedGateCanonical before and
+// after, and Affected are the other gated apps at a path whose local
+// address changes with it. Authentik matches one external host, so while
+// the canonical is the public name every gated path app's local address
+// redirects there, and one that is not published answers 404 (ADR-062
+// section 5).
+type GateMove struct {
+	From, To Hostname
+	Affected []Route
+	Dash     Route
+}
+
+// Moved reports that the canonical name changes.
+func (m GateMove) Moved() bool { return m.From != m.To }
+
+// GateCanonicalMove computes SharedGateCanonical for the edge table as it
+// is and as it would be once change has been applied to the path route at
+// path, from the same inputs SharedGateCanonical reads. Affected is empty
+// when the canonical does not move. An app whose gate is tunnel-only (a
+// craft app) keeps its local address open and is never affected.
+func GateCanonicalMove(routes []Route, path string, change func(*Route)) GateMove {
+	var dash Route
+	for _, r := range routes {
+		if r.Dashboard {
+			dash = r
+			break
+		}
+	}
+	after := make([]Route, len(routes))
+	copy(after, routes)
+	for i := range after {
+		if after[i].IsPath() && after[i].Path == path {
+			change(&after[i])
+		}
+	}
+	m := GateMove{From: SharedGateCanonical(routes, dash), To: SharedGateCanonical(after, dash), Dash: dash}
+	if !m.Moved() {
+		return m
+	}
+	for _, r := range after {
+		if r.IsPath() && r.Path != path && r.Gate != nil && !r.Gate.TunnelOnly && !r.Published {
+			m.Affected = append(m.Affected, r)
+		}
+	}
+	return m
+}
+
+// Lines name each affected app and what happens to its local address, for
+// the plan the owner approves. title gives an app's display name from its
+// route.
+func (m GateMove) Lines(title func(Route) string) []string {
+	var out []string
+	for _, r := range m.Affected {
+		local := string(m.Dash.Host) + r.Path
+		name := title(r)
+		if m.To == m.Dash.Host {
+			out = append(out, fmt.Sprintf("%s is gated but not published: its local address %s stops redirecting to %s and answers on the local network again.", name, local, m.From))
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s is gated but not published: its local address %s will redirect to %s, where it is not published, so it will be unreachable until it is published or its sign-in gate is turned off.", name, local, m.To))
+	}
+	return out
+}
+
 // renderOutpostHandle is the dashboard site's handle for Authentik's
 // embedded outpost, which the gate's sign-in redirect and callback need on
 // the name the app answers on (ADR-061; public too, because the gate runs

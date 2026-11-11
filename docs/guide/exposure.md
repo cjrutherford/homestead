@@ -61,6 +61,8 @@ When an app at a path is published, its local address (`https://homestead.lan/ap
 
 The Craft apps have no sign-in of their own, and Navidrome relies on Authentik instead of an OpenID Connect login. When published at a path they sit behind one shared Authentik gate. Authentik says who the person is. The appliance's edge then checks that person's groups against the app's groups and answers 403 to anyone signed in who was not granted the app. The LAN stays open, as above.
 
+The gate has one name. As soon as one gated app is published, every gated app's local address redirects to the public name, so a gated app that is not published (for example Navidrome while another gated app is published) cannot be reached on your network until it is published or its sign-in gate is turned off. The plan that causes this, publishing an app or turning its gate on, names each such app before you approve it; the plan that undoes it says they are reachable locally again. The publish plan also lists the paths of the app that skip the gate (for Navidrome, the streaming and sharing paths other apps need).
+
 ## Planned, approved, audited
 
 Every public change follows the same pattern: Homestead plans it, you review the exact preview, you approve it, and it runs as an operation. If a plan changes between preview and approval, approval is refused and you review again. Each approval and each result is recorded on the **Audit** page (`homesteadctl audit list`). Open the **Exposure** page to see what is published and to approve or apply exposure changes.

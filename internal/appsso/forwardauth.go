@@ -256,6 +256,9 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 			removal,
 			fmt.Sprintf("Delete the Authentik groups %s and %s. The shared group %s stays.", x.Groups[0], x.Groups[1], sso.OwnerGroup),
 			fmt.Sprintf("Anyone who can reach %s's address can open its own login again, as before the gate. People's %s accounts stay.", m.Title, m.Title))
+		if route, _, ok := canonicalRoute(in.Routes); ok {
+			p.Changes = append(p.Changes, gateMoveLines(in, route, false)...)
+		}
 		if canonical != "" && !docker.IsPrivateName(docker.Hostname(canonical)) {
 			p.Warnings = append(p.Warnings, fmt.Sprintf("%s is published at %s: turning the gate off leaves only its own login in front of it.", m.Title, canonical))
 		}
@@ -424,8 +427,9 @@ func buildForwardPlan(in Inputs, enable bool) (Plan, error) {
 	if len(redirects) > 0 {
 		p.Changes = append(p.Changes, fmt.Sprintf("%s answers only on %s; %s answer with a permanent redirect to it.", m.Title, g.Canonical, strings.Join(redirects, ", ")))
 	}
+	p.Changes = append(p.Changes, gateMoveLines(in, route, true)...)
 	for _, b := range g.Bypass {
-		p.Changes = append(p.Changes, fmt.Sprintf("Open without the gate: %s (%s)", b.Path, b.Reason))
+		p.Changes = append(p.Changes, OpenWithoutGateLine(b.Path, b.Reason))
 	}
 	if len(p.AppSettings) > 0 {
 		p.Changes = append(p.Changes, fmt.Sprintf("Trust settings written to %s: %s.", m.Title, strings.Join(p.AppSettings, ", ")))
@@ -703,4 +707,32 @@ func withoutEmptyWiring(steps []operation.StepDef, none bool) []operation.StepDe
 		}
 	}
 	return out
+}
+
+// OpenWithoutGateLine is the one wording for a path the gate leaves open,
+// used by the sign-in plan and the publish plan.
+func OpenWithoutGateLine(path, reason string) string {
+	return fmt.Sprintf("Open without the gate: %s (%s)", path, reason)
+}
+
+// gateMoveLines are the plan lines for the other gated apps whose local
+// address moves when this app's gate is turned on or off (S504). They are
+// empty for a host route, or when the shared gate's name does not move.
+func gateMoveLines(in Inputs, route docker.Route, enable bool) []string {
+	if !route.IsPath() || len(in.EdgeRoutes) == 0 {
+		return nil
+	}
+	move := docker.GateCanonicalMove(in.EdgeRoutes, route.Path, func(r *docker.Route) {
+		if !enable {
+			r.Gate = nil
+		} else if r.Gate == nil {
+			r.Gate = &docker.Gate{}
+		}
+	})
+	return move.Lines(func(r docker.Route) string {
+		if t := in.GateTitles[r.Path]; t != "" {
+			return t
+		}
+		return r.Path
+	})
 }
