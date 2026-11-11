@@ -195,6 +195,12 @@ export class People implements OnInit {
     return body || `That did not work (${err.status}).`;
   }
 
+  private warn(result: { warnings?: string[] } | null | undefined): void {
+    for (const w of result?.warnings ?? []) {
+      this.toast.show(`Warning: ${w}`, 'notice');
+    }
+  }
+
   private finished(message: string): void {
     this.dialog.set(null);
     this.toast.show(message);
@@ -266,7 +272,10 @@ export class People implements OnInit {
       const app = changes[i];
       const want = this.formAccess[app];
       const call = want === 'none' ? this.service.revokeApp(person.id, app) : this.service.grantApp(person.id, app, want === 'admin');
-      this.run(call, () => step(i + 1));
+      this.run(call, (r) => {
+        this.warn(r);
+        step(i + 1);
+      });
     };
     step(0);
   }
@@ -308,13 +317,22 @@ export class People implements OnInit {
         );
         break;
       case 'disable':
-        this.run(this.service.disablePerson(person.id), () => this.finished(`${name} disabled`));
+        this.run(this.service.disablePerson(person.id), (r) => {
+          this.warn(r);
+          this.finished(`${name} disabled`);
+        });
         break;
       case 'enable':
-        this.run(this.service.enablePerson(person.id), () => this.finished(`${name} enabled`));
+        this.run(this.service.enablePerson(person.id), (r) => {
+          this.warn(r);
+          this.finished(`${name} enabled`);
+        });
         break;
       case 'remove':
-        this.run(this.service.removePerson(person.id), () => this.finished(`${name} removed. App data stays in the apps.`));
+        this.run(this.service.removePerson(person.id), (r) => {
+          this.warn(r);
+          this.finished(`${name} removed. App data stays in the apps.`);
+        });
         break;
       case 'forget':
         this.resolve(person, 'forget');

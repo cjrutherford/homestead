@@ -237,3 +237,34 @@ func TestResetMFAReadsDeviceCounts(t *testing.T) {
 		t.Errorf("exit %d out %q err %q", code, out, errOut)
 	}
 }
+
+func TestPeopleChangesPrintResponseWarningsOnStderr(t *testing.T) {
+	var calls []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		person := `{"id":4,"display_name":"Sam Lee","username":"sam","state":"active","grants":[],"status":"ok"}`
+		if r.Method == "GET" {
+			_, _ = w.Write([]byte(`{"token_kept":true,"owner":"chris","apps":["nextcloud"],"people":[` + person + `]}`))
+			return
+		}
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		_, _ = w.Write([]byte(`{"ok":true,"person":` + person + `,"warnings":["Nextcloud admin was not dropped (x)","second"]}`))
+	}))
+	defer ts.Close()
+	for _, verb := range [][]string{{"grant", "sam", "nextcloud"}, {"revoke", "sam", "nextcloud"}, {"disable", "sam"}, {"enable", "sam"}, {"remove", "sam"}} {
+		code, out, errOut := invoke(t, append([]string{"--server", ts.URL, "people"}, verb...))
+		if code != exitOK {
+			t.Fatalf("%v: exit %d err %q", verb, code, errOut)
+		}
+		if strings.Contains(out, "warning:") {
+			t.Errorf("%v: warning on stdout: %q", verb, out)
+		}
+		want := "warning: Nextcloud admin was not dropped (x)\nwarning: second\n"
+		if !strings.HasSuffix(errOut, want) {
+			t.Errorf("%v: stderr %q, want %q", verb, errOut, want)
+		}
+	}
+	if len(calls) != 5 {
+		t.Errorf("calls %v", calls)
+	}
+}

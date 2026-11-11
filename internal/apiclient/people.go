@@ -106,6 +106,9 @@ type PersonResult struct {
 	Person   Person    `json:"person"`
 	Revealed *Revealed `json:"revealed"`
 	Warning  string    `json:"warning"`
+	// Warnings are non-blocking problems with grant, revoke, disable,
+	// enable and remove, such as a Nextcloud admin right not dropped (S507).
+	Warnings []string `json:"warnings,omitempty"`
 	// SignInFailed: the person was added but how they sign in was not
 	// set up (add only, ADR-049 §4).
 	SignInFailed bool `json:"sign_in_failed,omitempty"`
@@ -176,21 +179,27 @@ func (c *Client) ResetPersonSecondFactor(ctx context.Context, id int64) (SecondF
 }
 
 // SetPersonActive disables or enables a person.
-func (c *Client) SetPersonActive(ctx context.Context, id int64, active bool) error {
+// It returns the response's warnings.
+func (c *Client) SetPersonActive(ctx context.Context, id int64, active bool) ([]string, error) {
 	rest := "/disable"
 	if active {
 		rest = "/enable"
 	}
-	return c.postJSON(ctx, peoplePath(id, rest), map[string]any{"confirm": true}, nil)
+	var out PersonResult
+	err := c.postJSON(ctx, peoplePath(id, rest), map[string]any{"confirm": true}, &out)
+	return out.Warnings, err
 }
 
 // RemovePerson removes a person from Authentik and Homestead.
-func (c *Client) RemovePerson(ctx context.Context, id int64) error {
-	return c.postJSON(ctx, peoplePath(id, "/remove"), map[string]any{"confirm": true}, nil)
+// It returns the response's warnings.
+func (c *Client) RemovePerson(ctx context.Context, id int64) ([]string, error) {
+	var out PersonResult
+	err := c.postJSON(ctx, peoplePath(id, "/remove"), map[string]any{"confirm": true}, &out)
+	return out.Warnings, err
 }
 
 // GrantPersonApp lets a person open an app, as an app admin when admin.
-func (c *Client) GrantPersonApp(ctx context.Context, id int64, app string, admin bool) (Person, error) {
+func (c *Client) GrantPersonApp(ctx context.Context, id int64, app string, admin bool) (PersonResult, error) {
 	var out PersonResult
 	path := peoplePath(id, "/apps/"+url.PathEscape(app))
 	if admin {
@@ -198,22 +207,22 @@ func (c *Client) GrantPersonApp(ctx context.Context, id int64, app string, admin
 	}
 	raw, err := json.Marshal(map[string]any{"confirm": true})
 	if err != nil {
-		return Person{}, fmt.Errorf("api: encode: %w", err)
+		return PersonResult{}, fmt.Errorf("api: encode: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.base+path, bytes.NewReader(raw))
 	if err != nil {
-		return Person{}, fmt.Errorf("api: %w", err)
+		return PersonResult{}, fmt.Errorf("api: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	err = c.roundTrip(req, http.StatusOK, &out)
-	return out.Person, err
+	return out, err
 }
 
 // RevokePersonApp takes an app away from a person.
-func (c *Client) RevokePersonApp(ctx context.Context, id int64, app string) (Person, error) {
+func (c *Client) RevokePersonApp(ctx context.Context, id int64, app string) (PersonResult, error) {
 	var out PersonResult
 	err := c.postJSON(ctx, peoplePath(id, "/apps/"+url.PathEscape(app)+"/revoke"), map[string]any{"confirm": true}, &out)
-	return out.Person, err
+	return out, err
 }
 
 // ResolvePersonDrift settles drift: put-back, keep, recreate or forget.
