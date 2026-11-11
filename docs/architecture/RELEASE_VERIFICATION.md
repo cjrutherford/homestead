@@ -21,7 +21,7 @@ the appliance.
 - Signature: minisign `.minisig`, non-prehashed `Ed` only. Prehashed `ED`
   signatures are rejected. Both the file signature and minisign's global
   signature over signature plus trusted comment must verify. Create with
-  `minisign -S -m SHA256SUMS`.
+  `minisign -S -l -m SHA256SUMS`.
 - Public key: minisign `.pub` file or its bare base64 line.
 
 ## Rules
@@ -239,7 +239,7 @@ daemon is back.
 go build -ldflags "-X homestead/internal/version.Version=0.9.0" -o /srv/rel/homestead-server ./cmd/homestead-server
 printf 'version=0.9.0\ncounter=90\n%s  homestead-server\n' "$(sha256sum /srv/rel/homestead-server | cut -d' ' -f1)" > /srv/rel/SHA256SUMS
 minisign -G -p test.pub -s test.key   # once; then: homesteadctl updates trust add --key-file test.pub
-minisign -S -s test.key -m /srv/rel/SHA256SUMS   # writes SHA256SUMS.minisig
+minisign -S -l -s test.key -m /srv/rel/SHA256SUMS   # writes SHA256SUMS.minisig
 homesteadctl updates verify --component homestead-server --artifact /srv/rel/homestead-server --checksums /srv/rel/SHA256SUMS --signature /srv/rel/SHA256SUMS.minisig
 homesteadctl updates apply-platform --component homestead-server --artifact /srv/rel/homestead-server --checksums /srv/rel/SHA256SUMS --signature /srv/rel/SHA256SUMS.minisig --follow
 ```

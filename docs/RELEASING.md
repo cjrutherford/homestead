@@ -17,7 +17,8 @@ The gate for a release, in order. Signing is offline and manual
    prerelease with the four binaries (`homestead-server` and `homesteadctl`,
    linux amd64 and arm64) and `SHA256SUMS`, with the CHANGELOG section as notes.
 5. The owner downloads the assets, checks `sha256sum -c` on the lines in
-   `SHA256SUMS`, then signs offline: `minisign -S -m SHA256SUMS`.
+   `SHA256SUMS`, then signs offline: `minisign -S -l -m SHA256SUMS`. The `-l` is required: minisign
+   0.10+ defaults to prehashed `ED` signatures, which the appliance rejects.
 6. Upload `SHA256SUMS.minisig` to the draft and publish it.
 
 To try the build locally: `make dashboard-install release`; output is in
@@ -55,7 +56,7 @@ that updates never stop verifying:
    --key-file new.pub --label "release 2027"`, or Updates page, Trusted keys,
    paste the key, Add trusted key. `homesteadctl updates trust list` shows
    both.
-3. Sign releases with the new key (`minisign -S -m SHA256SUMS -s new.key`).
+3. Sign releases with the new key (`minisign -S -l -m SHA256SUMS -s new.key`).
    Releases signed with either key verify while both are trusted.
 4. Once appliances have verified a release signed by the new key, retire the
    old key: `homesteadctl updates trust remove OLD_KEY_ID`, or the Remove
